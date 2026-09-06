@@ -383,6 +383,16 @@ pub enum AgentCurrentActivityStatus {
     ModelWait,
     RunningTool,
     Waiting,
+    /// Settled because the parent's turn ended before this child did, not
+    /// because it asked anyone anything (#5906).
+    ///
+    /// The runtime parks such a child with a `needs_input` note that reads
+    /// like a question, so every surface used to render it as
+    /// `waiting for input` — indistinguishable from a child a user can
+    /// actually answer. It is its own state here because the recovery is
+    /// different: nobody will answer it, and it is continued through
+    /// `resume_from` (a *new* agent) or dismissed with `cancel`.
+    Parked,
     Done,
     Failed,
     Canceled,
@@ -390,6 +400,11 @@ pub enum AgentCurrentActivityStatus {
 }
 
 impl From<AgentWorkerStatus> for AgentCurrentActivityStatus {
+    /// Never yields [`Self::Parked`]: the worker status vocabulary cannot
+    /// express it (a parked child reports `WaitingForUser` /`Interrupted`
+    /// like any other settled one). Parked is derived from the checkpoint
+    /// flag by `crate::tui::subagent_routing::subagent_is_parked` and layered
+    /// over this mapping there — the one place that distinction is made.
     fn from(status: AgentWorkerStatus) -> Self {
         match status {
             AgentWorkerStatus::Queued => Self::Queued,
@@ -819,6 +834,19 @@ pub struct ComposerState {
     /// `selection_anchor` is the fixed end.  Both are char-indexed.
     /// `None` means no selection is active.
     pub selection_anchor: Option<usize>,
+    /// The first character typed into this composer line was `/` (#5925).
+    ///
+    /// A line that began as a command stays a command until Enter: if the
+    /// leading `/` is gone at submit time and no edit removed it, bytes were
+    /// lost between the terminal and the composer, and the line must not be
+    /// re-interpreted as a prose prompt for the model. Composer edits
+    /// re-derive the claim through
+    /// [`ComposerState::resync_command_line_claim`]; `clear_input` drops it.
+    pub(crate) line_began_with_slash: bool,
+    /// Startup consumed bytes it could not replay, so the shell cannot prove
+    /// it saw the whole line (#5925). Set once from the startup input
+    /// receipt; cleared by the first submit it holds.
+    pub(crate) startup_input_unproven: bool,
 }
 
 impl Default for ComposerState {
@@ -848,6 +876,8 @@ impl Default for ComposerState {
             vim_mode: VimMode::Normal,
             vim_pending_d: false,
             selection_anchor: None,
+            line_began_with_slash: false,
+            startup_input_unproven: false,
         }
     }
 }

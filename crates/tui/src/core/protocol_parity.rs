@@ -104,6 +104,7 @@ fn roster_state_str(state: RosterState) -> &'static str {
     match state {
         RosterState::Running => "running",
         RosterState::Waiting => "waiting",
+        RosterState::Parked => "parked",
         RosterState::Done => "done",
         RosterState::Failed => "failed",
         RosterState::Cancelled => "cancelled",
@@ -406,6 +407,12 @@ pub fn event_to_protocol(event: &Event, ids: &ProtocolIds) -> wire::EventMsg {
             provider: provider.clone(),
             omitted_tool_names: omitted_tool_names.clone(),
             omitted_tool_count: count(*omitted_tool_count),
+        },
+        Event::SnapshotsDisabled { workspace, reason } => wire::EventMsg::SnapshotsDisabled {
+            thread_id,
+            session_id,
+            workspace: workspace.clone(),
+            reason: reason.clone(),
         },
         Event::MessageStarted { index } => wire::EventMsg::MessageStarted {
             thread_id,
