@@ -442,6 +442,78 @@ fn builder_registers_speech_alias_tools() {
 
     assert!(registry.contains("speech"));
     assert!(registry.contains("tts"));
+    // One capability, one catalog entry: the alias stays callable for replay
+    // but is not advertised (#5941).
+    let visible: Vec<String> = registry
+        .to_api_tools()
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect();
+    assert!(visible.iter().any(|name| name == "speech"));
+    assert!(!visible.iter().any(|name| name == "tts"), "{visible:?}");
+}
+
+#[test]
+fn agent_runtime_surface_skips_speech_without_a_client() {
+    use super::AgentToolSurfaceOptions;
+    use crate::worker_profile::ShellPolicy;
+    let tmp = tempdir().expect("tempdir");
+    let ctx = ToolContext::new(tmp.path().to_path_buf());
+    let registry = ToolRegistryBuilder::new()
+        .with_agent_runtime_surface(
+            None,
+            "test-model".to_string(),
+            AgentToolSurfaceOptions::new(ShellPolicy::Full),
+            crate::tools::todo::new_shared_todo_list(),
+            crate::tools::plan::new_shared_plan_state(),
+        )
+        .build(ctx);
+    assert!(!registry.contains("speech"));
+    assert!(!registry.contains("tts"));
+}
+
+#[test]
+fn model_visible_tool_descriptions_name_no_vendor() {
+    use super::AgentToolSurfaceOptions;
+    use crate::worker_profile::ShellPolicy;
+    let tmp = tempdir().expect("tempdir");
+    let ctx = ToolContext::new(tmp.path().to_path_buf());
+    let mut options = AgentToolSurfaceOptions::new(ShellPolicy::Full);
+    options.web_search_enabled = true;
+    let registry = ToolRegistryBuilder::new()
+        .with_agent_runtime_surface(
+            None,
+            "test-model".to_string(),
+            options,
+            crate::tools::todo::new_shared_todo_list(),
+            crate::tools::plan::new_shared_plan_state(),
+        )
+        .with_speech_tools(None, None)
+        .build(ctx);
+    let vendors = [
+        "xiaomi",
+        "mimo",
+        "claude",
+        "anthropic",
+        "openai",
+        "gpt-",
+        "deepseek",
+        "gemini",
+        "kimi",
+        "qwen",
+        "grok",
+        "mistral",
+    ];
+    for tool in registry.to_api_tools() {
+        let description = tool.description.to_ascii_lowercase();
+        for vendor in vendors {
+            assert!(
+                !description.contains(vendor),
+                "tool {} names a vendor ({vendor}) in its model-facing description",
+                tool.name
+            );
+        }
+    }
 }
 
 #[test]
@@ -1689,4 +1761,27 @@ fn rlm_family_removes_legacy_aliases() {
             "{retired} must not be advertised"
         );
     }
+}
+
+#[test]
+fn a_builder_upgrade_replaces_the_tool_instead_of_registering_it_twice() {
+    // `with_patch_tools` swaps the default `File` for the patch-capable one;
+    // that used to reach `register` as a second `File` and warn on every
+    // registry rebuild (#5934).
+    let builder = ToolRegistryBuilder::new()
+        .with_file_tools()
+        .with_patch_tools();
+    let file_tools = builder
+        .tools
+        .iter()
+        .filter(|tool| tool.name() == "File")
+        .count();
+    assert_eq!(file_tools, 1, "one File tool after the upgrade");
+    assert!(
+        builder
+            .tools
+            .iter()
+            .any(|tool| tool.name() == "apply_patch"),
+        "the upgrade still adds apply_patch"
+    );
 }
