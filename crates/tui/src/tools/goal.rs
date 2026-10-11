@@ -1160,7 +1160,7 @@ impl ToolSpec for UpdateGoalTool {
                 },
                 "progress": {
                     "type": "object",
-                    "description": "Optional with not_achieved or advisory: your current best estimate of overall completion, shown to the user as reported progress. Keep percent honest — it is an estimate, never a verified fraction.",
+                    "description": "Optional with not_achieved, advisory or yield: your current best estimate of overall completion, shown to the user as reported progress. Keep percent honest — it is an estimate, never a verified fraction.",
                     "properties": {
                         "percent": {
                             "type": "integer",
@@ -1211,9 +1211,9 @@ impl ToolSpec for UpdateGoalTool {
         }
         let status = required_str(&input, "status")?.trim().to_ascii_lowercase();
         let progress = parse_progress_report(&input)?;
-        if progress.is_some() && !matches!(status.as_str(), "not_achieved" | "advisory") {
+        if progress.is_some() && !matches!(status.as_str(), "not_achieved" | "advisory" | "yield") {
             return Err(ToolError::invalid_input(
-                "progress is only accepted with status not_achieved or advisory",
+                "progress is only accepted with status not_achieved, advisory or yield",
             ));
         }
         let snapshot = {
@@ -1272,6 +1272,9 @@ impl ToolSpec for UpdateGoalTool {
                 }
                 "yield" => {
                     state.mark_yielded().map_err(ToolError::invalid_input)?;
+                    if progress.is_some() {
+                        state.progress = progress;
+                    }
                 }
                 "advisory" => {
                     let advisory = input
@@ -2342,7 +2345,7 @@ mod tests {
             .await
             .expect_err("progress is not terminal evidence");
         assert!(
-            err.to_string().contains("not_achieved or advisory"),
+            err.to_string().contains("not_achieved, advisory or yield"),
             "{err}"
         );
 

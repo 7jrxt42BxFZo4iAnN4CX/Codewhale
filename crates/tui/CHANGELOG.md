@@ -232,7 +232,8 @@ launcher guidance.
 - `todo_write` returns a short receipt (counts and the item in progress) to
   the model instead of repeating the whole list on every call.
 - Goal usage counts the turn that completes, yields or blocks the goal, so
-  `tokens_used` and `time_used_seconds` no longer stay at 0.
+  `tokens_used` and `time_used_seconds` no longer stay at 0. `update_goal`
+  accepts a progress estimate with `yield`.
 - A shell command that has printed nothing for a minute still reads as
   running ("no output for 1m 05s"), keeps its Stop action and is reachable
   through the Runtime API; only a job whose process is gone after a restart

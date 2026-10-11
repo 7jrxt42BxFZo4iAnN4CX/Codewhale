@@ -688,9 +688,11 @@ pub(crate) fn apply_goal_snapshot_to_app(app: &mut App, snapshot: &GoalSnapshot)
     // A fresh reported-progress receipt reads like the model's own status
     // line: percent with a bar, then the optional now/next lines it wrote.
     // Paused/complete goals keep their last report silent — the lifecycle
-    // receipt already spoke.
+    // receipt already spoke — except a yield, whose progress is the stage
+    // report the user is handed back with.
     if progress_changed
-        && verdict == GoalStatus::Active
+        && (verdict == GoalStatus::Active
+            || snapshot.pause_reason == Some(crate::tools::goal::GoalPauseReason::Yielded))
         && let Some(progress) = snapshot.progress.as_ref()
     {
         let mut content = app
