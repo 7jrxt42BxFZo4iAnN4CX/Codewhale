@@ -568,7 +568,7 @@ owner = "crates/tui/src/commands/groups/core/home.rs"
 [[feature]]
 id = "account-login"
 name = "Account login"
-summary = "/login selects providers; /login <id> runs reviewed plugin OAuth; status and account remain explicit."
+summary = "/login signs in to Codewhale or stores provider keys; plugin providers connect with /connect."
 status = "stable"
 surfaces = { tui = "stable" }
 owner = "crates/tui/src/commands/groups/config/config.rs"
@@ -682,7 +682,7 @@ owner = "crates/tui/src/oauth.rs"
 [[feature]]
 id = "plugin-oauth-providers"
 name = "Reviewed plugin OAuth providers"
-summary = "Reviewed plugins appear in /login and /provider; the host owns PKCE, model discovery and per-request approvals."
+summary = "Reviewed plugins connect with /connect <id>; the host owns PKCE, model discovery and per-request approvals."
 status = "experimental"
 surfaces = { tui = "preview", api = "partial", web = "none" }
 since = "unreleased"

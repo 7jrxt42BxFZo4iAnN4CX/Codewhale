@@ -2521,5 +2521,7 @@
   "PetAppearanceLegacy": "ペットは以前のバージョンで動作しています。Codewhale を更新してペットを再起動すると、クジラのスタイルと文字の言語を選べます。",
   "PluginOAuthBrowser": "Enter でブラウザーからログインします。Esc で戻ります。API キーは不要です。",
   "PluginOAuthReady": "{provider}：ログインしました。モデルを選択してください。",
-  "PluginOAuthLocalLogout": "{provider}：この端末の認証情報を削除しました。サーバーの認可は解除されていません。"
+  "PluginOAuthLocalLogout": "{provider}：この端末の認証情報を削除しました。サーバーの認可は解除されていません。",
+  "CmdConnectDescription": "ブラウザーのログインでプラグインプロバイダーに接続します",
+  "CmdDisconnectDescription": "プラグインプロバイダーのこの端末のログイン情報を削除します"
 }

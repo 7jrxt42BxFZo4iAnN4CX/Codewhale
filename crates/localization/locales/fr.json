@@ -2521,5 +2521,7 @@
   "PetAppearanceLegacy": "Le compagnon utilise une ancienne version. Redémarrez-le après la mise à jour de Codewhale pour choisir le style de baleine et la langue du texte.",
   "PluginOAuthBrowser": "Appuyez sur Entrée pour vous connecter dans le navigateur, ou Échap pour revenir. Aucune clé API nécessaire.",
   "PluginOAuthReady": "{provider} : connexion établie. Choisissez un modèle.",
-  "PluginOAuthLocalLogout": "{provider} : connexion locale supprimée. L’accès distant reste inchangé."
+  "PluginOAuthLocalLogout": "{provider} : connexion locale supprimée. L’accès distant reste inchangé.",
+  "CmdConnectDescription": "Connecter un fournisseur de plugin par connexion dans le navigateur",
+  "CmdDisconnectDescription": "Supprimer la connexion locale d’un fournisseur de plugin"
 }

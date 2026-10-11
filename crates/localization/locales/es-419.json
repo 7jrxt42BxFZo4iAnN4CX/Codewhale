@@ -2521,5 +2521,7 @@
   "PetAppearanceLegacy": "La mascota usa una versión anterior. Reiníciala después de actualizar Codewhale para elegir el estilo de ballena y el idioma del texto.",
   "PluginOAuthBrowser": "Presiona Intro para iniciar sesión en el navegador o Esc para volver. No se necesita una clave API.",
   "PluginOAuthReady": "{provider}: sesión iniciada. Elige un modelo.",
-  "PluginOAuthLocalLogout": "{provider}: se eliminó la sesión local. El acceso remoto no cambió."
+  "PluginOAuthLocalLogout": "{provider}: se eliminó la sesión local. El acceso remoto no cambió.",
+  "CmdConnectDescription": "Conecta un proveedor de plugins con inicio de sesión en el navegador",
+  "CmdDisconnectDescription": "Elimina el inicio de sesión local de un proveedor de plugins"
 }

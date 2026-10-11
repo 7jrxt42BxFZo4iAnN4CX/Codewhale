@@ -2521,5 +2521,7 @@
   "PetAppearanceLegacy": "Thú cưng đang dùng phiên bản cũ. Khởi động lại sau khi cập nhật Codewhale để chọn kiểu cá voi và ngôn ngữ văn bản.",
   "PluginOAuthBrowser": "Nhấn Enter để đăng nhập bằng trình duyệt hoặc Esc để quay lại. Không cần khóa API.",
   "PluginOAuthReady": "{provider}: đã đăng nhập. Hãy chọn mô hình.",
-  "PluginOAuthLocalLogout": "{provider}: đã xóa thông tin đăng nhập cục bộ. Quyền truy cập từ xa không đổi."
+  "PluginOAuthLocalLogout": "{provider}: đã xóa thông tin đăng nhập cục bộ. Quyền truy cập từ xa không đổi.",
+  "CmdConnectDescription": "Kết nối nhà cung cấp plugin bằng đăng nhập qua trình duyệt",
+  "CmdDisconnectDescription": "Xóa đăng nhập cục bộ của nhà cung cấp plugin"
 }

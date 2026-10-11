@@ -3341,12 +3341,9 @@ pub fn lsp_command(app: &mut App, arg: Option<&str>) -> CommandResult {
 
 pub fn login(app: &mut App, arg: Option<&str>) -> CommandResult {
     let raw = arg.map(str::trim).unwrap_or("");
-    if raw.split_whitespace().count() > 1 {
-        return CommandResult::error("Usage: /login [status|account|key|<provider>]");
-    }
-    match raw {
-        "" => CommandResult::action(AppAction::OpenProviderPicker),
-        "status" => CommandResult::message(login_status_text(app)),
+    let token = raw.split_whitespace().next().unwrap_or("");
+    match token {
+        "" | "status" => CommandResult::message(login_status_text(app)),
         "key" | "provider" => CommandResult::with_message_and_action(
             "Open the provider picker to store an API key. Account sign-in is `codewhale login`.",
             AppAction::OpenProviderPicker,
@@ -3354,23 +3351,56 @@ pub fn login(app: &mut App, arg: Option<&str>) -> CommandResult {
         "account" => CommandResult::message(
             "TUI cannot start the browser device flow without freezing the session.\n\
              Run `codewhale login` (same as `codewhale account login`) in a terminal.\n\
-             Then `/login status` to confirm the session landed."
+             Then `/login` to confirm the session landed."
                 .to_string(),
         ),
-        provider
-            if app
-                .plugin_registry
-                .active_plugins()
-                .into_iter()
-                .any(|plugin| plugin.manifest.providers.contains_key(provider)) =>
-        {
+        other => CommandResult::error(format!(
+            "Usage: /login [status|account|key]\nUnknown argument: {other}\n\
+             To sign in to a plugin provider, use `/connect <provider>`."
+        )),
+    }
+}
+
+fn is_enabled_plugin_provider(app: &App, provider: &str) -> bool {
+    app.plugin_registry
+        .active_plugins()
+        .into_iter()
+        .any(|plugin| plugin.manifest.providers.contains_key(provider))
+}
+
+pub fn connect(app: &mut App, arg: Option<&str>) -> CommandResult {
+    let raw = arg.map(str::trim).unwrap_or("");
+    if raw.split_whitespace().count() > 1 {
+        return CommandResult::error("Usage: /connect [<provider>]");
+    }
+    match raw {
+        "" => CommandResult::action(AppAction::OpenProviderPicker),
+        provider if is_enabled_plugin_provider(app, provider) => {
             CommandResult::action(AppAction::StartPluginLogin {
                 provider: provider.to_owned(),
             })
         }
         other => CommandResult::error(format!(
-            "Usage: /login [status|account|key|<provider>]\nUnknown or inactive provider: {other}"
+            "Usage: /connect [<provider>]\nUnknown or inactive plugin provider: {other}\n\
+             Codewhale account sign-in is `/login`."
         )),
+    }
+}
+
+pub fn disconnect(app: &mut App, arg: Option<&str>) -> CommandResult {
+    let raw = arg.map(str::trim).unwrap_or("");
+    if raw.is_empty() || raw.split_whitespace().count() > 1 {
+        return CommandResult::error("Usage: /disconnect <provider>");
+    }
+    if is_enabled_plugin_provider(app, raw) {
+        CommandResult::action(AppAction::StartPluginLogout {
+            provider: raw.to_owned(),
+        })
+    } else {
+        CommandResult::error(format!(
+            "Usage: /disconnect <provider>\nUnknown or inactive plugin provider: {raw}\n\
+             Signing out of Codewhale is `/logout`."
+        ))
     }
 }
 

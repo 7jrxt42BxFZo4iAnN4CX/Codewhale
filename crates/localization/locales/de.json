@@ -2521,5 +2521,7 @@
   "PetAppearanceLegacy": "Das Haustier verwendet eine ältere Version. Starte es nach dem Codewhale-Update neu, um den Walstil und die Textsprache auszuwählen.",
   "PluginOAuthBrowser": "Mit Eingabe im Browser anmelden, mit Esc zurück. Kein API-Schlüssel erforderlich.",
   "PluginOAuthReady": "{provider}: angemeldet. Wählen Sie ein Modell.",
-  "PluginOAuthLocalLogout": "{provider}: lokale Anmeldung entfernt. Der Fernzugriff bleibt unverändert."
+  "PluginOAuthLocalLogout": "{provider}: lokale Anmeldung entfernt. Der Fernzugriff bleibt unverändert.",
+  "CmdConnectDescription": "Plugin-Anbieter per Browser-Anmeldung verbinden",
+  "CmdDisconnectDescription": "Lokale Anmeldung eines Plugin-Anbieters entfernen"
 }

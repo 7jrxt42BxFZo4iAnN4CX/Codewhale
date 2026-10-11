@@ -22,6 +22,8 @@ impl CommandGroup for ConfigCommands {
             Box::new(FunctionCommand::new(&IMPORT_CLAUDE_INFO, run_import_claude)),
             crate::commands::config_policy_host::permissions_registration(),
             Box::new(FunctionCommand::new(&LOGIN_INFO, run_login)),
+            Box::new(FunctionCommand::new(&CONNECT_INFO, run_connect)),
+            Box::new(FunctionCommand::new(&DISCONNECT_INFO, run_disconnect)),
             Box::new(FunctionCommand::new(&AUTH_INFO, run_auth)),
             Box::new(FunctionCommand::new(&RAIL_INFO, run_rail)),
             Box::new(FunctionCommand::new(&PET_INFO, run_pet)),
@@ -54,8 +56,20 @@ static IMPORT_CLAUDE_INFO: CommandInfo = CommandInfo {
 static LOGIN_INFO: CommandInfo = CommandInfo {
     name: "login",
     aliases: &[],
-    usage: "/login [status|account|key|<provider>]",
+    usage: "/login [status|account|key]",
     description_id: MessageId::CmdLoginDescription,
+};
+static CONNECT_INFO: CommandInfo = CommandInfo {
+    name: "connect",
+    aliases: &[],
+    usage: "/connect [<provider>]",
+    description_id: MessageId::CmdConnectDescription,
+};
+static DISCONNECT_INFO: CommandInfo = CommandInfo {
+    name: "disconnect",
+    aliases: &[],
+    usage: "/disconnect <provider>",
+    description_id: MessageId::CmdDisconnectDescription,
 };
 static AUTH_INFO: CommandInfo = CommandInfo {
     name: "auth",
@@ -128,7 +142,7 @@ static TRUST_INFO: CommandInfo = CommandInfo {
 static LOGOUT_INFO: CommandInfo = CommandInfo {
     name: "logout",
     aliases: &[],
-    usage: "/logout [<provider>]",
+    usage: "/logout",
     description_id: MessageId::CmdLogoutDescription,
 };
 fn run_registered(app: &mut App, name: &str, arg: Option<&str>) -> CommandResult {
@@ -180,6 +194,12 @@ fn run_trust(app: &mut App, arg: Option<&str>) -> CommandResult {
 fn run_logout(app: &mut App, arg: Option<&str>) -> CommandResult {
     run_registered(app, "logout", arg)
 }
+fn run_connect(app: &mut App, arg: Option<&str>) -> CommandResult {
+    run_registered(app, "connect", arg)
+}
+fn run_disconnect(app: &mut App, arg: Option<&str>) -> CommandResult {
+    run_registered(app, "disconnect", arg)
+}
 pub(in crate::commands) fn dispatch(
     app: &mut App,
     command: &str,
@@ -230,21 +250,9 @@ pub(in crate::commands) fn dispatch(
         "theme" => config::theme(app, arg),
         "verbose" => config::verbose(app, arg),
         "trust" | "xinren" => config::trust(app, arg),
-        "logout" => match arg.map(str::trim).filter(|arg| !arg.is_empty()) {
-            None => config::logout(app),
-            Some(provider)
-                if app
-                    .plugin_registry
-                    .active_plugins()
-                    .into_iter()
-                    .any(|plugin| plugin.manifest.providers.contains_key(provider)) =>
-            {
-                CommandResult::action(crate::tui::app::AppAction::StartPluginLogout {
-                    provider: provider.to_owned(),
-                })
-            }
-            Some(_) => CommandResult::error("Usage: /logout [<enabled-plugin-provider>]"),
-        },
+        "logout" => config::logout(app),
+        "connect" => config::connect(app, arg),
+        "disconnect" => config::disconnect(app, arg),
         _ => return None,
     };
     Some(result)

@@ -711,11 +711,12 @@ mod tests {
         assert!(!message.contains("Daytona"), "{message}");
         assert!(!message.contains("set-slot"), "{message}");
 
-        assert_eq!(
-            execute("/login", &mut app).action,
-            Some(AppAction::OpenProviderPicker)
+        assert!(
+            execute("/login", &mut app)
+                .message
+                .expect("login status")
+                .contains("Codewhale login")
         );
-        assert!(execute("/login status extra", &mut app).is_error);
         let key = execute("/login key", &mut app);
         assert!(!key.is_error);
         assert_eq!(key.action, Some(AppAction::OpenProviderPicker));
@@ -723,15 +724,25 @@ mod tests {
         let daytona = execute("/login daytona", &mut app);
         assert!(daytona.is_error);
         let err = daytona.message.expect("usage");
-        assert!(
-            err.contains("Usage: /login [status|account|key|<provider>]"),
-            "{err}"
-        );
+        assert!(err.contains("Usage: /login [status|account|key]"), "{err}");
+        assert!(err.contains("/connect <provider>"), "{err}");
 
         let unknown = execute("/login oauth", &mut app);
         assert!(unknown.is_error);
         let err = unknown.message.expect("usage");
         assert!(err.contains("Usage: /login"), "{err}");
+
+        assert_eq!(
+            execute("/connect", &mut app).action,
+            Some(AppAction::OpenProviderPicker)
+        );
+        let connect = execute("/connect nothing-enabled", &mut app);
+        assert!(connect.is_error);
+        let err = connect.message.expect("usage");
+        assert!(err.contains("Usage: /connect [<provider>]"), "{err}");
+        assert!(err.contains("`/login`"), "{err}");
+        assert!(execute("/disconnect", &mut app).is_error);
+        assert!(execute("/disconnect nothing-enabled", &mut app).is_error);
     }
 
     #[test]

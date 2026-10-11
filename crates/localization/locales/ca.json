@@ -2521,5 +2521,7 @@
   "PetAppearanceLegacy": "La mascota funciona amb una versió anterior. Reinicia-la després d’actualitzar Codewhale per triar l’estil de balena i la llengua del text.",
   "PluginOAuthBrowser": "Prem Retorn per iniciar sessió al navegador o Esc per tornar. No cal cap clau API.",
   "PluginOAuthReady": "{provider}: sessió iniciada. Tria un model.",
-  "PluginOAuthLocalLogout": "{provider}: sessió local eliminada. L’accés remot no ha canviat."
+  "PluginOAuthLocalLogout": "{provider}: sessió local eliminada. L’accés remot no ha canviat.",
+  "CmdConnectDescription": "Connecta un proveïdor de plugins amb inici de sessió al navegador",
+  "CmdDisconnectDescription": "Elimina l’inici de sessió local d’un proveïdor de plugins"
 }
