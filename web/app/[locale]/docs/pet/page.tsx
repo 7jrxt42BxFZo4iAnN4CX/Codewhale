@@ -15,5 +15,16 @@ export async function generateMetadata({ params }: { params: Promise<{ locale: s
 
 export default async function PetPage({ params }: { params: Promise<{ locale: string }> }) {
   const { locale } = await params;
-  return <DocArticle t={getDocsPet(locale)} locale={locale} />;
+  return (
+    <>
+      <img
+        src="/brand/pixel-whale.webp"
+        alt=""
+        width={966}
+        height={865}
+        className="mx-auto mb-6 h-auto w-32 [image-rendering:pixelated]"
+      />
+      <DocArticle t={getDocsPet(locale)} locale={locale} />
+    </>
+  );
 }

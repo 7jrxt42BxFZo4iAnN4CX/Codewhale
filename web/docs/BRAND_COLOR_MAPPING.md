@@ -117,3 +117,13 @@ danger by a few units of lightness. Primary light (#245bc7) and danger light
 | `codwhale-404.webp` | keep: the founder's restored 404 poster (see `ocean-contract.test.ts`), photographic parody art, name kept |
 | `codewhale-tui-*.png` | not touched: referenced only by README files, outside this slice |
 | `public/merch/` | keep: product renders |
+
+## Two marks, two jobs (founder, 2026-10-11)
+
+| Mark | Use for |
+| --- | --- |
+| Smooth aurora whale (`public/brand/mark-gradient.svg` family) | identity: app icon, favicon, header, OG image, print and merch |
+| Pixel-dither whale (`public/brand/pixel-whale.webp`, 192-cell dither, same aurora gradient and silhouette) | the terminal side: pet mode page, docs and README heroes, release art, TUI splash |
+
+The pixel mark is a lossless raster (7.6 KB) shown with `image-rendering:
+pixelated`. The 404 poster stays as the founder restored it.
