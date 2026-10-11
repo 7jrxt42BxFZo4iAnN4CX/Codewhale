@@ -36,11 +36,11 @@ pub(super) fn format_shell_job_list(jobs: &[ShellJobSnapshot]) -> String {
             .map(|id| format!(" task={id}"))
             .unwrap_or_default();
         lines.push(format!(
-            "{}  {:8}  {}  exit={:?}{}",
+            "{}  {:8}  {}  {}{}",
             job.id,
             status_label(&job.status, job.stale),
             codewhale_command_contract::elapsed::format_elapsed_ms(job.elapsed_ms),
-            job.exit_code,
+            exit_label(job.exit_code),
             task
         ));
         lines.push(format!("  cwd: {}", crate::utils::display_path(&job.cwd)));
@@ -50,8 +50,10 @@ pub(super) fn format_shell_job_list(jobs: &[ShellJobSnapshot]) -> String {
         } else {
             job.stdout_tail.trim()
         };
-        if !tail.is_empty() {
-            lines.push(format!("  tail: {}", tail.replace('\n', "\\n")));
+        let tail_lines: Vec<&str> = tail.lines().collect();
+        let shown = tail_lines.len().saturating_sub(3);
+        for line in &tail_lines[shown..] {
+            lines.push(format!("  | {line}"));
         }
     }
     lines.push(
@@ -61,13 +63,21 @@ pub(super) fn format_shell_job_list(jobs: &[ShellJobSnapshot]) -> String {
     lines.join("\n")
 }
 
+fn exit_label(code: Option<i64>) -> String {
+    match code {
+        Some(0) => "exit 0".to_string(),
+        Some(code) => format!("exit {code}"),
+        None => "no exit yet".to_string(),
+    }
+}
+
 pub(super) fn format_shell_poll(result: &ShellResult) -> String {
     let mut lines = vec![
         format!(
-            "Bash job {}: {} exit={:?} elapsed={}",
+            "Bash job {}: {} {} elapsed={}",
             result.task_id.as_deref().unwrap_or("(unknown)"),
             status_label(&result.status, false),
-            result.exit_code,
+            exit_label(result.exit_code),
             codewhale_command_contract::elapsed::format_elapsed_ms(result.duration_ms)
         ),
         String::new(),
@@ -187,7 +197,7 @@ pub(crate) fn format_shell_job_detail(detail: &ShellJobDetail) -> String {
         "Elapsed: {}",
         codewhale_command_contract::elapsed::format_elapsed_ms(job.elapsed_ms)
     ));
-    lines.push(format!("Exit Code: {:?}", job.exit_code));
+    lines.push(format!("Exit Code: {}", exit_label(job.exit_code)));
     lines.push(format!("Stdin Available: {}", job.stdin_available));
     if let Some(task_id) = job.linked_task_id.as_ref() {
         lines.push(format!("Linked Task: {task_id}"));
