@@ -22,6 +22,7 @@ use super::{appearance::Appearance, persistence::Store};
 use crate::fleet::files::{WorkspaceFile, same_file};
 
 const LEASE: Duration = Duration::from_secs(2);
+const OWNER_IDLE_EXIT: Duration = Duration::from_secs(600);
 const MAX_CLIENTS: usize = 4096;
 /// Request body limit for every owner route. Clients size batches to it.
 pub(super) const MAX_REQUEST_BYTES: usize = 64 * 1024;
@@ -461,6 +462,7 @@ fn run_world(
     let mut last = origin;
     let mut last_view = origin;
     let mut was_active = true;
+    let mut idle_since: Option<Instant> = None;
     let frame_interval = Duration::from_secs_f64(1.0 / 30.0);
     let mut ticks = 0u64;
     let mut measurements = VecDeque::<f64>::new();
@@ -491,6 +493,12 @@ fn run_world(
         }
         let viewed = now.duration_since(last_view) <= LEASE;
         let active = viewed || producer.is_some() || audio.is_some();
+        if active {
+            idle_since = None;
+        } else if now.duration_since(*idle_since.get_or_insert(now)) > OWNER_IDLE_EXIT {
+            save(&context, &mut saved, &mut store)?;
+            return Ok(());
+        }
         if !active || !was_active {
             last = now;
         }
