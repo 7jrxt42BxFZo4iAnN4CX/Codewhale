@@ -7273,7 +7273,7 @@ impl Engine {
                     route.model.clone(),
                     self.session.workspace.clone(),
                     self.session.system_prompt.clone(),
-                    self.session.messages.clone().into(),
+                    self.session.messages.snapshot(),
                 ))
                 .with_cancel_token(self.cancel_token.clone())
                 .with_origin_turn_id(self.turn_counter.to_string());
@@ -7329,7 +7329,7 @@ impl Engine {
             route.model.clone(),
             self.session.workspace.clone(),
             self.session.system_prompt.clone(),
-            self.session.messages.clone().into(),
+            self.session.messages.snapshot(),
         ))
         .with_cancel_token(self.cancel_token.clone())
         .with_shell_policy(authority.shell_policy())
