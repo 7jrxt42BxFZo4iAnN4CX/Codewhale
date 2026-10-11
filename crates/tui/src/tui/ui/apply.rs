@@ -4437,7 +4437,7 @@ pub(crate) fn apply_loaded_session_with_goal(
         {
             app.extend_history(std::iter::once(HistoryCell::Error {
                 message: outcome.error.clone(),
-                severity: crate::error_taxonomy::ErrorSeverity::Warning,
+                severity: crate::error_taxonomy::ErrorSeverity::Error,
             }));
         }
     };

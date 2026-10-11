@@ -1550,6 +1550,19 @@ pub(super) fn present_turn_failure(
     error: Option<&str>,
 ) {
     let failed = matches!(status, crate::core::events::TurnOutcomeStatus::Failed);
+    if failed
+        && app.turn_error_posted
+        && let Some(notice) = app.turn_error_notice.clone()
+        && let Some(index) = (0..app.virtual_cell_count()).rev().find(|&index| {
+            matches!(
+                app.cell_at_virtual_index(index),
+                Some(HistoryCell::Error { message, .. }) if *message == notice
+            )
+        })
+        && let Some(HistoryCell::Error { severity, .. }) = app.cell_at_virtual_index_mut(index)
+    {
+        *severity = crate::error_taxonomy::ErrorSeverity::Error;
+    }
     // What the transcript shows for this turn's failure: the error cell an
     // earlier `Event::Error` already posted, or the notice added here.
     let shown = if app.turn_error_posted {
@@ -1559,7 +1572,7 @@ pub(super) fn present_turn_failure(
         if failed {
             app.add_message(HistoryCell::Error {
                 message: notice.clone(),
-                severity: crate::error_taxonomy::ErrorSeverity::Warning,
+                severity: crate::error_taxonomy::ErrorSeverity::Error,
             });
         }
         app.set_sticky_status(notice.clone(), StatusToastLevel::Error, None);
@@ -7423,14 +7436,14 @@ pub(super) async fn adopt_live_local_ollama_catalog(
     app.onboarding_needs_api_key = false;
     app.onboarding_missing_key_recovery = false;
     // A launch with no key opens the provider picker (#6566). The local model
-    // just answered that question, so close the picker and its onboarding
-    // step rather than leave a stale "connect a model" screen whose Esc would
-    // now walk back to the welcome screen.
+    // just answered that question, so close the picker and advance past its
+    // onboarding step rather than leave a stale "connect a model" screen whose
+    // Esc would now walk back to the welcome screen.
     if app.onboarding == OnboardingState::Provider {
         if app.view_stack.top_kind() == Some(ModalKind::ProviderPicker) {
             app.view_stack.pop();
         }
-        app.onboarding = OnboardingState::None;
+        crate::tui::onboarding::advance_onboarding_after_provider(app);
     }
     // Say plainly which model is in use and how to change it, instead of the
     // endpoint it was discovered from (#6566).
@@ -8575,10 +8588,13 @@ pub(super) fn route_key_to_view_stack(
 /// Keep only the Engine's retry receipts in the existing transcript. Ordinary
 /// status/footer behavior and internal/model-only status projection stay intact.
 pub(super) fn apply_engine_status(app: &mut App, message: String) -> bool {
+    if crate::core::events::is_retry_status_receipt(&message) {
+        app.add_message(HistoryCell::System { content: message });
+        return true;
+    }
     // The account-profile fallback notice is sent once per engine; keep it in
     // the transcript so the next turn's status line cannot erase it.
-    let retain = crate::core::events::is_retry_status_receipt(&message)
-        || app.tr(MessageId::ProfileConstitutionUnavailableLocal) == message.as_str();
+    let retain = app.tr(MessageId::ProfileConstitutionUnavailableLocal) == message.as_str();
     if retain {
         app.add_message(HistoryCell::System {
             content: message.clone(),

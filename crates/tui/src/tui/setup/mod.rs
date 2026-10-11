@@ -3328,7 +3328,11 @@ impl ModalView for SetupWizardView {
         let spec = self.selected_spec();
         let (title_text, question_text) = if self.progressive_guide {
             match self.selected_step() {
-                SetupStep::ProviderModel => (
+                SetupStep::Verification if self.facts.provider_ready => (
+                    tr(self.locale, MessageId::OnboardReadyTitle).into_owned(),
+                    tr(self.locale, MessageId::OnboardReadyLead).into_owned(),
+                ),
+                SetupStep::ProviderModel | SetupStep::Verification => (
                     tr(self.locale, MessageId::OnboardProviderTitle).into_owned(),
                     tr(self.locale, MessageId::OnboardProviderBlurb).into_owned(),
                 ),
@@ -3339,10 +3343,6 @@ impl ModalView for SetupWizardView {
                 SetupStep::RemoteRuntime => (
                     "/rc".to_string(),
                     tr(self.locale, MessageId::CmdRemoteControlDescription).into_owned(),
-                ),
-                SetupStep::Verification => (
-                    tr(self.locale, MessageId::OnboardReadyTitle).into_owned(),
-                    tr(self.locale, MessageId::OnboardReadyLead).into_owned(),
                 ),
                 _ => (
                     tr(self.locale, spec.title_id()).into_owned(),
@@ -3449,14 +3449,30 @@ impl SetupWizardView {
                 details(),
                 exit(),
             ],
-            SetupStep::Verification => vec![
-                ActionHint::new(
-                    "Enter",
-                    tr(self.locale, MessageId::OnboardReadyStart).to_string(),
-                ),
-                details(),
-                exit(),
-            ],
+            SetupStep::Verification => {
+                let mut hints = vec![
+                    ActionHint::new(
+                        "Enter",
+                        tr(self.locale, MessageId::OnboardReadyStart).to_string(),
+                    ),
+                    ActionHint::new(
+                        "C",
+                        tr(self.locale, MessageId::SetupActionCustomize).to_string(),
+                    ),
+                    details(),
+                    exit(),
+                ];
+                if !self.facts.provider_ready {
+                    hints.insert(
+                        0,
+                        ActionHint::new(
+                            "P",
+                            tr(self.locale, MessageId::SetupActionProvider).to_string(),
+                        ),
+                    );
+                }
+                hints
+            }
             _ => vec![exit()],
         };
         let position = self

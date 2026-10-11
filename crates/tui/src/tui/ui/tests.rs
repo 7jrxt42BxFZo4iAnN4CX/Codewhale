@@ -10957,7 +10957,15 @@ async fn adopting_a_local_model_closes_the_connect_picker_and_names_it() {
     .await;
 
     assert_eq!(app.api_provider, ProviderKind::Ollama);
-    assert_eq!(app.onboarding, crate::tui::app::OnboardingState::None);
+    assert!(
+        matches!(
+            app.onboarding,
+            crate::tui::app::OnboardingState::TrustDirectory
+                | crate::tui::app::OnboardingState::Ready
+        ),
+        "{:?}",
+        app.onboarding
+    );
     assert_ne!(
         app.view_stack.top_kind(),
         Some(crate::tui::views::ModalKind::ProviderPicker)
