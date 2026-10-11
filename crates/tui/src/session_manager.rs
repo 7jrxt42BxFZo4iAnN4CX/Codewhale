@@ -3678,11 +3678,15 @@ impl SessionManager {
         Ok(self
             .list_session_records()?
             .into_iter()
-            .map(|(_, metadata)| metadata)
+            .map(|(_, mut metadata)| {
+                self.apply_late_usage_to_metadata(&mut metadata);
+                metadata
+            })
             .collect())
     }
 
-    /// [`Self::list_sessions`], keeping the file each record was read from.
+    /// [`Self::list_sessions`] without the late-usage cost overlay, keeping
+    /// the file each record was read from.
     /// A record's file is not always `<id>.json`: early builds wrote
     /// `session_<timestamp>.json`, and retention must address those by path.
     fn list_session_records(&self) -> std::io::Result<Vec<(PathBuf, SessionMetadata)>> {
@@ -3693,9 +3697,8 @@ impl SessionManager {
             let path = entry.path();
 
             if path.extension().is_some_and(|ext| ext == "json")
-                && let Ok(mut session) = Self::load_session_metadata(&path)
+                && let Ok(session) = Self::load_session_metadata(&path)
             {
-                self.apply_late_usage_to_metadata(&mut session);
                 sessions.push((path, session));
             }
         }
