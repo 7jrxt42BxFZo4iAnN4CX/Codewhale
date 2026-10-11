@@ -1111,8 +1111,8 @@ mod tests {
 
         // Consistency: group-iterated command count must match registry.
         // FEAT-015 registers one test-only contextual command (`/feat015ctx`)
-        // under `#[cfg(test)]` to prove the dual-path seam (D6); the nine
-        // production groups remain exactly 96 commands.
+        // under `#[cfg(test)]` to prove the dual-path seam (D6); it is not
+        // part of any production group.
         let test_only_count = command_infos()
             .iter()
             .filter(|info| info.name == "feat015ctx")

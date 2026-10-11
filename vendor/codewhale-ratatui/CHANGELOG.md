@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.2 - 2026-10-11
+
+- Let the host paint its prepared pet in `PetMode` (`DotWhale`,
+  `PetMode::dot_whale`), the API Codewhale 0.10.2 renders the pet through.
+- Draw half-block sprites crisply: `Sprite` samples the pixel under each
+  cell's centre instead of box-filtering, and the whale cove rasterizes one
+  sample per pixel so shape edges no longer blend into the terminal
+  background.
+
 ## 0.1.1 - 2026-10-11
 
 - Simplify the native showcase: concise conversation, sparse ambient life,

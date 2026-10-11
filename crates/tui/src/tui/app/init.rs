@@ -935,6 +935,7 @@ impl App {
             show_tool_details,
             inline_diff_mode,
             ui_locale,
+            constitution_reviewed_digest: None,
             cost_currency,
             billing_presentation: provider_identity.as_ref().map_or(
                 crate::route_billing::BillingPresentation::Unknown,

@@ -856,10 +856,6 @@ pub enum ShellJobAction {
     Show {
         id: String,
     },
-    Poll {
-        id: String,
-        wait: bool,
-    },
     SendStdin {
         id: String,
         input: String,

@@ -283,7 +283,7 @@
         },
         "progress": {
           "additionalProperties": false,
-          "description": "Optional with not_achieved or advisory: your current best estimate of overall completion, shown to the user as reported progress. Keep percent honest — it is an estimate, never a verified fraction.",
+          "description": "Optional with not_achieved, advisory or yield: your current best estimate of overall completion, shown to the user as reported progress. Keep percent honest — it is an estimate, never a verified fraction.",
           "properties": {
             "next": {
               "description": "One short line: what comes next.",

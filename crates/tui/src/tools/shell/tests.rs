@@ -2652,7 +2652,7 @@ fn test_job_list_poll_cancel_and_stale_snapshot() {
 }
 
 #[test]
-fn running_job_snapshot_marks_no_output_stale_after_threshold() {
+fn running_job_snapshot_keeps_silent_live_job_live() {
     let tmp = tempdir().expect("tempdir");
     let mut manager = ShellManager::new(tmp.path().to_path_buf());
 
@@ -2662,7 +2662,7 @@ fn running_job_snapshot_marks_no_output_stale_after_threshold() {
 
     {
         let shell = manager.processes.get_mut(&task_id).expect("live shell");
-        shell.last_output_at = Instant::now() - STALE_NO_OUTPUT_AFTER - Duration::from_millis(1);
+        shell.last_output_at = Instant::now() - QUIET_NO_OUTPUT_AFTER - Duration::from_millis(1);
     }
 
     let job = manager
@@ -2672,10 +2672,10 @@ fn running_job_snapshot_marks_no_output_stale_after_threshold() {
         .expect("running job");
 
     assert_eq!(job.status, ShellStatus::Running);
-    assert!(job.stale, "silent running job should be marked stale");
+    assert!(!job.stale, "silence alone must not mark a live job stale");
     assert!(
         job.elapsed_since_output_ms
-            .is_some_and(|elapsed| elapsed >= STALE_NO_OUTPUT_AFTER.as_millis() as u64),
+            .is_some_and(|elapsed| elapsed >= QUIET_NO_OUTPUT_AFTER.as_millis() as u64),
         "elapsed no-output time should be exposed: {job:?}"
     );
 }
@@ -5773,14 +5773,14 @@ fn pty_resize_updates_live_terminal_and_rejects_finished_or_pipe_jobs() {
     // Reopening a client after an idle minute must retain this live PTY's
     // identity and resize eligibility; output silence is normal at a prompt.
     manager.processes.get_mut(&id).unwrap().last_output_at =
-        Instant::now() - STALE_NO_OUTPUT_AFTER - Duration::from_millis(1);
+        Instant::now() - QUIET_NO_OUTPUT_AFTER - Duration::from_millis(1);
     let idle = manager.inspect_job(&id).unwrap().snapshot;
     assert_eq!(idle.status, ShellStatus::Running);
     assert!(idle.stdin_available);
     assert!(!idle.stale, "an idle live PTY must remain reconnectable");
     assert!(
         idle.elapsed_since_output_ms
-            .is_some_and(|ms| ms >= STALE_NO_OUTPUT_AFTER.as_millis() as u64)
+            .is_some_and(|ms| ms >= QUIET_NO_OUTPUT_AFTER.as_millis() as u64)
     );
     let size = PtyDimensions {
         rows: 37,

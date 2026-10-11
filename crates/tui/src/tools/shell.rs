@@ -1003,7 +1003,7 @@ fn shared_output_pipe() -> io::Result<(File, File, File)> {
 }
 
 const SYNC_READER_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
-const STALE_NO_OUTPUT_AFTER: Duration = Duration::from_secs(60);
+pub(crate) const QUIET_NO_OUTPUT_AFTER: Duration = Duration::from_secs(60);
 
 /// Grace between SIGTERM and SIGKILL on the shell kill path (timeout,
 /// cancel, drop). Bounded so a SIGTERM-ignoring command is force-killed
@@ -1586,6 +1586,9 @@ impl BackgroundShell {
 
     /// Kill the process
     fn kill(&mut self) -> Result<()> {
+        if self.poll() && self.status != ShellStatus::Running {
+            return Ok(());
+        }
         #[cfg(unix)]
         if self.ownership == ShellOwnership::PersistPending
             && let Some(process_group_id) = self.child.as_ref().and_then(ShellChild::process_id)
@@ -1714,13 +1717,6 @@ impl BackgroundShell {
             .unwrap_or((0, String::new()));
         let elapsed_since_output_ms = (self.status == ShellStatus::Running)
             .then(|| u64::try_from(self.last_output_at.elapsed().as_millis()).unwrap_or(u64::MAX));
-        // A live PTY can wait indefinitely for input. Silence does not mean it
-        // lost its process owner; marking it stale hides its transport from API
-        // clients and incorrectly prevents reconnect/resize after one minute.
-        let stale = self.terminal_size.is_none()
-            && elapsed_since_output_ms.is_some_and(|elapsed| {
-                elapsed >= u64::try_from(STALE_NO_OUTPUT_AFTER.as_millis()).unwrap_or(u64::MAX)
-            });
         ShellJobSnapshot {
             id: self.id.clone(),
             job_id: self.id.clone(),
@@ -1736,7 +1732,7 @@ impl BackgroundShell {
             stdout_len,
             stderr_len,
             stdin_available: self.stdin.is_some() && self.status == ShellStatus::Running,
-            stale,
+            stale: false,
             elapsed_since_output_ms,
             linked_task_id: self.linked_task_id.clone(),
             owner_agent_id: self
@@ -3124,20 +3120,7 @@ impl ShellManager {
             .processes
             .get_mut(task_id)
             .ok_or_else(|| anyhow!("Task {task_id} not found"))?;
-
-        if wait && shell.status == ShellStatus::Running {
-            let timeout = Duration::from_millis(timeout_ms.clamp(1000, 600_000));
-            let deadline = Instant::now() + timeout;
-
-            while shell.status == ShellStatus::Running && Instant::now() < deadline {
-                if shell.poll() {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(100));
-            }
-        } else {
-            shell.poll();
-        }
+        wait_while_running(shell, wait, timeout_ms);
 
         let (
             stdout_delta,
@@ -3196,6 +3179,20 @@ impl ShellManager {
         Some(u64::try_from(shell.last_output_at.elapsed().as_millis()).unwrap_or(u64::MAX))
     }
 
+    pub fn running_progress(&mut self, task_id: &str) -> Option<String> {
+        let shell = self.processes.get_mut(task_id)?;
+        shell.poll();
+        if shell.status != ShellStatus::Running {
+            return None;
+        }
+        let job = shell.job_snapshot();
+        let quiet_secs = shell.last_output_at.elapsed().as_secs();
+        Some(format!(
+            "Progress: last output {quiet_secs}s ago; {}.",
+            output_phase_hint(&format!("{}\n{}", job.stdout_tail, job.stderr_tail))
+        ))
+    }
+
     /// Kill a running background process
     pub fn kill(&mut self, task_id: &str) -> Result<ShellResult> {
         let shell = self
@@ -3205,6 +3202,17 @@ impl ShellManager {
 
         shell.kill()?;
         shell.snapshot()
+    }
+
+    fn mark_cancel_reported(&mut self, result: &ShellResult) {
+        if result.status == ShellStatus::Killed
+            && let Some(shell) = result
+                .task_id
+                .as_deref()
+                .and_then(|id| self.processes.get_mut(id))
+        {
+            shell.completion_reported = true;
+        }
     }
 
     pub fn kill_for_session(
@@ -3239,18 +3247,20 @@ impl ShellManager {
     ) -> Result<Vec<ShellResult>> {
         let ids = self
             .processes
-            .iter()
+            .iter_mut()
             .filter(|(_, shell)| {
-                shell.status == ShellStatus::Running
-                    && !active_session_id.is_empty()
-                    && shell.owner_session_id == active_session_id
+                !active_session_id.is_empty() && shell.owner_session_id == active_session_id
             })
-            .map(|(id, _)| id.clone())
+            .filter_map(|(id, shell)| {
+                shell.poll();
+                (shell.status == ShellStatus::Running).then(|| id.clone())
+            })
             .collect::<Vec<_>>();
         let mut results = Vec::with_capacity(ids.len());
         for id in ids {
             results.push(self.kill(&id)?);
         }
+        results.retain(|result| result.status == ShellStatus::Killed);
         Ok(results)
     }
 
@@ -3342,17 +3352,6 @@ impl ShellManager {
         wait: bool,
         timeout_ms: u64,
     ) -> Result<ShellDeltaResult> {
-        self.get_output_delta(task_id, wait, timeout_ms)
-    }
-
-    pub fn poll_delta_for_session(
-        &mut self,
-        active_session_id: &str,
-        task_id: &str,
-        wait: bool,
-        timeout_ms: u64,
-    ) -> Result<ShellDeltaResult> {
-        self.require_session_owner(task_id, active_session_id)?;
         self.get_output_delta(task_id, wait, timeout_ms)
     }
 
@@ -3779,6 +3778,22 @@ impl ShellManager {
             remaining_count -= 1;
             remaining_bytes = remaining_bytes.saturating_sub(bytes);
         }
+    }
+}
+
+fn wait_while_running(shell: &mut BackgroundShell, wait: bool, timeout_ms: u64) {
+    if wait && shell.status == ShellStatus::Running {
+        let timeout = Duration::from_millis(timeout_ms.clamp(1000, 600_000));
+        let deadline = Instant::now() + timeout;
+
+        while shell.status == ShellStatus::Running && Instant::now() < deadline {
+            if shell.poll() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    } else {
+        shell.poll();
     }
 }
 
@@ -6695,6 +6710,15 @@ impl BashTool {
         {
             object.insert("wait_timeout_ms".to_string(), json!(timeout_ms));
         }
+        if matches!(status, ShellStatus::Running)
+            && let Some(progress) = context
+                .shell_manager
+                .lock()
+                .map_err(|_| ToolError::execution_failed("shell manager lock poisoned"))?
+                .running_progress(task_id)
+        {
+            result.content = format!("{progress}\n{}", result.content);
+        }
         if let Some(interruption) = interruption {
             let (action, key) = match interruption {
                 ShellWaitInterruption::Canceled => ("canceled", "wait_canceled"),
@@ -6823,10 +6847,24 @@ impl BashTool {
             .filter(|(_, status)| *status == ShellStatus::Running)
             .count();
         let settled = statuses.len().saturating_sub(running_after);
-        let lines: Vec<String> = statuses
-            .iter()
-            .map(|(id, status)| format!("{id}: {status:?}"))
-            .collect();
+        let lines: Vec<String> = {
+            let mut manager = context
+                .shell_manager
+                .lock()
+                .map_err(|_| ToolError::execution_failed("shell manager lock poisoned"))?;
+            statuses
+                .iter()
+                .map(|(id, status)| {
+                    let progress = (*status == ShellStatus::Running)
+                        .then(|| manager.running_progress(id))
+                        .flatten();
+                    match progress {
+                        Some(progress) => format!("{id}: {status:?} ({progress})"),
+                        None => format!("{id}: {status:?}"),
+                    }
+                })
+                .collect()
+        };
         let still_running: Vec<&str> = statuses
             .iter()
             .filter(|(_, status)| *status == ShellStatus::Running)
@@ -6993,6 +7031,9 @@ impl BashTool {
             let results = manager
                 .kill_running_for_session(&context.state_namespace)
                 .map_err(|err| ToolError::execution_failed(err.to_string()))?;
+            for result in &results {
+                manager.mark_cancel_reported(result);
+            }
             if results.is_empty() {
                 return Ok(ToolResult {
                     content: "No running background commands.".to_string(),
@@ -7029,15 +7070,20 @@ impl BashTool {
         let result = manager
             .kill_for_session(&context.state_namespace, task_id)
             .map_err(|err| ToolError::execution_failed(err.to_string()))?;
+        manager.mark_cancel_reported(&result);
         let task_id = result
             .task_id
             .clone()
             .unwrap_or_else(|| task_id.to_string());
         Ok(ToolResult {
-            content: format!(
-                "Canceled background command: {task_id}. {}",
-                kill_outcome_note(&format!("{}{}", result.stdout, result.stderr))
-            ),
+            content: if result.status == ShellStatus::Killed {
+                format!(
+                    "Canceled background command: {task_id}. {}",
+                    kill_outcome_note(&format!("{}{}", result.stdout, result.stderr))
+                )
+            } else {
+                format!("{} Nothing was killed.", wait_timing_line(&result))
+            },
             success: true,
             metadata: Some(json!({
                 "status": format!("{:?}", result.status),

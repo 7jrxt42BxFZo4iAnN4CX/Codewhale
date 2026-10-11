@@ -18,7 +18,9 @@ use crate::config_persistence::{
 };
 use crate::reasoning_preference::ReasoningEffort;
 use crate::settings::Settings;
-use crate::tui::app::{App, AppAction, OnboardingState, ScreenMode, SettingSelection, VimMode};
+use crate::tui::app::{
+    App, AppAction, AppModeUi, OnboardingState, ScreenMode, SettingSelection, VimMode,
+};
 use anyhow::Result;
 use codewhale_config::AppMode;
 use codewhale_execpolicy::ApprovalMode;
@@ -2429,7 +2431,7 @@ pub fn set_config_value(app: &mut App, key: &str, value: &str, persist: bool) ->
             };
             app.set_agent_shell_access(enabled);
             let mode_hint = if enabled {
-                " Act mode will expose shell on the next turn with approval gating. Full Access (Shift+Tab) also enables shell and auto-approves."
+                " Work mode will expose shell on the next turn with approval gating. Full Access (Shift+Tab) also enables shell and auto-approves."
             } else {
                 " Shell tools will be hidden on the next turn. Re-enable with `/config allow_shell true`."
             };
@@ -3081,7 +3083,7 @@ fn mode_selection(app: &mut App, arg: &str) -> CommandResult {
                 CommandResult::message(message)
             }
         }
-        None => CommandResult::error("Usage: /mode [act|agent|plan|operate|1|2|3]"),
+        None => CommandResult::error(format!("Usage: {}", super::MODE_INFO.usage)),
     }
 }
 
@@ -3099,7 +3101,13 @@ pub fn switch_mode(app: &mut App, mode: AppMode) -> String {
 /// written nothing.
 fn switch_mode_with_status(app: &mut App, mode: AppMode) -> (String, bool) {
     match app.select_mode(mode) {
-        SettingSelection::Changed => (format!("Switched to {} mode.", mode.display_name()), true),
+        SettingSelection::Changed => (
+            format!(
+                "Switched to {} mode.",
+                mode.display_name_localized(app.ui_locale)
+            ),
+            true,
+        ),
         SettingSelection::PersistedSame => (app.mode_startup_default_receipt(mode), false),
         SettingSelection::Refused => (
             app.setting_locked_message(MessageId::SettingSubjectMode),
@@ -3108,12 +3116,15 @@ fn switch_mode_with_status(app: &mut App, mode: AppMode) -> (String, bool) {
     }
 }
 
-/// Status for the legacy YOLO alias: user-facing copy says Act, because the
-/// alias is invisible Act + Full Access.
+/// Status for the legacy YOLO alias: user-facing copy names Full Access (Work),
+/// because the alias is invisible Work + Full Access.
 fn switch_yolo_compat_with_status(app: &mut App) -> (String, bool) {
     match app.select_yolo_compat() {
         SettingSelection::Changed => (
-            format!("Switched to {} mode.", AppMode::Agent.display_name()),
+            format!(
+                "Switched to {}.",
+                tr(app.ui_locale, MessageId::HotbarActionModeYoloName)
+            ),
             true,
         ),
         SettingSelection::PersistedSame => {
@@ -4128,8 +4139,13 @@ mod tests {
         // user settings on the host machine.
         let _ = mode(&mut app, Some("agent"));
         let result = mode(&mut app, Some("yolo"));
-        // YOLO is invisible Act+Bypass shorthand — user-facing copy says Act.
-        assert!(result.message.unwrap().contains("Switched to Act mode"));
+        // YOLO is invisible Work+Bypass shorthand — user-facing copy names Full Access (Work).
+        assert!(
+            result
+                .message
+                .unwrap()
+                .contains("Switched to Full Access (Work)")
+        );
         assert_eq!(result.action, Some(AppAction::ModeChanged(AppMode::Agent)));
         assert!(app.allow_shell);
         assert!(app.trust_mode);
@@ -4857,7 +4873,7 @@ mod tests {
 
         assert!(msg.contains("allow_shell = true"));
         assert!(msg.contains("session only"));
-        assert!(msg.contains("Act mode"));
+        assert!(msg.contains("Work mode"));
         assert!(msg.contains("approval gating"));
         assert!(msg.contains("next turn"));
         assert!(msg.contains("Full Access (Shift+Tab) also enables shell and auto-approves"));
@@ -4880,7 +4896,7 @@ mod tests {
         assert_eq!(
             msg,
             format!(
-                "allow_shell = true (saved to {}). Act mode will expose shell on the next turn with approval gating. Full Access (Shift+Tab) also enables shell and auto-approves.",
+                "allow_shell = true (saved to {}). Work mode will expose shell on the next turn with approval gating. Full Access (Shift+Tab) also enables shell and auto-approves.",
                 config_path.display()
             )
         );

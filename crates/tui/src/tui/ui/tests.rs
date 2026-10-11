@@ -1435,11 +1435,7 @@ fn canonical_background_bash_keeps_live_task_identity_for_follow_up_actions() {
     assert_eq!(exec.shell_task_id.as_deref(), Some("shell-42"));
     assert_eq!(exec.command, "cargo test --workspace");
     assert!(exec.output.is_none());
-    assert!(
-        exec.live_output
-            .as_deref()
-            .is_some_and(|output| { output.contains("Background task started: shell-42") })
-    );
+    assert!(exec.live_output.is_none());
 }
 
 #[test]
@@ -4446,7 +4442,7 @@ fn selection_to_text_copies_rendered_transcript_block() {
         !selected.contains("Ctrl+O"),
         "detail affordance leaked into the selection: {selected:?}"
     );
-    assert!(selected.contains("run Done · cargo check"), "{selected:?}");
+    assert!(selected.contains("run done · cargo check"), "{selected:?}");
     assert!(selected.contains("copy assistant"), "{selected:?}");
     // #1163: tool-card middle lines are rendered with a `│ ` left rail
     // glyph, but that decoration must not leak into copied text. Assert
@@ -4645,8 +4641,8 @@ fn mouse_selection_fragment_drag_copies_exact_text() {
         "must not round out to the whole cell, got {copied:?}"
     );
     assert_eq!(
-        app.status_message.as_deref(),
-        Some("Selection copied"),
+        app.status_toasts.back().map(|toast| toast.text.as_str()),
+        Some("Copied to the clipboard"),
         "fragment copy reports through the text-fallback receipt"
     );
     assert!(
@@ -10189,7 +10185,7 @@ fn shell_live_output_update_marks_stale_running_job_static() {
             stdout_len: 14,
             stderr_len: 0,
             stdin_available: false,
-            stale: true,
+            stale: false,
             elapsed_since_output_ms: Some(61_000),
             linked_task_id: None,
             owner_agent_id: None,
@@ -10232,7 +10228,7 @@ fn shell_live_output_update_marks_stale_running_job_static() {
         .iter()
         .map(|span| span.content.as_ref())
         .collect::<String>();
-    assert!(header_text.contains("running · stale · no output 1m 01s"));
+    assert!(header_text.contains("running · no output for 1m 01s"));
     assert!(!header_text.contains("running ("));
 }
 
@@ -10961,7 +10957,15 @@ async fn adopting_a_local_model_closes_the_connect_picker_and_names_it() {
     .await;
 
     assert_eq!(app.api_provider, ProviderKind::Ollama);
-    assert_eq!(app.onboarding, crate::tui::app::OnboardingState::None);
+    assert!(
+        matches!(
+            app.onboarding,
+            crate::tui::app::OnboardingState::TrustDirectory
+                | crate::tui::app::OnboardingState::Ready
+        ),
+        "{:?}",
+        app.onboarding
+    );
     assert_ne!(
         app.view_stack.top_kind(),
         Some(crate::tui::views::ModalKind::ProviderPicker)
@@ -22532,8 +22536,8 @@ fn completed_exec_tool_result_still_renders_run_done() {
 
     assert_eq!(exec.status, ToolStatus::Success);
     let text = rendered_text(&exec.lines_with_motion(100, true));
-    assert!(text.contains("run Done"), "{text}");
-    assert!(!text.contains("tool loaded - retry required"), "{text}");
+    assert!(text.contains("run done"), "{text}");
+    assert!(!text.contains("loaded, not run"), "{text}");
 }
 
 /// #6566: the tool output the person reads drops the engine's approval note
@@ -22619,8 +22623,8 @@ fn hydrated_exec_tool_result_renders_retry_required_not_run_done() {
 
     assert_eq!(exec.status, ToolStatus::Hydrated);
     let text = rendered_text(&exec.lines_with_motion(120, true));
-    assert!(text.contains("run tool loaded - retry required"), "{text}");
-    assert!(!text.contains("run Done"), "{text}");
+    assert!(text.contains("run loaded, not run"), "{text}");
+    assert!(!text.contains("run done"), "{text}");
 }
 
 #[test]
@@ -22657,8 +22661,8 @@ fn hydrated_tool_with_validation_body_still_uses_hydrated_status() {
 
     assert_eq!(generic.status, ToolStatus::Hydrated);
     let text = rendered_text(&HistoryCell::Tool(ToolCell::Generic(generic.clone())).lines(120));
-    assert!(text.contains("tool loaded - retry required"), "{text}");
-    assert!(!text.contains("tool Done"), "{text}");
+    assert!(text.contains("tool loaded, not run"), "{text}");
+    assert!(!text.contains("tool done"), "{text}");
 }
 
 #[test]
@@ -22693,8 +22697,8 @@ fn failed_tool_result_with_hydration_metadata_stays_failed() {
 
     assert_eq!(generic.status, ToolStatus::Failed);
     let text = rendered_text(&HistoryCell::Tool(ToolCell::Generic(generic.clone())).lines(120));
-    assert!(text.contains("tool issue"), "{text}");
-    assert!(!text.contains("tool loaded - retry required"), "{text}");
+    assert!(text.contains("tool failed"), "{text}");
+    assert!(!text.contains("loaded, not run"), "{text}");
 }
 
 #[test]
@@ -24250,7 +24254,7 @@ fn auto_route_receipt_survives_session_snapshot_and_restore() {
         restored_app.last_effective_reasoning_effort,
         Some(EffectiveReasoningEffort::Tier(ReasoningEffort::High))
     );
-    assert_eq!(restored_app.reasoning_effort_display_label(), "auto: high");
+    assert_eq!(restored_app.reasoning_effort_display_label(), "auto→high");
 }
 
 #[test]

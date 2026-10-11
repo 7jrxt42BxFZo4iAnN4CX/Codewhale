@@ -395,7 +395,7 @@ Running them in parallel:
   tests, `python3 scripts/split/module_graph.py --check` with the counts it
   should lower, and `python3 scripts/split/partition_report.py` before and after.
 
-Mapping of the open issues: RS-8 (#6935), RS-9 (#6936), RS-12 (#6939, partial) and
+Mapping of the open issues: RS-8 (#6935), RS-9 (#6936), RS-12 (#6939) and
 RS-13 (#6940, first sub-slice) landed; X2 completes RS-13; W0-S1 and W0-S2 replace
 RS-10 (#6937) and the test-support half of RS-11 (#6938); RS-14 (#6941) is
 replaced by this table pending the founder's decision.
