@@ -714,16 +714,15 @@ pub(super) fn handle_tool_call_complete(
     // Preserve the execution/audit name while recovering the action-qualified
     // semantic name from the registered call input. Active entries and
     // already-flushed history use separate detail stores.
-    let semantic_name = app
-        .active_tool_details
-        .get(id)
-        .or_else(|| {
-            app.tool_cells
-                .get(id)
-                .and_then(|cell_index| app.tool_details_by_cell.get(cell_index))
-        })
+    let detail = app.active_tool_details.get(id).or_else(|| {
+        app.tool_cells
+            .get(id)
+            .and_then(|cell_index| app.tool_details_by_cell.get(cell_index))
+    });
+    let semantic_name = detail
         .map_or(name, |detail| canonical_action_alias(name, &detail.input))
         .to_string();
+    let explicit_background = detail.is_some_and(|detail| exec_is_background(&detail.input));
 
     // Roll any child-LLM token usage the tool reports into the
     // session-cost counter. Runs unconditionally so future tools that
@@ -809,6 +808,7 @@ pub(super) fn handle_tool_call_complete(
     })
     .flatten();
     let mut workflow_panel_output: Option<String> = None;
+    let mut moved_to_jobs = false;
 
     if let Some(cell) = app.cell_at_virtual_index_mut(cell_index) {
         match cell {
@@ -874,11 +874,8 @@ pub(super) fn handle_tool_call_complete(
                             .as_deref()
                             .map(super::history::summarize_tool_output);
                         exec.live_output = None;
-                    } else if status == ToolStatus::Running
-                        && exec.interaction.is_none()
-                        && !tool_result.content.is_empty()
-                    {
-                        exec.live_output = Some(tool_result.content.clone());
+                    } else if status == ToolStatus::Running && exec.interaction.is_none() {
+                        moved_to_jobs = !explicit_background;
                     }
                 } else if let Err(err) = result.as_ref()
                     && exec.interaction.is_none()
@@ -998,6 +995,12 @@ pub(super) fn handle_tool_call_complete(
     // `Event::WorkflowUi`; this path covers tool-complete hydration.
     if let Some(output) = workflow_panel_output.as_deref() {
         apply_workflow_output_to_panel(app, output);
+    }
+    if moved_to_jobs {
+        let notice = app
+            .tr(codewhale_localization::MessageId::ShellWaitReleased)
+            .replace("{jobs}", "/jobs");
+        app.push_status_toast(notice, crate::tui::app::StatusToastLevel::Info, Some(6_000));
     }
 
     // If the mutated cell lived inside the active group, bump the active-cell

@@ -1435,11 +1435,7 @@ fn canonical_background_bash_keeps_live_task_identity_for_follow_up_actions() {
     assert_eq!(exec.shell_task_id.as_deref(), Some("shell-42"));
     assert_eq!(exec.command, "cargo test --workspace");
     assert!(exec.output.is_none());
-    assert!(
-        exec.live_output
-            .as_deref()
-            .is_some_and(|output| { output.contains("Background task started: shell-42") })
-    );
+    assert!(exec.live_output.is_none());
 }
 
 #[test]
