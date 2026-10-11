@@ -1836,6 +1836,9 @@ mod spawn_supervised_tests {
     /// the dump on Windows).
     #[tokio::test]
     async fn panicking_task_does_not_propagate_to_parent() {
+        let _lock = crate::test_support::lock_test_env();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let _profile = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", tmp.path());
         let parent_alive = Arc::new(AtomicBool::new(false));
         let parent_alive_clone = parent_alive.clone();
 
@@ -1861,6 +1864,9 @@ mod spawn_supervised_tests {
 
     #[tokio::test]
     async fn panicking_blocking_task_does_not_propagate_to_parent() {
+        let _lock = crate::test_support::lock_test_env();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let _profile = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", tmp.path());
         let parent_alive = Arc::new(AtomicBool::new(false));
         let parent_alive_clone = parent_alive.clone();
 
@@ -1890,8 +1896,7 @@ mod spawn_supervised_tests {
         let crash_dir = tmp.path().join("crashes");
         let location = std::panic::Location::caller();
 
-        // Crash directories hold multiple tasks' logs. The other supervised
-        // panic tests can write here while this process-wide profile is set.
+        // Crash directories hold multiple tasks' logs.
         write_panic_dump("another-task", location, "other boom").expect("write other dump");
         let other_entries: Vec<_> = std::fs::read_dir(&crash_dir)
             .expect("crashes dir exists")

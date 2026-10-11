@@ -15877,6 +15877,9 @@ async fn stall_dispatch_task_overrun_reports_and_restores_message() {
 
 #[tokio::test]
 async fn stall_dispatch_task_panic_still_reports_back() {
+    let _lock = crate::test_support::lock_test_env();
+    let crash_home = tempfile::tempdir().expect("tempdir");
+    let _profile = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", crash_home.path());
     let mut app = create_test_app();
     let config = Config::default();
     let prepare = prepare_user_dispatch(
