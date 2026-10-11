@@ -1586,6 +1586,9 @@ impl BackgroundShell {
 
     /// Kill the process
     fn kill(&mut self) -> Result<()> {
+        if self.poll() && self.status != ShellStatus::Running {
+            return Ok(());
+        }
         #[cfg(unix)]
         if self.ownership == ShellOwnership::PersistPending
             && let Some(process_group_id) = self.child.as_ref().and_then(ShellChild::process_id)
@@ -3204,6 +3207,9 @@ impl ShellManager {
             .ok_or_else(|| anyhow!("Task {task_id} not found"))?;
 
         shell.kill()?;
+        if shell.status == ShellStatus::Killed {
+            shell.completion_reported = true;
+        }
         shell.snapshot()
     }
 
@@ -7034,10 +7040,14 @@ impl BashTool {
             .clone()
             .unwrap_or_else(|| task_id.to_string());
         Ok(ToolResult {
-            content: format!(
-                "Canceled background command: {task_id}. {}",
-                kill_outcome_note(&format!("{}{}", result.stdout, result.stderr))
-            ),
+            content: if result.status == ShellStatus::Killed {
+                format!(
+                    "Canceled background command: {task_id}. {}",
+                    kill_outcome_note(&format!("{}{}", result.stdout, result.stderr))
+                )
+            } else {
+                format!("{} Nothing was killed.", wait_timing_line(&result))
+            },
             success: true,
             metadata: Some(json!({
                 "status": format!("{:?}", result.status),
