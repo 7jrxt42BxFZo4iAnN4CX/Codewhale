@@ -1424,6 +1424,7 @@ fn a_card_verb_agrees_with_its_own_label_in_every_locale() {
             entries: vec![super::ExploringEntry {
                 label: label.to_string(),
                 status: ToolStatus::Success,
+                error: None,
             }],
         };
 
@@ -2083,11 +2084,12 @@ fn a_checklist_update_shows_only_the_item_that_changed() {
         },
         80,
         true,
+        codewhale_localization::Locale::En,
     );
     assert!(lines.len() >= 3, "header, change, summary: {}", lines.len());
 
     let change = line_text(&lines[1]);
-    for needle in ["#2", "Write the test", "in_progress"] {
+    for needle in ["#2", "Write the test", "in progress"] {
         assert!(change.contains(needle), "missing {needle:?}: {change:?}");
     }
     for other in ["Land the PR", "Read the spec"] {
@@ -2123,6 +2125,7 @@ fn a_checklist_update_shows_only_the_item_that_changed() {
         },
         80,
         true,
+        codewhale_localization::Locale::En,
     );
     let change = line_text(&lines[1]);
     assert!(change.contains("#99") && change.contains("(missing title)"));
@@ -2194,7 +2197,7 @@ fn fan_out_prompts_replace_the_inline_argument_summary() {
     );
 
     let mut plain = generic_tool("file_search", ToolStatus::Running);
-    plain.input_summary = Some("query: foo".to_string());
+    plain.input_summary = Some("query: foo, path: src".to_string());
     let text = lines_text(&HistoryCell::Tool(ToolCell::Generic(plain)).lines(80));
     assert!(
         text.contains("query: foo"),
@@ -2563,7 +2566,7 @@ fn a_collapsed_run_summary_names_what_actually_happened() {
                 ..Default::default()
             }
         )),
-        "Explored 4 files, 1 search: read_file, list_dir"
+        "Explored 4 files, 1 search: read file, list dir"
     );
 
     assert_eq!(
@@ -2575,7 +2578,7 @@ fn a_collapsed_run_summary_names_what_actually_happened() {
                 ..Default::default()
             }
         )),
-        "Explored 2 files: read_file, ran 2 commands: run_tests, validate_data",
+        "Explored 2 files: read file, ran 2 commands: run tests, validate data",
         "each clause lists only its own families"
     );
 
@@ -2604,7 +2607,7 @@ fn a_collapsed_run_summary_names_what_actually_happened() {
     assert_eq!(commands[0].activity.commands, 3);
     assert_eq!(
         super::tool_run_summary(&commands[0]),
-        "Ran 3 commands: run_tests, run_verifiers, validate_data"
+        "Ran 3 commands: run tests, run verifiers, validate data"
     );
 
     let git = super::detect_tool_runs(
@@ -2618,7 +2621,7 @@ fn a_collapsed_run_summary_names_what_actually_happened() {
     assert_eq!(git[0].activity.files, 3);
     assert_eq!(
         super::tool_run_summary(&git[0]),
-        "Explored 3 files: git_log, git_show, git_blame"
+        "Explored 3 files: git log, git show, git blame"
     );
 }
 
@@ -2797,6 +2800,7 @@ fn exploring_cell_status_keeps_the_loudest_terminal_state() {
             .map(|status| ExploringEntry {
                 label: "Reading src/foo.rs".to_string(),
                 status: *status,
+                error: None,
             })
             .collect(),
     };

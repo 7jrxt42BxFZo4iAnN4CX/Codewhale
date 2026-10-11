@@ -2026,7 +2026,7 @@ pub(crate) async fn run_event_loop(
             if let Err(err) = completion {
                 tracing::warn!(error = %err, "background terminal clipboard write failed");
                 app.push_status_toast(
-                    format!("Clipboard copy failed: {err}"),
+                    crate::tui::mouse_ui::copy_failed_receipt(app, &err),
                     StatusToastLevel::Error,
                     None,
                 );
@@ -2911,7 +2911,7 @@ pub(crate) async fn run_event_loop(
                         // to interrupt a long-running turn (#1367). Only
                         // surface when the status_message slot is empty so
                         // we don't trample over a real transient message
-                        // (e.g. "/queue saved", "Selection copied"); the
+                        // (e.g. "/queue saved"); the
                         // hint then auto-clears as soon as anything else
                         // updates the slot.
                         if app.status_message.is_none() {
@@ -6502,18 +6502,7 @@ pub(crate) async fn run_event_loop(
                 KeyCode::Char('c') | KeyCode::Char('C')
                     if key_shortcuts::is_copy_shortcut(&key) =>
                 {
-                    let sel = app.selected_text();
-                    if !sel.is_empty() {
-                        if let Ok(transport) = app.clipboard.write_text_status(&sel) {
-                            let receipt = copy_receipt(app, transport, "Copied to clipboard");
-                            app.push_status_toast(receipt, StatusToastLevel::Info, None);
-                            app.clear_selection();
-                        } else {
-                            app.push_status_toast("Copy failed", StatusToastLevel::Error, None);
-                        }
-                    } else {
-                        copy_active_selection(app);
-                    }
+                    copy_active_selection(app);
                 }
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     // Four behaviors layered on Ctrl+C in priority order — see

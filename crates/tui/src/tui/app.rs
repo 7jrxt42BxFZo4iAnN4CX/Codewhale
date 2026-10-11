@@ -7390,11 +7390,7 @@ impl App {
                     return effective.display_label_for_provider(provider).to_string();
                 }
                 let effective = effective.display_label_for_provider(provider);
-                if requested == ReasoningEffort::Auto {
-                    format!("auto: {effective}")
-                } else {
-                    format!("{}→{effective}", requested.short_label())
-                }
+                format!("{}→{effective}", requested.short_label())
             }
             EffectiveReasoningEffort::ThinkingEnabledGranularityUnavailable => format!(
                 "{}→thinking enabled; granularity unavailable",

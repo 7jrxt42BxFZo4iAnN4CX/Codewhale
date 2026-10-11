@@ -547,17 +547,12 @@ impl SetupRuntimeFacts {
             remote_command_provider: remote.command_provider,
             remote_result: remote.result,
             remote_control_result: {
-                let status = app.remote_control.status_line();
-                let message = if status.starts_with("Remote control: connected") {
-                    MessageId::SetupRemoteStatusReady
-                } else if status.starts_with("Remote control: connecting")
-                    || status.starts_with("Remote control: stopping")
-                {
-                    MessageId::SetupStatusInProgress
-                } else if status.starts_with("Remote control: disconnected") {
-                    MessageId::SetupRemoteStatusNeedsAction
-                } else {
-                    MessageId::SetupRemoteStatusDisabled
+                use crate::remote_control::Status;
+                let message = match app.remote_control.status() {
+                    Status::Connected => MessageId::SetupRemoteStatusReady,
+                    Status::Connecting | Status::Stopping => MessageId::SetupStatusInProgress,
+                    Status::Failed => MessageId::SetupRemoteStatusNeedsAction,
+                    Status::Off => MessageId::SetupRemoteStatusDisabled,
                 };
                 tr(app.ui_locale, message).into_owned()
             },

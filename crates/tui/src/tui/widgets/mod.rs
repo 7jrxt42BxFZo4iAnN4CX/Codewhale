@@ -2528,16 +2528,15 @@ impl Renderable for ElevationWidget<'_> {
 
         let popup_width = 70.min(area.width.saturating_sub(4));
 
-        let mut lines = vec![
-            Line::from(""),
-            Line::from(vec![Span::styled(
-                tr(self.locale, MessageId::ElevationTitleSandboxDenied),
-                Style::default()
-                    .fg(palette::STATUS_ERROR)
-                    .add_modifier(Modifier::BOLD),
-            )]),
-            Line::from(""),
-            Line::from(vec![
+        let mut lines = vec![match self.request.command.as_deref() {
+            Some(command) => Line::from(vec![
+                Span::raw(tr(self.locale, MessageId::ElevationFieldCmd)),
+                Span::styled(
+                    crate::utils::truncate_with_ellipsis(command, 45, "..."),
+                    Style::default().fg(palette::TEXT_MUTED),
+                ),
+            ]),
+            None => Line::from(vec![
                 Span::raw(tr(self.locale, MessageId::ElevationFieldTool)),
                 Span::styled(
                     &self.request.tool_name,
@@ -2546,15 +2545,7 @@ impl Renderable for ElevationWidget<'_> {
                         .add_modifier(Modifier::BOLD),
                 ),
             ]),
-        ];
-
-        if let Some(ref command) = self.request.command {
-            let cmd_display = crate::utils::truncate_with_ellipsis(command, 45, "...");
-            lines.push(Line::from(vec![
-                Span::raw(tr(self.locale, MessageId::ElevationFieldCmd)),
-                Span::styled(cmd_display, Style::default().fg(palette::TEXT_MUTED)),
-            ]));
-        }
+        }];
 
         lines.push(Line::from(""));
         lines.push(Line::from(vec![

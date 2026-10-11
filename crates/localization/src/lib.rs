@@ -1022,6 +1022,7 @@ pub enum MessageId {
     ClipboardCutKeptText,
     /// Paste found nothing: the clipboard read came back empty or failed.
     ClipboardNothingToPaste,
+    ClipboardCopyFailed,
     ComposerOversizedSubmitHeld,
     /// Short toast form of [`Self::ComposerOversizedSubmitHeld`]; the toast row
     /// sheds clauses to fit, so the full text goes to the transcript instead.
@@ -1501,7 +1502,6 @@ pub enum MessageId {
     ApprovalMoreLines,
     ApprovalAutoDeniedSession,
     // Sandbox elevation dialog.
-    ElevationTitleSandboxDenied,
     ElevationTitleRequired,
     ElevationFieldTool,
     ElevationFieldCmd,
@@ -1589,6 +1589,10 @@ pub enum MessageId {
     ToolReceiptDone,
     ToolReceiptLinesSingular,
     ToolReceiptLinesPlural,
+    TodoStatusPending,
+    TodoStatusInProgress,
+    TodoStatusCompleted,
+    TodoStatusCancelled,
     // Voice commands (/voice, /voice-send, /voice-control)
     CmdVoiceDescription,
     CmdVoiceSendDescription,
@@ -3657,6 +3661,7 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::ClipboardSentToTerminal,
     MessageId::ClipboardCutKeptText,
     MessageId::ClipboardNothingToPaste,
+    MessageId::ClipboardCopyFailed,
     MessageId::ComposerOversizedSubmitHeld,
     MessageId::ComposerOversizedSubmitHeldShort,
     MessageId::KbContextMenu,
@@ -4105,7 +4110,6 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::ApprovalIntentLabel,
     MessageId::ApprovalMoreLines,
     MessageId::ApprovalAutoDeniedSession,
-    MessageId::ElevationTitleSandboxDenied,
     MessageId::ElevationTitleRequired,
     MessageId::ElevationFieldTool,
     MessageId::ElevationFieldCmd,
@@ -4189,6 +4193,10 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::ToolReceiptDone,
     MessageId::ToolReceiptLinesSingular,
     MessageId::ToolReceiptLinesPlural,
+    MessageId::TodoStatusPending,
+    MessageId::TodoStatusInProgress,
+    MessageId::TodoStatusCompleted,
+    MessageId::TodoStatusCancelled,
     MessageId::CmdVoiceDescription,
     MessageId::CmdVoiceSendDescription,
     MessageId::CmdVoiceControlDescription,

@@ -4641,8 +4641,8 @@ fn mouse_selection_fragment_drag_copies_exact_text() {
         "must not round out to the whole cell, got {copied:?}"
     );
     assert_eq!(
-        app.status_message.as_deref(),
-        Some("Selection copied"),
+        app.status_toasts.back().map(|toast| toast.text.as_str()),
+        Some("Copied to the clipboard"),
         "fragment copy reports through the text-fallback receipt"
     );
     assert!(
@@ -24254,7 +24254,7 @@ fn auto_route_receipt_survives_session_snapshot_and_restore() {
         restored_app.last_effective_reasoning_effort,
         Some(EffectiveReasoningEffort::Tier(ReasoningEffort::High))
     );
-    assert_eq!(restored_app.reasoning_effort_display_label(), "auto: high");
+    assert_eq!(restored_app.reasoning_effort_display_label(), "auto→high");
 }
 
 #[test]

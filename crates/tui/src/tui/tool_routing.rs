@@ -57,6 +57,7 @@ pub(super) fn handle_tool_call_started(
                 ExploringEntry {
                     label,
                     status: ToolStatus::Running,
+                    error: None,
                 },
             )
             .map_or(0, |(_, inner)| inner);
@@ -771,6 +772,14 @@ pub(super) fn handle_tool_call_complete(
             && let Some(entry) = cell.entries.get_mut(entry_index)
         {
             entry.status = tool_status_from_result(result);
+            entry.error = if entry.status == ToolStatus::Failed {
+                match result {
+                    Ok(tool_result) => visible_tool_output(&tool_result.content),
+                    Err(err) => Some(err.to_string()),
+                }
+            } else {
+                None
+            };
             app.mark_history_updated();
             // Mutating the in-flight exploring cell needs an active-cell
             // revision bump so the transcript cache invalidates the synthetic
