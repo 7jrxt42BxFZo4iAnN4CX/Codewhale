@@ -30,7 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Running shell commands open an inspector with their output and status. It
   follows new output until you scroll back, and drops Stop once the command
   ends. `Alt+V` opens the card you clicked, even after newer cards arrive or a
-  tool run collapses around it (#6931).
+  tool run collapses around it. `/jobs wait` and `/jobs poll` open the same
+  inspector instead of freezing the screen for up to 5 s, a shell row in the
+  work dock opens it too, and a task row opens `/task show` instead of failing
+  with "Job … not found" (#6931).
+- In `/setup`, `u` and `d` act only on the working-agreement step. Pressed on
+  another step they no longer close the wizard and switch your agreement off.
 - `/resume`, `/load` and other session changes that cannot run yet now list
   what is still busy and how to stop it.
 - Sessions that ended without a clean exit show `interrupted` with their age

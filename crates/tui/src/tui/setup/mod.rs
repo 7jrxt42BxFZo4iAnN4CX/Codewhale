@@ -3222,8 +3222,12 @@ impl ModalView for SetupWizardView {
             KeyCode::Char('k') if self.selected_step() == SetupStep::Constitution => {
                 self.commit_keep_existing_constitution()
             }
-            KeyCode::Char('u') => self.commit_constitution(SetupCommitKind::BundledConstitution),
-            KeyCode::Char('d') => self.commit_constitution(SetupCommitKind::DeferredConstitution),
+            KeyCode::Char('u') if self.selected_step() == SetupStep::Constitution => {
+                self.commit_constitution(SetupCommitKind::BundledConstitution)
+            }
+            KeyCode::Char('d') if self.selected_step() == SetupStep::Constitution => {
+                self.commit_constitution(SetupCommitKind::DeferredConstitution)
+            }
             KeyCode::Enter if self.selected_step() == SetupStep::Constitution => {
                 self.commit_constitution(SetupCommitKind::BundledConstitution)
             }
