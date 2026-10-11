@@ -72,6 +72,10 @@ launcher guidance.
 
 ### Added
 
+- `/connect [<provider>]` signs in to a model provider that a plugin adds,
+  inside the TUI, and `/disconnect <provider>` removes that sign-in.
+  `/login` and `/logout` are for your Codewhale account only. Plugins that
+  ship a shell installer can be installed from the plugin view (#6950).
 - `codewhale auth claude` and `/auth claude` add Claude subscription sign-in
   to the existing Anthropic route, with protected owned credentials, refresh
   before requests, a provider-picker choice and local sign-out. API-key billing
@@ -210,6 +214,56 @@ launcher guidance.
 
 ### Fixed
 
+- Windows 10 1607 starts again. 0.10.1 stopped at load with 0xC0000139
+  because `DeriveCapabilitySidsFromName` is missing there; it is now resolved
+  at runtime (#6953).
+- `codewhale resume` no longer refuses a session whose saved history still
+  holds a raw sub-agent handoff (#6954).
+- A saved session over 8 MiB can be resumed and forked again. Journal entries
+  off the current branch are archived instead of refusing the session (#6955).
+- Snapshot restore and `/undo` work with older git, such as the 2.43 that
+  Ubuntu 24.04 ships. They failed there with "only one reference expected".
+- Cancelling your own background shell job no longer reports it as finished
+  or starts a new model turn. Cancelling a job that had already exited keeps
+  its real exit status instead of reading "killed, exit 0".
+- A shell command that moves to the background after 30 seconds shows the
+  same "keep running in /jobs" notice as `Ctrl+B`, and its card no longer
+  shows the instructions written for the model.
+- `todo_write` returns a short receipt (counts and the item in progress) to
+  the model instead of repeating the whole list on every call.
+- Goal usage counts the turn that completes, yields or blocks the goal, so
+  `tokens_used` and `time_used_seconds` no longer stay at 0.
+- A shell command that has printed nothing for a minute still reads as
+  running ("no output for 1m 05s"), keeps its Stop action and is reachable
+  through the Runtime API; only a job whose process is gone after a restart
+  is stale. `/jobs poll` and `/jobs stdin` no longer consume the output the
+  model has not read yet, and Alt+V prefers a running shell only when it is
+  on screen (#6931).
+- `/constitution`: `ratify` checks the digest you reviewed in `suggestions`,
+  so a file that changed after your review is refused as documented; `preview`
+  shows the block exactly as the model receives it; messages no longer claim a
+  ratify or migrate moves the prompt-cache prefix; the setup wizard no longer
+  lists an authority order that contradicts the base prompt, and it caps your
+  own note so saving never cuts its end. The Simplified Chinese manager uses
+  the glossary term 宪章 throughout.
+- The pet shows sub-agents while they run, and a finished one no longer stays
+  "working". Half-block pet sprites are drawn crisply instead of blurred.
+- A provider's retry delay is honored when a 429 carries it in the body
+  instead of a `Retry-After` header (#6923).
+- A Codewhale home reached through a symlink or Windows junction keeps saving
+  artifacts and compacting (#6947).
+- A workflow gate that blocks its own role is rejected when the plan is
+  admitted instead of deadlocking the run (#6945).
+- Auto-Review gives its guardian an output budget a reasoning model can think
+  inside.
+- Skills are deduplicated across roots by file, ignored-key warnings are
+  grouped, in-workspace skill links are followed, and `doctor` warns about a
+  dead `always_load` pin or an unrecognized bundled skill.
+- MCP servers reconnect when a session sync drops the eager connection pool.
+- The shared pet owner exits after ten minutes with no client.
+- Tool headers keep their clipped part visible at narrow widths, `/jobs`
+  prints plain exit codes and a three-line tail, and a collapsed tool output
+  shows a single hidden row instead of a "1 line omitted" marker.
 - ChatGPT sign-in omits the unsupported `originator` query parameter that
   caused an initial `invalid_authorize_request` rejection. PKCE, account
   binding and granted-scope validation remain in the same login flow
@@ -308,10 +362,11 @@ launcher guidance.
 
 ### Contributors
 
-- **[@SparkofSpike](https://github.com/SparkofSpike)** — live network-policy updates and goal milestone hand-back ([#6928](https://github.com/codewhale-hq/Codewhale/pull/6928), [#6930](https://github.com/codewhale-hq/Codewhale/pull/6930)).
+- **[@LIghtJUNction](https://github.com/LIghtJUNction)** — plugin shell install and in-TUI plugin OAuth sign-in ([#6950](https://github.com/codewhale-hq/Codewhale/pull/6950)).
+- **[@SparkofSpike](https://github.com/SparkofSpike)** — live network-policy updates and goal milestone hand-back ([#6928](https://github.com/codewhale-hq/Codewhale/pull/6928), [#6930](https://github.com/codewhale-hq/Codewhale/pull/6930)), and a relocated Codewhale home ([#6947](https://github.com/codewhale-hq/Codewhale/issues/6947)).
 - **[@dajiaohuang](https://github.com/dajiaohuang)** — cache-write token accounting ([#6913](https://github.com/codewhale-hq/Codewhale/pull/6913)).
 - **[@gaord](https://github.com/gaord)** — embedder telemetry surface support ([#6916](https://github.com/codewhale-hq/Codewhale/pull/6916)).
-- **[@Lstarsky0](https://github.com/Lstarsky0)** — localized profile replies ([#6919](https://github.com/codewhale-hq/Codewhale/pull/6919)).
+- **[@Lstarsky0](https://github.com/Lstarsky0)** — localized profile replies ([#6919](https://github.com/codewhale-hq/Codewhale/pull/6919)) and workflow gates that block their own role ([#6952](https://github.com/codewhale-hq/Codewhale/pull/6952)).
 - **[@jayanthvee](https://github.com/jayanthvee)** — Windows npm launcher guidance ([#6906](https://github.com/codewhale-hq/Codewhale/pull/6906)).
 - **[@asto18089](https://github.com/asto18089)** — callback-window reference fix for longer browser sign-in waits ([#6865](https://github.com/codewhale-hq/Codewhale/issues/6865)).
 - **[@BX166](https://github.com/BX166)** — reported three provider failure modes measured on AICraft's own traffic: a cold model that reads as a dead connection, a listed model that fails on every call, and a response cut at the output ceiling that reports `stop` ([#6889](https://github.com/codewhale-hq/Codewhale/issues/6889)).
