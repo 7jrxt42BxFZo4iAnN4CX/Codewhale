@@ -2518,5 +2518,8 @@
   "PlanHandoffKeepPlanning": "繼續規劃",
   "PlanHandoffKeepPlanningDetail": "留在 Plan。不做任何變更。",
   "PlanHandoffProceed": "依計畫開始執行。",
-  "PetAppearanceLegacy": "寵物仍在使用舊版本。更新 Codewhale 後重新啟動寵物，即可選擇鯨魚樣式和文字語言。"
+  "PetAppearanceLegacy": "寵物仍在使用舊版本。更新 Codewhale 後重新啟動寵物，即可選擇鯨魚樣式和文字語言。",
+  "PluginOAuthBrowser": "按 Enter 開啟瀏覽器登入，按 Esc 返回。不需要 API Key。",
+  "PluginOAuthReady": "{provider}：已登入，請選擇模型。",
+  "PluginOAuthLocalLogout": "{provider}：已刪除本機登入憑證，未撤銷伺服器授權。"
 }

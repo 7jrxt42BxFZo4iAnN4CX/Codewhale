@@ -2518,5 +2518,8 @@
   "PlanHandoffKeepPlanning": "Lanjutkan merencanakan",
   "PlanHandoffKeepPlanningDetail": "Tetap di Plan. Tidak ada yang diubah.",
   "PlanHandoffProceed": "Silakan jalankan rencananya.",
-  "PetAppearanceLegacy": "Pet masih memakai versi lama. Mulai ulang pet setelah memperbarui Codewhale untuk memilih gaya paus dan bahasa teks."
+  "PetAppearanceLegacy": "Pet masih memakai versi lama. Mulai ulang pet setelah memperbarui Codewhale untuk memilih gaya paus dan bahasa teks.",
+  "PluginOAuthBrowser": "Tekan Enter untuk masuk melalui peramban atau Esc untuk kembali. Kunci API tidak diperlukan.",
+  "PluginOAuthReady": "{provider}: berhasil masuk. Pilih model.",
+  "PluginOAuthLocalLogout": "{provider}: data masuk lokal dihapus. Akses jarak jauh tidak berubah."
 }
