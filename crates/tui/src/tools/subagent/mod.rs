@@ -3669,8 +3669,19 @@ impl CoordinationProcessLock {
         reject_root_relative_symlinks(&requested_root, &lock_dir.join(SUBAGENT_STATE_LOCK_FILE))?;
         fs::create_dir_all(&lock_dir)?;
         let ignore = lock_dir.join(".gitignore");
-        if !ignore.exists() {
-            let _ = fs::write(&ignore, "*\n");
+        let ignored = reject_root_relative_symlinks(&requested_root, &ignore).and_then(|()| {
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&ignore)
+            {
+                Ok(mut file) => file.write_all(b"*\n").map_err(Into::into),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+                Err(error) => Err(error.into()),
+            }
+        });
+        if let Err(error) = ignored {
+            tracing::warn!(target: "subagent", %error, "could not write {}", ignore.display());
         }
         // Creating a missing root can change its canonical spelling on
         // Windows (for example by adding a `\\?\` prefix). Re-resolve both
