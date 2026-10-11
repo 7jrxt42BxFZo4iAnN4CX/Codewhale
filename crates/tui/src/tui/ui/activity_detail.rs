@@ -18,6 +18,9 @@ use crate::tui::ui_text::{
 use codewhale_localization::{MessageId, tr};
 
 fn selected_transcript_cell_index(app: &App) -> Option<usize> {
+    if let Some(owner) = app.selection_owner_cell() {
+        return Some(owner);
+    }
     app.viewport
         .transcript_selection
         .ordered_endpoints()
@@ -275,19 +278,7 @@ const RAW_DETAIL_PAGER_INTRO: &str =
     "Raw detail for the selected item — press Ctrl+Alt+O for the whole-turn overview.";
 
 pub(super) fn open_tool_details_pager(app: &mut App) -> bool {
-    let target_cell = if app
-        .viewport
-        .transcript_selection
-        .ordered_endpoints()
-        .is_some()
-    {
-        detail_target_cell_index(app)
-    } else {
-        crate::tui::shell_job_routing::newest_visible_running_shell_cell(app)
-            .or_else(|| detail_target_cell_index(app))
-    };
-
-    let Some(cell_index) = target_cell else {
+    let Some(cell_index) = detail_target_cell_index(app) else {
         app.status_message = Some(NO_RAW_DETAIL_HINT.to_string());
         return false;
     };
@@ -594,6 +585,9 @@ fn turn_answer_payload(app: &App, start: usize, end: usize, width: u16) -> Optio
 }
 
 pub(super) fn detail_target_cell_index(app: &App) -> Option<usize> {
+    if let Some(owner) = app.selection_owner_cell() {
+        return Some(owner);
+    }
     if let Some((start, _)) = app.viewport.transcript_selection.ordered_endpoints() {
         return app
             .viewport

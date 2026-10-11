@@ -749,6 +749,8 @@ pub(crate) fn handle_mouse_event(app: &mut App, mouse: MouseEvent) -> Vec<ViewEv
                 app.viewport.transcript_selection.anchor = Some(point);
                 app.viewport.transcript_selection.head = Some(point);
                 app.viewport.transcript_selection.dragging = true;
+                app.viewport.transcript_selection.owner =
+                    app.transcript_owner_at_line(point.line_index);
                 app.needs_redraw = true;
 
                 if app.is_loading

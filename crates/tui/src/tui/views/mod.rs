@@ -1593,6 +1593,13 @@ impl ViewStack {
             panel.refresh_snapshot(snapshot);
         }
     }
+
+    pub(crate) fn top_pager_mut(&mut self) -> Option<&mut crate::tui::pager::PagerView> {
+        self.views
+            .last_mut()?
+            .as_any_mut()
+            .downcast_mut::<crate::tui::pager::PagerView>()
+    }
 }
 
 impl fmt::Debug for ViewStack {

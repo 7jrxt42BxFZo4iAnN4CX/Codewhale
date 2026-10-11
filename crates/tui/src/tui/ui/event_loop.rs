@@ -466,6 +466,7 @@ pub(super) fn handle_transcript_space(app: &mut App) -> bool {
         app.viewport.transcript_selection.clear();
         app.viewport.transcript_selection.anchor = Some(point);
         app.viewport.transcript_selection.head = Some(point);
+        app.viewport.transcript_selection.owner = Some(owner);
     }
     app.mark_history_updated();
     true
@@ -2226,6 +2227,9 @@ pub(crate) async fn run_event_loop(
                 last_automation_scan = Instant::now();
             }
             if refresh_shell_exec_live_output(app) {
+                app.needs_redraw = true;
+            }
+            if crate::tui::shell_job_routing::refresh_live_shell_job_pager(app) {
                 app.needs_redraw = true;
             }
             if app
