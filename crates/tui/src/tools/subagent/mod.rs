@@ -3668,6 +3668,10 @@ impl CoordinationProcessLock {
         // `create_dir_all` follows links and would populate the target.
         reject_root_relative_symlinks(&requested_root, &lock_dir.join(SUBAGENT_STATE_LOCK_FILE))?;
         fs::create_dir_all(&lock_dir)?;
+        let ignore = lock_dir.join(".gitignore");
+        if !ignore.exists() {
+            let _ = fs::write(&ignore, "*\n");
+        }
         // Creating a missing root can change its canonical spelling on
         // Windows (for example by adding a `\\?\` prefix). Re-resolve both
         // sides before checking containment.
