@@ -3,7 +3,7 @@
 //! durable world and audio. No prompt, worker or execution authority lives here.
 use super::{PetWatch, habitat};
 use crate::{
-    agent_roster::RosterState,
+    agent_roster::{AgentRosterRow, RosterState},
     tools::subagent::AgentWorkerStatus,
     tui::{
         app::App,
@@ -41,8 +41,76 @@ fn theme(app: &App) -> Theme {
         .map_or(theme, |palette| theme.tui_palette(palette))
 }
 
+fn live_rows(app: &App) -> Vec<AgentRosterRow> {
+    use crate::tui::subagent_routing::{subagent_is_parked, worker_status_for_terminal_projection};
+    let mut rows = app.current_agent_roster().to_vec();
+    let name = |id: &str| app.agent_label_map.get(id).cloned();
+    let blank = |id: &str, display_name: String| AgentRosterRow {
+        worker_id: id.to_string(),
+        display_name,
+        model: String::new(),
+        state: RosterState::Running,
+        status: AgentWorkerStatus::Running,
+        activity: None,
+        outcome: None,
+        millis: None,
+        input_tokens: None,
+        output_tokens: None,
+        cost_microusd: None,
+        steps_taken: 0,
+        parent_run_id: None,
+        run_id: id.to_string(),
+    };
+    for agent in &app.subagent_cache {
+        let index = rows
+            .iter()
+            .position(|row| row.worker_id == agent.agent_id)
+            .unwrap_or_else(|| {
+                let display_name = name(&agent.agent_id)
+                    .or_else(|| agent.nickname.clone())
+                    .unwrap_or_else(|| agent.name.clone());
+                let usage = agent.usage.as_ref();
+                rows.push(AgentRosterRow {
+                    model: agent.model.clone(),
+                    millis: Some(agent.duration_ms),
+                    input_tokens: usage.and_then(|usage| usage.input_tokens),
+                    output_tokens: usage.and_then(|usage| usage.output_tokens),
+                    cost_microusd: usage.and_then(|usage| usage.cost_microusd),
+                    steps_taken: agent.steps_taken,
+                    parent_run_id: agent.parent_run_id.clone(),
+                    ..blank(&agent.agent_id, display_name)
+                });
+                rows.len() - 1
+            });
+        let row = &mut rows[index];
+        row.status = agent
+            .worker_status
+            .unwrap_or_else(|| worker_status_for_terminal_projection(&agent.status));
+        row.state = if subagent_is_parked(agent) {
+            RosterState::Parked
+        } else {
+            RosterState::from_worker(row.status)
+        };
+        if row.state == RosterState::Running
+            && let Some(started) = agent.started_at
+        {
+            row.millis = Some(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX));
+        }
+    }
+    for (id, progress) in &app.agent_progress {
+        match rows.iter_mut().find(|row| &row.worker_id == id) {
+            Some(row) => row.activity = Some(progress.clone()),
+            None => rows.push(AgentRosterRow {
+                activity: Some(progress.clone()),
+                ..blank(id, name(id).unwrap_or_else(|| id.clone()))
+            }),
+        }
+    }
+    rows
+}
+
 pub(super) fn agents(app: &App) -> Vec<Subagent<'static>> {
-    app.current_agent_roster()
+    live_rows(app)
         .iter()
         .map(|row| {
             let (state, label) = match row.state {
