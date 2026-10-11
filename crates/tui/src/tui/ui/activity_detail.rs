@@ -10,7 +10,7 @@
 use crate::snapshot::SnapshotRepo;
 use crate::tui::app::App;
 use crate::tui::footer_ui::one_line_summary;
-use crate::tui::history::{HistoryCell, ToolCell, ToolStatus};
+use crate::tui::history::{HistoryCell, ToolCell, ToolStatus, tool_status_label};
 use crate::tui::pager::{PagerPage, PagerView};
 use crate::tui::ui_text::{
     history_cell_to_clipboard_text, history_cell_to_text, truncate_line_to_width,
@@ -250,16 +250,6 @@ fn tool_duration_for_activity(tool: &ToolCell) -> Option<u64> {
             })
         }),
         _ => None,
-    }
-}
-
-fn activity_status_label(status: ToolStatus) -> &'static str {
-    match status {
-        ToolStatus::Running => "running",
-        ToolStatus::Success => "done",
-        ToolStatus::Hydrated => "tool loaded - retry required",
-        ToolStatus::Warning => "issue",
-        ToolStatus::Failed => "failed",
     }
 }
 
@@ -1190,7 +1180,7 @@ fn turn_timeline_lines(app: &App, start: usize, end: usize) -> Vec<String> {
                 let (kind, summary) = timeline_tool_summary(app, idx, tool);
                 let duration = tool_duration_for_activity(tool)
                     .map(codewhale_command_contract::elapsed::format_elapsed_ms);
-                let status = tool.status().map(activity_status_label);
+                let status = tool.status().map(tool_status_label);
                 let actions = timeline_cell_actions(app, idx, cell);
                 rows.push(timeline_row(
                     kind,
@@ -1444,7 +1434,7 @@ fn turn_files_changed(app: &App, start: usize, end: usize) -> Vec<String> {
                 lines.push(format!(
                     "• {} — {}",
                     truncate_line_to_width(&patch.path, 60),
-                    activity_status_label(patch.status)
+                    tool_status_label(patch.status)
                 ));
             }
             _ => {}
@@ -1513,7 +1503,7 @@ fn turn_verifier_lines(app: &App, start: usize, end: usize) -> Vec<String> {
                 lines.push(format!(
                     "• {} — {}",
                     truncate_line_to_width(&exec.command, 56),
-                    activity_status_label(exec.status)
+                    tool_status_label(exec.status)
                 ));
             }
             ToolCell::Review(review) => {
@@ -1523,10 +1513,7 @@ fn turn_verifier_lines(app: &App, start: usize, end: usize) -> Vec<String> {
                 } else {
                     format!("review {target}")
                 };
-                lines.push(format!(
-                    "• {target} — {}",
-                    activity_status_label(review.status)
-                ));
+                lines.push(format!("• {target} — {}", tool_status_label(review.status)));
             }
             _ => {}
         }

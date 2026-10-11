@@ -63,7 +63,7 @@ pub enum ToolFamily {
 pub fn tool_family_for_title(title: &str) -> ToolFamily {
     match title {
         "Shell" => ToolFamily::Run,
-        "Patch" | "Diff" => ToolFamily::Patch,
+        "Patch" | "Diff" | "File" => ToolFamily::Patch,
         "Workspace" | "Image" => ToolFamily::Read,
         "Search" => ToolFamily::Find,
         "Plan" | "Legacy plan" | "Review" => ToolFamily::Generic,

@@ -1376,7 +1376,7 @@ impl ExploringCell {
                     ToolStatus::Success => "done",
                     ToolStatus::Hydrated => "loaded",
                     ToolStatus::Warning => "issue",
-                    ToolStatus::Failed => "issue",
+                    ToolStatus::Failed => "failed",
                 };
                 lines.extend(render_compact_kv(
                     prefix,
@@ -1426,7 +1426,13 @@ impl PatchSummaryCell {
         let header_summary = self
             .receipt
             .as_ref()
-            .map(FileMutationReceipt::outcome_label)
+            .map(|receipt| {
+                if inline_diff_mode == crate::settings::InlineDiffMode::Off {
+                    receipt.outcome_label()
+                } else {
+                    receipt.semantic_summary()
+                }
+            })
             .unwrap_or_else(|| self.path.clone());
         lines.push(render_tool_header_with_summary(
             "File",
@@ -2584,7 +2590,8 @@ fn status_symbol(
         ToolStatus::Running => {
             crate::tui::spinner::braille_spinner_frame(started_at, low_motion).to_string()
         }
-        ToolStatus::Success | ToolStatus::Hydrated => TOOL_DONE_SYMBOL.to_string(),
+        ToolStatus::Success => TOOL_DONE_SYMBOL.to_string(),
+        ToolStatus::Hydrated => crate::tui::glyphs::NEUTRAL.to_string(),
         ToolStatus::Warning => "!".to_string(),
         ToolStatus::Failed => TOOL_FAILED_SYMBOL.to_string(),
     }
@@ -2979,7 +2986,7 @@ fn tool_detail_label_style() -> Style {
 /// its border colour follows it. In-flight takes the action accent, a settled
 /// success recedes into muted text so finished work stops competing for the
 /// eye, and only warning and failure keep a loud colour. `Hydrated` is a
-/// stalled "tool loaded — retry required", not live work, so it takes the hint
+/// stalled "loaded, not run", not live work, so it takes the hint
 /// colour instead of borrowing the running accent and reading as in-flight.
 ///
 /// The glyph and status word use the same lifecycle ink; the glyph shape
@@ -3002,13 +3009,13 @@ fn tool_glyph_color(
     tool_rail_color(status)
 }
 
-fn tool_status_label(status: ToolStatus) -> &'static str {
+pub(crate) fn tool_status_label(status: ToolStatus) -> &'static str {
     match status {
         ToolStatus::Running => "running",
         ToolStatus::Success => "done",
-        ToolStatus::Hydrated => "tool loaded - retry required",
+        ToolStatus::Hydrated => "loaded, not run",
         ToolStatus::Warning => "issue",
-        ToolStatus::Failed => "issue",
+        ToolStatus::Failed => "failed",
     }
 }
 

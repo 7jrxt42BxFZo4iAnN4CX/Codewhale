@@ -4442,7 +4442,7 @@ fn selection_to_text_copies_rendered_transcript_block() {
         !selected.contains("Ctrl+O"),
         "detail affordance leaked into the selection: {selected:?}"
     );
-    assert!(selected.contains("run Done · cargo check"), "{selected:?}");
+    assert!(selected.contains("run done · cargo check"), "{selected:?}");
     assert!(selected.contains("copy assistant"), "{selected:?}");
     // #1163: tool-card middle lines are rendered with a `│ ` left rail
     // glyph, but that decoration must not leak into copied text. Assert
@@ -22528,8 +22528,8 @@ fn completed_exec_tool_result_still_renders_run_done() {
 
     assert_eq!(exec.status, ToolStatus::Success);
     let text = rendered_text(&exec.lines_with_motion(100, true));
-    assert!(text.contains("run Done"), "{text}");
-    assert!(!text.contains("tool loaded - retry required"), "{text}");
+    assert!(text.contains("run done"), "{text}");
+    assert!(!text.contains("loaded, not run"), "{text}");
 }
 
 /// #6566: the tool output the person reads drops the engine's approval note
@@ -22615,8 +22615,8 @@ fn hydrated_exec_tool_result_renders_retry_required_not_run_done() {
 
     assert_eq!(exec.status, ToolStatus::Hydrated);
     let text = rendered_text(&exec.lines_with_motion(120, true));
-    assert!(text.contains("run tool loaded - retry required"), "{text}");
-    assert!(!text.contains("run Done"), "{text}");
+    assert!(text.contains("run loaded, not run"), "{text}");
+    assert!(!text.contains("run done"), "{text}");
 }
 
 #[test]
@@ -22653,8 +22653,8 @@ fn hydrated_tool_with_validation_body_still_uses_hydrated_status() {
 
     assert_eq!(generic.status, ToolStatus::Hydrated);
     let text = rendered_text(&HistoryCell::Tool(ToolCell::Generic(generic.clone())).lines(120));
-    assert!(text.contains("tool loaded - retry required"), "{text}");
-    assert!(!text.contains("tool Done"), "{text}");
+    assert!(text.contains("tool loaded, not run"), "{text}");
+    assert!(!text.contains("tool done"), "{text}");
 }
 
 #[test]
@@ -22689,8 +22689,8 @@ fn failed_tool_result_with_hydration_metadata_stays_failed() {
 
     assert_eq!(generic.status, ToolStatus::Failed);
     let text = rendered_text(&HistoryCell::Tool(ToolCell::Generic(generic.clone())).lines(120));
-    assert!(text.contains("tool issue"), "{text}");
-    assert!(!text.contains("tool loaded - retry required"), "{text}");
+    assert!(text.contains("tool failed"), "{text}");
+    assert!(!text.contains("loaded, not run"), "{text}");
 }
 
 #[test]

@@ -999,7 +999,7 @@ fn the_copy_prefix_skips_every_decoration_and_keeps_the_payload() {
     ));
     let copied = slice_visible_columns(&body, header.copy_prefix_width, text_visible_width(&body));
     assert!(
-        copied.contains("run Done"),
+        copied.contains("run done"),
         "receipt text was clipped away: {copied:?}"
     );
     for glyph in decorations {
@@ -1414,11 +1414,11 @@ fn a_card_verb_agrees_with_its_own_label_in_every_locale() {
     for (label, expected_en, expected_zh, forbidden_en) in [
         (
             "Searching for `TranscriptScroll`",
-            "find Done",
+            "find done",
             "find 完成",
-            "read Done",
+            "read done",
         ),
-        ("Reading src/foo.rs", "read Done", "read 完成", "find Done"),
+        ("Reading src/foo.rs", "read done", "read 完成", "find done"),
     ] {
         let cell = super::ExploringCell {
             entries: vec![super::ExploringEntry {
@@ -1466,7 +1466,7 @@ fn receipts_count_only_what_they_actually_counted() {
     use crate::tui::widgets::tool_card::ToolFamily;
     use codewhale_localization::Locale;
 
-    for (locale, done, unit) in [(Locale::En, "Done", "line"), (Locale::ZhHans, "完成", "行")] {
+    for (locale, done, unit) in [(Locale::En, "done", "line"), (Locale::ZhHans, "完成", "行")] {
         let label = |family, status, output| {
             super::tool_receipt_label(family, status, Some(output), locale)
         };
@@ -1548,7 +1548,7 @@ fn shell_headers_stay_truthful_through_the_output_formatters() {
         cell.duration_ms = Some(42);
 
         for (locale, done, unit) in [
-            (Locale::En, "Done", "lines"),
+            (Locale::En, "done", "lines"),
             (Locale::ZhHans, "完成", "行"),
         ] {
             let header = line_text(&cell.render_with_locale(80, true, RenderMode::Live, locale)[0]);

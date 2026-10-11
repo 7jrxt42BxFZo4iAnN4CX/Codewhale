@@ -3844,7 +3844,7 @@ mod tests {
             !settled.contains("run running"),
             "flushed terminal state reused the active cache entry:\n{settled}"
         );
-        assert!(settled.contains("run issue"), "{settled}");
+        assert!(settled.contains("run failed"), "{settled}");
     }
 
     fn render_approval_request(
@@ -4300,7 +4300,7 @@ mod tests {
             !settled.contains("run running"),
             "history cell reused the active slow-path cache entry:\n{settled}"
         );
-        assert!(settled.contains("run issue"), "{settled}");
+        assert!(settled.contains("run failed"), "{settled}");
     }
 
     #[test]

@@ -1333,7 +1333,7 @@
   "ToolFamilyVerify": "verify",
   "ToolFamilyThink": "think",
   "ToolFamilyGeneric": "tool",
-  "ToolReceiptDone": "Done",
+  "ToolReceiptDone": "done",
   "ToolReceiptLinesSingular": "1 line",
   "ToolReceiptLinesPlural": "{count} lines",
   "CmdVoiceDescription": "Dictate into the composer",
