@@ -2150,7 +2150,6 @@ pub struct App {
     pub yolo: bool,
     /// One-shot YOLO→Act+Bypass migration notice for this session (#0.8.68 M6).
     yolo_compat_notified: bool,
-    pub(crate) full_access_scope: crate::tui::full_access_confirm::FullAccessScope,
     /// The single serialized owner of `settings.toml` startup-default writes
     /// (mode, thinking, model). Keeping one owner per `App` is what stops two
     /// rapid selections from interleaving their load/modify/save transactions
@@ -3425,11 +3424,6 @@ impl App {
             self.needs_redraw = true;
             return SettingSelection::Refused;
         }
-        if !self.yolo
-            && self.request_full_access(crate::tui::full_access_confirm::FullAccessOrigin::Yolo)
-        {
-            return SettingSelection::NeedsConfirmation;
-        }
         let changed = self.set_mode_yolo_compat();
         self.startup_defaults
             .spawn(crate::tui::startup_defaults::StartupDefaults::mode(
@@ -3451,10 +3445,7 @@ impl App {
         &mut self,
         previous_mode: AppMode,
         permission_before: &str,
-        permission_pair_before: (
-            ApprovalMode,
-            crate::tui::full_access_confirm::FullAccessScope,
-        ),
+        permission_pair_before: ApprovalMode,
     ) {
         let context = self
             .base_hook_context()
@@ -3464,23 +3455,17 @@ impl App {
             self.surface_observer_hook_submission_failure(error);
         }
         if self.permission_pair() != permission_pair_before {
-            self.record_permission_change(permission_before, false);
+            self.record_permission_change(permission_before);
         }
         self.needs_redraw = true;
     }
 
-    fn permission_pair(
-        &self,
-    ) -> (
-        ApprovalMode,
-        crate::tui::full_access_confirm::FullAccessScope,
-    ) {
-        let approval = if self.mode == AppMode::Plan {
+    fn permission_pair(&self) -> ApprovalMode {
+        if self.mode == AppMode::Plan {
             self.mode_prefs.agent_approval_mode
         } else {
             self.approval_mode
-        };
-        (approval, self.full_access_scope)
+        }
     }
 
     /// Apply a *user-facing* mode selection: change the live session mode and
@@ -3817,10 +3802,6 @@ impl App {
             self.needs_redraw = true;
             return false;
         }
-        if next == ApprovalMode::Bypass {
-            self.request_full_access(crate::tui::full_access_confirm::FullAccessOrigin::Cycle);
-            return false;
-        }
         if let Err(err) = Self::persist_permission_posture(next) {
             self.push_status_toast(
                 format!("Permissions were not changed: could not save TUI posture ({err})"),
@@ -3849,11 +3830,6 @@ impl App {
                 Some(6_000),
             );
             self.needs_redraw = true;
-            return false;
-        }
-
-        if next == ApprovalMode::Bypass {
-            self.request_full_access(crate::tui::full_access_confirm::FullAccessOrigin::RootCycle);
             return false;
         }
 
@@ -3904,9 +3880,7 @@ impl App {
                 }
             };
             let previous = settings.permission_posture.clone();
-            if next != ApprovalMode::Bypass {
-                settings.permission_posture = Some(posture);
-            }
+            settings.permission_posture = Some(posture);
             if let Err(err) = transaction.save(&settings) {
                 return Ok(RootPostureOutcome::Failed(format!(
                     "could not save TUI posture ({err})"
@@ -3979,9 +3953,6 @@ impl App {
     /// queued mode/thinking write — the two used to load the same bytes and the
     /// later save reverted the other's field.
     fn persist_permission_posture(next: ApprovalMode) -> anyhow::Result<()> {
-        if next == ApprovalMode::Bypass {
-            return Ok(());
-        }
         Settings::transact(|settings| {
             settings.permission_posture = Some(Self::approval_posture_setting(next).to_string());
             Ok(())
@@ -3991,6 +3962,21 @@ impl App {
     fn finish_approval_posture_change(&mut self, next: ApprovalMode) {
         self.set_agent_approval_posture(next);
         self.needs_redraw = true;
+        // In Plan the new posture is real but dormant, and the footer chip
+        // alone would imply it is live. Say when it starts applying instead of
+        // refusing the change.
+        if self.mode == AppMode::Plan {
+            self.push_status_toast(
+                format!(
+                    "Permissions set to {}. Plan stays Read Only; this applies in Act and Operate.",
+                    next.permission_chip_label()
+                ),
+                StatusToastLevel::Info,
+                Some(5_000),
+            );
+        }
+        // Footer permission chip is canonical — no status toast for the new
+        // value, only the one-shot rebinding notice.
         self.notify_keybinding_migration_once();
     }
 
@@ -4068,7 +4054,6 @@ impl App {
     /// Plan remains read-only.
     pub fn set_agent_approval_posture(&mut self, next: ApprovalMode) {
         let permission_before = self.effective_permission_label();
-        let forgot_repo = self.leave_full_access_scope(next);
         let trust_mode = if next == ApprovalMode::Bypass {
             true
         } else if self.mode_prefs.agent_approval_mode == ApprovalMode::Bypass {
@@ -4077,7 +4062,7 @@ impl App {
             self.mode_prefs.agent_trust_mode
         };
         self.set_agent_runtime_baseline(self.mode_prefs.agent_allow_shell, trust_mode, next);
-        self.record_permission_change(&permission_before, forgot_repo);
+        self.record_permission_change(&permission_before);
     }
 
     #[must_use]
@@ -4085,138 +4070,16 @@ impl App {
         crate::tui::underwater::permission_label(self).into_owned()
     }
 
-    fn record_permission_change(&mut self, before: &str, forgot_repo: bool) {
+    fn record_permission_change(&mut self, before: &str) {
         let after = self.effective_permission_label();
         if after == before {
             return;
         }
-        let mut content = self
+        let content = self
             .tr(MessageId::PermissionsChangedReceipt)
             .replace("{label}", &after);
-        if forgot_repo {
-            content.push_str(" · ");
-            content.push_str(&self.tr(MessageId::ReceiptFullAccessForgotten));
-        }
         self.add_message(HistoryCell::System { content });
         self.needs_redraw = true;
-    }
-
-    fn leave_full_access_scope(&mut self, next: ApprovalMode) -> bool {
-        use crate::tui::full_access_confirm::FullAccessScope;
-
-        let in_force = self.approval_mode == ApprovalMode::Bypass
-            || self.mode_prefs.agent_approval_mode == ApprovalMode::Bypass;
-        if next == ApprovalMode::Bypass || !in_force {
-            return false;
-        }
-        let was_repo = self.full_access_scope == FullAccessScope::Repo;
-        self.full_access_scope = FullAccessScope::Session;
-        was_repo && self.forget_full_access_repo()
-    }
-
-    fn forget_full_access_repo(&mut self) -> bool {
-        let workspace = self.workspace.clone();
-        match Settings::transact(|settings| settings.set_full_access_repo(&workspace, false)) {
-            Ok(changed) => changed,
-            Err(err) => {
-                self.push_status_toast(
-                    format!("Full Access is still kept for this repo: could not save ({err})"),
-                    StatusToastLevel::Warning,
-                    Some(8_000),
-                );
-                false
-            }
-        }
-    }
-
-    pub(crate) fn request_full_access(
-        &mut self,
-        origin: crate::tui::full_access_confirm::FullAccessOrigin,
-    ) -> bool {
-        if self.approval_mode == ApprovalMode::Bypass
-            || self.mode_prefs.agent_approval_mode == ApprovalMode::Bypass
-        {
-            return false;
-        }
-        if self.view_stack.top_kind() != Some(crate::tui::views::ModalKind::FullAccessConfirm) {
-            self.view_stack
-                .push(crate::tui::full_access_confirm::FullAccessConfirmView::new(
-                    origin,
-                    self.ui_locale,
-                ));
-        }
-        self.needs_redraw = true;
-        true
-    }
-
-    pub(crate) fn apply_confirmed_full_access(
-        &mut self,
-        scope: crate::tui::full_access_confirm::FullAccessScope,
-        origin: crate::tui::full_access_confirm::FullAccessOrigin,
-    ) -> bool {
-        use crate::tui::full_access_confirm::{FullAccessOrigin, FullAccessScope};
-
-        let workspace = self.workspace.clone();
-        let migration = origin == FullAccessOrigin::Migration;
-        if (scope == FullAccessScope::Repo || migration)
-            && let Err(err) = Settings::transact(|settings| {
-                if migration {
-                    settings.permission_posture = Some("ask".to_string());
-                    settings.full_access_migration_shown = true;
-                }
-                if scope == FullAccessScope::Repo {
-                    settings.set_full_access_repo(&workspace, true)?;
-                }
-                Ok(())
-            })
-        {
-            let message = if migration {
-                format!("Full Access stays saved for every project: could not save ({err})")
-            } else {
-                format!("Full Access was not kept for this repo: could not save ({err})")
-            };
-            self.push_status_toast(message, StatusToastLevel::Warning, Some(8_000));
-            return false;
-        }
-        let permission_before = self.effective_permission_label();
-        self.full_access_scope = scope;
-        let moved = match origin {
-            FullAccessOrigin::Migration => {
-                self.record_permission_change(&permission_before, false);
-                false
-            }
-            FullAccessOrigin::Cycle | FullAccessOrigin::Config | FullAccessOrigin::Setup => {
-                self.finish_approval_posture_change(ApprovalMode::Bypass);
-                true
-            }
-            FullAccessOrigin::RootCycle | FullAccessOrigin::RootConfig => {
-                match self.adopt_root_approval_posture(ApprovalMode::Bypass) {
-                    Ok(()) => true,
-                    Err(reason) => {
-                        self.full_access_scope = FullAccessScope::Session;
-                        if scope == FullAccessScope::Repo {
-                            self.forget_full_access_repo();
-                        }
-                        self.push_status_toast(
-                            format!("Permissions were not changed: {reason}"),
-                            StatusToastLevel::Warning,
-                            Some(8_000),
-                        );
-                        false
-                    }
-                }
-            }
-            FullAccessOrigin::Yolo => {
-                let changed = self.set_mode_yolo_compat();
-                self.startup_defaults
-                    .spawn(crate::tui::startup_defaults::StartupDefaults::mode(
-                        self.mode,
-                    ));
-                changed
-            }
-        };
-        self.needs_redraw = true;
-        moved
     }
 
     #[must_use]

@@ -584,28 +584,13 @@ impl App {
             needs_api_key,
             needs_workspace_trust,
         );
-        let saved_posture = settings
-            .permission_posture
-            .as_deref()
-            .and_then(ApprovalMode::from_config_value);
-        let repo_full_access =
-            !approval_policy_locked && settings.full_access_repo_kept(&workspace);
-        let full_access_migration = !approval_policy_locked
-            && explicit_approval_mode.is_none()
-            && saved_posture == Some(ApprovalMode::Bypass)
-            && !repo_full_access
-            && !settings.full_access_migration_shown;
         let saved_permission_posture = if approval_policy_locked {
             None
-        } else if repo_full_access || full_access_migration {
-            Some(ApprovalMode::Bypass)
         } else {
-            saved_posture.filter(|mode| *mode != ApprovalMode::Bypass)
-        };
-        let full_access_scope = if repo_full_access {
-            crate::tui::full_access_confirm::FullAccessScope::Repo
-        } else {
-            crate::tui::full_access_confirm::FullAccessScope::Session
+            settings
+                .permission_posture
+                .as_deref()
+                .and_then(ApprovalMode::from_config_value)
         };
         let configured_approval_mode = explicit_approval_mode
             .or(saved_permission_posture)
@@ -1027,7 +1012,6 @@ impl App {
             lifecycle_outbox,
             yolo: yolo_compat,
             yolo_compat_notified: false,
-            full_access_scope,
             startup_defaults: Default::default(),
             keybinding_migration_notified: false,
             mode_prefs,
@@ -1235,13 +1219,6 @@ impl App {
         }
         if yolo_compat {
             app.notify_yolo_compat_once();
-        }
-        if full_access_migration {
-            app.view_stack
-                .push(crate::tui::full_access_confirm::FullAccessConfirmView::new(
-                    crate::tui::full_access_confirm::FullAccessOrigin::Migration,
-                    app.ui_locale,
-                ));
         }
         app
     }

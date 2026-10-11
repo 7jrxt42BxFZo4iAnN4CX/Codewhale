@@ -3198,20 +3198,6 @@ pub(crate) async fn handle_view_events(
                 }
                 app.needs_redraw = true;
             }
-            ViewEvent::FullAccessConfirmed { scope, origin } => {
-                if app.apply_confirmed_full_access(scope, origin) {
-                    if matches!(
-                        origin,
-                        crate::tui::full_access_confirm::FullAccessOrigin::RootCycle
-                            | crate::tui::full_access_confirm::FullAccessOrigin::RootConfig
-                    ) {
-                        config.approval_policy = None;
-                    }
-                    sync_mode_update(app, engine_handle).await;
-                    refresh_config_view_if_open(app, "permission_posture");
-                }
-                app.needs_redraw = true;
-            }
             ViewEvent::BacktrackConfirm => {
                 if let Some(depth) = app.backtrack.confirm() {
                     // Reserve the slot before mutating history (#6150): the

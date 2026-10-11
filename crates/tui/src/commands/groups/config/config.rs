@@ -2277,7 +2277,6 @@ pub fn set_config_value(app: &mut App, key: &str, value: &str, persist: bool) ->
                             .and_then(|settings| settings.permission_posture)
                             .as_deref()
                             .and_then(ApprovalMode::from_config_value)
-                            .filter(|mode| *mode != ApprovalMode::Bypass)
                             .unwrap_or(ApprovalMode::Suggest);
                         app.set_agent_approval_posture(saved_mode);
                         app.clear_saved_approval_policy_lock();
@@ -2323,17 +2322,18 @@ pub fn set_config_value(app: &mut App, key: &str, value: &str, persist: bool) ->
                     if persist
                         && matches!(control, crate::config::ApprovalPolicyControl::RootConfig) =>
                 {
-                    request_full_access_message(
-                        app,
-                        crate::tui::full_access_confirm::FullAccessOrigin::RootConfig,
-                    )
+                    match app.adopt_root_approval_posture(ApprovalMode::Bypass) {
+                        Ok(()) => CommandResult::with_message_and_action(
+                            "approval_mode = Full Access (saved as the TUI permission posture; removed the root approval_policy override)",
+                            AppAction::ApprovalPolicyPersisted { policy: None },
+                        ),
+                        Err(reason) => {
+                            CommandResult::error(format!("Failed to save Full Access: {reason}"))
+                        }
+                    }
                 }
                 Some(ApprovalMode::Bypass) if persist => CommandResult::error(
-                    "Full Access is per-session and is not saved as a top-level approval_policy. Remove the controlling policy first.",
-                ),
-                Some(ApprovalMode::Bypass) => request_full_access_message(
-                    app,
-                    crate::tui::full_access_confirm::FullAccessOrigin::Config,
+                    "Full Access is saved as the TUI permission posture, not as a top-level approval_policy. Remove the controlling policy first.",
                 ),
                 Some(m) => {
                     if persist {
@@ -3081,21 +3081,6 @@ fn switch_mode_with_status(app: &mut App, mode: AppMode) -> (String, bool) {
             app.setting_locked_message(MessageId::SettingSubjectMode),
             false,
         ),
-        SettingSelection::NeedsConfirmation => (
-            app.tr(MessageId::FullAccessConfirmTitle).into_owned(),
-            false,
-        ),
-    }
-}
-
-fn request_full_access_message(
-    app: &mut App,
-    origin: crate::tui::full_access_confirm::FullAccessOrigin,
-) -> CommandResult {
-    if app.request_full_access(origin) {
-        CommandResult::message(app.tr(MessageId::FullAccessConfirmTitle).into_owned())
-    } else {
-        CommandResult::message("approval_mode = Full Access (already on)")
     }
 }
 
@@ -3112,10 +3097,6 @@ fn switch_yolo_compat_with_status(app: &mut App) -> (String, bool) {
         }
         SettingSelection::Refused => (
             app.setting_locked_message(MessageId::SettingSubjectMode),
-            false,
-        ),
-        SettingSelection::NeedsConfirmation => (
-            app.tr(MessageId::FullAccessConfirmTitle).into_owned(),
             false,
         ),
     }
@@ -4083,18 +4064,9 @@ mod tests {
         // user settings on the host machine.
         let _ = mode(&mut app, Some("agent"));
         let result = mode(&mut app, Some("yolo"));
-        assert_eq!(
-            app.view_stack.top_kind(),
-            Some(crate::tui::views::ModalKind::FullAccessConfirm)
-        );
-        assert_eq!(
-            result.message.as_deref(),
-            Some(app.tr(MessageId::FullAccessConfirmTitle).as_ref())
-        );
-        assert!(app.apply_confirmed_full_access(
-            crate::tui::full_access_confirm::FullAccessScope::Session,
-            crate::tui::full_access_confirm::FullAccessOrigin::Yolo,
-        ));
+        // YOLO is invisible Act+Bypass shorthand — user-facing copy says Act.
+        assert!(result.message.unwrap().contains("Switched to Act mode"));
+        assert_eq!(result.action, Some(AppAction::ModeChanged(AppMode::Agent)));
         assert!(app.allow_shell);
         assert!(app.trust_mode);
         assert!(app.yolo);
@@ -4128,15 +4100,10 @@ mod tests {
         let result = mode(&mut app, Some("9"));
         assert!(result.is_error);
         assert_eq!(app.mode, AppMode::Operate);
-        let _ = mode(&mut app, Some("4"));
-        assert_eq!(
-            app.view_stack.top_kind(),
-            Some(crate::tui::views::ModalKind::FullAccessConfirm)
-        );
-        assert!(app.apply_confirmed_full_access(
-            crate::tui::full_access_confirm::FullAccessScope::Session,
-            crate::tui::full_access_confirm::FullAccessOrigin::Yolo,
-        ));
+        let result = mode(&mut app, Some("4"));
+        // "4" still routes to the deprecated YOLO alias, which lands in Agent
+        // mode with bypass approvals (M6 compat shim).
+        assert_eq!(result.action, Some(AppAction::ModeChanged(AppMode::Agent)));
         assert_eq!(app.mode, AppMode::Agent);
         assert!(app.yolo);
     }
@@ -6322,7 +6289,7 @@ context_window = 262144
         let result = set_config_value(&mut app, "approval_policy", "use-tui-default", true);
 
         assert!(!result.is_error, "{:?}", result.message);
-        assert_eq!(app.approval_mode, ApprovalMode::Suggest);
+        assert_eq!(app.approval_mode, ApprovalMode::Bypass);
         assert!(!app.approval_policy_locked());
         assert_eq!(
             result.action,
@@ -6360,22 +6327,20 @@ context_window = 262144
         let result = set_config_value(&mut app, "approval_policy", "full-access", true);
 
         assert!(!result.is_error, "{:?}", result.message);
-        assert_eq!(
-            app.view_stack.top_kind(),
-            Some(crate::tui::views::ModalKind::FullAccessConfirm)
-        );
-        assert!(app.approval_policy_locked());
-        assert!(app.apply_confirmed_full_access(
-            crate::tui::full_access_confirm::FullAccessScope::Session,
-            crate::tui::full_access_confirm::FullAccessOrigin::RootConfig,
-        ));
         assert_eq!(app.approval_mode, ApprovalMode::Bypass);
         assert!(!app.approval_policy_locked());
+        assert_eq!(
+            result.action,
+            Some(AppAction::ApprovalPolicyPersisted { policy: None })
+        );
         let saved_config = fs::read_to_string(config_path).unwrap();
         assert!(saved_config.contains("# keep"));
         assert!(!saved_config.contains("approval_policy"));
         let saved_settings = Settings::load_persisted().expect("saved TUI settings");
-        assert_eq!(saved_settings.permission_posture.as_deref(), Some("ask"));
+        assert_eq!(
+            saved_settings.permission_posture.as_deref(),
+            Some("full-access")
+        );
     }
 
     #[test]

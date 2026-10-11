@@ -4946,8 +4946,6 @@ pub struct UpdateThreadRequest {
     pub model: Option<String>,
     pub mode: Option<String>,
     pub permission_posture: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub full_access_confirmation: Option<String>,
     pub title: Option<String>,
     pub system_prompt: Option<String>,
     pub workspace: Option<PathBuf>,
@@ -10994,11 +10992,6 @@ impl RuntimeThreadManager {
         {
             bail!("permission_posture must not be empty");
         }
-        if let Some(confirmation) = req.full_access_confirmation.as_deref()
-            && !matches!(confirmation, "session" | "repo")
-        {
-            bail!("full_access_confirmation must be \"session\" or \"repo\"");
-        }
         if let Some(workspace) = req.workspace.as_ref()
             && workspace.as_os_str().is_empty()
         {
@@ -11056,58 +11049,6 @@ impl RuntimeThreadManager {
             None
         };
         let configured_sandbox_mode = self.read_config().sandbox_mode.clone();
-        if (req.mode.is_some() || req.permission_posture.is_some() || req.auto_approve.is_some())
-            && let Ok(current) = self.store.load_thread(id)
-            && let Ok(next) = runtime_policy_with_overrides(
-                &current,
-                req.mode.as_deref(),
-                req.permission_posture.as_deref(),
-                req.auto_approve,
-            )
-        {
-            let was_full = RuntimePolicyProjection::from_persisted(
-                &current.mode,
-                current.permission_posture.as_deref(),
-                current.auto_approve,
-            )
-            .permission
-                == ApprovalMode::Bypass;
-            let is_full = next.permission == ApprovalMode::Bypass;
-            let keep =
-                is_full && !was_full && req.full_access_confirmation.as_deref() == Some("repo");
-            let forget = was_full && !is_full;
-            if keep || forget {
-                let workspace = if keep {
-                    req.workspace
-                        .clone()
-                        .unwrap_or_else(|| current.workspace.clone())
-                } else {
-                    current.workspace.clone()
-                };
-                #[cfg(test)]
-                let env_ticket = crate::test_support::env_scope_ticket();
-                let saved = tokio::task::spawn_blocking(move || {
-                    #[cfg(test)]
-                    let _membership = crate::test_support::join_env_scope(env_ticket);
-                    crate::settings::Settings::transact(|settings| {
-                        settings.set_full_access_repo(&workspace, keep)
-                    })
-                })
-                .await
-                .map_err(|error| anyhow!("Full Access repo save task failed: {error}"))?;
-                match saved {
-                    Ok(_) => {}
-                    Err(error) if keep => {
-                        return Err(error.context(
-                            "Full Access could not be kept for this repo; the thread was not changed",
-                        ));
-                    }
-                    Err(error) => {
-                        tracing::warn!(%error, thread_id = id, "Full Access repo opt-in was not forgotten");
-                    }
-                }
-            }
-        }
         let (thread, changes, evicted_engine, posture_engine, ended_grants, permission_receipt) = {
             // Take the active guard first so a workspace mutation can check
             // and evict the cached engine atomically with the durable update.
@@ -11160,15 +11101,6 @@ impl RuntimeThreadManager {
                 thread.permission_posture.as_deref(),
                 thread.auto_approve,
             );
-            if let Some(policy) = policy_patch.as_ref()
-                && policy.permission == ApprovalMode::Bypass
-                && previous_policy.permission != ApprovalMode::Bypass
-                && req.full_access_confirmation.is_none()
-            {
-                bail!(
-                    "full_access_confirmation_required: turning on Full Access needs full_access_confirmation set to \"session\" or \"repo\""
-                );
-            }
 
             if let Some(archived) = req.archived
                 && thread.archived != archived
@@ -11294,30 +11226,15 @@ impl RuntimeThreadManager {
                 None
             };
             let permission_receipt = policy_patch.map(|policy| {
-                let scope = if policy.permission == ApprovalMode::Bypass
-                    && req.full_access_confirmation.as_deref() == Some("repo")
-                {
-                    crate::core::authority::FullAccessScope::Repo
-                } else {
-                    crate::core::authority::FullAccessScope::Session
-                };
-                let label = |policy: RuntimePolicyProjection, scope| {
+                let label = |policy: RuntimePolicyProjection| {
                     crate::core::authority::permission_label_for(
                         codewhale_localization::Locale::En,
                         policy.mode,
                         policy.permission,
-                        scope,
                     )
                     .into_owned()
                 };
-                (
-                    label(
-                        previous_policy,
-                        crate::core::authority::FullAccessScope::Session,
-                    ),
-                    label(policy, scope),
-                    scope,
-                )
+                (label(previous_policy), label(policy))
             });
             // Archiving ends the conversation's session grants: unarchiving
             // later starts from a clean slate and the next call prompts.
@@ -11384,10 +11301,10 @@ impl RuntimeThreadManager {
             .await?;
         }
 
-        if let Some((from, to, scope)) = permission_receipt
+        if let Some((from, to)) = permission_receipt
             && from != to
         {
-            self.publish_permissions_changed(&thread, &from, &to, scope)
+            self.publish_permissions_changed(&thread, &from, &to)
                 .await?;
         }
 
@@ -11399,17 +11316,12 @@ impl RuntimeThreadManager {
         thread: &ThreadRecord,
         from: &str,
         to: &str,
-        scope: crate::core::authority::FullAccessScope,
     ) -> Result<()> {
         let message = codewhale_localization::tr(
             codewhale_localization::Locale::En,
             codewhale_localization::MessageId::PermissionsChangedReceipt,
         )
         .replace("{label}", to);
-        let scope_name = match scope {
-            crate::core::authority::FullAccessScope::Session => "session",
-            crate::core::authority::FullAccessScope::Repo => "repo",
-        };
         if let Some(turn_id) = thread.latest_turn_id.as_deref() {
             let item = TurnItemRecord {
                 schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -11441,7 +11353,7 @@ impl RuntimeThreadManager {
             None,
             None,
             "thread.permissions_changed",
-            json!({ "from": from, "to": to, "scope": scope_name, "source": "runtime_api" }),
+            json!({ "from": from, "to": to, "source": "runtime_api" }),
         )
         .await?;
         Ok(())

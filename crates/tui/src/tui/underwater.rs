@@ -916,15 +916,8 @@ fn mode_label(locale: Locale, mode: AppMode) -> Cow<'static, str> {
 /// earns header columns when it is worth reading — see
 /// [`filesystem_scope_notice`].
 pub(crate) fn permission_label(app: &App) -> Cow<'static, str> {
-    permission_label_for(
-        app.ui_locale,
-        app.mode,
-        app.approval_mode,
-        app.full_access_scope,
-    )
+    crate::core::authority::permission_label_for(app.ui_locale, app.mode, app.approval_mode)
 }
-
-pub(crate) use crate::core::authority::permission_label_for;
 
 /// The effective filesystem scope — but only when it says something the
 /// permission word beside it does not already say.

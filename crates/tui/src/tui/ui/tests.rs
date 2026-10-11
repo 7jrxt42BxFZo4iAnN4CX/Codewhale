@@ -9005,25 +9005,17 @@ fn setup_high_trust_persists_full_access_without_legacy_yolo_mode() {
 
     let settings = Settings::load().expect("load saved settings");
     assert_eq!(settings.default_mode, "agent");
-    assert_eq!(settings.permission_posture.as_deref(), Some("ask"));
+    assert_eq!(settings.permission_posture.as_deref(), Some("full-access"));
     assert_eq!(config.approval_policy, None);
     assert_eq!(app.mode, AppMode::Agent);
-    assert_eq!(app.approval_mode, ApprovalMode::Suggest);
-    assert_eq!(
-        app.view_stack.top_kind(),
-        Some(crate::tui::views::ModalKind::FullAccessConfirm)
-    );
+    assert_eq!(app.approval_mode, ApprovalMode::Bypass);
     assert!(app.allow_shell);
-    assert!(!app.trust_mode);
+    assert!(app.trust_mode);
     assert_eq!(
         app.configured_sandbox_mode.as_deref(),
         Some("danger-full-access")
     );
 
-    assert!(app.apply_confirmed_full_access(
-        crate::tui::full_access_confirm::FullAccessScope::Session,
-        crate::tui::full_access_confirm::FullAccessOrigin::Setup,
-    ));
     app.set_mode(AppMode::Plan);
     assert!(!app.allow_shell);
     assert_eq!(app.approval_mode, ApprovalMode::Suggest);
@@ -10545,14 +10537,8 @@ async fn mode_change_update_notifies_engine() {
     let mut engine = crate::core::engine::mock_engine_handle();
 
     assert!(
-        !apply_yolo_compat_update(&mut app, &engine.handle, &crate::config::Config::default())
-            .await
+        apply_yolo_compat_update(&mut app, &engine.handle, &crate::config::Config::default()).await
     );
-    assert!(app.apply_confirmed_full_access(
-        crate::tui::full_access_confirm::FullAccessScope::Session,
-        crate::tui::full_access_confirm::FullAccessOrigin::Yolo,
-    ));
-    crate::tui::ui::sync_mode_update(&app, &engine.handle).await;
 
     match engine.rx_op.recv().await.expect("change mode op") {
         crate::core::ops::Op::ChangeMode {

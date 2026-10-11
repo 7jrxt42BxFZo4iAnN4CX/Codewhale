@@ -3940,19 +3940,7 @@ fn cycle_approval_scenario() {
         assert!(app.cycle_approval_posture());
         assert_eq!(app.approval_mode, ApprovalMode::Auto);
 
-        assert!(!app.cycle_approval_posture());
-        assert_eq!(
-            app.view_stack.top_kind(),
-            Some(crate::tui::views::ModalKind::FullAccessConfirm)
-        );
-        assert_eq!(app.approval_mode, ApprovalMode::Auto);
-        let persisted =
-            std::fs::read_to_string(tmp.path().join("settings.toml")).expect("settings");
-        assert!(!persisted.contains("full-access"));
-        assert!(app.apply_confirmed_full_access(
-            crate::tui::full_access_confirm::FullAccessScope::Session,
-            crate::tui::full_access_confirm::FullAccessOrigin::Cycle,
-        ));
+        assert!(app.cycle_approval_posture());
         assert_eq!(app.approval_mode, ApprovalMode::Bypass);
 
         assert!(app.cycle_approval_posture());
@@ -3980,7 +3968,7 @@ fn cycle_approval_scenario() {
             .count();
         assert_eq!(notices, 1, "first cycle posts the rebinding notice");
 
-        let _ = app.cycle_approval_posture();
+        assert!(app.cycle_approval_posture());
         let notices = app
             .status_toasts
             .iter()
@@ -4012,13 +4000,9 @@ fn plan_permission_cycle_moves_the_baseline_and_leaves_plan_read_only() {
     app.set_mode(AppMode::Plan);
 
     assert!(
-        !app.cycle_approval_posture(),
-        "Shift+Tab into Full Access asks first, even while in Plan"
+        app.cycle_approval_posture(),
+        "Shift+Tab must still change permissions while in Plan"
     );
-    assert!(app.apply_confirmed_full_access(
-        crate::tui::full_access_confirm::FullAccessScope::Session,
-        crate::tui::full_access_confirm::FullAccessOrigin::Cycle,
-    ));
     assert_eq!(
         app.mode_prefs.agent_approval_mode,
         ApprovalMode::Bypass,
@@ -4035,9 +4019,16 @@ fn plan_permission_cycle_moves_the_baseline_and_leaves_plan_read_only() {
         "changing permissions must not move the mode"
     );
     assert!(
-        std::fs::read_to_string(tmp.path().join("settings.toml"))
-            .map_or(true, |persisted| !persisted.contains("full-access")),
-        "Full Access is per-session and is never written to settings"
+        app.status_toasts
+            .iter()
+            .any(|toast| toast.text.contains("applies in Act and Operate")),
+        "the receipt must say when the new posture starts applying"
+    );
+
+    let persisted = std::fs::read_to_string(tmp.path().join("settings.toml")).expect("settings");
+    assert!(
+        persisted.contains("permission_posture = \"full-access\""),
+        "the posture is durable, not dropped because Plan was active: {persisted}"
     );
 
     app.set_mode(AppMode::Operate);
@@ -4074,10 +4065,10 @@ fn busy_permission_cycle_changes_neither_runtime_nor_persistence() {
 #[test]
 fn permission_postures_persist_across_restart() {
     let _env_lock = lock_test_env();
-    for (cycles, expected, restarted_expected) in [
-        (1, ApprovalMode::Auto, ApprovalMode::Auto),
-        (2, ApprovalMode::Bypass, ApprovalMode::Auto),
-        (3, ApprovalMode::Suggest, ApprovalMode::Suggest),
+    for (cycles, expected) in [
+        (1, ApprovalMode::Auto),
+        (2, ApprovalMode::Bypass),
+        (3, ApprovalMode::Suggest),
     ] {
         let tmp = tempfile::tempdir().expect("tempdir");
         let path = tmp.path().join("config.toml");
@@ -4086,27 +4077,16 @@ fn permission_postures_persist_across_restart() {
         options.start_in_agent_mode = true;
         options.config_path = Some(path.clone());
         let mut app = App::new(options.clone(), &Config::default());
-        for cycle in 1..=cycles {
-            if cycle == 2 {
-                assert!(!app.cycle_approval_posture());
-                assert!(app.apply_confirmed_full_access(
-                    crate::tui::full_access_confirm::FullAccessScope::Session,
-                    crate::tui::full_access_confirm::FullAccessOrigin::Cycle,
-                ));
-            } else {
-                assert!(app.cycle_approval_posture());
-            }
+        for _ in 0..cycles {
+            assert!(app.cycle_approval_posture());
         }
         assert_eq!(app.approval_mode, expected);
         assert_eq!(app.trust_mode, expected == ApprovalMode::Bypass);
 
         let restarted = App::new(options, &Config::default());
-        assert_eq!(restarted.approval_mode, restarted_expected);
-        assert_eq!(restarted.mode_prefs.agent_approval_mode, restarted_expected);
-        assert_eq!(
-            restarted.trust_mode,
-            restarted_expected == ApprovalMode::Bypass
-        );
+        assert_eq!(restarted.approval_mode, expected);
+        assert_eq!(restarted.mode_prefs.agent_approval_mode, expected);
+        assert_eq!(restarted.trust_mode, expected == ApprovalMode::Bypass);
         drop(config_env);
     }
 }
@@ -4176,24 +4156,11 @@ fn legacy_yolo_migrates_root_policy_to_agent_full_access() {
     let saved_settings = std::fs::read_to_string(&settings_path).expect("saved settings");
     assert!(saved_settings.contains("default_mode = \"agent\""));
     assert!(saved_settings.contains("permission_posture = \"full-access\""));
-    assert!(!saved_settings.contains("full_access_migration_shown"));
-    assert_eq!(
-        app.view_stack.top_kind(),
-        Some(crate::tui::views::ModalKind::FullAccessConfirm)
-    );
-    let mut app = app;
-    assert!(!app.apply_confirmed_full_access(
-        crate::tui::full_access_confirm::FullAccessScope::Session,
-        crate::tui::full_access_confirm::FullAccessOrigin::Migration,
-    ));
-    let saved_settings = std::fs::read_to_string(&settings_path).expect("saved settings");
-    assert!(saved_settings.contains("permission_posture = \"ask\""));
-    assert!(saved_settings.contains("full_access_migration_shown = true"));
 
     let restarted_config = Config::load(Some(config_path), None).expect("reload config");
     let restarted = App::new(options, &restarted_config);
     assert_eq!(restarted.mode, AppMode::Agent);
-    assert_eq!(restarted.approval_mode, ApprovalMode::Suggest);
+    assert_eq!(restarted.approval_mode, ApprovalMode::Bypass);
     assert!(!restarted.approval_policy_locked());
 }
 
@@ -6762,14 +6729,7 @@ fn explicit_mode_selection_and_hotbar_share_the_persistence_owner() {
 
     // The legacy YOLO entry point installs Act, so that is what must persist —
     // "yolo" is a permission alias, never a startup mode.
-    assert_eq!(
-        app.select_yolo_compat(),
-        SettingSelection::NeedsConfirmation
-    );
-    assert!(app.apply_confirmed_full_access(
-        crate::tui::full_access_confirm::FullAccessScope::Session,
-        crate::tui::full_access_confirm::FullAccessOrigin::Yolo,
-    ));
+    assert_eq!(app.select_yolo_compat(), SettingSelection::Changed);
     assert_eq!(Settings::load().expect("reload").default_mode, "agent");
 }
 
@@ -7124,20 +7084,13 @@ async fn mode_and_permission_posture_writes_do_not_clobber_each_other() {
             "mode selection must change mode"
         );
         assert!(
-            app.cycle_approval_posture()
-                || app.apply_confirmed_full_access(
-                    crate::tui::full_access_confirm::FullAccessScope::Session,
-                    crate::tui::full_access_confirm::FullAccessOrigin::Cycle,
-                ),
+            app.cycle_approval_posture(),
             "the posture write must succeed, or the assertion below is vacuous"
         );
     }
     app.startup_defaults.flush();
 
-    let expected_posture = match app.mode_prefs.agent_approval_mode {
-        ApprovalMode::Bypass => "auto-review",
-        mode => App::approval_posture_setting(mode),
-    };
+    let expected_posture = App::approval_posture_setting(app.mode_prefs.agent_approval_mode);
     let saved = Settings::load_persisted().expect("reload settings");
     assert_eq!(
         saved.default_mode, "operate",
@@ -7235,13 +7188,7 @@ async fn rapid_mixed_writes_settle_on_the_last_value_for_every_field() {
         );
         app.apply_reasoning_effort_cycle();
         // Synchronous direct writers.
-        assert!(
-            app.cycle_approval_posture()
-                || app.apply_confirmed_full_access(
-                    crate::tui::full_access_confirm::FullAccessScope::Session,
-                    crate::tui::full_access_confirm::FullAccessOrigin::Cycle,
-                )
-        );
+        assert!(app.cycle_approval_posture());
         Settings::transact(|settings| settings.set("max_history", &(200 + index).to_string()))
             .expect("the direct write must land");
     }
@@ -7258,10 +7205,7 @@ async fn rapid_mixed_writes_settle_on_the_last_value_for_every_field() {
         &app.active_route_base_url,
         &app.model,
     );
-    let expected_posture = match app.mode_prefs.agent_approval_mode {
-        ApprovalMode::Bypass => "auto-review",
-        mode => App::approval_posture_setting(mode),
-    };
+    let expected_posture = App::approval_posture_setting(app.mode_prefs.agent_approval_mode);
     let saved = Settings::load_persisted().expect("reload settings");
     assert_eq!(saved.default_mode, app.mode.as_setting());
     assert_eq!(saved.reasoning_effort.as_deref(), Some(expected_effort));

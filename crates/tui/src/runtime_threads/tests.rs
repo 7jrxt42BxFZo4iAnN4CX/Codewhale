@@ -10693,7 +10693,6 @@ async fn active_turn_permission_posture_switches_use_the_engine_live_authority()
                 &thread.id,
                 UpdateThreadRequest {
                     permission_posture: Some(requested.to_string()),
-                    full_access_confirmation: Some("session".to_string()),
                     ..Default::default()
                 },
             )
