@@ -91,11 +91,15 @@ impl RegisterCommand for ConstitutionCmd {
                     .split_whitespace()
                     .map(str::to_string)
                     .collect();
-                CommandResult::message(ratify_text(
+                let (message, ratified) = ratify_text(
                     app.ui_locale,
                     app.constitution_reviewed_digest.as_deref(),
                     &ids,
-                ))
+                );
+                if ratified.is_some() {
+                    app.constitution_reviewed_digest = ratified;
+                }
+                CommandResult::message(message)
             }
             Some("help") => CommandResult::message(help_text(app.ui_locale)),
             Some(other) => CommandResult::error(format!(
@@ -216,63 +220,75 @@ fn suggestions_text(locale: Locale) -> (String, Option<String>) {
 /// reviewed in `/constitution suggestions` to [`UserConstitution::ratify`],
 /// which refuses when the live file has moved since, and persists only when the
 /// clause set is exactly what the user named.
-fn ratify_text(locale: Locale, reviewed: Option<&str>, ids: &[String]) -> String {
+fn ratify_text(locale: Locale, reviewed: Option<&str>, ids: &[String]) -> (String, Option<String>) {
     if ids.is_empty() {
-        return match locale {
+        let text = match locale {
             Locale::ZhHans => {
                 "用法：/constitution ratify <id> [<id>...]。先用 /constitution suggestions 查看待批准条款。"
                     .to_string()
             }
             _ => "Usage: /constitution ratify <id> [<id>...]. Run /constitution suggestions first to see what is pending.".to_string(),
         };
+        return (text, None);
     }
 
     let (path, constitution) = match load_user_constitution() {
         UserConstitutionStatus::Loaded { path, constitution } => (path, constitution),
         _ => {
-            return match locale {
+            let text = match locale {
                 Locale::ZhHans => "没有可批准的结构化用户全局宪章。".to_string(),
                 _ => "There is no structured user-global constitution to ratify.".to_string(),
             };
+            return (text, None);
         }
     };
 
     let Some(reviewed) = reviewed else {
-        return match locale {
+        let text = match locale {
             Locale::ZhHans => {
                 "未批准任何条款：请先用 /constitution suggestions 审阅待批准条款。".to_string()
             }
             _ => "Nothing was ratified: review the pending clauses with /constitution suggestions first.".to_string(),
         };
+        return (text, None);
     };
     match constitution.ratify(reviewed, ids, None) {
-        Err(err) => match locale {
-            Locale::ZhHans => format!("未批准任何条款：{err}"),
-            _ => format!("Nothing was ratified: {err}"),
-        },
+        Err(err) => (
+            match locale {
+                Locale::ZhHans => format!("未批准任何条款：{err}"),
+                _ => format!("Nothing was ratified: {err}"),
+            },
+            None,
+        ),
         Ok(ratification) => match ratification.constitution.save_to(&path) {
-            Err(err) => match locale {
-                Locale::ZhHans => format!("批准已计算但保存失败，文件未更改：{err:#}"),
-                _ => format!(
-                    "Ratification was computed but could not be saved; the file is unchanged: {err:#}"
-                ),
-            },
-            Ok(()) => match locale {
-                Locale::ZhHans => format!(
-                    "已批准 {} 条：{}\n摘要 {} → {}\n这些条款从下一轮起作为会话记录中的消息发送给模型；提示词缓存前缀不变。",
-                    ratification.accepted_clause_ids.len(),
-                    ratification.accepted_clause_ids.join(", "),
-                    ratification.before_digest,
-                    ratification.after_digest,
-                ),
-                _ => format!(
-                    "Ratified {} clause(s): {}\nDigest {} → {}\nThey reach the model from the next turn as a message recorded in the session; the prompt-cache prefix is unchanged.",
-                    ratification.accepted_clause_ids.len(),
-                    ratification.accepted_clause_ids.join(", "),
-                    ratification.before_digest,
-                    ratification.after_digest,
-                ),
-            },
+            Err(err) => (
+                match locale {
+                    Locale::ZhHans => format!("批准已计算但保存失败，文件未更改：{err:#}"),
+                    _ => format!(
+                        "Ratification was computed but could not be saved; the file is unchanged: {err:#}"
+                    ),
+                },
+                None,
+            ),
+            Ok(()) => (
+                match locale {
+                    Locale::ZhHans => format!(
+                        "已批准 {} 条：{}\n摘要 {} → {}\n这些条款从下一轮起作为会话记录中的消息发送给模型；提示词缓存前缀不变。",
+                        ratification.accepted_clause_ids.len(),
+                        ratification.accepted_clause_ids.join(", "),
+                        ratification.before_digest,
+                        ratification.after_digest,
+                    ),
+                    _ => format!(
+                        "Ratified {} clause(s): {}\nDigest {} → {}\nThey reach the model from the next turn as a message recorded in the session; the prompt-cache prefix is unchanged.",
+                        ratification.accepted_clause_ids.len(),
+                        ratification.accepted_clause_ids.join(", "),
+                        ratification.before_digest,
+                        ratification.after_digest,
+                    ),
+                },
+                Some(ratification.after_digest.clone()),
+            ),
         },
     }
 }
