@@ -3,6 +3,7 @@
 > 英文原文：[RUNTIME_API.md](../RUNTIME_API.md)。
 > 最后与英文同步日期（last synced with English revision）：2026-09-29。
 > 2026-10-06 补齐设备令牌意图、逐调用变更、技能详情、持久配置与账号宪章契约。
+> 2026-10-11 补齐工作区信任契约：`workspace_trusted` 与 `POST /v1/workspace/trust`。
 
 `codewhale app-server` 是本地运行时的规范 API 与控制面。本地 SDK、移动端/远程控制客户端
 以及编辑器集成都与它对话，而不是去抓取终端输出。它提供完整的 HTTP/SSE 运行时
@@ -1509,6 +1510,31 @@ direction 为空、等待 lead 计划、缺少凭据或有
 `scripts/check-auto-merge.py --repo … --pr …
 --agent …`（退出码 0），然后是
 `scripts/auto-merge-pr.py`。不要再发明第二个检查器。
+
+**工作区信任**（项目范围的闸门）
+- `GET /v1/workspace/status` 还会返回 `workspace_trusted`：用户是否已在自有配置中信任
+  服务器的工作区。为 `false` 时，该工作区携带的项目 skills、命令、hooks、MCP 服务器与
+  项目上下文都会被跳过 —— 该目录被当作用户尚未背书的代码。
+- `POST /v1/workspace/trust`，请求体 `{"trusted": true|false}`，记录该决定并返回
+  `{workspace, workspace_trusted, config_path, message}`。
+
+这是 GUI 唯一的写入途径，它存在的意义就是让客户端不必去改 `config.toml`：
+该文档归引擎所有，此处理函数调用的正是 TUI `/trust on --save` 背后的同一个函数，
+因此两个前端写入的是闸门所读的同一份 `[projects."<workspace>"] trust_level` 记录。
+工作区取自服务器自身（`--workspace`），而非调用方传入的路径：客户端只能信任
+自己所附着的项目，别的都不行。响应中的 `workspace_trusted` 是写入后通过闸门
+**读回**的判定，而不是对请求的回声；`config_path` 则指明现在承载该记录的文件。
+
+信任按引擎自己的节奏生效，不会追溯既往：项目 skills、命令与项目上下文在每个回合
+边界重新读取，因此从下一回合起生效；项目 MCP 服务器在会话启动（session boot）时连接，
+因此要在下一次引擎启动之后才出现。路由把这一点写在 `message` 里，而不是暗示
+全部效果都已即时生效。
+
+有两个不同的东西都被叫作信任，二者不可互换。`workspace_trusted` 是上面那个**项目**决定。
+线程的 `trust_mode`（Full Access）才是文件工具可以触及工作区之外、以及恢复类路由
+所要求的东西（见 [工作区恢复端点](#工作区恢复端点)）。
+TUI 的 `/trust on --save` 会同时设置两者 —— 会话信任模式与持久化的项目记录 ——
+而本路由只设置持久化的项目记录。
 
 **内省**
 - `GET /v1/workspace/status`

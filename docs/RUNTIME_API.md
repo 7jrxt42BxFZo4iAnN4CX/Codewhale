@@ -1769,6 +1769,39 @@ human gate. Auto-merge is `scripts/check-auto-merge.py --repo … --pr …
 --agent …` from codewhale-ops `origin/main` (exit 0), then
 `scripts/auto-merge-pr.py`. Do not invent a second checker.
 
+**Workspace trust** (the project-scope gate)
+- `GET /v1/workspace/status` also reports `workspace_trusted`: whether the user
+  has trusted the server's workspace in their user-owned config. `false` means
+  the project skills, commands, hooks, MCP servers and project context that
+  workspace carries are being skipped — the folder is treated as code the user
+  has not vouched for.
+- `POST /v1/workspace/trust` with `{"trusted": true|false}` records that
+  decision and answers `{workspace, workspace_trusted, config_path, message}`.
+
+This route is the only writer a GUI has, and it exists so that a client never
+edits `config.toml`: the engine owns that document, and the handler calls the
+very function behind the TUI's `/trust on --save`, so both front ends write the
+same `[projects."<workspace>"] trust_level` record the gate reads. The
+workspace is the server's own (`--workspace`), never a caller-supplied path: a
+client may trust the project it is attached to and nothing else. The response's
+`workspace_trusted` is the verdict read back through the gate after the write
+rather than an echo of the request, and `config_path` names the document that
+now holds it.
+
+Trust lands on the engine's own schedule, not retroactively: project skills,
+commands and project context are re-read at each turn boundary, so they apply
+from the next turn, while project MCP servers are connected during a session
+boot and therefore appear after the next engine start. The route reports this
+in `message` rather than implying the whole effect is immediate.
+
+Two different things are called trust, and they are not interchangeable.
+`workspace_trusted` is the *project* decision above. A thread's `trust_mode`
+(Full Access) is what lets file tools reach outside the workspace and what the
+restore routes require (see
+[Workspace restore endpoints](#workspace-restore-endpoints)). The TUI's
+`/trust on --save` sets both — session trust mode and the persisted project
+record — while this route sets only the persisted project record.
+
 **Introspection**
 - `GET /v1/workspace/status`
 - `GET /v1/workspace/files/search?query=<partial>&limit=<1-100>` (see workspace file suggestions above)
