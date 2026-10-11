@@ -393,6 +393,23 @@ launcher guidance.
   deadline set by its first unsaved event. Tool heartbeats and store polls no
   longer restart that wait, and heartbeats are kept in memory only.
 
+### Known limits
+
+- Windows: when the previous app-server owner died without cleaning up, the
+  next start refuses with "Windows stale-owner recovery is not qualified" and
+  the stale publication has to be removed by hand. Unix recovers on its own
+  ([#6915](https://github.com/codewhale-hq/Codewhale/issues/6915)).
+- Idle CPU has not been measured on FreeBSD or Linux for this release
+  ([#6728](https://github.com/codewhale-hq/Codewhale/issues/6728)).
+- Models.dev prices with context tiers: a turn above a model's first tier can
+  be priced at its base rate. The bundled catalog has no tiered rows, so this
+  can only happen after a live models.dev refresh
+  ([#6396](https://github.com/codewhale-hq/Codewhale/issues/6396)).
+- Shell commands run by delegated agents appear in `/jobs` and the work dock
+  with their owner, not in the agent's own detail view; named terminal
+  sessions live in the terminal dock
+  ([#6931](https://github.com/codewhale-hq/Codewhale/issues/6931)).
+
 ### Maintenance
 
 - CI and test harness only, no change to the shipped binaries. The
