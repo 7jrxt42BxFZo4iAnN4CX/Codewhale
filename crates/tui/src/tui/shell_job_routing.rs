@@ -1,12 +1,12 @@
 //! Background shell job-center helpers for slash commands and pagers.
 //!
-//! Known limitations: the Bash Job pager follows a running job by re-reading
-//! it on the event loop's 2.5 s refresh (a bounded read that never consumes
-//! the model's output cursor), so new output lands up to 2.5 s late; the work
-//! dock's inspector is still a snapshot. Shells run by delegated agents show
-//! in `/jobs` and the dock with their Owner, not in the agent's detail. Named
-//! PTY sessions (`tools/terminal_session.rs`) are not listed here or in
-//! `/jobs`; they live in the terminal dock (#6912).
+//! Known limitations: the Bash Job pager (opened from `/jobs`, Alt+V or a
+//! work-dock shell row) follows a running job by re-reading it on the event
+//! loop's 2.5 s refresh (a bounded read that never consumes the model's
+//! output cursor), so new output lands up to 2.5 s late. Shells run by
+//! delegated agents show in `/jobs` and the dock with their Owner, not in the
+//! agent's detail. Named PTY sessions (`tools/terminal_session.rs`) are not
+//! listed here or in `/jobs`; they live in the terminal dock (#6912).
 
 use crate::tools::shell::{ShellJobDetail, ShellJobSnapshot, ShellResult, ShellStatus};
 use crate::tui::app::App;
