@@ -11452,7 +11452,7 @@ fn review_advisory_footer(number: u32, view: &GhPullRequest) -> String {
 
 /// Post one COMMENT review: summary body plus inline comments anchored to the
 /// PR head SHA. Never approves or requests changes — the review is advisory
-/// and posts alongside CODEOWNERS, like `claude-review.yml`.
+/// and posts alongside CODEOWNERS.
 fn run_gh_post_pr_review(
     repo: &str,
     number: u32,
