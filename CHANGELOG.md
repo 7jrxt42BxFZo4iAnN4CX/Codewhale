@@ -36,6 +36,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with "Job … not found" (#6931).
 - In `/setup`, `u` and `d` act only on the working-agreement step. Pressed on
   another step they no longer close the wizard and switch your agreement off.
+- `/setup` no longer says "You're ready." when no model is connected; its last
+  step asks for a provider and lists the P and C keys it accepts. A rejected
+  API key's reason stays visible at narrow widths.
+- First run with a local Ollama model continues to the trust question and the
+  ready screen instead of ending onboarding, and the next launch no longer
+  starts onboarding again.
+- A turn that ended in failure reads as an error, live and after resume. Retry
+  notices stay in the transcript instead of flashing a red error that hid the
+  recovery.
+- File edits show as patches with their change summary once. Tool status
+  words read `done`, `failed` and `loaded, not run` everywhere, and a tool
+  that only loaded no longer gets a done check.
+- Delegated agents' cards name the tool they are running instead of
+  "Core tool <call id>".
+- Markdown: a line like `#6235 fixed it` is no longer a heading, headings
+  render inline code and emphasis, and tables draw one rule under the header
+  instead of one between every row.
+- The approval card shows its field labels and description in your language in
+  every locale, not only Simplified Chinese.
+- `/mode work` says "Switched to Work mode.", and `/zidong` says it switched to
+  Full Access. `/overview` and `/setup` call the mode Work.
+- The language screen points to `/config locale <tag> --save`, the Korean
+  Never chip says it allows nothing, and the elevation dialog's Abort says it
+  skips only that tool call.
+- Less work on the UI thread and less memory per turn:
+  - the context meter keeps its estimates for unchanged history;
+  - tool calls share the turn's history instead of copying it;
+  - compaction checks pressure with one pass;
+  - write_atomic sweeps a directory for stale temps at most hourly;
+  - the pet costs nothing while hidden.
 - `/resume`, `/load` and other session changes that cannot run yet now list
   what is still busy and how to stop it.
 - Sessions that ended without a clean exit show `interrupted` with their age
