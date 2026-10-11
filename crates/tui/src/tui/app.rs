@@ -1961,6 +1961,7 @@ pub struct App {
     /// Exact evidence remains attached to each mutation receipt in all modes.
     pub inline_diff_mode: InlineDiffMode,
     pub ui_locale: Locale,
+    pub constitution_reviewed_digest: Option<String>,
     pub cost_currency: CostCurrency,
     /// Route payment truth. Model pricing alone cannot distinguish metered
     /// API calls from OAuth or token-plan quota.

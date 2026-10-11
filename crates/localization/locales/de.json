@@ -1019,7 +1019,6 @@
   "SetupStepConstitutionWhy": "Diese Vereinbarung lenkt das Verhalten, nicht die Laufzeitberechtigungen.",
   "SetupStepVerificationTitle": "Überprüfung",
   "SetupStepVerificationWhy": "Fasst den Setup-Status zusammen und zeigt, welche Schritte verifiziert, übersprungen oder noch offen sind.",
-  "SetupCheckpointLayerOrder": "Ebenenreihenfolge: mitgelieferte Verfassung -> benutzer-globale Verfassung -> Repo-Verfassung -> AGENTS-/Projektanweisungen -> Memory/Handoff -> aktuelle Anfrage.",
   "SetupCheckpointDoneBundled": "Verfassungs-Checkpoint abgeschlossen: mitgeliefertes/Standard-Recht wird verwendet.",
   "SetupCheckpointDoneGuided": "Verfassung ratifiziert — dein geltendes Recht ist gespeichert. Jederzeit mit /constitution änderbar.",
   "SetupCheckpointDoneKept": "Verfassung beibehalten — dein bestehendes Recht gilt unverändert. Jederzeit mit /constitution änderbar.",

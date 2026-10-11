@@ -1042,7 +1042,6 @@
   "SetupStepConstitutionWhy": "This agreement guides behavior, not runtime permissions.",
   "SetupStepVerificationTitle": "Review",
   "SetupStepVerificationWhy": "Summarize setup status and show which steps are verified, skipped, or still need action.",
-  "SetupCheckpointLayerOrder": "Layer order: bundled Constitution -> user-global constitution -> repo constitution -> AGENTS/project instructions -> memory/handoff -> current request.",
   "SetupCheckpointDoneBundled": "Constitution checkpoint complete: using bundled/default law.",
   "SetupCheckpointDoneGuided": "Constitution ratified — your standing law is saved. Amend anytime with /constitution.",
   "SetupCheckpointDoneKept": "Constitution kept — your existing law stands, unchanged. Amend anytime with /constitution.",

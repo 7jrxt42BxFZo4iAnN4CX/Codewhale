@@ -1042,7 +1042,6 @@
   "SetupStepConstitutionWhy": "이 작업 합의는 행동을 안내할 뿐, 실행 권한을 바꾸지 않습니다.",
   "SetupStepVerificationTitle": "검토",
   "SetupStepVerificationWhy": "설정 상태를 요약하고 어떤 단계가 확인됨, 건너뜀, 또는 아직 조치가 필요한지 표시합니다.",
-  "SetupCheckpointLayerOrder": "계층 순서: 내장 헌법 -> 사용자 전역 헌법 -> 저장소 헌법 -> AGENTS/프로젝트 지침 -> 메모리/인계 -> 현재 요청.",
   "SetupCheckpointDoneBundled": "헌법 체크포인트 완료: 내장/기본 규칙을 사용합니다.",
   "SetupCheckpointDoneGuided": "헌법이 승인되었습니다 — 상시 규칙이 저장되었습니다. /constitution으로 언제든지 수정할 수 있습니다.",
   "SetupCheckpointDoneKept": "헌법을 유지했습니다 — 기존 규칙이 변경 없이 그대로 적용됩니다. /constitution으로 언제든지 수정할 수 있습니다.",

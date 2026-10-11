@@ -1042,7 +1042,6 @@
   "SetupStepConstitutionWhy": "この作業合意は行動を導きますが、実行権限は変えません。",
   "SetupStepVerificationTitle": "レビュー",
   "SetupStepVerificationWhy": "セットアップ状態を要約し、確認済み、スキップ済み、または対応が必要なステップを表示します。",
-  "SetupCheckpointLayerOrder": "レイヤー順: 同梱 Constitution -> ユーザーグローバル constitution -> リポジトリ constitution -> AGENTS/プロジェクト指示 -> メモリ/引き継ぎ -> 現在の依頼。",
   "SetupCheckpointDoneBundled": "Constitution チェックポイント完了: 同梱/既定のルールを使用します。",
   "SetupCheckpointDoneGuided": "Constitution を承認しました。あなたの常設ルールを保存しました。いつでも /constitution で修正できます。",
   "SetupCheckpointDoneKept": "Constitution を維持しました。既存のルールは変更されません。いつでも /constitution で修正できます。",

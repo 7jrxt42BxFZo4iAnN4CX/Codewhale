@@ -1042,7 +1042,6 @@
   "SetupStepConstitutionWhy": "Este acuerdo guía el comportamiento, no los permisos de ejecución.",
   "SetupStepVerificationTitle": "Revisión",
   "SetupStepVerificationWhy": "Resume el estado del setup y muestra qué pasos están verificados, saltados o aún necesitan acción.",
-  "SetupCheckpointLayerOrder": "Orden de capas: Constitution incluida -> constitution global de usuario -> constitution del repo -> instrucciones AGENTS/proyecto -> memoria/handoff -> solicitud actual.",
   "SetupCheckpointDoneBundled": "Checkpoint de constitution completo: usando ley incluida/predeterminada.",
   "SetupCheckpointDoneGuided": "Constitution ratificada — tu ley permanente fue guardada. Puedes modificarla en cualquier momento con /constitution.",
   "SetupCheckpointDoneKept": "Constitution conservada — tu ley existente queda sin cambios. Puedes modificarla en cualquier momento con /constitution.",

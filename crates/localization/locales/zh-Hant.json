@@ -1040,7 +1040,6 @@
   "SetupStepConstitutionWhy": "此工作約定只引導行為，不會更改執行權限。",
   "SetupStepVerificationTitle": "檢視",
   "SetupStepVerificationWhy": "總結設定狀態，並顯示哪些步驟已驗證、已略過或仍需操作。",
-  "SetupCheckpointLayerOrder": "層級順序：內建基礎憲章 -> 使用者全域憲章 -> 儲存庫憲章 -> AGENTS/專案指示 -> 記憶/交接 -> 目前請求。",
   "SetupCheckpointDoneBundled": "憲章檢查點完成：使用內建/預設憲章。",
   "SetupCheckpointDoneGuided": "憲章已確認並儲存。可隨時用 /constitution 修訂。",
   "SetupCheckpointDoneKept": "已保留現有憲章，內容維持不變。可隨時用 /constitution 修訂。",

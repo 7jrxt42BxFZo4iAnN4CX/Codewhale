@@ -1042,7 +1042,6 @@
   "SetupStepConstitutionWhy": "Thỏa thuận này hướng dẫn hành vi, không đổi quyền thực thi.",
   "SetupStepVerificationTitle": "Xem lại",
   "SetupStepVerificationWhy": "Tóm tắt trạng thái setup và cho biết bước nào đã xác minh, đã bỏ qua hoặc còn cần hành động.",
-  "SetupCheckpointLayerOrder": "Thứ tự lớp: Constitution tích hợp -> constitution toàn cục của người dùng -> constitution repo -> chỉ dẫn AGENTS/dự án -> bộ nhớ/handoff -> yêu cầu hiện tại.",
   "SetupCheckpointDoneBundled": "Checkpoint constitution hoàn tất: dùng luật tích hợp/mặc định.",
   "SetupCheckpointDoneGuided": "Constitution đã được phê chuẩn — luật thường trực của bạn đã được lưu. Có thể sửa bất cứ lúc nào bằng /constitution.",
   "SetupCheckpointDoneKept": "Constitution được giữ nguyên — luật hiện có không đổi. Có thể sửa bất cứ lúc nào bằng /constitution.",

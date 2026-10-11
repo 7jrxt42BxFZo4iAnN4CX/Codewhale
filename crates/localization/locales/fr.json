@@ -1019,7 +1019,6 @@
   "SetupStepConstitutionWhy": "Cet accord guide le comportement, pas les permissions d'exécution.",
   "SetupStepVerificationTitle": "Revue",
   "SetupStepVerificationWhy": "Résume le statut du setup et montre quelles étapes sont vérifiées, ignorées ou demandent encore une action.",
-  "SetupCheckpointLayerOrder": "Ordre des couches : Constitution intégrée -> constitution globale utilisateur -> constitution du repo -> instructions AGENTS/projet -> mémoire/handoff -> demande actuelle.",
   "SetupCheckpointDoneBundled": "Point de contrôle de la constitution terminé : loi intégrée/par défaut utilisée.",
   "SetupCheckpointDoneGuided": "Constitution ratifiée — votre loi permanente est enregistrée. Amendez-la à tout moment avec /constitution.",
   "SetupCheckpointDoneKept": "Constitution conservée — votre loi existante reste inchangée. Amendez-la à tout moment avec /constitution.",

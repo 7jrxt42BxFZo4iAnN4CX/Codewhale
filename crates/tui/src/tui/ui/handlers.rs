@@ -353,7 +353,7 @@ pub(crate) async fn handle_setup_constitution_model_draft(
     app.status_message = Some(match locale {
         codewhale_localization::Locale::ZhHans => {
             format!(
-                "{model_label} 正在生成协作准则草案……（最多 {}s）",
+                "{model_label} 正在生成宪章草案……（最多 {}s）",
                 DRAFT_TIMEOUT.as_secs()
             )
         }

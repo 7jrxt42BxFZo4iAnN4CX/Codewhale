@@ -1019,7 +1019,6 @@
   "SetupStepConstitutionWhy": "Aquest acord guia el comportament, no els permisos d'execució.",
   "SetupStepVerificationTitle": "Revisió",
   "SetupStepVerificationWhy": "Resumeix l'estat de Setup i mostra quins passos estan verificats, omesos o encara calen acció.",
-  "SetupCheckpointLayerOrder": "Ordre de capes: constitució inclosa -> constitució global d'usuari -> constitució del repo -> instruccions AGENTS/del projecte -> memòria/handoff -> petició actual.",
   "SetupCheckpointDoneBundled": "Punt de control de la constitució complet: s'usa la llei inclosa/per defecte.",
   "SetupCheckpointDoneGuided": "Constitució ratificada — la teva llei permanent s'ha desat. Esmena-la en qualsevol moment amb /constitution.",
   "SetupCheckpointDoneKept": "Constitució conservada — la teva llei existent continua vigent, sense canvis. Esmena-la en qualsevol moment amb /constitution.",

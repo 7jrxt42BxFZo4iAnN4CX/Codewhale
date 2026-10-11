@@ -1042,7 +1042,6 @@
   "SetupStepConstitutionWhy": "此 Codewhale 宪章是工作约定，只指导行为，不会更改运行时权限。",
   "SetupStepVerificationTitle": "复核",
   "SetupStepVerificationWhy": "汇总设置状态，并显示哪些步骤已验证、已跳过或仍需操作。",
-  "SetupCheckpointLayerOrder": "层级顺序：内置基础宪章 -> 用户全局宪章 -> 仓库宪章 -> AGENTS/项目说明 -> 记忆/交接 -> 当前请求。",
   "SetupCheckpointDoneBundled": "宪章检查点已完成：使用内置/默认宪章。",
   "SetupCheckpointDoneGuided": "宪章已确认并保存。可随时用 /constitution 修改。",
   "SetupCheckpointDoneKept": "已保留现有宪章，内容保持不变。可随时用 /constitution 修改。",

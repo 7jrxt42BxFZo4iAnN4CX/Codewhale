@@ -1019,7 +1019,6 @@
   "SetupStepConstitutionWhy": "यह समझौता व्यवहार का मार्गदर्शन करता है, रनटाइम अनुमतियों का नहीं।",
   "SetupStepVerificationTitle": "समीक्षा",
   "SetupStepVerificationWhy": "सेटअप स्थिति का सार दें और दिखाएँ कौन से चरण सत्यापित, छोड़े गए या कार्रवाई माँगते हैं।",
-  "SetupCheckpointLayerOrder": "परत क्रम: bundled संविधान -> उपयोगकर्ता-वैश्विक संविधान -> रिपो संविधान -> AGENTS/प्रोजेक्ट निर्देश -> मेमोरी/हैंडऑफ़ -> वर्तमान अनुरोध।",
   "SetupCheckpointDoneBundled": "संविधान चेकपॉइंट पूर्ण: bundled/डिफ़ॉल्ट कानून उपयोग में।",
   "SetupCheckpointDoneGuided": "संविधान अंगीकृत — आपका स्थायी कानून सहेजा गया। /constitution से कभी भी संशोधित करें।",
   "SetupCheckpointDoneKept": "संविधान बरकरार — आपका मौजूदा कानून अपरिवर्तित रहा। /constitution से कभी भी संशोधित करें।",
