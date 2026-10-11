@@ -5648,6 +5648,16 @@ async fn run_doctor(
         "·".dimmed(),
         crate::utils::display_path(&selected_skills_dir)
     );
+    let unrecognized_system_skills = crate::skills::unrecognized_system_skills(&global_skills_dir);
+    if !unrecognized_system_skills.is_empty() {
+        println!(
+            "  {} {} bundled skill(s) in {} are customized or from an unknown generation and are never refreshed: {}",
+            "!".truecolor(sky_r, sky_g, sky_b),
+            unrecognized_system_skills.len(),
+            crate::utils::display_path(&global_skills_dir),
+            unrecognized_system_skills.join(", ")
+        );
+    }
     if !agents_skills_dir.exists()
         && !local_skills_dir.exists()
         && !agents_global_skills_dir
@@ -8196,6 +8206,7 @@ fn run_doctor_json(
         "mcp": mcp_summary,
         "skills": {
             "selected": selected_skills_dir.display().to_string(),
+            "unrecognized_system_skills": crate::skills::unrecognized_system_skills(&global_skills_dir),
             "global": {
                 "path": global_skills_dir.display().to_string(),
                 "present": global_skills_dir.exists(),

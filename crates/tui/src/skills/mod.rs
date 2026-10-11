@@ -32,6 +32,7 @@ pub use roots::{
 pub use system::is_exact_bundled_skill;
 pub use system::{
     BundledSkillTier, bundled_skill_tier, install_system_skills, is_bundled_skill_name,
+    unrecognized_system_skills,
 };
 
 use std::fs;
