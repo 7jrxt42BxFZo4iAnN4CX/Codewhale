@@ -64,8 +64,11 @@ pub(super) fn apply_engine_session_projection(
     {
         surface_goal_persistence_failure(app, &error);
     }
-    app.context_token_cache.borrow_mut().clear();
-    app.set_api_messages(messages);
+    let unchanged = app.set_api_messages(messages);
+    app.context_token_cache
+        .get_mut()
+        .message_tokens
+        .truncate(unchanged);
     // #6190: the projection is the engine's own record, so it is where a
     // steer's acceptance becomes observable — and the only place the steer's
     // real message index is known. Promote before anything else reads the

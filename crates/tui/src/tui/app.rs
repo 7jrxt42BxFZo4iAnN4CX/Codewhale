@@ -5387,6 +5387,7 @@ impl App {
     /// exclusive `Arc` mutates in place, a shared one detaches first, so an
     /// outstanding engine snapshot can never observe the mutation.
     pub fn api_messages_mut(&mut self) -> &mut Vec<Message> {
+        self.context_token_cache.get_mut().clear();
         Arc::make_mut(&mut self.api_messages)
     }
 
@@ -5396,7 +5397,7 @@ impl App {
     pub fn push_api_message(&mut self, message: Message) {
         self.api_message_stamps
             .resize_with(self.api_messages.len(), Utc::now);
-        self.api_messages_mut().push(message);
+        Arc::make_mut(&mut self.api_messages).push(message);
         self.api_message_stamps.push(Utc::now());
     }
 
@@ -5406,18 +5407,19 @@ impl App {
     /// that are new or were rewritten (compaction) are stamped now, which
     /// lands within a turn-event of the real append. The shared snapshot is
     /// installed without copying.
-    pub fn set_api_messages(&mut self, messages: Arc<Vec<Message>>) {
-        let keep = self
+    pub fn set_api_messages(&mut self, messages: Arc<Vec<Message>>) -> usize {
+        let unchanged = self
             .api_messages
             .iter()
             .zip(messages.iter())
             .take_while(|(old, new)| old == new)
-            .count()
-            .min(self.api_message_stamps.len());
-        self.api_message_stamps.truncate(keep);
+            .count();
+        self.api_message_stamps
+            .truncate(unchanged.min(self.api_message_stamps.len()));
         self.api_message_stamps
             .resize_with(messages.len(), Utc::now);
         self.api_messages = messages;
+        unchanged
     }
 
     /// Install a resumed conversation, reusing the persisted journal's
