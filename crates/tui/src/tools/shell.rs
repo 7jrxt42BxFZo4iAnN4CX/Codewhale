@@ -3179,6 +3179,20 @@ impl ShellManager {
         Some(u64::try_from(shell.last_output_at.elapsed().as_millis()).unwrap_or(u64::MAX))
     }
 
+    pub fn running_progress(&mut self, task_id: &str) -> Option<String> {
+        let shell = self.processes.get_mut(task_id)?;
+        shell.poll();
+        if shell.status != ShellStatus::Running {
+            return None;
+        }
+        let job = shell.job_snapshot();
+        let quiet_secs = shell.last_output_at.elapsed().as_secs();
+        Some(format!(
+            "Progress: last output {quiet_secs}s ago; {}.",
+            output_phase_hint(&format!("{}\n{}", job.stdout_tail, job.stderr_tail))
+        ))
+    }
+
     /// Kill a running background process
     pub fn kill(&mut self, task_id: &str) -> Result<ShellResult> {
         let shell = self
@@ -6709,6 +6723,15 @@ impl BashTool {
         {
             object.insert("wait_timeout_ms".to_string(), json!(timeout_ms));
         }
+        if matches!(status, ShellStatus::Running)
+            && let Some(progress) = context
+                .shell_manager
+                .lock()
+                .map_err(|_| ToolError::execution_failed("shell manager lock poisoned"))?
+                .running_progress(task_id)
+        {
+            result.content = format!("{progress}\n{}", result.content);
+        }
         if let Some(interruption) = interruption {
             let (action, key) = match interruption {
                 ShellWaitInterruption::Canceled => ("canceled", "wait_canceled"),
@@ -6837,10 +6860,24 @@ impl BashTool {
             .filter(|(_, status)| *status == ShellStatus::Running)
             .count();
         let settled = statuses.len().saturating_sub(running_after);
-        let lines: Vec<String> = statuses
-            .iter()
-            .map(|(id, status)| format!("{id}: {status:?}"))
-            .collect();
+        let lines: Vec<String> = {
+            let mut manager = context
+                .shell_manager
+                .lock()
+                .map_err(|_| ToolError::execution_failed("shell manager lock poisoned"))?;
+            statuses
+                .iter()
+                .map(|(id, status)| {
+                    let progress = (*status == ShellStatus::Running)
+                        .then(|| manager.running_progress(id))
+                        .flatten();
+                    match progress {
+                        Some(progress) => format!("{id}: {status:?} ({progress})"),
+                        None => format!("{id}: {status:?}"),
+                    }
+                })
+                .collect()
+        };
         let still_running: Vec<&str> = statuses
             .iter()
             .filter(|(_, status)| *status == ShellStatus::Running)

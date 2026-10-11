@@ -90,6 +90,16 @@ pub(super) fn format_shell_poll(result: &ShellResult) -> String {
         ),
         String::new(),
     ];
+    if result.status == ShellStatus::Killed {
+        lines.push(
+            crate::tools::shell_output::kill_outcome_note(&format!(
+                "{}{}",
+                result.stdout, result.stderr
+            ))
+            .to_string(),
+        );
+        lines.push(String::new());
+    }
     if result.stdout.is_empty() && result.stderr.is_empty() {
         lines.push("(no new output)".to_string());
     } else {

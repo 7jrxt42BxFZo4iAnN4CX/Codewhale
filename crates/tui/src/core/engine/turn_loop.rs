@@ -2161,8 +2161,7 @@ impl Engine {
                             !child.authority.runtime.has_foreground_ownership()
                         }) {
                             // A detached child's caller remains background even
-                            // for a synchronous tool. Full Access cannot bypass
-                            // the existing catastrophic-background safety floor.
+                            // for a synchronous tool.
                             RunOrigin::Background
                         } else {
                             auto_review_run_origin_for_plan(detached_start)
