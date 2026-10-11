@@ -27,8 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from plugins stay on demand. Finishing an OAuth login reconnects just that
   server, and `/mcp reload` redials every server that is not `lazy` and reports
   how many are not connected out of the configured total.
-- Running shell commands open an inspector with their output and status, and
-  `Alt+V` opens the newest running shell (#6931).
+- Running shell commands open an inspector with their output and status. It
+  follows new output until you scroll back, and drops Stop once the command
+  ends. `Alt+V` opens the card you clicked, even after newer cards arrive or a
+  tool run collapses around it (#6931).
 - `/resume`, `/load` and other session changes that cannot run yet now list
   what is still busy and how to stop it.
 - Sessions that ended without a clean exit show `interrupted` with their age
@@ -234,12 +236,15 @@ launcher guidance.
 - Goal usage counts the turn that completes, yields or blocks the goal, so
   `tokens_used` and `time_used_seconds` no longer stay at 0. `update_goal`
   accepts a progress estimate with `yield`.
+- Waiting on a running shell job reports how long ago it last printed and
+  whether it is still compiling or already running tests or the program.
+  Stopping a job from `/jobs`, and the completion the model then receives,
+  say whether build artifacts already on disk survive the kill (#6944).
 - A shell command that has printed nothing for a minute still reads as
   running ("no output for 1m 05s"), keeps its Stop action and is reachable
   through the Runtime API; only a job whose process is gone after a restart
   is stale. `/jobs poll` and `/jobs stdin` no longer consume the output the
-  model has not read yet, and Alt+V prefers a running shell only when it is
-  on screen (#6931).
+  model has not read yet (#6931).
 - `/constitution`: `ratify` checks the digest you reviewed in `suggestions`,
   so a file that changed after your review is refused as documented; `preview`
   shows the block exactly as the model receives it; messages no longer claim a
