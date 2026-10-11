@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { DocArticle } from "../_components/doc-article";
 import { getDocsPet } from "@/lib/i18n/dictionaries";
 import { buildPageMetadata } from "@/lib/page-meta";
@@ -17,7 +18,8 @@ export default async function PetPage({ params }: { params: Promise<{ locale: st
   const { locale } = await params;
   return (
     <>
-      <img
+      <Image
+        unoptimized
         src="/brand/pixel-whale.webp"
         alt=""
         width={966}
