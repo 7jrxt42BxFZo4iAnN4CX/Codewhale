@@ -53,17 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bash` now moves a foreground command to the background after 30 s and
   reports the elapsed time and how long ago it last printed output.
   `task_shell_start` is removed; use `bash` with `background=true`.
-- Full Access now asks before turning on (Shift+Tab, Alt+Y, `/config
-  approval_mode full-access`, the High-trust setup preset) and lasts one
-  session. `R` in the popup keeps it on for this repo (`full_access_repos` in
-  `settings.toml`); `--yolo` and `CODEWHALE_YOLO` skip the question. A saved
-  `permission_posture = "full-access"` stays on for that session with a
-  one-time notice; later sessions start in Ask.
-  The footer chip reads `Full Access · session` or `Full Access · this repo`,
-  and every change of effective permission writes a `Permissions changed to …`
-  line (a `status` item and `thread.permissions_changed` event in runtime
-  threads). Runtime clients that `PATCH /v1/threads/{id}` into Full Access
-  must now send `full_access_confirmation` (`session` or `repo`) or get a 400.
+- Every change of effective permission now writes a `Permissions changed to …`
+  line in the transcript, and runtime threads record it as a `status` item and
+  a `thread.permissions_changed` event.
 
 - The bundled first-party catalog pins marketplace revision
   `9b5f9d614ef69702be9944a61e89aeb3df14c047`; the 19 catalog entries are

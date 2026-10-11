@@ -20,7 +20,7 @@
 | `Ctrl-B` | 结束当前 shell 等待，使回合继续；前台命令转入 `/jobs`，后台任务继续运行。可用 `/jobs` 或 `action: "wait"` 的 `Bash` 查看输出 |
 | `Ctrl-D` | 退出（仅当输入框为空时） |
 | `Tab` | 当输入框为空时，循环切换 TUI 模式：Plan → Work → Operate → Plan |
-| `Shift+Tab` | 循环切换权限级别：Ask → Auto-Review → Full Access（完全访问）。进入 Full Access 前会先确认（`Enter` 仅本会话，`R` 对本仓库保持，`Esc` 取消）。无论输入框内容如何、回合是否在运行都即时生效（仅在打开设置以外的模态框时被抑制） |
+| `Shift+Tab` | 循环切换权限级别：Ask → Auto-Review → Full Access（完全访问）。无论输入框内容如何、回合是否在运行都即时生效（仅在打开设置以外的模态框时被抑制） |
 | `Ctrl-T` | 循环切换当前模型的思考强度。走与 `/model` 和 `/effort` 相同的阶梯（模型目录，或已文档化的路由方言）。始终思考的模型省略 `off`；Grok 4.6 包含 `xhigh`。 |
 | `Ctrl-Shift-T` | 切换实时对话记录浮层（粘性尾部自动滚动） |
 | `Ctrl-R` | 打开恢复会话选择器 |
@@ -36,7 +36,7 @@
 | `Alt-!` / `Alt-@` / `Alt-#` / `Alt-$` | 选择任务面板（workbar）的面板：Tasks / Agents / Context / Files |
 | `Ctrl-Alt-0` | 关闭任务面板（workbar）/ 恢复到底部位置 |
 | `Alt-L` | 为最后一条消息打开分页器（输入框为空） |
-| `Alt-P` / `Alt-A` / `Alt-Y` | 跳到 Plan / Work，或请求 Full Access（与 `Shift+Tab` 一样会先确认；`Alt-Y` 是旧的权限通道——Work + Full Access——不是独立模式；它遵循锁定的审批策略） |
+| `Alt-P` / `Alt-A` / `Alt-Y` | 跳到 Plan / Work，或请求 Full Access（`Alt-Y` 是旧的权限通道——Work + Full Access——不是独立模式；它遵循锁定的审批策略） |
 | `Ctrl-X`（Activity 任务面板） | 取消所有正在运行的后台 shell 任务 |
 | `Esc` | 关闭最上层模态框 · 取消斜杠菜单 · 关闭 toast。当压缩正在为一个进行中的回合服务时，`Esc` 会停止该回合（压缩随之中断） |
 

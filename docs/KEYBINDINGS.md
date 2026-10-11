@@ -18,7 +18,7 @@ Global key chords are not yet user-configurable — tracked for a future release
 | `Ctrl-B`             | Release the current shell wait so the turn can continue; foreground commands move into `/jobs`, and background tasks keep running. Use `/jobs` or `Bash` with `action: "wait"` to inspect output |
 | `Ctrl-D`             | Quit (only when the composer is empty)                         |
 | `Tab`                | When the composer is empty, cycle TUI mode: Plan → Work → Operate → Plan |
-| `Shift+Tab`          | Cycle permission posture: Ask → Auto-Review → Full Access. Reaching Full Access asks first (`Enter` for this session, `R` for this repo, `Esc` cancels). Live regardless of composer contents or whether a turn is running (suppressed only while a modal other than Config is open) |
+| `Shift+Tab`          | Cycle permission posture: Ask → Auto-Review → Full Access. Live regardless of composer contents or whether a turn is running (suppressed only while a modal other than Config is open) |
 | `Ctrl-T`             | Cycle reasoning effort for the active model. Walks the same ladder as `/model` and `/effort` (catalog or documented route dialect). Always-thinking models omit `off`; Grok 4.6 includes `xhigh`. |
 | `Ctrl-Shift-T`       | Toggle live transcript overlay (sticky-tail auto-scroll)                       |
 | `Ctrl-R`             | Open the resume-session picker                                 |
@@ -34,7 +34,7 @@ Global key chords are not yet user-configurable — tracked for a future release
 | `Alt-!` / `Alt-@` / `Alt-#` / `Alt-$` | Select the workbar panel: Tasks / Agents / Context / Files |
 | `Ctrl-Alt-0`         | Toggle the workbar off / back to the bottom placement          |
 | `Alt-L`              | Open the pager for the last message (composer empty)             |
-| `Alt-P` / `Alt-A` / `Alt-Y` | Jump to Plan / Work, or request Full Access, which asks first like `Shift+Tab` (`Alt-Y` is the legacy permission channel — Work + Full Access — not a separate mode; it honors a locked approval policy) |
+| `Alt-P` / `Alt-A` / `Alt-Y` | Jump to Plan / Work, or request Full Access (`Alt-Y` is the legacy permission channel — Work + Full Access — not a separate mode; it honors a locked approval policy) |
 | `Ctrl-X` (Activity workbar) | Cancel all running background shell jobs                  |
 | `Esc`                | Close topmost modal · cancel slash menu · dismiss toast. During a compact that is serving an in-flight turn, Esc stops the turn (the compact is collateral). |
 
