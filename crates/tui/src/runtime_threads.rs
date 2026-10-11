@@ -10603,12 +10603,30 @@ impl RuntimeThreadManager {
         until: Option<DateTime<Utc>>,
         group_by: UsageGroupBy,
     ) -> Result<UsageAggregation> {
+        let store = self.store.clone();
+        let (threads, turns_by_thread) = tokio::task::spawn_blocking(move || {
+            let threads = store.list_threads()?;
+            let mut turns_by_thread: HashMap<String, Vec<TurnRecord>> = HashMap::new();
+            if let Some(first) = threads.first() {
+                validated_record_id(&first.id, "thread id")?;
+                for turn in store.list_all_turns()? {
+                    turns_by_thread
+                        .entry(turn.thread_id.clone())
+                        .or_default()
+                        .push(turn);
+                }
+            }
+            Ok::<_, anyhow::Error>((threads, turns_by_thread))
+        })
+        .await
+        .context("Runtime usage aggregation task failed")??;
+
         let mut buckets: std::collections::BTreeMap<String, UsageBucket> =
             std::collections::BTreeMap::new();
         let mut totals = UsageTotals::default();
-        for thread in self.store.list_threads()? {
-            let turns = self.store.list_turns_for_thread(&thread.id)?;
-            for turn in turns {
+        for thread in &threads {
+            validated_record_id(&thread.id, "thread id")?;
+            for turn in turns_by_thread.get(&thread.id).into_iter().flatten() {
                 let parent_route = turn.effective_route_envelope();
                 let parent_dispatched_at = parent_route
                     .as_ref()
@@ -10622,8 +10640,8 @@ impl RuntimeThreadManager {
                         group_by,
                         parent_route.as_ref(),
                         usage,
-                        &turn,
-                        &thread,
+                        turn,
+                        thread,
                     );
                 }
                 for receipt in &turn.decision_receipts {
@@ -10650,8 +10668,8 @@ impl RuntimeThreadManager {
                             &mut buckets,
                             group_by,
                             child,
-                            &turn,
-                            &thread,
+                            turn,
+                            thread,
                         );
                     }
                 }
@@ -10663,8 +10681,8 @@ impl RuntimeThreadManager {
                             group_by,
                             &drop_record.route,
                             drop_record.reason,
-                            &turn,
-                            &thread,
+                            turn,
+                            thread,
                         );
                     }
                 }
@@ -10678,8 +10696,8 @@ impl RuntimeThreadManager {
                         &mut buckets,
                         group_by,
                         turn.routed_usage_dropped_records,
-                        &turn,
-                        &thread,
+                        turn,
+                        thread,
                     );
                 }
             }
