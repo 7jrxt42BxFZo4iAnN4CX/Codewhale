@@ -3135,10 +3135,11 @@ impl RuntimeThreadStore {
 
     /// Publish many items at once, paying the items directory's costs once.
     ///
-    /// Each `save_item` sweeps the whole items directory for stale temp files
-    /// and fsyncs it — right for one record, ruinous for the hundreds a fork
-    /// clones (measured: 22 ms of directory scan per item, 34 s for one fork's
-    /// 771). The per-record checks and the atomic replace are unchanged; see
+    /// Each `save_item` fsyncs the items directory — right for one record,
+    /// ruinous for the hundreds a fork clones. The stale-temp sweep is
+    /// throttled per directory inside `write_atomic`; unthrottled it cost 22 ms
+    /// of directory scan per item, 34 s for one fork's 771. The per-record
+    /// checks and the atomic replace are unchanged; see
     /// [`crate::utils::write_atomic_batch`].
     ///
     /// Ordering stays the caller's: items, then their turns, then the thread
@@ -12968,10 +12969,9 @@ impl RuntimeThreadManager {
         let mut saved_turn_ids = Vec::new();
         let mut saved_item_ids = Vec::new();
         let persistence = (|| -> Result<()> {
-            // Every cloned item in one batch. Each `save_item` sweeps the
-            // whole items directory and fsyncs it, which is right for a single
-            // record and ruinous for the hundreds a fork clones — the sweep
-            // gives the same answer every time. Items first, turns next, the
+            // Every cloned item in one batch. Each `save_item` fsyncs the items
+            // directory, which is right for a single record and ruinous for
+            // the hundreds a fork clones. Items first, turns next, the
             // thread record that makes them reachable last: the commit point is
             // unchanged, and the ids are recorded before the batch so a partial
             // write is still cleaned up.
