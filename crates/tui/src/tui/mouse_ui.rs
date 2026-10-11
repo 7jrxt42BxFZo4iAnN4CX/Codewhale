@@ -1608,6 +1608,19 @@ fn push_work_row_entries(app: &App, mouse: MouseEvent, entries: &mut Vec<Context
             entries.push(row(app.tr(MessageId::CtxMenuOpen).into_owned(), action).primary());
         }
         Some(SidebarRowAction::Command(command)) => {
+            if let Some(id) = command.strip_prefix("/jobs show ")
+                && app.task_panel.iter().any(|entry| {
+                    entry.id == id && crate::tui::background_indicator::is_live_shell_entry(entry)
+                })
+            {
+                stop = Some(
+                    row(
+                        app.tr(MessageId::CtxMenuStopWork).into_owned(),
+                        SidebarRowAction::Command(format!("/jobs cancel {id}")),
+                    )
+                    .confirm(confirm()),
+                );
+            }
             let label = app
                 .tr(MessageId::CtxMenuRunCommand)
                 .replace("{command}", &command);

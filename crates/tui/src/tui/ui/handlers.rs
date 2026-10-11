@@ -1244,17 +1244,6 @@ pub(crate) fn handle_shell_job_action(app: &mut App, action: crate::tui::app::Sh
                 Err(err) => add_shell_job_message(app, format!("Command lookup failed: {err}")),
             }
         }
-        crate::tui::app::ShellJobAction::Poll { id, wait } => {
-            let detail = if wait {
-                manager.wait_job_for_session(&active_session_id, &id, 5_000)
-            } else {
-                manager.inspect_job_for_session(&active_session_id, &id)
-            };
-            match detail {
-                Ok(detail) => open_shell_job_pager(app, &detail),
-                Err(err) => add_shell_job_message(app, format!("Command poll failed: {err}")),
-            }
-        }
         crate::tui::app::ShellJobAction::SendStdin { id, input, close } => {
             match manager.write_stdin_for_session(&active_session_id, &id, &input, close) {
                 Ok(()) => match manager.inspect_job_for_session(&active_session_id, &id) {

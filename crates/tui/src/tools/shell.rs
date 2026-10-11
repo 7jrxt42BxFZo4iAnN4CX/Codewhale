@@ -3487,19 +3487,6 @@ impl ShellManager {
         self.inspect_job(task_id)
     }
 
-    pub fn wait_job_for_session(
-        &mut self,
-        active_session_id: &str,
-        task_id: &str,
-        timeout_ms: u64,
-    ) -> Result<ShellJobDetail> {
-        self.require_session_owner(task_id, active_session_id)?;
-        if let Some(shell) = self.processes.get_mut(task_id) {
-            wait_while_running(shell, true, timeout_ms);
-        }
-        self.inspect_job(task_id)
-    }
-
     /// List all live and known-stale background shell jobs for the TUI.
     pub fn list_jobs(&mut self) -> Vec<ShellJobSnapshot> {
         for shell in self.processes.values_mut() {
