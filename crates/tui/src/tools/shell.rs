@@ -1003,7 +1003,7 @@ fn shared_output_pipe() -> io::Result<(File, File, File)> {
 }
 
 const SYNC_READER_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
-const STALE_NO_OUTPUT_AFTER: Duration = Duration::from_secs(60);
+pub(crate) const QUIET_NO_OUTPUT_AFTER: Duration = Duration::from_secs(60);
 
 /// Grace between SIGTERM and SIGKILL on the shell kill path (timeout,
 /// cancel, drop). Bounded so a SIGTERM-ignoring command is force-killed
@@ -1717,13 +1717,6 @@ impl BackgroundShell {
             .unwrap_or((0, String::new()));
         let elapsed_since_output_ms = (self.status == ShellStatus::Running)
             .then(|| u64::try_from(self.last_output_at.elapsed().as_millis()).unwrap_or(u64::MAX));
-        // A live PTY can wait indefinitely for input. Silence does not mean it
-        // lost its process owner; marking it stale hides its transport from API
-        // clients and incorrectly prevents reconnect/resize after one minute.
-        let stale = self.terminal_size.is_none()
-            && elapsed_since_output_ms.is_some_and(|elapsed| {
-                elapsed >= u64::try_from(STALE_NO_OUTPUT_AFTER.as_millis()).unwrap_or(u64::MAX)
-            });
         ShellJobSnapshot {
             id: self.id.clone(),
             job_id: self.id.clone(),
@@ -1739,7 +1732,7 @@ impl BackgroundShell {
             stdout_len,
             stderr_len,
             stdin_available: self.stdin.is_some() && self.status == ShellStatus::Running,
-            stale,
+            stale: false,
             elapsed_since_output_ms,
             linked_task_id: self.linked_task_id.clone(),
             owner_agent_id: self
@@ -3127,20 +3120,7 @@ impl ShellManager {
             .processes
             .get_mut(task_id)
             .ok_or_else(|| anyhow!("Task {task_id} not found"))?;
-
-        if wait && shell.status == ShellStatus::Running {
-            let timeout = Duration::from_millis(timeout_ms.clamp(1000, 600_000));
-            let deadline = Instant::now() + timeout;
-
-            while shell.status == ShellStatus::Running && Instant::now() < deadline {
-                if shell.poll() {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(100));
-            }
-        } else {
-            shell.poll();
-        }
+        wait_while_running(shell, wait, timeout_ms);
 
         let (
             stdout_delta,
@@ -3351,17 +3331,6 @@ impl ShellManager {
         self.get_output_delta(task_id, wait, timeout_ms)
     }
 
-    pub fn poll_delta_for_session(
-        &mut self,
-        active_session_id: &str,
-        task_id: &str,
-        wait: bool,
-        timeout_ms: u64,
-    ) -> Result<ShellDeltaResult> {
-        self.require_session_owner(task_id, active_session_id)?;
-        self.get_output_delta(task_id, wait, timeout_ms)
-    }
-
     fn get_output_delta_for_session(
         &mut self,
         active_session_id: &str,
@@ -3491,6 +3460,19 @@ impl ShellManager {
         task_id: &str,
     ) -> Result<ShellJobDetail> {
         self.require_session_owner(task_id, active_session_id)?;
+        self.inspect_job(task_id)
+    }
+
+    pub fn wait_job_for_session(
+        &mut self,
+        active_session_id: &str,
+        task_id: &str,
+        timeout_ms: u64,
+    ) -> Result<ShellJobDetail> {
+        self.require_session_owner(task_id, active_session_id)?;
+        if let Some(shell) = self.processes.get_mut(task_id) {
+            wait_while_running(shell, true, timeout_ms);
+        }
         self.inspect_job(task_id)
     }
 
@@ -3785,6 +3767,22 @@ impl ShellManager {
             remaining_count -= 1;
             remaining_bytes = remaining_bytes.saturating_sub(bytes);
         }
+    }
+}
+
+fn wait_while_running(shell: &mut BackgroundShell, wait: bool, timeout_ms: u64) {
+    if wait && shell.status == ShellStatus::Running {
+        let timeout = Duration::from_millis(timeout_ms.clamp(1000, 600_000));
+        let deadline = Instant::now() + timeout;
+
+        while shell.status == ShellStatus::Running && Instant::now() < deadline {
+            if shell.poll() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    } else {
+        shell.poll();
     }
 }
 

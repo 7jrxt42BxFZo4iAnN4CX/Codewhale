@@ -10185,7 +10185,7 @@ fn shell_live_output_update_marks_stale_running_job_static() {
             stdout_len: 14,
             stderr_len: 0,
             stdin_available: false,
-            stale: true,
+            stale: false,
             elapsed_since_output_ms: Some(61_000),
             linked_task_id: None,
             owner_agent_id: None,
@@ -10228,7 +10228,7 @@ fn shell_live_output_update_marks_stale_running_job_static() {
         .iter()
         .map(|span| span.content.as_ref())
         .collect::<String>();
-    assert!(header_text.contains("running · stale · no output 1m 01s"));
+    assert!(header_text.contains("running · no output for 1m 01s"));
     assert!(!header_text.contains("running ("));
 }
 

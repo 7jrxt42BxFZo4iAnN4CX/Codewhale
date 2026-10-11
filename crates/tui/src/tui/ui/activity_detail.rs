@@ -283,8 +283,7 @@ pub(super) fn open_tool_details_pager(app: &mut App) -> bool {
     {
         detail_target_cell_index(app)
     } else {
-        crate::tui::shell_job_routing::newest_running_shell_cell(app)
-            .filter(|&idx| crate::tui::shell_job_routing::shell_job_for_cell(app, idx).is_some())
+        crate::tui::shell_job_routing::newest_visible_running_shell_cell(app)
             .or_else(|| detail_target_cell_index(app))
     };
 

@@ -2819,7 +2819,7 @@ pub(crate) fn running_status_label_with_elapsed(elapsed_secs: u64) -> String {
 
 pub(crate) fn stale_shell_status_label(elapsed_since_output_ms: u64) -> String {
     format!(
-        "running · stale · no output {}",
+        "running · no output for {}",
         codewhale_command_contract::elapsed::format_elapsed_ms(elapsed_since_output_ms)
     )
 }

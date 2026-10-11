@@ -1,4 +1,9 @@
 //! Background shell job-center helpers for slash commands and pagers.
+//!
+//! Known limitations: the inspector is a snapshot (`/jobs poll` re-reads it,
+//! without consuming the model's output cursor); there is no follow mode.
+//! Named PTY sessions (`tools/terminal_session.rs`) are not listed here or in
+//! `/jobs`; they live in the terminal dock (#6912).
 
 use crate::tools::shell::{ShellJobDetail, ShellJobSnapshot, ShellResult, ShellStatus};
 use crate::tui::app::App;
@@ -139,13 +144,23 @@ pub(crate) fn shell_job_for_cell(app: &App, cell_index: usize) -> Option<ShellJo
     manager.inspect_job_for_session(session, &job_id).ok()
 }
 
-pub(crate) fn newest_running_shell_cell(app: &App) -> Option<usize> {
-    (0..app.virtual_cell_count()).rev().find(|&index| {
-        matches!(
-            app.cell_at_virtual_index(index),
-            Some(HistoryCell::Tool(ToolCell::Exec(exec))) if exec.status == ToolStatus::Running
-        )
-    })
+pub(crate) fn newest_visible_running_shell_cell(app: &App) -> Option<usize> {
+    let meta = app.viewport.transcript_cache.line_meta();
+    let start = app.viewport.last_transcript_top.min(meta.len());
+    let end = start
+        .saturating_add(app.viewport.last_transcript_visible.max(1))
+        .min(meta.len());
+    meta[start..end]
+        .iter()
+        .rev()
+        .filter_map(|line| line.cell_line())
+        .map(|(rendered, _)| app.original_cell_index_for_rendered(rendered))
+        .find(|&index| {
+            matches!(
+                app.cell_at_virtual_index(index),
+                Some(HistoryCell::Tool(ToolCell::Exec(exec))) if exec.status == ToolStatus::Running
+            ) && shell_job_for_cell(app, index).is_some()
+        })
 }
 
 pub(crate) fn open_shell_job_pager(app: &mut App, detail: &ShellJobDetail) {
