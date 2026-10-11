@@ -87,6 +87,15 @@ launcher guidance.
   Motion preferences and unknown usage stay truthful (#6920, #6907),
   using the shared `codewhale-ratatui` components
   ([#23](https://github.com/codewhale-hq/codewhale-ratatui/pull/23), [#25](https://github.com/codewhale-hq/codewhale-ratatui/pull/25)).
+- The pet view uses the latest Ratatui particle-whale renderer. Choose a
+  smooth aurora or pixel whale with `/pet style smooth|pixel`, and choose
+  English, Simplified Chinese, Traditional Chinese or Japanese activity words
+  with `/pet language auto|en|zh-Hans|zh-Hant|ja`. Language follows the interface
+  by default; a fixed choice lets you learn another language beside the normal
+  status text. The 980 drones form the same full phrases as the interface,
+  including `读取`, `搜索` and `调用工具`, then return to the whale. The appearance
+  studio saves the same choices. Reduced motion uses a stable pose, and the
+  reply inspector keeps priority on small terminals.
 
 - A Terminal work dock (`/workbar terminal`) shows the model’s live PTY sessions
   in the current workspace, with ANSI-styled output, session selection, resize

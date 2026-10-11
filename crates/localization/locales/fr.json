@@ -45,6 +45,9 @@
   "PetModeOn": "Mode animal activé. Écrivez dans le champ de message ; /pet inspect ouvre les réponses et les agents. /pet off rétablit la vue standard.",
   "PetModeOff": "Mode mascotte désactivé. La mascotte continue de vivre dans son compagnon ; /pet le réactive.",
   "PetModeReplyTitle": "Réponse",
+  "PetActivityBrowsing": "Utilisation du navigateur",
+  "PetActivityComputer": "Utilisation de l’ordinateur",
+  "PetActivityMemory": "Récupération du contexte",
   "PetModeMessageHint": "{back} écrire",
   "PetModePaneHint": "{switch} changer de vue",
   "PetModeAgentHints": "{select} sélectionner · {open} conversation",
@@ -2514,5 +2517,6 @@
   "PlanHandoffWorkAutoDetail": "Commencer le plan. Les actions risquées sont examinées automatiquement et peuvent encore demander votre accord.",
   "PlanHandoffKeepPlanning": "Continuer à planifier",
   "PlanHandoffKeepPlanningDetail": "Rester en Plan. Rien n'est modifié.",
-  "PlanHandoffProceed": "Allez-y, appliquez le plan."
+  "PlanHandoffProceed": "Allez-y, appliquez le plan.",
+  "PetAppearanceLegacy": "Le compagnon utilise une ancienne version. Redémarrez-le après la mise à jour de Codewhale pour choisir le style de baleine et la langue du texte."
 }

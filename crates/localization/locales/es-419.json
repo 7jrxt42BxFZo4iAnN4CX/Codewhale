@@ -45,6 +45,9 @@
   "PetModeOn": "Modo mascota activado. Escribe en el cuadro de mensaje; /pet inspect abre respuestas y agentes. /pet off restaura la vista estándar.",
   "PetModeOff": "Modo mascota desactivado. La mascota sigue viviendo en su compañero; /pet lo vuelve a activar.",
   "PetModeReplyTitle": "Respuesta",
+  "PetActivityBrowsing": "Usando el navegador",
+  "PetActivityComputer": "Usando la computadora",
+  "PetActivityMemory": "Recuperando contexto",
   "PetModeMessageHint": "{back} escribir",
   "PetModePaneHint": "{switch} cambiar vista",
   "PetModeAgentHints": "{select} seleccionar · {open} conversación",
@@ -2514,5 +2517,6 @@
   "PlanHandoffWorkAutoDetail": "Empieza con el plan. Las acciones riesgosas se revisan automáticamente y aún pueden preguntarte.",
   "PlanHandoffKeepPlanning": "Seguir planificando",
   "PlanHandoffKeepPlanningDetail": "Sigue en Plan. No se cambia nada.",
-  "PlanHandoffProceed": "Adelante con el plan."
+  "PlanHandoffProceed": "Adelante con el plan.",
+  "PetAppearanceLegacy": "La mascota usa una versión anterior. Reiníciala después de actualizar Codewhale para elegir el estilo de ballena y el idioma del texto."
 }

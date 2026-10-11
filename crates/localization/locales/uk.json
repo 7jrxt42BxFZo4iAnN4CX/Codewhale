@@ -45,6 +45,9 @@
   "PetModeOn": "Режим улюбленця ввімкнено. Пишіть у полі повідомлення; /pet inspect відкриває відповіді й агентів. /pet off повертає звичайний вигляд.",
   "PetModeOff": "Режим улюбленця вимкнено. Улюбленець далі живе в компаньйоні; /pet вмикає його знову.",
   "PetModeReplyTitle": "Відповідь",
+  "PetActivityBrowsing": "Робота в браузері",
+  "PetActivityComputer": "Керування комп’ютером",
+  "PetActivityMemory": "Пошук контексту",
   "PetModeMessageHint": "{back} написати",
   "PetModePaneHint": "{switch} змінити вигляд",
   "PetModeAgentHints": "{select} вибрати · {open} розмова",
@@ -2514,5 +2517,6 @@
   "PlanHandoffWorkAutoDetail": "Почати роботу за планом. Ризиковані дії перевіряються автоматично й усе одно можуть запитати вас.",
   "PlanHandoffKeepPlanning": "Планувати далі",
   "PlanHandoffKeepPlanningDetail": "Залишитися в Plan. Нічого не змінюється.",
-  "PlanHandoffProceed": "Беріться до плану."
+  "PlanHandoffProceed": "Беріться до плану.",
+  "PetAppearanceLegacy": "Улюбленець працює на старій версії. Після оновлення Codewhale перезапустіть його, щоб вибрати стиль кита й мову тексту."
 }

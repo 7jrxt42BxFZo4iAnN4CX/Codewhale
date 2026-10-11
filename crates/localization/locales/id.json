@@ -45,6 +45,9 @@
   "PetModeOn": "Mode peliharaan aktif. Tulis di kotak pesan; /pet inspect membuka balasan dan agen. /pet off mengembalikan tampilan biasa.",
   "PetModeOff": "Mode hewan peliharaan nonaktif. Hewan peliharaan tetap hidup di pendampingnya; /pet mengaktifkannya lagi.",
   "PetModeReplyTitle": "Balasan",
+  "PetActivityBrowsing": "Menggunakan peramban",
+  "PetActivityComputer": "Mengoperasikan komputer",
+  "PetActivityMemory": "Mengambil konteks",
   "PetModeMessageHint": "{back} tulis pesan",
   "PetModePaneHint": "{switch} ganti tampilan",
   "PetModeAgentHints": "{select} pilih · {open} percakapan",
@@ -2514,5 +2517,6 @@
   "PlanHandoffWorkAutoDetail": "Mulai kerjakan rencana. Tindakan berisiko ditinjau otomatis dan masih bisa bertanya kepada Anda.",
   "PlanHandoffKeepPlanning": "Lanjutkan merencanakan",
   "PlanHandoffKeepPlanningDetail": "Tetap di Plan. Tidak ada yang diubah.",
-  "PlanHandoffProceed": "Silakan jalankan rencananya."
+  "PlanHandoffProceed": "Silakan jalankan rencananya.",
+  "PetAppearanceLegacy": "Pet masih memakai versi lama. Mulai ulang pet setelah memperbarui Codewhale untuk memilih gaya paus dan bahasa teks."
 }

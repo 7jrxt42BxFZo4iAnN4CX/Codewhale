@@ -45,6 +45,9 @@
   "PetModeOn": "ペットモードを有効にしました。入力欄からメッセージを送れます。/pet inspect で返信とエージェントを表示し、/pet off で通常表示に戻ります。",
   "PetModeOff": "ペットモード オフ。ペットはコンパニオンで生き続けます。/pet で再びオンにします。",
   "PetModeReplyTitle": "返信",
+  "PetActivityBrowsing": "ブラウザーを操作中",
+  "PetActivityComputer": "コンピューターを操作中",
+  "PetActivityMemory": "コンテキストを検索中",
   "PetModeMessageHint": "{back} メッセージへ",
   "PetModePaneHint": "{switch} 表示を切替",
   "PetModeAgentHints": "{select} 選択 · {open} 会話履歴",
@@ -2514,5 +2517,6 @@
   "PlanHandoffWorkAutoDetail": "計画に着手します。リスクのある操作は自動でレビューされ、確認を求めることもあります。",
   "PlanHandoffKeepPlanning": "計画を続ける",
   "PlanHandoffKeepPlanningDetail": "Plan のままにします。何も変更されません。",
-  "PlanHandoffProceed": "計画どおりに進めてください。"
+  "PlanHandoffProceed": "計画どおりに進めてください。",
+  "PetAppearanceLegacy": "ペットは以前のバージョンで動作しています。Codewhale を更新してペットを再起動すると、クジラのスタイルと文字の言語を選べます。"
 }

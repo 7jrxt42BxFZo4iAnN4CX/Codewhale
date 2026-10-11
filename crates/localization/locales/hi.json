@@ -45,6 +45,9 @@
   "PetModeOn": "पेट मोड चालू है। संदेश बॉक्स में लिखें; /pet inspect से उत्तर और एजेंट खोलें। /pet off से सामान्य दृश्य पर लौटें।",
   "PetModeOff": "पालतू मोड बंद। पालतू अपने साथी में रहता है; /pet से फिर चालू करें।",
   "PetModeReplyTitle": "उत्तर",
+  "PetActivityBrowsing": "ब्राउज़र का उपयोग",
+  "PetActivityComputer": "कंप्यूटर का उपयोग",
+  "PetActivityMemory": "संदर्भ खोजना",
   "PetModeMessageHint": "{back} संदेश लिखें",
   "PetModePaneHint": "{switch} दृश्य बदलें",
   "PetModeAgentHints": "{select} चुनें · {open} बातचीत",
@@ -2514,5 +2517,6 @@
   "PlanHandoffWorkAutoDetail": "योजना पर काम शुरू करें। जोखिम वाले कामों की स्वतः समीक्षा होती है और वे फिर भी आपसे पूछ सकते हैं।",
   "PlanHandoffKeepPlanning": "योजना बनाना जारी रखें",
   "PlanHandoffKeepPlanningDetail": "Plan में बने रहें। कुछ भी नहीं बदलता।",
-  "PlanHandoffProceed": "योजना के अनुसार काम शुरू करें।"
+  "PlanHandoffProceed": "योजना के अनुसार काम शुरू करें।",
+  "PetAppearanceLegacy": "पेट पुराने संस्करण पर चल रहा है। व्हेल का रूप और टेक्स्ट की भाषा चुनने के लिए Codewhale अपडेट करने के बाद पेट को फिर से शुरू करें।"
 }

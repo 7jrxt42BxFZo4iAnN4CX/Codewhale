@@ -116,6 +116,8 @@ pub struct Producer {
     pub source_revision: u64,
     pub seq: u64,
     pub waiting: bool,
+    #[serde(default)]
+    pub locale: Option<String>,
     pub events: Vec<Value>,
 }
 
@@ -378,6 +380,7 @@ pub fn serve(root: PathBuf, requested_port: u16) -> anyhow::Result<()> {
         .route("/", get(|| async { Html(include_str!("shared.html")) }))
         .route("/pet-native.js", get(|| async { ([("content-type", "text/javascript")], include_str!("pet-native.js")) }))
         .route("/whale-points.tsv", get(|| async { include_str!("../ambient_life/whale-points.tsv") }))
+        .route("/pixel-whale.webp", get(|| async { ([("content-type", "image/webp")], include_bytes!("pixel-whale.webp").as_slice()) }))
         .route("/v1/frame", get(frame)).route("/v1/action", post(action))
         .route("/v1/producer", post(producer)).route("/v1/audio", post(audio))
         .route("/v1/export", get(export)).route("/v1/attach", post(attach))
@@ -461,6 +464,7 @@ fn run_world(
     let initial_time: f64 = context.with(|ctx| ctx.eval("JSON.parse(pet.snapshot()).timeMs"))?;
     let mut last = origin;
     let mut last_view = origin;
+    let mut interface_language = "en".to_string();
     let mut was_active = true;
     let mut idle_since: Option<Instant> = None;
     let frame_interval = Duration::from_secs_f64(1.0 / 30.0);
@@ -569,7 +573,14 @@ fn run_world(
                 last + Duration::from_secs_f64(count as f64 / 30.0)
             };
             if viewed {
-                let text: String = context.with(|ctx| ctx.eval("pet.presentation()"))?;
+                let appearance_json = serde_json::to_string(&saved.appearance)?;
+                let text: String = context.with(|ctx| -> rquickjs::Result<String> {
+                    ctx.globals()
+                        .set("appearanceJSON", appearance_json.as_str())?;
+                    ctx.globals()
+                        .set("interfaceLanguage", interface_language.as_str())?;
+                    ctx.eval("pet.presentation(JSON.parse(appearanceJSON),interfaceLanguage)")
+                })?;
                 let mut frame: Value = serde_json::from_str(&text)?;
                 frame["version"] = json!(1);
                 frame["identity"] = json!(saved.identity);
@@ -725,6 +736,12 @@ fn run_world(
                         || request.source != saved.source
                         || request.source_revision != saved.source_revision
                         || request.events.len() > 64
+                        || request.locale.as_ref().is_some_and(|locale| {
+                            locale.len() > 35
+                                || !locale
+                                    .bytes()
+                                    .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                        })
                     {
                         return Err(
                             "Source changed; attach at the current frame and discard stale input"
@@ -732,7 +749,7 @@ fn run_world(
                         );
                     }
                     use sha2::{Digest, Sha256};
-                    let hash=Sha256::digest(serde_json::to_vec(&json!({"seq":request.seq,"events":request.events,"waiting":request.waiting})).unwrap()).iter().map(|b|format!("{b:02x}")).collect::<String>();
+                    let hash=Sha256::digest(serde_json::to_vec(&json!({"seq":request.seq,"events":request.events,"waiting":request.waiting,"locale":request.locale})).unwrap()).iter().map(|b|format!("{b:02x}")).collect::<String>();
                     if let Some((id, seq, _, prior_hash)) = &producer {
                         if *id != request.client {
                             return Err("This source already has a producer".into());
@@ -775,6 +792,14 @@ fn run_world(
                     }
                     producer = Some((request.client, request.seq, Instant::now(), hash));
                     waiting = request.waiting;
+                    if let Some(locale) = request.locale {
+                        interface_language =
+                            if matches!(locale.as_str(), "en" | "zh-Hans" | "zh-Hant" | "ja") {
+                                locale
+                            } else {
+                                "en".into()
+                            };
+                    }
                     Ok(json!({"seq":request.seq,"cursor":saved.cursor,"durable":false}))
                 })();
                 let _ = reply.send(result);

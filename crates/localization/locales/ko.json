@@ -45,6 +45,9 @@
   "PetModeOn": "펫 모드를 켰습니다. 메시지 입력란에 작성하세요. /pet inspect로 답변과 에이전트를 열고 /pet off로 기본 보기로 돌아갑니다.",
   "PetModeOff": "펫 모드 꺼짐. 펫은 컴패니언에서 계속 살아갑니다. /pet 으로 다시 켭니다.",
   "PetModeReplyTitle": "답변",
+  "PetActivityBrowsing": "브라우저 사용 중",
+  "PetActivityComputer": "컴퓨터 조작 중",
+  "PetActivityMemory": "컨텍스트 검색 중",
   "PetModeMessageHint": "{back} 메시지 작성",
   "PetModePaneHint": "{switch} 보기 전환",
   "PetModeAgentHints": "{select} 선택 · {open} 대화 기록",
@@ -2514,5 +2517,6 @@
   "PlanHandoffWorkAutoDetail": "계획을 시작합니다. 위험한 작업은 자동으로 검토되며 확인을 요청할 수도 있습니다.",
   "PlanHandoffKeepPlanning": "계속 계획하기",
   "PlanHandoffKeepPlanningDetail": "Plan 에 머뭅니다. 아무것도 변경되지 않습니다.",
-  "PlanHandoffProceed": "계획대로 진행해 주세요."
+  "PlanHandoffProceed": "계획대로 진행해 주세요.",
+  "PetAppearanceLegacy": "펫이 이전 버전으로 실행 중입니다. Codewhale을 업데이트한 뒤 펫을 다시 시작하면 고래 스타일과 텍스트 언어를 선택할 수 있습니다."
 }

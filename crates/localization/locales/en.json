@@ -45,6 +45,9 @@
   "PetModeOn": "Pet mode on. Write in the message box; /pet inspect opens replies and agents. /pet off restores the standard view.",
   "PetModeOff": "Pet mode off. The pet keeps living in its companion; /pet turns it back on.",
   "PetModeReplyTitle": "Reply",
+  "PetActivityBrowsing": "Using the browser",
+  "PetActivityComputer": "Using the computer",
+  "PetActivityMemory": "Retrieving context",
   "PetModeMessageHint": "{back} message",
   "PetModePaneHint": "{switch} switch view",
   "PetModeAgentHints": "{select} select · {open} transcript",
@@ -2514,5 +2517,6 @@
   "PlanHandoffWorkAutoDetail": "Start on the plan. Risky actions are reviewed automatically and may still ask you.",
   "PlanHandoffKeepPlanning": "Keep planning",
   "PlanHandoffKeepPlanningDetail": "Stay in Plan. Nothing is changed.",
-  "PlanHandoffProceed": "Go ahead with the plan."
+  "PlanHandoffProceed": "Go ahead with the plan.",
+  "PetAppearanceLegacy": "The pet companion is running an older version. Restart it after updating Codewhale to use whale styles and text languages."
 }

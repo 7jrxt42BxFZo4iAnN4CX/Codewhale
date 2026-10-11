@@ -45,6 +45,9 @@
   "PetModeOn": "Режим питомца включён. Пишите в поле сообщения; /pet inspect открывает ответы и агентов. /pet off возвращает обычный вид.",
   "PetModeOff": "Режим питомца выключен. Питомец продолжает жить в компаньоне; /pet включает его снова.",
   "PetModeReplyTitle": "Ответ",
+  "PetActivityBrowsing": "Работа в браузере",
+  "PetActivityComputer": "Управление компьютером",
+  "PetActivityMemory": "Поиск контекста",
   "PetModeMessageHint": "{back} написать",
   "PetModePaneHint": "{switch} сменить вид",
   "PetModeAgentHints": "{select} выбрать · {open} переписка",
@@ -2514,5 +2517,6 @@
   "PlanHandoffWorkAutoDetail": "Начать работу по плану. Рискованные действия проверяются автоматически и всё же могут спросить вас.",
   "PlanHandoffKeepPlanning": "Продолжить планирование",
   "PlanHandoffKeepPlanningDetail": "Остаться в Plan. Ничего не меняется.",
-  "PlanHandoffProceed": "Приступайте к плану."
+  "PlanHandoffProceed": "Приступайте к плану.",
+  "PetAppearanceLegacy": "Питомец работает на старой версии. После обновления Codewhale перезапустите его, чтобы выбрать стиль кита и язык текста."
 }

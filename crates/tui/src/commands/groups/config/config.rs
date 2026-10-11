@@ -729,7 +729,7 @@ fn select_pet_mode(app: &mut App, enabled: bool, persist: bool) -> CommandResult
 /// Escape returns to the same backdrop and draft. Companion verbs keep the
 /// existing shared simulation, appearance, replay and single audio lease.
 pub fn pet(app: &mut App, arg: Option<&str>) -> CommandResult {
-    const USAGE: &str = "Usage: /pet [on|off|inspect|status|appearance|window|source|export|sound on|off|avatar [key]|action [name|live]|view [name|live]]";
+    const USAGE: &str = "Usage: /pet [on|off|inspect|status|appearance|style smooth|pixel|language auto|en|zh-Hans|zh-Hant|ja|window|source|export|sound on|off|avatar [key]|action [name|live]|view [name|live]]";
     use crate::tui::pet_watch::{self, Control};
     let words = arg
         .map(str::trim)
@@ -790,6 +790,30 @@ pub fn pet(app: &mut App, arg: Option<&str>) -> CommandResult {
             CommandResult::message(format!("/pet {kind} {name}"))
         }
         ["appearance"] => queued(app, Control::Browser),
+        ["style", value] => {
+            let Some(body) = pet_watch::BodyStyle::parse(value) else {
+                return CommandResult::error(USAGE);
+            };
+            queued(
+                app,
+                Control::Appearance {
+                    body: Some(body),
+                    language: None,
+                },
+            )
+        }
+        ["language", value] => {
+            let Some(language) = pet_watch::TextLanguage::parse(value) else {
+                return CommandResult::error(USAGE);
+            };
+            queued(
+                app,
+                Control::Appearance {
+                    body: None,
+                    language: Some(language),
+                },
+            )
+        }
         ["window"] => queued(app, Control::Window),
         ["source"] => queued(app, Control::Select),
         ["export"] => {

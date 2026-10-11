@@ -21,6 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 mod appearance;
+pub use appearance::{BodyStyle, TextLanguage};
 mod audio;
 mod audio_cursor;
 mod avatars;
@@ -36,6 +37,10 @@ mod worker;
 use live::{Command, Notice, Presentation, Worker};
 #[derive(Clone, Copy)]
 pub enum Control {
+    Appearance {
+        body: Option<BodyStyle>,
+        language: Option<TextLanguage>,
+    },
     Sound,
     Browser,
     Window,
@@ -360,6 +365,9 @@ pub fn command(app: &mut App, control: Control) {
 }
 fn apply(state: &mut PetWatch, control: Control, agents: &[codewhale_ratatui::Subagent<'_>]) {
     match control {
+        Control::Appearance { body, language } => {
+            state.send(Command::Appearance { body, language });
+        }
         Control::Browser => state.send(Command::Browser),
         Control::Window => state.send(Command::Window),
         Control::Select => state.send(Command::Select),
@@ -489,7 +497,7 @@ pub fn tick(app: &mut App, now: Instant) {
         }
         state.raster = Some(update);
         state.unavailable = false;
-        if visible && !full::canonical(state) {
+        if visible {
             app.needs_redraw = true;
         }
     }
@@ -517,11 +525,12 @@ pub fn tick(app: &mut App, now: Instant) {
             })
             .unwrap_or((8.0, 16.0));
         let next = live::View {
+            locale: app.ui_locale.tag().into(),
             width: a.width.clamp(1, 512),
             height: a.height.saturating_sub(1).clamp(1, 256),
             cell_width: cell.0,
             cell_height: cell.1,
-            motion: motion && !full::canonical(state),
+            motion,
             pixels: !full::canonical(state)
                 && matches!(state.avatars.key.as_str(), "" | "whale")
                 && crate::tui::mark::kitty_graphics_supported()
@@ -546,6 +555,10 @@ pub fn tick(app: &mut App, now: Instant) {
     for notice in notices {
         app.pet_watch.exporting = false;
         let (text, level) = match notice {
+            Notice::AppearanceLegacy => (
+                tr(app.ui_locale, MessageId::PetAppearanceLegacy).into_owned(),
+                StatusToastLevel::Warning,
+            ),
             Notice::Exported(path) => (
                 tr(app.ui_locale, MessageId::PetWatchExported)
                     .replace("{path}", &path.display().to_string()),

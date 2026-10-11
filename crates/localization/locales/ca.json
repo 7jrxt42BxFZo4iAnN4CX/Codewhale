@@ -45,6 +45,9 @@
   "PetModeOn": "Mode mascota activat. Escriu al quadre de missatge; /pet inspect obre les respostes i els agents. /pet off restaura la vista estàndard.",
   "PetModeOff": "Mode mascota desactivat. La mascota continua vivint al seu company; /pet el torna a activar.",
   "PetModeReplyTitle": "Resposta",
+  "PetActivityBrowsing": "Utilitzant el navegador",
+  "PetActivityComputer": "Utilitzant l’ordinador",
+  "PetActivityMemory": "Recuperant context",
   "PetModeMessageHint": "{back} escriure",
   "PetModePaneHint": "{switch} canviar vista",
   "PetModeAgentHints": "{select} seleccionar · {open} conversa",
@@ -2514,5 +2517,6 @@
   "PlanHandoffWorkAutoDetail": "Comença amb el pla. Les accions de risc es revisen automàticament i encara et poden preguntar.",
   "PlanHandoffKeepPlanning": "Continua planificant",
   "PlanHandoffKeepPlanningDetail": "Segueix a Plan. No es canvia res.",
-  "PlanHandoffProceed": "Endavant amb el pla."
+  "PlanHandoffProceed": "Endavant amb el pla.",
+  "PetAppearanceLegacy": "La mascota funciona amb una versió anterior. Reinicia-la després d’actualitzar Codewhale per triar l’estil de balena i la llengua del text."
 }

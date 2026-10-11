@@ -45,6 +45,9 @@
   "PetModeOn": "Haustiermodus aktiviert. Schreibe im Nachrichtenfeld; /pet inspect öffnet Antworten und Agenten. /pet off stellt die Standardansicht wieder her.",
   "PetModeOff": "Haustiermodus aus. Das Haustier lebt in seinem Begleiter weiter; /pet schaltet es wieder ein.",
   "PetModeReplyTitle": "Antwort",
+  "PetActivityBrowsing": "Browser verwenden",
+  "PetActivityComputer": "Computer bedienen",
+  "PetActivityMemory": "Kontext abrufen",
   "PetModeMessageHint": "{back} Nachricht schreiben",
   "PetModePaneHint": "{switch} Ansicht wechseln",
   "PetModeAgentHints": "{select} auswählen · {open} Verlauf",
@@ -2514,5 +2517,6 @@
   "PlanHandoffWorkAutoDetail": "Mit dem Plan beginnen. Riskante Aktionen werden automatisch geprüft und können trotzdem nachfragen.",
   "PlanHandoffKeepPlanning": "Weiter planen",
   "PlanHandoffKeepPlanningDetail": "In Plan bleiben. Nichts wird geändert.",
-  "PlanHandoffProceed": "Setze den Plan jetzt um."
+  "PlanHandoffProceed": "Setze den Plan jetzt um.",
+  "PetAppearanceLegacy": "Das Haustier verwendet eine ältere Version. Starte es nach dem Codewhale-Update neu, um den Walstil und die Textsprache auszuwählen."
 }
