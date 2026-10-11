@@ -139,6 +139,18 @@ export const DOC_TOPICS: DocTopic[] = [
     category: "core-concepts",
   },
   {
+    id: "pet",
+    slug: "pet",
+    label: { en: "Watch each session with pet mode", zh: "用 Pet 模式查看每个会话" },
+    description: {
+      en: "A whale view per terminal that shows working, waiting for you, done, or failed, with replies and agents one key away.",
+      zh: "每个终端一头鲸鱼，显示工作中、在等你、已完成或失败，回复和智能体只需按一个键即可查看。",
+    },
+    repoSource: "docs/PET_MODE.md",
+    hasPage: true,
+    category: "core-concepts",
+  },
+  {
     id: "subagents",
     slug: "subagents",
     label: { en: "Run agents in parallel", zh: "并行运行 Agent" },
