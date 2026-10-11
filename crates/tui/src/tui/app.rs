@@ -3535,7 +3535,7 @@ impl App {
     #[must_use]
     pub fn mode_startup_default_receipt(&self, mode: AppMode) -> String {
         self.tr(MessageId::ModeAlreadyActiveSavedAsDefault)
-            .replace("{mode}", mode.display_name())
+            .replace("{mode}", &mode.display_name_localized(self.ui_locale))
     }
 
     /// Surface any startup-default write that failed since the last drain.
@@ -3602,7 +3602,8 @@ impl App {
             Ok(())
         });
         self.push_status_toast(
-            "Legacy full-access mode is deprecated — use Act + Full Access (Shift+Tab)".to_string(),
+            "Legacy full-access mode is deprecated — use Work + Full Access (Shift+Tab)"
+                .to_string(),
             StatusToastLevel::Warning,
             Some(8_000),
         );
@@ -3969,7 +3970,7 @@ impl App {
         if self.mode == AppMode::Plan {
             self.push_status_toast(
                 format!(
-                    "Permissions set to {}. Plan stays Read Only; this applies in Act and Operate.",
+                    "Permissions set to {}. Plan stays Read Only; this applies in Work and Operate.",
                     next.permission_chip_label()
                 ),
                 StatusToastLevel::Info,

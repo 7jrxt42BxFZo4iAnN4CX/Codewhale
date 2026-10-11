@@ -23,7 +23,7 @@ use crate::config::{Config, has_api_key};
 use crate::prompts::{
     BASE_PROMPT_OVERRIDE_OPT_IN_ENV, CONSTITUTION_OVERRIDE_FILE, base_prompt_override_opt_in,
 };
-use crate::tui::app::App;
+use crate::tui::app::{App, AppModeUi};
 use crate::tui::onboarding;
 use crate::tui::views::{
     ActionHint, ModalKind, ModalView, ViewAction, ViewEvent, render_modal_footer,
@@ -507,7 +507,7 @@ impl SetupRuntimeFacts {
             provider_ready,
             provider_status,
             provider_result,
-            work_intent: app.mode.display_name().to_string(),
+            work_intent: app.mode.display_name_localized(app.ui_locale).into_owned(),
             approval: app
                 .approval_mode
                 .permission_chip_label()

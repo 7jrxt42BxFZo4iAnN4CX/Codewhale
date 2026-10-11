@@ -9,7 +9,7 @@ use crate::config::{
 };
 #[cfg(test)]
 use crate::reasoning_preference::ReasoningEffort;
-use crate::tui::app::{App, AppAction};
+use crate::tui::app::{App, AppAction, AppModeUi};
 use crate::tui::views::{HelpView, ModalKind, SubAgentsView, subagent_view_agents};
 use codewhale_config::AppMode;
 use codewhale_localization::{Locale, MessageId, tr};
@@ -658,7 +658,7 @@ pub fn home_dashboard(app: &mut App) -> CommandResult {
         stats,
         "{}       {}",
         tr(locale, MessageId::HomeMode),
-        app.mode.label()
+        app.mode.display_name_localized(locale)
     );
     let _ = writeln!(
         stats,

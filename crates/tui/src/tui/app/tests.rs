@@ -4021,7 +4021,7 @@ fn plan_permission_cycle_moves_the_baseline_and_leaves_plan_read_only() {
     assert!(
         app.status_toasts
             .iter()
-            .any(|toast| toast.text.contains("applies in Act and Operate")),
+            .any(|toast| toast.text.contains("applies in Work and Operate")),
         "the receipt must say when the new posture starts applying"
     );
 
