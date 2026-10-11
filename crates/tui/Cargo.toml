@@ -36,6 +36,7 @@ rusty-alloc = []
 [lib]
 name = "codewhale_tui"
 path = "src/lib.rs"
+doctest = false
 
 [dependencies]
 # Independent terminal kit, pinned and vendored for reproducible binary builds.
@@ -87,7 +88,6 @@ jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_r
 ratatui = { version = "=0.30.2", features = ["unstable-rendered-line-info"] }
 regex = "1.11"
 reqwest = { workspace = true, features = ["blocking", "stream", "form", "http2"] }
-rusqlite.workspace = true
 rquickjs.workspace = true
 rmcp = { version = "3.2.0", default-features = false, features = ["auth", "client"] }
 rustls.workspace = true
@@ -103,7 +103,6 @@ syntect = { version = "5.2", default-features = false, features = ["default-synt
 serde.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 yaml-rust2 = { workspace = true }
-schemars = { version = "1.2.1", features = ["derive", "preserve_order"] }
 shellexpand = "3"
 # Grammar-exact Rust parsing for the post-edit syntax gate (#6204). `syn` is
 # already in the lockfile as a proc-macro build dependency; this reuses that
@@ -172,6 +171,8 @@ wiremock = "0.6"
 tiny_http = "0.12"
 pretty_assertions = "1.4"
 rio-vt = "0.5.1"
+rusqlite.workspace = true
+schemars = { version = "1.2.1", features = ["derive", "preserve_order"] }
 tokio-tungstenite = "0.30"
 
 [target.'cfg(unix)'.dependencies]
