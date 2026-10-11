@@ -77,7 +77,7 @@
      floor. It settles within a few rows so text from 3rem down sits on
      >= 4.5:1 muted contrast; it is never a bright wall. */
   --sea-surface: var(--brand-deep);
-  --sea-shallow: var(--kit-whale-blue);
+  --sea-shallow: color-mix(in srgb, var(--kit-whale-blue) 60%, var(--kit-mark-navy));
   --sea-mid: var(--kit-mark-navy);
   --sea: linear-gradient(180deg, var(--sea-shallow) 0, var(--sea-mid) 5rem, var(--ocean-floor) 22rem);
   --sea-band: linear-gradient(180deg, var(--sea-shallow) 0, var(--sea-mid) 40%, var(--ocean-floor) 100%);
