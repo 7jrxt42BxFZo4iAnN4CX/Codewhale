@@ -914,7 +914,7 @@
   "HomePlanModeChecklistTip": "  Plan und To-do-Fortschritt vorlegen, dann zu Act oder Operate wechseln",
   "HomeGoalModeTip": "Zielverfolgung – /goal <objective> setzen, um Ziele zu verfolgen",
   "OnboardLanguageTitle": "Sprache wählen",
-  "OnboardLanguageBlurb": "Wähle die UI-Sprache. Du kannst sie jederzeit mit `/settings set locale <tag>` ändern.",
+  "OnboardLanguageBlurb": "Wähle die UI-Sprache. Du kannst sie jederzeit mit `/config locale <tag> --save` ändern.",
   "OnboardProviderTitle": "Modellprovider wählen",
   "OnboardProviderBlurb": "Wähle, wo dein Modell läuft. Gehostete Provider brauchen einen Schlüssel; lokale Laufzeiten kommen ohne aus.",
   "KimiCodePlanApiKeyHint": "Für Kimi-Code-Mitgliedschaftspläne erstelle den plangebundenen Schlüssel unter {console}.",

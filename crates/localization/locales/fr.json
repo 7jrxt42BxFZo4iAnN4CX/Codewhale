@@ -914,7 +914,7 @@
   "HomePlanModeChecklistTip": "  Présentez un plan et l'avancement des tâches, puis passez à Act ou Operate",
   "HomeGoalModeTip": "Suivi d'objectif — définissez /goal <objectif> pour poursuivre des objectifs",
   "OnboardLanguageTitle": "Choisissez votre langue",
-  "OnboardLanguageBlurb": "Choisissez la langue de l'interface. Vous pouvez la changer à tout moment avec `/settings set locale <tag>`.",
+  "OnboardLanguageBlurb": "Choisissez la langue de l'interface. Vous pouvez la changer à tout moment avec `/config locale <tag> --save`.",
   "OnboardProviderTitle": "Choisissez votre fournisseur de modèles",
   "OnboardProviderBlurb": "Choisissez où votre modèle s'exécute. Les fournisseurs hébergés demandent une clé ; les runtimes locaux peuvent continuer sans.",
   "KimiCodePlanApiKeyHint": "Pour les plans d'adhésion Kimi Code, créez la clé liée au plan sur {console}.",

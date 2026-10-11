@@ -914,7 +914,7 @@
   "HomePlanModeChecklistTip": "  Подайте план і прогрес To-do, потім перейдіть до Act або Operate",
   "HomeGoalModeTip": "Відстеження цілей - задайте /goal <objective>, щоб досягати цілей",
   "OnboardLanguageTitle": "Оберіть мову",
-  "OnboardLanguageBlurb": "Оберіть мову інтерфейсу. Її можна змінити будь-коли командою `/settings set locale <tag>`.",
+  "OnboardLanguageBlurb": "Оберіть мову інтерфейсу. Її можна змінити будь-коли командою `/config locale <tag> --save`.",
   "OnboardProviderTitle": "Оберіть провайдера моделі",
   "OnboardProviderBlurb": "Оберіть, де працюватиме модель. Хмарні провайдери потребують ключ; локальні середовища можуть працювати без нього.",
   "KimiCodePlanApiKeyHint": "Для планів підписки Kimi Code створіть прив'язаний до плану ключ на {console}.",

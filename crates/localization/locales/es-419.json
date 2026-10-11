@@ -931,7 +931,7 @@
   "HomePlanModeChecklistTip": "  Presenta el plan y luego cambia a Act u Operate",
   "HomeGoalModeTip": "Seguimiento de Goal - Usa /goal <objetivo> para seguir un objetivo persistente",
   "OnboardLanguageTitle": "Elige el idioma",
-  "OnboardLanguageBlurb": "Elige el idioma de la interfaz. Puedes cambiarlo en cualquier momento con `/settings set locale <etiqueta>`.",
+  "OnboardLanguageBlurb": "Elige el idioma de la interfaz. Puedes cambiarlo en cualquier momento con `/config locale <etiqueta> --save`.",
   "OnboardProviderTitle": "Elige tu proveedor de modelos",
   "OnboardProviderBlurb": "Elige dónde se ejecutará tu modelo. Los proveedores alojados necesitan una clave; los runtimes locales pueden continuar sin ella.",
   "KimiCodePlanApiKeyHint": "Para los planes de membresía de Kimi Code, crea la clave vinculada al plan en {console}.",

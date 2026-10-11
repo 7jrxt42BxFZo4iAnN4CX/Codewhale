@@ -914,7 +914,7 @@
   "HomePlanModeChecklistTip": "  Sajikan rencana dan progres To-do, lalu beralih ke Act atau Operate",
   "HomeGoalModeTip": "Pelacakan tujuan - Atur /goal <objective> untuk mengejar sasaran",
   "OnboardLanguageTitle": "Pilih bahasa Anda",
-  "OnboardLanguageBlurb": "Pilih bahasa UI. Anda dapat mengubahnya kapan saja dengan `/settings set locale <tag>`.",
+  "OnboardLanguageBlurb": "Pilih bahasa UI. Anda dapat mengubahnya kapan saja dengan `/config locale <tag> --save`.",
   "OnboardProviderTitle": "Pilih penyedia model Anda",
   "OnboardProviderBlurb": "Pilih tempat model Anda berjalan. Penyedia hosted memerlukan kunci; runtime lokal dapat lanjut tanpa kunci.",
   "KimiCodePlanApiKeyHint": "Untuk paket keanggotaan Kimi Code, buat kunci tertaut paket di {console}.",

@@ -929,7 +929,7 @@
   "HomePlanModeChecklistTip": "  提交計畫與待辦進度，然後切換到 Work 或 Operate",
   "HomeGoalModeTip": "Goal 跟蹤 - 設定 /goal <目標> 以跟蹤持久目標",
   "OnboardLanguageTitle": "選擇語言",
-  "OnboardLanguageBlurb": "選擇介面語言。可隨時使用 `/settings set locale <tag>` 修改。",
+  "OnboardLanguageBlurb": "選擇介面語言。可隨時使用 `/config locale <tag> --save` 修改。",
   "OnboardProviderTitle": "選擇模型供應商",
   "OnboardProviderBlurb": "選擇模型執行的位置。託管供應商需要金鑰；本地執行階段無需金鑰即可繼續。",
   "KimiCodePlanApiKeyHint": "對於 Kimi Code 會員計畫，請在 {console} 建立與計畫關聯的金鑰。",

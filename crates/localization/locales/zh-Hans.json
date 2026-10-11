@@ -931,7 +931,7 @@
   "HomePlanModeChecklistTip": "  提交计划和待办进度，然后切换到 Work 或 Operate",
   "HomeGoalModeTip": "Goal 跟踪 - 设置 /goal <目标> 以跟踪持久目标",
   "OnboardLanguageTitle": "选择语言",
-  "OnboardLanguageBlurb": "选择界面语言。可随时使用 `/settings set locale <tag>` 修改。",
+  "OnboardLanguageBlurb": "选择界面语言。可随时使用 `/config locale <tag> --save` 修改。",
   "OnboardProviderTitle": "选择模型提供商",
   "OnboardProviderBlurb": "选择模型运行的位置。托管提供商需要密钥；本地运行时无需密钥即可继续。",
   "KimiCodePlanApiKeyHint": "对于 Kimi Code 会员计划，请在 {console} 创建与计划关联的密钥。",

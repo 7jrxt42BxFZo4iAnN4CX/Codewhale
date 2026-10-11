@@ -914,7 +914,7 @@
   "HomePlanModeChecklistTip": "  Presenta un pla i el progrés de tasques, després canvia a Act o Operate",
   "HomeGoalModeTip": "Seguiment d'objectius - Defineix /goal <objectiu> per perseguir objectius",
   "OnboardLanguageTitle": "Tria l'idioma",
-  "OnboardLanguageBlurb": "Tria l'idioma de la interfície. El pots canviar en qualsevol moment amb `/settings set locale <tag>`.",
+  "OnboardLanguageBlurb": "Tria l'idioma de la interfície. El pots canviar en qualsevol moment amb `/config locale <tag> --save`.",
   "OnboardProviderTitle": "Tria el teu proveïdor de models",
   "OnboardProviderBlurb": "Tria on s'executa el teu model. Els proveïdors allotjats necessiten una clau; els runtimes locals poden continuar sense.",
   "KimiCodePlanApiKeyHint": "Per als plans de membresia de Kimi Code, crea la clau vinculada al pla a {console}.",

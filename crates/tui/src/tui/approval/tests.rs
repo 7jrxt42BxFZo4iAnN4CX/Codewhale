@@ -2763,7 +2763,7 @@ fn test_elevation_option_descriptions() {
             .description()
             .contains("filesystem and network access")
     );
-    assert!(ElevationOption::Abort.description().contains("Cancel"));
+    assert!(ElevationOption::Abort.description().contains("Skip"));
 }
 
 #[test]

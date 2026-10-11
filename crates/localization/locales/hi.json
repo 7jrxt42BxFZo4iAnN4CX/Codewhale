@@ -914,7 +914,7 @@
   "HomePlanModeChecklistTip": "  योजना और To-do प्रगति प्रस्तुत करें, फिर Act या Operate पर जाएँ",
   "HomeGoalModeTip": "गोल ट्रैकिंग - लक्ष्य के लिए /goal <objective> सेट करें",
   "OnboardLanguageTitle": "अपनी भाषा चुनें",
-  "OnboardLanguageBlurb": "UI भाषा चुनें। इसे कभी भी `/settings set locale <tag>` से बदल सकते हैं।",
+  "OnboardLanguageBlurb": "UI भाषा चुनें। इसे कभी भी `/config locale <tag> --save` से बदल सकते हैं।",
   "OnboardProviderTitle": "अपना मॉडल प्रोवाइडर चुनें",
   "OnboardProviderBlurb": "चुनें कि आपका मॉडल कहाँ चलेगा। होस्टेड प्रोवाइडर को कुंजी चाहिए; लोकल रनटाइम बिना कुंजी के चल सकते हैं।",
   "KimiCodePlanApiKeyHint": "Kimi Code मेंबरशिप प्लान के लिए, {console} पर प्लान-लिंक्ड कुंजी बनाएँ।",

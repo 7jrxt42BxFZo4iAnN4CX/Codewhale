@@ -931,7 +931,7 @@
   "HomePlanModeChecklistTip": "  計画を提示してから Act または Operate へ",
   "HomeGoalModeTip": "Goal 追跡 - /goal <目標> で持続的な目標を追跡",
   "OnboardLanguageTitle": "言語を選択",
-  "OnboardLanguageBlurb": "UI 言語を選んでください。`/settings set locale <tag>` でいつでも変更できます。",
+  "OnboardLanguageBlurb": "UI 言語を選んでください。`/config locale <tag> --save` でいつでも変更できます。",
   "OnboardProviderTitle": "モデルプロバイダーを選択",
   "OnboardProviderBlurb": "モデルの実行先を選びます。ホステッドプロバイダーにはキーが必要ですが、ローカルランタイムはキーなしで続行できます。",
   "KimiCodePlanApiKeyHint": "Kimi Code メンバーシッププランでは、{console} でプラン連携キーを作成します。",
