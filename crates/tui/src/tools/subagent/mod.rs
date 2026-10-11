@@ -10274,15 +10274,28 @@ impl SubAgentTranscriptArtifactWriter {
         })
     }
 
-    fn sync_messages(&mut self, messages: &[Message], durable: bool) -> Result<()> {
-        if messages.len() < self.synced_live_messages {
-            return Err(anyhow!(
+    fn unsynced_messages<'a>(&self, messages: &'a [Message]) -> Result<&'a [Message]> {
+        messages.get(self.synced_live_messages..).ok_or_else(|| {
+            anyhow!(
                 "sub-agent transcript history shrank from {} to {} messages",
                 self.synced_live_messages,
                 messages.len()
-            ));
-        }
-        self.append_messages(&messages[self.synced_live_messages..], durable)?;
+            )
+        })
+    }
+
+    fn sync_messages(&mut self, messages: &[Message], durable: bool) -> Result<()> {
+        let unsynced = self.unsynced_messages(messages)?;
+        self.append_messages(unsynced, durable)?;
+        self.synced_live_messages = messages.len();
+        Ok(())
+    }
+
+    fn sync_projected_messages(&mut self, messages: &[Message], durable: bool) -> Result<()> {
+        let unsynced = crate::image_attach::safe_tool_result_message_projection(
+            self.unsynced_messages(messages)?,
+        );
+        self.append_messages(&unsynced, durable)?;
         self.synced_live_messages = messages.len();
         Ok(())
     }
@@ -14415,11 +14428,8 @@ async fn insert_subagent_full_transcript_handle(
     // bounded message tail — embedding it verbatim would duplicate that tail
     // inside one payload. Keep checkpoint metadata, drop its messages, and
     // record how much of the true history the bounded tail omits.
-    let projected_messages = crate::image_attach::safe_tool_result_message_projection(messages);
-    let (bounded_messages, omitted_messages) = bounded_tail_messages(
-        &projected_messages,
-        SUBAGENT_TRANSCRIPT_MESSAGE_BUDGET_BYTES,
-    );
+    let (bounded_messages, omitted_messages) =
+        bounded_tail_messages(messages, SUBAGENT_TRANSCRIPT_MESSAGE_BUDGET_BYTES);
     let checkpoint_meta = checkpoint.map(|checkpoint| SubAgentCheckpoint {
         omitted_messages: checkpoint.message_count,
         messages: Vec::new(),
@@ -14427,7 +14437,7 @@ async fn insert_subagent_full_transcript_handle(
     });
     let transcript_artifact = transcript_artifact.map(|writer| {
         let synced =
-            match writer.sync_messages(&projected_messages, *status != SubAgentStatus::Running) {
+            match writer.sync_projected_messages(messages, *status != SubAgentStatus::Running) {
                 Ok(()) => true,
                 Err(err) => {
                     tracing::warn!(
@@ -14439,7 +14449,7 @@ async fn insert_subagent_full_transcript_handle(
                     false
                 }
             };
-        writer.metadata(synced && writer.synced_live_messages == projected_messages.len())
+        writer.metadata(synced && writer.synced_live_messages == messages.len())
     });
     let payload = json!({
         "kind": "subagent_full_transcript",
@@ -14544,23 +14554,27 @@ fn bound_subagent_tool_result(
 /// budgets. Exact JSON size via serde; unserializable messages (should not
 /// happen) count as 1 KiB so they still consume budget.
 fn approximate_message_bytes(message: &Message) -> usize {
-    serde_json::to_string(message).map_or(1024, |s| s.len())
+    let mut counter = crate::utils::CountingWriter::new();
+    serde_json::to_writer(&mut counter, message).map_or(1024, |()| counter.count())
 }
 
-/// Keep the most recent messages whose combined approximate size fits
-/// `budget_bytes`. Always keeps at least the final message (even if it alone
-/// exceeds the budget) so a non-empty history stays continuable. Returns the
-/// retained tail and how many older messages were omitted.
+/// Keep the most recent messages, after `safe_tool_result_message_projection`,
+/// whose combined approximate size fits `budget_bytes`. Always keeps at least
+/// the final message (even if it alone exceeds the budget) so a non-empty
+/// history stays continuable. Returns the retained tail and how many older
+/// messages were omitted.
 fn bounded_tail_messages(messages: &[Message], budget_bytes: usize) -> (Vec<Message>, usize) {
     let mut kept_rev: Vec<Message> = Vec::new();
     let mut used = 0usize;
     for message in messages.iter().rev() {
-        let size = approximate_message_bytes(message);
+        let projected =
+            crate::image_attach::safe_tool_result_message_projection(std::slice::from_ref(message));
+        let size: usize = projected.iter().map(approximate_message_bytes).sum();
         if !kept_rev.is_empty() && used.saturating_add(size) > budget_bytes {
             break;
         }
         used = used.saturating_add(size);
-        kept_rev.push(message.clone());
+        kept_rev.extend(projected);
     }
     kept_rev.reverse();
     let omitted = messages.len().saturating_sub(kept_rev.len());
@@ -14576,11 +14590,8 @@ fn build_subagent_checkpoint(
 ) -> SubAgentCheckpoint {
     let created_at_ms = epoch_millis_now();
     let checkpoint_id = format!("{agent_id}:step:{steps_taken}:ts:{created_at_ms}");
-    let projected_messages = crate::image_attach::safe_tool_result_message_projection(messages);
-    let (bounded_messages, omitted_messages) = bounded_tail_messages(
-        &projected_messages,
-        SUBAGENT_CHECKPOINT_MESSAGE_BUDGET_BYTES,
-    );
+    let (bounded_messages, omitted_messages) =
+        bounded_tail_messages(messages, SUBAGENT_CHECKPOINT_MESSAGE_BUDGET_BYTES);
     SubAgentCheckpoint {
         checkpoint_id: checkpoint_id.clone(),
         agent_id: agent_id.to_string(),
