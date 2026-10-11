@@ -4340,15 +4340,15 @@ impl Engine {
         }
     }
 
-    fn record_goal_usage_for_turn(&self, usage: &Usage, elapsed: std::time::Duration) {
+    fn record_goal_usage_for_turn(&self, usage: &Usage, started: Instant) {
         let token_delta =
             u64::from(usage.input_tokens).saturating_add(u64::from(usage.output_tokens));
-        let time_delta_seconds = elapsed.as_secs();
+        let time_delta_seconds = started.elapsed().as_secs();
         if token_delta == 0 && time_delta_seconds == 0 {
             return;
         }
         match self.config.goal_state.lock() {
-            Ok(mut state) => state.record_usage(token_delta, time_delta_seconds),
+            Ok(mut state) => state.record_usage(token_delta, time_delta_seconds, started),
             Err(err) => tracing::warn!("goal state lock poisoned while recording usage: {err}"),
         }
     }
@@ -6715,7 +6715,7 @@ impl Engine {
         // Update session usage
         self.session.total_usage.add(&turn.usage);
         if !self.is_acp_turn() {
-            self.record_goal_usage_for_turn(&turn.usage, turn.elapsed());
+            self.record_goal_usage_for_turn(&turn.usage, turn.started_at);
         }
 
         // Cancellation wins until the terminal settlement decision. `run_turn`

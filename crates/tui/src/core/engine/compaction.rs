@@ -358,7 +358,7 @@ impl Engine {
             ) => Some(result),
         };
         self.session.total_usage.add(&compaction_usage);
-        self.record_goal_usage_for_turn(&compaction_usage, started.elapsed());
+        self.record_goal_usage_for_turn(&compaction_usage, started);
         self.emit_compaction_usage(&compaction_usage, started.elapsed())
             .await;
 

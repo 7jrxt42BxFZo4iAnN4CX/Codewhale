@@ -391,8 +391,11 @@ impl GoalState {
         }
     }
 
-    pub fn record_usage(&mut self, token_delta: u64, time_delta_seconds: u64) {
-        if self.is_active() {
+    pub fn record_usage(&mut self, token_delta: u64, time_delta_seconds: u64, since: Instant) {
+        if self.is_active()
+            || (self.objective.is_some()
+                && self.finished_at.is_some_and(|finished| finished >= since))
+        {
             self.tokens_used = self.tokens_used.saturating_add(token_delta);
             self.time_used_seconds = self.time_used_seconds.saturating_add(time_delta_seconds);
         }
@@ -1543,7 +1546,7 @@ mod tests {
                 Some(1_200),
                 status,
             );
-            state.record_usage(300, 12);
+            state.record_usage(300, 12, std::time::Instant::now());
             state.record_continuation();
             let before = state.snapshot();
 
@@ -1569,7 +1572,7 @@ mod tests {
         blocked
             .create("resume the release goal".to_string(), Some(4_000))
             .expect("create blocked fixture");
-        blocked.record_usage(750, 44);
+        blocked.record_usage(750, 44, std::time::Instant::now());
         blocked.record_continuation();
         blocked
             .mark_blocked("provider failed".to_string())
@@ -1662,7 +1665,7 @@ mod tests {
         state
             .create("finish the first objective".to_string(), Some(1_200))
             .expect("create first goal");
-        state.record_usage(300, 12);
+        state.record_usage(300, 12, std::time::Instant::now());
         state.record_continuation();
         state
             .mark_complete(
@@ -2110,7 +2113,7 @@ mod tests {
         );
         {
             let mut goal = state.lock().expect("goal lock");
-            goal.record_usage(300, 12);
+            goal.record_usage(300, 12, std::time::Instant::now());
             goal.record_continuation();
         }
 
