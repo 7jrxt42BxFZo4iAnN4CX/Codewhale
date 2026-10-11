@@ -10,6 +10,14 @@ Current boundary note (read the workspace version from `Cargo.toml`; this
 boundary has held since v0.9.1):
 - `crates/tui` is still the live end-user runtime for the TUI, runtime API, task manager, and tool execution loop.
 - Other workspace crates are being split out incrementally, but they are not yet the sole runtime source of truth.
+
+<img src="assets/architecture.webp" alt="Codewhale architecture: clients reach the one turn loop, Engine::run_turn, through the CLI or the Runtime API; the engine uses crates/core to build requests, runs tools under approval and sandbox policy, routes to any provider through crates/config, and logs everything model-visible to the session store." width="1000">
+
+The diagram draws the Runtime API and the task manager as their own boxes; today
+both are hosted inside `crates/tui`, as the note above says. The GPUI desktop
+app and the VS Code extension live outside this repository. The arrow from the
+engine to the session log follows the "model-visible means logged" contract
+rather than a traced write path.
 - `crates/tui` is being split into crates sized as agent work partitions:
   contracts, utilities, services, providers, runtime, leaf feature crates,
   TUI views and hosts, in the order `docs/design/TUI_DECONSTRUCTION.md`
