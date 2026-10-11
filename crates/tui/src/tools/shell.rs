@@ -3187,10 +3187,18 @@ impl ShellManager {
             .ok_or_else(|| anyhow!("Task {task_id} not found"))?;
 
         shell.kill()?;
-        if shell.status == ShellStatus::Killed {
+        shell.snapshot()
+    }
+
+    fn mark_cancel_reported(&mut self, result: &ShellResult) {
+        if result.status == ShellStatus::Killed
+            && let Some(shell) = result
+                .task_id
+                .as_deref()
+                .and_then(|id| self.processes.get_mut(id))
+        {
             shell.completion_reported = true;
         }
-        shell.snapshot()
     }
 
     pub fn kill_for_session(
@@ -3225,18 +3233,20 @@ impl ShellManager {
     ) -> Result<Vec<ShellResult>> {
         let ids = self
             .processes
-            .iter()
+            .iter_mut()
             .filter(|(_, shell)| {
-                shell.status == ShellStatus::Running
-                    && !active_session_id.is_empty()
-                    && shell.owner_session_id == active_session_id
+                !active_session_id.is_empty() && shell.owner_session_id == active_session_id
             })
-            .map(|(id, _)| id.clone())
+            .filter_map(|(id, shell)| {
+                shell.poll();
+                (shell.status == ShellStatus::Running).then(|| id.clone())
+            })
             .collect::<Vec<_>>();
         let mut results = Vec::with_capacity(ids.len());
         for id in ids {
             results.push(self.kill(&id)?);
         }
+        results.retain(|result| result.status == ShellStatus::Killed);
         Ok(results)
     }
 
@@ -6997,6 +7007,9 @@ impl BashTool {
             let results = manager
                 .kill_running_for_session(&context.state_namespace)
                 .map_err(|err| ToolError::execution_failed(err.to_string()))?;
+            for result in &results {
+                manager.mark_cancel_reported(result);
+            }
             if results.is_empty() {
                 return Ok(ToolResult {
                     content: "No running background commands.".to_string(),
@@ -7033,6 +7046,7 @@ impl BashTool {
         let result = manager
             .kill_for_session(&context.state_namespace, task_id)
             .map_err(|err| ToolError::execution_failed(err.to_string()))?;
+        manager.mark_cancel_reported(&result);
         let task_id = result
             .task_id
             .clone()
