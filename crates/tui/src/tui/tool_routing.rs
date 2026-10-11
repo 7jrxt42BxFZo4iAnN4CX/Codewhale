@@ -722,7 +722,10 @@ pub(super) fn handle_tool_call_complete(
     let semantic_name = detail
         .map_or(name, |detail| canonical_action_alias(name, &detail.input))
         .to_string();
-    let explicit_background = detail.is_some_and(|detail| exec_is_background(&detail.input));
+    let explicit_background = detail.is_some_and(|detail| {
+        exec_is_background(&detail.input)
+            || detail.input.get("tty").and_then(serde_json::Value::as_bool) == Some(true)
+    });
 
     // Roll any child-LLM token usage the tool reports into the
     // session-cost counter. Runs unconditionally so future tools that
