@@ -26,47 +26,38 @@ to a date: at the observed cadence (0.10.0 on 2026-09-22, 0.10.1 on
 
 ## Releases
 
-### 0.10.2: Ship the candidate as-is. No structural move (moved here from the sequencer's X2-in-0.10.2).
+### 0.10.2: Founder-approved X2 and RS-11 alongside the release fixes
 
-Slices:
-- Release the stamped candidate. workspace.version is already 0.10.2 in Cargo.toml, and `wip(0.10.2)` and ratatui-0.1.1 release-prep commits are on main. The working tree has 48 dirty entries (CHANGELOG.md, settings.rs, tui/app*, runtime_api/*, core/authority.rs, a staged deletion of full_access_confirm.rs). A structural move on top of an RC with another agent's feature in flight is the largest avoidable risk in the plan.
-- Non-move rider: write the real per-crate tarball sizes (from the dry-run's check-crate-sizes.py output) into the release notes table. This is the baseline column for every later release.
-- Non-move rider: record the codewhale-ratatui 0.1.2 publication receipt in the release notes (out-of-band crate, not in crates.sh).
+The founder confirmed on 2026-10-12 that 0.10.2 is not structurally frozen.
+X2 (#6940) and RS-11 (#6938) belong in this candidate; the older schedule that
+moved them to 0.10.3/0.10.4 is superseded.
 
-- **Entry gate:** Founder-owned release process per docs/RELEASE_RUNBOOK.md. `python3 scripts/split/module_graph.py --check` PASS at 11/32/1/1. codewhale-ratatui 0.1.2 is on crates.io (human gate). The dirty full-access and settings work is either in the candidate or excluded by its owner.
-- **Exit gate:** `./scripts/release/publish-crates.sh dry-run` passes for all 29 crates, including check-crate-sizes.py. validate-crate-publish-order.py passes. Hosted CI green on the exact SHA (macOS and Windows jobs). Source, local, CI, packaged-artifact and release-state evidence are reported separately.
-- **Ratchet target:** prod 11, test 32 (RS-12 cleared fleet|lib.rs 3), late 1, uilib 1.
-- **Size budget:** All 29 crates: no growth versus the recorded table. codewhale-tui about 9.47 MiB real (about 9.50 by proxy). Not a gate on structure.
-- **Risks:** Carrying a structural move into the candidate would collide with the dirty tree. Nothing to roll back structurally.
-- **Rollback:** Normal release rollback per the runbook. No structural change to revert.
+- X2 moves the existing command-catalog port into `command_catalog`, adopts the
+  existing contract discovery enum, and migrates Runtime API, model help and
+  extension registration together. The API and help formats remain compatible.
+  Missing installation fails visibly. Tests capture the catalog onto the
+  Runtime server thread instead of installing a global test authority.
+- X2 source ratchet: production 11 -> 0, tests 32 -> 30, late 1, terminal-library
+  1. The measured largest cycle shrinks from 98 to 82 modules. These source
+  counts do not establish packaged or published acceptance.
+- RS-11 follows in the founder’s order: slices 2, 4, 5, then 1, 3, 6. Move pure
+  environment/support helpers behind the existing `codewhale-runtime`
+  `test-support` feature, keep one environment mutex, and move UI fixtures and
+  UI-typed assertions to their UI owner. No new test-support crate is needed.
+  RS-11 is still pending here; its final test-edge count is recorded when it lands.
+- Slice gate: one frozen native batch, focused existing checks with actual
+  nonzero counts, clippy using CI’s flags, and the lowered generated ratchet.
+  Preserve exact command JSON through a local before/after inspection.
+- Release gate: the founder-owned dry-run/publish process, actual crate sizes,
+  codewhale-ratatui 0.1.2 publication receipt, and hosted qualification on the
+  exact final candidate. Tags and publication remain human actions.
+- Recovery: a recoverable artifact backup and `git revert` on canonical main;
+  no force push, shared-history rewrite or agent-created release tag.
 
-### 0.10.3: Finish RS-13: command catalog port (X2). The only move.
+### 0.10.3 and 0.10.4: No additional structural move committed by this plan
 
-Slices:
-- X2 command_catalog leaf in crates/tui/src (new module), per the design doc. runtime_api.rs:4815-4898 (user_registry, command_infos, traits::usage_subcommands, CommandDiscovery, UNLISTED_COMMANDS, with_registry_for_workspace) and tools/tui_help.rs:14,173,210 go through it; extension_host/command.rs per the design table. The port must delete the old direct call sites in the same slice (no second registry).
-- Design-doc correction the sequencer dropped: install the real catalog process-wide for tests. A thread-local guard cannot reach the Runtime API test server thread.
-- Riders (no graph change): cut `runtime_api|commands` test edges (2) in the same files; move `late` (test_cases_04.rs:1197) and `uilib` (roster_routes.rs:798) test edges only if the owning test files are not dirty.
-
-- **Entry gate:** module_graph.py --check PASS at 11/32/1/1. The files this slice edits are clean in `git status`: runtime_api.rs (13,649 lines, not dirty now), tools/tui_help.rs, commands/catalog.rs, extension_host/command.rs. The sequencer's 'clean in all of commands/ and runtime_api/' would block this slice today, since runtime_api/tests.rs, runtime_api/thread_history.rs and commands/groups/config/config.rs are dirty. Require only the exact files edited, and coordinate on runtime_api/tests.rs if the test guard install touches it. One named build owner.
-- **Exit gate:** Slice gate: ratchet --check at prod 0 with the baseline JSON updated in the same commit. cargo fmt --check. clippy with CI's flags. `scripts/dev-test.sh` runtime_api and commands filters with N > 0 passed, including a slash-command-list API test and the /help test. Journey on the built binary: slash palette lists commands, /help, GET of the runtime API command list. Release gate at cut: publish-crates.sh dry-run and green hosted CI on the SHA.
-- **Ratchet target:** prod 11 -> 0, test 32 -> 30 (runtime_api|commands 2 cleared if achieved), late 1, uilib 1. Design doc predicts the cycle 100 -> 83 modules; re-run partition_report.py and quote the real number.
-- **Size budget:** No crate grows. A new leaf module in tui adds a few KiB.
-- **Risks:** Highest churn path: runtime_api is 286 commits in 30 days. The port could be built as a second registry (guard by deleting callers). The catalog process-wide install can leak between tests.
-- **Rollback:** Annotated local recovery tag plus a CW/backups note. `git revert` of the slice commit on main. No reset, no force-push. If 0.10.3 is already cut, fix forward before any other move.
-
-### 0.10.4: W0-S2: codewhale-test-support (publish=false), env half only.
-
-Slices:
-- New crates/test/test-support, publish = false, version.workspace = true, added to root Cargo.toml `members` (the sequencer omitted the members edit). Move tui/src/test_env_lock.rs (300 lines) and the env half of test_support.rs (non-test part 657 lines: isolated_test_state_root, SealedHome, EnvVarGuard, state_io_lock, guarded_env_keys). That is about 960 lines, not the 1.5k claimed. The tui test_support.rs stays as a shim plus the App fixtures and the fence tests (they name tui::app types).
-- Same seam: drop the cfg(test) mount of test_env_lock in shell_dispatcher.rs and the #[path] include in tests/integration/main.rs.
-- Rider: cut `test_support|tui` test edges that fall out (7 today).
-
-- **Entry gate:** 0.10.3 shipped. No one else edits test_support.rs, test_env_lock.rs or shell_dispatcher.rs. Confirm the new manifest uses `version.workspace = true`: validate-crate-publish-order.py checks that ALL workspace packages share one version (it counts publish=false crates in that check but not in the publish list). Confirm check-versions.sh item 4 only greps path deps that carry a version, so a version-less path dev-dep passes.
-- **Exit gate:** Slice gate: ratchet --check (test <= 33). `cargo test -p codewhale-tui --test integration --no-run`. nextest of a sample of EnvVarGuard users (spawns-binaries group) with equal pass counts before and after, N > 0. Exactly one copy of the process-global lock in the dependency graph, checked by reading Cargo.toml paths (grep for the symbol in crates/*: only tui and the new crate). Release gate: dry-run proves the published tui manifest has the path dev-dep stripped and crates.sh is unchanged at 29. Windows CI green for the cfg(unix) sandbox-visible tempdir code.
-- **Ratchet target:** prod 0, test <= 33, late 1, uilib 1 (no change expected from the carve itself).
-- **Size budget:** No crate grows. Not a size measure: the moved code is cfg(test) helpers.
-- **Risks:** Low. A second copy of the env mutex stops env tests serializing. The 7 other private env-guard copies stay (later cleanup). Why this is on the critical path: settings.rs has 34 test_support refs and credentials tests mutate env, so neither can move to a lower crate without a lower test-support.
-- **Rollback:** Recovery tag; revert one commit (3 files plus Cargo.toml and Cargo.lock; shim means consumers were untouched). Cargo.lock regeneration only by the build owner.
+The removed X2/test-support deferral is not permission to invent replacement
+work or alter the larger A/B decision. Later carve-outs retain their gates below.
 
 ### 0.10.5: Test-edge rehoming and the A/B decision release. Non-graph cleanup, no crate moves.
 
@@ -74,9 +65,9 @@ Slices:
 - Rehome the remaining test edges so no #[cfg(test)] code in the runtime half names crate::tui, commands or lib.rs: tools|tui 12, client|tui 3, session_manager|tui 3, config|tui 2, core|tui 2, prompts|tui 1, plus late 1 and uilib 1. Mechanism: move each such test to a tui-side integration module or replace the tui fixture with a runtime-side one. Split across several landings on main, owned per directory.
 - Record the founder's A/B decision (open_decisions[0]) before any Track B release starts.
 
-- **Entry gate:** 0.10.4 shipped. Per-landing: the test files edited are not dirty. Mapping of the 32 edges to files regenerated with `module_graph.py --report` at the start of the release and posted in the Linear issue.
+- **Entry gate:** RS-11 in 0.10.2 is verified. Per-landing: the test files edited are not dirty. Mapping of the 32 edges to files regenerated with `module_graph.py --report` at the start of the release and posted in the Linear issue.
 - **Exit gate:** module_graph.py --check at prod 0, test 0, late 0, uilib 0, baseline JSON updated. Existing tests for each touched file run with identical pass counts (quote before and after). No production file changed except visibility needed by a moved fixture. The A/B decision is recorded in docs/design/TUI_DECONSTRUCTION.md.
-- **Ratchet target:** prod 0, test 33 -> 0, late 1 -> 0, uilib 1 -> 0.
+- **Ratchet target:** prod 0, test 30 -> 0, late 1 -> 0, uilib 1 -> 0.
 - **Size budget:** No change. Test files are excluded from the tarball.
 - **Risks:** Test relocation is not rename-dominated and can silently drop coverage: gate on equal before/after pass counts per directory. tools tests are 152k production lines of neighbours, so collisions are likely; land per-directory.
 - **Rollback:** Per-landing revert. No published state touched.
@@ -220,10 +211,10 @@ Record at every release, on one machine, at a named source commit with a dirty-f
 ## Open decisions and what the critic changed
 
 - CHANGED: moved the A/B decision (RS-14 atomic move vs the design doc's slice-only path) from 'decide by 0.10.9' to 'record in 0.10.5, before any Track B release'. Reason: Option A makes X1, X4, X7, X8, P1, P2 and settings non-prerequisites, because they shrink a cycle that moves whole. Under A the work is 0.10.2 to 0.10.5, then 0.11.0, about six weeks at the measured 15-day cadence. Under B it is about fourteen releases. The sequencer paid for B and offered A as an afterthought. Size is also evidence: only A moves tui below 9.0 MiB (proxy UI 2.78 MiB, runtime 6.89 MiB); every leaf frees about 0.01-0.03 MiB. Consequence of A: library path break risk for codewhale-tui (keep re-exports of run, RuntimeOptions, route_preferences, config_keys, set_telemetry_preference) and a 30th crate. Consequence of B: tui stays at about 9.5 MiB for months with 0.5 MiB of headroom.
-- CHANGED: 0.10.2 now ships the candidate with no move, and X2 became 0.10.3. Reason: Cargo.toml already stamps 0.10.2 and the tree holds in-flight full-access, settings and runtime_api work from other agents. A structural move on a candidate is unreviewable risk. Founder to confirm that 0.10.2 is frozen. If it is not frozen, X2 may go back into it.
-- CHANGED: entry gate for X2 relaxed from 'git status clean in commands/ and runtime_api/' to 'the exact edited files are clean'. Verified: runtime_api/tests.rs, runtime_api/thread_history.rs and commands/groups/config/config.rs are dirty now, while runtime_api.rs (the file holding the 9 prod refs at :4815-4898) and tools/tui_help.rs are not. Also added the design doc's requirement to install the real catalog process-wide for tests, which the sequencer dropped.
+- CHANGED (founder, 2026-10-12): 0.10.2 includes X2 and RS-11. Reuse the existing runtime test-support feature rather than introducing a crate. The current X2 graph receipt is production 0 / tests 30, largest cycle 82 (before: 11 / 32, cycle 98).
+- CHANGED: entry gate for X2 relaxed from 'git status clean in commands/ and runtime_api/' to 'the exact edited files are clean'. Verified: runtime_api/tests.rs, runtime_api/thread_history.rs and commands/groups/config/config.rs are dirty now, while runtime_api.rs (the file holding the 9 prod refs at :4815-4898) and tools/tui_help.rs are not. The earlier global test-install proposal is superseded by capturing the thread-local catalog onto the Runtime server thread.
 - CHANGED: added 0.10.5 (test-edge rehoming plus late/uilib) which did not exist. Reason: the sequencer's 0.11.0 entry gate required test <= 34, but no release lowered any of the 35 test edges (test_support|tui 7, tools|tui 12 etc.), and keeping late 1 and uilib 1 would put crate::exec_agent and crossterm references into a crate that Cargo.toml says must never depend on tui or crossterm. Rehoming is test-only, not a graph change, so it can ride in pieces.
-- CHANGED: test-support (now 0.10.4): LOC corrected to about 960 (657 non-test lines in test_support.rs plus 300 in test_env_lock.rs), not 1.5k. Added the root Cargo.toml members edit and `version.workspace = true`. Verified in validate-crate-publish-order.py: the single-version check iterates all workspace packages, including publish=false ones, so an off-version test-support breaks the release gate. Added the reason this is on the critical path (settings.rs has 34 test_support refs; credentials tests mutate env).
+- CHANGED (founder, 2026-10-12): the proposed separate test-support crate is superseded by the existing codewhale-runtime test-support feature in RS-11. A second process environment mutex is forbidden.
 - CHANGED: X4 destination is codewhale-models, not crates/tools and not a new util-schema package. Verified: schema_sanitize.rs:50 prepare_tools_for_strict_mode uses codewhale_models::Tool, crates/tools depends only on protocol, and crates.sh publishes tools before config and models. Moved production is about 676 lines (schema_sanitize.rs tests start at line 470 and use tui-only ApplyPatchTool), not 3.2k. So the move is a split test module, not rename-only, and it needs no founder name approval. If the founder insists on a util crate, this reverts to the sequencer's plan.
 - CHANGED: P2 split into a seam release (0.10.10) and a move release (0.10.11). Verified the LlmClient trait has two tui-typed default methods (effective_max_output_tokens via route_budget at llm_client/mod.rs:109 and effective_route_envelope via cost_status at :123), not one; with_retry (:1593) calls error_taxonomy::envelope_for_llm_error so they move together. ToolError is already re-pointable (crates/tools/src/lib.rs:56). The sequencer's 'split if large' hedge is now the plan.
 - CHANGED: X6 reduced to the design table's part 1 (about 300 lines), not the full 1,614-line events.rs+ops.rs move at 0.10.11. Verified events.rs imports seven tools::subagent types, GoalSnapshot, UserInputRequest, McpManagerSnapshot, tool_inspection, snapshot, agent_roster, route_receipt, route_billing, provider_catalog_live and cost_status; ops.rs imports compaction, route_runtime, hooks, fleet::roster, engine::preview and cost_status. The sequencer's plan puts X6 before those seams exist. A sequencing error.
@@ -241,7 +232,7 @@ Record at every release, on one machine, at a named source commit with a dirty-f
 
 - **0.10.5**: A/B decision: RS-14 atomic move vs slice-only path (record in 0.10.5). Decide whether 0.11.0 is the atomic move of the remaining runtime SCC (Option A) or the design doc's slice-only path (Option B). Evidence: with A, X1/X4/X7/X8/P1/P2/settings are not prerequisites; only A moves tui below 9.0 MiB (proxy UI 2.78 MiB / runtime 6.89 MiB). Needs prod/test/late/uilib all 0 first. Linear only, not mirrored. Reuse the #6941 issue if it covers this.
 - **0.10.2**: 0.10.2: ship candidate with no structural move; record per-crate tarball table and ratatui 0.1.2 receipt. No move in the candidate. Add real per-crate tarball sizes to the release notes (baseline for later releases) and the codewhale-ratatui 0.1.2 publication receipt (out of band, not in crates.sh). Gate: publish-crates.sh dry-run, validate-crate-publish-order.py, hosted CI green on the SHA.
-- **0.10.3**: 0.10.3 X2: command catalog port, finish RS-13 (#6940). runtime_api.rs:4815-4898 and tools/tui_help.rs go through a command_catalog leaf; delete the direct call sites; install the real catalog process-wide for tests. Ratchet prod 11 -> 0. Claim exact files only (runtime_api.rs, tools/tui_help.rs, commands/catalog.rs, extension_host/command.rs). Linear only, not mirrored.
+- **0.10.2 (founder, 2026-10-12)**: X2 finishes RS-13 (#6940) through the shared command_catalog leaf; every direct consumer is migrated. Tests capture a catalog instead of mutating a global authority. Ratchet production 11 -> 0, tests 32 -> 30; RS-11 lowers the remaining test edges through the existing runtime test-support feature. Linear remains the claim owner.
 - **0.10.4**: 0.10.4 W0-S2: codewhale-test-support (publish=false), env half. Move test_env_lock.rs (300) and the env half of test_support.rs (657 non-test lines) to crates/test/test-support; version.workspace=true; add to root members; keep tui shim and App fixtures; remove shell_dispatcher cfg(test) mount and the tests/integration #[path] include. Critical path for settings and credentials tests. Gate: equal before/after pass counts, one process-global lock copy, crates.sh stays 29.
 - **0.10.5**: 0.10.5 Test-edge rehoming: test 32 -> 0, late 1 -> 0, uilib 1 -> 0. Rehome tests naming crate::tui, commands or lib.rs (tools|tui 12, client|tui 3, session_manager|tui 3, config|tui 2, core|tui 2, prompts|tui 1), plus test_cases_04.rs:1197 (exec_agent) and roster_routes.rs:798 (crossterm). Test-only; equal pass counts before and after per directory. Prerequisite for any new runtime crate that must not depend on tui or crossterm.
 - **0.10.6**: 0.10.6 X1 [Track B]: fslock into crates/runtime. Move try_lock_file_exclusive plus RuntimeProcessOwnerLock::try_lock_exclusive/is_contention (runtime_threads.rs:6592, 6855) to crates/runtime. Seam-introducing, not pure rename. Blocked until runtime_threads.rs and its tests are committed. Visibility review in the commit message; revert immediately on any lock regression.

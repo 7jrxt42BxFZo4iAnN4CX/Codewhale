@@ -316,7 +316,12 @@ launcher guidance.
   ratify or migrate moves the prompt-cache prefix; the setup wizard no longer
   lists an authority order that contradicts the base prompt, and it caps your
   own note so saving never cuts its end. The Simplified Chinese manager uses
-  the glossary term 宪章 throughout.
+  the glossary term 宪章 throughout. The manager checks whether your signed-in
+  account profile takes precedence and labels an active local file as standby;
+  the Runtime API returns the same guidance body from GET and preview. `doctor`
+  reports autonomy only from an active local constitution and leaves account
+  checks to sign-in. The context inspector shows the personal constitution as
+  a recorded session message outside the system-prompt layer.
 - The pet shows sub-agents while they run, and a finished one no longer stays
   "working". Half-block pet sprites are drawn crisply instead of blurred.
 - A provider's retry delay is honored when a 429 carries it in the body

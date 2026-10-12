@@ -32,16 +32,14 @@ impl RegisterCommand for ConstitutionCmd {
     fn execute(app: &mut App, arg: Option<&str>) -> CommandResult {
         match arg.map(str::trim).filter(|arg| !arg.is_empty()) {
             None | Some("status" | "home" | "manager") => {
-                open_status(app);
-                CommandResult::ok()
+                CommandResult::action(AppAction::OpenConstitutionManager { review: false })
             }
             Some("preview") => {
                 open_preview(app);
                 CommandResult::ok()
             }
             Some("review" | "existing") => {
-                open_review(app);
-                CommandResult::ok()
+                CommandResult::action(AppAction::OpenConstitutionManager { review: true })
             }
             Some("repo" | "repo-local" | "law") => {
                 open_repo_law(app);
@@ -109,17 +107,16 @@ impl RegisterCommand for ConstitutionCmd {
     }
 }
 
-fn open_status(app: &mut App) {
+pub(crate) fn open_manager(app: &mut App, review: bool, account: Result<bool, String>) {
     let locale = app.ui_locale;
-    let text = format_status(app, locale);
-    open_pager(app, manager_title(locale), &text);
-}
-
-fn open_review(app: &mut App) {
-    let locale = app.ui_locale;
-    let mut text = format_status(app, locale);
-    let _ = write!(text, "\n\n{}", preview_text(locale));
-    open_pager(app, review_title(locale), &text);
+    let mut text = format_status(app, locale, &account);
+    let title = if review {
+        let _ = write!(text, "\n\n{}", preview_text(locale));
+        review_title(locale)
+    } else {
+        manager_title(locale)
+    };
+    open_pager(app, title, &text);
 }
 
 fn open_preview(app: &mut App) {
@@ -413,7 +410,7 @@ fn open_pager(app: &mut App, title: &str, text: &str) {
         .push(PagerView::from_text(title, text, width.saturating_sub(2)));
 }
 
-fn format_status(app: &App, locale: Locale) -> String {
+fn format_status(app: &App, locale: Locale, account: &Result<bool, String>) -> String {
     let state = load_setup_state();
     let load = load_user_constitution();
     let context = crate::project_context::load_project_context_with_parents(&app.workspace);
@@ -429,11 +426,22 @@ fn format_status(app: &App, locale: Locale) -> String {
     out.push('\n');
     let _ = writeln!(out, "{}", copy.active_stack_header);
     let _ = writeln!(out, "- {}", copy.bundled_active);
+    let account_status = match account {
+        Ok(true) => codewhale_localization::tr(locale, MessageId::CmdConstitutionAccountApplies)
+            .into_owned(),
+        Ok(false) => codewhale_localization::tr(locale, MessageId::CmdConstitutionAccountSignedOut)
+            .into_owned(),
+        Err(error) => {
+            codewhale_localization::tr(locale, MessageId::CmdConstitutionAccountCheckFailed)
+                .replace("{error}", error)
+        }
+    };
+    let _ = writeln!(out, "- {account_status}");
     let _ = writeln!(
         out,
         "- {}: {}",
         copy.user_global_label,
-        user_constitution_stack_status(state.as_ref(), &load, locale)
+        user_constitution_stack_status(state.as_ref(), &load, locale, matches!(account, Ok(true)))
     );
     if let Some(path) = context.constitution_source_path.as_ref() {
         let _ = writeln!(
@@ -678,7 +686,15 @@ fn user_constitution_stack_status(
     state: Option<&SetupState>,
     load: &UserConstitutionStatus,
     locale: Locale,
+    account_applies: bool,
 ) -> String {
+    if account_applies
+        && user_constitution_is_active(state)
+        && matches!(load, UserConstitutionStatus::Loaded { .. })
+    {
+        return codewhale_localization::tr(locale, MessageId::CmdConstitutionLocalStandby)
+            .into_owned();
+    }
     let text = match load {
         UserConstitutionStatus::Loaded { .. } if user_constitution_is_active(state) => match locale
         {
@@ -714,14 +730,7 @@ fn user_constitution_stack_status(
 }
 
 fn user_constitution_is_active(state: Option<&SetupState>) -> bool {
-    !matches!(
-        state.map(|s| s.constitution_choice),
-        Some(
-            ConstitutionChoice::Bundled
-                | ConstitutionChoice::Deferred
-                | ConstitutionChoice::ExpertOverride
-        )
-    )
+    state.is_none_or(|state| state.constitution_choice.applies_user_global())
 }
 
 fn user_constitution_file_label(load: &UserConstitutionStatus, locale: Locale) -> String {
@@ -904,7 +913,7 @@ fn repair_text(locale: Locale) -> String {
         |s| choice_label(s.constitution_choice, locale),
     );
     let validity = validity_label(load.validity_for_display(state.as_ref()), locale);
-    let status = user_constitution_stack_status(state.as_ref(), &load, locale);
+    let status = user_constitution_stack_status(state.as_ref(), &load, locale, false);
 
     match locale {
         Locale::ZhHans => format!(
@@ -1289,8 +1298,12 @@ mod tests {
         app.ui_locale = Locale::En;
 
         let result = ConstitutionCmd::execute(&mut app, None);
-
+        assert_eq!(
+            result.action,
+            Some(AppAction::OpenConstitutionManager { review: false })
+        );
         assert!(result.message.is_none());
+        open_manager(&mut app, false, Ok(false));
         assert_eq!(app.view_stack.top_kind(), Some(ModalKind::Pager));
         assert!(pop_pager_body(&mut app).contains("Constitution Manager"));
     }
@@ -1302,9 +1315,7 @@ mod tests {
         let mut app = test_app_with_workspace(tmp.path().to_path_buf());
         app.ui_locale = Locale::En;
 
-        let result = ConstitutionCmd::execute(&mut app, None);
-
-        assert!(result.message.is_none());
+        open_manager(&mut app, false, Ok(false));
         let body = pop_pager_body(&mut app);
         assert!(body.contains("Legacy WHALE.md: ignored"));
         assert!(body.contains("WHALE.md is ignored"));
@@ -1568,7 +1579,7 @@ mod tests {
         assert!(help.contains("Refused if the base changed"));
         assert!(help.contains("/constitution migrate"));
 
-        ConstitutionCmd::execute(&mut app, None);
+        open_manager(&mut app, false, Ok(false));
         let body = pop_pager_body(&mut app);
         assert!(body.contains("/constitution base"));
         assert!(body.contains("/constitution suggestions"));
@@ -1584,9 +1595,7 @@ mod tests {
         let mut app = test_app();
         app.ui_locale = codewhale_localization::Locale::ZhHans;
 
-        let result = ConstitutionCmd::execute(&mut app, None);
-
-        assert!(result.message.is_none());
+        open_manager(&mut app, false, Ok(false));
         let body = pop_pager_body(&mut app);
         assert!(body.contains("宪章管理器"));
         assert!(body.contains("生效层级"));

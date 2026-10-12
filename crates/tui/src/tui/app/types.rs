@@ -645,6 +645,9 @@ pub enum AppAction {
     },
     /// Record that the bundled/default constitution should be used.
     UseBundledConstitution,
+    OpenConstitutionManager {
+        review: bool,
+    },
     /// Open the exact effective base-prompt preview for the next turn (#3928).
     ///
     /// Handled where the session config lives, so the preview is built by the

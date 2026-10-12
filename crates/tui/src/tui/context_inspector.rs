@@ -56,11 +56,6 @@ const SYSTEM_LAYER_MARKERS: &[(&str, &str, PromptLayerKind)] = &[
         PromptLayerKind::Static,
     ),
     (
-        "User-global constitution",
-        "<codewhale_user_constitution",
-        PromptLayerKind::Static,
-    ),
-    (
         "Repository constitution",
         "<codewhale_repo_constitution",
         PromptLayerKind::Static,
@@ -236,6 +231,32 @@ pub fn build_context_inspector_text(app: &App, locale: Locale) -> String {
     push_compaction_and_anchors(&mut out, app, locale);
     let _ = writeln!(out);
     push_system_prompt_structure(&mut out, app, locale);
+    if let Some(record) = app
+        .api_messages
+        .iter()
+        .rev()
+        .find_map(crate::runtime_handoff::constitution_display)
+    {
+        let source = match record
+            .split_once("\n\n")
+            .map(|(_, guidance)| guidance.lines().next().unwrap_or_default())
+        {
+            Some(line) if line.starts_with("Account profile constitution, settings revision ") => {
+                tr(locale, MessageId::CtxInspConstitutionAccount).replace(
+                    "{revision}",
+                    line.trim_start_matches("Account profile constitution, settings revision ")
+                        .trim_end_matches('.'),
+                )
+            }
+            Some(_) => tr(locale, MessageId::CtxInspConstitutionLocal).into_owned(),
+            None => tr(locale, MessageId::CtxInspConstitutionWithdrawn).into_owned(),
+        };
+        let label = tr(locale, MessageId::CtxInspPersonalConstitution);
+        let tokens = record.chars().count().div_ceil(3);
+        let unit = tr(locale, MessageId::CtxInspTokens);
+        let cadence = tr(locale, MessageId::CtxInspChangesByTurn);
+        let _ = writeln!(out, "\n{label} ({source}): ~{tokens} {unit} [{cadence}]");
+    }
     let _ = writeln!(out);
     push_references(&mut out, &app.session_context_references, locale);
     let _ = writeln!(out);
@@ -1338,7 +1359,7 @@ mod tests {
     fn inspector_text_prompt_shows_layer_map() {
         let mut app = test_app();
         app.system_prompt = Some(SystemPrompt::Text(
-            "## Codewhale\nBundled base law.\n\n## Language\nUse English.\n\n## Output Formatting\nBe clear.\n\n<codewhale_user_constitution>\nUser law\n</codewhale_user_constitution>\n\n<codewhale_repo_constitution>\nRepo law\n</codewhale_repo_constitution>\n\n<project_instructions source=\"AGENTS.md\">\nRules\n</project_instructions>\n\n## Project Context Pack\n{}\n\n## Environment\n- lang: en\n\n## Skills\n- rust\n\n## Core Execution\nInspect, edit, verify.\n\n## Compact\nTemplate\n\n## Repo Working Set\nsrc/".to_string(),
+            "## Codewhale\nBundled base law.\n\n## Language\nUse English.\n\n## Output Formatting\nBe clear.\n\n<codewhale_repo_constitution>\nRepo law\n</codewhale_repo_constitution>\n\n<project_instructions source=\"AGENTS.md\">\nRules\n</project_instructions>\n\n## Project Context Pack\n{}\n\n## Environment\n- lang: en\n\n## Skills\n- rust\n\n## Core Execution\nInspect, edit, verify.\n\n## Compact\nTemplate\n\n## Repo Working Set\nsrc/".to_string(),
         ));
 
         let text = build_context_inspector_text(&app, Locale::En);
@@ -1347,7 +1368,6 @@ mod tests {
         assert!(text.contains("Bundled constitution"));
         assert!(text.contains("Language policy"));
         assert!(text.contains("Output formatting"));
-        assert!(text.contains("User-global constitution"));
         assert!(text.contains("Repository constitution"));
         assert!(text.contains("Project context"));
         assert!(text.contains("Project context pack"));

@@ -28,6 +28,7 @@ mod automation_manager;
 mod child_env;
 mod client;
 mod codex_model_cache;
+mod command_catalog;
 mod commands;
 mod compaction;
 mod composer_history;
@@ -1880,6 +1881,7 @@ fn run_with_args(options: RuntimeOptions, args: Vec<String>) -> Result<()> {
     // (interactive, exec, serve): runtime code reaches raw mode and
     // notification delivery only through this port.
     crate::tui::ui::install_host_terminal();
+    crate::command_catalog::install(std::sync::Arc::new(crate::commands::CommandTable));
 
     // ── Process hardening (#2183) ─────────────────────────────────────────
     // MUST run before Tokio is booted and before any threads are spawned.
@@ -7142,8 +7144,9 @@ fn print_doctor_setup_report(
         doctor_ready_label(operate_ready)
     );
     println!(
-        "  · constitution autonomy: {} (guidance only)",
-        doctor_constitution_autonomy_preference_id()
+        "  · constitution autonomy: {} (choice: {}; guidance only; account profile: not probed)",
+        doctor_constitution_autonomy_preference_id(state),
+        constitution_choice_id(state.constitution_choice)
     );
     println!(
         "  · runtime posture: {}",
@@ -7294,7 +7297,12 @@ fn doctor_constitution_autonomy_preference() -> codewhale_config::AutonomyPrefer
         .unwrap_or(codewhale_config::AutonomyPreference::Unspecified)
 }
 
-fn doctor_constitution_autonomy_preference_id() -> &'static str {
+fn doctor_constitution_autonomy_preference_id(
+    state: &codewhale_config::SetupState,
+) -> &'static str {
+    if !state.constitution_choice.applies_user_global() {
+        return "inactive";
+    }
     autonomy_preference_id(doctor_constitution_autonomy_preference())
 }
 
@@ -7854,7 +7862,8 @@ fn doctor_setup_report_json(config: &Config, workspace: &Path) -> serde_json::Va
             "language": state.constitution_language.clone(),
             "preview_hash_present": state.constitution_preview_hash.is_some(),
             "preview_version": state.constitution_preview_version,
-            "autonomy_preference": doctor_constitution_autonomy_preference_id(),
+            "autonomy_preference": doctor_constitution_autonomy_preference_id(&state),
+            "account_profile": "not_probed",
         },
         "runtime_posture_source": runtime_posture_source_id(state.runtime_posture_source),
         "runtime_posture": {
@@ -9567,12 +9576,6 @@ fn install_extension_host_boot_config(config: &Config) {
         tokio::runtime::Handle::try_current().ok(),
     );
     if enabled {
-        // The host asks the command table whether a built-in command answers
-        // to a name before it admits an extension command; without this it
-        // refuses every extension command.
-        crate::extension_host::command::install_builtin_commands(std::sync::Arc::new(
-            crate::commands::BuiltinCommandNames,
-        ));
         // Per-plugin settings (`[plugins."<name>".config]`) and the file
         // `/plugin reload` re-reads them from.
         crate::extension_host::install_plugin_settings(
@@ -16083,7 +16086,7 @@ mod doctor_setup_state_tests {
             report["constitution"]["checkpoint_completed_for"],
             crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION
         );
-        assert_eq!(report["constitution"]["autonomy_preference"], "balanced");
+        assert_eq!(report["constitution"]["autonomy_preference"], "inactive");
         assert_eq!(report["runtime_posture_source"], "confirmed");
         assert_eq!(report["runtime_posture"]["source"], "confirmed");
         assert_eq!(

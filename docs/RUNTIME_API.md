@@ -2907,5 +2907,8 @@ accounts.
 `GET /v1/constitution` reads the next-turn profile and its model guidance. It is
 not a receipt that an active turn adopted the edit. `POST /v1/constitution/preview`
 accepts a constitution document and returns `{modelGuidance, saved:false}` without
-saving anything. Both routes use normal Runtime authorization. Older runtimes
+saving anything. `modelGuidance` is the Engine-rendered guidance body: GET and
+preview return identical text for the same document. It excludes the session
+record's attribution line or envelope; `source` and `revision` carry provenance.
+Both routes use normal Runtime authorization. Older runtimes
 must be upgraded before account transports submit profile-bearing turns.

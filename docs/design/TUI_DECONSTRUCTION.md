@@ -334,24 +334,24 @@ The runtime -> UI ratchet (`scripts/split/module_graph.py`,
 `scripts/runtime-boundary-baseline.json`, enforced by
 `scripts/check-command-crate-boundaries.py`) stays the gate until the runtime
 tier is out of `crates/tui`; then Cargo enforces the boundary and the ratchet
-is deleted. At `bd2a7b49c` it stands at 11 production references
-(`runtime_api -> commands` 9, `tools -> commands` 2) and 35 test references.
+is deleted. The 0.10.2 X2 snapshot stands at 0 production references and
+30 test references, down from 11 and 32. The current baseline is the authority.
 `crates/runtime` must never depend on `tui`, `cli`, ratatui, crossterm,
 `ansi-to-tui` or a terminal component kit; the runtime reaches the terminal
 only through `host_terminal`.
 
 ## Operational plan: assignable slices
 
-Measured 2026-10-10 with `python3 scripts/split/partition_report.py` (per-module
+Re-measured for X2 on 2026-10-12 with `python3 scripts/split/partition_report.py` (per-module
 waves, sizes and blockers) and `--scc-edges 60` (the heaviest edges inside the
 cycle). Regenerate before assigning; the numbers below are a snapshot.
 
-- The runtime closure is **one 100-module cycle** (the baseline above counted 85),
+- Before X2 the largest runtime cycle had **98 modules**; after X2 it has **82**.
   with `tools` 152k, `core` 50k, `fleet` 39k, `runtime_api` 31k, `client` 26k
-  production lines. It contains `tui`, `commands` and `lib.rs` only through the
-  11 production back-edges the ratchet counts (`runtime_api -> commands` 9,
-  `tools -> commands` 2). Removing those two edge pairs shrinks the cycle to 83
-  modules.
+  production lines in the earlier size snapshot. X2 removes all 11 production
+  back-edges (`runtime_api -> commands` 9, `tools -> commands` 2); `tui`,
+  `commands` and `lib.rs` leave the largest cycle. These are source graph
+  measurements, not a claim that the runtime crate migration has shipped.
 - 30 modules (about 17k production lines) are **wave 0**: nothing they depend on
   is still waiting to move. They are claimable as crates now.
 - Moving the cycle as a unit is the rejected pattern (see Rules). The open runtime
@@ -367,7 +367,7 @@ part of the slice.
 | Slice | Claim unit (paths) | Size | Status of the analysis | Must happen first | Result |
 | --- | --- | --- | --- | --- | --- |
 | **X1 util-fslock** | `crates/fslock/` (new), `runtime_threads.rs`, `session_manager.rs`, `session_reconcile.rs`, `operate.rs` | S, ~190 lines | **Held.** Five call-site clusters in `runtime_threads.rs` (incl. `has_live_holder`), `session_manager.rs:1954` is production | none | removes the `session_manager <-> runtime_threads` lock edge; first leaf for `session-store` |
-| **X2 command catalog port** | `crates/tui/src/command_catalog.rs` (new leaf), `commands/catalog.rs`, `runtime_api.rs` list handler, `tools/tui_help.rs`, `extension_host/command.rs` | M | **Held with a fix.** The thread-local test guard cannot reach the Runtime API test server thread: install the real catalog process-wide for tests | none | ratchet `prod` 11 -> 0, cycle 100 -> 83, `tui` and `commands` leave it |
+| **X2 command catalog port** | `crates/tui/src/command_catalog.rs`, `commands/mod.rs`, `runtime_api.rs` list handler, `tools/tui_help.rs`, `extension_host/command.rs` | M | **Landed in 0.10.2.** One host port supplies all three consumers; the Runtime API test server captures its thread-local guard | none | ratchet `prod` 11 -> 0, `test` 32 -> 30, largest cycle 98 -> 82 |
 | **X3 tool contract, part 1** | `crates/tools/src/canonical_action.rs`, `crates/tools/src/lib.rs`, `crates/tui/src/tools/mod.rs` | S with a `pub use` shim at `tools/mod.rs`, M without (42 files in other owners' directories) | Direction right; **not rename-only** (visibility widening, split test module) | none | first tool-contract move; unblocks TUI views depending on a crate, not the runtime |
 | **X4 util-schema** | `crates/util-schema/` (new), `tools/schema_sanitize.rs`, `schema_canonicalize.rs` | M | Needs `prepare_tools_for_strict_mode` moved next to its caller first (it is the only use of `codewhale_models::Tool`) | X3 not required | removes `client -> tools` schema refs |
 | **X5 config-types, part 1** | `crates/config-types/` (new), `features.rs`, `route_receipt.rs`, `plugins/types.rs` | S-M, ~400 lines | **Corrected:** move `impl Display for PluginId` with `PluginId` (orphan rule); leave out `CustomLspDef` (already in `crates/config`); the `lsp` and `plugins` edges stay | none | removes the type-only up-edges from `config`/`settings` |
@@ -501,3 +501,11 @@ Start with the existing model's ordinary reasoning/tool loop. Add independent
 review or multiple candidate attempts only where measured failures and task
 stakes justify the extra compute. No model-evaluation runs, provider spend, or
 performance gains were established by this source audit.
+
+The catalog installs once per process; first installation wins. Built-ins are
+host-owned metadata, and user rows are a point-in-time snapshot under the
+existing reload rules. Captured binding spellings preserve the live registry’s
+canonical-name precedence, alias selection and revoked-plugin filtering. The
+port never dispatches. Without installation, command registration is refused,
+`GET /v1/commands` reports an error and `tui_help` fails visibly. Extension
+commands remain omitted from the external Runtime command list.

@@ -1134,11 +1134,11 @@ impl HotbarAction for SlashHotbarAction {
             HotbarRecommendation::Default
         } else {
             match self.info.discovery() {
-                crate::commands::traits::CommandDiscovery::Primary => {
+                codewhale_command_contract::CommandDiscovery::Primary => {
                     HotbarRecommendation::Eligible
                 }
-                crate::commands::traits::CommandDiscovery::Advanced
-                | crate::commands::traits::CommandDiscovery::Compatibility => {
+                codewhale_command_contract::CommandDiscovery::Advanced
+                | codewhale_command_contract::CommandDiscovery::Compatibility => {
                     HotbarRecommendation::Advanced
                 }
             }

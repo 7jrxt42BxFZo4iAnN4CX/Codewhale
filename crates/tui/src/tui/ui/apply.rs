@@ -2728,6 +2728,16 @@ async fn apply_command_result_inner(
                         ));
                 }
             }
+            AppAction::OpenConstitutionManager { review } => {
+                let profile = config.account_profile.clone();
+                let account = tokio::task::spawn_blocking(move || {
+                    crate::profile_constitution::account_is_present(profile.as_deref())
+                        .map_err(|error| error.to_string())
+                })
+                .await
+                .unwrap_or_else(|error| Err(error.to_string()));
+                crate::commands::open_constitution_manager(app, review, account);
+            }
             AppAction::UseBundledConstitution => use_bundled_constitution(app, config),
             AppAction::PreviewEffectiveBasePrompt => preview_effective_base_prompt(app, config),
             AppAction::DisableHotbar => disable_hotbar(app, config),

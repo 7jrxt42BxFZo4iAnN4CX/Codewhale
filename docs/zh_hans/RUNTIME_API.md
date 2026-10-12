@@ -2557,5 +2557,7 @@ Engine 自行读取的资料不可用或无效时，本回合改用未登录的�
 
 `GET /v1/constitution` 读取下一回合的资料与模型指导，不是活跃回合已采用新编辑
 的回执。`POST /v1/constitution/preview` 接受宪章文档，返回
-`{modelGuidance, saved:false}`，不保存。两条路由遵循普通 Runtime 授权；
+`{modelGuidance, saved:false}`，不保存。`modelGuidance` 是 Engine 渲染的指导正文；
+同一文档的 GET 与预览返回相同文本，不含会话记录中的来源行或封装。
+`source` 与 `revision` 保留来源信息。两条路由遵循普通 Runtime 授权；
 旧 Runtime 必须升级后才能接收携带账号宪章的回合。

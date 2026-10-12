@@ -60,6 +60,7 @@ mod session_lifecycle_regression_tests;
 use std::sync::OnceLock;
 
 pub(crate) use groups::config::config::{set_workspace_trust, trust_change_note};
+pub(crate) use groups::core::open_constitution_manager;
 
 /// Stage a rollback of the last exchange for the UI to apply, or `None` when
 /// there is no user message to roll back. Nothing is mutated here.
@@ -203,16 +204,73 @@ pub fn registry() -> &'static traits::CommandRegistry {
 }
 
 /// The built-in command table as the extension host asks about it: the one
-/// read-only question "does a built-in command answer to this name?". The
+/// read-only metadata snapshot and built-in collision check. The
 /// composition root installs it at startup (`lib.rs`), so the runtime-side host
 /// never depends on this module.
-pub(crate) struct BuiltinCommandNames;
+pub(crate) struct CommandTable;
 
-impl crate::extension_host::command::BuiltinCommandCatalog for BuiltinCommandNames {
+impl crate::command_catalog::CommandCatalog for CommandTable {
     fn answers_to(&self, name: &str) -> bool {
         // `jihua` and `zidong` are mode aliases the dispatcher answers ahead
         // of the registry.
         matches!(name, "jihua" | "zidong") || registry().get(name).is_some()
+    }
+
+    fn builtins(&self) -> Vec<crate::command_catalog::BuiltinCommand> {
+        command_infos()
+            .into_iter()
+            .map(|info| crate::command_catalog::BuiltinCommand {
+                name: info.name.to_string(),
+                aliases: info
+                    .aliases
+                    .iter()
+                    .map(|alias| (*alias).to_string())
+                    .collect(),
+                usage: info.usage.to_string(),
+                description_id: info.description_id,
+                subcommands: info.subcommands().into_iter().map(str::to_string).collect(),
+                takes_arguments: user_registry::usage_describes_arguments(info.name, info.usage),
+                requires_argument: info.requires_argument(),
+                requires_required_argument: info.requires_required_argument(),
+                composer_wants_trailing_space: info.composer_wants_trailing_space(),
+                palette_runs_directly: info.palette_runs_directly(),
+                show_in_empty_discovery: info.show_in_empty_discovery(),
+                discovery: info.discovery(),
+                unlisted: info.is_unlisted(),
+            })
+            .collect()
+    }
+
+    fn user_commands(
+        &self,
+        workspace: &std::path::Path,
+    ) -> Vec<crate::command_catalog::UserCommand> {
+        user_registry::with_registry_for_workspace(Some(workspace), |registry| {
+            let mut bindings = std::collections::HashMap::<String, Vec<String>>::new();
+            for info in command_infos() {
+                for spelling in std::iter::once(info.name).chain(info.aliases.iter().copied()) {
+                    if let Some(command) = registry.get(spelling) {
+                        bindings
+                            .entry(command.name.clone())
+                            .or_default()
+                            .push(spelling.to_string());
+                    }
+                }
+            }
+            registry
+                .iter()
+                .map(|metadata| crate::command_catalog::UserCommand {
+                    name: metadata.name.clone(),
+                    aliases: metadata.aliases.clone(),
+                    description: metadata.description.clone(),
+                    usage: metadata.display_usage().map(str::to_string),
+                    takes_arguments: metadata.takes_arguments(),
+                    hidden: metadata.hidden,
+                    extension: metadata.extension.is_some(),
+                    builtin_bindings: bindings.remove(&metadata.name).unwrap_or_default(),
+                })
+                .collect()
+        })
     }
 }
 

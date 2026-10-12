@@ -16,12 +16,7 @@ pub struct CommandInfo {
     pub description_id: MessageId,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CommandDiscovery {
-    Primary,
-    Advanced,
-    Compatibility,
-}
+use codewhale_command_contract::CommandDiscovery;
 
 pub(crate) const ADVANCED_DISCOVERY_COMMANDS: &[&str] = &[
     "anchor",
@@ -90,12 +85,6 @@ pub(crate) fn bare_slash_discovery_rank(name: &str) -> Option<usize> {
 /// command name — see `palette_paste_only_names_are_registered` in the
 /// command palette tests.
 pub(crate) const PALETTE_PASTE_ONLY: &[&str] = &[];
-
-impl CommandDiscovery {
-    pub fn show_at_root(self) -> bool {
-        matches!(self, CommandDiscovery::Primary)
-    }
-}
 
 /// Bare words in a usage line that stand for a value the operator supplies
 /// rather than a literal token they type. `/workspace [path|worktrees]` reads
@@ -319,7 +308,7 @@ impl CommandInfo {
     }
 
     pub fn show_in_empty_discovery(&self) -> bool {
-        self.discovery().show_at_root()
+        matches!(self.discovery(), CommandDiscovery::Primary)
     }
 
     /// Whether this command may appear in slash completion at all.

@@ -7,13 +7,13 @@
 //! its own tests may not depend on either (`scripts/check-command-crate-boundaries.py`).
 //! They run the real Node host over the same fixtures the host's own tests use
 //! and, where the table matters, install the real built-in command catalog
-//! ([`BuiltinCommandNames`]) in place of the host tests' stub.
+//! ([`CommandTable`]) in place of the host tests' stub.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use super::BuiltinCommandNames;
-use crate::extension_host::command::BuiltinCommandsGuard;
+use super::CommandTable;
+use crate::command_catalog::CatalogGuard;
 use crate::extension_host::protocol::{RegisterKind, RegisterParams, RegisterSpecWire};
 use crate::extension_host::registry::{OwnerRegistry, OwnerState};
 use crate::extension_host::tests::{
@@ -27,8 +27,29 @@ use crate::plugins::activation::TestPolicyGuard;
 /// command cannot take any of them.
 #[test]
 fn the_real_built_in_catalog_refuses_every_name_alias_and_mode_alias() {
-    use crate::extension_host::command::BuiltinCommandCatalog;
-    let catalog = BuiltinCommandNames;
+    use crate::command_catalog::CommandCatalog;
+    let catalog = CommandTable;
+    let rows = catalog.builtins();
+    let row = |name: &str| {
+        rows.iter()
+            .find(|row| row.name == name)
+            .expect("real command row")
+    };
+    let model = row("model");
+    assert_eq!(
+        model.discovery,
+        codewhale_command_contract::CommandDiscovery::Primary
+    );
+    assert!(!model.unlisted);
+    assert!(!model.usage.is_empty());
+    assert!(model.takes_arguments);
+    let profile = row("profile");
+    assert!(profile.requires_argument);
+    assert!(profile.requires_required_argument);
+    assert!(profile.composer_wants_trailing_space);
+    assert!(!profile.palette_runs_directly);
+    assert!(row("lane").unlisted);
+    assert!(row("goal").subcommands.iter().any(|verb| verb == "blocked"));
     let mut owned = vec!["jihua".to_string(), "zidong".to_string()];
     for info in crate::commands::command_infos() {
         owned.push(info.name.to_string());
@@ -45,7 +66,7 @@ fn the_real_built_in_catalog_refuses_every_name_alias_and_mode_alias() {
     }
     assert!(!catalog.answers_to("ext-echo"));
 
-    let _catalog = BuiltinCommandsGuard::install(Arc::new(BuiltinCommandNames));
+    let _catalog = CatalogGuard::install(Arc::new(CommandTable));
     let mut registry = OwnerRegistry::new();
     let owner = registry
         .begin_owner(
@@ -105,7 +126,7 @@ async fn extension_commands_run_end_to_end_through_the_user_command_registry() {
     };
     let _policy = TestPolicyGuard::extension_host(true);
     let fixture = FixturePlugins::new(&["ext-commands"]).await;
-    let _catalog = BuiltinCommandsGuard::install(Arc::new(BuiltinCommandNames));
+    let _catalog = CatalogGuard::install(Arc::new(CommandTable));
     let manager = fixture.manager(node);
     let _manager = crate::extension_host::TestManagerGuard::install(Arc::clone(&manager));
     let engine = manager.attach(fixture.registry());
@@ -270,7 +291,7 @@ async fn extension_commands_never_shadow_built_ins_or_other_plugins() {
         "commands-clash-plugin",
     ])
     .await;
-    let _catalog = BuiltinCommandsGuard::install(Arc::new(BuiltinCommandNames));
+    let _catalog = CatalogGuard::install(Arc::new(CommandTable));
     let manager = fixture.manager(node);
     let engine = manager.attach(fixture.registry());
     engine.sync().await.unwrap();
