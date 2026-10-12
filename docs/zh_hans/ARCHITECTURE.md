@@ -10,9 +10,9 @@ Codewhale Engine 是现有 Rust 执行运行时。[Runtime API](RUNTIME_API.md) 
 当前边界说明（工作区版本以 `Cargo.toml` 为准；该边界自 v0.9.1 起保持不变）：
 - `crates/tui` 仍是 TUI、运行时 API、任务管理器和工具执行循环的现行终端用户运行时。
 - 其他工作区 crate 正在逐步拆出，但它们还不是唯一的权威运行时。
-- 运行时正按照 `docs/design/TUI_DECONSTRUCTION.md` 记录的顺序迁往 `crates/runtime`
-  （`codewhale-runtime`）：引擎、工具、配置、客户端与各存储一起迁移，绝不迁进
-  `crates/core`，而 TUI 始终是唯一写终端的 crate。在某个模块迁走之前，
+- `crates/tui` 正按照 `docs/design/TUI_DECONSTRUCTION.md` 记录的顺序拆分为以智能体
+  工作分区为单位的 crate：契约、工具库、服务、提供方、运行时、叶子功能 crate、TUI 视图
+  与宿主。TUI 始终是唯一写终端的 crate。在某个模块迁走之前，
   它仍位于 `crates/tui/src` 下的原路径。
 - LSP 子系统（`crates/tui/src/lsp/`）已完整接入引擎的工具执行后路径
   （`core/engine/lsp_hooks.rs`），在 `File` 写入、编辑和补丁动作之后提供内联诊断。
@@ -246,7 +246,7 @@ Chat Completions 驱动回合。
   - `policy.rs` - 沙箱策略配置
   - `opensandbox.rs` - Alibaba OpenSandbox HTTP 后端适配器
   - `seatbelt.rs` - macOS Seatbelt 配置生成
-  - `bwrap.rs` - 可选启用的 Linux bubblewrap 命令包装器
+  - `bwrap.rs` - Linux bubblewrap 命令包装器
   - `seccomp.rs` - 休眠中的 Linux seccomp 实现；未接入命令执行
   - `process_hardening.rs` - 针对 TUI 进程自身的 Linux 内核级加固
     （纵深防御；不是子命令沙箱）
@@ -293,7 +293,7 @@ Chat Completions 驱动回合。
 2. 工具注册表查找处理器
 3. 执行前钩子运行
 4. 当生效的权限姿态（posture）与策略要求时，请求审批
-5. 执行工具（在 macOS 上可能被 Seatbelt 包装，在 Linux 上可能被可选启用的 bubblewrap 包装）
+5. 执行工具（在 macOS 上可能被 Seatbelt 包装，在 Linux 上可能被 bubblewrap 包装）
 6. 执行后钩子运行
 7. 结果元数据保留在运行时条目记录上
 8. **LSP 编辑后钩子**：在 `File` 的写入、编辑或补丁动作之后（包括仅用于回放的遗留别名），当 LSP 启用时，引擎会运行 `run_post_edit_lsp_hook()` 以收集诊断
@@ -372,7 +372,7 @@ command = "echo 'Running tool: $TOOL_NAME'"
    去掉常规提示，但不会去掉硬性安全闸。有副作用的 MCP 工具走同一条边界。
 3. **可扩展性**：MCP、技能和钩子让定制无需改动代码
 4. **跨平台**：核心可在 Linux/macOS/Windows 上工作。沙箱保证因平台而异：
-   macOS 在可用时使用 Seatbelt；Linux 仅在显式启用时使用已安装的 bubblewrap
+   macOS 在可用时使用 Seatbelt；Linux 在探测证明可用时默认使用已安装的 bubblewrap
    可执行文件；Windows 没有对外宣称的操作系统命令沙箱。Seccomp 和 Windows
    辅助程序契约未接入命令执行。
 5. **最小依赖**：为构建速度谨慎选择依赖

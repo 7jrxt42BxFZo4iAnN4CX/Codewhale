@@ -96,7 +96,6 @@ use coord::{
 
 pub mod advisor;
 pub(crate) mod budget_handback;
-mod cloud_proposal;
 pub mod coord;
 mod delivery;
 pub(crate) mod engine;
@@ -343,12 +342,13 @@ fn child_runtime_budget_context(
 ) -> String {
     let wall = match runtime.worker_profile.wall_deadline_ms {
         Some(deadline_ms) => {
-            let remaining =
-                crate::elapsed::format_elapsed_ms(deadline_ms.saturating_sub(epoch_millis_now()));
+            let remaining = codewhale_command_contract::elapsed::format_elapsed_ms(
+                deadline_ms.saturating_sub(epoch_millis_now()),
+            );
             match runtime.worker_profile.wall_time_secs {
                 Some(total_secs) => format!(
                     "task work stops about {remaining} from now (total run budget {}); model and tool time count against it",
-                    crate::elapsed::format_elapsed_secs(total_secs)
+                    codewhale_command_contract::elapsed::format_elapsed_secs(total_secs)
                 ),
                 None => format!("task work stops about {remaining} from now"),
             }
@@ -444,10 +444,10 @@ fn child_budget_pacing_notice(
             let remaining = deadline.saturating_duration_since(Instant::now());
             consumed.push(format!(
                 "wall clock: ~{} remains of ~{}",
-                crate::elapsed::format_elapsed_ms(
+                codewhale_command_contract::elapsed::format_elapsed_ms(
                     u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX)
                 ),
-                crate::elapsed::format_elapsed_ms(
+                codewhale_command_contract::elapsed::format_elapsed_ms(
                     u64::try_from(total.as_millis()).unwrap_or(u64::MAX)
                 ),
             ));
@@ -2939,7 +2939,7 @@ pub struct SubAgentRuntime {
     pub parent_mode: AppMode,
     /// The session's deterministic Auto-Review policy (configured allow/block
     /// rules plus the built-in safety floor), shared with every descendant.
-    pub auto_review_policy: std::sync::Arc<crate::tui::auto_review::AutoReviewPolicy>,
+    pub auto_review_policy: std::sync::Arc<crate::core::authority::auto_review::AutoReviewPolicy>,
     /// Whether the host can answer an approval prompt for a child (an
     /// interactive TUI). Headless hosts keep the fail-closed denial.
     pub parent_can_prompt: bool,
@@ -3018,7 +3018,7 @@ impl SubAgentRuntime {
             todos: crate::tools::todo::new_shared_todo_list(),
             parent_mode: AppMode::Agent,
             auto_review_policy: std::sync::Arc::new(
-                crate::tui::auto_review::AutoReviewPolicy::default(),
+                crate::core::authority::auto_review::AutoReviewPolicy::default(),
             ),
             parent_can_prompt: false,
             approval_receipt_store: None,
@@ -3055,7 +3055,7 @@ impl SubAgentRuntime {
     #[must_use]
     pub fn with_permission_posture(
         mut self,
-        auto_review_policy: std::sync::Arc<crate::tui::auto_review::AutoReviewPolicy>,
+        auto_review_policy: std::sync::Arc<crate::core::authority::auto_review::AutoReviewPolicy>,
         parent_can_prompt: bool,
     ) -> Self {
         self.auto_review_policy = auto_review_policy;
@@ -3668,6 +3668,21 @@ impl CoordinationProcessLock {
         // `create_dir_all` follows links and would populate the target.
         reject_root_relative_symlinks(&requested_root, &lock_dir.join(SUBAGENT_STATE_LOCK_FILE))?;
         fs::create_dir_all(&lock_dir)?;
+        let ignore = lock_dir.join(".gitignore");
+        let ignored = reject_root_relative_symlinks(&requested_root, &ignore).and_then(|()| {
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&ignore)
+            {
+                Ok(mut file) => file.write_all(b"*\n").map_err(Into::into),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+                Err(error) => Err(error.into()),
+            }
+        });
+        if let Err(error) = ignored {
+            tracing::warn!(target: "subagent", %error, "could not write {}", ignore.display());
+        }
         // Creating a missing root can change its canonical spelling on
         // Windows (for example by adding a `\\?\` prefix). Re-resolve both
         // sides before checking containment.
@@ -8632,7 +8647,7 @@ impl SubAgentManager {
                 let elapsed = existing.started_at.elapsed();
                 let since = format!(
                     "{} ago",
-                    crate::elapsed::format_elapsed_secs(elapsed.as_secs())
+                    codewhale_command_contract::elapsed::format_elapsed_secs(elapsed.as_secs())
                 );
                 return Err(anyhow!(
                     "Sub-agent session name '{name}' is already in use by agent_id '{}' \
@@ -10259,15 +10274,28 @@ impl SubAgentTranscriptArtifactWriter {
         })
     }
 
-    fn sync_messages(&mut self, messages: &[Message], durable: bool) -> Result<()> {
-        if messages.len() < self.synced_live_messages {
-            return Err(anyhow!(
+    fn unsynced_messages<'a>(&self, messages: &'a [Message]) -> Result<&'a [Message]> {
+        messages.get(self.synced_live_messages..).ok_or_else(|| {
+            anyhow!(
                 "sub-agent transcript history shrank from {} to {} messages",
                 self.synced_live_messages,
                 messages.len()
-            ));
-        }
-        self.append_messages(&messages[self.synced_live_messages..], durable)?;
+            )
+        })
+    }
+
+    fn sync_messages(&mut self, messages: &[Message], durable: bool) -> Result<()> {
+        let unsynced = self.unsynced_messages(messages)?;
+        self.append_messages(unsynced, durable)?;
+        self.synced_live_messages = messages.len();
+        Ok(())
+    }
+
+    fn sync_projected_messages(&mut self, messages: &[Message], durable: bool) -> Result<()> {
+        let unsynced = crate::image_attach::safe_tool_result_message_projection(
+            self.unsynced_messages(messages)?,
+        );
+        self.append_messages(&unsynced, durable)?;
         self.synced_live_messages = messages.len();
         Ok(())
     }
@@ -11259,16 +11287,6 @@ impl ToolSpec for AgentTool {
                     "type": "string",
                     "description": "The focused task to give the worker. A read-only role needs no write scope; a write-capable role defaults to the parent workspace unless narrowed with write_roots."
                 },
-                "runtime": {
-                    "type": "string",
-                    "enum": ["local", "cloud"],
-                    "description": "cloud only proposes a cloud PR job; nothing runs until the person types /dispatch confirm <id>. Never confirm it yourself."
-                },
-                "remote": {
-                    "type": "string",
-                    "enum": ["github", "cnb", "gitee"],
-                    "description": "cloud: PR forge."
-                },
                 "detached": {
                     "type": "boolean",
                     "description": "Default children continue after ordinary parent turn completion and remain explicitly cancellable. true additionally opts this subtree out of parent-turn cancellation; its own budgets still apply."
@@ -11453,11 +11471,6 @@ impl ToolSpec for AgentTool {
                 | AgentToolAction::Peek
                 | AgentToolAction::Wait,
             ) => ApprovalRequirement::Auto,
-            // A cloud proposal spawns and spends nothing; the person's
-            // `/dispatch confirm` is its gate.
-            Ok(AgentToolAction::Start) if cloud_proposal::is_cloud_start(input) => {
-                ApprovalRequirement::Auto
-            }
             Ok(AgentToolAction::Start) if start_requests_read_only_role(input) => {
                 ApprovalRequirement::Auto
             }
@@ -11511,14 +11524,18 @@ impl ToolSpec for AgentTool {
         let action = parse_agent_tool_action(&input)?;
         match action {
             AgentToolAction::Start => {
-                if cloud_proposal::parse_start_runtime(&input)?
-                    == cloud_proposal::StartRuntime::Cloud
-                {
-                    return cloud_proposal::propose_cloud_run(
-                        &input,
-                        &context.workspace,
-                        self.runtime.spawn_depth,
-                    );
+                let remote_set = !matches!(input.get("remote"), None | Some(Value::Null));
+                let runtime_is_local = match input.get("runtime") {
+                    None | Some(Value::Null) => true,
+                    Some(Value::String(value)) => {
+                        matches!(value.trim().to_ascii_lowercase().as_str(), "" | "local")
+                    }
+                    Some(_) => false,
+                };
+                if remote_set || !runtime_is_local {
+                    return Err(ToolError::invalid_input(
+                        "Cloud agent runs are no longer started from the agent tool; omit runtime and remote to run a local child.",
+                    ));
                 }
             }
             AgentToolAction::Roster => {
@@ -14411,11 +14428,8 @@ async fn insert_subagent_full_transcript_handle(
     // bounded message tail — embedding it verbatim would duplicate that tail
     // inside one payload. Keep checkpoint metadata, drop its messages, and
     // record how much of the true history the bounded tail omits.
-    let projected_messages = crate::image_attach::safe_tool_result_message_projection(messages);
-    let (bounded_messages, omitted_messages) = bounded_tail_messages(
-        &projected_messages,
-        SUBAGENT_TRANSCRIPT_MESSAGE_BUDGET_BYTES,
-    );
+    let (bounded_messages, omitted_messages) =
+        bounded_tail_messages(messages, SUBAGENT_TRANSCRIPT_MESSAGE_BUDGET_BYTES);
     let checkpoint_meta = checkpoint.map(|checkpoint| SubAgentCheckpoint {
         omitted_messages: checkpoint.message_count,
         messages: Vec::new(),
@@ -14423,7 +14437,7 @@ async fn insert_subagent_full_transcript_handle(
     });
     let transcript_artifact = transcript_artifact.map(|writer| {
         let synced =
-            match writer.sync_messages(&projected_messages, *status != SubAgentStatus::Running) {
+            match writer.sync_projected_messages(messages, *status != SubAgentStatus::Running) {
                 Ok(()) => true,
                 Err(err) => {
                     tracing::warn!(
@@ -14435,7 +14449,7 @@ async fn insert_subagent_full_transcript_handle(
                     false
                 }
             };
-        writer.metadata(synced && writer.synced_live_messages == projected_messages.len())
+        writer.metadata(synced && writer.synced_live_messages == messages.len())
     });
     let payload = json!({
         "kind": "subagent_full_transcript",
@@ -14540,23 +14554,27 @@ fn bound_subagent_tool_result(
 /// budgets. Exact JSON size via serde; unserializable messages (should not
 /// happen) count as 1 KiB so they still consume budget.
 fn approximate_message_bytes(message: &Message) -> usize {
-    serde_json::to_string(message).map_or(1024, |s| s.len())
+    let mut counter = crate::utils::CountingWriter::new();
+    serde_json::to_writer(&mut counter, message).map_or(1024, |()| counter.count())
 }
 
-/// Keep the most recent messages whose combined approximate size fits
-/// `budget_bytes`. Always keeps at least the final message (even if it alone
-/// exceeds the budget) so a non-empty history stays continuable. Returns the
-/// retained tail and how many older messages were omitted.
+/// Keep the most recent messages, after `safe_tool_result_message_projection`,
+/// whose combined approximate size fits `budget_bytes`. Always keeps at least
+/// the final message (even if it alone exceeds the budget) so a non-empty
+/// history stays continuable. Returns the retained tail and how many older
+/// messages were omitted.
 fn bounded_tail_messages(messages: &[Message], budget_bytes: usize) -> (Vec<Message>, usize) {
     let mut kept_rev: Vec<Message> = Vec::new();
     let mut used = 0usize;
     for message in messages.iter().rev() {
-        let size = approximate_message_bytes(message);
+        let projected =
+            crate::image_attach::safe_tool_result_message_projection(std::slice::from_ref(message));
+        let size: usize = projected.iter().map(approximate_message_bytes).sum();
         if !kept_rev.is_empty() && used.saturating_add(size) > budget_bytes {
             break;
         }
         used = used.saturating_add(size);
-        kept_rev.push(message.clone());
+        kept_rev.extend(projected);
     }
     kept_rev.reverse();
     let omitted = messages.len().saturating_sub(kept_rev.len());
@@ -14572,11 +14590,8 @@ fn build_subagent_checkpoint(
 ) -> SubAgentCheckpoint {
     let created_at_ms = epoch_millis_now();
     let checkpoint_id = format!("{agent_id}:step:{steps_taken}:ts:{created_at_ms}");
-    let projected_messages = crate::image_attach::safe_tool_result_message_projection(messages);
-    let (bounded_messages, omitted_messages) = bounded_tail_messages(
-        &projected_messages,
-        SUBAGENT_CHECKPOINT_MESSAGE_BUDGET_BYTES,
-    );
+    let (bounded_messages, omitted_messages) =
+        bounded_tail_messages(messages, SUBAGENT_CHECKPOINT_MESSAGE_BUDGET_BYTES);
     SubAgentCheckpoint {
         checkpoint_id: checkpoint_id.clone(),
         agent_id: agent_id.to_string(),
@@ -18412,8 +18427,7 @@ fn reject_subagent_terminal_takeover(name: &str, input: &Value) -> Result<()> {
         return Err(anyhow!(
             "Sub-agents run in the background and cannot use Bash with interactive=true \
              because that would take over the parent TUI terminal. Use Bash without \
-             interactive, or with background=true / tty=true, or task_shell_start \
-             instead."
+             interactive, or with background=true / tty=true instead."
         ));
     }
     Ok(())

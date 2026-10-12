@@ -135,12 +135,19 @@ impl ToolRegistry {
         Ok(rich)
     }
 
-    pub(crate) async fn execute_rich_full_with_context(
+    pub(crate) async fn execute_rich_full_with_context<'a, F>(
         &self,
         name: &str,
         input: Value,
         context_override: Option<&ToolContext>,
-    ) -> Result<RichToolResult, ToolError> {
+        on_admitted: F,
+    ) -> Result<RichToolResult, ToolError>
+    where
+        F: FnOnce() -> Result<
+                Option<crate::core::engine::tool_execution::OperationSpanGuard<'a>>,
+                ToolError,
+            > + Send,
+    {
         let tool = self
             .get(name)
             .ok_or_else(|| ToolError::not_available(format!("tool '{name}' is not registered")))?;
@@ -150,9 +157,19 @@ impl ToolRegistry {
             .map_err(ToolError::not_available)?;
         let child = self.admit_child_call(name, &input, ctx).await?;
         enforce_tool_authority(name, &input, tool.as_ref(), ctx)?;
-        let mut rich = crate::image_attach::bound_rich_tool_result(
-            tool.execute_rich(input.clone(), ctx).await?,
-        );
+        let operation_span = on_admitted()?;
+        let outcome = tool.execute_rich(input.clone(), ctx).await;
+        if let Some(operation_span) = operation_span {
+            operation_span
+                .complete(super::activity::operation_outcome(
+                    &outcome,
+                    ctx.cancel_token
+                        .as_ref()
+                        .is_some_and(tokio_util::sync::CancellationToken::is_cancelled),
+                ))
+                .await;
+        }
+        let mut rich = crate::image_attach::bound_rich_tool_result(outcome?);
         if rich.result.success
             && let Some((authority, writes)) = child
         {
@@ -1176,9 +1193,9 @@ impl ToolRegistryBuilder {
     /// Each family is one tool with an `action` parameter (`tasks`, `github`,
     /// `automation`). Per-action execution aliases were removed in v0.9.3.
     ///
-    /// Shell-related task tools (`task_shell_start`, `task_shell_wait`) are
-    /// *not* included here — use `with_runtime_task_shell_tools` to register
-    /// them when `allow_shell` is true.
+    /// The shell-related task tool (`task_shell_wait`) is *not* included here —
+    /// use `with_runtime_task_shell_tools` to register it when `allow_shell`
+    /// is true.
     #[must_use]
     pub fn with_runtime_task_tools(self) -> Self {
         use super::automation::AutomationTool;
@@ -1192,16 +1209,15 @@ impl ToolRegistryBuilder {
             .with_tool(Arc::new(SendLaterTool::new("send_later")))
     }
 
-    /// Include shell-related task tools (`task_shell_start`, `task_shell_wait`).
+    /// Include the shell-related task tool (`task_shell_wait`).
     ///
-    /// These are gated behind `allow_shell` because `task_shell_start`
-    /// delegates directly to `BashTool`, providing the same shell
-    /// execution capability as `Bash`.
+    /// Gated behind `allow_shell` because it polls and cancels the background
+    /// jobs that `Bash` starts; background work has one entry point, the shell
+    /// tool's `background=true`.
     #[must_use]
     pub fn with_runtime_task_shell_tools(self) -> Self {
-        use super::tasks::{TaskShellStartTool, TaskShellWaitTool};
-        self.with_tool(Arc::new(TaskShellStartTool))
-            .with_tool(Arc::new(TaskShellWaitTool))
+        use super::tasks::TaskShellWaitTool;
+        self.with_tool(Arc::new(TaskShellWaitTool))
     }
 
     /// Include only read-only durable task, PR-attempt, GitHub, and automation
@@ -1357,7 +1373,10 @@ impl ToolRegistryBuilder {
     #[must_use]
     pub fn with_fim_tool(self, client: Option<CodewhaleClient>, model: String) -> Self {
         use super::fim::FimEditTool;
-        self.with_tool(Arc::new(FimEditTool::new(client, model)))
+        let Some(client) = client.filter(CodewhaleClient::can_request_fim_completion) else {
+            return self;
+        };
+        self.with_tool(Arc::new(FimEditTool::new(Some(client), model)))
     }
 
     /// Include the `remember` tool — model-callable bullet-add into the
