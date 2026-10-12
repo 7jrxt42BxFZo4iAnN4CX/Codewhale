@@ -421,9 +421,11 @@ launcher guidance.
   ([#6915](https://github.com/codewhale-hq/Codewhale/issues/6915)).
 - Idle CPU has not been measured on FreeBSD or Linux for this release
   ([#6728](https://github.com/codewhale-hq/Codewhale/issues/6728)).
-- Models.dev prices with context tiers: a turn above a model's first tier can
-  be priced at its base rate. The bundled catalog has no tiered rows, so this
-  can only happen after a live models.dev refresh
+- Models.dev prices with context tiers are not applied. A turn at or above a
+  model's first context tier reads as unpriced ("pricing tier unavailable")
+  and is counted as missing from the cost total, instead of being priced at
+  its base rate. The bundled catalog has no tiered rows, so this appears only
+  after a live models.dev refresh
   ([#6396](https://github.com/codewhale-hq/Codewhale/issues/6396)).
 - Shell commands run by delegated agents appear in `/jobs` and the work dock
   with their owner, not in the agent's own detail view; named terminal
