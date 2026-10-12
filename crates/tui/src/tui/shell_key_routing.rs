@@ -55,6 +55,7 @@ pub enum Focus {
 pub enum FocusScope {
     TerminalPanel,
     PetHabitat,
+    Pet,
     /// Only the sandbox-elevation decision card.
     Elevation,
     /// Only the model-bound redaction consent gate.
@@ -78,6 +79,7 @@ impl FocusScope {
         match self {
             Self::TerminalPanel => focus == Focus::TerminalPanel,
             Self::PetHabitat => focus == Focus::Modal(ModalKind::PetHabitat),
+            Self::Pet => matches!(focus, Focus::Composer | Focus::Modal(ModalKind::PetHabitat)),
             Self::Elevation => focus == Focus::Modal(ModalKind::Elevation),
             Self::RedactionGate => focus == Focus::RedactionGate,
             Self::SessionShell => {
@@ -138,9 +140,10 @@ pub enum ShellBindingId {
     ModeCycle,
     /// Shift+Tab: cycle the permission posture.
     PermissionCycle,
-    /// Ctrl+Tab / Ctrl+]: the next bottom-dock view.
+    /// Ctrl+Tab / Ctrl+]: the next bottom-dock view, or the next pet view
+    /// while the pet main view is showing.
     ViewCycle,
-    /// Ctrl+Shift+Tab: the previous bottom-dock view.
+    /// Ctrl+Shift+Tab: the previous bottom-dock view, or the previous pet view.
     ViewCycleBack,
 }
 
@@ -365,19 +368,19 @@ pub const SHELL_BINDINGS: &[ShellBinding] = &[
         id: ShellBindingId::PetSound,
         catalog_chord: "F6",
         footer_chord: "F6",
-        focus: FocusScope::PetHabitat,
+        focus: FocusScope::Pet,
     },
     ShellBinding {
         id: ShellBindingId::PetBrowser,
         catalog_chord: "F8",
         footer_chord: "F8",
-        focus: FocusScope::PetHabitat,
+        focus: FocusScope::Pet,
     },
     ShellBinding {
         id: ShellBindingId::PetWindow,
         catalog_chord: "F9",
         footer_chord: "F9",
-        focus: FocusScope::PetHabitat,
+        focus: FocusScope::Pet,
     },
     ShellBinding {
         id: ShellBindingId::RedactionGateConfirm,
@@ -537,7 +540,8 @@ pub fn tool_details_chord() -> Cow<'static, str> {
 }
 
 /// Render a portable `Alt+X` chord for the current platform. macOS normally
-/// shows `⌥X`; ASCII-safe terminals retain the portable `Alt+X` spelling.
+/// shows `⌥X` and `fn+F5`, because an Apple keyboard sends media keys from the
+/// top row unless Fn is held; ASCII-safe terminals retain the portable spelling.
 #[must_use]
 pub fn display_chord(chord: &'static str) -> Cow<'static, str> {
     display_chord_for_platform_and_ascii(
@@ -564,7 +568,19 @@ fn display_chord_for_platform_and_ascii(
     if !is_macos {
         return Cow::Borrowed(chord);
     }
-    let rendered = chord.replace("Alt+", "⌥").replace("F1", "fn+F1");
+    let mut rendered = String::with_capacity(chord.len() + 6);
+    let mut previous = None;
+    for (index, ch) in chord.char_indices() {
+        if ch == 'F'
+            && !previous.is_some_and(char::is_alphanumeric)
+            && chord[index + 1..].starts_with(|next: char| next.is_ascii_digit())
+        {
+            rendered.push_str("fn+");
+        }
+        rendered.push(ch);
+        previous = Some(ch);
+    }
+    let rendered = rendered.replace("Alt+", "⌥");
     if rendered == chord {
         Cow::Borrowed(chord)
     } else {

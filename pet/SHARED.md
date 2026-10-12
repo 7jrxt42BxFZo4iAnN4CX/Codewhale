@@ -52,9 +52,12 @@ English reader learn Chinese or Japanese phrases beside the normal English
 status. Both whale styles turn their 980 drones into these same activity words.
 The saved presentation settings leave the pet’s identity and recording intact.
 
-The pet has no workbar panel; the habitat is its only terminal view. Escape
-leaves it without cancelling the turn or touching the composer draft. F6
-toggles sound, F8 opens the appearance studio, and F9 opens the native window;
+The pet has no workbar panel. In the terminal it is the pet main view above the
+composer, with the F5 inspector over it. On the main view Ctrl+] cycles the
+pet's views: whale, cove, braille, pixels, particles, whale-girl and installed
+avatar packs. Escape leaves the inspector without cancelling the turn or
+touching the composer draft. F6 toggles sound, F8 opens the appearance studio,
+and F9 opens the native window, on the main view and in the inspector;
 reduced motion follows the shell's existing motion setting. Hints and key
 admission use the existing shell binding table. The habitat uses the modal
 stack; composer contents, transcript, selection and active Engine state stay
@@ -64,8 +67,8 @@ underneath it. Consent and approval views retain their existing priority.
 selects an isolated companion directory; its default is
 `~/.codewhale/pet-shared`. `CODEWHALE_PET_PORT` chooses the initial loopback port
 (default 4633; zero allocates an unused port for tests). A saved world retains
-its selected port. `CODEWHALE_PET_GRAPHICS=braille` forces the text fallback.
-None of these commands replace an installed global CLI.
+its selected port. `CODEWHALE_PET_GRAPHICS=braille` keeps the `pixels` view on
+its particles fallback. None of these commands replace an installed global CLI.
 
 ## Appearance and work-to-result preview
 

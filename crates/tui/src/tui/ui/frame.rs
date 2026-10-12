@@ -3193,11 +3193,11 @@ mod pet_main_tests {
         let session = app.current_session_id.clone();
         let (buf, _) = paint(&mut app, 100, 32);
         assert!(!text(&buf).contains("INSPECTION_RECEIPT"));
-        assert!(!pet_watch::handle_inspect_key(
+        assert!(!pet_watch::handle_key(
             &mut app,
             &KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)
         ));
-        assert!(pet_watch::handle_inspect_key(
+        assert!(pet_watch::handle_key(
             &mut app,
             &KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)
         ));
@@ -3246,7 +3246,7 @@ mod pet_main_tests {
             &serde_json::json!({"command":"git status"}),
             "pet-approval-key",
         )));
-        assert!(!pet_watch::handle_inspect_key(
+        assert!(!pet_watch::handle_key(
             &mut app,
             &KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)
         ));
@@ -3289,7 +3289,7 @@ mod pet_main_tests {
                 streaming: false,
             });
             app.record_completed_assistant_output(index, reply);
-            assert!(pet_watch::handle_inspect_key(
+            assert!(pet_watch::handle_key(
                 &mut app,
                 &KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)
             ));

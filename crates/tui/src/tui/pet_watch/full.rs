@@ -15,19 +15,68 @@ use crate::{
 use codewhale_localization::{Locale, MessageId, tr};
 use codewhale_protocol::engine_owner::{OwnerActivityKind, OwnerFreshness, OwnerPresence};
 use codewhale_ratatui::{
-    AgentCard, Caps, DotWhale, MotionMode, PetMode, PetModeAreas, State, StatusMark, Subagent,
-    SubagentControls, SubagentUsage, SubagentViewWords, Theme,
+    AgentCard, Caps, DotWhale, MotionMode, PetMode, PetModeAreas, PetStyle, State, StatusMark,
+    Subagent, SubagentControls, SubagentUsage, SubagentViewWords, Theme, WhalePet,
+    color::ColorDepth,
     whale_motion::{Activity, Context, Inputs, Presence, Span},
 };
 use ratatui::{Frame, layout::Rect, text::Line};
 use std::time::{Duration, Instant};
 
 pub(super) fn canonical(state: &PetWatch) -> bool {
-    matches!(state.avatars.key.as_str(), "" | "whale")
+    matches!(state.avatars.current(), "whale" | "cove" | "braille")
         && state.avatars.action.is_none()
         && state.avatars.view.is_none()
 }
-fn theme(app: &App) -> Theme {
+fn needs(
+    watch: &PetWatch,
+    synchronized: bool,
+    theme: &Theme,
+    pet: Rect,
+    live: bool,
+) -> Option<(&'static str, &'static str)> {
+    const ASCII: &str = "CODEWHALE_ASCII_SAFE unset";
+    let colour = || match theme.depth() {
+        ColorDepth::Monochrome => "NO_COLOR unset",
+        ColorDepth::Ansi16 => "COLORTERM=truecolor",
+        _ => "CODEWHALE_APPEARANCE=dark|light",
+    };
+    let art = WhalePet::art_area(pet);
+    let local = |style: PetStyle| {
+        if theme.ascii() {
+            Err((ASCII, "words"))
+        } else if art.width < 16 || art.height < 8 {
+            Err(("16x8 cells", "words"))
+        } else if style == PetStyle::Braille || !theme.paints_grounds() {
+            Ok("braille")
+        } else {
+            Ok("cove")
+        }
+    };
+    match watch.avatars.current() {
+        "whale" if theme.ascii() => Some((ASCII, "words")),
+        "whale" if !live => Some((
+            if watch.raster.is_none() {
+                "codewhale pet serve"
+            } else {
+                "/pet source"
+            },
+            local(PetStyle::Color).unwrap_or_else(|(_, shown)| shown),
+        )),
+        "cove" => match local(PetStyle::Color) {
+            Ok("braille") => Some((colour(), "braille")),
+            Ok(_) => None,
+            Err(need) => Some(need),
+        },
+        "braille" => local(PetStyle::Braille).err(),
+        "pixels" => super::pixels_need(synchronized).map(|need| (need, "particles")),
+        "whale-girl" if theme.ascii() => Some((ASCII, "ascii")),
+        "whale-girl" if !theme.paints_grounds() => Some((colour(), "ascii")),
+        _ if watch.avatars.fallback => Some(("atlas", "particles")),
+        _ => None,
+    }
+}
+pub(super) fn theme(app: &App) -> Theme {
     let mut caps = Caps::detect();
     if let Some(appearance) =
         codewhale_ratatui::detect::appearance_for_background(app.ui_theme.surface_bg)
@@ -273,12 +322,13 @@ pub(super) fn tick(app: &mut App, visible: bool, now: Instant) {
     });
     let motion = motion(app);
     let theme = theme(app);
-    let prepared = presentation(
-        app.pet_watch.raster.as_ref(),
-        app.current_session_id.as_deref(),
-        now,
-    )
-    .is_some_and(|r| r.scene.materials.is_some());
+    let prepared = app.pet_watch.avatars.current() == "whale"
+        && presentation(
+            app.pet_watch.raster.as_ref(),
+            app.current_session_id.as_deref(),
+            now,
+        )
+        .is_some_and(|r| r.scene.materials.is_some());
     let state = &mut app.pet_watch;
     state.full.update(
         app.current_session_id.as_deref(),
@@ -384,6 +434,50 @@ fn render(frame: &mut Frame, area: Rect, app: &mut App, inspect: bool) {
     );
     let owner = inputs(app, Instant::now());
     let motion = motion(app);
+    let view_key = app.pet_watch.avatars.current().to_owned();
+    let dot_whale = prepared.filter(|_| view_key == "whale").and_then(|r| {
+        let (points, materials, hollow) = if motion.animates() {
+            (
+                &r.scene.points,
+                r.scene.materials.as_ref(),
+                r.scene.style.hollow,
+            )
+        } else {
+            (
+                &r.scene.still.points,
+                r.scene.still.materials.as_ref(),
+                r.scene.still.style.hollow,
+            )
+        };
+        materials.map(|materials| {
+            DotWhale::new(points, materials)
+                .caption(&words)
+                .hollow(hollow)
+        })
+    });
+    let missing = (!plan.pet.is_empty())
+        .then(|| {
+            needs(
+                &app.pet_watch,
+                app.synchronized_output_enabled,
+                &theme,
+                plan.pet,
+                dot_whale.is_some(),
+            )
+        })
+        .flatten()
+        .map(|(requirement, shown)| {
+            Line::styled(
+                tr(app.ui_locale, MessageId::PetViewNeeds)
+                    .replace("{view}", &view_key)
+                    .replace("{requirement}", requirement)
+                    .replace("{shown}", shown),
+                codewhale_palette::chrome_style(
+                    &app.ui_theme,
+                    crate::tui::app::StatusToastLevel::Info.ink(),
+                ),
+            )
+        });
     // Revisions invalidate the selected cell inside the existing incremental
     // cache. Only source replacement or a destructive history change discards
     // its parser; streaming chunks and ambient frames keep the stable prefix.
@@ -401,6 +495,7 @@ fn render(frame: &mut Frame, area: Rect, app: &mut App, inspect: bool) {
     let mut options = app.transcript_render_options();
     options.low_motion = true;
     options.motion_mode = crate::tui::motion::MotionMode::Reduced;
+    let chord = |id| shell_key_routing::display_chord(shell_key_routing::binding(id).footer_chord);
     let copy_hint = (inspect && app.completed_assistant_output_receipt().is_some()).then(|| {
         tr(app.ui_locale, MessageId::PetModeCopyHint).replace(
             "{copy}",
@@ -455,9 +550,12 @@ fn render(frame: &mut Frame, area: Rect, app: &mut App, inspect: bool) {
             )
         ));
     }
-    if area.width >= 100 {
-        hints.push_str(&format!(" · {}", habitat::companion_hints(app.ui_locale)));
-    }
+    let companion = if area.width >= 100 {
+        format!(" · {}", habitat::companion_hints(app.ui_locale))
+    } else {
+        String::new()
+    };
+    hints.push_str(&companion);
     let arrows = format!(
         "{}{}",
         shell_key_routing::binding(Id::PetResultUp).footer_chord,
@@ -488,27 +586,14 @@ fn render(frame: &mut Frame, area: Rect, app: &mut App, inspect: bool) {
         };
     }
     let mut view = PetMode::new(&theme, mark);
-    view.dot_whale = prepared.and_then(|r| {
-        let (points, materials, hollow) = if motion.animates() {
-            (
-                &r.scene.points,
-                r.scene.materials.as_ref(),
-                r.scene.style.hollow,
-            )
-        } else {
-            (
-                &r.scene.still.points,
-                r.scene.still.materials.as_ref(),
-                r.scene.still.style.hollow,
-            )
-        };
-        materials.map(|materials| {
-            DotWhale::new(points, materials)
-                .caption(&words)
-                .hollow(hollow)
-        })
-    });
-    view.notice = notice;
+    view.style = if view_key == "braille" {
+        PetStyle::Braille
+    } else {
+        PetStyle::Color
+    };
+    view.cove = false;
+    view.dot_whale = dot_whale;
+    view.notice = notice.or(missing);
     view.title = "Codewhale".into();
     view.agents = if inspect { &agents } else { &[] };
     view.agent_words = SubagentViewWords {
@@ -546,19 +631,20 @@ fn render(frame: &mut Frame, area: Rect, app: &mut App, inspect: bool) {
             _ => MessageId::PetModeReplyTitle,
         },
     );
+    let inspect_hint = tr(app.ui_locale, MessageId::PetModeInspectHint)
+        .replace("{inspect}", &chord(Id::PetInspect));
+    let view_hint = tr(app.ui_locale, MessageId::PetModeViewHint)
+        .replace("{cycle}", &chord(Id::ViewCycle))
+        .replace("{view}", &view_key);
     view.pane_hints = if inspect {
         pane_hints.into()
     } else {
-        "".into()
+        view_hint.clone().into()
     };
-    let inspect_hint = tr(app.ui_locale, MessageId::PetModeInspectHint).replace(
-        "{inspect}",
-        shell_key_routing::binding(Id::PetInspect).footer_chord,
-    );
     view.hints = if inspect {
         hints.into()
     } else {
-        inspect_hint.clone().into()
+        format!("{inspect_hint}{companion}").into()
     };
     app.pet_watch
         .full
@@ -595,6 +681,10 @@ fn render(frame: &mut Frame, area: Rect, app: &mut App, inspect: bool) {
             plan.footer.height.min(1),
         )
     });
+    let width = codewhale_ratatui::text::width(&view_hint);
+    app.pet_watch.view_area =
+        (!inspect && plan.footer.height > 1 && width <= usize::from(plan.footer.width))
+            .then(|| Rect::new(plan.footer.x, plan.footer.y + 1, width as u16, 1));
     if canonical(&app.pet_watch) {
         app.pet_watch.area = Some(plan.pet);
     } else {
