@@ -52,17 +52,17 @@ pub(super) struct CreateSessionResponse {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct ResumeSessionRequest {
-    model: Option<String>,
-    mode: Option<String>,
+pub(crate) struct ResumeSessionRequest {
+    pub(crate) model: Option<String>,
+    pub(crate) mode: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
-pub(super) struct ResumeSessionResponse {
-    thread_id: String,
-    session_id: String,
-    message_count: usize,
-    summary: String,
+pub(crate) struct ResumeSessionResponse {
+    pub(crate) thread_id: String,
+    pub(crate) session_id: String,
+    pub(crate) message_count: usize,
+    pub(crate) summary: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,22 +107,22 @@ pub(super) struct PatchSessionResponse {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct SaveSessionRequest {
+pub(crate) struct SaveSessionRequest {
     /// Thread ID to save as a session. If omitted, saves the most recently
     /// active thread.
     #[serde(default)]
-    thread_id: Option<String>,
+    pub(crate) thread_id: Option<String>,
     /// If provided, update the existing session with this ID instead of
     /// creating a new one. This matches TUI's `build_session_snapshot`
     /// behavior where it updates the current session in-place.
     #[serde(default)]
-    session_id: Option<String>,
+    pub(crate) session_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
-pub(super) struct SaveSessionResponse {
-    session_id: String,
-    session: SessionDetailResponse,
+pub(crate) struct SaveSessionResponse {
+    pub(crate) session_id: String,
+    pub(super) session: SessionDetailResponse,
 }
 
 /// Turn a `SessionsQuery` into the shared projection query.
@@ -206,12 +206,26 @@ pub(super) async fn patch_session(
             "PATCH /v1/sessions/{id} requires at least one of `title` or `archived`",
         ));
     }
-    let manager = SessionManager::new(state.sessions_dir.clone())
+    // The single writers hold the session's live lease across their load and
+    // save; taking it may retry with short sleeps. Keep all of it off the
+    // async worker (#6149).
+    tokio::task::spawn_blocking(move || patch_session_blocking(state.sessions_dir, &id, &req))
+        .await
+        .map_err(|_| ApiError::internal("session update failed"))?
+        .map(Json)
+}
+
+fn patch_session_blocking(
+    sessions_dir: PathBuf,
+    id: &str,
+    req: &PatchSessionRequest,
+) -> Result<PatchSessionResponse, ApiError> {
+    let manager = SessionManager::new(sessions_dir)
         .map_err(|e| ApiError::internal(format!("Failed to open sessions dir: {e}")))?;
 
     let before = manager
-        .load_session(&id)
-        .map_err(|e| map_session_err(&id, e, "read"))?
+        .load_session(id)
+        .map_err(|e| map_session_err(id, e, "read"))?
         .metadata;
     let mut metadata = before.clone();
     let mut changes: HashMap<String, Value> = HashMap::new();
@@ -223,25 +237,56 @@ pub(super) async fn patch_session(
         crate::session_manager::normalize_session_title(title)
             .map_err(|e| ApiError::bad_request(e.to_string()))?;
         metadata = manager
-            .rename_session(&id, title, SessionMutator::External)
-            .map_err(|e| map_session_err(&id, e, "rename"))?;
+            .rename_session(id, title, SessionMutator::External)
+            .map_err(|e| map_session_err(id, e, "rename"))?;
         if metadata.title != before.title {
             changes.insert("title".to_string(), json!(metadata.title));
         }
     }
     if let Some(archived) = req.archived {
         metadata = manager
-            .set_session_archived(&id, archived, SessionMutator::External)
-            .map_err(|e| map_session_err(&id, e, "archive"))?;
+            .set_session_archived(id, archived, SessionMutator::External)
+            .map_err(|e| map_session_err(id, e, "archive"))?;
         if metadata.archived != before.archived {
             changes.insert("archived".to_string(), json!(metadata.archived));
         }
     }
 
-    Ok(Json(PatchSessionResponse {
+    Ok(PatchSessionResponse {
         session: metadata,
         changes,
-    }))
+    })
+}
+
+/// Hold `id`'s live lease across an external load and save, refusing (409)
+/// as rename, archive and delete do when an interactive session holds the
+/// document open — its next autosave would revert the write — and rejecting
+/// a malformed id (400). A released liveness probe cannot protect the write
+/// that follows it (#6144). Taking the lease may retry with short sleeps, so
+/// it runs off the async worker; drop the lease only after the save.
+async fn reserve_external_session_write(
+    state: &RuntimeApiState,
+    id: &str,
+    action: &'static str,
+) -> Result<crate::session_manager::SessionLease, ApiError> {
+    reserve_session_write(&state.sessions_dir, id, action).await
+}
+
+async fn reserve_session_write(
+    sessions_dir: &std::path::Path,
+    id: &str,
+    action: &'static str,
+) -> Result<crate::session_manager::SessionLease, ApiError> {
+    let sessions_dir = sessions_dir.to_path_buf();
+    let id = id.to_string();
+    tokio::task::spawn_blocking(move || {
+        SessionManager::new(sessions_dir)
+            .map_err(|e| ApiError::internal(format!("Failed to open sessions dir: {e}")))?
+            .reserve_session_for_external_write(&id)
+            .map_err(|e| map_session_err(&id, e, action))
+    })
+    .await
+    .map_err(|_| ApiError::internal("session lease reservation failed"))?
 }
 
 /// `GET /v1/sessions/{id}` query options.
@@ -308,13 +353,47 @@ pub(super) async fn resume_session_thread(
     Path(id): Path<String>,
     Json(req): Json<ResumeSessionRequest>,
 ) -> Result<(StatusCode, Json<ResumeSessionResponse>), ApiError> {
-    let _checkpoint_admission = state.runtime_threads.session_checkpoint_guard().await;
-    let manager = SessionManager::new(state.sessions_dir.clone())
+    resume_session_in_runtime(
+        &state.runtime_threads,
+        &state.sessions_dir,
+        &id,
+        req,
+        (
+            state.config_path.as_deref(),
+            state.config_profile.as_deref(),
+        ),
+        None,
+    )
+    .await
+}
+
+pub(crate) async fn resume_session_in_runtime(
+    runtime: &std::sync::Arc<RuntimeThreadManager>,
+    sessions_dir: &std::path::Path,
+    id: &str,
+    req: ResumeSessionRequest,
+    config_source: (Option<&std::path::Path>, Option<&str>),
+    allow_shell: Option<bool>,
+) -> Result<(StatusCode, Json<ResumeSessionResponse>), ApiError> {
+    let _checkpoint_admission = runtime.session_checkpoint_guard().await;
+    let manager = SessionManager::new(sessions_dir.to_path_buf())
         .map_err(|e| ApiError::internal(format!("Failed to open sessions dir: {e}")))?;
     let session = manager
-        .resume_session(&id)
-        .map_err(|e| map_session_err(&id, e, "read"))?
+        .resume_session(id)
+        .map_err(|e| map_session_err(id, e, "read"))?
         .session;
+
+    if runtime.is_acp_host()
+        && session
+            .metadata
+            .runtime_store
+            .as_ref()
+            .is_some_and(|binding| *binding != runtime.session_store_binding())
+    {
+        return Err(ApiError::conflict(
+            "This saved conversation belongs to another Runtime store; secure owner attachment is not qualified, so ACP will not copy its history",
+        ));
+    }
 
     // Validate imported image bytes before allocating a Runtime thread. This
     // retains local history's existing bounds; invalid content cannot leave an
@@ -332,7 +411,7 @@ pub(super) async fn resume_session_thread(
     // The conversation may already be open. Answer with the thread that holds
     // it rather than adding a second row for the same history (see
     // `RuntimeThreadManager::thread_holding_session`).
-    if let Some(existing) = state.runtime_threads.thread_holding_session(&id, &session) {
+    if let Some(existing) = runtime.thread_holding_session(id, &session) {
         let thread_id = existing.id;
         let message_count = session.messages.len();
         let summary = format!(
@@ -343,7 +422,7 @@ pub(super) async fn resume_session_thread(
             StatusCode::OK,
             Json(ResumeSessionResponse {
                 thread_id,
-                session_id: id.clone(),
+                session_id: id.to_string(),
                 message_count,
                 summary,
             }),
@@ -359,8 +438,7 @@ pub(super) async fn resume_session_thread(
             .unwrap_or_else(|| "agent".to_string())
     });
 
-    let thread = state
-        .runtime_threads
+    let thread = runtime
         .create_thread_with_shell_policy(
             CreateThreadRequest {
                 model: Some(model),
@@ -368,7 +446,7 @@ pub(super) async fn resume_session_thread(
                 model_provider_id: session.metadata.model_provider_id.clone(),
                 workspace: Some(session.metadata.workspace.clone()),
                 mode: Some(mode),
-                allow_shell: None,
+                allow_shell,
                 trust_mode: None,
                 auto_approve: None,
                 archived: false,
@@ -376,23 +454,21 @@ pub(super) async fn resume_session_thread(
                 task_id: None,
                 ..Default::default()
             },
-            state.config_path.as_deref(),
-            state.config_profile.as_deref(),
+            config_source.0,
+            config_source.1,
         )
         .await
         .map_err(map_resume_thread_create_err)?;
 
     let msg_count = session.messages.len();
-    state
-        .runtime_threads
+    runtime
         .seed_thread_from_messages(&thread.id, &session.messages)
         .await
         .map_err(|e| ApiError::internal(format!("Failed to seed thread history: {e}")))?;
 
     // Link the session to the new thread so that `ensure_engine_loaded`
     // can restore the full message history from the session file.
-    state
-        .runtime_threads
+    runtime
         .set_thread_session_checkpoint(&thread.id, &session)
         .await
         .map_err(|e| {
@@ -410,7 +486,7 @@ pub(super) async fn resume_session_thread(
         StatusCode::CREATED,
         Json(ResumeSessionResponse {
             thread_id: thread.id,
-            session_id: id,
+            session_id: id.to_string(),
             message_count: msg_count,
             summary,
         }),
@@ -469,13 +545,7 @@ pub(super) async fn create_session_from_thread(
     // this thread's lossier projection would drop its images, tool work and
     // system prompt. Export leaves that document untouched.
     let session_handle = crate::runtime_threads::thread_session_id(&detail.thread.id);
-    if manager.is_session_live_anywhere(&session_handle) {
-        return Err(map_session_err(
-            &session_handle,
-            crate::session_manager::live_session_conflict(&session_handle),
-            "export",
-        ));
-    }
+    let _lease = reserve_external_session_write(&state, &session_handle, "export").await?;
     let existing = match manager.load_session(&session_handle) {
         Ok(existing) => Some(existing),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
@@ -520,7 +590,7 @@ pub(super) async fn create_session_from_thread(
     let title = session.metadata.title.clone();
     let message_count = session.metadata.message_count;
 
-    persist_thread_cost(&state, thread_id, &mut session).await?;
+    persist_thread_cost(&state.runtime_threads, thread_id, &mut session).await?;
 
     manager
         .save_session(&session)
@@ -583,7 +653,7 @@ pub(super) fn stamp_session_provider_from_thread(
         let key = config
             .provider
             .as_deref()
-            .unwrap_or(crate::config::ApiProvider::Deepseek.as_str());
+            .unwrap_or(crate::config::ProviderKind::Deepseek.as_str());
         config.resolve_provider_identity(key)?
     };
     metadata.set_model_provider_route(
@@ -593,7 +663,7 @@ pub(super) fn stamp_session_provider_from_thread(
     Ok(())
 }
 
-fn thread_detail_has_live_work(detail: &ThreadDetail) -> bool {
+pub(super) fn thread_detail_has_live_work(detail: &ThreadDetail) -> bool {
     detail.turns.iter().any(|turn| {
         matches!(
             turn.status,
@@ -635,12 +705,11 @@ pub(super) fn messages_from_thread_detail(detail: &ThreadDetail) -> anyhow::Resu
 /// included, and `coverage_recorded` marks that this writer computed them
 /// from audited turn records rather than deserializing a legacy default.
 async fn persist_thread_cost(
-    state: &RuntimeApiState,
+    runtime: &std::sync::Arc<RuntimeThreadManager>,
     thread_id: &str,
     session: &mut crate::session_manager::SavedSession,
 ) -> Result<(), ApiError> {
-    let usage = state
-        .runtime_threads
+    let usage = runtime
         .aggregate_usage_for_thread(thread_id)
         .await
         .map_err(|e| ApiError::internal(format!("Failed to aggregate thread usage: {e}")))?;
@@ -702,14 +771,21 @@ pub(super) async fn save_current_session(
     State(state): State<RuntimeApiState>,
     Json(req): Json<SaveSessionRequest>,
 ) -> Result<Json<SaveSessionResponse>, ApiError> {
-    let _checkpoint_admission = state.runtime_threads.session_checkpoint_guard().await;
+    save_session_in_runtime(&state.runtime_threads, &state.sessions_dir, req).await
+}
+
+pub(crate) async fn save_session_in_runtime(
+    runtime: &std::sync::Arc<RuntimeThreadManager>,
+    sessions_dir: &std::path::Path,
+    req: SaveSessionRequest,
+) -> Result<Json<SaveSessionResponse>, ApiError> {
+    let _checkpoint_admission = runtime.session_checkpoint_guard().await;
     // Find the thread to save.
     let thread_id = match req.thread_id {
         Some(id) => id,
         None => {
             // Find the most recently updated thread.
-            let threads = state
-                .runtime_threads
+            let threads = runtime
                 .list_threads(ThreadListFilter::IncludeArchived, Some(100))
                 .await
                 .map_err(map_thread_err)?;
@@ -725,8 +801,7 @@ pub(super) async fn save_current_session(
     // then request a session snapshot. This reuses the same code path as
     // TUI's `build_session_snapshot`: the engine holds the authoritative
     // messages and token usage, so we don't need to reconstruct from turns.
-    let engine = state
-        .runtime_threads
+    let engine = runtime
         .get_engine(&thread_id)
         .await
         .map_err(|e| ApiError::internal(format!("Failed to get engine for thread: {e}")))?;
@@ -736,7 +811,7 @@ pub(super) async fn save_current_session(
         .await
         .map_err(|e| ApiError::internal(format!("Failed to get session snapshot: {e}")))?;
 
-    let manager = SessionManager::new(state.sessions_dir.clone())
+    let manager = SessionManager::new(sessions_dir.to_path_buf())
         .map_err(|e| ApiError::internal(format!("Failed to open sessions dir: {e}")))?;
 
     // A document another thread is bound to is that thread's conversation.
@@ -744,15 +819,12 @@ pub(super) async fn save_current_session(
     // describing a document it no longer owns (#6144). A thread already bound
     // to the same document (a legacy shared link) keeps saving to it.
     if let Some(requested) = req.session_id.as_deref() {
-        let own = state
-            .runtime_threads
+        let own = runtime
             .get_thread(&thread_id)
             .await
             .map_err(map_thread_err)?;
         if own.session_id.as_deref() != Some(requested)
-            && let Some(other) = state
-                .runtime_threads
-                .thread_bound_to_session(requested, &thread_id)
+            && let Some(other) = runtime.thread_bound_to_session(requested, &thread_id)
         {
             return Err(ApiError {
                 status: StatusCode::CONFLICT,
@@ -774,21 +846,14 @@ pub(super) async fn save_current_session(
     // its turns.
     let document_id = match req.session_id {
         Some(named) => named,
-        None => state
-            .runtime_threads
+        None => runtime
             .get_thread(&thread_id)
             .await
             .map_err(map_thread_err)?
             .session_id
             .unwrap_or_else(|| snapshot.session_id.clone()),
     };
-    if manager.is_session_live_anywhere(&document_id) {
-        return Err(map_session_err(
-            &document_id,
-            crate::session_manager::live_session_conflict(&document_id),
-            "save",
-        ));
-    }
+    let _lease = reserve_session_write(sessions_dir, &document_id, "save").await?;
 
     // Build or update the session, mirroring TUI's `build_session_snapshot`.
     // Only `io::ErrorKind::NotFound` falls back to creating a new session;
@@ -833,7 +898,11 @@ pub(super) async fn save_current_session(
         }
     };
 
-    persist_thread_cost(&state, &thread_id, &mut session).await?;
+    persist_thread_cost(runtime, &thread_id, &mut session).await?;
+
+    if runtime.is_acp_host() {
+        session.metadata.runtime_store = Some(runtime.session_store_binding());
+    }
 
     // Save the session.
     manager
@@ -844,8 +913,7 @@ pub(super) async fn save_current_session(
     // restore the full message history (including thinking/tool blocks)
     // from the session file instead of reconstructing from turns.
     let session_handle = session.metadata.id.clone();
-    state
-        .runtime_threads
+    runtime
         .set_thread_session_checkpoint(&thread_id, &session)
         .await
         .map_err(|e| {
@@ -888,26 +956,26 @@ pub(super) async fn delete_session(
     State(state): State<RuntimeApiState>,
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    let manager = SessionManager::new(state.sessions_dir.clone())
-        .map_err(|e| ApiError::internal(format!("Failed to open sessions dir: {e}")))?;
-    // Deleting a document an interactive session holds open would be undone
-    // by its next autosave, in whichever process holds it.
-    if manager.is_session_live_anywhere(&id) {
-        return Err(map_session_err(
-            &id,
-            crate::session_manager::live_session_conflict(&id),
-            "delete",
-        ));
-    }
-    manager
-        .delete_session(&id)
-        .map_err(|e| map_session_err(&id, e, "delete"))?;
-    // Threads bound to the document keep their turns; drop the dead link so
-    // they load from those instead of failing (#6144).
-    if let Err(error) = state.runtime_threads.unbind_session_threads(&id) {
-        tracing::warn!(session_id = %id, %error, "deleted session's threads were not unbound");
-    }
-    Ok(StatusCode::NO_CONTENT)
+    // Deletion validates the id (400), refuses an unknown one (404) before
+    // creating any lease file, and holds the session's live lease, refusing
+    // (409) a document an interactive session holds open: its next autosave,
+    // in whichever process holds it, would undo the delete. Taking the lease
+    // may retry with short sleeps, so all of it runs off the async worker.
+    tokio::task::spawn_blocking(move || {
+        let manager = SessionManager::new(state.sessions_dir.clone())
+            .map_err(|e| ApiError::internal(format!("Failed to open sessions dir: {e}")))?;
+        manager
+            .delete_session(&id)
+            .map_err(|e| map_session_err(&id, e, "delete"))?;
+        // Threads bound to the document keep their turns; drop the dead link
+        // so they load from those instead of failing (#6144).
+        if let Err(error) = state.runtime_threads.unbind_session_threads(&id) {
+            tracing::warn!(session_id = %id, %error, "deleted session's threads were not unbound");
+        }
+        Ok::<_, ApiError>(StatusCode::NO_CONTENT)
+    })
+    .await
+    .map_err(|_| ApiError::internal("session delete failed"))?
 }
 
 /// `GET /v1/sessions/repair`: what the last session-store repair did (#6144).
@@ -1327,7 +1395,7 @@ pub(super) fn resolve_session_artifact(
         }
     };
     let relative = PathBuf::from(id).join(&relative_path);
-    let opened = super::workspace::open_confined_file(sessions_dir, &relative, false)
+    let opened = super::workspace::open_confined_file_resolved(sessions_dir, &relative, false)
         .and_then(|file| super::workspace::read_confined_bytes(&file));
     let read = match (opened, &authority) {
         (Ok(read), _) => read,
@@ -1413,7 +1481,7 @@ fn image_evidence_summary(
 > {
     let relative = PathBuf::from(id)
         .join(crate::tools::large_output_router::evidence_metadata_relative_path(artifact_id));
-    let file = super::workspace::open_confined_file(sessions_dir, &relative, false)?;
+    let file = super::workspace::open_confined_file_resolved(sessions_dir, &relative, false)?;
     let evidence = crate::tools::large_output_router::read_evidence_metadata_file(&file)
         .map_err(|error| super::workspace::map_fs_error(error, "evidence metadata"))?;
     let expected_path =
@@ -1646,4 +1714,63 @@ mod tool_media_artifact_tests {
                 .is_err()
         );
     }
+}
+
+/// Trusted transport creation uses the same lease/checkpoint writer before
+/// the first provider call. Ordinary HTTP export still rejects empty history.
+pub(crate) async fn initialize_empty_session(
+    runtime: &std::sync::Arc<RuntimeThreadManager>,
+    sessions_dir: &std::path::Path,
+    thread_id: &str,
+    session_id: &str,
+) -> Result<(), ApiError> {
+    let _checkpoint_admission = runtime.session_checkpoint_guard().await;
+    let detail = runtime
+        .get_thread_detail(thread_id)
+        .await
+        .map_err(map_thread_err)?;
+    if thread_detail_has_live_work(&detail)
+        || !detail.turns.is_empty()
+        || detail.thread.session_id.is_some()
+    {
+        return Err(ApiError::conflict(
+            "Initial ACP checkpoint requires a new idle, unbound thread",
+        ));
+    }
+    let _lease = reserve_session_write(sessions_dir, session_id, "initialize").await?;
+    let manager = SessionManager::new(sessions_dir.to_path_buf())
+        .map_err(|error| ApiError::internal(error.to_string()))?;
+    match manager.load_session(session_id) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Ok(_) => {
+            return Err(ApiError::conflict(
+                "Initial session identity already exists",
+            ));
+        }
+        Err(error) => return Err(map_session_err(session_id, error, "read")),
+    }
+    let mut session = create_saved_session_with_id_and_mode(
+        session_id.to_string(),
+        &[],
+        &detail.thread.model,
+        &detail.thread.workspace,
+        0,
+        None,
+        Some(&detail.thread.mode),
+    );
+    stamp_session_provider_from_thread(&runtime.read_config(), &detail, &mut session.metadata)
+        .map_err(ApiError::bad_request)?;
+    session.metadata.runtime_store = Some(runtime.session_store_binding());
+    manager
+        .save_session(&session)
+        .map_err(|error| ApiError::internal(error.to_string()))?;
+    runtime
+        .set_thread_session_checkpoint(thread_id, &session)
+        .await
+        .map_err(|error| {
+            ApiError::internal(format!(
+                "Initial session was saved but checkpoint binding failed: {error}"
+            ))
+        })?;
+    Ok(())
 }

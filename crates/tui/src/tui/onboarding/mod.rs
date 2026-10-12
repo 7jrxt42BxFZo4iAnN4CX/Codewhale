@@ -170,6 +170,15 @@ fn provider_lines(app: &App, width: usize) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     heading(&mut lines, app, MessageId::OnboardProviderTitle, width);
     lines.push(Line::from(""));
+    if let Some(notice) = app.onboarding_key_rejected.as_deref() {
+        for segment in wrap_words(notice, width) {
+            lines.push(Line::from(Span::styled(
+                segment,
+                Style::default().fg(palette::STATUS_ERROR),
+            )));
+        }
+        lines.push(Line::from(""));
+    }
     wrap_body(&mut lines, app, MessageId::OnboardProviderBlurb, width);
     lines
 }
@@ -467,11 +476,14 @@ pub fn advance_onboarding_after_language(app: &mut App) {
 }
 
 /// Provider setup → trust when a decision is required, otherwise the ready
-/// screen.
+/// screen. A message already typed skips the ready screen and returns to the
+/// composer with the draft intact.
 pub fn advance_onboarding_after_provider(app: &mut App) {
     app.status_message = None;
     if trust_decision_required(app) {
         app.onboarding = OnboardingState::TrustDirectory;
+    } else if !app.composer.input.trim().is_empty() && !app.onboarding_explore_offline {
+        app.finish_onboarding_without_feature_intro();
     } else {
         app.onboarding = OnboardingState::Ready;
     }

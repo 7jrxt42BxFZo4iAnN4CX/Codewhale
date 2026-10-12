@@ -7,7 +7,7 @@
 #![allow(dead_code)]
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
@@ -220,12 +220,20 @@ impl LocalProcessFleetHostAdapter {
                     request.worker_id
                 )));
             }
+            // A draining worker's dispatcher exited but its tree still runs;
+            // forgetting it here would overlap a replacement with it.
+            if matches!(status.state, FleetHostWorkerState::Draining) {
+                return Err(FleetHostError::retryable(format!(
+                    "worker {} is still draining; stop it before starting a replacement",
+                    request.worker_id
+                )));
+            }
             self.processes.remove(&request.worker_id);
         }
 
         let env = worker_env(&request.env, &request.env_allowlist)?;
         let log_path = self.log_path_for(&request.worker_id, host_kind);
-        let log = open_worker_log(&log_path)?;
+        let log = open_worker_log(&self.workspace, &log_path)?;
         let stderr = log
             .try_clone()
             .map_err(|err| FleetHostError::retryable(format!("cloning worker log: {err}")))?;
@@ -417,7 +425,7 @@ impl FleetHostAdapter for LocalProcessFleetHostAdapter {
             .get(worker_id)
             .ok_or_else(|| FleetHostError::terminal(format!("unknown worker {worker_id}")))?;
         let max_bytes = max_bytes.min(process.request.log_limit_bytes.max(1));
-        read_bounded_log(&process.log_path, max_bytes)
+        read_bounded_log(&self.workspace, &process.log_path, max_bytes)
     }
 
     fn interrupt_worker(&mut self, worker_id: &str) -> FleetHostResult<FleetHostWorkerStatus> {
@@ -440,9 +448,10 @@ impl FleetHostAdapter for LocalProcessFleetHostAdapter {
             .get(worker_id)
             .map(|process| process.request.clone())
             .ok_or_else(|| FleetHostError::terminal(format!("unknown worker {worker_id}")))?;
-        let _ = self.stop_worker(worker_id);
-        self.processes.remove(worker_id);
-        self.start_worker(request)
+        restart_after_confirmed_stop(self, worker_id, |adapter| {
+            adapter.processes.remove(worker_id);
+            adapter.start_worker(request)
+        })
     }
 
     fn stop_worker(&mut self, worker_id: &str) -> FleetHostResult<FleetHostWorkerStatus> {
@@ -739,9 +748,10 @@ impl FleetHostAdapter for SshFleetHostAdapter {
             .get(worker_id)
             .map(|process| process.request.clone())
             .ok_or_else(|| FleetHostError::terminal(format!("unknown worker {worker_id}")))?;
-        let _ = self.stop_worker(worker_id);
-        self.local.processes.remove(worker_id);
-        self.local.start_with_kind(request, FleetHostKind::Ssh)
+        restart_after_confirmed_stop(self, worker_id, |adapter| {
+            adapter.local.processes.remove(worker_id);
+            adapter.local.start_with_kind(request, FleetHostKind::Ssh)
+        })
     }
 
     fn stop_worker(&mut self, worker_id: &str) -> FleetHostResult<FleetHostWorkerStatus> {
@@ -753,25 +763,72 @@ impl FleetHostAdapter for SshFleetHostAdapter {
     }
 }
 
-fn open_worker_log(path: &Path) -> FleetHostResult<File> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|err| {
-            FleetHostError::retryable(format!(
-                "creating worker log dir {}: {err}",
-                parent.display()
-            ))
-        })?;
+/// Restart policy shared by the process-backed adapters. The previous worker
+/// is released — and `replace` spawns its successor — only once a stop has
+/// confirmed the whole worker tree is gone. A failed or unconfirmed stop keeps
+/// the old handle so status, logs, and cleanup still reach a worker that may
+/// be running, and no replacement starts beside it (duplicate execution). The
+/// process-tree lifecycle in `stop_worker` stays the authority on "gone".
+///
+/// Known limitations:
+/// - For [`SshFleetHostAdapter`], "confirmed stopped" proves only that the
+///   local `ssh` client's process tree is gone. The remote `codewhale`
+///   process is not observed: if the remote side does not tear the command
+///   down when the connection drops, a restart can start a second remote
+///   worker beside it.
+/// - `start_worker` on an id the adapter still holds refuses only `Running`
+///   and `Draining` (see `LocalProcessFleetHostAdapter::start_with_kind`),
+///   while this restart also refuses `Unknown`. The process-backed adapters
+///   never report `Unknown`, so the gap is latent; an adapter that does must
+///   refuse `Unknown` in its start path too, or a start can overlap a worker
+///   in an unknown state.
+fn restart_after_confirmed_stop<A: FleetHostAdapter>(
+    adapter: &mut A,
+    worker_id: &str,
+    replace: impl FnOnce(&mut A) -> FleetHostResult<FleetWorkerHandle>,
+) -> FleetHostResult<FleetWorkerHandle> {
+    let stopped = adapter.stop_worker(worker_id).map_err(|err| FleetHostError {
+        kind: err.kind,
+        message: format!(
+            "restart of worker {worker_id} refused: the previous worker was not confirmed stopped ({})",
+            err.message
+        ),
+    })?;
+    if matches!(
+        stopped.state,
+        FleetHostWorkerState::Running
+            | FleetHostWorkerState::Draining
+            | FleetHostWorkerState::Unknown
+    ) {
+        return Err(FleetHostError::retryable(format!(
+            "restart of worker {worker_id} refused: the previous worker is still {:?} after stop",
+            stopped.state
+        )));
     }
-    OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(path)
-        .map_err(|err| FleetHostError::retryable(format!("opening worker log: {err}")))
+    replace(adapter)
 }
 
-fn read_bounded_log(path: &Path, max_bytes: usize) -> FleetHostResult<String> {
-    let mut file = File::open(path).map_err(|err| {
+fn open_worker_log(workspace: &Path, path: &Path) -> FleetHostResult<File> {
+    // Pinned, no-follow open under the workspace: a link in `.codewhale` or at
+    // the log's name is refused instead of redirecting the worker's output.
+    let relative = path.strip_prefix(workspace).map_err(|_| {
+        FleetHostError::retryable(format!(
+            "worker log {} is outside the workspace",
+            path.display()
+        ))
+    })?;
+    let file = super::files::WorkspaceFile::open(workspace, relative, true)
+        .and_then(|target| target.open_write(false))
+        .map_err(|err| FleetHostError::retryable(format!("opening worker log: {err}")))?;
+    // Validated handle first, truncation second.
+    file.set_len(0)
+        .map_err(|err| FleetHostError::retryable(format!("truncating worker log: {err}")))?;
+    Ok(file)
+}
+
+fn read_bounded_log(workspace: &Path, path: &Path, max_bytes: usize) -> FleetHostResult<String> {
+    // The worker may still hold its log open for writing.
+    let mut file = crate::fs_confined::open_read_shared(workspace, path).map_err(|err| {
         FleetHostError::retryable(format!("opening worker log {}: {err}", path.display()))
     })?;
     let len = file
@@ -1553,6 +1610,58 @@ fn safe_path_segment(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Worker output is opened through the pinned no-follow writer: a link in
+    /// `.codewhale` or at the log's name is refused, and a plain log is
+    /// truncated and readable back through the same confinement.
+    #[cfg(unix)]
+    #[test]
+    fn worker_logs_are_never_opened_through_links() {
+        use std::io::Write as _;
+        use std::os::unix::fs::symlink;
+        let workspace = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let log = workspace
+            .path()
+            .join(".codewhale")
+            .join("fleet-host")
+            .join("local")
+            .join("w1.log");
+
+        let mut file = open_worker_log(workspace.path(), &log).expect("plain log opens");
+        file.write_all(b"first run output").unwrap();
+        drop(file);
+        assert_eq!(
+            read_bounded_log(workspace.path(), &log, 1024).unwrap(),
+            "first run output"
+        );
+        drop(open_worker_log(workspace.path(), &log).expect("reopen truncates"));
+        assert_eq!(read_bounded_log(workspace.path(), &log, 1024).unwrap(), "");
+
+        // A linked directory and a linked file are both refused.
+        let linked_root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(linked_root.path().join(".codewhale")).unwrap();
+        symlink(
+            outside.path(),
+            linked_root.path().join(".codewhale").join("fleet-host"),
+        )
+        .unwrap();
+        let linked_dir_log = linked_root
+            .path()
+            .join(".codewhale")
+            .join("fleet-host")
+            .join("local")
+            .join("w1.log");
+        assert!(open_worker_log(linked_root.path(), &linked_dir_log).is_err());
+
+        let secret = outside.path().join("secret.txt");
+        std::fs::write(&secret, "do not read").unwrap();
+        let parent = log.parent().unwrap();
+        symlink(&secret, parent.join("w2.log")).unwrap();
+        assert!(open_worker_log(workspace.path(), &parent.join("w2.log")).is_err());
+        assert!(read_bounded_log(workspace.path(), &parent.join("w2.log"), 1024).is_err());
+        assert_eq!(std::fs::read_to_string(&secret).unwrap(), "do not read");
+    }
     use tempfile::TempDir;
 
     #[cfg(unix)]
@@ -2023,6 +2132,95 @@ mod tests {
         adapter.stop_worker("local-restart").unwrap();
     }
 
+    /// A host whose stop outcome is scripted: `None` fails the stop, `Some`
+    /// reports that state. Only the restart path is exercised.
+    struct ScriptedStopHost {
+        stop_state: Option<FleetHostWorkerState>,
+        owned: bool,
+        spawned: usize,
+    }
+
+    impl FleetHostAdapter for ScriptedStopHost {
+        fn start_worker(
+            &mut self,
+            request: FleetWorkerStartRequest,
+        ) -> FleetHostResult<FleetWorkerHandle> {
+            self.spawned += 1;
+            self.owned = true;
+            Ok(FleetWorkerHandle {
+                worker_id: request.worker_id,
+                host_kind: FleetHostKind::LocalProcess,
+                pid: None,
+                log_path: PathBuf::new(),
+            })
+        }
+        fn read_status(&mut self, _: &str) -> FleetHostResult<FleetHostWorkerStatus> {
+            unreachable!("restart must not consult status outside stop")
+        }
+        fn read_logs(&self, _: &str, _: usize) -> FleetHostResult<String> {
+            unreachable!()
+        }
+        fn interrupt_worker(&mut self, _: &str) -> FleetHostResult<FleetHostWorkerStatus> {
+            unreachable!()
+        }
+        fn restart_worker(&mut self, worker_id: &str) -> FleetHostResult<FleetWorkerHandle> {
+            restart_after_confirmed_stop(self, worker_id, |host| {
+                host.owned = false;
+                host.start_worker(FleetWorkerStartRequest::new(
+                    worker_id,
+                    shell_command("true"),
+                ))
+            })
+        }
+        fn stop_worker(&mut self, worker_id: &str) -> FleetHostResult<FleetHostWorkerStatus> {
+            let Some(state) = self.stop_state else {
+                return Err(FleetHostError::retryable(
+                    "Fleet session still has a live tracked leader after SIGKILL",
+                ));
+            };
+            Ok(FleetHostWorkerStatus {
+                worker_id: worker_id.to_string(),
+                state,
+                pid: Some(4242),
+                exit_code: None,
+                memory_mb: None,
+                retryable: false,
+            })
+        }
+        fn cleanup_worker(&mut self, _: &str) -> FleetHostResult<()> {
+            unreachable!()
+        }
+    }
+
+    #[test]
+    fn fleet_host_restart_keeps_the_old_worker_when_stop_is_unconfirmed() {
+        for stop_state in [None, Some(FleetHostWorkerState::Draining)] {
+            let mut host = ScriptedStopHost {
+                stop_state,
+                owned: true,
+                spawned: 0,
+            };
+            let err = host
+                .restart_worker("overlap")
+                .expect_err("an unconfirmed stop must refuse the restart");
+            assert!(err.message.contains("refused"), "{}", err.message);
+            assert_eq!(
+                host.spawned, 0,
+                "no replacement may start beside a surviving worker ({stop_state:?})"
+            );
+            assert!(host.owned, "the old worker's handle is kept");
+        }
+
+        let mut host = ScriptedStopHost {
+            stop_state: Some(FleetHostWorkerState::Stopped),
+            owned: true,
+            spawned: 0,
+        };
+        host.restart_worker("overlap")
+            .expect("a confirmed stop restarts");
+        assert_eq!(host.spawned, 1);
+    }
+
     #[cfg(unix)]
     #[test]
     fn fleet_host_local_adapter_reports_running_worker_memory_usage() {
@@ -2315,23 +2513,26 @@ mod tests {
 
     #[test]
     fn runtime_surface_review_documented_ssh_host_loads() {
-        // Windows checkouts may carry CRLF line endings.
-        let docs = include_str!("../../../../docs/zh_hans/FLEET.md").replace("\r\n", "\n");
-        let example = docs
-            .split_once("### Worker 认证")
-            .expect("worker authentication guidance")
-            .1
-            .split("```json\n")
-            .skip(1)
-            .filter_map(|block| {
-                serde_json::from_str::<serde_json::Value>(block.split("```").next()?).ok()
-            })
-            .find(|value| value["id"] == "builder-1")
-            .expect("documented SSH worker example");
-        let host: FleetHostSpec = serde_json::from_value(example["host"].clone()).unwrap();
-        let config = SshFleetHostConfig::from_host_spec(&host)
-            .expect("documented host must load without migration errors");
-        assert!(config.known_hosts.is_some());
+        for docs in [
+            include_str!("../../../../docs/FLEET.md"),
+            include_str!("../../../../docs/zh_hans/FLEET.md"),
+        ] {
+            // Match the actual example, not a translated section heading.
+            // Windows checkouts may carry CRLF line endings.
+            let docs = docs.replace("\r\n", "\n");
+            let example = docs
+                .split("```json\n")
+                .skip(1)
+                .filter_map(|block| {
+                    serde_json::from_str::<serde_json::Value>(block.split("```").next()?).ok()
+                })
+                .find(|value| value["id"] == "builder-1")
+                .expect("documented SSH worker example");
+            let host: FleetHostSpec = serde_json::from_value(example["host"].clone()).unwrap();
+            let config = SshFleetHostConfig::from_host_spec(&host)
+                .expect("documented host must load without migration errors");
+            assert!(config.known_hosts.is_some());
+        }
     }
 
     #[test]

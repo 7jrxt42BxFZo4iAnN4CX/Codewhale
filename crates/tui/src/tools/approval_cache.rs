@@ -49,9 +49,9 @@
 //! Known limits of this stopgap: the calls are matched by MCP tool-name suffix
 //! (`_consent`, `_consent_allow`, `_consent_revoke`, `_app_script`), so a
 //! different MCP server exposing a tool with one of those names is gated the
-//! same way (fail closed). The consent decision still travels through a model
-//! tool call; MCP elicitation, where the plugin asks the host for the user's
-//! answer directly, is the real fix and is not built.
+//! same way (fail closed). Consent, script and computer registration/spawn
+//! calls force an exact human card. Only its human decision can be attested
+//! to the reviewed built-in plugin; grants and autonomous modes cannot mint it.
 use std::fmt::Write as _;
 
 use serde_json::Value;
@@ -148,6 +148,8 @@ pub fn build_approval_grouping_key(tool_name: &str, input: &serde_json::Value) -
 /// keyed `<scope>:<tool_name>:<hash of input>` for both, so its grants are
 /// bound to the reviewed plugin build and never widened to a family; every
 /// other tool keeps [`build_approval_key`] / [`build_approval_grouping_key`].
+/// The registry's captured owning agent prefixes both keys with `agent:<id>:`,
+/// so its grants and denials never cover a parent or sibling's call.
 ///
 /// [`approval_scope`]: crate::tools::spec::ToolSpec::approval_scope
 #[must_use]
@@ -159,7 +161,7 @@ pub fn approval_keys_for_call(
     let scope = registry
         .and_then(|registry| registry.get(tool_name))
         .and_then(|tool| tool.approval_scope());
-    match scope {
+    let keys = match scope {
         Some(scope) => {
             let key = ApprovalKey(format!("{scope}:{tool_name}:{}", hash_json_value(input)));
             (key.clone(), key)
@@ -168,7 +170,33 @@ pub fn approval_keys_for_call(
             build_approval_key(tool_name, input),
             build_approval_grouping_key(tool_name, input),
         ),
+    };
+    if let Some(owner) = registry.and_then(|registry| registry.context().owner_agent_id.as_deref())
+    {
+        let scoped = |key: ApprovalKey| ApprovalKey(format!("agent:{owner}:{}", key.0));
+        (scoped(keys.0), scoped(keys.1))
+    } else {
+        keys
     }
+}
+
+/// [`approval_keys_for_call`] for a call an extension made through `core/call`
+/// (`scope` is the extension plugin build's [`approval_scope`]): both keys are
+/// prefixed `extcall:<scope>:`, so a session grant or a denial recorded for the
+/// model's call of a tool never matches the extension's call of it, and the
+/// reverse, and neither crosses to another plugin build.
+///
+/// [`approval_scope`]: crate::tools::spec::ToolSpec::approval_scope
+#[must_use]
+pub fn extension_origin_approval_keys(
+    scope: &str,
+    registry: Option<&crate::tools::ToolRegistry>,
+    tool_name: &str,
+    input: &serde_json::Value,
+) -> (ApprovalKey, ApprovalKey) {
+    let (exact, grouping) = approval_keys_for_call(registry, tool_name, input);
+    let scoped = |key: ApprovalKey| ApprovalKey(format!("extcall:{scope}:{}", key.0));
+    (scoped(exact), scoped(grouping))
 }
 
 /// The sorted `web.run` action kinds present in `input`, e.g. `open+search_query`.
@@ -252,6 +280,14 @@ pub(crate) enum ComputerUseUserGate {
         /// not shown by `first_line`.
         line_count: usize,
     },
+    /// Registering or spawning a computer the plugin will then drive (and,
+    /// for ssh, push an agent to).
+    Computer {
+        action: &'static str,
+        transport: Option<String>,
+        /// `user@host:port` for ssh, the target or image otherwise.
+        destination: Option<String>,
+    },
 }
 
 /// Classify an MCP tool call as a Computer Use call that needs a human
@@ -272,6 +308,41 @@ pub(crate) fn computer_use_user_gate(
             .filter(|value| !value.is_empty())
             .map(str::to_string)
     };
+    let computer_action = if tool_name.ends_with("_computer_register") {
+        Some("register")
+    } else if tool_name.ends_with("_computer_spawn") {
+        Some("spawn")
+    } else if tool_name.ends_with("_computer") {
+        match input.get("action").and_then(Value::as_str) {
+            Some("register") => Some("register"),
+            Some("spawn") => Some("spawn"),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    if let Some(action) = computer_action {
+        let host = text("host");
+        let destination = match host {
+            Some(host) => {
+                let user = text("user")
+                    .map(|user| format!("{user}@"))
+                    .unwrap_or_default();
+                let port = input
+                    .get("port")
+                    .and_then(Value::as_u64)
+                    .map(|port| format!(":{port}"))
+                    .unwrap_or_default();
+                Some(format!("{user}{host}{port}"))
+            }
+            None => text("target").or_else(|| text("image")),
+        };
+        return Some(ComputerUseUserGate::Computer {
+            action,
+            transport: text("transport"),
+            destination,
+        });
+    }
     let action = if tool_name.ends_with("_consent_allow") {
         "allow"
     } else if tool_name.ends_with("_consent_revoke") {
@@ -1304,6 +1375,67 @@ mod tests {
             build_approval_key("web.run", &search("espresso")),
             build_approval_key("web.run", &search("grinders")),
             "denials stay exact-call scoped"
+        );
+    }
+    #[test]
+    fn computer_register_and_spawn_need_a_human_card() {
+        for (tool, input) in [
+            (
+                "mcp_codewhale-cu_computer_register",
+                json!({"computer": "box", "transport": "ssh", "host": "box.example", "user": "me", "port": 2222}),
+            ),
+            (
+                "mcp_codewhale-cu_computer",
+                json!({"action": "register", "id": "box", "transport": "ssh", "host": "box.example"}),
+            ),
+            (
+                "mcp_codewhale-cu_computer_spawn",
+                json!({"image": "desktop"}),
+            ),
+            (
+                "mcp_codewhale-cu_computer",
+                json!({"action": "spawn", "id": "d"}),
+            ),
+        ] {
+            assert!(
+                matches!(
+                    computer_use_user_gate(tool, &input),
+                    Some(ComputerUseUserGate::Computer { .. })
+                ),
+                "{tool} {input}"
+            );
+        }
+        assert_eq!(
+            computer_use_user_gate(
+                "mcp_codewhale-cu_computer_register",
+                &json!({"transport": "ssh", "host": "box.example", "user": "me", "port": 2222}),
+            ),
+            Some(ComputerUseUserGate::Computer {
+                action: "register",
+                transport: Some("ssh".to_string()),
+                destination: Some("me@box.example:2222".to_string()),
+            })
+        );
+        for (tool, input) in [
+            ("mcp_codewhale-cu_computer", json!({"action": "list"})),
+            (
+                "mcp_codewhale-cu_computer",
+                json!({"action": "switch", "id": "box"}),
+            ),
+            (
+                "mcp_codewhale-cu_computer_switch",
+                json!({"computer": "box"}),
+            ),
+        ] {
+            assert_eq!(computer_use_user_gate(tool, &input), None, "{tool}");
+        }
+        assert_eq!(
+            computer_use_batch_hidden_gate(
+                "mcp_codewhale-cu_run_actions",
+                &json!({"steps": [{"tool": "codewhale-cu_computer_register", "arguments": {"host": "x"}}]}),
+            )
+            .as_deref(),
+            Some("codewhale-cu_computer_register")
         );
     }
 }

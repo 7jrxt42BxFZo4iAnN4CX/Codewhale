@@ -32,8 +32,8 @@ fn discover_visible_skills(app: &crate::tui::app::App) -> crate::skills::SkillRe
     crate::skills::discover_for_workspace_and_dir_with_mode_and_plugins(
         &app.workspace,
         &app.skills_dir,
-        crate::skills::SkillDiscoveryMode::from_codewhale_only(app.skills_scan_codewhale_only),
-        Some(app.plugin_registry.as_ref()),
+        app.skills_discovery_mode,
+        Some(app.extension_plugin_view().as_ref()),
     )
     .into_enabled()
 }
@@ -81,21 +81,22 @@ fn activate_skill(app: &mut crate::tui::app::App, name: &str) -> CommandResult {
     let registry = discover_visible_skills(app);
 
     if let Some(skill) = registry.get(name) {
-        let plugin_provenance = match &skill.source {
-            crate::skills::SkillSource::Native => None,
-            crate::skills::SkillSource::Plugin { authority, .. } => {
-                if let Err(reason) = crate::plugins::registry::verify_plugin_component_authority(
-                    authority,
-                    crate::plugins::activation::PluginActivationCapability::Skills,
-                ) {
-                    return CommandResult::error(format!(
-                        "Plugin skill '{}' is no longer active: {reason}",
-                        skill.name
-                    ));
-                }
-                Some(authority.as_ref().clone())
-            }
-        };
+        if !skill.invocation.user_invocable() {
+            return CommandResult::error(format!(
+                "Skill '{}' does not allow user invocation",
+                skill.name
+            ));
+        }
+        let plugin_provenance = skill.source.provenance();
+        if let Some(provenance) = &plugin_provenance
+            && let Err(reason) =
+                provenance.verify_for(&app.workspace, Some(app.extension_plugin_view().as_ref()))
+        {
+            return CommandResult::error(format!(
+                "Plugin skill '{}' is no longer active: {reason}",
+                skill.name
+            ));
+        }
         let instruction = format!(
             "You are now using a skill. Follow these instructions:\n\n# Skill: {}\n\n{}\n\n---\n\nNow respond to the user's request following the above skill instructions.",
             skill.name, skill.body
@@ -740,6 +741,9 @@ fn activate_skill_portable(
                 ))
             }
         }
+        Err(SkillActivationError::InvocationRejected { name, reason }) => {
+            CommandResult::error(format!("Skill '{}' could not be activated: {reason}", name))
+        }
         Err(SkillActivationError::PluginRejected { name, reason }) => CommandResult::error(
             format!("Plugin skill '{}' is no longer active: {reason}", name),
         ),
@@ -1344,6 +1348,24 @@ mod tests {
                 .message
                 .unwrap()
                 .contains("No skills installed.\n\nUse /skills to see how to add skills.")
+        );
+    }
+
+    #[test]
+    fn skill_invocation_rejected_is_honest_and_preserves_plugin_denial() {
+        let mut group = FakeSkillGroup::new(vec![demo_entry()]);
+        group.activation = Err(SkillActivationError::InvocationRejected {
+            name: "demo".into(),
+            reason: "frontmatter does not allow user invocation".into(),
+        });
+        let mut skills = FakeSkills { refreshed: false };
+        let result = run_skill(&mut group, &mut skills, Some("demo"));
+        assert!(result.is_error);
+        assert_eq!(
+            result.message.as_deref(),
+            Some(
+                "Error: Skill 'demo' could not be activated: frontmatter does not allow user invocation"
+            )
         );
     }
 

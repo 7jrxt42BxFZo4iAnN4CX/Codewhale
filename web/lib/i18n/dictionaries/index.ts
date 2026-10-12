@@ -37,6 +37,7 @@ import type {
   DocsTrustDict,
   DocsWebDict,
   DocsWorkDict,
+  DocsPetDict,
   HomeDict,
   DigestDict,
   FeedDict,
@@ -75,6 +76,8 @@ import { docsWeb as enDocsWeb } from "./en/docs-web";
 import { docsWeb as zhDocsWeb } from "./zh/docs-web";
 import { docsWork as enDocsWork } from "./en/docs-work";
 import { docsWork as zhDocsWork } from "./zh/docs-work";
+import { docsPet as enDocsPet } from "./en/docs-pet";
+import { docsPet as zhDocsPet } from "./zh/docs-pet";
 import { docsComputers as enDocsComputers } from "./en/docs-computers";
 import { docsComputers as zhDocsComputers } from "./zh/docs-computers";
 import { docsAuth as enDocsAuth } from "./en/docs-auth";
@@ -280,6 +283,10 @@ const DOCS_WORK: Record<string, DocsWorkDict> = {
   zh: zhDocsWork,
 };
 
+const DOCS_PET: Record<string, DocsPetDict> = {
+  zh: zhDocsPet,
+};
+
 const DOCS_COMPUTERS: Record<string, DocsComputersDict> = {
   zh: zhDocsComputers,
 };
@@ -435,6 +442,10 @@ export function getDocsWork(locale: string): DocsWorkDict {
   return DOCS_WORK[locale] ?? enDocsWork;
 }
 
+export function getDocsPet(locale: string): DocsPetDict {
+  return DOCS_PET[locale] ?? enDocsPet;
+}
+
 export function getDocsComputers(locale: string): DocsComputersDict {
   return DOCS_COMPUTERS[locale] ?? enDocsComputers;
 }
@@ -457,6 +468,15 @@ export function getDocsVocabulary(locale: string): DocsVocabularyDict {
 
 export function getComputerUse(locale: string): ComputerUseDict {
   return COMPUTER_USE[locale] ?? enComputerUse;
+}
+
+/**
+ * Locales whose /computer-use page body is translated (the page renders only
+ * from this dictionary). The content-locale registry derives canonical,
+ * hreflang and sitemap coverage from it, so they cannot drift apart.
+ */
+export function hasComputerUseTranslation(locale: string): boolean {
+  return locale === "en" || Object.hasOwn(COMPUTER_USE, locale);
 }
 
 export function getStates(locale: string): StatesDict {
@@ -539,6 +559,7 @@ export const EN_DOCS_SANDBOX = enDocsSandbox;
 export const EN_DOCS_SUBAGENTS = enDocsSubagents;
 export const EN_DOCS_WEB = enDocsWeb;
 export const EN_DOCS_WORK = enDocsWork;
+export const EN_DOCS_PET = enDocsPet;
 export const EN_DOCS_COMPUTERS = enDocsComputers;
 export const EN_DOCS_AUTH = enDocsAuth;
 export const EN_DOCS_TRUST = enDocsTrust;

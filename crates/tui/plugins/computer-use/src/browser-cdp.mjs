@@ -91,7 +91,11 @@ export function findBrowserApp(platform = process.platform, env = process.env, e
   return null;
 }
 
-/** Launch detached so the browser is its own process, never a child we must reap. */
+/**
+ * Launch detached so the browser is its own process, never a child we must
+ * reap. Returns a handle that keeps the tail of its stderr and its exit, so a
+ * browser that dies at start can say why instead of timing out silently.
+ */
 function defaultLaunch({ app, profileDir, url, platform = process.platform }) {
   const flags = ["--remote-debugging-port=0", `--user-data-dir=${profileDir}`, "--no-first-run", "--no-default-browser-check"];
   const target = url || "about:blank";
@@ -100,9 +104,30 @@ function defaultLaunch({ app, profileDir, url, platform = process.platform }) {
   // the person already has Chrome running — the args never reach a new process.
   if (platform === "darwin") { cmd = "open"; args = ["-g", "-n", "-a", app, "--args", ...flags, target]; }
   else { cmd = app; args = [...flags, target]; }
-  const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
-  child.on("error", () => {});
+  const child = spawn(cmd, args, { detached: true, stdio: ["ignore", "ignore", "pipe"] });
+  const handle = { stderr: "", exit: null };
+  child.stderr.on("data", (chunk) => { handle.stderr = (handle.stderr + chunk).slice(-4000); });
+  child.on("error", (error) => { handle.exit = { code: null, signal: null, error: error.message }; });
+  child.on("exit", (code, signal) => { handle.exit = { code, signal }; });
   child.unref();
+  return handle;
+}
+
+/**
+ * The error for a browser that did not produce a debugging endpoint. Chromium
+ * refuses to run as root without --no-sandbox; Codewhale does not add that
+ * flag, so that case names the two supported ways forward instead.
+ */
+export function browserStartFailure(handle, profileDir) {
+  const tail = handle?.stderr ?? "";
+  if (/Running as root without --no-sandbox/.test(tail)) {
+    return Object.assign(new ExecError("Chromium refused to start because it runs as root without its sandbox. Codewhale does not disable the sandbox. Run the Computer Use server as a non-root user, or set CODEWHALE_CU_BROWSER_APP to a launcher you control that supplies the flags you accept."), { code: "browser_unavailable" });
+  }
+  const exit = handle?.exit
+    ? `the browser exited before it opened its debugging endpoint (${handle.exit.error ?? `code ${handle.exit.code ?? "none"}${handle.exit.signal ? `, signal ${handle.exit.signal}` : ""}`})`
+    : "the browser started but its debugging endpoint never came up";
+  const detail = tail.trim().split("\n").slice(-2).join(" | ").slice(-300);
+  return Object.assign(new ExecError(`${exit} (profile ${profileDir})${detail ? `: ${detail}` : ""}`), { code: "browser_unavailable" });
 }
 
 /** The CDP bridge socket to attach to, or null for launch mode. */
@@ -191,6 +216,12 @@ function defaultConnect(url, { timeoutMs = 8_000 } = {}) {
   });
 }
 
+/** Per-command CDP reply deadline; teardown uses its own shorter bound. */
+const commandTimeoutMs = () => Number(process.env.CODEWHALE_CU_BROWSER_COMMAND_TIMEOUT_MS) || 30_000;
+// Teardown ignores the (possibly already cancelled) request signal and gives
+// an unanswered peer at most three seconds per command.
+const teardown = () => ({ timeoutMs: Math.min(3_000, commandTimeoutMs()), signal: null });
+
 /** id-matched JSON-RPC over the WebSocket, plus CDP event fan-out. */
 function makeChannel(ws) {
   let nextId = 0;
@@ -199,7 +230,7 @@ function makeChannel(ws) {
   let closed = false;
   const failAll = (reason) => {
     closed = true;
-    for (const [, entry] of pending) entry.reject(Object.assign(new ExecError(reason), { code: "browser_not_running" }));
+    for (const entry of [...pending.values()]) entry.reject(Object.assign(new ExecError(reason), { code: "browser_not_running" }));
     pending.clear();
   };
   ws.addEventListener("message", (event) => {
@@ -218,11 +249,29 @@ function makeChannel(ws) {
   ws.addEventListener("error", () => {});
   return {
     get alive() { return !closed; },
-    send(method, params = {}, sessionId) {
+    /**
+     * One CDP command. Bounded: a peer that keeps the socket open but never
+     * answers must not hang the request (or a stop/teardown awaiting it)
+     * forever. After the command is written its effect is unknown, so a
+     * timeout or cancel carries requestDispatched; a late reply is dropped.
+     */
+    send(method, params = {}, sessionId, { timeoutMs = commandTimeoutMs(), signal = currentSignal() } = {}) {
       if (closed) return Promise.reject(Object.assign(new ExecError("the browser is no longer reachable (CDP connection closed)"), { code: "browser_not_running" }));
+      if (signal?.aborted) return Promise.reject(Object.assign(new ExecError("computer request cancelled"), { code: "cancelled" }));
       return new Promise((resolve, reject) => {
         const id = ++nextId;
-        pending.set(id, { resolve, reject });
+        let timer = null;
+        const finish = () => { clearTimeout(timer); signal?.removeEventListener("abort", onAbort); pending.delete(id); };
+        const onAbort = () => { finish(); reject(Object.assign(new ExecError("computer request cancelled"), { code: "cancelled", requestDispatched: true })); };
+        pending.set(id, {
+          resolve: (value) => { finish(); resolve(value); },
+          reject: (error) => { finish(); reject(error); },
+        });
+        timer = setTimeout(() => {
+          finish();
+          reject(Object.assign(new ExecError(`CDP ${method} got no reply within ${timeoutMs}ms`), { code: "timeout", requestDispatched: true }));
+        }, timeoutMs);
+        signal?.addEventListener("abort", onAbort, { once: true });
         ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
       });
     },
@@ -280,8 +329,8 @@ export function createBrowser({
     const { targetInfo: info } = await state.channel.send("Target.getTargetInfo", { targetId });
     return { url: info?.url ?? "", title: info?.title ?? "" };
   }
-  async function listTabs() {
-    const { targetInfos } = await state.channel.send("Target.getTargets", {});
+  async function listTabs(options) {
+    const { targetInfos } = await state.channel.send("Target.getTargets", {}, undefined, options);
     return (targetInfos ?? []).filter((t) => t.type === "page");
   }
   async function ensureDom() {
@@ -435,7 +484,7 @@ export function createBrowser({
         else { try { fs.rmSync(portFile, { force: true }); } catch {} }
       }
       if (!ws) {
-        await launch({ app, profileDir: dir, url: "about:blank", platform });
+        const launched = await launch({ app, profileDir: dir, url: "about:blank", platform });
         const deadline = Date.now() + 20_000;
         for (;;) {
           if (currentSignal()?.aborted) throw Object.assign(new ExecError("computer request cancelled"), { code: "cancelled" });
@@ -444,7 +493,9 @@ export function createBrowser({
             ws = await attempt(file);
             if (ws) { state.port = file.port; break; }
           }
-          if (Date.now() > deadline) throw Object.assign(new ExecError(`the browser started but its debugging endpoint never came up (profile ${dir}); is it running with a usable profile?`), { code: "browser_unavailable" });
+          // A browser that already exited will not open the endpoint: report
+          // now, with its stderr, rather than after the full timeout.
+          if (launched?.exit || Date.now() > deadline) throw browserStartFailure(launched, dir);
           await sleep(300);
         }
       }
@@ -570,17 +621,17 @@ export function createBrowser({
       if (!state.channel) return { running: false, note: "no browser session for this computer session" };
       if (state.attached) {
         // The person's browser: never close a tab or the browser, only detach.
-        if (state.sessionId) await state.channel.send("Target.detachFromTarget", { sessionId: state.sessionId }).catch(() => {});
+        if (state.sessionId) await state.channel.send("Target.detachFromTarget", { sessionId: state.sessionId }, undefined, teardown()).catch(() => {});
         state.channel.close();
         state.channel = null; state.targetId = null; state.sessionId = null; state.pageEnabled = false; state.domEnabled = false; state.attached = false;
         return { running: false, detached: true, browser_closed: false, note: "detached from the shared browser; its window and tabs stay as they are" };
       }
-      try { await state.channel.send("Target.closeTarget", { targetId: state.targetId }); } catch { /* the tab may already be gone */ }
+      try { await state.channel.send("Target.closeTarget", { targetId: state.targetId }, undefined, teardown()); } catch { /* the tab may already be gone */ }
       let remaining = null;
-      try { remaining = (await listTabs()).length; } catch { remaining = null; }
+      try { remaining = (await listTabs(teardown())).length; } catch { remaining = null; }
       let browserClosed = false;
       if (remaining === 0) {
-        try { await state.channel.send("Browser.close"); browserClosed = true; } catch {}
+        try { await state.channel.send("Browser.close", {}, undefined, teardown()); browserClosed = true; } catch {}
         await sleep(200);
       }
       state.channel.close();

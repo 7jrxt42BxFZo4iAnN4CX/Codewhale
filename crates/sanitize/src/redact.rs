@@ -364,7 +364,27 @@ fn trim_word_punctuation(word: &str) -> &str {
 /// [`SENSITIVE_KEY_HINTS`] credential identifier.
 fn key_is_sensitive(raw: &str) -> bool {
     let key_norm = normalize_sensitive_key(raw);
+    // `Authorization failed: <reason>` is a status label, not a credential
+    // key; masking it hid every provider refusal reason (xAI's out-of-credits
+    // 403 rendered as `Authorization failed: [redacted]`). No credential is
+    // named for an outcome, so a key ending in one is never sensitive.
+    let names_an_outcome = key_norm.rsplit('_').next().is_some_and(|last| {
+        matches!(
+            last,
+            "failed"
+                | "failure"
+                | "error"
+                | "denied"
+                | "rejected"
+                | "refused"
+                | "expired"
+                | "invalid"
+                | "required"
+                | "missing"
+        )
+    });
     !key_norm.is_empty()
+        && !names_an_outcome
         && SENSITIVE_KEY_HINTS
             .iter()
             .any(|hint| key_matches_sensitive_hint(&key_norm, hint))
@@ -376,7 +396,7 @@ fn key_is_sensitive(raw: &str) -> bool {
 /// Punctuation and case transitions become `_`, so `oauth.token`,
 /// `accessToken`, and `APIKey` share the same matching surface as
 /// `oauth_token`, `access_token`, and `api_key`.
-fn normalize_sensitive_key(raw: &str) -> String {
+pub(crate) fn normalize_sensitive_key(raw: &str) -> String {
     let mut normalized = String::with_capacity(raw.len());
     let mut chars = raw.chars().peekable();
     let mut previous = None;

@@ -50,8 +50,34 @@ use thiserror::Error;
 
 use crate::network_policy::{Decision, NetworkPolicy, host_from_url};
 
+/// Connect and total budgets for install and registry-sync HTTP requests.
+fn install_http_timeouts() -> (std::time::Duration, std::time::Duration) {
+    if cfg!(test) {
+        // Short enough that the stalled-server regression test finishes
+        // quickly, long enough that happy-path tests never approach it.
+        (
+            std::time::Duration::from_millis(250),
+            std::time::Duration::from_secs(2),
+        )
+    } else {
+        (
+            std::time::Duration::from_secs(10),
+            std::time::Duration::from_secs(600),
+        )
+    }
+}
+
 fn reqwest_client() -> reqwest::Client {
+    let (connect_timeout, total_timeout) = install_http_timeouts();
     codewhale_release::platform_http_client_builder()
+        // The shared platform builder sets no timeouts; without a bound, a
+        // connection that opens but stalls (dead proxy, black-holed route)
+        // hangs installs and registry sync forever. Connect is bounded
+        // tightly; the total budget is generous for 5 MiB tarballs on slow
+        // links (registry sync fans out `SYNC_REGISTRY_CONCURRENCY` of
+        // these in parallel).
+        .connect_timeout(connect_timeout)
+        .timeout(total_timeout)
         .build()
         .expect("build platform HTTP client")
 }
@@ -245,8 +271,6 @@ pub enum InstallError {
     OversizedTarball { limit: u64 },
     #[error("missing SKILL.md in archive")]
     MissingSkillMd,
-    #[error("SKILL.md frontmatter missing required field: {0}")]
-    MissingFrontmatterField(&'static str),
     #[error("symlinks are not allowed in skill tarballs")]
     SymlinkRejected,
     #[error(
@@ -1581,14 +1605,7 @@ fn skill_target_path(name: &str, skills_dir: &Path) -> Result<PathBuf> {
 }
 
 pub(crate) fn validate_skill_name_segment(name: &str) -> Result<&str> {
-    if name.is_empty() || name.trim() != name || name.chars().any(char::is_whitespace) {
-        bail!("skill name must be a single path-safe segment (got '{name}')");
-    }
-    if name == "." || name == ".." || name.contains('/') || name.contains('\\') {
-        bail!("skill name must be a single path-safe segment (got '{name}')");
-    }
-    let mut components = Path::new(name).components();
-    if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
+    if !super::frontmatter::is_path_safe_skill_name(name) {
         bail!("skill name must be a single path-safe segment (got '{name}')");
     }
     Ok(name)
@@ -1628,25 +1645,15 @@ fn strip_prefix<'a>(path: &'a str, prefix: &str) -> std::borrow::Cow<'a, str> {
 /// Also verifies the leading `---` fence so we reject malformed files early.
 fn parse_frontmatter_name(bytes: &[u8]) -> Result<String> {
     let content = std::str::from_utf8(bytes).context("SKILL.md is not valid UTF-8")?;
-    let (metadata, _) = super::frontmatter::parse_frontmatter(content)
-        .map_err(anyhow::Error::msg)?
-        .ok_or_else(|| {
-            anyhow::anyhow!("SKILL.md is missing the leading '---' frontmatter fence")
-        })?;
-    let name = metadata
-        .get("name")
-        .filter(|value| !value.trim().is_empty())
-        .cloned()
-        .ok_or(InstallError::MissingFrontmatterField("name"))?;
-    if !metadata
-        .get("description")
-        .is_some_and(|value| !value.trim().is_empty())
-    {
-        return Err(InstallError::MissingFrontmatterField("description").into());
-    }
-    if validate_skill_name_segment(&name).is_err() {
-        bail!("SKILL.md `name` must be a single path-safe segment (got '{name}')");
-    }
+    let parsed = super::frontmatter::parse_frontmatter(content).map_err(anyhow::Error::msg)?;
+    super::frontmatter::validate_skill_frontmatter(
+        parsed.as_ref().map(|(metadata, _)| metadata),
+        None,
+        super::frontmatter::SkillValidationMode::Strict,
+    )
+    .map_err(anyhow::Error::msg)?;
+    let (metadata, _) = parsed.expect("strict validation requires frontmatter");
+    let name = metadata["name"].clone();
     Ok(name)
 }
 
@@ -1857,6 +1864,49 @@ mod tests {
             };
             assert!(err.contains("exceeds"), "{path}: {err}");
         }
+    }
+
+    /// A server that accepts the connection and then never reads or writes
+    /// another byte, so the request can only end through the client's own
+    /// timeouts.
+    async fn stalled_server() -> std::net::SocketAddr {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            // Hold every accepted socket open without responding.
+            let mut held = Vec::new();
+            while let Ok((socket, _)) = listener.accept().await {
+                held.push(socket);
+            }
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn stalled_registry_fetch_fails_through_the_client_timeouts() {
+        let addr = stalled_server().await;
+        let url = format!("http://{addr}/index.json");
+        let policy = NetworkPolicy {
+            default: Decision::Allow.into(),
+            allow: Vec::new(),
+            deny: Vec::new(),
+            proxy: Vec::new(),
+            proxy_fake_ip_cidrs: Vec::new(),
+            audit: false,
+        };
+        // Without the install client's own timeouts this call never returns;
+        // the outer bound only converts that hang into a test failure.
+        let outcome = tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            fetch_registry(&policy, &url),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("install HTTP must honor its own timeouts"));
+        let err = match outcome {
+            Ok(_) => panic!("a stalled registry connection must fail, not succeed"),
+            Err(err) => format!("{err:#}"),
+        };
+        assert!(err.contains("timed out"), "{err}");
     }
 
     #[test]

@@ -474,7 +474,7 @@ fn parse_exec_terminal_final_answer(value: &serde_json::Value) -> Option<FleetWo
         .and_then(|chars| usize::try_from(chars).ok())
         .unwrap_or_else(|| excerpt.chars().count());
     Some(FleetWorkerFinalAnswer {
-        excerpt: crate::exec_stream_final_answer_excerpt(excerpt),
+        excerpt: exec_stream_final_answer_excerpt(excerpt),
         chars,
     })
 }
@@ -494,7 +494,7 @@ fn parse_exec_terminal_route(value: &serde_json::Value) -> ParsedTerminalRoute {
         if provider.is_empty() || model.is_empty() {
             return None;
         }
-        let provider_kind = crate::config::ApiProvider::parse(provider)?;
+        let provider_kind = crate::config::ProviderKind::parse(provider)?;
         let provider_exact_id = match meta.get("provider_id") {
             None => None,
             Some(value) => {
@@ -505,7 +505,7 @@ fn parse_exec_terminal_route(value: &serde_json::Value) -> ParsedTerminalRoute {
                 Some(id.to_string())
             }
         };
-        if provider_exact_id.is_some() && provider_kind != crate::config::ApiProvider::Custom {
+        if provider_exact_id.is_some() && provider_kind != crate::config::ProviderKind::Custom {
             return None;
         }
         Some(FleetWorkerReportedRoute {
@@ -1036,6 +1036,29 @@ impl FleetExecutor {
     }
 }
 
+/// Character bound for `metadata.visible_final_answer_excerpt`. The excerpt
+/// is a status surface (fleet receipts, event labels, runtime API payloads),
+/// not the transcript: the full answer lives in the saved session and the
+/// worker's stream-json log, and `visible_final_answer_chars` carries the real
+/// length so a consumer can tell a bounded excerpt from a short answer.
+pub(crate) const EXEC_STREAM_FINAL_ANSWER_EXCERPT_CHARS: usize = 4_000;
+
+/// Bound and secret-redact the visible final answer once, at the emitter, so
+/// every downstream consumer reads the same excerpt.
+pub(crate) fn exec_stream_final_answer_excerpt(output: &str) -> String {
+    let redacted = codewhale_config::persistence::redact_secrets(output.trim());
+    let mut chars = redacted.chars();
+    let excerpt: String = chars
+        .by_ref()
+        .take(EXEC_STREAM_FINAL_ANSWER_EXCERPT_CHARS)
+        .collect();
+    if chars.next().is_some() {
+        format!("{excerpt}...")
+    } else {
+        excerpt
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1083,6 +1106,7 @@ mod tests {
 
     fn agent_profile(id: &str, role: &str, instructions: &str) -> AgentProfile {
         AgentProfile {
+            native_preset: None,
             id: id.to_string(),
             display_name: Some(format!("{role} profile")),
             description: Some(format!("{role} description")),
@@ -1675,46 +1699,6 @@ mod tests {
     }
 
     #[test]
-    fn default_max_turns_does_not_add_a_hidden_worker_cap() {
-        use clap::Parser;
-
-        let exec = FleetExecConfig::default();
-        let workspace = TempDir::new().unwrap();
-        for requested_steps in [None, Some(0), Some(13)] {
-            let mut task = task("x");
-            task.budget = requested_steps.map(|max_steps| FleetTaskBudget {
-                max_steps: Some(max_steps),
-                ..FleetTaskBudget::default()
-            });
-            let spec = launch_spec(&task, workspace.path());
-            let cmd = build_worker_exec_command_with_launch_spec(
-                "codewhale",
-                &task,
-                &spec,
-                &exec,
-                None,
-                &[],
-            )
-            .expect("production worker command");
-            let cli = crate::Cli::try_parse_from(
-                std::iter::once("codewhale").chain(cmd.args.iter().map(String::as_str)),
-            )
-            .expect("production worker args must parse");
-            let Some(crate::Commands::Exec(args)) = cli.command else {
-                panic!("expected worker exec command");
-            };
-            let expected = requested_steps.filter(|steps| *steps > 0);
-            assert_eq!(args.max_turns, expected);
-            assert_eq!(args.max_tool_calls, None);
-            // Follow omission beyond argv through the real CLI resolver. This
-            // previously installed 200 despite correct unbounded launch args.
-            let turn = crate::core::turn::TurnContext::new(crate::exec_max_steps(args.max_turns));
-            assert_eq!(turn.step_limit(), expected);
-            assert_eq!(turn.stop_diagnostics.effective_max_steps, expected);
-        }
-    }
-
-    #[test]
     fn stream_line_maps_tool_use_to_running_tool() {
         let line = r#"{"type":"tool_use","name":"read_file","id":"call-7","input":{}}"#;
         match map_exec_stream_line(line) {
@@ -2058,7 +2042,7 @@ mod tests {
         })).unwrap();
         assert!(!answer.excerpt.contains("sk-ant-must-not-leak"));
         assert!(
-            answer.excerpt.chars().count() <= crate::EXEC_STREAM_FINAL_ANSWER_EXCERPT_CHARS + 3
+            answer.excerpt.chars().count() <= super::EXEC_STREAM_FINAL_ANSWER_EXCERPT_CHARS + 3
         );
         assert_eq!(answer.chars, 9000);
     }

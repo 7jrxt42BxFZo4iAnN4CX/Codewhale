@@ -4,7 +4,7 @@
 //! allowing the UI to remain responsive while the engine processes requests.
 
 use crate::compaction::CompactionConfig;
-use crate::config::ApiProvider;
+use crate::config::ProviderKind;
 use crate::route_runtime::ResolvedRuntimeRoute;
 use crate::tools::goal::GoalStatus;
 use codewhale_config::AppMode;
@@ -18,7 +18,7 @@ pub const USER_SHELL_TOOL_ID_PREFIX: &str = "user_shell_";
 
 /// Snapshot of session state for saving to disk.
 /// Returned by `Op::GetSessionSnapshot` via a oneshot channel.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct SessionSnapshot {
     /// The live conversation id this engine session is running under.
     ///
@@ -80,7 +80,7 @@ pub struct SessionContextBudget {
 /// Returned by `Op::GetProviderRuntimeStatus` via a oneshot channel.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderRuntimeStatus {
-    pub provider: ApiProvider,
+    pub provider: ProviderKind,
     pub request_concurrency_limit: Option<usize>,
     pub active_provider_requests: usize,
 }
@@ -170,6 +170,8 @@ impl UserInputProvenance {
 /// variant; the serializable twin is `codewhale_protocol::op::TurnSpec`.
 #[derive(Debug)]
 pub struct TurnSpec {
+    pub profile_constitution:
+        Option<codewhale_config::user_constitution::ProfileConstitutionSnapshot>,
     /// Admitted allowance for this turn only; never changes session settings.
     pub max_output_tokens: Option<std::num::NonZeroU32>,
     pub content: String,
@@ -373,6 +375,15 @@ pub enum Op {
         model: String,
         workspace: PathBuf,
         mode: AppMode,
+    },
+
+    /// Rewind only the exact conversation observed by the caller. The Engine
+    /// compares the full expected state before changing history or caches.
+    /// A rejected rewind returns None and performs no mutation or inference.
+    RewindConversation {
+        expected: Box<SessionSnapshot>,
+        messages: Vec<Message>,
+        tx: tokio::sync::oneshot::Sender<Option<SessionSnapshot>>,
     },
 
     /// Run context compaction on one exact, structurally resolved provider

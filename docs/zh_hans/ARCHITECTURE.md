@@ -1,20 +1,22 @@
 # Codewhale 架构
 
 > 英文原文：[ARCHITECTURE.md](../ARCHITECTURE.md)。
-> 最后与英文同步日期（last synced with English revision）：2026-09-28。
+> 最后与英文同步日期（last synced with English revision）：2026-09-29。
+> 2026-10-06 补齐单一回合循环的私有阶段与 ACP 投影边界。
 
-本文面向开发者和贡献者，概览 Codewhale 的架构。
+Codewhale Engine 是现有 Rust 执行运行时。[Runtime API](RUNTIME_API.md) 是客户端
+接口，[TypeScript mods](EXTENSIONS.md) 提供经审查的扩展。
 
 当前边界说明（工作区版本以 `Cargo.toml` 为准；该边界自 v0.9.1 起保持不变）：
 - `crates/tui` 仍是 TUI、运行时 API、任务管理器和工具执行循环的现行终端用户运行时。
-- 其他工作区 crate 正在逐步拆出，但它们还不是唯一的事实来源运行时。
-- 运行时正按照 `docs/design/TUI_DECONSTRUCTION.md` 记录的顺序迁往 `crates/runtime`
-  （`codewhale-runtime`）：引擎、工具、配置、客户端与各存储一起迁移，绝不迁进
-  `crates/core`，而 TUI 始终是唯一写终端的 crate。在某个模块迁走之前，
+- 其他工作区 crate 正在逐步拆出，但它们还不是唯一的权威运行时。
+- `crates/tui` 正按照 `docs/design/TUI_DECONSTRUCTION.md` 记录的顺序拆分为以智能体
+  工作分区为单位的 crate：契约、工具库、服务、提供方、运行时、叶子功能 crate、TUI 视图
+  与宿主。TUI 始终是唯一写终端的 crate。在某个模块迁走之前，
   它仍位于 `crates/tui/src` 下的原路径。
 - LSP 子系统（`crates/tui/src/lsp/`）已完整接入引擎的工具执行后路径
   （`core/engine/lsp_hooks.rs`），在 `File` 写入、编辑和补丁动作之后提供内联诊断。
-- swarm 代理（agent）系统已在 v0.8.5 移除。当前生效的子代理（subagent）接口面
+- swarm 智能体（agent）系统已在 v0.8.5 移除。当前生效的子智能体（sub-agent）接口面
   是单一的 `agent` 工具；持久化 RLM 会话可通过延迟加载的 `rlm` 动作族使用。
   现行代码库中不再保留任何模型可见的 swarm 工具。
 
@@ -75,13 +77,18 @@
 
 ### 入口点
 
-- **`main.rs`** - CLI 参数解析（clap）、配置加载、入口点路由
+- **`crates/cli/src/main.rs`** - 唯一可执行程序的入口。`crates/cli/src/lib.rs` 拥有命令接口；终端和无头运行时通过 `crates/tui/src/lib.rs` 中的 `codewhale_tui` 库在同一进程内启动。
 
 ### 核心组件
 
 - **`core/`** - 主要引擎组件
   - `engine.rs` - 引擎状态、操作处理、消息处理
-  - `engine/turn_loop.rs` - 流式回合循环与工具执行编排
+  - `engine/turn_loop.rs` - 现有 Engine 外层回合循环、共享工具规划/执行/结果处理与
+    流解码。私有 `turn_loop/` 阶段包括准备（`preparation.rs`）、模型派发与接纳
+    （`model_step.rs`）、有序续接（`continuation.rs`）、内联 REPL 编排
+    （`inline_repl.rs`）及直接模型工具批次（`tool_batch.rs`）。它们借用同一个
+    Engine 与 TurnContext，不引入第二个运行时、会话、提示词、审批、事件或持久化
+    权威。重试、循环终止与立即返回仍不同，只有现有有效工作路径推进步骤。
   - `session.rs` - 会话状态管理
   - `turn.rs` - 基于回合的对话处理
   - `events.rs` - 用于 UI 更新的事件系统
@@ -94,28 +101,37 @@
 
 ### 工作区 crate
 
-- **`crates/cli`** - `codewhale` 二进制：一个命令行门面，自身拥有 `auth`、
-  `metrics` 和 `update` 等命令，其余命令（`run`、`exec`、`doctor`、`sessions`……）
-  转交给由 `crates/tui` 构建的 `codewhale-tui` 二进制。
+- **`crates/cli`** - 唯一的 `codewhale` 可执行程序及命令接口。它自身拥有
+  `auth`、`metrics`、`update` 等命令，并通过 `codewhale_tui::run(RuntimeOptions, args)`
+  在同一进程内启动终端和无头模式（`run`、`exec`、`doctor`、`sessions`……）。
+  `crates/tui` 是库；`codew` 和旧发布文件名的别名包含相同的可执行程序。
 - **`crates/tools`** - 共享的工具调用原语，包括 TUI 运行时使用的工具结果/错误/能力类型。
 - **`crates/agent`** - 模型/提供商（provider）注册表（ModelRegistry），用于把模型 ID
   解析到提供商端点。
-- **`crates/app-server`** - 用于无头代理工作流的 HTTP/SSE + JSON-RPC 应用服务器
-  传输层。注意 `app-server --http`/`--mobile` 会委托给 TUI 二进制，运行时 API
-  实际就在那里。
+- **`crates/app-server`** - 用于无头智能体工作流的 HTTP/SSE + JSON-RPC 应用服务器
+  传输层。唯一的可执行程序将 `app-server --http`/`--mobile` 在同一进程内
+  路由到由 `codewhale_tui` 库承载的运行时 API。
 - **`crates/config`** - 配置加载、profile、环境变量优先级、CLI 运行时覆盖。
 - **`crates/cloud-facts`** - 拉取已签名的 Codewhale 云端事实信道（`facts/v1`），
   校验其 Ed25519 信封，并维护一份已验证的磁盘缓存；从不是启动依赖。
 - **`crates/command-contract`** - 为分阶段抽离 TUI 命令而设的命令能力与分发形态
   原型；仅是形态，还不是生产分发路径。
 - **`crates/core`** - 提供商中立的请求构造（`request.rs`）、有界上下文片段、
-  工具调用解析器，以及线程/会话类型。它**不**拥有代理循环：现行回合循环是
+  工具调用解析器，以及线程/会话类型。它**不**拥有智能体循环：现行回合循环是
   `crates/tui/src/core/engine/turn_loop.rs` 里的 `Engine::run_turn`，而
   `crates/tui/src/core/` 是 TUI crate 内部的模块，不是这个 crate 的。这里曾有一棵
   占位的 `engine/` 目录树让人误解——它没有任何调用方，还会在不接触模型的情况下
-  发出 `TurnComplete`——已在 v0.9.11 移除，因此工作区里只有一个回合循环。
+  发出 `TurnComplete`——已在 v0.9.11 移除。源码守卫跟踪已解析的本地阶段调用，
+  仍拒绝未登记的循环 owner。ACP stdio 投影现有 Runtime manager 与 Engine，
+  不保留独立提供商/工具回合循环或历史。
+  递归 RLM 和普通 Python RPC 现在使用同一个 Engine 生产者与 Session；RLM
+  不再有独立循环。Python 保存上下文与变量，每轮只借用调用方已捕获的路由、
+  Native 选择、原有代码审批、取消信号和截止时间。任务指导有界且追加到 Core
+  策略；递归历史完整保留，超过预算时拒绝而不压缩。持久 `rlm` 上下文只属于
+  调用方会话，`share_session=true` 明确拒绝。子智能体也以已捕获的准入事实
+  使用同一个 Engine；两种嵌套宿主都不再保留独立循环例外。
 - **`crates/execpolicy`** - 用于工具执行决策的审批（approval）/沙箱（sandbox）策略引擎。
-- **`crates/hooks`** - 响应、工具、作业和审批生命周期事件的事件汇聚端（stdout、
+- **`crates/hooks`** - 响应、工具、作业和审批生命周期事件的事件接收端（sink：stdout、
   JSONL 文件、webhook、Unix socket），外加可选启用的 lifecycle outbox。
   用户在工具调用前后运行命令的自定义 shell 钩子（hook）是 `crates/tui/src/hooks.rs`
   里的另一套系统。
@@ -124,9 +140,9 @@
   输出语言。
 - **`crates/mcp`** - 用于 Model Context Protocol 工具服务器的 MCP 客户端 + stdio 服务器。
 - **`crates/memory`** - 本地、带作用域、带来源信息的记忆（memory）与可恢复状态
-  （是一个库，不是第二个代理循环）。
+  （是一个库，不是第二个智能体循环）。
 - **`crates/models`** - 提供商的请求/响应模型，以及离线模型元数据目录。
-- **`crates/palette`** - 终端 UI 的颜色令牌、主题和对比度计算。它的 `ratatui`
+- **`crates/palette`** - 终端 UI 的颜色 token、主题和对比度计算。它的 `ratatui`
   feature（默认开启）门控所有渲染相关代码；主题 id、设置规范化和十六进制解析
   在不开该 feature 时也能编译，运行时就是这样链接它的。
 - **`crates/paths`** - 用户作用域的运行时路径权威（`CODEWHALE_HOME` 与平台 home 解析）。
@@ -185,7 +201,7 @@ Chat Completions 驱动回合。
     评论/关闭动作）；默认延迟加载，可通过 `tool_search` 发现
   - `automation.rs` - 基于 `AutomationManager` 的模型可见调度工具
   - `plan.rs` - 规划工具
-  - `subagent/` - 子代理启动与监督。`agent` 是唯一的创建接口面；
+  - `subagent/` - 子智能体启动与监督。`agent` 是唯一的创建接口面；
     `subagent/coord.rs` 在既有管理器之上补上一组窄口径协调工具（`agents/list`、
     `agents/message`、`agents/followup`、`agents/interrupt`、`agents/wait`、
     `agents/coordinate`）。`agent_open`/`agent_eval`/`agent_close` 生命周期接口面
@@ -208,7 +224,7 @@ Chat Completions 驱动回合。
   - `ui.rs` - 事件处理、流式状态与渲染逻辑
   - `approval.rs` - 工具审批对话框
   - `clipboard.rs` - 剪贴板处理
-  - `underwater.rs` - 主 shell 界面：状态标签片、模式标签、阶段导轨
+  - `underwater.rs` - 主 shell 界面：状态标签（chip）、模式标签、阶段导轨
 
 ### LSP 集成
 
@@ -230,7 +246,7 @@ Chat Completions 驱动回合。
   - `policy.rs` - 沙箱策略配置
   - `opensandbox.rs` - Alibaba OpenSandbox HTTP 后端适配器
   - `seatbelt.rs` - macOS Seatbelt 配置生成
-  - `bwrap.rs` - 可选启用的 Linux bubblewrap 命令包装器
+  - `bwrap.rs` - Linux bubblewrap 命令包装器
   - `seccomp.rs` - 休眠中的 Linux seccomp 实现；未接入命令执行
   - `process_hardening.rs` - 针对 TUI 进程自身的 Linux 内核级加固
     （纵深防御；不是子命令沙箱）
@@ -242,12 +258,12 @@ Chat Completions 驱动回合。
 - **`utils.rs`** - 通用工具
 - **`logging.rs`** - 日志基础设施
 - **`compaction.rs`** - 长对话的上下文压缩
-- **`purge.rs`** - 代理驱动的上下文清除（外科式的消息移除/改写）
+- **`purge.rs`** - 智能体驱动的上下文清除（精确移除/改写个别消息）
 - **`pricing.rs`** - 成本估算
 - **`prompts.rs`** - 系统提示词模板
 - **`runtime_api.rs`** - HTTP/SSE 运行时 API（`codewhale serve --http`）
 - **`runtime_threads.rs`** - 持久化线程/回合/条目存储 + 可回放的事件时间线
-- **`task_manager.rs`** - 持久化队列、工作池、任务时间线和工件
+- **`task_manager.rs`** - 持久化队列、worker 池、任务时间线和产物（artifact）
 
 ## 数据流
 
@@ -277,21 +293,21 @@ Chat Completions 驱动回合。
 2. 工具注册表查找处理器
 3. 执行前钩子运行
 4. 当生效的权限姿态（posture）与策略要求时，请求审批
-5. 执行工具（在 macOS 上可能被 Seatbelt 包装，在 Linux 上可能被可选启用的 bubblewrap 包装）
+5. 执行工具（在 macOS 上可能被 Seatbelt 包装，在 Linux 上可能被 bubblewrap 包装）
 6. 执行后钩子运行
 7. 结果元数据保留在运行时条目记录上
 8. **LSP 编辑后钩子**：在 `File` 的写入、编辑或补丁动作之后（包括仅用于回放的遗留别名），当 LSP 启用时，引擎会运行 `run_post_edit_lsp_hook()` 以收集诊断
 9. **诊断刷写**：在下一次 API 请求之前，`flush_pending_lsp_diagnostics()` 会把已收集的错误作为一条合成用户消息注入
-10. 结果返回给代理循环
+10. 结果返回给智能体循环
 
 ### 后台任务
 
 1. 客户端入队任务（`/task add ...` 或 `POST /v1/tasks`）
 2. `task_manager.rs` 在 `~/.codewhale/tasks` 下持久化任务 + 队列条目
-3. 工作单元取出排队任务（有界工作池），状态转为 `running`
+3. 有界 worker 池中的 worker 领取排队任务，状态转为 `running`
 4. 任务创建/使用一个运行时线程，并启动一个运行时回合
 5. `runtime_threads.rs` 持久化线程/回合/条目记录 + 单调递增的事件序列
-6. 时间线/工具摘要/工件引用增量持久化
+6. 时间线/工具摘要/产物引用增量持久化
 7. 清单状态、验证器门禁、PR 尝试和受控的 GitHub 事件，从工具元数据应用到当前任务
 8. 最终状态（`completed|failed|canceled`）是持久的，可通过 TUI/API 查询
 
@@ -306,7 +322,7 @@ Chat Completions 驱动回合。
 3. 引擎事件被映射为条目生命周期事件（`item.started|item.delta|item.completed`）
 4. 中断/引导操作只作用于当前回合
 5. 压缩（自动/手动）以 `context_compaction` 条目生命周期形式发出
-6. 清除（代理驱动）以 `context_purge` 条目生命周期形式发出
+6. 清除（智能体驱动）以 `context_purge` 条目生命周期形式发出
 7. 客户端回放历史，并用 `/v1/threads/{id}/events?since_seq=<n>` 续接
 
 ### 持久化 schema 门禁
@@ -356,14 +372,14 @@ command = "echo 'Running tool: $TOOL_NAME'"
    去掉常规提示，但不会去掉硬性安全闸。有副作用的 MCP 工具走同一条边界。
 3. **可扩展性**：MCP、技能和钩子让定制无需改动代码
 4. **跨平台**：核心可在 Linux/macOS/Windows 上工作。沙箱保证因平台而异：
-   macOS 在可用时使用 Seatbelt；Linux 仅在显式启用时使用已安装的 bubblewrap
+   macOS 在可用时使用 Seatbelt；Linux 在探测证明可用时默认使用已安装的 bubblewrap
    可执行文件；Windows 没有对外宣称的操作系统命令沙箱。Seccomp 和 Windows
    辅助程序契约未接入命令执行。
 5. **最小依赖**：为构建速度谨慎选择依赖
 6. **本地优先的运行时 API**：HTTP/SSE 端点面向受信任的 localhost 访问，
    目前由 `crates/tui` 运行时提供
 7. **锁中毒**：默认失败即停。锁中毒意味着某个持有者在改到一半时 panic，
-   因此标准姿态是 `.expect()` 并附上指明该锁的消息——绝不对外提供只更新了
+   因此标准做法是 `.expect()` 并附上指明该锁的消息——绝不对外提供只更新了
    一半的状态。只有在状态过期是安全的场景（缓存、幂等重建）才用 `into_inner()`
    恢复，并加注释说明原因。
 
@@ -377,6 +393,6 @@ command = "echo 'Running tool: $TOOL_NAME'"
 - `~/.codewhale/sessions/` - 会话历史
 - `~/.codewhale/sessions/checkpoints/` - 崩溃检查点 + 离线队列持久化
 - `~/.codewhale/snapshots/` - 供 `/restore` 和 `revert_turn` 使用的 side-git 回合前/后工作区快照
-- `~/.codewhale/tasks/` - 后台任务记录、队列、时间线、工件
-- `~/.codewhale/audit.log` - 仅追加的安全事件：凭据的保存与清除、钩子环境变量的键名、压缩轮次、目标完成、终端的审批路由、Auto-Review 裁决，以及开启 `[network]` 审计时的出站网络决定。它不是操作记录：不包含命令或文件改动，app 或 `serve` 回合也不会在这里写入审批。一个会话做了什么，见 `docs/RECEIPTS.md`
+- `~/.codewhale/tasks/` - 后台任务记录、队列、时间线、产物
+- `~/.codewhale/audit.log` - 仅追加的安全事件：凭据的保存与清除、钩子环境变量的键名、压缩过程、目标完成、终端的审批路由、Auto-Review 裁决，以及开启 `[network]` 审计时的出站网络决定。它不是操作记录：不包含命令或文件改动，app 或 `serve` 回合也不会在这里写入审批。一个会话做了什么，见 `docs/RECEIPTS.md`
 - `~/.codewhale/sessions/<id>/approval_receipts.jsonl` - 一个会话的每一次审批请求与决定，包括由谁决定

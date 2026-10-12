@@ -8,7 +8,7 @@ use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::dependencies::{ExternalTool as _, Git};
+use crate::dependencies::Git;
 use crate::snapshot::is_git_metadata_name;
 
 use super::{ApiError, RuntimeApiState};
@@ -105,10 +105,20 @@ pub(super) struct WorkspaceGitMetadata {
     pub(super) dirty: bool,
 }
 
+/// Status is several blocking `git` spawns, so it runs off the async workers
+/// (#6149) like every other git read on this surface. It deliberately keeps
+/// normal Git filters and untracked settings rather than the full review
+/// command, so its counts match `git status` and the operator writes (see
+/// `git.rs`), but it never runs a repository-configured helper: fsmonitor and
+/// hooks are off, as on every read-only review path (see `run_git`).
 pub(super) async fn workspace_status(
     State(state): State<RuntimeApiState>,
 ) -> Result<Json<WorkspaceStatusResponse>, ApiError> {
-    Ok(Json(collect_workspace_status(&state.workspace)))
+    let workspace = state.workspace.clone();
+    tokio::task::spawn_blocking(move || collect_workspace_status(&workspace))
+        .await
+        .map(Json)
+        .map_err(|_| ApiError::internal("workspace status failed"))
 }
 
 pub(super) fn collect_workspace_status(workspace: &FsPath) -> WorkspaceStatusResponse {
@@ -186,8 +196,12 @@ pub(super) fn collect_workspace_git_metadata(workspace: &FsPath) -> WorkspaceGit
     }
 }
 
+/// Read-only git for status and metadata. `Git::review_base` disables
+/// `core.fsmonitor`, `core.hooksPath`, lazy fetch and replace objects: a
+/// status poll must not execute a helper the repository's config names.
 fn run_git(workspace: &FsPath, args: &[&str]) -> Option<String> {
-    let output = Git::output(args, workspace).ok()?;
+    let mut command = Git::review_base(workspace).ok()?;
+    let output = command.args(args).output().ok()?;
     if !output.status.success() {
         return None;
     }
@@ -552,6 +566,20 @@ pub(super) fn open_confined_file(
         .map_err(|error| map_fs_error(error, "file"))
 }
 
+/// [`open_confined_file`] for the application's own state root, which a user
+/// may have relocated behind a link (on Windows, a junction to another
+/// volume). The root is resolved once and every component below it is still
+/// refused when linked, so a reader follows its writer and a caller-supplied
+/// workspace root keeps the stricter [`open_confined_file`].
+pub(super) fn open_confined_file_resolved(
+    root: &FsPath,
+    relative: &FsPath,
+    create: bool,
+) -> Result<crate::fleet::files::WorkspaceFile, ApiError> {
+    crate::fleet::files::WorkspaceFile::open_resolved_root(root, relative, create)
+        .map_err(|error| map_fs_error(error, "file"))
+}
+
 /// Read one confined file completely (bounded by `FILE_SERVE_MAX_BYTES`) so
 /// the revision always describes the whole file.
 pub(super) fn read_confined_bytes(
@@ -692,6 +720,10 @@ fn write_workspace_file(
     bytes: &[u8],
     expected_revision: Option<&str>,
 ) -> Result<(StatusCode, Json<WorkspaceFileWriteResponse>), ApiError> {
+    static WRITES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _write_guard = WRITES
+        .lock()
+        .map_err(|_| ApiError::internal("workspace file write lock is unavailable"))?;
     let root = canonical_workspace(workspace)?;
     let created = precheck_file_target(&root, relative)?.is_none();
     match (created, expected_revision) {
@@ -722,8 +754,7 @@ fn write_workspace_file(
             )));
         }
     }
-    file.replace(bytes)
-        .map_err(|error| map_fs_error(error, "file"))?;
+    publish_workspace_file(&file, bytes, created)?;
     Ok((
         if created {
             StatusCode::CREATED
@@ -738,6 +769,27 @@ fn write_workspace_file(
             written_at: chrono::Utc::now().to_rfc3339(),
         }),
     ))
+}
+
+pub(super) fn publish_workspace_file(
+    file: &crate::fleet::files::WorkspaceFile,
+    bytes: &[u8],
+    created: bool,
+) -> Result<(), ApiError> {
+    // Absence was observed before opening the confined parent. Another
+    // creator can publish meanwhile; never replace that creator's file.
+    let publication = if created {
+        file.publish(bytes)
+    } else {
+        file.replace(bytes)
+    };
+    publication.map_err(|error| {
+        if created && error.kind() == std::io::ErrorKind::AlreadyExists {
+            ApiError::conflict("file was created by another writer; read it before overwriting")
+        } else {
+            map_fs_error(error, "file")
+        }
+    })
 }
 
 // ── Effective instruction sources (#6168) ────────────────────────────────
@@ -884,6 +936,47 @@ pub(super) async fn workspace_instructions(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use crate::dependencies::ExternalTool as _;
+
+    #[cfg(unix)]
+    #[test]
+    fn workspace_status_does_not_run_the_repository_fsmonitor() -> anyhow::Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir()?;
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir_all(&repo)?;
+        let git = |args: &[&str]| Git::status(args, &repo).is_ok_and(|status| status.success());
+        if !git(&["init", "-q"]) {
+            return Ok(());
+        }
+        std::fs::write(repo.join("file.txt"), "hello\n")?;
+        assert!(git(&["add", "file.txt"]));
+        assert!(git(&[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-qm",
+            "init",
+        ]));
+        std::fs::write(repo.join("file.txt"), "hello\nworld\n")?;
+        let marker = tmp.path().join("ran");
+        let hook = tmp.path().join("fsmonitor.sh");
+        std::fs::write(
+            &hook,
+            format!("#!/bin/sh\ntouch '{}'\nexit 1\n", marker.display()),
+        )?;
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755))?;
+        assert!(git(&["config", "core.fsmonitor", &hook.to_string_lossy()]));
+
+        let status = collect_workspace_status(&repo);
+        assert!(status.git_repo);
+        assert_eq!(status.unstaged, 1);
+        assert!(!marker.exists(), "the repository's fsmonitor hook ran");
+        Ok(())
+    }
 
     #[test]
     fn git_metadata_directory_is_refused_in_any_letter_case() {

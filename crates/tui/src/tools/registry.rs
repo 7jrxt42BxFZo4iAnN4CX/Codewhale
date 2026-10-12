@@ -38,6 +38,15 @@ pub struct ToolRegistry {
     api_cache: OnceLock<Vec<Tool>>,
 }
 
+/// The one sentence naming a `[tools.overrides]` entry that D4 refused, shared
+/// by the runtime log and the engine's user-facing status line.
+pub(crate) fn override_refusal_notice(tool_name: &str) -> String {
+    format!(
+        "Refused [tools.overrides.{name}]: a script or command override cannot replace the built-in tool '{name}', which stays active. Set type = \"disabled\" to turn it off, or key the override by a new tool name.",
+        name = crate::safe_label::SafeLabel::identifier(tool_name)
+    )
+}
+
 impl ToolRegistry {
     /// Create a new empty registry with the given context.
     #[must_use]
@@ -110,27 +119,62 @@ impl ToolRegistry {
             .get(name)
             .ok_or_else(|| ToolError::not_available(format!("tool '{name}' is not registered")))?;
 
+        crate::extension_host::validate_caller_plugins(self.context.plugin_registry.as_deref())
+            .map_err(ToolError::not_available)?;
+        let child = self.admit_child_call(name, &input, &self.context).await?;
         enforce_tool_authority(name, &input, tool.as_ref(), &self.context)?;
-        tool.execute_rich(input, &self.context)
+        let rich = tool
+            .execute_rich(input, &self.context)
             .await
-            .map(crate::image_attach::bound_rich_tool_result)
+            .map(crate::image_attach::bound_rich_tool_result)?;
+        if rich.result.success
+            && let Some((authority, writes)) = child
+        {
+            authority.record_settled_writes(writes).await;
+        }
+        Ok(rich)
     }
 
-    pub(crate) async fn execute_rich_full_with_context(
+    pub(crate) async fn execute_rich_full_with_context<'a, F>(
         &self,
         name: &str,
         input: Value,
         context_override: Option<&ToolContext>,
-    ) -> Result<RichToolResult, ToolError> {
+        on_admitted: F,
+    ) -> Result<RichToolResult, ToolError>
+    where
+        F: FnOnce() -> Result<
+                Option<crate::core::engine::tool_execution::OperationSpanGuard<'a>>,
+                ToolError,
+            > + Send,
+    {
         let tool = self
             .get(name)
             .ok_or_else(|| ToolError::not_available(format!("tool '{name}' is not registered")))?;
 
         let ctx = context_override.unwrap_or(&self.context);
+        crate::extension_host::validate_caller_plugins(ctx.plugin_registry.as_deref())
+            .map_err(ToolError::not_available)?;
+        let child = self.admit_child_call(name, &input, ctx).await?;
         enforce_tool_authority(name, &input, tool.as_ref(), ctx)?;
-        let mut rich = crate::image_attach::bound_rich_tool_result(
-            tool.execute_rich(input.clone(), ctx).await?,
-        );
+        let operation_span = on_admitted()?;
+        let outcome = tool.execute_rich(input.clone(), ctx).await;
+        if let Some(operation_span) = operation_span {
+            operation_span
+                .complete(super::activity::operation_outcome(
+                    &outcome,
+                    ctx.cancel_token
+                        .as_ref()
+                        .is_some_and(tokio_util::sync::CancellationToken::is_cancelled),
+                ))
+                .await;
+        }
+        let mut rich = crate::image_attach::bound_rich_tool_result(outcome?);
+        if rich.result.success
+            && let Some((authority, writes)) = child
+        {
+            authority.record_settled_writes(writes).await;
+        }
         let result = &mut rich.result;
 
         // Adaptive evidence routing (#4619) is an explicit opt-in
@@ -169,6 +213,47 @@ impl ToolRegistry {
         }
 
         Ok(rich)
+    }
+
+    pub(crate) async fn admit_child_call(
+        &self,
+        name: &str,
+        input: &Value,
+        context: &ToolContext,
+    ) -> Result<Option<(Arc<super::subagent::engine::ChildAuthority>, Vec<String>)>, ToolError>
+    {
+        let child = self
+            .context
+            .child_host
+            .as_ref()
+            .or(context.child_host.as_ref());
+        let Some(child) = child else {
+            return Ok(None);
+        };
+        if self
+            .context
+            .child_host
+            .as_ref()
+            .zip(context.child_host.as_ref())
+            .is_some_and(|(expected, actual)| !Arc::ptr_eq(expected, actual))
+        {
+            return Err(ToolError::permission_denied(
+                "child context cannot replace its captured grant",
+            ));
+        }
+        child.validate_context(context)?;
+        let writes = child
+            .validate_claim(self, name, input)
+            .await
+            .map_err(super::subagent::engine::ChildAuthority::typed_error)?;
+        // Claim lookup may wait; current caller liveness and immutable child ceiling are rechecked before effects.
+        child.validate_context(context)?;
+        crate::extension_host::validate_caller_plugins(context.plugin_registry.as_deref())
+            .map_err(ToolError::not_available)?;
+        child
+            .validate(self, name, input)
+            .map_err(super::subagent::engine::ChildAuthority::typed_error)?;
+        Ok(Some((child.clone(), writes)))
     }
 
     /// Get the current tool context.
@@ -367,15 +452,42 @@ impl ToolRegistry {
     /// Apply config.toml tool overrides to this registry.
     ///
     /// For each entry in `overrides`:
-    /// - `Disabled` removes the tool.
-    /// - `Script` / `Command` replaces the tool with the user's implementation.
+    /// - `Disabled` removes the tool, built-ins included.
+    /// - `Script` / `Command` registers the user's implementation under a name
+    ///   no built-in owns: a new tool, or a replacement for a drop-in plugin
+    ///   script of that name.
+    /// - `Script` / `Command` keyed by a name in `builtin_names` is refused and
+    ///   the built-in stays active: script tools cannot shadow built-ins (D4,
+    ///   CURRENT_DECISIONS §26).
+    ///
+    /// Returns the refused override names so the engine can name each one to
+    /// the user ([`override_refusal_notice`]); the runtime log records every
+    /// refusal. `/plugin` does not list `[tools.overrides]` entries, so it
+    /// cannot show them there.
     ///
     /// `plugin_dir` is used as the base for relative script paths.
+    #[cfg(test)]
     pub fn apply_overrides(
         &mut self,
         overrides: &std::collections::HashMap<String, crate::config::ToolOverride>,
         plugin_dir: &Path,
-    ) {
+        builtin_names: &std::collections::HashSet<String>,
+    ) -> Vec<String> {
+        self.apply_overrides_with_executor(
+            overrides,
+            plugin_dir,
+            builtin_names,
+            crate::tools::plugin::PluginExecutor::for_engine(),
+        )
+    }
+    pub(crate) fn apply_overrides_with_executor(
+        &mut self,
+        overrides: &std::collections::HashMap<String, crate::config::ToolOverride>,
+        plugin_dir: &Path,
+        builtin_names: &std::collections::HashSet<String>,
+        executor: crate::tools::plugin::PluginExecutor,
+    ) -> Vec<String> {
+        let mut refused = Vec::new();
         for (tool_name, override_cfg) in overrides {
             match override_cfg {
                 crate::config::ToolOverride::Disabled => {
@@ -385,10 +497,19 @@ impl ToolRegistry {
                         tracing::warn!("Cannot disable tool '{}': not registered", tool_name);
                     }
                 }
+                _ if builtin_names.contains(tool_name) => {
+                    tracing::error!("{}", override_refusal_notice(tool_name));
+                    refused.push(tool_name.clone());
+                }
                 _ => {
                     // Script and Command overrides create replacement tools.
-                    use crate::tools::plugin::tool_from_override;
-                    match tool_from_override(tool_name, override_cfg, plugin_dir) {
+                    use crate::tools::plugin::tool_from_override_with_executor;
+                    match tool_from_override_with_executor(
+                        tool_name,
+                        override_cfg,
+                        plugin_dir,
+                        executor.clone(),
+                    ) {
                         Some(replacement) => {
                             self.register(replacement);
                             tracing::info!("Tool '{}' replaced via config override", tool_name);
@@ -410,14 +531,26 @@ impl ToolRegistry {
                 }
             }
         }
+        refused
     }
 
     /// Load and register plugin tools from a directory.
     ///
     /// Each script with valid frontmatter (`# name:`, `# description:`, etc.)
-    /// becomes a registered `ScriptPluginTool`. Name collisions are refused;
-    /// replacing a registered tool requires an explicit config override.
+    /// becomes a registered `ScriptPluginTool`. Name collisions are refused:
+    /// a script tool never replaces a registered tool.
+    #[cfg(test)]
     pub fn load_plugins(&mut self, plugin_dir: &Path) {
+        self.load_plugins_with_executor(
+            plugin_dir,
+            crate::tools::plugin::PluginExecutor::for_engine(),
+        );
+    }
+    pub(crate) fn load_plugins_with_executor(
+        &mut self,
+        plugin_dir: &Path,
+        executor: crate::tools::plugin::PluginExecutor,
+    ) {
         if !plugin_dir.exists() {
             tracing::debug!(
                 "Plugin directory {} does not exist, skipping",
@@ -425,14 +558,14 @@ impl ToolRegistry {
             );
             return;
         }
-        let plugins = crate::tools::plugin::load_plugin_tools(plugin_dir);
+        let plugins = crate::tools::plugin::load_plugin_tools_with_executor(plugin_dir, executor);
         let mut count = 0;
         for tool in plugins {
             if let Some(previous) = self.get(tool.name()) {
                 tracing::error!(
                     previous_origin = ?previous.registration_origin(),
                     plugin_origin = ?tool.registration_origin(),
-                    "Cannot load plugin tool '{}': name is already registered; use an explicit tool override",
+                    "Cannot load plugin tool '{}': name is already registered; script tools cannot replace a registered tool, so give the script its own name",
                     crate::safe_label::SafeLabel::identifier(tool.name())
                 );
                 continue;
@@ -527,6 +660,63 @@ pub(crate) fn enforce_tool_authority(
     context: &ToolContext,
 ) -> Result<(), ToolError> {
     crate::core::engine::tool_catalog::enforce_tool_denial(context, name, input)?;
+    if let Some(mode) = context.acp_host {
+        let canonical = super::canonical_action::canonical_action_alias(name, input);
+        if matches!(name, "bash" | "Bash" | "exec_shell") || canonical.starts_with("exec_shell") {
+            let prepared = tool.prepare(input.clone(), context)?;
+            if context.shell_policy == crate::worker_profile::ShellPolicy::None
+                || prepared
+                    .input
+                    .get("action")
+                    .and_then(Value::as_str)
+                    .unwrap_or("run")
+                    != "run"
+                || prepared.starts_detached
+                || prepared.input.get("interactive").and_then(Value::as_bool) == Some(true)
+                || prepared.input.get("persist").and_then(Value::as_bool) == Some(true)
+                || prepared
+                    .input
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .is_some_and(super::shell::foreground_command_requests_detach)
+            {
+                return Err(ToolError::permission_denied(
+                    "ACP supports only admitted foreground shell commands; stateful and detached execution is unavailable",
+                ));
+            }
+        }
+        // The transport has no controls for these lifecycles. A fabricated
+        // tool name or alias cannot turn catalog omission into authority.
+        if !matches!(
+            tool.name(),
+            "read"
+                | "write"
+                | "edit"
+                | "File"
+                | "read_file"
+                | "write_file"
+                | "edit_file"
+                | "list_dir"
+                | "file_search"
+                | "grep_files"
+                | "Git"
+                | "apply_patch"
+                | "bash"
+                | "Bash"
+        ) {
+            return Err(ToolError::not_available(format!(
+                "{name} is outside the ACP foreground tool profile"
+            )));
+        }
+        if mode == codewhale_config::AppMode::Plan
+            && !tool.prepare(input.clone(), context)?.read_only
+        {
+            return Err(ToolError::permission_denied(
+                "ACP Plan mode permits only read-only calls",
+            ));
+        }
+    }
+
     let Some(authority) = context.tool_authority.as_ref() else {
         return Ok(());
     };
@@ -768,12 +958,36 @@ impl ToolRegistryBuilder {
         self
     }
 
+    /// Add client-executed runtime tools. A dynamic tool never replaces a
+    /// tool already in the builder (#6559 D04-10): `with_tool` treats a
+    /// repeated name as a planned upgrade, which let a client's `exec_shell`
+    /// or `read` silently take over the builtin handler and its approval
+    /// policy. The model-facing name is the bare `name`, so a second dynamic
+    /// tool with the same name in another namespace is refused the same way.
+    /// Both refusals are logged with the two origins.
+    ///
+    /// Known limitation: the refusal reaches the log, not the runtime client
+    /// that sent the spec; rejecting it at the API boundary, and exposing a
+    /// namespaced model-facing name, are protocol changes.
     #[must_use]
     pub fn with_dynamic_tools(mut self, dynamic_tools: &[DynamicToolSpec]) -> Self {
-        for tool in dynamic_tools {
-            self = self.with_tool(Arc::new(super::dynamic::RuntimeDynamicTool::new(
-                tool.clone(),
-            )));
+        for spec in dynamic_tools {
+            let tool: Arc<dyn ToolSpec> =
+                Arc::new(super::dynamic::RuntimeDynamicTool::new(spec.clone()));
+            if let Some(existing) = self
+                .tools
+                .iter()
+                .find(|existing| existing.name() == tool.name())
+            {
+                tracing::warn!(
+                    existing_origin = ?existing.registration_origin(),
+                    refused_origin = ?tool.registration_origin(),
+                    "Refusing runtime dynamic tool that collides with a registered tool: {}",
+                    crate::safe_label::SafeLabel::identifier(tool.name())
+                );
+                continue;
+            }
+            self.tools.push(tool);
         }
         self
     }
@@ -906,7 +1120,9 @@ impl ToolRegistryBuilder {
     /// sees a binary it can't actually use.
     #[must_use]
     pub fn with_pandoc_tools(self) -> Self {
-        if crate::dependencies::resolve_pandoc().is_some() {
+        if crate::dependencies::host_tool_available("pandoc_convert", || {
+            crate::dependencies::resolve_pandoc().is_some()
+        }) {
             use super::pandoc::PandocConvertTool;
             self.with_tool(Arc::new(PandocConvertTool))
         } else {
@@ -919,7 +1135,7 @@ impl ToolRegistryBuilder {
     /// Tesseract when installed.
     #[must_use]
     pub fn with_image_ocr_tools(self) -> Self {
-        if super::image_ocr::ocr_available() {
+        if crate::dependencies::host_tool_available("image_ocr", super::image_ocr::ocr_available) {
             use super::image_ocr::ImageOcrTool;
             self.with_tool(Arc::new(ImageOcrTool))
         } else {
@@ -977,9 +1193,9 @@ impl ToolRegistryBuilder {
     /// Each family is one tool with an `action` parameter (`tasks`, `github`,
     /// `automation`). Per-action execution aliases were removed in v0.9.3.
     ///
-    /// Shell-related task tools (`task_shell_start`, `task_shell_wait`) are
-    /// *not* included here — use `with_runtime_task_shell_tools` to register
-    /// them when `allow_shell` is true.
+    /// The shell-related task tool (`task_shell_wait`) is *not* included here —
+    /// use `with_runtime_task_shell_tools` to register it when `allow_shell`
+    /// is true.
     #[must_use]
     pub fn with_runtime_task_tools(self) -> Self {
         use super::automation::AutomationTool;
@@ -993,16 +1209,15 @@ impl ToolRegistryBuilder {
             .with_tool(Arc::new(SendLaterTool::new("send_later")))
     }
 
-    /// Include shell-related task tools (`task_shell_start`, `task_shell_wait`).
+    /// Include the shell-related task tool (`task_shell_wait`).
     ///
-    /// These are gated behind `allow_shell` because `task_shell_start`
-    /// delegates directly to `BashTool`, providing the same shell
-    /// execution capability as `Bash`.
+    /// Gated behind `allow_shell` because it polls and cancels the background
+    /// jobs that `Bash` starts; background work has one entry point, the shell
+    /// tool's `background=true`.
     #[must_use]
     pub fn with_runtime_task_shell_tools(self) -> Self {
-        use super::tasks::{TaskShellStartTool, TaskShellWaitTool};
-        self.with_tool(Arc::new(TaskShellStartTool))
-            .with_tool(Arc::new(TaskShellWaitTool))
+        use super::tasks::TaskShellWaitTool;
+        self.with_tool(Arc::new(TaskShellWaitTool))
     }
 
     /// Include only read-only durable task, PR-attempt, GitHub, and automation
@@ -1111,11 +1326,9 @@ impl ToolRegistryBuilder {
 
     /// Include the canonical persistent RLM session tool.
     #[must_use]
-    pub fn with_rlm_tool(self, client: Option<CodewhaleClient>, root_model: String) -> Self {
+    pub fn with_rlm_tool(self) -> Self {
         use super::rlm::RlmTool;
-        self.with_tool(Arc::new(
-            RlmTool::new("rlm", client).with_root_model(root_model),
-        ))
+        self.with_tool(Arc::new(RlmTool::new(super::rlm::RLM_TOOL_NAME)))
     }
 
     /// Include the persistent, project-scoped continual-harness controller.
@@ -1160,7 +1373,10 @@ impl ToolRegistryBuilder {
     #[must_use]
     pub fn with_fim_tool(self, client: Option<CodewhaleClient>, model: String) -> Self {
         use super::fim::FimEditTool;
-        self.with_tool(Arc::new(FimEditTool::new(client, model)))
+        let Some(client) = client.filter(CodewhaleClient::can_request_fim_completion) else {
+            return self;
+        };
+        self.with_tool(Arc::new(FimEditTool::new(Some(client), model)))
     }
 
     /// Include the `remember` tool — model-callable bullet-add into the
@@ -1347,7 +1563,7 @@ impl ToolRegistryBuilder {
             .with_todo_tool(todo_list)
             .with_plan_tool(plan_state)
             .with_review_tool(client.clone(), model.clone())
-            .with_rlm_tool(client.clone(), model.clone())
+            .with_rlm_tool()
             .with_harness_tool()
             .with_fim_tool(client, model);
 
@@ -1595,8 +1811,19 @@ impl ToolSpec for McpToolAdapter {
         context: &ToolContext,
     ) -> Result<RichToolResult, ToolError> {
         let mut pool = self.pool.lock().await;
+        if let Some(plugins) = context.plugin_registry.as_ref() {
+            pool.bind_caller_plugins(Arc::clone(plugins))
+                .map_err(|error| ToolError::not_available(error.to_string()))?;
+        }
+        pool.validate_native_caller(context.plugin_registry.as_deref())
+            .map_err(|error| ToolError::not_available(error.to_string()))?;
         let result = pool
-            .call_tool_with_disallowed(&self.name, input, &context.disallowed_tools)
+            .call_tool_with_disallowed(
+                &self.name,
+                input,
+                &context.disallowed_tools,
+                context.human_decision.as_ref(),
+            )
             .await
             .map_err(|e| ToolError::execution_failed(format!("MCP tool failed: {e}")))?;
         Ok(mcp_result_to_bounded_rich_tool_result(result))
