@@ -101,9 +101,19 @@ pub struct Request {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Action {
-    Interact { food: bool, x: f64, y: f64 },
-    Select { source: String },
-    Appearance { appearance: Appearance },
+    Interact {
+        food: bool,
+        x: f64,
+        y: f64,
+    },
+    Select {
+        source: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        only_if_idle: bool,
+    },
+    Appearance {
+        appearance: Appearance,
+    },
 }
 
 #[derive(Deserialize)]
@@ -861,12 +871,22 @@ fn run_world(
                                 })
                                 .map_err(|_| "Interaction failed")?;
                         }
-                        Action::Select { source } => {
+                        Action::Select {
+                            source,
+                            only_if_idle,
+                        } => {
                             if !valid_source(&source) {
                                 return Err("Invalid source identity".into());
                             }
+                            if only_if_idle && producer.is_some() {
+                                return Err("The followed source has a live producer".into());
+                            }
+                            let next_revision = saved
+                                .source_revision
+                                .checked_add(1)
+                                .ok_or("Source revision exhausted")?;
                             saved.source = source;
-                            saved.source_revision += 1;
+                            saved.source_revision = next_revision;
                             producer = None;
                             waiting = false;
                             context

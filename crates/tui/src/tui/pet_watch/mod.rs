@@ -32,6 +32,8 @@ pub use full::{render_full, render_main};
 mod live;
 pub(crate) mod owner;
 mod persistence;
+mod runtime;
+pub use runtime::observe_runtime;
 #[cfg(test)]
 mod worker;
 use live::{Command, Notice, Presentation, Worker};

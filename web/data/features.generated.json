@@ -2,7 +2,7 @@
   "format": "codewhale.features.v1",
   "source": {
     "path": "docs/features.toml",
-    "sha256": "0925e265468d2561e17f9799d645563757546d81f4ef001553cf1aa231329f16"
+    "sha256": "2e0161dd38e297e2c844c67313a13ecf154cda5562cbb50411fb462562baae2b"
   },
   "features": [
     {
@@ -713,10 +713,11 @@
     {
       "id": "pet",
       "name": "Pet",
-      "summary": "A per-terminal whale view of working, waiting, done and failed; Ctrl+] cycles its views, F5 opens replies and agents.",
+      "summary": "Shared whale activity and reply views; desktop and app-server turns can follow an idle existing companion.",
       "status": "stable",
       "surfaces": {
-        "tui": "stable"
+        "tui": "stable",
+        "api": "partial"
       },
       "since": null,
       "flag": null,

@@ -2958,6 +2958,7 @@ async fn run_async_main_dispatch(
                             config_path: cli.config.clone(),
                             config_profile,
                             control_frontend: cli.control_frontend.clone(),
+                            runtime_event_tap: Some(crate::tui::pet_watch::observe_runtime),
                         },
                     )
                     .await

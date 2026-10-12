@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.10.2] - 2026-10-10
 
+- Desktop and HTTP app-server turns feed an existing shared pet companion when
+  its followed session has no live producer. Automatic selection is checked
+  atomically by the owner; a live TUI keeps its source. The Runtime producer
+  forwards activity metadata only and releases its connection after a 12-second
+  completion tail. Refs #6155, #6139.
+
 - Bash cards show the model's short description on its own muted line under
   the command, including on automatic runs. The command stays visible, and
   `bash` accepts the optional description without changing execution or approval.

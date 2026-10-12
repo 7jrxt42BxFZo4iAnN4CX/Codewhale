@@ -130,6 +130,22 @@ called the source:
 The companion exits after ten minutes with no view, producer, or audio client.
 The next view starts it again.
 
+## Desktop and app-server sessions
+
+Desktop and HTTP app-server turns can feed the same companion. The Runtime host
+attaches only when the companion is already running; it never starts one. Start
+`codewhale pet serve` or open a pet view first. A new turn can follow an idle
+companion, but the owner refuses automatic selection while the followed session
+has a live producer. An active TUI keeps its source.
+
+Only turn, response, operation, agent and waiting metadata crosses this link.
+Prompts, replies, reasoning, tool names and arguments remain in the Runtime.
+The connection lasts for 12 seconds after completion, then its lease expires.
+An event gap clears the observed turn and releases the connection after the same
+interval unless a new turn starts.
+This presentation data does not enter model requests or affect the KV cache.
+`serve --acp` and TUI background-task threads do not feed this producer.
+
 ## Commands
 
 | Command | Effect |

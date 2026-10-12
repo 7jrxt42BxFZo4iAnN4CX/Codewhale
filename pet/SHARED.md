@@ -10,6 +10,8 @@ prompts, provider calls or second telemetry classifier.
 flowchart LR
   E[Existing Engine: accepted metadata] --> T[Terminal projection]
   T --> O[Local companion: one PetNative world]
+  E --> R[Runtime host: activity projection]
+  R -->|existing companion, idle handoff| O
   O --> S[Private checkpoint and immutable archives]
   O --> W[Ratatui Watch / full habitat]
   O --> B[Browser view]
@@ -71,6 +73,10 @@ its selected port. `CODEWHALE_PET_GRAPHICS=braille` keeps the `pixels` view on
 its particles fallback. None of these commands replace an installed global CLI.
 
 ## Appearance and work-to-result preview
+
+The current Ocean palette, activity colors and smooth whale are **Codewhale by
+default**, as the founder confirmed for 0.10.2. This records the existing look;
+the appearance controls and saved choices keep their current behavior.
 
 The habitat studio provides Ocean, Chalk, Graphite, Linen, Forest, Plum, Ember
 and Cobalt presets. Background, upper light, particle color, activity colors,
@@ -142,6 +148,18 @@ revision, ordered cursor, retained interaction receipts and canonical recording.
 The first attached saved terminal selects its session only when the source is
 `unattached`. Later terminals are views until explicitly selected. Session IDs
 are represented by a short SHA-256 identifier. Multiple sessions are never mixed.
+
+The HTTP Runtime host attaches to an existing companion when an accepted turn
+starts. It may follow an idle source; an optional `only_if_idle` condition on the
+existing select action makes the owner check the live producer atomically.
+Automatic handoff cannot evict a producer that attached after the frame was read.
+Manual `/pet source` remains an explicit selection. Runtime activity persists
+for 12 seconds after terminal completion, then its producer lease expires.
+An event gap clears the observed turn and starts the same release deadline;
+only a new turn starts a fresh observation.
+The host never starts the companion. ACP and TUI background-task threads are
+outside this feed. The projection is bounded metadata only, has no model-visible
+input, and adds no KV-cache bytes.
 
 Interactions require a client UUID, consecutive sequence and current source
 revision. The world and receipt are saved before acknowledgement. Repeating the

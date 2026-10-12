@@ -891,6 +891,8 @@ pub struct RuntimeApiOptions {
     /// Effective profile used to load the server's initial Config.
     pub config_profile: Option<String>,
     pub control_frontend: Option<codewhale_app_server::RuntimeControlFrontend>,
+    pub runtime_event_tap:
+        Option<fn(tokio::sync::broadcast::Receiver<crate::runtime_threads::RuntimeEventRecord>)>,
 }
 
 impl Default for RuntimeApiOptions {
@@ -908,6 +910,7 @@ impl Default for RuntimeApiOptions {
             config_path: None,
             config_profile: None,
             control_frontend: None,
+            runtime_event_tap: None,
         }
     }
 }
@@ -1873,6 +1876,9 @@ pub async fn run_http_server(
         existing_binding.as_ref(),
     )?;
     let sessions_dir = runtime_threads.sessions_dir().to_path_buf();
+    if let Some(tap) = options.runtime_event_tap {
+        tap(runtime_threads.subscribe_events());
+    }
     let task_manager =
         TaskManager::start_with_runtime_manager(task_cfg, config.clone(), runtime_threads.clone())
             .await?;
