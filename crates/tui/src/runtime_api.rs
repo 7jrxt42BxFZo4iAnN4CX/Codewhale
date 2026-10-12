@@ -1639,7 +1639,7 @@ pub(crate) fn open_runtime_threads_for_host(
     Ok((manager, workshop_activation))
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 enum RuntimeHostAdmission {
     Attached(Box<codewhale_app_server::daemon_client::OwnerClient>),
     Bootstrap {
@@ -1651,7 +1651,7 @@ enum RuntimeHostAdmission {
 
 /// Observe first, then hold the existing store lease through all recovery.
 /// Only pre-write publication changes or lease contention can re-observe.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 async fn admit_runtime_host(
     config_path: Option<PathBuf>,
     selected_socket: Option<PathBuf>,
@@ -1735,14 +1735,14 @@ pub async fn run_http_server(
         Some(task_default_model.clone()),
         Some(options.workers),
     );
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     let admission = admit_runtime_host(
         options.config_path.clone(),
         selected_control_socket(&options),
         RuntimeThreadManagerConfig::from_task_data_dir(task_cfg.data_dir.clone()).data_dir,
     )
     .await?;
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     let (published, preheld_lock, existing_binding, recovery) = match admission {
         RuntimeHostAdmission::Attached(client) => (Some(*client), None, None, None),
         RuntimeHostAdmission::Bootstrap {
@@ -1751,18 +1751,10 @@ pub async fn run_http_server(
             recovery,
         } => (None, Some(lock), binding, recovery),
     };
-    #[cfg(windows)]
-    let published = codewhale_app_server::daemon_client::connect_if_published(
-        options.config_path.clone(),
-        selected_control_socket(&options),
-    )
-    .await?;
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     let preheld_lock = None;
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     let existing_binding: Option<crate::runtime_threads::RuntimeStoreBinding> = None;
-    #[cfg(windows)]
-    let recovery = None;
     #[cfg(any(unix, windows))]
     if let Some(control) = published {
         let selected_store =

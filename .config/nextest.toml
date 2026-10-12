@@ -89,7 +89,7 @@ test-group = 'exec-persistent-service'
 slow-timeout = { period = "120s" }
 
 [[profile.default.overrides]]
-filter = 'binary(integration)'
+filter = 'binary(integration) | binary(owner_crash_reentry)'
 test-group = 'spawns-binaries'
 
 # CI (profiles inherit from default): the final summary lists every failure and

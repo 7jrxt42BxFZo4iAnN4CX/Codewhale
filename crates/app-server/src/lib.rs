@@ -653,16 +653,7 @@ pub async fn bind_runtime_frontends(
     state.captured_routing = Some(routing);
     state.owner_frontend = owner_frontend;
     *state.runtime_bridge.lock().await = Some(Arc::new(Mutex::new(bridge)));
-    #[cfg(unix)]
     let daemon = daemon_socket::bind_captured_owner(state.clone(), owner, recovery).await?;
-    #[cfg(windows)]
-    let daemon = {
-        anyhow::ensure!(
-            recovery.is_none(),
-            "Windows stale-owner recovery is not qualified; refusing fallback"
-        );
-        daemon_socket::bind_captured_owner(state.clone(), owner).await?
-    };
     Ok((daemon, state))
 }
 

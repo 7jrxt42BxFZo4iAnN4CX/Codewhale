@@ -413,12 +413,14 @@ launcher guidance.
   deadline set by its first unsaved event. Tool heartbeats and store polls no
   longer restart that wait, and heartbeats are kept in memory only.
 
+- On Windows, when the app-server that owned a Runtime has died, the next
+  start now replaces it automatically, as on macOS and Linux. A live owner,
+  a reused process ID, or a publication from another user, store or config
+  is still refused
+  ([#6915](https://github.com/codewhale-hq/Codewhale/issues/6915)).
+
 ### Known limits
 
-- Windows: when the previous app-server owner died without cleaning up, the
-  next start refuses with "Windows stale-owner recovery is not qualified" and
-  the stale publication has to be removed by hand. Unix recovers on its own
-  ([#6915](https://github.com/codewhale-hq/Codewhale/issues/6915)).
 - Idle CPU has not been measured on FreeBSD or Linux for this release
   ([#6728](https://github.com/codewhale-hq/Codewhale/issues/6728)).
 - Models.dev prices with context tiers are not applied. A turn at or above a
