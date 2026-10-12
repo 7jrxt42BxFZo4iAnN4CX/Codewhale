@@ -1043,6 +1043,7 @@ pub enum ToolStatus {
 #[derive(Debug, Clone)]
 pub struct ExecCell {
     pub command: String,
+    pub description: Option<String>,
     pub status: ToolStatus,
     pub output: Option<String>,
     pub live_output: Option<String>,
@@ -1120,8 +1121,25 @@ impl ExecCell {
             low_motion || stale_status.is_some(),
         ));
 
-        // A foreground shell wait stays a compact card — command, spinner and
-        // running badge. Live output and artifact paths belong in the
+        if let Some(description) = self.description.as_deref() {
+            let mut plain = String::new();
+            crate::tui::osc8::strip_ansi_into(description, &mut plain);
+            if let Some(description) = normalize_header_summary(&plain) {
+                let label = codewhale_localization::tr(
+                    locale,
+                    codewhale_localization::MessageId::ToolDescriptionNote,
+                );
+                lines.extend(render_card_detail_line(
+                    Some(label.as_ref()),
+                    &truncate_text(&description, TOOL_HEADER_SUMMARY_LIMIT),
+                    Style::default().fg(palette::TEXT_MUTED).italic(),
+                    width,
+                ));
+            }
+        }
+
+        // A foreground shell wait stays a compact card — command, optional note,
+        // spinner and running badge. Live output and artifact paths belong in the
         // Activity sidebar and `/jobs` detail surfaces.
         if self.is_foreground_shell_wait() {
             return wrap_card_rail(lines, self.status);

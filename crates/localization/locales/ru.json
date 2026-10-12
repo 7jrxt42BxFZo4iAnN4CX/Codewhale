@@ -1325,6 +1325,7 @@
   "ToolReceiptDone": "готово",
   "ToolReceiptLinesSingular": "1 строка",
   "ToolReceiptLinesPlural": "{count} строк",
+  "ToolDescriptionNote": "примечание",
   "TodoStatusPending": "ожидает",
   "TodoStatusInProgress": "в работе",
   "TodoStatusCompleted": "выполнено",

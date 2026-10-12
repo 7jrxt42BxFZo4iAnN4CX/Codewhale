@@ -9,6 +9,10 @@
           "description": "The command to execute. Actual execution shell: `/bin/bash`. Use Bash syntax: pipelines, redirections, $(command), and && / || are supported. Quote paths and variable expansions, such as \"$path\"; use single quotes for literal text. For literal multiline input, use a quoted heredoc delimiter (<<'EOF') with its closing delimiter on a separate line. Use only installed programs; do not assume GNU-specific flags on macOS/BSD. Example: printf '%s\\n' 'sample'.",
           "type": "string"
         },
+        "description": {
+          "description": "Optional few-word summary shown to the user beside the command.",
+          "type": "string"
+        },
         "justification": {
           "description": "Required with sandbox_permissions: one sentence explaining why this exact command needs wider access.",
           "type": "string"

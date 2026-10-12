@@ -1325,6 +1325,7 @@
   "ToolReceiptDone": "selesai",
   "ToolReceiptLinesSingular": "1 baris",
   "ToolReceiptLinesPlural": "{count} baris",
+  "ToolDescriptionNote": "catatan",
   "TodoStatusPending": "tertunda",
   "TodoStatusInProgress": "sedang dikerjakan",
   "TodoStatusCompleted": "selesai",

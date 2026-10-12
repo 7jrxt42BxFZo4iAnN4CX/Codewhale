@@ -1348,6 +1348,7 @@
   "ToolReceiptDone": "완료",
   "ToolReceiptLinesSingular": "1줄",
   "ToolReceiptLinesPlural": "{count}줄",
+  "ToolDescriptionNote": "설명",
   "TodoStatusPending": "대기 중",
   "TodoStatusInProgress": "진행 중",
   "TodoStatusCompleted": "완료됨",

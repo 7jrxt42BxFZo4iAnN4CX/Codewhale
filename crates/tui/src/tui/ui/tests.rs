@@ -6663,6 +6663,7 @@ fn running_exec_cell() -> HistoryCell {
         duration_ms: Some(20),
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     }))
@@ -10020,6 +10021,7 @@ fn refresh_shell_exec_live_output_finalizes_restored_missing_shell_job() {
         duration_ms: Some(1_234),
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -10055,6 +10057,7 @@ fn shell_live_output_update_matches_exact_task_id_only() {
         duration_ms: Some(111),
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -10070,6 +10073,7 @@ fn shell_live_output_update_matches_exact_task_id_only() {
         duration_ms: None,
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -10165,6 +10169,7 @@ fn shell_live_output_update_marks_stale_running_job_static() {
         duration_ms: Some(90_000),
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -10247,6 +10252,7 @@ fn shell_live_output_update_finalizes_background_exec_output() {
         duration_ms: None,
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -10337,6 +10343,7 @@ fn shell_live_output_update_skips_finalized_exec_cell() {
         duration_ms: Some(10),
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -21775,6 +21782,7 @@ fn spillover_pager_uses_session_artifact_for_specialized_bash_cell() {
         duration_ms: None,
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     }))];
@@ -21841,6 +21849,7 @@ fn terminal_pause_has_live_owner_only_for_running_exec_cells() {
             duration_ms: None,
             stale_elapsed_since_output_ms: None,
             source: ExecSource::Assistant,
+            description: None,
             interaction: Some("interactive".to_string()),
             output_summary: None,
         })),
@@ -25903,6 +25912,7 @@ fn turn_inspector_renders_overview_sections_for_active_turn() {
             duration_ms: Some(2400),
             stale_elapsed_since_output_ms: None,
             source: ExecSource::Assistant,
+            description: None,
             interaction: None,
             output_summary: None,
         })),
@@ -26063,6 +26073,7 @@ fn turn_inspector_timeline_numbers_semantic_entries_and_checkpoint_actions() {
             duration_ms: Some(1250),
             stale_elapsed_since_output_ms: None,
             source: ExecSource::Assistant,
+            description: None,
             interaction: None,
             output_summary: None,
         })),
@@ -26369,6 +26380,7 @@ fn turn_handoff_markdown_renders_compact_sections_for_active_turn() {
             duration_ms: Some(2400),
             stale_elapsed_since_output_ms: None,
             source: ExecSource::Assistant,
+            description: None,
             interaction: None,
             output_summary: None,
         })),

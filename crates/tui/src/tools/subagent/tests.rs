@@ -22083,8 +22083,8 @@ fn the_launched_authority_is_the_one_the_spawn_boundary_accepts() {
 /// Ceilings are in serialized bytes (deterministic, unlike token estimates);
 /// the stale token figure in workflows/stopship.workflow.js:1-5 is
 /// superseded by these tests.
-/// Measured 80,856B on 2026-08-02 (commit body has the receipt); +10%.
-const READ_ONLY_CHILD_ENVELOPE_BYTE_CEILING: usize = 89_000;
+/// Measured 80,856B on 2026-08-02; the ceiling includes the display-only bash description.
+const READ_ONLY_CHILD_ENVELOPE_BYTE_CEILING: usize = 89_112;
 /// Measured 85,913B on 2026-09-15 with the always-on session recall tools
 /// (#5715). Keep the next increase visible instead of adding another broad
 /// margin. Re-measured at 87,529B on 2026-09-17, with the bounded Git
@@ -22120,10 +22120,10 @@ const READ_ONLY_CHILD_ENVELOPE_BYTE_CEILING: usize = 89_000;
 // the hosted CI runners, measures about 2,070B lower and cannot trip this
 // ceiling. The figure before this batch was already 90,552B on the same
 // machine, 209B over the previous ceiling, which only CI had been checking.
-// The 0.10.2 batch adds 115B: +145B for the `agent` tool sentence that
+// The 0.10.2 batch adds 227B: +145B for the `agent` tool sentence that
 // restores the legacy Operate contract, less 30B from the background-shell
-// schema edits. The ceiling keeps the 13B Linux margin.
-const PARENT_SURFACE_BYTE_CEILING: usize = 90_680;
+// schema edits, plus 112B for the display-only bash description. The ceiling keeps the 13B Linux margin.
+const PARENT_SURFACE_BYTE_CEILING: usize = 90_792;
 
 #[tokio::test]
 async fn read_only_child_envelope_stays_within_measured_ceiling() {

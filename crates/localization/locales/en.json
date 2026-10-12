@@ -1348,6 +1348,7 @@
   "ToolReceiptDone": "done",
   "ToolReceiptLinesSingular": "1 line",
   "ToolReceiptLinesPlural": "{count} lines",
+  "ToolDescriptionNote": "note",
   "TodoStatusPending": "pending",
   "TodoStatusInProgress": "in progress",
   "TodoStatusCompleted": "completed",

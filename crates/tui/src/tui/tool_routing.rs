@@ -113,6 +113,7 @@ pub(super) fn handle_tool_call_started(
                     duration_ms: None,
                     stale_elapsed_since_output_ms: None,
                     source,
+                    description: None,
                     interaction: Some(summary.clone()),
                     output_summary: None,
                 })),
@@ -150,6 +151,10 @@ pub(super) fn handle_tool_call_started(
                 duration_ms: None,
                 stale_elapsed_since_output_ms: None,
                 source,
+                description: input
+                    .get("description")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_string),
                 interaction: None,
                 output_summary: None,
             })),
@@ -2767,6 +2772,7 @@ mod tests {
             duration_ms: Some(120),
             stale_elapsed_since_output_ms: None,
             source: ExecSource::Assistant,
+            description: None,
             interaction: None,
             output_summary: None,
         });

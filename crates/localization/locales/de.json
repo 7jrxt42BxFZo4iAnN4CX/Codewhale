@@ -1325,6 +1325,7 @@
   "ToolReceiptDone": "fertig",
   "ToolReceiptLinesSingular": "1 Zeile",
   "ToolReceiptLinesPlural": "{count} Zeilen",
+  "ToolDescriptionNote": "Hinweis",
   "TodoStatusPending": "ausstehend",
   "TodoStatusInProgress": "in Arbeit",
   "TodoStatusCompleted": "erledigt",

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.10.2] - 2026-10-10
 
+- Bash cards show the model's short description on its own muted line under
+  the command, including on automatic runs. The command stays visible, and
+  `bash` accepts the optional description without changing execution or approval.
+
 - A first launch with no key or route now opens the composer. Codewhale asks
   for a provider when you send your first message, keeps the message in the
   box, and offers a local model only when a local Ollama server answers. The provider list

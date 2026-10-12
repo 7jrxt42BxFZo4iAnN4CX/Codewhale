@@ -1325,6 +1325,7 @@
   "ToolReceiptDone": "готово",
   "ToolReceiptLinesSingular": "1 рядок",
   "ToolReceiptLinesPlural": "{count} рядків",
+  "ToolDescriptionNote": "примітка",
   "TodoStatusPending": "очікує",
   "TodoStatusInProgress": "у роботі",
   "TodoStatusCompleted": "виконано",

@@ -1346,6 +1346,7 @@
   "ToolReceiptDone": "xong",
   "ToolReceiptLinesSingular": "1 dòng",
   "ToolReceiptLinesPlural": "{count} dòng",
+  "ToolDescriptionNote": "ghi chú",
   "TodoStatusPending": "đang chờ",
   "TodoStatusInProgress": "đang thực hiện",
   "TodoStatusCompleted": "đã hoàn tất",

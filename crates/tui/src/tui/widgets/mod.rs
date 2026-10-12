@@ -3883,6 +3883,7 @@ mod tests {
             duration_ms: None,
             stale_elapsed_since_output_ms: None,
             source: ExecSource::User,
+            description: None,
             interaction: None,
             output_summary: None,
         }))

@@ -5427,6 +5427,7 @@ impl ToolSpec for LowercaseBashTool {
             "type": "object",
             "properties": {
                 "command": { "type": "string", "description": guidance::runtime_command_guidance() },
+                "description": { "type": "string", "description": "Optional few-word summary shown to the user beside the command." },
                 "timeout": { "type": "number", "description": "Optional seconds to wait in the foreground (default 30 seconds). A command still running then is not killed: it moves to the background by itself and you get its output so far, how long ago it last printed, its build phase, and a task_id. Find task_shell_wait with tool_search to read more or wait for it." },
                 "read_only": { "type": "boolean", "description": "Set true to run analysis code (including Python/SQLite) with mandatory native filesystem read-only isolation and no network. Available during peer writes. Refused when native enforcement is unavailable; no background, stdin, external backend, or sandbox escalation." },
                 "sandbox_permissions": {
@@ -5487,7 +5488,12 @@ fn contract_bash_legacy_input(input: &serde_json::Value) -> Result<serde_json::V
         .filter(|key| {
             !matches!(
                 key.as_str(),
-                "command" | "timeout" | "read_only" | "sandbox_permissions" | "justification"
+                "command"
+                    | "description"
+                    | "timeout"
+                    | "read_only"
+                    | "sandbox_permissions"
+                    | "justification"
             )
         })
         .cloned()
@@ -5499,6 +5505,7 @@ fn contract_bash_legacy_input(input: &serde_json::Value) -> Result<serde_json::V
         )));
     }
     let command = required_str(input, "command")?;
+    optional_str(input, "description")?;
     let mut translated = json!({"command": command});
     if let Some(timeout) = input.get("timeout") {
         let seconds = timeout.as_f64().ok_or_else(|| {

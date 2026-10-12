@@ -1325,6 +1325,7 @@
   "ToolReceiptDone": "पूर्ण",
   "ToolReceiptLinesSingular": "1 पंक्ति",
   "ToolReceiptLinesPlural": "{count} पंक्तियाँ",
+  "ToolDescriptionNote": "टिप्पणी",
   "TodoStatusPending": "लंबित",
   "TodoStatusInProgress": "जारी",
   "TodoStatusCompleted": "पूरा हुआ",

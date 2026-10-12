@@ -106,6 +106,7 @@ fn lowercase_bash_schema_is_small_contract() {
             .collect::<std::collections::BTreeSet<_>>(),
         [
             "command",
+            "description",
             "justification",
             "read_only",
             "sandbox_permissions",

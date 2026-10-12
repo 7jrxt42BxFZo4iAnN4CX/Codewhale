@@ -1325,6 +1325,7 @@
   "ToolReceiptDone": "fet",
   "ToolReceiptLinesSingular": "1 línia",
   "ToolReceiptLinesPlural": "{count} línies",
+  "ToolDescriptionNote": "nota",
   "TodoStatusPending": "pendent",
   "TodoStatusInProgress": "en curs",
   "TodoStatusCompleted": "completada",

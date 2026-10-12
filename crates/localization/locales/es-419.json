@@ -1346,6 +1346,7 @@
   "ToolReceiptDone": "listo",
   "ToolReceiptLinesSingular": "1 línea",
   "ToolReceiptLinesPlural": "{count} líneas",
+  "ToolDescriptionNote": "nota",
   "TodoStatusPending": "pendiente",
   "TodoStatusInProgress": "en curso",
   "TodoStatusCompleted": "completada",
