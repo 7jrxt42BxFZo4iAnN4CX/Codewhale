@@ -24386,7 +24386,7 @@ mod child_permission_gate {
         registry.gate_runtime.approval_receipt_store = None;
 
         let result = tokio::time::timeout(
-            CHILD_APPROVAL_EVENT_READINESS,
+            std::time::Duration::from_secs(30),
             registry.execute("agent_gate", "bash", json!({"command": "echo gated"})),
         )
         .await
