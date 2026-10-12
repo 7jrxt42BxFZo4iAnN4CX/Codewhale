@@ -152,10 +152,11 @@ Sleep dimming does not set unknown coverage.
 
 ### `/pet` habitat
 
-`/pet` (or `/pet on`) opens the full habitat over the existing shell. The pet
-has no workbar panel: no dock cycling, tab, placement or dismissal applies. The
-tank uses the whole content viewport and never overlays transcript cells; narrow
-views keep the text cue. Opening it starts a read-only observer; it does not start an Engine
+`/pet` (or `/pet on`) makes the pet the main view above the existing composer;
+F5 or `/pet inspect` opens replies and agents over it. The pet has no workbar
+panel: no placement or dismissal applies, and on the pet main view `Ctrl+]`
+cycles the pet's views instead of the dock. The pet never overlays transcript
+cells; narrow views keep the text cue. Opening it starts a read-only observer; it does not start an Engine
 turn or silently substitute demonstration data. It begins with unknown coverage
 and does not backfill events from before attachment.
 

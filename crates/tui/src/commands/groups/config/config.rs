@@ -731,8 +731,8 @@ fn select_pet_mode(app: &mut App, enabled: bool, persist: bool) -> CommandResult
 /// Escape returns to the same backdrop and draft. Companion verbs keep the
 /// existing shared simulation, appearance, replay and single audio lease.
 pub fn pet(app: &mut App, arg: Option<&str>) -> CommandResult {
-    const USAGE: &str = "Usage: /pet [on|off|inspect|status|appearance|style smooth|pixel|language auto|en|zh-Hans|zh-Hant|ja|window|source|export|sound on|off|avatar [key]|action [name|live]|view [name|live]]";
     use crate::tui::pet_watch::{self, Control};
+    let usage = || CommandResult::error(format!("Usage: {}", super::PET_INFO.usage));
     let words = arg
         .map(str::trim)
         .unwrap_or("")
@@ -742,8 +742,11 @@ pub fn pet(app: &mut App, arg: Option<&str>) -> CommandResult {
     let words = words.iter().map(String::as_str).collect::<Vec<_>>();
     let mode = |app: &mut App, enabled: bool| select_pet_mode(app, enabled, true);
     let queued = |app: &mut App, control: Control| {
-        pet_watch::command(app, control);
-        CommandResult::message(tr(app.ui_locale, MessageId::PetHabitatQueued))
+        if pet_watch::command(app, control) {
+            CommandResult::message(tr(app.ui_locale, MessageId::PetHabitatQueued))
+        } else {
+            CommandResult::error(tr(app.ui_locale, MessageId::PetWatchUnavailable))
+        }
     };
     match words.as_slice() {
         ["inspect"] => {
@@ -779,14 +782,14 @@ pub fn pet(app: &mut App, arg: Option<&str>) -> CommandResult {
         ["avatar"] => CommandResult::message(app.pet_watch.avatar_choices()),
         ["avatar", key] => {
             if !app.pet_watch.select_avatar(key) {
-                return CommandResult::error(USAGE);
+                return usage();
             }
             app.needs_redraw = true;
             CommandResult::message(format!("/pet avatar {key}"))
         }
         [kind @ ("action" | "view"), name] => {
             if !app.pet_watch.preview_avatar(name, *kind == "view") {
-                return CommandResult::error(USAGE);
+                return usage();
             }
             app.needs_redraw = true;
             CommandResult::message(format!("/pet {kind} {name}"))
@@ -794,7 +797,7 @@ pub fn pet(app: &mut App, arg: Option<&str>) -> CommandResult {
         ["appearance"] => queued(app, Control::Browser),
         ["style", value] => {
             let Some(body) = pet_watch::BodyStyle::parse(value) else {
-                return CommandResult::error(USAGE);
+                return usage();
             };
             queued(
                 app,
@@ -806,7 +809,7 @@ pub fn pet(app: &mut App, arg: Option<&str>) -> CommandResult {
         }
         ["language", value] => {
             let Some(language) = pet_watch::TextLanguage::parse(value) else {
-                return CommandResult::error(USAGE);
+                return usage();
             };
             queued(
                 app,
@@ -830,7 +833,7 @@ pub fn pet(app: &mut App, arg: Option<&str>) -> CommandResult {
                 [] => None,
                 ["on"] => Some(true),
                 ["off"] => Some(false),
-                _ => return CommandResult::error(USAGE),
+                _ => return usage(),
             };
             if let Some(enabled) = enabled {
                 app.pet_watch.set_sound(enabled);
@@ -843,7 +846,7 @@ pub fn pet(app: &mut App, arg: Option<&str>) -> CommandResult {
             };
             CommandResult::message(format!("{} · /pet sound on|off", tr(app.ui_locale, label)))
         }
-        _ => CommandResult::error(USAGE),
+        _ => usage(),
     }
 }
 

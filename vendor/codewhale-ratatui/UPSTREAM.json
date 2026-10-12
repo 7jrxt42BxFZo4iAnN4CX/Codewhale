@@ -189,11 +189,12 @@
   "pet_update": {
     "commit": "8f51c6bccadeb11278cda1e2481a116573e5d233",
     "scope": "Selected prepared pet renderer files; non-pet components retain the base snapshot and existing Engine patches.",
+    "local_changes": "Not yet upstream: src/avatar_sprite.rs (one integer scale for both axes), src/components/dot_whale.rs (scale capped at 32 dots, strongest dot's colour per cell, full ink, hollow in the Muted role instead of DIM) and src/components/pet_mode.rs (PetMode::style and PetMode::cove reach the WhalePet fallback). Their hashes below are the local files.",
     "files": {
-      "src/avatar_sprite.rs": "2d76da6667d24fbcd36a22d5a70c8ef9136eb1b853bb32884cf236ee0cce92b6",
+      "src/avatar_sprite.rs": "a2b6553802c4be509aa9772ff94bc9fef15c8b9d6ff00f262332b92aecf4fd52",
       "src/color.rs": "96c44be1540c4756f251ed5ffb74aa88a5ebf131b104bf25866ad7ab8e3c6ba8",
-      "src/components/dot_whale.rs": "191bacf808037ba4dd7d4dfffbd06fe9c951a258a31495380591ad6ab4a715fa",
-      "src/components/pet_mode.rs": "35142d709073a09720f1ce1cfb57b18d6ea4880530a5c8d96755c5b9fc203214",
+      "src/components/dot_whale.rs": "7c84fa84dd28b6a0910ac7fc41663ed96269560b5cc9741fbabc0162c2d767a9",
+      "src/components/pet_mode.rs": "b9be163495feced79505cf3907d2d462430eaa699db01a4998af14e8d84dd3b0",
       "src/components/whale_pet.rs": "bb29442f8db20e8387482e2e1dcb4fa5259ef99c3a37a77bfe9e4b56eaa05aed",
       "src/whale.rs": "126a6efc8cac550ccd7f9c8edc61745b8c959186de118c2f4d479f5a5c5ffcf7",
       "src/whale_motion/pixels.rs": "f83113863c7928cc93dbbc7b187d6f9346d1848ffb9636fd3d8551faa9de69d9"

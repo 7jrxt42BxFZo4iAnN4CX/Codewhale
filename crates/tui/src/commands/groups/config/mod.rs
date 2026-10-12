@@ -88,7 +88,7 @@ static RAIL_INFO: CommandInfo = CommandInfo {
 static PET_INFO: CommandInfo = CommandInfo {
     name: "pet",
     aliases: &[],
-    usage: "/pet [on|off|inspect|status|appearance|window|source|export|sound on|off|avatar [key]|action [name|live]|view [name|live]]",
+    usage: "/pet [on|off|inspect|status|appearance|style [smooth|pixel]|language [auto|en|zh-Hans|zh-Hant|ja]|window|source|export|sound [on|off]|avatar [whale|cove|braille|pixels|particles|whale-girl|key]|action [name|live]|view [name|live]]",
     description_id: MessageId::CmdPetDescription,
 };
 static SETTINGS_INFO: CommandInfo = CommandInfo {

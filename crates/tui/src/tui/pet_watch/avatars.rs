@@ -12,11 +12,21 @@ use std::{
     sync::mpsc::{self, Receiver},
 };
 
+const VIEWS: [&str; 6] = [
+    "whale",
+    "cove",
+    "braille",
+    "pixels",
+    "particles",
+    "whale-girl",
+];
+
 #[derive(Default)]
 pub(super) struct Avatars {
     pub key: String,
     pub view: Option<String>,
     pub action: Option<String>,
+    pub fallback: bool,
     catalog: Vec<RegisteredPack>,
     workspace: PathBuf,
     next: Option<Instant>,
@@ -117,24 +127,44 @@ impl Avatars {
         }
         changed
     }
+    fn ring(&self) -> impl Iterator<Item = &str> {
+        VIEWS
+            .into_iter()
+            .chain(self.catalog.iter().map(|p| p.key.as_str()))
+    }
     pub fn choices(&self) -> String {
-        std::iter::once("whale".to_string())
-            .chain(["particles".to_string(), "whale-girl".to_string()])
-            .chain(self.catalog.iter().map(|p| p.key.clone()))
-            .collect::<Vec<_>>()
-            .join("\n")
+        self.ring().collect::<Vec<_>>().join("\n")
+    }
+    pub fn current(&self) -> &str {
+        if self.key.is_empty() {
+            "whale"
+        } else {
+            &self.key
+        }
     }
     pub fn select(&mut self, key: &str) -> bool {
-        if !matches!(key, "whale" | "whale-girl" | "particles")
-            && !self.catalog.iter().any(|p| p.key == key)
-        {
+        if !self.ring().any(|view| view == key) {
             return false;
         }
         self.key = key.into();
         self.view = None;
         self.action = None;
         self.decoded = None;
+        self.fallback = false;
         true
+    }
+    pub fn cycle(&mut self, forward: bool) {
+        let ring: Vec<String> = self.ring().map(str::to_owned).collect();
+        let at = ring
+            .iter()
+            .position(|view| view == self.current())
+            .unwrap_or(0);
+        let next = if forward {
+            (at + 1) % ring.len()
+        } else {
+            (at + ring.len() - 1) % ring.len()
+        };
+        self.select(&ring[next]);
     }
     fn pack(&self) -> Option<&Pack> {
         if self.key == "whale-girl" {
@@ -174,6 +204,20 @@ impl Avatars {
         act: &str,
         clock: f64,
         reduced: bool,
+        theme: &codewhale_ratatui::Theme,
+    ) -> bool {
+        let painted = self.paint_pack(area, buf, act, clock, reduced, theme);
+        self.fallback = !painted && self.pack().is_some();
+        painted
+    }
+    fn paint_pack(
+        &mut self,
+        area: Rect,
+        buf: &mut ratatui::buffer::Buffer,
+        act: &str,
+        clock: f64,
+        reduced: bool,
+        theme: &codewhale_ratatui::Theme,
     ) -> bool {
         let Some(pack) = self.pack() else {
             return false;
@@ -185,14 +229,9 @@ impl Avatars {
             self.view.as_deref(),
             self.action.as_deref(),
         );
-        let theme = codewhale_ratatui::Theme::new(codewhale_ratatui::Caps {
-            depth: codewhale_ratatui::color::ColorDepth::detect(),
-            ascii: std::env::var_os("CODEWHALE_ASCII_SAFE").is_some(),
-            appearance: codewhale_ratatui::detect::Appearance::Dark,
-        });
         if self.key == "whale-girl" {
             if let Ok(sprite) = Sprite::new(pack, whale_girl::TERMINAL, 96, 96, sample.index) {
-                sprite.paint(area, buf, &theme);
+                sprite.paint(area, buf, theme);
                 return true;
             }
             return false;
@@ -236,7 +275,7 @@ impl Avatars {
             return false;
         };
         if let Ok(sprite) = Sprite::page(&entry.pack, pixels, *w, *h, sample.index) {
-            sprite.paint(area, buf, &theme);
+            sprite.paint(area, buf, theme);
             return true;
         }
         false

@@ -5605,7 +5605,7 @@ pub(crate) async fn run_event_loop(
                 continue;
             }
 
-            if crate::tui::pet_watch::handle_inspect_key(app, &key) {
+            if crate::tui::pet_watch::handle_key(app, &key) {
                 continue;
             }
 
