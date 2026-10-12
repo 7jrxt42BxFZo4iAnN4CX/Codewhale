@@ -339,7 +339,9 @@ is deleted. The 0.10.2 X2 snapshot stands at 0 production references and
 five test references and the final tools/crossterm test import, leaving 25
 test references and no UI-library imports. The following tools split moves the
 Workflow panel assertions to its existing history test and removes duplicated
-coordination pager checks, leaving 18 test references. The current baseline is the authority.
+coordination pager checks, leaving 18 test references. The history split moves
+persistence/render tests to history and uses the runtime MCP decoder in the
+engine, leaving 13 test references. The current baseline is the authority.
 `crates/runtime` must never depend on `tui`, `cli`, ratatui, crossterm,
 `ansi-to-tui` or a terminal component kit; the runtime reaches the terminal
 only through `host_terminal`.

@@ -27,6 +27,7 @@ use super::{
     extract_reasoning_summary, render_spillover_annotation, render_thinking,
     render_thinking_with_analysis, running_status_label_with_elapsed,
 };
+use crate::session_manager::{SessionManager, create_saved_session};
 use crate::tools::plan::{PlanSnapshot, StepStatus};
 use crate::tui::motion::MotionMode;
 use crate::tui::ui_text::{
@@ -35,6 +36,7 @@ use crate::tui::ui_text::{
 use codewhale_models::{ContentBlock, Message, Role};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use tempfile::tempdir;
 
 #[test]
 fn extension_prompt_snapshots_and_withdrawal_show_the_complete_model_input() {
@@ -53,6 +55,16 @@ fn extension_prompt_snapshots_and_withdrawal_show_the_complete_model_input() {
             None => assert!(content.contains("withdrawn")),
         }
     }
+    let message = crate::runtime_handoff::mcp_server_instructions_runtime_message(&[(
+        "guided".into(),
+        "Search before fetching.".into(),
+    )]);
+    let cells = super::history_cells_from_message(&message);
+    assert!(
+        matches!(cells.as_slice(), [HistoryCell::System { content }]
+            if content.contains("Search before fetching.")),
+        "the transcript shows what the model saw"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -3273,4 +3285,154 @@ fn calm1_calm_and_hidden_details_share_one_card_budget() {
         rendered.push(lines_text(&lines));
     }
     assert!(rendered.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+/// #4681: reopening a session must not surface `<turn_meta>` machine
+/// blocks in the transcript. Covers the current trailing shape and the
+/// legacy leading shape (sessions saved before the turn-meta tail move),
+/// while the loaded API history keeps both envelopes intact for replay.
+#[test]
+fn rehydrated_turn_meta_blocks_never_render_in_history_cells() {
+    let tmp = tempdir().expect("tempdir");
+    let manager = SessionManager::new(tmp.path().join("sessions")).expect("new");
+
+    let turn_meta = "<turn_meta>\nCurrent local date: 2026-08-01\n</turn_meta>";
+    let trailing_shape = Message {
+        role: Role::User,
+        content: vec![
+            ContentBlock::Text {
+                text: "Fix the flaky test".to_string(),
+                cache_control: None,
+            },
+            ContentBlock::Text {
+                text: turn_meta.to_string(),
+                cache_control: None,
+            },
+        ],
+    };
+    let legacy_leading_shape = Message {
+        role: Role::User,
+        content: vec![
+            ContentBlock::Text {
+                text: turn_meta.to_string(),
+                cache_control: None,
+            },
+            ContentBlock::Text {
+                text: "Now add the docs".to_string(),
+                cache_control: None,
+            },
+        ],
+    };
+    let messages = vec![
+        trailing_shape,
+        Message {
+            role: Role::Assistant,
+            content: vec![ContentBlock::Text {
+                text: "Done.".to_string(),
+                cache_control: None,
+            }],
+        },
+        legacy_leading_shape,
+    ];
+    let session = create_saved_session(&messages, "test-model", tmp.path(), 100, None);
+    let session_id = session.metadata.id.clone();
+    manager.save_session(&session).expect("save");
+
+    let loaded = manager.load_session(&session_id).expect("load");
+
+    // Display path: no rendered cell may carry turn_meta markup.
+    let rendered: Vec<HistoryCell> = loaded
+        .messages
+        .iter()
+        .flat_map(super::history_cells_from_message)
+        .collect();
+    let user_texts: Vec<&str> = rendered
+        .iter()
+        .filter_map(|cell| match cell {
+            HistoryCell::User { content } => Some(content.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(user_texts, vec!["Fix the flaky test", "Now add the docs"]);
+    assert!(
+        !user_texts.iter().any(|text| text.contains("<turn_meta")),
+        "rendered cells must not contain turn_meta markup: {user_texts:?}"
+    );
+
+    // Model-facing replay: the persisted envelopes survive the round trip.
+    let replayed_envelopes = loaded
+        .messages
+        .iter()
+        .flat_map(|message| &message.content)
+        .filter(|block| {
+            matches!(block, ContentBlock::Text { text, .. } if text.contains("<turn_meta>"))
+        })
+        .count();
+    assert_eq!(replayed_envelopes, 2);
+}
+
+#[test]
+fn save_and_load_session_preserves_rich_update_plan_tool_payload() {
+    let tmp = tempdir().expect("tempdir");
+    let manager = SessionManager::new(tmp.path().join("sessions")).expect("new");
+    let messages = vec![
+        Message {
+            role: Role::User,
+            content: vec![ContentBlock::Text {
+                text: "plan this carefully".to_string(),
+                cache_control: None,
+            }],
+        },
+        Message {
+            role: Role::Assistant,
+            content: vec![ContentBlock::ToolUse {
+                execution_id: None,
+                id: "plan-1".to_string(),
+                name: "update_plan".to_string(),
+                input: serde_json::json!({
+                    "objective": "Make Plan mode reviewable",
+                    "sources_used": ["gh issue view 2691"],
+                    "critical_files": ["crates/tui/src/tools/plan.rs"],
+                    "constraints": ["Preserve legacy update_plan payloads"],
+                    "verification_plan": "Run focused plan tests",
+                    "handoff_packet": "Next agent should inspect replay",
+                    "plan": [
+                        { "step": "render replay card", "status": "completed" }
+                    ]
+                }),
+                caller: None,
+                thought_signature: None,
+            }],
+        },
+        Message {
+            role: Role::User,
+            content: vec![ContentBlock::ToolResult {
+                execution_id: None,
+                tool_use_id: "plan-1".to_string(),
+                content: "Plan updated".to_string(),
+                is_error: None,
+                content_blocks: None,
+            }],
+        },
+    ];
+    let session = create_saved_session(&messages, "deepseek-v4-flash", tmp.path(), 42, None);
+    let session_id = session.metadata.id.clone();
+
+    manager.save_session(&session).expect("save");
+    let loaded = manager.load_session(&session_id).expect("load");
+
+    assert_eq!(loaded.messages.len(), 3);
+    let cells = super::history_cells_from_message(&loaded.messages[1]);
+    let Some(HistoryCell::Tool(ToolCell::PlanUpdate(cell))) = cells.first() else {
+        panic!("expected loaded update_plan to replay as a PlanUpdate cell");
+    };
+    assert_eq!(
+        cell.snapshot.objective.as_deref(),
+        Some("Make Plan mode reviewable")
+    );
+    assert_eq!(
+        cell.snapshot.critical_files,
+        vec!["crates/tui/src/tools/plan.rs"]
+    );
+    assert_eq!(cell.snapshot.items[0].status, StepStatus::Completed);
 }
