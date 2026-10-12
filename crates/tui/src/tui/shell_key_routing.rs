@@ -562,9 +562,6 @@ fn display_chord_for_platform_and_ascii(
     is_macos: bool,
     ascii_safe: bool,
 ) -> Cow<'static, str> {
-    if ascii_safe {
-        return Cow::Borrowed(chord);
-    }
     if !is_macos {
         return Cow::Borrowed(chord);
     }
@@ -580,7 +577,11 @@ fn display_chord_for_platform_and_ascii(
         rendered.push(ch);
         previous = Some(ch);
     }
-    let rendered = rendered.replace("Alt+", "⌥");
+    let rendered = if ascii_safe {
+        rendered
+    } else {
+        rendered.replace("Alt+", "⌥")
+    };
     if rendered == chord {
         Cow::Borrowed(chord)
     } else {

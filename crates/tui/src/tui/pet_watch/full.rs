@@ -1,7 +1,7 @@
 //! The actual `/pet on` surface over the foreground Engine session. This
 //! replaces the old full-screen tank layout; the companion still owns its
 //! durable world and audio. No prompt, worker or execution authority lives here.
-use super::{PetWatch, habitat};
+use super::{PetWatch, avatars, habitat};
 use crate::{
     agent_roster::{AgentRosterRow, RosterState},
     tools::subagent::AgentWorkerStatus,
@@ -21,7 +21,10 @@ use codewhale_ratatui::{
     whale_motion::{Activity, Context, Inputs, Presence, Span},
 };
 use ratatui::{Frame, layout::Rect, text::Line};
-use std::time::{Duration, Instant};
+use std::{
+    borrow::Cow,
+    time::{Duration, Instant},
+};
 
 pub(super) fn canonical(state: &PetWatch) -> bool {
     matches!(state.avatars.current(), "whale" | "cove" | "braille")
@@ -34,45 +37,78 @@ fn needs(
     theme: &Theme,
     pet: Rect,
     live: bool,
-) -> Option<(&'static str, &'static str)> {
-    const ASCII: &str = "CODEWHALE_ASCII_SAFE unset";
+    missing_atlas: bool,
+    locale: Locale,
+) -> Option<(Cow<'static, str>, Cow<'static, str>)> {
     let colour = || match theme.depth() {
-        ColorDepth::Monochrome => "NO_COLOR unset",
-        ColorDepth::Ansi16 => "COLORTERM=truecolor",
-        _ => "CODEWHALE_APPEARANCE=dark|light",
+        ColorDepth::Monochrome => tr(locale, MessageId::PetNeedsColor),
+        ColorDepth::Ansi16 => Cow::Borrowed("COLORTERM=truecolor"),
+        _ => Cow::Borrowed("CODEWHALE_APPEARANCE=dark|light"),
     };
     let art = WhalePet::art_area(pet);
     let local = |style: PetStyle| {
         if theme.ascii() {
-            Err((ASCII, "words"))
+            Err((
+                tr(locale, MessageId::PetNeedsUnicode),
+                tr(locale, MessageId::PetWords),
+            ))
         } else if art.width < 16 || art.height < 8 {
-            Err(("16x8 cells", "words"))
+            Err((
+                tr(locale, MessageId::PetNeedsArtSize),
+                tr(locale, MessageId::PetWords),
+            ))
         } else if style == PetStyle::Braille || !theme.paints_grounds() {
-            Ok("braille")
+            Ok(Cow::Borrowed("braille"))
         } else {
-            Ok("cove")
+            Ok(Cow::Borrowed("cove"))
         }
     };
     match watch.avatars.current() {
-        "whale" if theme.ascii() => Some((ASCII, "words")),
-        "whale" if !live => Some((
-            if watch.raster.is_none() {
-                "codewhale pet serve"
-            } else {
-                "/pet source"
-            },
-            local(PetStyle::Color).unwrap_or_else(|(_, shown)| shown),
+        "whale" if theme.ascii() => Some((
+            tr(locale, MessageId::PetNeedsUnicode),
+            tr(locale, MessageId::PetWords),
         )),
+        "whale" if !live => {
+            let requirement = if watch.unavailable || watch.failed {
+                Some("codewhale pet serve")
+            } else {
+                watch.session.as_deref().and_then(|session| {
+                    watch
+                        .raster
+                        .as_ref()
+                        .filter(|r| {
+                            r.scene.source != "unattached"
+                                && r.scene.source != super::live::session_source(session)
+                        })
+                        .map(|_| "/pet source")
+                })
+            };
+            requirement.map(|requirement| {
+                (
+                    Cow::Borrowed(requirement),
+                    local(PetStyle::Color).unwrap_or_else(|(_, shown)| shown),
+                )
+            })
+        }
         "cove" => match local(PetStyle::Color) {
-            Ok("braille") => Some((colour(), "braille")),
+            Ok(shown) if shown == "braille" => Some((colour(), shown)),
             Ok(_) => None,
             Err(need) => Some(need),
         },
         "braille" => local(PetStyle::Braille).err(),
-        "pixels" => super::pixels_need(synchronized).map(|need| (need, "particles")),
-        "whale-girl" if theme.ascii() => Some((ASCII, "ascii")),
-        "whale-girl" if !theme.paints_grounds() => Some((colour(), "ascii")),
-        _ if watch.avatars.fallback => Some(("atlas", "particles")),
+        "pixels" => super::pixels_need(synchronized)
+            .map(|need| (tr(locale, need), Cow::Borrowed("particles"))),
+        "whale-girl" if theme.ascii() => Some((
+            tr(locale, MessageId::PetNeedsUnicode),
+            tr(locale, MessageId::PetAscii),
+        )),
+        "whale-girl" if !theme.paints_grounds() => {
+            Some((colour(), tr(locale, MessageId::PetAscii)))
+        }
+        _ if missing_atlas => Some((
+            tr(locale, MessageId::PetNeedsAtlas),
+            Cow::Borrowed("particles"),
+        )),
         _ => None,
     }
 }
@@ -455,6 +491,12 @@ fn render(frame: &mut Frame, area: Rect, app: &mut App, inspect: bool) {
                 .hollow(hollow)
         })
     });
+    let (act, clock) = avatars::act(app.pet_watch.raster.as_ref(), app.is_loading);
+    let missing_atlas = !plan.pet.is_empty()
+        && app
+            .pet_watch
+            .avatars
+            .missing_atlas(act, clock, !motion.animates());
     let missing = (!plan.pet.is_empty())
         .then(|| {
             needs(
@@ -463,6 +505,8 @@ fn render(frame: &mut Frame, area: Rect, app: &mut App, inspect: bool) {
                 &theme,
                 plan.pet,
                 dot_whale.is_some(),
+                missing_atlas,
+                app.ui_locale,
             )
         })
         .flatten()
@@ -470,8 +514,8 @@ fn render(frame: &mut Frame, area: Rect, app: &mut App, inspect: bool) {
             Line::styled(
                 tr(app.ui_locale, MessageId::PetViewNeeds)
                     .replace("{view}", &view_key)
-                    .replace("{requirement}", requirement)
-                    .replace("{shown}", shown),
+                    .replace("{requirement}", requirement.as_ref())
+                    .replace("{shown}", shown.as_ref()),
                 codewhale_palette::chrome_style(
                     &app.ui_theme,
                     crate::tui::app::StatusToastLevel::Info.ink(),

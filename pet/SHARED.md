@@ -181,7 +181,9 @@ Stillness uses a separate stable projection and cannot change the authoritative
 simulation, score, journal or digest. Missing coverage remains hollow and
 labeled; sleep dims it separately.
 
-Pixels require a successful Kitty graphics query and synchronized output.
+Pixels draw only in the opt-in `pixels` view and require a successful Kitty
+graphics query, synchronized output and a known cell size in pixels.
+`CODEWHALE_PET_GRAPHICS=braille` disables that image.
 Inline RGB uses zlib and base64 chunks of at most 4,096 bytes. One image ID per
 process is replaced inside the existing Ratatui synchronized frame, with cursor
 save/restore and deletion on layout changes, covered views and exit. The
@@ -191,7 +193,8 @@ transport follows the [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/
 status` reports actual frames, elapsed output time, bytes/second, raster time
 and write time for that visit. Slow encoding drops intermediate presentations.
 The 30 Hz world does not depend on display rate. Unsupported terminals, tmux,
-Sixel-only terminals and disabled synchronized output use braille. SSH can use
+Sixel-only terminals and disabled synchronized output show the Braille particles
+instead of an image in the `pixels` view. SSH can use
 inline Kitty bytes if the remote terminal answers the probe, but bandwidth and
 end-to-end SSH compatibility require separate measurement. No tmux passthrough
 or Sixel pixel renderer is claimed.

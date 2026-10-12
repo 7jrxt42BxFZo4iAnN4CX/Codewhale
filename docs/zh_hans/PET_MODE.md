@@ -41,7 +41,7 @@ Pet 模式把你正在使用的终端变成一个一眼可读的状态视图。�
 | `whale` | 伴生进程的实时点阵鲸鱼。 | 在伴生进程可达（`codewhale pet serve`）且本终端的会话是来源（`/pet source`）之前，显示 `cove`（或 `braille`）。 |
 | `cove` | 本地半块字符鲸鱼，不带半透明的海湾背景。 | 需要颜色：在 `NO_COLOR`、16 色终端或背景未知时显示 `braille`。`COLORTERM=truecolor` 启用真彩色；`CODEWHALE_APPEARANCE=dark` 或 `light` 明确选择背景。 |
 | `braille` | 本地彩色盲文点阵鲸鱼。 | 在 `CODEWHALE_ASCII_SAFE` 下或图案区域小于 16x8 个单元格时，只显示状态文字。 |
-| `pixels` | 伴生进程鲸鱼的 kitty 图形图像。 | 需要 kitty 图形、同步输出、已知的单元格像素尺寸，且未设置 `CODEWHALE_PET_GRAPHICS`；否则显示 `particles`。Terminal.app 不支持 kitty 图形。 |
+| `pixels` | 伴生进程鲸鱼的 kitty 图形图像。 | 需要 kitty 图形、同步输出、已知的单元格像素尺寸，且 `CODEWHALE_PET_GRAPHICS` 不能为 `braille`；否则显示 `particles`。Terminal.app 不支持 kitty 图形。 |
 | `particles` | 伴生进程的盲文粒子网格。 | 伴生进程不可达时，显示静止的鲸鱼和 `offline`。 |
 | `whale-girl` | 内置的精灵头像。 | 与 `cove` 一样需要颜色；否则显示单色 ASCII 形式。 |
 | 已安装的头像包 | 按目录顺序显示各头像包。 | 图集加载期间显示 `particles`。 |
@@ -68,7 +68,7 @@ Pet 模式把你正在使用的终端变成一个一眼可读的状态视图。�
 | `Enter`（Agents 面板） | 打开所选智能体的对话记录。 |
 | `c` | 复制最近一条已完成的回复，与 `/copy` 走同一路径。 |
 
-`F5`、`F6`、`F8` 和 `F9` 在主视图和检查视图中都可用。Mac 键盘的顶行默认发送媒体键，需按住 Fn，所以那里的提示显示为 `fn+F5`。`F8` 或 `F9` 成功时提示 `habitat open`；启动失败时显示失败原因。
+`F5`、`F6`、`F8` 和 `F9` 在主视图和检查视图中都可用。Mac 键盘的顶行默认发送媒体键，需按住 Fn，因此整个 TUI（包括帮助浮层）的 F 键提示都显示为 `fn+F5`、`fn+F8` 等；ASCII 安全模式也保留这个前缀。`F8` 或 `F9` 成功时提示 `habitat open`；启动失败时显示失败原因。
 
 ## 多个终端，各有各的 Pet
 

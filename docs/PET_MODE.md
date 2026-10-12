@@ -70,7 +70,7 @@ one.
 | `whale` | The companion's live dot whale. | Shows `cove` (or `braille`) until the companion is reachable (`codewhale pet serve`) and this terminal's session is its source (`/pet source`). |
 | `cove` | The local half-block whale, without the translucent cove scenery. | Needs colour: `braille` is shown under `NO_COLOR`, a 16-colour terminal, or an unknown background. `COLORTERM=truecolor` enables true colour; `CODEWHALE_APPEARANCE=dark` or `light` selects a known background. |
 | `braille` | The local whale in coloured Braille dots. | Shows only the state words under `CODEWHALE_ASCII_SAFE` or when the art area is smaller than 16x8 cells. |
-| `pixels` | The companion's whale as a kitty-graphics image. | Needs kitty graphics, synchronized output, a known cell size in pixels, and `CODEWHALE_PET_GRAPHICS` unset; otherwise shows `particles`. Terminal.app has no kitty graphics. |
+| `pixels` | The companion's whale as a kitty-graphics image. | Needs kitty graphics, synchronized output, a known cell size in pixels, and `CODEWHALE_PET_GRAPHICS` not set to `braille`; otherwise shows `particles`. Terminal.app has no kitty graphics. |
 | `particles` | The companion's Braille particle grid. | Shows the resting whale and `offline` while the companion is unreachable. |
 | `whale-girl` | The bundled sprite avatar. | Needs colour, as `cove` does; otherwise shows a one-ink ASCII form. |
 | Installed avatar packs | Each pack, in catalog order. | Shows `particles` while the pack's atlas loads. |
@@ -103,8 +103,9 @@ inspector over it:
 | `c` | Copy the last finished reply, through the same path as `/copy`. |
 
 `F5`, `F6`, `F8` and `F9` work on the main view and in the inspector. On a Mac
-keyboard the top row sends media keys unless Fn is held, so the hints read
-`fn+F5` there; press Fn with the key. A successful `F8` or `F9` says
+keyboard the top row sends media keys unless Fn is held, so F-key hints
+throughout the TUI, including help, read `fn+F5`, `fn+F8` and so on; press
+Fn with the key. ASCII-safe hints keep that prefix. A successful `F8` or `F9` says
 `habitat open`; a failed launch shows its own reason.
 
 ## Several terminals, one pet each

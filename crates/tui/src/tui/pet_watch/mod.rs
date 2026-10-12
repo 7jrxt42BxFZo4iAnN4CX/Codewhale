@@ -519,21 +519,15 @@ pub fn tick(app: &mut App, now: Instant) {
         .lock()
         .map(|mut c| std::mem::take(&mut *c))
         .unwrap_or_default();
-    let agents = if controls.is_empty() {
-        Vec::new()
-    } else {
-        full::agents(app)
-    };
+    for control in controls {
+        command(app, control);
+    }
     let state = &mut app.pet_watch;
     if state.session != app.current_session_id {
         state.reset(app.current_session_id.clone());
     }
     if visible {
         state.ensure(app.current_session_id.clone());
-    }
-    for control in controls {
-        apply(state, control, &agents);
-        app.needs_redraw = true;
     }
     if let Some(update) = state
         .worker
@@ -833,15 +827,15 @@ fn cell_pixels() -> Option<(f64, f64)> {
             )
         })
 }
-fn pixels_need(synchronized: bool) -> Option<&'static str> {
+fn pixels_need(synchronized: bool) -> Option<MessageId> {
     if !crate::tui::mark::kitty_graphics_supported() {
-        Some("kitty graphics")
+        Some(MessageId::PetNeedsKittyGraphics)
     } else if !synchronized {
-        Some("synchronized output")
+        Some(MessageId::PetNeedsSynchronizedOutput)
     } else if std::env::var("CODEWHALE_PET_GRAPHICS").as_deref() == Ok("braille") {
-        Some("CODEWHALE_PET_GRAPHICS unset")
+        Some(MessageId::PetNeedsGraphicsAllowed)
     } else if cell_pixels().is_none() {
-        Some("cell pixel size")
+        Some(MessageId::PetNeedsCellPixels)
     } else {
         None
     }

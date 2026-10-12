@@ -85,26 +85,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Full Access.
 - An idle pet view no longer builds animation frames while nobody is
   looking at it (#6728).
-- On the pet main view, `Ctrl+]` (or `Ctrl+Tab`) cycles the pet's views: the
+- On the pet main view, `Ctrl+]` cycles the pet's views: the
   companion `whale`, a crisp local `cove` whale without the fog, `braille`,
   `pixels` (kitty graphics), `particles`, `whale-girl` and installed avatar
-  packs; `Ctrl+Shift+Tab` goes back. The footer names the view, and clicking
+  packs. Terminals with the kitty keyboard protocol can also send `Ctrl+Tab`
+  and `Ctrl+Shift+Tab` to move forward or back; Terminal.app uses those to
+  switch terminal tabs, so use `Ctrl+]` there. The footer names the view, and clicking
   it cycles. A view that cannot draw shows its fallback and says what it
   needs, for example `pixels needs kitty graphics · showing particles`.
   `/pet avatar <key>` jumps to a view, and the `/pet` usage lists every view,
   `style` and `language`.
 - `F6`, `F8` and `F9` work on the pet main view, not only in the `F5`
-  inspector, and on macOS the pet's key hints read `fn+F5`. `/pet on`, `F8`
+  inspector. Every F-key hint on macOS, including the help overlay, reads
+  `fn+F5`, `fn+F8` and so on, including in ASCII-safe mode. `/pet on`, `F8`
   and `F9` restart a companion view that stopped, so "/pet on retries" is
   true. A failed launch shows its own reason, a successful one says
   `habitat open`, and pressing `F8` several times while the companion starts
-  opens one tab.
+  opens one tab. `F8` and `F9` also restart a stopped companion from the inspector.
 - The live dot whale stays dense in large panes, the whale-girl sprite scales
   by whole pixels, and avatars, the particle grid and the pixel view no longer
   show the whale through them. Avatars follow your theme and
   `CODEWHALE_ASCII_SAFE`, the pixel view's image is a whole fraction of the
   terminal's pixel size, and the pet's view worker sleeps until its next
   deadline instead of waking every 2 ms.
+- The terminal dot whale respects studio brightness and sleep dimming. Normal
+  companion startup no longer shows a missing-service notice, avatar atlas
+  notices match the current frame, and pet fallback descriptions are translated.
 - README: `codewhale exec --auto` is shown for headless runs that edit files
   or run commands.
 - `bash` now moves a foreground command to the background after 30 s and

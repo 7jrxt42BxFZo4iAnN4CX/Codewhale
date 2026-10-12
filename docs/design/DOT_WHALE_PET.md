@@ -186,8 +186,10 @@ The presentation companion now owns the one persistent world. Terminal Watch,
 full-screen habitat, the owner's browser companion, macOS window, Apple Shared
 and Android Shared attach to its authenticated loopback snapshots. View
 interpolation and stillness never advance or modify the world. The existing Ratatui draw loop owns pixel
-placement and cleanup; a successful Kitty query selects pixels, otherwise the
-view uses braille. Full habitat focus uses the existing modal stack.
+placement and cleanup. Only the opt-in `pixels` view draws an image, after a
+successful Kitty query, with synchronized output and a known cell size in
+pixels; otherwise it shows the Braille particles. `CODEWHALE_PET_GRAPHICS=braille`
+also disables that image. Full habitat focus uses the existing modal stack.
 
 The complete ownership, source selection, storage/reconnect, graphics, audio,
 legacy habitat and mobile contracts live in [pet/SHARED.md](../../pet/SHARED.md).
