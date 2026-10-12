@@ -2,6 +2,7 @@
 //! Pipe names route; private receipts plus held kernel process/token identity
 //! select the actual owner. No bearer or Engine authority crosses this wire.
 
+use crate::daemon_client::UnavailablePublication;
 use crate::daemon_socket::{
     AuthorizedPeer, ConnectionTasks, DaemonShutdownHandle, DaemonSocketError, DaemonSocketOptions,
     SocketPathInputs, connection_context, owner_work, run_authorized_connection,
@@ -192,11 +193,12 @@ impl DaemonSocket {
 pub async fn bind_daemon_socket(
     options: DaemonSocketOptions,
 ) -> Result<DaemonSocket, DaemonSocketError> {
-    bind(options, None).await
+    bind(options, None, None).await
 }
 pub(crate) async fn bind_captured_owner(
     state: AppState,
     owner: RuntimeOwnerReceipt,
+    recovery: Option<Arc<UnavailablePublication>>,
 ) -> Result<DaemonSocket, DaemonSocketError> {
     bind(
         DaemonSocketOptions {
@@ -204,17 +206,59 @@ pub(crate) async fn bind_captured_owner(
             config_path: None,
         },
         Some((state, owner)),
+        recovery,
     )
     .await
 }
 async fn bind(
     options: DaemonSocketOptions,
     captured: Option<(AppState, RuntimeOwnerReceipt)>,
+    recovery: Option<Arc<UnavailablePublication>>,
 ) -> Result<DaemonSocket, DaemonSocketError> {
     let explicit = options.socket_path;
     let path = owner_work(move || selected_pipe_path(explicit))
         .await
         .map_err(DaemonSocketError::State)?;
+    let recovered = match recovery {
+        Some(previous) => {
+            let owner = &captured
+                .as_ref()
+                .ok_or_else(|| {
+                    DaemonSocketError::State(anyhow::anyhow!(
+                        "stale publication requires the actual captured Runtime owner"
+                    ))
+                })?
+                .1;
+            previous
+                .require_same_selection(owner, &path)
+                .map_err(DaemonSocketError::State)?;
+            Some(
+                owner_work(move || {
+                    let parent = previous.publication.parent.clone();
+                    anyhow::ensure!(
+                        parent.is_at_selected_path()?,
+                        "selected Windows owner parent changed"
+                    );
+                    anyhow::ensure!(
+                        previous.revalidate_receipt()?,
+                        "captured stale owner receipt changed before retirement"
+                    );
+                    anyhow::ensure!(
+                        parent.retire_private_receipt(
+                            &previous.publication.receipt_name,
+                            &previous.publication.file
+                        )?,
+                        "captured stale owner receipt changed during retirement"
+                    );
+                    drop(previous);
+                    Ok(parent)
+                })
+                .await
+                .map_err(DaemonSocketError::State)?,
+            )
+        }
+        None => None,
+    };
     let selected = path.clone();
     let pipe = owner_work(move || create_pipe(&selected, true))
         .await
@@ -232,7 +276,10 @@ async fn bind(
         let owner = owner.clone();
         Some(
             owner_work(move || {
-                let parent = Arc::new(PrivateDirectory::admit(&owner_directory()?)?);
+                let parent = match recovered {
+                    Some(parent) => parent,
+                    None => Arc::new(PrivateDirectory::admit(&owner_directory()?)?),
+                };
                 let mut guard = ReceiptGuard {
                     parent: parent.clone(),
                     file: None,
@@ -241,23 +288,12 @@ async fn bind(
                     parent.is_at_selected_path()?,
                     "selected Windows owner parent changed"
                 );
-                if let Some((bytes, file)) =
-                    parent.read_private_receipt("daemon.owner.json", 16384)?
-                {
-                    let previous: RuntimeOwnerReceipt = serde_json::from_slice(&bytes)?;
-                    anyhow::ensure!(
-                        previous.version == owner.version
-                            && previous.data_dir == owner.data_dir
-                            && previous.execution_scope == owner.execution_scope
-                            && previous.socket_path == owner.socket_path,
-                        "old Windows owner receipt belongs to another selected store"
-                    );
-                    anyhow::ensure!(
-                        parent.retire_private_receipt("daemon.owner.json", &file)?,
-                        "Windows owner receipt changed"
-                    );
-                    drop(file);
-                }
+                anyhow::ensure!(
+                    parent
+                        .read_private_receipt("daemon.owner.json", 16384)?
+                        .is_none(),
+                    "owner publication appeared during bootstrap; refusing replacement"
+                );
                 let bytes = serde_json::to_vec(&owner)?;
                 anyhow::ensure!(bytes.len() <= 16384, "Windows owner receipt exceeds bound");
                 parent.write_owned_file("daemon.owner.json", &bytes, false)?;

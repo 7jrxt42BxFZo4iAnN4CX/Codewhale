@@ -999,18 +999,9 @@ mod platform {
                     ))
                 })?
                 .1;
-            let old = previous.receipt();
-            if old.version != owner.version
-                || old.data_dir != owner.data_dir
-                || old.execution_scope != owner.execution_scope
-                || old.socket_path != path
-                || old.config_path != owner.config_path
-                || old.principal != owner.principal
-            {
-                return Err(DaemonSocketError::State(anyhow::anyhow!(
-                    "captured stale owner belongs to another selected store/config/principal"
-                )));
-            }
+            previous
+                .require_same_selection(owner, &path)
+                .map_err(DaemonSocketError::State)?;
             if !previous
                 .revalidate()
                 .await
