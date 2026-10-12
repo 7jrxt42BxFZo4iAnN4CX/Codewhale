@@ -44,11 +44,11 @@ impl Renderer {
         } else {
             16.0
         };
-        let width = cols as f64 * cw;
-        let height = rows as f64 * ch;
-        let resolution = (960.0 / width).min(560.0 / height).min(1.0);
-        let w = (width * resolution).round().clamp(1.0, 960.0) as usize;
-        let h = (height * resolution).round().clamp(1.0, 560.0) as usize;
+        let width = (cols as f64 * cw).round() as usize;
+        let height = (rows as f64 * ch).round() as usize;
+        let divisor = width.div_ceil(960).max(height.div_ceil(560)).max(1);
+        let w = width.div_ceil(divisor);
+        let h = height.div_ceil(divisor);
         if self.dimensions != (w, h) {
             self.dimensions = (w, h);
             self.background = vec![0; w * h * 3];

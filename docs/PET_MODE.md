@@ -16,6 +16,7 @@ Codewhale   ● working
                          (the whale)
                               ●
 F5 replies & agents · /pet off standard view
+Ctrl+] view: whale
 ╭──────────────────────────────────────────────────────────╮
 │❯ Type a follow-up…                                       │
 ╰──────────────────────────────────────────────────────────╯
@@ -54,6 +55,29 @@ count (`2 agents`) and the work bar. Transient notices, such as a retry
 (`Retry attempt: transport 1/3; network error; waiting 0.94s`), show on the
 second line.
 
+## Views
+
+`Ctrl+]` (or `Ctrl+Tab` where the terminal sends it) switches the pet to its
+next view while the pet main view is showing; `Ctrl+Shift+Tab` goes back. The
+footer's second line names the current view, `Ctrl+] view: whale`, and
+clicking it also moves to the next view. `/pet avatar <key>` jumps straight to
+one.
+
+| View | What it draws | When its requirement is missing |
+| --- | --- | --- |
+| `whale` | The companion's live dot whale. | Shows `cove` (or `braille`) until the companion is reachable (`codewhale pet serve`) and this terminal's session is its source (`/pet source`). |
+| `cove` | The local half-block whale, without the translucent cove scenery. | Needs colour: `braille` is shown under `NO_COLOR`, a 16-colour terminal (`COLORTERM=truecolor`), or an unknown background (`CODEWHALE_APPEARANCE=dark` or `light`). |
+| `braille` | The local whale in coloured Braille dots. | Shows only the state words under `CODEWHALE_ASCII_SAFE` or when the art area is smaller than 16x8 cells. |
+| `pixels` | The companion's whale as a kitty-graphics image. | Needs kitty graphics, synchronized output, a known cell size in pixels, and `CODEWHALE_PET_GRAPHICS` unset; otherwise shows `particles`. Terminal.app has no kitty graphics. |
+| `particles` | The companion's Braille particle grid. | Shows the resting whale and `offline` while the companion is unreachable. |
+| `whale-girl` | The bundled sprite avatar. | Needs colour, as `cove` does; otherwise shows a one-ink ASCII form. |
+| Installed avatar packs | Each pack, in catalog order. | Shows `particles` while the pack's atlas loads. |
+
+The order is `whale → cove → braille → pixels → particles → whale-girl →`
+installed packs, then back to `whale`. A view that cannot draw is never
+skipped: it shows its fallback, and the line under the title says what is
+missing, for example `pixels needs kitty graphics · showing particles`.
+
 ## Replies and agents on demand
 
 The main view stays quiet. Press `F5`, or run `/pet inspect`, to open the
@@ -66,11 +90,20 @@ inspector over it:
 | Key | Effect |
 | --- | --- |
 | `F5` or `/pet inspect` | Open replies and agents. |
+| `Ctrl+]` / `Ctrl+Tab`, `Ctrl+Shift+Tab` | Next or previous pet view (main view only). |
+| `F6` | Turn the companion's sound on or off. |
+| `F8` | Open the appearance studio in your browser. |
+| `F9` | Open the native Codewhale Pet window (macOS). |
 | `Esc` | Back to the message box. Your draft, the transcript, and any running turn are untouched. |
 | `Tab` | Switch between the Reply and Agents panes. |
 | `Up` / `Down`, `PgUp` / `PgDn`, `Home` / `End` | Scroll the focused pane. |
 | `Enter` (Agents pane) | Open the selected agent's transcript. |
 | `c` | Copy the last finished reply, through the same path as `/copy`. |
+
+`F5`, `F6`, `F8` and `F9` work on the main view and in the inspector. On a Mac
+keyboard the top row sends media keys unless Fn is held, so the hints read
+`fn+F5` there; press Fn with the key. A successful `F8` or `F9` says
+`habitat open`; a failed launch shows its own reason.
 
 ## Several terminals, one pet each
 
@@ -105,7 +138,7 @@ The next view starts it again.
 | `/pet appearance` | Open the appearance studio (palette, brightness, dot size, glow) in your browser, on loopback. Same as `F8`. |
 | `/pet window` | Open the native Codewhale Pet window, if the macOS app is installed. Same as `F9`. If it is not installed, Codewhale says to build or install it. |
 | `/pet sound on`, `/pet sound off` | Turn the companion's sound on or off. Same toggle as `F6`. |
-| `/pet avatar [key]` | List avatars, or choose one: `whale`, `particles`, `whale-girl`, and any avatar packs you have installed. |
+| `/pet avatar [key]` | List the views, or choose one: `whale`, `cove`, `braille`, `pixels`, `particles`, `whale-girl`, and any avatar packs you have installed. |
 | `/pet action <name>`, `/pet view <name>`, `/pet action live` | Preview a named pose or view of the chosen avatar, or return to live. |
 | `/pet export` | Save a replay of the pet's recording to this saved session's artifacts. |
 
@@ -129,10 +162,12 @@ stays off.
 - **`CODEWHALE_ASCII_SAFE=1`.** Marks, borders, and the pointer use ASCII
   (`o idle`, `|`, `>`), and the animated art is replaced by the mark and word.
 - **Reduced motion.** Follows the shell's motion setting and shows a still pose.
-- **`CODEWHALE_PET_GRAPHICS=braille`.** Forces text rendering where the
-  terminal view would otherwise use pixel graphics.
+- **`CODEWHALE_PET_GRAPHICS=braille`.** Keeps the `pixels` view on text: it
+  shows `particles` and says why.
 - **No companion.** If the companion cannot be reached, the view says so and the
   state word and mark continue to work, because they come from your session.
+  `/pet on`, `F8`, `F9` and the companion commands such as `/pet appearance`
+  start it again.
 
 ## Privacy
 
@@ -164,6 +199,16 @@ execution API.
   Other terminals show their own state word and mark, not the detail.
 - **`/pet window` is macOS only** and needs the Codewhale Pet app.
 - **Sound needs `ffplay`** and one terminal holds the output at a time.
+- **The chosen view is not saved.** It lasts for this run of Codewhale,
+  including session switches; a restart begins on `whale`.
+- **No view cycling inside the inspector.** Press `Esc` first; `Ctrl+]` cycles
+  only on the main view.
+- **`Ctrl+]` cannot open the work bar** while the pet main view is showing. Use
+  `/pet off` first.
+- **The browser studio and the macOS window are not views in the ring**, because
+  each press would start a process. Use `F8` and `F9`.
+- **No sixel or iTerm2 images.** The `pixels` view draws only through kitty
+  graphics.
 
 See also [Keybindings](KEYBINDINGS.md), [Modes](MODES.md), and the design notes
 in [`design/DOT_WHALE_PET.md`](design/DOT_WHALE_PET.md) and

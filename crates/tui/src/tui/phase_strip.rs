@@ -989,7 +989,10 @@ fn live_counts(
     // exact grey as the separators around it and the one clickable word in an
     // idle footer disappears into punctuation. Live counts already carry
     // `Active`; this is the idle case earning the same "you can click this".
-    if counts.is_empty() && app.work_surface.last_area.is_none() {
+    if counts.is_empty()
+        && app.work_surface.last_area.is_none()
+        && !crate::tui::pet_watch::main_view(app)
+    {
         // The word alone did not say it was an affordance, let alone which
         // key opened it — founder live-test: "what do we press at the bottom
         // to get the workbar to show up?". It carries its chord until the

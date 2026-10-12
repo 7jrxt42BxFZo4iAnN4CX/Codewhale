@@ -106,7 +106,7 @@ pub fn companion_hints(locale: codewhale_localization::Locale) -> String {
     ] {
         text = text.replace(
             &format!("{{{name}}}"),
-            shell_key_routing::binding(id).footer_chord,
+            &shell_key_routing::display_chord(shell_key_routing::binding(id).footer_chord),
         );
     }
     text

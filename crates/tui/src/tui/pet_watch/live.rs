@@ -147,10 +147,12 @@ pub enum Command {
     Browser,
     Window,
     Export,
+    Wake,
 }
 pub enum Notice {
     AppearanceLegacy,
     Exported(PathBuf),
+    Opened,
     Message(String),
     /// The companion cannot be reached: the view thread stopped, or a frame
     /// fetch failed and it is reconnecting. Only this marks the pet offline.
@@ -453,13 +455,49 @@ fn run(
     let mut last_produce = Instant::now();
     let mut last_audio = Instant::now();
     let mut last_failure = Instant::now() - Duration::from_secs(10);
-    loop {
-        let view = settings
+    let read_view = || {
+        settings
             .lock()
-            .map_err(|_| io::Error::other("Pet view lock failed"))?
-            .clone();
-        match rx.recv_timeout(Duration::from_millis(2)) {
-            Ok(command) => match command {
+            .map(|view| view.clone())
+            .map_err(|_| io::Error::other("Pet view lock failed"))
+    };
+    let encode_every = |view: &View| {
+        Duration::from_millis(if view.motion && view.pixels {
+            16
+        } else if view.motion {
+            33
+        } else {
+            200
+        })
+    };
+    let mut view = read_view()?;
+    loop {
+        let mut due = fetched + Duration::from_millis(if view.visible { 30 } else { 400 });
+        if let Some(s) = &scene {
+            if action.is_some() || appearance_patch.is_some() {
+                due = due.min(last_action + Duration::from_millis(250));
+            }
+            if source.as_deref() == Some(s.source.as_str()) {
+                due = due.min(last_produce + Duration::from_millis(100));
+            }
+            due = due.min(last_audio + Duration::from_millis(500));
+            if view.visible {
+                due = due.min(encoded + encode_every(&view));
+            }
+        }
+        let received = rx.recv_timeout(due.saturating_duration_since(Instant::now()));
+        view = read_view()?;
+        let commands: Vec<Command> = match received {
+            Ok(command) => std::iter::once(command).chain(rx.try_iter()).collect(),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                let _ = client.post("/v1/audio", &json!({"client":id,"enabled":false}));
+                return Ok(());
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => Vec::new(),
+        };
+        let (mut browser, mut window) = (false, false);
+        for command in commands {
+            match command {
                 Command::Appearance { body, language } => {
                     let patch = appearance_patch.get_or_insert((None, None));
                     patch.0 = body.or(patch.0);
@@ -486,16 +524,8 @@ fn run(
                         ));
                     }
                 }
-                Command::Browser => {
-                    if let Err(e) = client.open_browser() {
-                        let _ = notices.try_send(Notice::Message(e.to_string()));
-                    }
-                }
-                Command::Window => {
-                    if let Err(e) = client.open_window() {
-                        let _ = notices.try_send(Notice::Message(e.to_string()));
-                    }
-                }
+                Command::Browser => browser = true,
+                Command::Window => window = true,
                 Command::Export => {
                     let result = client.get("/v1/export").and_then(|r| {
                         super::persistence::export(
@@ -510,12 +540,20 @@ fn run(
                         Err(e) => Notice::Message(e.to_string()),
                     });
                 }
-            },
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                let _ = client.post("/v1/audio", &json!({"client":id,"enabled":false}));
-                return Ok(());
+                Command::Wake => {}
             }
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
+        }
+        for launched in [
+            browser.then(|| client.open_browser()),
+            window.then(|| client.open_window()),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            let _ = notices.try_send(match launched {
+                Ok(()) => Notice::Opened,
+                Err(e) => Notice::Message(e.to_string()),
+            });
         }
         if fetched.elapsed() >= Duration::from_millis(if view.visible { 30 } else { 400 }) {
             match client
@@ -632,16 +670,7 @@ fn run(
             let _=client.post("/v1/audio",&json!({"client":id,"enabled":view.sound&&view.visible&&changed.elapsed()<Duration::from_millis(500)}));
             last_audio = Instant::now();
         }
-        if view.visible
-            && encoded.elapsed()
-                >= Duration::from_millis(if view.motion && view.pixels {
-                    16
-                } else if view.motion {
-                    33
-                } else {
-                    200
-                })
-        {
+        if view.visible && encoded.elapsed() >= encode_every(&view) {
             let began = Instant::now();
             let mut pose = if view.motion {
                 Pose {

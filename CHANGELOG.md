@@ -85,6 +85,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Full Access.
 - An idle pet view no longer builds animation frames while nobody is
   looking at it (#6728).
+- On the pet main view, `Ctrl+]` (or `Ctrl+Tab`) cycles the pet's views: the
+  companion `whale`, a crisp local `cove` whale without the fog, `braille`,
+  `pixels` (kitty graphics), `particles`, `whale-girl` and installed avatar
+  packs; `Ctrl+Shift+Tab` goes back. The footer names the view, and clicking
+  it cycles. A view that cannot draw shows its fallback and says what it
+  needs, for example `pixels needs kitty graphics · showing particles`.
+  `/pet avatar <key>` jumps to a view, and the `/pet` usage lists every view,
+  `style` and `language`.
+- `F6`, `F8` and `F9` work on the pet main view, not only in the `F5`
+  inspector, and on macOS the pet's key hints read `fn+F5`. `/pet on`, `F8`
+  and `F9` restart a companion view that stopped, so "/pet on retries" is
+  true. A failed launch shows its own reason, a successful one says
+  `habitat open`, and pressing `F8` several times while the companion starts
+  opens one tab.
+- The live dot whale stays dense in large panes, the whale-girl sprite scales
+  by whole pixels, and avatars, the particle grid and the pixel view no longer
+  show the whale through them. Avatars follow your theme and
+  `CODEWHALE_ASCII_SAFE`, the pixel view's image is a whole fraction of the
+  terminal's pixel size, and the pet's view worker sleeps until its next
+  deadline instead of waking every 2 ms.
 - README: `codewhale exec --auto` is shown for headless runs that edit files
   or run commands.
 - `bash` now moves a foreground command to the background after 30 s and
@@ -409,6 +429,10 @@ launcher guidance.
   with their owner, not in the agent's own detail view; named terminal
   sessions live in the terminal dock
   ([#6931](https://github.com/codewhale-hq/Codewhale/issues/6931)).
+- The pet view chosen with `Ctrl+]` is not saved across restarts and cannot
+  be changed inside the `F5` inspector. The browser studio and the macOS
+  window are not views in the cycle, and `Ctrl+]` cannot open the work bar
+  while the pet main view is showing.
 
 ### Maintenance
 
