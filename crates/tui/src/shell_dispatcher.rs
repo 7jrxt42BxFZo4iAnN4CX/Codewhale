@@ -43,11 +43,6 @@ use std::sync::Mutex;
 
 static LOG_MUTEX: Mutex<()> = Mutex::new(());
 
-#[cfg(test)]
-#[allow(dead_code)] // Direct integration-harness inclusion only needs the read barrier.
-#[path = "test_env_lock.rs"]
-pub(crate) mod test_env_lock;
-
 // ---------------------------------------------------------------------------
 // Shell kind
 // ---------------------------------------------------------------------------
@@ -489,7 +484,9 @@ impl ShellDispatcher {
             // wedges the whole test binary with no libtest timeout to end it.
             // `$SHELL` is the only variable read, and the two tests that set it
             // set it to a fixed value, so an unsynchronized read is safe.
-            test_env_lock::with_test_env_lock_if_uncontended(Self::detect_shell_unlocked)
+            codewhale_runtime::test_support::with_test_env_lock_if_uncontended(
+                Self::detect_shell_unlocked,
+            )
         }
         #[cfg(not(test))]
         {

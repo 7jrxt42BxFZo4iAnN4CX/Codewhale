@@ -24,11 +24,11 @@ use crate::tui::app::App;
 use crate::tui::history::HistoryCell;
 
 fn frame_app() -> App {
-    let mut app = crate::test_support::test_app_with_options(crate::tui::app::TuiOptions {
+    let mut app = crate::tui::test_support::test_app_with_options(crate::tui::app::TuiOptions {
         model: "deepseek-v4-flash".to_string(),
         start_in_agent_mode: true,
         max_subagents: 4,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     });
     app.onboarding = crate::tui::app::OnboardingState::None;
     app.launch.visible = false;

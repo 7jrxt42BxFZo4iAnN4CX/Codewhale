@@ -182,7 +182,7 @@ pub(super) fn apply_subagent_terminal_projection(
     true
 }
 
-fn worker_status_for_terminal_projection(status: &SubAgentStatus) -> AgentWorkerStatus {
+pub(crate) fn worker_status_for_terminal_projection(status: &SubAgentStatus) -> AgentWorkerStatus {
     match status {
         SubAgentStatus::Running => AgentWorkerStatus::Running,
         SubAgentStatus::Completed => AgentWorkerStatus::Completed,
@@ -1094,7 +1094,7 @@ mod tests {
             start_in_agent_mode: true,
             initial_input: None::<InitialInput>,
             startup_notice: None,
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         }
     }
 

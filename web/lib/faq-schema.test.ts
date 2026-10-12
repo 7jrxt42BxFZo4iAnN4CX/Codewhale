@@ -1,3 +1,4 @@
+import { AUTO_ROUTING_COPY } from "./content/faq-routing";
 import { createElement } from "react";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -60,6 +61,7 @@ describe("FAQPage structured data", () => {
 
   it("covers all 42 curated pairs from the FAQ page arrays", () => {
     const questions = [...faqPage.matchAll(/^\s+q: "(.+)"/gm)].map((match) => match[1]);
+    questions.push(AUTO_ROUTING_COPY.question.en, AUTO_ROUTING_COPY.question.zh);
     expect(questions).toHaveLength(42);
     expect(new Set(questions).size).toBe(42);
     expect(faqPage).toContain("const faqEn");

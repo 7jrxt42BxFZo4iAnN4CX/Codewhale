@@ -127,7 +127,7 @@ mod tests {
         let options = TuiOptions {
             use_mouse_capture: true,
             max_subagents: 4,
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         App::new(options, &Config::default())
     }

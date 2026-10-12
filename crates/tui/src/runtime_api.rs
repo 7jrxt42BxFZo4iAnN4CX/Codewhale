@@ -891,6 +891,8 @@ pub struct RuntimeApiOptions {
     /// Effective profile used to load the server's initial Config.
     pub config_profile: Option<String>,
     pub control_frontend: Option<codewhale_app_server::RuntimeControlFrontend>,
+    pub runtime_event_tap:
+        Option<fn(tokio::sync::broadcast::Receiver<crate::runtime_threads::RuntimeEventRecord>)>,
 }
 
 impl Default for RuntimeApiOptions {
@@ -908,6 +910,7 @@ impl Default for RuntimeApiOptions {
             config_path: None,
             config_profile: None,
             control_frontend: None,
+            runtime_event_tap: None,
         }
     }
 }
@@ -1632,6 +1635,11 @@ pub(crate) fn open_runtime_threads_for_host(
         preheld_lock,
         binding,
     )?);
+    if let Some(skills_dir) = config.bundled_skills_install_dir()
+        && let Err(error) = crate::skills::install_system_skills(&skills_dir)
+    {
+        crate::logging::warn(format!("Failed to install system skills: {error}"));
+    }
     // Publish the same exact endpoint-scoped catalog as interactive startup
     // before the server admits turns. A cached model list alone does not make
     // its capabilities available to route resolution.
@@ -1639,7 +1647,7 @@ pub(crate) fn open_runtime_threads_for_host(
     Ok((manager, workshop_activation))
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 enum RuntimeHostAdmission {
     Attached(Box<codewhale_app_server::daemon_client::OwnerClient>),
     Bootstrap {
@@ -1651,7 +1659,7 @@ enum RuntimeHostAdmission {
 
 /// Observe first, then hold the existing store lease through all recovery.
 /// Only pre-write publication changes or lease contention can re-observe.
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 async fn admit_runtime_host(
     config_path: Option<PathBuf>,
     selected_socket: Option<PathBuf>,
@@ -1735,14 +1743,14 @@ pub async fn run_http_server(
         Some(task_default_model.clone()),
         Some(options.workers),
     );
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     let admission = admit_runtime_host(
         options.config_path.clone(),
         selected_control_socket(&options),
         RuntimeThreadManagerConfig::from_task_data_dir(task_cfg.data_dir.clone()).data_dir,
     )
     .await?;
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     let (published, preheld_lock, existing_binding, recovery) = match admission {
         RuntimeHostAdmission::Attached(client) => (Some(*client), None, None, None),
         RuntimeHostAdmission::Bootstrap {
@@ -1751,18 +1759,10 @@ pub async fn run_http_server(
             recovery,
         } => (None, Some(lock), binding, recovery),
     };
-    #[cfg(windows)]
-    let published = codewhale_app_server::daemon_client::connect_if_published(
-        options.config_path.clone(),
-        selected_control_socket(&options),
-    )
-    .await?;
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     let preheld_lock = None;
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     let existing_binding: Option<crate::runtime_threads::RuntimeStoreBinding> = None;
-    #[cfg(windows)]
-    let recovery = None;
     #[cfg(any(unix, windows))]
     if let Some(control) = published {
         let selected_store =
@@ -1876,6 +1876,9 @@ pub async fn run_http_server(
         existing_binding.as_ref(),
     )?;
     let sessions_dir = runtime_threads.sessions_dir().to_path_buf();
+    if let Some(tap) = options.runtime_event_tap {
+        tap(runtime_threads.subscribe_events());
+    }
     let task_manager =
         TaskManager::start_with_runtime_manager(task_cfg, config.clone(), runtime_threads.clone())
             .await?;
@@ -4812,74 +4815,68 @@ struct CommandsResponse {
 }
 
 fn command_catalog(
-    user_commands: &crate::commands::user_registry::UserCommandRegistry,
+    builtins: &[crate::command_catalog::BuiltinCommand],
+    users: &[crate::command_catalog::UserCommand],
 ) -> Vec<CommandCatalogEntry> {
     let mut commands = Vec::new();
-    for info in crate::commands::command_infos() {
-        let shadowed_by = user_commands
-            .get(info.name)
-            .map(|command| command.name.clone());
+    for info in builtins {
+        let shadowed_by = users
+            .iter()
+            .find(|user| {
+                user.builtin_bindings
+                    .iter()
+                    .any(|spelling| spelling == &info.name)
+            })
+            .map(|user| user.name.clone());
         let shadowed_aliases = info
             .aliases
             .iter()
-            .filter(|alias| user_commands.get(alias).is_some())
-            .map(|alias| (*alias).to_string())
+            .filter(|alias| {
+                users
+                    .iter()
+                    .any(|user| user.builtin_bindings.contains(alias))
+            })
+            .cloned()
             .collect();
         commands.push(CommandCatalogEntry {
-            name: info.name.to_string(),
-            aliases: info
-                .aliases
-                .iter()
-                .map(|alias| (*alias).to_string())
-                .collect(),
+            name: info.name.clone(),
+            aliases: info.aliases.clone(),
             summary: Some(
-                info.description_for(codewhale_localization::Locale::En)
+                codewhale_localization::tr(codewhale_localization::Locale::En, info.description_id)
                     .into_owned(),
             ),
-            usage: Some(info.usage.to_string()),
-            subcommands: crate::commands::traits::usage_subcommands(info.usage)
-                .iter()
-                .map(|token| (*token).to_string())
-                .collect(),
-            takes_arguments: crate::commands::user_registry::usage_describes_arguments(
-                info.name, info.usage,
-            ),
-            requires_argument: info.requires_argument(),
-            requires_required_argument: info.requires_required_argument(),
-            composer_wants_trailing_space: info.composer_wants_trailing_space(),
-            palette_runs_directly: info.palette_runs_directly(),
-            show_in_empty_discovery: info.show_in_empty_discovery(),
+            usage: Some(info.usage.clone()),
+            subcommands: info.subcommands.clone(),
+            takes_arguments: info.takes_arguments,
+            requires_argument: info.requires_argument,
+            requires_required_argument: info.requires_required_argument,
+            composer_wants_trailing_space: info.composer_wants_trailing_space,
+            palette_runs_directly: info.palette_runs_directly,
+            show_in_empty_discovery: info.show_in_empty_discovery,
             kind: "builtin",
             binding: "host",
-            discovery: Some(match info.discovery() {
-                crate::commands::traits::CommandDiscovery::Primary => "primary",
-                crate::commands::traits::CommandDiscovery::Advanced => "advanced",
-                crate::commands::traits::CommandDiscovery::Compatibility => "compatibility",
+            discovery: Some(match info.discovery {
+                codewhale_command_contract::CommandDiscovery::Primary => "primary",
+                codewhale_command_contract::CommandDiscovery::Advanced => "advanced",
+                codewhale_command_contract::CommandDiscovery::Compatibility => "compatibility",
             }),
-            hidden: crate::commands::traits::UNLISTED_COMMANDS.contains(&info.name),
+            hidden: info.unlisted,
             shadowed_by,
             shadowed_aliases,
         });
     }
-    // Extension commands run in the extension host from the TUI's event loop;
-    // a Runtime API client cannot run them, so they are not advertised here.
-    for command in user_commands
-        .iter()
-        .filter(|command| command.extension.is_none())
-    {
-        let takes_arguments = command.takes_arguments();
+    for command in users.iter().filter(|command| !command.extension) {
         commands.push(CommandCatalogEntry {
             name: command.name.clone(),
             aliases: command.aliases.clone(),
             summary: command.description.clone(),
-            usage: command.display_usage().map(str::to_string),
+            usage: command.usage.clone(),
             subcommands: Vec::new(),
-            takes_arguments,
-            // A template may run bare, so its arguments are never required.
-            requires_argument: takes_arguments,
+            takes_arguments: command.takes_arguments,
+            requires_argument: command.takes_arguments,
             requires_required_argument: false,
-            composer_wants_trailing_space: takes_arguments,
-            palette_runs_directly: !takes_arguments,
+            composer_wants_trailing_space: command.takes_arguments,
+            palette_runs_directly: !command.takes_arguments,
             show_in_empty_discovery: !command.hidden,
             kind: "user",
             binding: "prompt",
@@ -4895,10 +4892,21 @@ fn command_catalog(
 async fn list_commands(
     State(state): State<RuntimeApiState>,
 ) -> Result<Json<CommandsResponse>, ApiError> {
-    let commands = crate::commands::user_registry::with_registry_for_workspace(
-        Some(state.workspace.as_path()),
-        command_catalog,
-    );
+    let catalog = crate::command_catalog::installed()
+        .ok_or_else(|| ApiError::internal("command catalog is not installed"))?;
+    let workspace = state.workspace.clone();
+    #[cfg(test)]
+    let env_ticket = crate::test_support::env_scope_ticket();
+    let commands = tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        let _membership = crate::test_support::join_env_scope(env_ticket);
+        command_catalog(
+            &catalog.builtins(),
+            &catalog.user_commands(workspace.as_path()),
+        )
+    })
+    .await
+    .map_err(|error| ApiError::internal(error.to_string()))?;
     Ok(Json(CommandsResponse { commands }))
 }
 
@@ -6635,6 +6643,7 @@ fn mcp_server_config_from_write_request(
         disabled: !enabled,
         enabled,
         required: req.required.unwrap_or(false),
+        lazy: false,
         enabled_tools: req.enabled_tools.unwrap_or_default(),
         disabled_tools: req.disabled_tools.unwrap_or_default(),
         headers: std::collections::HashMap::new(),

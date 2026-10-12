@@ -993,10 +993,16 @@ pub(crate) fn build_reviewer_context(
 ) -> String {
     use codewhale_secrets::redact::{redact_json_model_bound_secrets, redact_model_bound_secrets};
 
-    let input = redact_json_model_bound_secrets(tool_input);
+    let mut input = redact_json_model_bound_secrets(tool_input);
     let tool = redact_model_bound_secrets(ctx.tool_name.as_ref());
     let hold_reason = redact_model_bound_secrets(held_reason);
     let credentials_masked = input != *tool_input || tool != ctx.tool_name.as_ref();
+    if crate::tools::canonical_action::canonical_action_alias(ctx.tool_name.as_ref(), tool_input)
+        == "exec_shell"
+        && let Some(fields) = input.as_object_mut()
+    {
+        fields.remove("description");
+    }
     serde_json::to_string(&serde_json::json!({
         "proposed_tool_call": {
             "tool": tool,
@@ -1578,11 +1584,12 @@ fn shell_params_are_destructive_like(params: &Value, workspace: Option<&std::pat
         })
 }
 
-/// The non-bypassable floor must hold genuinely catastrophic writes even when
-/// `command_safety` (tuned to avoid over-blocking build/test chains) rates
-/// them merely `RequiresApproval`: `dd`/`shred`/`wipefs` onto a device,
-/// `mkfs`, and a forced recursive delete of an absolute path that is not
-/// provably inside a safe workspace (#3883 follow-up).
+/// The background/headless floor, which Full Access skips, must hold
+/// genuinely catastrophic writes even when `command_safety` (tuned to avoid
+/// over-blocking build/test chains) rates them merely `RequiresApproval`:
+/// `dd`/`shred`/`wipefs` onto a device, `mkfs`, and a forced recursive delete
+/// of an absolute path that is not provably inside a safe workspace (#3883
+/// follow-up).
 fn argv_is_destroyer(argv: &[String], workspace: Option<&std::path::Path>) -> bool {
     let Some((command, args)) = argv.split_first() else {
         return false;

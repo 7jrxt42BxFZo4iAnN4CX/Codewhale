@@ -21,7 +21,7 @@ fn test_app(tmpdir: &TempDir) -> App {
         memory_path: tmpdir.path().join("memory.md"),
         notes_path: tmpdir.path().join("notes.txt"),
         mcp_config_path: tmpdir.path().join("mcp.json"),
-        ..crate::test_support::test_tui_options(tmpdir.path())
+        ..crate::tui::test_support::test_tui_options(tmpdir.path())
     };
     let mut app = App::new(options, &Config::default());
     app.ui_locale = Locale::En;

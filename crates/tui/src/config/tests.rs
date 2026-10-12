@@ -4379,7 +4379,7 @@ fn workspace_trust_round_trips_through_global_config() -> Result<()> {
 
     assert_eq!(saved, temp_root.join(".deepseek").join("config.toml"));
     assert!(is_workspace_trusted(&workspace));
-    assert!(!crate::tui::onboarding::needs_trust(&workspace));
+    assert!(!crate::config::needs_trust(&workspace));
     assert!(
         !workspace.join(".deepseek").exists(),
         "trust persistence must not create a project-local .deepseek directory"
@@ -4422,7 +4422,7 @@ fn workspace_trust_reads_existing_projects_table() -> Result<()> {
     )?;
 
     assert!(is_workspace_trusted(&workspace));
-    assert!(!crate::tui::onboarding::needs_trust(&workspace));
+    assert!(!crate::config::needs_trust(&workspace));
     Ok(())
 }
 

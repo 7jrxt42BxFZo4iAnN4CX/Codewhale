@@ -95,7 +95,7 @@ mod tests {
         App::new(
             TuiOptions {
                 model: "deepseek-v4-flash".to_string(),
-                ..crate::test_support::test_tui_options(PathBuf::from("."))
+                ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
             },
             &Config::default(),
         )

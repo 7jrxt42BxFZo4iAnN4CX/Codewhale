@@ -294,22 +294,13 @@ fn initial_onboarding_state(
     needs_api_key: bool,
     needs_workspace_trust: bool,
 ) -> OnboardingState {
-    if skip_onboarding || (was_onboarded && !needs_api_key && !needs_workspace_trust) {
+    if skip_onboarding || needs_api_key {
         return OnboardingState::None;
     }
 
-    if needs_api_key {
-        // Nothing can answer until a model is connected, so the first screen
-        // is the one that connects it (#6566). A returning user keeps the
-        // configured route focused; a new user sees the provider list. It is
-        // one screen, not the old five-gate wizard, and Esc leaves it for the
-        // composer.
-        OnboardingState::Provider
-    } else if was_onboarded && needs_workspace_trust {
+    if was_onboarded && needs_workspace_trust {
         OnboardingState::TrustDirectory
     } else {
-        // A new user who already has a key starts at the composer. Language
-        // and trust stay in /setup.
         OnboardingState::None
     }
 }
@@ -347,9 +338,10 @@ fn launch_onboarding_decision(
             needs_workspace_trust,
         )
     };
-    // Both a new user and a returning one reach the picker directly, and Esc
-    // returns to the composer. An explicitly configured route is focused even
-    // on first run (see `onboarding_recovers_configured_route`).
+    // A launch with no usable key opens the composer. The provider picker
+    // opens when the first message is sent (`keep_unsent_message_for_connect`),
+    // and Esc there returns to the composer. An explicitly configured route is
+    // focused even on first run (see `onboarding_recovers_configured_route`).
     let missing_key_recovery = !skip_onboarding && needs_api_key && !xai_oauth_needs_reauth;
     (onboarding, missing_key_recovery)
 }
@@ -636,6 +628,7 @@ pub struct LaunchRecentSession {
     pub title: String,
     pub updated_at: DateTime<Utc>,
     pub message_count: usize,
+    pub interrupted: bool,
 }
 
 /// Identity of one interactive row on the startup card. The card's rows are
@@ -731,8 +724,10 @@ pub(crate) const LAUNCH_CARD_DISSOLVE_MS: u128 = 240;
 /// exist at all so the card never claims "no recent sessions" while
 /// `/resume` has some.
 fn load_launch_recent(workspace: &std::path::Path) -> (Vec<LaunchRecentSession>, usize, bool) {
-    let sessions = crate::session_manager::SessionManager::default_location()
-        .and_then(|manager| manager.list_sessions())
+    let manager = crate::session_manager::SessionManager::default_location().ok();
+    let sessions = manager
+        .as_ref()
+        .and_then(|manager| manager.list_sessions().ok())
         .unwrap_or_default();
     let any_scoped = sessions.iter().any(|session| {
         !session.archived
@@ -746,6 +741,7 @@ fn load_launch_recent(workspace: &std::path::Path) -> (Vec<LaunchRecentSession>,
                 && crate::session_manager::workspace_scope_matches(&session.workspace, workspace)
         })
         .map(|session| LaunchRecentSession {
+            interrupted: false,
             id: session.id,
             title: session.title,
             updated_at: session.updated_at,
@@ -754,6 +750,13 @@ fn load_launch_recent(workspace: &std::path::Path) -> (Vec<LaunchRecentSession>,
         .collect();
     let total = scoped.len();
     scoped.truncate(LAUNCH_RECENT_INLINE_LIMIT);
+    if let Some(manager) = manager.as_ref() {
+        for session in &mut scoped {
+            session.interrupted = manager.session_has_checkpoint(&session.id)
+                && manager.session_from_prior_instance(&session.id)
+                && !manager.is_session_live_anywhere(&session.id);
+        }
+    }
     (scoped, total, any_scoped)
 }
 
@@ -1958,6 +1961,7 @@ pub struct App {
     /// Exact evidence remains attached to each mutation receipt in all modes.
     pub inline_diff_mode: InlineDiffMode,
     pub ui_locale: Locale,
+    pub constitution_reviewed_digest: Option<String>,
     pub cost_currency: CostCurrency,
     /// Route payment truth. Model pricing alone cannot distinguish metered
     /// API calls from OAuth or token-plan quota.
@@ -2133,6 +2137,7 @@ pub struct App {
     pub onboarding_had_language_step: bool,
     pub onboarding_had_provider_step: bool,
     pub onboarding_had_trust_step: bool,
+    pub local_runtime_detected: bool,
     /// True when the active credential was discovered only through an
     /// environment variable. Missing-key recovery and route rollback use this
     /// provenance to decide whether a durable provider slot still exists;
@@ -2482,6 +2487,9 @@ pub struct App {
     pub(crate) mcp_login: Option<PendingMcpLogin>,
     /// `/mcp retry` requests still waiting on the engine, one per server.
     pub(crate) mcp_retries: Vec<PendingMcpRetry>,
+    /// Server whose OAuth login just stored credentials; the event loop
+    /// retries that one server instead of asking for a full reload.
+    pub(crate) mcp_login_reconnect: Option<String>,
     /// Shared cell for async prompt suggestion delivery from background task.
     pub prompt_suggestion_cell: std::sync::Arc<std::sync::Mutex<Option<(u64, String)>>>,
     /// Tracks whether the initial balance fetch has been attempted for this session.
@@ -3330,6 +3338,8 @@ impl App {
         if previous_mode == mode && !self.yolo {
             return false;
         }
+        let permission_before = self.effective_permission_label();
+        let permission_pair_before = self.permission_pair();
 
         self.mode = mode;
         // Mode chip lives in the header — skip redundant status/toast copy.
@@ -3356,7 +3366,7 @@ impl App {
         self.approval_mode = policy.approval_mode;
         self.yolo = matches!(policy.approval_mode, ApprovalMode::Bypass);
 
-        self.finish_mode_change(previous_mode);
+        self.finish_mode_change(previous_mode, &permission_before, permission_pair_before);
         true
     }
 
@@ -3372,6 +3382,8 @@ impl App {
             return false;
         }
         let previous_mode = self.mode;
+        let permission_before = self.effective_permission_label();
+        let permission_pair_before = self.permission_pair();
         // Same baseline-refresh rule as a mode hop: the elevation must not
         // bleed into the restored Agent surface.
         if previous_mode.uses_agent_baseline() && !self.yolo {
@@ -3392,7 +3404,7 @@ impl App {
         self.approval_mode = ApprovalMode::Bypass;
         self.yolo = true;
         self.notify_yolo_compat_once();
-        self.finish_mode_change(previous_mode);
+        self.finish_mode_change(previous_mode, &permission_before, permission_pair_before);
         true
     }
 
@@ -3430,7 +3442,12 @@ impl App {
     /// id, workspace, model, and token total as every other event — it used
     /// to omit `DEEPSEEK_SESSION_ID` entirely, which made mode transitions
     /// uncorrelatable with the session they belonged to.
-    fn finish_mode_change(&mut self, previous_mode: AppMode) {
+    fn finish_mode_change(
+        &mut self,
+        previous_mode: AppMode,
+        permission_before: &str,
+        permission_pair_before: ApprovalMode,
+    ) {
         let context = self
             .base_hook_context()
             .with_mode(self.mode.label())
@@ -3438,7 +3455,18 @@ impl App {
         if let Err(error) = self.submit_hooks(HookEvent::ModeChange, context) {
             self.surface_observer_hook_submission_failure(error);
         }
+        if self.permission_pair() != permission_pair_before {
+            self.record_permission_change(permission_before);
+        }
         self.needs_redraw = true;
+    }
+
+    fn permission_pair(&self) -> ApprovalMode {
+        if self.mode == AppMode::Plan {
+            self.mode_prefs.agent_approval_mode
+        } else {
+            self.approval_mode
+        }
     }
 
     /// Apply a *user-facing* mode selection: change the live session mode and
@@ -3507,7 +3535,7 @@ impl App {
     #[must_use]
     pub fn mode_startup_default_receipt(&self, mode: AppMode) -> String {
         self.tr(MessageId::ModeAlreadyActiveSavedAsDefault)
-            .replace("{mode}", mode.display_name())
+            .replace("{mode}", &mode.display_name_localized(self.ui_locale))
     }
 
     /// Surface any startup-default write that failed since the last drain.
@@ -3574,7 +3602,8 @@ impl App {
             Ok(())
         });
         self.push_status_toast(
-            "Legacy full-access mode is deprecated — use Act + Full Access (Shift+Tab)".to_string(),
+            "Legacy full-access mode is deprecated — use Work + Full Access (Shift+Tab)"
+                .to_string(),
             StatusToastLevel::Warning,
             Some(8_000),
         );
@@ -3941,7 +3970,7 @@ impl App {
         if self.mode == AppMode::Plan {
             self.push_status_toast(
                 format!(
-                    "Permissions set to {}. Plan stays Read Only; this applies in Act and Operate.",
+                    "Permissions set to {}. Plan stays Read Only; this applies in Work and Operate.",
                     next.permission_chip_label()
                 ),
                 StatusToastLevel::Info,
@@ -4026,6 +4055,7 @@ impl App {
     /// an independently enabled trust baseline in other posture transitions.
     /// Plan remains read-only.
     pub fn set_agent_approval_posture(&mut self, next: ApprovalMode) {
+        let permission_before = self.effective_permission_label();
         let trust_mode = if next == ApprovalMode::Bypass {
             true
         } else if self.mode_prefs.agent_approval_mode == ApprovalMode::Bypass {
@@ -4034,6 +4064,24 @@ impl App {
             self.mode_prefs.agent_trust_mode
         };
         self.set_agent_runtime_baseline(self.mode_prefs.agent_allow_shell, trust_mode, next);
+        self.record_permission_change(&permission_before);
+    }
+
+    #[must_use]
+    pub(crate) fn effective_permission_label(&self) -> String {
+        crate::tui::underwater::permission_label(self).into_owned()
+    }
+
+    fn record_permission_change(&mut self, before: &str) {
+        let after = self.effective_permission_label();
+        if after == before {
+            return;
+        }
+        let content = self
+            .tr(MessageId::PermissionsChangedReceipt)
+            .replace("{label}", &after);
+        self.add_message(HistoryCell::System { content });
+        self.needs_redraw = true;
     }
 
     #[must_use]
@@ -5339,6 +5387,7 @@ impl App {
     /// exclusive `Arc` mutates in place, a shared one detaches first, so an
     /// outstanding engine snapshot can never observe the mutation.
     pub fn api_messages_mut(&mut self) -> &mut Vec<Message> {
+        self.context_token_cache.get_mut().clear();
         Arc::make_mut(&mut self.api_messages)
     }
 
@@ -5348,7 +5397,7 @@ impl App {
     pub fn push_api_message(&mut self, message: Message) {
         self.api_message_stamps
             .resize_with(self.api_messages.len(), Utc::now);
-        self.api_messages_mut().push(message);
+        Arc::make_mut(&mut self.api_messages).push(message);
         self.api_message_stamps.push(Utc::now());
     }
 
@@ -5358,18 +5407,19 @@ impl App {
     /// that are new or were rewritten (compaction) are stamped now, which
     /// lands within a turn-event of the real append. The shared snapshot is
     /// installed without copying.
-    pub fn set_api_messages(&mut self, messages: Arc<Vec<Message>>) {
-        let keep = self
+    pub fn set_api_messages(&mut self, messages: Arc<Vec<Message>>) -> usize {
+        let unchanged = self
             .api_messages
             .iter()
             .zip(messages.iter())
             .take_while(|(old, new)| old == new)
-            .count()
-            .min(self.api_message_stamps.len());
-        self.api_message_stamps.truncate(keep);
+            .count();
+        self.api_message_stamps
+            .truncate(unchanged.min(self.api_message_stamps.len()));
         self.api_message_stamps
             .resize_with(messages.len(), Utc::now);
         self.api_messages = messages;
+        unchanged
     }
 
     /// Install a resumed conversation, reusing the persisted journal's
@@ -5583,6 +5633,34 @@ impl App {
     /// Pick the detail target for the current viewport. The footer hint and
     /// Alt+V both resolve through this so they agree on the target.
     #[must_use]
+    pub(crate) fn transcript_owner_at_line(
+        &self,
+        line_index: usize,
+    ) -> Option<TranscriptActionOwner> {
+        let (rendered, _) = self
+            .viewport
+            .transcript_cache
+            .line_meta()
+            .get(line_index)?
+            .cell_line()?;
+        Some(TranscriptActionOwner {
+            cell_index: self.original_cell_index_for_rendered(rendered),
+            identity_epoch: self.transcript_identity_epoch,
+        })
+    }
+
+    pub(crate) fn selection_owner_cell(&self) -> Option<usize> {
+        let selection = &self.viewport.transcript_selection;
+        selection
+            .owner
+            .filter(|owner| {
+                selection.is_active()
+                    && owner.identity_epoch == self.transcript_identity_epoch
+                    && self.cell_at_virtual_index(owner.cell_index).is_some()
+            })
+            .map(|owner| owner.cell_index)
+    }
+
     pub fn detail_cell_index_for_viewport(
         &self,
         top: usize,
@@ -5594,11 +5672,14 @@ impl App {
                 .map(|(idx, _)| self.original_cell_index_for_rendered(idx))
         };
         let selected = self
-            .viewport
-            .transcript_selection
-            .ordered_endpoints()
-            .and_then(|(start, _)| line_meta.get(start.line_index))
-            .and_then(original)
+            .selection_owner_cell()
+            .or_else(|| {
+                self.viewport
+                    .transcript_selection
+                    .ordered_endpoints()
+                    .and_then(|(start, _)| line_meta.get(start.line_index))
+                    .and_then(original)
+            })
             .filter(|&idx| self.cell_has_detail_target(idx));
         let start = top.min(line_meta.len().saturating_sub(1));
         let end = start.saturating_add(visible).min(line_meta.len());
@@ -5717,7 +5798,16 @@ impl App {
         }
         // A pre-insertion action still names the old virtual index. Reject
         // it until the renderer establishes the owner's new position.
+        let previous_epoch = self.transcript_identity_epoch;
         self.transcript_identity_epoch = self.transcript_identity_epoch.wrapping_add(1);
+        if let Some(owner) = self.viewport.transcript_selection.owner.as_mut()
+            && owner.identity_epoch == previous_epoch
+        {
+            if owner.cell_index >= boundary {
+                owner.cell_index = owner.cell_index.saturating_add(added);
+            }
+            owner.identity_epoch = self.transcript_identity_epoch;
+        }
         for index in self.tool_cells.values_mut() {
             if *index >= boundary {
                 *index = index.saturating_add(added);
@@ -6222,12 +6312,6 @@ impl App {
             StatusToastLevel::Info,
             Some(Self::QUIT_CONFIRMATION_WINDOW.as_millis() as u64),
         );
-        if let Some(warning) = crate::cloud_dispatch::CloudJobStore::from_env()
-            .ok()
-            .and_then(|store| crate::cloud_dispatch::live_job_quit_warning(&store))
-        {
-            self.push_status_toast(warning, StatusToastLevel::Warning, Some(8_000));
-        }
     }
 
     /// Whether the quit timer is currently armed (i.e. a prior Ctrl+C set it
@@ -7306,11 +7390,7 @@ impl App {
                     return effective.display_label_for_provider(provider).to_string();
                 }
                 let effective = effective.display_label_for_provider(provider);
-                if requested == ReasoningEffort::Auto {
-                    format!("auto: {effective}")
-                } else {
-                    format!("{}→{effective}", requested.short_label())
-                }
+                format!("{}→{effective}", requested.short_label())
             }
             EffectiveReasoningEffort::ThinkingEnabledGranularityUnavailable => format!(
                 "{}→thinking enabled; granularity unavailable",

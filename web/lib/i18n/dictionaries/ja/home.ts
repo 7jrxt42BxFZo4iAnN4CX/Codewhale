@@ -3,12 +3,10 @@ import type { HomeDict } from "../types";
 /** Japanese home copy: useful work with chosen models and connected tools. */
 
 export const home: HomeDict = {
-  metaTitle: "Codewhale：自分のモデルとツールで、作りたいものを形に",
-  metaDescription:
-    "Codewhale でアプリを作り、仕事を自動化し、接続したツールを活用。オープンソースで、手持ちのモデル API やローカル・自己ホスト型の推論に対応。",
+  metaTitle: "Codewhale：オープンソースのコーディングエージェント",
+  metaDescription: "Codewhale はターミナルで動くオープンソースのコーディングエージェントです。選んだクラウドやローカルモデルでプロジェクトを読み、編集し、テストできます。",
   heroTitle: "アプリを作り、仕事を自動化しましょう。",
-  heroIntro:
-    "{brand} は、コードを書き、コマンドを実行し、接続したツールを使って作業するオープンソースのエージェントです。既存のモデル API を使うことも、ローカルや自分のサーバーでモデルを動かすこともできます。",
+  heroIntro: "{brand} はターミナルでファイルを読み、コードを書き、コマンドを実行するオープンソースのコーディングエージェントです。モデル API やローカルモデルを接続し、承認が必要な操作を選べます。",
   getCodewhale: "Codewhale をインストール",
   heroInstallAria: "インストールコマンド",
   exploreProduct: "Codewhale を見る",

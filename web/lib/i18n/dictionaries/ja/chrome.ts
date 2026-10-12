@@ -20,6 +20,7 @@ export const chrome: ChromeDict = {
   navCommunity: "コミュニティ",
   navContribute: "貢献",
 
+  navFeatures: "機能",
   navProduct: "製品",
   navModels: "モデル",
   navPlugins: "プラグイン",

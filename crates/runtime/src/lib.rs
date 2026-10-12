@@ -13,7 +13,6 @@
 
 pub use codewhale_command_contract::elapsed;
 
-pub mod computer_meter;
 pub mod context_budget;
 pub mod continual_harness;
 pub mod fast_hash;
@@ -37,6 +36,8 @@ pub mod session_tree;
 pub mod skill_state;
 pub mod sleep_guard;
 pub mod startup_trace;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 pub mod tool_history_repair;
 pub mod workspace_discovery;
 

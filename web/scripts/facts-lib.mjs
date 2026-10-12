@@ -16,6 +16,7 @@ import { parseModelCatalog } from "../lib/model-catalog.mjs";
 import { parseProviderDescriptors } from "../lib/provider-descriptors.mjs";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -128,6 +129,48 @@ export function deriveLatestPublishedRelease() {
   } catch {
     return null;
   }
+}
+
+export function deriveFeatures() {
+  const source = read("docs/features.toml");
+  if (!source) throw new Error("missing feature registry");
+  const parsed = spawnSync("python3", ["-c", "import json, sys, tomllib; print(json.dumps(tomllib.loads(sys.stdin.read())['feature']))"],
+    { input: source, encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });
+  if (parsed.status !== 0) throw new Error(`feature registry parse failed: ${parsed.stderr || parsed.error || parsed.status}`);
+  const rows = JSON.parse(parsed.stdout);
+  if (!Array.isArray(rows) || rows.length === 0) throw new Error("empty feature registry");
+  const ids = new Set();
+  const features = rows.map((row) => {
+    if (!row || typeof row.id !== "string" || !/^[a-z0-9-]+$/.test(row.id) || ids.has(row.id)
+      || typeof row.name !== "string" || typeof row.summary !== "string"
+      || !["stable", "flagged", "experimental"].includes(row.status)
+      || !row.surfaces || typeof row.surfaces !== "object" || Array.isArray(row.surfaces)) {
+      throw new Error(`invalid feature registry row: ${row?.id ?? "unknown"}`);
+    }
+    ids.add(row.id);
+    for (const [surface, state] of Object.entries(row.surfaces)) {
+      if (!["tui", "api", "web"].includes(surface) || !["stable", "partial", "preview", "none"].includes(state)) {
+        throw new Error(`invalid feature surface: ${row.id}/${surface}`);
+      }
+    }
+    for (const field of ["docs", "flag", "since"]) {
+      if (row[field] !== undefined && typeof row[field] !== "string") throw new Error(`invalid feature ${field}: ${row.id}`);
+    }
+    const documentation = row.docs ?? null;
+    if (documentation) {
+      const path = documentation.split("#", 1)[0];
+      if (path.startsWith("/") || path.includes("..") || !existsSync(join(REPO_ROOT, path))) {
+        throw new Error(`missing feature document: ${row.id}/${path}`);
+      }
+    }
+    const match = source.match(new RegExp(`^[ \\t]*id[ \\t]*=[ \\t]*["']${row.id}["']`, "m"));
+    if (!match) throw new Error(`feature registry location missing: ${row.id}`);
+    const line = source.slice(0, match.index).split("\n").length;
+    return { id: row.id, name: row.name, summary: row.summary, status: row.status,
+      surfaces: row.surfaces, since: row.since ?? null, flag: row.flag ?? null,
+      docs: documentation, registryLine: line };
+  });
+  return { format: "codewhale.features.v1", source: { path: "docs/features.toml", sha256: createHash("sha256").update(source).digest("hex") }, features };
 }
 
 /**

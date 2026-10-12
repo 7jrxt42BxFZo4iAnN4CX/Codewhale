@@ -325,7 +325,7 @@ mod tests {
             memory_path: temp.path().join("memory.md"),
             notes_path: temp.path().join("notes.txt"),
             mcp_config_path: temp.path().join("mcp.json"),
-            ..crate::test_support::test_tui_options(root.path())
+            ..crate::tui::test_support::test_tui_options(root.path())
         };
         let discovery = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv();
         let registry = discovery.registry_for_workspace(root.path());
@@ -509,7 +509,7 @@ mod tests {
             "Esc persists nothing"
         );
         let restarted = App::new_with_plugin_registry(
-            crate::test_support::test_tui_options(root.path()),
+            crate::tui::test_support::test_tui_options(root.path()),
             &Config::default(),
             app.plugin_registry.clone(),
         );
@@ -529,7 +529,7 @@ mod tests {
         assert!(saved.dismissed_plugin_suggestions.contains("supabase"));
         // A freshly initialized App must hydrate the persisted preference.
         let mut restarted = App::new_with_plugin_registry(
-            crate::test_support::test_tui_options(root.path()),
+            crate::tui::test_support::test_tui_options(root.path()),
             &Config::default(),
             app.plugin_registry.clone(),
         );

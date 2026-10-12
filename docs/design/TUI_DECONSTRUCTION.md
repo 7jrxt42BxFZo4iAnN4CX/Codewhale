@@ -32,8 +32,8 @@ Crates named for a subsystem whose implementation still lives in the TUI:
 `tools` (1.6k; the implementations are `tui/src/tools`, 204k), `mcp` (109
 lines; `tui/src/mcp*` is 26k), `core` (5.8k; the engine is `tui/src/core`),
 `agent` (1.6k model registry with one TUI consumer, beside the TUI's own
-catalog). `cli` depends on `tui` for `run`, `route_preferences`, `config_keys`
-and `cloud_dispatch`; `tui` depends on `app-server` while the Runtime API
+catalog). `cli` depends on `tui` for `run`, `route_preferences`, `config_keys`;
+`tui` depends on `app-server` while the Runtime API
 (`runtime_api`, 61k) lives inside `tui`.
 
 `scripts/split/module_graph.py --report` puts the runtime closure (everything
@@ -242,7 +242,6 @@ to that loop; it does not own another one.
 | `rlm` | `rlm`, `repl` | 5k |
 | `snapshot` | `snapshot` | 6k |
 | `voice`, `vision` | `voice`; `vision`, `image_attach` | 1k, 3k |
-| `cloud-dispatch` | `cloud_dispatch`, `dispatch_runner` | 5k |
 | `remote-control` | `remote_control`, `runtime_chat_relay`, `remote_setup` | 13k |
 | `integrations` | `integrations` | 5k |
 
@@ -335,24 +334,36 @@ The runtime -> UI ratchet (`scripts/split/module_graph.py`,
 `scripts/runtime-boundary-baseline.json`, enforced by
 `scripts/check-command-crate-boundaries.py`) stays the gate until the runtime
 tier is out of `crates/tui`; then Cargo enforces the boundary and the ratchet
-is deleted. At `bd2a7b49c` it stands at 11 production references
-(`runtime_api -> commands` 9, `tools -> commands` 2) and 35 test references.
+is deleted. The 0.10.2 X2 snapshot stands at 0 production references and
+30 test references, down from 11 and 32. The RS-11 roster split then removes
+five test references and the final tools/crossterm test import, leaving 25
+test references and no UI-library imports. The following tools split moves the
+Workflow panel assertions to its existing history test and removes duplicated
+coordination pager checks, leaving 18 test references. The history split moves
+persistence/render tests to history and uses the runtime MCP decoder in the
+engine, leaving 13 test references. Moving the two unchanged App fixtures to
+their UI owner and migrating all 114 consumers leaves 6 test references.
+Moving redaction decisions onto Config, workspace trust into config, and the
+unchanged constitution checkpoint into prompts removes the final 6. RS-11
+ends at production 0, test 0, late 1, UI-library 0 and doc 0. The late
+engine/exec-agent test reference belongs to a later slice. The current baseline
+is the authority.
 `crates/runtime` must never depend on `tui`, `cli`, ratatui, crossterm,
 `ansi-to-tui` or a terminal component kit; the runtime reaches the terminal
 only through `host_terminal`.
 
 ## Operational plan: assignable slices
 
-Measured 2026-10-10 with `python3 scripts/split/partition_report.py` (per-module
+Re-measured for X2 on 2026-10-12 with `python3 scripts/split/partition_report.py` (per-module
 waves, sizes and blockers) and `--scc-edges 60` (the heaviest edges inside the
 cycle). Regenerate before assigning; the numbers below are a snapshot.
 
-- The runtime closure is **one 100-module cycle** (the baseline above counted 85),
+- Before X2 the largest runtime cycle had **98 modules**; after X2 it has **82**.
   with `tools` 152k, `core` 50k, `fleet` 39k, `runtime_api` 31k, `client` 26k
-  production lines. It contains `tui`, `commands` and `lib.rs` only through the
-  11 production back-edges the ratchet counts (`runtime_api -> commands` 9,
-  `tools -> commands` 2). Removing those two edge pairs shrinks the cycle to 83
-  modules.
+  production lines in the earlier size snapshot. X2 removes all 11 production
+  back-edges (`runtime_api -> commands` 9, `tools -> commands` 2); `tui`,
+  `commands` and `lib.rs` leave the largest cycle. These are source graph
+  measurements, not a claim that the runtime crate migration has shipped.
 - 30 modules (about 17k production lines) are **wave 0**: nothing they depend on
   is still waiting to move. They are claimable as crates now.
 - Moving the cycle as a unit is the rejected pattern (see Rules). The open runtime
@@ -368,7 +379,7 @@ part of the slice.
 | Slice | Claim unit (paths) | Size | Status of the analysis | Must happen first | Result |
 | --- | --- | --- | --- | --- | --- |
 | **X1 util-fslock** | `crates/fslock/` (new), `runtime_threads.rs`, `session_manager.rs`, `session_reconcile.rs`, `operate.rs` | S, ~190 lines | **Held.** Five call-site clusters in `runtime_threads.rs` (incl. `has_live_holder`), `session_manager.rs:1954` is production | none | removes the `session_manager <-> runtime_threads` lock edge; first leaf for `session-store` |
-| **X2 command catalog port** | `crates/tui/src/command_catalog.rs` (new leaf), `commands/catalog.rs`, `runtime_api.rs` list handler, `tools/tui_help.rs`, `extension_host/command.rs` | M | **Held with a fix.** The thread-local test guard cannot reach the Runtime API test server thread: install the real catalog process-wide for tests | none | ratchet `prod` 11 -> 0, cycle 100 -> 83, `tui` and `commands` leave it |
+| **X2 command catalog port** | `crates/tui/src/command_catalog.rs`, `commands/mod.rs`, `runtime_api.rs` list handler, `tools/tui_help.rs`, `extension_host/command.rs` | M | **Landed in 0.10.2.** One host port supplies all three consumers; the Runtime API test server captures its thread-local guard | none | ratchet `prod` 11 -> 0, `test` 32 -> 30, largest cycle 98 -> 82 |
 | **X3 tool contract, part 1** | `crates/tools/src/canonical_action.rs`, `crates/tools/src/lib.rs`, `crates/tui/src/tools/mod.rs` | S with a `pub use` shim at `tools/mod.rs`, M without (42 files in other owners' directories) | Direction right; **not rename-only** (visibility widening, split test module) | none | first tool-contract move; unblocks TUI views depending on a crate, not the runtime |
 | **X4 util-schema** | `crates/util-schema/` (new), `tools/schema_sanitize.rs`, `schema_canonicalize.rs` | M | Needs `prepare_tools_for_strict_mode` moved next to its caller first (it is the only use of `codewhale_models::Tool`) | X3 not required | removes `client -> tools` schema refs |
 | **X5 config-types, part 1** | `crates/config-types/` (new), `features.rs`, `route_receipt.rs`, `plugins/types.rs` | S-M, ~400 lines | **Corrected:** move `impl Display for PluginId` with `PluginId` (orphan rule); leave out `CustomLspDef` (already in `crates/config`); the `lsp` and `plugins` edges stay | none | removes the type-only up-edges from `config`/`settings` |
@@ -376,8 +387,8 @@ part of the slice.
 | **X7 tool rules into execpolicy** | `crates/execpolicy/src/tool_rules.rs`, `core/engine/tool_catalog.rs` | S | Part of the fleet plan; `tool_denied`, `tool_matches_any_rule`, `requires_raw_shell`, `policy_tool_aliases` | none | cuts `tools -> core` and `config -> core` rule references |
 | **X8 agent-contract** | `crates/agent-contract/` (new), `fleet/role.rs`, `fleet/worker_profile.rs`, `tools/subagent/mod.rs` | M | **Corrected:** the inherent `impl FleetRole` at `tools/subagent/mod.rs:639` becomes illegal after the move; convert to free functions first; resolve the two different `ChildAuthority` types | X7 | removes `tools -> fleet` (62 refs) |
 | **X9 sandbox pilot** | `crates/sandbox/` (new), `tui/src/sandbox/` | S then M | **Corrected:** do the two edge cuts first (`sandbox -> config` 1, `sandbox -> oauth` 1); `shell_dispatcher` cannot move yet (`tests/integration/main.rs` includes it by `#[path]`, `test_env_lock` is `cfg(test)`) | the cuts only | second feature leaf after `tools-web` |
-| **W0-S1 runtime residents** | `crates/runtime/` ← `features`, `logging`, `startup_trace`, `resource_telemetry`, `runtime_policy`, `lane_control`, `computer_meter` | S, 2.6k lines | **Held.** `python3 scripts/split/move-modules.py` dry run is read-only and safe | none | seven fewer tui modules; no `test_support` needed |
-| **W0-S2.. test-support and the rest of wave 0** | `crates/test/test-support/` (new) then `child_env`, `process_tree`, `external_credentials`, `runtime_log` | M each | **Corrected:** `wait-timeout` is a normal dependency, not dev; `remote_setup` needs `uuid`; resolve the `external_credentials` name clash with `crates/config` | W0-S1 | replaces RS-10 and RS-11 |
+| **W0-S1 runtime residents** | `crates/runtime/` ← `features`, `logging`, `startup_trace`, `resource_telemetry`, `runtime_policy`, `lane_control` | S, landed 2026-10-10 (8aea0265c) | **Landed.** `python3 scripts/split/move-modules.py` dry run is read-only and safe | none | six fewer tui modules; no `test_support` needed |
+| **W0-S2.. test-support and the rest of wave 0** | the existing `codewhale-runtime` `test-support` feature, then remaining leaves | M each | **Environment helpers moved in 0.10.2:** one process environment lock in the Runtime test-support owner; no new test-support crate | W0-S1 | the TUI shim retains its resolver fences; App fixtures live in the UI owner; remaining residents follow RS-10 |
 | **B billing** | `crates/billing/` | L | **Not confirmed.** Five production callers remain, it must not depend on the runtime tier, and the engine files it touches are in flight | a host port for the usage store | deferred |
 | **S0 closure report** | `scripts/split/closure_report.py` | S (report), M (sandbox generator) | Held as a tool; deletes no edges | decide where sandbox third-party sources come from | the numbers the sandbox contract needs |
 
@@ -396,7 +407,7 @@ Running them in parallel:
   tests, `python3 scripts/split/module_graph.py --check` with the counts it
   should lower, and `python3 scripts/split/partition_report.py` before and after.
 
-Mapping of the open issues: RS-8 (#6935), RS-9 (#6936), RS-12 (#6939, partial) and
+Mapping of the open issues: RS-8 (#6935), RS-9 (#6936), RS-12 (#6939) and
 RS-13 (#6940, first sub-slice) landed; X2 completes RS-13; W0-S1 and W0-S2 replace
 RS-10 (#6937) and the test-support half of RS-11 (#6938); RS-14 (#6941) is
 replaced by this table pending the founder's decision.
@@ -502,3 +513,11 @@ Start with the existing model's ordinary reasoning/tool loop. Add independent
 review or multiple candidate attempts only where measured failures and task
 stakes justify the extra compute. No model-evaluation runs, provider spend, or
 performance gains were established by this source audit.
+
+The catalog installs once per process; first installation wins. Built-ins are
+host-owned metadata, and user rows are a point-in-time snapshot under the
+existing reload rules. Captured binding spellings preserve the live registry’s
+canonical-name precedence, alias selection and revoked-plugin filtering. The
+port never dispatches. Without installation, command registration is refused,
+`GET /v1/commands` reports an error and `tui_help` fails visibly. Extension
+commands remain omitted from the external Runtime command list.

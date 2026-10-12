@@ -544,6 +544,10 @@ fn load_handoff_block(workspace: &Path) -> Option<String> {
 /// Load the structured user-global constitution, if present, and render it as
 /// its own model-facing block.
 pub(crate) fn load_user_constitution_block() -> Option<String> {
+    load_active_user_constitution()?.render_block(None)
+}
+
+pub(crate) fn load_active_user_constitution() -> Option<Box<codewhale_config::UserConstitution>> {
     if user_constitution_disabled_by_setup_state() {
         return None;
     }
@@ -560,9 +564,7 @@ pub(crate) fn load_user_constitution_block() -> Option<String> {
     };
 
     match codewhale_config::UserConstitution::load_from(&path) {
-        codewhale_config::UserConstitutionLoad::Loaded(constitution) => {
-            constitution.render_block(None)
-        }
+        codewhale_config::UserConstitutionLoad::Loaded(constitution) => Some(constitution),
         codewhale_config::UserConstitutionLoad::Missing
         | codewhale_config::UserConstitutionLoad::Empty => None,
         codewhale_config::UserConstitutionLoad::Invalid(err) => {
@@ -586,12 +588,7 @@ pub(crate) fn load_user_constitution_block() -> Option<String> {
 
 fn user_constitution_disabled_by_setup_state() -> bool {
     match codewhale_config::SetupState::load() {
-        Ok(Some(state)) => matches!(
-            state.constitution_choice,
-            codewhale_config::ConstitutionChoice::Bundled
-                | codewhale_config::ConstitutionChoice::Deferred
-                | codewhale_config::ConstitutionChoice::ExpertOverride
-        ),
+        Ok(Some(state)) => !state.constitution_choice.applies_user_global(),
         Ok(None) => false,
         Err(err) => {
             tracing::warn!(
@@ -684,6 +681,11 @@ pub fn set_base_prompt_override(s: String) -> Result<(), String> {
 // also set an explicit opt-in flag (`CODEWHALE_ALLOW_BASE_PROMPT_OVERRIDE`).
 // This keeps replacing the global Constitution a deliberate, auditable act
 // rather than something a stray file can do.
+
+/// Target lane for the once-per-version constitution checkpoint. Bumped per
+/// release when the bundled constitution materially changes, so existing users
+/// re-acknowledge it once. 0.9.4 re-ships the Fleet/operate constitution.
+pub const CONSTITUTION_CHECKPOINT_VERSION: &str = "0.9.4";
 
 /// Relative path, under the config directory, of the optional base-prompt
 /// (constitution) override file.
@@ -2697,7 +2699,7 @@ mod tests {
 
         let mut state = codewhale_config::SetupState::default();
         state.complete_constitution_checkpoint(
-            crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+            crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             codewhale_config::ConstitutionChoice::Bundled,
         );
         state

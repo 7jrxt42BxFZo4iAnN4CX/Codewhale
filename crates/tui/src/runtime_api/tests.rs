@@ -1136,6 +1136,7 @@ fn spawn_product_stack_server(
         .shutdown
         .get_or_insert_with(RuntimeServerShutdown::default)
         .clone();
+    let catalog = crate::command_catalog::installed();
     std::thread::Builder::new()
         .name("runtime-api-test-server".to_string())
         .stack_size(codewhale_runtime::CODEWHALE_MAIN_STACK_BYTES)
@@ -1143,6 +1144,7 @@ fn spawn_product_stack_server(
             // Adopted for the thread's lifetime; the scope's generation check
             // refuses enrollment once the sealing test has ended.
             let _membership = crate::test_support::join_env_scope(env_ticket);
+            let _catalog = catalog.map(crate::command_catalog::CatalogGuard::install);
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()

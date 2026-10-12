@@ -374,8 +374,8 @@ fn one_pressure_number_across_mid_turn_compaction_and_route_switch() {
             assert_eq!(request.model, PRIVATE_MODEL, "turn two uses route B");
         }
 
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(workspace.path()),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(workspace.path()),
         );
         let mut readings = Vec::new();
         for (index, request) in turn_one_requests.iter().enumerate() {

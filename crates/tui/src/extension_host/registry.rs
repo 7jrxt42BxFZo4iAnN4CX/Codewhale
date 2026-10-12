@@ -1141,7 +1141,7 @@ impl OwnerRegistry {
         }
         // Fail closed: with no catalog installed there is nothing to check the
         // name against, so the registration is refused, not accepted unchecked.
-        let Some(catalog) = super::command::builtin_commands() else {
+        let Some(catalog) = crate::command_catalog::installed() else {
             return Err(format!(
                 "command `/{name}` cannot be checked against the built-in commands: no built-in command catalog is installed, so extension commands are refused"
             ));

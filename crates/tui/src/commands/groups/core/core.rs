@@ -9,7 +9,7 @@ use crate::config::{
 };
 #[cfg(test)]
 use crate::reasoning_preference::ReasoningEffort;
-use crate::tui::app::{App, AppAction};
+use crate::tui::app::{App, AppAction, AppModeUi};
 use crate::tui::views::{HelpView, ModalKind, SubAgentsView, subagent_view_agents};
 use codewhale_config::AppMode;
 use codewhale_localization::{Locale, MessageId, tr};
@@ -658,7 +658,7 @@ pub fn home_dashboard(app: &mut App) -> CommandResult {
         stats,
         "{}       {}",
         tr(locale, MessageId::HomeMode),
-        app.mode.label()
+        app.mode.display_name_localized(locale)
     );
     let _ = writeln!(
         stats,
@@ -865,7 +865,7 @@ mod tests {
     fn create_test_app() -> App {
         let options = TuiOptions {
             skills_dir: PathBuf::from("/tmp/test-skills"),
-            ..crate::test_support::test_tui_options(PathBuf::from("/tmp/test-workspace"))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("/tmp/test-workspace"))
         };
         let mut app = App::new(options, &Config::default());
         app.ui_locale = codewhale_localization::Locale::En;
