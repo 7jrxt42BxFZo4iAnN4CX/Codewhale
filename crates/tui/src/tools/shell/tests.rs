@@ -2,22 +2,14 @@ use super::*;
 
 use crate::tools::spec::ToolContext;
 use serde_json::{Value, json};
+#[cfg(unix)]
+use std::sync::OnceLock;
 use tempfile::tempdir;
 
 #[cfg(windows)]
 use windows::Win32::Foundation::{DUPLICATE_HANDLE_OPTIONS, DuplicateHandle, HANDLE};
 #[cfg(windows)]
 use windows::Win32::System::Threading::GetCurrentProcess;
-
-// `env_lock` serializes tests that mutate the process environment.
-#[cfg(any(unix, windows))]
-use std::sync::{Mutex, OnceLock};
-
-#[cfg(any(unix, windows))]
-fn env_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
 
 const BACKGROUND_COMPLETION_WAIT_MS: u64 = 30_000;
 
@@ -2368,11 +2360,9 @@ fn completion_evidence_preserves_arbitrary_stream_bytes() {
 #[test]
 #[cfg(unix)]
 fn shell_execution_scrubs_parent_env_and_keeps_explicit_env() {
-    let _guard = env_lock().lock().expect("env lock");
-    let previous = std::env::var_os("DEEPSEEK_CHILD_ENV_SHELL_SECRET");
-    unsafe {
-        std::env::set_var("DEEPSEEK_CHILD_ENV_SHELL_SECRET", "parent-secret");
-    }
+    let _lock = crate::test_support::lock_test_env();
+    let _secret =
+        crate::test_support::EnvVarGuard::set("DEEPSEEK_CHILD_ENV_SHELL_SECRET", "parent-secret");
 
     let tmp = tempdir().expect("tempdir");
     let mut manager = ShellManager::new(tmp.path().to_path_buf());
@@ -2395,15 +2385,6 @@ fn shell_execution_scrubs_parent_env_and_keeps_explicit_env() {
         )
         .expect("execute");
 
-    match previous {
-        Some(value) => unsafe {
-            std::env::set_var("DEEPSEEK_CHILD_ENV_SHELL_SECRET", value);
-        },
-        None => unsafe {
-            std::env::remove_var("DEEPSEEK_CHILD_ENV_SHELL_SECRET");
-        },
-    }
-
     assert_eq!(result.status, ShellStatus::Completed);
     assert_eq!(result.stdout, "unset\nexplicit-value\n");
 }
@@ -2411,13 +2392,9 @@ fn shell_execution_scrubs_parent_env_and_keeps_explicit_env() {
 #[test]
 #[cfg(windows)]
 fn shell_execution_preserves_custom_windows_sdk_root_env() {
-    let _guard = env_lock().lock().expect("env lock");
-    let previous_sdk = std::env::var_os("BIMRV_SDK_ROOT");
-    let previous_secret = std::env::var_os("MY_SECRET_ROOT");
-    unsafe {
-        std::env::set_var("BIMRV_SDK_ROOT", r"F:\Lib\BimRv27.5");
-        std::env::set_var("MY_SECRET_ROOT", r"F:\Secrets");
-    }
+    let _lock = crate::test_support::lock_test_env();
+    let _sdk = crate::test_support::EnvVarGuard::set("BIMRV_SDK_ROOT", r"F:\Lib\BimRv27.5");
+    let _secret = crate::test_support::EnvVarGuard::set("MY_SECRET_ROOT", r"F:\Secrets");
 
     let tmp = tempdir().expect("tempdir");
     let mut manager = ShellManager::new(tmp.path().to_path_buf());
@@ -2433,17 +2410,6 @@ fn shell_execution_preserves_custom_windows_sdk_root_env() {
     };
 
     let result = execute_shell(&mut manager, &command, None, 5000, false).expect("execute");
-
-    unsafe {
-        match previous_sdk {
-            Some(value) => std::env::set_var("BIMRV_SDK_ROOT", value),
-            None => std::env::remove_var("BIMRV_SDK_ROOT"),
-        }
-        match previous_secret {
-            Some(value) => std::env::set_var("MY_SECRET_ROOT", value),
-            None => std::env::remove_var("MY_SECRET_ROOT"),
-        }
-    }
 
     assert_eq!(result.status, ShellStatus::Completed);
     assert!(

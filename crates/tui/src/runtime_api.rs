@@ -4890,10 +4890,10 @@ async fn list_commands(
         .ok_or_else(|| ApiError::internal("command catalog is not installed"))?;
     let workspace = state.workspace.clone();
     #[cfg(test)]
-    let env_ticket = crate::shell_dispatcher::test_env_lock::env_scope_ticket();
+    let env_ticket = crate::test_support::env_scope_ticket();
     let commands = tokio::task::spawn_blocking(move || {
         #[cfg(test)]
-        let _membership = crate::shell_dispatcher::test_env_lock::join_env_scope(env_ticket);
+        let _membership = crate::test_support::join_env_scope(env_ticket);
         command_catalog(
             &catalog.builtins(),
             &catalog.user_commands(workspace.as_path()),

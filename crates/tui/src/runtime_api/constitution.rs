@@ -25,11 +25,10 @@ pub(super) async fn get_constitution(
         }
         None => {
             #[cfg(test)]
-            let env_ticket = crate::shell_dispatcher::test_env_lock::env_scope_ticket();
+            let env_ticket = crate::test_support::env_scope_ticket();
             let rendered = tokio::task::spawn_blocking(move || {
                 #[cfg(test)]
-                let _membership =
-                    crate::shell_dispatcher::test_env_lock::join_env_scope(env_ticket);
+                let _membership = crate::test_support::join_env_scope(env_ticket);
                 crate::prompts::load_active_user_constitution()
                     .map(|document| document.render_body())
             })

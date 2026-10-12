@@ -539,7 +539,7 @@
         // Scenario consolidation of: base_url_security_rejects_insecure_non_local_http, base_url_security_errors_redact_sensitive_url_parts, base_url_security_allows_localhost_http, base_url_security_allows_non_local_http_with_explicit_opt_in
         // from base_url_security_rejects_insecure_non_local_http
         {
-            let _lock = ALLOW_INSECURE_HTTP_ENV_LOCK.lock().unwrap();
+            let _lock = crate::test_support::lock_test_env();
             let _guard = AllowInsecureHttpEnvGuard::capture();
             unsafe { std::env::remove_var(ALLOW_INSECURE_HTTP_ENV) };
 
@@ -549,7 +549,7 @@
         }
         // from base_url_security_errors_redact_sensitive_url_parts
         {
-            let _lock = ALLOW_INSECURE_HTTP_ENV_LOCK.lock().unwrap();
+            let _lock = crate::test_support::lock_test_env();
             let _guard = AllowInsecureHttpEnvGuard::capture();
             unsafe { std::env::remove_var(ALLOW_INSECURE_HTTP_ENV) };
 
@@ -566,7 +566,7 @@
         }
         // from base_url_security_allows_localhost_http
         {
-            let _lock = ALLOW_INSECURE_HTTP_ENV_LOCK.lock().unwrap();
+            let _lock = crate::test_support::lock_test_env();
             let _guard = AllowInsecureHttpEnvGuard::capture();
             unsafe { std::env::remove_var(ALLOW_INSECURE_HTTP_ENV) };
 
@@ -596,7 +596,7 @@
         }
         // from base_url_security_allows_non_local_http_with_explicit_opt_in
         {
-            let _lock = ALLOW_INSECURE_HTTP_ENV_LOCK.lock().unwrap();
+            let _lock = crate::test_support::lock_test_env();
             let _guard = AllowInsecureHttpEnvGuard::capture();
             unsafe { std::env::set_var(ALLOW_INSECURE_HTTP_ENV, "1") };
 
@@ -606,7 +606,7 @@
         // use a plain-HTTP base URL without any env var. This is the
         // 0.9.11-and-earlier behavior the key silently stopped providing.
         {
-            let _lock = ALLOW_INSECURE_HTTP_ENV_LOCK.lock().unwrap();
+            let _lock = crate::test_support::lock_test_env();
             let _guard = AllowInsecureHttpEnvGuard::capture();
             unsafe { std::env::remove_var(ALLOW_INSECURE_HTTP_ENV) };
 
@@ -617,10 +617,6 @@
             assert!(err.to_string().contains("allow_insecure_http = true"));
         }
     }
-
-    /// Serialize tests that mutate `DEEPSEEK_ALLOW_INSECURE_HTTP`; env vars are
-    /// process-global and would otherwise leak across security checks.
-    static ALLOW_INSECURE_HTTP_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     struct AllowInsecureHttpEnvGuard {
         prior: Option<std::ffi::OsString>,
@@ -691,10 +687,6 @@
     }
 
     // === #103 Phase 2: HTTP/1 escape hatch ===================================
-
-    /// Serialize tests that mutate `DEEPSEEK_FORCE_HTTP1` so they don't race
-    /// against each other — env vars are process-global.
-    pub(super) static FORCE_HTTP1_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     struct ForceHttp1EnvGuard {
         prior: Option<std::ffi::OsString>,
@@ -784,17 +776,17 @@
         // Scenario consolidation of: force_http1_unset_is_false, force_http1_truthy_values, force_http1_falsy_values
         // from force_http1_unset_is_false
         {
-            let _lock = FORCE_HTTP1_ENV_LOCK.lock().unwrap();
+            let _lock = crate::test_support::lock_test_env();
             let _guard = ForceHttp1EnvGuard::capture();
             unsafe { std::env::remove_var("DEEPSEEK_FORCE_HTTP1") };
             assert!(!force_http1_from_env());
         }
         // from force_http1_truthy_values
         {
-            let _lock = FORCE_HTTP1_ENV_LOCK.lock().unwrap();
+            let _lock = crate::test_support::lock_test_env();
             let _guard = ForceHttp1EnvGuard::capture();
             for value in ["1", "true", "True", "YES", "on", " 1 "] {
-                // Safety: serialized by FORCE_HTTP1_ENV_LOCK; reverted by guard.
+                // Safety: serialized by lock_test_env; reverted by guard.
                 unsafe { std::env::set_var("DEEPSEEK_FORCE_HTTP1", value) };
                 assert!(
                     force_http1_from_env(),
@@ -804,7 +796,7 @@
         }
         // from force_http1_falsy_values
         {
-            let _lock = FORCE_HTTP1_ENV_LOCK.lock().unwrap();
+            let _lock = crate::test_support::lock_test_env();
             let _guard = ForceHttp1EnvGuard::capture();
             for value in ["0", "false", "no", "off", "", "garbage", "2"] {
                 unsafe { std::env::set_var("DEEPSEEK_FORCE_HTTP1", value) };
