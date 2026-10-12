@@ -11,6 +11,20 @@ pub(super) struct CompactionPass {
     pub usage: Usage,
 }
 
+/// Which branch the turn loop takes after [`Engine::run_auto_compaction`].
+/// The phase only reports it; `run_turn` keeps the `continue` and `return`.
+pub(super) enum AutoCompactionStep {
+    /// No pass was due, or a pass reached an outcome (compacted, skipped or
+    /// failed with the conversation unchanged): build this step's request.
+    Proceed,
+    /// The pass was stopped on its own while the turn stays live: start the
+    /// next loop iteration without sending a request.
+    Restart,
+    /// End the turn with this outcome: it was cancelled during the pass, or
+    /// the pass spent the turn's wall-clock budget.
+    EndTurn(TurnOutcomeStatus, Option<String>),
+}
+
 /// Engine-side sink for compaction downgrade notices.
 ///
 /// Delivered as `Event::Status`, the same channel other engine status lines
@@ -20,11 +34,27 @@ pub(super) struct CompactionPass {
 #[derive(Debug)]
 struct EngineCompactionNoticeSink {
     tx: mpsc::Sender<Event>,
+    child: Option<Arc<crate::tools::subagent::engine::ChildAuthority>>,
 }
 
 impl crate::compaction::CompactionNoticeSink for EngineCompactionNoticeSink {
     fn notice(&self, message: String) {
         let _ = self.tx.try_send(Event::Status { message });
+    }
+    fn accounting_origin(&self) -> Option<(crate::cost_status::CostScopeToken, String, String)> {
+        self.child.as_ref().map(|child| child.accounting_origin())
+    }
+    fn settled_usage<'a>(
+        &'a self,
+        source: &'a str,
+        route: &'a crate::cost_status::EffectiveRouteEnvelope,
+        usage: &'a Usage,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            if let Some(child) = self.child.as_ref() {
+                child.project_settled_response(source, route, usage).await;
+            }
+        })
     }
 }
 
@@ -36,8 +66,7 @@ impl Engine {
         message: String,
     ) {
         let _ = self
-            .tx_event
-            .send(Event::CompactionStarted { id, auto, message })
+            .send_event(Event::CompactionStarted { id, auto, message })
             .await;
     }
 
@@ -78,8 +107,7 @@ impl Engine {
         )
         .await;
         let _ = self
-            .tx_event
-            .send(Event::CompactionCompleted {
+            .send_event(Event::CompactionCompleted {
                 id,
                 auto,
                 message,
@@ -101,7 +129,11 @@ impl Engine {
         details["session_id"] = serde_json::json!(self.session.id);
         details["thread_id"] = serde_json::json!(self.config.runtime_services.active_thread_id);
         details["model"] = serde_json::json!(self.config.model);
+        #[cfg(test)]
+        let env_ticket = crate::test_support::env_scope_ticket();
         if let Err(error) = tokio::task::spawn_blocking(move || {
+            #[cfg(test)]
+            let _membership = crate::test_support::join_env_scope(env_ticket);
             crate::audit::log_sensitive_event(event, details);
         })
         .await
@@ -117,8 +149,7 @@ impl Engine {
         message: String,
     ) {
         let _ = self
-            .tx_event
-            .send(Event::CompactionCancelled { id, auto, message })
+            .send_event(Event::CompactionCancelled { id, auto, message })
             .await;
     }
 
@@ -143,8 +174,7 @@ impl Engine {
 
     pub(super) async fn emit_compaction_failed(&mut self, id: String, auto: bool, message: String) {
         let _ = self
-            .tx_event
-            .send(Event::CompactionFailed { id, auto, message })
+            .send_event(Event::CompactionFailed { id, auto, message })
             .await;
     }
 
@@ -202,6 +232,10 @@ impl Engine {
         prepared.session_id = Some(self.session.id.clone());
         prepared.notice_sink = Some(std::sync::Arc::new(EngineCompactionNoticeSink {
             tx: self.tx_event.clone(),
+            child: self
+                .child_host
+                .as_ref()
+                .map(|child| child.authority.clone()),
         }));
         // The summary request must carry the reasoning tier the turn sends:
         // reasoning routes render it at the head of the prompt, so omitting
@@ -227,8 +261,7 @@ impl Engine {
             let message = "Making room stopped before it started".to_string();
             self.emit_compaction_cancelled(id, false, message).await;
             let _ = self
-                .tx_event
-                .send(Event::TurnComplete {
+                .send_event(Event::TurnComplete {
                     usage: Usage::default(),
                     parent_route_usage: Usage::default(),
                     routed_usage_dropped_records: 0,
@@ -247,8 +280,7 @@ impl Engine {
             self.emit_compaction_failed(id, false, message.clone())
                 .await;
             let _ = self
-                .tx_event
-                .send(Event::error(ErrorEnvelope::fatal_auth(message)))
+                .send_event(Event::error(ErrorEnvelope::fatal_auth(message)))
                 .await;
             return;
         }
@@ -261,8 +293,7 @@ impl Engine {
             return;
         }
         let _ = self
-            .tx_event
-            .send(Event::RoutedTurnUsage {
+            .send_event(Event::RoutedTurnUsage {
                 usage: usage.clone(),
                 duration_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
                 first_token_ms: None,
@@ -287,12 +318,10 @@ impl Engine {
             self.emit_compaction_failed(id, false, message.clone())
                 .await;
             let _ = self
-                .tx_event
-                .send(Event::error(ErrorEnvelope::fatal_auth(message.clone())))
+                .send_event(Event::error(ErrorEnvelope::fatal_auth(message.clone())))
                 .await;
             let _ = self
-                .tx_event
-                .send(Event::TurnComplete {
+                .send_event(Event::TurnComplete {
                     usage: zero_usage,
                     parent_route_usage: Usage::default(),
                     routed_usage_dropped_records: 0,
@@ -329,7 +358,7 @@ impl Engine {
             ) => Some(result),
         };
         self.session.total_usage.add(&compaction_usage);
-        self.record_goal_usage_for_turn(&compaction_usage, started.elapsed());
+        self.record_goal_usage_for_turn(&compaction_usage, started);
         self.emit_compaction_usage(&compaction_usage, started.elapsed())
             .await;
 
@@ -342,8 +371,7 @@ impl Engine {
             )
             .await;
             let _ = self
-                .tx_event
-                .send(Event::TurnComplete {
+                .send_event(Event::TurnComplete {
                     usage: compaction_usage,
                     parent_route_usage: Usage::default(),
                     routed_usage_dropped_records: 0,
@@ -370,8 +398,7 @@ impl Engine {
                         )
                         .await;
                         let _ = self
-                            .tx_event
-                            .send(Event::TurnComplete {
+                            .send_event(Event::TurnComplete {
                                 usage: compaction_usage,
                                 parent_route_usage: Usage::default(),
                                 routed_usage_dropped_records: 0,
@@ -387,6 +414,15 @@ impl Engine {
                     let retries_used = result.retries_used;
                     let coverage_clause = result.coverage.receipt_clause();
                     let path = result.coverage.path;
+                    if let Some(job) = self.child_job()
+                        && let Err(error) = job
+                            .before_replace(&self.session.messages, &result.messages)
+                            .await
+                    {
+                        self.cancel_token.cancel();
+                        tracing::error!(%error, "child compaction projection failed; original Session retained");
+                        return;
+                    }
                     self.session.replace_messages(result.messages);
                     if let Some(pm) = self.session.prefix_stability.as_mut() {
                         pm.note_history_reset("compaction");
@@ -436,7 +472,7 @@ impl Engine {
                 );
                 self.emit_compaction_failed(id.clone(), false, message.clone())
                     .await;
-                let _ = self.tx_event.send(Event::status(message.clone())).await;
+                let _ = self.send_event(Event::status(message.clone())).await;
                 turn_status = TurnOutcomeStatus::Failed;
                 turn_error = Some(message);
             }
@@ -445,8 +481,7 @@ impl Engine {
         self.finish_compaction(&id);
 
         let _ = self
-            .tx_event
-            .send(Event::TurnComplete {
+            .send_event(Event::TurnComplete {
                 usage: compaction_usage,
                 parent_route_usage: Usage::default(),
                 routed_usage_dropped_records: 0,
@@ -456,6 +491,273 @@ impl Engine {
                 base_url: None,
             })
             .await;
+    }
+
+    /// The automatic compaction phase of `run_turn`, run once per loop
+    /// iteration before the request is built.
+    ///
+    /// When context pressure has reached the trigger, this summarizes history
+    /// with the tool prefix the next request will carry, installs the
+    /// checkpoint and reports the pass; a refusal is named once per turn.
+    /// `auto_compaction_suppressed` is the loop's turn-scoped latch: a failed,
+    /// cancelled or empty pass, or one that leaves pressure high, sets it so
+    /// the turn cannot become a paid summarization loop at every tool
+    /// boundary. The bounded hard-limit recovery
+    /// ([`Self::recover_context_overflow`]) stays available either way.
+    ///
+    /// The loop keeps its own control flow: the returned
+    /// [`AutoCompactionStep`] names the branch, and `run_turn` takes it.
+    pub(super) async fn run_auto_compaction(
+        &mut self,
+        client: &dyn crate::core::model_client::ModelClient,
+        active_tools: Option<&[Tool]>,
+        turn: &mut TurnContext,
+        auto_compaction_suppressed: &mut bool,
+    ) -> AutoCompactionStep {
+        let auto_compaction_config = self.config.compaction.clone();
+        // Billing usage accumulates every parent step and child-model
+        // call. Only the most recent parent-route request describes the
+        // live message list whose pressure we are checking here.
+        let billed_input_tokens = turn.live_input_tokens_for_compaction(
+            &self.session.messages,
+            self.session.system_prompt.as_ref(),
+            self.session.latest_parent_input_tokens,
+        );
+        let prepared = if !*auto_compaction_suppressed
+            && auto_compaction_config.enabled
+            && billed_input_tokens
+                .and_then(|tokens| usize::try_from(tokens).ok())
+                .unwrap_or(0)
+                >= auto_compaction_config.token_threshold
+        {
+            let mut prepared = self.prepare_compaction_envelope(auto_compaction_config);
+            prepared.tools = active_tools.map(<[Tool]>::to_vec);
+            Some(prepared)
+        } else {
+            None
+        };
+
+        let compaction_go = match prepared.as_ref() {
+            None => false,
+            Some(prepared) => match crate::compaction::compaction_decision_with_billed(
+                &self.session.messages,
+                self.session.system_prompt.as_ref(),
+                prepared,
+                billed_input_tokens,
+            ) {
+                crate::compaction::CompactionDecision::Compact => true,
+                crate::compaction::CompactionDecision::NotNeeded => false,
+                crate::compaction::CompactionDecision::Refused(reason) => {
+                    // A silent refusal looks like broken auto-compaction:
+                    // the meter is full and nothing happens (#5577). Name
+                    // the guard once per turn, in both the transcript
+                    // status line and the trace.
+                    if !turn.compaction_refusal_notified {
+                        turn.compaction_refusal_notified = true;
+                        let estimated_tokens_before = self.estimated_input_tokens();
+                        self.record_compaction_event("compaction.refused", serde_json::json!({
+                            "trigger": "auto",
+                            "reason": match &reason {
+                                crate::compaction::CompactionRefusal::TooFewMessages { .. } => "too_few_messages",
+                                crate::compaction::CompactionRefusal::RetainedFloor { .. } => "retained_floor",
+                            },
+                            "messages_before": self.session.messages.len(),
+                            "estimated_tokens_before": estimated_tokens_before,
+                            "billed_input_tokens": billed_input_tokens,
+                            "threshold_tokens": prepared.config.token_threshold,
+                        })).await;
+                        let message = match reason {
+                            crate::compaction::CompactionRefusal::TooFewMessages { count } => {
+                                format!(
+                                    "Context is filling up, but there is nothing to make room from yet: only {count} messages"
+                                )
+                            }
+                            crate::compaction::CompactionRefusal::RetainedFloor {
+                                floor,
+                                threshold,
+                            } => format!(
+                                "Context is filling up, but making room would not help: retained context (~{}K tokens) cannot fall below the {}K trigger — /compact to force a pass, or trim pinned context",
+                                floor / 1000,
+                                threshold / 1000
+                            ),
+                        };
+                        tracing::warn!(
+                            target: "compaction",
+                            ?reason,
+                            billed = ?billed_input_tokens,
+                            "auto-compaction refused under pressure"
+                        );
+                        let _ = self.send_event(Event::status(message)).await;
+                    }
+                    false
+                }
+            },
+        };
+        if let Some(prepared) = prepared
+            && compaction_go
+        {
+            let compaction_id = format!("compact_{}", &uuid::Uuid::new_v4().to_string()[..8]);
+            turn.stop_diagnostics.automatic_compaction_attempts = turn
+                .stop_diagnostics
+                .automatic_compaction_attempts
+                .saturating_add(1);
+            let compaction_cancel = self
+                .claim_compaction(&compaction_id)
+                .expect("a fresh automatic compaction id cannot be pre-canceled");
+            self.emit_compaction_started(compaction_id.clone(), true, "Making room…".to_string())
+                .await;
+            let auto_messages_before = self.session.messages.len();
+            let auto_tokens_before = self.estimated_input_tokens();
+            let turn_cancel = self.cancel_token.clone();
+            let started = Instant::now();
+            let mut compaction_usage = Usage::default();
+            // Parked: the compaction pass owns its own bound.
+            self.turn_heartbeat
+                .enter(super::turn_heartbeat::TurnPhase::Compacting, None, None);
+            let (compaction_result, turn_was_canceled) = tokio::select! {
+                biased;
+                _ = turn_cancel.cancelled() => (None, true),
+                _ = compaction_cancel.cancelled() => (None, false),
+                result = compact_messages_safe(
+                    client,
+                    &self.session.messages,
+                    self.session.system_prompt.as_ref(),
+                    &prepared,
+                    &mut compaction_usage,
+                ) => (Some(result), false),
+            };
+            turn.add_usage(&compaction_usage);
+            self.emit_compaction_usage(&compaction_usage, started.elapsed())
+                .await;
+            let Some(compaction_result) = compaction_result else {
+                *auto_compaction_suppressed = true;
+                self.finish_compaction(&compaction_id);
+                let message = if turn_was_canceled {
+                    "Making room stopped with the turn; the conversation was not changed"
+                } else {
+                    "Making room stopped; the conversation was not changed"
+                }
+                .to_string();
+                self.emit_compaction_cancelled(compaction_id, true, message)
+                    .await;
+                if turn_was_canceled {
+                    return AutoCompactionStep::EndTurn(TurnOutcomeStatus::Interrupted, None);
+                }
+                return AutoCompactionStep::Restart;
+            };
+
+            match compaction_result {
+                Ok(mut result) => {
+                    // Only update if we got valid messages (never corrupt state)
+                    if !result.messages.is_empty() || self.session.messages.is_empty() {
+                        self.append_compaction_agent_topology(&mut result.messages)
+                            .await;
+                        let turn_was_canceled = turn_cancel.is_cancelled();
+                        if turn_was_canceled || compaction_cancel.is_cancelled() {
+                            *auto_compaction_suppressed = true;
+                            self.finish_compaction(&compaction_id);
+                            let message = if turn_was_canceled {
+                                "Making room stopped with the turn; the conversation was not changed"
+                            } else {
+                                "Making room stopped; the conversation was not changed"
+                            }
+                            .to_string();
+                            self.emit_compaction_cancelled(compaction_id, true, message)
+                                .await;
+                            if turn_was_canceled {
+                                return AutoCompactionStep::EndTurn(
+                                    TurnOutcomeStatus::Interrupted,
+                                    None,
+                                );
+                            }
+                            return AutoCompactionStep::Restart;
+                        }
+                        let auto_messages_after = result.messages.len();
+                        let retries_used = result.retries_used;
+                        let coverage_clause = result.coverage.receipt_clause();
+                        let path = result.coverage.path;
+                        if let Some(job) = self.child_job()
+                            && let Err(error) = job
+                                .before_replace(&self.session.messages, &result.messages)
+                                .await
+                        {
+                            return AutoCompactionStep::EndTurn(
+                                TurnOutcomeStatus::Failed,
+                                Some(format!("child compaction projection failed: {error:#}")),
+                            );
+                        }
+                        self.session.replace_messages(result.messages);
+                        turn.clear_parent_input_tokens();
+                        if let Some(pm) = self.session.prefix_stability.as_mut() {
+                            pm.note_history_reset("compaction");
+                        }
+                        self.commit_compaction_checkpoint(result.summary_prompt);
+                        *auto_compaction_suppressed =
+                            crate::compaction::compaction_pressure_reached(
+                                &self.session.messages,
+                                self.session.system_prompt.as_ref(),
+                                &self.config.compaction,
+                            );
+                        self.emit_session_updated().await;
+                        let removed = auto_messages_before.saturating_sub(auto_messages_after);
+                        let auto_tokens_after = self.estimated_input_tokens();
+                        let status = if retries_used > 0 {
+                            format!(
+                                "Made room: {auto_messages_before} → {auto_messages_after} messages ({removed} removed, {retries_used} retries), ~{auto_tokens_before} → ~{auto_tokens_after} tokens ({coverage_clause})"
+                            )
+                        } else {
+                            format!(
+                                "Made room: {auto_messages_before} → {auto_messages_after} messages ({removed} removed), ~{auto_tokens_before} → ~{auto_tokens_after} tokens ({coverage_clause})"
+                            )
+                        };
+                        self.emit_compaction_completed(
+                            compaction_id.clone(),
+                            true,
+                            status.clone(),
+                            Some(auto_messages_before),
+                            Some(auto_messages_after),
+                            CompactionPass {
+                                trigger: "auto",
+                                path,
+                                tokens_before: auto_tokens_before,
+                                threshold_tokens: prepared.config.token_threshold,
+                                usage: compaction_usage.clone(),
+                            },
+                        )
+                        .await;
+                    } else {
+                        *auto_compaction_suppressed = true;
+                        let message =
+                            "Making room skipped: the summary came back empty".to_string();
+                        self.emit_compaction_failed(compaction_id.clone(), true, message.clone())
+                            .await;
+                        let _ = self.send_event(Event::status(message)).await;
+                    }
+                }
+                Err(err) => {
+                    *auto_compaction_suppressed = true;
+                    // Log error but continue with original messages (never corrupt)
+                    let message = crate::compaction::report_compaction_failure(
+                        "Making room failed",
+                        &compaction_id,
+                        true,
+                        &err,
+                    );
+                    self.emit_compaction_failed(compaction_id.clone(), true, message.clone())
+                        .await;
+                    let _ = self.send_event(Event::status(message)).await;
+                }
+            }
+            self.finish_compaction(&compaction_id);
+            // C02-06: a compaction pass has its own bound, not the
+            // turn's. Recheck the wall clock before it can authorize the
+            // provider request that follows this phase.
+            if let Some(error) = self.turn_wall_clock_exhausted_error() {
+                self.post_turn_budget_stop(&error).await;
+                return AutoCompactionStep::EndTurn(TurnOutcomeStatus::Failed, Some(error));
+            }
+        }
+        AutoCompactionStep::Proceed
     }
 
     pub(super) async fn recover_context_overflow(
@@ -621,6 +923,15 @@ impl Engine {
         let recovered = after_tokens <= target_budget && after_tokens < before_tokens;
 
         if recovered {
+            if let Some(job) = self.child_job()
+                && let Err(error) = job
+                    .before_replace(&self.session.messages, &compacted_messages)
+                    .await
+            {
+                self.cancel_token.cancel();
+                tracing::error!(%error, "child recovery projection failed; original Session retained");
+                return false;
+            }
             self.session.replace_messages(compacted_messages);
             turn.clear_parent_input_tokens();
             if let Some(pm) = self.session.prefix_stability.as_mut() {
@@ -650,7 +961,7 @@ impl Engine {
                 },
             )
             .await;
-            let _ = self.tx_event.send(Event::status(details)).await;
+            let _ = self.send_event(Event::status(details)).await;
             self.finish_compaction(&id);
             return true;
         }
@@ -675,7 +986,7 @@ impl Engine {
         };
         self.emit_compaction_failed(id.clone(), true, message.clone())
             .await;
-        let _ = self.tx_event.send(Event::status(message)).await;
+        let _ = self.send_event(Event::status(message)).await;
         self.finish_compaction(&id);
         false
     }
@@ -741,7 +1052,7 @@ mod tests {
     #[tokio::test]
     async fn compaction_notice_sink_delivers_a_status_event() {
         let (tx, mut rx) = mpsc::channel(4);
-        let sink = EngineCompactionNoticeSink { tx };
+        let sink = EngineCompactionNoticeSink { tx, child: None };
         sink.notice("Making room re-encoded 2 inline image(s)".to_string());
         match rx.recv().await {
             Some(Event::Status { message }) => {

@@ -2,17 +2,27 @@
 
 > 阅读简体中文版：[zh_hans/ARCHITECTURE.md](zh_hans/ARCHITECTURE.md)。
 
-This document provides an overview of the codewhale architecture for developers and contributors.
+Codewhale Engine is the existing Rust execution runtime. The
+[Runtime API](RUNTIME_API.md) is its client interface, and
+[TypeScript mods](EXTENSIONS.md) contribute reviewed extensions.
 
 Current boundary note (read the workspace version from `Cargo.toml`; this
 boundary has held since v0.9.1):
 - `crates/tui` is still the live end-user runtime for the TUI, runtime API, task manager, and tool execution loop.
 - Other workspace crates are being split out incrementally, but they are not yet the sole runtime source of truth.
-- The runtime is moving into `crates/runtime` (`codewhale-runtime`) in the
-  order `docs/design/TUI_DECONSTRUCTION.md` records: engine, tools, config,
-  client and stores move there together, never into `crates/core`, and the
-  TUI stays the only crate that writes to the terminal. Until a module has
-  moved, its path under `crates/tui/src` is still where it lives.
+
+<img src="assets/architecture.webp" alt="Codewhale architecture: clients reach the one turn loop, Engine::run_turn, through the CLI or the Runtime API; the engine uses crates/core to build requests, runs tools under approval and sandbox policy, routes to any provider through crates/config, and logs everything model-visible to the session store." width="1000">
+
+The diagram draws the Runtime API and the task manager as their own boxes; today
+both are hosted inside `crates/tui`, as the note above says. The GPUI desktop
+app and the VS Code extension live outside this repository. The arrow from the
+engine to the session log follows the "model-visible means logged" contract
+rather than a traced write path.
+- `crates/tui` is being split into crates sized as agent work partitions:
+  contracts, utilities, services, providers, runtime, leaf feature crates,
+  TUI views and hosts, in the order `docs/design/TUI_DECONSTRUCTION.md`
+  records. The TUI stays the only crate that writes to the terminal. Until a
+  module has moved, its path under `crates/tui/src` is still where it lives.
 - The LSP subsystem (`crates/tui/src/lsp/`) is fully wired into the engine's
   post-tool-execution path (`core/engine/lsp_hooks.rs`), providing inline
   diagnostics after `File` write, edit, and patch actions.
@@ -78,13 +88,21 @@ boundary has held since v0.9.1):
 
 ### Entry Point
 
-- **`main.rs`** - CLI argument parsing (clap), configuration loading, entry point routing
+- **`crates/cli/src/main.rs`** - The canonical executable entry point. `crates/cli/src/lib.rs` owns its command interface; terminal and headless runtime startup runs in process through the `codewhale_tui` library in `crates/tui/src/lib.rs`.
 
 ### Core Components
 
 - **`core/`** - Main engine components
   - `engine.rs` - Engine state, operation handling, message processing
-  - `engine/turn_loop.rs` - Streaming turn loop and tool execution orchestration
+  - `engine/turn_loop.rs` - The existing Engine outer turn loop, shared tool
+    planner/executor/result handling, and stream decoder. Its private
+    `turn_loop/` phases contain request preparation (`preparation.rs`), model
+    dispatch and admission (`model_step.rs`), the ordered continuation ladder
+    (`continuation.rs`), inline REPL orchestration (`inline_repl.rs`), and the
+    direct model tool batch (`tool_batch.rs`). They borrow the same Engine and
+    TurnContext; they introduce no runtime, session, prompt, approval, event,
+    or persistence authority. Retry, loop termination, and immediate return
+    stay distinct, and only the existing productive paths advance the step.
   - `session.rs` - Session state management
   - `turn.rs` - Turn-based conversation handling
   - `events.rs` - Event system for UI updates
@@ -97,15 +115,17 @@ boundary has held since v0.9.1):
 
 ### Workspace Crates
 
-- **`crates/cli`** - The `codewhale` binary: a command-line facade that owns
-  commands such as `auth`, `metrics` and `update` itself and passes the rest
-  (`run`, `exec`, `doctor`, `sessions`, ...) through to the `codewhale-tui`
-  binary built from `crates/tui`.
+- **`crates/cli`** - The canonical `codewhale` executable and command interface.
+  It owns commands such as `auth`, `metrics` and `update`, and invokes terminal
+  and headless modes (`run`, `exec`, `doctor`, `sessions`, ...) in process via
+  `codewhale_tui::run(RuntimeOptions, args)`. `crates/tui` is a library; the
+  `codew` and legacy release filename aliases contain the same executable.
 - **`crates/tools`** - Shared tool invocation primitives, including tool result/error/capability types used by the TUI runtime.
 - **`crates/agent`** - Model/provider registry (ModelRegistry) for resolving model IDs to provider endpoints.
 - **`crates/app-server`** - HTTP/SSE + JSON-RPC app server transport for
-  headless agent workflows. Note that `app-server --http`/`--mobile` delegate
-  to the TUI binary, which is where the runtime API actually lives.
+  headless agent workflows. The canonical executable dispatches
+  `app-server --http`/`--mobile` in process to the runtime API hosted by the
+  `codewhale_tui` library.
 - **`crates/config`** - Config loading, profiles, environment variable precedence, CLI runtime overrides.
 - **`crates/cloud-facts`** - Fetches the signed Codewhale cloud facts channel
   (`facts/v1`), verifies its Ed25519 envelope, and keeps a verified disk cache;
@@ -120,7 +140,18 @@ boundary has held since v0.9.1):
   `crates/tui/src/core/` is a module inside the TUI crate, not this crate. A
   placeholder `engine/` tree here once suggested otherwise — it had no callers
   and emitted `TurnComplete` without contacting a model — and was removed in
-  v0.9.11 so there is exactly one turn loop in the workspace.
+  v0.9.11. The source guard follows resolved local phase calls and still
+  rejects unlisted loop owners. ACP stdio now projects the existing Runtime
+  manager and Engine; it keeps no provider/tool round loop or separate history.
+  Recursive RLM and mounted Python RPCs now project captured caller authority
+  onto the same Engine producer and Session; no RLM loop exception remains.
+  Python retains its context and variables, while each round borrows the
+  captured route, Native selection, original code gate, cancellation and
+  deadline. Task guidance is bounded and additive to Core policy. Recursive
+  history is retained whole; overflow refuses rather than compacting it.
+  Persistent `rlm` contexts remain caller-session scoped and `share_session=true`
+  explicitly refuses. Child workers also use their captured admission in the
+  same Engine; neither nested host retains a turn-loop exception.
 - **`crates/execpolicy`** - Approval/sandbox policy engine for tool execution decisions.
 - **`crates/hooks`** - Event sinks (stdout, JSONL file, webhook, Unix socket)
   for response, tool, job and approval lifecycle events, plus the opt-in
@@ -247,7 +278,7 @@ drives turns through Chat Completions.
   - `policy.rs` - Sandbox policy configuration
   - `opensandbox.rs` - Alibaba OpenSandbox HTTP backend adapter
   - `seatbelt.rs` - macOS Seatbelt profile generation
-  - `bwrap.rs` - opt-in Linux bubblewrap command wrapper
+  - `bwrap.rs` - Linux bubblewrap command wrapper
   - `seccomp.rs` - dormant Linux seccomp implementation; not wired into commands
   - `process_hardening.rs` - Linux kernel-level hardening for the TUI process
     itself (defense-in-depth; not a child-command sandbox)
@@ -294,7 +325,7 @@ drives turns through Chat Completions.
 2. Tool registry looks up handler
 3. Pre-execution hooks run
 4. Approval requested when the effective permission posture and policy require it
-5. Tool executed (possibly wrapped by Seatbelt on macOS or opt-in bubblewrap on Linux)
+5. Tool executed (possibly wrapped by Seatbelt on macOS or bubblewrap on Linux)
 6. Post-execution hooks run
 7. Result metadata is retained on runtime item records
 8. **LSP post-edit hook**: after a `File` write, edit, or patch action (including a replay-only legacy alias), the engine runs `run_post_edit_lsp_hook()` when LSP is enabled to collect diagnostics
@@ -378,7 +409,7 @@ command = "echo 'Running tool: $TOOL_NAME'"
 3. **Extensibility**: MCP, skills, and hooks allow customization without code changes
 4. **Cross-platform**: Core works on Linux/macOS/Windows. Sandbox guarantees
    are platform-specific: macOS uses Seatbelt when available; Linux uses an
-   installed bubblewrap executable only when explicitly enabled; Windows has
+   installed bubblewrap executable by default when a probe shows it works; Windows has
    no advertised OS command sandbox. Seccomp and the Windows helper contract
    are not wired into command execution.
 5. **Minimal dependencies**: Careful dependency selection for build speed

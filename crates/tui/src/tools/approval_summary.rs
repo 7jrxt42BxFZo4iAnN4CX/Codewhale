@@ -55,6 +55,9 @@ pub fn approval_summary_in(
         "exec_shell_wait" | "exec_wait" => msg(MessageId::ApprovalSummaryShellWait),
         "exec_shell_interact" | "exec_interact" => msg(MessageId::ApprovalSummaryShellInput),
         "exec_shell_cancel" => msg(MessageId::ApprovalSummaryShellStop),
+        "task_shell_wait" if crate::tools::tasks::task_shell_wait_requests_cancel(input) => {
+            msg(MessageId::ApprovalSummaryShellStop)
+        }
         "write_file" => match path("path") {
             Some(path) => with(MessageId::ApprovalSummaryWritePath, "path", &path),
             None => msg(MessageId::ApprovalSummaryWriteFile),
@@ -649,6 +652,26 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    // The approval card for the model's stop call must say a command is being
+    // stopped, not show a bare tool name beside a task id.
+    #[test]
+    fn task_shell_wait_cancel_is_summarized_as_stopping_a_command() {
+        let stop = approval_summary_in(
+            Locale::En,
+            "task_shell_wait",
+            &json!({"task_id": "shell_1", "cancel": true}),
+            None,
+        );
+        assert_eq!(stop, "Stop a running shell command");
+        let poll = approval_summary_in(
+            Locale::En,
+            "task_shell_wait",
+            &json!({"task_id": "shell_1", "cancel": false, "gate": "test"}),
+            None,
+        );
+        assert_ne!(poll, stop);
+    }
+
     #[test]
     fn delegated_work_summary_names_the_authority_it_asks_for() {
         let summary = approval_summary(
@@ -955,7 +978,7 @@ mod tests {
                 &json!({"search_query": [{"q": "espresso"}, {"q": "grinder"}]}),
                 None,
             ),
-            "在网上搜索“espresso”（另 1 项）"
+            "在网上搜索“espresso” （另 1 项）"
         );
         assert_eq!(
             approval_summary_in(Locale::Fr, "mcp_github_create_issue", &json!({}), None),

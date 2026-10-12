@@ -40,6 +40,7 @@ const parityWorkflow = read(".github/workflows/release-parity.yml");
 const republish = read(".github/workflows/release-republish.yml");
 const releaseDockerfile = read("packaging/docker/Dockerfile.release");
 const cnb = read(".cnb.yml");
+const cnbSync = read(".github/workflows/sync-cnb.yml");
 const bundles = read("scripts/release/create-release-bundles.sh");
 const archiveInstaller = read("scripts/release/install.sh");
 const cliDispatcher = read("crates/cli/src/lib.rs");
@@ -62,11 +63,16 @@ assert.match(
   "the non-PR CNB fallback must be named explicitly",
 );
 
+assert.match(
+  namedStep(ciTestJob, "Build canonical executable for acceptance tests"),
+  /cargo build -p codewhale-cli --bin codewhale --all-features --locked/,
+  "Engine acceptance must build the canonical executable first",
+);
 const npmSmokeJob = ci.match(/^  npm-wrapper-smoke:\n([\s\S]*?)(?=^  \S)/m)?.[1];
 assert.ok(npmSmokeJob, "CI must retain the required npm-wrapper job");
 assert.match(
   namedStep(npmSmokeJob, "Build wrapper binaries"),
-  /run: cargo build --release --locked -p codewhale-cli -p codewhale-tui/,
+  /run: cargo build --release --locked -p codewhale-cli --bin codewhale/,
 );
 assert.match(
   namedStep(npmSmokeJob, "Smoke wrapper install and delegated entrypoints"),
@@ -153,7 +159,7 @@ function classify(paths) {
 }
 const rustSources = execFileSync("git", ["ls-files", "-z", "--", "*.rs"], { cwd: repoRoot, encoding: "utf8" })
   .split("\0")
-  .filter(Boolean);
+  .filter((file) => file && fs.existsSync(path.join(repoRoot, file)));
 const includeTargets = new Set();
 const includePattern =
   /include_(?:str|bytes)!\s*\(\s*(?:concat!\s*\(\s*(?:env!\s*\(\s*"(\w+)"\s*\)\s*,\s*)?)?"([^"]+)"/g;
@@ -498,6 +504,38 @@ assert.equal(
 );
 assert.match(release, /overwrite_files:\s*false/);
 assert.match(release, /fail_on_unmatched_files:\s*true/);
+// Assets land in a draft; the whole verified set becomes public at once, and
+// derived channels (the tagged container manifest) follow the canonical release.
+assert.match(release, /files: artifacts\/\*\n\s+draft: true\n/);
+assert.match(
+  namedStep(release, "Verify the draft's exact asset set, then publish it at once"),
+  /verify-release-inventory\.js \\\n\s+--draft --asset-dir artifacts --publish/,
+);
+const releaseJob = release.match(/\n  release:\n([\s\S]*?)\n  npm:\n/);
+assert.ok(releaseJob, "public release must retain its release job");
+assert.match(releaseJob[1], /^    needs: \[artifacts, docker-build, resolve\]$/m);
+const dockerJob = release.match(/\n  docker:\n([\s\S]*?)\n  release:\n/);
+assert.ok(dockerJob, "public release must retain its container manifest job");
+assert.match(dockerJob[1], /^    needs: \[docker-build, release, resolve\]$/m);
+assert.match(dockerJob[1], /needs\.release\.result == 'success'/);
+const cnbJob = release.match(/\n  cnb:\n([\s\S]*?)\n  npm:\n/);
+assert.ok(cnbJob, "CNB tag publication must follow the canonical release");
+assert.match(cnbJob[1], /^    needs: \[release, resolve\]$/m);
+assert.match(cnbJob[1], /needs\.release\.result == 'success'/);
+assert.match(cnbJob[1], /uses: \.\/\.github\/workflows\/sync-cnb\.yml/);
+assert.doesNotMatch(cnbSync, /^\s+tags:/m, "a tag push alone must not start CNB publication");
+assert.match(cnbSync, /^  workflow_call:/m);
+const cnbPush = namedStep(cnbSync, "Push triggering ref to CNB");
+const cnbPublicGate = cnbPush.indexOf("node scripts/release/verify-release-inventory.js --manifest");
+const cnbTagPush = cnbPush.indexOf('push_with_retry "tag ${TAG}"');
+assert.ok(cnbPublicGate >= 0 && cnbTagPush > cnbPublicGate,
+  "manual and called tag mirrors must verify the published inventory before pushing");
+assert.match(cnbPush, /verify-remote-tag\.sh/);
+assert.doesNotMatch(cnbPush, /\+refs\/tags\//, "published mirror tags must not be rewritten");
+assert.match(
+  namedStep(republish, "Require a complete published release"),
+  /verify-release-inventory\.js --manifest/,
+);
 
 assert.match(release, /^  docker-build:\n/m);
 assert.match(release, /^  docker:\n/m);
@@ -810,21 +848,30 @@ function jobTimeout(source, job) {
   return Number(match[1]);
 }
 
-// Pin the measured release-lane budget: fast setup and packaging fail quickly,
-// while cross-platform compilation keeps real margin over the 40-45m Windows
-// build observed on the release train.
+// Fast setup and packaging fail quickly. Native builds need the same finite
+// cold-build allowance as full CI: both 0.10.1 macOS artifacts hit the old
+// 90m compilation cap before reaching their launch and inventory checks.
 assert.equal(jobTimeout(candidate, "resolve"), 10);
 assert.equal(jobTimeout(candidate, "web"), 15);
 assert.equal(jobTimeout(artifacts, "pin"), 10);
-assert.equal(jobTimeout(artifacts, "build"), 90);
+assert.ok(
+  jobTimeout(artifacts, "build") >= jobTimeout(ci, "test"),
+  "native artifacts must allow the full CI cold-build budget",
+);
 for (const job of ["bundle", "windows-installer", "assemble", "smoke"]) {
   assert.equal(jobTimeout(artifacts, job), 15, `${job} must keep the 15m packaging cap`);
 }
-assert.equal(jobTimeout(nightly, "build"), 90);
+assert.equal(
+  jobTimeout(nightly, "build"), jobTimeout(artifacts, "build"),
+  "nightly and release must share the native cold-build allowance",
+);
 assert.equal(jobTimeout(release, "resolve"), 10);
-// The v0.9.12 tag push finished every parity step and was then cancelled at
-// 20 minutes inside rust-cache's post-run save; 45 keeps that margin.
-assert.equal(jobTimeout(parityWorkflow, "parity"), 45);
+// The 0.10.1 cold parity build exhausted 45 minutes before tests started.
+// Reuse the full CI suite's budget rather than pinning an older release's cap.
+assert.ok(
+  jobTimeout(parityWorkflow, "parity") >= jobTimeout(ci, "test"),
+  "release parity must allow the full CI suite's cold-build budget",
+);
 
 console.log(
   "Workflow contracts OK: 6-target/12-asset single-runtime nightly and exact-head 7-target/34-asset release candidate.",

@@ -9,8 +9,8 @@ use cucumber::{World as _, given, then, when, writer::Stats as _};
 use tempfile::TempDir;
 
 use crate::commands::{self, CommandResult};
-use crate::config::ApiProvider;
 use crate::config::Config;
+use crate::config::ProviderKind;
 use crate::tui::app::{App, TuiOptions};
 use crate::tui::command_palette::{self, CommandPaletteEntry};
 use crate::tui::widgets::{self, SlashMenuEntry};
@@ -64,7 +64,7 @@ fn palette_entries(tmpdir: &TempDir) -> Vec<CommandPaletteEntry> {
     command_palette::build_entries(
         Locale::En,
         tmpdir.path().join("skills").as_path(),
-        false,
+        crate::skills::SkillDiscoveryMode::Compatible,
         tmpdir.path(),
         tmpdir.path().join("mcp.json").as_path(),
         None,
@@ -78,7 +78,7 @@ fn completion_hints(tmpdir: &TempDir, input: &str) -> Vec<SlashMenuEntry> {
         &[],
         Locale::En,
         Some(tmpdir.path()),
-        ApiProvider::Deepseek,
+        ProviderKind::Deepseek,
     )
 }
 

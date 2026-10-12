@@ -29,14 +29,15 @@ use codewhale_core::ContextReferenceSource;
 use codewhale_localization::{Locale, MessageId, tr};
 use codewhale_models::{SystemPrompt, Tool};
 use codewhale_palette as palette;
+use codewhale_runtime::context_budget::{
+    CONTEXT_CRITICAL_THRESHOLD_PERCENT, CONTEXT_WARNING_THRESHOLD_PERCENT,
+};
 
 /// Marker used by per-turn working-set metadata. Replicated here so the
 /// context inspector can distinguish stable prompt blocks from volatile
 /// working-set context without importing engine internals.
 const WORKING_SET_MARKER: &str = "## Repo Working Set";
 
-pub(crate) const CONTEXT_WARNING_THRESHOLD_PERCENT: f64 = 85.0;
-pub(crate) const CONTEXT_CRITICAL_THRESHOLD_PERCENT: f64 = 95.0;
 const MAX_REFERENCE_ROWS: usize = 12;
 const MAX_TOOL_ROWS: usize = 8;
 const MAX_SCHEMA_COST_ROWS: usize = 24;
@@ -981,9 +982,13 @@ impl ModalView for ContextInspectorView {
             let value = tr(self.locale, MessageId::CtxInspRowTokens)
                 .replace("{tokens}", &row.tokens.to_string())
                 .replace("{percent}", &format!("{:.1}", row.percent));
-            let label_width = width.saturating_sub(value.len() + 5);
+            // Display cells, not bytes: a CJK or localized row measured in
+            // bytes padded short and pushed the value off the row (U04-m5).
+            let value_width = crate::tui::ui_text::text_display_width(&value);
+            let label_width = width.saturating_sub(value_width + 5);
             let label = crate::tui::ui_text::semantic_truncate(&row.label, label_width);
-            let gap = width.saturating_sub(label.len() + value.len() + 3);
+            let gap = width
+                .saturating_sub(crate::tui::ui_text::text_display_width(&label) + value_width + 3);
             let y = content
                 .y
                 .saturating_add(u16::try_from(lines.len()).unwrap_or(u16::MAX));
@@ -1037,7 +1042,7 @@ mod tests {
         // Pin the route identity: App::new consults the developer's real
         // saved settings, so on a machine with customized provider/model
         // the context-window assertions computed against a different route.
-        app.api_provider = crate::config::ApiProvider::Deepseek;
+        app.api_provider = crate::config::ProviderKind::Deepseek;
         app.auto_model = false;
         app.last_effective_model = None;
         app.active_route_limits = None;

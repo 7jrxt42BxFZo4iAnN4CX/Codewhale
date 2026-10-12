@@ -667,6 +667,45 @@ async fn parallel_partial_mode_keeps_schema_failures_as_structured_slots() {
     );
 }
 
+/// Audit R06-10: a cancel that lands while `task()` is still waiting on
+/// admission ends the run instead of leaving it parked on the driver.
+#[tokio::test]
+async fn cancel_during_task_admission_ends_the_run() {
+    let driver = Arc::new(FakeDriver::new());
+    driver.on("gate", FakeReply::HoldAdmission);
+    let cancel = WorkflowRunCancel::new();
+    let run_cancel = cancel.clone();
+    let run_driver = driver.clone();
+    let handle = tokio::spawn(async move {
+        WorkflowVm::new()
+            .run_script_with_cancel(
+                r#"await task({ description: "gate" });"#,
+                json!(null),
+                run_driver as Arc<dyn codewhale_workflow_js::WorkflowDriver>,
+                run_cancel,
+            )
+            .await
+    });
+
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while driver.spawn_count() == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("task should reach admission");
+    cancel.cancel();
+
+    let result = tokio::time::timeout(Duration::from_secs(5), handle)
+        .await
+        .expect("the run must end once cancelled")
+        .expect("VM task should join");
+    assert!(
+        matches!(result, Err(WorkflowJsError::Cancelled)),
+        "{result:?}"
+    );
+}
+
 #[tokio::test]
 async fn parallel_partial_mode_still_fails_the_run_on_cancellation() {
     let driver = Arc::new(FakeDriver::new());
@@ -2512,6 +2551,75 @@ async fn tools_call_round_trips() {
             .await
             .unwrap();
     assert_eq!(value, json!("x"));
+}
+
+#[tokio::test]
+async fn native_callbacks_stay_on_the_originating_host_runtime() {
+    use codewhale_workflow_js::{
+        BudgetSnapshot, DriverError, SpawnedTask, TaskRequest, ToolCallRequest, ToolCallResponse,
+        ToolInvoker, WorkflowDriver,
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct OriginCallbacks {
+        origin: std::thread::ThreadId,
+        calls: AtomicUsize,
+        driver: FakeDriver,
+    }
+
+    #[async_trait::async_trait]
+    impl WorkflowDriver for OriginCallbacks {
+        async fn spawn_task(&self, request: TaskRequest) -> Result<SpawnedTask, DriverError> {
+            assert_eq!(std::thread::current().id(), self.origin);
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.driver.spawn_task(request).await
+        }
+
+        fn cancel_all(&self) {
+            self.driver.cancel_all();
+        }
+
+        fn budget(&self) -> BudgetSnapshot {
+            self.driver.budget()
+        }
+
+        fn progress(&self, event: ProgressEvent) {
+            self.driver.progress(event);
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ToolInvoker for OriginCallbacks {
+        async fn invoke(&self, request: ToolCallRequest) -> Result<ToolCallResponse, DriverError> {
+            assert_eq!(std::thread::current().id(), self.origin);
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            EchoInvoker.invoke(request).await
+        }
+    }
+
+    let callbacks = Arc::new(OriginCallbacks {
+        origin: std::thread::current().id(),
+        calls: AtomicUsize::new(0),
+        driver: FakeDriver::new(),
+    });
+    let value = WorkflowVm::new()
+        .run_tools_script(
+            r#"const child = await task({ description: "origin-thread" });
+               const tool = await tools.call("read", { path: "original" });
+               return { child, path: tool.echo.path };"#,
+            json!(null),
+            callbacks.clone(),
+            callbacks.clone(),
+            WorkflowRunCancel::new(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        value,
+        json!({"child": "done:origin-thread", "path": "original"})
+    );
+    assert_eq!(callbacks.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(callbacks.driver.spawn_count(), 1);
 }
 
 #[tokio::test]

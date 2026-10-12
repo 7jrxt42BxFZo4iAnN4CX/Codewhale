@@ -306,6 +306,18 @@ fn structcopy_public_workflow_matches_frozen_baseline() {
     // Keep the original capture intact. Upstream's execution-identity change
     // supersedes exactly its duplicate-last observation with safe refusal.
     expected["tool_duplicate_last"] = expected["server_tool_unavailable"].clone();
+    // The integrated localization audit changed these four Chinese strings.
+    // Preserve the captured payloads and English receipts byte-for-byte.
+    for key in ["zh_hans_error_7", "zh_hans_native", "zh_hans_queued"] {
+        expected[key]["message"] = Value::String(
+            expected[key]["message"]
+                .as_str()
+                .unwrap()
+                .replace("轮次", "回合"),
+        );
+    }
+    expected["metadata"]["description_zh_hans"] =
+        Value::String("将一个会话对象复制为已脱敏的 JSON；不是模型工具".into());
     assert_eq!(
         baseline_observations(),
         expected,
@@ -354,7 +366,10 @@ fn structcopy_host_exposes_exact_authority_and_filters_private_data_before_cross
         debug_diff,
         debug_undo,
         debug_diagnostics,
+        permissions,
+        config_status,
     } = bundle.contexts(capabilities).into_parts();
+    assert!(permissions.is_none() && config_status.is_none());
     assert!(presentation.is_some());
     assert!(
         session.is_none()

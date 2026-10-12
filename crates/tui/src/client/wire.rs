@@ -49,10 +49,34 @@ pub(crate) fn parse_usage(usage: Option<&Value>) -> Usage {
         .and_then(Value::as_u64)
         .or(cached_tokens)
         .map(saturating_u32);
+    // Keep reported cache creation separate so pricing can apply its write
+    // rate. Fall back per field: a details object without this field must not
+    // hide the alternate dialect's value.
+    let nested_cache_write_tokens = usage.and_then(|u| {
+        u.pointer("/prompt_tokens_details/cache_write_tokens")
+            .and_then(Value::as_u64)
+            .or_else(|| {
+                u.pointer("/input_tokens_details/cache_write_tokens")
+                    .and_then(Value::as_u64)
+            })
+    });
+    let prompt_cache_write_tokens = usage
+        .and_then(|u| u.get("prompt_cache_write_tokens"))
+        .and_then(Value::as_u64)
+        .or(nested_cache_write_tokens)
+        .map(saturating_u32);
     let prompt_cache_miss_tokens = usage
         .and_then(|u| u.get("prompt_cache_miss_tokens"))
         .and_then(Value::as_u64)
-        .or_else(|| prompt_cache_hit_tokens.map(|hit| input_tokens.saturating_sub(u64::from(hit))))
+        .or_else(|| {
+            // No cache report means unknown, including when usage is absent.
+            // A reported zero is still a report and permits derivation.
+            (prompt_cache_hit_tokens.is_some() || prompt_cache_write_tokens.is_some()).then(|| {
+                let accounted = u64::from(prompt_cache_hit_tokens.unwrap_or(0))
+                    .saturating_add(u64::from(prompt_cache_write_tokens.unwrap_or(0)));
+                input_tokens.saturating_sub(accounted)
+            })
+        })
         .map(saturating_u32);
     // Reasoning tokens are a *subset* of the completion count every provider
     // bills, so they are never added to output. A payload claiming more
@@ -83,7 +107,7 @@ pub(crate) fn parse_usage(usage: Option<&Value>) -> Usage {
         output_tokens: saturating_u32(output_tokens),
         prompt_cache_hit_tokens,
         prompt_cache_miss_tokens,
-        prompt_cache_write_tokens: None,
+        prompt_cache_write_tokens,
         reasoning_tokens,
         reasoning_replay_tokens: None,
         server_tool_use,
@@ -98,6 +122,10 @@ pub(super) fn extract_sse_data_value(line: &str) -> Option<&str> {
 /// Hard ceiling for one pending SSE line, matching the MCP frame limit.
 /// This does not bound the size of a multi-line event or the whole stream.
 const MAX_SSE_LINE_BYTES: usize = 8 * 1024 * 1024;
+/// Hard ceiling for one assembled SSE event (its `data:` fields joined), so a
+/// peer that never sends the blank line ending an event cannot grow memory
+/// without bound. Same size as the single-line ceiling.
+const MAX_SSE_EVENT_BYTES: usize = MAX_SSE_LINE_BYTES;
 
 /// Invalid or oversized SSE line (or unterminated flush).
 ///
@@ -109,6 +137,7 @@ const MAX_SSE_LINE_BYTES: usize = 8 * 1024 * 1024;
 pub(super) enum SseLineError {
     InvalidUtf8 { valid_up_to: usize },
     TooLong,
+    EventTooLong,
 }
 
 impl std::fmt::Display for SseLineError {
@@ -120,6 +149,10 @@ impl std::fmt::Display for SseLineError {
             Self::TooLong => write!(
                 f,
                 "SSE line exceeded {MAX_SSE_LINE_BYTES} bytes (8 MiB) — aborting stream"
+            ),
+            Self::EventTooLong => write!(
+                f,
+                "SSE event exceeded {MAX_SSE_EVENT_BYTES} bytes (8 MiB) — aborting stream"
             ),
         }
     }
@@ -182,6 +215,27 @@ pub(super) fn flush_sse_line(buffer: &mut Vec<u8>) -> Result<Option<String>, Sse
     let decoded = decode_sse_line_bytes(&buffer[..end]).map(|text| text.trim().to_string());
     buffer.clear();
     decoded.map(|line| (!line.is_empty()).then_some(line))
+}
+
+/// Append one `data:` field to the event being assembled. The SSE spec joins
+/// the `data:` fields of one event with '\n' and dispatches the event at the
+/// blank line that ends it; a provider may split one JSON payload across
+/// several fields, so parsing each field alone would drop the event. Fails
+/// closed (clearing the event) past [`MAX_SSE_EVENT_BYTES`].
+pub(super) fn push_sse_event_data(event: &mut String, data: &str) -> Result<(), SseLineError> {
+    let needed = event
+        .len()
+        .saturating_add(usize::from(!event.is_empty()))
+        .saturating_add(data.len());
+    if needed > MAX_SSE_EVENT_BYTES {
+        event.clear();
+        return Err(SseLineError::EventTooLong);
+    }
+    if !event.is_empty() {
+        event.push('\n');
+    }
+    event.push_str(data);
+    Ok(())
 }
 
 /// Next decoded SSE line. When `at_end` is false, wait for `\n`. When `at_end`
@@ -269,6 +323,98 @@ mod tests {
             next_sse_line(&mut multiple, false).unwrap().as_deref(),
             Some("next")
         );
+    }
+
+    #[test]
+    fn parse_usage_preserves_absent_cache_telemetry_and_explicit_zero() {
+        for payload in [
+            None,
+            Some(json!({})),
+            Some(json!({"prompt_tokens": 100, "completion_tokens": 20})),
+        ] {
+            let usage = parse_usage(payload.as_ref());
+            assert_eq!(usage.prompt_cache_hit_tokens, None);
+            assert_eq!(usage.prompt_cache_miss_tokens, None);
+            assert_eq!(usage.prompt_cache_write_tokens, None);
+        }
+        let zero = parse_usage(Some(&json!({
+            "prompt_tokens": 100,
+            "prompt_cache_hit_tokens": 0,
+            "prompt_cache_write_tokens": 0,
+            "prompt_tokens_details": {"cache_write_tokens": 75}
+        })));
+        assert_eq!(zero.prompt_cache_hit_tokens, Some(0));
+        assert_eq!(zero.prompt_cache_write_tokens, Some(0));
+        assert_eq!(zero.prompt_cache_miss_tokens, Some(100));
+        let explicit_miss = parse_usage(Some(&json!({
+            "prompt_tokens": 100,
+            "prompt_cache_miss_tokens": 0
+        })));
+        assert_eq!(explicit_miss.prompt_cache_miss_tokens, Some(0));
+    }
+
+    #[test]
+    fn parse_usage_cache_write_dialects_partition_the_input_total() {
+        for payload in [
+            json!({
+                "input_tokens": 1000,
+                "prompt_cache_hit_tokens": 600,
+                "prompt_cache_write_tokens": 200
+            }),
+            json!({
+                "prompt_tokens": 1000,
+                "prompt_tokens_details": {"cached_tokens": 600, "cache_write_tokens": 200}
+            }),
+            json!({
+                "input_tokens": 1000,
+                "prompt_cache_hit_tokens": 600,
+                "input_tokens_details": {"cache_write_tokens": 200}
+            }),
+            // Both objects can exist; the first lacks the write field.
+            json!({
+                "prompt_tokens": 1000,
+                "prompt_tokens_details": {"cached_tokens": 600},
+                "input_tokens_details": {"cache_write_tokens": 200}
+            }),
+        ] {
+            let usage = parse_usage(Some(&payload));
+            assert_eq!(usage.input_tokens, 1000);
+            assert_eq!(usage.prompt_cache_hit_tokens, Some(600));
+            assert_eq!(usage.prompt_cache_write_tokens, Some(200));
+            assert_eq!(usage.prompt_cache_miss_tokens, Some(200));
+            let priced = crate::pricing::token_usage_for_pricing(&usage);
+            assert_eq!(priced.cache_read, 600);
+            assert_eq!(priced.cache_write, 200);
+            assert_eq!(priced.input, 200);
+            assert_eq!(priced.input + priced.cache_read + priced.cache_write, 1000);
+        }
+        let write_only = parse_usage(Some(&json!({
+            "prompt_tokens": 1000,
+            "input_tokens_details": {"cache_write_tokens": 200}
+        })));
+        assert_eq!(write_only.prompt_cache_hit_tokens, None);
+        assert_eq!(write_only.prompt_cache_write_tokens, Some(200));
+        assert_eq!(write_only.prompt_cache_miss_tokens, Some(800));
+    }
+
+    #[test]
+    fn parse_usage_cache_write_saturates_and_keeps_explicit_miss() {
+        let excessive = parse_usage(Some(&json!({
+            "prompt_tokens": 100,
+            "prompt_cache_hit_tokens": 60,
+            "prompt_cache_write_tokens": u64::MAX
+        })));
+        assert_eq!(excessive.input_tokens, 100);
+        assert_eq!(excessive.prompt_cache_write_tokens, Some(u32::MAX));
+        assert_eq!(excessive.prompt_cache_miss_tokens, Some(0));
+        let explicit = parse_usage(Some(&json!({
+            "prompt_tokens": 100,
+            "prompt_cache_hit_tokens": 60,
+            "prompt_cache_write_tokens": 20,
+            "prompt_cache_miss_tokens": 10
+        })));
+        assert_eq!(explicit.prompt_cache_write_tokens, Some(20));
+        assert_eq!(explicit.prompt_cache_miss_tokens, Some(10));
     }
 
     #[test]
@@ -387,14 +533,14 @@ mod tests {
     /// field entirely must not change the cost by a single cent.
     #[test]
     fn reasoning_parser_fixtures_never_exceed_or_add_to_billable_output() {
-        use crate::config::ApiProvider;
+        use crate::config::ProviderKind;
         use crate::pricing::{calculate_turn_cost_estimate_for_provider, token_usage_for_pricing};
 
         // (label, provider, model, payload)
-        let fixtures: [(&str, ApiProvider, &str, serde_json::Value); 3] = [
+        let fixtures: [(&str, ProviderKind, &str, serde_json::Value); 3] = [
             (
                 "moonshot",
-                ApiProvider::Moonshot,
+                ProviderKind::Moonshot,
                 "kimi-k2.7-code",
                 json!({
                     "prompt_tokens": 30_000,
@@ -406,7 +552,7 @@ mod tests {
             ),
             (
                 "minimax",
-                ApiProvider::Minimax,
+                ProviderKind::Minimax,
                 "minimax-m3",
                 json!({
                     "prompt_tokens": 12_000,
@@ -418,7 +564,7 @@ mod tests {
             ),
             (
                 "openrouter",
-                ApiProvider::Openrouter,
+                ProviderKind::Openrouter,
                 "qwen/qwen3.7-plus",
                 json!({
                     "prompt_tokens": 8_000,

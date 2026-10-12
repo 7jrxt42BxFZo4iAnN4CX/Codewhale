@@ -703,6 +703,14 @@ workflow({
                     ],
                     "the scout grep must not include its own authored prompt"
                 );
+                let repository_root =
+                    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+                for path in &leaf.file_scope {
+                    assert!(
+                        repository_root.join(path).is_file(),
+                        "scout evidence path must exist: {path}"
+                    );
+                }
                 assert!(
                     leaf.prompt.contains(
                         "`include` set exactly to [`fleets/stopship.toml`, `crates/cli/src/lib.rs`, `crates/workflow/src/role_resolve.rs`, `crates/tui/src/tools/workflow/mod.rs`, `crates/lane/src/runtime.rs`]"

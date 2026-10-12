@@ -29,3 +29,12 @@ result each, rather than accumulating duplicates. The upstream tests
 `tool_copy_selects_execution_when_provider_reuses_wire_id` and
 `tool_copy_refuses_ambiguous_or_inconsistent_identity` move unchanged into
 `session_structcopy_regression_tests.rs` and protect the new identity rules.
+
+## Localization audit reconciliation (2026-10-01)
+
+The integrated Chinese localization audit changed the turn label from `轮次`
+to `回合` in three receipts and shortened the command description to
+`将一个会话对象复制为已脱敏的 JSON；不是模型工具`. The assertion applies exactly
+these four textual updates to the preserved capture. The fixture itself,
+canonical JSON payloads, byte counts, English receipts, authority checks and
+transport outcomes remain unchanged.

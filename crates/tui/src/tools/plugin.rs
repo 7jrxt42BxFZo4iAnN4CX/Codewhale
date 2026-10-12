@@ -12,12 +12,27 @@
 //! # name: my-tool
 //! # description: Does something useful
 //! # schema: {"type":"object","properties":{"input":{"type":"string"}}}
-//! # approval: auto
+//! # approval: required
 //! ```
 //!
 //! The script receives the tool's JSON input on **stdin** and must return
 //! a JSON `ToolResult` (`{"content": "...", "success": true}`) on **stdout**.
 //! Non-JSON output is wrapped in a `ToolResult` with `success: false`.
+//!
+//! # What a script tool cannot do (D4, CURRENT_DECISIONS §26)
+//!
+//! - **Approve itself.** `# approval:` accepts `suggest` (the default) and
+//!   `required`. `auto` is no longer honoured: the tool gets the default a
+//!   script without the line gets, and [`PluginMetadata::auto_approval_ignored`]
+//!   lets each loader say so (runtime log, `/plugin tools`) instead of
+//!   downgrading silently.
+//! - **Replace a built-in.** A drop-in script whose name is already registered
+//!   is refused by `ToolRegistry::load_plugins`, and a `[tools.overrides]`
+//!   `script` / `command` entry keyed by a built-in is refused by
+//!   `ToolRegistry::apply_overrides_with_executor`; `disabled` still turns a built-in off.
+//!
+//! Known limitation: an unrecognised `# approval:` value (a typo such as
+//! `requried`) still falls back to the default without a diagnostic.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -35,6 +50,43 @@ use crate::config::ToolOverride;
 /// Timeout for plugin script execution (120 seconds).
 const PLUGIN_EXECUTION_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// Captured at catalogue preparation. Enabled host errors never select Legacy.
+#[derive(Clone)]
+pub(crate) enum PluginExecutor {
+    Legacy,
+    Host(Arc<crate::extension_host::ExtensionHostManager>),
+}
+impl PluginExecutor {
+    pub(crate) fn for_engine() -> Self {
+        if crate::plugins::activation::extension_host_policy_enabled() {
+            let manager = crate::extension_host::manager();
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                manager.bind_engine_handle(handle);
+            }
+            Self::Host(manager)
+        } else {
+            Self::Legacy
+        }
+    }
+    async fn run(
+        &self,
+        mut command: tokio::process::Command,
+        label: &str,
+        input: Value,
+        context: &ToolContext,
+    ) -> Result<ToolResult, ToolError> {
+        match self {
+            Self::Legacy if !crate::plugins::activation::extension_host_policy_enabled() => {
+                run_plugin_child_raw(&mut command, label, input).await
+            }
+            Self::Legacy => Err(ToolError::not_available(
+                "script catalogue predates enabled execution; prepare tools again",
+            )),
+            Self::Host(manager) => manager.execute_script(command, input, context).await,
+        }
+    }
+}
+
 /// Metadata extracted from a plugin script's frontmatter header.
 #[derive(Debug, Clone)]
 pub struct PluginMetadata {
@@ -46,14 +98,32 @@ pub struct PluginMetadata {
     /// Defaults to a permissive `{"type": "object"}` when absent.
     pub input_schema: Value,
     /// Approval requirement (from `# approval:`).
-    /// Defaults to `Suggest`.
+    /// Defaults to `Suggest`; never `Auto` (see the module docs).
     pub approval: ApprovalRequirement,
+    /// The frontmatter asked for `approval: auto`, which script tools may no
+    /// longer use; `approval` holds the default instead. Loaders report it
+    /// with `AUTO_APPROVAL_UNSUPPORTED`.
+    pub auto_approval_ignored: bool,
+}
+
+/// Why a script's `approval: auto` was ignored. Shared by the load warning and
+/// the `/plugin tools` diagnostic so the two surfaces say the same thing.
+pub(crate) const AUTO_APPROVAL_UNSUPPORTED: &str = "`approval: auto` is no longer supported for script tools; \
+     the tool follows the session's approval setting like a script with no `approval:` line";
+
+/// Log the D4 downgrade for a script tool registered as `tool_name`.
+fn warn_auto_approval_ignored(tool_name: &str) {
+    tracing::warn!(
+        "Script tool '{}': {AUTO_APPROVAL_UNSUPPORTED}",
+        crate::safe_label::SafeLabel::identifier(tool_name)
+    );
 }
 
 /// A tool backed by an external script or executable dropped into the
 /// plugins directory. The script receives JSON input on stdin and writes
 /// a JSON `ToolResult` to stdout.
 struct ScriptPluginTool {
+    executor: PluginExecutor,
     metadata: PluginMetadata,
     /// Absolute path to the script.
     script_path: PathBuf,
@@ -111,16 +181,26 @@ impl ToolSpec for ScriptPluginTool {
         self.metadata.approval
     }
 
-    async fn execute(&self, input: Value, _context: &ToolContext) -> Result<ToolResult, ToolError> {
+    async fn execute(&self, input: Value, context: &ToolContext) -> Result<ToolResult, ToolError> {
         let (interpreter, script_args) = script_command_parts(&self.script_path, &self.args);
-        let label = self.script_path.display().to_string();
-        run_plugin_child(&interpreter, &script_args, &label, input).await
+        let mut command = tokio::process::Command::new(&interpreter);
+        crate::utils::suppress_tokio_console_window(&mut command);
+        command.args(script_args);
+        self.executor
+            .run(
+                command,
+                &self.script_path.display().to_string(),
+                input,
+                context,
+            )
+            .await
     }
 }
 
 /// A tool backed by an arbitrary shell command from config.toml overrides.
 /// Behaves like `ScriptPluginTool` but uses the user-specified command string.
 struct CommandPluginTool {
+    executor: PluginExecutor,
     name: String,
     description: String,
     input_schema: Value,
@@ -171,7 +251,7 @@ impl ToolSpec for CommandPluginTool {
         self.approval
     }
 
-    async fn execute(&self, input: Value, _context: &ToolContext) -> Result<ToolResult, ToolError> {
+    async fn execute(&self, input: Value, context: &ToolContext) -> Result<ToolResult, ToolError> {
         // On Windows, if the command doesn't have an extension, try wrapping
         // in `cmd /c` or use `powershell` for `.ps1` files. For portability
         // we let tokio::process::Command resolve via PATH.
@@ -187,7 +267,7 @@ impl ToolSpec for CommandPluginTool {
         };
         cmd.args(&self.args);
         let label = format!("command '{}'", self.command);
-        run_plugin_child_raw(&mut cmd, &label, input).await
+        self.executor.run(cmd, &label, input, context).await
     }
 }
 
@@ -277,19 +357,6 @@ fn read_prefix_to_string(reader: impl std::io::Read, max_bytes: u64) -> Option<S
 // Shared child process helpers
 // ---------------------------------------------------------------------------
 
-/// Spawn a command, pipe JSON input to stdin, collect ToolResult from stdout.
-async fn run_plugin_child(
-    command: &str,
-    args: &[String],
-    label: &str,
-    input: Value,
-) -> Result<ToolResult, ToolError> {
-    let mut cmd = tokio::process::Command::new(command);
-    crate::utils::suppress_tokio_console_window(&mut cmd);
-    cmd.args(args);
-    run_plugin_child_raw(&mut cmd, label, input).await
-}
-
 /// Run a pre-configured tokio Command, pipe JSON input, collect ToolResult.
 async fn run_plugin_child_raw(
     cmd: &mut tokio::process::Command,
@@ -343,7 +410,7 @@ async fn run_plugin_child_raw(
 /// # name: my-tool
 /// # description: Does something
 /// # schema: {"type":"object"}
-/// # approval: auto
+/// # approval: required
 /// ```
 ///
 /// Also supports `// ` prefix for JavaScript/TypeScript scripts and `-- ` for Lua.
@@ -381,10 +448,12 @@ pub fn parse_frontmatter(content: &str) -> PluginMetadata {
         serde_json::from_str(&schema_str).unwrap_or_else(|_| serde_json::json!({"type": "object"}))
     };
 
-    let approval = match approval_str.to_lowercase().as_str() {
-        "auto" => ApprovalRequirement::Auto,
-        "required" => ApprovalRequirement::Required,
-        _ => ApprovalRequirement::Suggest,
+    // A script cannot approve itself (D4): `auto` gets the default, flagged so
+    // the loaders can report it.
+    let (approval, auto_approval_ignored) = match approval_str.to_lowercase().as_str() {
+        "required" => (ApprovalRequirement::Required, false),
+        "auto" => (ApprovalRequirement::Suggest, true),
+        _ => (ApprovalRequirement::Suggest, false),
     };
 
     PluginMetadata {
@@ -400,6 +469,7 @@ pub fn parse_frontmatter(content: &str) -> PluginMetadata {
         },
         input_schema,
         approval,
+        auto_approval_ignored,
     }
 }
 
@@ -464,7 +534,14 @@ pub fn scan_plugin_dir(dir: &Path) -> Vec<(PathBuf, PluginMetadata)> {
 
 /// Load all plugin tools from a directory. Each eligible script becomes
 /// a registered `ScriptPluginTool`.
+#[cfg(test)]
 pub fn load_plugin_tools(plugin_dir: &Path) -> Vec<Arc<dyn ToolSpec>> {
+    load_plugin_tools_with_executor(plugin_dir, PluginExecutor::for_engine())
+}
+pub(crate) fn load_plugin_tools_with_executor(
+    plugin_dir: &Path,
+    executor: PluginExecutor,
+) -> Vec<Arc<dyn ToolSpec>> {
     let discovered = scan_plugin_dir(plugin_dir);
     let mut tools: Vec<Arc<dyn ToolSpec>> = Vec::with_capacity(discovered.len());
 
@@ -474,7 +551,11 @@ pub fn load_plugin_tools(plugin_dir: &Path) -> Vec<Arc<dyn ToolSpec>> {
             meta.name,
             path.display()
         );
+        if meta.auto_approval_ignored {
+            warn_auto_approval_ignored(&meta.name);
+        }
         tools.push(Arc::new(ScriptPluginTool {
+            executor: executor.clone(),
             metadata: meta,
             script_path: path,
             args: Vec::new(),
@@ -487,10 +568,26 @@ pub fn load_plugin_tools(plugin_dir: &Path) -> Vec<Arc<dyn ToolSpec>> {
 /// Create a single tool from a `ToolOverride` config entry.
 ///
 /// Returns `None` for `Disabled` (the caller handles removal separately).
+/// This builds the tool only; `ToolRegistry::apply_overrides_with_executor` decides whether
+/// the name may be taken, and refuses one owned by a built-in.
+#[cfg(test)]
 pub fn tool_from_override(
     tool_name: &str,
     override_cfg: &ToolOverride,
     plugin_dir: &Path,
+) -> Option<Arc<dyn ToolSpec>> {
+    tool_from_override_with_executor(
+        tool_name,
+        override_cfg,
+        plugin_dir,
+        PluginExecutor::for_engine(),
+    )
+}
+pub(crate) fn tool_from_override_with_executor(
+    tool_name: &str,
+    override_cfg: &ToolOverride,
+    plugin_dir: &Path,
+    executor: PluginExecutor,
 ) -> Option<Arc<dyn ToolSpec>> {
     match override_cfg {
         ToolOverride::Disabled => None,
@@ -515,15 +612,20 @@ pub fn tool_from_override(
             // defaults if it has none.
             let mut meta = read_script_metadata(&script_path).unwrap_or_else(|| PluginMetadata {
                 name: tool_name.to_string(),
-                description: format!("Override for built-in tool '{tool_name}'"),
+                description: format!("Script tool '{tool_name}' from [tools.overrides]"),
                 input_schema: serde_json::json!({"type": "object"}),
                 approval: ApprovalRequirement::Suggest,
+                auto_approval_ignored: false,
             });
 
             // The config key owns the replacement target; frontmatter supplies metadata only.
             meta.name = tool_name.to_string();
+            if meta.auto_approval_ignored {
+                warn_auto_approval_ignored(tool_name);
+            }
 
             Some(Arc::new(ScriptPluginTool {
+                executor,
                 metadata: meta,
                 script_path,
                 args: args.clone().unwrap_or_default(),
@@ -535,6 +637,7 @@ pub fn tool_from_override(
             let cmd_args = args.clone().unwrap_or_default();
 
             Some(Arc::new(CommandPluginTool {
+                executor,
                 name: tool_name.to_string(),
                 description,
                 input_schema: serde_json::json!({"type": "object"}),
@@ -591,7 +694,8 @@ echo hello
 
         assert_eq!(meta.name, "compact-name");
         assert_eq!(meta.description, "spaced description");
-        assert_eq!(meta.approval, ApprovalRequirement::Auto);
+        assert_eq!(meta.approval, ApprovalRequirement::Suggest);
+        assert!(meta.auto_approval_ignored);
         assert_eq!(
             meta.input_schema,
             serde_json::json!({"type":"object","properties":{"ok":{"type":"boolean"}}})
@@ -881,7 +985,9 @@ echo hello
             assert_eq!(parse_frontmatter(content).approval, expected);
         };
 
-        check("# name: x\n# approval: auto", ApprovalRequirement::Auto);
+        // D4: a script cannot approve itself; `auto` gets the default.
+        check("# name: x\n# approval: auto", ApprovalRequirement::Suggest);
+        check("# name: x\n# approval: AUTO", ApprovalRequirement::Suggest);
         check(
             "# name: x\n# approval: required",
             ApprovalRequirement::Required,

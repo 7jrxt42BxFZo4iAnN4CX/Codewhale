@@ -417,8 +417,9 @@ fn write_atomic_with_permissions(
 /// once for the whole set — see [`write_atomic_batch`].
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum AtomicWriteScope {
-    /// Sweep this directory for stale temp files and fsync it: what a single
-    /// write should do, and what every caller of `write_atomic` gets.
+    /// Sweep this directory for stale temp files (at most once per
+    /// `STALE_AFTER`) and fsync it: what a single write should do, and what
+    /// every caller of `write_atomic` gets.
     Single,
     /// Leave both to the caller. Used only by [`write_atomic_batch`].
     Batch,
@@ -426,18 +427,18 @@ enum AtomicWriteScope {
 
 /// Write many files, and pay each directory's costs once.
 ///
-/// Every [`write_atomic`] call sweeps its directory for stale temp files and
-/// fsyncs that directory, which is exactly right for one record at a time. A
-/// caller publishing a thousand records into one directory pays that thousand
-/// times, though, and the sweep is the same answer every time: scanning a
-/// store directory of tens of thousands of entries per file is minutes of work
-/// that buys nothing (measured: 22 ms per item write, 34 s for one fork's
-/// clone).
+/// Every [`write_atomic`] call fsyncs its directory, which is exactly right
+/// for one record at a time. A caller publishing a thousand records into one
+/// directory pays that thousand times, though. The stale-temp sweep is
+/// already throttled to once per directory per `STALE_AFTER`, because
+/// scanning a store directory of tens of thousands of entries per file is
+/// minutes of work that buys nothing (measured before the throttle: 22 ms per
+/// item write, 34 s for one fork's clone).
 ///
-/// The batch sweeps each directory once, writes every file with the same
-/// atomic replace and per-file data sync, and fsyncs each directory once at
-/// the end. Per-file durability is unchanged; only the per-file directory work
-/// is hoisted out of the loop.
+/// The batch goes through the same throttled sweep once per directory, writes
+/// every file with the same atomic replace and per-file data sync, and fsyncs
+/// each directory once at the end. Per-file durability is unchanged; only the
+/// per-file directory work is hoisted out of the loop.
 ///
 /// Ordering is still the caller's job: a batch that publishes a graph of
 /// records must write its commit record last, as the single-write callers do.
@@ -451,9 +452,7 @@ pub fn write_atomic_batch(files: &[(PathBuf, Vec<u8>)]) -> std::io::Result<()> {
         }
     }
     for parent in &parents {
-        if is_codewhale_owned_state_dir(parent) {
-            sweep_stale_atomic_write_temps(parent);
-        }
+        sweep_owned_dir_if_due(parent);
     }
     for (path, contents) in files {
         write_atomic_scoped(
@@ -467,6 +466,58 @@ pub fn write_atomic_batch(files: &[(PathBuf, Vec<u8>)]) -> std::io::Result<()> {
         sync_directory(parent);
     }
     Ok(())
+}
+
+/// The file name Windows will create for `path`. The native rename used by
+/// `write_atomic_scoped` takes the name literally, while Win32 path APIs drop
+/// trailing dots and spaces and map device names (`CON`); refuse a name that
+/// Windows would rewrite instead of creating a file nothing else can open.
+/// A `:` names an NTFS alternate data stream (`notes:private`, `con:x`), so
+/// the write would land in a hidden stream rather than a file; refuse it too.
+#[cfg(windows)]
+fn windows_atomic_target_name(path: &Path) -> std::io::Result<std::ffi::OsString> {
+    let invalid = || {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!(
+                "Windows would not write this file name as given: {}",
+                path.display()
+            ),
+        )
+    };
+    let name = path.file_name().ok_or_else(invalid)?;
+    if name.to_string_lossy().contains(':') {
+        return Err(invalid());
+    }
+    // Path normalization alone can leave a reserved DOS basename unchanged.
+    // Reject them explicitly, including extensions and the documented
+    // superscript port digits, before the native rename can create one.
+    let stem = name
+        .to_string_lossy()
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches(' ')
+        .to_ascii_uppercase();
+    let reserved_port = stem
+        .strip_prefix("COM")
+        .or_else(|| stem.strip_prefix("LPT"))
+        .is_some_and(|port| {
+            matches!(
+                port,
+                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+            )
+        });
+    if matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL") || reserved_port {
+        return Err(invalid());
+    }
+    let absolute = std::path::absolute(path)?;
+    if absolute.file_name() != Some(name)
+        || absolute.as_os_str().to_string_lossy().starts_with(r"\\.\")
+    {
+        return Err(invalid());
+    }
+    Ok(name.to_owned())
 }
 
 fn write_atomic_scoped(
@@ -519,51 +570,77 @@ fn write_atomic_scoped(
         builder.permissions(fs::Permissions::from_mode(0o666));
     }
 
-    // Reclaim our own strays before adding another (see the function docs).
+    // Reclaim our own strays before adding another, at most once per
+    // directory per `STALE_AFTER` (see `sweep_stale_atomic_write_temps`).
     // Private permission policy is also used for user-chosen destinations
     // such as `/save <path>`; only sweep Codewhale-owned state/config dirs.
-    if permission_policy == AtomicWritePermissions::Private
-        && scope == AtomicWriteScope::Single
-        && is_codewhale_owned_state_dir(parent)
-    {
-        sweep_stale_atomic_write_temps(parent);
+    if permission_policy == AtomicWritePermissions::Private && scope == AtomicWriteScope::Single {
+        sweep_owned_dir_if_due(parent);
     }
 
+    // Validated before any temp exists, so a refused name leaves nothing.
+    #[cfg(windows)]
+    let target_name = windows_atomic_target_name(path)?;
+    #[cfg(not(windows))]
     let mut tmp = builder.tempfile_in(parent)?;
-    std::io::Write::write_all(&mut tmp, contents)?;
+    // DELETE on the temp handle lets Windows rename through that handle.
+    #[cfg(windows)]
+    let mut tmp = {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            DELETE, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_READ,
+        };
+        builder.make_in(parent, |temp| {
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .access_mode(FILE_GENERIC_READ | FILE_GENERIC_WRITE | DELETE)
+                .share_mode(FILE_SHARE_READ)
+                .open(temp)
+        })?
+    };
 
-    // Atomic replacement creates a new inode. Restore ordinary access /
-    // executable bits of an existing workspace file before persisting.
-    #[cfg(unix)]
-    if let Some(mode) = existing_workspace_mode {
-        use std::os::unix::fs::PermissionsExt;
-        tmp.as_file()
-            .set_permissions(fs::Permissions::from_mode(mode))?;
+    #[cfg(not(windows))]
+    {
+        std::io::Write::write_all(&mut tmp, contents)?;
+
+        // Atomic replacement creates a new inode. Restore ordinary access /
+        // executable bits of an existing workspace file before persisting.
+        #[cfg(unix)]
+        if let Some(mode) = existing_workspace_mode {
+            use std::os::unix::fs::PermissionsExt;
+            tmp.as_file()
+                .set_permissions(fs::Permissions::from_mode(mode))?;
+        }
+
+        tmp.as_file().sync_all()?;
+        tmp.persist(path)?;
     }
-
-    tmp.as_file().sync_all()?;
     #[cfg(windows)]
     {
-        // Keep the already-synced tempfile and retry only the transient Win32
-        // sharing/lock failures; permanent permission errors still surface.
-        let mut pending = tmp;
-        let mut attempt = 0;
-        loop {
-            match pending.persist(path) {
-                Ok(_) => break,
-                Err(err) => {
-                    let Some(backoff) = windows_publish_retry_delay(&err.error, attempt) else {
-                        return Err(err.error);
-                    };
-                    pending = err.file;
-                    std::thread::sleep(backoff);
-                    attempt += 1;
-                }
+        // MoveFileExW (tempfile::persist) reopens the destination directory
+        // with FILE_ADD_FILE, which conflicts with Fleet's read-only-shared
+        // ancestor pins (fleet/files.rs). Rename through the synced temp handle
+        // with a bare file name, so the parent is never reopened; the rename
+        // retries transient sharing/lock failures itself.
+        let result = (|| {
+            std::io::Write::write_all(&mut tmp, contents)?;
+            tmp.as_file().sync_all()?;
+            crate::fleet::files::rename_windows_opened(tmp.as_file(), &target_name, true)
+        })();
+        match result {
+            // The temp name is vacant now; never unlink a later entry.
+            Ok(()) => tmp.disable_cleanup(true),
+            Err(err) => {
+                // Close the delete-denying handle before deleting the temp.
+                let _ = tmp.into_temp_path().close();
+                return Err(std::io::Error::new(
+                    err.kind(),
+                    format!("replace {}: {err}", path.display()),
+                ));
             }
         }
     }
-    #[cfg(not(windows))]
-    tmp.persist(path)?;
     // Fsync the parent directory so the rename (the new directory entry) is
     // itself durable — otherwise a power loss right after the rename can lose
     // it even though the file data was synced, silently dropping a
@@ -608,6 +685,34 @@ fn is_codewhale_owned_state_dir(dir: &Path) -> bool {
     })
 }
 
+const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+fn sweep_owned_dir_if_due(dir: &Path) {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock, PoisonError};
+    use std::time::Instant;
+
+    static LAST_SWEPT: OnceLock<Mutex<HashMap<PathBuf, Instant>>> = OnceLock::new();
+    let now = Instant::now();
+    {
+        let mut last_swept = LAST_SWEPT
+            .get_or_init(Default::default)
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if last_swept
+            .get(dir)
+            .is_some_and(|swept| now.saturating_duration_since(*swept) < STALE_AFTER)
+        {
+            return;
+        }
+        last_swept.retain(|_, swept| now.saturating_duration_since(*swept) < STALE_AFTER);
+        last_swept.insert(dir.to_path_buf(), now);
+    }
+    if is_codewhale_owned_state_dir(dir) {
+        sweep_stale_atomic_write_temps(dir);
+    }
+}
+
 /// Remove `.tmpXXXXXX` files this writer stranded in `dir` on an earlier run.
 ///
 /// `NamedTempFile` deletes itself on drop, so an ordinary failure — or an
@@ -632,7 +737,6 @@ fn is_codewhale_owned_state_dir(dir: &Path) -> bool {
 /// - **Best effort** — every failure is ignored; this must never turn a
 ///   successful write into an error.
 fn sweep_stale_atomic_write_temps(dir: &Path) {
-    const STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(60 * 60);
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
@@ -679,11 +783,36 @@ pub fn open_append(path: &Path) -> std::io::Result<std::io::BufWriter<std::fs::F
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)?;
+    let file = private_log_options().append(true).open(path)?;
+    restrict_to_owner(&file)?;
     Ok(std::io::BufWriter::new(file))
+}
+
+/// Open options for an owner-only log or lock file: created 0600 and never
+/// opened through a link at the final component (Unix). Callers add the
+/// access mode they need.
+pub fn private_log_options() -> std::fs::OpenOptions {
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    options
+}
+
+/// Tighten a log created by an earlier version at the default mode. No-op
+/// outside Unix.
+pub fn restrict_to_owner(file: &std::fs::File) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+    #[cfg(not(unix))]
+    let _ = file;
+    Ok(())
 }
 
 /// Flush a `BufWriter` wrapping a `File`, then `fsync` the underlying file.
@@ -879,7 +1008,11 @@ where
     F: FnOnce() + Send + 'static,
 {
     let location = std::panic::Location::caller();
+    #[cfg(test)]
+    let env_ticket = crate::test_support::env_scope_ticket();
     tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        let _membership = crate::test_support::join_env_scope(env_ticket);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
         if let Err(panic_info) = result {
             let msg = panic_message(&*panic_info);
@@ -953,25 +1086,7 @@ pub fn display_path(path: &Path) -> String {
 /// The home-relative suffix is rejoined with the platform separator
 /// (`\` on Windows, `/` elsewhere) by walking the path's components, so
 /// inputs that carried foreign separators don't leak through.
-#[must_use]
-pub fn display_path_with_home(path: &Path, home: Option<&Path>) -> String {
-    let Some(home) = home else {
-        return path.display().to_string();
-    };
-    if let Ok(rest) = path.strip_prefix(home) {
-        if rest.as_os_str().is_empty() {
-            return "~".to_string();
-        }
-        let sep = std::path::MAIN_SEPARATOR_STR;
-        let mut out = String::from("~");
-        for component in rest.components() {
-            out.push_str(sep);
-            out.push_str(&component.as_os_str().to_string_lossy());
-        }
-        return out;
-    }
-    path.display().to_string()
-}
+pub use codewhale_protocol::display::display_path_with_home;
 
 /// Estimate the total character count across message content blocks.
 #[must_use]
@@ -1107,9 +1222,10 @@ mod atomic_write_tests {
 
     /// A batch writes every file, and pays the directory's hygiene once.
     ///
-    /// The per-file path sweeps the directory for stale temp files and fsyncs
-    /// it on every call; a fork publishing hundreds of cloned items paid that
-    /// hundreds of times (22 ms of directory scan each, 34 s for one fork).
+    /// The per-file path fsyncs the directory on every call, and used to sweep
+    /// it for stale temp files on every call too; a fork publishing hundreds
+    /// of cloned items paid that hundreds of times (22 ms of directory scan
+    /// each, 34 s for one fork).
     /// What must not change: every file lands with its content, a stray temp
     /// file is still reclaimed, and none of ours is left behind.
     #[test]
@@ -1188,6 +1304,65 @@ mod atomic_write_tests {
         write_atomic(&path, b"new content").expect("retry contended atomic replacement");
         release.join().expect("release destination handle");
         assert_eq!(fs::read(&path).expect("read replacement"), b"new content");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn write_atomic_writes_beside_live_fleet_pins_and_refuses_rewritten_names() {
+        // A live Fleet ledger keeps every ancestor of its files open with
+        // read-only sharing, so MoveFileExW could not add an entry there
+        // (hosted os error 32 writing mcp.json).
+        let workspace = tempdir().expect("tempdir");
+        let _pins = crate::fleet::files::WorkspaceFile::open(
+            workspace.path(),
+            Path::new(".codewhale/fleet.jsonl"),
+            true,
+        )
+        .expect("pin workspace ancestors");
+        let created = workspace.path().join("created.json");
+        write_atomic(&created, b"new").expect("create beside pins");
+        assert_eq!(fs::read(&created).expect("read created"), b"new");
+        write_atomic(&created, b"replaced").expect("replace beside pins");
+        assert_eq!(fs::read(&created).expect("read replaced"), b"replaced");
+        for name in [
+            "trailing.",
+            "trailing ",
+            "CON",
+            "con.txt",
+            "PRN",
+            "AUX.log",
+            "nul.tar.gz",
+            "COM1",
+            "com9.cfg",
+            "LPT1",
+            "lpt9.log",
+            "COM¹",
+            "COM².log",
+            "COM³",
+            "LPT¹",
+            "LPT².log",
+            "LPT³",
+            "notes:private",
+            "config.json:stream",
+            "con:stream",
+            "file::$DATA",
+        ] {
+            assert!(
+                write_atomic(&workspace.path().join(name), b"x").is_err(),
+                "{name}"
+            );
+        }
+        for name in ["console.json", "CON-file", "COM10.txt", "LPT10.txt"] {
+            let path = workspace.path().join(name);
+            write_atomic(&path, b"ordinary").expect("write ordinary name");
+            assert_eq!(fs::read(&path).expect("read ordinary name"), b"ordinary");
+        }
+        let strays: Vec<_> = fs::read_dir(workspace.path())
+            .expect("read_dir")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with(".tmp"))
+            .collect();
+        assert!(strays.is_empty(), "{strays:?}");
     }
 
     #[test]
@@ -1686,6 +1861,9 @@ mod spawn_supervised_tests {
     /// the dump on Windows).
     #[tokio::test]
     async fn panicking_task_does_not_propagate_to_parent() {
+        let _lock = crate::test_support::lock_test_env();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let _profile = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", tmp.path());
         let parent_alive = Arc::new(AtomicBool::new(false));
         let parent_alive_clone = parent_alive.clone();
 
@@ -1711,6 +1889,9 @@ mod spawn_supervised_tests {
 
     #[tokio::test]
     async fn panicking_blocking_task_does_not_propagate_to_parent() {
+        let _lock = crate::test_support::lock_test_env();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let _profile = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", tmp.path());
         let parent_alive = Arc::new(AtomicBool::new(false));
         let parent_alive_clone = parent_alive.clone();
 
@@ -1740,8 +1921,7 @@ mod spawn_supervised_tests {
         let crash_dir = tmp.path().join("crashes");
         let location = std::panic::Location::caller();
 
-        // Crash directories hold multiple tasks' logs. The other supervised
-        // panic tests can write here while this process-wide profile is set.
+        // Crash directories hold multiple tasks' logs.
         write_panic_dump("another-task", location, "other boom").expect("write other dump");
         let other_entries: Vec<_> = std::fs::read_dir(&crash_dir)
             .expect("crashes dir exists")
@@ -1984,5 +2164,29 @@ mod project_mapping_tests {
                 assert!(msg.contains("empty"), "unexpected error message: {msg}");
             }
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn append_logs_are_owner_only_and_not_opened_through_links() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        let log = dir.path().join("audit.log");
+        drop(super::open_append(&log).expect("open"));
+        let mode = std::fs::metadata(&log).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+
+        // A log left world-readable by an earlier version is tightened.
+        std::fs::set_permissions(&log, std::fs::Permissions::from_mode(0o644)).unwrap();
+        drop(super::open_append(&log).expect("reopen"));
+        let mode = std::fs::metadata(&log).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+
+        let target = dir.path().join("elsewhere");
+        std::fs::write(&target, "").unwrap();
+        let link = dir.path().join("linked.log");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        assert!(super::open_append(&link).is_err());
     }
 }

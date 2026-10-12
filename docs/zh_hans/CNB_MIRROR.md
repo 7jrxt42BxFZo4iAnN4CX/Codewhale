@@ -1,17 +1,31 @@
 # CNB Cool 镜像
 
 > 英文原文：[CNB_MIRROR.md](../CNB_MIRROR.md)。
-> 最后与英文同步日期（last synced with English revision）：2026-09-26。
+> 最后与英文同步日期（last synced with English revision）：2026-10-06。
 
 `cnb.cool/codewhale.net/codewhale` 是这个 GitHub 仓库的单向镜像，服务那些
 GitHub 慢或无法访问的网络环境（主要是中国大陆）。镜像会收到：`main` 的每一次
 推送，第一方发布工作用到的每个 `fix/*`、`rebrand/*` 和 `work/v*` 分支，以及
-每个 `v*` 发布标签。
+每个完整 GitHub Release 已发布后的 `v*` 发布标签。
+
+## 源码与下载分别验证（2026-10-06 审核）
+
+本次审核确认 CNB `main` 与权威 GitHub `main` 同步；这不等于二进制发布完成。
+GitHub、npm 与 npmmirror 的最新已发布版本为 **0.10.0**，两个 npm 注册表的
+包装器压缩包字节与完整性值一致。CNB 最新二进制 release 仍是 **0.9.9**；
+`v0.10.0` 的源码标签存在，但其标签构建在发布说明检查处失败，编译和上传未完成。
+该版本 CNB 校验清单返回 404，所以不能宣称 `CODEWHALE_USE_CNB_MIRROR=1`
+可安装 0.10.0。0.10.1 在发布前仅是 `main` 上的源码候选版。
+
+先验证标签指向相同源码，再验证该版本的 release、资产和校验清单实际存在。
+只看 GitHub 同步工作流成功，或看到源码标签，都不足以证明下载可用。
+恢复已存在标签不会产生一次新的标签推送；维护者需单独恢复 CNB 构建/发布并审核
+结果，不能移动或重打已经发布的标签。发布之后应重新审核本段版本状态。
 
 ## 来源
 
 **GitHub 是唯一的权威源。** 所有发布、标签和源代码都源自
-`github.com/Hmbown/CodeWhale`。CNB 镜像是 `Sync to CNB` 工作流维护的只读副本，
+`github.com/codewhale-hq/CodeWhale`。CNB 镜像是 `Sync to CNB` 工作流维护的只读副本，
 它存在的唯一目的，是服务 GitHub 被 GFW 封锁或连接缓慢的用户。
 
 每个 CNB 发布都附带 `codewhale-artifacts-sha256.txt`，这是 CNB 构建的
@@ -29,16 +43,17 @@ sha256sum -c codewhale-artifacts-sha256.txt --ignore-missing
 镜像由 [`Sync to CNB`](../../.github/workflows/sync-cnb.yml) GitHub Actions
 工作流维护：
 
-- **触发：** 推送到 `main`、推送任意 `v*` 标签、匹配 `work/v*` 的发布工作分支、
+- **触发：** 推送到 `main`、权威 Release 发布成功后的发布工作流、匹配 `work/v*` 的发布工作分支、
   匹配 `fix/*` 和 `rebrand/*` 的第一方修复与改名分支，或用于手动恢复的
-  `workflow_dispatch`。
+  `workflow_dispatch`。仅推送标签不会触发发布标签镜像。手动恢复标签也必须
+  验证 GitHub 已公开的完整资产清单及不可变的源码提交。
 - **认证：** HTTPS basic auth，用户名为 `cnb`，密码是仓库 secret
   `CNB_GIT_TOKEN`。
 - **范围：** 只推送触发本次运行的那个 ref。标签推送就推送该标签。分支推送镜像
   `main`、第一方 `fix/*`/`rebrand/*` 分支，或显式匹配的发布分支。其他功能分支
   和 dependabot ref 有意*不*镜像。
-- **并发：** 各次运行通过 `cnb-sync` 并发组串行化，这样 `auto-tag.yml` 接连
-  发出的 `main` 推送和标签推送不会互相竞争。
+- **并发：** 按 `cnb-sync-${{ github.ref }}` 为每个 ref 单独串行化。
+  不同标签不会互相挤掉待运行任务；同一分支只保留最新待同步推送。
 - **重试：** 每次推送最多重试三次，采用线性退避（5s、10s），之后工作流放弃。
 
 CNB 流水线配置也纳入 GitHub 的源码管理，位置是
@@ -59,6 +74,8 @@ CNB 流水线配置也纳入 GitHub 的源码管理，位置是
 这样，能访问 CNB 但访问不了 GitHub 的用户就有了一条 CNB 原生的发布路径。
 GitHub 仍是 macOS/Windows 的权威发布矩阵；CNB 标签流水线则是更适配中国网络的
 Linux x64 备用路径。
+GitHub 发布工作流只会在完整且经过验证的资产集公开后调用镜像。权威发布失败时，
+CNB 不会提前发布该版本。已有 CNB 标签必须与源码一致；恢复不会强制改写发布标签。
 
 ## CNB 上的 Linux CI 与发布预检
 
@@ -70,7 +87,7 @@ Linux x64 备用路径。
 - `cargo check --workspace --all-targets --locked`
 - `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
 - `cargo test --workspace --all-features --locked`
-- `cargo build --release --locked -p codewhale-cli -p codewhale-tui`
+- `cargo build --release --locked -p codewhale-cli --bin codewhale`
 - `node scripts/release/npm-wrapper-smoke.js`
 
 匹配 `work/v*` 的发布分支还会运行
@@ -88,7 +105,7 @@ git ls-remote https://cnb.cool/codewhale.net/codewhale.git \
     refs/tags/vX.Y.Z
 
 # Quick check: is CNB's main at the same commit as origin/main?
-gh_main=$(git ls-remote https://github.com/Hmbown/CodeWhale.git refs/heads/main | awk '{print $1}')
+gh_main=$(git ls-remote https://github.com/codewhale-hq/CodeWhale.git refs/heads/main | awk '{print $1}')
 cnb_main=$(git ls-remote https://cnb.cool/codewhale.net/codewhale.git refs/heads/main | awk '{print $1}')
 test "$gh_main" = "$cnb_main" && echo "in sync" || echo "DIVERGED: gh=$gh_main cnb=$cnb_main"
 ```
@@ -96,7 +113,7 @@ test "$gh_main" = "$cnb_main" && echo "in sync" || echo "DIVERGED: gh=$gh_main c
 或者直接查看工作流运行：
 
 ```bash
-gh run list --workflow=sync-cnb.yml --repo Hmbown/CodeWhale --limit 5
+gh run list --workflow=sync-cnb.yml --repo codewhale-hq/CodeWhale --limit 5
 ```
 
 如果该发布标签最近一次运行是 `success`，说明镜像已经跟上。如果是 `failure`，
@@ -115,10 +132,10 @@ workflow dispatch 路径。
 
 ```bash
 # Prefer rerunning the existing failed tag run when one exists.
-gh run rerun <failed-tag-run-id> --repo Hmbown/CodeWhale
+gh run rerun <failed-tag-run-id> --repo codewhale-hq/CodeWhale
 
 # If no tag run exists, dispatch from the exact existing release tag.
-gh workflow run sync-cnb.yml --repo Hmbown/CodeWhale --ref vX.Y.Z
+gh workflow run sync-cnb.yml --repo codewhale-hq/CodeWhale --ref vX.Y.Z
 ```
 
 修复标签时不要省略 `--ref`：在默认分支上 dispatch 同步的是 `main`，
@@ -132,11 +149,11 @@ gh workflow run sync-cnb.yml --repo Hmbown/CodeWhale --ref vX.Y.Z
 1. 登录 `cnb.cool`，生成一个带 `repo`（push）权限的新个人访问 token。
 2. 更新 `CNB_GIT_TOKEN` 仓库 secret：
    ```bash
-   gh secret set CNB_GIT_TOKEN --repo Hmbown/CodeWhale
+   gh secret set CNB_GIT_TOKEN --repo codewhale-hq/CodeWhale
    ```
 3. 在最近的提交上重新触发工作流：
    ```bash
-   gh workflow run sync-cnb.yml --repo Hmbown/CodeWhale
+   gh workflow run sync-cnb.yml --repo codewhale-hq/CodeWhale
    ```
 4. 用 `gh run list --workflow=sync-cnb.yml` 确认运行成功。
 
@@ -219,6 +236,8 @@ https://cnb.cool/codewhale.net/codewhale.git
 镜像会收到 `main`、发布标签和匹配到的发布分支。当 CNB 工作流或凭据不健康时，
 GitHub 是回退方案。
 
-CNB 部署按钮的示例放在 `deploy/tencent-lighthouse/cnb/`。只有把它们复制进
+腾讯云 Lighthouse 自建服务器的中文/英文操作步骤见
+[`scripts/tencent-lighthouse/README.md`](../../scripts/tencent-lighthouse/README.md)。
+CNB 部署按钮示例见 [`deploy/tencent-lighthouse/cnb/`](../../deploy/tencent-lighthouse/cnb/README.md)。只有把它们复制进
 `.cnb.yml` 和 `.cnb/tag_deploy.yml` 之后才会生效，因为实际部署任务需要
 Lighthouse 部署密钥、目标主机，以及明确的 CNB 配额/计费策略。

@@ -5,6 +5,8 @@
 //! `codewhale-tui` one command group at a time. Only after every group uses
 //! these shapes will groups move physically into a commands crate.
 
+pub use crate::config_policy::{CommandConfigStatusContext, CommandPermissionsContext};
+
 use std::path::{Path, PathBuf};
 
 mod session_structcopy;
@@ -748,11 +750,13 @@ pub struct PluginLegacyTool {
     pub path: PathBuf,
 }
 
-/// Portable legacy-tool scan result: directory and discovered tools.
+/// Portable legacy-tool scan result: directory, discovered tools, and load
+/// diagnostics for scripts that asked for something the loader ignored.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PluginLegacyScan {
     pub dir: PathBuf,
     pub tools: Vec<PluginLegacyTool>,
+    pub diagnostics: Vec<PluginDiagnostic>,
 }
 
 /// Portable Kimi managed-plugin candidate (FEAT-020 D2).
@@ -790,6 +794,8 @@ pub struct PluginDshPreview {
     pub remote_servers: Vec<String>,
     pub local_servers: Vec<String>,
     pub network_hosts: Vec<String>,
+    /// Rows that become Native host code (JavaScript run by the extension host).
+    pub native_rows: Vec<String>,
     pub requires_node: bool,
     /// One line per skipped row or patch operation (a manual port).
     pub manual_ports: Vec<String>,
@@ -1154,6 +1160,10 @@ pub enum SkillActivationError {
         available: Vec<String>,
         warnings: Vec<String>,
     },
+    InvocationRejected {
+        name: String,
+        reason: String,
+    },
     PluginRejected {
         name: String,
         reason: String,
@@ -1371,6 +1381,17 @@ pub trait CommandSessionLifecycleContext {
     /// never consult it in the baseline, so their paths must not either.
     fn transition_blocked(&self) -> bool;
 
+    /// Why the transition gate is closed, in operator terms; empty means the
+    /// transition is allowed. Consulted only after [`Self::transition_blocked`]
+    /// reports a block, so the refusal can name the work that holds the
+    /// session instead of restating that it is held.
+    ///
+    /// Display projection, not a data source: the strings are pre-rendered
+    /// for a refusal message and carry no stable shape. A caller that needs
+    /// ids, durations, or owners should add a structured method instead of
+    /// parsing these back out.
+    fn transition_blockers(&self) -> Vec<String>;
+
     /// `/branch` with no argument: the current leaf when an active journaled
     /// session resolves, otherwise `None` (the baseline silently falls back
     /// to the usage message on this path).
@@ -1447,6 +1468,10 @@ pub struct RelayProjection {
     /// Authoritative compact-template text (`COMPACT_TEMPLATE`), echoed with
     /// a trailing trim by the handler exactly as today.
     pub compact_template: String,
+    /// Workspace-relative path the relay is written to. The host supplies
+    /// the same path its startup loader reads first, so the writer and the
+    /// loader cannot drift.
+    pub handoff_path: String,
     pub workspace: String,
     pub mode: String,
     pub model: String,
@@ -1625,6 +1650,16 @@ pub struct HostedWorkTarget {
 pub trait CommandSessionControlContext {
     /// Live transition gate consulted by `/resume` before any picker or I/O.
     fn transition_blocked(&self) -> bool;
+
+    /// Why the transition gate is closed, in operator terms; empty means the
+    /// transition is allowed. Consulted only after [`Self::transition_blocked`]
+    /// reports a block.
+    ///
+    /// Display projection, not a data source: the strings are pre-rendered
+    /// for a refusal message and carry no stable shape. A caller that needs
+    /// ids, durations, or owners should add a structured method instead of
+    /// parsing these back out.
+    fn transition_blockers(&self) -> Vec<String>;
 
     /// `/relay`: authoritative semantic snapshot (workspace/mode/model/goal/
     /// to-do/plan/compact-template). Unavailable sources are represented as
