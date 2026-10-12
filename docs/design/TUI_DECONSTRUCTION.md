@@ -337,7 +337,9 @@ tier is out of `crates/tui`; then Cargo enforces the boundary and the ratchet
 is deleted. The 0.10.2 X2 snapshot stands at 0 production references and
 30 test references, down from 11 and 32. The RS-11 roster split then removes
 five test references and the final tools/crossterm test import, leaving 25
-test references and no UI-library imports. The current baseline is the authority.
+test references and no UI-library imports. The following tools split moves the
+Workflow panel assertions to its existing history test and removes duplicated
+coordination pager checks, leaving 18 test references. The current baseline is the authority.
 `crates/runtime` must never depend on `tui`, `cli`, ratatui, crossterm,
 `ansi-to-tui` or a terminal component kit; the runtime reaches the terminal
 only through `host_terminal`.
