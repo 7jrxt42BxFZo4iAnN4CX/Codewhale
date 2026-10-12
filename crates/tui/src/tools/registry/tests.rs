@@ -1855,6 +1855,7 @@ fn agent_tools_with_shell_policy_readonly_exposes_only_run_only_bash() {
             .collect::<std::collections::BTreeSet<_>>(),
         [
             "command",
+            "description",
             "justification",
             "read_only",
             "sandbox_permissions",

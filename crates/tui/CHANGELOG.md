@@ -125,9 +125,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a `thread.permissions_changed` event.
 
 - The bundled first-party catalog pins marketplace revision
-  `9b5f9d614ef69702be9944a61e89aeb3df14c047`; the 19 catalog entries are
-  unchanged, and installed bundles now come from a revision carrying the
-  reviewed Computer Use and bridge fixes and the MIT license.
+  `e3e61273f2ae31ec205e3c7f21b34dd73954d6b2` with 19 catalog entries,
+  including the bundled Skills pack. Installed bundles carry the reviewed
+  Computer Use and bridge fixes and the MIT license.
 - `codewhale app-server` no longer serves `GET /jobs`, which was always empty;
   background jobs are `GET /v1/jobs` on the Runtime API (#6513).
 
