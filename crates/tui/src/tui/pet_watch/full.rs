@@ -550,9 +550,11 @@ fn render(frame: &mut Frame, area: Rect, app: &mut App, inspect: bool) {
             )
         ));
     }
-    let companion = (area.width >= 100)
-        .then(|| format!(" · {}", habitat::companion_hints(app.ui_locale)))
-        .unwrap_or_default();
+    let companion = if area.width >= 100 {
+        format!(" · {}", habitat::companion_hints(app.ui_locale))
+    } else {
+        String::new()
+    };
     hints.push_str(&companion);
     let arrows = format!(
         "{}{}",
