@@ -42,7 +42,7 @@ pub(crate) fn dispatch_hotbar_slot(
         return Ok(Some(HotbarDispatch::Handled));
     }
 
-    action.dispatch(app).map(Some)
+    action.dispatch(app, config).map(Some)
 }
 
 pub(crate) fn queued_ui_to_session(msg: &QueuedMessage) -> QueuedSessionMessage {
@@ -89,22 +89,26 @@ pub(crate) fn paint_user_turn_cell(
     content: String,
 ) -> usize {
     if message.history_echoed
-        && let Some(idx) = app
-            .history
-            .iter()
-            .enumerate()
-            .rev()
-            .find_map(|(idx, cell)| match cell {
-                HistoryCell::User { content } if content == &message.display => Some(idx),
-                _ => None,
-            })
+        && let Some(idx) = echoed_user_turn_cell(app, &message.display)
     {
         app.history[idx] = HistoryCell::User { content };
-        app.needs_redraw = true;
+        app.bump_history_cell(idx);
         return idx;
     }
     app.add_message(HistoryCell::User { content });
     app.history.len().saturating_sub(1)
+}
+
+/// The newest transcript cell that queue-time echo painted for `display`.
+pub(crate) fn echoed_user_turn_cell(app: &App, display: &str) -> Option<usize> {
+    app.history
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(idx, cell)| match cell {
+            HistoryCell::User { content } if content == display => Some(idx),
+            _ => None,
+        })
 }
 
 pub(crate) fn enqueue_offline_message(app: &mut App, message: QueuedMessage) {
@@ -352,15 +356,10 @@ pub(crate) fn queued_message_content_for_app(
     cwd: Option<PathBuf>,
     git_cache: &mut crate::tui::git_mention::GitMentionCache,
 ) -> Result<String> {
-    if let Some(authority) = message.skill_provenance.as_ref() {
-        if authority.workspace != app.workspace {
-            anyhow::bail!("Queued plugin skill belongs to a different workspace and was denied");
-        }
-        crate::plugins::registry::verify_plugin_component_authority(
-            authority,
-            crate::plugins::activation::PluginActivationCapability::Skills,
-        )
-        .map_err(anyhow::Error::msg)?;
+    if let Some(provenance) = message.skill_provenance.as_ref() {
+        provenance
+            .verify_for(&app.workspace, Some(app.extension_plugin_view().as_ref()))
+            .map_err(anyhow::Error::msg)?;
     }
     // Pass the process CWD explicitly so the resolver's two-pass logic can
     // honor the user's launch directory when it differs from `--workspace`
@@ -597,7 +596,8 @@ pub(crate) fn prepare_user_dispatch(
     if let Some(note) = paused_dispatch.note() {
         content.push_str(note);
     }
-    let (app_route_identity, route_config) = app_scoped_runtime_config(app, config);
+    let (app_route_identity, route_config) =
+        app_scoped_runtime_config(app, config).map_err(anyhow::Error::msg)?;
 
     let should_auto_resolve = auto_router::should_resolve_auto_model_selection(app);
     let auto_router_context = auto_router::recent_auto_router_context(&app.api_messages);
@@ -613,7 +613,6 @@ pub(crate) fn prepare_user_dispatch(
         tool_evidence: app.tool_evidence.clone(),
         history_len: app.history.len(),
         history_revisions_len: app.history_revisions.len(),
-        history_version: app.history_version,
         api_messages_len: app.api_messages.len(),
         last_send_at: app.last_send_at,
     };
@@ -706,14 +705,21 @@ pub(crate) fn start_user_dispatch(
         }
     };
     app.dispatch_in_flight = true;
+    // #6800: a local cancel (Esc, stall recovery) trips this token so the
+    // dispatch fails back to the composer at once instead of holding
+    // `dispatch_in_flight` — and queueing every new send — for the full
+    // `DISPATCH_TASK_BOUND` while it waits on engine admission.
+    let cancel = tokio_util::sync::CancellationToken::new();
+    app.dispatch_cancel = Some(cancel.clone());
     // Supervised: `spawned_dispatch_execute` owns the whole dispatch future,
-    // so its completion callback always arrives — on success, on a panic, or
-    // when the dispatch exceeds its bound (#6184).
+    // so its completion callback always arrives — on success, on a panic, on
+    // a local cancel, or when the dispatch exceeds its bound (#6184).
     tokio::spawn(spawned_dispatch_execute(
         prepare,
         recovery,
         engine_handle.clone(),
         completion_permit,
+        cancel,
     ));
     Ok(())
 }
@@ -729,11 +735,13 @@ pub(crate) async fn spawned_dispatch_execute(
     recovery: DispatchRecovery,
     engine_handle: EngineHandle,
     completion_permit: tokio::sync::mpsc::OwnedPermit<crate::tui::app::DispatchApplyFn>,
+    cancel: tokio_util::sync::CancellationToken,
 ) {
     let apply = supervised_dispatch(
         prepare,
         recovery,
         DISPATCH_TASK_BOUND,
+        cancel,
         |prepare, recovery| spawned_dispatch_inner(prepare, recovery, engine_handle),
     )
     .await;
@@ -744,11 +752,15 @@ pub(crate) async fn spawned_dispatch_execute(
 /// turn a panic or a hang into a dispatch that never reported back: the
 /// completion permit was dropped, `dispatch_in_flight` stayed set and the
 /// message sat in limbo. Every outcome now yields a callback; a panic or an
-/// overrun also leaves a log line and a `crashes/` record.
+/// overrun also leaves a log line and a `crashes/` record. A tripped `cancel`
+/// token abandons the dispatch and fails it back through the same error
+/// closure, so the unsent message returns to the composer exactly as on any
+/// other dispatch failure (#6800).
 pub(crate) async fn supervised_dispatch<F, Fut>(
     prepare: UserDispatchPrepare,
     recovery: DispatchRecovery,
     bound: std::time::Duration,
+    cancel: tokio_util::sync::CancellationToken,
     run: F,
 ) -> crate::tui::app::DispatchApplyFn
 where
@@ -759,7 +771,18 @@ where
     let fallback = prepare.clone();
     let started = std::time::Instant::now();
     let supervised = std::panic::AssertUnwindSafe(run(prepare, recovery)).catch_unwind();
-    match tokio::time::timeout(bound, supervised).await {
+    let outcome = tokio::select! {
+        biased;
+        () = cancel.cancelled() => {
+            return build_dispatch_error_closure(
+                fallback,
+                recovery,
+                "Message dispatch was cancelled before it reached the engine".to_string(),
+            );
+        }
+        outcome = tokio::time::timeout(bound, supervised) => outcome,
+    };
+    match outcome {
         Ok(Ok(apply)) => apply,
         Ok(Err(panic)) => {
             let detail = crate::utils::panic_message(&*panic);
@@ -778,7 +801,10 @@ where
                         .to_string(),
                     detail: Some(format!(
                         "{} / {}",
-                        fallback.api_provider.display_name(),
+                        fallback
+                            .app_route_identity
+                            .compatibility()
+                            .map_or(fallback.app_route_identity.key.as_str(), |row| row.label),
                         fallback.app_model
                     )),
                     turn_id: None,
@@ -878,6 +904,7 @@ pub(crate) async fn spawned_dispatch_inner(
         batch: Some(initial_routed_usage.clone()),
     };
     let op = Op::SendMessage(TurnSpec {
+        profile_constitution: None,
         max_output_tokens: None,
         content: prepare.content.clone(),
         images: Vec::new(),
@@ -1109,7 +1136,10 @@ pub(crate) fn build_dispatch_error_closure(
             app.prune_transcript_index_state(prepare.snapshot.history_len);
             app.history_revisions
                 .truncate(prepare.snapshot.history_revisions_len);
-            app.history_version = prepare.snapshot.history_version;
+            // Never rewind the version: a cache keyed by (version, len) that
+            // saw the rolled-back echo would match a different cell that
+            // later lands at the same version and length.
+            app.history_version = app.history_version.wrapping_add(1);
             app.truncate_api_messages(prepare.snapshot.api_messages_len);
             app.last_send_at = prepare.snapshot.last_send_at;
             app.needs_redraw = true;
@@ -1271,15 +1301,12 @@ pub(crate) async fn steer_user_message(
     let content = content.trim().to_string();
     let message_index = app.api_messages.len();
 
-    // A foreground shell blocks the turn loop that consumes steer input.
-    // Ask the shared shell manager to detach it before enqueueing the steer so
-    // the loop can leave the foreground wait and process this message (#4930).
-    if active_foreground_shell_running(app)
-        && let Err(err) = request_active_foreground_shell_background(app)
-    {
+    // A shell wait blocks the turn boundary that consumes steer input. Release
+    // only this session's live waits; the owned commands keep running (#6909).
+    if let Err(err) = request_active_shell_wait_detach(app) {
         restore_steer_paused_state(app, &paused_snapshot);
         engine_handle.set_paused(paused_snapshot.paused);
-        return Err(err.context("could not move foreground shell to /jobs before steering"));
+        return Err(err.context("could not release shell wait before steering"));
     }
 
     if let Err(err) = engine_handle.steer(content.clone()).await {

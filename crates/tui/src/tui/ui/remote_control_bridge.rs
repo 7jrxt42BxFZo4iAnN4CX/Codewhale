@@ -251,7 +251,10 @@ pub(crate) async fn drain_remote_control_events(
                         }
                     }
                     crate::remote_control::RemoteCommand::Approval { gate, approved } => {
-                        let Some(tool_id) = app.remote_control.take_pending_approval(&gate) else {
+                        // Keep the gate pending until the engine takes the
+                        // decision: a failed send leaves it retryable (U03-07).
+                        let Some(tool_id) = app.remote_control.pending_approval_tool_id(&gate)
+                        else {
                             app.remote_control.acknowledge(
                                 &run_id,
                                 seq,
@@ -268,6 +271,8 @@ pub(crate) async fn drain_remote_control_events(
                         };
                         match result {
                             Ok(()) => {
+                                note_human_decision_delivered(app, &tool_id);
+                                let _ = app.remote_control.take_pending_approval(&gate);
                                 app.retire_action_notices(Some(&tool_id));
                                 // First decision wins: the web answered this
                                 // gate, so dismiss exactly the matching card —
@@ -414,7 +419,7 @@ pub(crate) fn start_remote_control_session(app: &mut App, config: &Config) {
         .filter(|value| !value.is_empty())
         .unwrap_or("Codewhale session")
         .to_string();
-    let git_remote = crate::remote_control::observed_git_repo(&app.workspace);
+    let git_remote = crate::git_status::observed_git_repo(&app.workspace);
     let runtime_commit = option_env!("CODEWHALE_BUILD_COMMIT")
         .unwrap_or("")
         .to_string();

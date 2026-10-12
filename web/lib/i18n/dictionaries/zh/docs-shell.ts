@@ -9,10 +9,10 @@ import type { DocsShellDict } from "../types";
 export const docsShell: DocsShellDict = {
   metaTitle: "文档 · Codewhale",
   metaDescription:
-    "安装 Codewhale，连接模型提供商，然后把事情做完：模式与审批、查看改动、Workflow、子 Agent、MCP 工具、钩子、Runtime API 以及问题排查。",
+    "安装 Codewhale，连接模型提供商，然后把事情做完：模式与审批、查看改动、工作流、子智能体、MCP 工具、钩子、Runtime API 以及问题排查。",
   portalMark: "Codewhale 文档",
-  heroTitle: "用 Codewhale 把事情做完。",
-  heroLead: "从你想做的事开始。每一页都会说明你需要准备什么，给出今天就能运行的命令，并指向下一步。",
+  heroTitle: "安装与使用 Codewhale",
+  heroLead: "查找安装步骤、模型连接、工具配置和问题排查指南。每份指南都包含可以运行的命令和示例。",
   installCta: "安装 Codewhale",
 
   releaseLabel: "版本",
@@ -29,13 +29,13 @@ export const docsShell: DocsShellDict = {
   tasksHeading: "按任务",
   tasksLead: "从你想完成的事情开始。",
   topicsHeading: "按主题",
-  webGuideTag: "网页",
+  webGuideTag: "网页指南",
   sourceDocTag: "源文档",
   sourceDetails: "详情",
   emptyTitle: "没有匹配的条目",
   emptyBody: "换一个关键词试试——中英文都可以搜索——或浏览 GitHub 上的完整文档目录。",
   emptyCta: "GitHub 文档目录 ↗",
-  indexNote: "“网页”条目在 codewhale.net 上打开；“源文档”条目会打开 GitHub 仓库中的完整参考资料。",
+  indexNote: "“网页指南”条目在 codewhale.net 上打开；“源文档”条目会打开 GitHub 仓库中的完整参考资料。",
 
   sidebarHeading: "文档目录",
   sidebarAria: "文档目录",
@@ -43,8 +43,8 @@ export const docsShell: DocsShellDict = {
   breadcrumbHome: "首页",
   breadcrumbDocs: "文档",
 
-  helpTitle: "这一页还不够？",
-  helpLead: "每份指南都对照仓库中的一份文档核实过。如果它写错了或缺了什么，请在维护者能看到的地方告诉我们。",
+  helpTitle: "获取帮助",
+  helpLead: "在 Discord 提问，或在 GitHub 报告文档问题。",
   helpSource: "来源：{name}",
   helpTroubleshooting: "排查问题",
   helpFaq: "常见问题",

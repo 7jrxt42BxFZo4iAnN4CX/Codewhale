@@ -349,11 +349,14 @@ fn finish_workflow_controller(state: &WorkflowWorkspaceState, record: &WorkflowR
         let payload =
             format!("{summary}\n<codewhale:subagent.done>{receipt}</codewhale:subagent.done>");
         debug_assert!(payload.len() <= WORKFLOW_COMPLETION_MAX_BYTES);
-        let _ = tx.try_send(SubAgentCompletion {
-            owner_session_id: controller.driver.owner_session_id.clone(),
-            agent_id: record.run_id.clone(),
-            payload,
-        });
+        send_terminal_event(
+            tx,
+            SubAgentCompletion {
+                owner_session_id: controller.driver.owner_session_id.clone(),
+                agent_id: record.run_id.clone(),
+                payload,
+            },
+        );
     }
     controllers.remove(&record.run_id);
 }
@@ -1163,10 +1166,10 @@ impl ToolSpec for WorkflowTool {
     fn description(&self) -> &'static str {
         concat!(
             "Run named steps through the existing sub-agents with a structured plan, ordered phases, shared budgets and result handoffs. Fleet configures those same sub-agents and roles. ",
-            "Inspect agent(action=\"roster\") before assigning steps; choose saved models or role/profile assignments and respect unavailable routes. ",
-            "Prefer plan for multi-step work. Saved or advanced workflows can use script/source_path; provide exactly one input form. ",
-            "Use action=start for detached orchestration and action=status with run_id to inspect progress. Use action=run when the model needs the final result before continuing. ",
-            "Start a workflow on your own only for broad or staged work (the session [workflow].automatic table, default on). An explicit /workflow invocation is authorization. Do not start a workflow for one-file edits or simple questions."
+            "A workflow is for broad or staged work: several steps with an order, phases, gates, or a fan-in of results. ",
+            "agent(action=\"roster\") lists the saved models, role/profile assignments, and route availability that steps can be assigned. ",
+            "plan is the structured input form for multi-step work; saved or advanced workflows can use script/source_path; exactly one input form is accepted. ",
+            "action=start runs the orchestration detached and action=status with run_id reports its progress. action=run waits and returns the final result."
         )
     }
 
@@ -3157,6 +3160,13 @@ fn validate_runtime_gates(gates: &mut [GateSpec]) -> Result<(), ToolError> {
                 "Workflow role_start gates are not supported; use role_complete with an explicit prerequisite role",
             ));
         }
+        if gate.blocks_role.as_deref() == Some(gate.role.as_str()) {
+            return Err(ToolError::invalid_input(format!(
+                "Workflow gate `{}` has role and blocks_role both set to `{}`; a gate cannot block \
+                 the role whose completion triggers it, so set blocks_role to a later role",
+                gate.id, gate.role
+            )));
+        }
     }
     Ok(())
 }
@@ -4799,15 +4809,26 @@ impl SubAgentWorkflowDriver {
             }
         };
         self.ensure_admission_open()?;
-        let workflow_child_index = self
-            .child_counter
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
-                (count < self.max_children).then_some(count + 1)
-            })
-            .map_err(|_| DriverError::Rejected(format!(
-                "workflow.max_children limit ({}) reached; reduce remaining work or start a new reviewed plan",
-                self.max_children
-            )))?;
+        // A plain compare-exchange loop: `fetch_update` is deprecated from
+        // Rust 1.99 and its `try_update` replacement is newer than the MSRV.
+        let mut count = self.child_counter.load(Ordering::SeqCst);
+        let workflow_child_index = loop {
+            if count >= self.max_children {
+                return Err(DriverError::Rejected(format!(
+                    "workflow.max_children limit ({}) reached; reduce remaining work or start a new reviewed plan",
+                    self.max_children
+                )));
+            }
+            match self.child_counter.compare_exchange_weak(
+                count,
+                count + 1,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(reserved) => break reserved,
+                Err(current) => count = current,
+            }
+        };
         let handoffs = WorkflowHandoffReservation {
             board: self.gate_board.clone(),
             artifacts: self.prepare_request_for_gates(&mut request)?,
@@ -6376,6 +6397,39 @@ mod tests {
         assert!(body.contains("\"confirmed\": 2"), "{body}");
     }
 
+    /// A workspace that ships `.codewhale/reports` as a link cannot make the
+    /// run report or the raw schema reply land outside the workspace.
+    #[cfg(unix)]
+    #[test]
+    fn report_artifacts_are_never_written_through_a_linked_reports_directory() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        std::fs::create_dir_all(tmp.path().join(".codewhale")).expect("mkdir");
+        std::os::unix::fs::symlink(
+            outside.path(),
+            tmp.path().join(".codewhale").join("reports"),
+        )
+        .expect("link");
+        let mut record = WorkflowRunRecord::new(
+            "workflow_report_linked".to_string(),
+            Some("session-test".to_string()),
+            None,
+            None,
+            None,
+        );
+        record.status = WorkflowRunStatus::Completed;
+
+        write_run_report_artifact(tmp.path(), &record);
+        let schema = write_schema_raw_artifact(tmp.path(), "run-linked", "agent_0001", 1, "raw");
+
+        assert!(schema.is_none(), "the schema artifact must be refused");
+        assert_eq!(
+            std::fs::read_dir(outside.path()).expect("outside").count(),
+            0,
+            "nothing may land behind the link"
+        );
+    }
+
     #[test]
     fn running_runs_write_no_report_artifact() {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -7804,7 +7858,7 @@ workflow({
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, calls) = fake_chat_client("Completed without a turn cap.").await;
+        let (client, calls, api_config) = fake_chat_client("Completed without a turn cap.").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -7812,7 +7866,8 @@ workflow({
             true,
             None,
             manager.clone(),
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(manager, runtime);
 
         let result = tool
@@ -7930,7 +7985,7 @@ workflow({
 
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, calls) = fake_chat_client("scout evidence").await;
+        let (client, calls, api_config) = fake_chat_client("scout evidence").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -7938,7 +7993,8 @@ workflow({
             true,
             None,
             manager,
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(runtime.manager.clone(), runtime);
         let result = tool
             .execute(
@@ -8839,7 +8895,7 @@ export default workflow({
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, calls) = fake_chat_client("child done").await;
+        let (client, calls, api_config) = fake_chat_client("child done").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -8847,7 +8903,8 @@ export default workflow({
             true,
             None,
             manager.clone(),
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(manager.clone(), runtime);
 
         let result = tool
@@ -9033,7 +9090,7 @@ reviewer = "reviewer"
 
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, calls) = fake_chat_client("role-resolved child").await;
+        let (client, calls, api_config) = fake_chat_client("role-resolved child").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -9041,7 +9098,8 @@ reviewer = "reviewer"
             true,
             None,
             manager.clone(),
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(manager, runtime);
 
         let completed = tool
@@ -9111,7 +9169,7 @@ reviewer = "reviewer"
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 4);
-        let (client, calls) = fake_chat_client("ok").await;
+        let (client, calls, api_config) = fake_chat_client("ok").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -9119,7 +9177,8 @@ reviewer = "reviewer"
             true,
             None,
             manager.clone(),
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(manager.clone(), runtime);
 
         let result = tool
@@ -9170,7 +9229,7 @@ reviewer = "reviewer"
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, calls) = fake_chat_client("reduce-with-partial").await;
+        let (client, calls, api_config) = fake_chat_client("reduce-with-partial").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -9178,7 +9237,8 @@ reviewer = "reviewer"
             true,
             None,
             manager,
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(runtime.manager.clone(), runtime);
 
         let result = tool
@@ -9279,7 +9339,7 @@ reviewer = "reviewer"
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, calls) = fake_chat_client("unused").await;
+        let (client, calls, api_config) = fake_chat_client("unused").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -9287,7 +9347,8 @@ reviewer = "reviewer"
             true,
             None,
             manager,
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(runtime.manager.clone(), runtime);
 
         let result = tool
@@ -9332,7 +9393,7 @@ reviewer = "reviewer"
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, calls) = fake_chat_client("child done").await;
+        let (client, calls, api_config) = fake_chat_client("child done").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -9340,7 +9401,8 @@ reviewer = "reviewer"
             true,
             None,
             manager,
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(runtime.manager.clone(), runtime);
 
         let result = tool
@@ -9384,7 +9446,7 @@ reviewer = "reviewer"
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, calls) = fake_chat_client("unused").await;
+        let (client, calls, api_config) = fake_chat_client("unused").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -9392,7 +9454,8 @@ reviewer = "reviewer"
             true,
             None,
             manager,
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(runtime.manager.clone(), runtime);
 
         let result = tool
@@ -9473,7 +9536,7 @@ reviewer = "reviewer"
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, calls) = fake_chat_client("child done").await;
+        let (client, calls, api_config) = fake_chat_client("child done").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -9481,7 +9544,8 @@ reviewer = "reviewer"
             true,
             None,
             manager,
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(runtime.manager.clone(), runtime);
 
         let result = tool
@@ -9522,7 +9586,7 @@ reviewer = "reviewer"
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, calls) = fake_chat_client("unused").await;
+        let (client, calls, api_config) = fake_chat_client("unused").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -9530,7 +9594,8 @@ reviewer = "reviewer"
             true,
             None,
             manager,
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(runtime.manager.clone(), runtime);
 
         let result = tool
@@ -9593,7 +9658,7 @@ reviewer = "reviewer"
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, calls) = fake_chat_client("child done").await;
+        let (client, calls, api_config) = fake_chat_client("child done").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -9601,7 +9666,8 @@ reviewer = "reviewer"
             true,
             None,
             manager,
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(runtime.manager.clone(), runtime);
 
         let result = tool
@@ -9639,7 +9705,8 @@ reviewer = "reviewer"
             let tmp = tempfile::tempdir().expect("tempdir");
             let ctx = ToolContext::new(tmp.path().to_path_buf());
             let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-            let (client, calls, bodies) = fake_chat_client_capturing("upstream-output").await;
+            let (client, calls, bodies, api_config) =
+                fake_chat_client_capturing("upstream-output").await;
             let runtime = SubAgentRuntime::new(
                 client,
                 "deepseek-v4-flash".to_string(),
@@ -9647,7 +9714,8 @@ reviewer = "reviewer"
                 true,
                 None,
                 manager,
-            );
+            )
+            .with_api_config(api_config);
             let tool = WorkflowTool::new(runtime.manager.clone(), runtime);
             let mut upstream = vec![json!({
                 "id": "__proto__", "prompt": "Produce the upstream finding.", "role": "reviewer"
@@ -9724,7 +9792,8 @@ reviewer = "reviewer"
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, calls, bodies) = fake_chat_client_capturing("upstream-output").await;
+        let (client, calls, bodies, api_config) =
+            fake_chat_client_capturing("upstream-output").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -9732,7 +9801,8 @@ reviewer = "reviewer"
             true,
             None,
             manager,
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(runtime.manager.clone(), runtime);
 
         let result = tool
@@ -10472,7 +10542,7 @@ reviewer = "reviewer"
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, calls) =
+        let (client, calls, api_config) =
             fake_chat_client("BLOCK\nFINAL RECEIPT\n- missing terminal evidence").await;
         let runtime = SubAgentRuntime::new(
             client,
@@ -10481,7 +10551,8 @@ reviewer = "reviewer"
             true,
             None,
             manager,
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(runtime.manager.clone(), runtime);
 
         let result = tool
@@ -10700,7 +10771,7 @@ reviewer = "reviewer"
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, _calls) = fake_chat_client("status-output").await;
+        let (client, _calls, api_config) = fake_chat_client("status-output").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -10708,7 +10779,8 @@ reviewer = "reviewer"
             true,
             None,
             manager,
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(runtime.manager.clone(), runtime);
 
         let run = tool
@@ -10765,7 +10837,7 @@ reviewer = "reviewer"
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, _calls) = fake_chat_client("journal-output").await;
+        let (client, _calls, api_config) = fake_chat_client("journal-output").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -10773,7 +10845,8 @@ reviewer = "reviewer"
             true,
             None,
             manager.clone(),
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(manager.clone(), runtime.clone());
 
         let run = tool
@@ -10822,7 +10895,7 @@ reviewer = "reviewer"
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, _calls) = fake_chat_client(r#"{"refuted":"yes"}"#).await;
+        let (client, _calls, api_config) = fake_chat_client(r#"{"refuted":"yes"}"#).await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -10830,7 +10903,8 @@ reviewer = "reviewer"
             true,
             None,
             manager.clone(),
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(manager, runtime);
 
         let run = tool
@@ -10897,7 +10971,7 @@ reviewer = "reviewer"
         // The #5583 report shape: attempt 1 wraps valid JSON in prose (a
         // parse failure), the bounded repair answers with bare corrected
         // JSON. Two model calls, no more — the fake server panics on extras.
-        let (client, calls) = fake_chat_client_responses(&[
+        let (client, calls, api_config) = fake_chat_client_responses(&[
             "Sure — here it is:\n```json\n{\"refuted\": true}\n```\nDone!",
             "{\"refuted\": true}",
         ])
@@ -10909,7 +10983,8 @@ reviewer = "reviewer"
             true,
             None,
             manager.clone(),
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(manager, runtime);
 
         let run = tool
@@ -11045,7 +11120,7 @@ reviewer = "reviewer"
             crate::tools::plan::new_shared_plan_state(),
         ));
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 4);
-        let (client, calls) = fake_chat_client("audited").await;
+        let (client, calls, api_config) = fake_chat_client("audited").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -11053,7 +11128,8 @@ reviewer = "reviewer"
             true,
             None,
             manager,
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(runtime.manager.clone(), runtime);
 
         let result = tool
@@ -11259,7 +11335,7 @@ FINAL RECEIPT
 - run_completed: crates/tui/src/tools/workflow/mod.rs: WorkflowUiEventKind::RunCompleted -> terminal_completed_receipt
 - lane_exit: crates/lane/src/runtime.rs: process_exit_receipt -> lane_reconciled"#,
         ];
-        let (client, calls) = fake_chat_client_responses(&responses).await;
+        let (client, calls, api_config) = fake_chat_client_responses(&responses).await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -11267,7 +11343,8 @@ FINAL RECEIPT
             true,
             None,
             manager,
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(runtime.manager.clone(), runtime);
 
         let result = tool
@@ -11479,7 +11556,7 @@ FINAL RECEIPT
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, calls) = fake_chat_client("telemetry-output").await;
+        let (client, calls, api_config) = fake_chat_client("telemetry-output").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -11487,7 +11564,8 @@ FINAL RECEIPT
             true,
             None,
             manager,
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(runtime.manager.clone(), runtime);
 
         let run = tool
@@ -12054,7 +12132,7 @@ FINAL RECEIPT
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 4);
-        let (client, calls) = fake_chat_client("child done").await;
+        let (client, calls, api_config) = fake_chat_client("child done").await;
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel(256);
         let runtime = SubAgentRuntime::new(
             client,
@@ -12063,7 +12141,8 @@ FINAL RECEIPT
             true,
             Some(event_tx),
             manager.clone(),
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(manager.clone(), runtime);
 
         let started = tool
@@ -12168,7 +12247,7 @@ FINAL RECEIPT
         let tmp = tempfile::tempdir().expect("tempdir");
         let ctx = ToolContext::new(tmp.path().to_path_buf());
         let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 2);
-        let (client, calls, bodies) = fake_chat_client_capturing("budgeted").await;
+        let (client, calls, bodies, api_config) = fake_chat_client_capturing("budgeted").await;
         let runtime = SubAgentRuntime::new(
             client,
             "deepseek-v4-flash".to_string(),
@@ -12176,7 +12255,8 @@ FINAL RECEIPT
             true,
             None,
             manager.clone(),
-        );
+        )
+        .with_api_config(api_config);
         let tool = WorkflowTool::new(manager.clone(), runtime);
 
         let result = tool
@@ -12790,7 +12870,7 @@ FINAL RECEIPT
                     let requested = Arc::clone(&requested);
                     let release = Arc::clone(&release);
                     let calls = Arc::clone(&calls);
-                    move |Json(_body): Json<Value>| {
+                    move |Json(body): Json<Value>| {
                         let requested = Arc::clone(&requested);
                         let release = Arc::clone(&release);
                         let calls = Arc::clone(&calls);
@@ -12798,23 +12878,11 @@ FINAL RECEIPT
                             calls.fetch_add(1, Ordering::SeqCst);
                             requested.notify_one();
                             release.notified().await;
-                            Json(json!({
-                                "id": "chatcmpl-journal-probe",
-                                "model": "deepseek-v4-flash",
-                                "choices": [{
-                                    "index": 0,
-                                    "message": {
-                                        "role": "assistant",
-                                        "content": "JOURNAL_CHILD_COMPLETED"
-                                    },
-                                    "finish_reason": "stop"
-                                }],
-                                "usage": {
-                                    "prompt_tokens": 1,
-                                    "completion_tokens": 1,
-                                    "total_tokens": 2
-                                }
-                            }))
+                            fake_chat_response(
+                                body["stream"].as_bool().unwrap_or(false),
+                                "chatcmpl-journal-probe".to_string(),
+                                "JOURNAL_CHILD_COMPLETED",
+                            )
                         }
                     }
                 }),
@@ -12845,6 +12913,7 @@ FINAL RECEIPT
                 Some(event_tx),
                 manager.clone(),
             )
+            .with_api_config(config)
             .with_parent_completion_tx(completion_tx);
             let parent_cancel = runtime.cancel_token.clone();
             let tool = WorkflowTool::new(manager, runtime);
@@ -13382,6 +13451,25 @@ FINAL RECEIPT
         }
     }
 
+    #[test]
+    fn native_gate_that_blocks_its_own_role_is_rejected_at_admission() {
+        let mut gates: Vec<GateSpec> = serde_json::from_value(json!([{
+            "id": "v1", "gate": "verify", "on": "role_complete", "role": "implement",
+            "blocks_role": "implement", "on_fail": "escalate", "max_retries": 1,
+            "require_explicit_verdict": true
+        }]))
+        .expect("gates");
+        let error = validate_runtime_gates(&mut gates).expect_err("gate blocks its own role");
+        let message = error.to_string();
+        for needle in ["`v1`", "blocks_role", "`implement`"] {
+            assert!(message.contains(needle), "{message}");
+        }
+        gates[0].blocks_role = Some(" Implement ".to_string());
+        assert!(validate_runtime_gates(&mut gates).is_err());
+        gates[0].blocks_role = Some("verify".to_string());
+        validate_runtime_gates(&mut gates).expect("blocking a later role stays valid");
+    }
+
     #[tokio::test]
     async fn native_default_shared_budget_applies_only_without_an_explicit_budget() {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -13541,6 +13629,36 @@ FINAL RECEIPT
         );
     }
 
+    fn fake_chat_response(stream: bool, id: String, text: &str) -> axum::response::Response {
+        use axum::response::IntoResponse;
+        let usage = json!({"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2});
+        if stream {
+            let content = json!({
+                "id": id,
+                "model": "deepseek-v4-flash",
+                "choices": [{"index": 0, "delta": {"role": "assistant", "content": text}, "finish_reason": null}],
+            });
+            let terminal = json!({
+                "id": id,
+                "model": "deepseek-v4-flash",
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                "usage": usage,
+            });
+            (
+                [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+                format!("data: {content}\n\ndata: {terminal}\n\ndata: [DONE]\n\n"),
+            )
+                .into_response()
+        } else {
+            Json(json!({
+                "id": id,
+                "model": "deepseek-v4-flash",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": text}, "finish_reason": "stop"}],
+                "usage": usage,
+            })).into_response()
+        }
+    }
+
     fn stub_client() -> CodewhaleClient {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let config = crate::config::Config {
@@ -13550,27 +13668,39 @@ FINAL RECEIPT
         CodewhaleClient::new(&config).expect("stub client should construct")
     }
 
-    async fn fake_chat_client(response_text: &str) -> (CodewhaleClient, Arc<AtomicUsize>) {
-        let (client, calls, _) = fake_chat_client_capturing(response_text).await;
-        (client, calls)
+    async fn fake_chat_client(
+        response_text: &str,
+    ) -> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+        let (client, calls, _, config) = fake_chat_client_capturing(response_text).await;
+        (client, calls, config)
     }
 
     async fn fake_chat_client_responses(
         response_texts: &[&str],
-    ) -> (CodewhaleClient, Arc<AtomicUsize>) {
-        let (client, calls, _) = fake_chat_client_capturing_responses(response_texts).await;
-        (client, calls)
+    ) -> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+        let (client, calls, _, config) = fake_chat_client_capturing_responses(response_texts).await;
+        (client, calls, config)
     }
 
     pub(super) async fn fake_chat_client_capturing(
         response_text: &str,
-    ) -> (CodewhaleClient, Arc<AtomicUsize>, Arc<Mutex<Vec<Value>>>) {
+    ) -> (
+        CodewhaleClient,
+        Arc<AtomicUsize>,
+        Arc<Mutex<Vec<Value>>>,
+        crate::config::Config,
+    ) {
         fake_chat_client_capturing_responses(&[response_text]).await
     }
 
     async fn fake_chat_client_capturing_responses(
         response_texts: &[&str],
-    ) -> (CodewhaleClient, Arc<AtomicUsize>, Arc<Mutex<Vec<Value>>>) {
+    ) -> (
+        CodewhaleClient,
+        Arc<AtomicUsize>,
+        Arc<Mutex<Vec<Value>>>,
+        crate::config::Config,
+    ) {
         assert!(
             !response_texts.is_empty(),
             "fake chat client needs at least one response"
@@ -13594,6 +13724,7 @@ FINAL RECEIPT
                     let bodies = Arc::clone(&bodies);
                     let response_texts = Arc::clone(&response_texts);
                     async move {
+                        let stream = body["stream"].as_bool().unwrap_or(false);
                         bodies.lock().expect("capture body").push(body);
                         let attempt = calls.fetch_add(1, Ordering::SeqCst) + 1;
                         let response_text = if response_texts.len() == 1 {
@@ -13609,23 +13740,11 @@ FINAL RECEIPT
                                 })
                                 .clone()
                         };
-                        Json(json!({
-                            "id": format!("chatcmpl-workflow-test-{attempt}"),
-                            "model": "deepseek-v4-flash",
-                            "choices": [{
-                                "index": 0,
-                                "message": {
-                                    "role": "assistant",
-                                    "content": response_text
-                                },
-                                "finish_reason": "stop"
-                            }],
-                            "usage": {
-                                "prompt_tokens": 1,
-                                "completion_tokens": 1,
-                                "total_tokens": 2
-                            }
-                        }))
+                        fake_chat_response(
+                            stream,
+                            format!("chatcmpl-workflow-test-{attempt}"),
+                            &response_text,
+                        )
                     }
                 }
             }),
@@ -13650,6 +13769,7 @@ FINAL RECEIPT
             CodewhaleClient::new(&config).expect("fake chat client"),
             calls,
             bodies,
+            config,
         )
     }
 

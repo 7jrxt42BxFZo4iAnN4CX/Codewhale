@@ -81,6 +81,13 @@ pub(crate) fn prev_grapheme_boundary(text: &str, char_index: usize) -> usize {
     acc
 }
 
+/// Char index of the grapheme-cluster boundary at or before `char_index`:
+/// the start of the cluster that contains it. Vim column moves land here so a
+/// line change never parks the cursor inside a ZWJ or combining sequence.
+pub(crate) fn floor_grapheme_boundary(text: &str, char_index: usize) -> usize {
+    prev_grapheme_boundary(text, char_index.saturating_add(1)).min(char_index)
+}
+
 /// Char index of the first grapheme-cluster boundary strictly after
 /// `char_index` — i.e. where the cursor lands after one "right" step.
 /// Returns the total char count when already at or past the end.
@@ -731,6 +738,10 @@ impl App {
         if let Some(pending) = self.paste_burst.flush_before_modified_input() {
             self.insert_str(&pending);
         }
+        if self.attach_pasted_image_paths(text) {
+            self.paste_burst.clear_after_explicit_paste();
+            return;
+        }
         let normalized = normalize_paste_text(text);
         if !normalized.is_empty() {
             self.insert_str(&normalized);
@@ -741,6 +752,32 @@ impl App {
         // an @paste-...md mention before dispatch, so no path silently
         // truncates user input.
         // self.consolidate_large_input_if_oversized(); // deferred to submit time
+    }
+
+    /// A file dragged onto the terminal arrives as a paste of its path. When
+    /// the whole paste names local image files, attach them on the same
+    /// `[Attached image: …]` line a clipboard image gets, so each shows as a
+    /// composer attachment and is sent to the model as an image part (the
+    /// engine expands the line when it builds the user message, and the
+    /// route's vision capability decides per request; a text-only route gets
+    /// the omission notice there). Returns whether the paste was consumed.
+    ///
+    /// A command line (`/…`) or shell line (`!…`) keeps the literal path.
+    pub(crate) fn attach_pasted_image_paths(&mut self, text: &str) -> bool {
+        if self.input.trim_start().starts_with(['/', '!']) {
+            return false;
+        }
+        let Some(paths) = crate::image_attach::pasted_image_paths(text) else {
+            return false;
+        };
+        for path in &paths {
+            self.insert_media_attachment("image", path, None);
+        }
+        self.status_message = Some(match paths.as_slice() {
+            [path] => format!("Attached image: {}", path.display()),
+            paths => format!("Attached {} images", paths.len()),
+        });
+        true
     }
 
     pub fn insert_media_attachment(&mut self, kind: &str, path: &Path, description: Option<&str>) {
@@ -1404,10 +1441,10 @@ impl App {
         let end = next_grapheme_boundary(&self.input, pos);
         remove_char_range(&mut self.input, pos, end);
         self.resync_command_line_claim();
-        // Keep cursor in bounds after deletion.
+        // Keep cursor in bounds after deletion, on the last cluster's start.
         let new_total = char_count(&self.input);
         if self.cursor_position > 0 && self.cursor_position >= new_total {
-            self.cursor_position = new_total.saturating_sub(1);
+            self.cursor_position = prev_grapheme_boundary(&self.input, new_total);
         }
         self.needs_redraw = true;
     }
@@ -1450,7 +1487,8 @@ impl App {
     pub fn vim_enter_append(&mut self) {
         let total = char_count(&self.input);
         if self.cursor_position < total {
-            self.cursor_position += 1;
+            // After the whole cluster under the cursor, not one scalar in.
+            self.cursor_position = next_grapheme_boundary(&self.input, self.cursor_position);
         }
         self.vim_mode = VimMode::Insert;
         self.needs_redraw = true;
@@ -1468,10 +1506,11 @@ impl App {
     pub fn vim_enter_normal(&mut self) {
         self.vim_mode = VimMode::Normal;
         self.vim_pending_d = false;
-        // In Normal mode the cursor sits on a character, not after the last one.
+        // In Normal mode the cursor sits on a character, not after the last
+        // one: on the last grapheme cluster's start (U01-m4).
         let total = char_count(&self.input);
         if self.cursor_position > 0 && self.cursor_position >= total {
-            self.cursor_position = total.saturating_sub(1);
+            self.cursor_position = prev_grapheme_boundary(&self.input, total);
         }
         self.needs_redraw = true;
     }
@@ -1497,7 +1536,8 @@ impl App {
             let next_line_char_len =
                 char_count(&text[next_line_start..next_line_start + next_line_len]);
             let target_col = col.min(next_line_char_len);
-            self.cursor_position = char_count(&text[..next_line_start]) + target_col;
+            self.cursor_position =
+                floor_grapheme_boundary(&text, char_count(&text[..next_line_start]) + target_col);
             self.needs_redraw = true;
         } else {
             self.history_down();
@@ -1518,7 +1558,8 @@ impl App {
             let prev_start = text[..prev_line_end].rfind('\n').map_or(0, |i| i + 1);
             let prev_line_len = char_count(&text[prev_start..prev_line_end]);
             let target_col = col.min(prev_line_len);
-            self.cursor_position = char_count(&text[..prev_start]) + target_col;
+            self.cursor_position =
+                floor_grapheme_boundary(&text, char_count(&text[..prev_start]) + target_col);
             self.needs_redraw = true;
         } else {
             self.history_up();
@@ -1688,6 +1729,20 @@ impl App {
         // bytes lost after the composer accepted them — never fall through
         // to the prose-prompt branch; hold it instead.
         let claimed_command = self.command_line_claimed();
+        // A dropped image path that was not converted at paste time (typed
+        // keys, or the question written on the same line) still attaches.
+        if !claimed_command
+            && !self.input.trim_start().starts_with('!')
+            && let Some((path, rest)) = crate::image_attach::leading_dropped_image(&self.input)
+        {
+            let reference = media_attachment_reference("image", &path, None);
+            self.input = if rest.is_empty() {
+                reference
+            } else {
+                format!("{reference}\n{rest}")
+            };
+            self.cursor_position = char_count(&self.input);
+        }
         // Safety net: if any earlier path filled the buffer above the
         // safety cap without going through `insert_paste_text`, fold it
         // into a workspace paste file now (#553). Bracketed pastes hit
@@ -1747,8 +1802,11 @@ impl App {
             self.input_history.drain(0..excess);
         }
         // Mirror prompts and commands to the persisted cross-session history
-        // so arrow-up recall works across restarts (#366, #6006).
-        crate::composer_history::append_history(&input);
+        // so arrow-up recall works across restarts (#366, #6006). A history
+        // limit of zero saves nothing (U01-m2).
+        if self.max_input_history > 0 {
+            crate::composer_history::append_history(&input);
+        }
         self.history_index = None;
         self.history_navigation_draft = None;
         self.clear_input();
@@ -1937,16 +1995,31 @@ impl App {
         let filename = format!("paste-{}-{}.md", now.format("%Y-%m-%d-%H%M%S"), suffix);
         let rel_path = format!(".codewhale/pastes/{filename}");
 
-        let pastes_dir = self.workspace.join(".codewhale/pastes");
+        // Confined to the workspace: a linked `.codewhale` or `pastes`
+        // directory must not send the pasted text somewhere else.
         let file_path = self.workspace.join(&rel_path);
-        let written = std::fs::create_dir_all(&pastes_dir)
-            .and_then(|()| std::fs::write(&file_path, &self.input));
+        let written = crate::fs_confined::write(&self.workspace, &file_path, self.input.as_bytes());
         if let Err(error) = written {
+            let limit = MAX_SUBMITTED_INPUT_CHARS.to_string();
+            // The toast row sheds clauses to fit and left only "Not sent", so
+            // the toast carries a short form and the full reason, including
+            // the write error, goes to the transcript where nothing is clipped.
+            let short = self
+                .tr(MessageId::ComposerOversizedSubmitHeldShort)
+                .replace("{limit}", &limit);
             let reason = self
                 .tr(MessageId::ComposerOversizedSubmitHeld)
-                .replace("{limit}", &MAX_SUBMITTED_INPUT_CHARS.to_string())
+                .replace("{limit}", &limit)
                 .replace("{error}", &error.to_string());
-            self.push_status_toast(reason, StatusToastLevel::Error, Some(8_000));
+            self.push_status_toast(short, StatusToastLevel::Error, Some(8_000));
+            // Enter and paste both retry this; do not stack identical cells.
+            let already_noted = matches!(
+                self.history.last(),
+                Some(HistoryCell::System { content }) if *content == reason
+            );
+            if !already_noted {
+                self.add_message(HistoryCell::System { content: reason });
+            }
             self.needs_redraw = true;
             return false;
         }

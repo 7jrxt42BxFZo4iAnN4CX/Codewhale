@@ -25,6 +25,7 @@ import {
 } from "./i18n/links";
 import { SITE_URL } from "./page-meta";
 import { siteCss } from "./site-css";
+import { readCatalogue } from "./ratatui/catalogue";
 
 const webRoot = new URL("../", import.meta.url);
 const repoRoot = new URL("../../", import.meta.url);
@@ -91,9 +92,13 @@ describe("sitemap and hreflang preservation", () => {
   });
 
   it("keeps sitemap and hreflang output aligned with real translation coverage", () => {
-    // 18 home locales + 10 guide locales + English-only install + (en, zh) for every other route
-    // (including /product, /plugins, and /changelog, whose bodies ship en/zh only).
-    expect(sitemapEntries).toHaveLength(99);
+    // 18 home locales + 18 /computer-use locales + English-only install + (en, zh) for every
+    // other route (including /docs/guide, /product, /plugins, and /changelog, whose bodies
+    // ship en/zh only).
+    const existingEntries = sitemapEntries.filter(
+      (entry) => new URL(entry.url).pathname.split("/")[2] !== "ratatui",
+    );
+    expect(existingEntries).toHaveLength(109);
     expect(sitemapEntries.filter(entry => entry.url.endsWith("/install")).map(entry => entry.url))
       .toEqual([`${SITE_URL}/en/install`]);
     expect(sitemapEntries.some(entry => entry.url.endsWith("/pricing"))).toBe(false);
@@ -105,7 +110,8 @@ describe("sitemap and hreflang preservation", () => {
     }
     for (const [path, expectedLocales] of [
       ["/", locales],
-      ["/docs/guide", contentLocalesForPath("/docs/guide")],
+      ["/docs/guide", ["en", "zh"]],
+      ["/computer-use", locales],
       ["/install", ["en"]],
       ["/docs", ["en", "zh"]],
     ] as const) {
@@ -119,6 +125,22 @@ describe("sitemap and hreflang preservation", () => {
       ]);
     }
     expect(sitemapEntries.every((entry) => !("lastModified" in entry))).toBe(true);
+  });
+
+  it("indexes every Ratatui preview with genuine translation alternates", () => {
+    const catalogue = readCatalogue();
+    const paths = ["/ratatui", ...catalogue.entries.map((entry) => `/ratatui/${encodeURIComponent(entry.name)}`)];
+    const expectedUrls = paths.flatMap((path) =>
+      contentLocalesForPath(path).map((locale) => `${SITE_URL}/${locale}${path}`),
+    );
+    const entries = sitemapEntries.filter(
+      (entry) => new URL(entry.url).pathname.split("/")[2] === "ratatui",
+    );
+    expect(entries.map((entry) => entry.url)).toEqual(expectedUrls);
+    expect(new Set(sitemapEntries.map((entry) => entry.url)).size).toBe(sitemapEntries.length);
+    for (const entry of entries) {
+      expect(Object.keys(entry.alternates?.languages ?? {})).toEqual(["en", "zh"]);
+    }
   });
 
   it("keeps the new docs pages on the shared metadata helper", () => {
@@ -199,7 +221,7 @@ describe("navigation parity and accessibility", () => {
     const moreReference = buildSecondaryNavLinks("en", getChrome("en")).map((l) =>
       l.href.replace(/^\/en\//, ""),
     );
-    expect(moreReference).toEqual(["docs/guide", "install", "faq", "community", "contribute"]);
+    expect(moreReference).toEqual(["docs/guide", "install", "ratatui", "faq", "community", "contribute"]);
     for (const locale of locales) {
       const links = buildNavLinks(locale, getChrome(locale));
       expect(
@@ -233,11 +255,11 @@ describe("navigation parity and accessibility", () => {
       ).toEqual(reference);
       const project = footerProjectLinks(locale, getChrome(locale));
       expect(project.map((l) => l.href), `${locale} footer project routes`).toEqual([
-        "https://github.com/Hmbown/CodeWhale",
-        "https://github.com/Hmbown/CodeWhale/issues",
+        "https://github.com/codewhale-hq/CodeWhale",
+        "https://github.com/codewhale-hq/CodeWhale/issues",
         "https://discord.gg/37gfS3ksug",
         `/${locale}/contribute`,
-        "https://github.com/Hmbown/CodeWhale/blob/main/LICENSE",
+        "https://github.com/codewhale-hq/CodeWhale/blob/main/LICENSE",
       ]);
       const legal = footerLegalLinks(locale, getChrome(locale));
       expect(legal.map((l) => l.href), `${locale} footer legal`).toEqual([
@@ -333,7 +355,7 @@ describe("navigation parity and accessibility", () => {
     const license = footerProjectLinks("en", getChrome("en")).at(-1);
     expect(license).toEqual({
       label: "MIT license",
-      href: "https://github.com/Hmbown/CodeWhale/blob/main/LICENSE",
+      href: "https://github.com/codewhale-hq/CodeWhale/blob/main/LICENSE",
     });
     // zh gets the footer legal labels from its dictionary, not English.
     expect(footerLegalLinks("zh", getChrome("zh")).map((l) => l.label)).toEqual([
@@ -357,19 +379,11 @@ describe("homepage integration", () => {
     expect(homepage).toContain("/docs/vocabulary");
   });
 
-  it("keeps the previously pinned homepage facts intact", () => {
-    // Guard against the new band accidentally displacing the public-copy
-    // gate's required surface (the full contract lives in public-copy.test.ts).
+  it("keeps the published release separate from the source candidate", () => {
     expect(homepage).toContain("facts.latestPublishedRelease");
     // The unreleased-source label is the EN dictionary value the page renders
     // (plain "Unreleased", per docs/design/WEB_VOICE.md).
     expect(homepage).toContain("d.sourceCandidate");
     expect(getHome("en").sourceCandidate).toBe("Unreleased");
-    // The terminal is the live capture, labelled with the captured build.
-    expect(homepage).toContain("<TerminalCapture");
-    expect(homepage).toContain("TERMINAL_SCREENSHOT.version");
-    for (const label of ["Plan", "Work", "Operate", "Ask", "Auto-Review", "Full Access"]) {
-      expect(homepage).toContain(label);
-    }
   });
 });

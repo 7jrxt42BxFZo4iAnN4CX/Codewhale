@@ -127,6 +127,7 @@ pub enum MessageId {
     MobileStreamClosed,
     MobileStreamReconnecting,
     MobileStreamConnected,
+    ConversationChangedBeforeUndo,
     SessionArchiveExported,
     SessionArchiveSizes,
     SessionArchiveNoArtifacts,
@@ -179,6 +180,8 @@ pub enum MessageId {
     HistoryHintRestore,
     HistoryNoMatches,
     TranscriptReasoningExpand,
+    TranscriptThought,
+    TranscriptThoughtFor,
     ScreenModeFullscreenNotice,
     ScreenModeInlineNotice,
     ScreenModeMouseCaptureOn,
@@ -519,6 +522,11 @@ pub enum MessageId {
     CmdHfDescription,
     CmdHelpDescription,
     CmdProfileDescription,
+    ProfileUsage,
+    ProfileSwitching,
+    ProfileSwitched,
+    ProfileStatus,
+    ProfileSwitchFailed,
     CmdHomeDescription,
     CmdOverviewDescription,
     HomeBackToConversation,
@@ -536,11 +544,12 @@ pub enum MessageId {
     GoalContinuationStopped,
     CmdInitDescription,
     CmdJobsDescription,
-    CmdDispatchDescription,
     CmdLinksDescription,
     CmdLoadDescription,
     CmdLogoutDescription,
     CmdLoginDescription,
+    CmdConnectDescription,
+    CmdDisconnectDescription,
     CmdMcpDescription,
     McpRecommendedUnknownId,
     McpRecommendationsHeading,
@@ -600,12 +609,15 @@ pub enum MessageId {
     ExtensionsInventoryMcp,
     ExtensionsInventoryNone,
     ExtensionsInventorySkills,
+    ExtensionPromptUnavailable,
+    ProfileConstitutionUnavailableLocal,
     ExtensionsMarketplaceDetail,
     ExtensionsMarketplaceUnavailable,
     ExtensionsMcpEmpty,
     ExtensionsMcpBrowse,
     ExtensionsMcpDetail,
     ExtensionsMcpNotInspected,
+    ExtensionsMcpNotConnectedYet,
     ExtensionsMcpRefresh,
     ExtensionsMcpSummary,
     ExtensionsNoItems,
@@ -855,9 +867,23 @@ pub enum MessageId {
     PetWatchSoundPaused,
     PetWatchSoundUnavailable,
     CmdPetDescription,
+    ConfigLabelPetMode,
+    ConfigHintPetMode,
+    PetModeCopyHint,
     PetModeOn,
     PetModeOff,
     PetModeOnLabel,
+    PetModeInspectHint,
+    PetModeReplyTitle,
+    PetActivityBrowsing,
+    PetActivityComputer,
+    PetActivityMemory,
+    PetAppearanceLegacy,
+    PetModeMessageHint,
+    PetModePaneHint,
+    PetModeAgentHints,
+    PetModeReplyHints,
+    PetModeCompanionHints,
     PetModeOffLabel,
     PetViewOpen,
     PetViewClosed,
@@ -996,7 +1022,11 @@ pub enum MessageId {
     ClipboardCutKeptText,
     /// Paste found nothing: the clipboard read came back empty or failed.
     ClipboardNothingToPaste,
+    ClipboardCopyFailed,
     ComposerOversizedSubmitHeld,
+    /// Short toast form of [`Self::ComposerOversizedSubmitHeld`]; the toast row
+    /// sheds clauses to fit, so the full text goes to the transcript instead.
+    ComposerOversizedSubmitHeldShort,
     KbContextMenu,
     KbPointerScroll,
     KbPointerClick,
@@ -1017,6 +1047,7 @@ pub enum MessageId {
     ClearConversation,
     ClearConversationBusy,
     ModelChanged,
+    ModelChangedSessionNote,
     LinksProjectTitle,
     LinksDocumentation,
     LinksCommunity,
@@ -1028,6 +1059,15 @@ pub enum MessageId {
     LinksDocs,
     LinksKimiCodeRouteNote,
     LinksTip,
+    WorkspaceCurrent,
+    WorkspaceNotFound,
+    WorkspaceNotDirectory,
+    WorkspaceSwitching,
+    WorkspaceHomeUnresolved,
+    WorkspaceSwitchBusy,
+    WorkspaceUnchanged,
+    WorkspaceSwitched,
+    WorkspaceStatus,
     SubagentsFetching,
     SubagentsNoCurrentSessionFleetWorkers,
     SubagentsCurrentSessionFleetWorkersTitle,
@@ -1223,7 +1263,6 @@ pub enum MessageId {
     SetupStepConstitutionWhy,
     SetupStepVerificationTitle,
     SetupStepVerificationWhy,
-    SetupCheckpointLayerOrder,
     SetupCheckpointDoneBundled,
     SetupCheckpointDoneGuided,
     SetupCheckpointDoneKept,
@@ -1455,6 +1494,7 @@ pub enum MessageId {
     ApprovalControlsHintChild,
     PendingApprovalInAgent,
     ApprovalTruncationHint,
+    ApprovalAsksWithoutGit,
     ApprovalFullAccessPolicyBlocked,
     ApprovalChooseHint,
     ApprovalChooseAction,
@@ -1462,7 +1502,6 @@ pub enum MessageId {
     ApprovalMoreLines,
     ApprovalAutoDeniedSession,
     // Sandbox elevation dialog.
-    ElevationTitleSandboxDenied,
     ElevationTitleRequired,
     ElevationFieldTool,
     ElevationFieldCmd,
@@ -1550,6 +1589,10 @@ pub enum MessageId {
     ToolReceiptDone,
     ToolReceiptLinesSingular,
     ToolReceiptLinesPlural,
+    TodoStatusPending,
+    TodoStatusInProgress,
+    TodoStatusCompleted,
+    TodoStatusCancelled,
     // Voice commands (/voice, /voice-send, /voice-control)
     CmdVoiceDescription,
     CmdVoiceSendDescription,
@@ -1592,6 +1635,10 @@ pub enum MessageId {
     NotificationShellFinished,
     NotificationShellFailed,
     NotificationShellStopped,
+    ShellWaitNoActive,
+    ShellWaitInteractive,
+    ShellWaitUnavailable,
+    ShellWaitReleased,
     NotificationTaskFinished,
     NotificationTaskFailed,
     NotificationTaskStopped,
@@ -1812,6 +1859,7 @@ pub enum MessageId {
     ChipPermissionAuto,
     ChipPermissionFullAccess,
     ChipPermissionNever,
+    PermissionsChangedReceipt,
     // Underwater footer right-hand hint words (keys stay literal in code).
     FooterHintKeys,
     FooterHintOutput,
@@ -2057,6 +2105,10 @@ pub enum MessageId {
     XaiAuthChoiceIntro,
     XaiAuthChoiceApiKeyOption,
     XaiAuthChoiceDeviceOAuthOption,
+    OrcarouterAuthChoiceTitle,
+    OrcarouterAuthChoiceIntro,
+    OrcarouterAuthChoiceApiKeyOption,
+    OrcarouterAuthChoicePkceOption,
     ChatgptAuthChoiceTitle,
     ChatgptAuthChoiceIntro,
     ChatgptAuthChoicePkceOption,
@@ -2226,6 +2278,16 @@ pub enum MessageId {
     SidebarDestructiveArmed,
     WorkSurfaceTodoProgress,
     WorkSurfaceStopConfirmHint,
+    TerminalDockStarting,
+    TerminalDockControls,
+    TerminalDockEmpty,
+    TerminalDockUnsupported,
+    TerminalDockLost,
+    TerminalDockDropped,
+    TerminalDockError,
+    TerminalDockPasteRefused,
+    TerminalDockExited,
+    TerminalDockLive,
     CoordinationWorkTitle,
     CoordinationSummaryDecisions,
     CoordinationSummaryContentions,
@@ -2299,6 +2361,18 @@ pub enum MessageId {
     SavedAsStartupDefault,
     ModeAlreadyActiveSavedAsDefault,
     StartupDefaultNotSaved,
+    RouteSaveNothingPending,
+    RouteSaveNoTeamSelected,
+    RouteSaveTeamUpdated,
+    RouteSaveTeamUpdateFailed,
+    RouteSaveTeamUpdateFailedMoved,
+    RouteSaveTeamCreateFailed,
+    RouteSaveSelectedNote,
+    RouteSaveSelectionFailedNote,
+    RouteSaveSavedAsNewTeam,
+    RouteSaveFailed,
+    RouteSaveRouteNoLongerActive,
+    RouteSaveRememberedDefault,
     StartupDefaultSubjectMode,
     StartupDefaultSubjectThinking,
     StartupDefaultSubjectModel,
@@ -2670,6 +2744,29 @@ pub enum MessageId {
     ModelPickerReadinessRefreshed,
     ModelPickerOpenToRefresh,
     ModelPickerPinnedChip,
+    AuthSignedInAs,
+    AuthSignedInWithoutEmail,
+    AuthReplacedPreviousSignInAs,
+    AuthReplacedPreviousSignIn,
+    AuthSameAccountAsBefore,
+    AuthEnvTokenOutranksSignIn,
+    /// Hover label for the pinned user-prompt header above the transcript:
+    /// clicking the header jumps to the user message it names.
+    PinnedPromptJumpToMessage,
+    /// Plan hand-off: the question asked when a Plan turn ends with open
+    /// To-do steps, its three choices, and the message sent on "Work".
+    PlanHandoffHeader,
+    PlanHandoffQuestion,
+    PlanHandoffWorkAsk,
+    PlanHandoffWorkAskDetail,
+    PlanHandoffWorkAuto,
+    PlanHandoffWorkAutoDetail,
+    PlanHandoffKeepPlanning,
+    PlanHandoffKeepPlanningDetail,
+    PluginOAuthBrowser,
+    PluginOAuthReady,
+    PluginOAuthLocalLogout,
+    PlanHandoffProceed,
 }
 
 #[allow(dead_code)]
@@ -2681,6 +2778,7 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::MobileStreamClosed,
     MessageId::MobileStreamReconnecting,
     MessageId::MobileStreamConnected,
+    MessageId::ConversationChangedBeforeUndo,
     MessageId::SessionArchiveExported,
     MessageId::SessionArchiveSizes,
     MessageId::SessionArchiveNoArtifacts,
@@ -2733,6 +2831,8 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::HistoryHintRestore,
     MessageId::HistoryNoMatches,
     MessageId::TranscriptReasoningExpand,
+    MessageId::TranscriptThought,
+    MessageId::TranscriptThoughtFor,
     MessageId::ScreenModeFullscreenNotice,
     MessageId::ScreenModeInlineNotice,
     MessageId::ScreenModeMouseCaptureOn,
@@ -3077,6 +3177,11 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::CmdHfDescription,
     MessageId::CmdHelpDescription,
     MessageId::CmdProfileDescription,
+    MessageId::ProfileUsage,
+    MessageId::ProfileSwitching,
+    MessageId::ProfileSwitched,
+    MessageId::ProfileStatus,
+    MessageId::ProfileSwitchFailed,
     MessageId::CmdHomeDescription,
     MessageId::CmdOverviewDescription,
     MessageId::HomeBackToConversation,
@@ -3085,11 +3190,12 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::CmdAgentDescription,
     MessageId::CmdInitDescription,
     MessageId::CmdJobsDescription,
-    MessageId::CmdDispatchDescription,
     MessageId::CmdLinksDescription,
     MessageId::CmdLoadDescription,
     MessageId::CmdLogoutDescription,
     MessageId::CmdLoginDescription,
+    MessageId::CmdConnectDescription,
+    MessageId::CmdDisconnectDescription,
     MessageId::CmdMcpDescription,
     MessageId::McpRecommendedUnknownId,
     MessageId::McpRecommendationsHeading,
@@ -3148,12 +3254,15 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::ExtensionsInventoryMcp,
     MessageId::ExtensionsInventoryNone,
     MessageId::ExtensionsInventorySkills,
+    MessageId::ExtensionPromptUnavailable,
+    MessageId::ProfileConstitutionUnavailableLocal,
     MessageId::ExtensionsMarketplaceDetail,
     MessageId::ExtensionsMarketplaceUnavailable,
     MessageId::ExtensionsMcpEmpty,
     MessageId::ExtensionsMcpBrowse,
     MessageId::ExtensionsMcpDetail,
     MessageId::ExtensionsMcpNotInspected,
+    MessageId::ExtensionsMcpNotConnectedYet,
     MessageId::ExtensionsMcpRefresh,
     MessageId::ExtensionsMcpSummary,
     MessageId::ExtensionsNoItems,
@@ -3399,9 +3508,23 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::PetWatchSoundPaused,
     MessageId::PetWatchSoundUnavailable,
     MessageId::CmdPetDescription,
+    MessageId::ConfigLabelPetMode,
+    MessageId::ConfigHintPetMode,
+    MessageId::PetModeCopyHint,
     MessageId::PetModeOn,
     MessageId::PetModeOff,
     MessageId::PetModeOnLabel,
+    MessageId::PetModeInspectHint,
+    MessageId::PetModeReplyTitle,
+    MessageId::PetActivityBrowsing,
+    MessageId::PetActivityComputer,
+    MessageId::PetActivityMemory,
+    MessageId::PetAppearanceLegacy,
+    MessageId::PetModeMessageHint,
+    MessageId::PetModePaneHint,
+    MessageId::PetModeAgentHints,
+    MessageId::PetModeReplyHints,
+    MessageId::PetModeCompanionHints,
     MessageId::PetModeOffLabel,
     MessageId::PetViewOpen,
     MessageId::PetViewClosed,
@@ -3538,7 +3661,9 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::ClipboardSentToTerminal,
     MessageId::ClipboardCutKeptText,
     MessageId::ClipboardNothingToPaste,
+    MessageId::ClipboardCopyFailed,
     MessageId::ComposerOversizedSubmitHeld,
+    MessageId::ComposerOversizedSubmitHeldShort,
     MessageId::KbContextMenu,
     MessageId::KbPointerScroll,
     MessageId::KbPointerClick,
@@ -3559,6 +3684,7 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::ClearConversation,
     MessageId::ClearConversationBusy,
     MessageId::ModelChanged,
+    MessageId::ModelChangedSessionNote,
     MessageId::LinksProjectTitle,
     MessageId::LinksDocumentation,
     MessageId::LinksCommunity,
@@ -3570,6 +3696,15 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::LinksDocs,
     MessageId::LinksKimiCodeRouteNote,
     MessageId::LinksTip,
+    MessageId::WorkspaceCurrent,
+    MessageId::WorkspaceNotFound,
+    MessageId::WorkspaceNotDirectory,
+    MessageId::WorkspaceSwitching,
+    MessageId::WorkspaceHomeUnresolved,
+    MessageId::WorkspaceSwitchBusy,
+    MessageId::WorkspaceUnchanged,
+    MessageId::WorkspaceSwitched,
+    MessageId::WorkspaceStatus,
     MessageId::SubagentsFetching,
     MessageId::SubagentsNoCurrentSessionFleetWorkers,
     MessageId::SubagentsCurrentSessionFleetWorkersTitle,
@@ -3757,7 +3892,6 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::SetupStepConstitutionWhy,
     MessageId::SetupStepVerificationTitle,
     MessageId::SetupStepVerificationWhy,
-    MessageId::SetupCheckpointLayerOrder,
     MessageId::SetupCheckpointDoneBundled,
     MessageId::SetupCheckpointDoneGuided,
     MessageId::SetupCheckpointDoneKept,
@@ -3969,13 +4103,13 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::ApprovalControlsHintChild,
     MessageId::PendingApprovalInAgent,
     MessageId::ApprovalTruncationHint,
+    MessageId::ApprovalAsksWithoutGit,
     MessageId::ApprovalFullAccessPolicyBlocked,
     MessageId::ApprovalChooseHint,
     MessageId::ApprovalChooseAction,
     MessageId::ApprovalIntentLabel,
     MessageId::ApprovalMoreLines,
     MessageId::ApprovalAutoDeniedSession,
-    MessageId::ElevationTitleSandboxDenied,
     MessageId::ElevationTitleRequired,
     MessageId::ElevationFieldTool,
     MessageId::ElevationFieldCmd,
@@ -4059,6 +4193,10 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::ToolReceiptDone,
     MessageId::ToolReceiptLinesSingular,
     MessageId::ToolReceiptLinesPlural,
+    MessageId::TodoStatusPending,
+    MessageId::TodoStatusInProgress,
+    MessageId::TodoStatusCompleted,
+    MessageId::TodoStatusCancelled,
     MessageId::CmdVoiceDescription,
     MessageId::CmdVoiceSendDescription,
     MessageId::CmdVoiceControlDescription,
@@ -4097,6 +4235,10 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::NotificationShellFinished,
     MessageId::NotificationShellFailed,
     MessageId::NotificationShellStopped,
+    MessageId::ShellWaitNoActive,
+    MessageId::ShellWaitInteractive,
+    MessageId::ShellWaitUnavailable,
+    MessageId::ShellWaitReleased,
     MessageId::NotificationTaskFinished,
     MessageId::NotificationTaskFailed,
     MessageId::NotificationTaskStopped,
@@ -4293,6 +4435,7 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::ChipPermissionAuto,
     MessageId::ChipPermissionFullAccess,
     MessageId::ChipPermissionNever,
+    MessageId::PermissionsChangedReceipt,
     MessageId::FooterHintKeys,
     MessageId::FooterHintOutput,
     MessageId::FooterHintContext,
@@ -4530,6 +4673,10 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::XaiAuthChoiceIntro,
     MessageId::XaiAuthChoiceApiKeyOption,
     MessageId::XaiAuthChoiceDeviceOAuthOption,
+    MessageId::OrcarouterAuthChoiceTitle,
+    MessageId::OrcarouterAuthChoiceIntro,
+    MessageId::OrcarouterAuthChoiceApiKeyOption,
+    MessageId::OrcarouterAuthChoicePkceOption,
     MessageId::ChatgptAuthChoiceTitle,
     MessageId::ChatgptAuthChoiceIntro,
     MessageId::ChatgptAuthChoicePkceOption,
@@ -4682,6 +4829,16 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::SidebarDestructiveArmed,
     MessageId::WorkSurfaceTodoProgress,
     MessageId::WorkSurfaceStopConfirmHint,
+    MessageId::TerminalDockStarting,
+    MessageId::TerminalDockControls,
+    MessageId::TerminalDockEmpty,
+    MessageId::TerminalDockUnsupported,
+    MessageId::TerminalDockLost,
+    MessageId::TerminalDockDropped,
+    MessageId::TerminalDockError,
+    MessageId::TerminalDockPasteRefused,
+    MessageId::TerminalDockExited,
+    MessageId::TerminalDockLive,
     MessageId::CoordinationWorkTitle,
     MessageId::CoordinationSummaryDecisions,
     MessageId::CoordinationSummaryContentions,
@@ -4750,6 +4907,18 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::SavedAsStartupDefault,
     MessageId::ModeAlreadyActiveSavedAsDefault,
     MessageId::StartupDefaultNotSaved,
+    MessageId::RouteSaveNothingPending,
+    MessageId::RouteSaveNoTeamSelected,
+    MessageId::RouteSaveTeamUpdated,
+    MessageId::RouteSaveTeamUpdateFailed,
+    MessageId::RouteSaveTeamUpdateFailedMoved,
+    MessageId::RouteSaveTeamCreateFailed,
+    MessageId::RouteSaveSelectedNote,
+    MessageId::RouteSaveSelectionFailedNote,
+    MessageId::RouteSaveSavedAsNewTeam,
+    MessageId::RouteSaveFailed,
+    MessageId::RouteSaveRouteNoLongerActive,
+    MessageId::RouteSaveRememberedDefault,
     MessageId::StartupDefaultSubjectMode,
     MessageId::StartupDefaultSubjectThinking,
     MessageId::StartupDefaultSubjectModel,
@@ -5112,6 +5281,25 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::ModelPickerReadinessRefreshed,
     MessageId::ModelPickerOpenToRefresh,
     MessageId::ModelPickerPinnedChip,
+    MessageId::AuthSignedInAs,
+    MessageId::AuthSignedInWithoutEmail,
+    MessageId::AuthReplacedPreviousSignInAs,
+    MessageId::AuthReplacedPreviousSignIn,
+    MessageId::AuthSameAccountAsBefore,
+    MessageId::AuthEnvTokenOutranksSignIn,
+    MessageId::PinnedPromptJumpToMessage,
+    MessageId::PlanHandoffHeader,
+    MessageId::PlanHandoffQuestion,
+    MessageId::PlanHandoffWorkAsk,
+    MessageId::PlanHandoffWorkAskDetail,
+    MessageId::PlanHandoffWorkAuto,
+    MessageId::PlanHandoffWorkAutoDetail,
+    MessageId::PlanHandoffKeepPlanning,
+    MessageId::PlanHandoffKeepPlanningDetail,
+    MessageId::PluginOAuthBrowser,
+    MessageId::PluginOAuthReady,
+    MessageId::PluginOAuthLocalLogout,
+    MessageId::PlanHandoffProceed,
 ];
 
 pub fn tr(locale: Locale, id: MessageId) -> Cow<'static, str> {
@@ -5539,6 +5727,39 @@ mod tests {
         }
     }
 
+    #[test]
+    fn context_inspector_and_command_hints_are_explicitly_localized() {
+        let ids = [
+            MessageId::CtxInspRowCompaction,
+            MessageId::CtxInspRowAnchors,
+            MessageId::CtxInspCompactionNever,
+            MessageId::CtxInspCompactionDetail,
+            MessageId::CtxInspCompactionRestored,
+            MessageId::CtxInspCompactionPathSummary,
+            MessageId::CtxInspCompactionPathPrune,
+            MessageId::CtxInspCompactionAssistantKept,
+            MessageId::CtxInspAnchorsNone,
+            MessageId::CtxInspAnchorsPresent,
+            MessageId::KbReasoningDetail,
+            MessageId::CmdTurnInspectDescription,
+            MessageId::CmdAdvisorDescription,
+            MessageId::ModelChangedSessionNote,
+        ];
+        for locale in Locale::shipped_complete() {
+            if *locale == Locale::En {
+                continue;
+            }
+            for id in ids {
+                assert_ne!(
+                    tr(*locale, id),
+                    tr(Locale::En, id),
+                    "{} ships the English text for {id:?}",
+                    locale.tag()
+                );
+            }
+        }
+    }
+
     fn raw_locale_messages(locale: Locale) -> serde_json::Map<String, serde_json::Value> {
         serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(locale_json_source(
             locale,
@@ -5913,6 +6134,51 @@ mod tests {
         }
     }
 
+    /// #6715 review: the sign-in account summary is filled by `{provider}` and
+    /// `{account}` substitution, so a pack that drops a placeholder or ships the
+    /// English sentence would silently name no account or stay untranslated.
+    #[test]
+    fn auth_sign_in_copy_is_translated_and_keeps_its_placeholders() {
+        let english = raw_locale_messages(Locale::En);
+        let auth_keys = [
+            "AuthSignedInAs",
+            "AuthSignedInWithoutEmail",
+            "AuthReplacedPreviousSignInAs",
+            "AuthReplacedPreviousSignIn",
+            "AuthSameAccountAsBefore",
+            "AuthEnvTokenOutranksSignIn",
+        ];
+
+        for locale in Locale::shipped_complete() {
+            if *locale == Locale::En {
+                continue;
+            }
+            let pack = raw_locale_messages(*locale);
+            for key in auth_keys {
+                let english_value = english
+                    .get(key)
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_else(|| panic!("English {key} must be a string"));
+                let translated = pack
+                    .get(key)
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_else(|| panic!("{} is missing raw key {key}", locale.tag()));
+                assert_eq!(
+                    message_placeholders(translated),
+                    message_placeholders(english_value),
+                    "{} changed placeholders for {key}",
+                    locale.tag()
+                );
+                assert_ne!(
+                    translated,
+                    english_value,
+                    "{} ships English for {key}",
+                    locale.tag()
+                );
+            }
+        }
+    }
+
     #[test]
     fn current_session_pod_worker_copy_has_complete_locale_and_placeholder_parity() {
         let current_session_ids = [
@@ -6010,8 +6276,8 @@ mod tests {
             (Locale::Ru, "Воркеры флота текущего сеанса:"),
             (Locale::Uk, "Воркери флоту поточного сеансу:"),
             (Locale::Vi, "Worker hạm đội của phiên hiện tại:"),
-            (Locale::ZhHans, "当前会话的舰队工作器："),
-            (Locale::ZhHant, "目前工作階段的艦隊工作器："),
+            (Locale::ZhHans, "本会话的智能体："),
+            (Locale::ZhHant, "本工作階段的代理："),
         ];
         assert_eq!(expected.len(), Locale::shipped_complete().len());
 
@@ -6571,7 +6837,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             keys.len(),
-            100,
+            101,
             "the complete extensions locale set changed"
         );
 
@@ -6580,6 +6846,7 @@ mod tests {
             "ExtensionsMcpBrowse",
             "ExtensionsMarketplaceUnavailable",
             "ExtensionsMcpNotInspected",
+            "ExtensionsMcpNotConnectedYet",
             "ExtensionsMcpRefresh",
             "ExtensionsNoItems",
             "ExtensionsNoMatches",

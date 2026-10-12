@@ -57,6 +57,7 @@ pub(super) fn handle_tool_call_started(
                 ExploringEntry {
                     label,
                     status: ToolStatus::Running,
+                    error: None,
                 },
             )
             .map_or(0, |(_, inner)| inner);
@@ -659,11 +660,24 @@ fn fire_tool_completion_hooks(
         return;
     }
 
+    let input = app
+        .active_tool_details
+        .get(id)
+        .or_else(|| {
+            app.tool_cells
+                .get(id)
+                .and_then(|index| app.tool_details_by_cell.get(index))
+        })
+        .map(|detail| detail.input.clone());
     let context = app
         .base_hook_context()
         .with_tool_name(name)
         .with_tool_call_id(id)
         .with_tool_outcome(result);
+    let context = input.as_ref().map_or_else(
+        || context.clone(),
+        |input| context.clone().with_tool_args(input),
+    );
     let failed = context.tool_success == Some(false);
     let error_context = (wants_error && failed).then(|| {
         let text = context.tool_result.as_deref().unwrap_or_default();
@@ -701,16 +715,18 @@ pub(super) fn handle_tool_call_complete(
     // Preserve the execution/audit name while recovering the action-qualified
     // semantic name from the registered call input. Active entries and
     // already-flushed history use separate detail stores.
-    let semantic_name = app
-        .active_tool_details
-        .get(id)
-        .or_else(|| {
-            app.tool_cells
-                .get(id)
-                .and_then(|cell_index| app.tool_details_by_cell.get(cell_index))
-        })
+    let detail = app.active_tool_details.get(id).or_else(|| {
+        app.tool_cells
+            .get(id)
+            .and_then(|cell_index| app.tool_details_by_cell.get(cell_index))
+    });
+    let semantic_name = detail
         .map_or(name, |detail| canonical_action_alias(name, &detail.input))
         .to_string();
+    let explicit_background = detail.is_some_and(|detail| {
+        exec_is_background(&detail.input)
+            || detail.input.get("tty").and_then(serde_json::Value::as_bool) == Some(true)
+    });
 
     // Roll any child-LLM token usage the tool reports into the
     // session-cost counter. Runs unconditionally so future tools that
@@ -756,6 +772,14 @@ pub(super) fn handle_tool_call_complete(
             && let Some(entry) = cell.entries.get_mut(entry_index)
         {
             entry.status = tool_status_from_result(result);
+            entry.error = if entry.status == ToolStatus::Failed {
+                match result {
+                    Ok(tool_result) => visible_tool_output(&tool_result.content),
+                    Err(err) => Some(err.to_string()),
+                }
+            } else {
+                None
+            };
             app.mark_history_updated();
             // Mutating the in-flight exploring cell needs an active-cell
             // revision bump so the transcript cache invalidates the synthetic
@@ -796,6 +820,7 @@ pub(super) fn handle_tool_call_complete(
     })
     .flatten();
     let mut workflow_panel_output: Option<String> = None;
+    let mut moved_to_jobs = false;
 
     if let Some(cell) = app.cell_at_virtual_index_mut(cell_index) {
         match cell {
@@ -861,11 +886,8 @@ pub(super) fn handle_tool_call_complete(
                             .as_deref()
                             .map(super::history::summarize_tool_output);
                         exec.live_output = None;
-                    } else if status == ToolStatus::Running
-                        && exec.interaction.is_none()
-                        && !tool_result.content.is_empty()
-                    {
-                        exec.live_output = Some(tool_result.content.clone());
+                    } else if status == ToolStatus::Running && exec.interaction.is_none() {
+                        moved_to_jobs = !explicit_background;
                     }
                 } else if let Err(err) = result.as_ref()
                     && exec.interaction.is_none()
@@ -985,6 +1007,12 @@ pub(super) fn handle_tool_call_complete(
     // `Event::WorkflowUi`; this path covers tool-complete hydration.
     if let Some(output) = workflow_panel_output.as_deref() {
         apply_workflow_output_to_panel(app, output);
+    }
+    if moved_to_jobs {
+        let notice = app
+            .tr(codewhale_localization::MessageId::ShellWaitReleased)
+            .replace("{jobs}", "/jobs");
+        app.push_status_toast(notice, crate::tui::app::StatusToastLevel::Info, Some(6_000));
     }
 
     // If the mutated cell lived inside the active group, bump the active-cell
@@ -2484,10 +2512,9 @@ mod tests {
     }
 
     /// #6582: hooks see a `bash` command's real exit code and status, for a
-    /// failing command as well as a passing one. `bash` reports a nonzero
-    /// exit or a timeout as a `ToolError`, and the hook used to read the code
-    /// only from a successful result, so every failing command reached
-    /// `tool_call_after` and `on_error` with no exit code.
+    /// failing command as well as a passing one. A nonzero exit is a
+    /// `ToolError`. A foreground wait that expires is not: the command moves
+    /// to the background and stays running, so `on_error` does not fire for it.
     #[cfg(unix)]
     #[test]
     fn bash_completion_hooks_get_exit_code_and_status_for_failures() {
@@ -2540,7 +2567,7 @@ mod tests {
         }
 
         let mut after = hook_log_lines_eventually(&after_log, 4);
-        let mut errors = hook_log_lines_eventually(&error_log, 3);
+        let mut errors = hook_log_lines_eventually(&error_log, 2);
         after.sort();
         errors.sort();
         assert_eq!(
@@ -2549,7 +2576,7 @@ mod tests {
                 "call-exit-0 0 completed true",
                 "call-exit-1 1 failed false",
                 "call-exit-127 127 failed false",
-                "call-timeout unset timed_out false",
+                "call-timeout unset running true",
             ]
         );
         assert_eq!(
@@ -2557,7 +2584,6 @@ mod tests {
             vec![
                 "call-exit-1 1 failed false",
                 "call-exit-127 127 failed false",
-                "call-timeout unset timed_out false",
             ]
         );
     }

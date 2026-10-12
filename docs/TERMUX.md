@@ -11,7 +11,7 @@ should know about.
 ## Installation
 
 Use the Android-specific GitHub release archive. The
-[v0.9.11 release](https://github.com/Hmbown/CodeWhale/releases/tag/v0.9.11)
+[v0.9.11 release](https://github.com/codewhale-hq/CodeWhale/releases/tag/v0.9.11)
 includes `codewhale-android-arm64.tar.gz`; device support remains **preview**.
 Follow [the Android / Termux installation steps](INSTALL.md#android--termux-arm64-preview)
 to verify the archive against the matching `codewhale-bundles-sha256.txt`, then
@@ -42,7 +42,7 @@ Codewhale's security model has three distinct layers on Android:
    [Android application sandbox](https://source.android.com/docs/security/app-sandbox)
    and [Termux filesystem layout](https://github.com/termux/termux-packages/wiki/Termux-file-system-layout).
 2. **Codewhale's per-command sandbox backend** — Seatbelt (macOS) or the
-   opt-in bubblewrap wrapper (Linux) can further narrow what a child command
+   bubblewrap wrapper (Linux) can further narrow what a child command
    may access. Codewhale does not currently provide that additional layer on
    Android.
 3. **Codewhale's own gates** — workspace trust, approval prompts,

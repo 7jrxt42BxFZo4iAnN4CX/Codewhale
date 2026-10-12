@@ -692,21 +692,23 @@ fn keepalive_route(
     } else {
         (
             config
-                .active_provider_identity(config.api_provider())
+                .active_provider_identity()
                 .map_err(anyhow::Error::msg)?,
             config.default_model(),
         )
     };
     if model.trim().eq_ignore_ascii_case("auto") {
         let mut scoped = config.clone();
-        scoped.scope_to_provider_identity(&identity);
-        let credentials = crate::config::has_api_key_for(&scoped, identity.provider);
+        scoped
+            .scope_to_provider_identity(&identity)
+            .map_err(anyhow::Error::msg)?;
+        let credentials = crate::config::has_api_key_for(&scoped, &identity);
         return Ok((identity, "auto".to_string(), credentials));
     }
     let route =
         crate::route_runtime::resolve_runtime_route_for_identity(config, &identity, Some(&model))
             .map_err(anyhow::Error::msg)?;
-    let credentials = crate::config::has_api_key_for(&route.config, route.identity.provider);
+    let credentials = crate::config::has_api_key_for(&route.config, &route.identity);
     Ok((route.identity, route.model, credentials))
 }
 
@@ -1057,12 +1059,7 @@ impl OperationStore {
     }
 
     fn open_lock_file(&self) -> Result<fs::File> {
-        fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(&self.lock_path)
+        crate::session_manager::open_private_lock_file(&self.lock_path)
             .with_context(|| format!("Failed to open {}", self.lock_path.display()))
     }
 
@@ -1301,6 +1298,7 @@ pub(crate) fn upsert_keepalive(
             updated_at: now,
             next_run_at: None,
             last_run_at: None,
+            revision: 0,
         });
         record.schema_version = crate::automation_manager::CURRENT_AUTOMATION_SCHEMA_VERSION;
         if record.execution_scope.is_none() {
@@ -1331,16 +1329,32 @@ pub(crate) fn upsert_keepalive(
 /// Cancel tears the operation down *including* its keepalive: an unattended
 /// hourly lead run after cancel is pure cost. The automation is paused
 /// (never deleted) so its run history survives and a later start reactivates
-/// it. A missing keepalive is not an error.
+/// it. A missing keepalive is not an error; any other failure to establish
+/// its state is. A requested spending stop that cannot confirm the record is
+/// paused must never look like one that happened — an unreadable record may
+/// still be Active and scheduled.
 pub fn pause_keepalive(manager: &AutomationManager) -> Result<()> {
-    match manager.get_automation(OPERATE_KEEPALIVE_ID) {
-        Ok(record) if matches!(record.status, AutomationStatus::Active) => {
-            manager.pause_automation(OPERATE_KEEPALIVE_ID)?;
-            Ok(())
+    let record = match manager.get_automation(OPERATE_KEEPALIVE_ID) {
+        Ok(record) => record,
+        Err(error) if is_not_found(&error) => return Ok(()),
+        Err(error) => {
+            return Err(error.context(
+                "Operate keepalive state could not be established; it may still be scheduled",
+            ));
         }
-        Ok(_) => Ok(()),
-        Err(_) => Ok(()),
+    };
+    if matches!(record.status, AutomationStatus::Active) {
+        manager.pause_automation(OPERATE_KEEPALIVE_ID)?;
     }
+    Ok(())
+}
+
+fn is_not_found(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound)
+    })
 }
 
 /// Pull the next keepalive lead run to the next scheduler tick (for example
@@ -1462,12 +1476,15 @@ api_key_env = "CW_OPERATE_MISSING_TEST_KEY"
         let _cli = crate::test_support::EnvVarGuard::remove("CODEWHALE_CLI_API_KEY");
         let root = TempDir::new()?;
         let manager = AutomationManager::open_for_test(root.path().join("automations"))?;
-        let config = crate::config::Config {
-            provider: Some("custom".into()),
-            default_text_model: Some("legacy-model".into()),
-            ..Default::default()
-        }
-        .with_legacy_root(None, Some("https://legacy.example.test/v1".into()));
+        let config = crate::config::parse_config_base(
+            r#"provider = "custom"
+[providers.custom]
+kind = "openai-compatible"
+base_url = "https://legacy.example.test/v1"
+model = "legacy-model"
+auth_mode = "none"
+"#,
+        )?;
         upsert_keepalive(&manager, root.path(), false, &config, None)?;
         let record = manager.get_automation(OPERATE_KEEPALIVE_ID)?;
         assert_eq!(record.model.as_deref(), Some("legacy-model"));
@@ -1646,6 +1663,19 @@ api_key_env = "CW_OPERATE_MISSING_TEST_KEY"
                 .filter(|member| member.id == "lead")
                 .all(|member| member.model == "auto")
         );
+        Ok(())
+    }
+
+    /// The cross-process lock sidecar is owner-only like the operation file.
+    #[cfg(unix)]
+    #[test]
+    fn operation_lock_file_is_owner_only() -> Result<()> {
+        use std::os::unix::fs::PermissionsExt as _;
+        let root = TempDir::new()?;
+        let store = OperationStore::open(root.path())?;
+        start_operation(&store, root.path(), None, None, true, "auto")?;
+        let lock = root.path().join("current.json.lock");
+        assert_eq!(fs::metadata(&lock)?.permissions().mode() & 0o777, 0o600);
         Ok(())
     }
 
@@ -1985,6 +2015,28 @@ api_key_env = "CW_OPERATE_MISSING_TEST_KEY"
     }
 
     #[test]
+    fn pause_keepalive_refuses_to_report_a_stop_it_cannot_confirm() {
+        let dir = TempDir::new().expect("temp");
+        let manager = AutomationManager::open_for_test(dir.path().to_path_buf()).expect("manager");
+        upsert_keepalive(&manager, dir.path(), false, &route_fixture_config(), None)
+            .expect("upsert");
+        // Fault fixture: the keepalive record exists but cannot be parsed, so
+        // whether it is still Active (and spending) is unknown.
+        let record = dir
+            .path()
+            .join("automations")
+            .join(format!("{OPERATE_KEEPALIVE_ID}.json"));
+        assert!(record.exists(), "fixture targets the real record path");
+        fs::write(&record, b"{\"status\": \"active\", truncated").expect("corrupt record");
+
+        let error = pause_keepalive(&manager).expect_err("an unconfirmed stop must fail");
+        assert!(
+            format!("{error:#}").contains("could not be established"),
+            "{error:#}"
+        );
+    }
+
+    #[test]
     fn explicit_env_paths_reject_traversal() {
         assert!(explicit_file_path("  /tmp/does-not-exist.md ").is_none());
         assert!(explicit_file_path("").is_none());
@@ -2079,11 +2131,11 @@ api_key_env = "CW_OPERATE_MISSING_TEST_KEY"
     #[test]
     fn calls_landed_checker_flags() {
         assert_eq!(
-            check_auto_merge_args("Hmbown/CodeWhale", "1234", "keel"),
+            check_auto_merge_args("codewhale-hq/CodeWhale", "1234", "keel"),
             vec![
                 "scripts/check-auto-merge.py",
                 "--repo",
-                "Hmbown/CodeWhale",
+                "codewhale-hq/CodeWhale",
                 "--pr",
                 "1234",
                 "--agent",
@@ -2091,14 +2143,14 @@ api_key_env = "CW_OPERATE_MISSING_TEST_KEY"
             ]
         );
         assert_eq!(
-            auto_merge_pr_args("Hmbown/CodeWhale", "1234", "keel")[0],
+            auto_merge_pr_args("codewhale-hq/CodeWhale", "1234", "keel")[0],
             "scripts/auto-merge-pr.py"
         );
         let deny = evaluate_auto_merge(
             AutoMergeRequest {
                 pr: "12",
                 role: "keel",
-                repo: "Hmbown/CodeWhale",
+                repo: "codewhale-hq/CodeWhale",
             },
             None,
         );
@@ -2112,7 +2164,7 @@ api_key_env = "CW_OPERATE_MISSING_TEST_KEY"
         let ok = |repo, pr, role| {
             validate_auto_merge_request(&AutoMergeRequest { pr, role, repo }).is_ok()
         };
-        assert!(ok("Hmbown/CodeWhale", "1234", "keel"));
+        assert!(ok("codewhale-hq/CodeWhale", "1234", "keel"));
         assert!(ok("a-b/c.d_e-f", "1", "scout_2"));
         for (repo, pr, role) in [
             ("Hmbown", "1", "keel"),
@@ -2167,7 +2219,7 @@ api_key_env = "CW_OPERATE_MISSING_TEST_KEY"
                 AutoMergeRequest {
                     pr: "42",
                     role: "keel",
-                    repo: "Hmbown/CodeWhale",
+                    repo: "codewhale-hq/CodeWhale",
                 },
                 Some(&checker),
             ),

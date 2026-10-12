@@ -98,7 +98,14 @@ fn unicode_skill_identity_preserves_bodies_and_legacy_activation() {
     );
     let long = format!("{}技能", "a".repeat(100));
     assert_eq!(super::normalize_skill_name_for_lookup(&long).len(), 64);
-    assert!(registry.warnings().is_empty(), "{:?}", registry.warnings());
+    assert!(
+        registry
+            .warnings()
+            .iter()
+            .all(|warning| warning.contains("differs from directory")),
+        "{:?}",
+        registry.warnings()
+    );
     let mut malformed = registry.get("技能").unwrap().clone();
     malformed.name = "bad\u{1}技能".to_string();
     let mut validation = super::SkillRegistry::default();
@@ -535,6 +542,7 @@ fn render_skills_block_shortens_summary_before_trigger() {
             localized_descriptions: std::collections::HashMap::new(),
             invocation: super::SkillInvocation::ModelAndUser,
             aliases: Vec::new(),
+            argument_hint: None,
             body: "body".to_string(),
             path: tmpdir.path().join(format!("skill-{i:03}/SKILL.md")),
             source: super::SkillSource::Native,
@@ -586,6 +594,7 @@ fn render_skills_block_holds_budget_with_five_digit_omission_counts() {
             localized_descriptions: std::collections::HashMap::new(),
             invocation: super::SkillInvocation::ModelAndUser,
             aliases: Vec::new(),
+            argument_hint: None,
             body: "body".to_string(),
             path: tmpdir.path().join(format!("skill-{i:05}/SKILL.md")),
             source: super::SkillSource::Native,
@@ -628,6 +637,7 @@ fn explicit_only_skills_do_not_reduce_ambient_index_capacity() {
             localized_descriptions: std::collections::HashMap::new(),
             invocation: super::SkillInvocation::ModelAndUser,
             aliases: Vec::new(),
+            argument_hint: None,
             body: "body".to_string(),
             path: tmpdir.path().join(format!("visible-{i:03}/SKILL.md")),
             source: super::SkillSource::Native,
@@ -647,6 +657,7 @@ fn explicit_only_skills_do_not_reduce_ambient_index_capacity() {
             localized_descriptions: std::collections::HashMap::new(),
             invocation: super::SkillInvocation::ExplicitOnly,
             aliases: Vec::new(),
+            argument_hint: None,
             body: "body".to_string(),
             path: tmpdir.path().join(format!("explicit-{i:05}/SKILL.md")),
             source: super::SkillSource::Native,
@@ -669,6 +680,7 @@ fn render_skills_block_preserves_registry_precedence_under_prompt_budget() {
         localized_descriptions: std::collections::HashMap::new(),
         invocation: super::SkillInvocation::ModelAndUser,
         aliases: Vec::new(),
+        argument_hint: None,
         body: "body".to_string(),
         path: tmpdir
             .path()
@@ -688,6 +700,7 @@ fn render_skills_block_preserves_registry_precedence_under_prompt_budget() {
             localized_descriptions: std::collections::HashMap::new(),
             invocation: super::SkillInvocation::ModelAndUser,
             aliases: Vec::new(),
+            argument_hint: None,
             body: "body".to_string(),
             path: tmpdir
                 .path()
@@ -808,6 +821,7 @@ fn description_for_locale_matches_exact_then_primary_then_falls_back() {
         localized_descriptions: localized,
         invocation: super::SkillInvocation::ModelAndUser,
         aliases: Vec::new(),
+        argument_hint: None,
         body: String::new(),
         path: std::path::PathBuf::new(),
         source: super::SkillSource::Native,
@@ -843,6 +857,7 @@ fn description_for_locale_uses_exact_traditional_key_when_authored() {
         localized_descriptions: localized,
         invocation: super::SkillInvocation::ModelAndUser,
         aliases: Vec::new(),
+        argument_hint: None,
         body: String::new(),
         path: std::path::PathBuf::new(),
         source: super::SkillSource::Native,
@@ -863,6 +878,7 @@ fn description_for_locale_uses_default_when_no_localized_variants() {
         localized_descriptions: std::collections::HashMap::new(),
         invocation: super::SkillInvocation::ModelAndUser,
         aliases: Vec::new(),
+        argument_hint: None,
         body: String::new(),
         path: std::path::PathBuf::new(),
         source: super::SkillSource::Native,
@@ -882,6 +898,7 @@ fn render_skills_block_selects_description_by_locale() {
         localized_descriptions: localized,
         invocation: super::SkillInvocation::ModelAndUser,
         aliases: Vec::new(),
+        argument_hint: None,
         body: "body".to_string(),
         path: std::path::PathBuf::from("/skills/compress/SKILL.md"),
         source: super::SkillSource::Native,
@@ -946,8 +963,10 @@ fn skills_directories_returns_existing_dirs_in_precedence_order() {
 
     assert_eq!(dirs.get(idx), Some(&agents), "agents must come first");
     idx += 1;
-    assert_eq!(dirs.get(idx), Some(&local), "local must come second");
-    idx += 1;
+    assert!(
+        !dirs.contains(&local),
+        "flat product content requires opt-in"
+    );
     // .opencode/skills was not created — it must NOT appear.
     assert!(
         !dirs
@@ -955,7 +974,11 @@ fn skills_directories_returns_existing_dirs_in_precedence_order() {
             .any(|p| p == &workspace.join(".opencode").join("skills")),
         "missing dir must be omitted, got: {dirs:?}"
     );
-    assert_eq!(dirs.get(idx), Some(&claude), "claude must come after local");
+    assert_eq!(
+        dirs.get(idx),
+        Some(&claude),
+        "claude must come after agents"
+    );
     idx += 1;
     assert_eq!(
         dirs.get(idx),
@@ -1902,6 +1925,7 @@ fn plugin_skills_are_qualified_and_denied_until_trusted_and_enabled() {
         localized_descriptions: std::collections::HashMap::new(),
         invocation: super::SkillInvocation::ModelAndUser,
         aliases: Vec::new(),
+        argument_hint: None,
         body: "recovery".to_string(),
         path: tmp.path().join("native/SKILL.md"),
         source: super::SkillSource::Native,
@@ -1936,19 +1960,40 @@ fn discovery_delta_since(earlier: super::SkillDiscoveryMetrics) -> super::SkillD
     super::discovery_metrics_snapshot().delta_since(earlier)
 }
 
+/// Run a cache-hit measurement on a cache no other test emptied meanwhile.
+///
+/// The discovery cache is process-wide. Under `cargo test` every test shares
+/// it, and other tests (and the app code they drive) empty it at any moment,
+/// which turns a genuine hit into a re-walk. Each attempt starts from an
+/// empty cache and is kept only if nothing else dropped the cache while it
+/// ran.
+fn measure_on_undisturbed_cache<T>(mut measure: impl FnMut() -> T) -> T {
+    for _ in 0..200 {
+        super::clear_skill_discovery_cache();
+        let drops = super::discovery_cache_drops();
+        let measured = measure();
+        if super::discovery_cache_drops() == drops {
+            return measured;
+        }
+    }
+    panic!("other tests emptied the shared skill discovery cache during every attempt");
+}
+
 #[test]
 fn cached_discovery_reuses_unchanged_registry_without_rewalking() {
-    super::clear_skill_discovery_cache();
     let tmpdir = TempDir::new().unwrap();
     let skills_root = tmpdir.path().join("skills");
     write_skill(&skills_root, "demo", "A demo skill", "Instructions");
     let dirs = vec![skills_root];
 
-    super::reset_discovery_metrics();
-    let first = super::discover_from_directories_with_plugins(dirs.clone(), None);
-    let walked = discovery_delta_since(super::SkillDiscoveryMetrics::default());
-    let second = super::discover_from_directories_with_plugins(dirs, None);
-    let rewalked = discovery_delta_since(walked);
+    let (first, walked, second, rewalked) = measure_on_undisturbed_cache(|| {
+        super::reset_discovery_metrics();
+        let first = super::discover_from_directories_with_plugins(dirs.clone(), None);
+        let walked = discovery_delta_since(super::SkillDiscoveryMetrics::default());
+        let second = super::discover_from_directories_with_plugins(dirs.clone(), None);
+        let rewalked = discovery_delta_since(walked);
+        (first, walked, second, rewalked)
+    });
 
     assert_eq!(walked.root_discovery_calls, 1);
     assert_eq!(rewalked, super::SkillDiscoveryMetrics::default());
@@ -2048,21 +2093,24 @@ fn workspace_and_dir_entry_point_shares_the_same_cache() {
     let _codewhale_home =
         crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", home.join(".codewhale"));
 
-    super::reset_discovery_metrics();
-    let first = super::discover_for_workspace_and_dir_with_mode_and_plugins(
-        &workspace,
-        &skills_dir,
-        super::SkillDiscoveryMode::Compatible,
-        None,
-    );
-    let walked = discovery_delta_since(super::SkillDiscoveryMetrics::default());
-    let second = super::discover_for_workspace_and_dir_with_mode_and_plugins(
-        &workspace,
-        &skills_dir,
-        super::SkillDiscoveryMode::Compatible,
-        None,
-    );
-    let rewalked = discovery_delta_since(walked);
+    let (first, walked, second, rewalked) = measure_on_undisturbed_cache(|| {
+        super::reset_discovery_metrics();
+        let first = super::discover_for_workspace_and_dir_with_mode_and_plugins(
+            &workspace,
+            &skills_dir,
+            super::SkillDiscoveryMode::Compatible,
+            None,
+        );
+        let walked = discovery_delta_since(super::SkillDiscoveryMetrics::default());
+        let second = super::discover_for_workspace_and_dir_with_mode_and_plugins(
+            &workspace,
+            &skills_dir,
+            super::SkillDiscoveryMode::Compatible,
+            None,
+        );
+        let rewalked = discovery_delta_since(walked);
+        (first, walked, second, rewalked)
+    });
 
     assert!(walked.root_discovery_calls >= 1);
     assert_eq!(rewalked, super::SkillDiscoveryMetrics::default());
@@ -2401,4 +2449,329 @@ fn hidden_and_backup_payload_changes_stale_the_trust_receipt() {
         fs::write(package.join(marker), "local metadata").unwrap();
         assert_eq!(compute_package_digest(&package).unwrap(), digest);
     }
+}
+
+#[test]
+fn owned_global_root_shadows_claude_compat() {
+    let tmp = TempDir::new().unwrap();
+    let workspace = tmp.path().join("ws");
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&workspace).unwrap();
+    write_skill(
+        &home.join(".codewhale/skills"),
+        "shared",
+        "owned",
+        "owned body",
+    );
+    write_skill(
+        &home.join(".agents/skills"),
+        "shared",
+        "agents",
+        "agents body",
+    );
+    write_skill(
+        &home.join(".claude/skills"),
+        "shared",
+        "claude",
+        "claude body",
+    );
+    let registry = super::discover_for_workspace_and_dir_with_home(
+        &workspace,
+        &home.join(".codewhale/skills"),
+        Some(&home),
+    );
+    assert_eq!(registry.get("shared").unwrap().body, "owned body");
+    assert_eq!(
+        registry
+            .warnings()
+            .iter()
+            .filter(|warning| warning.contains("shadowed by"))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn installed_skill_wins_over_agents_copy() {
+    let tmp = TempDir::new().unwrap();
+    let workspace = tmp.path().join("ws");
+    crate::test_support::trust_workspace(&workspace);
+    write_skill(
+        &workspace.join(".codewhale/skills"),
+        "shared",
+        "installed",
+        "installed body",
+    );
+    write_skill(
+        &workspace.join(".agents/skills"),
+        "shared",
+        "compat",
+        "compat body",
+    );
+    let registry = super::discover_for_workspace_and_dir_with_home(
+        &workspace,
+        &workspace.join(".codewhale/skills"),
+        None,
+    );
+    assert_eq!(registry.get("shared").unwrap().body, "installed body");
+    assert!(
+        registry
+            .warnings()
+            .iter()
+            .any(|warning| warning.contains(".agents")
+                && warning.contains(".codewhale")
+                && warning.contains("shadowed by"))
+    );
+}
+
+#[test]
+fn flat_skills_root_opt_in() {
+    let tmp = TempDir::new().unwrap();
+    let workspace = tmp.path().join("ws");
+    crate::test_support::trust_workspace(&workspace);
+    write_skill(
+        &workspace.join("skills"),
+        "flat",
+        "product content",
+        "flat body",
+    );
+    let catalog = super::roots::SkillRootCatalog::build(&workspace, None, None);
+    assert!(
+        catalog
+            .audit_compatible_directories()
+            .iter()
+            .any(|root| root.path == workspace.join("skills") && !root.active_for_runtime)
+    );
+    let default = super::discover_for_workspace_and_dir_with_home_and_mode(
+        &workspace,
+        &workspace.join(".codewhale/skills"),
+        None,
+        super::SkillDiscoveryMode::Compatible,
+    );
+    assert!(default.get("flat").is_none());
+    let config: crate::config::Config =
+        toml::from_str("[skills]\nflat_workspace_root = true\n").unwrap();
+    let mode = super::SkillDiscoveryMode::from_config(&config.skills_config());
+    assert_eq!(mode, super::SkillDiscoveryMode::CompatibleWithFlatWorkspace);
+    let enabled = super::discover_for_workspace_and_dir_with_home_and_mode(
+        &workspace,
+        &workspace.join(".codewhale/skills"),
+        None,
+        mode,
+    );
+    assert_eq!(enabled.get("flat").unwrap().body, "flat body");
+    let owned_only: crate::config::Config =
+        toml::from_str("[skills]\nflat_workspace_root = true\nscan_codewhale_only = true\n")
+            .unwrap();
+    assert_eq!(
+        super::SkillDiscoveryMode::from_config(&owned_only.skills_config()),
+        super::SkillDiscoveryMode::CodeWhaleOnly
+    );
+    let explicit = super::discover_for_workspace_and_dir_with_home_and_mode(
+        &workspace,
+        &workspace.join("skills"),
+        None,
+        super::SkillDiscoveryMode::Compatible,
+    );
+    assert!(
+        explicit.get("flat").is_some(),
+        "explicit skills_dir remains supported"
+    );
+}
+
+#[test]
+fn disable_model_invocation_maps_to_explicit_only() {
+    for value in ["true", "yes", "on", "1"] {
+        let skill = super::SkillRegistry::parse_skill(std::path::Path::new("demo/SKILL.md"), &format!("---\nname: demo\ndescription: routing\ndisable-model-invocation: {value}\n---\nbody")).unwrap();
+        assert_eq!(skill.invocation, super::SkillInvocation::ExplicitOnly);
+        assert!(!skill.invocation.model_invocable());
+        assert!(skill.invocation.user_invocable());
+    }
+}
+
+#[test]
+fn user_invocable_false_hidden_from_slash_menu() {
+    let content = "---\nname: demo\ndescription: routing\nuser-invocable: false\nargument-hint: '[query] [path]'\n---\nbody";
+    let skill =
+        super::SkillRegistry::parse_skill(std::path::Path::new("demo/SKILL.md"), content).unwrap();
+    assert_eq!(skill.invocation, super::SkillInvocation::ModelOnly);
+    assert!(skill.invocation.model_invocable());
+    assert!(!skill.invocation.user_invocable());
+    assert_eq!(skill.argument_hint.as_deref(), Some("[query] [path]"));
+    assert!(skill.user_menu_description().contains("[query] [path]"));
+    let disabled = super::SkillRegistry::parse_skill(
+        std::path::Path::new("demo/SKILL.md"),
+        &content.replace(
+            "user-invocable: false",
+            "user-invocable: false\ndisable-model-invocation: true",
+        ),
+    )
+    .unwrap();
+    assert_eq!(disabled.invocation, super::SkillInvocation::Disabled);
+    assert!(!disabled.invocation.model_invocable());
+    assert!(!disabled.invocation.user_invocable());
+    let invalid = super::SkillRegistry::parse_skill(
+        std::path::Path::new("demo/SKILL.md"),
+        &content.replace(
+            "user-invocable: false",
+            "user-invocable: mystery\ndisable-model-invocation: mystery",
+        ),
+    )
+    .unwrap();
+    assert_eq!(invalid.invocation, super::SkillInvocation::Disabled);
+}
+
+#[test]
+fn when_to_use_merged_into_trigger() {
+    let content = "---\nname: demo\ndescription: Short summary.\nwhen_to_use: fixing a failing build\n---\nbody";
+    let skill =
+        super::SkillRegistry::parse_skill(std::path::Path::new("demo/SKILL.md"), content).unwrap();
+    assert_eq!(
+        skill.description,
+        "Short summary. Use when: fixing a failing build"
+    );
+    let (summary, trigger) = super::split_trigger(&skill.description);
+    assert_eq!(summary.trim(), "Short summary");
+    assert!(trigger.unwrap().contains("fixing a failing build"));
+}
+
+#[test]
+fn frontmatter_warnings_reach_registry_once() {
+    let tmp = TempDir::new().unwrap();
+    create_skill_dir(
+        &tmp,
+        "directory",
+        "---\nname: different\nallowed-tools: [Read]\nmodel: example\ncontext: fork\nmystery: ignored\n---\nbody",
+    );
+    let registry = super::SkillRegistry::discover(&tmp.path().join("skills"));
+    assert!(
+        registry.get("different").is_some(),
+        "runtime remains lenient"
+    );
+    assert_eq!(registry.warnings().len(), 6, "{:?}", registry.warnings());
+    for key in [
+        "allowed-tools",
+        "model",
+        "context",
+        "mystery",
+        "missing description",
+        "differs from directory",
+    ] {
+        assert_eq!(
+            registry
+                .warnings()
+                .iter()
+                .filter(|warning| warning.contains(key))
+                .count(),
+            1
+        );
+    }
+}
+
+/// A repository must not make skill discovery read outside itself: a linked
+/// skill directory or `SKILL.md` that leaves the workspace and a linked skills
+/// root under the workspace are each refused with a warning, a linked skill
+/// directory whose target stays inside the workspace is followed, and the same
+/// layout under an operator-owned root (no workspace) follows links on purpose.
+#[cfg(unix)]
+#[test]
+fn workspace_skill_discovery_does_not_follow_links_out_of_the_workspace() {
+    use std::os::unix::fs::symlink;
+    super::clear_skill_discovery_cache();
+    let workspace = TempDir::new().unwrap();
+    let outside = TempDir::new().unwrap();
+    write_skill(
+        outside.path(),
+        "smuggled-dir",
+        "outside dir",
+        "Outside body",
+    );
+    let linked_file_skill = outside.path().join("linked-file-source");
+    write_skill(
+        &linked_file_skill,
+        "smuggled-file",
+        "outside file",
+        "Outside body",
+    );
+
+    let root = workspace.path().join(".agents").join("skills");
+    write_skill(&root, "inside", "inside the workspace", "Inside body");
+    symlink(outside.path().join("smuggled-dir"), root.join("linked-dir")).unwrap();
+    write_skill(
+        &workspace.path().join("docs").join("skills"),
+        "linked-inside",
+        "inside via link",
+        "Inside body",
+    );
+    symlink(
+        workspace
+            .path()
+            .join("docs")
+            .join("skills")
+            .join("linked-inside"),
+        root.join("linked-inside"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("linked-file")).unwrap();
+    symlink(
+        linked_file_skill.join("smuggled-file").join("SKILL.md"),
+        root.join("linked-file").join("SKILL.md"),
+    )
+    .unwrap();
+
+    let registry = super::discover_from_directories_in_workspace(
+        vec![root.clone()],
+        Some(workspace.path()),
+        None,
+    );
+    let names = registry
+        .list()
+        .iter()
+        .map(|skill| skill.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        vec!["inside", "linked-inside"],
+        "{:?}",
+        registry.warnings()
+    );
+    let warnings = registry.warnings().join("\n");
+    assert!(
+        warnings.contains("Refusing symlinked skill entry"),
+        "{warnings}"
+    );
+    assert!(warnings.contains("linked-dir"), "{warnings}");
+    assert!(!warnings.contains("linked-inside"), "{warnings}");
+    assert!(warnings.contains("linked-file"), "{warnings}");
+
+    // The same tree read as an operator-owned root still follows links.
+    super::clear_skill_discovery_cache();
+    let operator = super::discover_from_directories_with_plugins(vec![root.clone()], None);
+    assert!(
+        operator
+            .list()
+            .iter()
+            .any(|skill| skill.name == "smuggled-dir"),
+        "operator-owned roots keep following links"
+    );
+
+    // A linked skills root under the workspace is refused as a whole.
+    super::clear_skill_discovery_cache();
+    let other = TempDir::new().unwrap();
+    std::fs::create_dir_all(other.path().join(".agents")).unwrap();
+    symlink(outside.path(), other.path().join(".agents").join("skills")).unwrap();
+    let registry = super::discover_from_directories_in_workspace(
+        vec![other.path().join(".agents").join("skills")],
+        Some(other.path()),
+        None,
+    );
+    assert!(registry.list().is_empty());
+    assert!(
+        registry
+            .warnings()
+            .join("\n")
+            .contains("Refusing symlinked path"),
+        "{:?}",
+        registry.warnings()
+    );
 }

@@ -40,7 +40,7 @@ codewhale
 | 对象 | 之前 | 之后 |
 |---|---|---|
 | 已安装命令 | `deepseek` / `deepseek-tui` | `codewhale` / `codew` |
-| npm 包装器包 | `deepseek-tui` | `codewhale` |
+| npm 封装包 | `deepseek-tui` | `codewhale` |
 | Crates.io crate | `deepseek-tui-cli` / `deepseek-tui` / `deepseek-*` | `codewhale-cli` / `codewhale-tui` / `codewhale-*` |
 | 发布资产 | `deepseek-<platform>` / `deepseek-tui-<platform>` | `codewhale-<platform>` / `codew-<platform>`；`codewhale-tui-<platform>` 只作为兼容文件名保留 |
 | 校验和清单 | `deepseek-artifacts-sha256.txt` | `codewhale-artifacts-sha256.txt` |
@@ -59,21 +59,21 @@ Codewhale 从不自动删除旧目录。
   `DEEPSEEK_PROVIDER`、`DEEPSEEK_PROFILE`、`DEEPSEEK_LOG_LEVEL`，以及现有的
   `DEEPSEEK_TUI_*` 运行时开关（`DEEPSEEK_TUI_BIN`、`DEEPSEEK_TUI_RELEASE_BASE_URL`
   等）。保留这些名字是为了向后兼容；一旦改名，全世界每个 shell rc 文件都会失效。
-- **`DEEPSEEK_YOLO`**：现已弃用，但 0.9.x 及更早版本仍会把它当作 `CODEWHALE_YOLO`
+- **`DEEPSEEK_YOLO`**：现已弃用，但在整个 0.9.x 期间仍会把它当作 `CODEWHALE_YOLO`
   的别名来读取，现有脚本因此照常工作（两者都设置时，`CODEWHALE_YOLO` 生效）。
   它会在 0.10 中移除（#5443）；新脚本请用 `CODEWHALE_YOLO`。
 - **模型 ID**：`deepseek-v4-pro`、`deepseek-v4-flash`，以及旧别名
   `deepseek-chat` 和 `deepseek-reasoner`。
-- **主机**：`api.deepseek.com`（全球）。旧域名里的拼写错误 `api.deepseeki.com`
+- **主机**：`api.deepseek.com`（全球）。带拼写错误的旧主机名 `api.deepseeki.com`
   不是 DeepSeek 的官方端点；它仍只在给现有配置做 URL 启发式判断时被接受，
-  并不作为备用地址提供（#1079）。
-- **GitHub 仓库地址**：`https://github.com/Hmbown/CodeWhale`。
+  也不会作为备用地址提供（#1079）。
+- **GitHub 仓库地址**：`https://github.com/codewhale-hq/CodeWhale`。
   过渡期间，旧的 `Hmbown/DeepSeek-TUI` 地址会重定向到这里。
 - **Homebrew tap 与 formula**：formula 名为 `codewhale`。tap 的 GitHub 仓库
   在改名之前仍是 `Hmbown/homebrew-deepseek-tui`；当前的安装路径是
   `brew tap Hmbown/deepseek-tui && brew install codewhale`。旧的 `deepseek-tui`
   formula 在这一个重叠版本里仍是已弃用的别名。
-- **Docker 镜像**：`ghcr.io/hmbown/codewhale`。
+- **Docker 镜像**：`ghcr.io/codewhale-hq/codewhale`。
 
 ## 弃用 shim（v0.9.0 中移除）
 
@@ -139,7 +139,7 @@ brew upgrade codewhale
 ```
 
 tap 的 GitHub 仓库在改名为 `Hmbown/homebrew-codewhale` 之前仍是
-`Hmbown/homebrew-deepseek-tui`（改名后 `brew tap Hmbown/codewhale` 即可用；
+`Hmbown/homebrew-deepseek-tui`（改名后 `brew tap codewhale-hq/codewhale` 即可用；
 旧 tap 名靠 GitHub 的重定向继续工作）。旧的 `deepseek-tui` formula 在这个重叠
 版本中仍是已弃用的别名，现有的 `brew upgrade deepseek-tui` 定时任务因此照常运行。
 
@@ -212,16 +212,16 @@ tap 的 GitHub 仓库在改名为 `Hmbown/homebrew-codewhale` 之前仍是
 
 ## 为什么改名
 
-Codewhale 是这个终端编码代理（agent）的新名字：更短，也更贴合终端习惯。它同时指向
+Codewhale 是同一个终端编码智能体的新名字：更短，也更贴合终端习惯。它同时指向
 更长期的产品方向——一个面向开源与开放权重编码模型的智能体终端；项目起步时的提供商
 DeepSeek，与其他每个提供商一样仍是一等公民。项目名、命令名、包名、发布资产、
 Docker 镜像和 CNB 镜像都改成了 Codewhale；官方的 DeepSeek 提供商、模型 ID、
-环境变量和 `~/.deepseek/` 配置表面仍是一等公民。
+环境变量和 `~/.deepseek/` 配置入口仍是一等公民。
 
 ## 报告改名相关的问题
 
 如果你的安装在迁移期间坏了，请在
-<https://github.com/Hmbown/CodeWhale/issues> 开一个 issue，并附上：
+<https://github.com/codewhale-hq/CodeWhale/issues> 开一个 issue，并附上：
 
 - `codewhale --version` 的输出（如果你还在用 shim，就是 `deepseek --version`）。
 - 你用的安装方式（npm、cargo、brew、手动）。

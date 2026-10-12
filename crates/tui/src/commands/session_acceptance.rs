@@ -604,7 +604,7 @@ fn codewhale_sends_session_relay_instruction_focused_on(
         other => panic!("expected relay SendMessage action, got {other:?}"),
     };
 
-    assert!(message.contains("Write or update `.deepseek/handoff.md`."));
+    assert!(message.contains("Write or update `.codewhale/handoff.md`."));
     assert!(message.contains("# Session relay"));
     assert!(message.contains("## Verification"));
     assert!(
@@ -613,7 +613,7 @@ fn codewhale_sends_session_relay_instruction_focused_on(
     );
     assert_eq!(
         world.last_message.as_deref(),
-        Some("Preparing session relay at .deepseek/handoff.md...")
+        Some("Preparing session relay at .codewhale/handoff.md...")
     );
 }
 
@@ -637,6 +637,34 @@ fn codewhale_rejects_unknown_session_command(world: &mut SessionCommandWorld) {
         message.contains("/sessions") || message.contains("/save"),
         "unknown command should include a session-related suggestion: {message}"
     );
+}
+
+/// C01-09: `/save <path>` replaces a saved session, never an arbitrary file.
+#[tokio::test(flavor = "current_thread")]
+async fn save_refuses_to_overwrite_a_file_that_is_not_a_saved_session() {
+    let mut world = SessionCommandWorld::default();
+    workspace_with_one_user_message(&mut world);
+    let target = world
+        .tmpdir
+        .as_ref()
+        .expect("tmpdir")
+        .path()
+        .join("notes.txt");
+    std::fs::write(&target, "keep me").expect("seed an unrelated file");
+
+    let refused = execute_isolated(&mut world, &format!("/save {}", target.display()));
+    assert!(refused.is_error, "{:?}", refused.message);
+    assert_eq!(
+        std::fs::read_to_string(&target).expect("still readable"),
+        "keep me",
+        "the unrelated file is untouched"
+    );
+
+    let saved = world.save_path.clone().expect("save path");
+    for attempt in ["first save", "re-save over the saved session"] {
+        let result = execute_isolated(&mut world, &format!("/save {}", saved.display()));
+        assert!(!result.is_error, "{attempt}: {:?}", result.message);
+    }
 }
 
 #[tokio::test(flavor = "current_thread")]

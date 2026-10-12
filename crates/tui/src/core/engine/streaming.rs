@@ -4,8 +4,180 @@
 //! content block kind tracking, streamed tool-use buffers, transparent retry
 //! policy, and scrubbers for text that looks like a forged tool-call wrapper.
 
+use crate::core::events::TurnOutcomeStatus;
 use codewhale_models::ToolCaller;
 use std::time::Duration;
+
+/// A send that did not enter the existing event queue. Cancellation is not
+/// evidence that the consumer closed, and neither is user-visible delivery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EventSendError {
+    Cancelled,
+    Closed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum EventReservationPolicy {
+    /// Cancellation wins before admitting work or a new stream observation.
+    Strict,
+    /// Preserve a completed observation when capacity is already available.
+    Receipt,
+}
+
+/// Reserve from the one event queue. Lifecycle and terminal handoff permits
+/// are held locally; ordinary receipts consume theirs immediately. Receipts
+/// may enter available capacity after cancellation, but cancellation always
+/// releases a wait on a full queue. Idle sends have no turn token to cancel.
+pub(super) async fn reserve_event_capacity(
+    tx: &tokio::sync::mpsc::Sender<super::Event>,
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+    policy: EventReservationPolicy,
+) -> Result<tokio::sync::mpsc::OwnedPermit<super::Event>, EventSendError> {
+    if policy == EventReservationPolicy::Receipt {
+        match tx.clone().try_reserve_owned() {
+            Ok(permit) => return Ok(permit),
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                return Err(EventSendError::Closed);
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {}
+        }
+    }
+    let reserve = tx.clone().reserve_owned();
+    match cancel {
+        Some(cancel) => tokio::select! {
+            biased;
+            () = cancel.cancelled() => Err(EventSendError::Cancelled),
+            result = reserve => result.map_err(|_| EventSendError::Closed),
+        },
+        None => reserve.await.map_err(|_| EventSendError::Closed),
+    }
+}
+
+/// Selective quiet affects only attempt observations; completed summaries and
+/// counters survive. Admission and delivery use the same existing queue guard.
+async fn emit_retry_status(
+    tx: &tokio::sync::mpsc::Sender<super::Event>,
+    cancel: &tokio_util::sync::CancellationToken,
+    quiet: bool,
+    message: String,
+) -> Result<(), EventSendError> {
+    let attempt = message.starts_with("Retry attempt:");
+    if quiet && attempt {
+        return Ok(());
+    }
+    let policy = if attempt {
+        EventReservationPolicy::Strict
+    } else {
+        EventReservationPolicy::Receipt
+    };
+    let permit = reserve_event_capacity(tx, Some(cancel), policy).await?;
+    permit.send(super::Event::status(message));
+    Ok(())
+}
+
+impl super::Engine {
+    pub(super) fn request_retry_observation(&self) -> crate::llm_client::RequestRetryObservation {
+        let tx = self.tx_event.clone();
+        let cancel = self.cancel_token.clone();
+        let quiet = self.api_config.notifications_config().quiet;
+        crate::llm_client::RequestRetryObservation {
+            retries: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
+            emit: std::sync::Arc::new(move |message| {
+                let tx = tx.clone();
+                let cancel = cancel.clone();
+                Box::pin(async move {
+                    let _ = emit_retry_status(&tx, &cancel, quiet, message).await;
+                })
+            }),
+        }
+    }
+
+    // The existing turn owns these cumulative counters. Closing observations
+    // describe its actual outcome, without attributing a later tool failure
+    // to an earlier provider response or changing any recovery budget.
+    pub(super) async fn send_answer_retry_summary(
+        &self,
+        diagnostics: &crate::tool_inspection::TurnStopDiagnostics,
+        status: TurnOutcomeStatus,
+    ) {
+        let (prefix, outcome) = match status {
+            TurnOutcomeStatus::Completed => ("Retry recovery", "turn completed"),
+            TurnOutcomeStatus::Failed => ("Retry stopped", "turn failed"),
+            TurnOutcomeStatus::Interrupted => ("Retry interrupted", "turn interrupted"),
+        };
+        for (kind, retries, limit) in [
+            (
+                "reasoning-only",
+                diagnostics.reasoning_only_reprompts,
+                self.config.reasoning_only_max_reprompts,
+            ),
+            (
+                "empty-stop",
+                diagnostics.empty_stop_retries,
+                super::turn_loop::EMPTY_STOP_MAX_RETRIES,
+            ),
+        ] {
+            if retries > 0 {
+                let _ = self
+                    .send_retry_status(format!(
+                        "{prefix}: {kind} used {retries}/{limit} retries; {outcome}"
+                    ))
+                    .await;
+            }
+        }
+    }
+
+    pub(super) async fn send_retry_status(&self, message: String) -> Result<(), EventSendError> {
+        emit_retry_status(
+            &self.tx_event,
+            &self.cancel_token,
+            self.api_config.notifications_config().quiet,
+            message,
+        )
+        .await
+    }
+
+    /// Stream observations always belong to the decoder's current turn,
+    /// including direct test/embedding calls that do not enqueue an Op.
+    pub(super) async fn send_stream_event(&self, event: super::Event) -> bool {
+        match reserve_event_capacity(
+            &self.tx_event,
+            Some(&self.cancel_token),
+            EventReservationPolicy::Strict,
+        )
+        .await
+        {
+            Ok(permit) => {
+                permit.send(event);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// Every instance emitter uses the same queue authority. Available
+    /// capacity preserves post-cancel usage/status receipts; cancellation
+    /// releases a wait for capacity. An idle refresh must not inherit the
+    /// token of an earlier interrupted turn. Stream/admission/terminal handoff
+    /// reservations retain their strict cancellation floor.
+    pub(super) async fn send_event(&self, event: super::Event) -> Result<(), EventSendError> {
+        let cancel = self
+            .turn_controls
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .active
+            .as_ref()
+            .map(|control| control.cancel.clone());
+        let permit = reserve_event_capacity(
+            &self.tx_event,
+            cancel.as_ref(),
+            EventReservationPolicy::Receipt,
+        )
+        .await?;
+        permit.send(event);
+        Ok(())
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum ContentBlockKind {
@@ -38,8 +210,25 @@ impl ToolUseState {
     }
 }
 
-/// Maximum total bytes of text/thinking content before aborting the stream.
+/// Maximum total bytes of text, reasoning and tool-argument content before aborting the stream.
 pub(super) const STREAM_MAX_CONTENT_BYTES: usize = 10 * 1024 * 1024; // 10 MB
+/// A response can contain many empty tool starts without spending the byte
+/// budget. Bound that batch before any call is retained or admitted. A lower
+/// configured per-turn tool budget remains authoritative at execution.
+pub(super) const MAX_TOOL_CALLS_PER_RESPONSE: usize = 256;
+
+pub(super) fn tool_call_limit_error() -> crate::error_taxonomy::ErrorEnvelope {
+    crate::error_taxonomy::ErrorEnvelope::new(
+        crate::error_taxonomy::ErrorCategory::InvalidInput,
+        crate::error_taxonomy::ErrorSeverity::Error,
+        false,
+        "response_tool_call_limit",
+        format!(
+            "Model response exceeded the maximum of {MAX_TOOL_CALLS_PER_RESPONSE} tool calls; no call from this response was executed"
+        ),
+    )
+}
+
 /// Sanity backstop for total stream wall-clock duration. **Not** a routine
 /// kill switch — the stream chunk idle timeout is the primary stall
 /// detector. The wall-clock cap is here only to bound pathological cases
@@ -176,6 +365,101 @@ impl StreamRetryBudget {
     /// still-bounded budget.
     pub(super) fn reset(&mut self) {
         self.spent = 0;
+    }
+}
+
+/// Failures in a row, on one model with one upstream HTTP status, at which the
+/// error starts saying so (#6889). Every counted failure has already spent its
+/// transport retries, so two means two full rounds of them.
+pub(super) const REPEATED_UPSTREAM_FAILURE_NOTICE_AT: u32 = 2;
+
+/// Model requests that failed the same way with nothing succeeding in
+/// between: same model, same upstream HTTP status (#6889). One 502 is a
+/// transient fault worth retrying. The same 502 on every request is a model
+/// that is listed but not serving, and no amount of retrying fixes that.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct RepeatedUpstreamFailure {
+    model: String,
+    status: u16,
+    count: u32,
+}
+
+/// Record one upstream failure for `model`. Returns the line to add to its
+/// error once the same failure has repeated
+/// [`REPEATED_UPSTREAM_FAILURE_NOTICE_AT`] times. A different model or status
+/// starts a new count; the caller clears the streak when a request succeeds
+/// or fails some other way.
+pub(super) fn note_upstream_failure(
+    streak: &mut Option<RepeatedUpstreamFailure>,
+    model: &str,
+    status: u16,
+) -> Option<String> {
+    let count = match streak {
+        Some(prior) if prior.model == model && prior.status == status => {
+            prior.count = prior.count.saturating_add(1);
+            prior.count
+        }
+        _ => {
+            *streak = Some(RepeatedUpstreamFailure {
+                model: model.to_string(),
+                status,
+                count: 1,
+            });
+            1
+        }
+    };
+    (count >= REPEATED_UPSTREAM_FAILURE_NOTICE_AT).then(|| {
+        format!(
+            "`{model}` has now failed {count} times in a row with HTTP {status}, after retries each time. A provider can list a model that is not serving requests. If this keeps happening, choose another model with /model."
+        )
+    })
+}
+
+#[cfg(test)]
+mod repeated_upstream_failure_tests {
+    use super::{REPEATED_UPSTREAM_FAILURE_NOTICE_AT, note_upstream_failure};
+
+    #[test]
+    fn the_same_upstream_failure_is_named_once_it_repeats() {
+        let mut streak = None;
+        for _ in 1..REPEATED_UPSTREAM_FAILURE_NOTICE_AT {
+            assert_eq!(note_upstream_failure(&mut streak, "model-a", 502), None);
+        }
+        let notice = note_upstream_failure(&mut streak, "model-a", 502)
+            .expect("a repeated identical failure is named");
+        assert!(notice.contains("`model-a`"), "{notice}");
+        assert!(notice.contains("HTTP 502"), "{notice}");
+        assert!(
+            notice.contains(&format!(
+                "{REPEATED_UPSTREAM_FAILURE_NOTICE_AT} times in a row"
+            )),
+            "{notice}"
+        );
+        assert!(notice.contains("/model"), "{notice}");
+
+        // It keeps counting while nothing changes.
+        let next = note_upstream_failure(&mut streak, "model-a", 502).expect("still repeating");
+        assert!(
+            next.contains(&format!(
+                "{} times in a row",
+                REPEATED_UPSTREAM_FAILURE_NOTICE_AT + 1
+            )),
+            "{next}"
+        );
+    }
+
+    #[test]
+    fn a_different_model_or_status_or_a_success_starts_over() {
+        let mut streak = None;
+        assert_eq!(note_upstream_failure(&mut streak, "model-a", 502), None);
+        // Another status is another failure, not a repeat of the first.
+        assert_eq!(note_upstream_failure(&mut streak, "model-a", 503), None);
+        // So is another model.
+        assert_eq!(note_upstream_failure(&mut streak, "model-b", 503), None);
+        // The caller clears the streak on a success.
+        streak = None;
+        assert_eq!(note_upstream_failure(&mut streak, "model-b", 503), None);
+        assert!(note_upstream_failure(&mut streak, "model-b", 503).is_some());
     }
 }
 

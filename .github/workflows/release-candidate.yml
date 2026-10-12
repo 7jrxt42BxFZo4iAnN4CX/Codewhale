@@ -33,7 +33,7 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # stable 2026-07-18
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # stable 2026-07-18
         with:
           toolchain: stable
       - name: Match dispatch to the requested commit
@@ -124,10 +124,16 @@ jobs:
     uses: ./.github/workflows/release-parity.yml
 
   artifacts:
+    permissions:
+      contents: read
+      actions: read
     needs: [resolve, web]
     if: ${{ !cancelled() && needs.resolve.result == 'success' && needs.web.result == 'success' }}
     uses: ./.github/workflows/release-artifacts.yml
     with:
       source_sha: ${{ needs.resolve.outputs.sha }}
       version: ${{ needs.resolve.outputs.version }}
+      compiled_host_delivery: ${{ vars.CODEWHALE_COMPILED_HOST_DELIVERY == '1' }}
+      compiled_host_run_id: ${{ vars.CODEWHALE_COMPILED_HOST_QUALIFICATION_RUN_ID || '' }}
+      compiled_host_targets: ${{ vars.CODEWHALE_COMPILED_HOST_TARGETS || 'linux-x64,macos-arm64,windows-x64' }}
       retention_days: 7

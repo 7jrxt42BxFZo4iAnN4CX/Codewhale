@@ -139,6 +139,18 @@ export const DOC_TOPICS: DocTopic[] = [
     category: "core-concepts",
   },
   {
+    id: "pet",
+    slug: "pet",
+    label: { en: "Watch each session with pet mode", zh: "用 Pet 模式查看每个会话" },
+    description: {
+      en: "A whale view per terminal that shows working, waiting for you, done, or failed, with replies and agents one key away.",
+      zh: "每个终端一头鲸鱼，显示工作中、在等你、已完成或失败，回复和智能体只需按一个键即可查看。",
+    },
+    repoSource: "docs/PET_MODE.md",
+    hasPage: true,
+    category: "core-concepts",
+  },
+  {
     id: "subagents",
     slug: "subagents",
     label: { en: "Run agents in parallel", zh: "并行运行 Agent" },
@@ -230,7 +242,7 @@ export const DOC_TOPICS: DocTopic[] = [
       en: "Find, install, review, and trust plugin bundles.",
       zh: "查找、安装、审查并信任插件包。",
     },
-    repoSource: ["docs/PLUGINS.md", "docs/PLUGIN_BUNDLES.md"],
+    repoSource: ["docs/PLUGINS.md", "docs/PLUGIN_BUNDLES.md", "docs/EXTENSIONS.md"],
     hasPage: false,
     category: "extending",
   },
@@ -265,10 +277,10 @@ export const DOC_TOPICS: DocTopic[] = [
     slug: "computers",
     label: { en: "Send a task to the cloud", zh: "把任务发送到云端" },
     description: {
-      en: "Preview: propose, confirm, and track a cloud agent that opens a pull request on GitHub, CNB, or Gitee.",
-      zh: "预览版：提议、确认并跟踪一个在 GitHub、CNB 或 Gitee 上提交拉取请求的云端 Agent。",
+      en: "Preview: quote and run a cloud agent through your account.",
+      zh: "预览版：通过你的账户为云端 Agent 报价并运行。",
     },
-    repoSource: ["docs/DAYTONA_CLOUD_DISPATCH.md", "docs/CODEWHALE_AGENT.md"],
+    repoSource: ["docs/GUIDE.md", "docs/CODEWHALE_AGENT.md"],
     hasPage: true,
     category: "extending",
   },
@@ -370,4 +382,4 @@ export function docTopicIsExternal(topic: DocTopic): boolean {
 }
 
 /** Repo source base URL for generating direct links. */
-export const REPO_DOCS_BASE = "https://github.com/Hmbown/CodeWhale/blob/main";
+export const REPO_DOCS_BASE = "https://github.com/codewhale-hq/CodeWhale/blob/main";

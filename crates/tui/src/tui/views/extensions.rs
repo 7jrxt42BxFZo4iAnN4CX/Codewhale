@@ -1274,7 +1274,7 @@ fn mcp_model(app: &App, locale: Locale) -> ExtensionsTabModel {
                 })
                 .flatten();
             // `connecting` is the engine's real in-flight set (#6033): under
-            // lazy boot a configured-but-unstarted server reads "not started",
+            // lazy boot a configured-but-unstarted server reads "not connected",
             // never "connecting".
             let initializing = retry.is_some()
                 || (enabled
@@ -1297,11 +1297,15 @@ fn mcp_model(app: &App, locale: Locale) -> ExtensionsTabModel {
                 tr(locale, MessageId::ExtensionsStateError)
             } else if stale {
                 // Switched on in the file, still off in the live pool.
-                tr(locale, MessageId::SetupStatusNotStarted)
+                tr(locale, MessageId::McpStateDisconnected)
             } else if observed.is_none() {
                 tr(locale, MessageId::ExtensionsStateNotInspected)
             } else if observed.is_some_and(|server| !server.started()) {
-                tr(locale, MessageId::SetupStatusNotStarted)
+                // Nothing in this session has needed it yet. "Not started"
+                // read as a failure to someone whose `codewhale mcp tools`
+                // had just listed its tools from the shell, which is a
+                // separate process with its own connection.
+                tr(locale, MessageId::McpStateDisconnected)
             } else {
                 tr(locale, MessageId::ExtensionsStateDisconnected)
             }
@@ -1309,6 +1313,12 @@ fn mcp_model(app: &App, locale: Locale) -> ExtensionsTabModel {
             let not_started = enabled
                 && !initializing
                 && (stale || observed.is_none_or(|server| !server.started()));
+            // The live pool knows this server and has simply not needed it:
+            // it has no tool counts to show, only what happens next.
+            let waiting_for_first_use = enabled
+                && !initializing
+                && !stale
+                && observed.is_some_and(|server| !server.started());
             let oauth_capable = config.is_some_and(crate::mcp::mcp_server_oauth_capable);
             let recovery = match observed {
                 Some(server) => server.recovery_kind(oauth_capable),
@@ -1426,6 +1436,9 @@ fn mcp_model(app: &App, locale: Locale) -> ExtensionsTabModel {
                     |(plugin, server)| format!("{plugin}/{server}"),
                 ),
                 description: observed.map_or_else(String::new, |server| {
+                    if waiting_for_first_use {
+                        return server.transport.clone();
+                    }
                     localize(
                         locale,
                         MessageId::ExtensionsMcpSummary,
@@ -1444,6 +1457,10 @@ fn mcp_model(app: &App, locale: Locale) -> ExtensionsTabModel {
                     observed.map_or_else(
                         || tr(locale, MessageId::ExtensionsMcpNotInspected).into_owned(),
                         |server| {
+                            if waiting_for_first_use {
+                                return tr(locale, MessageId::ExtensionsMcpNotConnectedYet)
+                                    .into_owned();
+                            }
                             server.error.clone().unwrap_or_else(|| {
                                 localize(
                                     locale,
@@ -1570,6 +1587,26 @@ enum VisibleEntry<'a> {
     Item(&'a ExtensionGroup, &'a ExtensionItem),
     Problem(&'a str),
     Empty,
+}
+
+/// Stable identity of a visible row across snapshot refreshes. An item is
+/// keyed by its own id alone: a refresh may regroup it (MCP login-first).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum EntryKey {
+    Group(String),
+    Item(String),
+    Problem,
+}
+
+impl EntryKey {
+    fn of(entry: VisibleEntry<'_>) -> Option<Self> {
+        match entry {
+            VisibleEntry::Group(group) => Some(Self::Group(group.id.clone())),
+            VisibleEntry::Item(_, item) => Some(Self::Item(item.id.clone())),
+            VisibleEntry::Problem(_) => Some(Self::Problem),
+            VisibleEntry::Empty => None,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -1893,11 +1930,33 @@ impl ExtensionsView {
 
     /// Swap in a fresh read model while keeping everything the user is doing:
     /// active tab, focus, search query, selection, scroll, and folded groups
-    /// all survive; the selection only moves when the refreshed list no
-    /// longer reaches it.
+    /// all survive. The selection follows its entity, not its row number: a
+    /// refresh that reorders the list (a server logs in, a plugin is
+    /// installed) keeps the same item selected, so a later `e`/`d` can never
+    /// act on whatever row slid into the old index. It only moves when the
+    /// selected entity is gone.
     pub fn refresh_snapshot(&mut self, snapshot: ExtensionsSnapshot) {
+        let active = self.active_tab;
+        let anchors = ExtensionsTab::ALL.map(|tab| {
+            self.active_tab = tab;
+            self.visible_entries()
+                .get(self.selected[tab.index()])
+                .copied()
+                .and_then(EntryKey::of)
+        });
         self.snapshot = snapshot;
-        self.clamp_selection();
+        for (tab, anchor) in ExtensionsTab::ALL.into_iter().zip(anchors) {
+            self.active_tab = tab;
+            if let Some(index) = anchor.and_then(|anchor| {
+                self.visible_entries()
+                    .iter()
+                    .position(|entry| EntryKey::of(*entry).as_ref() == Some(&anchor))
+            }) {
+                self.selected[tab.index()] = index;
+            }
+            self.clamp_selection();
+        }
+        self.active_tab = active;
     }
 
     fn set_tab(&mut self, tab: ExtensionsTab) {
@@ -2603,10 +2662,25 @@ mod tests {
         assert_eq!((group, github.state.as_str()), ("servers", "connected"));
         assert_eq!(command(github), None);
 
+        // Lazy boot has not needed it: the row says so and says what happens
+        // next, not "not started" over a row of zero counts.
         let (group, playwright) = row("playwright");
         assert_eq!(
             (group, playwright.state.as_str()),
-            ("servers", "not started")
+            ("servers", "not connected")
+        );
+        assert_eq!(playwright.description, "stdio");
+        assert!(
+            playwright
+                .detail
+                .ends_with("Not connected in this session yet. Connects when a tool is needed, or connect it now."),
+            "{}",
+            playwright.detail
+        );
+        assert!(
+            !playwright.detail.contains("tools: 0"),
+            "{}",
+            playwright.detail
         );
         assert_eq!(playwright.tone, ExtensionTone::Idle);
         assert_eq!(
@@ -2902,7 +2976,14 @@ mod tests {
         );
         assert!(!builtin.trusted());
         assert!(!builtin.enabled);
-        assert_eq!(group.items.iter().filter(|row| matches!(&row.action, Some(ExtensionAction::Command { command, .. }) if command.starts_with("/plugin marketplace install "))).count(), 5);
+        assert!(
+            group.items.iter().any(|row| matches!(
+                &row.action,
+                Some(ExtensionAction::Command { command, .. })
+                    if command == "/plugin marketplace install codewhale whalewiki"
+            )),
+            "an absent catalog bundle should still offer installation"
+        );
     }
 
     #[test]
@@ -3323,5 +3404,68 @@ mod tests {
             }
             other => panic!("expected the refreshed item, got {other:?}"),
         }
+    }
+
+    /// U09-05: a refresh that reorders the list keeps the selection on the
+    /// same entity, so a later toggle acts on the row the user chose — never
+    /// on whatever slid into the old index.
+    #[test]
+    fn refresh_keeps_selection_on_the_same_entity_when_rows_reorder() {
+        fn row(id: &str) -> ExtensionItem {
+            ExtensionItem {
+                id: id.into(),
+                label: id.into(),
+                toggle: Some(ExtensionAction::Command {
+                    label: "disable".into(),
+                    command: format!("/plugin disable {id}"),
+                    disposition: RowActionDisposition::InPlace,
+                }),
+                ..item_with_action(ExtensionAction::Status {
+                    label: "enabled".into(),
+                })
+            }
+        }
+        fn snapshot(order: &[&str]) -> ExtensionsSnapshot {
+            let mut snapshot = ExtensionsSnapshot::default();
+            snapshot.tabs[ExtensionsTab::Plugins.index()] = ExtensionsTabModel {
+                groups: vec![ExtensionGroup {
+                    id: "g".into(),
+                    label: "g".into(),
+                    items: order.iter().map(|id| row(id)).collect(),
+                }],
+                problem: None,
+            };
+            snapshot
+        }
+        let mut view = ExtensionsView::from_snapshot_with_locale(
+            snapshot(&["alpha", "beta"]),
+            ExtensionsTab::Plugins,
+            Locale::En,
+        );
+        // Group heading, alpha, beta: select beta.
+        view.selected[ExtensionsTab::Plugins.index()] = 2;
+        assert_eq!(
+            view.selected_item().map(|item| item.id.as_str()),
+            Some("beta")
+        );
+
+        view.refresh_snapshot(snapshot(&["beta", "alpha"]));
+        assert_eq!(
+            view.selected_item().map(|item| item.id.as_str()),
+            Some("beta")
+        );
+        match view.toggle_selected() {
+            ViewAction::Emit(ViewEvent::ExecutePanelCommand { command, .. }) => {
+                assert_eq!(command, "/plugin disable beta");
+            }
+            other => panic!("expected the toggle command, got {other:?}"),
+        }
+
+        // A selected entity that is gone falls back to the clamped row.
+        view.refresh_snapshot(snapshot(&["alpha"]));
+        assert_eq!(
+            view.selected_item().map(|item| item.id.as_str()),
+            Some("alpha")
+        );
     }
 }

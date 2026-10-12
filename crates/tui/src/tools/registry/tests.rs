@@ -20,7 +20,7 @@ use super::{
 #[tokio::test]
 async fn shell_denial_reaches_registry_and_direct_delegation_sinks() {
     use crate::tools::run_tool::RunTool;
-    use crate::tools::tasks::{TaskShellStartTool, TasksTool};
+    use crate::tools::tasks::TasksTool;
     use crate::tools::terminal_session::{TerminalResetTool, TerminalRunTool, TerminalSendTool};
     use crate::tools::test_runner::RunTestsTool;
     use crate::tools::verifier::RunVerifiersTool;
@@ -35,7 +35,6 @@ async fn shell_denial_reaches_registry_and_direct_delegation_sinks() {
             Arc::new(BashTool::alias("exec_interact", "interact")),
             json!({"task_id":"missing", "stdin":command, "action":"wait"}),
         ),
-        (Arc::new(TaskShellStartTool), json!({"command":command})),
         (
             Arc::new(TasksTool::new("tasks")),
             json!({"action":"gate_run", "gate":"custom", "command":command}),
@@ -478,7 +477,7 @@ fn rlm_is_the_only_registered_session_surface() {
     let tmp = tempdir().expect("tempdir");
     let ctx = ToolContext::new(tmp.path().to_path_buf());
     let registry = ToolRegistryBuilder::new()
-        .with_rlm_tool(None, "test-model".to_string())
+        .with_rlm_tool()
         .with_harness_tool()
         .build(ctx);
 
@@ -501,26 +500,149 @@ fn rlm_is_the_only_registered_session_surface() {
     }
 }
 
+/// The names an engine treats as built in: whatever is registered before the
+/// plugin directory loads (see `configure_plugin_tools`).
+fn builtin_names(registry: &ToolRegistry) -> std::collections::HashSet<String> {
+    registry.names().into_iter().map(str::to_string).collect()
+}
+
 #[test]
 fn apply_overrides_removes_original_when_replacement_is_missing() {
     let tmp = tempdir().expect("tempdir");
     let ctx = ToolContext::new(tmp.path().to_path_buf());
     let mut registry = ToolRegistryBuilder::new().with_file_tools().build(ctx);
-
-    assert!(registry.contains("File"));
+    let builtins = builtin_names(&registry);
+    std::fs::write(
+        tmp.path().join("reader.sh"),
+        "# name: custom-reader\n# description: drop-in reader\n",
+    )
+    .unwrap();
+    registry.load_plugins(tmp.path());
+    assert!(registry.contains("custom-reader"));
 
     let mut overrides = HashMap::new();
     overrides.insert(
-        "File".to_string(),
+        "custom-reader".to_string(),
         ToolOverride::Script {
             path: "missing-wrapper.sh".to_string(),
             args: None,
         },
     );
 
-    registry.apply_overrides(&overrides, tmp.path());
+    registry.apply_overrides(&overrides, tmp.path(), &builtins);
 
+    assert!(!registry.contains("custom-reader"));
+    assert!(registry.contains("File"));
+}
+
+/// D4 (CURRENT_DECISIONS §26): a `[tools.overrides]` script or command cannot
+/// replace a built-in. The entry is refused loudly, naming the config key and
+/// the built-in, and the built-in stays active; `disabled` and overrides under
+/// a new name keep working.
+#[test]
+fn script_and_command_overrides_cannot_replace_builtins() {
+    let tmp = tempdir().unwrap();
+    let mut registry = ToolRegistryBuilder::new()
+        .with_file_tools()
+        .with_patch_tools()
+        .build(ToolContext::new(tmp.path()));
+    let builtins = builtin_names(&registry);
+    let file = registry.get("File").unwrap();
+    let patch = registry.get("apply_patch").unwrap();
+    std::fs::write(
+        tmp.path().join("wrapper.sh"),
+        "# name: wrapper\n# description: audit wrapper\n",
+    )
+    .unwrap();
+    let script = || ToolOverride::Script {
+        path: "wrapper.sh".to_string(),
+        args: None,
+    };
+    let command = || ToolOverride::Command {
+        command: "my-patcher".to_string(),
+        args: None,
+    };
+    let overrides = HashMap::from([
+        ("File".to_string(), script()),
+        ("apply_patch".to_string(), command()),
+        ("audited_file".to_string(), script()),
+        ("my_patcher".to_string(), command()),
+    ]);
+
+    let mut refused = Vec::new();
+    let errors = capture_registration_warnings(|| {
+        refused = registry.apply_overrides(&overrides, tmp.path(), &builtins);
+    });
+
+    assert!(Arc::ptr_eq(&registry.get("File").unwrap(), &file));
+    assert!(Arc::ptr_eq(&registry.get("apply_patch").unwrap(), &patch));
+    // The refusals are returned for the engine's status line and logged.
+    refused.sort();
+    assert_eq!(refused, ["File", "apply_patch"]);
+    for name in ["File", "apply_patch"] {
+        assert!(
+            errors.contains(&super::override_refusal_notice(name)),
+            "{errors}"
+        );
+    }
+    assert_eq!(
+        registry.get("audited_file").unwrap().description(),
+        "audit wrapper"
+    );
+    assert!(registry.contains("my_patcher"));
+
+    let disable = HashMap::from([("File".to_string(), ToolOverride::Disabled)]);
+    registry.apply_overrides(&disable, tmp.path(), &builtins);
     assert!(!registry.contains("File"));
+}
+
+/// D4 (CURRENT_DECISIONS §26): a script cannot approve itself. `approval: auto`
+/// gets the default a script without the line gets, and the loader says so.
+#[test]
+fn script_tool_auto_approval_is_ignored_and_reported() {
+    let tmp = tempdir().unwrap();
+    let mut registry = ToolRegistryBuilder::new()
+        .with_file_tools()
+        .build(ToolContext::new(tmp.path()));
+    let builtins = builtin_names(&registry);
+    let plugin_dir = tmp.path().join("tools");
+    std::fs::create_dir(&plugin_dir).unwrap();
+    std::fs::write(
+        plugin_dir.join("greet.sh"),
+        "# name: greet\n# description: Say hello\n# approval: auto\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tmp.path().join("audit.sh"),
+        "# name: ignored\n# description: audit\n# approval: auto\n",
+    )
+    .unwrap();
+    let overrides = HashMap::from([(
+        "audited".to_string(),
+        ToolOverride::Script {
+            path: tmp.path().join("audit.sh").to_string_lossy().into_owned(),
+            args: None,
+        },
+    )]);
+
+    let warnings = capture_registration_warnings(|| {
+        registry.load_plugins(&plugin_dir);
+        registry.apply_overrides(&overrides, &plugin_dir, &builtins);
+    });
+
+    for name in ["greet", "audited"] {
+        assert_eq!(
+            registry.get(name).unwrap().approval_requirement(),
+            ApprovalRequirement::Suggest,
+            "{name}"
+        );
+        assert!(
+            warnings.contains(&format!(
+                "Script tool '{name}': `approval: auto` is no longer supported for script tools"
+            )),
+            "{warnings}"
+        );
+    }
 }
 
 #[test]
@@ -1276,7 +1398,10 @@ async fn fleet_authority_rejects_fim_edit_outside_its_write_scope() {
     std::fs::create_dir(tmp.path().join("docs")).expect("docs");
     std::fs::write(tmp.path().join("docs/outside.txt"), "before\nafter\n").expect("fixture");
     let registry = ToolRegistryBuilder::new()
-        .with_fim_tool(None, "fixture-model".to_string())
+        .with_tool(Arc::new(crate::tools::fim::FimEditTool::new(
+            None,
+            "fixture-model".to_string(),
+        )))
         .build(scoped_context(tmp.path()));
 
     let error = registry
@@ -1860,8 +1985,8 @@ fn agent_tools_with_shell_policy_full_includes_shell_tools() {
     assert!(registry.contains("Bash"));
     assert!(!registry.contains("exec_shell"));
     assert!(
-        registry.contains("task_shell_start"),
-        "task_shell_start should be included when the shell policy is Full"
+        !registry.contains("task_shell_start"),
+        "task_shell_start is removed; background shell work goes through bash background=true"
     );
     assert!(
         registry.contains("task_shell_wait"),
@@ -2052,9 +2177,7 @@ fn read_only_task_surface_contains_no_per_action_aliases() {
 fn rlm_family_removes_legacy_aliases() {
     let tmp = tempdir().expect("tempdir");
     let ctx = ToolContext::new(tmp.path().to_path_buf());
-    let registry = ToolRegistryBuilder::new()
-        .with_rlm_tool(None, "deepseek-v4-pro".to_string())
-        .build(ctx);
+    let registry = ToolRegistryBuilder::new().with_rlm_tool().build(ctx);
 
     for alias in [
         "rlm_session_objects",
@@ -2177,16 +2300,26 @@ fn runtime_surface_hardening_plugin_collisions_preserve_registered_tools() {
     registry.load_plugins(tmp.path());
     assert!(registry.contains("custom-reader"));
 
+    // An explicit override still wins over a drop-in script of the same name;
+    // it never replaces a built-in (see
+    // `script_and_command_overrides_cannot_replace_builtins`).
+    let builtins = std::collections::HashSet::from(["File".to_string()]);
     let overrides = std::collections::HashMap::from([(
-        "File".to_string(),
-        crate::config::ToolOverride::Script {
-            path: "other.sh".to_string(),
+        "custom-reader".to_string(),
+        crate::config::ToolOverride::Command {
+            command: "my-reader".to_string(),
             args: None,
         },
     )]);
-    registry.apply_overrides(&overrides, tmp.path());
-    assert_eq!(registry.get("File").unwrap().description(), "custom reader");
-    assert!(!Arc::ptr_eq(&registry.get("File").unwrap(), &original));
+    registry.apply_overrides(&overrides, tmp.path(), &builtins);
+    assert!(
+        registry
+            .get("custom-reader")
+            .unwrap()
+            .description()
+            .contains("my-reader")
+    );
+    assert!(Arc::ptr_eq(&registry.get("File").unwrap(), &original));
 }
 
 #[test]
@@ -2353,4 +2486,43 @@ fn read_media_is_not_offered_to_a_text_only_route() {
             .build(context);
         assert_eq!(registry.get("read_media").is_some(), offered, "{state:?}");
     }
+}
+
+/// #6559 D04-10: a client-supplied dynamic tool cannot take over a builtin
+/// handler (and its approval policy), and a second dynamic tool with the same
+/// model-facing name from another namespace cannot replace the first.
+#[test]
+fn dynamic_tools_never_replace_registered_tools() {
+    use codewhale_protocol::runtime::DynamicToolSpec;
+    let tmp = tempdir().unwrap();
+    let spec = |namespace: &str, name: &str, description: &str| DynamicToolSpec {
+        namespace: Some(namespace.to_string()),
+        name: name.to_string(),
+        description: description.to_string(),
+        input_schema: json!({"type": "object"}),
+        defer_loading: false,
+    };
+    let registry = ToolRegistryBuilder::new()
+        .with_file_tools()
+        .with_dynamic_tools(&[
+            spec("client", "read", "client read"),
+            spec("first", "lookup", "first lookup"),
+            spec("second", "lookup", "second lookup"),
+        ])
+        .build(ToolContext::new(tmp.path()));
+
+    let read = registry.get("read").expect("builtin read");
+    assert_ne!(read.description(), "client read");
+    assert!(
+        !read.registration_origin().contains("runtime dynamic"),
+        "{}",
+        read.registration_origin()
+    );
+    assert_eq!(
+        registry
+            .get("lookup")
+            .expect("first dynamic tool")
+            .description(),
+        "first lookup"
+    );
 }

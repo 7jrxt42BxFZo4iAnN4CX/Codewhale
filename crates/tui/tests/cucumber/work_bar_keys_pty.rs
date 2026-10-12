@@ -16,7 +16,7 @@ fn work_bar_opens_from_launch_with_legacy_and_enhanced_keys() {
         let trust = workspace.workspace().join(".deepseek");
         std::fs::create_dir_all(&trust).unwrap();
         std::fs::write(trust.join("trusted"), "").unwrap();
-        let mut tui = Harness::builder(Harness::cargo_bin("codewhale-tui"))
+        let mut tui = Harness::builder(Harness::codewhale_binary())
             .cwd(workspace.workspace())
             .clear_env()
             .seal_home(workspace.home())
@@ -33,12 +33,6 @@ fn work_bar_opens_from_launch_with_legacy_and_enhanced_keys() {
             .size(rows, cols)
             .spawn()
             .expect("start TUI");
-        tui.wait_for_text("Choose your model provider", Duration::from_secs(15))
-            .unwrap();
-        tui.send(keys::key::ctrl('o')).unwrap();
-        tui.wait_for_text("You're ready.", Duration::from_secs(5))
-            .unwrap();
-        tui.send(keys::key::enter()).unwrap();
         tui.wait_for_text("New session", Duration::from_secs(15))
             .unwrap();
         tui.wait_for_idle(Duration::from_millis(250), Duration::from_secs(5))
