@@ -8400,7 +8400,7 @@ mod tests {
         .collect();
         std::fs::write(&config_path, document).expect("config only");
         let config = Config::load(Some(config_path.clone()), None).expect("load route");
-        let mut options = crate::test_support::test_tui_options(home.path());
+        let mut options = crate::tui::test_support::test_tui_options(home.path());
         options.config_path = Some(config_path);
         options.skip_onboarding = false;
         check(crate::tui::app::App::new(options, &config), config);

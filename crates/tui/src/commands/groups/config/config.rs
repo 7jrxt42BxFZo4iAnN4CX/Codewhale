@@ -3582,7 +3582,7 @@ mod tests {
             // `allow_shell` on and breaks the allow_shell assertions.
             start_in_agent_mode: true,
             skip_onboarding: false,
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         let mut app = App::new(options, config);
         // App::new folds in saved TUI settings from the developer machine.

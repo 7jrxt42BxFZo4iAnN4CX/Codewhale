@@ -1335,7 +1335,7 @@ mod tests {
 
     fn app_in(workspace: PathBuf) -> App {
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(workspace.clone())
+            ..crate::tui::test_support::test_tui_options(workspace.clone())
         };
         let mut app = App::new(options, &Config::default());
         app.workspace = workspace;
@@ -2107,7 +2107,10 @@ model = "fixture-review-model"
                 .unwrap(),
             );
             save_fleet(&fleet, FleetScope::Workspace, root.path()).unwrap();
-            let mut app = App::new(crate::test_support::test_tui_options(root.path()), &config);
+            let mut app = App::new(
+                crate::tui::test_support::test_tui_options(root.path()),
+                &config,
+            );
             app.workspace = root.path().to_path_buf();
             let mut view = FleetDetailView::open_for_member(
                 &app,

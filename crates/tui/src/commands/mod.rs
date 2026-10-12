@@ -595,7 +595,7 @@ mod tests {
 
     fn create_test_app() -> App {
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         App::new(options, &Config::default())
     }
@@ -635,8 +635,8 @@ mod tests {
         )
         .unwrap();
 
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(temp.path()),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(temp.path()),
         );
         super::user_registry::reload(Some(temp.path()));
 
@@ -657,8 +657,8 @@ mod tests {
         let command_path = commands_dir.join("help.md");
         std::fs::write(&command_path, "user help").unwrap();
 
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(temp.path()),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(temp.path()),
         );
         super::user_registry::reload(Some(temp.path()));
         assert!(matches!(
@@ -1693,7 +1693,7 @@ mod tests {
             memory_path: workspace.join("memory.md"),
             notes_path: workspace.join("notes.txt"),
             mcp_config_path: workspace.join("mcp.json"),
-            ..crate::test_support::test_tui_options(workspace.clone())
+            ..crate::tui::test_support::test_tui_options(workspace.clone())
         };
         let app = App::new(options, &Config::default());
         assert!(
@@ -2453,7 +2453,7 @@ mod tests {
         let options = TuiOptions {
             memory_path: tmpdir.path().join("memory.md"),
             use_memory: true,
-            ..crate::test_support::test_tui_options(tmpdir.path())
+            ..crate::tui::test_support::test_tui_options(tmpdir.path())
         };
         App::new(options, &Config::default())
     }
@@ -2512,9 +2512,9 @@ mod tests {
     fn feat022_test_app(tmp: &tempfile::TempDir) -> App {
         // The fixture's skills dir lives inside its workspace.
         crate::test_support::trust_workspace(tmp.path());
-        let mut options = crate::test_support::test_tui_options(tmp.path());
+        let mut options = crate::tui::test_support::test_tui_options(tmp.path());
         options.skills_dir = tmp.path().join("skills");
-        crate::test_support::test_app_with_options(options)
+        crate::tui::test_support::test_app_with_options(options)
     }
 
     fn feat022_write_skill(dir: &std::path::Path, name: &str) {
@@ -2762,7 +2762,7 @@ mod tests {
         )
         .unwrap();
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(tmpdir.path())
+            ..crate::tui::test_support::test_tui_options(tmpdir.path())
         };
         let mut app = App::new(options, &Config::default());
         let discovery = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv();

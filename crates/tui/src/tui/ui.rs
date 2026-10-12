@@ -1455,7 +1455,7 @@ mod provider_key_validation_tests {
         let options = TuiOptions {
             start_in_agent_mode: true,
             skip_onboarding: false,
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         let mut app = App::new(options, &Config::default());
         // These suites assert legacy strip geometry (work surface above the
@@ -2517,7 +2517,7 @@ fn fleet_role_entry_opens_shared_picker_and_cancel_restores_parked_roster() {
     let workspace = tempfile::tempdir().unwrap();
     let config = Config::default();
     let mut app = App::new(
-        crate::test_support::test_tui_options(workspace.path()),
+        crate::tui::test_support::test_tui_options(workspace.path()),
         &config,
     );
     app.view_stack

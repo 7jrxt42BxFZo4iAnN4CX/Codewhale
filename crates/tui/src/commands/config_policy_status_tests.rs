@@ -141,7 +141,7 @@ mod tests {
     fn create_test_app(workspace: PathBuf) -> App {
         let options = TuiOptions {
             skills_dir: PathBuf::from("/tmp/test-skills"),
-            ..crate::test_support::test_tui_options(workspace)
+            ..crate::tui::test_support::test_tui_options(workspace)
         };
         let mut app = App::new(options, &Config::default());
         app.api_provider = ProviderKind::Deepseek;

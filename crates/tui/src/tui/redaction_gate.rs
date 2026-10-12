@@ -211,7 +211,7 @@ mod tests {
     fn app_fixture() -> App {
         let options = TuiOptions {
             model: "test-model".to_string(),
-            ..crate::test_support::test_tui_options(PathBuf::from("workspace-fixture"))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("workspace-fixture"))
         };
         let mut app = App::new(options, &Config::default());
         app.ui_locale = codewhale_localization::Locale::En;

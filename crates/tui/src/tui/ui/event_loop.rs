@@ -7879,7 +7879,7 @@ mod session_boot_event_tests {
     }
 
     fn test_app() -> App {
-        crate::test_support::test_app_with_options(crate::test_support::test_tui_options(
+        crate::tui::test_support::test_app_with_options(crate::tui::test_support::test_tui_options(
             PathBuf::from("."),
         ))
     }
@@ -8219,8 +8219,8 @@ mod telemetry_notice_tests {
 
     #[test]
     fn telemetry_notice_waits_for_the_launch_card_to_leave() {
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(std::env::temp_dir()),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(std::env::temp_dir()),
         );
         app.launch.visible = true;
         app.launch.dissolve_started_ms = None;

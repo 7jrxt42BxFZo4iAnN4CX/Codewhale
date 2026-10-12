@@ -241,7 +241,7 @@ mod tests {
             memory_path: temp.path().join("memory.md"),
             notes_path: temp.path().join("notes.txt"),
             mcp_config_path: temp.path().join("mcp.json"),
-            ..crate::test_support::test_tui_options(&workspace)
+            ..crate::tui::test_support::test_tui_options(&workspace)
         };
         let app = App::new(options, &Config::default());
         (temp, app)

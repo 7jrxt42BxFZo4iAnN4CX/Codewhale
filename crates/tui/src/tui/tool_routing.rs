@@ -1952,8 +1952,8 @@ mod tests {
 
     #[test]
     fn concurrent_runs_keep_their_own_events() {
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
         );
         apply_workflow_ui_event(
             &mut app,
@@ -2029,8 +2029,8 @@ mod tests {
 
     #[test]
     fn a_completion_replay_for_another_run_never_touches_this_one() {
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
         );
         apply_workflow_ui_event(
             &mut app,
@@ -2096,8 +2096,8 @@ mod tests {
 
     #[test]
     fn workflow_completion_replay_uses_authoritative_dispatch_failure_ledger() {
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
         );
         let failure = json!({
             "type": "task_dispatch_failed",
@@ -2151,8 +2151,8 @@ mod tests {
 
     #[test]
     fn degraded_run_writes_one_warning_finish_line_after_its_start_card() {
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
         );
         app.history
             .push(HistoryCell::Tool(ToolCell::Generic(GenericToolCell {
@@ -2210,8 +2210,8 @@ mod tests {
 
     #[test]
     fn a_foreground_run_card_carries_its_own_finish_line() {
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
         );
         let mut active = crate::tui::active_cell::ActiveCell::new();
         active.push_untracked(HistoryCell::Tool(ToolCell::Generic(GenericToolCell {
@@ -2279,8 +2279,8 @@ mod tests {
 
     #[test]
     fn a_detached_finish_waits_for_its_start_card_to_leave_the_active_group() {
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
         );
         let start_card = HistoryCell::Tool(ToolCell::Generic(GenericToolCell {
             name: "workflow".to_string(),
@@ -2375,8 +2375,8 @@ mod tests {
 
     #[test]
     fn a_status_poll_that_returned_the_settled_record_is_the_only_finish() {
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
         );
         let mut active = crate::tui::active_cell::ActiveCell::new();
         active.push_untracked(workflow_card(
@@ -2398,8 +2398,8 @@ mod tests {
 
     #[test]
     fn the_finish_rewrites_the_start_card_not_a_later_status_poll() {
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
         );
         let running = json!({"run_id": "run-x", "workflow_goal": "quick", "status": "running"});
         app.add_message(workflow_card(running.clone()));
@@ -2413,8 +2413,8 @@ mod tests {
 
     #[test]
     fn a_run_that_settles_after_the_conversation_moved_on_finishes_at_the_tail() {
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
         );
         app.add_message(workflow_card(
             json!({"run_id": "run-x", "workflow_goal": "quick", "status": "running"}),
@@ -2471,8 +2471,8 @@ mod tests {
             )
         };
 
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(dir.path()),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(dir.path()),
         );
         app.workspace = dir.path().to_path_buf();
         app.hooks = HookExecutor::new(
@@ -2535,8 +2535,8 @@ mod tests {
                 path.display()
             )
         };
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(dir.path()),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(dir.path()),
         );
         app.workspace = dir.path().to_path_buf();
         app.hooks = HookExecutor::new(
@@ -2827,7 +2827,7 @@ mod tests {
     #[test]
     fn oldest_tool_outputs_are_released_once_the_budget_is_exceeded() {
         let mut app = crate::tui::app::App::new(
-            crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+            crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
             &crate::config::Config::default(),
         );
         // 200 records x 64 KiB = 12.8 MiB, well past the 8 MiB budget.

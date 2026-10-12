@@ -18,7 +18,7 @@ fn test_options(yolo: bool) -> TuiOptions {
         start_in_agent_mode: true,
         skip_onboarding: false,
         yolo,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     }
 }
 

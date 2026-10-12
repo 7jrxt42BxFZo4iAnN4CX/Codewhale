@@ -130,8 +130,9 @@ mod tests {
     }
     #[test]
     fn pet_habitat_full_view_preserves_composer_history_and_session_on_escape() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.input = "unfinished composer".into();
         app.add_message(crate::tui::history::HistoryCell::System {
             content: "retained transcript".into(),
@@ -174,8 +175,9 @@ mod tests {
         let tmp = tempfile::TempDir::new().unwrap();
         let _home = crate::test_support::EnvVarGuard::set("HOME", tmp.path());
         let _state = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", tmp.path());
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.clipboard = crate::tui::clipboard::ClipboardHandler::for_test(false, false);
         app.input = "unfinished draft".into();
         let answer = "Finished **Markdown**\n```rust\nlet x = 1;\n```";

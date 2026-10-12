@@ -849,8 +849,9 @@ mod tests {
     #[test]
     fn work_completion_reveals_existing_answer_without_sending_text_to_owner() {
         use crate::core::events::TurnOutcomeStatus;
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.onboarding = crate::tui::app::OnboardingState::None;
         app.redaction_gate = false;
         assert!(app.view_stack.is_empty());
@@ -908,8 +909,9 @@ mod tests {
 
     #[test]
     fn unavailable_companion_keeps_legacy_fallback_and_native_response_available() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.onboarding = crate::tui::app::OnboardingState::None;
         app.redaction_gate = false;
         app.pet_watch.session = app.current_session_id.clone();
@@ -972,8 +974,9 @@ mod tests {
 
     #[test]
     fn a_refused_pet_action_keeps_the_habitat_and_only_unreachable_marks_offline() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.onboarding = crate::tui::app::OnboardingState::None;
         app.redaction_gate = false;
         app.pet_watch.session = app.current_session_id.clone();
@@ -1014,8 +1017,9 @@ mod tests {
 
     #[test]
     fn pet_off_restores_the_shell_and_keeps_the_draft() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.onboarding = crate::tui::app::OnboardingState::None;
         app.redaction_gate = false;
         app.input = "kept draft".into();

@@ -743,8 +743,9 @@ mod tests {
     use super::*;
     use crate::tui::{active_cell::ActiveCell, app::OnboardingState};
     fn app() -> App {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.onboarding = OnboardingState::None;
         app.redaction_gate = false;
         app.pet_watch.session = app.current_session_id.clone();

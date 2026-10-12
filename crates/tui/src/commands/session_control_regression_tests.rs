@@ -41,7 +41,7 @@ impl ControlHarness {
             memory_path: temp.path().join("memory.md"),
             notes_path: temp.path().join("notes.txt"),
             mcp_config_path: temp.path().join("mcp.json"),
-            ..crate::test_support::test_tui_options(temp.path())
+            ..crate::tui::test_support::test_tui_options(temp.path())
         };
         let app = App::new(options, &Config::default());
         let manager = SessionManager::default_location().expect("session manager");

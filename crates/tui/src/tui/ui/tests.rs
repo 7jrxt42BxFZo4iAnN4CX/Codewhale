@@ -231,10 +231,10 @@ fn frame_cursor_is_hidden_during_diff_then_positioned_before_reveal() {
 
 #[test]
 fn workbar_rows_sit_under_the_status_row_one_per_workflow() {
-    let mut app = crate::test_support::test_app_with_options(crate::tui::app::TuiOptions {
+    let mut app = crate::tui::test_support::test_app_with_options(crate::tui::app::TuiOptions {
         model: "deepseek-v4-flash".to_string(),
         start_in_agent_mode: true,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     });
     app.onboarding = crate::tui::app::OnboardingState::None;
     app.launch.visible = false;
@@ -340,11 +340,12 @@ fn composer_rows_stay_pinned_across_turn_state_transitions() {
     // displace the composer, relocate the route into the footer, or drop
     // the phase verb from the footer's left half.
     fn frame_app() -> App {
-        let mut app = crate::test_support::test_app_with_options(crate::tui::app::TuiOptions {
-            model: "deepseek-v4-flash".to_string(),
-            start_in_agent_mode: true,
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
-        });
+        let mut app =
+            crate::tui::test_support::test_app_with_options(crate::tui::app::TuiOptions {
+                model: "deepseek-v4-flash".to_string(),
+                start_in_agent_mode: true,
+                ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
+            });
         app.onboarding = crate::tui::app::OnboardingState::None;
         app.launch.visible = false;
         app.ui_locale = codewhale_localization::Locale::En;
@@ -5787,12 +5788,12 @@ fn tool_path_relevance_extracts_paths_from_command_text() {
 }
 
 fn create_test_app() -> App {
-    let mut app = crate::test_support::test_app_with_options(TuiOptions {
+    let mut app = crate::tui::test_support::test_app_with_options(TuiOptions {
         // Keep UI tests independent from the developer's saved
         // `default_mode` setting.
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     });
     // These suites assert legacy strip geometry (work surface above the
     // transcript). The Bottom default (round 3, 2026-09-01) has dedicated
@@ -8614,7 +8615,7 @@ fn create_test_options() -> TuiOptions {
         // `default_mode` setting.
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     }
 }
 
@@ -8840,7 +8841,7 @@ fn setup_runtime_presets_preserve_environment_authority_and_state() {
                 "{canonical}: canonical wins when both are set"
             );
 
-            let mut options = crate::test_support::test_tui_options(home._tmp.path());
+            let mut options = crate::tui::test_support::test_tui_options(home._tmp.path());
             options.config_path = Some(config_path.clone());
             options.allow_shell = config.allow_shell.unwrap_or(false);
             options.start_in_agent_mode = true;
@@ -19616,8 +19617,8 @@ fn apply_slash_menu_selection_honors_user_argument_metadata_and_builtin_override
     .expect("write argument command");
     // Workspace commands load only in a trusted workspace.
     crate::config::save_workspace_trust(tmp.path()).expect("trust test workspace");
-    let mut app = crate::test_support::test_app_with_options(
-        crate::test_support::test_tui_options(tmp.path()),
+    let mut app = crate::tui::test_support::test_app_with_options(
+        crate::tui::test_support::test_tui_options(tmp.path()),
     );
     let entries = vec![
         crate::tui::widgets::SlashMenuEntry {
@@ -20249,9 +20250,9 @@ async fn redaction_confirmation_restores_history_before_first_local_provider_req
         server.uri()
     )).unwrap();
     let config = Config::load(Some(config_path), None).unwrap();
-    let mut app = crate::test_support::test_app_with_options(TuiOptions {
+    let mut app = crate::tui::test_support::test_app_with_options(TuiOptions {
         start_in_agent_mode: true,
-        ..crate::test_support::test_tui_options(temp.path())
+        ..crate::tui::test_support::test_tui_options(temp.path())
     });
     app.auto_model = false;
     app.onboarding = OnboardingState::None;
@@ -24296,7 +24297,7 @@ fn app_new_restores_saved_model_and_reasoning_effort() {
         model: "auto".to_string(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let config = Config {
         reasoning_effort: Some("max".to_string()),
@@ -24324,7 +24325,7 @@ fn app_new_restores_saved_reasoning_effort_for_auto_model() {
         model: "deepseek-v4-pro".to_string(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
 
     let app = App::new(options, &Config::default());
@@ -24349,7 +24350,7 @@ fn app_new_auto_model_preserves_explicit_config_reasoning() {
         model: "deepseek-v4-pro".to_string(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let config = Config {
         reasoning_effort: Some("medium".to_string()),
@@ -24380,7 +24381,7 @@ fn app_new_auto_model_without_saved_reasoning_keeps_auto_default() {
         model: "deepseek-v4-pro".to_string(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
 
     let app = App::new(options, &Config::default());
@@ -24404,7 +24405,7 @@ fn app_new_auto_model_ignores_reasoning_inferred_from_legacy_alias() {
         model: "deepseek-v4-pro".to_string(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let config = Config {
         reasoning_effort: Some("high".to_string()),
@@ -24519,7 +24520,7 @@ async fn model_picker_startup_default_overrides_configured_xai_route_after_resta
         model: config.default_model(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let mut app = App::new(initial_options, &config);
     assert_eq!(app.api_provider, ProviderKind::Xai);
@@ -24566,7 +24567,7 @@ async fn model_picker_startup_default_overrides_configured_xai_route_after_resta
         model: restart_config.default_model(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let restarted = App::new(restart_options, &restart_config);
     assert_eq!(restarted.api_provider, ProviderKind::Deepseek);
@@ -27154,7 +27155,7 @@ fn fallback_switch_status_shows_one_based_position_and_reason() {
         ..Default::default()
     };
     let mut app = App::new(
-        crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+        crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
         &config,
     );
     app.api_provider = ProviderKind::Deepseek;
@@ -31744,7 +31745,7 @@ async fn refused_route_change_does_not_pin_a_startup_default_and_says_so() {
         model: config.default_model(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let mut app = App::new(options, &config);
     let previous_effort = app.reasoning_effort;

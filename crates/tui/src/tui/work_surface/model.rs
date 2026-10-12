@@ -3162,7 +3162,7 @@ mod tests {
             TuiOptions {
                 model: "deepseek-v4-flash".to_string(),
                 start_in_agent_mode: true,
-                ..crate::test_support::test_tui_options(std::path::PathBuf::from(
+                ..crate::tui::test_support::test_tui_options(std::path::PathBuf::from(
                     "/workspace/project",
                 ))
             },

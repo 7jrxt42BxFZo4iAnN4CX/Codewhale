@@ -2310,8 +2310,9 @@ mod tests {
     fn clickable_chrome_registers_a_hover_target() {
         let _guard = crate::tui::hover_layer::HOVER_TEST_LOCK.lock().unwrap();
         crate::tui::hover_layer::begin_frame();
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         let button = ratatui::layout::Rect::new(70, 10, 3, 3);
         app.viewport.jump_to_latest_button_area = Some(button);
 
@@ -2331,8 +2332,9 @@ mod tests {
     fn pinned_prompt_header_registers_a_hover_target() {
         let _guard = crate::tui::hover_layer::HOVER_TEST_LOCK.lock().unwrap();
         crate::tui::hover_layer::begin_frame();
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         let header = ratatui::layout::Rect::new(4, 3, 40, 1);
         app.viewport.pinned_prompt_area = Some(header);
 
@@ -2352,8 +2354,9 @@ mod tests {
     #[test]
     fn composer_send_target_lights_up_only_when_it_would_send() {
         let _guard = crate::tui::hover_layer::HOVER_TEST_LOCK.lock().unwrap();
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.launch.visible = false;
         app.composer_border = true;
         let area = ratatui::layout::Rect::new(0, 20, 80, 4);
@@ -2388,8 +2391,9 @@ mod tests {
 
     #[test]
     fn infoline_route_segment_registers_interaction_target() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.onboarding_needs_api_key = false;
         let mut terminal =
             Terminal::new(TestBackend::new(160, 1)).expect("info-line test terminal should build");
@@ -2453,8 +2457,9 @@ mod tests {
     /// route, and it is not a route control until a model is connected.
     #[test]
     fn keyless_launch_route_chip_says_not_connected() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.ui_locale = codewhale_localization::Locale::En;
         app.onboarding_needs_api_key = true;
         let (_, model) = app.effective_route_identity_display();
@@ -2538,8 +2543,9 @@ mod tests {
     /// `context_usage_snapshot` like the live shell does.
     fn app_with_context_percent(pct: u8) -> App {
         use codewhale_models::{ContentBlock, Message};
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         // A keyless test config would paint "not connected" (U3); these
         // readings are about a connected route.
         app.onboarding_needs_api_key = false;
@@ -3094,8 +3100,9 @@ mod pet_main_tests {
     use ratatui::{Terminal, backend::TestBackend};
 
     fn app() -> App {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.onboarding = OnboardingState::None;
         app.redaction_gate = false;
         app.ui_locale = codewhale_localization::Locale::En;

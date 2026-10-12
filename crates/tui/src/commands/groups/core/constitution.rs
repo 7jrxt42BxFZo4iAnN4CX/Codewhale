@@ -1278,7 +1278,7 @@ mod tests {
 
     fn test_app_with_workspace(workspace: PathBuf) -> App {
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(workspace)
+            ..crate::tui::test_support::test_tui_options(workspace)
         };
         App::new(options, &Config::default())
     }

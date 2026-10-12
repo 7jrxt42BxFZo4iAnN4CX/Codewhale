@@ -865,7 +865,7 @@ mod tests {
     fn create_test_app() -> App {
         let options = TuiOptions {
             skills_dir: PathBuf::from("/tmp/test-skills"),
-            ..crate::test_support::test_tui_options(PathBuf::from("/tmp/test-workspace"))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("/tmp/test-workspace"))
         };
         let mut app = App::new(options, &Config::default());
         app.ui_locale = codewhale_localization::Locale::En;

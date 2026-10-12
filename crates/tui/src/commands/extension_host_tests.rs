@@ -189,7 +189,7 @@ async fn extension_commands_run_end_to_end_through_the_user_command_registry() {
     let mut app = App::new(
         TuiOptions {
             workspace: fixture.workspace().to_path_buf(),
-            ..crate::test_support::test_tui_options(fixture.workspace())
+            ..crate::tui::test_support::test_tui_options(fixture.workspace())
         },
         &crate::config::Config::default(),
     );

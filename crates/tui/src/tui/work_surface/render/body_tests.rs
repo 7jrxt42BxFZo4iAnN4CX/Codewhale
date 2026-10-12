@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 fn app() -> App {
     let mut app = App::new(
-        crate::test_support::test_tui_options(PathBuf::from(".")),
+        crate::tui::test_support::test_tui_options(PathBuf::from(".")),
         &Config::default(),
     );
     app.ui_locale = codewhale_localization::Locale::En;

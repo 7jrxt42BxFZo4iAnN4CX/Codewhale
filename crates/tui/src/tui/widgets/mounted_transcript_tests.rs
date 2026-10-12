@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 fn app(locale: Locale, case: usize) -> App {
     let mut app = App::new(
-        crate::test_support::test_tui_options(PathBuf::from(".")),
+        crate::tui::test_support::test_tui_options(PathBuf::from(".")),
         &Config::default(),
     );
     app.launch.visible = false;

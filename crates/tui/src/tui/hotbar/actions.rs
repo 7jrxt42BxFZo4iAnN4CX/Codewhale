@@ -1481,7 +1481,7 @@ mod tests {
         let options = TuiOptions {
             skills_dir,
             start_in_agent_mode: true,
-            ..crate::test_support::test_tui_options(workspace)
+            ..crate::tui::test_support::test_tui_options(workspace)
         };
         let mut app = App::new(options, config);
         app.ui_locale = codewhale_localization::Locale::En;
