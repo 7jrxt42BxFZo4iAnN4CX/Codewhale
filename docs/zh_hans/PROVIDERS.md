@@ -37,7 +37,7 @@ OpenCode Zen 和 OpenCode Go 是一等提供商路由，配置方式与下文其
 - `crates/config/src/lib.rs` —— 共享的提供商 ID、默认值、环境变量优先级。
 - `crates/config/assets/provider_descriptors.json` —— 内置的 OpenAI 兼容主机描述符（即上文的已知可用主机表）。
 - `crates/tui/src/config.rs` —— TUI 提供商 ID、提供商能力元数据以及提供商特定的环境变量处理。
-- `crates/agent/src/lib.rs` —— `codewhale model list` 和 `codewhale model resolve` 使用的静态 `ModelRegistry`。
+- `crates/agent/src/lib.rs` —— `codewhale model resolve` 使用的静态 `ModelRegistry`（以及 `[model]` 配置面）。`codewhale model list` 则改为读取解析后的 provider lake，因此一次列表就能同时看到内置、实时与已配置的行。
 - `config.example.toml` 和 `docs/CONFIGURATION.md` —— 面向用户的配置示例和环境变量参考。
 - `scripts/check-provider-registry.py` —— 对规范提供商 ID、实时 TUI 提供商 ID、TOML 表名、静态注册表行和文档化默认值的漂移检查。
 
@@ -662,7 +662,7 @@ OpenRouter completions 和静态注册表行包括自 2026 年 4 月起通过 Op
 
 ## 静态模型注册表
 
-`codewhale model list` 和 `codewhale model resolve` 使用 `crates/agent/src/lib.rs` 中的静态注册表。这与实时 `/models` 发现不同。当端点支持模型列表时，使用 `/models` 或 `codewhale models` 从活动的 API 端点获取模型 ID。
+下表描述的是静态注册表；`codewhale model resolve`（以及 `[model]` 配置面）仍用它解析选择器别名。这与实时 `/models` 发现不同。当端点支持模型列表时，使用 `/models` 或 `codewhale models` 从活动的 API 端点获取模型 ID。
 
 | 提供商 | 静态注册表条目 | 工具调用 | 注册表推理标志 |
 | --- | --- | --- | --- |
@@ -853,6 +853,14 @@ python3 scripts/check-provider-registry.py
 - 随附提供商表遗漏或添加了一个 `[providers.*]` TOML 表。
 - 静态模型注册表表偏离 `crates/agent/src/lib.rs` 使用的提供商。
 - `crates/tui/src/config.rs` 中的提供商默认模型或 base URL 常量在这里不再被提及。
+
+## 提供商常见陷阱
+
+提供商运营方在真实流量上测得的三种“看起来像别的问题”的故障：
+
+- **冷模型看起来像坏了。** 对提供商尚未加载的模型，首次调用可能需要 90 到 150 秒，预热后降到一秒甚至更短。在把超时当作“模型不可用”之前，先调大 `[stream].open_timeout_secs`（默认 45 秒，最多 300 秒）。
+- **列出不等于可调用。** 目录里可见的条目仍可能每次调用都失败。若每次尝试都返回相同的错误文本（例如“resources busy”的 502），那不是暂时性故障：真正繁忙的上游会在其间返回成功。使用模型前先探测，并停止重试每次都以相同方式失败的模型。
+- **被截断的回答可能报告 `stop`。** 推理模型可能把整个 `max_tokens` 额度花在推理上。当提供商报告的 `completion_tokens` 恰好等于请求的 `max_tokens`，且结束原因为 `stop` 时，Codewhale 把该回合视为在上限处被截断而非已完成（`codewhale-models` 中的 `stop_contradicts_output_ceiling`）；用相同提示重试会在相同数量处停止，因此应调高上限或缩短任务。提供商未报告用量时不做任何推断。
 
 ## 已规划、尚未随附
 

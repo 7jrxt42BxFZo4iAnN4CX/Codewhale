@@ -562,10 +562,18 @@ pub enum AppAction {
     /// Run native ChatGPT PKCE sign-in with the TUI temporarily suspended.
     StartChatgptPkceLogin,
     StartChatgptRevoke,
+    StartClaudeLogin,
+    StartClaudeRevoke,
     /// Run OrcaRouter OAuth 2.0 + PKCE sign-in (loopback redirect) with the TUI
     /// temporarily suspended. Produces a durable `sk-orca-...` key in the
     /// ordinary `orcarouter` credential slot — the same slot the API-key path
     /// writes — so nothing downstream knows which adapter was used.
+    StartPluginLogin {
+        provider: String,
+    },
+    StartPluginLogout {
+        provider: String,
+    },
     StartOrcarouterPkceLogin,
     /// Clear the saved OrcaRouter credential.
     StartOrcarouterRevoke,
@@ -847,10 +855,6 @@ pub enum ShellJobAction {
     List,
     Show {
         id: String,
-    },
-    Poll {
-        id: String,
-        wait: bool,
     },
     SendStdin {
         id: String,

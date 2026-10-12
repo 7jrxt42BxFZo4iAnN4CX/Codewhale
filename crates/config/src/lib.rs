@@ -58,15 +58,18 @@ pub use user_constitution::{
 };
 pub use xai_credentials::{
     CHATGPT_HOST_FILE_NAME, CHATGPT_OAUTH_GENERATION_PREFIX, CHATGPT_OAUTH_GENERATION_SUFFIX,
-    LEGACY_CHATGPT_OAUTH_FILE_NAME, LEGACY_XAI_OAUTH_FILE_NAME, XAI_OAUTH_GENERATION_PREFIX,
+    CLAUDE_OAUTH_GENERATION_PREFIX, CLAUDE_OAUTH_GENERATION_SUFFIX, LEGACY_CHATGPT_OAUTH_FILE_NAME,
+    LEGACY_CLAUDE_OAUTH_FILE_NAME, LEGACY_XAI_OAUTH_FILE_NAME, XAI_OAUTH_GENERATION_PREFIX,
     XAI_OAUTH_GENERATION_SUFFIX, XaiOAuthCredentialStore, XaiOAuthRevocation,
-    chatgpt_oauth_generation_path, clear_all_chatgpt_oauth_credentials,
-    clear_all_chatgpt_oauth_credentials_locked, clear_all_xai_oauth_credentials,
-    is_valid_chatgpt_oauth_generation, is_valid_xai_oauth_generation, legacy_chatgpt_oauth_path,
-    legacy_xai_oauth_path, remove_chatgpt_oauth_generation, remove_xai_oauth_generation,
-    validate_chatgpt_oauth_generation, validate_xai_oauth_generation,
-    with_xai_oauth_lifecycle_lock, with_xai_oauth_revocation_transaction,
-    xai_oauth_credentials_dir, xai_oauth_generation_path,
+    chatgpt_oauth_generation_path, claude_oauth_generation_path,
+    clear_all_chatgpt_oauth_credentials, clear_all_chatgpt_oauth_credentials_locked,
+    clear_all_claude_oauth_credentials_locked, clear_all_xai_oauth_credentials,
+    is_valid_chatgpt_oauth_generation, is_valid_claude_oauth_generation,
+    is_valid_xai_oauth_generation, legacy_chatgpt_oauth_path, legacy_xai_oauth_path,
+    remove_chatgpt_oauth_generation, remove_xai_oauth_generation,
+    validate_chatgpt_oauth_generation, validate_claude_oauth_generation,
+    validate_xai_oauth_generation, with_xai_oauth_lifecycle_lock,
+    with_xai_oauth_revocation_transaction, xai_oauth_credentials_dir, xai_oauth_generation_path,
 };
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -1641,6 +1644,9 @@ mod provider_chain_tests {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct HookSinksToml {
     /// Unix domain socket path used by the app-server event sink.
+    ///
+    /// Known limitation: only `codewhale app-server` reads this table; the
+    /// TUI and the Runtime API do not dispatch hook events to it.
     ///
     /// When unset, no Unix socket sink is registered. There is deliberately no
     /// shared `/tmp` default because socket ownership should be explicit.
@@ -6323,6 +6329,16 @@ pub fn resolve_config_path(explicit: Option<PathBuf>) -> Result<PathBuf> {
         return normalize_config_file_path(path);
     }
     default_config_path()
+}
+
+pub fn require_explicit_config_exists(explicit: Option<PathBuf>) -> Result<()> {
+    if let Some(path) = explicit {
+        let path = normalize_config_file_path(path)?;
+        if !checked_path_exists(&path)? {
+            bail!("config file does not exist: {}", quote_os_path(&path));
+        }
+    }
+    Ok(())
 }
 
 /// Whether `path` names a workspace-scoped config document —

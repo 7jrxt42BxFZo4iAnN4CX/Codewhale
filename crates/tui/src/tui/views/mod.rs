@@ -927,11 +927,15 @@ pub enum ViewEvent {
     },
     /// Emitted by provider/setup UI when xAI device-code OAuth is requested.
     ProviderPickerXaiOAuthRequested,
+    ProviderPickerClaudeOAuthRequested,
     /// Emitted by provider/setup UI when native ChatGPT PKCE sign-in is requested.
     ProviderPickerChatgptOAuthRequested,
     /// Emitted by provider/setup UI when OrcaRouter OAuth 2.0 + PKCE sign-in is
     /// requested. The picker only emits this after the user chose "Connect with
     /// OrcaRouter" from the two-option OrcaRouter auth screen.
+    ProviderPickerPluginOAuthRequested {
+        provider: String,
+    },
     ProviderPickerOrcarouterOAuthRequested,
     /// Emitted only after the picker showed owner, exact path, and the full
     /// read-only side-effect contract and the user explicitly confirmed it.
@@ -1588,6 +1592,13 @@ impl ViewStack {
         {
             panel.refresh_snapshot(snapshot);
         }
+    }
+
+    pub(crate) fn top_pager_mut(&mut self) -> Option<&mut crate::tui::pager::PagerView> {
+        self.views
+            .last_mut()?
+            .as_any_mut()
+            .downcast_mut::<crate::tui::pager::PagerView>()
     }
 }
 

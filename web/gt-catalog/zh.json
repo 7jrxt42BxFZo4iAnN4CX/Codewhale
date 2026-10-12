@@ -890,17 +890,17 @@
         "title": "用代码模式组合工具调用（实验性）",
         "blocks": [
           {
-            "p": "代码模式让模型写一段简短的 JavaScript 程序，在其中调用多个工具、循环和筛选结果，而不必把每次调用都作为单独的一步。只有程序的最终结果会返回给模型，长时间的查找因此更紧凑。它默认关闭。可以只在一次会话中试用，也可以在配置中开启："
+            "p": "代码模式让模型写一段简短的 JavaScript 程序，在其中调用多个工具、循环和筛选结果，而不必把每次调用都作为单独的一步。只有程序的最终结果会返回给模型，长时间的查找因此更紧凑。它默认开启——`execute_tools` 从第一条请求起就会提供——MCP 和插件工具与内置工具一样可以在程序中组合调用。要关闭它，可以只在一次会话中关闭，也可以在配置中关闭："
           },
           {
-            "code": "codewhale --enable code_mode\n\n# ~/.codewhale/config.toml\n[features]\ncode_mode = true",
+            "code": "codewhale --disable code_mode\n\n# ~/.codewhale/config.toml\n[features]\ncode_mode = false",
             "lang": "终端 / config.toml"
           },
           {
             "list": [
-              "程序中只能调用无需审批的只读工具。任何写入、运行 shell 命令或需要征求你同意的调用，都会让程序停止，并报告被拒绝的是哪一次调用。",
-              "程序中暂时还不能调用 MCP 工具，请把它们作为普通工具调用来使用。",
-              "每个程序的上限：50 次工具调用、同时最多 4 次、30 秒、返回 16 KiB。",
+              "程序中的嵌套调用——原生工具、MCP 和插件工具都一样——与直接调用走同一道关卡：允许/拒绝名单、ask 规则和审查照常生效。需要审批的调用会弹出常规审批卡片并暂停程序；允许后程序继续，拒绝只让该次调用失败。批准程序本身不会获得任何权限。",
+              "MCP 调用经由会话的 MCP 连接池执行，插件工具也可以像内置工具一样在程序中调用。",
+              "每个程序的上限：50 次嵌套调用、同时最多 4 次、返回 16 KiB。程序没有固定的 30 秒上限：它使用当前回合剩余的墙钟时间，除非设置了 `[tui].turn_wall_clock_secs`，否则不受限制。",
               "Plan 模式下不能使用代码模式。"
             ]
           }
@@ -1563,17 +1563,17 @@
   },
   "docs-computers": {
     "metaTitle": "把任务发送到云端 · Codewhale 文档",
-    "metaDescription": "把编码任务交给 Codewhale 云端智能体，由它在一个分支上完成工作并提交拉取请求——先提议，只有你确认后才会开始。",
+    "metaDescription": "把编码任务交给 Codewhale 云端智能体，通过你的账户运行——先报价，只有你同意后才会开始。",
     "bodyClassName": "text-ink-soft leading-[1.9] tracking-wide",
     "title": "把任务发送到云端",
-    "lede": "云端智能体会把任务从你的机器上接走：它在一个全新的云端沙箱中工作，推送一个分支并提交拉取请求，你则可以继续在本地工作。在你确认之前，不会启动任何东西、不会产生费用，也不会推送代码。",
+    "lede": "云端智能体会把任务从你的机器上接走：它在云端算力上工作，你则可以继续在本地工作。在你看过报价并同意之前，不会启动任何东西。",
     "sections": [
       {
         "id": "status",
         "title": "了解目前的完成度",
         "blocks": [
           {
-            "note": "云端智能体目前是预览版。完整流程已有离线测试覆盖，但真实链路——真实的沙箱，以及在各个代码托管平台上真实提交的拉取请求——尚未经过端到端验证。暂不支持私有仓库。"
+            "note": "云端智能体目前是预览版。任务通过你已登录的 Codewhale 账户运行，因此下文的报价和计算位置确认适用于每个任务。"
           }
         ]
       },
@@ -1583,58 +1583,24 @@
         "blocks": [
           {
             "list": [
-              "用 `codewhale login` 登录你的 Codewhale 账户。未登录时，任务只能提议，无法确认。",
-              "把账户 API 密钥设为 `CODEWHALE_API_KEY`，让沙箱中的智能体以你的账户身份运行。缺少它时，确认会在产生任何费用之前被拒绝。",
-              "如果使用 GitHub，请先登录 `gh` 命令行工具；Codewhale 会用这个登录来提交拉取请求。"
+              "用 `codewhale login` 登录你的 Codewhale 账户。派发任务始终通过已登录的账户运行。"
             ]
-          },
-          {
-            "code": "codewhale dispatch --status",
-            "lang": "终端"
-          },
-          {
-            "p": "`--status` 会显示从你的 git 远程仓库中识别出的代码托管平台，以及所需的凭据是否齐全。它从不打印任何密钥。"
           }
         ]
       },
       {
         "id": "send",
-        "title": "先提议，再确认",
+        "title": "先报价、再确认、后运行",
         "blocks": [
           {
-            "code": "codewhale dispatch \"fix the flaky login test and open a PR\" --remote github\ncodewhale dispatch --confirm cloud_<id>",
+            "code": "codewhale dispatch \"fix the flaky login test and open a PR\"",
             "lang": "终端"
           },
           {
-            "p": "第一条命令只写入一份提议并打印其 id；第二条命令才真正启动。Codewhale 可以自己提议云端任务，但从不自行确认。在会话中，使用 `/dispatch <task>` 和 `/dispatch confirm <id>`。"
+            "p": "Codewhale 会显示你账户的任务时长报价，并请你确认仓库代码和你附加的文件将在欧盟计算资源上运行。在你同意之前不会启动任何任务。脚本中可传入 `--yes --confirm-eu-compute` 一次性回答这两个问题。"
           },
           {
-            "p": "确认之后，智能体会把仓库克隆到一个新沙箱中完成工作，推送一个新分支（绝不强制推送），并提交拉取请求。任务完成、失败或被取消时，沙箱都会被删除。"
-          }
-        ]
-      },
-      {
-        "id": "track",
-        "title": "跟踪或取消任务",
-        "blocks": [
-          {
-            "code": "codewhale dispatch --list\ncodewhale dispatch --show cloud_<id>\ncodewhale dispatch --cancel cloud_<id>",
-            "lang": "终端"
-          },
-          {
-            "p": "云端任务也会出现在 `/jobs` 中。每个任务会显示进度、分支、拉取请求链接（有了之后），以及运行了多少分钟——这是运行时长，不是账单。取消会立即拆除沙箱。"
-          }
-        ]
-      },
-      {
-        "id": "forge",
-        "title": "选择拉取请求提交到哪里",
-        "blocks": [
-          {
-            "p": "Codewhale 支持 GitHub、CNB 和 Gitee，且从不假定 `origin` 就是 GitHub。名为 `github`、`cnb` 或 `gitee` 的远程仓库即对应该平台；其他远程仓库按其主机名识别。如果仓库关联了多个平台，请传入 `--remote`。"
-          },
-          {
-            "p": "如果拉取请求无法提交——例如缺少代码托管平台的令牌——任务会在推送之后被标记为失败，并说明没有提交拉取请求。它绝不会报告一个并不存在的链接。"
+            "p": "用 `--seconds` 设置任务时长，用 `--agent` 选择智能体，用 `--context-file` 或 `--file` 附加上下文。"
           }
         ]
       }
@@ -1656,7 +1622,7 @@
         "note": "改为在你自己的机器上运行更长的多步骤工作。"
       }
     ],
-    "sourceNote": "来源文档：docs/DAYTONA_CLOUD_DISPATCH.md、docs/CODEWHALE_AGENT.md · 修改时同步更新 docs-map.ts。"
+    "sourceNote": "来源文档：docs/GUIDE.md、docs/CODEWHALE_AGENT.md · 修改时同步更新 docs-map.ts。"
   },
   "docs-auth": {
     "metaTitle": "连接模型提供商 · Codewhale 文档",
