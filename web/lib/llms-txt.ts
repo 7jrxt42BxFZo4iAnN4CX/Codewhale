@@ -30,7 +30,7 @@ const EXTRA_PAGES: readonly { path: string; title: string; description: string }
     path: "/runtime",
     title: "Runtime & Integrations",
     description:
-      "Local Runtime API, HTTP/SSE, baseline ACP stdio adapter, MCP servers, an early VS Code companion, and a community VS Code GUI.",
+      "Local Runtime API over HTTP/SSE, ACP stdio over the existing Engine, MCP servers, an early VS Code companion, and a community VS Code GUI.",
   },
   {
     // The page's own English copy, so the index cannot drift from it (W01-03).
@@ -79,7 +79,7 @@ const EXTRA_PAGES: readonly { path: string; title: string; description: string }
     path: "/plugins",
     title: "Plugins and marketplace",
     description:
-      "Let the agent operate the desktop apps you choose with Computer Use, and install reviewed plugins from the Codewhale catalog, a GitHub repository, or a tarball.",
+      "Preview Computer Use for selected desktop apps, and install reviewed plugins from the Codewhale catalog, a GitHub repository, or a tarball.",
   },
   {
     path: "/ratatui",
@@ -111,49 +111,29 @@ const EXTRA_PAGES: readonly { path: string; title: string; description: string }
   },
 ];
 
-function topicSitePath(topic: (typeof DOC_TOPICS)[number]): string | null {
-  if (topic.sitePath) return `/${topic.sitePath}`;
-  if (topic.hasPage) return `/docs/${topic.slug}`;
-  return null;
-}
-
-/** Plain-text /llms.txt body generated from the docs registry and sitemap extras. */
 export function buildLlmsTxt(): string {
-  const covered = new Set<string>();
-  const lines: string[] = [
-    `# ${SITE_NAME}`,
-    "",
-    `> ${IDENTITY_PHRASE}`,
-    "",
-    `${SITE_NAME} is an open-source agent for building apps and tools, automating workflows, and working across connected services through plugins, MCP servers or APIs. Use your existing model APIs or local and self-hosted inference.`,
-    `Official site: ${SITE_URL}`,
-    `Source: ${REPO_URL}`,
-    "",
-    "## Documentation",
-    "",
+  const lines = [
+    `# ${SITE_NAME}`, "", `> ${IDENTITY_PHRASE}`, "",
+    "Read, edit and test a project with a hosted or local model. Modes, approvals and sandbox policy control tool access.",
+    "Install: `npm install -g codewhale`", "",
+    "## Agent entry points", "",
+    `- [Feature catalogue](${SITE_URL}/en/features): Source capabilities, status, surfaces and documentation.`,
+    `- [Feature JSON](${SITE_URL}/features.json): The generated feature registry, including its source hash.`,
+    `- [Full documentation](${SITE_URL}/llms-full.txt): Every documentation topic as plain text.`,
+    `- [Runtime API](${SITE_URL}/docs-markdown/runtime-api.md): HTTP/SSE API and ACP integration.`,
+    `- [MCP](${SITE_URL}/docs-markdown/mcp.md): Connect tools or run codewhale mcp-server / codewhale serve --mcp. Default server tools are read-only file_read and search.`,
+    "", "## Documentation", "",
   ];
-
   for (const topic of DOC_TOPICS) {
-    const path = topicSitePath(topic);
-    if (!path) continue;
-    covered.add(path);
-    const href = `${SITE_URL}${docTopicHref(topic, "en")}`;
-    lines.push(`- [${topic.label.en}](${href}): ${topic.description.en}`);
+    lines.push(`- [${topic.label.en}](${SITE_URL}/docs-markdown/${topic.slug}.md): ${topic.description.en}`);
   }
-
-  lines.push("", "## Pages", "");
+  lines.push("", "## Optional", "");
+  for (const topic of DOC_TOPICS) {
+    lines.push(`- [${topic.label.en} on the site](${topic.hasPage ? `${SITE_URL}${docTopicHref(topic, "en")}` : `${REPO_DOCS_BASE}/${Array.isArray(topic.repoSource) ? topic.repoSource[0] : topic.repoSource}`}): ${topic.description.en}`);
+  }
   for (const page of EXTRA_PAGES) {
-    if (covered.has(page.path)) continue;
     lines.push(`- [${page.title}](${SITE_URL}/en${page.path}): ${page.description}`);
   }
-
-  lines.push("", "## Source documents", "");
-  for (const topic of DOC_TOPICS) {
-    if (topic.hasPage) continue;
-    const source = Array.isArray(topic.repoSource) ? topic.repoSource[0] : topic.repoSource;
-    lines.push(`- [${topic.label.en}](${REPO_DOCS_BASE}/${source}): ${topic.description.en}`);
-  }
-
-  lines.push("", "## Optional", "", `- [GitHub](${REPO_URL})`, `- [Discord](${DISCORD_URL})`, "");
+  lines.push(`- [GitHub](${REPO_URL})`, `- [Discord](${DISCORD_URL})`, "");
   return lines.join("\n");
 }

@@ -1,3 +1,7 @@
+import { docsClaudeCode as enDocsClaudeCode } from "./en/docs-claude-code";
+import { docsClaudeCode as zhDocsClaudeCode } from "./zh/docs-claude-code";
+import { docsSkills as enDocsSkills } from "./en/docs-skills";
+import { docsSkills as zhDocsSkills } from "./zh/docs-skills";
 /**
  * Dictionary loader for the website localization layer (#3091, #4934).
  *
@@ -39,6 +43,8 @@ import type {
   DocsWorkDict,
   DocsPetDict,
   HomeDict,
+  FeaturesDict,
+  DocsPageDict,
   DigestDict,
   FeedDict,
   CommunityDict,
@@ -48,6 +54,24 @@ import type {
   RoadmapDict,
   StatesDict,
 } from "./types";
+import { features as features0 } from "./en/features";
+import { features as features1 } from "./zh/features";
+import { features as features2 } from "./ja/features";
+import { features as features3 } from "./vi/features";
+import { features as features4 } from "./ko/features";
+import { features as features5 } from "./ru/features";
+import { features as features6 } from "./uk/features";
+import { features as features7 } from "./es/features";
+import { features as features8 } from "./pt-BR/features";
+import { features as features9 } from "./fr/features";
+import { features as features10 } from "./de/features";
+import { features as features11 } from "./ca/features";
+import { features as features12 } from "./id/features";
+import { features as features13 } from "./hi/features";
+import { features as features14 } from "./tr/features";
+import { features as features15 } from "./it/features";
+import { features as features16 } from "./pl/features";
+import { features as features17 } from "./ar/features";
 import { chrome as enChrome } from "./en/chrome";
 import { home as enHome } from "./en/home";
 import { docsGuide as enDocsGuide } from "./en/docs-guide";
@@ -382,6 +406,31 @@ const RUNTIME: Record<string, RuntimeDict> = {
   zh: zhRuntime,
 };
 
+const FEATURES: Record<string, FeaturesDict> = {
+  "en": features0,
+  "zh": features1,
+  "ja": features2,
+  "vi": features3,
+  "ko": features4,
+  "ru": features5,
+  "uk": features6,
+  "es": features7,
+  "pt-BR": features8,
+  "fr": features9,
+  "de": features10,
+  "ca": features11,
+  "id": features12,
+  "hi": features13,
+  "tr": features14,
+  "it": features15,
+  "pl": features16,
+  "ar": features17,
+};
+
+export function getFeatures(locale: string): FeaturesDict {
+  return FEATURES[locale] ?? features0;
+}
+
 export function getChrome(locale: string): ChromeDict {
   return CHROME[locale] ?? enChrome;
 }
@@ -598,3 +647,11 @@ export function splitToken(template: string, token: string): string[] {
   return template.split(`{${token}}`);
 }
 
+
+export function getDocsSkills(locale: string): DocsPageDict {
+  return locale === "zh" ? zhDocsSkills : enDocsSkills;
+}
+
+export function getDocsClaudeCode(locale: string): DocsPageDict {
+  return locale === "zh" ? zhDocsClaudeCode : enDocsClaudeCode;
+}

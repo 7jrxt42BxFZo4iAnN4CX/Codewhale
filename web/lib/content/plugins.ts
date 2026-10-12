@@ -15,11 +15,11 @@ export const PLUGINS_COPY = {
   marketplaceCta: { en: "Browse the Codewhale catalog", zh: "浏览 Codewhale 目录" },
   docsCta: { en: "Plugin authoring guide", zh: "插件编写指南" },
 
-  cuLabel: { en: "First-party plugin · macOS beta", zh: "官方插件 · macOS Beta" },
+  cuLabel: { en: "First-party plugin · macOS preview", zh: "官方插件 · macOS 预览" },
   cuTitle: { en: "Control apps with Computer Use", zh: "使用 Computer Use 操作应用" },
   cuLead: {
-    en: "The agent observes the apps you choose, reads their controls through the accessibility tree, types and clicks, and records each action in a receipt. macOS is the qualified beta platform; Windows, Linux and HarmonyOS backends remain experimental and source-only.",
-    zh: "代理观察你选择的应用，通过无障碍树读取控件，执行输入与点击，并在回执中记录每一步操作。macOS 是完成认证的 Beta 平台；Windows、Linux 与 HarmonyOS 后端仍为实验性、仅提供源码。",
+    en: "Computer Use is a preview. The agent reads app controls, types and clicks, and records actions; Windows, Linux and HarmonyOS backends remain experimental and source-only.",
+    zh: "Computer Use 是预览功能。智能体读取应用控件、输入与点击，并记录操作；Windows、Linux 与 HarmonyOS 后端仍为实验性、仅提供源码。",
   },
   cuInstall: { en: "/plugin marketplace install codewhale computer-use", zh: "/plugin marketplace install codewhale computer-use" },
   cuFeatures: [

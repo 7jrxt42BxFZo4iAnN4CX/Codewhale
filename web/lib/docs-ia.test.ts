@@ -92,13 +92,12 @@ describe("sitemap and hreflang preservation", () => {
   });
 
   it("keeps sitemap and hreflang output aligned with real translation coverage", () => {
-    // 18 home locales + 18 /computer-use locales + English-only install + (en, zh) for every
-    // other route (including /docs/guide, /product, /plugins, and /changelog, whose bodies
-    // ship en/zh only).
+    // Home and Computer Use have 18 locales; install and the source catalogue are English.
+    // Other page bodies ship English and Chinese.
     const existingEntries = sitemapEntries.filter(
       (entry) => new URL(entry.url).pathname.split("/")[2] !== "ratatui",
     );
-    expect(existingEntries).toHaveLength(109);
+    expect(existingEntries).toHaveLength(114);
     expect(sitemapEntries.filter(entry => entry.url.endsWith("/install")).map(entry => entry.url))
       .toEqual([`${SITE_URL}/en/install`]);
     expect(sitemapEntries.some(entry => entry.url.endsWith("/pricing"))).toBe(false);
@@ -139,7 +138,7 @@ describe("sitemap and hreflang preservation", () => {
     expect(entries.map((entry) => entry.url)).toEqual(expectedUrls);
     expect(new Set(sitemapEntries.map((entry) => entry.url)).size).toBe(sitemapEntries.length);
     for (const entry of entries) {
-      expect(Object.keys(entry.alternates?.languages ?? {})).toEqual(["en", "zh"]);
+      expect(Object.keys(entry.alternates?.languages ?? {})).toEqual(entry.url.endsWith("/ratatui") ? ["en", "zh"] : ["en"]);
     }
   });
 
@@ -217,7 +216,7 @@ describe("navigation parity and accessibility", () => {
     const reference = buildNavLinks("en", getChrome("en")).map((l) =>
       l.href.replace(/^\/en\//, ""),
     );
-    expect(reference).toEqual(["product", "models", "plugins", "docs"]);
+    expect(reference).toEqual(["product", "features", "models", "plugins", "docs"]);
     const moreReference = buildSecondaryNavLinks("en", getChrome("en")).map((l) =>
       l.href.replace(/^\/en\//, ""),
     );

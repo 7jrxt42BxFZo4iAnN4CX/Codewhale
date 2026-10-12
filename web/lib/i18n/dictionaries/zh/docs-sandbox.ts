@@ -11,6 +11,25 @@ export const docsSandbox: DocsSandboxDict = {
     "批准一条命令，决定的是它能不能运行；沙箱决定的是它运行之后能碰到什么。只要操作系统提供沙箱，Codewhale 就会使用它；没有沙箱时，也会如实告诉你。",
   sections: [
     {
+      "id": "execution-policy",
+      "title": "检查执行策略规则",
+      "blocks": [
+        {
+          "code": "/permissions",
+          "lang": "Codewhale"
+        },
+        {
+          "p": "类型化权限依次按 User、Agent、BuiltinDefault 选择规则。同一来源层中，deny 优先于 ask 与 allow；匹配精度用于打破同级平局。"
+        },
+        {
+          "p": "硬性拒绝的命令前缀不能被类型化 allow 覆盖。allow 不会移除后续安全检查、仓库限制或沙箱边界。"
+        },
+        {
+          "p": "[阅读授权顺序与匹配规则](https://github.com/codewhale-hq/CodeWhale/blob/main/docs/AUTHORIZATION_ORDER.md)"
+        }
+      ]
+    },
+    {
       id: "platforms",
       title: "查看你的平台提供了什么",
       blocks: [

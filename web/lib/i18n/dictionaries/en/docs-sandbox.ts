@@ -16,6 +16,25 @@ export const docsSandbox: DocsSandboxDict = {
     "Approving a command decides whether it runs. A sandbox decides what it can reach once it does. Codewhale uses the operating system's sandbox where one is available and tells you plainly when there is none.",
   sections: [
     {
+      "id": "execution-policy",
+      "title": "Inspect execution policy rules",
+      "blocks": [
+        {
+          "code": "/permissions",
+          "lang": "Codewhale"
+        },
+        {
+          "p": "Typed permissions select User, Agent and BuiltinDefault rules in that order. Within one source layer, deny wins over ask and allow; specificity breaks ties."
+        },
+        {
+          "p": "Hard denied command prefixes cannot be overridden by a typed allow. An allow never removes later safety checks, repository restrictions or sandbox limits."
+        },
+        {
+          "p": "[Read the authorization order and matching rules](https://github.com/codewhale-hq/CodeWhale/blob/main/docs/AUTHORIZATION_ORDER.md)"
+        }
+      ]
+    },
+    {
       id: "platforms",
       title: "Check what your platform provides",
       blocks: [

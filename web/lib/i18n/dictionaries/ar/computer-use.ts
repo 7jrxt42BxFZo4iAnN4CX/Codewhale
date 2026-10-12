@@ -7,7 +7,7 @@ import type { ComputerUseDict } from "../types";
  * as the app shows them; the macOS names use the Arabic system UI labels.
  */
 export const computerUse: ComputerUseDict = {
-  metaTitle: "Computer Use لنظام Mac · Codewhale",
+  metaTitle: "Computer Use · معاينة · Codewhale",
   metaDescription: "نزّل Codewhale Computer Use لنظام Mac وجهّزه. تحكّم في التطبيقات في الخلفية، وإعداد الأذونات، وأزرار Pause وStop بيدك.",
   title: "Computer Use",
   lead: "دع Codewhale يعمل داخل تطبيقاتك بينما تواصل عملك. يجمع مساعد Mac في شريط القوائم الأذونات والتحكم في التطبيقات في الخلفية وإمكانية إيقاف الإدخال مؤقتًا أو إنهائه.",

@@ -1,8 +1,8 @@
 import type { LocalizedText } from "./vocabulary";
 
 export const MODELS_COPY = {
-  metaTitle: { en: "Models and providers · Codewhale", zh: "模型与提供商 · Codewhale" },
-  metaDescription: { en: "Connect a hosted provider, a gateway, or a local model server, and switch models per session.", zh: "连接托管提供商、网关或本地模型服务，并按会话切换模型。" },
+  metaTitle: { en: "DeepSeek, Ollama and local models · Codewhale", zh: "DeepSeek、Ollama 与本地模型 · Codewhale" },
+  metaDescription: { en: "Use Codewhale with DeepSeek, Ollama, other hosted providers or local models. Configure credentials and endpoints, then choose a model per session.", zh: "让 Codewhale 使用 DeepSeek、Ollama、其他托管提供商或本地模型。配置凭据与端点，再按会话选择模型。" },
   kicker: { en: "Models and providers", zh: "模型与提供商" },
   title: { en: "Pick the right model for each task.", zh: "为每项任务选择合适的模型。" },
   lead: { en: "Use a hosted model, a local server, or a gateway. Switch the provider or model whenever the work changes.", zh: "使用托管模型、本地服务或网关。工作变化时，随时切换提供商或模型。" },

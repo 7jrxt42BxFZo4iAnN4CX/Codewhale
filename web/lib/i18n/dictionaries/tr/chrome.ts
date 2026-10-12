@@ -22,6 +22,7 @@ export const chrome: ChromeDict = {
   navCommunity: "Topluluk",
   navContribute: "Katkı",
 
+  navFeatures: "Özellikler",
   navProduct: "Ürün",
   navModels: "Modeller",
   navPlugins: "Eklentiler",
