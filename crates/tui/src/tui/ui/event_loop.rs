@@ -1142,7 +1142,7 @@ pub async fn run_tui(
     // masking boundary only after an explicit one-time confirmation on this
     // startup gate. Arm the gate before the engine spawns so it owns the first
     // screen; answering it rebuilds the engine with the confirmed mode.
-    app.redaction_gate = crate::tui::redaction_gate::confirmation_required(config);
+    app.redaction_gate = config.redaction_confirmation_required();
 
     // Restore before admitting initial input, including resumed conversations.
     let engine_handle = spawn_tui_engine_with_session(&mut app, config).await?;
@@ -5439,7 +5439,7 @@ pub(crate) async fn run_event_loop(
                             app.redaction_gate_confirming = true;
                             app.redaction_gate_scroll.set(0);
                         } else {
-                            match crate::tui::redaction_gate::record_confirmation(config) {
+                            match config.record_redaction_confirmation() {
                                 Ok(_) => {
                                     // The engine already spawned with masking on
                                     // (the unconfirmed safe default). Rebuild it so

@@ -342,8 +342,12 @@ Workflow panel assertions to its existing history test and removes duplicated
 coordination pager checks, leaving 18 test references. The history split moves
 persistence/render tests to history and uses the runtime MCP decoder in the
 engine, leaving 13 test references. Moving the two unchanged App fixtures to
-their UI owner and migrating all114 consumers leaves6 test references.
-The current baseline is the authority.
+their UI owner and migrating all 114 consumers leaves 6 test references.
+Moving redaction decisions onto Config, workspace trust into config, and the
+unchanged constitution checkpoint into prompts removes the final 6. RS-11
+ends at production 0, test 0, late 1, UI-library 0 and doc 0. The late
+engine/exec-agent test reference belongs to a later slice. The current baseline
+is the authority.
 `crates/runtime` must never depend on `tui`, `cli`, ratatui, crossterm,
 `ansi-to-tui` or a terminal component kit; the runtime reaches the terminal
 only through `host_terminal`.

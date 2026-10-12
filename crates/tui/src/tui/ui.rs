@@ -1018,7 +1018,7 @@ pub(crate) struct SteerPausedSnapshot {
 fn use_bundled_constitution(app: &mut App, config: &Config) {
     let mut state = crate::tui::setup::load_setup_state_for_app(app, config);
     state.complete_constitution_checkpoint(
-        crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+        crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
         codewhale_config::ConstitutionChoice::Bundled,
     );
     state.constitution_source = codewhale_config::ConstitutionSource::Bundled;
@@ -1029,7 +1029,7 @@ fn use_bundled_constitution(app: &mut App, config: &Config) {
         codewhale_config::StepEntry::new(
             codewhale_config::StepStatus::Verified,
             true,
-            crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+            crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
         )
         .with_result("bundled/default constitution"),
     );

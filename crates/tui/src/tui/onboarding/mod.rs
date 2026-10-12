@@ -109,7 +109,7 @@ fn required_progress(app: &App) -> Option<(usize, usize)> {
 }
 
 fn trust_decision_required(app: &App) -> bool {
-    !app.trust_mode && needs_trust(&app.workspace)
+    !app.trust_mode && crate::config::needs_trust(&app.workspace)
 }
 
 fn action_hints(app: &App) -> Vec<ActionHint> {
@@ -390,18 +390,6 @@ fn mark_onboarded_at_path(path: PathBuf) -> std::io::Result<PathBuf> {
     }
     std::fs::write(&path, "")?;
     Ok(path)
-}
-
-pub fn needs_trust(workspace: &Path) -> bool {
-    if crate::config::is_workspace_trusted(workspace) {
-        return false;
-    }
-
-    let markers = [
-        workspace.join(".deepseek").join("trusted"),
-        workspace.join(".deepseek").join("trust.json"),
-    ];
-    !markers.iter().any(|path| path.exists())
 }
 
 pub fn mark_trusted(workspace: &Path) -> anyhow::Result<PathBuf> {

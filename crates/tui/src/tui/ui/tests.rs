@@ -8652,7 +8652,7 @@ fn setup_checkpoint_waits_for_onboarding_and_skip_flag() {
         .expect("setup state");
     assert_eq!(
         state.constitution_checkpoint_completed_for.as_deref(),
-        Some(crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION)
+        Some(crate::prompts::CONSTITUTION_CHECKPOINT_VERSION)
     );
     assert_eq!(
         state.constitution_choice,
@@ -8693,7 +8693,7 @@ fn setup_runtime_preset_apply_persists_settings_config_and_state() {
         codewhale_config::StepEntry::new(
             codewhale_config::StepStatus::Verified,
             true,
-            crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+            crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
         )
         .with_result(preset.result_summary()),
     );
@@ -20294,7 +20294,7 @@ async fn redaction_confirmation_restores_history_before_first_local_provider_req
         );
         assert!(server.received_requests().await.unwrap().is_empty());
     }
-    crate::tui::redaction_gate::record_confirmation(&config).unwrap();
+    config.record_redaction_confirmation().unwrap();
     engine.send(Op::Shutdown).await.unwrap();
     let replacement = spawn_tui_engine_with_session(&mut app, &config)
         .await
@@ -20308,7 +20308,7 @@ async fn redaction_confirmation_restores_history_before_first_local_provider_req
         app.current_session_id.as_deref(),
         Some("local-consent-resumed-session")
     );
-    assert!(!crate::tui::redaction_gate::confirmation_required(&config));
+    assert!(!config.redaction_confirmation_required());
     app.redaction_gate = false;
     app.redaction_gate_confirming = false;
     submit_initial_input_if_ready(&mut app, &config, &replacement)
@@ -21325,7 +21325,7 @@ fn trust_directory_continue_untrusted_advances_without_recording_trust() {
     assert!(!app.trust_mode);
     assert_eq!(app.onboarding, OnboardingState::Ready);
     assert!(
-        crate::tui::onboarding::needs_trust(&app.workspace),
+        crate::config::needs_trust(&app.workspace),
         "declining trust must not write a trusted marker"
     );
     let notice = app.status_message.expect("restricted-mode notice");

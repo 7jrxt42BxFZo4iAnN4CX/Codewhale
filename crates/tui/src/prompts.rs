@@ -682,6 +682,11 @@ pub fn set_base_prompt_override(s: String) -> Result<(), String> {
 // This keeps replacing the global Constitution a deliberate, auditable act
 // rather than something a stray file can do.
 
+/// Target lane for the once-per-version constitution checkpoint. Bumped per
+/// release when the bundled constitution materially changes, so existing users
+/// re-acknowledge it once. 0.9.4 re-ships the Fleet/operate constitution.
+pub const CONSTITUTION_CHECKPOINT_VERSION: &str = "0.9.4";
+
 /// Relative path, under the config directory, of the optional base-prompt
 /// (constitution) override file.
 pub const CONSTITUTION_OVERRIDE_FILE: &str = "prompts/constitution.md";
@@ -2694,7 +2699,7 @@ mod tests {
 
         let mut state = codewhale_config::SetupState::default();
         state.complete_constitution_checkpoint(
-            crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+            crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             codewhale_config::ConstitutionChoice::Bundled,
         );
         state
