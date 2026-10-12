@@ -7032,6 +7032,23 @@ impl Config {
             .unwrap_or_else(|| PathBuf::from("./skills"))
     }
 
+    #[must_use]
+    pub(crate) fn bundled_skills_install_dir(&self) -> Option<PathBuf> {
+        if self.skills_dir.is_some() {
+            return None;
+        }
+        let directory = default_skills_dir()?;
+        #[cfg(test)]
+        if !crate::test_support::guarded_environment_provides_state_paths() {
+            return Some(directory);
+        }
+        let owned = match codewhale_home_dir().ok()? {
+            Some(home) => home.join("skills"),
+            None => effective_home_dir()?.join(".codewhale").join("skills"),
+        };
+        (directory == owned).then_some(directory)
+    }
+
     /// Resolve the MCP config path.
     #[must_use]
     pub fn mcp_config_path(&self) -> PathBuf {

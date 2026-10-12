@@ -1632,6 +1632,11 @@ pub(crate) fn open_runtime_threads_for_host(
         preheld_lock,
         binding,
     )?);
+    if let Some(skills_dir) = config.bundled_skills_install_dir()
+        && let Err(error) = crate::skills::install_system_skills(&skills_dir)
+    {
+        crate::logging::warn(format!("Failed to install system skills: {error}"));
+    }
     // Publish the same exact endpoint-scoped catalog as interactive startup
     // before the server admits turns. A cached model list alone does not make
     // its capabilities available to route resolution.

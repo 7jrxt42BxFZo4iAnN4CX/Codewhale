@@ -13480,7 +13480,9 @@ async fn run_interactive_prepared(
     // Auto-install bundled system skills (e.g. skill-creator) on first launch.
     // Errors are non-fatal: log a warning and continue.
     let skills_dir = config.skills_dir();
-    if let Err(e) = crate::skills::install_system_skills(&skills_dir) {
+    if let Some(install_dir) = config.bundled_skills_install_dir()
+        && let Err(e) = crate::skills::install_system_skills(&install_dir)
+    {
         logging::warn(format!("Failed to install system skills: {e}"));
     }
 
