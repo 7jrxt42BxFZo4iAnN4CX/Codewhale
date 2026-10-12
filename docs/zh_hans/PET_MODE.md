@@ -34,12 +34,12 @@ Pet 模式把你正在使用的终端变成一个一眼可读的状态视图。�
 
 ## 视图
 
-主视图显示时，按 `Ctrl+]`（终端能发送时也可按 `Ctrl+Tab`）切换到下一个视图，`Ctrl+Shift+Tab` 切回上一个。页脚第二行显示当前视图，例如 `Ctrl+] view: whale`，点击它也会切到下一个视图。`/pet avatar <key>` 可直接跳到某个视图。
+主视图显示时，按 `Ctrl+]` 切换到下一个视图。支持 kitty 键盘协议的终端还可发送 `Ctrl+Tab` 切到下一个、`Ctrl+Shift+Tab` 切回上一个。Terminal.app 用这两个 Tab 组合键切换终端标签页，因此请在那里使用 `Ctrl+]`。页脚第二行显示当前视图，例如 `Ctrl+] view: whale`，点击它也会切到下一个视图。`/pet avatar <key>` 可直接跳到某个视图。
 
 | 视图 | 显示内容 | 条件不满足时 |
 | --- | --- | --- |
 | `whale` | 伴生进程的实时点阵鲸鱼。 | 在伴生进程可达（`codewhale pet serve`）且本终端的会话是来源（`/pet source`）之前，显示 `cove`（或 `braille`）。 |
-| `cove` | 本地半块字符鲸鱼，不带半透明的海湾背景。 | 需要颜色：在 `NO_COLOR`、16 色终端（`COLORTERM=truecolor`）或背景未知（`CODEWHALE_APPEARANCE=dark` 或 `light`）时显示 `braille`。 |
+| `cove` | 本地半块字符鲸鱼，不带半透明的海湾背景。 | 需要颜色：在 `NO_COLOR`、16 色终端或背景未知时显示 `braille`。`COLORTERM=truecolor` 启用真彩色；`CODEWHALE_APPEARANCE=dark` 或 `light` 明确选择背景。 |
 | `braille` | 本地彩色盲文点阵鲸鱼。 | 在 `CODEWHALE_ASCII_SAFE` 下或图案区域小于 16x8 个单元格时，只显示状态文字。 |
 | `pixels` | 伴生进程鲸鱼的 kitty 图形图像。 | 需要 kitty 图形、同步输出、已知的单元格像素尺寸，且未设置 `CODEWHALE_PET_GRAPHICS`；否则显示 `particles`。Terminal.app 不支持 kitty 图形。 |
 | `particles` | 伴生进程的盲文粒子网格。 | 伴生进程不可达时，显示静止的鲸鱼和 `offline`。 |
@@ -58,7 +58,7 @@ Pet 模式把你正在使用的终端变成一个一眼可读的状态视图。�
 | 按键 | 效果 |
 | --- | --- |
 | `F5` 或 `/pet inspect` | 打开回复与智能体。 |
-| `Ctrl+]` / `Ctrl+Tab`、`Ctrl+Shift+Tab` | 下一个或上一个 Pet 视图（仅主视图）。 |
+| `Ctrl+]` / `Ctrl+Tab`、`Ctrl+Shift+Tab` | 下一个或上一个 Pet 视图（仅主视图）。Tab 组合键需要终端能发送；Terminal.app 中请使用 `Ctrl+]`。 |
 | `F6` | 开关伴生进程的声音。 |
 | `F8` | 在浏览器中打开外观工作室。 |
 | `F9` | 打开原生 Codewhale Pet 窗口（macOS）。 |

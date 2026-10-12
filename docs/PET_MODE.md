@@ -57,8 +57,10 @@ second line.
 
 ## Views
 
-`Ctrl+]` (or `Ctrl+Tab` where the terminal sends it) switches the pet to its
-next view while the pet main view is showing; `Ctrl+Shift+Tab` goes back. The
+`Ctrl+]` switches the pet to its next view while the pet main view is showing.
+Terminals with the kitty keyboard protocol can also send `Ctrl+Tab` for the
+next view and `Ctrl+Shift+Tab` for the previous view. Terminal.app uses those
+Tab chords to switch terminal tabs; use `Ctrl+]` there. The
 footer's second line names the current view, `Ctrl+] view: whale`, and
 clicking it also moves to the next view. `/pet avatar <key>` jumps straight to
 one.
@@ -66,7 +68,7 @@ one.
 | View | What it draws | When its requirement is missing |
 | --- | --- | --- |
 | `whale` | The companion's live dot whale. | Shows `cove` (or `braille`) until the companion is reachable (`codewhale pet serve`) and this terminal's session is its source (`/pet source`). |
-| `cove` | The local half-block whale, without the translucent cove scenery. | Needs colour: `braille` is shown under `NO_COLOR`, a 16-colour terminal (`COLORTERM=truecolor`), or an unknown background (`CODEWHALE_APPEARANCE=dark` or `light`). |
+| `cove` | The local half-block whale, without the translucent cove scenery. | Needs colour: `braille` is shown under `NO_COLOR`, a 16-colour terminal, or an unknown background. `COLORTERM=truecolor` enables true colour; `CODEWHALE_APPEARANCE=dark` or `light` selects a known background. |
 | `braille` | The local whale in coloured Braille dots. | Shows only the state words under `CODEWHALE_ASCII_SAFE` or when the art area is smaller than 16x8 cells. |
 | `pixels` | The companion's whale as a kitty-graphics image. | Needs kitty graphics, synchronized output, a known cell size in pixels, and `CODEWHALE_PET_GRAPHICS` unset; otherwise shows `particles`. Terminal.app has no kitty graphics. |
 | `particles` | The companion's Braille particle grid. | Shows the resting whale and `offline` while the companion is unreachable. |
@@ -90,7 +92,7 @@ inspector over it:
 | Key | Effect |
 | --- | --- |
 | `F5` or `/pet inspect` | Open replies and agents. |
-| `Ctrl+]` / `Ctrl+Tab`, `Ctrl+Shift+Tab` | Next or previous pet view (main view only). |
+| `Ctrl+]` / `Ctrl+Tab`, `Ctrl+Shift+Tab` | Next or previous pet view (main view only). The Tab chords require a terminal that sends them; use `Ctrl+]` in Terminal.app. |
 | `F6` | Turn the companion's sound on or off. |
 | `F8` | Open the appearance studio in your browser. |
 | `F9` | Open the native Codewhale Pet window (macOS). |
