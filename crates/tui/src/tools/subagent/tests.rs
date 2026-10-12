@@ -24386,7 +24386,7 @@ mod child_permission_gate {
         registry.gate_runtime.approval_receipt_store = None;
 
         let result = tokio::time::timeout(
-            std::time::Duration::from_millis(250),
+            CHILD_APPROVAL_EVENT_READINESS,
             registry.execute("agent_gate", "bash", json!({"command": "echo gated"})),
         )
         .await
@@ -24583,7 +24583,7 @@ mod child_permission_gate {
         let expected = child_approval_keys("agent_gate", "bash", &input);
         let manager_for_answer = Arc::clone(&manager);
         let answerer = tokio::spawn(async move {
-            tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            tokio::time::timeout(CHILD_APPROVAL_EVENT_READINESS, async {
                 while let Some(event) = rx.recv().await {
                     if let Event::ApprovalRequired {
                         id,
@@ -24891,7 +24891,7 @@ mod child_permission_gate {
             "retirement waits for channel capacity instead of dropping the event"
         );
         assert!(matches!(rx.recv().await, Some(Event::Status { .. })));
-        tokio::time::timeout(Duration::from_secs(1), delivery)
+        tokio::time::timeout(CHILD_APPROVAL_EVENT_READINESS, delivery)
             .await
             .expect("retirement is delivered once the host drains");
         assert!(matches!(
