@@ -5522,7 +5522,24 @@ async fn steer_and_interrupt_endpoints_work_on_active_turn() -> Result<()> {
         .json()
         .await?;
     assert_eq!(steer_resp["id"], turn_id);
-    assert_eq!(steer_resp["steer_count"], 1);
+    let deadline = tokio::time::Instant::now() + ci_scaled(Duration::from_secs(10));
+    while !runtime_threads
+        .events_since(&thread_id, None)?
+        .iter()
+        .any(|ev| ev.event == "turn.steered")
+    {
+        if tokio::time::Instant::now() >= deadline {
+            bail!("timed out waiting for the steer on {turn_id} to settle");
+        }
+        sleep(Duration::from_millis(25)).await;
+    }
+    assert_eq!(
+        runtime_threads
+            .test_store()
+            .load_turn(&turn_id)?
+            .steer_count,
+        1
+    );
 
     let interrupt_resp: serde_json::Value = client
         .post(format!(
