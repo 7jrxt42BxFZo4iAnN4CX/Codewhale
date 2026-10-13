@@ -121,6 +121,7 @@ pub(crate) fn assert_only_export_facet_exposed(parts: ContextParts<'_>) {
         debug_diagnostics,
         permissions,
         config_status,
+        ..
     } = parts;
     assert!(permissions.is_none() && config_status.is_none());
 
