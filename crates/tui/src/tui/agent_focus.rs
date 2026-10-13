@@ -792,7 +792,7 @@ mod tests {
                 model: "test-model".to_string(),
                 use_mouse_capture: true,
                 max_subagents: 4,
-                ..crate::test_support::test_tui_options(workspace)
+                ..crate::tui::test_support::test_tui_options(workspace)
             },
             &Config::default(),
         )
@@ -1409,7 +1409,7 @@ mod mounted_transcript_acceptance {
 
     fn fixture(locale: Locale, offset: Option<usize>) -> App {
         let mut app = App::new(
-            crate::test_support::test_tui_options(PathBuf::from(".")),
+            crate::tui::test_support::test_tui_options(PathBuf::from(".")),
             &Config::default(),
         );
         app.launch.visible = false;

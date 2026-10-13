@@ -63,7 +63,6 @@ pub mod hover_layer;
 pub mod infoline;
 pub mod key_actions;
 pub mod key_shortcuts;
-pub mod keybindings;
 pub mod launch_resume_confirm;
 pub mod list_nav;
 pub mod live_transcript;
@@ -109,6 +108,8 @@ pub mod startup_input;
 pub mod streaming;
 pub mod streaming_thinking;
 mod subagent_routing;
+#[cfg(test)]
+pub(crate) mod test_support;
 pub mod theme_picker;
 pub mod tideline;
 mod tool_routing;

@@ -790,12 +790,7 @@ async fn wait_for_queued_child(mailbox: &mut MailboxReceiver, id: &str) {
 
 #[tokio::test]
 async fn fleet_editor_save_reload_reaches_type_only_admission_without_a_model_request() {
-    use crate::fleet::store::{
-        FleetFile, FleetScope, load_fleet_in_scope, save_fleet, set_selected,
-    };
-    use crate::tui::views::fleet_detail::FleetDetailView;
-    use crate::tui::views::{ModalView, ViewAction, ViewEvent};
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crate::fleet::store::{FleetFile, FleetScope, save_fleet, set_selected};
 
     let _env = crate::test_support::lock_test_env();
     let root = tempdir().unwrap();
@@ -808,49 +803,19 @@ async fn fleet_editor_save_reload_reaches_type_only_admission_without_a_model_re
     let _model = crate::test_support::EnvVarGuard::set("CODEWHALE_MODEL", "deepseek-v4-flash");
     let config_path = root.path().join("config.toml");
     write_restart_route_config(&config_path, fixture_client.base_url(), "");
-    let config = crate::config::Config::load(Some(config_path.clone()), None).unwrap();
     let mut fleet = FleetFile::new("Editor restart acceptance".into(), None).unwrap();
     fleet.members.push(
         serde_json::from_value(json!({
-            "id":"review-pin", "role":"reviewer", "instructions":"SAVED_REVIEW_INSTRUCTION"
+            "id":"review-pin", "role":"reviewer", "instructions":"SAVED_REVIEW_INSTRUCTION",
+            "provider":"ReviewerRoute", "model":"fixture-review-model", "reasoning":"off",
+            "shortlist":false
         }))
         .unwrap(),
     );
     save_fleet(&fleet, FleetScope::Workspace, root.path()).unwrap();
     set_selected(&fleet.name, FleetScope::Workspace, root.path()).unwrap();
 
-    let mut app =
-        crate::tui::app::App::new(crate::test_support::test_tui_options(root.path()), &config);
-    app.workspace = root.path().to_path_buf();
-    let mut view = FleetDetailView::open_for_member(
-        &app,
-        &config,
-        &fleet.name,
-        FleetScope::Workspace,
-        Some("review-pin"),
-    )
-    .unwrap();
-    let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
-    view.handle_key(key(KeyCode::Char('e')));
-    for ch in "ReviewerRoute".chars() {
-        view.handle_key(key(KeyCode::Char(ch)));
-    }
-    view.handle_key(key(KeyCode::Enter));
-    // Off survives generic route normalization and distinguishes the saved
-    // choice from default reasoning without inventing fixture capabilities.
-    view.handle_key(key(KeyCode::Char('t')));
-    assert!(matches!(
-        view.handle_key(key(KeyCode::Char('s'))),
-        ViewAction::EmitAndClose(ViewEvent::FleetStoreChanged { .. })
-    ));
-    let (saved, _) = load_fleet_in_scope(&fleet.name, FleetScope::Workspace, root.path()).unwrap();
-    let pin = &saved.members[0];
-    assert!(!pin.shortlist);
-    assert_eq!(pin.role, "reviewer");
-    assert_eq!(pin.provider.as_deref(), Some("ReviewerRoute"));
-    assert_eq!(pin.model.as_deref(), Some("fixture-review-model"));
-    assert_eq!(pin.reasoning.as_deref(), Some("off"));
-    drop((view, app, config, fixture_client));
+    drop(fixture_client);
 
     // Restart from the ordinary file loader; no old UI state or runtime roster survives.
     let reloaded = crate::config::Config::load(Some(config_path), None).unwrap();

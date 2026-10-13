@@ -53,7 +53,7 @@ describe("public website copy contracts", () => {
   });
 
   it("describes ACP and the VS Code extension at their implemented capability level", () => {
-    const runtime = pageSource("runtime/page.tsx");
+    const runtime = readFileSync(new URL("./content/runtime-integrations.ts", import.meta.url), "utf8") + pageSource("runtime/page.tsx");
     const sourceDocTargets = [
       ...new Set(
         [...runtime.matchAll(/REPO_BLOB_BASE}\/([^`]+)`/g)].map((match) => match[1]),
@@ -61,7 +61,7 @@ describe("public website copy contracts", () => {
     ];
 
     expect(runtime).toContain("ACP (Agent Client Protocol)");
-    expect(runtime).toContain("Baseline JSON-RPC adapter over stdio");
+    expect(runtime).toContain("ACP stdio connects compatible editors to the existing Engine");
     expect(runtime).toContain("Early companion for the local runtime");
     expect(runtime).not.toContain("Agent Communication Protocol");
     expect(runtime).not.toContain("IETF-standard");

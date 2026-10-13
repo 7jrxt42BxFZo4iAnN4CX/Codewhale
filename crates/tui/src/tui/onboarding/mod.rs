@@ -109,7 +109,7 @@ fn required_progress(app: &App) -> Option<(usize, usize)> {
 }
 
 fn trust_decision_required(app: &App) -> bool {
-    !app.trust_mode && needs_trust(&app.workspace)
+    !app.trust_mode && crate::config::needs_trust(&app.workspace)
 }
 
 fn action_hints(app: &App) -> Vec<ActionHint> {
@@ -392,18 +392,6 @@ fn mark_onboarded_at_path(path: PathBuf) -> std::io::Result<PathBuf> {
     Ok(path)
 }
 
-pub fn needs_trust(workspace: &Path) -> bool {
-    if crate::config::is_workspace_trusted(workspace) {
-        return false;
-    }
-
-    let markers = [
-        workspace.join(".deepseek").join("trusted"),
-        workspace.join(".deepseek").join("trust.json"),
-    ];
-    !markers.iter().any(|path| path.exists())
-}
-
 pub fn mark_trusted(workspace: &Path) -> anyhow::Result<PathBuf> {
     crate::config::save_workspace_trust(workspace)
 }
@@ -476,11 +464,14 @@ pub fn advance_onboarding_after_language(app: &mut App) {
 }
 
 /// Provider setup → trust when a decision is required, otherwise the ready
-/// screen.
+/// screen. A message already typed skips the ready screen and returns to the
+/// composer with the draft intact.
 pub fn advance_onboarding_after_provider(app: &mut App) {
     app.status_message = None;
     if trust_decision_required(app) {
         app.onboarding = OnboardingState::TrustDirectory;
+    } else if !app.composer.input.trim().is_empty() && !app.onboarding_explore_offline {
+        app.finish_onboarding_without_feature_intro();
     } else {
         app.onboarding = OnboardingState::Ready;
     }
@@ -553,7 +544,7 @@ mod tests {
     /// different in CI. Every test below opts in to the steps it is about.
     fn test_app_with_locale(locale: Locale) -> App {
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         let mut app = App::new(options, &Config::default());
         app.ui_locale = locale;

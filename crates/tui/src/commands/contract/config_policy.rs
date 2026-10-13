@@ -286,8 +286,8 @@ mod tests {
     use tempfile::TempDir;
 
     fn fixture(temp: &TempDir) -> App {
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(temp.path()),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(temp.path()),
         );
         app.config_path = Some(temp.path().join("config.toml"));
         app.sandbox_backend = None;
@@ -441,8 +441,8 @@ fn config_policy_status_retains_notice_after_delivery_and_binds_it_to_session() 
     let workspace = root.path().join("workspace");
     std::fs::create_dir(&workspace).unwrap();
     std::fs::write(workspace.join("large.txt"), vec![b'x'; 4096]).unwrap();
-    let mut app = crate::test_support::test_app_with_options(
-        crate::test_support::test_tui_options(&workspace),
+    let mut app = crate::tui::test_support::test_app_with_options(
+        crate::tui::test_support::test_tui_options(&workspace),
     );
     app.current_session_id = Some("policy-session".into());
     assert!(

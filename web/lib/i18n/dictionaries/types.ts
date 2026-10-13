@@ -36,6 +36,7 @@ export interface ChromeDict {
    * dictionary for the compact sheet's second group and the footer.
    */
   navProduct: string;
+  navFeatures: string;
   navModels: string;
   navPlugins: string;
 
@@ -119,6 +120,21 @@ export interface ChromeDict {
    * the heading of the group that lists partial packs.
    */
   partialBadge: string;
+}
+
+export interface FeaturesDict {
+  title: string;
+  description: string;
+  notice: string;
+  stable: string;
+  flagged: string;
+  experimental: string;
+  partial: string;
+  preview: string;
+  none: string;
+  docs: string;
+  source: string;
+  exportJson: string;
 }
 
 export interface HomeDict {
@@ -685,6 +701,8 @@ export type DocsSubagentsDict = DocsPageDict;
 export type DocsWebDict = DocsPageDict;
 
 export type DocsWorkDict = DocsPageDict;
+
+export type DocsPetDict = DocsPageDict;
 
 /** Copy for `app/[locale]/computer-use/page.tsx` and the install page's Computer Use section. */
 export interface ComputerUseDict {

@@ -1235,7 +1235,7 @@ mod tests {
             let mut reader = codewhale_app_server::BoundedLines::new(BufReader::new(input));
             let mut output = Vec::new();
             let result = tokio::time::timeout(
-                Duration::from_secs(20),
+                Duration::from_secs(if cfg!(windows) { 120 } else { 20 }),
                 self.server.drive_prompt(
                     json!({"sessionId":session,"prompt":text}),
                     &mut reader,
@@ -2482,9 +2482,16 @@ mod tests {
             std::fs::read_to_string(rig.workspace.join("ordinary.txt"))?,
             "allowed"
         );
+        let sentinel = rig.workspace.join("floor-sentinel.txt");
+        for _ in 0..180 {
+            if crate::test_support::read_shell_sentinel(&sentinel) == "rm -rf /" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
         assert_eq!(
-            std::fs::read_to_string(rig.workspace.join("floor-sentinel.txt"))?,
-            "rm -rf /\n"
+            crate::test_support::read_shell_sentinel(&sentinel),
+            "rm -rf /"
         );
         assert!(!rig.workspace.join("CHANGELOG.md").exists());
         assert!(

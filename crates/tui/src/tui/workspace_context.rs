@@ -279,7 +279,7 @@ mod tests {
         std::fs::write(&memory, vec![b'x'; 2048]).unwrap();
 
         let mut app = crate::tui::app::App::new(
-            crate::test_support::test_tui_options(dir.path()),
+            crate::tui::test_support::test_tui_options(dir.path()),
             &crate::config::Config::default(),
         );
         app.use_memory = true;

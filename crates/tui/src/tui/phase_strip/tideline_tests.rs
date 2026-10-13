@@ -346,8 +346,8 @@ use crate::tui::footer_hints::{
 };
 
 fn session_app() -> App {
-    let mut app = crate::test_support::test_app_with_options(
-        crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+    let mut app = crate::tui::test_support::test_app_with_options(
+        crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
     );
     app.onboarding = OnboardingState::None;
     app.launch.visible = false;
@@ -367,6 +367,7 @@ fn set_uses(app: &mut App, key: &str, uses: u8) {
 #[test]
 fn cycle_keys_show_at_zero_and_one_use_and_go_bare_at_two() {
     let mut app = session_app();
+    app.approval_mode = codewhale_execpolicy::ApprovalMode::Suggest;
     let facts = tideline_footer_from_app(&mut app, 120);
     assert_eq!(facts.permission_key.as_deref(), Some("Shift+Tab to change"));
     assert_eq!(facts.mode_key, Some("Tab"));
@@ -775,8 +776,9 @@ fn narrow_widths_shed_the_clocks_before_the_hint_and_counts() {
 
 #[test]
 fn scheduled_count_opens_automations_directly() {
-    let mut app =
-        crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+    let mut app = crate::tui::test_support::test_app_with_options(
+        crate::tui::test_support::test_tui_options("."),
+    );
     app.automation_panel.active_automations = 2;
     let facts = super::tideline_footer_from_app(&mut app, 140);
     assert_eq!(

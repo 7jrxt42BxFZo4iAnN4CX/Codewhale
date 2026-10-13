@@ -10,7 +10,7 @@ average 10–27, recorded next to each number), so treat them as relative
 before/after evidence, not benchmarks.
 
 > Split plan: [TUI deconstruction](design/TUI_DECONSTRUCTION.md) contains the
-> September 9 source audit and current proposed extraction order. Measurements
+> current source audit, target crate map and extraction order. Measurements
 > below are historical; the B3/deferred candidate lists are not an execution queue.
 
 ## Where the time goes (baseline, commit 533c530b)
@@ -210,10 +210,12 @@ every workspace crate.
 
 ### A2 nextest in CI
 
-`cargo test --workspace --all-features --locked --doc` inventories
-**3 passing / 8 ignored doctests across 21 crates**; CI keeps them as a
-separate step next to `cargo nextest run --workspace --all-features
---locked --profile ci`.
+`cargo test --workspace --all-features --locked --doc` inventoried
+**3 passing / 8 ignored doctests across 21 crates**. All 8 ignored fences
+were in codewhale-tui, which has no runnable doc example and now sets
+`doctest = false`, so its doc pass is skipped (the new inventory is not
+re-measured yet). CI keeps the doc run as a separate step next to
+`cargo nextest run --workspace --all-features --locked --profile ci`.
 
 ### A3/A4 (not adopted, measured)
 

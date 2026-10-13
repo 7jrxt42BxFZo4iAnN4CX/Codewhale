@@ -16,6 +16,8 @@ fn config_policy_keeps_host_registry_order_metadata_and_exact_capabilities() {
             "import-claude",
             "permissions",
             "login",
+            "connect",
+            "disconnect",
             "auth",
             "workbar",
             "pet",
@@ -70,8 +72,8 @@ fn config_policy_keeps_host_registry_order_metadata_and_exact_capabilities() {
 fn config_policy_status_survives_unreadable_optional_config_without_rewriting_it() {
     let _env = crate::test_support::lock_test_env();
     let temp = tempfile::TempDir::new().unwrap();
-    let mut app = crate::test_support::test_app_with_options(
-        crate::test_support::test_tui_options(temp.path()),
+    let mut app = crate::tui::test_support::test_app_with_options(
+        crate::tui::test_support::test_tui_options(temp.path()),
     );
     app.ui_locale = codewhale_localization::Locale::En;
     let path = temp.path().join("config.toml");
@@ -102,8 +104,8 @@ fn config_policy_status_reports_saved_fleet_drift_without_rewriting_pins_or_file
     use crate::fleet::store::{FleetFile, FleetOperator, FleetScope, save_fleet, set_selected};
     let _env = crate::test_support::lock_test_env();
     let temp = tempfile::TempDir::new().unwrap();
-    let mut app = crate::test_support::test_app_with_options(
-        crate::test_support::test_tui_options(temp.path()),
+    let mut app = crate::tui::test_support::test_app_with_options(
+        crate::tui::test_support::test_tui_options(temp.path()),
     );
     app.ui_locale = codewhale_localization::Locale::En;
     app.model = "retained-session-pin".into();

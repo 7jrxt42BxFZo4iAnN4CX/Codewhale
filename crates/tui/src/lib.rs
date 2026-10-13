@@ -27,13 +27,12 @@ mod auto_reasoning;
 mod automation_manager;
 mod child_env;
 mod client;
-pub mod cloud_dispatch;
 mod codex_model_cache;
+mod command_catalog;
 mod commands;
 mod compaction;
 mod composer_history;
 mod composer_stash;
-pub mod computer_meter;
 mod config;
 pub mod config_keys;
 mod config_persistence;
@@ -46,7 +45,6 @@ mod credentials;
 /// Guarded installation I/O reusing Engine's confined file primitives.
 pub mod delivery_files;
 mod dependencies;
-pub mod dispatch_runner;
 mod doctor;
 mod doctor_fix;
 mod dsh_credentials;
@@ -54,18 +52,17 @@ mod error_taxonomy;
 mod eval;
 mod extension_host;
 mod external_credentials;
-mod features;
 mod fleet;
 mod fs_confined;
 mod git_status;
+mod keybinding_table;
+use crate::fleet::executor::exec_stream_final_answer_excerpt;
 mod hooks;
 mod image_attach;
 mod import_claude;
 mod integrations;
-mod lane_control;
 mod llm_client;
 mod local_ollama;
-mod logging;
 mod lsp;
 mod mcp;
 mod mcp_server;
@@ -99,7 +96,6 @@ pub mod repl;
 mod repo_law;
 mod request_manifest;
 mod request_tuning;
-mod resource_telemetry;
 pub mod rlm;
 mod route_billing;
 mod route_budget;
@@ -110,7 +106,6 @@ mod runtime_api;
 mod runtime_chat_relay;
 mod runtime_handoff;
 mod runtime_log;
-mod runtime_policy;
 mod runtime_threads;
 mod sandbox;
 mod scorecard;
@@ -134,7 +129,6 @@ mod settings;
 mod shell_dispatcher;
 mod skills;
 mod snapshot;
-mod startup_trace;
 mod superfast;
 mod task_manager;
 mod telemetry_notice;
@@ -148,9 +142,10 @@ use codewhale_release::tls;
 // re-exports; the split deletes it by rewriting these paths to
 // `codewhale_runtime::` (docs/design/TUI_DECONSTRUCTION.md).
 use codewhale_runtime::{
-    context_budget, continual_harness, fast_hash, goal_loop, hashing, host_terminal,
-    llm_response_cache, media_originals, model_context, native_memory, prompt_zones, regex_cache,
-    retry_status, safe_label, session_tree, skill_state, sleep_guard, tool_history_repair,
+    context_budget, continual_harness, fast_hash, features, goal_loop, hashing, host_terminal,
+    lane_control, llm_response_cache, logging, media_originals, model_context, native_memory,
+    prompt_zones, regex_cache, resource_telemetry, retry_status, runtime_policy, safe_label,
+    session_tree, skill_state, sleep_guard, startup_trace, tool_history_repair,
     workspace_discovery,
 };
 mod todo_snapshot;
@@ -172,6 +167,7 @@ mod workspace_trust;
 
 use crate::config::{
     Config, DEFAULT_MAX_SUBAGENTS, DEFAULT_TEXT_MODEL, MAX_SUBAGENTS, effective_home_dir,
+    initialize_cloud_facts,
 };
 use crate::eval::{EvalHarness, EvalHarnessConfig, ScenarioStepKind};
 use crate::features::{Feature, render_feature_table};
@@ -247,6 +243,8 @@ enum Commands {
     Doctor(DoctorArgs),
     /// Summarize failure signals from a local JSONL session log without raw content
     SessionDiagnostics(SessionDiagnosticsArgs),
+    #[command(about = "Install a local, GitHub or version-pinned npm plugin bundle")]
+    Install { source: String },
     /// Bootstrap MCP config and/or skills directories
     Setup(SetupArgs),
     /// Generate a remote Codewhale agent deploy bundle (cloud + chat bridge)
@@ -1812,8 +1810,6 @@ enum SandboxCommand {
     },
 }
 
-const CODEWHALE_MAIN_STACK_BYTES: usize = 32 * 1024 * 1024;
-
 /// Pre-clap seam feeding `apply_process_hardening` (#5723): resolve only the
 /// *startup* sandbox posture — `CODEWHALE_SANDBOX_MODE` /
 /// `DEEPSEEK_SANDBOX_MODE` first, then the config file's `sandbox_mode` key —
@@ -1885,6 +1881,7 @@ fn run_with_args(options: RuntimeOptions, args: Vec<String>) -> Result<()> {
     // (interactive, exec, serve): runtime code reaches raw mode and
     // notification delivery only through this port.
     crate::tui::ui::install_host_terminal();
+    crate::command_catalog::install(std::sync::Arc::new(crate::commands::CommandTable));
 
     // ── Process hardening (#2183) ─────────────────────────────────────────
     // MUST run before Tokio is booted and before any threads are spawned.
@@ -2038,7 +2035,7 @@ fn run_with_args(options: RuntimeOptions, args: Vec<String>) -> Result<()> {
     // address space only, since thread stacks commit lazily.
     let runtime_thread = std::thread::Builder::new()
         .name("codewhale-main".to_string())
-        .stack_size(CODEWHALE_MAIN_STACK_BYTES)
+        .stack_size(codewhale_runtime::CODEWHALE_MAIN_STACK_BYTES)
         .spawn(move || run_async_main(cli, command, plugin_discovery, plugin_registry))
         .context("Failed to start the Codewhale runtime thread")?;
     match runtime_thread.join() {
@@ -2147,7 +2144,7 @@ fn tokio_runtime_builder() -> tokio::runtime::Builder {
     let mut builder = tokio::runtime::Builder::new_multi_thread();
     builder
         .enable_all()
-        .thread_stack_size(CODEWHALE_MAIN_STACK_BYTES);
+        .thread_stack_size(codewhale_runtime::CODEWHALE_MAIN_STACK_BYTES);
     builder
 }
 
@@ -2542,6 +2539,15 @@ async fn run_async_main_dispatch(
                 }
             }
             Commands::SessionDiagnostics(args) => run_session_diagnostics(args),
+            Commands::Install { source } => {
+                let config = load_config_from_cli(&cli)?;
+                crate::plugins::mutation::install_from_cli(
+                    source,
+                    config,
+                    (*plugin_registry).clone(),
+                )
+                .await
+            }
             Commands::Setup(args) => {
                 let config = load_config_from_cli(&cli)?;
                 let workspace = resolve_workspace(&cli);
@@ -2952,6 +2958,7 @@ async fn run_async_main_dispatch(
                             config_path: cli.config.clone(),
                             config_profile,
                             control_frontend: cli.control_frontend.clone(),
+                            runtime_event_tap: Some(crate::tui::pet_watch::observe_runtime),
                         },
                     )
                     .await
@@ -5655,6 +5662,16 @@ async fn run_doctor(
         "·".dimmed(),
         crate::utils::display_path(&selected_skills_dir)
     );
+    let unrecognized_system_skills = crate::skills::unrecognized_system_skills(&global_skills_dir);
+    if !unrecognized_system_skills.is_empty() {
+        println!(
+            "  {} {} bundled skill(s) in {} are customized or from an unknown generation and are never refreshed: {}",
+            "!".truecolor(sky_r, sky_g, sky_b),
+            unrecognized_system_skills.len(),
+            crate::utils::display_path(&global_skills_dir),
+            unrecognized_system_skills.join(", ")
+        );
+    }
     if !agents_skills_dir.exists()
         && !local_skills_dir.exists()
         && !agents_global_skills_dir
@@ -7056,7 +7073,7 @@ fn doctor_inherited_setup_facts(
         language: None,
         has_provider_route: !config.default_model().trim().is_empty(),
         has_credentials_or_local_runtime: doctor_has_credentials_or_local_runtime(config),
-        trust_chosen: !crate::tui::onboarding::needs_trust(workspace),
+        trust_chosen: !crate::config::needs_trust(workspace),
         has_expert_override,
         has_user_constitution,
         user_constitution_validity,
@@ -7084,7 +7101,7 @@ fn print_doctor_setup_report(
     // Ordinary doctor deliberately does not read environment values or the
     // durable secret store, so `not_probed` must not erase a completed lane.
     let first_run_ready = state.first_run_ready();
-    let update_ready = state.update_ready(crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION);
+    let update_ready = state.update_ready(crate::prompts::CONSTITUTION_CHECKPOINT_VERSION);
     let operate_ready = state.operate_ready();
     let first_run_icon = if first_run_ready {
         "✓".truecolor(ok_rgb.0, ok_rgb.1, ok_rgb.2)
@@ -7119,7 +7136,7 @@ fn print_doctor_setup_report(
     if first_run_ready {
         println!(
             "  {update_icon} update checkpoint {}: {}",
-            crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+            crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             doctor_ready_label(update_ready)
         );
     }
@@ -7128,8 +7145,9 @@ fn print_doctor_setup_report(
         doctor_ready_label(operate_ready)
     );
     println!(
-        "  · constitution autonomy: {} (guidance only)",
-        doctor_constitution_autonomy_preference_id()
+        "  · constitution autonomy: {} (choice: {}; guidance only; account profile: not probed)",
+        doctor_constitution_autonomy_preference_id(state),
+        constitution_choice_id(state.constitution_choice)
     );
     println!(
         "  · runtime posture: {}",
@@ -7280,7 +7298,12 @@ fn doctor_constitution_autonomy_preference() -> codewhale_config::AutonomyPrefer
         .unwrap_or(codewhale_config::AutonomyPreference::Unspecified)
 }
 
-fn doctor_constitution_autonomy_preference_id() -> &'static str {
+fn doctor_constitution_autonomy_preference_id(
+    state: &codewhale_config::SetupState,
+) -> &'static str {
+    if !state.constitution_choice.applies_user_global() {
+        return "inactive";
+    }
     autonomy_preference_id(doctor_constitution_autonomy_preference())
 }
 
@@ -7343,7 +7366,7 @@ fn doctor_runtime_posture_line(config: &Config, workspace: &Path) -> String {
     } else {
         "default"
     };
-    let trust = if crate::tui::onboarding::needs_trust(workspace) {
+    let trust = if crate::config::needs_trust(workspace) {
         "workspace not elevated"
     } else {
         "workspace trusted"
@@ -7802,7 +7825,7 @@ fn doctor_setup_report_json(config: &Config, workspace: &Path) -> serde_json::Va
         "default"
     };
     let (telemetry_value, telemetry_source) = doctor_runtime_telemetry(config);
-    let workspace_trusted = !crate::tui::onboarding::needs_trust(workspace);
+    let workspace_trusted = !crate::config::needs_trust(workspace);
     let credential = resolve_credential_diagnostic(config);
     let credential_ready = credential.availability.certifies_ready();
     let steps: Vec<_> = codewhale_config::SetupStep::ALL
@@ -7823,9 +7846,9 @@ fn doctor_setup_report_json(config: &Config, workspace: &Path) -> serde_json::Va
         "source": source,
         "schema_version": state.schema_version,
         "inherited": state.inherited,
-        "checkpoint_version": crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+        "checkpoint_version": crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
         "first_run_ready": state.first_run_ready(),
-        "update_ready": state.update_ready(crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION),
+        "update_ready": state.update_ready(crate::prompts::CONSTITUTION_CHECKPOINT_VERSION),
         "operate_ready": state.operate_ready(),
         "credential": {
             "ready": credential_ready,
@@ -7840,7 +7863,8 @@ fn doctor_setup_report_json(config: &Config, workspace: &Path) -> serde_json::Va
             "language": state.constitution_language.clone(),
             "preview_hash_present": state.constitution_preview_hash.is_some(),
             "preview_version": state.constitution_preview_version,
-            "autonomy_preference": doctor_constitution_autonomy_preference_id(),
+            "autonomy_preference": doctor_constitution_autonomy_preference_id(&state),
+            "account_profile": "not_probed",
         },
         "runtime_posture_source": runtime_posture_source_id(state.runtime_posture_source),
         "runtime_posture": {
@@ -8203,6 +8227,7 @@ fn run_doctor_json(
         "mcp": mcp_summary,
         "skills": {
             "selected": selected_skills_dir.display().to_string(),
+            "unrecognized_system_skills": crate::skills::unrecognized_system_skills(&global_skills_dir),
             "global": {
                 "path": global_skills_dir.display().to_string(),
                 "present": global_skills_dir.exists(),
@@ -9494,17 +9519,6 @@ fn resolve_workspace(cli: &Cli) -> PathBuf {
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
-/// Activate facts only at accepted inference runtime settings boundaries.
-/// Identical settings preserve the shared ticket; readers track its generation.
-pub(crate) fn initialize_cloud_facts(config: &Config) {
-    let settings = config.cloud_facts_config().settings();
-    codewhale_cloud_facts::configure(&settings);
-    codewhale_cloud_facts::maybe_load_persisted_cache(&settings);
-    if tokio::runtime::Handle::try_current().is_ok() {
-        codewhale_cloud_facts::spawn_background_refresh(settings, None);
-    }
-}
-
 async fn plugin_auth_entry_from_cli(
     cli: &Cli,
     provider: &str,
@@ -9563,12 +9577,6 @@ fn install_extension_host_boot_config(config: &Config) {
         tokio::runtime::Handle::try_current().ok(),
     );
     if enabled {
-        // The host asks the command table whether a built-in command answers
-        // to a name before it admits an extension command; without this it
-        // refuses every extension command.
-        crate::extension_host::command::install_builtin_commands(std::sync::Arc::new(
-            crate::commands::BuiltinCommandNames,
-        ));
         // Per-plugin settings (`[plugins."<name>".config]`) and the file
         // `/plugin reload` re-reads them from.
         crate::extension_host::install_plugin_settings(
@@ -11459,7 +11467,7 @@ fn review_advisory_footer(number: u32, view: &GhPullRequest) -> String {
 
 /// Post one COMMENT review: summary body plus inline comments anchored to the
 /// PR head SHA. Never approves or requests changes — the review is advisory
-/// and posts alongside CODEOWNERS, like `claude-review.yml`.
+/// and posts alongside CODEOWNERS.
 fn run_gh_post_pr_review(
     repo: &str,
     number: u32,
@@ -12040,6 +12048,7 @@ async fn run_mcp_command(
                 disabled: false,
                 enabled: true,
                 required: false,
+                lazy: false,
                 enabled_tools: Vec::new(),
                 disabled_tools: Vec::new(),
                 headers: std::collections::HashMap::new(),
@@ -12191,6 +12200,7 @@ async fn run_mcp_command(
                         disabled: false,
                         enabled: true,
                         required: false,
+                        lazy: false,
                         enabled_tools: Vec::new(),
                         disabled_tools: Vec::new(),
                         headers: std::collections::HashMap::new(),
@@ -13474,7 +13484,9 @@ async fn run_interactive_prepared(
     // Auto-install bundled system skills (e.g. skill-creator) on first launch.
     // Errors are non-fatal: log a warning and continue.
     let skills_dir = config.skills_dir();
-    if let Err(e) = crate::skills::install_system_skills(&skills_dir) {
+    if let Some(install_dir) = config.bundled_skills_install_dir()
+        && let Err(e) = crate::skills::install_system_skills(&install_dir)
+    {
         logging::warn(format!("Failed to install system skills: {e}"));
     }
 
@@ -13529,23 +13541,6 @@ async fn run_interactive_prepared(
             && let Ok(manager) = session_manager::SessionManager::default_location()
         {
             let _ = manager.cleanup_old_sessions_keeping(janitor_resume_id.as_deref());
-        }
-
-        // Cloud-dispatch orphan reconciliation: a previous TUI could quit
-        // (or crash) with a detached cloud-agent runner in flight, leaving
-        // an active job record — and possibly a billing sandbox — behind.
-        // Stale active jobs are failed and torn down, then any
-        // dispatch-labeled sandbox whose job no longer needs it is deleted
-        // by label. Best effort: one bounded listing call when credentials
-        // exist, fail-closed quiet otherwise, never fatal.
-        if let Ok(store) = crate::cloud_dispatch::CloudJobStore::from_env() {
-            let receipt = crate::dispatch_runner::startup_reconcile(
-                &store,
-                &crate::cloud_dispatch::LiveDaytonaLauncher,
-            );
-            if !receipt.is_empty() {
-                logging::info(receipt);
-            }
         }
     });
 
@@ -14746,13 +14741,6 @@ fn exec_stream_resume_hint(session_id: &str) -> String {
     }
 }
 
-/// Character bound for `metadata.visible_final_answer_excerpt`. The excerpt
-/// is a status surface (fleet receipts, event labels, runtime API payloads),
-/// not the transcript: the full answer lives in the saved session and the
-/// worker's stream-json log, and `visible_final_answer_chars` carries the real
-/// length so a consumer can tell a bounded excerpt from a short answer.
-const EXEC_STREAM_FINAL_ANSWER_EXCERPT_CHARS: usize = 4_000;
-
 /// The final visible assistant reply for the terminal receipt: the text
 /// blocks of the last assistant-like message after the current user prompt.
 /// Tool results also use the user role, so they must not start a new turn.
@@ -14788,22 +14776,6 @@ fn exec_stream_final_answer_text(
         .trim()
         .to_string();
     (!text.is_empty()).then_some(text)
-}
-
-/// Bound and secret-redact the visible final answer once, at the emitter, so
-/// every downstream consumer reads the same excerpt.
-fn exec_stream_final_answer_excerpt(output: &str) -> String {
-    let redacted = codewhale_config::persistence::redact_secrets(output.trim());
-    let mut chars = redacted.chars();
-    let excerpt: String = chars
-        .by_ref()
-        .take(EXEC_STREAM_FINAL_ANSWER_EXCERPT_CHARS)
-        .collect();
-    if chars.next().is_some() {
-        format!("{excerpt}...")
-    } else {
-        excerpt
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -15758,7 +15730,7 @@ mod doctor_setup_state_tests {
         assert_eq!(report["next_actions"]["persistence"], "/setup persistence");
         assert_eq!(
             report["checkpoint_version"],
-            crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION
+            crate::prompts::CONSTITUTION_CHECKPOINT_VERSION
         );
         assert_eq!(report["update_ready"], false);
         assert_eq!(report["operate_ready"], false);
@@ -16051,7 +16023,7 @@ mod doctor_setup_state_tests {
             codewhale_config::StepEntry::new(
                 codewhale_config::StepStatus::Verified,
                 true,
-                crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+                crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             ),
         );
         state.set_step(
@@ -16059,7 +16031,7 @@ mod doctor_setup_state_tests {
             codewhale_config::StepEntry::new(
                 codewhale_config::StepStatus::Verified,
                 true,
-                crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+                crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             )
             .with_result("deepseek/deepseek-chat"),
         );
@@ -16068,12 +16040,12 @@ mod doctor_setup_state_tests {
             codewhale_config::StepEntry::new(
                 codewhale_config::StepStatus::Verified,
                 true,
-                crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+                crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             ),
         );
         state
             .complete_constitution_checkpoint(
-                crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+                crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
                 codewhale_config::ConstitutionChoice::Bundled,
             )
             .set_step(
@@ -16081,7 +16053,7 @@ mod doctor_setup_state_tests {
                 codewhale_config::StepEntry::new(
                     codewhale_config::StepStatus::Verified,
                     true,
-                    crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+                    crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
                 ),
             );
         state.runtime_posture_source = codewhale_config::RuntimePostureSource::Confirmed;
@@ -16113,9 +16085,9 @@ mod doctor_setup_state_tests {
         assert_eq!(report["constitution"]["choice"], "bundled");
         assert_eq!(
             report["constitution"]["checkpoint_completed_for"],
-            crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION
+            crate::prompts::CONSTITUTION_CHECKPOINT_VERSION
         );
-        assert_eq!(report["constitution"]["autonomy_preference"], "balanced");
+        assert_eq!(report["constitution"]["autonomy_preference"], "inactive");
         assert_eq!(report["runtime_posture_source"], "confirmed");
         assert_eq!(report["runtime_posture"]["source"], "confirmed");
         assert_eq!(
@@ -16272,7 +16244,7 @@ mod doctor_setup_state_tests {
             codewhale_config::StepEntry::new(
                 codewhale_config::StepStatus::Verified,
                 true,
-                crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+                crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             ),
         );
         state.set_step(
@@ -16280,12 +16252,12 @@ mod doctor_setup_state_tests {
             codewhale_config::StepEntry::new(
                 codewhale_config::StepStatus::Verified,
                 true,
-                crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+                crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             ),
         );
         state.runtime_posture_source = codewhale_config::RuntimePostureSource::Confirmed;
         state.complete_constitution_checkpoint(
-            crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+            crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             codewhale_config::ConstitutionChoice::Bundled,
         );
         state.set_step(
@@ -16293,7 +16265,7 @@ mod doctor_setup_state_tests {
             codewhale_config::StepEntry::new(
                 codewhale_config::StepStatus::Verified,
                 false,
-                crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+                crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             )
             .with_result(
                 "provider=ready, runtime=ready, roster=ready, concurrency=plan limit not probed",
@@ -18945,6 +18917,7 @@ mod doctor_mcp_tests {
             disabled: false,
             enabled: true,
             required: false,
+            lazy: false,
             enabled_tools: Vec::new(),
             disabled_tools: Vec::new(),
             headers: std::collections::HashMap::new(),
@@ -19922,7 +19895,7 @@ mod setup_helper_tests {
 
         let sources = [
             include_str!("config.rs"),
-            include_str!("logging.rs"),
+            include_str!("../../runtime/src/logging.rs"),
             include_str!("../../config/src/lib.rs"),
             include_str!("../../config/src/provider.rs"),
             include_str!("../../config/assets/provider_descriptors.json"),

@@ -1335,7 +1335,7 @@ mod tests {
 
     fn app_in(workspace: PathBuf) -> App {
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(workspace.clone())
+            ..crate::tui::test_support::test_tui_options(workspace.clone())
         };
         let mut app = App::new(options, &Config::default());
         app.workspace = workspace;
@@ -2082,6 +2082,66 @@ mod tests {
         let op = loaded.operator.expect("operator");
         assert_eq!(op.model, "deepseek-v4-pro");
         assert_eq!(op.reasoning.as_deref(), Some("high"));
+
+        {
+            let _env = crate::test_support::lock_test_env();
+            let root = tempfile::tempdir().unwrap();
+            let _home =
+                crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", root.path().join("state"));
+            let config: Config = toml::from_str(
+                r#"
+provider = "ReviewerRoute"
+[providers.ReviewerRoute]
+kind = "openai-compatible"
+api_key = "fixture-review-key"
+base_url = "http://127.0.0.1:9/v1"
+model = "fixture-review-model"
+"#,
+            )
+            .unwrap();
+            let mut fleet = FleetFile::new("Editor restart acceptance".into(), None).unwrap();
+            fleet.members.push(
+                serde_json::from_value(serde_json::json!({
+                    "id":"review-pin", "role":"reviewer", "instructions":"SAVED_REVIEW_INSTRUCTION"
+                }))
+                .unwrap(),
+            );
+            save_fleet(&fleet, FleetScope::Workspace, root.path()).unwrap();
+            let mut app = App::new(
+                crate::tui::test_support::test_tui_options(root.path()),
+                &config,
+            );
+            app.workspace = root.path().to_path_buf();
+            let mut view = FleetDetailView::open_for_member(
+                &app,
+                &config,
+                &fleet.name,
+                FleetScope::Workspace,
+                Some("review-pin"),
+            )
+            .unwrap();
+            let key = |code| KeyEvent::new(code, KeyModifiers::NONE);
+            view.handle_key(key(KeyCode::Char('e')));
+            for ch in "ReviewerRoute".chars() {
+                view.handle_key(key(KeyCode::Char(ch)));
+            }
+            view.handle_key(key(KeyCode::Enter));
+            // Off survives generic route normalization and distinguishes the saved
+            // choice from default reasoning without inventing fixture capabilities.
+            view.handle_key(key(KeyCode::Char('t')));
+            assert!(matches!(
+                view.handle_key(key(KeyCode::Char('s'))),
+                ViewAction::EmitAndClose(ViewEvent::FleetStoreChanged { .. })
+            ));
+            let (saved, _) =
+                load_fleet_in_scope(&fleet.name, FleetScope::Workspace, root.path()).unwrap();
+            let pin = &saved.members[0];
+            assert!(!pin.shortlist);
+            assert_eq!(pin.role, "reviewer");
+            assert_eq!(pin.provider.as_deref(), Some("ReviewerRoute"));
+            assert_eq!(pin.model.as_deref(), Some("fixture-review-model"));
+            assert_eq!(pin.reasoning.as_deref(), Some("off"));
+        }
     }
 
     #[test]

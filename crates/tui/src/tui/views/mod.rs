@@ -933,6 +933,9 @@ pub enum ViewEvent {
     /// Emitted by provider/setup UI when OrcaRouter OAuth 2.0 + PKCE sign-in is
     /// requested. The picker only emits this after the user chose "Connect with
     /// OrcaRouter" from the two-option OrcaRouter auth screen.
+    ProviderPickerPluginOAuthRequested {
+        provider: String,
+    },
     ProviderPickerOrcarouterOAuthRequested,
     /// Emitted only after the picker showed owner, exact path, and the full
     /// read-only side-effect contract and the user explicitly confirmed it.
@@ -1589,6 +1592,13 @@ impl ViewStack {
         {
             panel.refresh_snapshot(snapshot);
         }
+    }
+
+    pub(crate) fn top_pager_mut(&mut self) -> Option<&mut crate::tui::pager::PagerView> {
+        self.views
+            .last_mut()?
+            .as_any_mut()
+            .downcast_mut::<crate::tui::pager::PagerView>()
     }
 }
 
@@ -7457,7 +7467,7 @@ mod tests {
             // tests at a unique absent file so developer or concurrent test
             // settings cannot silently change which controls are editable.
             config_path: Some(isolated_config_path),
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         let mut app = App::new(options, &Config::default());
         app.api_provider = crate::config::ProviderKind::Deepseek;
@@ -9305,7 +9315,7 @@ context_window = 262144
             Config::load(Some(config_path.clone()), None).expect("captured fixture config");
         let options = TuiOptions {
             config_path: Some(config_path),
-            ..crate::test_support::test_tui_options(temp.path())
+            ..crate::tui::test_support::test_tui_options(temp.path())
         };
         let mut app = App::new(options, &config);
         let identity = config
@@ -9388,7 +9398,7 @@ context_window = 131072
         );
         let options = TuiOptions {
             config_path: Some(saved_path),
-            ..crate::test_support::test_tui_options(temp.path())
+            ..crate::tui::test_support::test_tui_options(temp.path())
         };
         let mut app = App::new(options, &saved);
         app.set_provider_identity_record(saved_identity.clone());

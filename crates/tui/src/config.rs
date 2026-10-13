@@ -4400,9 +4400,11 @@ impl Config {
                 }
                 parsed
             } else {
+                apply_profile(ConfigFile::default(), profile)?;
                 Config::default()
             }
         } else {
+            apply_profile(ConfigFile::default(), profile)?;
             Config::default()
         };
 
@@ -7030,6 +7032,23 @@ impl Config {
             .unwrap_or_else(|| PathBuf::from("./skills"))
     }
 
+    #[must_use]
+    pub(crate) fn bundled_skills_install_dir(&self) -> Option<PathBuf> {
+        if self.skills_dir.is_some() {
+            return None;
+        }
+        let directory = default_skills_dir()?;
+        #[cfg(test)]
+        if !crate::test_support::guarded_environment_provides_state_paths() {
+            return Some(directory);
+        }
+        let owned = match codewhale_home_dir().ok()? {
+            Some(home) => home.join("skills"),
+            None => effective_home_dir()?.join(".codewhale").join("skills"),
+        };
+        (directory == owned).then_some(directory)
+    }
+
     /// Resolve the MCP config path.
     #[must_use]
     pub fn mcp_config_path(&self) -> PathBuf {
@@ -7907,6 +7926,25 @@ impl Config {
             .unwrap_or_default()
     }
 
+    /// Whether the startup gate must ask before the current config's
+    /// `[redaction] model_bound` request can take effect.
+    pub fn redaction_confirmation_required(&self) -> bool {
+        codewhale_config::redaction::confirmation_required(
+            self.model_bound_redaction(),
+            self.loaded_config_path.as_deref(),
+        )
+    }
+
+    /// Persist the confirmation and return the written receipt path. Called after
+    /// the user picks the explicit "confirm" action.
+    pub fn record_redaction_confirmation(&self) -> anyhow::Result<std::path::PathBuf> {
+        let path = self.loaded_config_path.as_deref().ok_or_else(|| {
+            anyhow::anyhow!("No loaded config file can receive this confirmation")
+        })?;
+        codewhale_config::redaction::record_model_bound_disabled_confirmation(path)
+            .map_err(anyhow::Error::from)
+    }
+
     /// Return the configured DeepSeek reasoning-effort tier, if any.
     #[must_use]
     pub fn reasoning_effort(&self) -> Option<&str> {
@@ -8118,6 +8156,17 @@ pub(crate) use paths::{
     clipboard_images_dir, effective_home_dir, expand_path, home_config_path, is_home_config_path,
 };
 
+/// Activate facts only at accepted inference runtime settings boundaries.
+/// Identical settings preserve the shared ticket; readers track its generation.
+pub(crate) fn initialize_cloud_facts(config: &Config) {
+    let settings = config.cloud_facts_config().settings();
+    codewhale_cloud_facts::configure(&settings);
+    codewhale_cloud_facts::maybe_load_persisted_cache(&settings);
+    if tokio::runtime::Handle::try_current().is_ok() {
+        codewhale_cloud_facts::spawn_background_refresh(settings, None);
+    }
+}
+
 pub(crate) fn workspace_trust_config_candidate_paths() -> Vec<PathBuf> {
     #[cfg(test)]
     {
@@ -8160,6 +8209,18 @@ pub(crate) fn workspace_trust_config_candidate_paths() -> Vec<PathBuf> {
         home.join(".codewhale").join("config.toml"),
         home.join(".deepseek").join("config.toml"),
     ]
+}
+
+pub(crate) fn needs_trust(workspace: &Path) -> bool {
+    if is_workspace_trusted(workspace) {
+        return false;
+    }
+
+    let markers = [
+        workspace.join(".deepseek").join("trusted"),
+        workspace.join(".deepseek").join("trust.json"),
+    ];
+    !markers.iter().any(|path| path.exists())
 }
 
 #[must_use]

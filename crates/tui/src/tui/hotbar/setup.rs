@@ -1067,7 +1067,7 @@ mod tests {
     fn test_app_with_config(config: &Config) -> App {
         let options = TuiOptions {
             start_in_agent_mode: true,
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         let mut app = App::new(options, config);
         app.ui_locale = Locale::En;

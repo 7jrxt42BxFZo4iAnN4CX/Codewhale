@@ -688,9 +688,11 @@ pub(crate) fn apply_goal_snapshot_to_app(app: &mut App, snapshot: &GoalSnapshot)
     // A fresh reported-progress receipt reads like the model's own status
     // line: percent with a bar, then the optional now/next lines it wrote.
     // Paused/complete goals keep their last report silent — the lifecycle
-    // receipt already spoke.
+    // receipt already spoke — except a yield, whose progress is the stage
+    // report the user is handed back with.
     if progress_changed
-        && verdict == GoalStatus::Active
+        && (verdict == GoalStatus::Active
+            || snapshot.pause_reason == Some(crate::tools::goal::GoalPauseReason::Yielded))
         && let Some(progress) = snapshot.progress.as_ref()
     {
         let mut content = app
@@ -2515,6 +2517,12 @@ async fn apply_command_result_inner(
             AppAction::StartChatgptRevoke => {
                 run_chatgpt_revoke_from_tui(app, config).await;
             }
+            AppAction::StartPluginLogin { provider } => {
+                run_plugin_oauth_from_tui(terminal, app, config, provider, false).await?;
+            }
+            AppAction::StartPluginLogout { provider } => {
+                run_plugin_oauth_from_tui(terminal, app, config, provider, true).await?;
+            }
             AppAction::StartOrcarouterPkceLogin => {
                 let _switched =
                     run_orcarouter_pkce_login_from_tui(terminal, app, engine_handle, config)
@@ -2720,6 +2728,16 @@ async fn apply_command_result_inner(
                         ));
                 }
             }
+            AppAction::OpenConstitutionManager { review } => {
+                let profile = config.account_profile.clone();
+                let account = tokio::task::spawn_blocking(move || {
+                    crate::profile_constitution::account_is_present(profile.as_deref())
+                        .map_err(|error| error.to_string())
+                })
+                .await
+                .unwrap_or_else(|error| Err(error.to_string()));
+                crate::commands::open_constitution_manager(app, review, account);
+            }
             AppAction::UseBundledConstitution => use_bundled_constitution(app, config),
             AppAction::PreviewEffectiveBasePrompt => preview_effective_base_prompt(app, config),
             AppAction::DisableHotbar => disable_hotbar(app, config),
@@ -2908,7 +2926,7 @@ async fn apply_command_result_inner(
                             new_config,
                             &validated_route,
                         );
-                        crate::initialize_cloud_facts(config);
+                        crate::config::initialize_cloud_facts(config);
                         // Rebuild the engine with the new config so API key/model/base URL take effect.
                         let _ = engine_handle.send(Op::Shutdown).await;
                         let engine_config = build_engine_config(app, config);
@@ -4429,7 +4447,7 @@ pub(crate) fn apply_loaded_session_with_goal(
         {
             app.extend_history(std::iter::once(HistoryCell::Error {
                 message: outcome.error.clone(),
-                severity: crate::error_taxonomy::ErrorSeverity::Warning,
+                severity: crate::error_taxonomy::ErrorSeverity::Error,
             }));
         }
     };
@@ -4656,7 +4674,7 @@ pub(crate) fn apply_loaded_session_config_snapshot(
         );
     *config = next_config;
     app.configured_models = config.custom_models.clone().unwrap_or_default();
-    crate::initialize_cloud_facts(config);
+    crate::config::initialize_cloud_facts(config);
     app.refresh_notification_settings(config);
     Ok(respawn)
 }
@@ -4691,7 +4709,7 @@ mod profile_snapshot_tests {
                     home.path().as_os_str(),
                 );
                 let mut config = profile_fixture("old-preview", "https://old.example.test/v1");
-                let mut options = crate::test_support::test_tui_options(home.path());
+                let mut options = crate::tui::test_support::test_tui_options(home.path());
                 options.model = config.default_model();
                 let mut app = App::new(options, &config);
                 assert_eq!(app.configured_models[0].id, "old-preview");
