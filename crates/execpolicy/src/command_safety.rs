@@ -2031,7 +2031,10 @@ fn split_command_segments(command: &str) -> Vec<String> {
     while let Some(ch) = chars.next() {
         if let Some(active) = quote {
             current.push(ch);
-            if ch == '\\' && active == '"' && chars.peek() == Some(&'"') {
+            if ch == '\\'
+                && active == '"'
+                && chars.peek().is_some_and(|next| matches!(next, '"' | '\\'))
+            {
                 current.push(chars.next().unwrap());
             } else if ch == active {
                 quote = None;
@@ -3032,6 +3035,7 @@ mod tests {
         for command in [
             "echo x & rm -rf /etc",
             "echo x&rm -rf /etc",
+            r#"printf "\\";rm -rf /etc"#,
             "npm test 2>&1&rm -rf /etc",
             "curl https://example.com & rm -rf /etc",
         ] {
