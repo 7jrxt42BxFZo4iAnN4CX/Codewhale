@@ -3665,8 +3665,13 @@ mod tests {
         // user settings on the host machine.
         let _ = mode_command(&mut app, Some("agent"));
         let result = mode_command(&mut app, Some("yolo"));
-        // YOLO is invisible Act+Bypass shorthand — user-facing copy says Act.
-        assert!(result.message.unwrap().contains("Switched to Act mode"));
+        // YOLO is invisible Work+Bypass shorthand — user-facing copy names Full Access (Work).
+        assert!(
+            result
+                .message
+                .unwrap()
+                .contains("Switched to Full Access (Work)")
+        );
         assert_eq!(result.action, Some(AppAction::ModeChanged(AppMode::Agent)));
         assert!(app.allow_shell);
         assert!(app.trust_mode);

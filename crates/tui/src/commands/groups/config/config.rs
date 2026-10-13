@@ -621,7 +621,7 @@ pub fn mode(contexts: CommandContexts<'_>, arg: Option<&str>) -> ConfigCommandRe
 }
 
 /// `/mode` usage, shared with the registration metadata.
-const MODE_USAGE: &str = "/mode [work|plan|operate|1|2|3]";
+pub(super) const MODE_USAGE: &str = "/mode [work|plan|operate|1|2|3]";
 
 /// `/pet` usage, shared with the registration metadata.
 pub const PET_USAGE: &str = "/pet [on|off|inspect|status|appearance|style [smooth|pixel]|language [auto|en|zh-Hans|zh-Hant|ja]|window|source|export|sound [on|off]|avatar [whale|cove|braille|pixels|particles|whale-girl|key]|action [name|live]|view [name|live]]";
@@ -934,7 +934,8 @@ pub fn login(contexts: CommandContexts<'_>, arg: Option<&str>) -> ConfigCommandR
                 .to_string(),
         ),
         other => ConfigCommandResult::error(format!(
-            "Usage: /login [status|account|key]\nUnknown argument: {other}"
+            "Usage: /login [status|account|key]\nUnknown argument: {other}\n\
+             To sign in to a plugin provider, use `/connect <provider>`."
         )),
     }
 }

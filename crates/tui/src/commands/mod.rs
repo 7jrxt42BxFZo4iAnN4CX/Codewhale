@@ -2218,10 +2218,12 @@ mod tests {
             // FEAT-027 config policy/status slice.
             "permissions",
             "status",
-            // FEAT-028 completes the config group (all 17 commands portable).
+            // FEAT-028 completes the config group (all 19 commands portable).
             "config",
             "import-claude",
             "login",
+            "connect",
+            "disconnect",
             "auth",
             "workbar",
             "pet",

@@ -83,7 +83,7 @@ static STATUSLINE_INFO: CommandInfo = CommandInfo {
 static MODE_INFO: CommandInfo = CommandInfo {
     name: "mode",
     aliases: &["jihua", "zidong"],
-    usage: "/mode [act|plan|operate|1|2|3]",
+    usage: config::MODE_USAGE,
     description_key: "cmd_mode_description",
 };
 static FULLSCREEN_INFO: CommandInfo = CommandInfo {
