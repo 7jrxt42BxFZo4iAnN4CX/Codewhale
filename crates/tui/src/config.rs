@@ -11554,6 +11554,11 @@ fn save_root_api_key_metadata_without_plaintext(config_path: &Path, table: &str)
         }
         crate::config_persistence::unset_document_value(doc, &["api_key"])?;
         crate::config_persistence::unset_document_value(doc, &["providers", table, "api_key"])?;
+        crate::config_persistence::set_document_value(
+            doc,
+            &["providers", table, "auth_mode"],
+            "api_key",
+        )?;
         if table == "deepseek" {
             crate::config_persistence::unset_document_value(
                 doc,
