@@ -7,8 +7,8 @@ import type { ComputerUseDict } from "../types";
  * as the app shows them.
  */
 export const computerUse: ComputerUseDict = {
-  metaTitle: "Mac 版 Computer Use · Codewhale",
-  metaDescription: "下载并设置 Mac 版 Codewhale Computer Use。提供应用后台操作、权限设置，以及由用户控制的暂停和停止功能。",
+  metaTitle: "Computer Use · 预览 · Codewhale",
+  metaDescription: "预览功能：下载并设置 Mac 版 Codewhale Computer Use。提供应用后台操作、权限设置，以及由用户控制的暂停和停止功能。",
   title: "Computer Use",
   lead: "让 Codewhale 在应用中完成操作，你也可以继续工作。Mac 助手将权限设置、应用后台操作，以及暂停或停止输入的控制集中在菜单栏中。",
   publisher: "由 Codewhale 开发",
@@ -29,7 +29,7 @@ export const computerUse: ComputerUseDict = {
     { title: "运行后台检查", body: "助手会打开一个临时练习窗口，输入文本并截取该窗口，同时检查运行期间指针或前台应用是否发生变化。" },
     { title: "连接 Codewhale", body: "在 Codewhale 插件市场中审查、信任并启用 Computer Use。请使用插件 0.3.1 或更高版本，确保本地操作受助手的暂停和停止控制。" },
   ],
-  controlsTitle: "继续工作，掌握控制权。",
+  controlsTitle: "暂停或停止应用控制",
   controlsBody: "受支持的操作可在选定应用的后台完成。需要前台控制的应用或手势必须得到你的授权。菜单会显示目标应用与输入模式；Pause 暂停助手输入，Stop 结束助手的现有会话。",
   updateTitle: "由你决定何时更新",
   updateBody: "在应用中选择 Check for updates。安装更新前，助手会校验下载文件、Codewhale 签名和 Apple 公证，并保留旧版应用以便恢复。",

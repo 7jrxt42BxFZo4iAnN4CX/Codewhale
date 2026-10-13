@@ -2235,6 +2235,9 @@ impl CommandSessionLifecycleContext for FakeLifecycle {
     fn transition_blocked(&self) -> bool {
         self.blocked
     }
+    fn transition_blockers(&self) -> Vec<String> {
+        Vec::new()
+    }
     fn branch_current_leaf_hint(&self) -> Option<String> {
         self.leaf_hint.clone()
     }
@@ -2558,6 +2561,9 @@ impl CommandSessionControlContext for FakeControl {
     fn transition_blocked(&self) -> bool {
         self.blocked
     }
+    fn transition_blockers(&self) -> Vec<String> {
+        Vec::new()
+    }
     fn relay_projection(&self) -> RelayProjection {
         self.relay
             .clone()
@@ -2640,6 +2646,7 @@ impl CommandSessionControlContext for FakeControl {
 fn control_relay_projection() -> RelayProjection {
     RelayProjection {
         compact_template: "# Session relay".to_string(),
+        handoff_path: ".codewhale/handoff.md".to_string(),
         workspace: "/workspace/control".to_string(),
         mode: "operate".to_string(),
         model: "control-model".to_string(),

@@ -10,7 +10,9 @@ import {
   type DocTopic,
 } from "@/lib/docs-map";
 import { DOC_TASKS, docTaskHaystack, type DocTask } from "@/lib/docs-tasks";
-import { fill, getDocsShell, pickText } from "@/lib/i18n/dictionaries";
+import { fill, getDocsShell, getFeatures, pickText } from "@/lib/i18n/dictionaries";
+import { FEATURE_CATALOGUE } from "@/lib/features";
+import { Status } from "./status-badge";
 import { docTopicHaystack, highlightSpan } from "@/lib/search-utils";
 import { isSlashShortcut } from "@/lib/slash-shortcut";
 import { EmptyState } from "./surface-state";
@@ -135,6 +137,9 @@ export function DocsSearch({ locale }: { locale: string }) {
     () => (q ? DOC_TOPICS.filter((_, i) => topicHaystacks[i].includes(q)) : DOC_TOPICS),
     [q, topicHaystacks],
   );
+  const filteredFeatures = useMemo(() => q ? FEATURE_CATALOGUE.features.filter((feature) =>
+    [feature.id, feature.name, feature.summary, feature.flag, feature.docs, ...Object.entries(feature.surfaces).flat()].join(" ").toLowerCase().includes(q)
+  ) : [], [q]);
 
   // Group filtered topics by category (preserve DOC_TOPICS order).
   const grouped = useMemo(() => {
@@ -160,8 +165,8 @@ export function DocsSearch({ locale }: { locale: string }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
-  const total = DOC_TOPICS.length + DOC_TASKS.length;
-  const matched = filteredTopics.length + filteredTasks.length;
+  const total = DOC_TOPICS.length + DOC_TASKS.length + FEATURE_CATALOGUE.features.length;
+  const matched = filteredTopics.length + filteredTasks.length + filteredFeatures.length;
   const hasQuery = q.length > 0;
 
   return (
@@ -205,6 +210,13 @@ export function DocsSearch({ locale }: { locale: string }) {
 
       {matched > 0 ? (
         <div className="docs-result-groups">
+          {filteredFeatures.length > 0 && <section className="docs-result-group">
+            <div className="docs-result-heading"><h2>{getFeatures(locale).title}</h2><span>{filteredFeatures.length}</span></div>
+            <div className="docs-topic-list">{filteredFeatures.map((feature) => <Link key={feature.id} href={`/${locale}/features#${feature.id}`} className="docs-topic-row">
+              <div className="docs-topic-main" lang="en" dir="ltr"><div className="docs-topic-title">{highlight(feature.name, query)}</div><p>{highlight(feature.summary, query)}</p></div>
+              <Status tone={feature.status === "stable" ? "ready" : "attention"}>{getFeatures(locale)[feature.status]}</Status>
+            </Link>)}</div>
+          </section>}
           {/* Tasks — "I am trying to…" */}
           {filteredTasks.length > 0 && (
             <section id="tasks" className="docs-result-group docs-task-group">

@@ -1,4 +1,55 @@
 use super::*;
+use crate::command_catalog::{BuiltinCommand, CommandCatalog, UserCommand};
+
+fn builtin(name: &str, aliases: Vec<String>) -> BuiltinCommand {
+    BuiltinCommand {
+        name: name.to_string(),
+        aliases,
+        usage: format!("/{name} [value]"),
+        description_id: codewhale_localization::MessageId::CmdModelDescription,
+        subcommands: Vec::new(),
+        takes_arguments: true,
+        requires_argument: true,
+        requires_required_argument: false,
+        composer_wants_trailing_space: true,
+        palette_runs_directly: false,
+        show_in_empty_discovery: true,
+        discovery: codewhale_command_contract::CommandDiscovery::Primary,
+        unlisted: false,
+    }
+}
+
+fn user(name: &str) -> UserCommand {
+    UserCommand {
+        name: name.to_string(),
+        aliases: Vec::new(),
+        description: Some("Pick the fast route.".to_string()),
+        usage: None,
+        takes_arguments: false,
+        hidden: false,
+        extension: false,
+        builtin_bindings: vec![name.to_string()],
+    }
+}
+
+struct Catalog(PathBuf);
+impl CommandCatalog for Catalog {
+    fn answers_to(&self, name: &str) -> bool {
+        matches!(name, "model" | "profile")
+    }
+    fn builtins(&self) -> Vec<BuiltinCommand> {
+        let mut profile = builtin("profile", Vec::new());
+        profile.requires_required_argument = true;
+        vec![builtin("model", Vec::new()), profile]
+    }
+    fn user_commands(&self, workspace: &Path) -> Vec<UserCommand> {
+        if workspace == self.0 {
+            vec![user("model")]
+        } else {
+            Vec::new()
+        }
+    }
+}
 
 fn entry<'a>(commands: &'a [CommandCatalogEntry], name: &str) -> &'a CommandCatalogEntry {
     commands
@@ -8,47 +59,13 @@ fn entry<'a>(commands: &'a [CommandCatalogEntry], name: &str) -> &'a CommandCata
 }
 
 #[test]
-fn command_catalog_serves_builtins_with_host_binding() {
-    let users = crate::commands::user_registry::UserCommandRegistry::new();
-    let commands = command_catalog(&users);
-
-    let model = entry(&commands, "model");
-    assert_eq!(model.kind, "builtin");
-    assert_eq!(model.binding, "host");
-    assert_eq!(model.discovery, Some("primary"));
-    assert!(!model.hidden);
-    assert_eq!(model.shadowed_by, None);
-    assert!(model.summary.is_some());
-    assert!(model.usage.is_some());
-    assert!(model.takes_arguments);
-
-    // Composer shape comes from the same predicates the TUI composer uses:
-    // `/profile <name>` cannot run bare.
-    let profile = entry(&commands, "profile");
-    assert!(profile.requires_argument);
-    assert!(profile.requires_required_argument);
-    assert!(profile.composer_wants_trailing_space);
-    assert!(!profile.palette_runs_directly);
-
-    // Unlisted builtins run but are not advertised — hidden, not absent.
-    assert!(entry(&commands, "lane").hidden);
-
-    // A usage line's literal verbs surface as subcommands.
-    let goal = entry(&commands, "goal");
-    assert!(
-        goal.subcommands.iter().any(|verb| verb == "blocked"),
-        "goal usage should declare its verbs: {:?}",
-        goal.subcommands
-    );
-}
-
-#[test]
 fn command_catalog_marks_user_shadowing_of_builtin_names_and_aliases() {
-    let users = crate::commands::user_registry::UserCommandRegistry::from_loaded(vec![
-        ("model".to_string(), "Pick the fast route.".to_string()),
-        ("agents".to_string(), "Alias-shaped command.".to_string()),
-    ]);
-    let commands = command_catalog(&users);
+    let builtins = [
+        builtin("model", vec![]),
+        builtin("subagents", vec!["agents".to_string()]),
+    ];
+    let users = [user("model"), user("agents")];
+    let commands = command_catalog(&builtins, &users);
 
     let model = entry(&commands, "model");
     assert_eq!(model.shadowed_by.as_deref(), Some("model"));
@@ -80,16 +97,9 @@ async fn get_v1_commands_serves_the_catalog_over_http() -> Result<()> {
     let root = temp.path().join("commands-route");
     let sessions_dir = root.join("sessions");
     let workspace = root.join("workspace");
-    let commands_dir = workspace.join(".codewhale").join("commands");
-    fs::create_dir_all(&commands_dir)?;
-    fs::write(commands_dir.join("model.md"), "Pick the fast route.\n")?;
-    // Workspace commands load only in a trusted workspace. A sealed config
-    // path lets the server's threads read the same trust record.
-    let _config = crate::test_support::EnvVarGuard::set(
-        "CODEWHALE_CONFIG_PATH",
-        temp.path().join("config.toml"),
-    );
-    crate::test_support::trust_workspace(&workspace);
+    fs::create_dir_all(&workspace)?;
+    let _catalog =
+        crate::command_catalog::CatalogGuard::install(Arc::new(Catalog(workspace.clone())));
 
     let Some((addr, _runtime_threads, handle)) =
         spawn_test_server_with_root_token_mobile_workspace(

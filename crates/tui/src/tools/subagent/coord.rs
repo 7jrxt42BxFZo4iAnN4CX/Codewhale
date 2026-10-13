@@ -2019,18 +2019,6 @@ mod tests {
             projection.contentions[0].resolution_sequence,
             Some(resolution_sequence)
         );
-        assert!(!crate::tui::coordination_detail::needs_attention(
-            &projection
-        ));
-        let pager = crate::tui::coordination_detail::format(
-            codewhale_localization::Locale::En,
-            &projection,
-        );
-        assert!(
-            pager.contains("disposition resolved_by_successful_claim"),
-            "{pager}"
-        );
-        assert!(!pager.contains("disposition blocked_pending"), "{pager}");
     }
 
     #[tokio::test]

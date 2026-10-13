@@ -107,6 +107,9 @@ impl Engine {
                     job.provider_responded();
                 }
                 progress.context_recovery_attempts = 0;
+                // The route answered, so any run of identical upstream
+                // failures is over (#6889).
+                self.repeated_upstream_failure = None;
                 // A model has the question now; a later credential
                 // failure in this turn (a token expiring mid-turn, say)
                 // must not take it back (#6566).
@@ -225,6 +228,15 @@ impl Engine {
                 // and a provider's HTTP rejection must not pass for one
                 // because its body text mentions a timeout (#6711).
                 let open_transport_failure = crate::client::is_stream_open_transport_failure(&e);
+                // #6889: read the upstream status before `e` moves, so a 5xx
+                // that keeps repeating on this model can be told apart from
+                // a transient one below.
+                let upstream_status =
+                    e.chain()
+                        .find_map(|cause| match cause.downcast_ref::<LlmError>() {
+                            Some(LlmError::ServerError { status, .. }) => Some(*status),
+                            _ => None,
+                        });
                 let mut envelope =
                     crate::error_taxonomy::envelope_for_llm_error(e, message.clone());
                 // #6699: the request never became a stream (connect
@@ -260,6 +272,23 @@ impl Engine {
                         progress.stream_retry_budget.spent()
                     )).await;
                 }
+                // #6889: this request is not being re-issued. When the same
+                // model has now failed the same way more than once, say so
+                // and name the way out; the provider's own text stays first.
+                let display_message = match upstream_status {
+                    Some(status) => match super::streaming::note_upstream_failure(
+                        &mut self.repeated_upstream_failure,
+                        &stream_request.model,
+                        status,
+                    ) {
+                        Some(notice) => format!("{display_message}\n{notice}"),
+                        None => display_message,
+                    },
+                    None => {
+                        self.repeated_upstream_failure = None;
+                        display_message
+                    }
+                };
                 envelope.message = display_message.clone();
                 // #6566: no model saw the question. Take it back out of
                 // the session before reporting, so the next request does
@@ -286,6 +315,9 @@ impl Engine {
                     }
                 }
                 progress.turn_error = Some(display_message);
+                if envelope.severity == crate::error_taxonomy::ErrorSeverity::Warning {
+                    envelope.severity = crate::error_taxonomy::ErrorSeverity::Error;
+                }
                 let _ = self.send_event(Event::error(envelope)).await;
                 return PhaseResult::Return((
                     TurnOutcomeStatus::Failed,
@@ -358,6 +390,26 @@ impl Engine {
             visible_text_chars = current_text_visible.chars().count(),
             "parent model response settled"
         );
+        // #6889: a Chat Completions `stop` whose own usage equals the output
+        // ceiling this request asked for was cut at that ceiling. From here
+        // on it is the `length` stop it should have been, so it takes the
+        // one output-limit path below (continue from the partial answer, or
+        // fail by name when there is none) instead of passing for a finished
+        // answer or being re-requested unchanged. The diagnostics above keep
+        // the reason the provider sent.
+        let stop_reason = if stop_contradicts_output_ceiling(
+            stop_reason.as_deref(),
+            usage_reported.then_some(usage.output_tokens),
+            stream_request.max_tokens,
+        ) {
+            crate::logging::warn(format!(
+                "Provider reported stop reason `stop`, but its usage shows the whole requested output allowance was used ({} tokens, reasoning tokens: {:?}); treating the response as cut at the output limit.",
+                usage.output_tokens, usage.reasoning_tokens
+            ));
+            Some(OUTPUT_CEILING_STOP_REASON.to_string())
+        } else {
+            stop_reason
+        };
         // These belong to post-stream response assembly, not stream
         // consumption: blocks are built from the completed stream state,
         // and truncation is derived from its terminal stop reason below.

@@ -74,6 +74,9 @@ pub(crate) fn auth_class_for_provider(
         return ProviderAuthClass::Legacy;
     }
     let auth_mode = config.auth_mode_for_provider(identity);
+    if provider == ProviderKind::Anthropic && auth_mode.as_deref() == Some("oauth") {
+        return ProviderAuthClass::OAuth;
+    }
     if provider == ProviderKind::Custom
         && config
             .provider_config_for(identity)
@@ -125,6 +128,17 @@ pub(crate) fn credential_state_for_provider(
         return CredentialState::MissingKey;
     }
     let auth_mode = config.auth_mode_for_provider(identity);
+    if provider == ProviderKind::Anthropic && auth_mode.as_deref() == Some("oauth") {
+        return if matches!(
+            config.base_url_for_route(identity).trim_end_matches('/'),
+            "https://api.anthropic.com" | "https://api.anthropic.com/v1"
+        ) && crate::oauth::credentials_valid(crate::oauth::OAuthProvider::Claude, config)
+        {
+            CredentialState::Saved
+        } else {
+            CredentialState::MissingLogin
+        };
+    }
     // Plugin OAuth takes precedence over local/keyless and legacy custom
     // classifications. Diagnostics only read the bound credential; they never
     // refresh, migrate storage or turn a missing login into API-key fallback.
@@ -443,7 +457,7 @@ impl ResolvedProviderReadiness {
             Self::LocalUnchecked => Cow::Borrowed("local · not checked"),
             Self::Ready => Cow::Borrowed("ready"),
             Self::ConnectionCheckedModelUnchecked => {
-                Cow::Borrowed("models endpoint 2xx · model not checked")
+                Cow::Borrowed("endpoint reachable · model not checked")
             }
             Self::SavedLastCheckFailed { category, .. } => {
                 Cow::Owned(format!("last check failed ({category})"))
@@ -1061,7 +1075,7 @@ mod tests {
         );
         assert_eq!(
             ResolvedProviderReadiness::ConnectionCheckedModelUnchecked.label(),
-            "models endpoint 2xx · model not checked"
+            "endpoint reachable · model not checked"
         );
         assert!(!ResolvedProviderReadiness::ConnectionCheckedModelUnchecked.can_attempt());
     }

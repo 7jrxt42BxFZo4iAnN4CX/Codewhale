@@ -58,8 +58,9 @@ mod tests {
 
     #[test]
     fn home_preserves_session_draft_and_reveal_and_escape_returns() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.launch.dismiss();
         app.current_session_id = Some("retained-session".into());
         app.api_messages_mut().push(codewhale_models::Message {
@@ -130,8 +131,9 @@ mod tests {
 
     #[test]
     fn home_refuses_to_cover_active_work() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.launch.dismiss();
         app.is_loading = true;
         let result = HomeCmd::execute(&mut app, None);

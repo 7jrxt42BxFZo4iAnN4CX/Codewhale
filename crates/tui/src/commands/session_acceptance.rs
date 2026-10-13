@@ -604,7 +604,7 @@ fn codewhale_sends_session_relay_instruction_focused_on(
         other => panic!("expected relay SendMessage action, got {other:?}"),
     };
 
-    assert!(message.contains("Write or update `.deepseek/handoff.md`."));
+    assert!(message.contains("Write or update `.codewhale/handoff.md`."));
     assert!(message.contains("# Session relay"));
     assert!(message.contains("## Verification"));
     assert!(
@@ -613,7 +613,7 @@ fn codewhale_sends_session_relay_instruction_focused_on(
     );
     assert_eq!(
         world.last_message.as_deref(),
-        Some("Preparing session relay at .deepseek/handoff.md...")
+        Some("Preparing session relay at .codewhale/handoff.md...")
     );
 }
 
@@ -745,7 +745,7 @@ fn create_test_app_with_tmpdir(tmpdir: &TempDir) -> App {
         memory_path: tmpdir.path().join("memory.md"),
         notes_path: tmpdir.path().join("notes.txt"),
         mcp_config_path: tmpdir.path().join("mcp.json"),
-        ..crate::test_support::test_tui_options(tmpdir.path())
+        ..crate::tui::test_support::test_tui_options(tmpdir.path())
     };
     App::new(options, &Config::default())
 }

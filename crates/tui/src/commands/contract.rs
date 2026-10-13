@@ -203,7 +203,6 @@ pub(crate) fn key_to_message_id(key: &'static str) -> Option<MessageId> {
         "cmd_hotbar_description" => MessageId::CmdHotbarDescription,
         "cmd_init_description" => MessageId::CmdInitDescription,
         "cmd_jobs_description" => MessageId::CmdJobsDescription,
-        "cmd_dispatch_description" => MessageId::CmdDispatchDescription,
         "cmd_lane_description" => MessageId::CmdLaneDescription,
         "cmd_links_description" => MessageId::CmdLinksDescription,
         "cmd_load_description" => MessageId::CmdLoadDescription,
@@ -316,6 +315,10 @@ pub(crate) struct SessionLifecycleAdapter<'a> {
 impl CommandSessionLifecycleContext for SessionLifecycleAdapter<'_> {
     fn transition_blocked(&self) -> bool {
         self.host.app.borrow().session_transition_blocked()
+    }
+
+    fn transition_blockers(&self) -> Vec<String> {
+        self.host.app.borrow().session_transition_blockers()
     }
 
     fn branch_current_leaf_hint(&self) -> Option<String> {
@@ -1052,6 +1055,10 @@ impl CommandSessionControlContext for SessionControlAdapter<'_> {
         self.host.app.borrow().session_transition_blocked()
     }
 
+    fn transition_blockers(&self) -> Vec<String> {
+        self.host.app.borrow().session_transition_blockers()
+    }
+
     fn relay_projection(&self) -> RelayProjection {
         let app = self.host.app.borrow();
         let plan = match app.plan_state.try_lock() {
@@ -1075,6 +1082,7 @@ impl CommandSessionControlContext for SessionControlAdapter<'_> {
         };
         RelayProjection {
             compact_template: crate::prompts::COMPACT_TEMPLATE.to_string(),
+            handoff_path: crate::prompts::HANDOFF_RELATIVE_PATH.to_string(),
             workspace: app.workspace.display().to_string(),
             mode: app.mode.label().to_string(),
             model: app.model_display_label(),
@@ -4703,7 +4711,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn test_app() -> App {
-        crate::test_support::test_app_with_options(crate::test_support::test_tui_options(
+        crate::tui::test_support::test_app_with_options(crate::tui::test_support::test_tui_options(
             PathBuf::from("."),
         ))
     }
@@ -5628,13 +5636,13 @@ mod tests {
 
     /// App with an isolated temp memory file; memory feature enabled or not.
     fn memory_test_app(tmpdir: &TempDir, use_memory: bool) -> App {
-        let options = crate::test_support::test_tui_options(tmpdir.path());
+        let options = crate::tui::test_support::test_tui_options(tmpdir.path());
         let options = crate::tui::app::TuiOptions {
             memory_path: tmpdir.path().join("memory.md"),
             use_memory,
             ..options
         };
-        crate::test_support::test_app_with_options(options)
+        crate::tui::test_support::test_app_with_options(options)
     }
 
     /// Give a temp workspace a git origin so workspace identity resolves.
@@ -6093,9 +6101,9 @@ mod tests {
     /// must be trusted for those skills to load.
     fn skill_test_app(tmp: &TempDir, skills_dir: &Path) -> App {
         crate::test_support::trust_workspace(tmp.path());
-        let mut options = crate::test_support::test_tui_options(tmp.path());
+        let mut options = crate::tui::test_support::test_tui_options(tmp.path());
         options.skills_dir = skills_dir.to_path_buf();
-        crate::test_support::test_app_with_options(options)
+        crate::tui::test_support::test_app_with_options(options)
     }
 
     fn write_skill(dir: &Path, name: &str) {
@@ -6446,8 +6454,8 @@ mod tests {
     // ------------------------------------------------------------------
 
     fn plugin_test_app(tmpdir: &TempDir) -> App {
-        let options = crate::test_support::test_tui_options(tmpdir.path());
-        let mut app = crate::test_support::test_app_with_options(options);
+        let options = crate::tui::test_support::test_tui_options(tmpdir.path());
+        let mut app = crate::tui::test_support::test_app_with_options(options);
         app.ui_locale = Locale::En;
         app
     }
@@ -6657,7 +6665,7 @@ mod tests {
     // ---------------------------------------------------------------------------
 
     fn lifecycle_test_app(tmpdir: &TempDir) -> App {
-        let options = crate::test_support::test_tui_options(tmpdir.path());
+        let options = crate::tui::test_support::test_tui_options(tmpdir.path());
         App::new(options, &crate::config::Config::default())
     }
 
@@ -7081,6 +7089,10 @@ mod tests {
             assert_eq!(
                 projection.compact_template.trim(),
                 crate::prompts::COMPACT_TEMPLATE.trim()
+            );
+            assert_eq!(
+                projection.handoff_path,
+                crate::prompts::HANDOFF_RELATIVE_PATH
             );
             assert!(matches!(projection.todos, TodoProjection::Absent));
             assert!(matches!(projection.plan, PlanProjection::Absent));

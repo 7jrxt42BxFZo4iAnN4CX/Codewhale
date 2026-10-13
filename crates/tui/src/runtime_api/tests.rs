@@ -16,6 +16,8 @@ use uuid::Uuid;
 
 mod command_catalog;
 mod headless_catalog;
+#[cfg(unix)]
+mod owner_bootstrap;
 mod profile_constitution;
 #[cfg(any(unix, windows))]
 mod runtime_store_convergence;
@@ -466,6 +468,7 @@ fn messages_from_thread_detail_batches_tool_results() {
         duration_ms: Some(0),
         usage: None,
         model_request_diagnostics: None,
+        operation_activity: None,
         routing_settlement: false,
         effective_route_usage: None,
         permission_posture: Some("ask".to_string()),
@@ -1133,13 +1136,15 @@ fn spawn_product_stack_server(
         .shutdown
         .get_or_insert_with(RuntimeServerShutdown::default)
         .clone();
+    let catalog = crate::command_catalog::installed();
     std::thread::Builder::new()
         .name("runtime-api-test-server".to_string())
-        .stack_size(crate::CODEWHALE_MAIN_STACK_BYTES)
+        .stack_size(codewhale_runtime::CODEWHALE_MAIN_STACK_BYTES)
         .spawn(move || {
             // Adopted for the thread's lifetime; the scope's generation check
             // refuses enrollment once the sealing test has ended.
             let _membership = crate::test_support::join_env_scope(env_ticket);
+            let _catalog = catalog.map(crate::command_catalog::CatalogGuard::install);
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -1355,7 +1360,7 @@ async fn build_test_server(
         let model = runtime_request_model(&state.config.read(), None)
             .map_err(|error| anyhow::anyhow!(error.message))?;
         let (owner, compatibility) =
-            bind_captured_runtime_frontends(&state, Some(socket), model, 1, false).await?;
+            bind_captured_runtime_frontends(&state, Some(socket), model, 1, false, None).await?;
         (Some(owner), Some(compatibility))
     } else {
         (None, None)
@@ -9680,6 +9685,8 @@ async fn approvals_endpoint_lists_decided_and_pending_newest_first() -> Result<(
             tool_call_id: "tool-1".into(),
             tool_name: "exec_shell".into(),
             created_at: at(10),
+            target: Some("api.example.com".into()),
+            summary: Some("curl api.example.com".into()),
         },
     )?;
     store.append(
@@ -9690,6 +9697,8 @@ async fn approvals_endpoint_lists_decided_and_pending_newest_first() -> Result<(
             outcome: ApprovalOutcome::Denied,
             created_at: at(11),
             decided_by: Some(crate::approval_log::ApprovalDecider::User),
+            grant_id: None,
+            matched_label: None,
         },
     )?;
     store.append(
@@ -9699,6 +9708,8 @@ async fn approvals_endpoint_lists_decided_and_pending_newest_first() -> Result<(
             tool_call_id: "tool-2".into(),
             tool_name: "write_file".into(),
             created_at: at(12),
+            target: None,
+            summary: None,
         },
     )?;
     let corrupt_dir = store.log_path("sess-corrupt")?;
@@ -9721,6 +9732,10 @@ async fn approvals_endpoint_lists_decided_and_pending_newest_first() -> Result<(
     assert_eq!(rows[1]["tool_name"], "exec_shell");
     assert_eq!(rows[1]["outcome"], "denied");
     assert_eq!(rows[1]["decided_by"], "user");
+    assert_eq!(rows[1]["target"], "api.example.com");
+    assert_eq!(rows[1]["summary"], "curl api.example.com");
+    assert!(rows[0].get("target").is_none());
+    assert!(rows[0].get("summary").is_none());
     assert!(rows[0].get("decided_by").is_none());
     assert_eq!(rows[1]["asked_at"], "2026-09-10T10:00:00Z");
     assert_eq!(rows[1]["decided_at"], "2026-09-10T11:00:00Z");
@@ -9795,6 +9810,7 @@ async fn session_save_merges_thread_cost_split_and_records_coverage() -> Result<
             ..Usage::default()
         }),
         model_request_diagnostics: None,
+        operation_activity: None,
         routing_settlement: false,
         effective_route_usage: None,
         permission_posture: None,
@@ -9994,6 +10010,7 @@ async fn session_save_persists_parent_cny_unpriced_reasons_without_double_count(
             ..Usage::default()
         }),
         model_request_diagnostics: None,
+        operation_activity: None,
         routing_settlement: false,
         effective_route_usage: None,
         permission_posture: None,
@@ -11342,6 +11359,7 @@ fn seed_summary_search_transcript(
             duration_ms: Some(0),
             usage: None,
             model_request_diagnostics: None,
+            operation_activity: None,
             routing_settlement: false,
             effective_route_usage: None,
             permission_posture: None,
@@ -20111,6 +20129,60 @@ async fn workspace_file_put_keeps_the_edited_files_mode() -> Result<()> {
     }
 
     handle.abort();
+    Ok(())
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn workspace_file_concurrent_creates_preserve_the_first_publication() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let relative = Path::new("notes/new.txt");
+    fs::write(tmp.path().join("unrelated.txt"), b"keep me\n")?;
+
+    // Admit both creators while the destination is absent, before either
+    // publishes. This makes the stale-create race independent of scheduling.
+    let files = [
+        crate::fleet::files::WorkspaceFile::open_shared(tmp.path(), relative, true)?,
+        crate::fleet::files::WorkspaceFile::open_shared(tmp.path(), relative, true)?,
+    ];
+    assert!(!tmp.path().join(relative).exists());
+    let payloads = [
+        b"first creator\n".as_slice(),
+        b"second creator\n".as_slice(),
+    ];
+    let barrier = std::sync::Barrier::new(2);
+    let results = std::thread::scope(|scope| {
+        let handles: Vec<_> = files
+            .into_iter()
+            .zip(payloads)
+            .map(|(file, bytes)| {
+                let barrier = &barrier;
+                scope.spawn(move || {
+                    barrier.wait();
+                    workspace::publish_workspace_file(&file, bytes, true)
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("creator worker must not panic"))
+            .collect::<Vec<_>>()
+    });
+
+    let winners: Vec<_> = results
+        .iter()
+        .enumerate()
+        .filter_map(|(index, result)| result.is_ok().then_some(index))
+        .collect();
+    assert_eq!(winners.len(), 1, "exactly one create may publish");
+    let error = results
+        .iter()
+        .find_map(|result| result.as_ref().err())
+        .unwrap();
+    assert_eq!(error.status, StatusCode::CONFLICT);
+    assert!(error.message.contains("read it before overwriting"));
+    assert_eq!(fs::read(tmp.path().join(relative))?, payloads[winners[0]]);
+    assert_eq!(fs::read(tmp.path().join("unrelated.txt"))?, b"keep me\n");
     Ok(())
 }
 

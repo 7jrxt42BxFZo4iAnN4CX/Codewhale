@@ -12,7 +12,6 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
-use super::command::{BuiltinCommandCatalog, BuiltinCommandsGuard};
 use super::protocol::{
     self, OwnerRef, RegisterKind, RegisterParams, RegisterSpecWire, parse_core_message,
     parse_host_message,
@@ -20,6 +19,7 @@ use super::protocol::{
 use super::registry::{OwnerRegistry, OwnerState};
 use super::tier::HostTier;
 use super::{ExtensionHostManager, ExtensionHostOptions, HostAttachment, HostStatus};
+use crate::command_catalog::{BuiltinCommand, CatalogGuard, CommandCatalog, UserCommand};
 use crate::plugins::PluginRegistry;
 use crate::plugins::activation::TestPolicyGuard;
 use crate::plugins::discovery::{DiscoveryConfig, discover_with_config};
@@ -35,18 +35,24 @@ const NODE: crate::config::ExtensionHostRuntime = crate::config::ExtensionHostRu
 #[derive(Debug)]
 struct StubBuiltinCommands;
 
-impl BuiltinCommandCatalog for StubBuiltinCommands {
+impl CommandCatalog for StubBuiltinCommands {
     fn answers_to(&self, name: &str) -> bool {
         matches!(
             name,
             "help" | "trust" | "model" | "jihua" | "zidong" | "stub-alias"
         )
     }
+    fn builtins(&self) -> Vec<BuiltinCommand> {
+        Vec::new()
+    }
+    fn user_commands(&self, _: &Path) -> Vec<UserCommand> {
+        Vec::new()
+    }
 }
 
 /// The stub catalog, for this thread until the guard drops.
-fn stub_builtin_commands() -> BuiltinCommandsGuard {
-    BuiltinCommandsGuard::install(Arc::new(StubBuiltinCommands))
+fn stub_builtin_commands() -> CatalogGuard {
+    CatalogGuard::install(Arc::new(StubBuiltinCommands))
 }
 
 fn fixtures_dir() -> PathBuf {
@@ -695,7 +701,7 @@ pub(crate) struct FixturePlugins {
     pub root: PathBuf,
     /// The stub built-in command catalog, so a fixture plugin's commands can
     /// register; a test about the real table installs its own after this.
-    _commands: BuiltinCommandsGuard,
+    _commands: CatalogGuard,
 }
 
 impl FixturePlugins {
@@ -4383,7 +4389,7 @@ fn a_command_registration_is_refused_when_no_built_in_catalog_is_installed() {
             )
             .unwrap()
     };
-    let _absent = BuiltinCommandsGuard::absent();
+    let _absent = CatalogGuard::absent();
     let mut registry = OwnerRegistry::new();
     let a = owner(&mut registry);
     let refused = register_command(&mut registry, &a, "fine-name", None).unwrap_err();

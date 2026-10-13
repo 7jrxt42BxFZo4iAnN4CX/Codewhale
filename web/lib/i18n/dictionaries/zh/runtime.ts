@@ -4,7 +4,7 @@ import type { RuntimeDict } from "../types";
 export const runtime: RuntimeDict = {
   metaTitle: "Runtime & 集成 · Codewhale",
   metaDescription:
-    "通过基于 HTTP/SSE 的本地 Runtime API、基础 ACP stdio 适配器、MCP 服务器、早期 VS Code 配套扩展和消息桥接，把编辑器、脚本和聊天应用连接到 Codewhale。",
+    "通过基于 HTTP/SSE 的本地 Runtime API、ACP stdio 传输、MCP 服务器、早期 VS Code 配套扩展和消息桥接，把编辑器、脚本和聊天应用连接到 Codewhale。",
   kicker: "Runtime & 集成",
   title: "用你自己的工具驱动 Codewhale",
   titleAside: "Runtime & Integrations",

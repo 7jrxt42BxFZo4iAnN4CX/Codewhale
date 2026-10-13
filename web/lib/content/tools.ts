@@ -10,6 +10,7 @@ export const TOOLS_COPY = {
     { name: "read", detail: { en: "path · offset? · limit?", zh: "path · offset? · limit?" } },
     { name: "write", detail: { en: "path · content", zh: "path · content" } },
     { name: "edit", detail: { en: "path · edits", zh: "path · edits" } },
+    { name: "file_search", detail: { en: "Find workspace files by name, path, or glob pattern.", zh: "按文件名、路径或 glob 通配模式查找工作区文件。" } },
     { name: "bash", detail: { en: "command · timeout?", zh: "command · timeout?" } },
     { name: "agent · workflow", detail: { en: "Delegate work and coordinate dependent phases.", zh: "委派工作并协调有依赖关系的阶段。" } },
     { name: "todo_write", detail: { en: "Replace the task list with content and status entries.", zh: "用包含内容与状态的条目替换任务列表。" } },
@@ -22,6 +23,9 @@ export const TOOLS_COPY = {
     { name: "MCP", detail: { en: "mcp_<server>_<tool> — registered from ~/.codewhale/mcp.json.", zh: "mcp_<server>_<tool>——从 ~/.codewhale/mcp.json 注册。" } },
   ],
   compatibilityTitle: { en: "Replay compatibility", zh: "回放兼容" },
+  lspTitle: { en: "Read language-server diagnostics", zh: "读取语言服务器诊断" },
+  lspBody: { en: "After file edits, LSP diagnostics can report errors to the agent. Add a custom server by file extension under [lsp.custom]; install the server executable separately.", zh: "文件修改后，LSP 诊断可向智能体报告错误。通过 [lsp.custom] 按扩展名添加自定义服务器；服务器可执行文件需要单独安装。" },
+  lspDocs: { en: "PHP and custom LSP server setup", zh: "PHP 与自定义 LSP 服务器设置" },
   compatibility: { en: "Legacy names remain only for saved transcripts and protocol clients. Exact old calls retain their handlers but stay out of new catalogs and tool_search. Unknown names are never guessed or rewritten.", zh: "旧名称仅为已保存的记录与协议客户端保留。精确旧调用仍使用原处理器，但不会出现在新目录或 tool_search 中。未知名称不会被猜测或改写。" },
 } satisfies {
   metaTitle: LocalizedText;
@@ -31,5 +35,8 @@ export const TOOLS_COPY = {
   reference: LocalizedText;
   rows: { name: string; detail: LocalizedText }[];
   compatibilityTitle: LocalizedText;
+  lspTitle: LocalizedText;
+  lspBody: LocalizedText;
+  lspDocs: LocalizedText;
   compatibility: LocalizedText;
 };

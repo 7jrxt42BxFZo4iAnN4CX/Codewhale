@@ -1,4 +1,150 @@
 {
+  "features": {
+    "title": "查看 Codewhale 提供的能力",
+    "description": "浏览 Codewhale 命令、工具和 Runtime 能力，了解可用范围并查看文档。",
+    "notice": "本目录包含源码 v{version} 中的 {count} 项能力。名称与说明使用英文；请核对已安装版本。",
+    "stable": "稳定",
+    "flagged": "需要功能开关",
+    "experimental": "实验性",
+    "partial": "部分支持",
+    "preview": "预览",
+    "none": "不可用",
+    "docs": "阅读文档",
+    "source": "查看源码条目",
+    "exportJson": "下载功能 JSON"
+  },
+  "docs-skills": {
+    "metaTitle": "管理技能 · Codewhale 文档",
+    "metaDescription": "查找、安装并信任 SKILL.md 指令包，控制用户与模型调用，并导入兼容的 Claude Code 技能。",
+    "bodyClassName": "text-ink-soft leading-[1.9] tracking-wide",
+    "title": "管理可复用技能",
+    "lede": "技能是 SKILL.md 指令包。发现兼容文件夹后，先审阅来源与信任设置，再使用技能。",
+    "sections": [
+      {
+        "id": "manager",
+        "title": "打开技能管理器",
+        "blocks": [
+          {
+            "code": "/skills\n/skills manage\n/skills inspect\n/skill <name>",
+            "lang": "Codewhale"
+          },
+          {
+            "p": "管理器打开时不访问网络，并显示 Codewhale 自有目录。启用兼容目录扫描即可检查外部文件夹；导入目标始终是 Codewhale 自有目录。"
+          }
+        ]
+      },
+      {
+        "id": "install",
+        "title": "安装到自有目录",
+        "blocks": [
+          {
+            "code": "/skill install --project <spec>\n/skill install --global <spec>\n/skill trust --project <name>",
+            "lang": "Codewhale"
+          },
+          {
+            "p": "自有目录包括项目中的 .codewhale/skills 与全局 ~/.codewhale/skills。兼容的 .agents/skills 和 .claude/skills 目录只作为只读导入来源。"
+          },
+          {
+            "note": "只有信任工作区后才会加载项目技能。配置的外部 skills_dir 始终只读；选择文件夹不会授予修改权限。"
+          }
+        ]
+      },
+      {
+        "id": "invocation",
+        "title": "选择谁可以加载技能",
+        "blocks": [
+          {
+            "p": "Frontmatter 中的 disable-model-invocation: true 会将技能移出模型发现列表。user-invocable: false 会从用户菜单中隐藏技能并拒绝显式激活；两者同时设置会禁用两条路径。"
+          },
+          {
+            "p": "技能正文在加载时才进入上下文。精简目录只包含有界的名称、别名和调用元数据。"
+          }
+        ]
+      }
+    ],
+    "next": [
+      {
+        "href": "/docs/claude-code",
+        "label": "从 Claude Code 迁移",
+        "note": "带入兼容技能并审阅设置导入方案。"
+      },
+      {
+        "href": "/plugins",
+        "label": "添加插件",
+        "note": "通过审阅与信任流程安装支持的插件包。"
+      }
+    ],
+    "sourceNote": "来源：docs/SKILLS.md 与 docs/CLAUDE_PLUGIN_COMPAT.md。"
+  },
+  "docs-claude-code": {
+    "metaTitle": "从 Claude Code 迁移 · Codewhale 文档",
+    "metaDescription": "把 Codewhale 作为开源 Claude Code 替代方案。保留兼容指令与技能，并审阅设置和 MCP 导入方案。",
+    "bodyClassName": "text-ink-soft leading-[1.9] tracking-wide",
+    "title": "从 Claude Code 迁移",
+    "lede": "保留兼容的项目说明与技能文件夹，同时选择你自己的模型连接。应用设置和插件导入前，请先审阅。",
+    "sections": [
+      {
+        "id": "instructions",
+        "title": "保留项目说明",
+        "blocks": [
+          {
+            "p": "AGENTS.md 是项目说明的规范文件。CLAUDE.md 和 .claude/instructions.md 作为兼容回退，不会覆盖 Codewhale 安全控制。"
+          },
+          {
+            "p": "普通 .claude/skills/<name>/SKILL.md 文件夹通过常规[技能注册表](/docs/skills)发现，并受工作区信任与调用控制约束。"
+          }
+        ]
+      },
+      {
+        "id": "settings",
+        "title": "审阅设置导入",
+        "blocks": [
+          {
+            "code": "/import-claude",
+            "lang": "Codewhale"
+          },
+          {
+            "p": "该命令读取 Claude 设置，生成可审阅报告与尚未应用的配置包。MCP 服务器使用现有的导入同意流程；权限和钩子需要单独审阅。"
+          },
+          {
+            "note": "疑似密钥和未知环境变量的值不会被导入或回显。运行方案不会启用服务器，也不会应用权限。"
+          }
+        ]
+      },
+      {
+        "id": "plugins",
+        "title": "安装支持的插件子集",
+        "blocks": [
+          {
+            "code": "/plugin install <spec>",
+            "lang": "Codewhale"
+          },
+          {
+            "p": "声明式 .claude-plugin/plugin.json 子集支持技能、命令、智能体配置与 MCP 声明。Codewhale 的审阅哈希、显式信任与启用流程仍然适用。"
+          },
+          {
+            "note": "Codewhale 不会运行 Claude Code 插件运行时。钩子、插件 LSP 声明、构建步骤与 TypeScript 智能体不在该导入器的支持范围内。"
+          },
+          {
+            "p": "[阅读兼容性限制](https://github.com/codewhale-hq/CodeWhale/blob/main/docs/CLAUDE_PLUGIN_COMPAT.md)。在[模型设置](/models)中选择凭据与端点。"
+          }
+        ]
+      }
+    ],
+    "next": [
+      {
+        "href": "/docs/skills",
+        "label": "管理技能",
+        "note": "导入前检查兼容目录。"
+      },
+      {
+        "href": "/docs/auth",
+        "label": "连接提供商",
+        "note": "使用你选择的托管模型或本地模型。"
+      }
+    ],
+    "sourceNote": "来源：docs/CONFIGURATION.md、docs/CLAUDE_PLUGIN_COMPAT.md 与 docs/features.toml 中的 claude-settings-import 条目。"
+  },
   "chrome": {
     "navDocs": "文档",
     "navStart": "指引",
@@ -6,6 +152,7 @@
     "navFaq": "常见问题",
     "navCommunity": "社区",
     "navContribute": "贡献",
+    "navFeatures": "功能",
     "navProduct": "产品",
     "navModels": "模型",
     "navPlugins": "插件",
@@ -22,7 +169,7 @@
     "themeDark": "深色",
     "themeAria": "主题：{mode}（点击切换）",
     "themeTitle": "主题 · 自动 / 浅色 / 深色",
-    "footerTagline": "用你选择的模型编辑代码、运行测试并审查变更。",
+    "footerTagline": "用自己的模型和连接的工具，构建应用，让工作自动完成。",
     "footerProduct": "产品",
     "footerProject": "项目",
     "footerDocs": "文档",
@@ -46,65 +193,61 @@
     "partialBadge": "(部分)"
   },
   "home": {
-    "metaTitle": "Codewhale：适用于任意模型的开源编程智能体",
-    "metaDescription": "Codewhale 是一个在终端中运行的开源编程智能体。它使用你选择的云端或本地模型，读取项目、编辑文件并运行测试。",
-    "heroTitle": "适用于任意模型的开源编程智能体",
-    "heroIntro": "{brand} 在终端中读取你的项目、编辑文件并运行测试。连接云端或本地模型，并决定哪些操作需要你批准。",
+    "metaTitle": "Codewhale：开源编程智能体",
+    "metaDescription": "Codewhale 是终端里的开源编程智能体。用你选择的托管模型或本地模型读取、修改和测试项目。",
+    "heroTitle": "构建应用，让你的工作自动运行。",
+    "heroIntro": "{brand} 是终端里的开源编程智能体，可以读取文件、编写代码并运行命令。连接已有的模型 API 或本地模型，并选择哪些操作需要批准。",
     "getCodewhale": "安装 Codewhale",
     "heroInstallAria": "安装命令",
-    "exploreProduct": "了解工作方式",
+    "exploreProduct": "探索 Codewhale",
     "shotPreview": "终端预览",
-    "shotBuild": "v{version} 预发布版本",
-    "screenshotAlt": "Codewhale v{version} 预发布版本：鲸鱼标志、新会话、消息输入区、Ask 权限、Work 模式和模型状态。由隔离终端会话的实际画面渲染。",
+    "screenshotAlt": "Codewhale v{version} 的终端实录画面，包含对话、消息输入框与会话控制。",
     "latestRelease": "最新发布 {tag}",
     "releaseUnavailable": "发布状态暂不可用",
     "currentSource": "源码",
     "sourceCandidate": "未发布",
     "publishedRelease": "已发布",
-    "figcaptionSourceCandidate": "未发布",
-    "chapterTerminal": "你的终端",
-    "chapterTerminalTitle": "实时查看每一次编辑和命令",
-    "gainHeading": "交出任务，保留控制权",
-    "gainLede": "直接说出想要的结果：修复错误、解释某个模块，或自动完成重复任务。先用一个智能体，任务变大时再增加。",
+    "gainHeading": "你可以做什么",
+    "gainLede": "描述你想构建或自动完成的工作。Codewhale 可以编辑文件、运行命令并检查结果，访问权限由你控制。",
     "gain": [
       [
-        "修改代码并验证",
-        "智能体查看你的项目、编辑文件并运行测试。你可以在它工作时查看每一次编辑和命令结果。"
+        "构建应用和工具",
+        "创建应用、添加功能或编写脚本。Codewhale 可以处理项目文件、运行代码并测试构建结果。"
       ],
       [
-        "自动完成重复工作",
-        "在脚本和 CI 中运行 codewhale exec。使用 Fleet 把大型任务分给多个智能体。"
+        "让重复工作自动完成",
+        "从终端、脚本或 CI 中运行工作流。任务较大时，可以把部分工作交给使用不同模型的 Fleet 智能体团队。"
       ],
       [
-        "掌握执行过程",
-        "开始前设定权限，回应审批请求，随时停止任务。运行 /receipts 可列出会话中的每个文件、命令和审批。"
+        "连接你常用的工具",
+        "通过插件和 MCP 服务器添加工具，或在自己的脚本中调用 API。每项服务都需要单独配置和身份验证。"
       ]
     ],
     "chapterModels": "你的模型",
-    "modelsHeading": "为每项任务选择模型",
-    "modelsBody": "为每个会话选择内置提供商、任意 OpenAI 兼容端点或本地模型。你的模型连接与 Codewhale 账户相互独立。",
+    "modelsHeading": "使用你选择的模型",
+    "modelsBody": "连接你的提供商账户、OpenAI 兼容端点，或本地及自托管模型。为会话选择模型，也可以为 Fleet 中的每个智能体分别选择模型。",
     "modelsFacts": [
       [
-        "托管",
-        "你自己的 API 密钥，用 codewhale auth set --provider <id> 保存"
+        "你的 API 账户",
+        "使用自己的密钥连接 OpenAI、Anthropic、Google、DeepSeek 等提供商。"
       ],
       [
-        "网关",
-        "一个端点接多个模型；提供商仍由你选择"
+        "你的网关",
+        "连接 OpenAI 兼容端点，选择它提供的模型。"
       ],
       [
-        "本地",
-        "localhost 上的 vLLM、SGLang 或 Ollama，通常无需密钥"
+        "你的推理服务",
+        "通过 Ollama、vLLM 或 SGLang 运行本地或自托管模型。"
       ]
     ],
     "modelsLink": "浏览模型与提供商",
-    "startHeading": "安装、连接模型、运行任务",
-    "startLede": "在项目文件夹中用三个步骤运行第一项任务。如果工作需要多个智能体，之后再添加 Fleet。",
+    "startHeading": "开始使用",
+    "startLede": "安装 Codewhale，连接模型，然后打开项目文件夹。需要时，再添加插件或更多智能体。",
     "startGuideLink": "按照新手指引操作",
     "startVocabularyLink": "查名词",
     "chapterAvailability": "在哪里运行",
-    "availabilityHeading": "现在就在终端中使用",
-    "availabilityLede": "终端、本地浏览器客户端和社区维护的 CodeWhale GUI 现已可用。桌面应用和重建中的托管网页应用正在开发，两者共用同一会话模型。",
+    "availabilityHeading": "当前可用与开发中的功能",
+    "availabilityLede": "终端和本地浏览器客户端现已可用。原生桌面应用与重建中的托管网页应用正在开发。",
     "availability": [
       [
         "终端与本地浏览器",
@@ -133,42 +276,42 @@
         "为你运行任务的托管计算机。"
       ]
     ],
-    "availabilityNote": "终端、本地浏览器和 GUI 无需 Codewhale 账户。托管网页和桌面端使用账户，但账户不能代替模型连接；使用你自己的密钥产生的用量由提供商计费。",
+    "availabilityNote": "终端、本地浏览器和 GUI 无需 Codewhale 账户。托管网页和桌面端使用账户。使用你自己的提供商密钥时，相应用量由该提供商计费。",
     "accountLink": "创建账户",
-    "surfacesHeading": "扩展智能体能接触的范围",
+    "surfacesHeading": "使用文件和工具开展工作",
     "surfaces": [
       [
-        "文件与命令",
-        "在你设定的权限内读取项目、编辑文件、运行测试并查看输出。"
+        "文件与终端",
+        "创建文件、运行命令、分析数据，并测试你构建的成果。工作目录和权限由你设定。"
       ],
       [
-        "插件与 MCP",
-        "连接更多工具和服务。每个插件在你审核并启用之前都保持关闭。"
+        "插件与已连接的应用",
+        "通过插件和 MCP 添加技能与工具。审核并启用你希望智能体使用的连接。"
       ],
       [
-        "Computer Use · 预览",
-        "让智能体查看并操作其他应用的插件。由你启用它，并授予它请求的系统权限。"
+        "浏览器与电脑操作 · 预览",
+        "使用浏览器工具和 Computer Use 插件，在你授予的访问范围内操作应用与网站。"
       ],
       [
-        "保存的会话",
-        "将对话和工具结果保存在一起，可以接着之前的工作继续，无需从头开始。本地浏览器会打开你电脑上的同一个会话。"
+        "随时接着做的会话",
+        "将对话、工具结果和工作记录保存在一起。在终端或本地浏览器客户端中继续之前的任务。"
       ],
       [
-        "Fleet",
-        "把任务的各部分分配给使用不同模型和角色的智能体，然后跟踪它们的进度。"
+        "智能体团队",
+        "用 Fleet 将大任务分配给不同角色和模型的智能体，在一处查看它们的进度。"
       ]
     ],
-    "runtimeLink": "查看全部集成",
+    "runtimeLink": "探索工具与集成",
     "installBandHeading": "在 macOS 或 Linux 上安装",
     "copy": "复制",
     "copied": "已复制 ✓",
     "binaries": "预编译包",
     "chinaMirrors": "中国镜像",
     "installGuideLink": "阅读安装指南",
-    "communityHeading": "和我们一起构建 Codewhale",
-    "communityBody": "在 GitHub 上报告 bug、提出功能建议，或提交你的第一个 pull request。欢迎小而经过测试的修复。",
+    "communityHeading": "为 Codewhale 做贡献",
+    "communityBody": "在 GitHub 上报告问题、改进文档或贡献代码。你也可以构建插件，与其他用户分享工作流。",
     "communityLinksAria": "社区链接",
-    "contribute": "提交 pull request"
+    "contribute": "在 GitHub 上参与贡献"
   },
   "docs-guide": {
     "metaTitle": "开始第一个任务 · Codewhale 文档",
@@ -185,8 +328,8 @@
     "metaTitle": "文档 · Codewhale",
     "metaDescription": "安装 Codewhale，连接模型提供商，然后把事情做完：模式与审批、查看改动、工作流、子智能体、MCP 工具、钩子、Runtime API 以及问题排查。",
     "portalMark": "Codewhale 文档",
-    "heroTitle": "用 Codewhale 把事情做完。",
-    "heroLead": "从你想做的事开始。每一页都会说明你需要准备什么，给出今天就能运行的命令，并指向下一步。",
+    "heroTitle": "安装与使用 Codewhale",
+    "heroLead": "查找安装步骤、模型连接、工具配置和问题排查指南。每份指南都包含可以运行的命令和示例。",
     "installCta": "安装 Codewhale",
     "releaseLabel": "版本",
     "releasePublished": "最新发布 {tag} · {date}",
@@ -213,8 +356,8 @@
     "breadcrumbAria": "面包屑导航",
     "breadcrumbHome": "首页",
     "breadcrumbDocs": "文档",
-    "helpTitle": "这一页还不够？",
-    "helpLead": "每份指南都对照仓库中的一份文档核实过。如果它写错了或缺了什么，请在维护者能看到的地方告诉我们。",
+    "helpTitle": "获取帮助",
+    "helpLead": "在 Discord 提问，或在 GitHub 报告文档问题。",
     "helpSource": "来源：{name}",
     "helpTroubleshooting": "排查问题",
     "helpFaq": "常见问题",
@@ -878,14 +1021,14 @@
         "title": "把 Codewhale 作为 MCP 服务器运行",
         "blocks": [
           {
-            "p": "其他 MCP 客户端——包括另一个 Codewhale 会话——都可以使用 Codewhale 的工具。只需注册一次："
+            "p": "其他 MCP 客户端可以把 Codewhale 作为工具服务器。默认仅暴露只读的 `file_read` 和 `search` 工具。"
           },
           {
             "code": "codewhale mcp add-self\ncodewhale mcp tools codewhale",
             "lang": "终端"
           },
           {
-            "p": "`add-self` 会写入一条通过 stdio 运行 `codewhale serve --mcp` 的配置。每个客户端各自启动一个进程，不会打开任何网络端口。`codewhale serve --http` 则是另一回事——它是供应用使用的 [Runtime API](/docs/runtime-api)。"
+            "p": "`add-self` 注册通过 stdio 运行的 `codewhale serve --mcp`；`codewhale mcp-server` 是等价入口。除非操作者在服务器配置中明确允许，否则不会提供写入工具。[Runtime API](/docs/runtime-api) HTTP 是单独的传输方式。"
           }
         ]
       },
@@ -894,17 +1037,17 @@
         "title": "用代码模式组合工具调用（实验性）",
         "blocks": [
           {
-            "p": "代码模式让模型写一段简短的 JavaScript 程序，在其中调用多个工具、循环和筛选结果，而不必把每次调用都作为单独的一步。只有程序的最终结果会返回给模型，长时间的查找因此更紧凑。它默认关闭。可以只在一次会话中试用，也可以在配置中开启："
+            "p": "代码模式让模型写一段简短的 JavaScript 程序，在其中调用多个工具、循环和筛选结果，而不必把每次调用都作为单独的一步。只有程序的最终结果会返回给模型，长时间的查找因此更紧凑。它默认开启——`execute_tools` 从第一条请求起就会提供——MCP 和插件工具与内置工具一样可以在程序中组合调用。要关闭它，可以只在一次会话中关闭，也可以在配置中关闭："
           },
           {
-            "code": "codewhale --enable code_mode\n\n# ~/.codewhale/config.toml\n[features]\ncode_mode = true",
+            "code": "codewhale --disable code_mode\n\n# ~/.codewhale/config.toml\n[features]\ncode_mode = false",
             "lang": "终端 / config.toml"
           },
           {
             "list": [
-              "程序中只能调用无需审批的只读工具。任何写入、运行 shell 命令或需要征求你同意的调用，都会让程序停止，并报告被拒绝的是哪一次调用。",
-              "程序中暂时还不能调用 MCP 工具，请把它们作为普通工具调用来使用。",
-              "每个程序的上限：50 次工具调用、同时最多 4 次、30 秒、返回 16 KiB。",
+              "程序中的嵌套调用——原生工具、MCP 和插件工具都一样——与直接调用走同一道关卡：允许/拒绝名单、ask 规则和审查照常生效。需要审批的调用会弹出常规审批卡片并暂停程序；允许后程序继续，拒绝只让该次调用失败。批准程序本身不会获得任何权限。",
+              "MCP 调用经由会话的 MCP 连接池执行，插件工具也可以像内置工具一样在程序中调用。",
+              "每个程序的上限：50 次嵌套调用、同时最多 4 次、返回 16 KiB。程序没有固定的 30 秒上限：它使用当前回合剩余的墙钟时间，除非设置了 `[tui].turn_wall_clock_secs`，否则不受限制。",
               "Plan 模式下不能使用代码模式。"
             ]
           }
@@ -1194,6 +1337,25 @@
     "title": "限制命令的访问范围",
     "lede": "批准一条命令，决定的是它能不能运行；沙箱决定的是它运行之后能碰到什么。只要操作系统提供沙箱，Codewhale 就会使用它；没有沙箱时，也会如实告诉你。",
     "sections": [
+      {
+        "id": "execution-policy",
+        "title": "检查执行策略规则",
+        "blocks": [
+          {
+            "code": "/permissions",
+            "lang": "Codewhale"
+          },
+          {
+            "p": "类型化权限依次按 User、Agent、BuiltinDefault 选择规则。同一来源层中，deny 优先于 ask 与 allow；匹配精度用于打破同级平局。"
+          },
+          {
+            "p": "硬性拒绝的命令前缀不能被类型化 allow 覆盖。allow 不会移除后续安全检查、仓库限制或沙箱边界。"
+          },
+          {
+            "p": "[阅读授权顺序与匹配规则](https://github.com/codewhale-hq/CodeWhale/blob/main/docs/AUTHORIZATION_ORDER.md)"
+          }
+        ]
+      },
       {
         "id": "platforms",
         "title": "查看你的平台提供了什么",
@@ -1567,17 +1729,17 @@
   },
   "docs-computers": {
     "metaTitle": "把任务发送到云端 · Codewhale 文档",
-    "metaDescription": "把编码任务交给 Codewhale 云端智能体，由它在一个分支上完成工作并提交拉取请求——先提议，只有你确认后才会开始。",
+    "metaDescription": "把编码任务交给 Codewhale 云端智能体，通过你的账户运行——先报价，只有你同意后才会开始。",
     "bodyClassName": "text-ink-soft leading-[1.9] tracking-wide",
     "title": "把任务发送到云端",
-    "lede": "云端智能体会把任务从你的机器上接走：它在一个全新的云端沙箱中工作，推送一个分支并提交拉取请求，你则可以继续在本地工作。在你确认之前，不会启动任何东西、不会产生费用，也不会推送代码。",
+    "lede": "云端智能体会把任务从你的机器上接走：它在云端算力上工作，你则可以继续在本地工作。在你看过报价并同意之前，不会启动任何东西。",
     "sections": [
       {
         "id": "status",
         "title": "了解目前的完成度",
         "blocks": [
           {
-            "note": "云端智能体目前是预览版。完整流程已有离线测试覆盖，但真实链路——真实的沙箱，以及在各个代码托管平台上真实提交的拉取请求——尚未经过端到端验证。暂不支持私有仓库。"
+            "note": "云端智能体目前是预览版。任务通过你已登录的 Codewhale 账户运行，因此下文的报价和计算位置确认适用于每个任务。"
           }
         ]
       },
@@ -1587,58 +1749,24 @@
         "blocks": [
           {
             "list": [
-              "用 `codewhale login` 登录你的 Codewhale 账户。未登录时，任务只能提议，无法确认。",
-              "把账户 API 密钥设为 `CODEWHALE_API_KEY`，让沙箱中的智能体以你的账户身份运行。缺少它时，确认会在产生任何费用之前被拒绝。",
-              "如果使用 GitHub，请先登录 `gh` 命令行工具；Codewhale 会用这个登录来提交拉取请求。"
+              "用 `codewhale login` 登录你的 Codewhale 账户。派发任务始终通过已登录的账户运行。"
             ]
-          },
-          {
-            "code": "codewhale dispatch --status",
-            "lang": "终端"
-          },
-          {
-            "p": "`--status` 会显示从你的 git 远程仓库中识别出的代码托管平台，以及所需的凭据是否齐全。它从不打印任何密钥。"
           }
         ]
       },
       {
         "id": "send",
-        "title": "先提议，再确认",
+        "title": "先报价、再确认、后运行",
         "blocks": [
           {
-            "code": "codewhale dispatch \"fix the flaky login test and open a PR\" --remote github\ncodewhale dispatch --confirm cloud_<id>",
+            "code": "codewhale dispatch \"fix the flaky login test and open a PR\"",
             "lang": "终端"
           },
           {
-            "p": "第一条命令只写入一份提议并打印其 id；第二条命令才真正启动。Codewhale 可以自己提议云端任务，但从不自行确认。在会话中，使用 `/dispatch <task>` 和 `/dispatch confirm <id>`。"
+            "p": "Codewhale 会显示你账户的任务时长报价，并请你确认仓库代码和你附加的文件将在欧盟计算资源上运行。在你同意之前不会启动任何任务。脚本中可传入 `--yes --confirm-eu-compute` 一次性回答这两个问题。"
           },
           {
-            "p": "确认之后，智能体会把仓库克隆到一个新沙箱中完成工作，推送一个新分支（绝不强制推送），并提交拉取请求。任务完成、失败或被取消时，沙箱都会被删除。"
-          }
-        ]
-      },
-      {
-        "id": "track",
-        "title": "跟踪或取消任务",
-        "blocks": [
-          {
-            "code": "codewhale dispatch --list\ncodewhale dispatch --show cloud_<id>\ncodewhale dispatch --cancel cloud_<id>",
-            "lang": "终端"
-          },
-          {
-            "p": "云端任务也会出现在 `/jobs` 中。每个任务会显示进度、分支、拉取请求链接（有了之后），以及运行了多少分钟——这是运行时长，不是账单。取消会立即拆除沙箱。"
-          }
-        ]
-      },
-      {
-        "id": "forge",
-        "title": "选择拉取请求提交到哪里",
-        "blocks": [
-          {
-            "p": "Codewhale 支持 GitHub、CNB 和 Gitee，且从不假定 `origin` 就是 GitHub。名为 `github`、`cnb` 或 `gitee` 的远程仓库即对应该平台；其他远程仓库按其主机名识别。如果仓库关联了多个平台，请传入 `--remote`。"
-          },
-          {
-            "p": "如果拉取请求无法提交——例如缺少代码托管平台的令牌——任务会在推送之后被标记为失败，并说明没有提交拉取请求。它绝不会报告一个并不存在的链接。"
+            "p": "用 `--seconds` 设置任务时长，用 `--agent` 选择智能体，用 `--context-file` 或 `--file` 附加上下文。"
           }
         ]
       }
@@ -1660,7 +1788,7 @@
         "note": "改为在你自己的机器上运行更长的多步骤工作。"
       }
     ],
-    "sourceNote": "来源文档：docs/DAYTONA_CLOUD_DISPATCH.md、docs/CODEWHALE_AGENT.md · 修改时同步更新 docs-map.ts。"
+    "sourceNote": "来源文档：docs/GUIDE.md、docs/CODEWHALE_AGENT.md · 修改时同步更新 docs-map.ts。"
   },
   "docs-auth": {
     "metaTitle": "连接模型提供商 · Codewhale 文档",
@@ -1798,6 +1926,25 @@
     "lede": "Codewhale 在你的电脑上运行，只与你选择的模型提供商通信。这一页按目前的实际实现，列出数据分别去了哪里、匿名用量统计包含什么，以及如何关闭它。",
     "sections": [
       {
+        "id": "preview-request",
+        "title": "发送前查看请求",
+        "blocks": [
+          {
+            "p": "/preview-request 展示下一个主智能体回合的脱敏清单。这是供人使用的命令，不会发送请求，也不会写入对话或 Work 状态。"
+          },
+          {
+            "code": "/preview-request\n/preview-request json\n/preview-request json --prompt explain this project",
+            "lang": "Codewhale"
+          },
+          {
+            "note": "未提供 --prompt 时，路由和请求体不可用。已配置的分类器、钩子或待处理运行状态也可能阻止精确预览；清单会说明原因。"
+          },
+          {
+            "p": "[阅读请求预览约定](https://github.com/codewhale-hq/CodeWhale/blob/main/docs/PREVIEW_REQUEST.md)"
+          }
+        ]
+      },
+      {
         "id": "boundaries",
         "title": "你的工作内容去了哪里",
         "blocks": [
@@ -1916,9 +2063,9 @@
   "states": {
     "loadingLabel": "加载中…",
     "emptyTitle": "这里还没有内容",
-    "emptyBody": "暂时没有可显示的记录。这里不会用编造的内容填充。",
+    "emptyBody": "暂无可显示的记录。",
     "errorTitle": "页面没有加载完成",
-    "errorBody": "中途出了问题。你的操作没有丢失；请重试，如果持续失败，请报告给我们。",
+    "errorBody": "出了点问题。请重试；如果问题持续，请报告给我们。",
     "retry": "重试",
     "reload": "重新加载页面",
     "homeLink": "返回首页",
@@ -1928,7 +2075,7 @@
     "notFoundHomeLink": "返回基地",
     "notFoundPosterAlt": "虚构游戏《Codwhale: Modern Whalefare》的海报，一只身穿战术装备的蓝鲸。",
     "unavailableTitle": "实时记录尚未加载",
-    "unavailableBody": "数据源没有响应上一次刷新，或者此页面自构建以来尚未刷新。这里不会用编造的内容填充。",
+    "unavailableBody": "暂时无法获取最新信息。请尝试刷新此页面。",
     "offlineTitle": "你已离线",
     "offlineBody": "操作已暂停，直到网络恢复。此处显示的内容不会刷新。",
     "reconnectingTitle": "正在重新连接…",
@@ -1964,8 +2111,8 @@
     "emptyBody": "构建时没有找到可解析的 CHANGELOG.md。GitHub 的发布列表仍然是权威记录。"
   },
   "computer-use": {
-    "metaTitle": "Mac 版 Computer Use · Codewhale",
-    "metaDescription": "下载并设置 Mac 版 Codewhale Computer Use。提供应用后台操作、权限设置，以及由用户控制的暂停和停止功能。",
+    "metaTitle": "Computer Use · 预览 · Codewhale",
+    "metaDescription": "预览功能：下载并设置 Mac 版 Codewhale Computer Use。提供应用后台操作、权限设置，以及由用户控制的暂停和停止功能。",
     "title": "Computer Use",
     "lead": "让 Codewhale 在应用中完成操作，你也可以继续工作。Mac 助手将权限设置、应用后台操作，以及暂停或停止输入的控制集中在菜单栏中。",
     "publisher": "由 Codewhale 开发",
@@ -1998,7 +2145,7 @@
         "body": "在 Codewhale 插件市场中审查、信任并启用 Computer Use。请使用插件 0.3.1 或更高版本，确保本地操作受助手的暂停和停止控制。"
       }
     ],
-    "controlsTitle": "继续工作，掌握控制权。",
+    "controlsTitle": "暂停或停止应用控制",
     "controlsBody": "受支持的操作可在选定应用的后台完成。需要前台控制的应用或手势必须得到你的授权。菜单会显示目标应用与输入模式；Pause 暂停助手输入，Stop 结束助手的现有会话。",
     "updateTitle": "由你决定何时更新",
     "updateBody": "在应用中选择 Check for updates。安装更新前，助手会校验下载文件、Codewhale 签名和 Apple 公证，并保留旧版应用以便恢复。",

@@ -2,22 +2,14 @@ use super::*;
 
 use crate::tools::spec::ToolContext;
 use serde_json::{Value, json};
+#[cfg(unix)]
+use std::sync::OnceLock;
 use tempfile::tempdir;
 
 #[cfg(windows)]
 use windows::Win32::Foundation::{DUPLICATE_HANDLE_OPTIONS, DuplicateHandle, HANDLE};
 #[cfg(windows)]
 use windows::Win32::System::Threading::GetCurrentProcess;
-
-// `env_lock` serializes tests that mutate the process environment.
-#[cfg(any(unix, windows))]
-use std::sync::{Mutex, OnceLock};
-
-#[cfg(any(unix, windows))]
-fn env_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
 
 const BACKGROUND_COMPLETION_WAIT_MS: u64 = 30_000;
 
@@ -106,6 +98,7 @@ fn lowercase_bash_schema_is_small_contract() {
             .collect::<std::collections::BTreeSet<_>>(),
         [
             "command",
+            "description",
             "justification",
             "read_only",
             "sandbox_permissions",
@@ -126,7 +119,7 @@ fn lowercase_bash_description_matches_the_timeout_it_actually_applies() {
     };
 
     // `bash {command}` with no `timeout` translates to a legacy input carrying
-    // no `timeout_ms`. The contract delegate waits the 120 s default in the
+    // no `timeout_ms`. The contract delegate waits the 30 s default in the
     // foreground, then moves a still-running process to the background.
     let translated =
         contract_bash_legacy_input(&json!({"command": "sleep 600"})).expect("translated input");
@@ -1807,7 +1800,7 @@ async fn exec_shell_multiline_block_explains_allow_shell_boundary() {
         result.content
     );
     assert!(
-        result.content.contains("task_shell_start"),
+        result.content.contains("background=true"),
         "{}",
         result.content
     );
@@ -2367,11 +2360,9 @@ fn completion_evidence_preserves_arbitrary_stream_bytes() {
 #[test]
 #[cfg(unix)]
 fn shell_execution_scrubs_parent_env_and_keeps_explicit_env() {
-    let _guard = env_lock().lock().expect("env lock");
-    let previous = std::env::var_os("DEEPSEEK_CHILD_ENV_SHELL_SECRET");
-    unsafe {
-        std::env::set_var("DEEPSEEK_CHILD_ENV_SHELL_SECRET", "parent-secret");
-    }
+    let _lock = crate::test_support::lock_test_env();
+    let _secret =
+        crate::test_support::EnvVarGuard::set("DEEPSEEK_CHILD_ENV_SHELL_SECRET", "parent-secret");
 
     let tmp = tempdir().expect("tempdir");
     let mut manager = ShellManager::new(tmp.path().to_path_buf());
@@ -2394,15 +2385,6 @@ fn shell_execution_scrubs_parent_env_and_keeps_explicit_env() {
         )
         .expect("execute");
 
-    match previous {
-        Some(value) => unsafe {
-            std::env::set_var("DEEPSEEK_CHILD_ENV_SHELL_SECRET", value);
-        },
-        None => unsafe {
-            std::env::remove_var("DEEPSEEK_CHILD_ENV_SHELL_SECRET");
-        },
-    }
-
     assert_eq!(result.status, ShellStatus::Completed);
     assert_eq!(result.stdout, "unset\nexplicit-value\n");
 }
@@ -2410,13 +2392,9 @@ fn shell_execution_scrubs_parent_env_and_keeps_explicit_env() {
 #[test]
 #[cfg(windows)]
 fn shell_execution_preserves_custom_windows_sdk_root_env() {
-    let _guard = env_lock().lock().expect("env lock");
-    let previous_sdk = std::env::var_os("BIMRV_SDK_ROOT");
-    let previous_secret = std::env::var_os("MY_SECRET_ROOT");
-    unsafe {
-        std::env::set_var("BIMRV_SDK_ROOT", r"F:\Lib\BimRv27.5");
-        std::env::set_var("MY_SECRET_ROOT", r"F:\Secrets");
-    }
+    let _lock = crate::test_support::lock_test_env();
+    let _sdk = crate::test_support::EnvVarGuard::set("BIMRV_SDK_ROOT", r"F:\Lib\BimRv27.5");
+    let _secret = crate::test_support::EnvVarGuard::set("MY_SECRET_ROOT", r"F:\Secrets");
 
     let tmp = tempdir().expect("tempdir");
     let mut manager = ShellManager::new(tmp.path().to_path_buf());
@@ -2432,17 +2410,6 @@ fn shell_execution_preserves_custom_windows_sdk_root_env() {
     };
 
     let result = execute_shell(&mut manager, &command, None, 5000, false).expect("execute");
-
-    unsafe {
-        match previous_sdk {
-            Some(value) => std::env::set_var("BIMRV_SDK_ROOT", value),
-            None => std::env::remove_var("BIMRV_SDK_ROOT"),
-        }
-        match previous_secret {
-            Some(value) => std::env::set_var("MY_SECRET_ROOT", value),
-            None => std::env::remove_var("MY_SECRET_ROOT"),
-        }
-    }
 
     assert_eq!(result.status, ShellStatus::Completed);
     assert!(
@@ -2652,7 +2619,7 @@ fn test_job_list_poll_cancel_and_stale_snapshot() {
 }
 
 #[test]
-fn running_job_snapshot_marks_no_output_stale_after_threshold() {
+fn running_job_snapshot_keeps_silent_live_job_live() {
     let tmp = tempdir().expect("tempdir");
     let mut manager = ShellManager::new(tmp.path().to_path_buf());
 
@@ -2662,7 +2629,7 @@ fn running_job_snapshot_marks_no_output_stale_after_threshold() {
 
     {
         let shell = manager.processes.get_mut(&task_id).expect("live shell");
-        shell.last_output_at = Instant::now() - STALE_NO_OUTPUT_AFTER - Duration::from_millis(1);
+        shell.last_output_at = Instant::now() - QUIET_NO_OUTPUT_AFTER - Duration::from_millis(1);
     }
 
     let job = manager
@@ -2672,10 +2639,10 @@ fn running_job_snapshot_marks_no_output_stale_after_threshold() {
         .expect("running job");
 
     assert_eq!(job.status, ShellStatus::Running);
-    assert!(job.stale, "silent running job should be marked stale");
+    assert!(!job.stale, "silence alone must not mark a live job stale");
     assert!(
         job.elapsed_since_output_ms
-            .is_some_and(|elapsed| elapsed >= STALE_NO_OUTPUT_AFTER.as_millis() as u64),
+            .is_some_and(|elapsed| elapsed >= QUIET_NO_OUTPUT_AFTER.as_millis() as u64),
         "elapsed no-output time should be exposed: {job:?}"
     );
 }
@@ -3296,11 +3263,11 @@ async fn test_exec_shell_foreground_can_move_to_background() {
             .expect("execute")
     });
 
-    tokio::time::sleep(Duration::from_millis(150)).await;
+    await_shell_wait_registration(&ctx).await;
     shell_manager
         .lock()
         .expect("shell manager lock")
-        .request_foreground_background();
+        .request_shell_wait_detach("workspace");
 
     let result = tokio::time::timeout(Duration::from_secs(5), task)
         .await
@@ -3317,6 +3284,7 @@ async fn test_exec_shell_foreground_can_move_to_background() {
         result.content
     );
     assert!(result.content.contains("task_id="), "{}", result.content);
+    assert!(result.content.contains("cancel=true"), "{}", result.content);
     assert!(!result.content.contains("exec_shell"), "{}", result.content);
 
     let meta = result.metadata.expect("metadata");
@@ -3412,11 +3380,11 @@ async fn lowercase_bash_foreground_detach_is_a_successful_running_receipt() {
             .expect("execute")
     });
 
-    tokio::time::sleep(Duration::from_millis(150)).await;
+    await_shell_wait_registration(&ctx).await;
     shell_manager
         .lock()
         .expect("shell manager lock")
-        .request_foreground_background();
+        .request_shell_wait_detach("workspace");
 
     let result = tokio::time::timeout(Duration::from_secs(5), task)
         .await
@@ -3432,6 +3400,9 @@ async fn lowercase_bash_foreground_detach_is_a_successful_running_receipt() {
         "{}",
         result.content
     );
+    // A model that owns a stuck command learns here how to stop it; no other
+    // tool in its catalog can.
+    assert!(result.content.contains("cancel=true"), "{}", result.content);
     assert!(!result.content.contains("code -1"), "{}", result.content);
     let metadata = result.metadata.expect("metadata");
     assert_eq!(metadata["status"], "Running");
@@ -3442,6 +3413,379 @@ async fn lowercase_bash_foreground_detach_is_a_successful_running_receipt() {
     let job = manager.inspect_job(task_id).expect("inspect job");
     assert_eq!(job.snapshot.status, ShellStatus::Running);
     manager.kill(task_id).expect("kill test job");
+}
+
+async fn start_wait_detach_job(context: &ToolContext, command: String) -> String {
+    BashTool::new("Bash")
+        .execute(json!({"command": command, "background": true}), context)
+        .await
+        .expect("start owned background job")
+        .metadata
+        .unwrap()["task_id"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+async fn await_shell_wait_registration(context: &ToolContext) {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if context
+                .shell_manager
+                .lock()
+                .unwrap()
+                .shell_wait_active_for_test(&context.state_namespace)
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("blocking shell wait registered");
+}
+
+fn wait_detach_output_command(marker: &str) -> String {
+    let separator = if cfg!(windows)
+        && !crate::shell_dispatcher::global_dispatcher()
+            .kind()
+            .is_powershell()
+    {
+        "&"
+    } else {
+        ";"
+    };
+    format!("{} {separator} {}", echo_command(marker), sleep_command(30))
+}
+
+async fn await_wait_detach_output(context: &ToolContext, id: &str, marker: &str) {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if context
+                .shell_manager
+                .lock()
+                .unwrap()
+                .inspect_job(id)
+                .unwrap()
+                .stdout
+                .contains(marker)
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("job produced output before wait");
+}
+
+#[tokio::test]
+async fn background_wait_detaches_promptly_preserves_output_and_owned_process() {
+    let tmp = tempdir().unwrap();
+    let context = ToolContext::new(tmp.path()).with_state_namespace("detach-owner");
+    let id =
+        start_wait_detach_job(&context, wait_detach_output_command("detach-output-canary")).await;
+    await_wait_detach_output(&context, &id, "detach-output-canary").await;
+    let wait_context = context.clone();
+    let wait_id = id.clone();
+    let mut waiting = tokio::spawn(async move {
+        BashTool::alias("exec_shell_wait", "wait")
+            .execute(
+                json!({"task_id": wait_id, "timeout_ms": 600_000}),
+                &wait_context,
+            )
+            .await
+    });
+    await_shell_wait_registration(&context).await;
+    assert!(
+        !context
+            .shell_manager
+            .lock()
+            .unwrap()
+            .request_shell_wait_detach("other-session")
+    );
+    assert!(!waiting.is_finished());
+    assert!(
+        context
+            .shell_manager
+            .lock()
+            .unwrap()
+            .request_shell_wait_detach(&context.state_namespace)
+    );
+    let returned = tokio::time::timeout(Duration::from_secs(3), &mut waiting).await;
+    if returned.is_err() {
+        waiting.abort();
+        context
+            .shell_manager
+            .lock()
+            .unwrap()
+            .kill_for_session(&context.state_namespace, &id)
+            .unwrap();
+    }
+    let result = returned
+        .expect("detach must release a ten-minute wait promptly")
+        .unwrap()
+        .unwrap();
+    let alive = context
+        .shell_manager
+        .lock()
+        .unwrap()
+        .inspect_job_for_session(&context.state_namespace, &id)
+        .unwrap()
+        .snapshot
+        .status;
+    let next = BashTool::alias("exec_shell_wait", "wait")
+        .execute(json!({"task_id": id, "wait": false}), &context)
+        .await
+        .unwrap();
+    context
+        .shell_manager
+        .lock()
+        .unwrap()
+        .kill_for_session(&context.state_namespace, &id)
+        .unwrap();
+    assert!(result.success);
+    assert_eq!(result.metadata.as_ref().unwrap()["status"], "Running");
+    assert_eq!(result.metadata.as_ref().unwrap()["wait_detached"], true);
+    assert!(
+        result
+            .metadata
+            .as_ref()
+            .unwrap()
+            .get("wait_canceled")
+            .is_none()
+    );
+    assert_eq!(alive, ShellStatus::Running);
+    assert_eq!(result.content.matches("detach-output-canary").count(), 1);
+    assert!(
+        !next.content.contains("detach-output-canary"),
+        "detach consumes each output byte once"
+    );
+    assert!(
+        !context
+            .shell_manager
+            .lock()
+            .unwrap()
+            .request_shell_wait_detach(&context.state_namespace)
+    );
+}
+
+#[tokio::test]
+async fn multi_background_wait_detach_is_session_scoped_and_rejects_foreign_jobs() {
+    let tmp = tempdir().unwrap();
+    let owner = ToolContext::new(tmp.path()).with_state_namespace("multi-owner");
+    let foreign = owner.clone().with_state_namespace("multi-foreign");
+    let first =
+        start_wait_detach_job(&owner, wait_detach_output_command("multi-output-canary")).await;
+    await_wait_detach_output(&owner, &first, "multi-output-canary").await;
+    let second = start_wait_detach_job(&owner, sleep_command(30)).await;
+    let other = start_wait_detach_job(&foreign, sleep_command(30)).await;
+    let rejected = BashTool::alias("exec_shell_wait", "wait")
+        .execute(
+            json!({"task_ids": [first, other], "timeout_ms": 600_000}),
+            &owner,
+        )
+        .await;
+    assert!(
+        rejected.is_err(),
+        "every job must belong to the waiting session"
+    );
+    assert!(
+        !owner
+            .shell_manager
+            .lock()
+            .unwrap()
+            .shell_wait_active_for_test(&owner.state_namespace)
+    );
+    let wait_context = owner.clone();
+    let ids = vec![first.clone(), second.clone()];
+    let mut waiting = tokio::spawn(async move {
+        BashTool::alias("exec_shell_wait", "wait")
+            .execute(
+                json!({"task_ids": ids, "until": "all", "timeout_ms": 600_000}),
+                &wait_context,
+            )
+            .await
+    });
+    let foreign_context = foreign.clone();
+    let other_id = other.clone();
+    let mut foreign_wait = tokio::spawn(async move {
+        BashTool::alias("exec_shell_wait", "wait")
+            .execute(
+                json!({"task_id": other_id, "timeout_ms": 600_000}),
+                &foreign_context,
+            )
+            .await
+    });
+    await_shell_wait_registration(&owner).await;
+    await_shell_wait_registration(&foreign).await;
+    assert!(
+        owner
+            .shell_manager
+            .lock()
+            .unwrap()
+            .request_shell_wait_detach(&owner.state_namespace)
+    );
+    let returned = tokio::time::timeout(Duration::from_secs(3), &mut waiting).await;
+    let foreign_still_waiting = !foreign_wait.is_finished();
+    assert!(
+        owner
+            .shell_manager
+            .lock()
+            .unwrap()
+            .request_shell_wait_detach(&foreign.state_namespace)
+    );
+    let foreign_returned = tokio::time::timeout(Duration::from_secs(3), &mut foreign_wait).await;
+    waiting.abort();
+    foreign_wait.abort();
+    let first_output = BashTool::alias("exec_shell_wait", "wait")
+        .execute(json!({"task_id": first, "wait": false}), &owner)
+        .await
+        .unwrap();
+    let next_output = BashTool::alias("exec_shell_wait", "wait")
+        .execute(json!({"task_id": first, "wait": false}), &owner)
+        .await
+        .unwrap();
+    let mut manager = owner.shell_manager.lock().unwrap();
+    let statuses: Vec<_> = [&first, &second, &other]
+        .into_iter()
+        .map(|id| manager.inspect_job(id).unwrap().snapshot.status)
+        .collect();
+    manager
+        .kill_for_session(&owner.state_namespace, &first)
+        .unwrap();
+    manager
+        .kill_for_session(&owner.state_namespace, &second)
+        .unwrap();
+    manager
+        .kill_for_session(&foreign.state_namespace, &other)
+        .unwrap();
+    drop(manager);
+    let result = returned
+        .expect("multi-wait must detach promptly")
+        .unwrap()
+        .unwrap();
+    assert!(result.success);
+    assert_eq!(result.metadata.as_ref().unwrap()["wait_detached"], true);
+    assert_eq!(
+        result.metadata.as_ref().unwrap()["statuses"][&first],
+        "Running"
+    );
+    assert_eq!(
+        result.metadata.as_ref().unwrap()["statuses"][&second],
+        "Running"
+    );
+    assert!(foreign_still_waiting, "detaching A must not release B");
+    let foreign_result = foreign_returned
+        .expect("foreign session can release its own wait")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        foreign_result.metadata.as_ref().unwrap()["wait_detached"],
+        true
+    );
+    assert_eq!(
+        first_output.content.matches("multi-output-canary").count(),
+        1
+    );
+    assert!(
+        !next_output.content.contains("multi-output-canary"),
+        "multi-wait must not consume output cursors"
+    );
+    assert!(
+        statuses
+            .into_iter()
+            .all(|status| status == ShellStatus::Running)
+    );
+    assert!(
+        !owner
+            .shell_manager
+            .lock()
+            .unwrap()
+            .request_shell_wait_detach(&owner.state_namespace)
+    );
+}
+
+#[tokio::test]
+async fn shell_wait_detach_expires_and_turn_cancellation_keeps_precedence() {
+    let tmp = tempdir().unwrap();
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let context = ToolContext::new(tmp.path())
+        .with_state_namespace("cancel-owner")
+        .with_cancel_token(cancel.clone());
+    let id = start_wait_detach_job(&context, sleep_command(30)).await;
+    {
+        let mut manager = context.shell_manager.lock().unwrap();
+        let previous = manager.register_shell_wait(&context.state_namespace);
+        assert!(manager.request_shell_wait_detach(&context.state_namespace));
+        drop(previous);
+        assert!(!manager.request_shell_wait_detach(&context.state_namespace));
+    }
+    // An old request must not free a fresh wait. Dropping its future must also
+    // unregister it, so a later request cannot affect the next call.
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(100),
+            BashTool::alias("exec_shell_wait", "wait")
+                .execute(json!({"task_id": id, "timeout_ms": 600_000}), &context)
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        !context
+            .shell_manager
+            .lock()
+            .unwrap()
+            .request_shell_wait_detach(&context.state_namespace)
+    );
+    let wait_context = context.clone();
+    let wait_id = id.clone();
+    let mut waiting = tokio::spawn(async move {
+        BashTool::alias("exec_shell_wait", "wait")
+            .execute(
+                json!({"task_id": wait_id, "timeout_ms": 600_000}),
+                &wait_context,
+            )
+            .await
+    });
+    await_shell_wait_registration(&context).await;
+    context
+        .shell_manager
+        .lock()
+        .unwrap()
+        .request_shell_wait_detach(&context.state_namespace);
+    cancel.cancel();
+    let returned = tokio::time::timeout(Duration::from_secs(3), &mut waiting).await;
+    waiting.abort();
+    let alive = context
+        .shell_manager
+        .lock()
+        .unwrap()
+        .inspect_job(&id)
+        .unwrap()
+        .snapshot
+        .status;
+    context
+        .shell_manager
+        .lock()
+        .unwrap()
+        .kill_for_session(&context.state_namespace, &id)
+        .unwrap();
+    let result = returned
+        .expect("cancel releases wait promptly")
+        .unwrap()
+        .unwrap();
+    assert_eq!(result.metadata.as_ref().unwrap()["wait_canceled"], true);
+    assert!(
+        result
+            .metadata
+            .as_ref()
+            .unwrap()
+            .get("wait_detached")
+            .is_none()
+    );
+    assert_eq!(alive, ShellStatus::Running);
 }
 
 #[tokio::test]
@@ -4736,7 +5080,7 @@ fn timeout_ms_description_covers_every_action_default() {
         .as_str()
         .expect("timeout_ms description");
 
-    for expected in ["120000", "600000", "30000", "1000"] {
+    for expected in ["600000", "30000", "1000"] {
         assert!(
             description.contains(expected),
             "missing {expected}: {description}"
@@ -5396,14 +5740,14 @@ fn pty_resize_updates_live_terminal_and_rejects_finished_or_pipe_jobs() {
     // Reopening a client after an idle minute must retain this live PTY's
     // identity and resize eligibility; output silence is normal at a prompt.
     manager.processes.get_mut(&id).unwrap().last_output_at =
-        Instant::now() - STALE_NO_OUTPUT_AFTER - Duration::from_millis(1);
+        Instant::now() - QUIET_NO_OUTPUT_AFTER - Duration::from_millis(1);
     let idle = manager.inspect_job(&id).unwrap().snapshot;
     assert_eq!(idle.status, ShellStatus::Running);
     assert!(idle.stdin_available);
     assert!(!idle.stale, "an idle live PTY must remain reconnectable");
     assert!(
         idle.elapsed_since_output_ms
-            .is_some_and(|ms| ms >= STALE_NO_OUTPUT_AFTER.as_millis() as u64)
+            .is_some_and(|ms| ms >= QUIET_NO_OUTPUT_AFTER.as_millis() as u64)
     );
     let size = PtyDimensions {
         rows: 37,

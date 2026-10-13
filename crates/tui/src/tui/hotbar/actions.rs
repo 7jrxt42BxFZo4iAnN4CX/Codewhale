@@ -17,7 +17,7 @@ use codewhale_localization::{Locale, MessageId, tr};
 pub const HOTBAR_COMPACT_LABEL_MAX_WIDTH: usize = 7;
 
 /// Result of firing a hotbar action.
-#[allow(dead_code, clippy::large_enum_variant)] // AppAction is intentionally large; boxing would force clone churn on the hot path
+#[allow(clippy::large_enum_variant)] // AppAction is intentionally large; boxing would force clone churn on the hot path
 #[derive(Debug, Clone, PartialEq)]
 pub enum HotbarDispatch {
     /// The action was fully handled by mutating [`App`].
@@ -1134,11 +1134,11 @@ impl HotbarAction for SlashHotbarAction {
             HotbarRecommendation::Default
         } else {
             match self.info.discovery() {
-                crate::commands::traits::CommandDiscovery::Primary => {
+                codewhale_command_contract::CommandDiscovery::Primary => {
                     HotbarRecommendation::Eligible
                 }
-                crate::commands::traits::CommandDiscovery::Advanced
-                | crate::commands::traits::CommandDiscovery::Compatibility => {
+                codewhale_command_contract::CommandDiscovery::Advanced
+                | codewhale_command_contract::CommandDiscovery::Compatibility => {
                     HotbarRecommendation::Advanced
                 }
             }
@@ -1481,7 +1481,7 @@ mod tests {
         let options = TuiOptions {
             skills_dir,
             start_in_agent_mode: true,
-            ..crate::test_support::test_tui_options(workspace)
+            ..crate::tui::test_support::test_tui_options(workspace)
         };
         let mut app = App::new(options, config);
         app.ui_locale = codewhale_localization::Locale::En;

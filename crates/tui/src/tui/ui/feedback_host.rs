@@ -169,7 +169,10 @@ mod tests {
     fn captured_feedback_result_rejects_session_workspace_and_plugin_view_changes() {
         let tmp = tempfile::tempdir().unwrap();
         let config = Config::default();
-        let mut app = App::new(crate::test_support::test_tui_options(tmp.path()), &config);
+        let mut app = App::new(
+            crate::tui::test_support::test_tui_options(tmp.path()),
+            &config,
+        );
         app.current_session_id = Some("session-a".into());
         let scope = Scope::capture(&app, &config).unwrap();
         assert!(scope.current(&app, &config));
@@ -189,7 +192,10 @@ mod tests {
     fn feedback_edit_slot_refuses_replacement_and_feature_change_rejects_apply() {
         let tmp = tempfile::tempdir().unwrap();
         let mut config = Config::default();
-        let mut app = App::new(crate::test_support::test_tui_options(tmp.path()), &config);
+        let mut app = App::new(
+            crate::tui::test_support::test_tui_options(tmp.path()),
+            &config,
+        );
         app.current_session_id = Some("session".into());
         let scope = Scope::capture(&app, &config).unwrap();
         app.feedback_dispatch = Some(EditReady {
@@ -222,7 +228,10 @@ mod tests {
     async fn full_or_closed_feedback_mailbox_refuses_before_any_read_or_host_job() {
         let tmp = tempfile::tempdir().unwrap();
         let config = Config::default();
-        let mut app = App::new(crate::test_support::test_tui_options(tmp.path()), &config);
+        let mut app = App::new(
+            crate::tui::test_support::test_tui_options(tmp.path()),
+            &config,
+        );
         app.current_session_id = Some("session".into());
         let (tx, rx) = tokio::sync::mpsc::channel::<crate::tui::app::DispatchApplyFn>(1);
         let _reserved = tx.clone().try_reserve_owned().unwrap();

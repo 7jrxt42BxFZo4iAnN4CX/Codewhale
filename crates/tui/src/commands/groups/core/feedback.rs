@@ -130,7 +130,7 @@ mod tests {
     fn test_app() -> (App, TempDir) {
         let tmp = TempDir::new().unwrap();
         let app = App::new(
-            crate::test_support::test_tui_options(tmp.path()),
+            crate::tui::test_support::test_tui_options(tmp.path()),
             &Config::default(),
         );
         (app, tmp)

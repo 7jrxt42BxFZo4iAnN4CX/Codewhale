@@ -583,7 +583,13 @@ pub(super) fn apply_route_reasoning_controls(
     model: &str,
     effort: Option<&str>,
 ) {
-    apply_reasoning_effort(body, effort, provider);
+    let reasoning_provider =
+        if provider == ProviderKind::Custom && requires_reasoning_content(model) {
+            ProviderKind::Deepseek
+        } else {
+            provider
+        };
+    apply_reasoning_effort(body, effort, reasoning_provider);
     apply_modelstudio_route_reasoning_controls(body, provider, base_url, model, effort);
     apply_minimax_route_reasoning_controls(body, provider, base_url, model, effort);
     apply_inkling_reasoning_effort(body, provider, model, effort);

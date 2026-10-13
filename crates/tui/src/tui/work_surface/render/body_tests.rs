@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 fn app() -> App {
     let mut app = App::new(
-        crate::test_support::test_tui_options(PathBuf::from(".")),
+        crate::tui::test_support::test_tui_options(PathBuf::from(".")),
         &Config::default(),
     );
     app.ui_locale = codewhale_localization::Locale::En;
@@ -48,7 +48,9 @@ fn shared_native_body_matches_frozen_whole_buffer_actions_and_hover_receipts() {
     ] {
         for panel in RailPanel::ORDER
             .into_iter()
-            .filter(|panel| *panel != RailPanel::Git)
+            // These two panels have dedicated renderers; Terminal was added
+            // after the legacy body was frozen and has no old counterpart.
+            .filter(|panel| !matches!(panel, RailPanel::Git | RailPanel::Terminal))
         {
             for width in [12, 40, 59, 71, 72, 80, 120] {
                 for height in [1, 2, 3, 5, 12] {

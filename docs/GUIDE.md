@@ -85,16 +85,16 @@ codewhale
 For the default GitHub installer destination, you can use
 `"$HOME/.local/bin/codewhale"` until that directory is on PATH.
 
-On first launch, Codewhale asks only for decisions this installation still
-needs: language when it cannot infer one, a provider when no usable route is
-configured, and workspace trust when the folder requires a decision. The
-provider step includes an explicit offline route. The ready screen then opens
-the real composer, preserving a task supplied on the command line or suggesting
-a first task for the current folder.
+On first launch, Codewhale opens the composer, even with no key or route.
+With no key or route, workspace trust is asked once a provider is connected;
+otherwise only when the folder requires a decision. A provider is asked for
+when you send your first message: the message stays in the box while you sign
+in or use your own key, and a local model is offered only when a local Ollama
+server answers. The provider step also has an explicit offline route.
 
 Everything optional stays available after that. Use `/setup` for the
 progressive setup and repair guide, `/settings` for the full typed editor, and
-`/constitution` when you want to customize the bundled working agreement.
+`/constitution` when you want your own constitution on top of the bundled one.
 The localized telemetry choice appears only after the workspace is ready and
 does not block the composer.
 
@@ -332,11 +332,15 @@ Or switch directly:
 
 Plan mode is the safest place to start in an unfamiliar repository. It is for
 inspection and decision-making, not file edits.
-For non-trivial work, Plan mode's confirmation prompt can show a grounded
-PlanArtifact: objective, context, sources used, critical files, constraints,
-approach, verification plan, risks, and handoff notes. Empty sections are
-visible when the agent uses the rich artifact shape, so you can ask for a
-revision instead of accepting an under-specified plan.
+When a Plan turn successfully finishes a nonempty response, Codewhale asks
+how to continue, including when the plan is plain text. **Work (Ask)** and
+**Work (Auto-Review)** switch to Work with that permission and send the exact
+approved response as the next message. Existing To-dos from that turn are
+preserved; a prose-only plan adds one pending item without replacing unrelated
+work. If Codewhale cannot prepare the work state, it stays in Plan without
+starting the task. **Keep planning**, or `Esc`, stays in Plan. You can also
+type feedback there to have the plan revised. The question appears only when
+the composer is empty and no other view is open; `/mode work` always works.
 
 Work mode is the default for most contribution work. It lets Codewhale read,
 run checks, and edit files while keeping risky actions behind approval gates.
@@ -347,9 +351,8 @@ direct. Multi-step delegation uses a compact Workflow plan with dependencies,
 bounded scopes, and completion evidence passed between steps. Fleet configures
 and manages those same sub-agents and their roles. One bounded, independent
 task can use a direct agent; continued work reuses it through `followup`.
-Heavy work can also be proposed to a Daytona cloud agent with `codewhale
-dispatch` or `/dispatch` (explicit confirmation; remotes are `github` / `cnb` /
-`gitee`). See [DAYTONA_CLOUD_DISPATCH.md](DAYTONA_CLOUD_DISPATCH.md).
+Heavy work can also run on a cloud computer with `codewhale dispatch "<task>"`,
+which goes through the signed-in account with a quote and EU-compute consent.
 
 For trusted workspaces where you intentionally want actions to proceed without
 approval prompts, select the Full Access permission posture with `Shift+Tab`.
@@ -507,8 +510,16 @@ Codewhale keeps these records on your machine, under `~/.codewhale/`:
   in their event log. A call that ran without asking (Full Access, an allow
   rule, a remembered grant) has no approval record; the posture each turn
   ran under is saved with the turn.
-- **Undo points.** Workspace snapshots let `/undo` and `/restore` roll files
-  back.
+- **Undo points.** Workspace snapshots let you go back. `/undo` takes back
+  your last request in one step: every file it changed, plus the request and
+  its reply. It works in every access mode and lists the files it put back.
+  If one of those files changed after the request, `/undo` changes nothing
+  and says which file. If a request was cut off before Codewhale recorded
+  where its changes end, `/undo` says so; `/undo force` undoes it anyway,
+  including edits made to those files since it started. `/restore` rolls the
+  whole folder back to a point you pick, overwriting later edits, so it
+  needs `/trust on` or Full Access. Esc Esc rewinds the conversation only;
+  `/undo` afterwards puts the files back.
 - **Security events.** `audit.log` records credential changes, hook
   environment key names, compaction passes, the terminal's approval
   routing, and Auto-Review verdicts. It is not a list of what a session did.
@@ -805,3 +816,24 @@ and sub-agents.
 Next: [INSTALL.md](INSTALL.md), [CONFIGURATION.md](CONFIGURATION.md),
 [PROVIDERS.md](PROVIDERS.md), [MODES.md](MODES.md), and
 [TOOL_SURFACE.md](TOOL_SURFACE.md).
+
+## Live Terminal dock
+
+Open `/workbar terminal` to watch the same workspace PTY sessions the model
+uses. Click the dock or press `Alt+W` to give it input focus. While focused,
+typing, Enter, Tab and Ctrl+C reach the selected shell. Esc returns focus to
+the composer; the output remains visible. Click a session or use `Alt+Down` /
+`Alt+Up` to switch. `Ctrl+N` starts your own fresh shell without replacing the
+model’s session. Mouse-wheel and PageUp/PageDown review the retained output.
+The active permission posture and filesystem scope govern fresh shells and
+refuse reuse of an unsandboxed shell after the scope narrows.
+
+The dock shows the latest 64 KiB, reports omitted bytes, and never consumes the
+model’s output cursor. A reset or lost session requires explicit selection;
+input cannot silently follow a reused session name. PTYs are currently supported
+on macOS and Linux. This is an ANSI-styled output view: cursor-addressed programs,
+alternate screens and replay after process restart are outside its scope. Paste
+is direct terminal input and may execute commands containing newlines; control
+characters and pastes over 64 KiB are refused. While a process uses canonical
+line input, batches of 1 KiB or more are refused before any bytes are sent:
+the terminal can discard oversized input. Transfer long content through a file.

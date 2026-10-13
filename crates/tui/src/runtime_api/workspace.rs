@@ -566,6 +566,20 @@ pub(super) fn open_confined_file(
         .map_err(|error| map_fs_error(error, "file"))
 }
 
+/// [`open_confined_file`] for the application's own state root, which a user
+/// may have relocated behind a link (on Windows, a junction to another
+/// volume). The root is resolved once and every component below it is still
+/// refused when linked, so a reader follows its writer and a caller-supplied
+/// workspace root keeps the stricter [`open_confined_file`].
+pub(super) fn open_confined_file_resolved(
+    root: &FsPath,
+    relative: &FsPath,
+    create: bool,
+) -> Result<crate::fleet::files::WorkspaceFile, ApiError> {
+    crate::fleet::files::WorkspaceFile::open_resolved_root(root, relative, create)
+        .map_err(|error| map_fs_error(error, "file"))
+}
+
 /// Read one confined file completely (bounded by `FILE_SERVE_MAX_BYTES`) so
 /// the revision always describes the whole file.
 pub(super) fn read_confined_bytes(
@@ -706,6 +720,10 @@ fn write_workspace_file(
     bytes: &[u8],
     expected_revision: Option<&str>,
 ) -> Result<(StatusCode, Json<WorkspaceFileWriteResponse>), ApiError> {
+    static WRITES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _write_guard = WRITES
+        .lock()
+        .map_err(|_| ApiError::internal("workspace file write lock is unavailable"))?;
     let root = canonical_workspace(workspace)?;
     let created = precheck_file_target(&root, relative)?.is_none();
     match (created, expected_revision) {
@@ -736,8 +754,7 @@ fn write_workspace_file(
             )));
         }
     }
-    file.replace(bytes)
-        .map_err(|error| map_fs_error(error, "file"))?;
+    publish_workspace_file(&file, bytes, created)?;
     Ok((
         if created {
             StatusCode::CREATED
@@ -752,6 +769,27 @@ fn write_workspace_file(
             written_at: chrono::Utc::now().to_rfc3339(),
         }),
     ))
+}
+
+pub(super) fn publish_workspace_file(
+    file: &crate::fleet::files::WorkspaceFile,
+    bytes: &[u8],
+    created: bool,
+) -> Result<(), ApiError> {
+    // Absence was observed before opening the confined parent. Another
+    // creator can publish meanwhile; never replace that creator's file.
+    let publication = if created {
+        file.publish(bytes)
+    } else {
+        file.replace(bytes)
+    };
+    publication.map_err(|error| {
+        if created && error.kind() == std::io::ErrorKind::AlreadyExists {
+            ApiError::conflict("file was created by another writer; read it before overwriting")
+        } else {
+            map_fs_error(error, "file")
+        }
+    })
 }
 
 // ── Effective instruction sources (#6168) ────────────────────────────────

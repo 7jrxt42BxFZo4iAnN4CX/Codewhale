@@ -1068,12 +1068,14 @@ impl WorkflowPanel {
         // timestamps) which would otherwise render multi-year elapsed times.
         if self.started_at_ms == 0 {
             if let Some(completed) = self.completed_at_ms {
-                return crate::elapsed::format_elapsed_ms(completed);
+                return codewhale_command_contract::elapsed::format_elapsed_ms(completed);
             }
             return "0s".to_string();
         }
         let end = self.completed_at_ms.unwrap_or_else(now_ms);
-        crate::elapsed::format_elapsed_ms(end.saturating_sub(self.started_at_ms))
+        codewhale_command_contract::elapsed::format_elapsed_ms(
+            end.saturating_sub(self.started_at_ms),
+        )
     }
 
     /// Expanded history-card body lines (phase/child summaries, links,
@@ -1174,7 +1176,9 @@ impl WorkflowPanel {
                         mark = role_mark(row.profile.as_deref()),
                         label = short_label(&row.label, 14),
                         track = lane_track(row, max_elapsed, 16, now_ms()),
-                        elapsed = crate::elapsed::format_elapsed_ms(row_elapsed_ms(row, now_ms())),
+                        elapsed = codewhale_command_contract::elapsed::format_elapsed_ms(
+                            row_elapsed_ms(row, now_ms())
+                        ),
                         status = row.status.display_label(self.locale),
                     ),
                     content_width,
@@ -2194,9 +2198,10 @@ fn receipt_parts(row: &WorkflowPanelRow, locale: Locale) -> Vec<String> {
         let tools = usage
             .tool_calls
             .map_or_else(|| unknown.clone(), |calls| calls.to_string());
-        let duration = usage
-            .duration_ms
-            .map_or_else(|| unknown.clone(), crate::elapsed::format_elapsed_ms);
+        let duration = usage.duration_ms.map_or_else(
+            || unknown.clone(),
+            codewhale_command_contract::elapsed::format_elapsed_ms,
+        );
         parts.extend([
             localized_field(locale, MessageId::WorkflowReceiptTokens, &tokens),
             localized_field(locale, MessageId::WorkflowReceiptTools, &tools),
@@ -2558,6 +2563,76 @@ mod tests {
             .map(row_receipt_text)
             .collect::<Vec<_>>();
         assert_eq!(original, round_tripped);
+
+        {
+            let child_id = "persisted-child";
+            let mut started = task_started_json(child_id, "deepseek", "deepseek-v4-flash");
+            started["requested_reasoning"] = json!("low");
+            started["effective_reasoning"] = json!("low");
+            started["route_source"] = json!("task.model");
+            let persisted_json = json!({
+                "run_id":"workflow_abc", "workflow_goal":"audit", "started_at_ms":1_000,
+                "events":[
+                    {"type":"run_started", "run_id":"workflow_abc", "workflow_goal":"audit", "at_ms":1_000},
+                    started,
+                    {"type":"task_completed", "task_id":child_id, "status":"succeeded", "at_ms":3_200}
+                ]
+            });
+            let mut panel = WorkflowPanel::from_run_json(&persisted_json)
+                .expect("journal should hydrate workflow panel");
+            let original_receipt = panel
+                .phases
+                .iter()
+                .flat_map(|phase| phase.rows.iter())
+                .find(|row| row.task_id == child_id)
+                .map(row_receipt_text)
+                .expect("spawned child receipt");
+            assert!(original_receipt.contains("deepseek/deepseek-v4-flash"));
+            assert!(original_receipt.contains("reasoning low→"));
+            assert!(original_receipt.contains("via task.model"));
+
+            panel.apply_json_event(&json!({
+                "type": "task_started",
+                "at_ms": 9_000,
+                "task_id": "later-route",
+                "label": "later-route",
+                "resolved_role": "consultant",
+                "resolved_provider": "moonshot",
+                "resolved_model": "kimi-k3",
+                "requested_reasoning": "auto",
+                "effective_reasoning": "medium",
+                "route_source": "agent_profile.model",
+                "worktree": false,
+            }));
+            panel.apply_json_event(&json!({
+                "type": "task_completed",
+                "at_ms": 9_100,
+                "task_id": "later-route",
+                "status": "succeeded"
+            }));
+            let unchanged = panel
+                .phases
+                .iter()
+                .flat_map(|phase| phase.rows.iter())
+                .find(|row| row.task_id == child_id)
+                .map(row_receipt_text)
+                .expect("original child after later route");
+            assert_eq!(unchanged, original_receipt);
+
+            let history = WorkflowPanel::from_run_json(&panel.to_run_json())
+                .expect("history receipt round trip");
+            let later_receipt = history
+                .phases
+                .iter()
+                .flat_map(|phase| phase.rows.iter())
+                .find(|row| row.task_id == "later-route")
+                .map(row_receipt_text)
+                .expect("later route history receipt");
+            assert!(later_receipt.contains("moonshot/kimi-k3"));
+            assert!(later_receipt.contains("reasoning auto→medium"));
+            assert!(later_receipt.contains("tokens unknown"));
+            assert!(!later_receipt.contains("tokens 0"));
+        }
     }
 
     /// #4039 compatibility: journals written before the receipt fields existed

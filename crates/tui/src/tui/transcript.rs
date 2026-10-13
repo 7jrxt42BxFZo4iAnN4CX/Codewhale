@@ -191,6 +191,18 @@ impl TranscriptViewCache {
         self.streaming_source_receipt = receipt;
     }
 
+    #[cfg(test)]
+    pub(crate) fn streaming_render_work(
+        &self,
+        cell_index: usize,
+    ) -> Option<crate::tui::markdown_render::MarkdownRenderWork> {
+        self.per_cell
+            .get(cell_index)?
+            .incremental_markdown
+            .as_ref()
+            .map(|cache| cache.work())
+    }
+
     pub(crate) fn take_transcript_action(
         &mut self,
     ) -> Option<(TranscriptActionOwner, Option<CellFoldActionTarget>)> {
@@ -1323,6 +1335,9 @@ fn truncate_spans_to_width(spans: Vec<Span<'static>>, max_width: usize) -> Vec<S
         for ch in span.content.chars() {
             let width = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
             if used + width > content_budget {
+                if !content.is_empty() {
+                    truncated.push(Span::styled(content, span.style));
+                }
                 break 'outer;
             }
             content.push(ch);
