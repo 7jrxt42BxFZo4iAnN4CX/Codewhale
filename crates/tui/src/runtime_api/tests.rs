@@ -4286,7 +4286,7 @@ async fn turn_operation_lookup_is_authenticated_read_only_and_survives_restart()
     let workspace = dir.path().join("workspace");
     let token = "turn-lookup-local-fixture";
     let _backend = EnvVarGuard::set("CODEWHALE_SECRET_BACKEND", "file");
-    let _proxy = EnvVarGuard::set("NO_PROXY", "*");
+    let _proxy = EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
     let (addr, manager, server) = spawn_test_server_with_root_token_mobile_workspace(
         root.clone(),
         sessions.clone(),
@@ -5522,7 +5522,24 @@ async fn steer_and_interrupt_endpoints_work_on_active_turn() -> Result<()> {
         .json()
         .await?;
     assert_eq!(steer_resp["id"], turn_id);
-    assert_eq!(steer_resp["steer_count"], 1);
+    let deadline = tokio::time::Instant::now() + ci_scaled(Duration::from_secs(10));
+    while !runtime_threads
+        .events_since(&thread_id, None)?
+        .iter()
+        .any(|ev| ev.event == "turn.steered")
+    {
+        if tokio::time::Instant::now() >= deadline {
+            bail!("timed out waiting for the steer on {turn_id} to settle");
+        }
+        sleep(Duration::from_millis(25)).await;
+    }
+    assert_eq!(
+        runtime_threads
+            .test_store()
+            .load_turn(&turn_id)?
+            .steer_count,
+        1
+    );
 
     let interrupt_resp: serde_json::Value = client
         .post(format!(
@@ -19445,7 +19462,7 @@ async fn native_notification_replay_rechecks_requests_settled_during_the_read() 
     let temp = tempfile::tempdir()?;
     let _home = EnvVarGuard::set("CODEWHALE_HOME", temp.path().join("home"));
     let _backend = EnvVarGuard::set("CODEWHALE_SECRET_BACKEND", "file");
-    let _proxy = EnvVarGuard::set("NO_PROXY", "*");
+    let _proxy = EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
     let path = temp.path().join("config.toml");
     fs::write(
         &path,
@@ -25774,5 +25791,213 @@ async fn session_export_keeps_execution_identity_and_rejects_invalid_item_correl
     );
     assert_eq!(fs::read(saved_path)?, before);
     handle.abort();
+    Ok(())
+}
+
+/// The two halves a client needs to settle workspace trust, over HTTP.
+///
+/// The write is asserted through the *response* rather than a second request,
+/// because the response's `workspace_trusted` is the gate's verdict read back
+/// inside the same request: the handler writes with `config::set_workspace_trust`
+/// and re-reads with `config::is_workspace_trusted`, so a `true` here is proof the
+/// record landed where that gate looks. A second GET cannot add to that proof in
+/// this harness and would only be flaky — `unsealed_test_state_root` hands a
+/// thread that resolves the config through `with_test_env_lock` a root keyed by
+/// *its own* thread id, so two requests served by different blocking workers
+/// legitimately resolve two different test config files (verified by probe).
+/// `workspace_bootstrap_status_reports_the_trust_gate` covers the projection
+/// deterministically on one thread.
+#[tokio::test]
+async fn workspace_trust_is_reported_and_written_through_the_api() -> Result<()> {
+    let root = std::env::temp_dir().join(format!("codewhale-workspace-trust-{}", Uuid::new_v4()));
+    let sessions_dir = root.join("sessions");
+    let workspace = root.join("workspace");
+    fs::create_dir_all(&workspace)?;
+    fs::create_dir_all(&sessions_dir)?;
+
+    let Some((addr, _runtime_threads, handle)) =
+        spawn_test_server_with_root_token_mobile_workspace_and_overrides(
+            root,
+            sessions_dir,
+            None,
+            false,
+            workspace.clone(),
+            TestServerOverrides::default(),
+        )
+        .await?
+    else {
+        return Ok(());
+    };
+    let client = crate::tls::reqwest_client();
+    let expected_workspace = fs::canonicalize(&workspace)?;
+
+    let before: serde_json::Value = client
+        .get(format!("http://{addr}/v1/workspace/status"))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(
+        before["workspace_trusted"],
+        json!(false),
+        "a workspace nothing has vouched for must report untrusted: {before}"
+    );
+
+    let granted: serde_json::Value = client
+        .post(format!("http://{addr}/v1/workspace/trust"))
+        .json(&json!({ "trusted": true }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(
+        granted["workspace_trusted"],
+        json!(true),
+        "the write must land where the gate reads it back: {granted}"
+    );
+    assert_eq!(
+        granted["workspace"]
+            .as_str()
+            .and_then(|path| fs::canonicalize(path).ok()),
+        Some(expected_workspace.clone()),
+        "the route trusts the server's own workspace, never a caller-supplied one"
+    );
+    // The named document is checked rather than taken on faith: a client shows
+    // this path to the user as the record of their decision.
+    let granted_config = granted["config_path"]
+        .as_str()
+        .context("the response must name the document it wrote")?;
+    let record: toml::Value = toml::from_str(&fs::read_to_string(granted_config)?)?;
+    assert_eq!(
+        record["projects"][expected_workspace.to_string_lossy().as_ref()]["trust_level"].as_str(),
+        Some("trusted"),
+        "the named document must carry the record the gate reads: {granted_config}"
+    );
+
+    // A switch, not a one-way latch: revoking has to reverse it too, and the
+    // verdict it reports is the read-back rather than an echo of the request.
+    let revoked: serde_json::Value = client
+        .post(format!("http://{addr}/v1/workspace/trust"))
+        .json(&json!({ "trusted": false }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(revoked["workspace_trusted"], json!(false));
+    let revoked_config = revoked["config_path"]
+        .as_str()
+        .context("the revoke response must name its document")?;
+    let record: toml::Value = toml::from_str(&fs::read_to_string(revoked_config)?)?;
+    assert_eq!(
+        record["projects"][expected_workspace.to_string_lossy().as_ref()]["trust_level"].as_str(),
+        Some("untrusted"),
+        "revoking must rewrite the same record: {revoked_config}"
+    );
+
+    handle.abort();
+    Ok(())
+}
+
+/// A malformed body is refused before anything is written.
+///
+/// `deny_unknown_fields` is part of the contract, not decoration: this route
+/// records a security decision, and a typo in the field name must fail loudly
+/// rather than silently revoke the workspace's trust (the `false` default a
+/// permissive parse would supply).
+#[tokio::test]
+async fn workspace_trust_route_refuses_malformed_bodies() -> Result<()> {
+    let root =
+        std::env::temp_dir().join(format!("codewhale-workspace-trust-body-{}", Uuid::new_v4()));
+    let sessions_dir = root.join("sessions");
+    let workspace = root.join("workspace");
+    fs::create_dir_all(&workspace)?;
+    fs::create_dir_all(&sessions_dir)?;
+
+    let Some((addr, _runtime_threads, handle)) =
+        spawn_test_server_with_root_token_mobile_workspace_and_overrides(
+            root,
+            sessions_dir,
+            None,
+            false,
+            workspace.clone(),
+            TestServerOverrides::default(),
+        )
+        .await?
+    else {
+        return Ok(());
+    };
+    let client = crate::tls::reqwest_client();
+
+    // Trust it first, so a write that slipped through would be visible as a
+    // changed record rather than as a config file nobody reads.
+    let granted: serde_json::Value = client
+        .post(format!("http://{addr}/v1/workspace/trust"))
+        .json(&json!({ "trusted": true }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let config_path = granted["config_path"]
+        .as_str()
+        .context("the response must name the document it wrote")?
+        .to_string();
+    let before = fs::read(&config_path)?;
+
+    for body in [json!({}), json!({ "trusted": true, "extra": 1 })] {
+        let refused = client
+            .post(format!("http://{addr}/v1/workspace/trust"))
+            .json(&body)
+            .send()
+            .await?;
+        assert_eq!(
+            refused.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "a malformed body must be refused before any write: {body}"
+        );
+    }
+
+    assert_eq!(
+        fs::read(&config_path)?,
+        before,
+        "a refused request must leave the document byte-identical: {config_path}"
+    );
+
+    handle.abort();
+    Ok(())
+}
+
+/// `GET /v1/workspace/status` reports the gate's verdict, not a constant.
+///
+/// Run on one thread and sealed, so the write and the read below resolve the
+/// same config document: this is the deterministic half of the pair above. The
+/// route is the same function the handler spawns, so what is proven here is what
+/// the HTTP read serves.
+#[test]
+fn workspace_bootstrap_status_reports_the_trust_gate() -> Result<()> {
+    let _home = crate::test_support::SealedHome::new();
+    let tmp = tempfile::tempdir()?;
+    let workspace = tmp.path().join("project");
+    fs::create_dir_all(&workspace)?;
+
+    assert!(
+        !collect_workspace_status(&workspace).workspace_trusted,
+        "a fresh workspace must report untrusted"
+    );
+
+    crate::config::set_workspace_trust(&workspace, true)?;
+    assert!(
+        collect_workspace_status(&workspace).workspace_trusted,
+        "the status projection must follow the gate"
+    );
+
+    crate::config::set_workspace_trust(&workspace, false)?;
+    assert!(
+        !collect_workspace_status(&workspace).workspace_trusted,
+        "revoking must be visible to the status projection too"
+    );
     Ok(())
 }

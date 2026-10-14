@@ -136,9 +136,9 @@ use self::sessions::{messages_from_thread_detail, session_to_detail};
 #[cfg(test)]
 use self::workspace::collect_workspace_status;
 use self::workspace::{
-    WorkspaceGitMetadata, collect_workspace_git_metadata, workspace_file_read,
-    workspace_file_search, workspace_file_write, workspace_files_list, workspace_instructions,
-    workspace_status,
+    WorkspaceGitMetadata, collect_workspace_git_metadata, update_workspace_trust,
+    workspace_file_read, workspace_file_search, workspace_file_write, workspace_files_list,
+    workspace_instructions, workspace_status,
 };
 
 const RUNTIME_TOKEN_ENV: &str = "CODEWHALE_RUNTIME_TOKEN";
@@ -2386,6 +2386,9 @@ pub fn build_router(state: RuntimeApiState) -> Router {
             get(read_session_artifact),
         )
         .route("/v1/workspace/status", get(workspace_status))
+        // The only writer a GUI has for workspace trust. The engine owns
+        // `config.toml`; a client asks here instead of editing the file.
+        .route("/v1/workspace/trust", post(update_workspace_trust))
         // The Engine's terminal byte stream (#34). Auth is the route layer's,
         // not this module's; these never create a session — see terminal.rs.
         .route("/v1/terminal/{name}/output", get(terminal::terminal_output))

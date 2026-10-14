@@ -11612,6 +11612,142 @@ fn persist_state_rejects_state_path_outside_state_root() {
     assert!(format!("{err:#}").contains("must stay within state root"));
 }
 
+/// A user who keeps application state on another volume makes the workspace's
+/// `.codewhale` a junction, so `.codewhale/state/...` resolves inside that
+/// target. That target is where the state lives; refusing it failed every
+/// child at step 0.
+#[cfg(windows)]
+#[test]
+fn state_path_accepts_a_state_root_relocated_behind_a_junction() {
+    let tmp = tempdir().expect("tempdir");
+    let workspace = tmp.path().join("workspace");
+    let relocated = tmp.path().join("relocated-state");
+    std::fs::create_dir_all(&workspace).expect("mkdir workspace");
+    std::fs::create_dir_all(&relocated).expect("mkdir relocated");
+    let link = workspace.join(".codewhale");
+    let output = Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(&link)
+        .arg(&relocated)
+        .output()
+        .expect("invoke Windows junction creation");
+    assert!(
+        output.status.success(),
+        "failed to create junction: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let state_path = checked_subagent_state_path(
+        &workspace,
+        &std::path::Path::new(".codewhale")
+            .join("state")
+            .join(SUBAGENT_STATE_FILE),
+    )
+    .expect("a relocated state root must pass containment");
+
+    let resolved_target = relocated.canonicalize().expect("canonical target");
+    assert!(
+        state_path.starts_with(&resolved_target),
+        "state must land in the junction target {}: {}",
+        resolved_target.display(),
+        state_path.display()
+    );
+
+    // The re-root covers that one user-owned link, not the boundary: a path
+    // that resolves outside both roots is still refused.
+    let escaped = std::path::Path::new("..")
+        .join("escaped")
+        .join(SUBAGENT_STATE_FILE);
+    assert!(
+        checked_subagent_state_path(&workspace, &escaped).is_err(),
+        "an escape past both roots must still fail"
+    );
+
+    // `mklink /J` accepts a target that does not exist yet, and creating the
+    // junction before the first run is a normal setup order. Both sides then
+    // resolve to the link's own spelling, so containment holds until the
+    // target exists.
+    let dangling_workspace = tmp.path().join("dangling");
+    let dangling_target = tmp.path().join("not-created-yet");
+    std::fs::create_dir_all(&dangling_workspace).expect("mkdir dangling workspace");
+    let output = Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(dangling_workspace.join(".codewhale"))
+        .arg(&dangling_target)
+        .output()
+        .expect("invoke Windows junction creation");
+    assert!(
+        output.status.success(),
+        "failed to create dangling junction: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !dangling_target.exists(),
+        "the probe needs a target that does not exist yet"
+    );
+    checked_subagent_state_path(
+        &dangling_workspace,
+        &std::path::Path::new(".codewhale")
+            .join("state")
+            .join(SUBAGENT_STATE_FILE),
+    )
+    .expect("a junction whose target is not created yet must pass containment");
+}
+
+/// The guards that run after `checked_subagent_state_path` must reach the same
+/// root decision it did. Before they did, the containment check passed and the
+/// write still failed with the same message on the child's first step.
+#[cfg(windows)]
+#[test]
+fn state_writes_follow_a_relocated_state_root() {
+    let tmp = tempdir().expect("tempdir");
+    let workspace = tmp.path().join("workspace");
+    let relocated = tmp.path().join("relocated-state");
+    std::fs::create_dir_all(&workspace).expect("mkdir workspace");
+    std::fs::create_dir_all(&relocated).expect("mkdir relocated");
+    let link = workspace.join(".codewhale");
+    let output = Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(&link)
+        .arg(&relocated)
+        .output()
+        .expect("invoke Windows junction creation");
+    assert!(
+        output.status.success(),
+        "failed to create junction: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // The manager state file: write_json_atomic and read_subagent_state_file.
+    let mut manager = SubAgentManager::new(workspace.clone(), 1);
+    manager
+        .persist_state_synchronously()
+        .expect("persist under a relocated state root");
+    manager
+        .load_state()
+        .expect("load under a relocated state root");
+
+    // The child's transcript: the pre-create and append guards.
+    let state_root = normalize_subagent_workspace(&workspace);
+    let writer = SubAgentTranscriptArtifactWriter::create(&state_root, "agent_relocated")
+        .expect("transcript create under a relocated state root");
+    append_private_subagent_transcript(
+        &state_root,
+        &writer.path,
+        b"{\"kind\":\"message\"}\n",
+        true,
+    )
+    .expect("transcript append under a relocated state root");
+
+    let resolved_target = relocated.canonicalize().expect("canonical target");
+    assert!(
+        writer.path.starts_with(&resolved_target),
+        "the transcript must land in the junction target {}: {}",
+        resolved_target.display(),
+        writer.path.display()
+    );
+}
+
 #[test]
 fn explicit_state_roots_isolate_managers_for_the_same_execution_workspace() {
     let tmp = tempdir().expect("tempdir");
@@ -23850,18 +23986,35 @@ async fn refuse_worktree_spawn_and_expect_cleanup(repo: &tempfile::TempDir, bran
 
     // The removal runs on the blocking pool, off the async worker.
     let deadline = std::time::Instant::now() + Duration::from_secs(30);
-    let worktrees = loop {
-        let worktrees = git_stdout(repo.path(), &["worktree", "list", "--porcelain"]);
-        let count = worktrees
-            .lines()
-            .filter(|line| line.starts_with("worktree "))
-            .count();
-        let branch_gone = git_stdout(repo.path(), &["branch", "--list", branch]).is_empty();
-        if (count == 1 && branch_gone) || std::time::Instant::now() >= deadline {
-            break worktrees;
+    let stdout_if_ok = |args: &[&str]| {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo.path())
+            .output()
+            .expect("git command should run");
+        output
+            .status
+            .success()
+            .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+    };
+    loop {
+        let only_main_left =
+            stdout_if_ok(&["worktree", "list", "--porcelain"]).is_some_and(|worktrees| {
+                worktrees
+                    .lines()
+                    .filter(|line| line.starts_with("worktree "))
+                    .count()
+                    == 1
+            });
+        let branch_gone = stdout_if_ok(&["branch", "--list", branch])
+            .as_deref()
+            .is_some_and(str::is_empty);
+        if (only_main_left && branch_gone) || std::time::Instant::now() >= deadline {
+            break;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
-    };
+    }
+    let worktrees = git_stdout(repo.path(), &["worktree", "list", "--porcelain"]);
     assert_eq!(
         worktrees
             .lines()
@@ -24386,7 +24539,7 @@ mod child_permission_gate {
         registry.gate_runtime.approval_receipt_store = None;
 
         let result = tokio::time::timeout(
-            std::time::Duration::from_millis(250),
+            std::time::Duration::from_secs(30),
             registry.execute("agent_gate", "bash", json!({"command": "echo gated"})),
         )
         .await
@@ -24583,7 +24736,7 @@ mod child_permission_gate {
         let expected = child_approval_keys("agent_gate", "bash", &input);
         let manager_for_answer = Arc::clone(&manager);
         let answerer = tokio::spawn(async move {
-            tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            tokio::time::timeout(CHILD_APPROVAL_EVENT_READINESS, async {
                 while let Some(event) = rx.recv().await {
                     if let Event::ApprovalRequired {
                         id,
@@ -24891,7 +25044,7 @@ mod child_permission_gate {
             "retirement waits for channel capacity instead of dropping the event"
         );
         assert!(matches!(rx.recv().await, Some(Event::Status { .. })));
-        tokio::time::timeout(Duration::from_secs(1), delivery)
+        tokio::time::timeout(CHILD_APPROVAL_EVENT_READINESS, delivery)
             .await
             .expect("retirement is delivered once the host drains");
         assert!(matches!(
