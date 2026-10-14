@@ -105,7 +105,7 @@ fn registration<const INDEX: usize>() -> Box<dyn Command> {
 /// Dispatch a `/jihua` (`plan`) or `/zidong` (`yolo`) mode alias through the
 /// registered `/mode` handler and its declared capability envelope.
 pub(super) fn mode_alias(app: &mut App, arg: &str) -> CommandResult {
-    match Registration::<10>::handler() {
+    match Registration::<12>::handler() {
         CommandHandler::Contextual {
             capabilities,
             handler,

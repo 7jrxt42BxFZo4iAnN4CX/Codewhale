@@ -133,7 +133,7 @@ fn contextual(
     }
 }
 
-/// Complete group inventory (17 commands), shared by the host registration and
+/// Complete group inventory (19 commands), shared by the host registration and
 /// the extraction proof. Order is the registration order.
 pub fn portable_handlers() -> [(&'static CommandInfo, CommandHandler<ConfigCommandResult>); 19] {
     // The policy slice (permissions, status) already exposes a portable

@@ -3660,25 +3660,31 @@ mod tests {
 
     #[test]
     fn test_mode_yolo_sets_all_flags() {
-        let mut app = create_test_app();
-        // Switch to Agent first to guarantee a clean starting state regardless of
-        // user settings on the host machine.
-        let _ = mode_command(&mut app, Some("agent"));
-        let result = mode_command(&mut app, Some("yolo"));
-        // YOLO is invisible Work+Bypass shorthand — user-facing copy names Full Access (Work).
-        assert!(
-            result
-                .message
-                .unwrap()
-                .contains("Switched to Full Access (Work)")
-        );
-        assert_eq!(result.action, Some(AppAction::ModeChanged(AppMode::Agent)));
-        assert!(app.allow_shell);
-        assert!(app.trust_mode);
-        assert!(app.yolo);
-        assert_eq!(app.approval_mode, ApprovalMode::Bypass);
-        // The deprecated YOLO alias remaps to Agent mode (M6 compat shim).
-        assert_eq!(app.mode, AppMode::Agent);
+        for use_alias in [false, true] {
+            let mut app = create_test_app();
+            // Switch to Agent first to guarantee a clean starting state regardless of
+            // user settings on the host machine.
+            let _ = mode_command(&mut app, Some("agent"));
+            let result = if use_alias {
+                crate::commands::execute("/zidong", &mut app)
+            } else {
+                mode_command(&mut app, Some("yolo"))
+            };
+            // YOLO is invisible Work+Bypass shorthand — user-facing copy names Full Access (Work).
+            assert!(
+                result
+                    .message
+                    .unwrap()
+                    .contains("Switched to Full Access (Work)")
+            );
+            assert_eq!(result.action, Some(AppAction::ModeChanged(AppMode::Agent)));
+            assert!(app.allow_shell);
+            assert!(app.trust_mode);
+            assert!(app.yolo);
+            assert_eq!(app.approval_mode, ApprovalMode::Bypass);
+            // The deprecated YOLO alias remaps to Agent mode (M6 compat shim).
+            assert_eq!(app.mode, AppMode::Agent);
+        }
     }
 
     #[test]
@@ -3692,6 +3698,10 @@ mod tests {
         let result = mode_command(&mut app, Some("act"));
         assert_eq!(result.action, Some(AppAction::ModeChanged(AppMode::Agent)));
         assert_eq!(app.mode, AppMode::Agent);
+        let result = crate::commands::execute("/jihua", &mut app);
+        assert!(!result.is_error);
+        assert_eq!(result.action, Some(AppAction::ModeChanged(AppMode::Plan)));
+        assert_eq!(app.mode, AppMode::Plan);
         let _ = mode_command(&mut app, Some("plan"));
         assert_eq!(app.mode, AppMode::Plan);
         let result = mode_command(&mut app, Some("3"));
