@@ -468,7 +468,7 @@ owner = "crates/tui/src/lsp"
 [[feature]]
 id = "runtime-api"
 name = "Runtime API"
-summary = "Local HTTP threads/approvals with watch/drive tokens, Unix store sockets and workspace leases at Runtime API admission."
+summary = "Local API: threads, events, approvals, project trust, workspace leases, Unix store sockets and scoped device tokens."
 status = "stable"
 surfaces = { api = "stable" }
 docs = "docs/RUNTIME_API.md"
