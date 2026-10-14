@@ -3554,6 +3554,8 @@ fn structcopy_capability_preserves_all_published_identities() {
         CommandCapabilities::CONFIG,
         CommandCapabilities::PET,
         CommandCapabilities::TRUST,
+        CommandCapabilities::LOGIN,
+        CommandCapabilities::WORK_SURFACE,
     ];
     let exact = CommandCapabilities::SESSION_STRUCTCOPY | CommandCapabilities::PRESENTATION;
     for (index, capability) in capabilities.into_iter().enumerate() {
@@ -3613,7 +3615,11 @@ fn structcopy_slot_is_optional_and_does_not_grant_other_authority() {
         debug_diagnostics,
         permissions,
         config_status,
-        ..
+        config,
+        pet,
+        trust,
+        login,
+        work_surface,
     } = CommandContexts::empty()
         .with_structcopy(&mut fixture)
         .with_presentation(&mut presentation)
@@ -3658,6 +3664,11 @@ fn structcopy_slot_is_optional_and_does_not_grant_other_authority() {
         debug_diagnostics.is_some(),
         permissions.is_some(),
         config_status.is_some(),
+        config.is_some(),
+        pet.is_some(),
+        trust.is_some(),
+        login.is_some(),
+        work_surface.is_some(),
     ] {
         assert!(!present);
     }
