@@ -4358,6 +4358,11 @@ zai = ["GLM-5.2", "GLM-5.3"]
     #[test]
     fn ghostty_term_program_keeps_full_motion_without_the_legacy_30_fps_cap() {
         let _g = term_program_test_guard();
+        let _tmux = crate::test_support::EnvVarGuard::remove("TMUX");
+        let _sty = crate::test_support::EnvVarGuard::remove("STY");
+        let _tilix_id = crate::test_support::EnvVarGuard::remove("TILIX_ID");
+        let _terminator_uuid = crate::test_support::EnvVarGuard::remove("TERMINATOR_UUID");
+        let _no_animations = crate::test_support::EnvVarGuard::remove("NO_ANIMATIONS");
         // Neutralize the SSH markers: production intentionally caps motion
         // over SSH, and the suite routinely runs inside one.
         let _ssh_client = crate::test_support::EnvVarGuard::remove("SSH_CLIENT");
@@ -4386,6 +4391,11 @@ zai = ["GLM-5.2", "GLM-5.3"]
     #[test]
     fn ghostty_term_fallback_keeps_full_motion_without_the_legacy_30_fps_cap() {
         let _g = term_program_test_guard();
+        let _tmux = crate::test_support::EnvVarGuard::remove("TMUX");
+        let _sty = crate::test_support::EnvVarGuard::remove("STY");
+        let _tilix_id = crate::test_support::EnvVarGuard::remove("TILIX_ID");
+        let _terminator_uuid = crate::test_support::EnvVarGuard::remove("TERMINATOR_UUID");
+        let _no_animations = crate::test_support::EnvVarGuard::remove("NO_ANIMATIONS");
         // Neutralize the SSH markers: production intentionally caps motion
         // over SSH, and the suite routinely runs inside one.
         let _ssh_client = crate::test_support::EnvVarGuard::remove("SSH_CLIENT");
@@ -4419,6 +4429,7 @@ zai = ["GLM-5.2", "GLM-5.3"]
     #[test]
     fn non_vscode_term_program_does_not_force_low_motion() {
         let _g = term_program_test_guard();
+        let _no_animations = crate::test_support::EnvVarGuard::remove("NO_ANIMATIONS");
         let prev = std::env::var_os("TERM_PROGRAM");
         let prev_term = std::env::var_os("TERM");
         let prev_ssh_client = std::env::var_os("SSH_CLIENT");
@@ -4486,6 +4497,7 @@ zai = ["GLM-5.2", "GLM-5.3"]
     #[test]
     fn tilix_and_terminator_cap_redraws_without_disabling_motion() {
         let _g = term_program_test_guard();
+        let _no_animations = crate::test_support::EnvVarGuard::remove("NO_ANIMATIONS");
         // Neutralize the SSH markers: production intentionally caps motion
         // over SSH, and the suite routinely runs inside one.
         let _ssh_client = crate::test_support::EnvVarGuard::remove("SSH_CLIENT");
