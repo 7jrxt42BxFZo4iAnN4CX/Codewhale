@@ -470,6 +470,7 @@ fn messages_from_thread_detail_batches_tool_results() {
         duration_ms: Some(0),
         usage: None,
         model_request_diagnostics: None,
+        operation_activity: None,
         routing_settlement: false,
         effective_route_usage: None,
         permission_posture: Some("ask".to_string()),
@@ -1137,13 +1138,15 @@ fn spawn_product_stack_server(
         .shutdown
         .get_or_insert_with(RuntimeServerShutdown::default)
         .clone();
+    let catalog = crate::command_catalog::installed();
     std::thread::Builder::new()
         .name("runtime-api-test-server".to_string())
-        .stack_size(crate::CODEWHALE_MAIN_STACK_BYTES)
+        .stack_size(codewhale_runtime::CODEWHALE_MAIN_STACK_BYTES)
         .spawn(move || {
             // Adopted for the thread's lifetime; the scope's generation check
             // refuses enrollment once the sealing test has ended.
             let _membership = crate::test_support::join_env_scope(env_ticket);
+            let _catalog = catalog.map(crate::command_catalog::CatalogGuard::install);
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -4285,7 +4288,7 @@ async fn turn_operation_lookup_is_authenticated_read_only_and_survives_restart()
     let workspace = dir.path().join("workspace");
     let token = "turn-lookup-local-fixture";
     let _backend = EnvVarGuard::set("CODEWHALE_SECRET_BACKEND", "file");
-    let _proxy = EnvVarGuard::set("NO_PROXY", "*");
+    let _proxy = EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
     let (addr, manager, server) = spawn_test_server_with_root_token_mobile_workspace(
         root.clone(),
         sessions.clone(),
@@ -5521,7 +5524,24 @@ async fn steer_and_interrupt_endpoints_work_on_active_turn() -> Result<()> {
         .json()
         .await?;
     assert_eq!(steer_resp["id"], turn_id);
-    assert_eq!(steer_resp["steer_count"], 1);
+    let deadline = tokio::time::Instant::now() + ci_scaled(Duration::from_secs(10));
+    while !runtime_threads
+        .events_since(&thread_id, None)?
+        .iter()
+        .any(|ev| ev.event == "turn.steered")
+    {
+        if tokio::time::Instant::now() >= deadline {
+            bail!("timed out waiting for the steer on {turn_id} to settle");
+        }
+        sleep(Duration::from_millis(25)).await;
+    }
+    assert_eq!(
+        runtime_threads
+            .test_store()
+            .load_turn(&turn_id)?
+            .steer_count,
+        1
+    );
 
     let interrupt_resp: serde_json::Value = client
         .post(format!(
@@ -9684,6 +9704,8 @@ async fn approvals_endpoint_lists_decided_and_pending_newest_first() -> Result<(
             tool_call_id: "tool-1".into(),
             tool_name: "exec_shell".into(),
             created_at: at(10),
+            target: Some("api.example.com".into()),
+            summary: Some("curl api.example.com".into()),
         },
     )?;
     store.append(
@@ -9694,6 +9716,8 @@ async fn approvals_endpoint_lists_decided_and_pending_newest_first() -> Result<(
             outcome: ApprovalOutcome::Denied,
             created_at: at(11),
             decided_by: Some(crate::approval_log::ApprovalDecider::User),
+            grant_id: None,
+            matched_label: None,
         },
     )?;
     store.append(
@@ -9703,6 +9727,8 @@ async fn approvals_endpoint_lists_decided_and_pending_newest_first() -> Result<(
             tool_call_id: "tool-2".into(),
             tool_name: "write_file".into(),
             created_at: at(12),
+            target: None,
+            summary: None,
         },
     )?;
     let corrupt_dir = store.log_path("sess-corrupt")?;
@@ -9725,6 +9751,10 @@ async fn approvals_endpoint_lists_decided_and_pending_newest_first() -> Result<(
     assert_eq!(rows[1]["tool_name"], "exec_shell");
     assert_eq!(rows[1]["outcome"], "denied");
     assert_eq!(rows[1]["decided_by"], "user");
+    assert_eq!(rows[1]["target"], "api.example.com");
+    assert_eq!(rows[1]["summary"], "curl api.example.com");
+    assert!(rows[0].get("target").is_none());
+    assert!(rows[0].get("summary").is_none());
     assert!(rows[0].get("decided_by").is_none());
     assert_eq!(rows[1]["asked_at"], "2026-09-10T10:00:00Z");
     assert_eq!(rows[1]["decided_at"], "2026-09-10T11:00:00Z");
@@ -9799,6 +9829,7 @@ async fn session_save_merges_thread_cost_split_and_records_coverage() -> Result<
             ..Usage::default()
         }),
         model_request_diagnostics: None,
+        operation_activity: None,
         routing_settlement: false,
         effective_route_usage: None,
         permission_posture: None,
@@ -9998,6 +10029,7 @@ async fn session_save_persists_parent_cny_unpriced_reasons_without_double_count(
             ..Usage::default()
         }),
         model_request_diagnostics: None,
+        operation_activity: None,
         routing_settlement: false,
         effective_route_usage: None,
         permission_posture: None,
@@ -11346,6 +11378,7 @@ fn seed_summary_search_transcript(
             duration_ms: Some(0),
             usage: None,
             model_request_diagnostics: None,
+            operation_activity: None,
             routing_settlement: false,
             effective_route_usage: None,
             permission_posture: None,
@@ -19431,7 +19464,7 @@ async fn native_notification_replay_rechecks_requests_settled_during_the_read() 
     let temp = tempfile::tempdir()?;
     let _home = EnvVarGuard::set("CODEWHALE_HOME", temp.path().join("home"));
     let _backend = EnvVarGuard::set("CODEWHALE_SECRET_BACKEND", "file");
-    let _proxy = EnvVarGuard::set("NO_PROXY", "*");
+    let _proxy = EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
     let path = temp.path().join("config.toml");
     fs::write(
         &path,

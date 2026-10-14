@@ -55,6 +55,7 @@ pub enum Focus {
 pub enum FocusScope {
     TerminalPanel,
     PetHabitat,
+    Pet,
     /// Only the sandbox-elevation decision card.
     Elevation,
     /// Only the model-bound redaction consent gate.
@@ -78,6 +79,7 @@ impl FocusScope {
         match self {
             Self::TerminalPanel => focus == Focus::TerminalPanel,
             Self::PetHabitat => focus == Focus::Modal(ModalKind::PetHabitat),
+            Self::Pet => matches!(focus, Focus::Composer | Focus::Modal(ModalKind::PetHabitat)),
             Self::Elevation => focus == Focus::Modal(ModalKind::Elevation),
             Self::RedactionGate => focus == Focus::RedactionGate,
             Self::SessionShell => {
@@ -111,11 +113,17 @@ pub enum ShellBindingId {
     ElevationDown,
     ElevationConfirm,
     ElevationAbort,
+    PetInspect,
     PetResultUp,
     PetResultDown,
     PetResultPageUp,
     PetResultPageDown,
     PetBack,
+    PetResultStart,
+    PetResultEnd,
+    PetFocusAgents,
+    PetOpenAgent,
+    PetCopyReply,
     PetSound,
     PetBrowser,
     PetWindow,
@@ -132,9 +140,10 @@ pub enum ShellBindingId {
     ModeCycle,
     /// Shift+Tab: cycle the permission posture.
     PermissionCycle,
-    /// Ctrl+Tab / Ctrl+]: the next bottom-dock view.
+    /// Ctrl+Tab / Ctrl+]: the next bottom-dock view, or the next pet view
+    /// while the pet main view is showing.
     ViewCycle,
-    /// Ctrl+Shift+Tab: the previous bottom-dock view.
+    /// Ctrl+Shift+Tab: the previous bottom-dock view, or the previous pet view.
     ViewCycleBack,
 }
 
@@ -173,6 +182,7 @@ impl ShellBinding {
                 key.code == KeyCode::Enter && key.modifiers.is_empty()
             }
             ShellBindingId::ElevationAbort => key.code == KeyCode::Esc && key.modifiers.is_empty(),
+            ShellBindingId::PetInspect => key.code == KeyCode::F(5) && key.modifiers.is_empty(),
             ShellBindingId::PetResultUp => key.code == KeyCode::Up && key.modifiers.is_empty(),
             ShellBindingId::PetResultDown => key.code == KeyCode::Down && key.modifiers.is_empty(),
             ShellBindingId::PetResultPageUp => {
@@ -182,6 +192,13 @@ impl ShellBinding {
                 key.code == KeyCode::PageDown && key.modifiers.is_empty()
             }
             ShellBindingId::PetBack => key.code == KeyCode::Esc && key.modifiers.is_empty(),
+            ShellBindingId::PetResultStart => key.code == KeyCode::Home && key.modifiers.is_empty(),
+            ShellBindingId::PetResultEnd => key.code == KeyCode::End && key.modifiers.is_empty(),
+            ShellBindingId::PetFocusAgents => key.code == KeyCode::Tab && key.modifiers.is_empty(),
+            ShellBindingId::PetOpenAgent => key.code == KeyCode::Enter && key.modifiers.is_empty(),
+            ShellBindingId::PetCopyReply => {
+                key.code == KeyCode::Char('c') && key.modifiers.is_empty()
+            }
             ShellBindingId::PetSound => key.code == KeyCode::F(6) && key.modifiers.is_empty(),
             ShellBindingId::PetBrowser => key.code == KeyCode::F(8) && key.modifiers.is_empty(),
             ShellBindingId::PetWindow => key.code == KeyCode::F(9) && key.modifiers.is_empty(),
@@ -282,6 +299,12 @@ pub const SHELL_BINDINGS: &[ShellBinding] = &[
         focus: FocusScope::Elevation,
     },
     ShellBinding {
+        id: ShellBindingId::PetInspect,
+        catalog_chord: "F5 / /pet inspect",
+        footer_chord: "F5",
+        focus: FocusScope::AnyShell,
+    },
+    ShellBinding {
         id: ShellBindingId::PetResultUp,
         catalog_chord: "Up",
         footer_chord: "↑",
@@ -312,22 +335,52 @@ pub const SHELL_BINDINGS: &[ShellBinding] = &[
         focus: FocusScope::PetHabitat,
     },
     ShellBinding {
+        id: ShellBindingId::PetResultStart,
+        catalog_chord: "Home",
+        footer_chord: "Home",
+        focus: FocusScope::PetHabitat,
+    },
+    ShellBinding {
+        id: ShellBindingId::PetResultEnd,
+        catalog_chord: "End",
+        footer_chord: "End",
+        focus: FocusScope::PetHabitat,
+    },
+    ShellBinding {
+        id: ShellBindingId::PetFocusAgents,
+        catalog_chord: "Tab",
+        footer_chord: "Tab",
+        focus: FocusScope::PetHabitat,
+    },
+    ShellBinding {
+        id: ShellBindingId::PetOpenAgent,
+        catalog_chord: "Enter",
+        footer_chord: "Enter",
+        focus: FocusScope::PetHabitat,
+    },
+    ShellBinding {
+        id: ShellBindingId::PetCopyReply,
+        catalog_chord: "c",
+        footer_chord: "c",
+        focus: FocusScope::PetHabitat,
+    },
+    ShellBinding {
         id: ShellBindingId::PetSound,
         catalog_chord: "F6",
         footer_chord: "F6",
-        focus: FocusScope::PetHabitat,
+        focus: FocusScope::Pet,
     },
     ShellBinding {
         id: ShellBindingId::PetBrowser,
         catalog_chord: "F8",
         footer_chord: "F8",
-        focus: FocusScope::PetHabitat,
+        focus: FocusScope::Pet,
     },
     ShellBinding {
         id: ShellBindingId::PetWindow,
         catalog_chord: "F9",
         footer_chord: "F9",
-        focus: FocusScope::PetHabitat,
+        focus: FocusScope::Pet,
     },
     ShellBinding {
         id: ShellBindingId::RedactionGateConfirm,
@@ -487,7 +540,8 @@ pub fn tool_details_chord() -> Cow<'static, str> {
 }
 
 /// Render a portable `Alt+X` chord for the current platform. macOS normally
-/// shows `⌥X`; ASCII-safe terminals retain the portable `Alt+X` spelling.
+/// shows `⌥X` and `fn+F5`, because an Apple keyboard sends media keys from the
+/// top row unless Fn is held; ASCII-safe terminals retain the portable spelling.
 #[must_use]
 pub fn display_chord(chord: &'static str) -> Cow<'static, str> {
     display_chord_for_platform_and_ascii(
@@ -508,13 +562,26 @@ fn display_chord_for_platform_and_ascii(
     is_macos: bool,
     ascii_safe: bool,
 ) -> Cow<'static, str> {
-    if ascii_safe {
-        return Cow::Borrowed(chord);
-    }
     if !is_macos {
         return Cow::Borrowed(chord);
     }
-    let rendered = chord.replace("Alt+", "⌥").replace("F1", "fn+F1");
+    let mut rendered = String::with_capacity(chord.len() + 6);
+    let mut previous = None;
+    for (index, ch) in chord.char_indices() {
+        if ch == 'F'
+            && !previous.is_some_and(char::is_alphanumeric)
+            && chord[index + 1..].starts_with(|next: char| next.is_ascii_digit())
+        {
+            rendered.push_str("fn+");
+        }
+        rendered.push(ch);
+        previous = Some(ch);
+    }
+    let rendered = if ascii_safe {
+        rendered
+    } else {
+        rendered.replace("Alt+", "⌥")
+    };
     if rendered == chord {
         Cow::Borrowed(chord)
     } else {
@@ -1051,6 +1118,45 @@ mod tests {
             assert!(!binding.catalog_chord.starts_with("v /"));
             assert!(!binding.footer_chord.contains("Alt+?"));
             assert_ne!(binding.footer_chord, "v");
+        }
+    }
+
+    #[test]
+    fn shell_binding_source_matches_help_catalog_chords() {
+        assert_eq!(binding(ShellBindingId::ToolDetails).catalog_chord, "Alt+V");
+        assert_eq!(
+            binding(ShellBindingId::ContextInspector).catalog_chord,
+            "/context"
+        );
+        assert_eq!(
+            binding(ShellBindingId::ProviderRoute).catalog_chord,
+            "F3 / /provider"
+        );
+        assert_eq!(binding(ShellBindingId::Help).catalog_chord, "F1 / Ctrl+/");
+        // Every ordinary shell binding: exclusive redaction choices are
+        // advertised only by their consent screen, never as global shortcuts.
+        // The two that were
+        // not covered had already drifted (the view-cycle chord read
+        // "Ctrl+] / Ctrl+Tab" here and "Ctrl+Tab / Ctrl+]" at the source),
+        // which is exactly the rot this module's doc comment warns about.
+        for id in [
+            ShellBindingId::ToolDetails,
+            ShellBindingId::ContextInspector,
+            ShellBindingId::ProviderRoute,
+            ShellBindingId::Help,
+            ShellBindingId::Settings,
+            ShellBindingId::ModeCycle,
+            ShellBindingId::PermissionCycle,
+            ShellBindingId::ViewCycle,
+            ShellBindingId::ViewCycleBack,
+        ] {
+            let chord = binding(id).catalog_chord;
+            assert!(
+                crate::keybinding_table::KEYBINDINGS
+                    .iter()
+                    .any(|entry| entry.chord == chord || entry.chord.contains(chord)),
+                "shell binding {id:?} chord missing from help catalog: {chord}"
+            );
         }
     }
 }

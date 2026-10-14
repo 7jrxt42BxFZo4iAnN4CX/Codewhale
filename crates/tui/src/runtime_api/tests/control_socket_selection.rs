@@ -135,7 +135,9 @@ async fn the_runtime_dir_override_reaches_the_control_endpoint() -> Result<()> {
     let _env = lock_test_env();
     // A short root on purpose: unix socket paths have a hard kernel limit, and
     // a fixture under the (long) macOS temp dir cannot hold a derived name.
-    let root = PathBuf::from(format!("/tmp/cw-control-socket-env-{}", std::process::id()));
+    let root = std::env::var_os("CODEWHALE_TEST_SHORT_TMPDIR")
+        .map_or_else(|| PathBuf::from("/tmp"), PathBuf::from)
+        .join(format!("cw-control-socket-env-{}", std::process::id()));
     let home = root.join("home");
     let store = root.join("runtime-store");
     std::fs::create_dir_all(&home)?;

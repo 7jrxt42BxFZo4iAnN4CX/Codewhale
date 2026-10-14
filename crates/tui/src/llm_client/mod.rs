@@ -1077,11 +1077,9 @@ pub struct RetryConfig {
     pub respect_retry_after: bool,
 
     /// HTTP status codes that should trigger a retry
-    #[allow(dead_code)] // Used in tests via is_retryable_status()
     pub retryable_status_codes: Vec<u16>,
 
     /// Timeout for individual requests (seconds, 0 = no timeout)
-    #[allow(dead_code)] // Configuration field for retry consumers
     pub request_timeout: f64,
 
     /// Total timeout for all retry attempts (seconds, 0 = no total timeout)
@@ -1106,7 +1104,6 @@ impl Default for RetryConfig {
     }
 }
 
-#[allow(dead_code)] // Public builder API, used in tests
 impl RetryConfig {
     /// Creates a new `RetryConfig` with default values
     pub fn new() -> Self {
@@ -1546,6 +1543,27 @@ pub fn extract_retry_after(headers: &reqwest::header::HeaderMap) -> Option<Durat
         .get(reqwest::header::RETRY_AFTER)
         .and_then(|v| v.to_str().ok())
         .and_then(parse_retry_after)
+}
+
+const PROVIDER_RETRY_HINT_MAX: Duration = Duration::from_secs(120);
+
+pub fn retry_delay_from_error_body(body: &str) -> Option<Duration> {
+    static HINTS: std::sync::OnceLock<[regex::Regex; 2]> = std::sync::OnceLock::new();
+    let [structured, prose] = HINTS.get_or_init(|| {
+        [
+            regex::Regex::new(r#"retryDelay\\?"\s*:\s*\\?"\s*(\d+(?:\.\d+)?)\s*s"#).unwrap(),
+            regex::Regex::new(r"(?i)retry in\s+(\d+(?:\.\d+)?)\s*s").unwrap(),
+        ]
+    });
+    structured
+        .captures(body)
+        .or_else(|| prose.captures(body))
+        .and_then(|captures| captures.get(1))
+        .and_then(|value| value.as_str().parse::<f64>().ok())
+        .filter(|seconds| {
+            seconds.is_finite() && (0.0..=PROVIDER_RETRY_HINT_MAX.as_secs_f64()).contains(seconds)
+        })
+        .map(Duration::from_secs_f64)
 }
 
 #[cfg(test)]

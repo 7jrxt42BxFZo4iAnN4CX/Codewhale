@@ -688,9 +688,11 @@ pub(crate) fn apply_goal_snapshot_to_app(app: &mut App, snapshot: &GoalSnapshot)
     // A fresh reported-progress receipt reads like the model's own status
     // line: percent with a bar, then the optional now/next lines it wrote.
     // Paused/complete goals keep their last report silent — the lifecycle
-    // receipt already spoke.
+    // receipt already spoke — except a yield, whose progress is the stage
+    // report the user is handed back with.
     if progress_changed
-        && verdict == GoalStatus::Active
+        && (verdict == GoalStatus::Active
+            || snapshot.pause_reason == Some(crate::tools::goal::GoalPauseReason::Yielded))
         && let Some(progress) = snapshot.progress.as_ref()
     {
         let mut content = app
@@ -2416,7 +2418,7 @@ async fn apply_command_result_inner(
             AppAction::OpenWorktreeManager => {
                 if app.view_stack.top_kind() != Some(ModalKind::WorktreeManager) {
                     // Non-blocking: git_status caches; manager never shells on paint.
-                    crate::tui::git_status::refresh_if_stale(&app.workspace);
+                    crate::git_status::refresh_if_stale(&app.workspace);
                     app.view_stack
                         .push(crate::tui::worktree_manager::WorktreeManagerView::new(
                             app.workspace.clone(),
@@ -2474,12 +2476,52 @@ async fn apply_command_result_inner(
                 let _switched =
                     run_xai_device_login_from_tui(terminal, app, engine_handle, config).await?;
             }
+            AppAction::StartClaudeLogin => {
+                let _ = run_claude_login_from_tui(terminal, app, engine_handle, config).await?;
+            }
+            AppAction::StartClaudeRevoke => {
+                let path = app.config_path.clone();
+                let result = tokio::task::spawn_blocking(move || {
+                    crate::oauth::revoke_owned_login(
+                        crate::oauth::OAuthProvider::Claude,
+                        path.as_deref(),
+                        None,
+                    )
+                })
+                .await
+                .map_err(|error| anyhow::anyhow!("Claude sign-out worker failed: {error}"))
+                .and_then(|result| result);
+                if result.is_ok() {
+                    let identity = config
+                        .builtin_provider_identity(ProviderKind::Anthropic)
+                        .map_err(anyhow::Error::msg)?;
+                    let entry = config.provider_config_for_mut(&identity)?;
+                    entry.oauth_credential_generation = None;
+                }
+                let (message, level) = match result {
+                    Ok(()) => (
+                        "Removed Codewhale's saved Claude sign-in.".to_string(),
+                        StatusToastLevel::Info,
+                    ),
+                    Err(error) => (
+                        format!("Claude sign-out failed: {error}"),
+                        StatusToastLevel::Error,
+                    ),
+                };
+                app.push_status_toast(message, level, Some(8_000));
+            }
             AppAction::StartChatgptPkceLogin => {
                 let _switched =
                     run_chatgpt_pkce_login_from_tui(terminal, app, engine_handle, config).await?;
             }
             AppAction::StartChatgptRevoke => {
                 run_chatgpt_revoke_from_tui(app, config).await;
+            }
+            AppAction::StartPluginLogin { provider } => {
+                run_plugin_oauth_from_tui(terminal, app, config, provider, false).await?;
+            }
+            AppAction::StartPluginLogout { provider } => {
+                run_plugin_oauth_from_tui(terminal, app, config, provider, true).await?;
             }
             AppAction::StartOrcarouterPkceLogin => {
                 let _switched =
@@ -2686,6 +2728,16 @@ async fn apply_command_result_inner(
                         ));
                 }
             }
+            AppAction::OpenConstitutionManager { review } => {
+                let profile = config.account_profile.clone();
+                let account = tokio::task::spawn_blocking(move || {
+                    crate::profile_constitution::account_is_present(profile.as_deref())
+                        .map_err(|error| error.to_string())
+                })
+                .await
+                .unwrap_or_else(|error| Err(error.to_string()));
+                crate::commands::open_constitution_manager(app, review, account);
+            }
             AppAction::UseBundledConstitution => use_bundled_constitution(app, config),
             AppAction::PreviewEffectiveBasePrompt => preview_effective_base_prompt(app, config),
             AppAction::DisableHotbar => disable_hotbar(app, config),
@@ -2874,7 +2926,7 @@ async fn apply_command_result_inner(
                             new_config,
                             &validated_route,
                         );
-                        crate::initialize_cloud_facts(config);
+                        crate::config::initialize_cloud_facts(config);
                         // Rebuild the engine with the new config so API key/model/base URL take effect.
                         let _ = engine_handle.send(Op::Shutdown).await;
                         let engine_config = build_engine_config(app, config);
@@ -4043,7 +4095,7 @@ pub(crate) async fn apply_provider_picker_setup_confirmed(
     switched
 }
 
-async fn apply_codewhale_owned_login(
+pub(crate) async fn apply_codewhale_owned_login(
     app: &mut App,
     engine_handle: &mut EngineHandle,
     config: &mut Config,
@@ -4052,8 +4104,18 @@ async fn apply_codewhale_owned_login(
     status_prefix: &str,
     login_kind: &str,
 ) -> bool {
-    match crate::oauth::activate_login(pending, app.config_path.as_deref(), Some(&mut *config)) {
-        Ok(activation) => {
+    let path = app.config_path.clone();
+    let mut live = config.clone();
+    let activation = tokio::task::spawn_blocking(move || {
+        crate::oauth::activate_login(pending, path.as_deref(), Some(&mut live))
+            .map(|activation| (activation, live))
+    })
+    .await
+    .map_err(|error| anyhow::anyhow!("OAuth activation worker failed: {error}"))
+    .and_then(|result| result);
+    match activation {
+        Ok((activation, live)) => {
+            config.refresh_provider_routes_from(&live);
             // The account line goes to the transcript: the status line is
             // overwritten by the route summary once the switch lands.
             let locale = app.ui_locale;
@@ -4385,7 +4447,7 @@ pub(crate) fn apply_loaded_session_with_goal(
         {
             app.extend_history(std::iter::once(HistoryCell::Error {
                 message: outcome.error.clone(),
-                severity: crate::error_taxonomy::ErrorSeverity::Warning,
+                severity: crate::error_taxonomy::ErrorSeverity::Error,
             }));
         }
     };
@@ -4612,7 +4674,7 @@ pub(crate) fn apply_loaded_session_config_snapshot(
         );
     *config = next_config;
     app.configured_models = config.custom_models.clone().unwrap_or_default();
-    crate::initialize_cloud_facts(config);
+    crate::config::initialize_cloud_facts(config);
     app.refresh_notification_settings(config);
     Ok(respawn)
 }
@@ -4647,7 +4709,7 @@ mod profile_snapshot_tests {
                     home.path().as_os_str(),
                 );
                 let mut config = profile_fixture("old-preview", "https://old.example.test/v1");
-                let mut options = crate::test_support::test_tui_options(home.path());
+                let mut options = crate::tui::test_support::test_tui_options(home.path());
                 options.model = config.default_model();
                 let mut app = App::new(options, &config);
                 assert_eq!(app.configured_models[0].id, "old-preview");

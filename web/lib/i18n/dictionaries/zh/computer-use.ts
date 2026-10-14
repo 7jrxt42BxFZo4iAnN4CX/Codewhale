@@ -7,8 +7,8 @@ import type { ComputerUseDict } from "../types";
  * as the app shows them.
  */
 export const computerUse: ComputerUseDict = {
-  metaTitle: "Mac 版 Computer Use · Codewhale",
-  metaDescription: "下载并设置 Mac 版 Codewhale Computer Use。提供应用后台操作、权限设置，以及由用户控制的暂停和停止功能。",
+  metaTitle: "Computer Use · 预览 · Codewhale",
+  metaDescription: "预览功能：下载并设置 Mac 版 Codewhale Computer Use。提供应用后台操作、权限设置，以及由用户控制的暂停和停止功能。",
   title: "Computer Use",
   lead: "让 Codewhale 在应用中完成操作，你也可以继续工作。Mac 助手将权限设置、应用后台操作，以及暂停或停止输入的控制集中在菜单栏中。",
   publisher: "由 Codewhale 开发",

@@ -120,27 +120,62 @@ mod platform {
             anyhow::Error::new(cause)
                 .context("selected owner publication unavailable; canonical host recovery required")
         }
-        #[cfg(unix)]
         fn require_dead_process(&self) -> Result<()> {
-            use codewhale_config::private_directory::{UnixProcessStatus, unix_process_status};
             let receipt = self.receipt();
+            #[cfg(unix)]
+            let principal = PrivateDirectory::current_user_id().to_string();
+            #[cfg(windows)]
+            let principal =
+                codewhale_config::windows_identity::CurrentWindowsUser::open()?.sid_string()?;
             anyhow::ensure!(
-                receipt.principal == PrivateDirectory::current_user_id().to_string()
-                    && !receipt.process_start.is_empty(),
+                receipt.principal == principal && !receipt.process_start.is_empty(),
                 "selected owner process identity is invalid"
             );
-            match unix_process_status(receipt.pid)? {
-                UnixProcessStatus::Absent => Ok(()),
-                UnixProcessStatus::Present { start } if start == receipt.process_start => {
-                    bail!("selected owner process is still present; refusing recovery")
+            #[cfg(unix)]
+            let (running, start) = {
+                use codewhale_config::private_directory::{UnixProcessStatus, unix_process_status};
+                match unix_process_status(receipt.pid)? {
+                    UnixProcessStatus::Absent => return Ok(()),
+                    UnixProcessStatus::Present { start } => (true, start),
                 }
-                UnixProcessStatus::Present { .. } => {
-                    bail!("selected owner PID was reused; refusing recovery")
+            };
+            #[cfg(windows)]
+            let (running, start) = {
+                use codewhale_config::windows_identity::{
+                    WindowsProcessStatus, windows_process_status,
+                };
+                match windows_process_status(receipt.pid)? {
+                    WindowsProcessStatus::Absent => return Ok(()),
+                    WindowsProcessStatus::Running { start } => (true, start),
+                    WindowsProcessStatus::Exited { start } => (false, start),
                 }
+            };
+            if start != receipt.process_start {
+                bail!("selected owner PID was reused; refusing recovery")
             }
+            if running {
+                bail!("selected owner process is still present; refusing recovery")
+            }
+            Ok(())
+        }
+        pub(crate) fn require_same_selection(
+            &self,
+            owner: &RuntimeOwnerReceipt,
+            endpoint: &std::path::Path,
+        ) -> Result<()> {
+            let old = self.receipt();
+            anyhow::ensure!(
+                old.version == owner.version
+                    && old.data_dir == owner.data_dir
+                    && old.execution_scope == owner.execution_scope
+                    && old.socket_path == endpoint
+                    && old.config_path == owner.config_path
+                    && old.principal == owner.principal,
+                "captured stale owner belongs to another selected store/config/principal"
+            );
+            Ok(())
         }
         /// Caller retains the real Runtime lease; this checks evidence only.
-        #[cfg(unix)]
         pub(crate) fn revalidate_receipt(&self) -> Result<bool> {
             if !self.publication.receipt_is_current()? {
                 return Ok(false);
@@ -148,7 +183,6 @@ mod platform {
             self.require_dead_process()?;
             Ok(true)
         }
-        #[cfg(unix)]
         pub(crate) fn revalidate_all(&self) -> Result<bool> {
             if !self.publication.is_current()? {
                 return Ok(false);
@@ -156,7 +190,6 @@ mod platform {
             self.require_dead_process()?;
             Ok(true)
         }
-        #[cfg(unix)]
         pub async fn revalidate(self: &Arc<Self>) -> Result<bool> {
             let held = self.clone();
             owner_work(move || held.revalidate_all()).await
@@ -459,7 +492,29 @@ mod platform {
         };
         #[cfg(windows)]
         let (stream, peer) = {
-            let (stream, process) = crate::daemon_windows::connect_owner(&receipt).await?;
+            let (stream, process) = match crate::daemon_windows::connect_owner(&receipt).await {
+                Ok(connected) => connected,
+                Err(error) => {
+                    let held = publication.clone();
+                    anyhow::ensure!(
+                        owner_work(move || held.is_current()).await?,
+                        PublicationChangedBeforeAttach
+                    );
+                    let missing = error
+                        .downcast_ref::<std::io::Error>()
+                        .filter(|cause| cause.kind() == std::io::ErrorKind::NotFound)
+                        .map(|cause| match cause.raw_os_error() {
+                            Some(code) => std::io::Error::from_raw_os_error(code),
+                            None => std::io::Error::from(cause.kind()),
+                        });
+                    if let Some(cause) = missing {
+                        return Ok(HostOwnerProbe::Unavailable(Arc::new(
+                            UnavailablePublication { publication, cause },
+                        )));
+                    }
+                    return Err(error);
+                }
+            };
             let peer = AuthorizedPeer {
                 pid: process.pid(),
                 start: process.start().to_string(),

@@ -5,7 +5,7 @@ import { Status, type StatusTone } from "@/components/status-badge";
 import { NativeTerminalGallery } from "@/components/native-terminal-gallery";
 import { getFacts } from "@/lib/facts";
 import { PRODUCT_COPY } from "@/lib/content/product";
-import { fill, getHome, pickText } from "@/lib/i18n/dictionaries";
+import { fill, getChrome, getHome, pickText } from "@/lib/i18n/dictionaries";
 import { buildPageMetadata } from "@/lib/page-meta";
 import { getNativeTerminalCopy } from "@/lib/content/native-terminal";
 import { TERMINAL_SCREENSHOT } from "@/lib/media-manifest";
@@ -58,6 +58,7 @@ export default async function ProductPage({ params }: { params: Promise<{ locale
             <Link href={`/${locale}/docs`} className="btn btn-secondary btn-lg">
               {t(PRODUCT_COPY.actions.docs)}
             </Link>
+            <Link href={`/${locale}/features`} className="btn btn-secondary btn-lg">{getChrome(locale).navFeatures}</Link>
           </>
         }
       />
@@ -92,6 +93,7 @@ export default async function ProductPage({ params }: { params: Promise<{ locale
                 </span>
                 <h3>{t(row.title)}</h3>
                 <p>{fill(t(row.body), { count: providerCount })}</p>
+                <Link className="section-link" href={`/${locale}/docs/${["tools", "mcp", "fleet"][index]}`}>{getChrome(locale).navDocs}</Link>
               </div>
             ))}
           </div>

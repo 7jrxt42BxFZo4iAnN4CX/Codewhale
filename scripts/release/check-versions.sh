@@ -132,7 +132,7 @@ fi
 # 4) Internal path dependency pins.
 internal_dep_drift="$(
   grep -nE 'codewhale-[a-z-]+[[:space:]]*=[[:space:]]*\{[^}]*version[[:space:]]*=[[:space:]]*"' crates/*/Cargo.toml \
-    | grep -vF 'codewhale-ratatui = { path = "../../vendor/codewhale-ratatui", version = "0.1.0" }' \
+    | grep -vF 'codewhale-ratatui = { path = "../../vendor/codewhale-ratatui", version = "0.1.2" }' \
     | grep -v "version[[:space:]]*=[[:space:]]*\"${workspace_version}\"" || true
 )"
 if [[ -n "${internal_dep_drift}" ]]; then
@@ -361,6 +361,9 @@ if [[ -f "${golden_fixture}" ]]; then
     echo "::error::${golden_fixture} is stamped '${golden_version:-<missing>}', want '${workspace_version}'. Regenerate with: WRITE_GOLDEN=1 cargo test -p codewhale-config --lib -- --ignored write_golden_providers_export_when_requested" >&2
     fail=1
   fi
+else
+  echo "::error::${golden_fixture} is missing, so its version stamp cannot be checked against '${workspace_version}'." >&2
+  fail=1
 fi
 status_fixture="crates/tui/src/commands/contract/fixtures/config_policy/status.json"
 if [[ -f "${status_fixture}" ]]; then
@@ -369,6 +372,9 @@ if [[ -f "${status_fixture}" ]]; then
     echo "::error::${status_fixture} first line is '${status_fixture_line:-<missing>}', want 'codewhale ${workspace_version}'." >&2
     fail=1
   fi
+else
+  echo "::error::${status_fixture} is missing, so its version stamp cannot be checked against '${workspace_version}'." >&2
+  fail=1
 fi
 
 if [[ "${fail}" -eq 0 ]]; then

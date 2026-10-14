@@ -104,11 +104,12 @@ const GOAL_CONTINUATION_FAILURE_DETAIL_MAX_BYTES: usize = 512;
 const PLAN_SHELL_NETWORK_DENIED_HINT: &str = "Shell command blocked: in Plan mode shell commands run in a read-only sandbox with no writes and no network access. The user can change modes with /mode.";
 
 fn context_pressure_message(usage_percent: f64) -> Option<&'static str> {
-    if usage_percent >= crate::tui::context_inspector::CONTEXT_CRITICAL_THRESHOLD_PERCENT {
+    if usage_percent >= codewhale_runtime::context_budget::CONTEXT_CRITICAL_THRESHOLD_PERCENT {
         Some(
             "Context pressure: critical — CRITICAL: stop expanding scope; run /compact immediately or finish the current task",
         )
-    } else if usage_percent >= crate::tui::context_inspector::CONTEXT_WARNING_THRESHOLD_PERCENT {
+    } else if usage_percent >= codewhale_runtime::context_budget::CONTEXT_WARNING_THRESHOLD_PERCENT
+    {
         Some(
             "Context pressure: warning — ESCALATED: prefer /compact, narrow scope, or finish the current task",
         )
@@ -355,7 +356,7 @@ pub struct EngineConfig {
     /// Feature flags controlling tool availability.
     pub features: Features,
     /// Deterministic auto-review policy for tool calls.
-    pub auto_review_policy: crate::tui::auto_review::AutoReviewPolicy,
+    pub auto_review_policy: crate::core::authority::auto_review::AutoReviewPolicy,
     /// Auto-compaction settings for long conversations.
     pub compaction: CompactionConfig,
     /// Shared Todo list state.
@@ -604,7 +605,7 @@ impl Default for EngineConfig {
             launch_concurrency: DEFAULT_MAX_SUBAGENTS,
             subagents_enabled: true,
             features: Features::with_defaults(),
-            auto_review_policy: crate::tui::auto_review::AutoReviewPolicy::default(),
+            auto_review_policy: crate::core::authority::auto_review::AutoReviewPolicy::default(),
             compaction: CompactionConfig::default(),
             todos: new_shared_todo_list(),
             plan_state: new_shared_plan_state(),
@@ -878,6 +879,41 @@ enum EngineHostSetup {
     Rlm(rlm_host::RlmHostSetup),
 }
 
+pub(crate) fn compaction_checkpoint_for_restore(
+    messages: &[codewhale_models::Message],
+    system_prompt: Option<codewhale_models::SystemPrompt>,
+) -> Option<codewhale_models::SystemPrompt> {
+    extract_compaction_summary_prompt(system_prompt).or_else(|| {
+        // Current Engine projections carry the checkpoint in history,
+        // with a stripped system prompt. Only the existing structural
+        // validator can authorize a history block as that checkpoint.
+        messages.iter().rev().find_map(|message| {
+            if !crate::compaction::is_wire_compaction_checkpoint_message(message) {
+                return None;
+            }
+            match &message.content[0] {
+                codewhale_models::ContentBlock::Text { text, .. } => {
+                    Some(codewhale_models::SystemPrompt::Text(text.clone()))
+                }
+                _ => None,
+            }
+        })
+    })
+}
+
+/// The history a restore installs: sub-agent handoffs become restored
+/// checkpoints and the compaction checkpoint replaces its summary in place.
+/// Resume acknowledgement compares against this same projection.
+pub(crate) fn project_history_for_restore(
+    messages: Vec<codewhale_models::Message>,
+    compaction_checkpoint: Option<&codewhale_models::SystemPrompt>,
+) -> Vec<codewhale_models::Message> {
+    crate::compaction::restore_compaction_checkpoint(
+        crate::runtime_handoff::project_owned_messages_for_restore(messages),
+        compaction_checkpoint,
+    )
+}
+
 pub struct Engine {
     rlm_host: Option<rlm_host::RlmHostState>,
     host_profile: EngineHostProfile,
@@ -909,7 +945,7 @@ pub struct Engine {
     subagent_manager: SharedSubAgentManager,
     /// The deterministic Auto-Review policy shared with every child runtime
     /// so children are gated by the same rules as the parent turn.
-    shared_auto_review_policy: Arc<crate::tui::auto_review::AutoReviewPolicy>,
+    shared_auto_review_policy: Arc<crate::core::authority::auto_review::AutoReviewPolicy>,
     shell_manager: SharedShellManager,
     /// Read-before-edit snapshots live for the session, not for one turn's
     /// transient `ToolContext` (#4475).
@@ -1879,7 +1915,7 @@ impl Engine {
         }
 
         let (tx_op, rx_op) = mpsc::channel(ENGINE_OP_CHANNEL_CAPACITY);
-        let (tx_event, rx_event) = mpsc::channel(256);
+        let (tx_event, rx_event) = mpsc::channel(4 * streaming::MAX_TOOL_CALLS_PER_RESPONSE);
         let (tx_approval, rx_approval) = mpsc::channel(64);
         let (tx_user_input, rx_user_input) = mpsc::channel(32);
         let (tx_steer, rx_steer) = mpsc::channel(64);
@@ -2934,34 +2970,10 @@ impl Engine {
         system_prompt_override: bool,
     ) {
         self.session.tool_activation_cache.clear();
-        let compaction_checkpoint = extract_compaction_summary_prompt(system_prompt.clone())
-            .or_else(|| {
-                // Current Engine projections carry the checkpoint in history,
-                // with a stripped system prompt. Only the existing structural
-                // validator can authorize a history block as that checkpoint.
-                messages.iter().rev().find_map(|message| {
-                    if !crate::compaction::is_wire_compaction_checkpoint_message(message) {
-                        return None;
-                    }
-                    match &message.content[0] {
-                        codewhale_models::ContentBlock::Text { text, .. } => {
-                            Some(codewhale_models::SystemPrompt::Text(text.clone()))
-                        }
-                        _ => None,
-                    }
-                })
-            });
-        // The op owns the synced history: move each message
-        // through the projection instead of cloning the whole
-        // conversation and dropping the original (M3).
+        let compaction_checkpoint =
+            compaction_checkpoint_for_restore(&messages, system_prompt.clone());
         let restored_messages =
-            crate::runtime_handoff::project_owned_messages_for_restore(messages);
-        // Replace the checkpoint in place so turns after the
-        // compaction boundary keep their chronology.
-        let restored_messages = crate::compaction::restore_compaction_checkpoint(
-            restored_messages,
-            compaction_checkpoint.as_ref(),
-        );
+            project_history_for_restore(messages, compaction_checkpoint.as_ref());
         self.session.messages = restored_messages.into();
         // Direct field assignment bypasses `add_message` /
         // `replace_messages`, which own the messages-revision
@@ -3029,8 +3041,8 @@ impl Engine {
         // authoritative schedule makes that token fail closed when drained.
         self.scheduled_goal_continuation = None;
         // Runtime-added MCP servers are conversation capabilities even when
-        // both conversations use the same workspace. Configured servers can
-        // reconnect lazily after the new session is installed.
+        // both conversations use the same workspace. The sync handler restarts
+        // the session boot once the new session is installed.
         self.drop_mcp_pool();
         // C02-17: cumulative usage belongs to the conversation that spent
         // it. The sync carries no prior total for the installed session, so
@@ -3938,6 +3950,16 @@ impl Engine {
                         };
                         self.session.rebuild_working_set();
                         self.reconcile_restored_work_bindings().await;
+                        if self.mcp_pool.is_none()
+                            && let Err(error) = self
+                                .start_mcp_session_boot(McpConnectRefresh::IfChanged)
+                                .await
+                        {
+                            tracing::debug!(
+                                "MCP session boot failed: {}",
+                                crate::mcp::format_mcp_error_for_display(&error)
+                            );
+                        }
                         // SessionUpdated acknowledges the sync. A generic status
                         // would immediately cover the host's confirmed resume receipt.
                         self.emit_session_updated().await;
@@ -4318,15 +4340,15 @@ impl Engine {
         }
     }
 
-    fn record_goal_usage_for_turn(&self, usage: &Usage, elapsed: std::time::Duration) {
+    fn record_goal_usage_for_turn(&self, usage: &Usage, started: Instant) {
         let token_delta =
             u64::from(usage.input_tokens).saturating_add(u64::from(usage.output_tokens));
-        let time_delta_seconds = elapsed.as_secs();
+        let time_delta_seconds = started.elapsed().as_secs();
         if token_delta == 0 && time_delta_seconds == 0 {
             return;
         }
         match self.config.goal_state.lock() {
-            Ok(mut state) => state.record_usage(token_delta, time_delta_seconds),
+            Ok(mut state) => state.record_usage(token_delta, time_delta_seconds, started),
             Err(err) => tracing::warn!("goal state lock poisoned while recording usage: {err}"),
         }
     }
@@ -4610,7 +4632,7 @@ impl Engine {
         // Emit it only when the snapshot actually changed since the last
         // emitted block; the model can always run `git status` for a fresh
         // read.
-        if let Some(git_snapshot) = crate::tui::workspace_context::collect(&self.config.workspace) {
+        if let Some(git_snapshot) = crate::git_status::collect(&self.config.workspace) {
             let mut last = self
                 .last_turn_meta_git_snapshot
                 .lock()
@@ -5190,6 +5212,37 @@ impl Engine {
         true
     }
 
+    /// Resume a goal the model handed back at a milestone, when it is the
+    /// objective this turn names; publish the change like any other goal
+    /// transition. A yield is a hand-back rather than a judgement about the
+    /// work, so answering it continues the work.
+    async fn resume_yielded_goal(&mut self, objective: Option<&str>) -> bool {
+        let snapshot = match self.config.goal_state.lock() {
+            Ok(mut state) => {
+                if normalized_goal_objective(state.objective())
+                    != normalized_goal_objective(objective)
+                    || !state.resume_after_yield()
+                {
+                    return false;
+                }
+                state.snapshot()
+            }
+            Err(err) => {
+                tracing::warn!("goal state lock poisoned while resuming a yielded goal: {err}");
+                return false;
+            }
+        };
+        self.config.goal_status = GoalStatus::Active;
+        self.emit_session_updated().await;
+        let _ = self.send_event(Event::GoalUpdated { snapshot }).await;
+        let _ = self
+            .send_event(Event::status(
+                "Goal resumed: your message continues the work the earlier turn handed back",
+            ))
+            .await;
+        true
+    }
+
     /// Pause a still-active goal with an inspectable reason and publish every
     /// host projection in one ordered path.
     async fn pause_goal_continuation(&mut self, reason: GoalPauseReason, message: String) {
@@ -5678,7 +5731,7 @@ impl Engine {
         // The registry is rebuilt every turn: name each refused override to
         // the user once per process, not once per turn.
         for name in refused_overrides {
-            if first_override_refusal(&name) {
+            if first_notice(&name) {
                 let _ = self
                     .send_event(Event::status(
                         crate::tools::registry::override_refusal_notice(&name),
@@ -5714,6 +5767,25 @@ impl Engine {
         // caller can attribute MCP contributions without a second connect.
         let mcp_tools = mcp_state.tools().to_vec();
         let mcp_tool_names: Vec<String> = mcp_tools.iter().map(|tool| tool.name.clone()).collect();
+        if self.child_host.is_none() && matches!(mcp_state, McpToolState::Live { .. }) {
+            let native_names = tool_registry.names();
+            for entry in &self.config.tools_always_load {
+                let selects = |name: &str| match entry.strip_suffix('*') {
+                    Some(prefix) => name.starts_with(prefix),
+                    None => name == entry,
+                };
+                if !native_names.iter().any(|name| selects(name))
+                    && !mcp_tool_names.iter().any(|name| selects(name))
+                    && first_notice(&format!("always_load:{entry}"))
+                {
+                    let _ = self
+                        .send_event(Event::status(format!(
+                            "always_load entry `{entry}` matches no tool; MCP tool names carry a plugin-N prefix that renumbers when plugins change."
+                        )))
+                        .await;
+                }
+            }
+        }
         // The surface budget belongs to the route the request would go to,
         // which is not necessarily the installed one under auto routing.
         let capability = route.capability_profile();
@@ -6080,15 +6152,25 @@ impl Engine {
         // A person writing to a goal that only the runtime stopped (a failed
         // or timed-out continuation) is continuing the work: resume it as a
         // new revision instead of running a goalless turn against a stale
-        // blocker. Blockers the model or user reported stay until an explicit
+        // blocker. A goal the model handed back at a milestone is the same
+        // shape — the model stopped for an answer, not because anything is
+        // wrong — so answering it continues the work too. Blockers the model
+        // reported and pauses the user asked for stay until an explicit
         // resume, and automated inputs never resume anything.
-        let goal_status = if !self.is_acp_turn()
-            && provenance == UserInputProvenance::ExternalUser
-            && goal_status == GoalStatus::Blocked
-            && self
-                .resume_runtime_blocked_goal(goal_objective.as_deref())
-                .await
+        let resumed_goal = if !self.is_acp_turn() && provenance == UserInputProvenance::ExternalUser
         {
+            match goal_status {
+                GoalStatus::Blocked => {
+                    self.resume_runtime_blocked_goal(goal_objective.as_deref())
+                        .await
+                }
+                GoalStatus::Paused => self.resume_yielded_goal(goal_objective.as_deref()).await,
+                _ => false,
+            }
+        } else {
+            false
+        };
+        let goal_status = if resumed_goal {
             GoalStatus::Active
         } else {
             goal_status
@@ -6633,7 +6715,7 @@ impl Engine {
         // Update session usage
         self.session.total_usage.add(&turn.usage);
         if !self.is_acp_turn() {
-            self.record_goal_usage_for_turn(&turn.usage, turn.elapsed());
+            self.record_goal_usage_for_turn(&turn.usage, turn.started_at);
         }
 
         // Cancellation wins until the terminal settlement decision. `run_turn`
@@ -7110,6 +7192,59 @@ impl Engine {
         )
     }
 
+    /// The network decider this turn runs under: the live policy, re-read from
+    /// the document the session was launched with.
+    ///
+    /// `self.config.network_policy` is the snapshot `Engine::new` took when the
+    /// session was spawned. `/network allow <host>` edits `config.toml` and
+    /// promises "Retry the command now.", but it cannot reach that snapshot —
+    /// so without this re-read the host stayed refused until the next engine
+    /// spawn. Same shape as the workspace trust list loaded below, which also
+    /// re-reads per tool-context build so `/trust add` lands mid-session; a
+    /// hand edit of `[network]` lands through it too.
+    ///
+    /// Both directions have to land. `/network deny <host>` writes the same
+    /// `[network]` table `/network allow` does, and a session that started
+    /// without one adopts it the moment it appears — otherwise tightening a
+    /// policy mid-session would need the restart this exists to remove.
+    ///
+    /// A session that started gated keeps the policy it holds when the document
+    /// stops carrying a `[network]` table, so removing the table cannot leave a
+    /// session ungated by accident.
+    ///
+    /// The session cache rides along on a refresh, so a host approved through
+    /// the approval prompt survives it. An adopted table has no cache to
+    /// inherit: the session had no decider, so nothing was ever approved under
+    /// one.
+    fn current_network_decider(&self) -> Option<crate::network_policy::NetworkPolicyDecider> {
+        let Some(path) = self.api_config.loaded_config_path.as_deref() else {
+            return self.config.network_policy.clone();
+        };
+        let Some(document) = crate::config::network_policy_from_document(path) else {
+            // The document carries no `[network]` table. Keep what the session
+            // resolved: removing a table must not ungate a gated run.
+            return self.config.network_policy.clone();
+        };
+        match self.config.network_policy.as_ref() {
+            // A managed overlay or a Fleet denial produced this policy, so the
+            // document is a lower layer: it may add hosts, but it may not widen
+            // the fallback or lift a denial.
+            Some(decider)
+                if decider.is_authoritative() || self.api_config.network_layer_is_managed =>
+            {
+                Some(
+                    decider
+                        .with_policy_refreshed(decider.policy().folded_with_lower_layer(document)),
+                )
+            }
+            Some(decider) => Some(decider.with_policy_refreshed(document)),
+            // Nothing resolved a policy for this session, so there is no higher
+            // layer to protect. Adopt the table the moment it exists — that is
+            // how `/network deny <host>` lands where there was no policy yet.
+            None => Some(crate::network_policy::NetworkPolicyDecider::with_default_audit(document)),
+        }
+    }
+
     /// Build one tool context from the already-resolved turn authority and
     /// route. A preview owns values that are deliberately not installed on the
     /// session; rebuilding either from `self.session` would give it the prior
@@ -7138,7 +7273,7 @@ impl Engine {
                     route.model.clone(),
                     self.session.workspace.clone(),
                     self.session.system_prompt.clone(),
-                    self.session.messages.clone().into(),
+                    self.session.messages.snapshot(),
                 ))
                 .with_cancel_token(self.cancel_token.clone())
                 .with_origin_turn_id(self.turn_counter.to_string());
@@ -7160,8 +7295,7 @@ impl Engine {
         }
         let trusted = crate::workspace_trust::WorkspaceTrust::load_for(&self.session.workspace);
         let mut trusted_external_paths = trusted.paths().to_vec();
-        let clipboard_images_dir =
-            crate::tui::clipboard::clipboard_images_dir(&self.session.workspace);
+        let clipboard_images_dir = crate::config::clipboard_images_dir(&self.session.workspace);
         if !trusted_external_paths
             .iter()
             .any(|path| path == &clipboard_images_dir)
@@ -7195,7 +7329,7 @@ impl Engine {
             route.model.clone(),
             self.session.workspace.clone(),
             self.session.system_prompt.clone(),
-            self.session.messages.clone().into(),
+            self.session.messages.snapshot(),
         ))
         .with_cancel_token(self.cancel_token.clone())
         .with_shell_policy(authority.shell_policy())
@@ -7216,8 +7350,8 @@ impl Engine {
             ctx.memory_path = Some(self.config.memory_path.clone());
         }
 
-        if let Some(decider) = self.config.network_policy.as_ref() {
-            ctx = ctx.with_network_policy(decider.clone());
+        if let Some(decider) = self.current_network_decider() {
+            ctx = ctx.with_network_policy(decider);
         }
 
         // Adaptive evidence routing is engine-native and opt-in
@@ -7426,8 +7560,8 @@ impl Engine {
         }
         pool = pool.with_backend(crate::mcp::McpBackend::from_config(&self.api_config));
         pool = pool.with_disallowed_tools(self.config.disallowed_tools.clone().unwrap_or_default());
-        if let Some(decider) = self.config.network_policy.as_ref() {
-            pool = pool.with_network_policy(decider.clone());
+        if let Some(decider) = self.current_network_decider() {
+            pool = pool.with_network_policy(decider);
         }
         // The self-serve login tool honors the same pre-registered redirect
         // overrides `/mcp login` uses, or providers with pinned callback
@@ -8017,11 +8151,9 @@ impl Engine {
             }
         };
 
-        // Boot is lazy (#6033): a configured server nobody asked for is not
-        // spawned at session start. The eager set is `required` servers plus
-        // whatever the session's explicit tool selections cover; everything
-        // else connects on demand — a selected turn, a `/mcp` connect, or a
-        // lazy tool-name resolution.
+        // Boot connects every configured server in the background except
+        // those marked `lazy = true`, which connect on demand — a selected
+        // turn, a `/mcp` connect, or a lazy tool-name resolution.
         let requested = self.explicit_mcp_tool_names(self.config.allowed_tools.as_deref());
         let (pending, auth_errors, timeouts, network_policy, catalog_generation, backend) = {
             let mut pool = pool.lock().await;
@@ -8707,16 +8839,15 @@ fn plugin_tools_dir(tools_config: Option<&crate::config::ToolsConfig>) -> PathBu
     default_plugin_tools_dir()
 }
 
-/// Whether this process has not yet told the user about the refused
-/// `[tools.overrides.<name>]`.
-fn first_override_refusal(name: &str) -> bool {
+/// Whether this process has not yet shown the user the notice keyed `key`.
+fn first_notice(key: &str) -> bool {
     static NOTIFIED: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
         std::sync::OnceLock::new();
     NOTIFIED
         .get_or_init(Default::default)
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .insert(name.to_string())
+        .insert(key.to_string())
 }
 
 /// Load drop-in scripts and apply `[tools.overrides]`. Returns the tool names
@@ -8851,8 +8982,8 @@ pub(crate) fn auto_review_run_origin_for_plan(detached_start: bool) -> RunOrigin
 }
 
 pub(crate) fn auto_review_plan_decision_for_context(
-    policy: &crate::tui::auto_review::AutoReviewPolicy,
-    context: &crate::tui::auto_review::AutoReviewContext<'_>,
+    policy: &crate::core::authority::auto_review::AutoReviewPolicy,
+    context: &crate::core::authority::auto_review::AutoReviewContext<'_>,
 ) -> (AutoReviewPlanDecision, Value) {
     let decision = policy.evaluate(context);
     let audit_event = policy.audit_event(context, &decision);
@@ -8865,13 +8996,17 @@ pub(crate) fn auto_review_plan_decision_for_context(
         AutoReviewPlanDecision::Allow
     } else {
         match decision.action {
-            crate::tui::auto_review::AutoReviewAction::Allow
+            crate::core::authority::auto_review::AutoReviewAction::Allow
                 if context.approval_mode == ApprovalMode::Auto =>
             {
                 AutoReviewPlanDecision::Allow
             }
-            crate::tui::auto_review::AutoReviewAction::Allow => AutoReviewPlanDecision::NoChange,
-            crate::tui::auto_review::AutoReviewAction::AskUser if decision.built_in_safety_gate => {
+            crate::core::authority::auto_review::AutoReviewAction::Allow => {
+                AutoReviewPlanDecision::NoChange
+            }
+            crate::core::authority::auto_review::AutoReviewAction::AskUser
+                if decision.built_in_safety_gate =>
+            {
                 // Name the built-in gate honestly.
                 let reason = format!(
                     "Built-in safety gate requires approval: {}",
@@ -8879,23 +9014,25 @@ pub(crate) fn auto_review_plan_decision_for_context(
                 );
                 if matches!(
                     context.approval_mode,
-                    ApprovalMode::Auto | ApprovalMode::Never | ApprovalMode::Bypass
+                    ApprovalMode::Auto | ApprovalMode::Never
                 ) {
-                    // Auto-Review, Never, and Full Access are non-interactive for
-                    // approval holds. Full Access auto-runs ordinary calls, but a
-                    // non-bypassable safety floor always fails closed.
+                    // Auto-Review and Never are non-interactive for approval
+                    // holds, so the floor fails closed instead of stranding
+                    // the call on a modal neither posture opens.
                     AutoReviewPlanDecision::Block(reason)
                 } else {
                     AutoReviewPlanDecision::ForcePrompt(reason)
                 }
             }
-            crate::tui::auto_review::AutoReviewAction::AskUser
+            crate::core::authority::auto_review::AutoReviewAction::AskUser
                 if context.approval_mode == ApprovalMode::Auto =>
             {
                 AutoReviewPlanDecision::ConsultReviewer(decision.reason.clone())
             }
-            crate::tui::auto_review::AutoReviewAction::AskUser => AutoReviewPlanDecision::NoChange,
-            crate::tui::auto_review::AutoReviewAction::Block => {
+            crate::core::authority::auto_review::AutoReviewAction::AskUser => {
+                AutoReviewPlanDecision::NoChange
+            }
+            crate::core::authority::auto_review::AutoReviewAction::Block => {
                 AutoReviewPlanDecision::Block(format!(
                     "Auto-review policy blocked tool '{}': {}",
                     context.tool_name, decision.reason
@@ -9226,8 +9363,10 @@ impl MockEngineHandle {
         Option<crate::approval_log::ApprovalDecider>,
     )> {
         Some(match self.rx_approval.recv().await? {
-            ApprovalDecision::Approved { id, by } => (MockApprovalEvent::Approved { id }, Some(by)),
-            ApprovalDecision::Denied { id, by } => (MockApprovalEvent::Denied { id }, Some(by)),
+            ApprovalDecision::Approved { id, by, .. } => {
+                (MockApprovalEvent::Approved { id }, Some(by))
+            }
+            ApprovalDecision::Denied { id, by, .. } => (MockApprovalEvent::Denied { id }, Some(by)),
             ApprovalDecision::TimedOut { id } => (MockApprovalEvent::TimedOut { id }, None),
             ApprovalDecision::Unavailable { id } => (MockApprovalEvent::Unavailable { id }, None),
             ApprovalDecision::RetryWithPolicy { id, policy, by } => {
@@ -9291,7 +9430,7 @@ impl MockEngineHandle {
 #[cfg(test)]
 pub(crate) fn mock_engine_handle() -> MockEngineHandle {
     let (tx_op, rx_op) = mpsc::channel(32);
-    let (tx_event, rx_event) = mpsc::channel(256);
+    let (tx_event, rx_event) = mpsc::channel(4 * streaming::MAX_TOOL_CALLS_PER_RESPONSE);
     let (tx_approval, rx_approval) = mpsc::channel(64);
     let (tx_user_input, rx_user_input) = mpsc::channel(32);
     let (tx_steer, rx_steer) = mpsc::channel(64);
@@ -9747,7 +9886,7 @@ pub(crate) mod reviewer;
 mod streaming;
 mod token_estimate_cache;
 pub(crate) mod tool_catalog;
-mod tool_execution;
+pub(crate) mod tool_execution;
 #[cfg(all(test, unix))]
 pub(crate) use tool_execution::pin_replay_span_sequence;
 mod tool_media;

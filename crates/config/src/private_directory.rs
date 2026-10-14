@@ -86,6 +86,22 @@ fn validate_private_basename(name: &str) -> Result<()> {
 }
 
 #[cfg(unix)]
+fn resolve_ancestors(directory: &Path) -> std::path::PathBuf {
+    use std::os::unix::fs::MetadataExt as _;
+
+    let mut resolved = std::path::PathBuf::new();
+    for component in directory.components() {
+        resolved.push(component);
+        let root_owned_link = std::fs::symlink_metadata(&resolved)
+            .is_ok_and(|meta| meta.file_type().is_symlink() && meta.uid() == 0);
+        if root_owned_link && let Ok(real) = resolved.canonicalize() {
+            resolved = real;
+        }
+    }
+    resolved
+}
+
+#[cfg(unix)]
 fn open_owned_directory(directory: &Path, protect: bool, create: bool) -> Result<PrivateDirectory> {
     use std::os::fd::FromRawFd as _;
     use std::os::unix::fs::{MetadataExt as _, PermissionsExt as _};
@@ -94,6 +110,8 @@ fn open_owned_directory(directory: &Path, protect: bool, create: bool) -> Result
         directory.is_absolute(),
         "xAI OAuth credentials directory must be absolute"
     );
+    let resolved = resolve_ancestors(directory);
+    let directory = resolved.as_path();
     // SAFETY: the literal root path contains no interior NUL and the returned
     // descriptor is immediately owned by `File`.
     let root_fd = unsafe {
@@ -608,6 +626,15 @@ impl PrivateDirectory {
                     )),
                 };
             }
+            let identity = windows_file_identity(&file)?;
+            drop(file);
+            let file = self
+                .open_windows_file(name, true, true)?
+                .context("new xAI OAuth lifecycle lock disappeared after securing")?;
+            anyhow::ensure!(
+                windows_file_identity(&file)? == identity,
+                "new xAI OAuth lifecycle lock identity changed after securing"
+            );
             return Ok(file);
         }
         bail!("xAI OAuth lifecycle lock changed repeatedly while opening")
@@ -758,10 +785,36 @@ fn reopen_windows_file_for_owner_security(file: &File, path: &Path) -> Result<Fi
 #[cfg(windows)]
 fn mark_windows_file_handle_for_deletion(file: &File) -> Result<()> {
     use std::os::windows::io::AsRawHandle as _;
+    use windows_sys::Win32::Foundation::{
+        ERROR_INVALID_FUNCTION, ERROR_INVALID_PARAMETER, ERROR_NOT_SUPPORTED,
+    };
     use windows_sys::Win32::Storage::FileSystem::{
-        FILE_DISPOSITION_INFO, FileDispositionInfo, SetFileInformationByHandle,
+        FILE_DISPOSITION_FLAG_DELETE, FILE_DISPOSITION_FLAG_POSIX_SEMANTICS, FILE_DISPOSITION_INFO,
+        FILE_DISPOSITION_INFO_EX, FileDispositionInfo, FileDispositionInfoEx,
+        SetFileInformationByHandle,
     };
 
+    let posix = FILE_DISPOSITION_INFO_EX {
+        Flags: FILE_DISPOSITION_FLAG_DELETE | FILE_DISPOSITION_FLAG_POSIX_SEMANTICS,
+    };
+    if unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FileDispositionInfoEx,
+            (&raw const posix).cast(),
+            std::mem::size_of::<FILE_DISPOSITION_INFO_EX>() as u32,
+        )
+    } != 0
+    {
+        return Ok(());
+    }
+    let error = std::io::Error::last_os_error();
+    if !matches!(
+        error.raw_os_error().map(|code| code as u32),
+        Some(ERROR_INVALID_PARAMETER | ERROR_NOT_SUPPORTED | ERROR_INVALID_FUNCTION)
+    ) {
+        return Err(error).context("marking exact private file handle for deletion");
+    }
     let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
     // SAFETY: the disposition buffer has the documented structure and the
     // handle remains owned until after the call. Windows marks this exact file
@@ -776,7 +829,7 @@ fn mark_windows_file_handle_for_deletion(file: &File) -> Result<()> {
     } == 0
     {
         return Err(std::io::Error::last_os_error())
-            .context("marking exact xAI OAuth file handle for deletion");
+            .context("marking exact private file handle for deletion");
     }
     Ok(())
 }

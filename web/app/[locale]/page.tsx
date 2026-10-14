@@ -10,7 +10,7 @@ import { TerminalCapture } from "@/components/terminal-capture";
 import { WhaleLive } from "@/components/whale-live";
 import { getFacts } from "@/lib/facts";
 import { GETTING_STARTED_STEPS } from "@/lib/content/getting-started";
-import { fill, getHome, splitToken } from "@/lib/i18n/dictionaries";
+import { fill, getChrome, getHome, splitToken } from "@/lib/i18n/dictionaries";
 import {
   APP_SIGNUP_URL,
   DISCORD_URL,
@@ -82,7 +82,7 @@ export default async function HomePage({ params }: { params: Promise<{ locale: s
                 </Fragment>
               ))}
             </p>
-            <HeroInstall ariaLabel={d.heroInstallAria} copyLabel={d.copy} copiedLabel={d.copied} />
+            <HeroInstall locale={locale} ariaLabel={d.heroInstallAria} copyLabel={d.copy} copiedLabel={d.copied} />
             <div className="actions">
               <Link href={`/${locale}/install`} className="btn btn-primary btn-lg">
                 {d.getCodewhale}
@@ -134,12 +134,13 @@ export default async function HomePage({ params }: { params: Promise<{ locale: s
           className="home-section"
           title={d.gainHeading}
           scope={d.gainLede}
+          link={<Link href={`/${locale}/features`} className="section-link">{getChrome(locale).navFeatures}</Link>}
         >
           <dl className="ruled-list">
-            {d.gain.map(([name, description]) => (
+            {d.gain.map(([name, description], index) => (
               <div key={name}>
                 <dt>{name}</dt>
-                <dd>{description}</dd>
+                <dd>{description} <Link className="section-link" href={`/${locale}/docs/${["tools", "fleet", "mcp"][index]}`}>{getChrome(locale).navDocs}</Link></dd>
               </div>
             ))}
           </dl>

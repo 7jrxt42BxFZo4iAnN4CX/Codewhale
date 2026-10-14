@@ -18,7 +18,7 @@ assert.ok(binaryArg && evidenceArg, 'usage: node windows-terminal-clipboard.mjs 
 const binary = path.resolve(binaryArg);
 const evidence = path.resolve(evidenceArg);
 await fs.mkdir(evidence, { recursive: true });
-const root = await fs.mkdtemp(path.join(process.env.RUNNER_TEMP, 'cw-clipboard-'));
+const root = await fs.mkdtemp(path.join(process.env.RUNNER_TEMP, 'cw-terminal-fixture-'));
 const qaHome = path.join(root, 'home');
 const workspace = path.join(root, 'workspace');
 const terminalRoot = path.join(root, 'terminal');
@@ -125,7 +125,10 @@ try {
   desktop.stdout.on('data', data => { void fs.appendFile(path.join(evidence, 'desktop.log'), data); });
   desktop.stderr.on('data', data => { desktopError += data; void fs.appendFile(path.join(evidence, 'desktop-error.log'), data); });
   desktopExit = new Promise((resolve, reject) => { desktop.once('error', reject); desktop.once('exit', resolve); });
+  await until(() => exists('ready.json'), 'Windows Terminal composer readiness', 120_000);
+  receipt.readyAt = new Date().toISOString();
   await until(() => exists('pasted.json'), 'actual clipboard paste');
+  receipt.pastedAt = new Date().toISOString();
   assert.equal(requests.length, 0, 'pasting must not submit any partial turn');
   receipt.requestsBeforeEnter = 0;
   await fs.writeFile(path.join(evidence, 'submit'), 'enter once');

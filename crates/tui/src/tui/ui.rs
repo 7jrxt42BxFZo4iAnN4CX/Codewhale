@@ -191,8 +191,9 @@ use self::activity_detail::{
 const SLASH_MENU_LIMIT: usize = 128;
 const MIN_CHAT_HEIGHT: u16 = 3;
 const MIN_COMPOSER_HEIGHT: u16 = 2;
-const CONTEXT_WARNING_THRESHOLD_PERCENT: f64 = 85.0;
-const CONTEXT_CRITICAL_THRESHOLD_PERCENT: f64 = 95.0;
+use codewhale_runtime::context_budget::{
+    CONTEXT_CRITICAL_THRESHOLD_PERCENT, CONTEXT_WARNING_THRESHOLD_PERCENT,
+};
 const CONTEXT_SUGGEST_COMPACT_THRESHOLD_PERCENT: f64 = 60.0;
 const UI_IDLE_POLL_MS: u64 = 48;
 const UI_ACTIVE_POLL_MS: u64 = 24;
@@ -1017,7 +1018,7 @@ pub(crate) struct SteerPausedSnapshot {
 fn use_bundled_constitution(app: &mut App, config: &Config) {
     let mut state = crate::tui::setup::load_setup_state_for_app(app, config);
     state.complete_constitution_checkpoint(
-        crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+        crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
         codewhale_config::ConstitutionChoice::Bundled,
     );
     state.constitution_source = codewhale_config::ConstitutionSource::Bundled;
@@ -1028,7 +1029,7 @@ fn use_bundled_constitution(app: &mut App, config: &Config) {
         codewhale_config::StepEntry::new(
             codewhale_config::StepStatus::Verified,
             true,
-            crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+            crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
         )
         .with_result("bundled/default constitution"),
     );
@@ -1454,7 +1455,7 @@ mod provider_key_validation_tests {
         let options = TuiOptions {
             start_in_agent_mode: true,
             skip_onboarding: false,
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         let mut app = App::new(options, &Config::default());
         // These suites assert legacy strip geometry (work surface above the
@@ -2516,7 +2517,7 @@ fn fleet_role_entry_opens_shared_picker_and_cancel_restores_parked_roster() {
     let workspace = tempfile::tempdir().unwrap();
     let config = Config::default();
     let mut app = App::new(
-        crate::test_support::test_tui_options(workspace.path()),
+        crate::tui::test_support::test_tui_options(workspace.path()),
         &config,
     );
     app.view_stack

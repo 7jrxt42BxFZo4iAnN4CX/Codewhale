@@ -5,6 +5,15 @@ workspace drive-lease design below (§11). Decision record: per-client topology
 ("Plan C" — A's mechanism, client-specific defaults), not single-owner-everywhere
 ("Plan B"). Written against `wave/0.10.1-next` (`5cf09da77` and descendants).
 
+
+This is a design record, not a claim that every phase is implemented. This PR
+adds Unix control sockets for an explicit canonical runtime-directory override
+and a shared workspace lease at Runtime API scope admission. Existing store,
+principal, config, worker and workspace checks remain authoritative. Detached
+owner election, scope retirement, standalone TUI/turn/CLI lease admission and
+store-derived Windows pipe names remain follow-up work. Existing Windows named
+pipe transport and owner recovery are retained.
+
 **Audience:** Engine runtime maintainers, desktop client, web client, VS Code
 extension owners.
 
@@ -108,7 +117,7 @@ Socket layout (unix; macOS path budget is 103 bytes — verified
   (macOS ≈ 56 bytes, well inside the 103-byte kernel budget).
   Receipts continue to ride beside their socket (`<name>.owner.json`), so
   publication, re-validation, and stale reclaim work unchanged per socket.
-- Windows (transport currently reserved, unimplemented): the derived pipe
+- Windows (named-pipe transport exists; store-derived naming is deferred): the derived pipe
   name is `\\.\pipe\codewhale-daemon-<boundary_id>`; follow-up work.
 
 Consequences for today's refusal paths:
@@ -360,20 +369,22 @@ spawn-and-scan client.
 4. Whether the desktop wants a *named* multi-boundary story (e.g., one
    boundary per account profile) — the tuple supports it; the UX does not
    have to yet.
-5. Windows named-pipe implementation timing (transport is reserved today).
+5. Windows store-derived named-pipe naming timing (the existing transport is retained).
 
 ---
 
 ## 11. Workspace drive lease (single-writer per workspace)
 
-**Status:** Design accepted; implementation alongside Phase A.
+**Status:** Partial implementation at Runtime API workspace scope admission.
+Turn admission and standalone TUI/CLI ownership are not added in this PR.
 
 ### The invariant
 
-At most one **drive** holder per workspace (canonical path), process-wide,
-across stores and clients. Watch-only observers are unlimited. This is the
-precise form of "regardless of client (web, desktop, TUI, VS Code), only one
-client at a time drives a workspace".
+One process holds the workspace kernel lease across stores that use the same
+private lease-state root. Scopes in that process share counted acquisitions.
+This PR does not serialize distinct in-process engines or add leases to
+standalone TUI/CLI drivers. Existing watchers of an admitted owner share its
+held scope and retain their token-intent restrictions.
 
 ### Why the lease unit is the workspace, not the store
 
@@ -396,48 +407,46 @@ The existing exclusivity unit — the store process-owner lock — is scoped to
 
 ### Drive vs watch
 
-The engine already separates these intents in device tokens
-   (`client_token_intents`: `watch` default, `drive` explicit). The lease
-   gates exactly the drive path: turn admission (accepted turns that mutate
-   the workspace), workspace scope admission for driving frontends, and CLI
-   resume/fork. Watch flows (read-only observers, remote watch sessions,
-   status panels) never take the lease.
+Existing device tokens separate watch and drive intent. This PR takes the
+lease when a Runtime API workspace scope is admitted; it does not add a
+separate lease-free scope admission API. Existing observers attach to the
+owner's held scope and do not acquire another operating-system lease.
 
 ### Mechanism
 
-- **Lease file**: one per workspace under the existing snapshot-state base —
-  `<snapshot_state_base()>/leases/<project_hash>/<worktree_hash>.lease` —
+- **Lease file**: one per workspace under the private `workspace-leases` state directory —
+  `<lease_state_base()>/<project_hash>/<worktree_hash>.lease` —
   reusing the same canonical-path hashing as the snapshot side-repo, so worktrees
   of one checkout share a project bucket and a worktree lease is exact.
-- **Acquire**: open-create + `fd_lock` write lock (same primitive as the
-  store's process-owner lock and automations). Write holder facts: pid,
+- **Acquire**: open-create + a kernel `flock`/Windows byte-range lock. Write holder facts: pid,
   `process_start` (the existing liveness token), client label, store root,
   timestamp.
-- **Liveness**: the lock releases when the holder dies (kernel closes fds),
-  so a crashed holder self-heals. A *live-but-wedged* holder is detected by
-  pid + `process_start` mismatch (`unix_process_start`, the same check the
-  owner receipt uses); `--force` (or an engine-side takeover when the
-  recorded pid is provably dead) rewrites the lease after breaking the
-  stale lock.
+- **Liveness**: the kernel lock releases when its holder dies, so a crashed
+  holder does not prevent the next acquisition. The lease file keeps a stable
+  identity. Releasing the lock leaves diagnostic metadata on disk; a successor
+  overwrites it on acquisition. The record alone never establishes a live holder.
+  A contender never deletes or replaces it based on recorded pid or
+  creation-time metadata: those fields describe a holder but do not grant
+  takeover authority. An old record can remain between a successor's lock
+  acquisition and its metadata write. A live but wedged holder must release
+  the kernel lease or exit before another process can drive the workspace.
 - **Refusal is legible**: on contention the engine reports the recorded
-  holder (pid, client label, store root, age) so the second client can offer
-  a real choice: stay watch-only, or take over.
+  holder (pid, client label, store root, age). The holder must close or release
+  its scope before another process can drive; existing observers may attach
+  watch-only to that owner. This PR does not add a forced takeover command.
 - **Where it lives**: one small module in the TUI crate beside the store
    process-owner lock, taking only `&Path` (workspace) + holder facts.
 
 ### Admission points
 
-1. `RuntimeWorkspaceScopes::admit` — the engine-side choke point every
-   driving frontend already passes through (it holds the workspace dir fd
-   there). Driving attach without a lease → typed refusal.
-2. Turn admission for workspace-mutating turns (defense in depth below the
-   scope check, covering engines that somehow opened before the lease
-   existed).
-3. CLI `codewhale thread resume` / `fork` workspace scopes (they go through
-   scope admission, so (1) covers them).
+`RuntimeWorkspaceScopes::admit` is the implemented admission point. It retains
+canonical directory identity checks, acquires the lease before coordination
+registration, and holds the guard through asynchronous MCP/LSP cleanup.
 
-Watch paths attach without the lease; their token intent already forbids
-   writes.
+Independent turn admission and standalone TUI/CLI resume/fork ownership are
+follow-up work. They do not acquire this lease merely by opening a
+`RuntimeThreadManager`. Existing watch requests continue to use the admitted
+owner scope and existing token checks.
 
 ### Costs and caveats (honest list)
 

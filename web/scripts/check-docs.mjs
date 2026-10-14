@@ -16,6 +16,7 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildInstallGuide, installAnchorErrors } from "./install-guide-lib.mjs";
+import { readDocTopics } from "./docs-sources-lib.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WEB_DIR = resolve(__dirname, "..");
@@ -24,30 +25,6 @@ const REPO_ROOT = resolve(WEB_DIR, "..");
 /* ------------------------------------------------------------------ */
 /*  Parse docs-map.ts (regex — avoids ts-node dependency)              */
 /* ------------------------------------------------------------------ */
-
-function parseDocsMap() {
-  const path = resolve(WEB_DIR, "lib", "docs-map.ts");
-  if (!existsSync(path)) {
-    console.error(`[check-docs] ERROR: docs-map.ts not found at ${path}`);
-    process.exit(1);
-  }
-  const src = readFileSync(path, "utf-8");
-
-  const topics = [];
-  const re =
-    /\{\s*id:\s*"(\w[^"]*)",\s*slug:\s*"(\w[^"]*)",[\s\S]*?repoSource:\s*(\[[^\]]+\]|"[^"]+")/g;
-  let m;
-  while ((m = re.exec(src)) !== null) {
-    const id = m[1];
-    const slug = m[2];
-    let rawSource = m[3];
-    const sources = rawSource.startsWith("[")
-      ? rawSource.match(/"([^"]+)"/g)?.map((s) => s.slice(1, -1)) ?? []
-      : [rawSource.slice(1, -1)];
-    topics.push({ id, slug, repoSource: sources });
-  }
-  return topics;
-}
 
 /* ------------------------------------------------------------------ */
 /*  Check 1: every repo source file exists                             */
@@ -131,7 +108,7 @@ function checkInstallSnippets() {
 /* ------------------------------------------------------------------ */
 
 function main() {
-  const topics = parseDocsMap();
+  const topics = readDocTopics(WEB_DIR);
   if (topics.length === 0) {
     console.error("[check-docs] ERROR: no topics parsed from docs-map.ts");
     process.exit(1);

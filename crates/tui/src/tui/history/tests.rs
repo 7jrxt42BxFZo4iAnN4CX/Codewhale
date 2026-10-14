@@ -27,6 +27,7 @@ use super::{
     extract_reasoning_summary, render_spillover_annotation, render_thinking,
     render_thinking_with_analysis, running_status_label_with_elapsed,
 };
+use crate::session_manager::{SessionManager, create_saved_session};
 use crate::tools::plan::{PlanSnapshot, StepStatus};
 use crate::tui::motion::MotionMode;
 use crate::tui::ui_text::{
@@ -35,6 +36,7 @@ use crate::tui::ui_text::{
 use codewhale_models::{ContentBlock, Message, Role};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use tempfile::tempdir;
 
 #[test]
 fn extension_prompt_snapshots_and_withdrawal_show_the_complete_model_input() {
@@ -53,6 +55,16 @@ fn extension_prompt_snapshots_and_withdrawal_show_the_complete_model_input() {
             None => assert!(content.contains("withdrawn")),
         }
     }
+    let message = crate::runtime_handoff::mcp_server_instructions_runtime_message(&[(
+        "guided".into(),
+        "Search before fetching.".into(),
+    )]);
+    let cells = super::history_cells_from_message(&message);
+    assert!(
+        matches!(cells.as_slice(), [HistoryCell::System { content }]
+            if content.contains("Search before fetching.")),
+        "the transcript shows what the model saw"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +108,7 @@ fn exec_tool(command: &str, status: ToolStatus) -> ExecCell {
         duration_ms: None,
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     }
@@ -999,7 +1012,7 @@ fn the_copy_prefix_skips_every_decoration_and_keeps_the_payload() {
     ));
     let copied = slice_visible_columns(&body, header.copy_prefix_width, text_visible_width(&body));
     assert!(
-        copied.contains("run Done"),
+        copied.contains("run done"),
         "receipt text was clipped away: {copied:?}"
     );
     for glyph in decorations {
@@ -1414,16 +1427,17 @@ fn a_card_verb_agrees_with_its_own_label_in_every_locale() {
     for (label, expected_en, expected_zh, forbidden_en) in [
         (
             "Searching for `TranscriptScroll`",
-            "find Done",
+            "find done",
             "find 完成",
-            "read Done",
+            "read done",
         ),
-        ("Reading src/foo.rs", "read Done", "read 完成", "find Done"),
+        ("Reading src/foo.rs", "read done", "read 完成", "find done"),
     ] {
         let cell = super::ExploringCell {
             entries: vec![super::ExploringEntry {
                 label: label.to_string(),
                 status: ToolStatus::Success,
+                error: None,
             }],
         };
 
@@ -1466,7 +1480,7 @@ fn receipts_count_only_what_they_actually_counted() {
     use crate::tui::widgets::tool_card::ToolFamily;
     use codewhale_localization::Locale;
 
-    for (locale, done, unit) in [(Locale::En, "Done", "line"), (Locale::ZhHans, "完成", "行")] {
+    for (locale, done, unit) in [(Locale::En, "done", "line"), (Locale::ZhHans, "完成", "行")] {
         let label = |family, status, output| {
             super::tool_receipt_label(family, status, Some(output), locale)
         };
@@ -1548,7 +1562,7 @@ fn shell_headers_stay_truthful_through_the_output_formatters() {
         cell.duration_ms = Some(42);
 
         for (locale, done, unit) in [
-            (Locale::En, "Done", "lines"),
+            (Locale::En, "done", "lines"),
             (Locale::ZhHans, "完成", "行"),
         ] {
             let header = line_text(&cell.render_with_locale(80, true, RenderMode::Live, locale)[0]);
@@ -2083,11 +2097,12 @@ fn a_checklist_update_shows_only_the_item_that_changed() {
         },
         80,
         true,
+        codewhale_localization::Locale::En,
     );
     assert!(lines.len() >= 3, "header, change, summary: {}", lines.len());
 
     let change = line_text(&lines[1]);
-    for needle in ["#2", "Write the test", "in_progress"] {
+    for needle in ["#2", "Write the test", "in progress"] {
         assert!(change.contains(needle), "missing {needle:?}: {change:?}");
     }
     for other in ["Land the PR", "Read the spec"] {
@@ -2123,6 +2138,7 @@ fn a_checklist_update_shows_only_the_item_that_changed() {
         },
         80,
         true,
+        codewhale_localization::Locale::En,
     );
     let change = line_text(&lines[1]);
     assert!(change.contains("#99") && change.contains("(missing title)"));
@@ -2194,7 +2210,7 @@ fn fan_out_prompts_replace_the_inline_argument_summary() {
     );
 
     let mut plain = generic_tool("file_search", ToolStatus::Running);
-    plain.input_summary = Some("query: foo".to_string());
+    plain.input_summary = Some("query: foo, path: src".to_string());
     let text = lines_text(&HistoryCell::Tool(ToolCell::Generic(plain)).lines(80));
     assert!(
         text.contains("query: foo"),
@@ -2563,7 +2579,7 @@ fn a_collapsed_run_summary_names_what_actually_happened() {
                 ..Default::default()
             }
         )),
-        "Explored 4 files, 1 search: read_file, list_dir"
+        "Explored 4 files, 1 search: read file, list dir"
     );
 
     assert_eq!(
@@ -2575,7 +2591,7 @@ fn a_collapsed_run_summary_names_what_actually_happened() {
                 ..Default::default()
             }
         )),
-        "Explored 2 files: read_file, ran 2 commands: run_tests, validate_data",
+        "Explored 2 files: read file, ran 2 commands: run tests, validate data",
         "each clause lists only its own families"
     );
 
@@ -2604,7 +2620,7 @@ fn a_collapsed_run_summary_names_what_actually_happened() {
     assert_eq!(commands[0].activity.commands, 3);
     assert_eq!(
         super::tool_run_summary(&commands[0]),
-        "Ran 3 commands: run_tests, run_verifiers, validate_data"
+        "Ran 3 commands: run tests, run verifiers, validate data"
     );
 
     let git = super::detect_tool_runs(
@@ -2618,7 +2634,7 @@ fn a_collapsed_run_summary_names_what_actually_happened() {
     assert_eq!(git[0].activity.files, 3);
     assert_eq!(
         super::tool_run_summary(&git[0]),
-        "Explored 3 files: git_log, git_show, git_blame"
+        "Explored 3 files: git log, git show, git blame"
     );
 }
 
@@ -2797,6 +2813,7 @@ fn exploring_cell_status_keeps_the_loudest_terminal_state() {
             .map(|status| ExploringEntry {
                 label: "Reading src/foo.rs".to_string(),
                 status: *status,
+                error: None,
             })
             .collect(),
     };
@@ -3268,4 +3285,154 @@ fn calm1_calm_and_hidden_details_share_one_card_budget() {
         rendered.push(lines_text(&lines));
     }
     assert!(rendered.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+/// #4681: reopening a session must not surface `<turn_meta>` machine
+/// blocks in the transcript. Covers the current trailing shape and the
+/// legacy leading shape (sessions saved before the turn-meta tail move),
+/// while the loaded API history keeps both envelopes intact for replay.
+#[test]
+fn rehydrated_turn_meta_blocks_never_render_in_history_cells() {
+    let tmp = tempdir().expect("tempdir");
+    let manager = SessionManager::new(tmp.path().join("sessions")).expect("new");
+
+    let turn_meta = "<turn_meta>\nCurrent local date: 2026-08-01\n</turn_meta>";
+    let trailing_shape = Message {
+        role: Role::User,
+        content: vec![
+            ContentBlock::Text {
+                text: "Fix the flaky test".to_string(),
+                cache_control: None,
+            },
+            ContentBlock::Text {
+                text: turn_meta.to_string(),
+                cache_control: None,
+            },
+        ],
+    };
+    let legacy_leading_shape = Message {
+        role: Role::User,
+        content: vec![
+            ContentBlock::Text {
+                text: turn_meta.to_string(),
+                cache_control: None,
+            },
+            ContentBlock::Text {
+                text: "Now add the docs".to_string(),
+                cache_control: None,
+            },
+        ],
+    };
+    let messages = vec![
+        trailing_shape,
+        Message {
+            role: Role::Assistant,
+            content: vec![ContentBlock::Text {
+                text: "Done.".to_string(),
+                cache_control: None,
+            }],
+        },
+        legacy_leading_shape,
+    ];
+    let session = create_saved_session(&messages, "test-model", tmp.path(), 100, None);
+    let session_id = session.metadata.id.clone();
+    manager.save_session(&session).expect("save");
+
+    let loaded = manager.load_session(&session_id).expect("load");
+
+    // Display path: no rendered cell may carry turn_meta markup.
+    let rendered: Vec<HistoryCell> = loaded
+        .messages
+        .iter()
+        .flat_map(super::history_cells_from_message)
+        .collect();
+    let user_texts: Vec<&str> = rendered
+        .iter()
+        .filter_map(|cell| match cell {
+            HistoryCell::User { content } => Some(content.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(user_texts, vec!["Fix the flaky test", "Now add the docs"]);
+    assert!(
+        !user_texts.iter().any(|text| text.contains("<turn_meta")),
+        "rendered cells must not contain turn_meta markup: {user_texts:?}"
+    );
+
+    // Model-facing replay: the persisted envelopes survive the round trip.
+    let replayed_envelopes = loaded
+        .messages
+        .iter()
+        .flat_map(|message| &message.content)
+        .filter(|block| {
+            matches!(block, ContentBlock::Text { text, .. } if text.contains("<turn_meta>"))
+        })
+        .count();
+    assert_eq!(replayed_envelopes, 2);
+}
+
+#[test]
+fn save_and_load_session_preserves_rich_update_plan_tool_payload() {
+    let tmp = tempdir().expect("tempdir");
+    let manager = SessionManager::new(tmp.path().join("sessions")).expect("new");
+    let messages = vec![
+        Message {
+            role: Role::User,
+            content: vec![ContentBlock::Text {
+                text: "plan this carefully".to_string(),
+                cache_control: None,
+            }],
+        },
+        Message {
+            role: Role::Assistant,
+            content: vec![ContentBlock::ToolUse {
+                execution_id: None,
+                id: "plan-1".to_string(),
+                name: "update_plan".to_string(),
+                input: serde_json::json!({
+                    "objective": "Make Plan mode reviewable",
+                    "sources_used": ["gh issue view 2691"],
+                    "critical_files": ["crates/tui/src/tools/plan.rs"],
+                    "constraints": ["Preserve legacy update_plan payloads"],
+                    "verification_plan": "Run focused plan tests",
+                    "handoff_packet": "Next agent should inspect replay",
+                    "plan": [
+                        { "step": "render replay card", "status": "completed" }
+                    ]
+                }),
+                caller: None,
+                thought_signature: None,
+            }],
+        },
+        Message {
+            role: Role::User,
+            content: vec![ContentBlock::ToolResult {
+                execution_id: None,
+                tool_use_id: "plan-1".to_string(),
+                content: "Plan updated".to_string(),
+                is_error: None,
+                content_blocks: None,
+            }],
+        },
+    ];
+    let session = create_saved_session(&messages, "deepseek-v4-flash", tmp.path(), 42, None);
+    let session_id = session.metadata.id.clone();
+
+    manager.save_session(&session).expect("save");
+    let loaded = manager.load_session(&session_id).expect("load");
+
+    assert_eq!(loaded.messages.len(), 3);
+    let cells = super::history_cells_from_message(&loaded.messages[1]);
+    let Some(HistoryCell::Tool(ToolCell::PlanUpdate(cell))) = cells.first() else {
+        panic!("expected loaded update_plan to replay as a PlanUpdate cell");
+    };
+    assert_eq!(
+        cell.snapshot.objective.as_deref(),
+        Some("Make Plan mode reviewable")
+    );
+    assert_eq!(
+        cell.snapshot.critical_files,
+        vec!["crates/tui/src/tools/plan.rs"]
+    );
+    assert_eq!(cell.snapshot.items[0].status, StepStatus::Completed);
 }

@@ -8,7 +8,7 @@ import type { ComputerUseDict } from "../types";
  * guillemets, in line with the other French dictionaries.
  */
 export const computerUse: ComputerUseDict = {
-  metaTitle: "Computer Use pour Mac · Codewhale",
+  metaTitle: "Computer Use · Aperçu · Codewhale",
   metaDescription: "Téléchargez et configurez Codewhale Computer Use pour Mac : contrôle des apps en arrière-plan, configuration des autorisations et commandes Pause et Stop à portée de main.",
   title: "Computer Use",
   lead: "Laissez Codewhale agir dans vos apps pendant que vous continuez à travailler. L’assistant Mac regroupe dans votre barre des menus les autorisations, le contrôle des apps en arrière-plan et de quoi mettre en pause ou arrêter la saisie.",

@@ -18,7 +18,7 @@ fn test_options(yolo: bool) -> TuiOptions {
         start_in_agent_mode: true,
         skip_onboarding: false,
         yolo,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     }
 }
 
@@ -396,7 +396,7 @@ fn reasoning_effort_display_label_keeps_codex_top_tiers_distinct() {
     app.reasoning_effort = ReasoningEffort::Auto;
     app.last_effective_reasoning_effort =
         Some(EffectiveReasoningEffort::Tier(ReasoningEffort::Max));
-    assert_eq!(app.reasoning_effort_display_label(), "auto: max");
+    assert_eq!(app.reasoning_effort_display_label(), "auto→max");
 }
 
 #[test]
@@ -2685,29 +2685,26 @@ fn fully_configured_returning_user_skips_onboarding() {
 }
 
 #[test]
-fn returning_user_missing_api_key_goes_to_canonical_provider_setup() {
+fn returning_user_missing_api_key_starts_at_composer() {
     assert_eq!(
         initial_onboarding_state(false, true, false, true, false),
-        OnboardingState::Provider
+        OnboardingState::None
     );
-    // workspace trust doesn't affect the api-key gate
     assert_eq!(
         initial_onboarding_state(false, true, false, true, true),
-        OnboardingState::Provider
+        OnboardingState::None
     );
 }
 
 #[test]
-fn first_run_user_without_a_key_starts_on_connect_a_model() {
-    // #6566: a new user with no key used to land on a composer that could
-    // not answer. The one launch screen is the provider picker.
+fn first_run_user_without_a_key_starts_at_composer() {
     assert_eq!(
         initial_onboarding_state(false, false, true, true, true),
-        OnboardingState::Provider
+        OnboardingState::None
     );
     assert_eq!(
         initial_onboarding_state(false, false, false, true, true),
-        OnboardingState::Provider
+        OnboardingState::None
     );
 }
 
@@ -2816,8 +2813,9 @@ fn first_run_app_without_a_key_opens_provider_setup() {
     .collect();
 
     let app = App::new(test_options(false), &Config::default());
-    // #6566: the first screen connects a model; Esc returns to the composer.
-    assert_eq!(app.onboarding, OnboardingState::Provider);
+    // CW-7167: a keyless launch opens the composer; the provider is asked for
+    // on the first send.
+    assert_eq!(app.onboarding, OnboardingState::None);
     assert!(app.onboarding_needs_api_key);
     assert!(app.onboarding_missing_key_recovery);
     // A new user has no saved route, so the picker opens on the provider
@@ -4023,7 +4021,7 @@ fn plan_permission_cycle_moves_the_baseline_and_leaves_plan_read_only() {
     assert!(
         app.status_toasts
             .iter()
-            .any(|toast| toast.text.contains("applies in Act and Operate")),
+            .any(|toast| toast.text.contains("applies in Work and Operate")),
         "the receipt must say when the new posture starts applying"
     );
 
@@ -7683,11 +7681,11 @@ fn launch_onboarding_scenario() {
     }
     // from launch_onboarding_opens_picker_for_generic_missing_key
     {
-        // A generic missing key (not the xAI-OAuth re-auth case) still reopens the
-        // provider picker for recovery.
+        // A generic missing key (not the xAI-OAuth re-auth case) starts at the
+        // composer with missing-key recovery armed for the first send.
         let (onboarding, recovery) =
             launch_onboarding_decision(false, true, false, true, false, false);
-        assert_eq!(onboarding, OnboardingState::Provider);
+        assert_eq!(onboarding, OnboardingState::None);
         assert!(recovery);
     }
     // from launch_onboarding_clean_when_onboarded_with_key
@@ -7705,10 +7703,8 @@ fn launch_onboarding_scenario() {
         assert_eq!(onboarding, OnboardingState::None);
         assert!(!recovery);
 
-        // #6566: a first run with no key opens the picker directly, with the
-        // same Esc-to-composer exit as missing-key recovery.
         let (keyless, recovery) = launch_onboarding_decision(false, false, true, true, true, false);
-        assert_eq!(keyless, OnboardingState::Provider);
+        assert_eq!(keyless, OnboardingState::None);
         assert!(recovery);
 
         // A first run with a key starts at the composer.
@@ -8081,5 +8077,126 @@ fn a_typed_drop_with_the_question_on_its_line_still_sends_the_image() {
             .blocks
             .iter()
             .any(|block| matches!(block, codewhale_models::ContentBlock::ImageUrl { .. }))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn pet_view_choice_restores_without_launch_overlay_and_preserves_other_settings() {
+    let _lock = lock_test_env();
+    let tmp = tempfile::TempDir::new().unwrap();
+    let _env = sealed_settings_home(tmp.path());
+    let _writes = crate::tui::startup_defaults::allow_writes_in_tests();
+    let path = tmp.path().join(".codewhale/settings.toml");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &path,
+        "# keep this comment\nlow_motion = true\ncontextual_tips = false\n",
+    )
+    .unwrap();
+    let mut app = App::new(test_options(false), &Config::default());
+    assert!(
+        !app.pet_watch.enabled,
+        "old settings keep their existing view"
+    );
+    app.pet_watch.detach_for_test();
+    app.input = "unfinished draft".into();
+    assert!(
+        !crate::commands::execute_with_config("/pet on", &mut app, &Config::default()).is_error
+    );
+    assert!(app.pet_watch.enabled);
+    assert!(app.view_stack.is_empty());
+    assert_eq!(app.input, "unfinished draft");
+    app.startup_defaults.flush();
+    let restored = App::new(test_options(false), &Config::default());
+    assert!(restored.pet_watch.enabled);
+    assert!(
+        !restored.launch.visible,
+        "the welcome overlay must not hide the remembered view"
+    );
+    assert!(restored.low_motion);
+    assert!(restored.view_stack.is_empty());
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert!(saved.contains("# keep this comment"));
+    assert!(!Settings::load_persisted().unwrap().contextual_tips);
+
+    // Both public selectors enqueue in user-action order; quit immediately
+    // after the last choice and prove the existing shutdown join persists it.
+    for value in [false, true, false, true] {
+        app.pet_watch.detach_for_test();
+        let result = crate::commands::execute_with_config(
+            &format!(
+                "/config pet_mode {} --save",
+                if value { "true" } else { "false" }
+            ),
+            &mut app,
+            &Config::default(),
+        );
+        assert!(!result.is_error);
+    }
+    assert!(
+        !crate::commands::execute_with_config("/pet off", &mut app, &Config::default()).is_error
+    );
+    assert!(app.startup_defaults.shutdown().is_empty());
+    assert!(!Settings::load_persisted().unwrap().pet_mode);
+    assert!(
+        !App::new(test_options(false), &Config::default())
+            .pet_watch
+            .enabled
+    );
+
+    // Session overrides and rejected values must not change the saved choice.
+    app.pet_watch.detach_for_test();
+    assert!(
+        !crate::commands::execute_with_config(
+            "/config pet_mode true",
+            &mut app,
+            &Config::default()
+        )
+        .is_error
+    );
+    assert!(
+        crate::commands::execute_with_config(
+            "/config pet_mode banana --save",
+            &mut app,
+            &Config::default()
+        )
+        .is_error
+    );
+    assert!(app.pet_watch.enabled);
+    app.startup_defaults.flush();
+    assert!(!Settings::load_persisted().unwrap().pet_mode);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pet_view_save_failure_keeps_the_live_view_and_reports_without_overwriting_bad_settings() {
+    let _lock = lock_test_env();
+    let tmp = tempfile::TempDir::new().unwrap();
+    let _env = sealed_settings_home(tmp.path());
+    let _writes = crate::tui::startup_defaults::allow_writes_in_tests();
+    let path = tmp.path().join(".codewhale/settings.toml");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let bad = "# preserve for repair\npet_mode = [broken";
+    std::fs::write(&path, bad).unwrap();
+    let mut app = App::new(test_options(false), &Config::default());
+    app.pet_watch.detach_for_test();
+    app.ui_locale = codewhale_localization::Locale::Fr;
+    assert!(
+        !crate::commands::execute_with_config("/pet on", &mut app, &Config::default()).is_error
+    );
+    assert!(app.pet_watch.enabled);
+    app.startup_defaults.flush();
+    let failures = app.startup_defaults.drain_failures();
+    assert_eq!(failures.len(), 1);
+    assert_eq!(
+        failures[0].subjects,
+        vec![crate::tui::startup_defaults::StartupDefaultSubject::PetMode]
+    );
+    let message = app.startup_default_failure_message(&failures[0]);
+    assert!(message.contains(app.tr(MessageId::ConfigLabelPetMode).as_ref()));
+    assert!(!message.contains(tmp.path().to_str().unwrap()));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), bad);
+    assert!(
+        app.pet_watch.enabled,
+        "a failed save does not undo the live view"
     );
 }

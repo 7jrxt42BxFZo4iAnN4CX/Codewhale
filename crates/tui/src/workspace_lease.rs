@@ -15,26 +15,21 @@
 //!
 //! The mechanism mirrors the store process-owner lock: an fd lock the kernel
 //! releases when the holder dies, plus a small holder record a contender can
-//! read to name the holder in a legible refusal, plus a kernel-backed liveness
-//! check so a provably-dead holder's residue can be broken instead of refusing
-//! every later start.
+//! read to name the holder in a legible refusal. The kernel lock is the
+//! authority; recorded holder facts never authorize replacing its file.
 
-use std::fs::{File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::fs::File;
+use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context as _, Result};
+use codewhale_config::private_directory::PrivateDirectory;
 
 /// Upper bound on the bytes read back from a lease holder record. Also the
 /// offset the Windows byte-range lock starts at, so a contender can still read
 /// the record of the holder it is contending with.
 const HOLDER_RECORD_MAX_BYTES: u64 = 512;
-
-/// How many times a provably-stale lock is broken before the contender gives
-/// up and refuses. One extra attempt is enough to cover a recycled inode; a
-/// loop would spin forever on a record that cannot be unlinked.
-const STALE_BREAK_ATTEMPTS: usize = 2;
 
 /// Facts about who holds a workspace drive lease.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,10 +106,8 @@ impl WorkspaceLeaseHolder {
 ///
 /// The first admission for a workspace acquires the OS lease; later admissions
 /// in the *same process* (a successor manager, a second engine in one test
-/// process) share it by refcount instead of refusing each other — the lease's
-/// unit is the process, matching an fd lock's own scope. The last handle drop
-/// releases it.
-#[derive(Clone)]
+/// process) share it by counted acquisition instead of refusing each other.
+/// The last admitted handle drop releases it.
 pub struct SharedWorkspaceDriveLease {
     inner: std::sync::Arc<LeaseInner>,
 }
@@ -141,14 +134,19 @@ impl SharedWorkspaceDriveLease {
             let mut registry = registry()
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            registry
-                .entry(lease_key)
-                .or_insert_with(|| {
-                    std::sync::Arc::new(LeaseInner {
-                        state: std::sync::Mutex::new(None),
-                    })
-                })
-                .clone()
+            if let Some(slot) = registry.get(&lease_key) {
+                slot.clone()
+            } else {
+                let Some(lease) = WorkspaceDriveLease::try_acquire(workspace, client, store_root)?
+                else {
+                    return Ok(None);
+                };
+                let inner = std::sync::Arc::new(LeaseInner {
+                    state: std::sync::Mutex::new(Some((lease, 1))),
+                });
+                registry.insert(lease_key, inner.clone());
+                return Ok(Some(Self { inner }));
+            }
         };
         // The returned handle is an owned clone, so moving it out never
         // borrows the guard: the state guard stays held across `try_acquire`,
@@ -205,8 +203,8 @@ impl Drop for SharedWorkspaceDriveLease {
 /// map before the removal could populate the slot that is about to be deleted,
 /// and the next contender would then create a second slot for the same
 /// workspace. A free slot holds nothing but an empty `Option`, so keeping it
-/// costs one map entry per workspace this process has ever driven — the same
-/// set the runtime workspace scopes already bound.
+/// costs one map entry per workspace this process has successfully acquired.
+/// Refused first acquisitions do not enter the registry.
 type LeaseRegistry =
     std::sync::Mutex<std::collections::HashMap<PathBuf, std::sync::Arc<LeaseInner>>>;
 
@@ -215,10 +213,11 @@ fn registry() -> &'static LeaseRegistry {
     REGISTRY.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
 }
 
-/// A held workspace drive lease. Dropping releases it and clears the record.
+/// A held workspace drive lease. Dropping releases the kernel lock.
 pub struct WorkspaceDriveLease {
     file: File,
-    recorded: bool,
+    _base: PrivateDirectory,
+    _directory: PrivateDirectory,
 }
 
 impl WorkspaceDriveLease {
@@ -240,52 +239,28 @@ impl WorkspaceDriveLease {
 
     /// Try once to acquire the drive lease for this process.
     ///
-    /// `None` on contention: the lock is held and its holder looks alive. Use
-    /// [`Self::read_holder`] to name the holder. A holder whose recorded pid is
-    /// provably dead is broken and the attempt is retried
-    /// ([`STALE_BREAK_ATTEMPTS`] times at most).
+    /// `None` on contention: the kernel lock is held. Use
+    /// [`Self::read_holder`] to name the recorded holder.
     pub fn try_acquire(
         workspace: &Path,
         client: Option<&str>,
         store_root: Option<&Path>,
     ) -> Result<Option<Self>> {
-        let mut attempt = 0;
-        loop {
-            match Self::try_acquire_once(workspace, client, store_root)? {
-                LeaseOutcome::Held(lease) => return Ok(Some(lease)),
-                LeaseOutcome::Contended { stale_broken } => {
-                    attempt += 1;
-                    if !stale_broken || attempt >= STALE_BREAK_ATTEMPTS {
-                        return Ok(None);
-                    }
-                }
-            }
-        }
-    }
-
-    fn try_acquire_once(
-        workspace: &Path,
-        client: Option<&str>,
-        store_root: Option<&Path>,
-    ) -> Result<LeaseOutcome> {
         let path = Self::lease_path(workspace)?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("Failed to create lease dir {}", parent.display()))?;
-        }
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(&path)
-            .with_context(|| format!("Failed to open workspace lease {}", path.display()))?;
+        let parent = path.parent().context("Workspace lease has no parent")?;
+        let base = parent
+            .parent()
+            .context("Workspace lease has no state root")?;
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .context("Workspace lease name is invalid")?;
+        let base = PrivateDirectory::admit(base)?;
+        let directory = PrivateDirectory::admit(parent)?;
+        let file = directory.open_internal_file(name)?;
         #[cfg(unix)]
         let contention = {
             use std::os::fd::AsRawFd as _;
-            use std::os::unix::fs::PermissionsExt as _;
-            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
-                .context("Failed to protect workspace lease")?;
             // SAFETY: `file` owns a valid descriptor retained by this guard.
             if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
                 Some(std::io::Error::last_os_error())
@@ -321,23 +296,18 @@ impl WorkspaceDriveLease {
             if !is_contention(&error) {
                 return Err(error).context("Failed to lock workspace lease");
             }
-            // A provably-dead holder's residue (a recycled inode, or a
-            // filesystem whose locks outlived the fd) must not refuse every
-            // later start. Unlinking the record is the break; a live holder's
-            // record never reads dead, so this cannot steal a live lease.
-            if !holder_is_dead(&path) {
-                return Ok(LeaseOutcome::Contended {
-                    stale_broken: false,
-                });
-            }
-            drop(file);
-            if std::fs::remove_file(&path).is_err() {
-                return Ok(LeaseOutcome::Contended {
-                    stale_broken: false,
-                });
-            }
-            return Ok(LeaseOutcome::Contended { stale_broken: true });
+            return Ok(None);
         }
+        #[cfg(any(unix, windows))]
+        anyhow::ensure!(
+            base.is_at_selected_path()? && directory.is_at_selected_path()?,
+            "Workspace lease directory identity changed"
+        );
+        let selected = directory.open_internal_file(name)?;
+        anyhow::ensure!(
+            PrivateDirectory::same_file_identity(&file, &selected)?,
+            "Workspace lease file identity changed"
+        );
         let holder = WorkspaceLeaseHolder {
             pid: std::process::id(),
             process_start: current_process_start(),
@@ -349,55 +319,72 @@ impl WorkspaceDriveLease {
         };
         let mut lease = Self {
             file,
-            recorded: false,
+            _base: base,
+            _directory: directory,
         };
         // Best effort: holder diagnostics must never fail the lease holder.
-        if lease
+        let _ = lease
             .file
             .set_len(0)
             .and_then(|()| lease.file.seek(SeekFrom::Start(0)).map(|_| ()))
-            .and_then(|()| lease.file.write_all(holder.to_record().as_bytes()))
-            .is_ok()
-        {
-            lease.recorded = true;
-        }
-        Ok(LeaseOutcome::Held(lease))
+            .and_then(|()| lease.file.write_all(holder.to_record().as_bytes()));
+        Ok(Some(lease))
     }
 
-    /// Read the recorded holder, if any. Never blocks, never fails hard:
-    /// anything unreadable or malformed is `None`.
+    /// Read the recorded holder, if any. Missing or malformed data is `None`;
+    /// filesystem errors remain explicit, and the record may be stale.
     pub fn read_holder(workspace: &Path) -> Result<Option<WorkspaceLeaseHolder>> {
         let path = Self::lease_path(workspace)?;
-        let file = match OpenOptions::new().read(true).open(&path) {
-            Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => {
-                return Err(error).context("Failed to read workspace lease holder record");
+        let parent = path.parent().context("Workspace lease has no parent")?;
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .context("Workspace lease name is invalid")?;
+        let directory = match PrivateDirectory::inspect(parent) {
+            Ok(directory) => directory,
+            Err(error)
+                if error.chain().any(|cause| {
+                    cause
+                        .downcast_ref::<std::io::Error>()
+                        .is_some_and(|error| error.kind() == std::io::ErrorKind::NotFound)
+                }) =>
+            {
+                return Ok(None);
             }
+            Err(error) => return Err(error).context("Failed to inspect workspace lease directory"),
         };
-        let mut text = String::new();
-        file.take(HOLDER_RECORD_MAX_BYTES)
-            .read_to_string(&mut text)?;
-        Ok(WorkspaceLeaseHolder::from_record(&text))
+        #[cfg(unix)]
+        let bytes =
+            match directory.read_private_receipt(name, HOLDER_RECORD_MAX_BYTES as usize - 1)? {
+                Some((bytes, _file)) => bytes,
+                None => return Ok(None),
+            };
+        #[cfg(windows)]
+        let bytes = {
+            use std::io::Read as _;
+            let Some(file) = directory.open_owned_file_for_read(name)? else {
+                return Ok(None);
+            };
+            let mut bytes = Vec::new();
+            file.take(HOLDER_RECORD_MAX_BYTES).read_to_end(&mut bytes)?;
+            bytes
+        };
+        #[cfg(not(any(unix, windows)))]
+        anyhow::bail!("Workspace drive lease is unsupported on this platform");
+        #[cfg(any(unix, windows))]
+        {
+            anyhow::ensure!(
+                directory.is_at_selected_path()?,
+                "Workspace lease directory identity changed"
+            );
+            let text = std::str::from_utf8(&bytes)?;
+            Ok(WorkspaceLeaseHolder::from_record(text))
+        }
     }
-}
-
-/// The outcome of one acquisition attempt.
-enum LeaseOutcome {
-    Held(WorkspaceDriveLease),
-    /// Held by someone else. `stale_broken` says the recorded holder was
-    /// provably dead and its record was unlinked, so one retry is worth it.
-    Contended {
-        stale_broken: bool,
-    },
 }
 
 impl Drop for WorkspaceDriveLease {
     fn drop(&mut self) {
-        if self.recorded {
-            // Best effort: a stale holder record must not outlive the lease.
-            let _ = self.file.set_len(0);
-        }
         #[cfg(unix)]
         {
             use std::os::fd::AsRawFd as _;
@@ -431,14 +418,7 @@ fn is_contention(error: &std::io::Error) -> bool {
     error.kind() == std::io::ErrorKind::WouldBlock || matches!(error.raw_os_error(), Some(32 | 33))
 }
 
-/// Whether the recorded holder is provably dead.
-///
-/// Conservative by design: an unreadable record, a missing liveness token, an
-/// uncertain kernel answer, or a holder that *is* this process all read "not
-/// dead", so a contender stays refused rather than stealing a live engine's
-/// lease. A pid that is kernel-absent, or present with a different creation
-/// token (recycled), is dead.
-#[cfg(unix)]
+#[cfg(all(test, unix))]
 fn holder_is_dead(path: &Path) -> bool {
     use codewhale_config::private_directory::{UnixProcessStatus, unix_process_status};
 
@@ -466,14 +446,6 @@ fn holder_is_dead(path: &Path) -> bool {
     }
 }
 
-/// The kernel cannot prove a Windows holder dead from here; a byte-range lock
-/// is released when the holder's handle closes, so there is no residue to
-/// break.
-#[cfg(not(unix))]
-fn holder_is_dead(_path: &Path) -> bool {
-    false
-}
-
 /// This process's liveness token, best effort.
 #[cfg(unix)]
 fn current_process_start() -> Option<String> {
@@ -499,6 +471,7 @@ fn lease_state_base() -> Result<PathBuf> {
     #[cfg(test)]
     {
         if let Some(base) = crate::test_support::unsealed_state_dir("workspace-leases") {
+            PrivateDirectory::open(&base)?;
             return Ok(base);
         }
     }
@@ -518,8 +491,16 @@ mod tests {
 
     fn write_record(workspace: &Path, holder: &WorkspaceLeaseHolder) -> PathBuf {
         let path = WorkspaceDriveLease::lease_path(workspace).expect("lease path");
-        std::fs::create_dir_all(path.parent().expect("lease dir")).expect("create lease dir");
-        std::fs::write(&path, holder.to_record()).expect("write holder record");
+        let parent = path.parent().expect("lease dir");
+        let _base = PrivateDirectory::open(parent.parent().expect("lease state root"))
+            .expect("private lease state root");
+        let directory = PrivateDirectory::open(parent).expect("private lease dir");
+        let mut file = directory
+            .open_internal_file(path.file_name().unwrap().to_str().unwrap())
+            .expect("private lease file");
+        file.set_len(0).expect("truncate holder record");
+        file.write_all(holder.to_record().as_bytes())
+            .expect("write holder record");
         path
     }
 
@@ -673,7 +654,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn a_provably_dead_holder_is_broken_not_assumed_dead() {
+    fn a_provably_dead_holder_record_does_not_replace_a_locked_lease() {
         /// Spawn a child, report its pid and creation token while it is alive,
         /// then reap it. Returns the recorded facts and the lease path.
         fn holder_of_a_reaped_child(workspace: &Path) -> PathBuf {
@@ -700,17 +681,28 @@ mod tests {
                 },
             );
             assert!(holder_is_dead(&path), "a reaped holder is provably dead");
-            assert!(
-                WorkspaceDriveLease::try_acquire(workspace, Some("next"), None)
-                    .expect("acquire")
-                    .is_some(),
-                "a dead holder's residue must not refuse the next driver"
-            );
             path
         }
 
         let workspace = temp_workspace("dead");
         holder_of_a_reaped_child(&workspace);
+        let first = WorkspaceDriveLease::try_acquire(&workspace, Some("next"), None)
+            .expect("acquire")
+            .expect("an unlocked lease remains acquirable despite a stale record");
+        holder_of_a_reaped_child(&workspace);
+        assert!(
+            WorkspaceDriveLease::try_acquire(&workspace, Some("contender"), None)
+                .expect("contend")
+                .is_none(),
+            "a stale holder record must not replace a held kernel lock"
+        );
+        drop(first);
+        assert!(
+            WorkspaceDriveLease::try_acquire(&workspace, Some("after"), None)
+                .expect("reacquire")
+                .is_some(),
+            "the same lease is available after its holder releases it"
+        );
     }
 
     #[cfg(unix)]

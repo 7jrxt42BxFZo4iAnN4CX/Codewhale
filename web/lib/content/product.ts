@@ -42,8 +42,8 @@ export const PRODUCT_COPY = {
     zh: "构建应用，自动化工作流",
   },
   lede: {
-    en: "Codewhale is an open-source agent that writes code, runs commands and works with the tools you connect. Use your existing model APIs, or run models locally and on your own servers.",
-    zh: "Codewhale 是一个开源智能体，可以编写代码、运行命令，并使用你连接的工具。使用已有的模型 API，或在本地和自己的服务器上运行模型。",
+    en: "Codewhale is an open-source coding agent that reads files, writes code and runs commands in your terminal. Connect a hosted or local model and choose which actions need approval.",
+    zh: "Codewhale 是终端里的开源编程智能体，可以读取文件、编写代码并运行命令。连接托管模型或本地模型，并选择哪些操作需要批准。",
   },
 
   gainHeading: { en: "What you can build and automate", zh: "可以构建与自动化的工作" },

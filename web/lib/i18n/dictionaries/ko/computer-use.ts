@@ -8,7 +8,7 @@ import type { ComputerUseDict } from "../types";
  * (손쉬운 사용, 화면 기록, 응용 프로그램).
  */
 export const computerUse: ComputerUseDict = {
-  metaTitle: "Mac용 Computer Use · Codewhale",
+  metaTitle: "Computer Use · 미리 보기 · Codewhale",
   metaDescription: "Mac용 Codewhale Computer Use를 다운로드하고 설정하세요. 백그라운드 앱 제어, 권한 설정, 그리고 사용자가 직접 누르는 Pause와 Stop 제어를 제공합니다.",
   title: "Computer Use",
   lead: "당신이 계속 일하는 동안 Codewhale이 앱 안에서 작업을 대신합니다. Mac 도우미는 권한 설정, 백그라운드 앱 제어, 입력을 일시 정지하거나 중지하는 기능을 메뉴 막대에 모아 줍니다.",

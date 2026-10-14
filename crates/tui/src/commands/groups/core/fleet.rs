@@ -305,14 +305,14 @@ mod tests {
 
     fn test_app() -> App {
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         App::new(options, &Config::default())
     }
 
     fn app_in(workspace: PathBuf) -> App {
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(workspace.clone())
+            ..crate::tui::test_support::test_tui_options(workspace.clone())
         };
         let mut app = App::new(options, &Config::default());
         app.workspace = workspace;
