@@ -13,6 +13,7 @@ import { hasComputerUseTranslation } from "./dictionaries";
 const ROUTE_CONTENT_LOCALES: Readonly<Record<string, readonly string[]>> = {
   "/": locales,
   "/install": ["en"],
+  "/features": ["en"],
   "/computer-use": locales.filter(hasComputerUseTranslation),
 };
 
@@ -26,7 +27,9 @@ function normalizedPath(path: string): string {
 
 /** Locales with a genuine page-body translation for an indexable route. */
 export function contentLocalesForPath(path: string): readonly string[] {
-  return ROUTE_CONTENT_LOCALES[normalizedPath(path)] ?? DEFAULT_CONTENT_LOCALES;
+  const normalized = normalizedPath(path);
+  if (normalized.startsWith("/ratatui/")) return ["en"];
+  return ROUTE_CONTENT_LOCALES[normalized] ?? DEFAULT_CONTENT_LOCALES;
 }
 
 /**

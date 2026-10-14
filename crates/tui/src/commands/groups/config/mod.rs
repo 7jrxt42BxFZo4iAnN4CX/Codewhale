@@ -88,7 +88,7 @@ static RAIL_INFO: CommandInfo = CommandInfo {
 static PET_INFO: CommandInfo = CommandInfo {
     name: "pet",
     aliases: &[],
-    usage: "/pet [on|off|inspect|status|appearance|window|source|export|sound on|off|avatar [key]|action [name|live]|view [name|live]]",
+    usage: "/pet [on|off|inspect|status|appearance|style [smooth|pixel]|language [auto|en|zh-Hans|zh-Hant|ja]|window|source|export|sound [on|off]|avatar [whale|cove|braille|pixels|particles|whale-girl|key]|action [name|live]|view [name|live]]",
     description_id: MessageId::CmdPetDescription,
 };
 static SETTINGS_INFO: CommandInfo = CommandInfo {
@@ -106,7 +106,7 @@ static STATUSLINE_INFO: CommandInfo = CommandInfo {
 static MODE_INFO: CommandInfo = CommandInfo {
     name: "mode",
     aliases: &["jihua", "zidong"],
-    usage: "/mode [act|plan|operate|1|2|3]",
+    usage: "/mode [work|plan|operate|1|2|3]",
     description_id: MessageId::CmdModeDescription,
 };
 static FULLSCREEN_INFO: CommandInfo = CommandInfo {

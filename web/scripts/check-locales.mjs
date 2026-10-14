@@ -26,6 +26,9 @@ const FILES = ["chrome.ts", "home.ts"];
 // key/token parity, and a locale without it falls back to English at
 // lookup time — so absence is a valid state, never a failure.
 const OPTIONAL_FILES = [
+  "features.ts",
+  "docs-skills.ts",
+  "docs-claude-code.ts",
   "docs-guide.ts",
   "docs-shell.ts",
   "docs-hooks.ts",

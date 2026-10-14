@@ -3660,8 +3660,8 @@ impl ProviderPickerView {
                 inner,
                 buf,
                 &[
-                    ActionHint::new("Enter", "continue"),
-                    ActionHint::new("Esc", "back"),
+                    ActionHint::new("Enter", self.tr(MessageId::SetupActionContinue)),
+                    ActionHint::new("Esc", self.tr(MessageId::SetupActionBack)),
                 ],
             )
         };
@@ -3760,10 +3760,13 @@ impl ProviderPickerView {
         };
 
         if let Some(ref error) = self.key_entry_error {
-            hint_lines.push(Line::from(Span::styled(
-                error.clone(),
-                Style::default().fg(palette::STATUS_ERROR),
-            )));
+            hint_lines.insert(
+                0,
+                Line::from(Span::styled(
+                    error.clone(),
+                    Style::default().fg(palette::STATUS_ERROR),
+                )),
+            );
         }
 
         // `Line` count is not rendered row count: long environment-variable
@@ -4031,8 +4034,8 @@ impl ProviderPickerView {
             buf,
             &[
                 ActionHint::new("↑↓", "move"),
-                ActionHint::new("Enter", "continue"),
-                ActionHint::new("Esc", "back"),
+                ActionHint::new("Enter", self.tr(MessageId::SetupActionContinue)),
+                ActionHint::new("Esc", self.tr(MessageId::SetupActionBack)),
             ],
         );
 
@@ -4148,8 +4151,8 @@ impl ProviderPickerView {
             buf,
             &[
                 ActionHint::new("↑↓", "choose"),
-                ActionHint::new("Enter", "continue"),
-                ActionHint::new("Esc", "back"),
+                ActionHint::new("Enter", self.tr(MessageId::SetupActionContinue)),
+                ActionHint::new("Esc", self.tr(MessageId::SetupActionBack)),
             ],
         );
         self.render_setup_choices(
@@ -4187,8 +4190,8 @@ impl ProviderPickerView {
             buf,
             &[
                 ActionHint::new("↑↓", "choose"),
-                ActionHint::new("Enter", "continue"),
-                ActionHint::new("Esc", "back"),
+                ActionHint::new("Enter", self.tr(MessageId::SetupActionContinue)),
+                ActionHint::new("Esc", self.tr(MessageId::SetupActionBack)),
             ],
         );
         // Keep the actual endpoint with each route; choosing only stages
@@ -8397,7 +8400,7 @@ mod tests {
         .collect();
         std::fs::write(&config_path, document).expect("config only");
         let config = Config::load(Some(config_path.clone()), None).expect("load route");
-        let mut options = crate::test_support::test_tui_options(home.path());
+        let mut options = crate::tui::test_support::test_tui_options(home.path());
         options.config_path = Some(config_path);
         options.skip_onboarding = false;
         check(crate::tui::app::App::new(options, &config), config);

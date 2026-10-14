@@ -550,9 +550,9 @@ owner = "crates/tui/src/voice.rs"
 [[feature]]
 id = "pet"
 name = "Pet"
-summary = "A per-terminal whale view of working, waiting, done and failed; F5 or /pet inspect opens replies and agents."
+summary = "Shared whale activity and reply views; desktop and app-server turns can follow an idle existing companion."
 status = "stable"
-surfaces = { tui = "stable" }
+surfaces = { tui = "stable", api = "partial" }
 owner = "crates/tui/src/tui/pet_watch"
 docs = "docs/PET_MODE.md"
 
@@ -682,7 +682,7 @@ owner = "crates/tui/src/oauth.rs"
 [[feature]]
 id = "plugin-oauth-providers"
 name = "Reviewed plugin OAuth providers"
-summary = "Reviewed plugins connect with /connect <id>; the host owns PKCE, model discovery and per-request approvals."
+summary = "Reviewed plugins sign in with /connect <id> and out with /disconnect; the host owns PKCE, models and approvals."
 status = "experimental"
 surfaces = { tui = "preview", api = "partial", web = "none" }
 since = "unreleased"

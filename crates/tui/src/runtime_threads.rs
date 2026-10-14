@@ -3135,10 +3135,11 @@ impl RuntimeThreadStore {
 
     /// Publish many items at once, paying the items directory's costs once.
     ///
-    /// Each `save_item` sweeps the whole items directory for stale temp files
-    /// and fsyncs it — right for one record, ruinous for the hundreds a fork
-    /// clones (measured: 22 ms of directory scan per item, 34 s for one fork's
-    /// 771). The per-record checks and the atomic replace are unchanged; see
+    /// Each `save_item` fsyncs the items directory — right for one record,
+    /// ruinous for the hundreds a fork clones. The stale-temp sweep is
+    /// throttled per directory inside `write_atomic`; unthrottled it cost 22 ms
+    /// of directory scan per item, 34 s for one fork's 771. The per-record
+    /// checks and the atomic replace are unchanged; see
     /// [`crate::utils::write_atomic_batch`].
     ///
     /// Ordering stays the caller's: items, then their turns, then the thread
@@ -6727,7 +6728,7 @@ impl RuntimeProcessOwnerLock {
     }
 
     /// Host admission reuses this exact store lease, never a PID-file lock.
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     pub(crate) fn try_acquire_for_host(root: &Path, create: bool) -> Result<Option<Self>> {
         if !create {
             checked_existing_runtime_store_dir(root)?;
@@ -10602,12 +10603,30 @@ impl RuntimeThreadManager {
         until: Option<DateTime<Utc>>,
         group_by: UsageGroupBy,
     ) -> Result<UsageAggregation> {
+        let store = self.store.clone();
+        let (threads, turns_by_thread) = tokio::task::spawn_blocking(move || {
+            let threads = store.list_threads()?;
+            let mut turns_by_thread: HashMap<String, Vec<TurnRecord>> = HashMap::new();
+            if let Some(first) = threads.first() {
+                validated_record_id(&first.id, "thread id")?;
+                for turn in store.list_all_turns()? {
+                    turns_by_thread
+                        .entry(turn.thread_id.clone())
+                        .or_default()
+                        .push(turn);
+                }
+            }
+            Ok::<_, anyhow::Error>((threads, turns_by_thread))
+        })
+        .await
+        .context("Runtime usage aggregation task failed")??;
+
         let mut buckets: std::collections::BTreeMap<String, UsageBucket> =
             std::collections::BTreeMap::new();
         let mut totals = UsageTotals::default();
-        for thread in self.store.list_threads()? {
-            let turns = self.store.list_turns_for_thread(&thread.id)?;
-            for turn in turns {
+        for thread in &threads {
+            validated_record_id(&thread.id, "thread id")?;
+            for turn in turns_by_thread.get(&thread.id).into_iter().flatten() {
                 let parent_route = turn.effective_route_envelope();
                 let parent_dispatched_at = parent_route
                     .as_ref()
@@ -10621,8 +10640,8 @@ impl RuntimeThreadManager {
                         group_by,
                         parent_route.as_ref(),
                         usage,
-                        &turn,
-                        &thread,
+                        turn,
+                        thread,
                     );
                 }
                 for receipt in &turn.decision_receipts {
@@ -10649,8 +10668,8 @@ impl RuntimeThreadManager {
                             &mut buckets,
                             group_by,
                             child,
-                            &turn,
-                            &thread,
+                            turn,
+                            thread,
                         );
                     }
                 }
@@ -10662,8 +10681,8 @@ impl RuntimeThreadManager {
                             group_by,
                             &drop_record.route,
                             drop_record.reason,
-                            &turn,
-                            &thread,
+                            turn,
+                            thread,
                         );
                     }
                 }
@@ -10677,8 +10696,8 @@ impl RuntimeThreadManager {
                         &mut buckets,
                         group_by,
                         turn.routed_usage_dropped_records,
-                        &turn,
-                        &thread,
+                        turn,
+                        thread,
                     );
                 }
             }
@@ -12968,10 +12987,9 @@ impl RuntimeThreadManager {
         let mut saved_turn_ids = Vec::new();
         let mut saved_item_ids = Vec::new();
         let persistence = (|| -> Result<()> {
-            // Every cloned item in one batch. Each `save_item` sweeps the
-            // whole items directory and fsyncs it, which is right for a single
-            // record and ruinous for the hundreds a fork clones — the sweep
-            // gives the same answer every time. Items first, turns next, the
+            // Every cloned item in one batch. Each `save_item` fsyncs the items
+            // directory, which is right for a single record and ruinous for
+            // the hundreds a fork clones. Items first, turns next, the
             // thread record that makes them reachable last: the commit point is
             // unchanged, and the ids are recorded before the batch so a partial
             // write is still cleaned up.

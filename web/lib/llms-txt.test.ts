@@ -55,7 +55,12 @@ describe("llms.txt", () => {
     expect(spec.rules).toEqual([
       {
         userAgent: "*",
-        allow: ["/", "/llms.txt"],
+        allow: ["/", "/llms.txt", "/llms-full.txt", "/features.json", "/docs-markdown/"],
+        disallow: ["/api/", "/*/admin"],
+      },
+      {
+        userAgent: ["GPTBot", "OAI-SearchBot", "ChatGPT-User", "ClaudeBot", "Claude-SearchBot", "Claude-User", "PerplexityBot", "Perplexity-User", "Google-Extended"],
+        allow: "/",
         disallow: ["/api/", "/*/admin"],
       },
     ]);

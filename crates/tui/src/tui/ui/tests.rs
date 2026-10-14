@@ -231,10 +231,10 @@ fn frame_cursor_is_hidden_during_diff_then_positioned_before_reveal() {
 
 #[test]
 fn workbar_rows_sit_under_the_status_row_one_per_workflow() {
-    let mut app = crate::test_support::test_app_with_options(crate::tui::app::TuiOptions {
+    let mut app = crate::tui::test_support::test_app_with_options(crate::tui::app::TuiOptions {
         model: "deepseek-v4-flash".to_string(),
         start_in_agent_mode: true,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     });
     app.onboarding = crate::tui::app::OnboardingState::None;
     app.launch.visible = false;
@@ -340,11 +340,12 @@ fn composer_rows_stay_pinned_across_turn_state_transitions() {
     // displace the composer, relocate the route into the footer, or drop
     // the phase verb from the footer's left half.
     fn frame_app() -> App {
-        let mut app = crate::test_support::test_app_with_options(crate::tui::app::TuiOptions {
-            model: "deepseek-v4-flash".to_string(),
-            start_in_agent_mode: true,
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
-        });
+        let mut app =
+            crate::tui::test_support::test_app_with_options(crate::tui::app::TuiOptions {
+                model: "deepseek-v4-flash".to_string(),
+                start_in_agent_mode: true,
+                ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
+            });
         app.onboarding = crate::tui::app::OnboardingState::None;
         app.launch.visible = false;
         app.ui_locale = codewhale_localization::Locale::En;
@@ -1435,11 +1436,7 @@ fn canonical_background_bash_keeps_live_task_identity_for_follow_up_actions() {
     assert_eq!(exec.shell_task_id.as_deref(), Some("shell-42"));
     assert_eq!(exec.command, "cargo test --workspace");
     assert!(exec.output.is_none());
-    assert!(
-        exec.live_output
-            .as_deref()
-            .is_some_and(|output| { output.contains("Background task started: shell-42") })
-    );
+    assert!(exec.live_output.is_none());
 }
 
 #[test]
@@ -3179,7 +3176,7 @@ async fn mcp_login_stalled_discovery_is_cancellable_and_repeat_clicks_keep_one_o
     let temp = tempfile::tempdir().unwrap();
     let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", temp.path());
     let _backend = crate::test_support::EnvVarGuard::set("CODEWHALE_SECRET_BACKEND", "file");
-    let _proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*");
+    let _proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut app = create_test_app();
     app.workspace = temp.path().to_path_buf();
@@ -4446,7 +4443,7 @@ fn selection_to_text_copies_rendered_transcript_block() {
         !selected.contains("Ctrl+O"),
         "detail affordance leaked into the selection: {selected:?}"
     );
-    assert!(selected.contains("run Done · cargo check"), "{selected:?}");
+    assert!(selected.contains("run done · cargo check"), "{selected:?}");
     assert!(selected.contains("copy assistant"), "{selected:?}");
     // #1163: tool-card middle lines are rendered with a `│ ` left rail
     // glyph, but that decoration must not leak into copied text. Assert
@@ -4645,8 +4642,8 @@ fn mouse_selection_fragment_drag_copies_exact_text() {
         "must not round out to the whole cell, got {copied:?}"
     );
     assert_eq!(
-        app.status_message.as_deref(),
-        Some("Selection copied"),
+        app.status_toasts.back().map(|toast| toast.text.as_str()),
+        Some("Copied to the clipboard"),
         "fragment copy reports through the text-fallback receipt"
     );
     assert!(
@@ -5791,12 +5788,12 @@ fn tool_path_relevance_extracts_paths_from_command_text() {
 }
 
 fn create_test_app() -> App {
-    let mut app = crate::test_support::test_app_with_options(TuiOptions {
+    let mut app = crate::tui::test_support::test_app_with_options(TuiOptions {
         // Keep UI tests independent from the developer's saved
         // `default_mode` setting.
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     });
     // These suites assert legacy strip geometry (work surface above the
     // transcript). The Bottom default (round 3, 2026-09-01) has dedicated
@@ -6667,6 +6664,7 @@ fn running_exec_cell() -> HistoryCell {
         duration_ms: Some(20),
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     }))
@@ -8617,7 +8615,7 @@ fn create_test_options() -> TuiOptions {
         // `default_mode` setting.
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     }
 }
 
@@ -8654,7 +8652,7 @@ fn setup_checkpoint_waits_for_onboarding_and_skip_flag() {
         .expect("setup state");
     assert_eq!(
         state.constitution_checkpoint_completed_for.as_deref(),
-        Some(crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION)
+        Some(crate::prompts::CONSTITUTION_CHECKPOINT_VERSION)
     );
     assert_eq!(
         state.constitution_choice,
@@ -8695,7 +8693,7 @@ fn setup_runtime_preset_apply_persists_settings_config_and_state() {
         codewhale_config::StepEntry::new(
             codewhale_config::StepStatus::Verified,
             true,
-            crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+            crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
         )
         .with_result(preset.result_summary()),
     );
@@ -8843,7 +8841,7 @@ fn setup_runtime_presets_preserve_environment_authority_and_state() {
                 "{canonical}: canonical wins when both are set"
             );
 
-            let mut options = crate::test_support::test_tui_options(home._tmp.path());
+            let mut options = crate::tui::test_support::test_tui_options(home._tmp.path());
             options.config_path = Some(config_path.clone());
             options.allow_shell = config.allow_shell.unwrap_or(false);
             options.start_in_agent_mode = true;
@@ -10024,6 +10022,7 @@ fn refresh_shell_exec_live_output_finalizes_restored_missing_shell_job() {
         duration_ms: Some(1_234),
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -10059,6 +10058,7 @@ fn shell_live_output_update_matches_exact_task_id_only() {
         duration_ms: Some(111),
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -10074,6 +10074,7 @@ fn shell_live_output_update_matches_exact_task_id_only() {
         duration_ms: None,
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -10169,6 +10170,7 @@ fn shell_live_output_update_marks_stale_running_job_static() {
         duration_ms: Some(90_000),
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -10189,7 +10191,7 @@ fn shell_live_output_update_marks_stale_running_job_static() {
             stdout_len: 14,
             stderr_len: 0,
             stdin_available: false,
-            stale: true,
+            stale: false,
             elapsed_since_output_ms: Some(61_000),
             linked_task_id: None,
             owner_agent_id: None,
@@ -10232,7 +10234,7 @@ fn shell_live_output_update_marks_stale_running_job_static() {
         .iter()
         .map(|span| span.content.as_ref())
         .collect::<String>();
-    assert!(header_text.contains("running · stale · no output 1m 01s"));
+    assert!(header_text.contains("running · no output for 1m 01s"));
     assert!(!header_text.contains("running ("));
 }
 
@@ -10251,6 +10253,7 @@ fn shell_live_output_update_finalizes_background_exec_output() {
         duration_ms: None,
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -10341,6 +10344,7 @@ fn shell_live_output_update_skips_finalized_exec_cell() {
         duration_ms: Some(10),
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -10961,7 +10965,15 @@ async fn adopting_a_local_model_closes_the_connect_picker_and_names_it() {
     .await;
 
     assert_eq!(app.api_provider, ProviderKind::Ollama);
-    assert_eq!(app.onboarding, crate::tui::app::OnboardingState::None);
+    assert!(
+        matches!(
+            app.onboarding,
+            crate::tui::app::OnboardingState::TrustDirectory
+                | crate::tui::app::OnboardingState::Ready
+        ),
+        "{:?}",
+        app.onboarding
+    );
     assert_ne!(
         app.view_stack.top_kind(),
         Some(crate::tui::views::ModalKind::ProviderPicker)
@@ -19605,8 +19617,8 @@ fn apply_slash_menu_selection_honors_user_argument_metadata_and_builtin_override
     .expect("write argument command");
     // Workspace commands load only in a trusted workspace.
     crate::config::save_workspace_trust(tmp.path()).expect("trust test workspace");
-    let mut app = crate::test_support::test_app_with_options(
-        crate::test_support::test_tui_options(tmp.path()),
+    let mut app = crate::tui::test_support::test_app_with_options(
+        crate::tui::test_support::test_tui_options(tmp.path()),
     );
     let entries = vec![
         crate::tui::widgets::SlashMenuEntry {
@@ -20218,7 +20230,7 @@ async fn redaction_confirmation_restores_history_before_first_local_provider_req
     let _lock = lock_test_env();
     let temp = tempfile::tempdir().unwrap();
     let _home = EnvVarGuard::set("CODEWHALE_HOME", temp.path());
-    let _proxy = EnvVarGuard::set("NO_PROXY", "*");
+    let _proxy = EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
     let server = MockServer::builder()
         .body_print_limit(wiremock::BodyPrintLimit::Limited(0))
         .start()
@@ -20238,9 +20250,9 @@ async fn redaction_confirmation_restores_history_before_first_local_provider_req
         server.uri()
     )).unwrap();
     let config = Config::load(Some(config_path), None).unwrap();
-    let mut app = crate::test_support::test_app_with_options(TuiOptions {
+    let mut app = crate::tui::test_support::test_app_with_options(TuiOptions {
         start_in_agent_mode: true,
-        ..crate::test_support::test_tui_options(temp.path())
+        ..crate::tui::test_support::test_tui_options(temp.path())
     });
     app.auto_model = false;
     app.onboarding = OnboardingState::None;
@@ -20282,7 +20294,7 @@ async fn redaction_confirmation_restores_history_before_first_local_provider_req
         );
         assert!(server.received_requests().await.unwrap().is_empty());
     }
-    crate::tui::redaction_gate::record_confirmation(&config).unwrap();
+    config.record_redaction_confirmation().unwrap();
     engine.send(Op::Shutdown).await.unwrap();
     let replacement = spawn_tui_engine_with_session(&mut app, &config)
         .await
@@ -20296,7 +20308,7 @@ async fn redaction_confirmation_restores_history_before_first_local_provider_req
         app.current_session_id.as_deref(),
         Some("local-consent-resumed-session")
     );
-    assert!(!crate::tui::redaction_gate::confirmation_required(&config));
+    assert!(!config.redaction_confirmation_required());
     app.redaction_gate = false;
     app.redaction_gate_confirming = false;
     submit_initial_input_if_ready(&mut app, &config, &replacement)
@@ -21313,7 +21325,7 @@ fn trust_directory_continue_untrusted_advances_without_recording_trust() {
     assert!(!app.trust_mode);
     assert_eq!(app.onboarding, OnboardingState::Ready);
     assert!(
-        crate::tui::onboarding::needs_trust(&app.workspace),
+        crate::config::needs_trust(&app.workspace),
         "declining trust must not write a trusted marker"
     );
     let notice = app.status_message.expect("restricted-mode notice");
@@ -21771,6 +21783,7 @@ fn spillover_pager_uses_session_artifact_for_specialized_bash_cell() {
         duration_ms: None,
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     }))];
@@ -21837,6 +21850,7 @@ fn terminal_pause_has_live_owner_only_for_running_exec_cells() {
             duration_ms: None,
             stale_elapsed_since_output_ms: None,
             source: ExecSource::Assistant,
+            description: None,
             interaction: Some("interactive".to_string()),
             output_summary: None,
         })),
@@ -22532,8 +22546,8 @@ fn completed_exec_tool_result_still_renders_run_done() {
 
     assert_eq!(exec.status, ToolStatus::Success);
     let text = rendered_text(&exec.lines_with_motion(100, true));
-    assert!(text.contains("run Done"), "{text}");
-    assert!(!text.contains("tool loaded - retry required"), "{text}");
+    assert!(text.contains("run done"), "{text}");
+    assert!(!text.contains("loaded, not run"), "{text}");
 }
 
 /// #6566: the tool output the person reads drops the engine's approval note
@@ -22619,8 +22633,8 @@ fn hydrated_exec_tool_result_renders_retry_required_not_run_done() {
 
     assert_eq!(exec.status, ToolStatus::Hydrated);
     let text = rendered_text(&exec.lines_with_motion(120, true));
-    assert!(text.contains("run tool loaded - retry required"), "{text}");
-    assert!(!text.contains("run Done"), "{text}");
+    assert!(text.contains("run loaded, not run"), "{text}");
+    assert!(!text.contains("run done"), "{text}");
 }
 
 #[test]
@@ -22657,8 +22671,8 @@ fn hydrated_tool_with_validation_body_still_uses_hydrated_status() {
 
     assert_eq!(generic.status, ToolStatus::Hydrated);
     let text = rendered_text(&HistoryCell::Tool(ToolCell::Generic(generic.clone())).lines(120));
-    assert!(text.contains("tool loaded - retry required"), "{text}");
-    assert!(!text.contains("tool Done"), "{text}");
+    assert!(text.contains("tool loaded, not run"), "{text}");
+    assert!(!text.contains("tool done"), "{text}");
 }
 
 #[test]
@@ -22693,8 +22707,8 @@ fn failed_tool_result_with_hydration_metadata_stays_failed() {
 
     assert_eq!(generic.status, ToolStatus::Failed);
     let text = rendered_text(&HistoryCell::Tool(ToolCell::Generic(generic.clone())).lines(120));
-    assert!(text.contains("tool issue"), "{text}");
-    assert!(!text.contains("tool loaded - retry required"), "{text}");
+    assert!(text.contains("tool failed"), "{text}");
+    assert!(!text.contains("loaded, not run"), "{text}");
 }
 
 #[test]
@@ -24250,7 +24264,7 @@ fn auto_route_receipt_survives_session_snapshot_and_restore() {
         restored_app.last_effective_reasoning_effort,
         Some(EffectiveReasoningEffort::Tier(ReasoningEffort::High))
     );
-    assert_eq!(restored_app.reasoning_effort_display_label(), "auto: high");
+    assert_eq!(restored_app.reasoning_effort_display_label(), "auto→high");
 }
 
 #[test]
@@ -24283,7 +24297,7 @@ fn app_new_restores_saved_model_and_reasoning_effort() {
         model: "auto".to_string(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let config = Config {
         reasoning_effort: Some("max".to_string()),
@@ -24311,7 +24325,7 @@ fn app_new_restores_saved_reasoning_effort_for_auto_model() {
         model: "deepseek-v4-pro".to_string(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
 
     let app = App::new(options, &Config::default());
@@ -24336,7 +24350,7 @@ fn app_new_auto_model_preserves_explicit_config_reasoning() {
         model: "deepseek-v4-pro".to_string(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let config = Config {
         reasoning_effort: Some("medium".to_string()),
@@ -24367,7 +24381,7 @@ fn app_new_auto_model_without_saved_reasoning_keeps_auto_default() {
         model: "deepseek-v4-pro".to_string(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
 
     let app = App::new(options, &Config::default());
@@ -24391,7 +24405,7 @@ fn app_new_auto_model_ignores_reasoning_inferred_from_legacy_alias() {
         model: "deepseek-v4-pro".to_string(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let config = Config {
         reasoning_effort: Some("high".to_string()),
@@ -24506,7 +24520,7 @@ async fn model_picker_startup_default_overrides_configured_xai_route_after_resta
         model: config.default_model(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let mut app = App::new(initial_options, &config);
     assert_eq!(app.api_provider, ProviderKind::Xai);
@@ -24553,7 +24567,7 @@ async fn model_picker_startup_default_overrides_configured_xai_route_after_resta
         model: restart_config.default_model(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let restarted = App::new(restart_options, &restart_config);
     assert_eq!(restarted.api_provider, ProviderKind::Deepseek);
@@ -25899,6 +25913,7 @@ fn turn_inspector_renders_overview_sections_for_active_turn() {
             duration_ms: Some(2400),
             stale_elapsed_since_output_ms: None,
             source: ExecSource::Assistant,
+            description: None,
             interaction: None,
             output_summary: None,
         })),
@@ -26059,6 +26074,7 @@ fn turn_inspector_timeline_numbers_semantic_entries_and_checkpoint_actions() {
             duration_ms: Some(1250),
             stale_elapsed_since_output_ms: None,
             source: ExecSource::Assistant,
+            description: None,
             interaction: None,
             output_summary: None,
         })),
@@ -26365,6 +26381,7 @@ fn turn_handoff_markdown_renders_compact_sections_for_active_turn() {
             duration_ms: Some(2400),
             stale_elapsed_since_output_ms: None,
             source: ExecSource::Assistant,
+            description: None,
             interaction: None,
             output_summary: None,
         })),
@@ -27138,7 +27155,7 @@ fn fallback_switch_status_shows_one_based_position_and_reason() {
         ..Default::default()
     };
     let mut app = App::new(
-        crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+        crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
         &config,
     );
     app.api_provider = ProviderKind::Deepseek;
@@ -31728,7 +31745,7 @@ async fn refused_route_change_does_not_pin_a_startup_default_and_says_so() {
         model: config.default_model(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let mut app = App::new(options, &config);
     let previous_effort = app.reasoning_effort;

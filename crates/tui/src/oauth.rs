@@ -282,9 +282,6 @@ pub struct OAuthProviderParams<'a> {
     /// account instead of reusing the browser's session. Sent unless
     /// [`OAuthEnvOverrides::no_account_prompt_var`] is set.
     pub account_choice_extras: &'a [(&'a str, &'a str)],
-    /// Honest client identity for issuers that require one (ChatGPT's
-    /// `originator`). Never impersonate another CLI.
-    pub originator: Option<&'a str>,
     /// Remote revoke path under the issuer, pinned rather than discovered:
     /// revoke must still clear local credentials when the issuer is
     /// unreachable, so a discovery fetch would only add a failure mode to a
@@ -325,7 +322,6 @@ pub const XAI_OAUTH_PARAMS: OAuthProviderParams<'static> = OAuthProviderParams {
     device_poll_floor_secs: 30,
     authorize_extras: &[],
     account_choice_extras: &[],
-    originator: None,
     revoke_path: None,
     callback_path: "",
     loopback_ports: &[],
@@ -353,7 +349,6 @@ pub const CLAUDE_OAUTH_PARAMS: OAuthProviderParams<'static> = OAuthProviderParam
     device_poll_floor_secs: 0,
     authorize_extras: &[],
     account_choice_extras: &[],
-    originator: None,
     revoke_path: None,
     callback_path: "/oauth/code/callback",
     loopback_ports: &[],
@@ -368,7 +363,6 @@ pub const CHATGPT_OAUTH_PARAMS: OAuthProviderParams<'static> = OAuthProviderPara
     default_issuer: CHATGPT_OAUTH_ISSUER,
     default_client_id: CHATGPT_OAUTH_CLIENT_ID,
     default_scopes: CHATGPT_OAUTH_SCOPE,
-    originator: None,
     env: OAuthEnvOverrides {
         issuer_vars: &["CODEWHALE_CHATGPT_OAUTH_ISSUER"],
         client_id_vars: &["CODEWHALE_CHATGPT_OAUTH_CLIENT_ID"],
@@ -461,7 +455,6 @@ pub const ORCAROUTER_OAUTH_PARAMS: OAuthProviderParams<'static> = OAuthProviderP
     device_poll_floor_secs: 30,
     authorize_extras: &[],
     account_choice_extras: &[],
-    originator: None,
     revoke_path: None,
     callback_path: "/callback",
     // OrcaRouter validates `callback_url` per request and accepts any
@@ -1854,9 +1847,6 @@ pub fn build_authorize_url(
         .append_pair("code_challenge", &pkce.challenge)
         .append_pair("code_challenge_method", "S256")
         .append_pair("state", state);
-    if let Some(originator) = params.originator {
-        url.query_pairs_mut().append_pair("originator", originator);
-    }
     for (key, value) in params.authorize_extras {
         url.query_pairs_mut().append_pair(key, value);
     }
@@ -3182,9 +3172,7 @@ fn apply_token_response(
     entry.oidc_issuer = Some(issuer.to_string());
     entry.oidc_client_id = Some(client_id.to_string());
     entry.auth_mode = Some("oidc".to_string());
-    entry.originator = oauth_provider_params(provider)
-        .originator
-        .map(ToOwned::to_owned);
+    entry.originator = None;
     if let Some(id_token) = token.id_token.clone() {
         if provider != OAuthProvider::Chatgpt
             && let Some(account_id) = account_id_from_id_token(&id_token)
@@ -4528,7 +4516,6 @@ impl PluginOAuthConfig {
             device_poll_floor_secs: 0,
             authorize_extras: &[],
             account_choice_extras: &[],
-            originator: None,
             revoke_path: None,
             callback_path: &self.callback_path,
             loopback_ports: &[],

@@ -23,6 +23,7 @@ export const chrome: ChromeDict = {
   navCommunity: "커뮤니티",
   navContribute: "기여",
 
+  navFeatures: "기능",
   navProduct: "제품",
   navModels: "모델",
   navPlugins: "플러그인",

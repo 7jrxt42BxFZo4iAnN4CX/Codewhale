@@ -12,7 +12,7 @@ use ratatui::{
     Frame,
     layout::Rect,
     style::{Color, Style},
-    widgets::{Block, Paragraph},
+    widgets::{Block, Clear, Paragraph},
 };
 use serde_json::json;
 use std::{
@@ -32,6 +32,8 @@ pub use full::{render_full, render_main};
 mod live;
 pub(crate) mod owner;
 mod persistence;
+mod runtime;
+pub use runtime::observe_runtime;
 #[cfg(test)]
 mod worker;
 use live::{Command, Notice, Presentation, Worker};
@@ -64,6 +66,7 @@ pub struct PetWatch {
     sound_requested: bool,
     pub(crate) area: Option<Rect>,
     pub(crate) inspect_area: Option<Rect>,
+    pub(crate) view_area: Option<Rect>,
     copy_area: Arc<Mutex<Option<Rect>>>,
     raster: Option<Presentation>,
     controls: Arc<Mutex<Vec<Control>>>,
@@ -84,6 +87,8 @@ pub struct PetWatch {
     full_response_key: Option<(u64, usize, bool)>,
     full_inputs: Option<codewhale_ratatui::whale_motion::Inputs>,
     selection: Arc<Mutex<Option<String>>>,
+    #[cfg(test)]
+    detached: bool,
 }
 impl PetWatch {
     pub fn avatar_choices(&self) -> String {
@@ -133,6 +138,10 @@ impl PetWatch {
         if self.session != session {
             self.reset(session)
         }
+        #[cfg(test)]
+        if self.detached {
+            return;
+        }
         if self.worker.is_none() && !self.failed {
             match Worker::start(self.session.clone()) {
                 Ok(worker) => self.worker = Some(worker),
@@ -153,6 +162,19 @@ impl PetWatch {
     pub(crate) fn detach_for_test(&mut self) {
         self.worker = None;
         self.failed = true;
+        self.detached = true;
+    }
+    fn revive(&mut self) {
+        if self.worker.as_ref().is_some_and(|w| {
+            matches!(
+                w.tx.try_send(Command::Wake),
+                Err(std::sync::mpsc::TrySendError::Disconnected(_))
+            )
+        }) {
+            self.worker = None;
+            self.raster = None;
+        }
+        self.failed = false;
     }
     pub fn observe(&mut self, event: &Event, session: Option<&str>, _now: Instant) {
         if self.session.as_deref() != session {
@@ -197,6 +219,7 @@ impl PetWatch {
     }
     pub fn prepare_frame(&mut self) {
         self.inspect_area = None;
+        self.view_area = None;
         if let Ok(mut area) = self.copy_area.lock() {
             *area = None;
         }
@@ -357,10 +380,21 @@ fn metadata(event: &Event, turn_id: Option<&str>) -> Option<String> {
     (json.len() <= 16_384).then_some(json)
 }
 
-pub fn command(app: &mut App, control: Control) {
+pub fn command(app: &mut App, control: Control) -> bool {
+    if matches!(
+        control,
+        Control::Appearance { .. } | Control::Browser | Control::Window | Control::Select
+    ) {
+        app.pet_watch.revive();
+    }
     app.pet_watch.ensure(app.current_session_id.clone());
     let agents = full::agents(app);
     apply(&mut app.pet_watch, control, &agents);
+    app.needs_redraw = true;
+    app.pet_watch.worker.is_some()
+}
+pub fn cycle_view(app: &mut App, forward: bool) {
+    app.pet_watch.avatars.cycle(forward);
     app.needs_redraw = true;
 }
 fn apply(state: &mut PetWatch, control: Control, agents: &[codewhale_ratatui::Subagent<'_>]) {
@@ -415,6 +449,7 @@ pub fn set_enabled(app: &mut App, enabled: bool) {
         crate::tui::agent_focus::exit_focus(app);
         app.file_tree = None;
         app.file_tree_visible = false;
+        app.pet_watch.revive();
         app.pet_watch.ensure(app.current_session_id.clone());
     } else {
         let session = app.pet_watch.session.clone();
@@ -424,16 +459,35 @@ pub fn set_enabled(app: &mut App, enabled: bool) {
 }
 /// F5 and `/pet inspect` enter the same existing modal stack. Printable keys,
 /// paste, submit and editing remain with the normal composer on the main view.
-pub fn handle_inspect_key(app: &mut App, key: &crossterm::event::KeyEvent) -> bool {
-    use crate::tui::shell_key_routing::{self, ShellBindingId};
-    if app.pet_watch.enabled
-        && shell_key_routing::route(app.focus(), key) == Some(ShellBindingId::PetInspect)
-    {
-        open_habitat(app);
-        true
-    } else {
-        false
+pub fn handle_key(app: &mut App, key: &crossterm::event::KeyEvent) -> bool {
+    use crate::tui::shell_key_routing::{self, ShellBindingId as Id};
+    if !app.pet_watch.enabled {
+        return false;
     }
+    let showing = main_view(app) && app.view_stack.is_empty();
+    match shell_key_routing::route(app.focus(), key) {
+        Some(Id::PetInspect) => open_habitat(app),
+        Some(Id::ViewCycle) if showing => cycle_view(app, true),
+        Some(Id::ViewCycleBack) if showing => cycle_view(app, false),
+        Some(Id::PetSound) if showing => {
+            command(app, Control::Sound);
+            let label = if app.pet_watch.sound_requested {
+                MessageId::PetWatchSoundOn
+            } else {
+                MessageId::PetWatchSoundOff
+            };
+            let text = tr(app.ui_locale, label).into_owned();
+            app.push_status_toast(text, StatusToastLevel::Info, Some(4000));
+        }
+        Some(Id::PetBrowser) if showing => {
+            command(app, Control::Browser);
+        }
+        Some(Id::PetWindow) if showing => {
+            command(app, Control::Window);
+        }
+        _ => return false,
+    }
+    true
 }
 /// The existing Engine determines work boundaries. Only the shell reads the
 /// answer; no conversation text enters the pet owner or recording.
@@ -457,10 +511,6 @@ pub fn tick(app: &mut App, now: Instant) {
     if visible && app.pet_watch.avatars.refresh(&app.workspace, now) {
         app.needs_redraw = true;
     }
-    let waiting = matches!(
-        ShellPhase::from_app(app),
-        ShellPhase::Waiting | ShellPhase::Approval
-    );
     let sound_allowed = visible
         && app.onboarding == crate::tui::app::OnboardingState::None
         && !app.notification_settings.quiet
@@ -471,21 +521,15 @@ pub fn tick(app: &mut App, now: Instant) {
         .lock()
         .map(|mut c| std::mem::take(&mut *c))
         .unwrap_or_default();
-    let agents = if controls.is_empty() {
-        Vec::new()
-    } else {
-        full::agents(app)
-    };
+    for control in controls {
+        command(app, control);
+    }
     let state = &mut app.pet_watch;
     if state.session != app.current_session_id {
         state.reset(app.current_session_id.clone());
     }
     if visible {
         state.ensure(app.current_session_id.clone());
-    }
-    for control in controls {
-        apply(state, control, &agents);
-        app.needs_redraw = true;
     }
     if let Some(update) = state
         .worker
@@ -513,48 +557,52 @@ pub fn tick(app: &mut App, now: Instant) {
         .last_tick
         .is_none_or(|t| now.saturating_duration_since(t) >= Duration::from_millis(30))
     {
-        let a = state.area.unwrap_or(Rect::new(0, 0, 40, 8));
-        let cell = crossterm::terminal::window_size()
-            .ok()
-            .filter(|s| s.columns > 0 && s.rows > 0 && s.width > 0 && s.height > 0)
-            .map(|s| {
-                (
-                    f64::from(s.width) / f64::from(s.columns),
-                    f64::from(s.height) / f64::from(s.rows),
-                )
-            })
-            .unwrap_or((8.0, 16.0));
-        let next = live::View {
-            locale: app.ui_locale.tag().into(),
-            width: a.width.clamp(1, 512),
-            height: a.height.saturating_sub(1).clamp(1, 256),
-            cell_width: cell.0,
-            cell_height: cell.1,
-            motion,
-            pixels: !full::canonical(state)
-                && matches!(state.avatars.key.as_str(), "" | "whale")
-                && crate::tui::mark::kitty_graphics_supported()
-                && app.synchronized_output_enabled
-                && std::env::var("CODEWHALE_PET_GRAPHICS").as_deref() != Ok("braille"),
-            visible,
-            waiting,
-            sound: state.sound_requested && sound_allowed,
-        };
-        if let Some(worker) = &state.worker
-            && let Ok(mut view) = worker.view.lock()
-        {
-            *view = next;
-        }
         state.last_tick = Some(now);
+        let state = &app.pet_watch;
+        if let Some(worker) = &state.worker {
+            let waiting = matches!(
+                ShellPhase::from_app(app),
+                ShellPhase::Waiting | ShellPhase::Approval
+            );
+            let a = state.area.unwrap_or(Rect::new(0, 0, 40, 8));
+            let cell = cell_pixels().unwrap_or((8.0, 16.0));
+            let next = live::View {
+                locale: app.ui_locale.tag().into(),
+                width: a.width.clamp(1, 512),
+                height: a.height.saturating_sub(1).clamp(1, 256),
+                cell_width: cell.0,
+                cell_height: cell.1,
+                motion,
+                pixels: state.avatars.current() == "pixels"
+                    && pixels_need(app.synchronized_output_enabled).is_none(),
+                visible,
+                waiting,
+                sound: state.sound_requested && sound_allowed,
+            };
+            let woke = worker.view.lock().is_ok_and(|mut view| {
+                let woke = view.visible != next.visible;
+                *view = next;
+                woke
+            });
+            if woke {
+                let _ = worker.tx.try_send(Command::Wake);
+            }
+        }
     }
-    let notices: Vec<_> = state
+    let notices: Vec<_> = app
+        .pet_watch
         .worker
         .as_ref()
         .map(|w| w.notices.try_iter().take(16).collect())
         .unwrap_or_default();
     for notice in notices {
-        app.pet_watch.exporting = false;
+        let recorded = !matches!(notice, Notice::Opened);
+        app.pet_watch.exporting &= !recorded;
         let (text, level) = match notice {
+            Notice::Opened => (
+                tr(app.ui_locale, MessageId::PetViewOpen).into_owned(),
+                StatusToastLevel::Info,
+            ),
             Notice::AppearanceLegacy => (
                 tr(app.ui_locale, MessageId::PetAppearanceLegacy).into_owned(),
                 StatusToastLevel::Warning,
@@ -566,13 +614,7 @@ pub fn tick(app: &mut App, now: Instant) {
             ),
             // A refused action (select, export, open) leaves a reachable
             // companion and the habitat as they are.
-            Notice::Message(message) => (
-                format!(
-                    "{} · {message}",
-                    tr(app.ui_locale, MessageId::PetWatchUnavailable)
-                ),
-                StatusToastLevel::Warning,
-            ),
+            Notice::Message(message) => (message, StatusToastLevel::Warning),
             Notice::Unreachable(message) => {
                 app.pet_watch.unavailable = true;
                 if app.is_loading
@@ -590,10 +632,12 @@ pub fn tick(app: &mut App, now: Instant) {
                 )
             }
         };
-        app.add_message(crate::tui::history::HistoryCell::System {
-            content: text.clone(),
-        });
-        app.push_status_toast(text, level, Some(12000));
+        if recorded {
+            app.add_message(crate::tui::history::HistoryCell::System {
+                content: text.clone(),
+            });
+        }
+        app.push_status_toast(text, level, Some(if recorded { 12000 } else { 4000 }));
         app.needs_redraw = true;
     }
     full::tick(app, visible, now);
@@ -661,12 +705,14 @@ fn render_tank(frame: &mut Frame, area: Rect, app: &mut App) {
             )
         })
         .unwrap_or(Color::Rgb(180, 210, 216));
+    frame.render_widget(Clear, area);
     frame.render_widget(
         Block::default().style(Style::default().bg(Color::Rgb(bg[0], bg[1], bg[2]))),
         area,
     );
     let (act, clock) = avatars::act(raster, app.is_loading);
     let reduced = !full::motion(app).animates();
+    let theme = full::theme(app);
     let tank = Rect {
         height: area.height.saturating_sub(1),
         ..area
@@ -674,7 +720,7 @@ fn render_tank(frame: &mut Frame, area: Rect, app: &mut App) {
     if app
         .pet_watch
         .avatars
-        .paint(tank, frame.buffer_mut(), act, clock, reduced)
+        .paint(tank, frame.buffer_mut(), act, clock, reduced, &theme)
     {
         let preview = app.pet_watch.avatars.action.as_deref().or(app
             .pet_watch
@@ -772,6 +818,30 @@ fn paint_resting_whale(frame: &mut Frame, area: Rect, style: Style) {
 pub(crate) fn clear_images(output: &mut impl Write) -> io::Result<()> {
     graphics::clear(output)
 }
+fn cell_pixels() -> Option<(f64, f64)> {
+    crossterm::terminal::window_size()
+        .ok()
+        .filter(|s| s.columns > 0 && s.rows > 0 && s.width > 0 && s.height > 0)
+        .map(|s| {
+            (
+                f64::from(s.width) / f64::from(s.columns),
+                f64::from(s.height) / f64::from(s.rows),
+            )
+        })
+}
+fn pixels_need(synchronized: bool) -> Option<MessageId> {
+    if !crate::tui::mark::kitty_graphics_supported() {
+        Some(MessageId::PetNeedsKittyGraphics)
+    } else if !synchronized {
+        Some(MessageId::PetNeedsSynchronizedOutput)
+    } else if std::env::var("CODEWHALE_PET_GRAPHICS").as_deref() == Ok("braille") {
+        Some(MessageId::PetNeedsGraphicsAllowed)
+    } else if cell_pixels().is_none() {
+        Some(MessageId::PetNeedsCellPixels)
+    } else {
+        None
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -781,8 +851,9 @@ mod tests {
     #[test]
     fn work_completion_reveals_existing_answer_without_sending_text_to_owner() {
         use crate::core::events::TurnOutcomeStatus;
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.onboarding = crate::tui::app::OnboardingState::None;
         app.redaction_gate = false;
         assert!(app.view_stack.is_empty());
@@ -840,8 +911,9 @@ mod tests {
 
     #[test]
     fn unavailable_companion_keeps_legacy_fallback_and_native_response_available() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.onboarding = crate::tui::app::OnboardingState::None;
         app.redaction_gate = false;
         app.pet_watch.session = app.current_session_id.clone();
@@ -904,8 +976,9 @@ mod tests {
 
     #[test]
     fn a_refused_pet_action_keeps_the_habitat_and_only_unreachable_marks_offline() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.onboarding = crate::tui::app::OnboardingState::None;
         app.redaction_gate = false;
         app.pet_watch.session = app.current_session_id.clone();
@@ -946,8 +1019,9 @@ mod tests {
 
     #[test]
     fn pet_off_restores_the_shell_and_keeps_the_draft() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.onboarding = crate::tui::app::OnboardingState::None;
         app.redaction_gate = false;
         app.input = "kept draft".into();

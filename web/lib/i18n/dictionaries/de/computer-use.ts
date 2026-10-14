@@ -8,7 +8,7 @@ import type { ComputerUseDict } from "../types";
  * the other German dictionaries: knapp, Anrede per Du.
  */
 export const computerUse: ComputerUseDict = {
-  metaTitle: "Computer Use für den Mac · Codewhale",
+  metaTitle: "Computer Use · Vorschau · Codewhale",
   metaDescription: "Codewhale Computer Use für den Mac herunterladen und einrichten. App-Steuerung im Hintergrund, Berechtigungen einrichten und Pause und Stop in deiner Hand.",
   title: "Computer Use",
   lead: "Lass Codewhale in deinen Apps arbeiten, während du weiterarbeitest. Der Mac-Helfer bringt Berechtigungen, App-Steuerung im Hintergrund und eine Möglichkeit, Eingaben zu pausieren oder zu stoppen, in deine Menüleiste.",

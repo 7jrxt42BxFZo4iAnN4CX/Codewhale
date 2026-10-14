@@ -8,18 +8,61 @@ repository.workspace = true
 description = "Terminal UI for open-source and open-weight coding models"
 autobins = false
 # crates.io rejects packages over 10 MiB compressed, and this crate's test
-# sources (~11 MiB) push the package past that cap (0.10.1's upload was
-# refused with HTTP 413 at 11.9 MiB). None of these are compiled by
-# `cargo build` / `cargo install`; the repository keeps them for CI and local
-# test runs, and only the published package omits them.
+# sources, extension-host build inputs and dev-only assets push the package
+# past that cap (0.10.1's upload was refused with HTTP 413 at 11.9 MiB). None
+# of these are compiled, embedded or read by `cargo build` / `cargo install`;
+# the repository keeps them for CI, local test runs and the extension-host
+# build, and only the published package omits them.
 exclude = [
   "tests/**",
   "src/**/tests.rs",
   "src/**/tests/**",
   "src/**/*_tests.rs",
   "src/**/test_cases_*.rs",
+  "src/**/*_legacy.rs",
+  "src/**/*test_support.rs",
+  "src/**/*acceptance.rs",
+  "src/conformance.rs",
+  "src/conformance/**",
+  "src/lib/terminal_mode_test_cases_*.rs",
+  "src/llm_client/mock.rs",
+  "src/plugins/test_fixture.rs",
+  "src/skills/catalog_matrix.rs",
+  "src/compaction/survival_contract.rs",
+  "src/compaction/SURVIVAL_CONTRACT.md",
+  "src/compaction/validate_survival_contract.mjs",
+  "src/compaction/fixtures/**",
+  "src/commands/contract/config_policy_baseline.rs",
+  "src/commands/contract/fixtures/**",
+  "src/commands/fixtures/diagnostics/**",
+  "src/commands/fixtures/*_baseline.md",
+  "src/commands/fixtures/*_baseline.json",
+  "src/pricing/default_coverage_unpriced.json",
+  "src/runtime_web/app.test.mjs",
+  "src/runtime_web/orca-evidence.html",
+  "src/tui/golden_harness.rs",
+  "src/tui/goldens/**",
+  "src/tui/pet_watch/worker.rs",
+  "src/tui/widgets/pending_input_preview/legacy_fixture.rs",
+  "assets/mark-*.png",
+  "assets/skills-catalog-matrix.json",
   "extension-host/test/**",
+  "extension-host/build.mjs",
+  "extension-host/compile-host.mjs",
+  "extension-host/package-lock.json",
+  "extension-host/scripts/**",
+  "extension-host/src/**/*.ts",
+  "extension-host/src/dsh/dsh-tools-compat.js",
+  "extension-host/dist/agent-presets.mjs",
+  "extension-host/dist/avatars.mjs",
+  "extension-host/dist/builtin-modules.json",
+  "extension-host/dist/protocol.mjs",
+  "extension-host/dist/rpc.mjs",
+  "extension-host/dist/shell-hooks.mjs",
+  "extension-host/dist/skills.mjs",
+  "extension-host/dist/stock-adapters.mjs",
   "plugins/computer-use/tests/**",
+  "plugins/computer-use/scripts/smoke.mjs",
 ]
 
 [lints]
@@ -36,10 +79,11 @@ rusty-alloc = []
 [lib]
 name = "codewhale_tui"
 path = "src/lib.rs"
+doctest = false
 
 [dependencies]
 # Independent terminal kit, pinned and vendored for reproducible binary builds.
-codewhale-ratatui = { path = "../../vendor/codewhale-ratatui", version = "0.1.1" }
+codewhale-ratatui = { path = "../../vendor/codewhale-ratatui", version = "0.1.2" }
 codewhale-sanitize = { path = "../sanitize", version = "0.10.2" }
 codewhale-memory = { path = "../memory", version = "0.10.2" }
 ahash = "0.8"
@@ -87,7 +131,6 @@ jsonwebtoken = { version = "10", default-features = false, features = ["aws_lc_r
 ratatui = { version = "=0.30.2", features = ["unstable-rendered-line-info"] }
 regex = "1.11"
 reqwest = { workspace = true, features = ["blocking", "stream", "form", "http2"] }
-rusqlite.workspace = true
 rquickjs.workspace = true
 rmcp = { version = "3.2.0", default-features = false, features = ["auth", "client"] }
 rustls.workspace = true
@@ -103,7 +146,6 @@ syntect = { version = "5.2", default-features = false, features = ["default-synt
 serde.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 yaml-rust2 = { workspace = true }
-schemars = { version = "1.2.1", features = ["derive", "preserve_order"] }
 shellexpand = "3"
 # Grammar-exact Rust parsing for the post-edit syntax gate (#6204). `syn` is
 # already in the lockfile as a proc-macro build dependency; this reuses that
@@ -172,6 +214,8 @@ wiremock = "0.6"
 tiny_http = "0.12"
 pretty_assertions = "1.4"
 rio-vt = "0.5.1"
+rusqlite.workspace = true
+schemars = { version = "1.2.1", features = ["derive", "preserve_order"] }
 tokio-tungstenite = "0.30"
 
 [target.'cfg(unix)'.dependencies]

@@ -21,7 +21,8 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildFacts } from "./facts-lib.mjs";
+import { buildFacts, deriveFeatures, REPO_ROOT } from "./facts-lib.mjs";
+import { deriveAgentDocs } from "./docs-sources-lib.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const GENERATED_PATH = resolve(__dirname, "..", "lib", "facts.generated.ts");
@@ -92,6 +93,16 @@ if (committed.error) {
 
 // The shared parser refuses incomplete or malformed provider projections.
 const fresh = buildFacts();
+const docsPath = resolve(__dirname, "..", "data", "agent-docs.generated.json");
+if (!existsSync(docsPath) || JSON.stringify(JSON.parse(readFileSync(docsPath, "utf8"))) !== JSON.stringify(deriveAgentDocs(resolve(__dirname, ".."), REPO_ROOT))) {
+  console.error("[check-facts] FAIL — generated agent docs are stale; run npm run prebuild");
+  process.exit(1);
+}
+const featuresPath = resolve(__dirname, "..", "data", "features.generated.json");
+if (!existsSync(featuresPath) || JSON.stringify(JSON.parse(readFileSync(featuresPath, "utf8"))) !== JSON.stringify(deriveFeatures())) {
+  console.error("[check-facts] FAIL — generated feature registry is stale; run npm run prebuild");
+  process.exit(1);
+}
 
 // Quick sanity: critical source facts must never degrade to matching nulls.
 const criticalGaps = [];

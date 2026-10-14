@@ -64,8 +64,11 @@ pub(super) fn apply_engine_session_projection(
     {
         surface_goal_persistence_failure(app, &error);
     }
-    app.context_token_cache.borrow_mut().clear();
-    app.set_api_messages(messages);
+    let unchanged = app.set_api_messages(messages);
+    app.context_token_cache
+        .get_mut()
+        .message_tokens
+        .truncate(unchanged);
     // #6190: the projection is the engine's own record, so it is where a
     // steer's acceptance becomes observable — and the only place the steer's
     // real message index is known. Promote before anything else reads the
@@ -466,6 +469,7 @@ pub(super) fn handle_transcript_space(app: &mut App) -> bool {
         app.viewport.transcript_selection.clear();
         app.viewport.transcript_selection.anchor = Some(point);
         app.viewport.transcript_selection.head = Some(point);
+        app.viewport.transcript_selection.owner = Some(owner);
     }
     app.mark_history_updated();
     true
@@ -1138,7 +1142,7 @@ pub async fn run_tui(
     // masking boundary only after an explicit one-time confirmation on this
     // startup gate. Arm the gate before the engine spawns so it owns the first
     // screen; answering it rebuilds the engine with the confirmed mode.
-    app.redaction_gate = crate::tui::redaction_gate::confirmation_required(config);
+    app.redaction_gate = config.redaction_confirmation_required();
 
     // Restore before admitting initial input, including resumed conversations.
     let engine_handle = spawn_tui_engine_with_session(&mut app, config).await?;
@@ -1549,6 +1553,19 @@ pub(super) fn present_turn_failure(
     error: Option<&str>,
 ) {
     let failed = matches!(status, crate::core::events::TurnOutcomeStatus::Failed);
+    if failed
+        && app.turn_error_posted
+        && let Some(notice) = app.turn_error_notice.clone()
+        && let Some(index) = (0..app.virtual_cell_count()).rev().find(|&index| {
+            matches!(
+                app.cell_at_virtual_index(index),
+                Some(HistoryCell::Error { message, .. }) if *message == notice
+            )
+        })
+        && let Some(HistoryCell::Error { severity, .. }) = app.cell_at_virtual_index_mut(index)
+    {
+        *severity = crate::error_taxonomy::ErrorSeverity::Error;
+    }
     // What the transcript shows for this turn's failure: the error cell an
     // earlier `Event::Error` already posted, or the notice added here.
     let shown = if app.turn_error_posted {
@@ -1558,7 +1575,7 @@ pub(super) fn present_turn_failure(
         if failed {
             app.add_message(HistoryCell::Error {
                 message: notice.clone(),
-                severity: crate::error_taxonomy::ErrorSeverity::Warning,
+                severity: crate::error_taxonomy::ErrorSeverity::Error,
             });
         }
         app.set_sticky_status(notice.clone(), StatusToastLevel::Error, None);
@@ -2009,7 +2026,7 @@ pub(crate) async fn run_event_loop(
             if let Err(err) = completion {
                 tracing::warn!(error = %err, "background terminal clipboard write failed");
                 app.push_status_toast(
-                    format!("Clipboard copy failed: {err}"),
+                    crate::tui::mouse_ui::copy_failed_receipt(app, &err),
                     StatusToastLevel::Error,
                     None,
                 );
@@ -2226,6 +2243,9 @@ pub(crate) async fn run_event_loop(
                 last_automation_scan = Instant::now();
             }
             if refresh_shell_exec_live_output(app) {
+                app.needs_redraw = true;
+            }
+            if crate::tui::shell_job_routing::refresh_live_shell_job_pager(app) {
                 app.needs_redraw = true;
             }
             if app
@@ -2891,7 +2911,7 @@ pub(crate) async fn run_event_loop(
                         // to interrupt a long-running turn (#1367). Only
                         // surface when the status_message slot is empty so
                         // we don't trample over a real transient message
-                        // (e.g. "/queue saved", "Selection copied"); the
+                        // (e.g. "/queue saved"); the
                         // hint then auto-clears as soon as anything else
                         // updates the slot.
                         if app.status_message.is_none() {
@@ -5419,7 +5439,7 @@ pub(crate) async fn run_event_loop(
                             app.redaction_gate_confirming = true;
                             app.redaction_gate_scroll.set(0);
                         } else {
-                            match crate::tui::redaction_gate::record_confirmation(config) {
+                            match config.record_redaction_confirmation() {
                                 Ok(_) => {
                                     // The engine already spawned with masking on
                                     // (the unconfirmed safe default). Rebuild it so
@@ -5585,7 +5605,7 @@ pub(crate) async fn run_event_loop(
                 continue;
             }
 
-            if crate::tui::pet_watch::handle_inspect_key(app, &key) {
+            if crate::tui::pet_watch::handle_key(app, &key) {
                 continue;
             }
 
@@ -6482,18 +6502,7 @@ pub(crate) async fn run_event_loop(
                 KeyCode::Char('c') | KeyCode::Char('C')
                     if key_shortcuts::is_copy_shortcut(&key) =>
                 {
-                    let sel = app.selected_text();
-                    if !sel.is_empty() {
-                        if let Ok(transport) = app.clipboard.write_text_status(&sel) {
-                            let receipt = copy_receipt(app, transport, "Copied to clipboard");
-                            app.push_status_toast(receipt, StatusToastLevel::Info, None);
-                            app.clear_selection();
-                        } else {
-                            app.push_status_toast("Copy failed", StatusToastLevel::Error, None);
-                        }
-                    } else {
-                        copy_active_selection(app);
-                    }
+                    copy_active_selection(app);
                 }
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     // Four behaviors layered on Ctrl+C in priority order — see
@@ -7419,14 +7428,14 @@ pub(super) async fn adopt_live_local_ollama_catalog(
     app.onboarding_needs_api_key = false;
     app.onboarding_missing_key_recovery = false;
     // A launch with no key opens the provider picker (#6566). The local model
-    // just answered that question, so close the picker and its onboarding
-    // step rather than leave a stale "connect a model" screen whose Esc would
-    // now walk back to the welcome screen.
+    // just answered that question, so close the picker and advance past its
+    // onboarding step rather than leave a stale "connect a model" screen whose
+    // Esc would now walk back to the welcome screen.
     if app.onboarding == OnboardingState::Provider {
         if app.view_stack.top_kind() == Some(ModalKind::ProviderPicker) {
             app.view_stack.pop();
         }
-        app.onboarding = OnboardingState::None;
+        crate::tui::onboarding::advance_onboarding_after_provider(app);
     }
     // Say plainly which model is in use and how to change it, instead of the
     // endpoint it was discovered from (#6566).
@@ -7870,7 +7879,7 @@ mod session_boot_event_tests {
     }
 
     fn test_app() -> App {
-        crate::test_support::test_app_with_options(crate::test_support::test_tui_options(
+        crate::tui::test_support::test_app_with_options(crate::tui::test_support::test_tui_options(
             PathBuf::from("."),
         ))
     }
@@ -8210,8 +8219,8 @@ mod telemetry_notice_tests {
 
     #[test]
     fn telemetry_notice_waits_for_the_launch_card_to_leave() {
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(std::env::temp_dir()),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(std::env::temp_dir()),
         );
         app.launch.visible = true;
         app.launch.dissolve_started_ms = None;
@@ -8571,10 +8580,13 @@ pub(super) fn route_key_to_view_stack(
 /// Keep only the Engine's retry receipts in the existing transcript. Ordinary
 /// status/footer behavior and internal/model-only status projection stay intact.
 pub(super) fn apply_engine_status(app: &mut App, message: String) -> bool {
+    if crate::core::events::is_retry_status_receipt(&message) {
+        app.add_message(HistoryCell::System { content: message });
+        return true;
+    }
     // The account-profile fallback notice is sent once per engine; keep it in
     // the transcript so the next turn's status line cannot erase it.
-    let retain = crate::core::events::is_retry_status_receipt(&message)
-        || app.tr(MessageId::ProfileConstitutionUnavailableLocal) == message.as_str();
+    let retain = app.tr(MessageId::ProfileConstitutionUnavailableLocal) == message.as_str();
     if retain {
         app.add_message(HistoryCell::System {
             content: message.clone(),

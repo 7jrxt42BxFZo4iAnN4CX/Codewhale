@@ -8,7 +8,7 @@ import type { ComputerUseDict } from "../types";
  * system UI names (Доступність, Запис екрана, Програми).
  */
 export const computerUse: ComputerUseDict = {
-  metaTitle: "Computer Use для Mac · Codewhale",
+  metaTitle: "Computer Use · Попередня версія · Codewhale",
   metaDescription: "Завантажте й налаштуйте Codewhale Computer Use для Mac. Фонове керування застосунками, налаштування дозволів і кнопки Pause та Stop під вашим контролем.",
   title: "Computer Use",
   lead: "Дозвольте Codewhale працювати у ваших застосунках, поки ви займаєтеся своїми справами. Помічник для Mac збирає в смузі меню дозволи, фонове керування застосунками та можливість призупинити або зупинити введення.",

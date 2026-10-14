@@ -279,7 +279,7 @@ mod tests {
 
     fn create_test_app() -> App {
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         let mut app = App::new(options, &Config::default());
         // Legacy strip geometry (see ui.rs); Bottom default has its own tests.

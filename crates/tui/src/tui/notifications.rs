@@ -1467,7 +1467,7 @@ mod tests {
         let _guard = crate::test_support::lock_test_env();
         for &locale in Locale::shipped_complete() {
             let mut app = App::new(
-                crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+                crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
                 &crate::config::Config::default(),
             );
             app.ui_locale = locale;

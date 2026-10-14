@@ -30,6 +30,11 @@ def main() -> int:
         print("usage: build-lock.py <lock-file> -- <command> [args...]", file=sys.stderr)
         return 2
     lock_path, command = sys.argv[1], sys.argv[3:]
+    if os.environ.get("CODEWHALE_BUILD_LOCK_HELD") or os.environ.get(
+        "CODEWHALE_BUILD_LOCK", "1"
+    ) in ("0", "false", "no", "off", "never", "disabled"):
+        status = subprocess.call(command)
+        return 128 - status if status < 0 else status
     env = dict(os.environ, CODEWHALE_BUILD_LOCK_HELD="1")
     try:
         import fcntl

@@ -152,10 +152,11 @@ Sleep dimming does not set unknown coverage.
 
 ### `/pet` habitat
 
-`/pet` (or `/pet on`) opens the full habitat over the existing shell. The pet
-has no workbar panel: no dock cycling, tab, placement or dismissal applies. The
-tank uses the whole content viewport and never overlays transcript cells; narrow
-views keep the text cue. Opening it starts a read-only observer; it does not start an Engine
+`/pet` (or `/pet on`) makes the pet the main view above the existing composer;
+F5 or `/pet inspect` opens replies and agents over it. The pet has no workbar
+panel: no placement or dismissal applies, and on the pet main view `Ctrl+]`
+cycles the pet's views instead of the dock. The pet never overlays transcript
+cells; narrow views keep the text cue. Opening it starts a read-only observer; it does not start an Engine
 turn or silently substitute demonstration data. It begins with unknown coverage
 and does not backfill events from before attachment.
 
@@ -185,8 +186,10 @@ The presentation companion now owns the one persistent world. Terminal Watch,
 full-screen habitat, the owner's browser companion, macOS window, Apple Shared
 and Android Shared attach to its authenticated loopback snapshots. View
 interpolation and stillness never advance or modify the world. The existing Ratatui draw loop owns pixel
-placement and cleanup; a successful Kitty query selects pixels, otherwise the
-view uses braille. Full habitat focus uses the existing modal stack.
+placement and cleanup. Only the opt-in `pixels` view draws an image, after a
+successful Kitty query, with synchronized output and a known cell size in
+pixels; otherwise it shows the Braille particles. `CODEWHALE_PET_GRAPHICS=braille`
+also disables that image. Full habitat focus uses the existing modal stack.
 
 The complete ownership, source selection, storage/reconnect, graphics, audio,
 legacy habitat and mobile contracts live in [pet/SHARED.md](../../pet/SHARED.md).

@@ -1,4 +1,150 @@
 {
+  "features": {
+    "title": "查看 Codewhale 提供的能力",
+    "description": "浏览 Codewhale 命令、工具和 Runtime 能力，了解可用范围并查看文档。",
+    "notice": "本目录包含源码 v{version} 中的 {count} 项能力。名称与说明使用英文；请核对已安装版本。",
+    "stable": "稳定",
+    "flagged": "需要功能开关",
+    "experimental": "实验性",
+    "partial": "部分支持",
+    "preview": "预览",
+    "none": "不可用",
+    "docs": "阅读文档",
+    "source": "查看源码条目",
+    "exportJson": "下载功能 JSON"
+  },
+  "docs-skills": {
+    "metaTitle": "管理技能 · Codewhale 文档",
+    "metaDescription": "查找、安装并信任 SKILL.md 指令包，控制用户与模型调用，并导入兼容的 Claude Code 技能。",
+    "bodyClassName": "text-ink-soft leading-[1.9] tracking-wide",
+    "title": "管理可复用技能",
+    "lede": "技能是 SKILL.md 指令包。发现兼容文件夹后，先审阅来源与信任设置，再使用技能。",
+    "sections": [
+      {
+        "id": "manager",
+        "title": "打开技能管理器",
+        "blocks": [
+          {
+            "code": "/skills\n/skills manage\n/skills inspect\n/skill <name>",
+            "lang": "Codewhale"
+          },
+          {
+            "p": "管理器打开时不访问网络，并显示 Codewhale 自有目录。启用兼容目录扫描即可检查外部文件夹；导入目标始终是 Codewhale 自有目录。"
+          }
+        ]
+      },
+      {
+        "id": "install",
+        "title": "安装到自有目录",
+        "blocks": [
+          {
+            "code": "/skill install --project <spec>\n/skill install --global <spec>\n/skill trust --project <name>",
+            "lang": "Codewhale"
+          },
+          {
+            "p": "自有目录包括项目中的 .codewhale/skills 与全局 ~/.codewhale/skills。兼容的 .agents/skills 和 .claude/skills 目录只作为只读导入来源。"
+          },
+          {
+            "note": "只有信任工作区后才会加载项目技能。配置的外部 skills_dir 始终只读；选择文件夹不会授予修改权限。"
+          }
+        ]
+      },
+      {
+        "id": "invocation",
+        "title": "选择谁可以加载技能",
+        "blocks": [
+          {
+            "p": "Frontmatter 中的 disable-model-invocation: true 会将技能移出模型发现列表。user-invocable: false 会从用户菜单中隐藏技能并拒绝显式激活；两者同时设置会禁用两条路径。"
+          },
+          {
+            "p": "技能正文在加载时才进入上下文。精简目录只包含有界的名称、别名和调用元数据。"
+          }
+        ]
+      }
+    ],
+    "next": [
+      {
+        "href": "/docs/claude-code",
+        "label": "从 Claude Code 迁移",
+        "note": "带入兼容技能并审阅设置导入方案。"
+      },
+      {
+        "href": "/plugins",
+        "label": "添加插件",
+        "note": "通过审阅与信任流程安装支持的插件包。"
+      }
+    ],
+    "sourceNote": "来源：docs/SKILLS.md 与 docs/CLAUDE_PLUGIN_COMPAT.md。"
+  },
+  "docs-claude-code": {
+    "metaTitle": "从 Claude Code 迁移 · Codewhale 文档",
+    "metaDescription": "把 Codewhale 作为开源 Claude Code 替代方案。保留兼容指令与技能，并审阅设置和 MCP 导入方案。",
+    "bodyClassName": "text-ink-soft leading-[1.9] tracking-wide",
+    "title": "从 Claude Code 迁移",
+    "lede": "保留兼容的项目说明与技能文件夹，同时选择你自己的模型连接。应用设置和插件导入前，请先审阅。",
+    "sections": [
+      {
+        "id": "instructions",
+        "title": "保留项目说明",
+        "blocks": [
+          {
+            "p": "AGENTS.md 是项目说明的规范文件。CLAUDE.md 和 .claude/instructions.md 作为兼容回退，不会覆盖 Codewhale 安全控制。"
+          },
+          {
+            "p": "普通 .claude/skills/<name>/SKILL.md 文件夹通过常规[技能注册表](/docs/skills)发现，并受工作区信任与调用控制约束。"
+          }
+        ]
+      },
+      {
+        "id": "settings",
+        "title": "审阅设置导入",
+        "blocks": [
+          {
+            "code": "/import-claude",
+            "lang": "Codewhale"
+          },
+          {
+            "p": "该命令读取 Claude 设置，生成可审阅报告与尚未应用的配置包。MCP 服务器使用现有的导入同意流程；权限和钩子需要单独审阅。"
+          },
+          {
+            "note": "疑似密钥和未知环境变量的值不会被导入或回显。运行方案不会启用服务器，也不会应用权限。"
+          }
+        ]
+      },
+      {
+        "id": "plugins",
+        "title": "安装支持的插件子集",
+        "blocks": [
+          {
+            "code": "/plugin install <spec>",
+            "lang": "Codewhale"
+          },
+          {
+            "p": "声明式 .claude-plugin/plugin.json 子集支持技能、命令、智能体配置与 MCP 声明。Codewhale 的审阅哈希、显式信任与启用流程仍然适用。"
+          },
+          {
+            "note": "Codewhale 不会运行 Claude Code 插件运行时。钩子、插件 LSP 声明、构建步骤与 TypeScript 智能体不在该导入器的支持范围内。"
+          },
+          {
+            "p": "[阅读兼容性限制](https://github.com/codewhale-hq/CodeWhale/blob/main/docs/CLAUDE_PLUGIN_COMPAT.md)。在[模型设置](/models)中选择凭据与端点。"
+          }
+        ]
+      }
+    ],
+    "next": [
+      {
+        "href": "/docs/skills",
+        "label": "管理技能",
+        "note": "导入前检查兼容目录。"
+      },
+      {
+        "href": "/docs/auth",
+        "label": "连接提供商",
+        "note": "使用你选择的托管模型或本地模型。"
+      }
+    ],
+    "sourceNote": "来源：docs/CONFIGURATION.md、docs/CLAUDE_PLUGIN_COMPAT.md 与 docs/features.toml 中的 claude-settings-import 条目。"
+  },
   "chrome": {
     "navDocs": "文档",
     "navStart": "指引",
@@ -6,6 +152,7 @@
     "navFaq": "常见问题",
     "navCommunity": "社区",
     "navContribute": "贡献",
+    "navFeatures": "功能",
     "navProduct": "产品",
     "navModels": "模型",
     "navPlugins": "插件",
@@ -46,10 +193,10 @@
     "partialBadge": "(部分)"
   },
   "home": {
-    "metaTitle": "Codewhale：用自己的模型和工具，把想法做出来",
-    "metaDescription": "用 Codewhale 构建应用、自动处理工作，并连接你常用的工具。开源，支持你已有的模型 API、本地模型和自托管推理服务。",
+    "metaTitle": "Codewhale：开源编程智能体",
+    "metaDescription": "Codewhale 是终端里的开源编程智能体。用你选择的托管模型或本地模型读取、修改和测试项目。",
     "heroTitle": "构建应用，让你的工作自动运行。",
-    "heroIntro": "{brand} 是一个开源智能体，可以编写代码、运行命令，并使用你连接的工具。你可以使用已有的模型 API，也可以在本地或自己的服务器上运行模型。",
+    "heroIntro": "{brand} 是终端里的开源编程智能体，可以读取文件、编写代码并运行命令。连接已有的模型 API 或本地模型，并选择哪些操作需要批准。",
     "getCodewhale": "安装 Codewhale",
     "heroInstallAria": "安装命令",
     "exploreProduct": "探索 Codewhale",
@@ -874,14 +1021,14 @@
         "title": "把 Codewhale 作为 MCP 服务器运行",
         "blocks": [
           {
-            "p": "其他 MCP 客户端——包括另一个 Codewhale 会话——都可以使用 Codewhale 的工具。只需注册一次："
+            "p": "其他 MCP 客户端可以把 Codewhale 作为工具服务器。默认仅暴露只读的 `file_read` 和 `search` 工具。"
           },
           {
             "code": "codewhale mcp add-self\ncodewhale mcp tools codewhale",
             "lang": "终端"
           },
           {
-            "p": "`add-self` 会写入一条通过 stdio 运行 `codewhale serve --mcp` 的配置。每个客户端各自启动一个进程，不会打开任何网络端口。`codewhale serve --http` 则是另一回事——它是供应用使用的 [Runtime API](/docs/runtime-api)。"
+            "p": "`add-self` 注册通过 stdio 运行的 `codewhale serve --mcp`；`codewhale mcp-server` 是等价入口。除非操作者在服务器配置中明确允许，否则不会提供写入工具。[Runtime API](/docs/runtime-api) HTTP 是单独的传输方式。"
           }
         ]
       },
@@ -1190,6 +1337,25 @@
     "title": "限制命令的访问范围",
     "lede": "批准一条命令，决定的是它能不能运行；沙箱决定的是它运行之后能碰到什么。只要操作系统提供沙箱，Codewhale 就会使用它；没有沙箱时，也会如实告诉你。",
     "sections": [
+      {
+        "id": "execution-policy",
+        "title": "检查执行策略规则",
+        "blocks": [
+          {
+            "code": "/permissions",
+            "lang": "Codewhale"
+          },
+          {
+            "p": "类型化权限依次按 User、Agent、BuiltinDefault 选择规则。同一来源层中，deny 优先于 ask 与 allow；匹配精度用于打破同级平局。"
+          },
+          {
+            "p": "硬性拒绝的命令前缀不能被类型化 allow 覆盖。allow 不会移除后续安全检查、仓库限制或沙箱边界。"
+          },
+          {
+            "p": "[阅读授权顺序与匹配规则](https://github.com/codewhale-hq/CodeWhale/blob/main/docs/AUTHORIZATION_ORDER.md)"
+          }
+        ]
+      },
       {
         "id": "platforms",
         "title": "查看你的平台提供了什么",
@@ -1760,6 +1926,25 @@
     "lede": "Codewhale 在你的电脑上运行，只与你选择的模型提供商通信。这一页按目前的实际实现，列出数据分别去了哪里、匿名用量统计包含什么，以及如何关闭它。",
     "sections": [
       {
+        "id": "preview-request",
+        "title": "发送前查看请求",
+        "blocks": [
+          {
+            "p": "/preview-request 展示下一个主智能体回合的脱敏清单。这是供人使用的命令，不会发送请求，也不会写入对话或 Work 状态。"
+          },
+          {
+            "code": "/preview-request\n/preview-request json\n/preview-request json --prompt explain this project",
+            "lang": "Codewhale"
+          },
+          {
+            "note": "未提供 --prompt 时，路由和请求体不可用。已配置的分类器、钩子或待处理运行状态也可能阻止精确预览；清单会说明原因。"
+          },
+          {
+            "p": "[阅读请求预览约定](https://github.com/codewhale-hq/CodeWhale/blob/main/docs/PREVIEW_REQUEST.md)"
+          }
+        ]
+      },
+      {
         "id": "boundaries",
         "title": "你的工作内容去了哪里",
         "blocks": [
@@ -1926,8 +2111,8 @@
     "emptyBody": "构建时没有找到可解析的 CHANGELOG.md。GitHub 的发布列表仍然是权威记录。"
   },
   "computer-use": {
-    "metaTitle": "Mac 版 Computer Use · Codewhale",
-    "metaDescription": "下载并设置 Mac 版 Codewhale Computer Use。提供应用后台操作、权限设置，以及由用户控制的暂停和停止功能。",
+    "metaTitle": "Computer Use · 预览 · Codewhale",
+    "metaDescription": "预览功能：下载并设置 Mac 版 Codewhale Computer Use。提供应用后台操作、权限设置，以及由用户控制的暂停和停止功能。",
     "title": "Computer Use",
     "lead": "让 Codewhale 在应用中完成操作，你也可以继续工作。Mac 助手将权限设置、应用后台操作，以及暂停或停止输入的控制集中在菜单栏中。",
     "publisher": "由 Codewhale 开发",

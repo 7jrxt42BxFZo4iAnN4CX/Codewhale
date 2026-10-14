@@ -1922,44 +1922,13 @@ pub(crate) fn render(f: &mut Frame, app: &mut App, _config: &Config) -> Option<(
     // frame-derived explicit styled-surface mask, including aliased colors.
     if let Some(column) = shell_ocean {
         // The working canvas may keep a small responsive gutter, but the water
-        // does not stop at that content edge. Paint the cleared terminal floor
-        // first so wide layouts read as one ocean rather than a blue card
-        // floating between black banks. `paint_matching` leaves every semantic
-        // widget background untouched.
+        // does not stop at that content edge. One full-frame `surface_bg` pass
+        // paints the cleared terminal floor and every ordinary surface band
+        // so wide layouts read as one ocean rather than a blue card floating
+        // between black banks. `paint_matching` leaves every semantic widget
+        // background untouched.
         column.paint_matching_native(
             size,
-            f.buffer_mut(),
-            app.ui_theme.surface_bg,
-            &app.ui_theme,
-            &app.viewport.ocean_semantic_surfaces,
-        );
-        if top_work_strip_height > 0 {
-            column.paint_matching_native(
-                body_chunks[strip_slot],
-                f.buffer_mut(),
-                app.ui_theme.surface_bg,
-                &app.ui_theme,
-                &app.viewport.ocean_semantic_surfaces,
-            );
-        }
-        if let Some(side_area) = side_work_area {
-            column.paint_matching_native(
-                side_area,
-                f.buffer_mut(),
-                app.ui_theme.surface_bg,
-                &app.ui_theme,
-                &app.viewport.ocean_semantic_surfaces,
-            );
-        }
-        column.paint_matching_native(
-            work_chat_area,
-            f.buffer_mut(),
-            app.ui_theme.surface_bg,
-            &app.ui_theme,
-            &app.viewport.ocean_semantic_surfaces,
-        );
-        column.paint_matching_native(
-            body_chunks[preview_slot],
             f.buffer_mut(),
             app.ui_theme.surface_bg,
             &app.ui_theme,
@@ -2341,8 +2310,9 @@ mod tests {
     fn clickable_chrome_registers_a_hover_target() {
         let _guard = crate::tui::hover_layer::HOVER_TEST_LOCK.lock().unwrap();
         crate::tui::hover_layer::begin_frame();
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         let button = ratatui::layout::Rect::new(70, 10, 3, 3);
         app.viewport.jump_to_latest_button_area = Some(button);
 
@@ -2362,8 +2332,9 @@ mod tests {
     fn pinned_prompt_header_registers_a_hover_target() {
         let _guard = crate::tui::hover_layer::HOVER_TEST_LOCK.lock().unwrap();
         crate::tui::hover_layer::begin_frame();
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         let header = ratatui::layout::Rect::new(4, 3, 40, 1);
         app.viewport.pinned_prompt_area = Some(header);
 
@@ -2383,8 +2354,9 @@ mod tests {
     #[test]
     fn composer_send_target_lights_up_only_when_it_would_send() {
         let _guard = crate::tui::hover_layer::HOVER_TEST_LOCK.lock().unwrap();
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.launch.visible = false;
         app.composer_border = true;
         let area = ratatui::layout::Rect::new(0, 20, 80, 4);
@@ -2419,8 +2391,9 @@ mod tests {
 
     #[test]
     fn infoline_route_segment_registers_interaction_target() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.onboarding_needs_api_key = false;
         let mut terminal =
             Terminal::new(TestBackend::new(160, 1)).expect("info-line test terminal should build");
@@ -2484,8 +2457,9 @@ mod tests {
     /// route, and it is not a route control until a model is connected.
     #[test]
     fn keyless_launch_route_chip_says_not_connected() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.ui_locale = codewhale_localization::Locale::En;
         app.onboarding_needs_api_key = true;
         let (_, model) = app.effective_route_identity_display();
@@ -2569,8 +2543,9 @@ mod tests {
     /// `context_usage_snapshot` like the live shell does.
     fn app_with_context_percent(pct: u8) -> App {
         use codewhale_models::{ContentBlock, Message};
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         // A keyless test config would paint "not connected" (U3); these
         // readings are about a connected route.
         app.onboarding_needs_api_key = false;
@@ -3125,8 +3100,9 @@ mod pet_main_tests {
     use ratatui::{Terminal, backend::TestBackend};
 
     fn app() -> App {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.onboarding = OnboardingState::None;
         app.redaction_gate = false;
         app.ui_locale = codewhale_localization::Locale::En;
@@ -3224,11 +3200,11 @@ mod pet_main_tests {
         let session = app.current_session_id.clone();
         let (buf, _) = paint(&mut app, 100, 32);
         assert!(!text(&buf).contains("INSPECTION_RECEIPT"));
-        assert!(!pet_watch::handle_inspect_key(
+        assert!(!pet_watch::handle_key(
             &mut app,
             &KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE)
         ));
-        assert!(pet_watch::handle_inspect_key(
+        assert!(pet_watch::handle_key(
             &mut app,
             &KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)
         ));
@@ -3277,7 +3253,7 @@ mod pet_main_tests {
             &serde_json::json!({"command":"git status"}),
             "pet-approval-key",
         )));
-        assert!(!pet_watch::handle_inspect_key(
+        assert!(!pet_watch::handle_key(
             &mut app,
             &KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)
         ));
@@ -3320,7 +3296,7 @@ mod pet_main_tests {
                 streaming: false,
             });
             app.record_completed_assistant_output(index, reply);
-            assert!(pet_watch::handle_inspect_key(
+            assert!(pet_watch::handle_key(
                 &mut app,
                 &KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)
             ));

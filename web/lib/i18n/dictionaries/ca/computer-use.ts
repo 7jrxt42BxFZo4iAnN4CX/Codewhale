@@ -8,7 +8,7 @@ import type { ComputerUseDict } from "../types";
  * the names the Catalan system UI shows.
  */
 export const computerUse: ComputerUseDict = {
-  metaTitle: "Computer Use per a Mac · Codewhale",
+  metaTitle: "Computer Use · Previsualització · Codewhale",
   metaDescription: "Baixa i configura Codewhale Computer Use per a Mac. Control d’aplicacions en segon pla, configuració de permisos i controls humans de Pause i Stop.",
   title: "Computer Use",
   lead: "Deixa que Codewhale treballi a les teves aplicacions mentre tu continues treballant. L’ajudant per a Mac posa els permisos, el control d’aplicacions en segon pla i una manera de pausar o aturar l’entrada a la barra de menús.",

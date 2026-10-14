@@ -512,7 +512,7 @@ mod tests {
 
     fn test_app() -> App {
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         App::new(options, &crate::config::Config::default())
     }

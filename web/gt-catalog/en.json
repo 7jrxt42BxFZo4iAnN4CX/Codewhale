@@ -1,4 +1,150 @@
 {
+  "features": {
+    "title": "Check what Codewhale ships",
+    "description": "Browse Codewhale commands, tools and Runtime capabilities with availability and documentation.",
+    "notice": "This catalogue covers {count} entries in source v{version}. Names and descriptions are in English; check your installed version.",
+    "stable": "Stable",
+    "flagged": "Requires a flag",
+    "experimental": "Experimental",
+    "partial": "Partial",
+    "preview": "Preview",
+    "none": "Unavailable",
+    "docs": "Read documentation",
+    "source": "Read source entry",
+    "exportJson": "Download feature JSON"
+  },
+  "docs-skills": {
+    "metaTitle": "Manage skills · Codewhale Docs",
+    "metaDescription": "Find, install and trust SKILL.md instruction packages. Control user and model invocation and import compatible Claude Code skills.",
+    "bodyClassName": "text-ink-soft leading-relaxed",
+    "title": "Manage reusable skills",
+    "lede": "Skills are SKILL.md instruction packages. Discover compatible folders, then review the source and trust before using a skill.",
+    "sections": [
+      {
+        "id": "manager",
+        "title": "Open the skills manager",
+        "blocks": [
+          {
+            "code": "/skills\n/skills manage\n/skills inspect\n/skill <name>",
+            "lang": "Codewhale"
+          },
+          {
+            "p": "The manager opens without network access and shows owned roots. Turn on compatible-root scanning to inspect external folders; importing targets a Codewhale-owned root."
+          }
+        ]
+      },
+      {
+        "id": "install",
+        "title": "Install into an owned folder",
+        "blocks": [
+          {
+            "code": "/skill install --project <spec>\n/skill install --global <spec>\n/skill trust --project <name>",
+            "lang": "Codewhale"
+          },
+          {
+            "p": "Owned roots are .codewhale/skills in your project and ~/.codewhale/skills globally. Compatible .agents/skills and .claude/skills directories are read-only import sources."
+          },
+          {
+            "note": "Project skills load only after you trust that workspace. A configured external skills_dir stays read-only; choosing a folder does not grant authority to mutate it."
+          }
+        ]
+      },
+      {
+        "id": "invocation",
+        "title": "Choose who can load a skill",
+        "blocks": [
+          {
+            "p": "Frontmatter disable-model-invocation: true removes a skill from model discovery. user-invocable: false hides it from user menus and refuses explicit activation; setting both disables both paths."
+          },
+          {
+            "p": "A skill body enters context when loaded. The compact catalogue contains bounded names, aliases and invocation metadata."
+          }
+        ]
+      }
+    ],
+    "next": [
+      {
+        "href": "/docs/claude-code",
+        "label": "Move from Claude Code",
+        "note": "Bring compatible skills and review a settings import."
+      },
+      {
+        "href": "/plugins",
+        "label": "Add plugins",
+        "note": "Install supported bundles through review and trust."
+      }
+    ],
+    "sourceNote": "Source: docs/SKILLS.md and docs/CLAUDE_PLUGIN_COMPAT.md."
+  },
+  "docs-claude-code": {
+    "metaTitle": "Move from Claude Code · Codewhale Docs",
+    "metaDescription": "Use Codewhale as an open-source Claude Code alternative. Bring compatible instructions and skills, and review a settings and MCP import plan.",
+    "bodyClassName": "text-ink-soft leading-relaxed",
+    "title": "Move from Claude Code",
+    "lede": "Keep compatible project instructions and skill folders while choosing your own model connection. Review settings and plugin imports before applying them.",
+    "sections": [
+      {
+        "id": "instructions",
+        "title": "Keep your project instructions",
+        "blocks": [
+          {
+            "p": "AGENTS.md is the canonical project instruction file. CLAUDE.md and .claude/instructions.md are compatibility fallbacks; they do not override Codewhale security controls."
+          },
+          {
+            "p": "Plain .claude/skills/<name>/SKILL.md folders are discovered through the normal [skills registry](/docs/skills), with workspace trust and invocation controls."
+          }
+        ]
+      },
+      {
+        "id": "settings",
+        "title": "Review a settings import",
+        "blocks": [
+          {
+            "code": "/import-claude",
+            "lang": "Codewhale"
+          },
+          {
+            "p": "The command reads Claude settings and writes a reviewable report and unapplied config bundle. MCP servers use the existing import consent flow; permissions and hooks need separate review."
+          },
+          {
+            "note": "Secret-shaped and unknown environment values are not imported or echoed. Running the plan does not enable servers or apply permissions."
+          }
+        ]
+      },
+      {
+        "id": "plugins",
+        "title": "Install the supported plugin subset",
+        "blocks": [
+          {
+            "code": "/plugin install <spec>",
+            "lang": "Codewhale"
+          },
+          {
+            "p": "The declarative .claude-plugin/plugin.json subset supports skills, commands, agent profiles and MCP declarations. Codewhale review hashes and explicit trust and enablement still apply."
+          },
+          {
+            "note": "Codewhale does not run Claude Code plugin runtimes. Hooks, plugin LSP declarations, build steps and TypeScript agents are outside this importer."
+          },
+          {
+            "p": "[Read the compatibility limits](https://github.com/codewhale-hq/CodeWhale/blob/main/docs/CLAUDE_PLUGIN_COMPAT.md). Choose credentials and endpoints in [model setup](/models)."
+          }
+        ]
+      }
+    ],
+    "next": [
+      {
+        "href": "/docs/skills",
+        "label": "Manage skills",
+        "note": "Inspect compatible directories before importing."
+      },
+      {
+        "href": "/docs/auth",
+        "label": "Connect a provider",
+        "note": "Use your chosen hosted or local model."
+      }
+    ],
+    "sourceNote": "Source: docs/CONFIGURATION.md, docs/CLAUDE_PLUGIN_COMPAT.md and the claude-settings-import entry in docs/features.toml."
+  },
   "chrome": {
     "navDocs": "Docs",
     "navStart": "Start",
@@ -6,6 +152,7 @@
     "navFaq": "FAQ",
     "navCommunity": "Community",
     "navContribute": "Contribute",
+    "navFeatures": "Capabilities",
     "navProduct": "Product",
     "navModels": "Models",
     "navPlugins": "Plugins",
@@ -46,10 +193,10 @@
     "partialBadge": "(partial)"
   },
   "home": {
-    "metaTitle": "Codewhale: build with your models and tools",
-    "metaDescription": "Build apps, automate workflows, and work across connected tools with Codewhale. Open source, with your own model APIs or local and self-hosted inference.",
+    "metaTitle": "Codewhale: an open-source coding agent",
+    "metaDescription": "Codewhale is an open-source coding agent for your terminal. Read, edit and test projects with your own hosted or local models.",
     "heroTitle": "Build apps and automate your work.",
-    "heroIntro": "{brand} is an open-source agent that writes code, runs commands and works with the tools you connect. Use your existing model APIs, or run models locally and on your own servers.",
+    "heroIntro": "{brand} is an open-source coding agent that reads files, writes code and runs commands in your terminal. Connect your existing model API or a local model, and choose which actions need approval.",
     "getCodewhale": "Install Codewhale",
     "heroInstallAria": "Install command",
     "exploreProduct": "Explore Codewhale",
@@ -874,14 +1021,14 @@
         "title": "Run Codewhale as an MCP server",
         "blocks": [
           {
-            "p": "Other MCP clients — including another Codewhale session — can use Codewhale's tools. Register it once:"
+            "p": "Other MCP clients can use Codewhale as a tool server. By default, it exposes only read-only `file_read` and `search` tools."
           },
           {
             "code": "codewhale mcp add-self\ncodewhale mcp tools codewhale",
             "lang": "Terminal"
           },
           {
-            "p": "`add-self` writes an entry that runs `codewhale serve --mcp` over stdio. Each client starts its own process; no network port is opened. `codewhale serve --http` is a different thing — the [Runtime API](/docs/runtime-api) for apps."
+            "p": "`add-self` registers `codewhale serve --mcp` over stdio; `codewhale mcp-server` is the equivalent entry point. Write tools stay withheld unless the operator explicitly permits them in server configuration. [Runtime API](/docs/runtime-api) HTTP is a separate transport."
           }
         ]
       },
@@ -1190,6 +1337,25 @@
     "title": "Limit what commands can touch",
     "lede": "Approving a command decides whether it runs. A sandbox decides what it can reach once it does. Codewhale uses the operating system's sandbox where one is available and tells you plainly when there is none.",
     "sections": [
+      {
+        "id": "execution-policy",
+        "title": "Inspect execution policy rules",
+        "blocks": [
+          {
+            "code": "/permissions",
+            "lang": "Codewhale"
+          },
+          {
+            "p": "Typed permissions select User, Agent and BuiltinDefault rules in that order. Within one source layer, deny wins over ask and allow; specificity breaks ties."
+          },
+          {
+            "p": "Hard denied command prefixes cannot be overridden by a typed allow. An allow never removes later safety checks, repository restrictions or sandbox limits."
+          },
+          {
+            "p": "[Read the authorization order and matching rules](https://github.com/codewhale-hq/CodeWhale/blob/main/docs/AUTHORIZATION_ORDER.md)"
+          }
+        ]
+      },
       {
         "id": "platforms",
         "title": "Check what your platform provides",
@@ -1760,6 +1926,25 @@
     "lede": "Codewhale runs on your computer and talks to the model provider you choose. This page lists what goes where, what the anonymous usage count contains, and how to switch it off — as built today.",
     "sections": [
       {
+        "id": "preview-request",
+        "title": "See the request before sending",
+        "blocks": [
+          {
+            "p": "/preview-request shows a redacted manifest of the next primary turn. This human command never sends a request or writes conversation or Work state."
+          },
+          {
+            "code": "/preview-request\n/preview-request json\n/preview-request json --prompt explain this project",
+            "lang": "Codewhale"
+          },
+          {
+            "note": "Without --prompt, route and body are unavailable. A configured classifier, hooks or pending runtime work can also prevent an exact preview; the manifest states why."
+          },
+          {
+            "p": "[Read the request preview contract](https://github.com/codewhale-hq/CodeWhale/blob/main/docs/PREVIEW_REQUEST.md)"
+          }
+        ]
+      },
+      {
         "id": "boundaries",
         "title": "Where your work goes",
         "blocks": [
@@ -1926,8 +2111,8 @@
     "emptyBody": "The build did not find a parsable CHANGELOG.md. The GitHub release list is still the record."
   },
   "computer-use": {
-    "metaTitle": "Computer Use for Mac · Codewhale",
-    "metaDescription": "Download and set up Codewhale Computer Use for Mac. Background app control, permission setup, and human Pause and Stop controls.",
+    "metaTitle": "Computer Use · Preview · Codewhale",
+    "metaDescription": "Preview: download and set up Codewhale Computer Use for Mac. Background app control, permission setup, and human Pause and Stop controls.",
     "title": "Computer Use",
     "lead": "Let Codewhale work in your apps while you keep working. The Mac helper brings permissions, background app control, and a way to pause or stop input to your menu bar.",
     "publisher": "By Codewhale",

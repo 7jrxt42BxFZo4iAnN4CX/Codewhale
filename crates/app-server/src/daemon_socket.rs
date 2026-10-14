@@ -298,6 +298,21 @@ where
     .map_err(anyhow::Error::from)?
 }
 
+// Blocking endpoint mutations retain the actual captured manager through
+// its existing frontend, even after cancellation of the async caller.
+#[cfg(any(unix, windows))]
+pub(crate) async fn socket_owner_work<T, F>(owner_state: Option<AppState>, work: F) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T> + Send + 'static,
+{
+    owner_work(move || {
+        let _held_owner = owner_state;
+        work()
+    })
+    .await
+}
+
 use crate::{
     AppState, AppTransport, JsonRpcError, ParsedStdioLine, ShutdownAuthority, StdioLoopExit,
     StdioLoopPolicy, dispatch_stdio_request_with_writer, jsonrpc_error, jsonrpc_result,
@@ -790,7 +805,7 @@ mod platform {
     use super::{ClientIdentity, ConnectionRegistry};
     use super::{
         ConnectionContext, ConnectionTasks, DaemonShutdownHandle, DaemonSocketError,
-        DaemonSocketOptions, SocketPathInputs, resolve_socket_path,
+        DaemonSocketOptions, SocketPathInputs, resolve_socket_path, socket_owner_work,
     };
     use crate::{AppState, AppTransport, build_state_off_runtime};
 
@@ -843,20 +858,6 @@ mod platform {
             }
             Ok(())
         }
-    }
-
-    // Blocking endpoint mutations retain the actual captured manager through
-    // its existing frontend, even after cancellation of the async caller.
-    async fn socket_owner_work<T, F>(owner_state: Option<AppState>, work: F) -> Result<T>
-    where
-        T: Send + 'static,
-        F: FnOnce() -> Result<T> + Send + 'static,
-    {
-        super::owner_work(move || {
-            let _held_owner = owner_state;
-            work()
-        })
-        .await
     }
 
     impl Drop for SocketFileGuard {
@@ -999,18 +1000,9 @@ mod platform {
                     ))
                 })?
                 .1;
-            let old = previous.receipt();
-            if old.version != owner.version
-                || old.data_dir != owner.data_dir
-                || old.execution_scope != owner.execution_scope
-                || old.socket_path != path
-                || old.config_path != owner.config_path
-                || old.principal != owner.principal
-            {
-                return Err(DaemonSocketError::State(anyhow::anyhow!(
-                    "captured stale owner belongs to another selected store/config/principal"
-                )));
-            }
+            previous
+                .require_same_selection(owner, &path)
+                .map_err(DaemonSocketError::State)?;
             if !previous
                 .revalidate()
                 .await

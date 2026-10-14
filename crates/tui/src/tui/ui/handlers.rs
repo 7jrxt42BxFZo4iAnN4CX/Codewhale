@@ -353,7 +353,7 @@ pub(crate) async fn handle_setup_constitution_model_draft(
     app.status_message = Some(match locale {
         codewhale_localization::Locale::ZhHans => {
             format!(
-                "{model_label} 正在生成协作准则草案……（最多 {}s）",
+                "{model_label} 正在生成宪章草案……（最多 {}s）",
                 DRAFT_TIMEOUT.as_secs()
             )
         }
@@ -1244,30 +1244,20 @@ pub(crate) fn handle_shell_job_action(app: &mut App, action: crate::tui::app::Sh
                 Err(err) => add_shell_job_message(app, format!("Command lookup failed: {err}")),
             }
         }
-        crate::tui::app::ShellJobAction::Poll { id, wait } => {
-            match manager.poll_delta_for_session(
-                &active_session_id,
-                &id,
-                wait,
-                if wait { 5_000 } else { 1_000 },
-            ) {
-                Ok(delta) => add_shell_job_message(app, format_shell_poll(&delta.result)),
-                Err(err) => add_shell_job_message(app, format!("Command poll failed: {err}")),
-            }
-        }
         crate::tui::app::ShellJobAction::SendStdin { id, input, close } => {
             match manager.write_stdin_for_session(&active_session_id, &id, &input, close) {
-                Ok(()) => {
-                    match manager.poll_delta_for_session(&active_session_id, &id, false, 1_000) {
-                        Ok(delta) => add_shell_job_message(app, format_shell_poll(&delta.result)),
-                        Err(err) => {
-                            add_shell_job_message(
-                                app,
-                                format!("Command input sent; poll failed: {err}"),
-                            );
-                        }
+                Ok(()) => match manager.inspect_job_for_session(&active_session_id, &id) {
+                    Ok(detail) => add_shell_job_message(
+                        app,
+                        format_shell_job_list(std::slice::from_ref(&detail.snapshot)),
+                    ),
+                    Err(err) => {
+                        add_shell_job_message(
+                            app,
+                            format!("Command input sent; poll failed: {err}"),
+                        );
                     }
-                }
+                },
                 Err(err) => add_shell_job_message(app, format!("Command input failed: {err}")),
             }
         }

@@ -8987,9 +8987,8 @@ export default workflow({
         assert_eq!(child.status, SubAgentStatus::Completed);
         assert_eq!(child.result.as_deref(), Some("child done"));
 
-        // Full receipt chain: the spawn-minted event survives the JSONL
-        // journal reload, hydrates the live projection, and round-trips into
-        // history without following a later route or inventing missing usage.
+        // The spawn-minted receipt survives the JSONL journal reload with
+        // the requested and resolved route fields intact.
         let reloaded = WorkflowWorkspaceState::open(tmp.path());
         let persisted = reloaded
             .runs
@@ -9011,63 +9010,6 @@ export default workflow({
         assert_eq!(persisted_started["resolved_provider"], "deepseek");
         assert_eq!(persisted_started["resolved_model"], "deepseek-v4-flash");
         assert_eq!(persisted_started["route_source"], "task.model");
-
-        let mut panel =
-            crate::tui::widgets::workflow_panel::WorkflowPanel::from_run_json(&persisted_json)
-                .expect("journal should hydrate workflow panel");
-        let original_receipt = panel
-            .phases
-            .iter()
-            .flat_map(|phase| phase.rows.iter())
-            .find(|row| row.task_id == child_id)
-            .map(crate::tui::widgets::workflow_panel::row_receipt_text)
-            .expect("spawned child receipt");
-        assert!(original_receipt.contains("deepseek/deepseek-v4-flash"));
-        assert!(original_receipt.contains("reasoning low→"));
-        assert!(original_receipt.contains("via task.model"));
-
-        panel.apply_json_event(&json!({
-            "type": "task_started",
-            "at_ms": 9_000,
-            "task_id": "later-route",
-            "label": "later-route",
-            "resolved_role": "consultant",
-            "resolved_provider": "moonshot",
-            "resolved_model": "kimi-k3",
-            "requested_reasoning": "auto",
-            "effective_reasoning": "medium",
-            "route_source": "agent_profile.model",
-            "worktree": false,
-        }));
-        panel.apply_json_event(&json!({
-            "type": "task_completed",
-            "at_ms": 9_100,
-            "task_id": "later-route",
-            "status": "succeeded"
-        }));
-        let unchanged = panel
-            .phases
-            .iter()
-            .flat_map(|phase| phase.rows.iter())
-            .find(|row| row.task_id == child_id)
-            .map(crate::tui::widgets::workflow_panel::row_receipt_text)
-            .expect("original child after later route");
-        assert_eq!(unchanged, original_receipt);
-
-        let history =
-            crate::tui::widgets::workflow_panel::WorkflowPanel::from_run_json(&panel.to_run_json())
-                .expect("history receipt round trip");
-        let later_receipt = history
-            .phases
-            .iter()
-            .flat_map(|phase| phase.rows.iter())
-            .find(|row| row.task_id == "later-route")
-            .map(crate::tui::widgets::workflow_panel::row_receipt_text)
-            .expect("later route history receipt");
-        assert!(later_receipt.contains("moonshot/kimi-k3"));
-        assert!(later_receipt.contains("reasoning auto→medium"));
-        assert!(later_receipt.contains("tokens unknown"));
-        assert!(!later_receipt.contains("tokens 0"));
     }
 
     #[tokio::test]

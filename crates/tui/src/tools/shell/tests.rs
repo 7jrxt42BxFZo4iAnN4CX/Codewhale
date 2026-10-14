@@ -2,22 +2,14 @@ use super::*;
 
 use crate::tools::spec::ToolContext;
 use serde_json::{Value, json};
+#[cfg(unix)]
+use std::sync::OnceLock;
 use tempfile::tempdir;
 
 #[cfg(windows)]
 use windows::Win32::Foundation::{DUPLICATE_HANDLE_OPTIONS, DuplicateHandle, HANDLE};
 #[cfg(windows)]
 use windows::Win32::System::Threading::GetCurrentProcess;
-
-// `env_lock` serializes tests that mutate the process environment.
-#[cfg(any(unix, windows))]
-use std::sync::{Mutex, OnceLock};
-
-#[cfg(any(unix, windows))]
-fn env_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
 
 const BACKGROUND_COMPLETION_WAIT_MS: u64 = 30_000;
 
@@ -106,6 +98,7 @@ fn lowercase_bash_schema_is_small_contract() {
             .collect::<std::collections::BTreeSet<_>>(),
         [
             "command",
+            "description",
             "justification",
             "read_only",
             "sandbox_permissions",
@@ -2367,11 +2360,9 @@ fn completion_evidence_preserves_arbitrary_stream_bytes() {
 #[test]
 #[cfg(unix)]
 fn shell_execution_scrubs_parent_env_and_keeps_explicit_env() {
-    let _guard = env_lock().lock().expect("env lock");
-    let previous = std::env::var_os("DEEPSEEK_CHILD_ENV_SHELL_SECRET");
-    unsafe {
-        std::env::set_var("DEEPSEEK_CHILD_ENV_SHELL_SECRET", "parent-secret");
-    }
+    let _lock = crate::test_support::lock_test_env();
+    let _secret =
+        crate::test_support::EnvVarGuard::set("DEEPSEEK_CHILD_ENV_SHELL_SECRET", "parent-secret");
 
     let tmp = tempdir().expect("tempdir");
     let mut manager = ShellManager::new(tmp.path().to_path_buf());
@@ -2394,15 +2385,6 @@ fn shell_execution_scrubs_parent_env_and_keeps_explicit_env() {
         )
         .expect("execute");
 
-    match previous {
-        Some(value) => unsafe {
-            std::env::set_var("DEEPSEEK_CHILD_ENV_SHELL_SECRET", value);
-        },
-        None => unsafe {
-            std::env::remove_var("DEEPSEEK_CHILD_ENV_SHELL_SECRET");
-        },
-    }
-
     assert_eq!(result.status, ShellStatus::Completed);
     assert_eq!(result.stdout, "unset\nexplicit-value\n");
 }
@@ -2410,13 +2392,9 @@ fn shell_execution_scrubs_parent_env_and_keeps_explicit_env() {
 #[test]
 #[cfg(windows)]
 fn shell_execution_preserves_custom_windows_sdk_root_env() {
-    let _guard = env_lock().lock().expect("env lock");
-    let previous_sdk = std::env::var_os("BIMRV_SDK_ROOT");
-    let previous_secret = std::env::var_os("MY_SECRET_ROOT");
-    unsafe {
-        std::env::set_var("BIMRV_SDK_ROOT", r"F:\Lib\BimRv27.5");
-        std::env::set_var("MY_SECRET_ROOT", r"F:\Secrets");
-    }
+    let _lock = crate::test_support::lock_test_env();
+    let _sdk = crate::test_support::EnvVarGuard::set("BIMRV_SDK_ROOT", r"F:\Lib\BimRv27.5");
+    let _secret = crate::test_support::EnvVarGuard::set("MY_SECRET_ROOT", r"F:\Secrets");
 
     let tmp = tempdir().expect("tempdir");
     let mut manager = ShellManager::new(tmp.path().to_path_buf());
@@ -2432,17 +2410,6 @@ fn shell_execution_preserves_custom_windows_sdk_root_env() {
     };
 
     let result = execute_shell(&mut manager, &command, None, 5000, false).expect("execute");
-
-    unsafe {
-        match previous_sdk {
-            Some(value) => std::env::set_var("BIMRV_SDK_ROOT", value),
-            None => std::env::remove_var("BIMRV_SDK_ROOT"),
-        }
-        match previous_secret {
-            Some(value) => std::env::set_var("MY_SECRET_ROOT", value),
-            None => std::env::remove_var("MY_SECRET_ROOT"),
-        }
-    }
 
     assert_eq!(result.status, ShellStatus::Completed);
     assert!(
@@ -2652,7 +2619,7 @@ fn test_job_list_poll_cancel_and_stale_snapshot() {
 }
 
 #[test]
-fn running_job_snapshot_marks_no_output_stale_after_threshold() {
+fn running_job_snapshot_keeps_silent_live_job_live() {
     let tmp = tempdir().expect("tempdir");
     let mut manager = ShellManager::new(tmp.path().to_path_buf());
 
@@ -2662,7 +2629,7 @@ fn running_job_snapshot_marks_no_output_stale_after_threshold() {
 
     {
         let shell = manager.processes.get_mut(&task_id).expect("live shell");
-        shell.last_output_at = Instant::now() - STALE_NO_OUTPUT_AFTER - Duration::from_millis(1);
+        shell.last_output_at = Instant::now() - QUIET_NO_OUTPUT_AFTER - Duration::from_millis(1);
     }
 
     let job = manager
@@ -2672,10 +2639,10 @@ fn running_job_snapshot_marks_no_output_stale_after_threshold() {
         .expect("running job");
 
     assert_eq!(job.status, ShellStatus::Running);
-    assert!(job.stale, "silent running job should be marked stale");
+    assert!(!job.stale, "silence alone must not mark a live job stale");
     assert!(
         job.elapsed_since_output_ms
-            .is_some_and(|elapsed| elapsed >= STALE_NO_OUTPUT_AFTER.as_millis() as u64),
+            .is_some_and(|elapsed| elapsed >= QUIET_NO_OUTPUT_AFTER.as_millis() as u64),
         "elapsed no-output time should be exposed: {job:?}"
     );
 }
@@ -5773,14 +5740,14 @@ fn pty_resize_updates_live_terminal_and_rejects_finished_or_pipe_jobs() {
     // Reopening a client after an idle minute must retain this live PTY's
     // identity and resize eligibility; output silence is normal at a prompt.
     manager.processes.get_mut(&id).unwrap().last_output_at =
-        Instant::now() - STALE_NO_OUTPUT_AFTER - Duration::from_millis(1);
+        Instant::now() - QUIET_NO_OUTPUT_AFTER - Duration::from_millis(1);
     let idle = manager.inspect_job(&id).unwrap().snapshot;
     assert_eq!(idle.status, ShellStatus::Running);
     assert!(idle.stdin_available);
     assert!(!idle.stale, "an idle live PTY must remain reconnectable");
     assert!(
         idle.elapsed_since_output_ms
-            .is_some_and(|ms| ms >= STALE_NO_OUTPUT_AFTER.as_millis() as u64)
+            .is_some_and(|ms| ms >= QUIET_NO_OUTPUT_AFTER.as_millis() as u64)
     );
     let size = PtyDimensions {
         rows: 37,

@@ -19,7 +19,10 @@ fn app_with_open_picker(root: &std::path::Path) -> (App, Config) {
             Some("fixture-key".into()),
         )
         .unwrap();
-    let mut app = App::new(crate::test_support::test_tui_options(&workspace), &config);
+    let mut app = App::new(
+        crate::tui::test_support::test_tui_options(&workspace),
+        &config,
+    );
     app.workspace = workspace;
     let picker = ModelPickerView::new(&app, &config);
     app.view_stack.push(picker);

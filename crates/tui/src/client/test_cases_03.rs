@@ -797,17 +797,17 @@
                     .unwrap(),
                 custom.canonicalize().unwrap()
             );
-            assert!(crate::tui::redaction_gate::confirmation_required(&config));
+            assert!(config.redaction_confirmation_required());
             let client = CodewhaleClient::new(&config).unwrap();
             let prepared =
                 client.prepare_model_bound_request(request_with_tool_result(tool_output.clone()));
             assert!(!tool_result_content(&prepared).contains(CONFIG_SECRET_SENTINELS[6]));
         }
         let config = Config::load(None, None).unwrap();
-        crate::tui::redaction_gate::record_confirmation(&config).unwrap();
+        config.record_redaction_confirmation().unwrap();
         for explicit in [Some(custom.clone()), None] {
             let config = Config::load(explicit, None).unwrap();
-            assert!(!crate::tui::redaction_gate::confirmation_required(&config));
+            assert!(!config.redaction_confirmation_required());
             let client = CodewhaleClient::new(&config).unwrap();
             let prepared =
                 client.prepare_model_bound_request(request_with_tool_result(tool_output.clone()));

@@ -11,6 +11,25 @@ export const docsReview: DocsReviewDict = {
     "Codewhale 每改一处都会当场展示给你，并在每个回合前后为工作区保存快照。这一页介绍如何查看改了什么、把文件恢复原样，以及在推送之前请它再审一遍。",
   sections: [
     {
+      "id": "receipts",
+      "title": "查看会话做了什么",
+      "blocks": [
+        {
+          "p": "会话收据列出已记录的文件修改、命令、工具、智能体、审批与失败。下方的审查收据记录单独的代码审查。"
+        },
+        {
+          "code": "/receipts\n/receipts json\ncodewhale receipts --last --format md\nGET /v1/threads/{id}/receipt\nGET /v1/threads/{id}/turns/{turn_id}/receipt",
+          "lang": "Codewhale / Terminal / HTTP"
+        },
+        {
+          "p": "这些接口只读取记录，不会调用提供商、运行工具或修改会话状态。"
+        },
+        {
+          "note": "Runtime 收据不会逐项列出 shell 命令修改的文件。终端可根据回合快照报告修改；较旧记录可能缺少审批决策者。"
+        }
+      ]
+    },
+    {
       id: "diff",
       title: "查看改动",
       blocks: [
@@ -68,7 +87,7 @@ codewhale review --pr 123             # a GitHub pull request (needs gh)`,
       ],
     },
     {
-      id: "receipts",
+      id: "review-receipts",
       title: "为审查保留回执",
       blocks: [
         {
@@ -85,9 +104,6 @@ codewhale review --base origin/main --check-receipt`,
             "`--check-receipt` 不调用模型。如果 diff 在回执生成后发生了变化、审查留下了未解决的风险，或者附带的检查没有通过，它都会以非零状态退出，因此可以用作推送前的检查关卡。",
             "`--receipt-path <file>` 写入或读取指定的回执，而不是最新的那一份。",
           ],
-        },
-        {
-          note: "目前回执只覆盖代码审查。普通智能体回合的回执——把每次工具调用、审批和文件改动汇总成一份导出——已经设计好，但还没有实现。",
         },
       ],
     },
