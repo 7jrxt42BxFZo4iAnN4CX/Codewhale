@@ -95,22 +95,63 @@ pub(in crate::commands) fn apply_plan(
                         source: crate::utils::display_path(&source).to_string(),
                     });
                 } else {
-                    match std::fs::read(&source) {
-                        Ok(bytes)
-                            if codewhale_config::persistence::atomic_write(
-                                &destination,
-                                &bytes,
-                            )
-                            .is_ok() =>
+                    let copy_source = source.clone();
+                    let copy_home = home.clone();
+                    #[cfg(test)]
+                    let ticket = crate::test_support::env_scope_ticket();
+                    let copied = match tokio::runtime::Handle::try_current() {
+                        Ok(handle)
+                            if handle.runtime_flavor()
+                                == tokio::runtime::RuntimeFlavor::MultiThread =>
                         {
-                            done.push(CommandImportFollowUp::InstructionsCopied {
-                                destination: crate::utils::display_path(&destination).to_string(),
-                            });
+                            crate::commands::contract::run_async(async move {
+                                tokio::task::spawn_blocking(move || {
+                                    #[cfg(test)]
+                                    let _membership = crate::test_support::join_env_scope(ticket);
+                                    std::fs::read(&copy_source).is_ok_and(|bytes| {
+                                        codewhale_config::private_directory::PrivateDirectory::open(
+                                            &copy_home,
+                                        )
+                                        .and_then(|directory| {
+                                            directory.write_owned_file(
+                                                "instructions.md",
+                                                &bytes,
+                                                false,
+                                            )
+                                        })
+                                        .is_ok()
+                                    })
+                                })
+                                .await
+                                .unwrap_or(false)
+                            })
                         }
-                        _ => manual.push(CommandImportFollowUp::InstructionsCopyFailed {
+                        Err(_) => std::thread::spawn(move || {
+                            #[cfg(test)]
+                            let _membership = crate::test_support::join_env_scope(ticket);
+                            std::fs::read(&copy_source).is_ok_and(|bytes| {
+                                codewhale_config::private_directory::PrivateDirectory::open(
+                                    &copy_home,
+                                )
+                                .and_then(|directory| {
+                                    directory.write_owned_file("instructions.md", &bytes, false)
+                                })
+                                .is_ok()
+                            })
+                        })
+                        .join()
+                        .unwrap_or(false),
+                        Ok(_) => false,
+                    };
+                    if copied {
+                        done.push(CommandImportFollowUp::InstructionsCopied {
+                            destination: crate::utils::display_path(&destination).to_string(),
+                        });
+                    } else {
+                        manual.push(CommandImportFollowUp::InstructionsCopyFailed {
                             source: crate::utils::display_path(&source).to_string(),
                             destination: crate::utils::display_path(&destination).to_string(),
-                        }),
+                        });
                     }
                 }
             }
@@ -234,7 +275,12 @@ mod tests {
         let cw_home = temp.path().join("cw");
         let _cw = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", &cw_home);
 
-        let result = import_claude_command(&mut app, Some("--apply"));
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("import runtime");
+        let result = runtime.block_on(async { import_claude_command(&mut app, Some("--apply")) });
         let message = result.message.expect("an outcome");
         let destination = cw_home.join("instructions.md");
         assert!(destination.exists(), "instructions were copied: {message}");

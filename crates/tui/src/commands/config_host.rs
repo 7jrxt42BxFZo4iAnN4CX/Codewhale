@@ -6,9 +6,6 @@
 //! unified `ConfigAction` to the concrete `AppAction` the event loop applies,
 //! and back for the host helpers that still return a TUI `CommandResult`.
 //!
-//! The reverse `AppAction` -> `ConfigAction` direction and its `from_*` helpers
-//! are consumed by the Phase 5 host adapters; until then they are kept ready.
-#![allow(dead_code)]
 
 use crate::compaction::CompactionConfig;
 use crate::config::SearchProvider;

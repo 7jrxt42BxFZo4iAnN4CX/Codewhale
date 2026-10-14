@@ -2691,7 +2691,7 @@ pub(crate) struct SkillGroupAdapter<'a> {
 /// `block_in_place` + `Handle::current().block_on` bridges sync handlers back
 /// into the async ecosystem. Mirrors `groups/skills/skills.rs::run_async`;
 /// the legacy copy is removed in Phase 4 when the handlers are ported.
-fn run_async<F, T>(future: F) -> T
+pub(super) fn run_async<F, T>(future: F) -> T
 where
     F: std::future::Future<Output = T>,
 {
