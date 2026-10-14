@@ -648,7 +648,7 @@ mod tests {
 
     fn app_in(workspace: PathBuf) -> App {
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(workspace.clone())
+            ..crate::tui::test_support::test_tui_options(workspace.clone())
         };
         let mut app = App::new(options, &Config::default());
         app.workspace = workspace;

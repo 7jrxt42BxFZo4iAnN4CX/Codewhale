@@ -555,7 +555,7 @@ mod tests {
 
     fn app() -> App {
         crate::tui::app::App::new(
-            crate::test_support::test_tui_options(PathBuf::from("/repo")),
+            crate::tui::test_support::test_tui_options(PathBuf::from("/repo")),
             &crate::config::Config::default(),
         )
     }

@@ -557,7 +557,7 @@ mod tests {
                 model: "test-model".to_string(),
                 use_mouse_capture: true,
                 max_subagents: 4,
-                ..crate::test_support::test_tui_options(workspace)
+                ..crate::tui::test_support::test_tui_options(workspace)
             },
             &Config::default(),
         )

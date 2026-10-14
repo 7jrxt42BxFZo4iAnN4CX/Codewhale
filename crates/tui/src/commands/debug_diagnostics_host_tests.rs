@@ -1488,7 +1488,7 @@ mod cost_breakdown_tests {
     fn test_app() -> App {
         let options = TuiOptions {
             skills_dir: PathBuf::from("/tmp/test-skills"),
-            ..crate::test_support::test_tui_options(PathBuf::from("/tmp/test-workspace"))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("/tmp/test-workspace"))
         };
         let mut app = App::new(options, &Config::default());
         app.ui_locale = codewhale_localization::Locale::En;
@@ -1704,7 +1704,7 @@ mod zones_tests {
     #[test]
     fn cache_zones_output_reports_real_wiring() {
         let mut app = App::new(
-            crate::test_support::test_tui_options(PathBuf::from(".")),
+            crate::tui::test_support::test_tui_options(PathBuf::from(".")),
             &Config::default(),
         );
         app.api_messages = std::sync::Arc::new(Vec::new());
@@ -1746,7 +1746,7 @@ mod arg_tests {
 
     fn app() -> App {
         App::new(
-            crate::test_support::test_tui_options(PathBuf::from(".")),
+            crate::tui::test_support::test_tui_options(PathBuf::from(".")),
             &Config::default(),
         )
     }
@@ -1794,7 +1794,7 @@ mod preview_host_tests {
 
     #[test]
     fn unknown_argument_is_rejected_without_touching_state() {
-        let options = crate::test_support::test_tui_options(std::path::PathBuf::from(
+        let options = crate::tui::test_support::test_tui_options(std::path::PathBuf::from(
             "/tmp/test-workspace-preview-request",
         ));
         let mut app = App::new(options, &Config::default());
@@ -1819,7 +1819,7 @@ mod preview_host_tests {
 
     #[test]
     fn command_delegates_to_the_engine_and_mutates_nothing() {
-        let options = crate::test_support::test_tui_options(std::path::PathBuf::from(
+        let options = crate::tui::test_support::test_tui_options(std::path::PathBuf::from(
             "/tmp/test-workspace-preview-request-pure",
         ));
         let mut app = App::new(options, &Config::default());

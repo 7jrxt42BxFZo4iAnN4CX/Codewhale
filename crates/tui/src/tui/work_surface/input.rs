@@ -622,7 +622,7 @@ mod tests {
 
     fn app() -> App {
         App::new(
-            crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+            crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
             &crate::config::Config::default(),
         )
     }

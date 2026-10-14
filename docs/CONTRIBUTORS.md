@@ -39,10 +39,11 @@ changelog or release notes, and this contributor record.
 
 **Contributions**
 
-- **[Sh1Zuku / SparkofSpike](https://github.com/SparkofSpike)** — live network-policy updates and goal milestone hand-back ([#6928](https://github.com/codewhale-hq/Codewhale/pull/6928), [#6930](https://github.com/codewhale-hq/Codewhale/pull/6930)).
+- **[Sh1Zuku / SparkofSpike](https://github.com/SparkofSpike)** — live network-policy updates and goal milestone hand-back ([#6928](https://github.com/codewhale-hq/Codewhale/pull/6928), [#6930](https://github.com/codewhale-hq/Codewhale/pull/6930)), and a Codewhale home reached through a symlink or junction ([#6947](https://github.com/codewhale-hq/Codewhale/issues/6947)).
 - **[dajiaohuang](https://github.com/dajiaohuang)** — cache-write token accounting, with missing and explicit-zero usage preserved ([#6913](https://github.com/codewhale-hq/Codewhale/pull/6913)).
 - **[gaord](https://github.com/gaord)** — embedder-declared telemetry surface support without changing collection policy ([#6916](https://github.com/codewhale-hq/Codewhale/pull/6916)).
-- **[Lstarsky0](https://github.com/Lstarsky0)** — localized `/profile` replies across all 15 complete locale packs ([#6919](https://github.com/codewhale-hq/Codewhale/pull/6919)).
+- **[Lstarsky0](https://github.com/Lstarsky0)** — localized `/profile` replies across all 15 complete locale packs ([#6919](https://github.com/codewhale-hq/Codewhale/pull/6919)), and workflow gates that block their own role rejected at plan admission ([#6952](https://github.com/codewhale-hq/Codewhale/pull/6952)).
+- **[LIghtJUNction](https://github.com/LIghtJUNction)** — plugin shell install and in-TUI plugin OAuth sign-in with `/connect` and `/disconnect` ([#6950](https://github.com/codewhale-hq/Codewhale/pull/6950)).
 - **[jayanthvee](https://github.com/jayanthvee)** — Windows npm launcher guidance and targeted process shutdown ([#6906](https://github.com/codewhale-hq/Codewhale/pull/6906)).
 - **[asto18089](https://github.com/asto18089)** — reference fix for longer browser sign-in callback windows ([#6865](https://github.com/codewhale-hq/Codewhale/issues/6865)).
 

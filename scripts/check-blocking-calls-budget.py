@@ -264,7 +264,7 @@ def _rust_path_literal(text: str) -> tuple[str, int] | None:
 
 
 def _test_module_edges(path: Path, text: str, *, crate_root: bool = False) -> list[tuple[Path, bool]]:
-    """Literal item edges and their actual lexical cfg(test) module scope."""
+    """Literal item edges and their test-only module scope."""
     code = strip_comments_and_strings(text, module_literals=True)
     closes: dict[int, int] = {}
     braces: list[int] = []
@@ -280,8 +280,11 @@ def _test_module_edges(path: Path, text: str, *, crate_root: bool = False) -> li
     ))
     inline = [entry for entry in modules if entry.group("end") == "{" and entry.end() - 1 in closes]
     def test_attribute(entry: re.Match[str]) -> bool:
-        return any(re.fullmatch(r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]", attr.group())
-                   for attr in re.finditer(r"#\s*\[[^\]]*\]", entry.group("attrs")))
+        attrs = text[entry.start("attrs"):entry.end("attrs")]
+        return any(re.fullmatch(
+            r'#\s*\[\s*cfg\s*\(\s*(?:test|any\s*\(\s*test\s*,\s*feature\s*=\s*"test-support"\s*\))\s*\)\s*\]',
+            attr.group(),
+        ) for attr in re.finditer(r"#\s*\[[^\]]*\]", attrs))
     def ancestors(position: int) -> list[re.Match[str]]:
         return [entry for entry in inline if entry.end() <= position < closes[entry.end() - 1]]
     def under_test(position: int) -> bool:

@@ -181,6 +181,42 @@ impl WindowsPeerProcess {
     }
 }
 
+pub enum WindowsProcessStatus {
+    Running { start: String },
+    Exited { start: String },
+    Absent,
+}
+
+pub fn windows_process_status(pid: u32) -> Result<WindowsProcessStatus> {
+    use std::os::windows::io::AsRawHandle as _;
+    use windows_sys::Win32::Foundation::{ERROR_INVALID_PARAMETER, WAIT_OBJECT_0, WAIT_TIMEOUT};
+    use windows_sys::Win32::Storage::FileSystem::SYNCHRONIZE;
+    use windows_sys::Win32::System::Threading::{
+        GetProcessId, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, WaitForSingleObject,
+    };
+    anyhow::ensure!(pid > 0, "invalid Windows process PID");
+    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid) };
+    if process.is_null() {
+        let error = std::io::Error::last_os_error();
+        if error.raw_os_error() == Some(ERROR_INVALID_PARAMETER as i32) {
+            return Ok(WindowsProcessStatus::Absent);
+        }
+        return Err(error).context("selected Windows process identity/liveness is uncertain");
+    }
+    let process = unsafe { std::os::windows::io::OwnedHandle::from_raw_handle(process) };
+    anyhow::ensure!(
+        unsafe { GetProcessId(process.as_raw_handle()) } == pid,
+        "Windows kernel process PID changed"
+    );
+    let start = process_creation(process.as_raw_handle())?;
+    match unsafe { WaitForSingleObject(process.as_raw_handle(), 0) } {
+        WAIT_OBJECT_0 => Ok(WindowsProcessStatus::Exited { start }),
+        WAIT_TIMEOUT => Ok(WindowsProcessStatus::Running { start }),
+        _ => Err(std::io::Error::last_os_error())
+            .context("selected Windows process identity/liveness is uncertain"),
+    }
+}
+
 fn process_creation(process: windows_sys::Win32::Foundation::HANDLE) -> Result<String> {
     use windows_sys::Win32::Foundation::FILETIME;
     use windows_sys::Win32::System::Threading::GetProcessTimes;

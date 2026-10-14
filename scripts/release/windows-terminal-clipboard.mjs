@@ -18,7 +18,7 @@ assert.ok(binaryArg && evidenceArg, 'usage: node windows-terminal-clipboard.mjs 
 const binary = path.resolve(binaryArg);
 const evidence = path.resolve(evidenceArg);
 await fs.mkdir(evidence, { recursive: true });
-const root = await fs.mkdtemp(path.join(process.env.RUNNER_TEMP, 'cw-clipboard-'));
+const root = await fs.mkdtemp(path.join(process.env.RUNNER_TEMP, 'cw-terminal-fixture-'));
 const qaHome = path.join(root, 'home');
 const workspace = path.join(root, 'workspace');
 const terminalRoot = path.join(root, 'terminal');

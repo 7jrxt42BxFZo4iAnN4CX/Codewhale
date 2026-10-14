@@ -3,12 +3,10 @@ import type { HomeDict } from "../types";
 /** Turkish home copy: useful work with chosen models and connected tools. */
 
 export const home: HomeDict = {
-  metaTitle: "Codewhale: kendi modellerin ve araçlarınla geliştir",
-  metaDescription:
-    "Codewhale ile uygulamalar geliştir, iş akışlarını otomatikleştir ve bağlı araçlarla çalış. Açık kaynak; kendi model API’lerin, yerel veya kendi barındırdığın çıkarımla.",
+  metaTitle: "Codewhale: açık kaynak kodlama ajanı",
+  metaDescription: "Codewhale, terminaliniz için açık kaynak bir kodlama ajanıdır. Kendi barındırılan veya yerel modellerinizle projeleri okuyun, düzenleyin ve test edin.",
   heroTitle: "Uygulamalar geliştir ve işlerini otomatikleştir.",
-  heroIntro:
-    "{brand}, kod yazan, komut çalıştıran ve bağladığın araçlarla çalışan açık kaynaklı bir ajandır. Mevcut model API’lerini kullan veya modelleri yerel olarak ve kendi sunucularında çalıştır.",
+  heroIntro: "{brand}, terminalde dosyaları okuyan, kod yazan ve komutları çalıştıran açık kaynak bir kodlama ajanıdır. Model API’nizi veya yerel modelinizi bağlayın ve hangi işlemlerin onay gerektirdiğini seçin.",
   getCodewhale: "Codewhale'i kur",
   heroInstallAria: "Kurulum komutu",
   exploreProduct: "Codewhale’i keşfet",

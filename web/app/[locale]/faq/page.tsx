@@ -1,3 +1,4 @@
+import { AUTO_ROUTING_COPY } from "@/lib/content/faq-routing";
 import Link from "next/link";
 import { GETTING_STARTED_STEPS } from "@/lib/content/getting-started";
 import { PageHeader } from "@/components/page-header";
@@ -5,7 +6,7 @@ import { FaqSearch } from "@/components/faq-search";
 import { buildFaqPageJsonLd } from "@/lib/faq-schema";
 import { FACTS } from "@/lib/facts.generated";
 import { canonicalLocaleForPath } from "@/lib/i18n/content-locales";
-import { getFaq, pickTextLocale } from "@/lib/i18n/dictionaries";
+import { getFaq, pickText, pickTextLocale } from "@/lib/i18n/dictionaries";
 import { serializeJsonLd } from "@/lib/json-ld";
 import { buildPageMetadata } from "@/lib/page-meta";
 import { SITE_URL } from "@/lib/page-meta";
@@ -201,21 +202,9 @@ api_key = "sk-or-v1-..."`}
     sources: ["docs/MODES.md"],
   },
   {
-    q: "What is model auto-routing? What is Fin?",
-    a: (
-      <>
-        <p className="mb-2">
-          Use <code className="inline">codewhale --model auto</code> or <code className="inline">/model auto</code> to let Codewhale decide how much model power each turn needs.
-        </p>
-        <p className="mb-2">
-          <strong>Fin</strong> is the fast non-thinking path (<code className="inline">deepseek-v4-flash</code> with thinking off) used for routing decisions, summaries, RLM children, context maintenance, and other coordination work. Before the real turn is sent, Fin makes a small routing call to pick the concrete model and thinking level.
-        </p>
-        <p>
-          Short/simple turns can stay on Flash with thinking off. Coding, debugging, release work, architecture, or security review can move up to Pro and/or higher thinking. Fin is local to Codewhale — the upstream API never receives <code className="inline">model: "auto"</code>.
-        </p>
-      </>
-    ),
-    sources: ["README.md", "#1207"],
+    q: pickText(AUTO_ROUTING_COPY.question, "en"),
+    a: pickText(AUTO_ROUTING_COPY.answer, "en"),
+    sources: ["docs/CONFIGURATION.md"],
   },
   {
     q: "What does /goal do?",
@@ -368,16 +357,8 @@ registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"`}
   },
   {
     q: "Why is token consumption so high? / Why is cache hit rate low?",
-    a: (
-      <>
-        Codewhale sends substantial context (system prompt, project instructions, tool definitions) with each turn.
-        DeepSeek's prefix cache is used aggressively — the system prompt is layered to maximize cache hits.
-        If you see high token usage, check: are you using <code className="inline">deepseek-v4-pro</code> for simple queries better suited to Flash?
-        Model auto-routing (Fin) can help pick the right model per turn.
-        Cache hit rate depends on prompt stability — modifying the system prompt or switching models resets the cache.
-      </>
-    ),
-    sources: ["#1177", "#1818", "#743"],
+    a: pickText(AUTO_ROUTING_COPY.cache, "en"),
+    sources: ["docs/CONFIGURATION.md"],
   },
   {
     q: "How do I update Codewhale?",
@@ -575,21 +556,9 @@ api_key = "sk-or-v1-..."`}
     sources: ["docs/MODES.md"],
   },
   {
-    q: "什么是模型自动路由？Fin 是什么？",
-    a: (
-      <>
-        <p className="mb-2">
-          使用 <code className="inline">codewhale --model auto</code> 或 <code className="inline">/model auto</code> 让 Codewhale 为每个回合自动选择最合适的模型和推理深度。
-        </p>
-        <p className="mb-2">
-          <strong>Fin</strong> 是快速非推理路径（<code className="inline">deepseek-v4-flash</code>，推理关闭），用于路由决策、摘要、RLM 子任务、上下文维护等协调工作。在真实请求发送前，Fin 会做一个小的路由调用来选择具体的模型和推理级别。
-        </p>
-        <p>
-          简短简单的请求可以留在 Flash + 推理关闭的状态。编码、调试、发布工作、架构设计或安全审查则会提升到 Pro 和/或更高的推理级别。Fin 是 Codewhale 本地逻辑——上游 API 永远不会收到 <code className="inline">model: "auto"</code>。
-        </p>
-      </>
-    ),
-    sources: ["README.md", "#1207"],
+    q: pickText(AUTO_ROUTING_COPY.question, "zh"),
+    a: pickText(AUTO_ROUTING_COPY.answer, "zh"),
+    sources: ["docs/CONFIGURATION.md"],
   },
   {
     q: "什么是 Goal 模式？现在可用吗？",
@@ -728,16 +697,8 @@ registry = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"`}
   },
   {
     q: "为什么 token 消耗这么大？/ 缓存命中率为什么低？",
-    a: (
-      <>
-        Codewhale 每次请求都会发送大量上下文（系统提示、项目说明、工具定义）。
-        DeepSeek 的前缀缓存被积极使用——系统提示按最稳定的层级排列以最大化缓存命中。
-        如果你发现 token 使用量很高，请检查：是否在简单查询中使用了 <code className="inline">deepseek-v4-pro</code>（更适合用 Flash）？
-        模型自动路由（Fin）可以帮助为每个回合选择合适的模型。
-        缓存命中率取决于提示的稳定性——修改系统提示或切换模型会重置缓存。
-      </>
-    ),
-    sources: ["#1177", "#1818", "#743"],
+    a: pickText(AUTO_ROUTING_COPY.cache, "zh"),
+    sources: ["docs/CONFIGURATION.md"],
   },
   {
     q: "如何更新 Codewhale？",

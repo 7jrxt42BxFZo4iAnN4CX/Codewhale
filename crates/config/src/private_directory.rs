@@ -776,10 +776,36 @@ fn reopen_windows_file_for_owner_security(file: &File, path: &Path) -> Result<Fi
 #[cfg(windows)]
 fn mark_windows_file_handle_for_deletion(file: &File) -> Result<()> {
     use std::os::windows::io::AsRawHandle as _;
+    use windows_sys::Win32::Foundation::{
+        ERROR_INVALID_FUNCTION, ERROR_INVALID_PARAMETER, ERROR_NOT_SUPPORTED,
+    };
     use windows_sys::Win32::Storage::FileSystem::{
-        FILE_DISPOSITION_INFO, FileDispositionInfo, SetFileInformationByHandle,
+        FILE_DISPOSITION_FLAG_DELETE, FILE_DISPOSITION_FLAG_POSIX_SEMANTICS, FILE_DISPOSITION_INFO,
+        FILE_DISPOSITION_INFO_EX, FileDispositionInfo, FileDispositionInfoEx,
+        SetFileInformationByHandle,
     };
 
+    let posix = FILE_DISPOSITION_INFO_EX {
+        Flags: FILE_DISPOSITION_FLAG_DELETE | FILE_DISPOSITION_FLAG_POSIX_SEMANTICS,
+    };
+    if unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FileDispositionInfoEx,
+            (&raw const posix).cast(),
+            std::mem::size_of::<FILE_DISPOSITION_INFO_EX>() as u32,
+        )
+    } != 0
+    {
+        return Ok(());
+    }
+    let error = std::io::Error::last_os_error();
+    if !matches!(
+        error.raw_os_error().map(|code| code as u32),
+        Some(ERROR_INVALID_PARAMETER | ERROR_NOT_SUPPORTED | ERROR_INVALID_FUNCTION)
+    ) {
+        return Err(error).context("marking exact private file handle for deletion");
+    }
     let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
     // SAFETY: the disposition buffer has the documented structure and the
     // handle remains owned until after the call. Windows marks this exact file
@@ -794,7 +820,7 @@ fn mark_windows_file_handle_for_deletion(file: &File) -> Result<()> {
     } == 0
     {
         return Err(std::io::Error::last_os_error())
-            .context("marking exact xAI OAuth file handle for deletion");
+            .context("marking exact private file handle for deletion");
     }
     Ok(())
 }

@@ -7,6 +7,7 @@ param(
     [Parameter(Mandatory)][string]$Evidence
 )
 $ErrorActionPreference = 'Stop'
+Write-Output 'desktop stage: loading automation'
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Windows.Forms, System.Drawing
 Add-Type @'
 using System;
@@ -19,6 +20,7 @@ public static class ClipboardFixtureWindow {
 '@
 $window = $null
 $ownedPid = $null
+Write-Output 'desktop stage: automation loaded'
 function Read-Terminal {
     $texts = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants,
         [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::IsTextPatternAvailableProperty, $true))
@@ -59,7 +61,9 @@ try {
         if ($arg.Contains('"')) { throw 'Unexpected quote in fixture argument' }
     }
     $arguments = "-w new new-tab --title `"$Title`" --suppressApplicationTitle --startingDirectory `"$Workspace`" `"$Binary`" --workspace `"$Workspace`" --no-project-config --fresh --provider openai --model gpt-4o-mini --api-key clipboard-fixture-only --base-url `"$BaseUrl`""
+    Write-Output 'desktop stage: starting owned Terminal'
     Start-Process -FilePath $Terminal -ArgumentList $arguments | Out-Null
+    Write-Output 'desktop stage: locating owned Terminal window'
     Wait-For {
         $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
             [System.Windows.Automation.TreeScope]::Children, [System.Windows.Automation.Condition]::TrueCondition)
@@ -73,8 +77,11 @@ try {
         }
         return $false
     } 'owned Windows Terminal window'
+    Write-Output 'desktop stage: focusing owned Terminal'
     Focus-OwnedWindow
+    Write-Output 'desktop stage: reading composer accessibility'
     Wait-For { (Read-Terminal).Contains('Type a message') } 'Codewhale composer'
+    Write-Output 'desktop stage: composer ready'
     Capture 'ready'
     @{ processId = $ownedPid; readyAt = [DateTime]::UtcNow.ToString('o') } | ConvertTo-Json |
         Set-Content -Encoding UTF8 (Join-Path $Evidence 'ready.json')

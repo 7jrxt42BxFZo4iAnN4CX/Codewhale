@@ -500,7 +500,6 @@ mod tests {
 
     #[test]
     fn configured_http1_pin_controls_open_attempts_and_survives_clone() {
-        let _pin_env = super::super::tests::FORCE_HTTP1_ENV_LOCK.lock().unwrap();
         let _env = crate::test_support::lock_test_env();
         let _codewhale = crate::test_support::EnvVarGuard::remove("CODEWHALE_FORCE_HTTP1");
         let _deepseek = crate::test_support::EnvVarGuard::remove("DEEPSEEK_FORCE_HTTP1");

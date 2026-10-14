@@ -1,9 +1,4 @@
-//! Process-wide test-environment barrier owned by shell dispatch.
-//!
-//! `shell_dispatcher.rs` is also compiled directly by integration harnesses,
-//! outside the main binary crate. Keeping the barrier under that module makes
-//! shell detection self-contained while `crate::test_support` re-exports the
-//! same instance to its existing environment-mutating callers in the main crate.
+//! Process-wide test-environment barrier.
 
 use std::sync::{Mutex, MutexGuard, OnceLock, TryLockError};
 use std::thread::ThreadId;
@@ -59,7 +54,7 @@ fn current_thread_owns_contended_env_lock() -> bool {
 /// Owners and adopted workers can pass the same live generation to child
 /// workers. Foreign threads cannot mint a ticket for a test they did not join.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct EnvScopeTicket {
+pub struct EnvScopeTicket {
     generation: u64,
 }
 
@@ -68,7 +63,7 @@ impl EnvScopeTicket {
     /// disk writes on a live scope key their bookkeeping by this value, so a
     /// straggler from generation N can never be mistaken for work belonging to
     /// generation N+1.
-    pub(crate) fn generation(&self) -> u64 {
+    pub fn generation(&self) -> u64 {
         self.generation
     }
 }
@@ -80,7 +75,7 @@ impl EnvScopeTicket {
 /// This is the authorization primitive for anything that must only touch disk
 /// on behalf of a test that actually sealed `HOME`. A process-global "writes
 /// are enabled" flag cannot distinguish unrelated parallel tests.
-pub(crate) fn current_env_scope_generation() -> Option<u64> {
+pub fn current_env_scope_generation() -> Option<u64> {
     let scope = lock_env_scope();
     let current = std::thread::current().id();
     if scope.owner == Some(current) || scope.adopted.contains(&current) {
@@ -90,7 +85,7 @@ pub(crate) fn current_env_scope_generation() -> Option<u64> {
     }
 }
 
-pub(crate) fn env_scope_ticket() -> Option<EnvScopeTicket> {
+pub fn env_scope_ticket() -> Option<EnvScopeTicket> {
     let scope = lock_env_scope();
     let current = std::thread::current().id();
     (scope.owner == Some(current) || scope.adopted.contains(&current)).then_some(EnvScopeTicket {
@@ -104,7 +99,7 @@ pub(crate) fn env_scope_ticket() -> Option<EnvScopeTicket> {
 /// [`with_test_env_lock`] stops a foreign test from resolving another test's
 /// temporary `HOME`. A helper thread doing work for the sealing test must see
 /// that same environment without blocking on the mutex its owner holds.
-pub(crate) fn join_env_scope(ticket: Option<EnvScopeTicket>) -> Option<EnvScopeMembership> {
+pub fn join_env_scope(ticket: Option<EnvScopeTicket>) -> Option<EnvScopeMembership> {
     let ticket = ticket?;
     let mut scope = lock_env_scope();
     if scope.owner.is_none() || scope.generation != ticket.generation {
@@ -120,7 +115,7 @@ pub(crate) fn join_env_scope(ticket: Option<EnvScopeTicket>) -> Option<EnvScopeM
     })
 }
 
-pub(crate) struct EnvScopeMembership {
+pub struct EnvScopeMembership {
     generation: u64,
     thread: ThreadId,
 }
@@ -139,7 +134,7 @@ impl Drop for EnvScopeMembership {
 /// Clearing the owner before the underlying mutex unlocks keeps re-entrant
 /// reader detection exact. Closing the scope also evicts adopted workers, so
 /// enrollment cannot outlive the test that granted it.
-pub(crate) struct TestEnvLock {
+pub struct TestEnvLock {
     _guard: MutexGuard<'static, ()>,
 }
 
@@ -157,7 +152,7 @@ impl Drop for TestEnvLock {
 ///
 /// If a prior test panicked while holding the lock, recover the guard instead
 /// of cascading failures across unrelated tests.
-pub(crate) fn lock_test_env() -> TestEnvLock {
+pub fn lock_test_env() -> TestEnvLock {
     let guard = match env_lock().lock() {
         Ok(guard) => guard,
         Err(poisoned) => poisoned.into_inner(),
@@ -170,7 +165,7 @@ pub(crate) fn lock_test_env() -> TestEnvLock {
 ///
 /// The owner check makes the barrier re-entrant for a test that reads its own
 /// guarded override.
-pub(crate) fn with_test_env_lock<T>(read: impl FnOnce() -> T) -> T {
+pub fn with_test_env_lock<T>(read: impl FnOnce() -> T) -> T {
     if current_thread_owns_contended_env_lock() {
         return read();
     }
@@ -194,7 +189,7 @@ pub(crate) fn with_test_env_lock<T>(read: impl FnOnce() -> T) -> T {
 /// serialized, and a contended one reads a variable mid-mutation at worst.
 /// Callers must therefore only use this for values whose staleness is
 /// tolerable, never to gate a disk write.
-pub(crate) fn with_test_env_lock_if_uncontended<T>(read: impl FnOnce() -> T) -> T {
+pub fn with_test_env_lock_if_uncontended<T>(read: impl FnOnce() -> T) -> T {
     if current_thread_owns_contended_env_lock() {
         return read();
     }
@@ -209,7 +204,7 @@ pub(crate) fn with_test_env_lock_if_uncontended<T>(read: impl FnOnce() -> T) -> 
     }
 }
 
-pub(crate) fn current_thread_holds_test_env_lock() -> bool {
+pub fn current_thread_holds_test_env_lock() -> bool {
     match env_lock().try_lock() {
         Ok(guard) => {
             drop(guard);

@@ -52,7 +52,7 @@ local supervisor / SDK / automation harness
 | `codewhale app-server --http` | 在 `127.0.0.1:7878` 上的 HTTP/SSE | 完整的 `/v1/*` 运行时 API（规范入口） |
 | `codewhale app-server --mobile` | 回环上的 HTTP/SSE + `/mobile` | 运行时 API + 本地移动端控制页 |
 | `codewhale app-server --stdio` | 基于 stdio 的 JSON-RPC 2.0 | 本地 SDK / 控制探针（不监听端口） |
-| `codewhale app-server --socket [--socket-path P]` | 基于权限为 `0600` 的 unix 域套接字的 JSON-RPC 2.0 | 桌面守护进程：多客户端、对端 uid 校验、`daemon/attach` 认领握手（macOS/Linux；Windows 命名管道已预留但未实现） |
+| `codewhale app-server --socket [--socket-path P]` | 基于权限为 `0600` 的 Unix 域套接字（macOS/Linux）或仅限所有者的命名管道（Windows）的 JSON-RPC 2.0 | 桌面守护进程：多客户端、内核对端身份校验、`daemon/attach` 认领握手。Windows 原生应用验收仍待完成。 |
 | `codewhale app-server` | 在 `127.0.0.1:8787` 上的 HTTP | 旧式进程内 app-server（`/healthz`、`/thread`、`/app`、`/prompt`）；后台作业请用运行时 API 的 `GET /v1/jobs`；`/prompt` 与 `/thread` 消息会通过运行时桥执行真实回合。它没有直接的 `/tool` 路由：工具只在 Engine 回合内部、在 Engine 的工具目录与审批姿态下运行。这个旧式服务器不呈现审批：它的桥只转发文本增量和回合的完成，并且没有决策路由，所以一个受审批门控的调用会一直等不到答复。受审批门控的工作请通过运行时 API 驱动（`/v1/threads/*` 事件与 `POST /v1/approvals/{approval_id}`） |
 | `codewhale serve --http` / `--mobile` | 与 `app-server --http`/`--mobile` 相同的服务器 | 兼容别名 |
 
@@ -2583,5 +2583,7 @@ Engine 自行读取的资料不可用或无效时，本回合改用未登录的�
 
 `GET /v1/constitution` 读取下一回合的资料与模型指导，不是活跃回合已采用新编辑
 的回执。`POST /v1/constitution/preview` 接受宪章文档，返回
-`{modelGuidance, saved:false}`，不保存。两条路由遵循普通 Runtime 授权；
+`{modelGuidance, saved:false}`，不保存。`modelGuidance` 是 Engine 渲染的指导正文；
+同一文档的 GET 与预览返回相同文本，不含会话记录中的来源行或封装。
+`source` 与 `revision` 保留来源信息。两条路由遵循普通 Runtime 授权；
 旧 Runtime 必须升级后才能接收携带账号宪章的回合。

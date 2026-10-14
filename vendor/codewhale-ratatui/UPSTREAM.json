@@ -5,7 +5,7 @@
   "license": "MIT",
   "files": {
     "BENCHMARKS.md": "e9512637752467a627d1d15b3d3b6e23af72741ef713a243862ac600cbd6b9b7",
-    "CHANGELOG.md": "d7e5d2e670b606d0ccabf004a39b37604b824755f52f8fcfd89946f2d8abe71d",
+    "CHANGELOG.md": "6558423f5afd2a98aa3ab6472b0243be61a7ba5e6349c217c6a4763ca8518f53",
     "COMPONENTS.md": "8c38525d88c61f9daf70edced3834ab22c393af01b9bc598882a3e358a56bd41",
     "CONTRIBUTING-COMPONENTS.md": "4c46df68bf1fb1cc2d11ae7360cf96b61de59a0be14fdfa5c3b85f1ab6873c7b",
     "Cargo.lock": "0d89ce2d29562e58eb5b537156aeb7aaf06e93b1c27371eb783d0b3e5bcb16b4",
@@ -187,16 +187,17 @@
     "vendor/codewhale-design/tokens.rs": "975b7a4e2cda30f9dfa642283f092b9770529c5ec8c401d05b9bde5b6e55bdd1"
   },
   "pet_update": {
-    "commit": "00c6505356c5264fa6fd7d01f66458624d03e951",
+    "commit": "13ee6c74b19b783f006ecf5c6b289941c0071cef",
     "scope": "Selected prepared pet renderer files; non-pet components retain the base snapshot and existing Engine patches.",
+    "local_changes": "The selected pet renderer files now match upstream codewhale-hq/codewhale-ratatui at this commit, including the strongest dot's alpha. Non-pet components retain the base snapshot and existing Engine patches.",
     "files": {
-      "src/avatar_sprite.rs": "efa14ec46bae22772f01fa28375c4f75cb8fe3696ca29f392b157b6173e1adee",
+      "src/avatar_sprite.rs": "a2b6553802c4be509aa9772ff94bc9fef15c8b9d6ff00f262332b92aecf4fd52",
       "src/color.rs": "96c44be1540c4756f251ed5ffb74aa88a5ebf131b104bf25866ad7ab8e3c6ba8",
-      "src/components/dot_whale.rs": "191bacf808037ba4dd7d4dfffbd06fe9c951a258a31495380591ad6ab4a715fa",
-      "src/components/pet_mode.rs": "35142d709073a09720f1ce1cfb57b18d6ea4880530a5c8d96755c5b9fc203214",
+      "src/components/dot_whale.rs": "63d8fa45bb85ff37be7235b9ca80927deb45054e13d43c8d87580ebd47a6d7c0",
+      "src/components/pet_mode.rs": "b9be163495feced79505cf3907d2d462430eaa699db01a4998af14e8d84dd3b0",
       "src/components/whale_pet.rs": "bb29442f8db20e8387482e2e1dcb4fa5259ef99c3a37a77bfe9e4b56eaa05aed",
       "src/whale.rs": "126a6efc8cac550ccd7f9c8edc61745b8c959186de118c2f4d479f5a5c5ffcf7",
-      "src/whale_motion/pixels.rs": "f232f48a1a9c36339b3dd78e9c5ae5a2043d08749d023977bc39633821ad0bb6"
+      "src/whale_motion/pixels.rs": "f83113863c7928cc93dbbc7b187d6f9346d1848ffb9636fd3d8551faa9de69d9"
     },
     "merged_exports": {
       "src/components/mod.rs": "0ea81b474b2137b177c5535e7523ed6b312ea972630ac94f5131883246496e8e"

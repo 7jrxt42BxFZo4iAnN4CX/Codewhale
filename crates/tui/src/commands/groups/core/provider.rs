@@ -244,7 +244,7 @@ mod tests {
 
     fn create_test_app() -> App {
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         let mut app = App::new(options, &Config::default());
         app.ui_locale = codewhale_localization::Locale::En;
@@ -845,7 +845,7 @@ mod tests {
             ..Default::default()
         };
         let mut app = App::new(
-            crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+            crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
             &config,
         );
         app.api_provider = ProviderKind::Deepseek;

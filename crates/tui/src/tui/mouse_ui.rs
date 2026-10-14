@@ -490,6 +490,12 @@ pub(crate) fn handle_mouse_event(app: &mut App, mouse: MouseEvent) -> Vec<ViewEv
             crate::tui::pet_watch::open_habitat(app);
             return Vec::new();
         }
+        if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+            && mouse_hits_rect(mouse, app.pet_watch.view_area)
+        {
+            crate::tui::pet_watch::cycle_view(app, true);
+            return Vec::new();
+        }
         if mouse_hits_rect(mouse, app.pet_watch.area) {
             crate::tui::pet_watch::command(app, crate::tui::pet_watch::Control::Mouse(mouse));
             return Vec::new();
@@ -749,6 +755,8 @@ pub(crate) fn handle_mouse_event(app: &mut App, mouse: MouseEvent) -> Vec<ViewEv
                 app.viewport.transcript_selection.anchor = Some(point);
                 app.viewport.transcript_selection.head = Some(point);
                 app.viewport.transcript_selection.dragging = true;
+                app.viewport.transcript_selection.owner =
+                    app.transcript_owner_at_line(point.line_index);
                 app.needs_redraw = true;
 
                 if app.is_loading
@@ -1606,6 +1614,19 @@ fn push_work_row_entries(app: &App, mouse: MouseEvent, entries: &mut Vec<Context
             entries.push(row(app.tr(MessageId::CtxMenuOpen).into_owned(), action).primary());
         }
         Some(SidebarRowAction::Command(command)) => {
+            if let Some(id) = command.strip_prefix("/jobs show ")
+                && app.task_panel.iter().any(|entry| {
+                    entry.id == id && crate::tui::background_indicator::is_live_shell_entry(entry)
+                })
+            {
+                stop = Some(
+                    row(
+                        app.tr(MessageId::CtxMenuStopWork).into_owned(),
+                        SidebarRowAction::Command(format!("/jobs cancel {id}")),
+                    )
+                    .confirm(confirm()),
+                );
+            }
             let label = app
                 .tr(MessageId::CtxMenuRunCommand)
                 .replace("{command}", &command);
@@ -1748,12 +1769,16 @@ pub(crate) fn apply_context_menu_action(
                 }
             }
         }
-        ContextMenuAction::CopyText { text } => {
-            app.status_message = Some(match app.clipboard.write_text_status(&text) {
-                Ok(transport) => copy_receipt(app, transport, app.tr(MessageId::ClipboardCopied)),
-                Err(error) => format!("Copy failed: {error}"),
-            });
-        }
+        ContextMenuAction::CopyText { text } => match app.clipboard.write_text_status(&text) {
+            Ok(transport) => {
+                let receipt = copy_receipt(app, transport, app.tr(MessageId::ClipboardCopied));
+                app.push_status_toast(receipt, StatusToastLevel::Info, None);
+            }
+            Err(error) => {
+                let receipt = copy_failed_receipt(app, error);
+                app.push_status_toast(receipt, StatusToastLevel::Error, None);
+            }
+        },
         ContextMenuAction::ToggleWindowPin => {
             crate::tui::window_control::toggle_pin(app);
         }
@@ -1944,6 +1969,11 @@ pub(crate) fn copy_receipt(
     }
 }
 
+pub(crate) fn copy_failed_receipt(app: &App, error: impl std::fmt::Display) -> String {
+    app.tr(MessageId::ClipboardCopyFailed)
+        .replace("{error}", &error.to_string())
+}
+
 /// Ctrl+X on a composer selection. The text is deleted only after a native
 /// clipboard confirmed the copy; an OSC 52 / tmux copy is never confirmed,
 /// so the text stays and the receipt says why.
@@ -1954,15 +1984,20 @@ pub(crate) fn cut_selection(app: &mut App) {
     }
     match app.clipboard.write_text_status(&sel) {
         Ok(crate::tui::clipboard::CopyTransport::Native) => {
-            app.push_status_toast("Cut to clipboard", StatusToastLevel::Info, None);
+            app.push_status_toast(
+                app.tr(MessageId::ClipboardCopied),
+                StatusToastLevel::Info,
+                None,
+            );
             app.delete_selection();
         }
         Ok(crate::tui::clipboard::CopyTransport::Terminal) => {
             let receipt = app.tr(MessageId::ClipboardCutKeptText).into_owned();
             app.push_status_toast(receipt, StatusToastLevel::Info, None);
         }
-        Err(_) => {
-            app.push_status_toast("Cut failed", StatusToastLevel::Error, None);
+        Err(error) => {
+            let receipt = copy_failed_receipt(app, error);
+            app.push_status_toast(receipt, StatusToastLevel::Error, None);
         }
     }
 }
@@ -2053,10 +2088,14 @@ pub(crate) fn copy_active_selection(app: &mut App) {
     if !sel.is_empty() {
         match app.clipboard.write_text_status(&sel) {
             Ok(transport) => {
-                app.status_message = Some(copy_receipt(app, transport, "Selection copied"));
+                let receipt = copy_receipt(app, transport, app.tr(MessageId::ClipboardCopied));
+                app.push_status_toast(receipt, StatusToastLevel::Info, None);
                 app.clear_selection();
             }
-            Err(_) => app.status_message = Some("Copy failed".to_string()),
+            Err(error) => {
+                let receipt = copy_failed_receipt(app, error);
+                app.push_status_toast(receipt, StatusToastLevel::Error, None);
+            }
         }
         return;
     }
@@ -2078,25 +2117,22 @@ pub(crate) fn copy_active_selection(app: &mut App) {
             .map(|text| (text, None))
     });
     if let Some((text, markdown_cells)) = payload {
-        let written = app.clipboard.write_text_status(&text);
-        if let Ok(crate::tui::clipboard::CopyTransport::Terminal) = written {
-            app.status_message = Some(copy_receipt(
-                app,
-                crate::tui::clipboard::CopyTransport::Terminal,
-                "",
-            ));
-        } else if written.is_ok() {
-            match markdown_cells {
-                Some(cells) => {
-                    let toast = app
+        match app.clipboard.write_text_status(&text) {
+            Ok(transport) => {
+                let receipt = match (transport, markdown_cells) {
+                    (crate::tui::clipboard::CopyTransport::Native, Some(cells)) => app
                         .tr(MessageId::SelectionCopiedAsMarkdown)
-                        .replace("{count}", &cells.to_string());
-                    app.push_status_toast(toast, StatusToastLevel::Info, None);
-                }
-                None => app.status_message = Some("Selection copied".to_string()),
+                        .replace("{count}", &cells.to_string()),
+                    (transport, _) => {
+                        copy_receipt(app, transport, app.tr(MessageId::ClipboardCopied))
+                    }
+                };
+                app.push_status_toast(receipt, StatusToastLevel::Info, None);
             }
-        } else {
-            app.status_message = Some("Copy failed".to_string());
+            Err(error) => {
+                let receipt = copy_failed_receipt(app, error);
+                app.push_status_toast(receipt, StatusToastLevel::Error, None);
+            }
         }
     } else {
         clear_transcript_selection(app);
@@ -2355,7 +2391,7 @@ mod tests {
 
     pub(super) fn create_test_app() -> App {
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         let mut app = App::new(options, &Config::default());
         // Legacy strip geometry (see ui.rs); Bottom default has its own tests.
@@ -2370,7 +2406,7 @@ mod tests {
         let _home =
             crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", root.path().join("home"));
         let mut app = App::new(
-            crate::test_support::test_tui_options(root.path()),
+            crate::tui::test_support::test_tui_options(root.path()),
             &Config::default(),
         );
         app.surface_plugin_review_request("catalog-only", "/plugin install arbitrary-source");
@@ -3315,7 +3351,10 @@ mod tests {
         select(&mut app);
         super::apply_context_menu_action(&mut app, ContextMenuAction::CopySelection);
         assert_eq!(app.clipboard.last_written_text(), Some("hello"));
-        assert_eq!(app.status_message.as_deref(), Some("Selection copied"));
+        assert_eq!(
+            app.status_toasts.back().map(|toast| toast.text.as_str()),
+            Some("Copied to the clipboard")
+        );
 
         select(&mut app);
         super::apply_context_menu_action(&mut app, ContextMenuAction::OpenSelection);
@@ -3392,7 +3431,7 @@ mod tests {
 
     /// Ctrl+X deletes the selection only when a native clipboard confirmed
     /// the copy. A terminal (OSC 52 / tmux) copy keeps the text and says why;
-    /// a failed copy keeps it and says the cut failed.
+    /// a failed copy keeps it and says the copy failed.
     #[test]
     fn cut_deletes_only_after_a_native_copy() {
         fn select_all(app: &mut App, text: &str) {
@@ -3409,7 +3448,7 @@ mod tests {
         super::cut_selection(&mut app);
         assert_eq!(app.clipboard.last_written_text(), Some("hello"));
         assert_eq!(app.input, "", "a native copy cuts");
-        assert_eq!(last_toast(&app), Some("Cut to clipboard"));
+        assert_eq!(last_toast(&app), Some("Copied to the clipboard"));
 
         app.clipboard = crate::tui::clipboard::ClipboardHandler::terminal_only_for_test();
         select_all(&mut app, "kept");
@@ -3429,7 +3468,11 @@ mod tests {
         select_all(&mut app, "also kept");
         super::cut_selection(&mut app);
         assert_eq!(app.input, "also kept", "a failed copy keeps the text");
-        assert_eq!(last_toast(&app), Some("Cut failed"));
+        assert!(
+            last_toast(&app).is_some_and(|toast| toast.starts_with("Clipboard copy failed: ")),
+            "{:?}",
+            last_toast(&app)
+        );
     }
 
     /// A right-click on a row's inline stop zone opens the row's own menu;
@@ -3471,6 +3514,10 @@ mod tests {
     /// the text was sent to the terminal, not that it was copied.
     #[test]
     fn copy_receipts_name_the_transport() {
+        fn last_toast(app: &App) -> Option<&str> {
+            app.status_toasts.back().map(|toast| toast.text.as_str())
+        }
+
         let mut app = create_test_app();
         super::apply_context_menu_action(
             &mut app,
@@ -3479,10 +3526,7 @@ mod tests {
             },
         );
         assert_eq!(app.clipboard.last_written_text(), Some("agent_1"));
-        assert_eq!(
-            app.status_message.as_deref(),
-            Some("Copied to the clipboard")
-        );
+        assert_eq!(last_toast(&app), Some("Copied to the clipboard"));
 
         app.clipboard = crate::tui::clipboard::ClipboardHandler::terminal_only_for_test();
         super::apply_context_menu_action(
@@ -3492,7 +3536,7 @@ mod tests {
             },
         );
         assert_eq!(
-            app.status_message.as_deref(),
+            last_toast(&app),
             Some("Sent to the terminal clipboard (terminals do not confirm it)")
         );
 
@@ -3510,7 +3554,7 @@ mod tests {
         app.cursor_position = 5;
         super::apply_context_menu_action(&mut app, ContextMenuAction::CopySelection);
         assert_eq!(
-            app.status_message.as_deref(),
+            last_toast(&app),
             Some("Sent to the terminal clipboard (terminals do not confirm it)")
         );
 
@@ -3522,11 +3566,9 @@ mod tests {
             },
         );
         assert!(
-            app.status_message
-                .as_deref()
-                .is_some_and(|status| status.starts_with("Copy failed")),
+            last_toast(&app).is_some_and(|toast| toast.starts_with("Clipboard copy failed: ")),
             "{:?}",
-            app.status_message
+            last_toast(&app)
         );
     }
 

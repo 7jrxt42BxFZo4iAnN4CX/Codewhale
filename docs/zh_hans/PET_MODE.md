@@ -32,6 +32,22 @@ Pet 模式把你正在使用的终端变成一个一眼可读的状态视图。�
 
 下方状态栏保留原有的实时读数，例如智能体数量（`2 agents`）和任务面板。重试等临时提示显示在第二行。
 
+## 视图
+
+主视图显示时，按 `Ctrl+]` 切换到下一个视图。支持 kitty 键盘协议的终端还可发送 `Ctrl+Tab` 切到下一个、`Ctrl+Shift+Tab` 切回上一个。Terminal.app 用这两个 Tab 组合键切换终端标签页，因此请在那里使用 `Ctrl+]`。页脚第二行显示当前视图，例如 `Ctrl+] view: whale`，点击它也会切到下一个视图。`/pet avatar <key>` 可直接跳到某个视图。
+
+| 视图 | 显示内容 | 条件不满足时 |
+| --- | --- | --- |
+| `whale` | 伴生进程的实时点阵鲸鱼。 | 在伴生进程可达（`codewhale pet serve`）且本终端的会话是来源（`/pet source`）之前，显示 `cove`（或 `braille`）。 |
+| `cove` | 本地半块字符鲸鱼，不带半透明的海湾背景。 | 需要颜色：在 `NO_COLOR`、16 色终端或背景未知时显示 `braille`。`COLORTERM=truecolor` 启用真彩色；`CODEWHALE_APPEARANCE=dark` 或 `light` 明确选择背景。 |
+| `braille` | 本地彩色盲文点阵鲸鱼。 | 在 `CODEWHALE_ASCII_SAFE` 下或图案区域小于 16x8 个单元格时，只显示状态文字。 |
+| `pixels` | 伴生进程鲸鱼的 kitty 图形图像。 | 需要 kitty 图形、同步输出、已知的单元格像素尺寸，且 `CODEWHALE_PET_GRAPHICS` 不能为 `braille`；否则显示 `particles`。Terminal.app 不支持 kitty 图形。 |
+| `particles` | 伴生进程的盲文粒子网格。 | 伴生进程不可达时，显示静止的鲸鱼和 `offline`。 |
+| `whale-girl` | 内置的精灵头像。 | 与 `cove` 一样需要颜色；否则显示单色 ASCII 形式。 |
+| 已安装的头像包 | 按目录顺序显示各头像包。 | 图集加载期间显示 `particles`。 |
+
+顺序为 `whale → cove → braille → pixels → particles → whale-girl →` 已安装的头像包，然后回到 `whale`。无法绘制的视图不会被跳过：它显示降级内容，标题下一行说明缺少什么，例如 `pixels needs kitty graphics · showing particles`。
+
 ## 按需查看回复与智能体
 
 主视图保持安静。按 `F5` 或运行 `/pet inspect`，在其上打开检查视图：
@@ -42,11 +58,17 @@ Pet 模式把你正在使用的终端变成一个一眼可读的状态视图。�
 | 按键 | 效果 |
 | --- | --- |
 | `F5` 或 `/pet inspect` | 打开回复与智能体。 |
+| `Ctrl+]` / `Ctrl+Tab`、`Ctrl+Shift+Tab` | 下一个或上一个 Pet 视图（仅主视图）。Tab 组合键需要终端能发送；Terminal.app 中请使用 `Ctrl+]`。 |
+| `F6` | 开关伴生进程的声音。 |
+| `F8` | 在浏览器中打开外观工作室。 |
+| `F9` | 打开原生 Codewhale Pet 窗口（macOS）。 |
 | `Esc` | 回到消息框。草稿、对话记录和正在运行的回合都不受影响。 |
 | `Tab` | 在 Reply 与 Agents 面板之间切换。 |
 | `Up` / `Down`、`PgUp` / `PgDn`、`Home` / `End` | 滚动当前聚焦的面板。 |
 | `Enter`（Agents 面板） | 打开所选智能体的对话记录。 |
 | `c` | 复制最近一条已完成的回复，与 `/copy` 走同一路径。 |
+
+`F5`、`F6`、`F8` 和 `F9` 在主视图和检查视图中都可用。Mac 键盘的顶行默认发送媒体键，需按住 Fn，因此整个 TUI（包括帮助浮层）的 F 键提示都显示为 `fn+F5`、`fn+F8` 等；ASCII 安全模式也保留这个前缀。`F8` 或 `F9` 成功时提示 `habitat open`；启动失败时显示失败原因。
 
 ## 多个终端，各有各的 Pet
 
@@ -60,6 +82,12 @@ Pet 模式按终端独立。在两个终端里各运行 `/pet on`：每头鲸鱼
 
 伴生进程在十分钟内没有任何视图、生产端或音频客户端时会退出；下一个视图会再次启动它。
 
+## 桌面与 app-server 会话
+
+桌面和 HTTP app-server 的回合可以向同一个伴侣提供活动状态。Runtime 只连接已经运行的伴侣，不会启动新的伴侣；请先运行 `codewhale pet serve` 或打开 Pet 视图。新回合可以接手空闲的伴侣，但只要当前会话还有在线的生产者，所有者就会拒绝自动切换。活动中的 TUI 保留自己的来源。
+
+这条连接只传递回合、响应、操作、智能体和等待状态的元数据。提示词、回复、推理内容、工具名称和参数仍保留在 Runtime 中。回合结束后连接保留 12 秒，再等待租约过期。事件缺口会清除已观察的回合，并启动同样的释放期限，除非新的回合开始。这些展示数据不会进入模型请求，也不会影响 KV 缓存。`serve --acp` 和 TUI 的后台任务线程不会向这个生产者提供事件。
+
 ## 命令
 
 | 命令 | 效果 |
@@ -71,7 +99,7 @@ Pet 模式按终端独立。在两个终端里各运行 `/pet on`：每头鲸鱼
 | `/pet appearance` | 在浏览器（仅回环地址）中打开外观工作室，可调整配色、亮度、点大小和光晕。同 `F8`。 |
 | `/pet window` | 若已安装 macOS 的 Codewhale Pet 应用，则打开原生窗口。同 `F9`。未安装时会提示构建或安装。 |
 | `/pet sound on`、`/pet sound off` | 开关伴生进程的声音。与 `F6` 是同一个开关。 |
-| `/pet avatar [key]` | 列出头像，或选择其一：`whale`、`particles`、`whale-girl`，以及你已安装的头像包。 |
+| `/pet avatar [key]` | 列出视图，或选择其一：`whale`、`cove`、`braille`、`pixels`、`particles`、`whale-girl`，以及你已安装的头像包。 |
 | `/pet action <name>`、`/pet view <name>`、`/pet action live` | 预览所选头像的某个姿态或视图，或回到实时。 |
 | `/pet export` | 把 Pet 的录制回放保存到当前已保存会话的产物目录。 |
 
@@ -87,8 +115,8 @@ Pet 模式按终端独立。在两个终端里各运行 `/pet on`：每头鲸鱼
 - **`NO_COLOR`。** 颜色交由终端决定；标记和文字仍然表达状态。
 - **`CODEWHALE_ASCII_SAFE=1`。** 标记、边框和提示符改用 ASCII（`o idle`、`|`、`>`），动画图案由标记和文字取代。
 - **减弱动效。** 遵循 shell 的动效设置，显示静态姿态。
-- **`CODEWHALE_PET_GRAPHICS=braille`。** 在终端视图本会使用像素图形时，强制使用文字渲染。
-- **伴生进程不可用。** 视图会提示；状态文字和标记仍然可用，因为它们来自你的会话。
+- **`CODEWHALE_PET_GRAPHICS=braille`。** 让 `pixels` 视图保持文字渲染：它显示 `particles` 并说明原因。
+- **伴生进程不可用。** 视图会提示；状态文字和标记仍然可用，因为它们来自你的会话。`/pet on`、`F8`、`F9` 以及 `/pet appearance` 等伴生命令会重新启动它。
 
 ## 隐私
 
@@ -107,5 +135,10 @@ Pet 模式按终端独立。在两个终端里各运行 `/pet on`：每头鲸鱼
 - **一次只有一个来源。** 伴生进程的活动细节只跟随一个会话。其他终端显示各自的状态文字和标记，不显示细节。
 - **`/pet window` 仅限 macOS**，且需要 Codewhale Pet 应用。
 - **声音需要 `ffplay`**，且同一时间只有一个终端持有输出。
+- **所选视图不会保存。** 它在本次运行中保持，包括切换会话；重启后从 `whale` 开始。
+- **检查视图中不能切换视图。** 先按 `Esc`；`Ctrl+]` 只在主视图中切换。
+- **Pet 主视图显示时，`Ctrl+]` 不能打开任务面板。** 请先 `/pet off`。
+- **浏览器工作室和 macOS 窗口不在视图循环中**，因为每次按键都会启动一个进程。请使用 `F8` 和 `F9`。
+- **没有 sixel 或 iTerm2 图像。** `pixels` 视图只通过 kitty 图形绘制。
 
 另见 [键位](KEYBINDINGS.md)、[模式](MODES.md)，以及设计说明 [`design/DOT_WHALE_PET.md`](../design/DOT_WHALE_PET.md) 和 [`../../pet/SHARED.md`](../../pet/SHARED.md)。

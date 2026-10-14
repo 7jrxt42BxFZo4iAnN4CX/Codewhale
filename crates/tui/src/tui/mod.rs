@@ -108,6 +108,8 @@ pub mod startup_input;
 pub mod streaming;
 pub mod streaming_thinking;
 mod subagent_routing;
+#[cfg(test)]
+pub(crate) mod test_support;
 pub mod theme_picker;
 pub mod tideline;
 mod tool_routing;

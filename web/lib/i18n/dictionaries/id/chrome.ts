@@ -19,6 +19,7 @@ export const chrome: ChromeDict = {
   navCommunity: "Komunitas",
   navContribute: "Kontribusi",
 
+  navFeatures: "Kemampuan",
   navProduct: "Produk",
   navModels: "Model",
   navPlugins: "Plugin",

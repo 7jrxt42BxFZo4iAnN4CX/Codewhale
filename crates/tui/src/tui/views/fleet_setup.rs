@@ -3051,7 +3051,7 @@ approval_required = true
         std::fs::write(&path, original).unwrap();
         let config = Config::default();
         let app = App::new(
-            crate::test_support::test_tui_options(workspace.path()),
+            crate::tui::test_support::test_tui_options(workspace.path()),
             &config,
         );
         let mut view =
@@ -3120,7 +3120,7 @@ approval_required = true
         let workspace = tempfile::tempdir().unwrap();
         let config = Config::default();
         let app = App::new(
-            crate::test_support::test_tui_options(workspace.path()),
+            crate::tui::test_support::test_tui_options(workspace.path()),
             &config,
         );
         let mut view = FleetSetupView::new_for_route_assignment(&app, &config, "manager").unwrap();

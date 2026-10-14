@@ -42,18 +42,11 @@ fn jobs(args: Option<&str>) -> CommandResult {
 
     match action.as_str() {
         "list" => CommandResult::action(AppAction::ShellJob(ShellJobAction::List)),
-        "show" | "inspect" => match id {
+        "show" | "inspect" | "poll" | "wait" => match id {
             Some(id) => CommandResult::action(AppAction::ShellJob(ShellJobAction::Show {
                 id: id.to_string(),
             })),
-            None => CommandResult::error("Usage: /jobs show <id>"),
-        },
-        "poll" | "wait" => match id {
-            Some(id) => CommandResult::action(AppAction::ShellJob(ShellJobAction::Poll {
-                id: id.to_string(),
-                wait: action == "wait",
-            })),
-            None => CommandResult::error("Usage: /jobs poll <id>"),
+            None => CommandResult::error(format!("Usage: /jobs {action} <id>")),
         },
         "stdin" | "send" => match id {
             Some(id) if !rest.is_empty() => {
