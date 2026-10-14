@@ -712,7 +712,7 @@ mod tests {
 
         let workspace = temp_workspace("live");
         let mut child = std::process::Command::new("/bin/sh")
-            .args(["-c", "sleep 30"])
+            .args(["-c", "exec sleep 30"])
             .spawn()
             .expect("spawn child");
         let pid = child.id();
