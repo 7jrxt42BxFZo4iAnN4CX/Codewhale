@@ -314,8 +314,9 @@ mod tests {
 
     #[test]
     fn ui_snapshot_uses_active_route_without_claiming_saved_defaults() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.pending_turn_route = Some((ProviderKind::Zai, "GLM-5.3".to_string(), false));
 
         let snapshot = UiSnapshot::from_app(&app);
@@ -335,8 +336,9 @@ mod tests {
 
     #[test]
     fn context_budget_projection_reuses_and_bounds_the_existing_estimate() {
-        let app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         let (used, max_tokens, _) =
             crate::tui::ui::context_usage_snapshot(&app).expect("existing context estimate");
         let snapshot = ContextBudgetSnapshot::from_app(&app).expect("Tideline projection");

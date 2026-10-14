@@ -63,7 +63,7 @@ pub enum ToolFamily {
 pub fn tool_family_for_title(title: &str) -> ToolFamily {
     match title {
         "Shell" => ToolFamily::Run,
-        "Patch" | "Diff" => ToolFamily::Patch,
+        "Patch" | "Diff" | "File" => ToolFamily::Patch,
         "Workspace" | "Image" => ToolFamily::Read,
         "Search" => ToolFamily::Find,
         "Plan" | "Legacy plan" | "Review" => ToolFamily::Generic,
@@ -222,7 +222,7 @@ fn summary_value(summary: &str, key: &str) -> Option<String> {
     None
 }
 
-fn should_show_tool_name_in_header(name: &str, family: ToolFamily) -> bool {
+pub(crate) fn should_show_tool_name_in_header(name: &str, family: ToolFamily) -> bool {
     (matches!(family, ToolFamily::Generic) && !is_known_metadata_tool_name(name))
         || matches!(name, "git_log" | "git_show" | "git_blame")
 }

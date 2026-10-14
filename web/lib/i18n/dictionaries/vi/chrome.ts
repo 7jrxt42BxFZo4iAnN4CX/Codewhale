@@ -20,6 +20,7 @@ export const chrome: ChromeDict = {
   navCommunity: "Cộng đồng",
   navContribute: "Đóng góp",
 
+  navFeatures: "Khả năng",
   navProduct: "Sản phẩm",
   navModels: "Mô hình",
   navPlugins: "Plugin",

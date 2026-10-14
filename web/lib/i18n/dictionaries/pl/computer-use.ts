@@ -7,7 +7,7 @@ import type { ComputerUseDict } from "../types";
  * the app shows them.
  */
 export const computerUse: ComputerUseDict = {
-  metaTitle: "Computer Use na Maca · Codewhale",
+  metaTitle: "Computer Use · Wersja poglądowa · Codewhale",
   metaDescription: "Pobierz i skonfiguruj Codewhale Computer Use na Maca. Sterowanie aplikacjami w tle, konfiguracja uprawnień oraz przyciski Pause i Stop pod Twoją kontrolą.",
   title: "Computer Use",
   lead: "Pozwól Codewhale działać w Twoich aplikacjach, a sam pracuj dalej. Pomocnik na Maca zbiera w pasku menu uprawnienia, sterowanie aplikacjami w tle oraz możliwość wstrzymania lub zatrzymania wprowadzania danych.",

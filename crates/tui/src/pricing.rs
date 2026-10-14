@@ -1634,7 +1634,10 @@ fn audit_turn_cost_for_provider_on_endpoint_for_identity_at(
         VerifiedOffering::Absent => None,
     };
 
-    if let Some(audit) = offering.as_ref().and_then(invalid_catalog_pricing_audit) {
+    if let Some(audit) = offering
+        .as_ref()
+        .and_then(|offering| refused_catalog_pricing_audit(offering, usage))
+    {
         return audit.with_live_defect(live_defect);
     }
 
@@ -1692,17 +1695,22 @@ fn audit_turn_cost_for_provider_on_endpoint_for_identity_at(
     }
 }
 
-/// Convert malformed catalog numerics into an explicit runtime audit reason.
+/// Convert malformed catalog numerics, or a context tier this turn reached,
+/// into an explicit runtime audit reason.
 /// Keeping this distinct from the ordinary `None` projection prevents a bad
 /// published row from becoming indistinguishable from an absent price.
-fn invalid_catalog_pricing_audit(
+fn refused_catalog_pricing_audit(
     offering: &codewhale_config::catalog::CatalogOffering,
+    usage: &Usage,
 ) -> Option<TurnCostAudit> {
-    offering
-        .cost
-        .as_ref()
-        .is_some_and(|cost| !codewhale_config::pricing::catalog_cost_is_valid(cost))
-        .then(|| TurnCostAudit::unpriced(UnpricedReason::InvalidPricingRow))
+    let cost = offering.cost.as_ref()?;
+    if !codewhale_config::pricing::catalog_cost_is_valid(cost) {
+        return Some(TurnCostAudit::unpriced(UnpricedReason::InvalidPricingRow));
+    }
+    cost.context_tiers()
+        .iter()
+        .any(|tier| tier.tier.kind != "context" || u64::from(usage.input_tokens) >= tier.tier.size)
+        .then(|| TurnCostAudit::unpriced(UnpricedReason::UnrepresentedTier))
 }
 
 /// Outcome of checking a catalog row's pricing provenance against the route.
@@ -2109,7 +2117,7 @@ fn audit_openrouter_immutable_pricing(
         ProviderKind::Openrouter,
         &canonical_model,
     ) {
-        if let Some(audit) = invalid_catalog_pricing_audit(&offering) {
+        if let Some(audit) = refused_catalog_pricing_audit(&offering, usage) {
             return audit;
         }
         if let Some(pricing) = effective_offering_pricing(
@@ -2665,7 +2673,7 @@ mod tests {
             ..Default::default()
         };
 
-        let audit = invalid_catalog_pricing_audit(&offering)
+        let audit = refused_catalog_pricing_audit(&offering, &Usage::default())
             .expect("malformed row must become an explicit failed-closed audit");
         assert!(!audit.is_priced());
         assert_eq!(

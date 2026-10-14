@@ -885,11 +885,12 @@ mod idle_poll_tests {
     use super::*;
 
     fn quiet_app() -> App {
-        let mut app = crate::test_support::test_app_with_options(crate::tui::app::TuiOptions {
-            skip_onboarding: true,
-            start_in_agent_mode: true,
-            ..crate::test_support::test_tui_options(std::path::PathBuf::from("."))
-        });
+        let mut app =
+            crate::tui::test_support::test_app_with_options(crate::tui::app::TuiOptions {
+                skip_onboarding: true,
+                start_in_agent_mode: true,
+                ..crate::tui::test_support::test_tui_options(std::path::PathBuf::from("."))
+            });
         app.needs_redraw = false;
         app.low_motion = false;
         app
@@ -1200,8 +1201,8 @@ mod screen_mode_tests {
     #[cfg(not(windows))]
     #[test]
     fn switching_screens_recomputes_mouse_capture() {
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
         );
         app.screen_mode = ScreenMode::Inline;
         app.mouse_capture_preference = true;
@@ -1236,8 +1237,8 @@ mod screen_mode_tests {
 
     #[test]
     fn switching_screens_recomputes_derived_composer_arrows_only() {
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
         );
         app.composer_arrows_scroll_explicit = false;
 

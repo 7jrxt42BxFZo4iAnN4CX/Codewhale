@@ -3668,6 +3668,21 @@ impl CoordinationProcessLock {
         // `create_dir_all` follows links and would populate the target.
         reject_root_relative_symlinks(&requested_root, &lock_dir.join(SUBAGENT_STATE_LOCK_FILE))?;
         fs::create_dir_all(&lock_dir)?;
+        let ignore = lock_dir.join(".gitignore");
+        let ignored = reject_root_relative_symlinks(&requested_root, &ignore).and_then(|()| {
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&ignore)
+            {
+                Ok(mut file) => file.write_all(b"*\n").map_err(Into::into),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+                Err(error) => Err(error.into()),
+            }
+        });
+        if let Err(error) = ignored {
+            tracing::warn!(target: "subagent", %error, "could not write {}", ignore.display());
+        }
         // Creating a missing root can change its canonical spelling on
         // Windows (for example by adding a `\\?\` prefix). Re-resolve both
         // sides before checking containment.
@@ -10259,15 +10274,28 @@ impl SubAgentTranscriptArtifactWriter {
         })
     }
 
-    fn sync_messages(&mut self, messages: &[Message], durable: bool) -> Result<()> {
-        if messages.len() < self.synced_live_messages {
-            return Err(anyhow!(
+    fn unsynced_messages<'a>(&self, messages: &'a [Message]) -> Result<&'a [Message]> {
+        messages.get(self.synced_live_messages..).ok_or_else(|| {
+            anyhow!(
                 "sub-agent transcript history shrank from {} to {} messages",
                 self.synced_live_messages,
                 messages.len()
-            ));
-        }
-        self.append_messages(&messages[self.synced_live_messages..], durable)?;
+            )
+        })
+    }
+
+    fn sync_messages(&mut self, messages: &[Message], durable: bool) -> Result<()> {
+        let unsynced = self.unsynced_messages(messages)?;
+        self.append_messages(unsynced, durable)?;
+        self.synced_live_messages = messages.len();
+        Ok(())
+    }
+
+    fn sync_projected_messages(&mut self, messages: &[Message], durable: bool) -> Result<()> {
+        let unsynced = crate::image_attach::safe_tool_result_message_projection(
+            self.unsynced_messages(messages)?,
+        );
+        self.append_messages(&unsynced, durable)?;
         self.synced_live_messages = messages.len();
         Ok(())
     }
@@ -10393,7 +10421,7 @@ pub fn load_subagent_transcript_artifact(
 fn remove_subagent_transcript_artifact(state_root: &Path, agent_id: &str) -> Result<bool> {
     let state_root = normalize_subagent_workspace(state_root);
     let path = checked_subagent_transcript_artifact_path(&state_root, agent_id)?;
-    reject_root_relative_symlinks(&state_root, &path)?;
+    reject_state_path_symlinks(&state_root, &path)?;
     let metadata = match fs::symlink_metadata(&path) {
         Ok(metadata) => metadata,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
@@ -10452,6 +10480,10 @@ fn checked_subagent_state_path(state_root: &Path, path: &Path) -> Result<PathBuf
     // an 8.3 component (for example `RUNNER~1`) that no longer prefixes the root.
     let parent = resolve_path_for_containment(parent)?;
     let state_path = parent.join(file_name);
+    // The state root may itself sit behind a link the user created: see
+    // `effective_state_root`. Both checks below must use the same root, or a
+    // relocated state directory fails containment and then fails the walk.
+    let state_root = effective_state_root(&state_root, &state_path);
     if !path_is_within_state_root(&state_path, &state_root) {
         return Err(anyhow!(
             "sub-agent state path must stay within state root: {}",
@@ -10460,6 +10492,45 @@ fn checked_subagent_state_path(state_root: &Path, path: &Path) -> Result<PathBuf
     }
     reject_root_relative_symlinks(&state_root, &state_path)?;
     Ok(state_path)
+}
+
+/// The state root in effect for an already-resolved child path.
+///
+/// `default_state_path` and the transcript artifact writer both build
+/// `.codewhale/state/...` under the state root. A user who keeps application
+/// state on another volume makes `<state_root>/.codewhale` a junction (or a
+/// symlink), which resolves the child outside the state root while landing
+/// exactly where that user put the state. When the link exists and the child
+/// resolves inside its target, the target is the root the containment check
+/// and the link walk must use; otherwise the state root is returned unchanged.
+///
+/// A child that resolves anywhere else keeps the stricter state root, so this
+/// re-roots one known, user-owned link and does not widen the boundary.
+fn effective_state_root(state_root: &Path, state_path: &Path) -> PathBuf {
+    let linked = state_root.join(codewhale_config::CODEWHALE_APP_DIR);
+    let Ok(metadata) = fs::symlink_metadata(&linked) else {
+        return state_root.to_path_buf();
+    };
+    // Windows junctions are reparse points without the symlink tag, so the
+    // shared predicate is required here; `FileType::is_symlink` alone would
+    // miss exactly the case this exists for.
+    if !crate::plugins::metadata_is_link_or_reparse(&metadata) {
+        return state_root.to_path_buf();
+    }
+    match resolve_path_for_containment(&linked) {
+        Ok(resolved) if path_is_within_state_root(state_path, &resolved) => resolved,
+        _ => state_root.to_path_buf(),
+    }
+}
+
+/// [`reject_root_relative_symlinks`] for a path that may sit under a state
+/// root the user relocated behind a link. Every guard that runs after
+/// `checked_subagent_state_path` must reach the same root decision it did, or
+/// a relocated root passes that check and fails the write; roots outside this
+/// module's state layout come back unchanged from [`effective_state_root`].
+fn reject_state_path_symlinks(state_root: &Path, path: &Path) -> Result<()> {
+    let root = effective_state_root(state_root, path);
+    reject_root_relative_symlinks(&root, path)
 }
 
 /// Canonicalize `path` when it exists; otherwise canonicalize the deepest
@@ -10705,7 +10776,7 @@ const MAX_SUBAGENT_STATE_BYTES: u64 = 16 * 1024 * 1024;
 
 fn read_subagent_state_file(state_root: &Path, path: &Path) -> Result<String> {
     let state_root = normalize_subagent_workspace(state_root);
-    reject_root_relative_symlinks(&state_root, path)?;
+    reject_state_path_symlinks(&state_root, path)?;
     let metadata = fs::symlink_metadata(path)?;
     let file_type = metadata.file_type();
     if file_type.is_symlink() || !file_type.is_file() {
@@ -10745,14 +10816,14 @@ fn open_subagent_state_file(path: &Path) -> Result<fs::File> {
 }
 
 fn prepare_subagent_transcript_parent(state_root: &Path, path: &Path) -> Result<()> {
-    reject_root_relative_symlinks(state_root, path)?;
+    reject_state_path_symlinks(state_root, path)?;
     let parent = path
         .parent()
         .ok_or_else(|| anyhow!("sub-agent transcript artifact must have a parent directory"))?;
     fs::create_dir_all(parent)?;
     // Re-check after creation so a pre-existing component cannot redirect the
     // private transcript outside the state root.
-    reject_root_relative_symlinks(state_root, path)?;
+    reject_state_path_symlinks(state_root, path)?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -10775,7 +10846,7 @@ fn append_private_subagent_transcript(
     bytes: &[u8],
     durable: bool,
 ) -> Result<()> {
-    reject_root_relative_symlinks(state_root, path)?;
+    reject_state_path_symlinks(state_root, path)?;
     let mut file = open_private_subagent_transcript(path, true)?;
     if !bytes.is_empty() {
         file.write_all(bytes)?;
@@ -10846,7 +10917,7 @@ static STATE_PUBLISH_SEQUENCES: std::sync::OnceLock<parking_lot::Mutex<HashMap<P
 
 fn write_json_atomic(state_root: &Path, path: &Path, value: &PersistedSubAgentState) -> Result<()> {
     let state_root = normalize_subagent_workspace(state_root);
-    reject_root_relative_symlinks(&state_root, path)?;
+    reject_state_path_symlinks(&state_root, path)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -14400,11 +14471,8 @@ async fn insert_subagent_full_transcript_handle(
     // bounded message tail — embedding it verbatim would duplicate that tail
     // inside one payload. Keep checkpoint metadata, drop its messages, and
     // record how much of the true history the bounded tail omits.
-    let projected_messages = crate::image_attach::safe_tool_result_message_projection(messages);
-    let (bounded_messages, omitted_messages) = bounded_tail_messages(
-        &projected_messages,
-        SUBAGENT_TRANSCRIPT_MESSAGE_BUDGET_BYTES,
-    );
+    let (bounded_messages, omitted_messages) =
+        bounded_tail_messages(messages, SUBAGENT_TRANSCRIPT_MESSAGE_BUDGET_BYTES);
     let checkpoint_meta = checkpoint.map(|checkpoint| SubAgentCheckpoint {
         omitted_messages: checkpoint.message_count,
         messages: Vec::new(),
@@ -14412,7 +14480,7 @@ async fn insert_subagent_full_transcript_handle(
     });
     let transcript_artifact = transcript_artifact.map(|writer| {
         let synced =
-            match writer.sync_messages(&projected_messages, *status != SubAgentStatus::Running) {
+            match writer.sync_projected_messages(messages, *status != SubAgentStatus::Running) {
                 Ok(()) => true,
                 Err(err) => {
                     tracing::warn!(
@@ -14424,7 +14492,7 @@ async fn insert_subagent_full_transcript_handle(
                     false
                 }
             };
-        writer.metadata(synced && writer.synced_live_messages == projected_messages.len())
+        writer.metadata(synced && writer.synced_live_messages == messages.len())
     });
     let payload = json!({
         "kind": "subagent_full_transcript",
@@ -14529,23 +14597,27 @@ fn bound_subagent_tool_result(
 /// budgets. Exact JSON size via serde; unserializable messages (should not
 /// happen) count as 1 KiB so they still consume budget.
 fn approximate_message_bytes(message: &Message) -> usize {
-    serde_json::to_string(message).map_or(1024, |s| s.len())
+    let mut counter = crate::utils::CountingWriter::new();
+    serde_json::to_writer(&mut counter, message).map_or(1024, |()| counter.count())
 }
 
-/// Keep the most recent messages whose combined approximate size fits
-/// `budget_bytes`. Always keeps at least the final message (even if it alone
-/// exceeds the budget) so a non-empty history stays continuable. Returns the
-/// retained tail and how many older messages were omitted.
+/// Keep the most recent messages, after `safe_tool_result_message_projection`,
+/// whose combined approximate size fits `budget_bytes`. Always keeps at least
+/// the final message (even if it alone exceeds the budget) so a non-empty
+/// history stays continuable. Returns the retained tail and how many older
+/// messages were omitted.
 fn bounded_tail_messages(messages: &[Message], budget_bytes: usize) -> (Vec<Message>, usize) {
     let mut kept_rev: Vec<Message> = Vec::new();
     let mut used = 0usize;
     for message in messages.iter().rev() {
-        let size = approximate_message_bytes(message);
+        let projected =
+            crate::image_attach::safe_tool_result_message_projection(std::slice::from_ref(message));
+        let size: usize = projected.iter().map(approximate_message_bytes).sum();
         if !kept_rev.is_empty() && used.saturating_add(size) > budget_bytes {
             break;
         }
         used = used.saturating_add(size);
-        kept_rev.push(message.clone());
+        kept_rev.extend(projected);
     }
     kept_rev.reverse();
     let omitted = messages.len().saturating_sub(kept_rev.len());
@@ -14561,11 +14633,8 @@ fn build_subagent_checkpoint(
 ) -> SubAgentCheckpoint {
     let created_at_ms = epoch_millis_now();
     let checkpoint_id = format!("{agent_id}:step:{steps_taken}:ts:{created_at_ms}");
-    let projected_messages = crate::image_attach::safe_tool_result_message_projection(messages);
-    let (bounded_messages, omitted_messages) = bounded_tail_messages(
-        &projected_messages,
-        SUBAGENT_CHECKPOINT_MESSAGE_BUDGET_BYTES,
-    );
+    let (bounded_messages, omitted_messages) =
+        bounded_tail_messages(messages, SUBAGENT_CHECKPOINT_MESSAGE_BUDGET_BYTES);
     SubAgentCheckpoint {
         checkpoint_id: checkpoint_id.clone(),
         agent_id: agent_id.to_string(),

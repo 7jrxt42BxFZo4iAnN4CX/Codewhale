@@ -97,7 +97,7 @@ codewhale mcp add tracker --url "https://example.com/mcp" --bearer-token-env-var
       title: "Run Codewhale as an MCP server",
       blocks: [
         {
-          p: "Other MCP clients — including another Codewhale session — can use Codewhale's tools. Register it once:",
+          p: "Other MCP clients can use Codewhale as a tool server. By default, it exposes only read-only `file_read` and `search` tools.",
         },
         {
           code: `codewhale mcp add-self
@@ -105,7 +105,7 @@ codewhale mcp tools codewhale`,
           lang: "Terminal",
         },
         {
-          p: "`add-self` writes an entry that runs `codewhale serve --mcp` over stdio. Each client starts its own process; no network port is opened. `codewhale serve --http` is a different thing — the [Runtime API](/docs/runtime-api) for apps.",
+          p: "`add-self` registers `codewhale serve --mcp` over stdio; `codewhale mcp-server` is the equivalent entry point. Write tools stay withheld unless the operator explicitly permits them in server configuration. [Runtime API](/docs/runtime-api) HTTP is a separate transport.",
         },
       ],
     },

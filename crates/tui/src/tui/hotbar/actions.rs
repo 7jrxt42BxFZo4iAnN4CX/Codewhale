@@ -1134,11 +1134,11 @@ impl HotbarAction for SlashHotbarAction {
             HotbarRecommendation::Default
         } else {
             match self.info.discovery() {
-                crate::commands::traits::CommandDiscovery::Primary => {
+                codewhale_command_contract::CommandDiscovery::Primary => {
                     HotbarRecommendation::Eligible
                 }
-                crate::commands::traits::CommandDiscovery::Advanced
-                | crate::commands::traits::CommandDiscovery::Compatibility => {
+                codewhale_command_contract::CommandDiscovery::Advanced
+                | codewhale_command_contract::CommandDiscovery::Compatibility => {
                     HotbarRecommendation::Advanced
                 }
             }
@@ -1481,7 +1481,7 @@ mod tests {
         let options = TuiOptions {
             skills_dir,
             start_in_agent_mode: true,
-            ..crate::test_support::test_tui_options(workspace)
+            ..crate::tui::test_support::test_tui_options(workspace)
         };
         let mut app = App::new(options, config);
         app.ui_locale = codewhale_localization::Locale::En;

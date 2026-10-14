@@ -1,8 +1,16 @@
 //! Background shell job-center helpers for slash commands and pagers.
+//!
+//! Known limitations: the Bash Job pager (opened from `/jobs`, Alt+V or a
+//! work-dock shell row) follows a running job by re-reading it on the event
+//! loop's 2.5 s refresh (a bounded read that never consumes the model's
+//! output cursor), so new output lands up to 2.5 s late. Shells run by
+//! delegated agents show in `/jobs` and the dock with their Owner, not in the
+//! agent's detail. Named PTY sessions (`tools/terminal_session.rs`) are not
+//! listed here or in `/jobs`; they live in the terminal dock (#6912).
 
 use crate::tools::shell::{ShellJobDetail, ShellJobSnapshot, ShellResult, ShellStatus};
 use crate::tui::app::App;
-use crate::tui::history::{HistoryCell, ToolCell, ToolStatus};
+use crate::tui::history::{HistoryCell, ToolCell};
 use crate::tui::pager::PagerView;
 use crate::tui::views::{CommandPaletteAction, ViewEvent};
 use codewhale_localization::MessageId;
@@ -36,11 +44,11 @@ pub(super) fn format_shell_job_list(jobs: &[ShellJobSnapshot]) -> String {
             .map(|id| format!(" task={id}"))
             .unwrap_or_default();
         lines.push(format!(
-            "{}  {:8}  {}  exit={:?}{}",
+            "{}  {:8}  {}  {}{}",
             job.id,
             status_label(&job.status, job.stale),
             codewhale_command_contract::elapsed::format_elapsed_ms(job.elapsed_ms),
-            job.exit_code,
+            exit_label(job.exit_code),
             task
         ));
         lines.push(format!("  cwd: {}", crate::utils::display_path(&job.cwd)));
@@ -50,8 +58,10 @@ pub(super) fn format_shell_job_list(jobs: &[ShellJobSnapshot]) -> String {
         } else {
             job.stdout_tail.trim()
         };
-        if !tail.is_empty() {
-            lines.push(format!("  tail: {}", tail.replace('\n', "\\n")));
+        let tail_lines: Vec<&str> = tail.lines().collect();
+        let shown = tail_lines.len().saturating_sub(3);
+        for line in &tail_lines[shown..] {
+            lines.push(format!("  | {line}"));
         }
     }
     lines.push(
@@ -61,17 +71,35 @@ pub(super) fn format_shell_job_list(jobs: &[ShellJobSnapshot]) -> String {
     lines.join("\n")
 }
 
+fn exit_label(code: Option<i64>) -> String {
+    match code {
+        Some(0) => "exit 0".to_string(),
+        Some(code) => format!("exit {code}"),
+        None => "no exit yet".to_string(),
+    }
+}
+
 pub(super) fn format_shell_poll(result: &ShellResult) -> String {
     let mut lines = vec![
         format!(
-            "Bash job {}: {} exit={:?} elapsed={}",
+            "Bash job {}: {} {} elapsed={}",
             result.task_id.as_deref().unwrap_or("(unknown)"),
             status_label(&result.status, false),
-            result.exit_code,
+            exit_label(result.exit_code),
             codewhale_command_contract::elapsed::format_elapsed_ms(result.duration_ms)
         ),
         String::new(),
     ];
+    if result.status == ShellStatus::Killed {
+        lines.push(
+            crate::tools::shell_output::kill_outcome_note(&format!(
+                "{}{}",
+                result.stdout, result.stderr
+            ))
+            .to_string(),
+        );
+        lines.push(String::new());
+    }
     if result.stdout.is_empty() && result.stderr.is_empty() {
         lines.push("(no new output)".to_string());
     } else {
@@ -129,15 +157,6 @@ pub(crate) fn shell_job_for_cell(app: &App, cell_index: usize) -> Option<ShellJo
     manager.inspect_job_for_session(session, &job_id).ok()
 }
 
-pub(crate) fn newest_running_shell_cell(app: &App) -> Option<usize> {
-    (0..app.virtual_cell_count()).rev().find(|&index| {
-        matches!(
-            app.cell_at_virtual_index(index),
-            Some(HistoryCell::Tool(ToolCell::Exec(exec))) if exec.status == ToolStatus::Running
-        )
-    })
-}
-
 pub(crate) fn open_shell_job_pager(app: &mut App, detail: &ShellJobDetail) {
     let width = app
         .viewport
@@ -154,6 +173,7 @@ pub(crate) fn open_shell_job_pager(app: &mut App, detail: &ShellJobDetail) {
     )
     .with_copy_text(body);
     if live {
+        pager = pager.with_live_shell_job(detail.snapshot.id.clone());
         pager = pager.with_destructive_action(
             's',
             app.tr(MessageId::SidebarStopControl),
@@ -168,11 +188,55 @@ pub(crate) fn open_shell_job_pager(app: &mut App, detail: &ShellJobDetail) {
     app.view_stack.push(pager);
 }
 
+pub(crate) fn refresh_live_shell_job_pager(app: &mut App) -> bool {
+    let Some(job_id) = app
+        .view_stack
+        .top_pager_mut()
+        .and_then(|pager| pager.live_shell_job().map(str::to_owned))
+    else {
+        return false;
+    };
+    let Some(shell_manager) = app.runtime_services.shell_manager.clone() else {
+        return false;
+    };
+    let session = app.current_session_id.clone().unwrap_or_default();
+    let detail = {
+        let Ok(mut manager) = shell_manager.try_lock() else {
+            return false;
+        };
+        manager.inspect_job_for_session(&session, &job_id).ok()
+    };
+    let Some(pager) = app.view_stack.top_pager_mut() else {
+        return false;
+    };
+    let Some(detail) = detail else {
+        pager.end_live_shell_job();
+        return true;
+    };
+    let changed = pager.replace_live_text(&format_shell_job_detail(&detail));
+    if detail.snapshot.status != ShellStatus::Running {
+        pager.end_live_shell_job();
+        return true;
+    }
+    changed
+}
+
+fn detail_status_label(job: &ShellJobSnapshot) -> String {
+    let quiet =
+        u64::try_from(crate::tools::shell::QUIET_NO_OUTPUT_AFTER.as_millis()).unwrap_or(u64::MAX);
+    match job.elapsed_since_output_ms {
+        Some(ms) if job.status == ShellStatus::Running && !job.stale && ms >= quiet => {
+            crate::tui::history::stale_shell_status_label(ms)
+        }
+        _ => status_label(&job.status, job.stale).to_string(),
+    }
+}
+
 pub(crate) fn format_shell_job_detail(detail: &ShellJobDetail) -> String {
     let job = &detail.snapshot;
     let mut lines = vec![
         format!("Job: {}", job.id),
-        format!("Status: {}", status_label(&job.status, job.stale)),
+        format!("Status: {}", detail_status_label(job)),
         format!("Command: {}", job.command),
         format!("Cwd: {}", crate::utils::display_path(&job.cwd)),
     ];
@@ -187,7 +251,7 @@ pub(crate) fn format_shell_job_detail(detail: &ShellJobDetail) -> String {
         "Elapsed: {}",
         codewhale_command_contract::elapsed::format_elapsed_ms(job.elapsed_ms)
     ));
-    lines.push(format!("Exit Code: {:?}", job.exit_code));
+    lines.push(format!("Exit Code: {}", exit_label(job.exit_code)));
     lines.push(format!("Stdin Available: {}", job.stdin_available));
     if let Some(task_id) = job.linked_task_id.as_ref() {
         lines.push(format!("Linked Task: {task_id}"));
@@ -235,14 +299,13 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    #[test]
-    fn list_shows_controls_and_stale_state() {
-        let jobs = vec![ShellJobSnapshot {
+    fn snapshot(status: ShellStatus, stale: bool) -> ShellJobSnapshot {
+        ShellJobSnapshot {
             id: "shell_dead".to_string(),
             job_id: "shell_dead".to_string(),
             command: "cargo test".to_string(),
             cwd: PathBuf::from("/tmp/repo"),
-            status: ShellStatus::Killed,
+            status,
             exit_code: None,
             elapsed_ms: 0,
             stdout_tail: String::new(),
@@ -250,7 +313,7 @@ mod tests {
             stdout_len: 0,
             stderr_len: 8,
             stdin_available: false,
-            stale: true,
+            stale,
             elapsed_since_output_ms: None,
             linked_task_id: Some("task_1".to_string()),
             owner_agent_id: None,
@@ -260,7 +323,26 @@ mod tests {
             owner_session_id: "session-test".to_string(),
             background: true,
             finished_at: Some(chrono::Utc::now()),
-        }];
+        }
+    }
+
+    #[test]
+    fn silent_running_job_detail_reads_quiet_not_stale() {
+        let mut job = snapshot(ShellStatus::Running, false);
+        job.elapsed_since_output_ms = Some(125_000);
+        let body = format_shell_job_detail(&ShellJobDetail {
+            snapshot: job,
+            stdout: String::new(),
+            stderr: String::new(),
+        });
+        assert!(body.contains("Status: running · no output for"), "{body}");
+        assert!(body.contains("(no output yet)"), "{body}");
+        assert!(!body.contains("stale"), "{body}");
+    }
+
+    #[test]
+    fn list_shows_controls_and_stale_state() {
+        let jobs = vec![snapshot(ShellStatus::Killed, true)];
         let formatted = format_shell_job_list(&jobs);
         assert!(formatted.contains("Bash jobs (1)"));
         assert!(!formatted.contains("Background commands"));

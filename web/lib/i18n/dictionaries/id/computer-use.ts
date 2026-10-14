@@ -7,7 +7,7 @@ import type { ComputerUseDict } from "../types";
  * the app shows them; formal "Anda" address matches the rest of the site.
  */
 export const computerUse: ComputerUseDict = {
-  metaTitle: "Computer Use untuk Mac · Codewhale",
+  metaTitle: "Computer Use · Pratinjau · Codewhale",
   metaDescription: "Unduh dan siapkan Codewhale Computer Use untuk Mac. Kendali aplikasi di latar belakang, pengaturan izin, serta kontrol Pause dan Stop di tangan Anda.",
   title: "Computer Use",
   lead: "Biarkan Codewhale bekerja di aplikasi Anda sementara Anda tetap bekerja. Pembantu Mac ini menghadirkan pengaturan izin, kendali aplikasi di latar belakang, dan cara menjeda atau menghentikan input langsung dari bar menu.",

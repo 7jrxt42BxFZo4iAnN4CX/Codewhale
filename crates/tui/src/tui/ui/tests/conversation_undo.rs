@@ -113,7 +113,7 @@ fn undo_retry_apply_path_keeps_engine_request_and_reopened_session_consistent() 
         config.set_feature("mcp", false).unwrap();
         config.set_feature("subagents", false).unwrap();
         let mut app = App::new(
-            crate::test_support::test_tui_options(workspace.path()),
+            crate::tui::test_support::test_tui_options(workspace.path()),
             &config,
         );
         app.onboarding_needs_api_key = false;

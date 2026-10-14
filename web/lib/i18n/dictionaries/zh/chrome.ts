@@ -13,6 +13,7 @@ export const chrome: ChromeDict = {
   navCommunity: "社区",
   navContribute: "贡献",
 
+  navFeatures: "功能",
   navProduct: "产品",
   navModels: "模型",
   navPlugins: "插件",

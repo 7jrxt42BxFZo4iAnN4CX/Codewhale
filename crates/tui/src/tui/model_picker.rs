@@ -5393,7 +5393,7 @@ mod tests {
         .expect("fleet add");
 
         let options = crate::tui::app::TuiOptions {
-            ..crate::test_support::test_tui_options(workspace.clone())
+            ..crate::tui::test_support::test_tui_options(workspace.clone())
         };
         let mut app = crate::tui::app::App::new(options, &Config::default());
         app.workspace = workspace;
@@ -5461,7 +5461,7 @@ mod tests {
                     &["reviewer".into()],
                 )
                 .unwrap();
-                let options = crate::test_support::test_tui_options(workspace.clone());
+                let options = crate::tui::test_support::test_tui_options(workspace.clone());
                 let mut app = App::new(options, &config);
                 app.workspace = workspace.clone();
                 let pins = picker_pins_for_app(&app);
@@ -5508,7 +5508,7 @@ mod tests {
                     .as_mut()
                     .unwrap()
                     .retain(|row| row.id == lower);
-                let options = crate::test_support::test_tui_options(workspace.clone());
+                let options = crate::tui::test_support::test_tui_options(workspace.clone());
                 let mut reloaded = App::new(options, &config);
                 reloaded.workspace = workspace;
                 let rows = picker_model_rows_for_app(&reloaded, &config);
@@ -5575,7 +5575,7 @@ mod tests {
         }
         let config = Config::default();
         let mut app = App::new(
-            crate::test_support::test_tui_options(std::env::current_dir().unwrap()),
+            crate::tui::test_support::test_tui_options(std::env::current_dir().unwrap()),
             &config,
         );
         let mut picker = ModelPickerView::new(&app, &config);
@@ -6072,7 +6072,7 @@ model = "deepseek/deepseek-v4-flash"
 
         let home = tempfile::tempdir().expect("test home");
         let workspace = tempfile::tempdir().expect("test workspace");
-        let options = crate::test_support::test_tui_options(workspace.path());
+        let options = crate::tui::test_support::test_tui_options(workspace.path());
         let mut app = App::new(options, &config);
         // The resumed session stays on the provider it was created with.
         app.api_provider = ProviderKind::Openrouter;
@@ -6278,7 +6278,10 @@ api_key = "fixture-xai-key"
 "#,
         )
         .expect("founder fixture");
-        let mut app = App::new(crate::test_support::test_tui_options(workspace), &config);
+        let mut app = App::new(
+            crate::tui::test_support::test_tui_options(workspace),
+            &config,
+        );
         app.workspace = workspace.to_path_buf();
         app.api_provider = ProviderKind::Deepseek;
         app.provider_identity = Some(

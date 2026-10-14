@@ -24,13 +24,13 @@ use codewhale_command_contract::handler::{CommandCapabilities, CommandHandler};
 use crate::commands::session_export_test_support::{
     assert_only_export_facet_exposed, normalize_export_time,
 };
-use crate::commands::traits::CommandDiscovery;
 use crate::commands::{CommandResult, execute};
 use crate::config::{Config, ProviderKind};
 use crate::test_support::{EnvVarGuard, TestEnvLock};
 use crate::tui::app::{App, TuiOptions};
 use crate::tui::clipboard::ClipboardHandler;
 use crate::tui::command_palette;
+use codewhale_command_contract::CommandDiscovery;
 use codewhale_localization::Locale;
 use codewhale_models::{ContentBlock, Message, Role};
 
@@ -68,7 +68,7 @@ impl SurfaceHarness {
             memory_path: temp.path().join("memory.md"),
             notes_path: temp.path().join("notes.txt"),
             mcp_config_path: temp.path().join("mcp.json"),
-            ..crate::test_support::test_tui_options(temp.path())
+            ..crate::tui::test_support::test_tui_options(temp.path())
         };
         let app = App::new(options, &Config::default());
         Self {

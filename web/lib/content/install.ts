@@ -12,8 +12,8 @@ export const INSTALL_COMMANDS = {
 export const INSTALL_COPY = {
   windowsNote: { en: "Windows x64. Winget updates can lag behind GitHub releases; npm is another option.", zh: "适用于 Windows x64。Winget 更新可能晚于 GitHub 发布；也可以通过 npm 安装。" },
   cargoNote: { en: "Builds from source. Requires current stable Rust and build tools. The Cargo package can lag behind GitHub releases.", zh: "从源码构建，需要当前稳定版 Rust 和构建工具。Cargo 包可能晚于 GitHub 发布。" },
-  metaTitle: { en: "Install · Codewhale", zh: "安装 · Codewhale" },
-  metaDescription: { en: "Install Codewhale on macOS, Linux, or Windows, connect a model, and run your first task. Covers package managers and source builds.", zh: "在 macOS、Linux 或 Windows 上安装 Codewhale，连接模型并运行第一项任务。也介绍包管理器和源码构建。" },
+  metaTitle: { en: "Install Codewhale, the terminal coding agent", zh: "安装终端编程智能体 Codewhale" },
+  metaDescription: { en: "Install the open-source terminal coding agent on macOS, Linux or Windows. Connect your model and run a task.", zh: "在 macOS、Linux 或 Windows 上安装开源终端编程智能体。连接你选择的模型并运行任务。" },
   source: { en: "Read the verified guide on GitHub", zh: "查看 GitHub 上已验证的指南" },
   translationNotice: { en: "Installation receipts retain the version actually tested; latest resolves to the published release.", zh: "本页采用经审阅的简体中文指南。安装回执保留实际测试版本；latest 以已发布版本为准。" },
   configuration: { en: "Settings and configuration", zh: "设置与配置" },

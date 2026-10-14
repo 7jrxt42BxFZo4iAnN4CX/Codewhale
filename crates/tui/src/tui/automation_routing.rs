@@ -625,8 +625,8 @@ mod tests {
         use ratatui::{buffer::Buffer, layout::Rect};
 
         let root = TempDir::new().unwrap();
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(root.path()),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(root.path()),
         );
         app.view_stack
             .push(AutomationsView::from_rows(Vec::new(), Locale::En));

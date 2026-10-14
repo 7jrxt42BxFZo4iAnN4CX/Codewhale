@@ -1793,7 +1793,17 @@ impl ProviderPickerView {
     /// OAuth-only providers never collect a typed credential: the key entry
     /// stage for them is a routing step (device flow / external consent), so
     /// typed input and pastes are accepted events but never stored.
+    fn selected_plugin_provider(&self) -> Option<String> {
+        let identity = self.selected_identity()?;
+        crate::plugins::providers::plugin_auth_entry(&self.route_config, identity.key.as_str())
+            .ok()
+            .map(|_| identity.key.as_str().to_owned())
+    }
+
     fn key_entry_is_oauth_locked(&self) -> bool {
+        if self.selected_plugin_provider().is_some() {
+            return true;
+        }
         self.selected_provider()
             .provider()
             .credential_help()
@@ -3595,6 +3605,15 @@ impl ProviderPickerView {
     }
 
     fn render_key_entry(&self, area: Rect, buf: &mut Buffer) {
+        if let Some(provider) = self.selected_plugin_provider() {
+            let block = Block::default().title(provider).borders(Borders::ALL);
+            let inner = block.inner(area);
+            block.render(area, buf);
+            Paragraph::new(self.tr(MessageId::PluginOAuthBrowser).into_owned())
+                .wrap(Wrap { trim: true })
+                .render(inner, buf);
+            return;
+        }
         let row = &self.rows[self.selected_idx];
         let codex_oauth = row.provider == ProviderKind::OpenaiCodex;
         let oauth_provider = codex_oauth;
@@ -3641,8 +3660,8 @@ impl ProviderPickerView {
                 inner,
                 buf,
                 &[
-                    ActionHint::new("Enter", "continue"),
-                    ActionHint::new("Esc", "back"),
+                    ActionHint::new("Enter", self.tr(MessageId::SetupActionContinue)),
+                    ActionHint::new("Esc", self.tr(MessageId::SetupActionBack)),
                 ],
             )
         };
@@ -3741,10 +3760,13 @@ impl ProviderPickerView {
         };
 
         if let Some(ref error) = self.key_entry_error {
-            hint_lines.push(Line::from(Span::styled(
-                error.clone(),
-                Style::default().fg(palette::STATUS_ERROR),
-            )));
+            hint_lines.insert(
+                0,
+                Line::from(Span::styled(
+                    error.clone(),
+                    Style::default().fg(palette::STATUS_ERROR),
+                )),
+            );
         }
 
         // `Line` count is not rendered row count: long environment-variable
@@ -4012,8 +4034,8 @@ impl ProviderPickerView {
             buf,
             &[
                 ActionHint::new("↑↓", "move"),
-                ActionHint::new("Enter", "continue"),
-                ActionHint::new("Esc", "back"),
+                ActionHint::new("Enter", self.tr(MessageId::SetupActionContinue)),
+                ActionHint::new("Esc", self.tr(MessageId::SetupActionBack)),
             ],
         );
 
@@ -4129,8 +4151,8 @@ impl ProviderPickerView {
             buf,
             &[
                 ActionHint::new("↑↓", "choose"),
-                ActionHint::new("Enter", "continue"),
-                ActionHint::new("Esc", "back"),
+                ActionHint::new("Enter", self.tr(MessageId::SetupActionContinue)),
+                ActionHint::new("Esc", self.tr(MessageId::SetupActionBack)),
             ],
         );
         self.render_setup_choices(
@@ -4168,8 +4190,8 @@ impl ProviderPickerView {
             buf,
             &[
                 ActionHint::new("↑↓", "choose"),
-                ActionHint::new("Enter", "continue"),
-                ActionHint::new("Esc", "back"),
+                ActionHint::new("Enter", self.tr(MessageId::SetupActionContinue)),
+                ActionHint::new("Esc", self.tr(MessageId::SetupActionBack)),
             ],
         );
         // Keep the actual endpoint with each route; choosing only stages
@@ -4476,6 +4498,15 @@ impl ProviderPickerView {
     fn activate_selected_row(&mut self) -> ViewAction {
         if !self.row_visible(self.selected_idx) {
             return ViewAction::None;
+        }
+        if let Some(provider) = self.selected_plugin_provider() {
+            return if self.selected_has_key() && !self.selected_credential_rejected() {
+                ViewAction::EmitAndClose(ViewEvent::ProviderPickerOpenModels {
+                    identity: self.selected_identity().expect("admitted plugin provider"),
+                })
+            } else {
+                ViewAction::EmitAndClose(ViewEvent::ProviderPickerPluginOAuthRequested { provider })
+            };
         }
         let provider = self.selected_provider();
         if provider == ProviderKind::Custom && !self.rows[self.selected_idx].is_configured {
@@ -4943,6 +4974,11 @@ impl ModalView for ProviderPickerView {
                     ViewAction::None
                 }
                 KeyCode::Enter => {
+                    if let Some(provider) = self.selected_plugin_provider() {
+                        return ViewAction::EmitAndClose(
+                            ViewEvent::ProviderPickerPluginOAuthRequested { provider },
+                        );
+                    }
                     if self.selected_provider() == ProviderKind::OpenaiCodex {
                         return ViewAction::EmitAndClose(
                             ViewEvent::ProviderPickerChatgptOAuthRequested,
@@ -8364,7 +8400,7 @@ mod tests {
         .collect();
         std::fs::write(&config_path, document).expect("config only");
         let config = Config::load(Some(config_path.clone()), None).expect("load route");
-        let mut options = crate::test_support::test_tui_options(home.path());
+        let mut options = crate::tui::test_support::test_tui_options(home.path());
         options.config_path = Some(config_path);
         options.skip_onboarding = false;
         check(crate::tui::app::App::new(options, &config), config);

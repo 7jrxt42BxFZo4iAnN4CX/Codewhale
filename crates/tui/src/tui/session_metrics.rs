@@ -444,7 +444,7 @@ mod tests {
     #[test]
     fn cache_rates_count_writes_in_agent_and_combined_input() {
         let mut app = crate::tui::app::App::new(
-            crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+            crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
             &crate::config::Config::default(),
         );
         assert_eq!(cache_rates(&app), CacheRates::default());
@@ -491,7 +491,7 @@ mod tests {
         // #6565: the footer rate keeps meaning this conversation's requests;
         // agents and the token-weighted combination are labelled beside it.
         let mut app = crate::tui::app::App::new(
-            crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+            crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
             &crate::config::Config::default(),
         );
         assert_eq!(cache_rates(&app), CacheRates::default());

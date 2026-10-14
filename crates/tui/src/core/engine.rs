@@ -4340,15 +4340,15 @@ impl Engine {
         }
     }
 
-    fn record_goal_usage_for_turn(&self, usage: &Usage, elapsed: std::time::Duration) {
+    fn record_goal_usage_for_turn(&self, usage: &Usage, started: Instant) {
         let token_delta =
             u64::from(usage.input_tokens).saturating_add(u64::from(usage.output_tokens));
-        let time_delta_seconds = elapsed.as_secs();
+        let time_delta_seconds = started.elapsed().as_secs();
         if token_delta == 0 && time_delta_seconds == 0 {
             return;
         }
         match self.config.goal_state.lock() {
-            Ok(mut state) => state.record_usage(token_delta, time_delta_seconds),
+            Ok(mut state) => state.record_usage(token_delta, time_delta_seconds, started),
             Err(err) => tracing::warn!("goal state lock poisoned while recording usage: {err}"),
         }
     }
@@ -5731,7 +5731,7 @@ impl Engine {
         // The registry is rebuilt every turn: name each refused override to
         // the user once per process, not once per turn.
         for name in refused_overrides {
-            if first_override_refusal(&name) {
+            if first_notice(&name) {
                 let _ = self
                     .send_event(Event::status(
                         crate::tools::registry::override_refusal_notice(&name),
@@ -5767,6 +5767,25 @@ impl Engine {
         // caller can attribute MCP contributions without a second connect.
         let mcp_tools = mcp_state.tools().to_vec();
         let mcp_tool_names: Vec<String> = mcp_tools.iter().map(|tool| tool.name.clone()).collect();
+        if self.child_host.is_none() && matches!(mcp_state, McpToolState::Live { .. }) {
+            let native_names = tool_registry.names();
+            for entry in &self.config.tools_always_load {
+                let selects = |name: &str| match entry.strip_suffix('*') {
+                    Some(prefix) => name.starts_with(prefix),
+                    None => name == entry,
+                };
+                if !native_names.iter().any(|name| selects(name))
+                    && !mcp_tool_names.iter().any(|name| selects(name))
+                    && first_notice(&format!("always_load:{entry}"))
+                {
+                    let _ = self
+                        .send_event(Event::status(format!(
+                            "always_load entry `{entry}` matches no tool; MCP tool names carry a plugin-N prefix that renumbers when plugins change."
+                        )))
+                        .await;
+                }
+            }
+        }
         // The surface budget belongs to the route the request would go to,
         // which is not necessarily the installed one under auto routing.
         let capability = route.capability_profile();
@@ -6696,7 +6715,7 @@ impl Engine {
         // Update session usage
         self.session.total_usage.add(&turn.usage);
         if !self.is_acp_turn() {
-            self.record_goal_usage_for_turn(&turn.usage, turn.elapsed());
+            self.record_goal_usage_for_turn(&turn.usage, turn.started_at);
         }
 
         // Cancellation wins until the terminal settlement decision. `run_turn`
@@ -7254,7 +7273,7 @@ impl Engine {
                     route.model.clone(),
                     self.session.workspace.clone(),
                     self.session.system_prompt.clone(),
-                    self.session.messages.clone().into(),
+                    self.session.messages.snapshot(),
                 ))
                 .with_cancel_token(self.cancel_token.clone())
                 .with_origin_turn_id(self.turn_counter.to_string());
@@ -7310,7 +7329,7 @@ impl Engine {
             route.model.clone(),
             self.session.workspace.clone(),
             self.session.system_prompt.clone(),
-            self.session.messages.clone().into(),
+            self.session.messages.snapshot(),
         ))
         .with_cancel_token(self.cancel_token.clone())
         .with_shell_policy(authority.shell_policy())
@@ -8820,16 +8839,15 @@ fn plugin_tools_dir(tools_config: Option<&crate::config::ToolsConfig>) -> PathBu
     default_plugin_tools_dir()
 }
 
-/// Whether this process has not yet told the user about the refused
-/// `[tools.overrides.<name>]`.
-fn first_override_refusal(name: &str) -> bool {
+/// Whether this process has not yet shown the user the notice keyed `key`.
+fn first_notice(key: &str) -> bool {
     static NOTIFIED: std::sync::OnceLock<std::sync::Mutex<std::collections::HashSet<String>>> =
         std::sync::OnceLock::new();
     NOTIFIED
         .get_or_init(Default::default)
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
-        .insert(name.to_string())
+        .insert(key.to_string())
 }
 
 /// Load drop-in scripts and apply `[tools.overrides]`. Returns the tool names

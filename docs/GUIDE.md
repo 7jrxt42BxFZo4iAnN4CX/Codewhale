@@ -94,7 +94,7 @@ server answers. The provider step also has an explicit offline route.
 
 Everything optional stays available after that. Use `/setup` for the
 progressive setup and repair guide, `/settings` for the full typed editor, and
-`/constitution` when you want to customize the bundled working agreement.
+`/constitution` when you want your own constitution on top of the bundled one.
 The localized telemetry choice appears only after the workspace is ready and
 does not block the composer.
 

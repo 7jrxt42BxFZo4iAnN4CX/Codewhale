@@ -10,7 +10,7 @@
 use crate::snapshot::SnapshotRepo;
 use crate::tui::app::App;
 use crate::tui::footer_ui::one_line_summary;
-use crate::tui::history::{HistoryCell, ToolCell, ToolStatus};
+use crate::tui::history::{HistoryCell, ToolCell, ToolStatus, tool_status_label};
 use crate::tui::pager::{PagerPage, PagerView};
 use crate::tui::ui_text::{
     history_cell_to_clipboard_text, history_cell_to_text, truncate_line_to_width,
@@ -18,6 +18,9 @@ use crate::tui::ui_text::{
 use codewhale_localization::{MessageId, tr};
 
 fn selected_transcript_cell_index(app: &App) -> Option<usize> {
+    if let Some(owner) = app.selection_owner_cell() {
+        return Some(owner);
+    }
     app.viewport
         .transcript_selection
         .ordered_endpoints()
@@ -250,16 +253,6 @@ fn tool_duration_for_activity(tool: &ToolCell) -> Option<u64> {
     }
 }
 
-fn activity_status_label(status: ToolStatus) -> &'static str {
-    match status {
-        ToolStatus::Running => "running",
-        ToolStatus::Success => "done",
-        ToolStatus::Hydrated => "tool loaded - retry required",
-        ToolStatus::Warning => "issue",
-        ToolStatus::Failed => "failed",
-    }
-}
-
 /// Empty-state hint shown when the selection has no raw leaf detail to open.
 /// `v` / `Alt+V` only ever surface the raw detail of the ONE selected
 /// tool/card/leaf, so when there is nothing leaf-level to show we point the
@@ -275,20 +268,7 @@ const RAW_DETAIL_PAGER_INTRO: &str =
     "Raw detail for the selected item — press Ctrl+Alt+O for the whole-turn overview.";
 
 pub(super) fn open_tool_details_pager(app: &mut App) -> bool {
-    let target_cell = if app
-        .viewport
-        .transcript_selection
-        .ordered_endpoints()
-        .is_some()
-    {
-        detail_target_cell_index(app)
-    } else {
-        crate::tui::shell_job_routing::newest_running_shell_cell(app)
-            .filter(|&idx| crate::tui::shell_job_routing::shell_job_for_cell(app, idx).is_some())
-            .or_else(|| detail_target_cell_index(app))
-    };
-
-    let Some(cell_index) = target_cell else {
+    let Some(cell_index) = detail_target_cell_index(app) else {
         app.status_message = Some(NO_RAW_DETAIL_HINT.to_string());
         return false;
     };
@@ -595,6 +575,9 @@ fn turn_answer_payload(app: &App, start: usize, end: usize, width: u16) -> Optio
 }
 
 pub(super) fn detail_target_cell_index(app: &App) -> Option<usize> {
+    if let Some(owner) = app.selection_owner_cell() {
+        return Some(owner);
+    }
     if let Some((start, _)) = app.viewport.transcript_selection.ordered_endpoints() {
         return app
             .viewport
@@ -1197,7 +1180,7 @@ fn turn_timeline_lines(app: &App, start: usize, end: usize) -> Vec<String> {
                 let (kind, summary) = timeline_tool_summary(app, idx, tool);
                 let duration = tool_duration_for_activity(tool)
                     .map(codewhale_command_contract::elapsed::format_elapsed_ms);
-                let status = tool.status().map(activity_status_label);
+                let status = tool.status().map(tool_status_label);
                 let actions = timeline_cell_actions(app, idx, cell);
                 rows.push(timeline_row(
                     kind,
@@ -1451,7 +1434,7 @@ fn turn_files_changed(app: &App, start: usize, end: usize) -> Vec<String> {
                 lines.push(format!(
                     "• {} — {}",
                     truncate_line_to_width(&patch.path, 60),
-                    activity_status_label(patch.status)
+                    tool_status_label(patch.status)
                 ));
             }
             _ => {}
@@ -1520,7 +1503,7 @@ fn turn_verifier_lines(app: &App, start: usize, end: usize) -> Vec<String> {
                 lines.push(format!(
                     "• {} — {}",
                     truncate_line_to_width(&exec.command, 56),
-                    activity_status_label(exec.status)
+                    tool_status_label(exec.status)
                 ));
             }
             ToolCell::Review(review) => {
@@ -1530,10 +1513,7 @@ fn turn_verifier_lines(app: &App, start: usize, end: usize) -> Vec<String> {
                 } else {
                     format!("review {target}")
                 };
-                lines.push(format!(
-                    "• {target} — {}",
-                    activity_status_label(review.status)
-                ));
+                lines.push(format!("• {target} — {}", tool_status_label(review.status)));
             }
             _ => {}
         }
@@ -1799,7 +1779,7 @@ mod tests {
         let options = TuiOptions {
             model: "deepseek-v4-flash".to_string(),
             start_in_agent_mode: true,
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         App::new(options, &Config::default())
     }

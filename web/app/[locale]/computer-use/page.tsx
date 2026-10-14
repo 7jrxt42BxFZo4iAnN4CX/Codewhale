@@ -1,7 +1,7 @@
 import { Icon } from "@/components/icon";
 import { PageHeader, Section } from "@/components/page-header";
 import { Status } from "@/components/status-badge";
-import { getComputerUse } from "@/lib/i18n/dictionaries";
+import { getComputerUse, getFeatures } from "@/lib/i18n/dictionaries";
 import { buildPageMetadata } from "@/lib/page-meta";
 import { COMPUTER_USE_REPO, getComputerUseRelease } from "@/lib/computer-use-release";
 import { getEnv } from "@/lib/kv";
@@ -40,6 +40,8 @@ export default async function ComputerUsePage({ params }: { params: Promise<{ lo
         pose="computer"
         meta={
           <>
+            <Status tone="attention">{getFeatures(locale).preview}</Status>
+            <br />
             {t.requirements}
             <br />
             {t.included}

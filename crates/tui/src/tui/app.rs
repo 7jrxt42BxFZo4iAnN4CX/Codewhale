@@ -1961,6 +1961,7 @@ pub struct App {
     /// Exact evidence remains attached to each mutation receipt in all modes.
     pub inline_diff_mode: InlineDiffMode,
     pub ui_locale: Locale,
+    pub constitution_reviewed_digest: Option<String>,
     pub cost_currency: CostCurrency,
     /// Route payment truth. Model pricing alone cannot distinguish metered
     /// API calls from OAuth or token-plan quota.
@@ -3534,7 +3535,7 @@ impl App {
     #[must_use]
     pub fn mode_startup_default_receipt(&self, mode: AppMode) -> String {
         self.tr(MessageId::ModeAlreadyActiveSavedAsDefault)
-            .replace("{mode}", mode.display_name())
+            .replace("{mode}", &mode.display_name_localized(self.ui_locale))
     }
 
     /// Surface any startup-default write that failed since the last drain.
@@ -3601,7 +3602,8 @@ impl App {
             Ok(())
         });
         self.push_status_toast(
-            "Legacy full-access mode is deprecated — use Act + Full Access (Shift+Tab)".to_string(),
+            "Legacy full-access mode is deprecated — use Work + Full Access (Shift+Tab)"
+                .to_string(),
             StatusToastLevel::Warning,
             Some(8_000),
         );
@@ -3968,7 +3970,7 @@ impl App {
         if self.mode == AppMode::Plan {
             self.push_status_toast(
                 format!(
-                    "Permissions set to {}. Plan stays Read Only; this applies in Act and Operate.",
+                    "Permissions set to {}. Plan stays Read Only; this applies in Work and Operate.",
                     next.permission_chip_label()
                 ),
                 StatusToastLevel::Info,
@@ -5385,6 +5387,7 @@ impl App {
     /// exclusive `Arc` mutates in place, a shared one detaches first, so an
     /// outstanding engine snapshot can never observe the mutation.
     pub fn api_messages_mut(&mut self) -> &mut Vec<Message> {
+        self.context_token_cache.get_mut().clear();
         Arc::make_mut(&mut self.api_messages)
     }
 
@@ -5394,7 +5397,7 @@ impl App {
     pub fn push_api_message(&mut self, message: Message) {
         self.api_message_stamps
             .resize_with(self.api_messages.len(), Utc::now);
-        self.api_messages_mut().push(message);
+        Arc::make_mut(&mut self.api_messages).push(message);
         self.api_message_stamps.push(Utc::now());
     }
 
@@ -5404,18 +5407,19 @@ impl App {
     /// that are new or were rewritten (compaction) are stamped now, which
     /// lands within a turn-event of the real append. The shared snapshot is
     /// installed without copying.
-    pub fn set_api_messages(&mut self, messages: Arc<Vec<Message>>) {
-        let keep = self
+    pub fn set_api_messages(&mut self, messages: Arc<Vec<Message>>) -> usize {
+        let unchanged = self
             .api_messages
             .iter()
             .zip(messages.iter())
             .take_while(|(old, new)| old == new)
-            .count()
-            .min(self.api_message_stamps.len());
-        self.api_message_stamps.truncate(keep);
+            .count();
+        self.api_message_stamps
+            .truncate(unchanged.min(self.api_message_stamps.len()));
         self.api_message_stamps
             .resize_with(messages.len(), Utc::now);
         self.api_messages = messages;
+        unchanged
     }
 
     /// Install a resumed conversation, reusing the persisted journal's
@@ -5629,6 +5633,34 @@ impl App {
     /// Pick the detail target for the current viewport. The footer hint and
     /// Alt+V both resolve through this so they agree on the target.
     #[must_use]
+    pub(crate) fn transcript_owner_at_line(
+        &self,
+        line_index: usize,
+    ) -> Option<TranscriptActionOwner> {
+        let (rendered, _) = self
+            .viewport
+            .transcript_cache
+            .line_meta()
+            .get(line_index)?
+            .cell_line()?;
+        Some(TranscriptActionOwner {
+            cell_index: self.original_cell_index_for_rendered(rendered),
+            identity_epoch: self.transcript_identity_epoch,
+        })
+    }
+
+    pub(crate) fn selection_owner_cell(&self) -> Option<usize> {
+        let selection = &self.viewport.transcript_selection;
+        selection
+            .owner
+            .filter(|owner| {
+                selection.is_active()
+                    && owner.identity_epoch == self.transcript_identity_epoch
+                    && self.cell_at_virtual_index(owner.cell_index).is_some()
+            })
+            .map(|owner| owner.cell_index)
+    }
+
     pub fn detail_cell_index_for_viewport(
         &self,
         top: usize,
@@ -5640,11 +5672,14 @@ impl App {
                 .map(|(idx, _)| self.original_cell_index_for_rendered(idx))
         };
         let selected = self
-            .viewport
-            .transcript_selection
-            .ordered_endpoints()
-            .and_then(|(start, _)| line_meta.get(start.line_index))
-            .and_then(original)
+            .selection_owner_cell()
+            .or_else(|| {
+                self.viewport
+                    .transcript_selection
+                    .ordered_endpoints()
+                    .and_then(|(start, _)| line_meta.get(start.line_index))
+                    .and_then(original)
+            })
             .filter(|&idx| self.cell_has_detail_target(idx));
         let start = top.min(line_meta.len().saturating_sub(1));
         let end = start.saturating_add(visible).min(line_meta.len());
@@ -5763,7 +5798,16 @@ impl App {
         }
         // A pre-insertion action still names the old virtual index. Reject
         // it until the renderer establishes the owner's new position.
+        let previous_epoch = self.transcript_identity_epoch;
         self.transcript_identity_epoch = self.transcript_identity_epoch.wrapping_add(1);
+        if let Some(owner) = self.viewport.transcript_selection.owner.as_mut()
+            && owner.identity_epoch == previous_epoch
+        {
+            if owner.cell_index >= boundary {
+                owner.cell_index = owner.cell_index.saturating_add(added);
+            }
+            owner.identity_epoch = self.transcript_identity_epoch;
+        }
         for index in self.tool_cells.values_mut() {
             if *index >= boundary {
                 *index = index.saturating_add(added);
@@ -7346,11 +7390,7 @@ impl App {
                     return effective.display_label_for_provider(provider).to_string();
                 }
                 let effective = effective.display_label_for_provider(provider);
-                if requested == ReasoningEffort::Auto {
-                    format!("auto: {effective}")
-                } else {
-                    format!("{}→{effective}", requested.short_label())
-                }
+                format!("{}→{effective}", requested.short_label())
             }
             EffectiveReasoningEffort::ThinkingEnabledGranularityUnavailable => format!(
                 "{}→thinking enabled; granularity unavailable",

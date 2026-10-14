@@ -1985,8 +1985,8 @@ mod launch_card_tests {
     use unicode_segmentation::UnicodeSegmentation;
 
     fn app_with_recent(titles: &[&str], total: usize) -> App {
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(std::env::temp_dir()),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(std::env::temp_dir()),
         );
         app.launch.visible = true;
         app.launch.claude_code_detected = false;
