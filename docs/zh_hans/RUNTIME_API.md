@@ -1511,30 +1511,15 @@ direction 为空、等待 lead 计划、缺少凭据或有
 --agent …`（退出码 0），然后是
 `scripts/auto-merge-pr.py`。不要再发明第二个检查器。
 
-**工作区信任**（项目范围的闸门）
-- `GET /v1/workspace/status` 还会返回 `workspace_trusted`：用户是否已在自有配置中信任
-  服务器的工作区。为 `false` 时，该工作区携带的项目 skills、命令、hooks、MCP 服务器与
-  项目上下文都会被跳过 —— 该目录被当作用户尚未背书的代码。
-- `POST /v1/workspace/trust`，请求体 `{"trusted": true|false}`，记录该决定并返回
-  `{workspace, workspace_trusted, config_path, message}`。
+**工作区信任**（持久化的项目决定）
+- `GET /v1/workspace/status` 返回 `workspace_trusted`：服务器工作区是否已在发现的用户配置中被设为可信。项目技能、命令和 MCP 配置会检查这个决定。项目钩子还需要单独批准钩子文件的精确摘要。
+- `POST /v1/workspace/trust` 接受 `{"trusted": true|false}`，记录决定并返回 `{workspace, workspace_trusted, config_path, message}`。
 
-这是 GUI 唯一的写入途径，它存在的意义就是让客户端不必去改 `config.toml`：
-该文档归引擎所有，此处理函数调用的正是 TUI `/trust on --save` 背后的同一个函数，
-因此两个前端写入的是闸门所读的同一份 `[projects."<workspace>"] trust_level` 记录。
-工作区取自服务器自身（`--workspace`），而非调用方传入的路径：客户端只能信任
-自己所附着的项目，别的都不行。响应中的 `workspace_trusted` 是写入后通过闸门
-**读回**的判定，而不是对请求的回声；`config_path` 则指明现在承载该记录的文件。
+处理器复用 `/trust on|off --save` 使用的 `config::set_workspace_trust`，再通过 `is_workspace_trusted` 读回结果。请求不接受路径，只作用于服务器已接纳的工作区。`config_path` 标识实际写入的文档。读写都使用默认配置发现规则，包括已配置的环境变量覆盖；启动运行时的显式 `--config` 参数不会选择这个信任文档。
 
-信任按引擎自己的节奏生效，不会追溯既往：项目 skills、命令与项目上下文在每个回合
-边界重新读取，因此从下一回合起生效；项目 MCP 服务器在会话启动（session boot）时连接，
-因此要在下一次引擎启动之后才出现。路由把这一点写在 `message` 里，而不是暗示
-全部效果都已即时生效。
+项目技能和命令会在各自现有的加载或回合边界检查信任。项目钩子还需要单独的摘要批准，并在执行前重新检查权限。重启引擎可重新建立项目 MCP 连接；本请求不会断开已有连接池或中断正在运行的回合。现有上下文加载器会独立于此标志加载 `AGENTS.md` 等项目指令文件和项目规则，因此撤销工作区信任不会移除这些指令或已持久化的历史。
 
-有两个不同的东西都被叫作信任，二者不可互换。`workspace_trusted` 是上面那个**项目**决定。
-线程的 `trust_mode`（Full Access）才是文件工具可以触及工作区之外、以及恢复类路由
-所要求的东西（见 [工作区恢复端点](#工作区恢复端点)）。
-TUI 的 `/trust on --save` 会同时设置两者 —— 会话信任模式与持久化的项目记录 ——
-而本路由只设置持久化的项目记录。
+这个持久化的项目决定与线程的 `trust_mode` / Full Access，以及 `/trust add <path>` 的外部路径授权分别独立。`/trust on|off --save` 同时修改会话文件工具信任和持久化项目记录；本 HTTP 路由只修改项目记录。POST 使用其他状态变更路由相同的运行时写权限；watch 设备令牌可以读取状态，但不能写入信任。
 
 **内省**
 - `GET /v1/workspace/status`

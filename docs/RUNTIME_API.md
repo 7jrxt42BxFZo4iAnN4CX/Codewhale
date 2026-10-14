@@ -1769,38 +1769,15 @@ human gate. Auto-merge is `scripts/check-auto-merge.py --repo … --pr …
 --agent …` from codewhale-ops `origin/main` (exit 0), then
 `scripts/auto-merge-pr.py`. Do not invent a second checker.
 
-**Workspace trust** (the project-scope gate)
-- `GET /v1/workspace/status` also reports `workspace_trusted`: whether the user
-  has trusted the server's workspace in their user-owned config. `false` means
-  the project skills, commands, hooks, MCP servers and project context that
-  workspace carries are being skipped — the folder is treated as code the user
-  has not vouched for.
-- `POST /v1/workspace/trust` with `{"trusted": true|false}` records that
-  decision and answers `{workspace, workspace_trusted, config_path, message}`.
+**Workspace trust** (the persisted project decision)
+- `GET /v1/workspace/status` reports `workspace_trusted`: whether the server’s workspace is trusted in the discovered user config. Project skills, commands and MCP configuration consult this decision. Project hooks require both workspace trust and separate approval of the exact hooks file.
+- `POST /v1/workspace/trust` with `{"trusted": true|false}` records that decision and answers `{workspace, workspace_trusted, config_path, message}`.
 
-This route is the only writer a GUI has, and it exists so that a client never
-edits `config.toml`: the engine owns that document, and the handler calls the
-very function behind the TUI's `/trust on --save`, so both front ends write the
-same `[projects."<workspace>"] trust_level` record the gate reads. The
-workspace is the server's own (`--workspace`), never a caller-supplied path: a
-client may trust the project it is attached to and nothing else. The response's
-`workspace_trusted` is the verdict read back through the gate after the write
-rather than an echo of the request, and `config_path` names the document that
-now holds it.
+The handler reuses `config::set_workspace_trust`, the writer behind `/trust on|off --save`, and reads the decision back through `is_workspace_trusted`. The request accepts no path; it applies only to the server’s admitted workspace. `config_path` identifies the document written. Both read and write use default config discovery, including configured environment overrides; a runtime’s explicit `--config` argument does not select this trust document.
 
-Trust lands on the engine's own schedule, not retroactively: project skills,
-commands and project context are re-read at each turn boundary, so they apply
-from the next turn, while project MCP servers are connected during a session
-boot and therefore appear after the next engine start. The route reports this
-in `message` rather than implying the whole effect is immediate.
+Project skills and commands consult trust at their existing load or turn boundaries. Project hooks also need their separate digest approval and recheck authority before execution. Restart the engine to rebuild project MCP connections; this request does not disconnect an existing pool or interrupt a running turn. Project instruction files such as `AGENTS.md` and project rules are loaded by the existing context loader independently of this flag, so revoking workspace trust does not remove those instructions or their persisted history.
 
-Two different things are called trust, and they are not interchangeable.
-`workspace_trusted` is the *project* decision above. A thread's `trust_mode`
-(Full Access) is what lets file tools reach outside the workspace and what the
-restore routes require (see
-[Workspace restore endpoints](#workspace-restore-endpoints)). The TUI's
-`/trust on --save` sets both — session trust mode and the persisted project
-record — while this route sets only the persisted project record.
+This persisted project decision is separate from a thread’s `trust_mode` / Full Access and from `/trust add <path>` external-path grants. `/trust on|off --save` changes session file-tool trust and the persisted project record. This HTTP route changes only the persisted project record. Its POST requires the same Runtime write authority as other state-changing routes; watch device tokens can read status but cannot write trust.
 
 **Introspection**
 - `GET /v1/workspace/status`

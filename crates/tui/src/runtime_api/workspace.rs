@@ -97,12 +97,6 @@ pub(super) struct WorkspaceStatusResponse {
     pub(super) ahead: Option<u32>,
     pub(super) behind: Option<u32>,
     /// Whether the user has trusted this workspace in user-owned config.
-    ///
-    /// A GUI client cannot read `config.toml` (that decision lives in the
-    /// engine), so this is the field a banner keys off: `false` means the
-    /// project skills, commands, hooks, MCP servers and context this
-    /// workspace carries are being skipped. See [`update_workspace_trust`]
-    /// for the only writer.
     pub(super) workspace_trusted: bool,
 }
 
@@ -162,11 +156,6 @@ pub(super) struct WorkspaceTrustResponse {
 /// The workspace is the server's own (`state.workspace`), never a
 /// caller-supplied path: a client may trust the project it is attached to and
 /// nothing else.
-///
-/// The change takes effect from the next turn: the prompt composer and skill
-/// discovery re-read the decision from disk at each turn boundary. Project MCP
-/// servers are connected during a session boot, so they appear on the next
-/// engine start.
 pub(super) async fn update_workspace_trust(
     State(state): State<RuntimeApiState>,
     Json(request): Json<WorkspaceTrustRequest>,
@@ -188,12 +177,12 @@ pub(super) async fn update_workspace_trust(
         workspace_trusted: recorded,
         config_path,
         message: if recorded {
-            "Workspace trust saved: project skills, commands, hooks and context load from the next turn; project MCP servers load on the next engine start."
+            "Workspace trust saved in user config. Project skills and commands use it on subsequent turns; project hooks also require separate approval. Restart the engine to rebuild project MCP connections. Thread Full Access and existing project instructions are unchanged."
         } else {
             // Worded as the state, not as the action: this arm is reached both by
             // a revoke and by a grant the gate did not accept, and "revoked"
             // would be the wrong sentence for the second.
-            "Workspace trust is not recorded in user config; project-scoped content is skipped."
+            "Workspace trust is not recorded in user config. Project skills, commands, hooks and MCP loading use this decision; existing project instructions and MCP connections are not removed. Thread Full Access is unchanged."
         }
         .to_string(),
     }))
