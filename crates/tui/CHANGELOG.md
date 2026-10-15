@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.10.2] - 2026-10-10
 
+- OpenHarmony builds on Windows select Ninja, with an SDK-bundled fallback and
+  a clear error when it is unavailable. The CLI keeps its download and Work
+  context integrity checks available on OHOS by sharing an ungated SHA-256
+  helper (thanks @shenjackyuanjie, #6989; reported in #6988).
+
 - Desktop and HTTP app-server turns feed an existing shared pet companion when
   its followed session has no live producer. Automatic selection is checked
   atomically by the owner; a live TUI keeps its source. The Runtime producer
@@ -473,6 +478,7 @@ launcher guidance.
 
 ### Contributors
 
+- **[@shenjackyuanjie](https://github.com/shenjackyuanjie)** — diagnosed and fixed the Windows OpenHarmony CMake generator and CLI hashing-module build failures ([#6988](https://github.com/codewhale-hq/Codewhale/issues/6988), [#6989](https://github.com/codewhale-hq/Codewhale/pull/6989)).
 - **[@LIghtJUNction](https://github.com/LIghtJUNction)** — plugin shell install and in-TUI plugin OAuth sign-in ([#6950](https://github.com/codewhale-hq/Codewhale/pull/6950)).
 - **[@SparkofSpike](https://github.com/SparkofSpike)** — live network-policy updates and goal milestone hand-back ([#6928](https://github.com/codewhale-hq/Codewhale/pull/6928), [#6930](https://github.com/codewhale-hq/Codewhale/pull/6930)), and a relocated Codewhale home ([#6947](https://github.com/codewhale-hq/Codewhale/issues/6947)).
 - **[@dajiaohuang](https://github.com/dajiaohuang)** — cache-write token accounting ([#6913](https://github.com/codewhale-hq/Codewhale/pull/6913)).
