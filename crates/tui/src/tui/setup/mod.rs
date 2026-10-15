@@ -24,7 +24,6 @@ use crate::prompts::{
     BASE_PROMPT_OVERRIDE_OPT_IN_ENV, CONSTITUTION_OVERRIDE_FILE, base_prompt_override_opt_in,
 };
 use crate::tui::app::{App, AppModeUi};
-use crate::tui::onboarding;
 use crate::tui::views::{
     ActionHint, ModalKind, ModalView, ViewAction, ViewEvent, render_modal_footer,
     render_panel_scroll_rail, render_underwater_surface,
@@ -53,10 +52,7 @@ use persistence::SetupPersistenceFacts;
 pub(crate) use provider::record_configured_route;
 use remote::SetupRemoteFacts;
 
-/// Target lane for the once-per-version constitution checkpoint. Bumped per
-/// release when the bundled constitution materially changes, so existing users
-/// re-acknowledge it once. 0.9.4 re-ships the Fleet/operate constitution.
-pub const CONSTITUTION_CHECKPOINT_VERSION: &str = "0.9.4";
+use crate::prompts::CONSTITUTION_CHECKPOINT_VERSION;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetupCommitKind {
@@ -5441,7 +5437,7 @@ fn inherited_facts_for_app(app: &App, config: &Config) -> InheritedConfigFacts {
         language: Some(app.ui_locale.tag().to_string()),
         has_provider_route: !config.default_model().trim().is_empty(),
         has_credentials_or_local_runtime: has_api_key(config),
-        trust_chosen: app.trust_mode || !onboarding::needs_trust(&app.workspace),
+        trust_chosen: app.trust_mode || !crate::config::needs_trust(&app.workspace),
         has_expert_override: expert_override.is_active(),
         has_user_constitution,
         user_constitution_validity,

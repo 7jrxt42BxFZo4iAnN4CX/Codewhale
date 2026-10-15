@@ -82,7 +82,11 @@ pub fn build_approval_key(tool_name: &str, input: &serde_json::Value) -> Approva
         | "exec_shell_interact"
         | "exec_wait"
         | "exec_interact" => {
-            format!("shell:{tool_name}:{}", hash_json_value(input))
+            let mut execution_input = input.clone();
+            if let Some(fields) = execution_input.as_object_mut() {
+                fields.remove("description");
+            }
+            format!("shell:{tool_name}:{}", hash_json_value(&execution_input))
         }
         "fetch_url" | "web.fetch" | "web_fetch" => {
             let host = parse_host(input);

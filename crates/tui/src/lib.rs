@@ -28,6 +28,7 @@ mod automation_manager;
 mod child_env;
 mod client;
 mod codex_model_cache;
+mod command_catalog;
 mod commands;
 mod compaction;
 mod composer_history;
@@ -162,6 +163,7 @@ mod voice;
 mod work_graph;
 mod worker_profile;
 mod working_set;
+mod workspace_lease;
 mod workspace_trust;
 
 use crate::config::{
@@ -1880,6 +1882,7 @@ fn run_with_args(options: RuntimeOptions, args: Vec<String>) -> Result<()> {
     // (interactive, exec, serve): runtime code reaches raw mode and
     // notification delivery only through this port.
     crate::tui::ui::install_host_terminal();
+    crate::command_catalog::install(std::sync::Arc::new(crate::commands::CommandTable));
 
     // ── Process hardening (#2183) ─────────────────────────────────────────
     // MUST run before Tokio is booted and before any threads are spawned.
@@ -2956,6 +2959,7 @@ async fn run_async_main_dispatch(
                             config_path: cli.config.clone(),
                             config_profile,
                             control_frontend: cli.control_frontend.clone(),
+                            runtime_event_tap: Some(crate::tui::pet_watch::observe_runtime),
                         },
                     )
                     .await
@@ -7070,7 +7074,7 @@ fn doctor_inherited_setup_facts(
         language: None,
         has_provider_route: !config.default_model().trim().is_empty(),
         has_credentials_or_local_runtime: doctor_has_credentials_or_local_runtime(config),
-        trust_chosen: !crate::tui::onboarding::needs_trust(workspace),
+        trust_chosen: !crate::config::needs_trust(workspace),
         has_expert_override,
         has_user_constitution,
         user_constitution_validity,
@@ -7098,7 +7102,7 @@ fn print_doctor_setup_report(
     // Ordinary doctor deliberately does not read environment values or the
     // durable secret store, so `not_probed` must not erase a completed lane.
     let first_run_ready = state.first_run_ready();
-    let update_ready = state.update_ready(crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION);
+    let update_ready = state.update_ready(crate::prompts::CONSTITUTION_CHECKPOINT_VERSION);
     let operate_ready = state.operate_ready();
     let first_run_icon = if first_run_ready {
         "✓".truecolor(ok_rgb.0, ok_rgb.1, ok_rgb.2)
@@ -7133,7 +7137,7 @@ fn print_doctor_setup_report(
     if first_run_ready {
         println!(
             "  {update_icon} update checkpoint {}: {}",
-            crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+            crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             doctor_ready_label(update_ready)
         );
     }
@@ -7142,8 +7146,9 @@ fn print_doctor_setup_report(
         doctor_ready_label(operate_ready)
     );
     println!(
-        "  · constitution autonomy: {} (guidance only)",
-        doctor_constitution_autonomy_preference_id()
+        "  · constitution autonomy: {} (choice: {}; guidance only; account profile: not probed)",
+        doctor_constitution_autonomy_preference_id(state),
+        constitution_choice_id(state.constitution_choice)
     );
     println!(
         "  · runtime posture: {}",
@@ -7294,7 +7299,12 @@ fn doctor_constitution_autonomy_preference() -> codewhale_config::AutonomyPrefer
         .unwrap_or(codewhale_config::AutonomyPreference::Unspecified)
 }
 
-fn doctor_constitution_autonomy_preference_id() -> &'static str {
+fn doctor_constitution_autonomy_preference_id(
+    state: &codewhale_config::SetupState,
+) -> &'static str {
+    if !state.constitution_choice.applies_user_global() {
+        return "inactive";
+    }
     autonomy_preference_id(doctor_constitution_autonomy_preference())
 }
 
@@ -7357,7 +7367,7 @@ fn doctor_runtime_posture_line(config: &Config, workspace: &Path) -> String {
     } else {
         "default"
     };
-    let trust = if crate::tui::onboarding::needs_trust(workspace) {
+    let trust = if crate::config::needs_trust(workspace) {
         "workspace not elevated"
     } else {
         "workspace trusted"
@@ -7816,7 +7826,7 @@ fn doctor_setup_report_json(config: &Config, workspace: &Path) -> serde_json::Va
         "default"
     };
     let (telemetry_value, telemetry_source) = doctor_runtime_telemetry(config);
-    let workspace_trusted = !crate::tui::onboarding::needs_trust(workspace);
+    let workspace_trusted = !crate::config::needs_trust(workspace);
     let credential = resolve_credential_diagnostic(config);
     let credential_ready = credential.availability.certifies_ready();
     let steps: Vec<_> = codewhale_config::SetupStep::ALL
@@ -7837,9 +7847,9 @@ fn doctor_setup_report_json(config: &Config, workspace: &Path) -> serde_json::Va
         "source": source,
         "schema_version": state.schema_version,
         "inherited": state.inherited,
-        "checkpoint_version": crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+        "checkpoint_version": crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
         "first_run_ready": state.first_run_ready(),
-        "update_ready": state.update_ready(crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION),
+        "update_ready": state.update_ready(crate::prompts::CONSTITUTION_CHECKPOINT_VERSION),
         "operate_ready": state.operate_ready(),
         "credential": {
             "ready": credential_ready,
@@ -7854,7 +7864,8 @@ fn doctor_setup_report_json(config: &Config, workspace: &Path) -> serde_json::Va
             "language": state.constitution_language.clone(),
             "preview_hash_present": state.constitution_preview_hash.is_some(),
             "preview_version": state.constitution_preview_version,
-            "autonomy_preference": doctor_constitution_autonomy_preference_id(),
+            "autonomy_preference": doctor_constitution_autonomy_preference_id(&state),
+            "account_profile": "not_probed",
         },
         "runtime_posture_source": runtime_posture_source_id(state.runtime_posture_source),
         "runtime_posture": {
@@ -9567,12 +9578,6 @@ fn install_extension_host_boot_config(config: &Config) {
         tokio::runtime::Handle::try_current().ok(),
     );
     if enabled {
-        // The host asks the command table whether a built-in command answers
-        // to a name before it admits an extension command; without this it
-        // refuses every extension command.
-        crate::extension_host::command::install_builtin_commands(std::sync::Arc::new(
-            crate::commands::BuiltinCommandNames,
-        ));
         // Per-plugin settings (`[plugins."<name>".config]`) and the file
         // `/plugin reload` re-reads them from.
         crate::extension_host::install_plugin_settings(
@@ -13480,7 +13485,9 @@ async fn run_interactive_prepared(
     // Auto-install bundled system skills (e.g. skill-creator) on first launch.
     // Errors are non-fatal: log a warning and continue.
     let skills_dir = config.skills_dir();
-    if let Err(e) = crate::skills::install_system_skills(&skills_dir) {
+    if let Some(install_dir) = config.bundled_skills_install_dir()
+        && let Err(e) = crate::skills::install_system_skills(&install_dir)
+    {
         logging::warn(format!("Failed to install system skills: {e}"));
     }
 
@@ -15724,7 +15731,7 @@ mod doctor_setup_state_tests {
         assert_eq!(report["next_actions"]["persistence"], "/setup persistence");
         assert_eq!(
             report["checkpoint_version"],
-            crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION
+            crate::prompts::CONSTITUTION_CHECKPOINT_VERSION
         );
         assert_eq!(report["update_ready"], false);
         assert_eq!(report["operate_ready"], false);
@@ -16017,7 +16024,7 @@ mod doctor_setup_state_tests {
             codewhale_config::StepEntry::new(
                 codewhale_config::StepStatus::Verified,
                 true,
-                crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+                crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             ),
         );
         state.set_step(
@@ -16025,7 +16032,7 @@ mod doctor_setup_state_tests {
             codewhale_config::StepEntry::new(
                 codewhale_config::StepStatus::Verified,
                 true,
-                crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+                crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             )
             .with_result("deepseek/deepseek-chat"),
         );
@@ -16034,12 +16041,12 @@ mod doctor_setup_state_tests {
             codewhale_config::StepEntry::new(
                 codewhale_config::StepStatus::Verified,
                 true,
-                crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+                crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             ),
         );
         state
             .complete_constitution_checkpoint(
-                crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+                crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
                 codewhale_config::ConstitutionChoice::Bundled,
             )
             .set_step(
@@ -16047,7 +16054,7 @@ mod doctor_setup_state_tests {
                 codewhale_config::StepEntry::new(
                     codewhale_config::StepStatus::Verified,
                     true,
-                    crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+                    crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
                 ),
             );
         state.runtime_posture_source = codewhale_config::RuntimePostureSource::Confirmed;
@@ -16079,9 +16086,9 @@ mod doctor_setup_state_tests {
         assert_eq!(report["constitution"]["choice"], "bundled");
         assert_eq!(
             report["constitution"]["checkpoint_completed_for"],
-            crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION
+            crate::prompts::CONSTITUTION_CHECKPOINT_VERSION
         );
-        assert_eq!(report["constitution"]["autonomy_preference"], "balanced");
+        assert_eq!(report["constitution"]["autonomy_preference"], "inactive");
         assert_eq!(report["runtime_posture_source"], "confirmed");
         assert_eq!(report["runtime_posture"]["source"], "confirmed");
         assert_eq!(
@@ -16238,7 +16245,7 @@ mod doctor_setup_state_tests {
             codewhale_config::StepEntry::new(
                 codewhale_config::StepStatus::Verified,
                 true,
-                crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+                crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             ),
         );
         state.set_step(
@@ -16246,12 +16253,12 @@ mod doctor_setup_state_tests {
             codewhale_config::StepEntry::new(
                 codewhale_config::StepStatus::Verified,
                 true,
-                crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+                crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             ),
         );
         state.runtime_posture_source = codewhale_config::RuntimePostureSource::Confirmed;
         state.complete_constitution_checkpoint(
-            crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+            crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             codewhale_config::ConstitutionChoice::Bundled,
         );
         state.set_step(
@@ -16259,7 +16266,7 @@ mod doctor_setup_state_tests {
             codewhale_config::StepEntry::new(
                 codewhale_config::StepStatus::Verified,
                 false,
-                crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+                crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             )
             .with_result(
                 "provider=ready, runtime=ready, roster=ready, concurrency=plan limit not probed",

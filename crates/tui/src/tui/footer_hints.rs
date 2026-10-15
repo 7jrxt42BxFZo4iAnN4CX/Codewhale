@@ -109,8 +109,8 @@ mod tests {
 
     #[test]
     fn recorded_uses_accumulate_per_key() {
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
         );
         app.note_footer_hint_used(PERMISSION_CYCLE);
         assert_eq!(app.footer_hint_uses.get(PERMISSION_CYCLE).copied(), Some(1));

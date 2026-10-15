@@ -7,8 +7,8 @@ import type { ComputerUseDict } from "../types";
  * macOS setting names stay as the app shows them.
  */
 export const computerUse: ComputerUseDict = {
-  metaTitle: "Computer Use for Mac · Codewhale",
-  metaDescription: "Download and set up Codewhale Computer Use for Mac. Background app control, permission setup, and human Pause and Stop controls.",
+  metaTitle: "Computer Use · Preview · Codewhale",
+  metaDescription: "Preview: download and set up Codewhale Computer Use for Mac. Background app control, permission setup, and human Pause and Stop controls.",
   title: "Computer Use",
   lead: "Let Codewhale work in your apps while you keep working. The Mac helper brings permissions, background app control, and a way to pause or stop input to your menu bar.",
   publisher: "By Codewhale",

@@ -8,7 +8,7 @@ import type { ComputerUseDict } from "../types";
  * Japanese system UI (アクセシビリティ / 画面収録 / アプリケーション).
  */
 export const computerUse: ComputerUseDict = {
-  metaTitle: "Mac 版 Computer Use · Codewhale",
+  metaTitle: "Computer Use · プレビュー · Codewhale",
   metaDescription: "Mac 版 Codewhale Computer Use をダウンロードして設定します。アプリのバックグラウンド操作、権限の設定、そして人が操作する Pause と Stop のコントロールを備えています。",
   title: "Computer Use",
   lead: "あなたが作業を続けている間に、Codewhale がアプリの中で仕事を進めます。Mac 用ヘルパーは、権限の設定、アプリのバックグラウンド操作、入力の一時停止や停止をメニューバーにまとめます。",

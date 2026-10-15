@@ -46,30 +46,55 @@
         );
     }
 
-    async fn capture_deepseek_chat_body_for_effort(effort: Option<&str>) -> Value {
+    async fn capture_deepseek_chat_body_for_effort(
+        effort: Option<&str>,
+        custom: bool,
+        stream: bool,
+    ) -> Value {
         let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+        let model = if custom {
+            "deepseek/deepseek-v4.1-flash"
+        } else {
+            "deepseek-v4-pro"
+        };
+        let response = if stream {
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(format!(
+                    "data: {}\n\ndata: [DONE]\n\n",
+                    json!({
+                        "id": "chatcmpl-deepseek-effort-ladder",
+                        "object": "chat.completion.chunk",
+                        "model": model,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"content": "ok"},
+                            "finish_reason": "stop"
+                        }],
+                        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+                    })
+                ))
+        } else {
+            ResponseTemplate::new(200).set_body_json(json!({
                 "id": "chatcmpl-deepseek-effort-ladder",
                 "object": "chat.completion",
-                "model": "deepseek-v4-pro",
+                "model": model,
                 "choices": [{
                     "index": 0,
                     "message": {"role": "assistant", "content": "ok"},
                     "finish_reason": "stop"
                 }],
-                "usage": {
-                    "prompt_tokens": 1,
-                    "completion_tokens": 1,
-                    "total_tokens": 2
-                }
-            })))
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}
+            }))
+        };
+        Mock::given(method("POST"))
+            .respond_with(response)
             .expect(1)
             .mount(&server)
             .await;
 
         let request = MessageRequest {
-            model: "deepseek-v4-pro".to_string(),
+            model: model.to_string(),
             messages: vec![Message {
                 role: Role::User,
                 content: vec![ContentBlock::Text {
@@ -83,24 +108,46 @@
             tool_choice: None,
             metadata: None,
             thinking: None,
-            reasoning_effort: effort.map(str::to_string),
-            stream: Some(false),
+            reasoning_effort: effort.map(|effort| {
+                crate::reasoning_preference::ReasoningEffort::parse_strict(effort)
+                    .expect("valid capture effort")
+                    .as_setting_for_route(
+                        ProviderKind::Deepseek,
+                        &server.uri(),
+                        model,
+                    )
+                    .to_string()
+            }),
+            stream: Some(stream),
             temperature: None,
             top_p: None,
         };
-        let client =
-            deepseek_request_boundary_client(crate::config::DEFAULT_DEEPSEEK_BASE_URL, server.uri());
-        client
-            .create_message(request)
-            .await
-            .expect("non-streaming request succeeds");
+        let client = if custom {
+            custom_mock_client_for_identity(&server, "aicraft")
+        } else {
+            deepseek_request_boundary_client(crate::config::DEFAULT_DEEPSEEK_BASE_URL, server.uri())
+        };
+        if stream {
+            let mut events = client
+                .create_message_stream(request)
+                .await
+                .expect("streaming request succeeds");
+            while let Some(event) = events.next().await {
+                event.expect("streaming event succeeds");
+            }
+        } else {
+            client
+                .create_message(request)
+                .await
+                .unwrap_or_else(|error| panic!("custom={custom} effort={effort:?}: {error}"));
+        }
 
         let requests = server.received_requests().await.expect("recorded request");
         assert_eq!(requests.len(), 1);
         serde_json::from_slice(&requests[0].body).expect("captured request JSON")
     }
 
-    /// Request-body capture per effort level on the first-party DeepSeek chat
+    /// Request-body capture per effort level on direct and custom DeepSeek chat
     /// route: the wire must carry the documented low/high/max ladder and the
     /// thinking toggle, never an invented value (#52).
     #[tokio::test]
@@ -113,17 +160,20 @@
             (Some("off"), None, Some("disabled")),
             (None, None, None),
         ] {
-            let body = capture_deepseek_chat_body_for_effort(effort).await;
-            assert_eq!(
-                body.get("reasoning_effort").and_then(Value::as_str),
-                expected_effort,
-                "reasoning_effort on the wire for {effort:?}: {body}"
-            );
-            assert_eq!(
-                body.pointer("/thinking/type").and_then(Value::as_str),
-                expected_thinking,
-                "thinking on the wire for {effort:?}: {body}"
-            );
+            for (custom, stream) in [(false, false), (false, true), (true, false), (true, true)] {
+                let body = capture_deepseek_chat_body_for_effort(effort, custom, stream).await;
+                assert_eq!(body["max_tokens"], 64);
+                assert_eq!(
+                    body.get("reasoning_effort").and_then(Value::as_str),
+                    expected_effort,
+                    "reasoning_effort on the wire for {effort:?}: {body}"
+                );
+                assert_eq!(
+                    body.pointer("/thinking/type").and_then(Value::as_str),
+                    expected_thinking,
+                    "thinking on the wire for {effort:?}: {body}"
+                );
+            }
         }
     }
 

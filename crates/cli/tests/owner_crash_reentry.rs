@@ -21,9 +21,9 @@ impl Fixture {
         let root = tempfile::Builder::new()
             .prefix("cw-ocr-")
             .tempdir_in(
-                std::path::Path::new("/tmp")
+                std::env::temp_dir()
                     .canonicalize()
-                    .expect("canonical /tmp"),
+                    .expect("canonical temporary directory"),
             )
             .expect("fixture root");
         #[cfg(windows)]
@@ -136,7 +136,7 @@ fn spawn_owner(fixture: &Fixture, label: &str) -> Owner {
 }
 
 fn http() -> reqwest::blocking::Client {
-    reqwest::blocking::Client::builder()
+    codewhale_release::tls::reqwest_blocking_client_builder()
         .no_proxy()
         .timeout(Duration::from_secs(30))
         .build()

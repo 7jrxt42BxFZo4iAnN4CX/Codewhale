@@ -733,9 +733,9 @@ mod automation_scan_gate_tests {
     use std::time::Duration;
 
     fn app() -> App {
-        crate::test_support::test_app_with_options(crate::tui::app::TuiOptions {
+        crate::tui::test_support::test_app_with_options(crate::tui::app::TuiOptions {
             skip_onboarding: true,
-            ..crate::test_support::test_tui_options(std::path::PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(std::path::PathBuf::from("."))
         })
     }
 

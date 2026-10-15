@@ -34,14 +34,14 @@ Pet 模式把你正在使用的终端变成一个一眼可读的状态视图。�
 
 ## 视图
 
-主视图显示时，按 `Ctrl+]`（终端能发送时也可按 `Ctrl+Tab`）切换到下一个视图，`Ctrl+Shift+Tab` 切回上一个。页脚第二行显示当前视图，例如 `Ctrl+] view: whale`，点击它也会切到下一个视图。`/pet avatar <key>` 可直接跳到某个视图。
+主视图显示时，按 `Ctrl+]` 切换到下一个视图。支持 kitty 键盘协议的终端还可发送 `Ctrl+Tab` 切到下一个、`Ctrl+Shift+Tab` 切回上一个。Terminal.app 用这两个 Tab 组合键切换终端标签页，因此请在那里使用 `Ctrl+]`。页脚第二行显示当前视图，例如 `Ctrl+] view: whale`，点击它也会切到下一个视图。`/pet avatar <key>` 可直接跳到某个视图。
 
 | 视图 | 显示内容 | 条件不满足时 |
 | --- | --- | --- |
 | `whale` | 伴生进程的实时点阵鲸鱼。 | 在伴生进程可达（`codewhale pet serve`）且本终端的会话是来源（`/pet source`）之前，显示 `cove`（或 `braille`）。 |
-| `cove` | 本地半块字符鲸鱼，不带半透明的海湾背景。 | 需要颜色：在 `NO_COLOR`、16 色终端（`COLORTERM=truecolor`）或背景未知（`CODEWHALE_APPEARANCE=dark` 或 `light`）时显示 `braille`。 |
+| `cove` | 本地半块字符鲸鱼，不带半透明的海湾背景。 | 需要颜色：在 `NO_COLOR`、16 色终端或背景未知时显示 `braille`。`COLORTERM=truecolor` 启用真彩色；`CODEWHALE_APPEARANCE=dark` 或 `light` 明确选择背景。 |
 | `braille` | 本地彩色盲文点阵鲸鱼。 | 在 `CODEWHALE_ASCII_SAFE` 下或图案区域小于 16x8 个单元格时，只显示状态文字。 |
-| `pixels` | 伴生进程鲸鱼的 kitty 图形图像。 | 需要 kitty 图形、同步输出、已知的单元格像素尺寸，且未设置 `CODEWHALE_PET_GRAPHICS`；否则显示 `particles`。Terminal.app 不支持 kitty 图形。 |
+| `pixels` | 伴生进程鲸鱼的 kitty 图形图像。 | 需要 kitty 图形、同步输出、已知的单元格像素尺寸，且 `CODEWHALE_PET_GRAPHICS` 不能为 `braille`；否则显示 `particles`。Terminal.app 不支持 kitty 图形。 |
 | `particles` | 伴生进程的盲文粒子网格。 | 伴生进程不可达时，显示静止的鲸鱼和 `offline`。 |
 | `whale-girl` | 内置的精灵头像。 | 与 `cove` 一样需要颜色；否则显示单色 ASCII 形式。 |
 | 已安装的头像包 | 按目录顺序显示各头像包。 | 图集加载期间显示 `particles`。 |
@@ -58,7 +58,7 @@ Pet 模式把你正在使用的终端变成一个一眼可读的状态视图。�
 | 按键 | 效果 |
 | --- | --- |
 | `F5` 或 `/pet inspect` | 打开回复与智能体。 |
-| `Ctrl+]` / `Ctrl+Tab`、`Ctrl+Shift+Tab` | 下一个或上一个 Pet 视图（仅主视图）。 |
+| `Ctrl+]` / `Ctrl+Tab`、`Ctrl+Shift+Tab` | 下一个或上一个 Pet 视图（仅主视图）。Tab 组合键需要终端能发送；Terminal.app 中请使用 `Ctrl+]`。 |
 | `F6` | 开关伴生进程的声音。 |
 | `F8` | 在浏览器中打开外观工作室。 |
 | `F9` | 打开原生 Codewhale Pet 窗口（macOS）。 |
@@ -68,7 +68,7 @@ Pet 模式把你正在使用的终端变成一个一眼可读的状态视图。�
 | `Enter`（Agents 面板） | 打开所选智能体的对话记录。 |
 | `c` | 复制最近一条已完成的回复，与 `/copy` 走同一路径。 |
 
-`F5`、`F6`、`F8` 和 `F9` 在主视图和检查视图中都可用。Mac 键盘的顶行默认发送媒体键，需按住 Fn，所以那里的提示显示为 `fn+F5`。`F8` 或 `F9` 成功时提示 `habitat open`；启动失败时显示失败原因。
+`F5`、`F6`、`F8` 和 `F9` 在主视图和检查视图中都可用。Mac 键盘的顶行默认发送媒体键，需按住 Fn，因此整个 TUI（包括帮助浮层）的 F 键提示都显示为 `fn+F5`、`fn+F8` 等；ASCII 安全模式也保留这个前缀。`F8` 或 `F9` 成功时提示 `habitat open`；启动失败时显示失败原因。
 
 ## 多个终端，各有各的 Pet
 
@@ -81,6 +81,12 @@ Pet 模式按终端独立。在两个终端里各运行 `/pet on`：每头鲸鱼
 - 在某个终端运行 `/pet source`，即可让它的会话成为来源。
 
 伴生进程在十分钟内没有任何视图、生产端或音频客户端时会退出；下一个视图会再次启动它。
+
+## 桌面与 app-server 会话
+
+桌面和 HTTP app-server 的回合可以向同一个伴侣提供活动状态。Runtime 只连接已经运行的伴侣，不会启动新的伴侣；请先运行 `codewhale pet serve` 或打开 Pet 视图。新回合可以接手空闲的伴侣，但只要当前会话还有在线的生产者，所有者就会拒绝自动切换。活动中的 TUI 保留自己的来源。
+
+这条连接只传递回合、响应、操作、智能体和等待状态的元数据。提示词、回复、推理内容、工具名称和参数仍保留在 Runtime 中。回合结束后连接保留 12 秒，再等待租约过期。事件缺口会清除已观察的回合，并启动同样的释放期限，除非新的回合开始。这些展示数据不会进入模型请求，也不会影响 KV 缓存。`serve --acp` 和 TUI 的后台任务线程不会向这个生产者提供事件。
 
 ## 命令
 

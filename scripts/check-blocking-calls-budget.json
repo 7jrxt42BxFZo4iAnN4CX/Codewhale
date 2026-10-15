@@ -385,7 +385,7 @@
     "std_fs": 1
   },
   "crates/tui/src/tools/search.rs": {
-    "path_canonicalize": 2
+    "path_canonicalize": 3
   },
   "crates/tui/src/tools/shell.rs": {
     "path_canonicalize": 2,
@@ -516,6 +516,9 @@
   "crates/tui/src/working_set.rs": {
     "path_canonicalize": 1,
     "std_fs": 1
+  },
+  "crates/tui/src/workspace_lease.rs": {
+    "path_canonicalize": 1
   },
   "crates/tui/src/workspace_trust.rs": {
     "path_canonicalize": 1,

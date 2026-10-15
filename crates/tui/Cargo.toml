@@ -24,7 +24,6 @@ exclude = [
   "src/**/*acceptance.rs",
   "src/conformance.rs",
   "src/conformance/**",
-  "src/test_env_lock.rs",
   "src/lib/terminal_mode_test_cases_*.rs",
   "src/llm_client/mock.rs",
   "src/plugins/test_fixture.rs",

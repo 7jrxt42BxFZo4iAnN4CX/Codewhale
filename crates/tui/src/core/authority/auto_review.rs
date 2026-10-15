@@ -993,10 +993,16 @@ pub(crate) fn build_reviewer_context(
 ) -> String {
     use codewhale_secrets::redact::{redact_json_model_bound_secrets, redact_model_bound_secrets};
 
-    let input = redact_json_model_bound_secrets(tool_input);
+    let mut input = redact_json_model_bound_secrets(tool_input);
     let tool = redact_model_bound_secrets(ctx.tool_name.as_ref());
     let hold_reason = redact_model_bound_secrets(held_reason);
     let credentials_masked = input != *tool_input || tool != ctx.tool_name.as_ref();
+    if crate::tools::canonical_action::canonical_action_alias(ctx.tool_name.as_ref(), tool_input)
+        == "exec_shell"
+        && let Some(fields) = input.as_object_mut()
+    {
+        fields.remove("description");
+    }
     serde_json::to_string(&serde_json::json!({
         "proposed_tool_call": {
             "tool": tool,

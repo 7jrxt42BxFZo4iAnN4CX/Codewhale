@@ -54,7 +54,7 @@ For the read-only record of what a thread or turn did, see
 | `codewhale app-server --http` | HTTP/SSE on `127.0.0.1:7878` | Full `/v1/*` runtime API (canonical) |
 | `codewhale app-server --mobile` | HTTP/SSE on loopback + `/mobile` | Runtime API + local mobile control page |
 | `codewhale app-server --stdio` | JSON-RPC 2.0 over stdio | Local SDK / control probe (no listener) |
-| `codewhale app-server --socket [--socket-path P]` | JSON-RPC 2.0 over a `0600` unix domain socket | Desktop daemon: multi-client, peer-uid checked, `daemon/attach` claim handshake (macOS/Linux; Windows named pipe reserved, not implemented) |
+| `codewhale app-server --socket [--socket-path P]` | JSON-RPC 2.0 over a `0600` Unix domain socket (macOS/Linux) or an owner-only named pipe (Windows) | Desktop daemon: multi-client, kernel peer identity checked, `daemon/attach` claim handshake. Windows native-app qualification remains open. |
 | `codewhale app-server` | HTTP on `127.0.0.1:8787` | Legacy in-process app-server (`/healthz`, `/thread`, `/app`, `/prompt`); background jobs are `GET /v1/jobs` on the Runtime API; `/prompt` and `/thread` messages execute real turns via the runtime bridge. There is no direct `/tool` route: tools run only inside Engine turns, under the Engine's tool catalog and approval posture. This legacy server does not surface approvals: its bridge forwards only text deltas and the turn's completion, and it has no decision route, so an approval-gated call waits unanswered. Drive approval-gated work through the Runtime API (`/v1/threads/*` events and `POST /v1/approvals/{approval_id}`) |
 | `codewhale serve --http` / `--mobile` | same server as `app-server --http`/`--mobile` | Compatibility aliases |
 
@@ -1769,6 +1769,16 @@ human gate. Auto-merge is `scripts/check-auto-merge.py --repo … --pr …
 --agent …` from codewhale-ops `origin/main` (exit 0), then
 `scripts/auto-merge-pr.py`. Do not invent a second checker.
 
+**Workspace trust** (the persisted project decision)
+- `GET /v1/workspace/status` reports `workspace_trusted`: whether the server’s workspace is trusted in the discovered user config. Project skills, commands and MCP configuration consult this decision. Project hooks require both workspace trust and separate approval of the exact hooks file.
+- `POST /v1/workspace/trust` with `{"trusted": true|false}` records that decision and answers `{workspace, workspace_trusted, config_path, message}`.
+
+The handler reuses `config::set_workspace_trust`, the writer behind `/trust on|off --save`, and reads the decision back through `is_workspace_trusted`. The request accepts no path; it applies only to the server’s admitted workspace. `config_path` identifies the document written. Both read and write use default config discovery, including configured environment overrides; a runtime’s explicit `--config` argument does not select this trust document.
+
+Project skills and commands consult trust at their existing load or turn boundaries. Project hooks also need their separate digest approval and recheck authority before execution. Restart the engine to rebuild project MCP connections; this request does not disconnect an existing pool or interrupt a running turn. Project instruction files such as `AGENTS.md` and project rules are loaded by the existing context loader independently of this flag, so revoking workspace trust does not remove those instructions or their persisted history.
+
+This persisted project decision is separate from a thread’s `trust_mode` / Full Access and from `/trust add <path>` external-path grants. `/trust on|off --save` changes session file-tool trust and the persisted project record. This HTTP route changes only the persisted project record. Its POST requires the same Runtime write authority as other state-changing routes; watch device tokens can read status but cannot write trust.
+
 **Introspection**
 - `GET /v1/workspace/status`
 - `GET /v1/workspace/files/search?query=<partial>&limit=<1-100>` (see workspace file suggestions above)
@@ -2907,5 +2917,8 @@ accounts.
 `GET /v1/constitution` reads the next-turn profile and its model guidance. It is
 not a receipt that an active turn adopted the edit. `POST /v1/constitution/preview`
 accepts a constitution document and returns `{modelGuidance, saved:false}` without
-saving anything. Both routes use normal Runtime authorization. Older runtimes
+saving anything. `modelGuidance` is the Engine-rendered guidance body: GET and
+preview return identical text for the same document. It excludes the session
+record's attribution line or envelope; `source` and `revision` carry provenance.
+Both routes use normal Runtime authorization. Older runtimes
 must be upgraded before account transports submit profile-bearing turns.

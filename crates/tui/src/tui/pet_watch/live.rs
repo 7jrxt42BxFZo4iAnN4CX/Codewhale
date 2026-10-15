@@ -84,7 +84,7 @@ impl Scene {
             self.activity = None;
         }
     }
-    fn valid(&self) -> bool {
+    pub(super) fn valid(&self) -> bool {
         self.version == 1
             && self.time_ms.is_finite()
             && self.points.len() == 980
@@ -163,8 +163,8 @@ pub enum Notice {
 /// a batch that exceeds either is a coverage gap, never a post the owner must
 /// refuse (a 64-event batch of 16 KiB events is far over the body limit).
 #[derive(Default)]
-struct Batch {
-    events: Vec<Value>,
+pub(super) struct Batch {
+    pub(super) events: Vec<Value>,
     bytes: usize,
 }
 
@@ -175,7 +175,7 @@ impl Batch {
 
     /// Queue one event. `Ok(false)` means it does not fit: the caller drops
     /// the batch and restarts the lease rather than posting a partial one.
-    fn push(&mut self, text: &str) -> io::Result<bool> {
+    pub(super) fn push(&mut self, text: &str) -> io::Result<bool> {
         // `+ 1` counts the separating comma in the posted JSON array.
         let bytes = self.bytes + text.len() + 1;
         if self.events.len() >= Self::MAX_EVENTS || bytes > Self::MAX_EVENT_BYTES {
@@ -186,7 +186,7 @@ impl Batch {
         Ok(true)
     }
 
-    fn clear(&mut self) {
+    pub(super) fn clear(&mut self) {
         self.events.clear();
         self.bytes = 0;
     }
@@ -205,6 +205,12 @@ pub struct Client {
 }
 impl Client {
     pub fn connect() -> io::Result<Self> {
+        Self::connect_with_start(true)
+    }
+    pub(super) fn attach() -> io::Result<Self> {
+        Self::connect_with_start(false)
+    }
+    fn connect_with_start(start: bool) -> io::Result<Self> {
         let root = owner::directory()?;
         let http = crate::tls::reqwest_blocking_client_builder()
             .no_proxy()
@@ -218,10 +224,10 @@ impl Client {
                 http: http.clone(),
             })
         };
-        if let Ok(client) = attempt()
-            && client.get("/v1/frame").is_ok()
-        {
-            return Ok(client);
+        match attempt().and_then(|client| client.get("/v1/frame").map(|_| client)) {
+            Ok(client) => return Ok(client),
+            Err(error) if !start => return Err(error),
+            Err(_) => {}
         }
         #[cfg(not(test))]
         {

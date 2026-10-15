@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Contributors
+
+- **[@printf033](https://github.com/printf033)** — replaced the SELinux-denied root-directory anchor of confined-file I/O with an `O_PATH` walk (Linux-cfg-gated) and a re-materialized final parent, restoring workflow journal, compaction checkpoint and artifact writes on Android/Termux ([#6983](https://github.com/codewhale-hq/Codewhale/pull/6983)); reported the Android confined-I/O failure with strace evidence and an on-device reproducer ([#6980](https://github.com/codewhale-hq/Codewhale/issues/6980)).
+
 ## [0.10.2] - 2026-10-10
+
+- Desktop and HTTP app-server turns feed an existing shared pet companion when
+  its followed session has no live producer. Automatic selection is checked
+  atomically by the owner; a live TUI keeps its source. The Runtime producer
+  forwards activity metadata only and releases its connection after a 12-second
+  completion tail. Refs #6155, #6139.
+
+- Bash cards show the model's short description on its own muted line under
+  the command, including on automatic runs. The command stays visible, and
+  `bash` accepts the optional description without changing execution or approval.
 
 - A first launch with no key or route now opens the composer. Codewhale asks
   for a provider when you send your first message, keeps the message in the
@@ -85,26 +99,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Full Access.
 - An idle pet view no longer builds animation frames while nobody is
   looking at it (#6728).
-- On the pet main view, `Ctrl+]` (or `Ctrl+Tab`) cycles the pet's views: the
+- On the pet main view, `Ctrl+]` cycles the pet's views: the
   companion `whale`, a crisp local `cove` whale without the fog, `braille`,
   `pixels` (kitty graphics), `particles`, `whale-girl` and installed avatar
-  packs; `Ctrl+Shift+Tab` goes back. The footer names the view, and clicking
+  packs. Terminals with the kitty keyboard protocol can also send `Ctrl+Tab`
+  and `Ctrl+Shift+Tab` to move forward or back; Terminal.app uses those to
+  switch terminal tabs, so use `Ctrl+]` there. The footer names the view, and clicking
   it cycles. A view that cannot draw shows its fallback and says what it
   needs, for example `pixels needs kitty graphics · showing particles`.
   `/pet avatar <key>` jumps to a view, and the `/pet` usage lists every view,
   `style` and `language`.
 - `F6`, `F8` and `F9` work on the pet main view, not only in the `F5`
-  inspector, and on macOS the pet's key hints read `fn+F5`. `/pet on`, `F8`
+  inspector. Every F-key hint on macOS, including the help overlay, reads
+  `fn+F5`, `fn+F8` and so on, including in ASCII-safe mode. `/pet on`, `F8`
   and `F9` restart a companion view that stopped, so "/pet on retries" is
   true. A failed launch shows its own reason, a successful one says
   `habitat open`, and pressing `F8` several times while the companion starts
-  opens one tab.
+  opens one tab. `F8` and `F9` also restart a stopped companion from the inspector.
 - The live dot whale stays dense in large panes, the whale-girl sprite scales
   by whole pixels, and avatars, the particle grid and the pixel view no longer
   show the whale through them. Avatars follow your theme and
   `CODEWHALE_ASCII_SAFE`, the pixel view's image is a whole fraction of the
   terminal's pixel size, and the pet's view worker sleeps until its next
   deadline instead of waking every 2 ms.
+- The terminal dot whale respects studio brightness and sleep dimming. Normal
+  companion startup no longer shows a missing-service notice, avatar atlas
+  notices match the current frame, and pet fallback descriptions are translated.
 - README: `codewhale exec --auto` is shown for headless runs that edit files
   or run commands.
 - `bash` now moves a foreground command to the background after 30 s and
@@ -115,9 +135,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a `thread.permissions_changed` event.
 
 - The bundled first-party catalog pins marketplace revision
-  `9b5f9d614ef69702be9944a61e89aeb3df14c047`; the 19 catalog entries are
-  unchanged, and installed bundles now come from a revision carrying the
-  reviewed Computer Use and bridge fixes and the MIT license.
+  `e3e61273f2ae31ec205e3c7f21b34dd73954d6b2` with 19 catalog entries,
+  including the bundled Skills pack. Installed bundles carry the reviewed
+  Computer Use and bridge fixes and the MIT license.
 - `codewhale app-server` no longer serves `GET /jobs`, which was always empty;
   background jobs are `GET /v1/jobs` on the Runtime API (#6513).
 
@@ -306,7 +326,12 @@ launcher guidance.
   ratify or migrate moves the prompt-cache prefix; the setup wizard no longer
   lists an authority order that contradicts the base prompt, and it caps your
   own note so saving never cuts its end. The Simplified Chinese manager uses
-  the glossary term 宪章 throughout.
+  the glossary term 宪章 throughout. The manager checks whether your signed-in
+  account profile takes precedence and labels an active local file as standby;
+  the Runtime API returns the same guidance body from GET and preview. `doctor`
+  reports autonomy only from an active local constitution and leaves account
+  checks to sign-in. The context inspector shows the personal constitution as
+  a recorded session message outside the system-prompt layer.
 - The pet shows sub-agents while they run, and a finished one no longer stays
   "working". Half-block pet sprites are drawn crisply instead of blurred.
 - A provider's retry delay is honored when a 429 carries it in the body
@@ -413,12 +438,14 @@ launcher guidance.
   deadline set by its first unsaved event. Tool heartbeats and store polls no
   longer restart that wait, and heartbeats are kept in memory only.
 
+- On Windows, when the app-server that owned a Runtime has died, the next
+  start now replaces it automatically, as on macOS and Linux. A live owner,
+  a reused process ID, or a publication from another user, store or config
+  is still refused
+  ([#6915](https://github.com/codewhale-hq/Codewhale/issues/6915)).
+
 ### Known limits
 
-- Windows: when the previous app-server owner died without cleaning up, the
-  next start refuses with "Windows stale-owner recovery is not qualified" and
-  the stale publication has to be removed by hand. Unix recovers on its own
-  ([#6915](https://github.com/codewhale-hq/Codewhale/issues/6915)).
 - Idle CPU has not been measured on FreeBSD or Linux for this release
   ([#6728](https://github.com/codewhale-hq/Codewhale/issues/6728)).
 - Models.dev prices with context tiers are not applied. A turn at or above a

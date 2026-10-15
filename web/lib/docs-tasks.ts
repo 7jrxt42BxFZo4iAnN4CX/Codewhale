@@ -31,6 +31,92 @@ export interface DocTask {
 
 export const DOC_TASKS: DocTask[] = [
   {
+    "id": "preview-request",
+    "label": {
+      "en": "Inspect the outbound request",
+      "zh": "检查出站请求"
+    },
+    "description": {
+      "en": "Read a redacted request manifest without sending or changing session state.",
+      "zh": "读取脱敏请求清单，不发送请求也不修改会话状态。"
+    },
+    "href": "/docs/trust",
+    "topicId": "trust",
+    "keywords": {
+      "en": "preview-request preview_request dryrun prompt payload manifest offline",
+      "zh": "请求 提示 预览 清单 离线"
+    }
+  },
+  {
+    "id": "language-server",
+    "label": {
+      "en": "Read language-server diagnostics",
+      "zh": "读取语言服务器诊断"
+    },
+    "description": {
+      "en": "Return LSP errors after edits and configure custom servers by file extension.",
+      "zh": "修改后返回 LSP 错误，并按文件扩展名配置自定义服务器。"
+    },
+    "href": "/docs/tools",
+    "topicId": "tools",
+    "keywords": {
+      "en": "lsp diagnostics type errors language server php custom",
+      "zh": "语言服务器 诊断 类型 错误"
+    }
+  },
+  {
+    "id": "execution-policy",
+    "label": {
+      "en": "Inspect execution policy rules",
+      "zh": "检查执行策略规则"
+    },
+    "description": {
+      "en": "Read rule sources, matchers and scope; understand allow, ask and deny precedence.",
+      "zh": "查看规则来源、匹配器与作用域，了解 allow、ask 和 deny 的优先级。"
+    },
+    "href": "/docs/sandbox",
+    "topicId": "sandbox",
+    "keywords": {
+      "en": "exec-policy execpolicy permissions rules prefix deny ask allow",
+      "zh": "执行策略 权限 规则 拒绝 审批"
+    }
+  },
+  {
+    "id": "manage-skills",
+    "label": {
+      "en": "Manage reusable skills",
+      "zh": "管理可复用技能"
+    },
+    "description": {
+      "en": "Find SKILL.md folders, import into owned roots and control invocation.",
+      "zh": "查找 SKILL.md 文件夹、导入自有目录并控制调用。"
+    },
+    "href": "/docs/skills",
+    "topicId": "skills",
+    "keywords": {
+      "en": "skills trust skill.md invocation install claude agents",
+      "zh": "技能 信任 安装 调用"
+    }
+  },
+  {
+    "id": "move-from-claude-code",
+    "label": {
+      "en": "Move from Claude Code",
+      "zh": "从 Claude Code 迁移"
+    },
+    "description": {
+      "en": "Keep compatible instructions and skills, and review a settings import plan.",
+      "zh": "保留兼容指令与技能，并审阅设置导入方案。"
+    },
+    "href": "/docs/claude-code",
+    "topicId": "claude-code",
+    "keywords": {
+      "en": "claude code alternative import-claude plugin settings migration",
+      "zh": "Claude Code 替代 迁移 导入 插件 设置"
+    }
+  },
+
+  {
     id: "install",
     label: { en: "Install Codewhale", zh: "安装 Codewhale" },
     description: {
@@ -98,14 +184,14 @@ export const DOC_TASKS: DocTask[] = [
   },
   {
     id: "receipts",
-    label: { en: "Keep a receipt of a review", zh: "为审查保留收据" },
+    label: { en: "See what a session did", zh: "查看会话做了什么" },
     description: {
-      en: "Write a review receipt and check it before you push.",
-      zh: "生成审查收据，并在推送前核对它。",
+      en: "Read a session receipt of commands, file changes, tools and approval decisions.",
+      zh: "阅读会话收据，查看命令、文件修改、工具与审批决策。",
     },
     href: "/docs/review",
     topicId: "review",
-    keywords: { en: "receipt write-receipt check-receipt pre-push export", zh: "收据 推送 导出" },
+    keywords: { en: "receipt receipts audit tool approval command file export", zh: "收据 推送 导出" },
   },
   {
     id: "watch-sessions",

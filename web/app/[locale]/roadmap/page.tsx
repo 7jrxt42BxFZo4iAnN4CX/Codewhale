@@ -34,7 +34,7 @@ const tracksEn: Track[] = [
       { title: "OS command sandbox", note: "Seatbelt on macOS when available; opt-in bubblewrap on Linux when installed. Windows currently reports no OS sandbox." },
       { title: "Durable sessions + tasks", note: "Save, resume, rollback; background task queue with replayable timelines" },
       { title: "Bidirectional MCP", note: "Consume tools from external servers; expose as a server via `codewhale serve --mcp`" },
-      { title: "Skills + unified slash palette", note: "Skills load automatically from your Codewhale folder; /help, /mode, /status, /config, /trust, /feedback" },
+      { title: "Skills + unified slash palette", note: "Skills load from trusted roots; /help, /mode, /status, /config, /trust, /feedback" },
       { title: "OpenRouter provider", note: "OpenRouter integration with 300+ models across dozens of providers" },
       { title: "OpenAI-compatible & local runtimes", note: "Generic `openai` route for any OpenAI-compatible gateway, plus vLLM, SGLang, and Ollama against your own localhost endpoints — no key required" },
       { title: "Multi-provider support", note: "Hot-swap between providers (DeepSeek, OpenAI, Anthropic, OpenRouter) per session" },

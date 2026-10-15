@@ -1779,7 +1779,7 @@ mod tests {
         let options = TuiOptions {
             model: "deepseek-v4-flash".to_string(),
             start_in_agent_mode: true,
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         App::new(options, &Config::default())
     }

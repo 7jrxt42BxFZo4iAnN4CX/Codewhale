@@ -32,6 +32,8 @@ pub use full::{render_full, render_main};
 mod live;
 pub(crate) mod owner;
 mod persistence;
+mod runtime;
+pub use runtime::observe_runtime;
 #[cfg(test)]
 mod worker;
 use live::{Command, Notice, Presentation, Worker};
@@ -519,21 +521,15 @@ pub fn tick(app: &mut App, now: Instant) {
         .lock()
         .map(|mut c| std::mem::take(&mut *c))
         .unwrap_or_default();
-    let agents = if controls.is_empty() {
-        Vec::new()
-    } else {
-        full::agents(app)
-    };
+    for control in controls {
+        command(app, control);
+    }
     let state = &mut app.pet_watch;
     if state.session != app.current_session_id {
         state.reset(app.current_session_id.clone());
     }
     if visible {
         state.ensure(app.current_session_id.clone());
-    }
-    for control in controls {
-        apply(state, control, &agents);
-        app.needs_redraw = true;
     }
     if let Some(update) = state
         .worker
@@ -833,15 +829,15 @@ fn cell_pixels() -> Option<(f64, f64)> {
             )
         })
 }
-fn pixels_need(synchronized: bool) -> Option<&'static str> {
+fn pixels_need(synchronized: bool) -> Option<MessageId> {
     if !crate::tui::mark::kitty_graphics_supported() {
-        Some("kitty graphics")
+        Some(MessageId::PetNeedsKittyGraphics)
     } else if !synchronized {
-        Some("synchronized output")
+        Some(MessageId::PetNeedsSynchronizedOutput)
     } else if std::env::var("CODEWHALE_PET_GRAPHICS").as_deref() == Ok("braille") {
-        Some("CODEWHALE_PET_GRAPHICS unset")
+        Some(MessageId::PetNeedsGraphicsAllowed)
     } else if cell_pixels().is_none() {
-        Some("cell pixel size")
+        Some(MessageId::PetNeedsCellPixels)
     } else {
         None
     }
@@ -855,8 +851,9 @@ mod tests {
     #[test]
     fn work_completion_reveals_existing_answer_without_sending_text_to_owner() {
         use crate::core::events::TurnOutcomeStatus;
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.onboarding = crate::tui::app::OnboardingState::None;
         app.redaction_gate = false;
         assert!(app.view_stack.is_empty());
@@ -914,8 +911,9 @@ mod tests {
 
     #[test]
     fn unavailable_companion_keeps_legacy_fallback_and_native_response_available() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.onboarding = crate::tui::app::OnboardingState::None;
         app.redaction_gate = false;
         app.pet_watch.session = app.current_session_id.clone();
@@ -978,8 +976,9 @@ mod tests {
 
     #[test]
     fn a_refused_pet_action_keeps_the_habitat_and_only_unreachable_marks_offline() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.onboarding = crate::tui::app::OnboardingState::None;
         app.redaction_gate = false;
         app.pet_watch.session = app.current_session_id.clone();
@@ -1020,8 +1019,9 @@ mod tests {
 
     #[test]
     fn pet_off_restores_the_shell_and_keeps_the_draft() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.onboarding = crate::tui::app::OnboardingState::None;
         app.redaction_gate = false;
         app.input = "kept draft".into();

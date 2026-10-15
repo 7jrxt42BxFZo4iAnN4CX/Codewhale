@@ -11,6 +11,25 @@ export const docsTrust: DocsTrustDict = {
     "Codewhale 在你的电脑上运行，只与你选择的模型提供商通信。这一页按目前的实际实现，列出数据分别去了哪里、匿名用量统计包含什么，以及如何关闭它。",
   sections: [
     {
+      "id": "preview-request",
+      "title": "发送前查看请求",
+      "blocks": [
+        {
+          "p": "/preview-request 展示下一个主智能体回合的脱敏清单。这是供人使用的命令，不会发送请求，也不会写入对话或 Work 状态。"
+        },
+        {
+          "code": "/preview-request\n/preview-request json\n/preview-request json --prompt explain this project",
+          "lang": "Codewhale"
+        },
+        {
+          "note": "未提供 --prompt 时，路由和请求体不可用。已配置的分类器、钩子或待处理运行状态也可能阻止精确预览；清单会说明原因。"
+        },
+        {
+          "p": "[阅读请求预览约定](https://github.com/codewhale-hq/CodeWhale/blob/main/docs/PREVIEW_REQUEST.md)"
+        }
+      ]
+    },
+    {
       id: "boundaries",
       title: "你的工作内容去了哪里",
       blocks: [

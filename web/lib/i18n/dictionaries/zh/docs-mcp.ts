@@ -91,7 +91,7 @@ codewhale mcp add tracker --url "https://example.com/mcp" --bearer-token-env-var
       title: "把 Codewhale 作为 MCP 服务器运行",
       blocks: [
         {
-          p: "其他 MCP 客户端——包括另一个 Codewhale 会话——都可以使用 Codewhale 的工具。只需注册一次：",
+          p: "其他 MCP 客户端可以把 Codewhale 作为工具服务器。默认仅暴露只读的 `file_read` 和 `search` 工具。",
         },
         {
           code: `codewhale mcp add-self
@@ -99,7 +99,7 @@ codewhale mcp tools codewhale`,
           lang: "终端",
         },
         {
-          p: "`add-self` 会写入一条通过 stdio 运行 `codewhale serve --mcp` 的配置。每个客户端各自启动一个进程，不会打开任何网络端口。`codewhale serve --http` 则是另一回事——它是供应用使用的 [Runtime API](/docs/runtime-api)。",
+          p: "`add-self` 注册通过 stdio 运行的 `codewhale serve --mcp`；`codewhale mcp-server` 是等价入口。除非操作者在服务器配置中明确允许，否则不会提供写入工具。[Runtime API](/docs/runtime-api) HTTP 是单独的传输方式。",
         },
       ],
     },

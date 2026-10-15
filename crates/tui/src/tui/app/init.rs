@@ -561,7 +561,7 @@ impl App {
         // YOLO is a permission change. A locked policy must not be sidestepped
         // by --yolo, default_mode=yolo, /zidong, or Alt+Y.
         let yolo_compat = yolo_requested && !approval_policy_locked;
-        let needs_workspace_trust = !yolo_compat && crate::tui::onboarding::needs_trust(&workspace);
+        let needs_workspace_trust = !yolo_compat && crate::config::needs_trust(&workspace);
         // The language screen is required only when the locale cannot be
         // confidently inferred from settings or the environment; returning
         // users never see it.

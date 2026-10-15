@@ -3,12 +3,10 @@ import type { HomeDict } from "../types";
 /** Simplified Chinese home copy: useful work with chosen models and connected tools. */
 
 export const home: HomeDict = {
-  metaTitle: "Codewhale：用自己的模型和工具，把想法做出来",
-  metaDescription:
-    "用 Codewhale 构建应用、自动处理工作，并连接你常用的工具。开源，支持你已有的模型 API、本地模型和自托管推理服务。",
+  metaTitle: "Codewhale：开源编程智能体",
+  metaDescription: "Codewhale 是终端里的开源编程智能体。用你选择的托管模型或本地模型读取、修改和测试项目。",
   heroTitle: "构建应用，让你的工作自动运行。",
-  heroIntro:
-    "{brand} 是一个开源智能体，可以编写代码、运行命令，并使用你连接的工具。你可以使用已有的模型 API，也可以在本地或自己的服务器上运行模型。",
+  heroIntro: "{brand} 是终端里的开源编程智能体，可以读取文件、编写代码并运行命令。连接已有的模型 API 或本地模型，并选择哪些操作需要批准。",
   getCodewhale: "安装 Codewhale",
   heroInstallAria: "安装命令",
   exploreProduct: "探索 Codewhale",

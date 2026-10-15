@@ -136,9 +136,9 @@ use self::sessions::{messages_from_thread_detail, session_to_detail};
 #[cfg(test)]
 use self::workspace::collect_workspace_status;
 use self::workspace::{
-    WorkspaceGitMetadata, collect_workspace_git_metadata, workspace_file_read,
-    workspace_file_search, workspace_file_write, workspace_files_list, workspace_instructions,
-    workspace_status,
+    WorkspaceGitMetadata, collect_workspace_git_metadata, update_workspace_trust,
+    workspace_file_read, workspace_file_search, workspace_file_write, workspace_files_list,
+    workspace_instructions, workspace_status,
 };
 
 const RUNTIME_TOKEN_ENV: &str = "CODEWHALE_RUNTIME_TOKEN";
@@ -240,9 +240,15 @@ struct RuntimeWorkspaceScope {
     canonical: PathBuf,
     directory: Arc<std::fs::File>,
     mcp: Mutex<Option<(u64, Arc<Mutex<McpPool>>)>>,
+    mcp_policy: parking_lot::Mutex<Value>,
     lsp: std::sync::OnceLock<Arc<crate::lsp::LspManager>>,
     owner: SharedRuntimeThreadManager,
     cleanup_runtime: tokio::runtime::Handle,
+    /// The workspace drive lease held for this scope's lifetime: at most one
+    /// driving engine per workspace, across stores and clients
+    /// (`workspace_lease`). Watch-only observers never reach scope admission.
+    /// Underscored because it is held for its `Drop` side effect, never read.
+    _drive_lease: Option<crate::workspace_lease::SharedWorkspaceDriveLease>,
 }
 
 pub(crate) fn open_workspace_directory(workspace: &FsPath) -> Result<(PathBuf, std::fs::File)> {
@@ -294,6 +300,7 @@ impl Drop for RuntimeWorkspaceScope {
     fn drop(&mut self) {
         let mcp = self.mcp.get_mut().take().map(|(_, pool)| pool);
         let lsp = self.lsp.take();
+        let drive_lease = self._drive_lease.take();
         // The canonical writer lease and held directory survive the actual
         // transport cleanup, including waiter cancellation and guest detach.
         let owner = self.owner.clone();
@@ -301,6 +308,7 @@ impl Drop for RuntimeWorkspaceScope {
         self.cleanup_runtime.spawn(async move {
             let _owner = owner;
             let _directory = directory;
+            let _drive_lease = drive_lease;
             if let Some(pool) = mcp {
                 pool.lock().await.shutdown_all().await;
             }
@@ -319,6 +327,52 @@ struct RuntimeWorkspaceScopes {
     workers: SharedSubAgentManager,
     cleanup_runtime: tokio::runtime::Handle,
 }
+
+/// A legible refusal when the workspace drive lease is held elsewhere: it
+/// names the recorded holder so the second client can offer a real choice
+/// (stay watch-only, or take the lease over) instead of an opaque conflict.
+#[derive(Debug)]
+struct WorkspaceDriveLeaseRefusal {
+    message: String,
+}
+
+impl WorkspaceDriveLeaseRefusal {
+    fn named_holder(workspace: &FsPath) -> Option<Self> {
+        let holder = crate::workspace_lease::WorkspaceDriveLease::read_holder(workspace)
+            .ok()
+            .flatten()?;
+        let held_for = holder.held_for();
+        Some(Self {
+            message: format!(
+                "another client is already driving this workspace: pid={} client={} store={} held_for={held_for:?}; \
+                 close it first or attach watch-only to its existing owner",
+                holder.pid,
+                holder.client.as_deref().unwrap_or("unknown"),
+                holder
+                    .store_root
+                    .as_ref()
+                    .map_or_else(|| "unknown".to_string(), |root| root.display().to_string()),
+            ),
+        })
+    }
+
+    fn unreadable() -> Self {
+        Self {
+            message:
+                "another client is already driving this workspace (holder record unreadable); \
+                      close it first or attach watch-only to its existing owner"
+                    .to_string(),
+        }
+    }
+}
+
+impl std::fmt::Display for WorkspaceDriveLeaseRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for WorkspaceDriveLeaseRefusal {}
 
 impl RuntimeWorkspaceScopes {
     fn new(owner: SharedRuntimeThreadManager, workers: SharedSubAgentManager) -> Arc<Self> {
@@ -350,6 +404,38 @@ impl RuntimeWorkspaceScopes {
                 scopes.len() < MAX_RUNTIME_WORKSPACE_SCOPES,
                 "Runtime workspace scope limit reached; restart the owner to retire unused scopes"
             );
+            // One driving engine per workspace, process-wide. The lease is held
+            // for as long as this engine drives the workspace and releases when
+            // the scope (and its engine) goes away. A contending client gets the
+            // recorded holder's facts in the refusal instead of an opaque
+            // conflict. Watch-only observers attach to the owner that holds the
+            // lease, so they never reach this point.
+            let client = std::env::var("CODEWHALE_CLIENT_LABEL")
+                .ok()
+                .filter(|label| !label.trim().is_empty())
+                .or_else(|| {
+                    std::env::var("TERM_PROGRAM")
+                        .ok()
+                        .filter(|program| program.to_ascii_lowercase().contains("vscode"))
+                })
+                .map(|label| label.replace(['\n', '='], " "));
+            let store_root = owner.owner.session_store_binding().data_dir;
+            let drive_lease = crate::workspace_lease::SharedWorkspaceDriveLease::acquire(
+                &lexical,
+                client.as_deref(),
+                Some(&store_root),
+            )
+            .map_err(|error| {
+                anyhow::anyhow!(
+                    "workspace drive lease check failed for {}: {error:#}",
+                    lexical.display()
+                )
+            })?;
+            let Some(drive_lease) = drive_lease else {
+                let refusal = WorkspaceDriveLeaseRefusal::named_holder(&lexical)
+                    .unwrap_or_else(WorkspaceDriveLeaseRefusal::unreadable);
+                return Err(anyhow::Error::new(refusal));
+            };
             owner
                 .workers
                 .blocking_write()
@@ -360,9 +446,11 @@ impl RuntimeWorkspaceScopes {
                 canonical,
                 directory,
                 mcp: Mutex::new(None),
+                mcp_policy: parking_lot::Mutex::new(Value::Null),
                 lsp: std::sync::OnceLock::new(),
                 owner: owner.owner.clone(),
                 cleanup_runtime: owner.cleanup_runtime.clone(),
+                _drive_lease: Some(drive_lease),
             });
             scopes.insert(lexical, scope.clone());
             Ok(scope)
@@ -891,6 +979,8 @@ pub struct RuntimeApiOptions {
     /// Effective profile used to load the server's initial Config.
     pub config_profile: Option<String>,
     pub control_frontend: Option<codewhale_app_server::RuntimeControlFrontend>,
+    pub runtime_event_tap:
+        Option<fn(tokio::sync::broadcast::Receiver<crate::runtime_threads::RuntimeEventRecord>)>,
 }
 
 impl Default for RuntimeApiOptions {
@@ -908,6 +998,7 @@ impl Default for RuntimeApiOptions {
             config_path: None,
             config_profile: None,
             control_frontend: None,
+            runtime_event_tap: None,
         }
     }
 }
@@ -1632,6 +1723,11 @@ pub(crate) fn open_runtime_threads_for_host(
         preheld_lock,
         binding,
     )?);
+    if let Some(skills_dir) = config.bundled_skills_install_dir()
+        && let Err(error) = crate::skills::install_system_skills(&skills_dir)
+    {
+        crate::logging::warn(format!("Failed to install system skills: {error}"));
+    }
     // Publish the same exact endpoint-scoped catalog as interactive startup
     // before the server admits turns. A cached model list alone does not make
     // its capabilities available to route resolution.
@@ -1736,9 +1832,18 @@ pub async fn run_http_server(
         Some(options.workers),
     );
     #[cfg(any(unix, windows))]
+    let selected_store =
+        RuntimeThreadManagerConfig::from_task_data_dir(task_cfg.data_dir.clone()).data_dir;
+    #[cfg(unix)]
+    let control_socket = Some(
+        store_selected_control_socket(selected_control_socket(&options), &selected_store).await?,
+    );
+    #[cfg(windows)]
+    let control_socket = selected_control_socket(&options);
+    #[cfg(any(unix, windows))]
     let admission = admit_runtime_host(
         options.config_path.clone(),
-        selected_control_socket(&options),
+        control_socket.clone(),
         RuntimeThreadManagerConfig::from_task_data_dir(task_cfg.data_dir.clone()).data_dir,
     )
     .await?;
@@ -1757,9 +1862,7 @@ pub async fn run_http_server(
     let existing_binding: Option<crate::runtime_threads::RuntimeStoreBinding> = None;
     #[cfg(any(unix, windows))]
     if let Some(control) = published {
-        let selected_store =
-            RuntimeThreadManagerConfig::from_task_data_dir(task_cfg.data_dir.clone()).data_dir;
-        validate_selected_owner(&control, selected_store).await?;
+        validate_selected_owner(&control, selected_store.clone()).await?;
         let observed_owner = control.receipt().clone();
         let client = match options.control_frontend.as_ref() {
             Some(codewhale_app_server::RuntimeControlFrontend::Acp { model }) => {
@@ -1767,7 +1870,7 @@ pub async fn run_http_server(
                 let client =
                     codewhale_app_server::daemon_client::connect_selected_acp_if_published(
                         options.config_path.clone(),
-                        selected_control_socket(&options),
+                        control_socket.clone(),
                         codewhale_app_server::RuntimeFrontendScope {
                             workers: options.workers,
                             workspace: workspace.clone(),
@@ -1795,7 +1898,7 @@ pub async fn run_http_server(
                 drop(control);
                 codewhale_app_server::daemon_client::connect_scoped_control_if_published(
                     options.config_path.clone(),
-                    selected_control_socket(&options),
+                    control_socket.clone(),
                     codewhale_app_server::RuntimeFrontendScope {
                         workers: options.workers,
                         workspace: workspace.clone(),
@@ -1835,7 +1938,7 @@ pub async fn run_http_server(
                 drop(control);
                 codewhale_app_server::daemon_client::connect_listener_if_published(
                     options.config_path.clone(),
-                    selected_control_socket(&options),
+                    control_socket.clone(),
                     selection,
                     observed_owner,
                 )
@@ -1868,6 +1971,9 @@ pub async fn run_http_server(
         existing_binding.as_ref(),
     )?;
     let sessions_dir = runtime_threads.sessions_dir().to_path_buf();
+    if let Some(tap) = options.runtime_event_tap {
+        tap(runtime_threads.subscribe_events());
+    }
     let task_manager =
         TaskManager::start_with_runtime_manager(task_cfg, config.clone(), runtime_threads.clone())
             .await?;
@@ -1963,7 +2069,7 @@ pub async fn run_http_server(
     #[cfg(any(unix, windows))]
     let (owner_frontend, control_state) = bind_captured_runtime_frontends(
         &state,
-        selected_control_socket(&options),
+        control_socket.clone(),
         match options.control_frontend.as_ref() {
             Some(codewhale_app_server::RuntimeControlFrontend::Acp { model }) => model.clone(),
             _ => task_default_model.clone(),
@@ -2102,6 +2208,68 @@ fn selected_control_socket(options: &RuntimeApiOptions) -> Option<PathBuf> {
         Some(codewhale_app_server::RuntimeControlFrontend::Socket { path }) => path.clone(),
         _ => None,
     }
+}
+
+/// The control endpoint this `serve` run uses: an explicit `Socket { path }`
+/// selection, else the socket derived from the selected runtime store.
+///
+/// One endpoint per store, as a pure function of the store selection. The
+/// default store keeps the well-known socket (discovery and single-engine
+/// setups unchanged), while a non-default store — a client-scoped
+/// `CODEWHALE_RUNTIME_DIR`, like the VS Code extension's per-workspace store —
+/// derives its own private sibling socket. A store-scoped engine then elects
+/// its own owner instead of colliding with the default store's owner, and the
+/// cross-store attach refusal drops out of the topology.
+///
+/// `selected_store` is the store root this run resolved, the same value the
+/// thread manager will open.
+///
+/// Unix only, with `daemon_socket::store_selected_socket_path`: a Windows
+/// owner endpoint is a named pipe whose derived-name form is follow-up work,
+/// so Windows keeps the well-known endpoint and the explicit selection.
+#[cfg(unix)]
+async fn store_selected_control_socket(
+    explicit: Option<PathBuf>,
+    selected_store: &FsPath,
+) -> Result<PathBuf> {
+    let selected_store = selected_store.to_path_buf();
+    codewhale_app_server::daemon_socket::owner_work(move || {
+        let store_override = crate::runtime_threads::canonical_runtime_dir_override()?;
+        let inputs = codewhale_app_server::daemon_socket::SocketPathInputs::from_environment(None)?;
+        store_selected_control_socket_with(
+            explicit,
+            &selected_store,
+            store_override.as_deref(),
+            &inputs,
+        )
+    })
+    .await
+}
+
+/// The environment-free core of [`store_selected_control_socket`].
+///
+/// The environment reads stay in the caller so this decision — the part the
+/// endpoint depends on — can be proven without a test mutating process-wide
+/// environment, which would race every other test in this binary.
+#[cfg(unix)]
+fn store_selected_control_socket_with(
+    explicit: Option<PathBuf>,
+    selected_store: &FsPath,
+    store_override: Option<&FsPath>,
+    inputs: &codewhale_app_server::daemon_socket::SocketPathInputs,
+) -> Result<PathBuf> {
+    if let Some(path) = explicit {
+        return Ok(path);
+    }
+    // Canonicalize the store root before comparing: the override is canonical
+    // (`canonical_runtime_dir_override`), and the store selection is whatever
+    // the store chain resolved. Comparing them in different forms would let a
+    // symlinked or relative override silently keep the default endpoint.
+    let selected =
+        crate::runtime_threads::checked_runtime_store_root(selected_store.to_path_buf())?;
+    let derived_from = store_override.filter(|dir| *dir == selected);
+    codewhale_app_server::daemon_socket::store_selected_socket_path(derived_from, inputs)
+        .map_err(Into::into)
 }
 
 #[cfg(any(unix, windows))]
@@ -2375,6 +2543,9 @@ pub fn build_router(state: RuntimeApiState) -> Router {
             get(read_session_artifact),
         )
         .route("/v1/workspace/status", get(workspace_status))
+        // The only writer a GUI has for workspace trust. The engine owns
+        // `config.toml`; a client asks here instead of editing the file.
+        .route("/v1/workspace/trust", post(update_workspace_trust))
         // The Engine's terminal byte stream (#34). Auth is the route layer's,
         // not this module's; these never create a session — see terminal.rs.
         .route("/v1/terminal/{name}/output", get(terminal::terminal_output))
@@ -4804,74 +4975,68 @@ struct CommandsResponse {
 }
 
 fn command_catalog(
-    user_commands: &crate::commands::user_registry::UserCommandRegistry,
+    builtins: &[crate::command_catalog::BuiltinCommand],
+    users: &[crate::command_catalog::UserCommand],
 ) -> Vec<CommandCatalogEntry> {
     let mut commands = Vec::new();
-    for info in crate::commands::command_infos() {
-        let shadowed_by = user_commands
-            .get(info.name)
-            .map(|command| command.name.clone());
+    for info in builtins {
+        let shadowed_by = users
+            .iter()
+            .find(|user| {
+                user.builtin_bindings
+                    .iter()
+                    .any(|spelling| spelling == &info.name)
+            })
+            .map(|user| user.name.clone());
         let shadowed_aliases = info
             .aliases
             .iter()
-            .filter(|alias| user_commands.get(alias).is_some())
-            .map(|alias| (*alias).to_string())
+            .filter(|alias| {
+                users
+                    .iter()
+                    .any(|user| user.builtin_bindings.contains(alias))
+            })
+            .cloned()
             .collect();
         commands.push(CommandCatalogEntry {
-            name: info.name.to_string(),
-            aliases: info
-                .aliases
-                .iter()
-                .map(|alias| (*alias).to_string())
-                .collect(),
+            name: info.name.clone(),
+            aliases: info.aliases.clone(),
             summary: Some(
-                info.description_for(codewhale_localization::Locale::En)
+                codewhale_localization::tr(codewhale_localization::Locale::En, info.description_id)
                     .into_owned(),
             ),
-            usage: Some(info.usage.to_string()),
-            subcommands: crate::commands::traits::usage_subcommands(info.usage)
-                .iter()
-                .map(|token| (*token).to_string())
-                .collect(),
-            takes_arguments: crate::commands::user_registry::usage_describes_arguments(
-                info.name, info.usage,
-            ),
-            requires_argument: info.requires_argument(),
-            requires_required_argument: info.requires_required_argument(),
-            composer_wants_trailing_space: info.composer_wants_trailing_space(),
-            palette_runs_directly: info.palette_runs_directly(),
-            show_in_empty_discovery: info.show_in_empty_discovery(),
+            usage: Some(info.usage.clone()),
+            subcommands: info.subcommands.clone(),
+            takes_arguments: info.takes_arguments,
+            requires_argument: info.requires_argument,
+            requires_required_argument: info.requires_required_argument,
+            composer_wants_trailing_space: info.composer_wants_trailing_space,
+            palette_runs_directly: info.palette_runs_directly,
+            show_in_empty_discovery: info.show_in_empty_discovery,
             kind: "builtin",
             binding: "host",
-            discovery: Some(match info.discovery() {
-                crate::commands::traits::CommandDiscovery::Primary => "primary",
-                crate::commands::traits::CommandDiscovery::Advanced => "advanced",
-                crate::commands::traits::CommandDiscovery::Compatibility => "compatibility",
+            discovery: Some(match info.discovery {
+                codewhale_command_contract::CommandDiscovery::Primary => "primary",
+                codewhale_command_contract::CommandDiscovery::Advanced => "advanced",
+                codewhale_command_contract::CommandDiscovery::Compatibility => "compatibility",
             }),
-            hidden: crate::commands::traits::UNLISTED_COMMANDS.contains(&info.name),
+            hidden: info.unlisted,
             shadowed_by,
             shadowed_aliases,
         });
     }
-    // Extension commands run in the extension host from the TUI's event loop;
-    // a Runtime API client cannot run them, so they are not advertised here.
-    for command in user_commands
-        .iter()
-        .filter(|command| command.extension.is_none())
-    {
-        let takes_arguments = command.takes_arguments();
+    for command in users.iter().filter(|command| !command.extension) {
         commands.push(CommandCatalogEntry {
             name: command.name.clone(),
             aliases: command.aliases.clone(),
             summary: command.description.clone(),
-            usage: command.display_usage().map(str::to_string),
+            usage: command.usage.clone(),
             subcommands: Vec::new(),
-            takes_arguments,
-            // A template may run bare, so its arguments are never required.
-            requires_argument: takes_arguments,
+            takes_arguments: command.takes_arguments,
+            requires_argument: command.takes_arguments,
             requires_required_argument: false,
-            composer_wants_trailing_space: takes_arguments,
-            palette_runs_directly: !takes_arguments,
+            composer_wants_trailing_space: command.takes_arguments,
+            palette_runs_directly: !command.takes_arguments,
             show_in_empty_discovery: !command.hidden,
             kind: "user",
             binding: "prompt",
@@ -4887,10 +5052,21 @@ fn command_catalog(
 async fn list_commands(
     State(state): State<RuntimeApiState>,
 ) -> Result<Json<CommandsResponse>, ApiError> {
-    let commands = crate::commands::user_registry::with_registry_for_workspace(
-        Some(state.workspace.as_path()),
-        command_catalog,
-    );
+    let catalog = crate::command_catalog::installed()
+        .ok_or_else(|| ApiError::internal("command catalog is not installed"))?;
+    let workspace = state.workspace.clone();
+    #[cfg(test)]
+    let env_ticket = crate::test_support::env_scope_ticket();
+    let commands = tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        let _membership = crate::test_support::join_env_scope(env_ticket);
+        command_catalog(
+            &catalog.builtins(),
+            &catalog.user_commands(workspace.as_path()),
+        )
+    })
+    .await
+    .map_err(|error| ApiError::internal(error.to_string()))?;
     Ok(Json(CommandsResponse { commands }))
 }
 
@@ -6106,52 +6282,62 @@ async fn mcp_pool_handle(
             .workspace_scopes
             .mcp_generation
             .load(std::sync::atomic::Ordering::SeqCst);
+        let policy = mcp_pool_policy(&state.config.read());
         if let Some((admitted, pool)) = slot.as_ref() {
-            if *admitted == generation {
+            let policy_changed = *state.workspace_scope.mcp_policy.lock() != policy;
+            if *admitted == generation && !policy_changed {
                 return Ok(Some(pool.clone()));
             }
             let mut held = pool.clone().lock_owned().await;
             let current = state.clone();
             #[cfg(test)]
             let env_ticket = crate::test_support::env_scope_ticket();
-            codewhale_app_server::daemon_socket::owner_work(move || {
-                #[cfg(test)]
-                let _membership = crate::test_support::join_env_scope(env_ticket);
-                // Keep the exact scope/owner alive through synchronous disk
-                // reload even if this request is cancelled after admission.
-                current.workspace_scope.validate_sync()?;
-                let path = current.config.read().mcp_config_path();
-                let plugins = current
-                    .plugin_discovery
-                    .registry_for_workspace(&current.workspace);
-                held.switch_workspace_config_source(&path, &current.workspace, plugins)
-            })
-            .await
-            .map_err(|error| ApiError::internal(error.to_string()))?;
+            if policy_changed {
+                let (rebuilt, admitted_policy) =
+                    codewhale_app_server::daemon_socket::owner_work(move || {
+                        #[cfg(test)]
+                        let _membership = crate::test_support::join_env_scope(env_ticket);
+                        load_mcp_management_pool(&current)
+                    })
+                    .await
+                    .map_err(|error| {
+                        ApiError::internal(format!("Failed to load MCP config: {error}"))
+                    })?;
+                held.shutdown_all().await;
+                *held = rebuilt;
+                *state.workspace_scope.mcp_policy.lock() = admitted_policy;
+            } else {
+                codewhale_app_server::daemon_socket::owner_work(move || {
+                    #[cfg(test)]
+                    let _membership = crate::test_support::join_env_scope(env_ticket);
+                    // Keep the exact scope/owner alive through synchronous disk
+                    // reload even if this request is cancelled after admission.
+                    current.workspace_scope.validate_sync()?;
+                    let path = current.config.read().mcp_config_path();
+                    let plugins = current
+                        .plugin_discovery
+                        .registry_for_workspace(&current.workspace);
+                    held.switch_workspace_config_source(&path, &current.workspace, plugins)
+                })
+                .await
+                .map_err(|error| ApiError::internal(error.to_string()))?;
+            }
             slot.as_mut().expect("retained pool").0 = generation;
         } else if create {
             let current = state.clone();
             #[cfg(test)]
             let env_ticket = crate::test_support::env_scope_ticket();
-            let pool = codewhale_app_server::daemon_socket::owner_work(move || {
-                #[cfg(test)]
-                let _membership = crate::test_support::join_env_scope(env_ticket);
-                current.workspace_scope.validate_sync()?;
-                let path = current.config.read().mcp_config_path();
-                let plugins = current
-                    .plugin_discovery
-                    .registry_for_workspace(&current.workspace);
-                let mut pool = McpPool::from_config_path_with_workspace_and_plugins(
-                    &path,
-                    &current.workspace,
-                    plugins,
-                )?
-                .with_backend(crate::mcp::McpBackend::from_config(&current.config.read()));
-                pool.dynamic_servers = current.workspace_scopes.dynamic_servers.clone();
-                Ok(pool)
-            })
-            .await
-            .map_err(|error| ApiError::internal(format!("Failed to load MCP config: {error}")))?;
+            let (pool, admitted_policy) =
+                codewhale_app_server::daemon_socket::owner_work(move || {
+                    #[cfg(test)]
+                    let _membership = crate::test_support::join_env_scope(env_ticket);
+                    load_mcp_management_pool(&current)
+                })
+                .await
+                .map_err(|error| {
+                    ApiError::internal(format!("Failed to load MCP config: {error}"))
+                })?;
+            *state.workspace_scope.mcp_policy.lock() = admitted_policy;
             *slot = Some((generation, Arc::new(Mutex::new(pool))));
         } else {
             return Ok(None);
@@ -6159,6 +6345,41 @@ async fn mcp_pool_handle(
         // A concurrent global mutation may have settled during disk work.
         // Repeat validation under the same pool; no second connection owner.
     }
+}
+
+fn mcp_pool_policy(config: &Config) -> Value {
+    json!([
+        config
+            .network
+            .clone()
+            .map(crate::config::NetworkPolicyToml::into_runtime),
+        config.mcp_oauth_callback_port,
+        config.mcp_oauth_callback_url,
+    ])
+}
+
+fn load_mcp_management_pool(state: &RuntimeApiState) -> Result<(McpPool, Value)> {
+    state.workspace_scope.validate_sync()?;
+    let path = state.config.read().mcp_config_path();
+    let plugins = state
+        .plugin_discovery
+        .registry_for_workspace(&state.workspace);
+    let mut pool =
+        McpPool::from_config_path_with_workspace_and_plugins(&path, &state.workspace, plugins)?;
+    let config = state.config.read();
+    pool = pool
+        .with_backend(crate::mcp::McpBackend::from_config(&config))
+        .with_oauth_callback(
+            config.mcp_oauth_callback_port,
+            config.mcp_oauth_callback_url.clone(),
+        );
+    if let Some(network) = config.network.clone() {
+        pool = pool.with_network_policy(
+            crate::network_policy::NetworkPolicyDecider::with_default_audit(network.into_runtime()),
+        );
+    }
+    pool.dynamic_servers = state.workspace_scopes.dynamic_servers.clone();
+    Ok((pool, mcp_pool_policy(&config)))
 }
 
 fn mcp_connection_outcome(

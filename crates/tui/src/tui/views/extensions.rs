@@ -2593,7 +2593,7 @@ mod tests {
         let registry = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv()
             .registry_for_workspace(root.path());
         let mut app = App::new_with_plugin_registry(
-            crate::test_support::test_tui_options(root.path()),
+            crate::tui::test_support::test_tui_options(root.path()),
             &crate::config::Config::default(),
             registry,
         );
@@ -2722,7 +2722,7 @@ mod tests {
         let registry = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv()
             .registry_for_workspace(root.path());
         let app = App::new_with_plugin_registry(
-            crate::test_support::test_tui_options(root.path()),
+            crate::tui::test_support::test_tui_options(root.path()),
             &crate::config::Config::default(),
             registry,
         );
@@ -2856,7 +2856,7 @@ mod tests {
         let registry = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv()
             .registry_for_workspace(root.path());
         let app = App::new_with_plugin_registry(
-            crate::test_support::test_tui_options(root.path()),
+            crate::tui::test_support::test_tui_options(root.path()),
             &crate::config::Config::default(),
             registry,
         );
@@ -2911,7 +2911,7 @@ mod tests {
         let registry = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv()
             .registry_for_workspace(root.path());
         let app = App::new_with_plugin_registry(
-            crate::test_support::test_tui_options(root.path()),
+            crate::tui::test_support::test_tui_options(root.path()),
             &crate::config::Config::default(),
             registry,
         );
@@ -2940,7 +2940,7 @@ mod tests {
         let registry = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv()
             .registry_for_workspace(root.path());
         let app = App::new_with_plugin_registry(
-            crate::test_support::test_tui_options(root.path()),
+            crate::tui::test_support::test_tui_options(root.path()),
             &crate::config::Config::default(),
             registry,
         );

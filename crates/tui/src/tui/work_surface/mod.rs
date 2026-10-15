@@ -111,7 +111,7 @@ mod tests {
         let options = TuiOptions {
             use_mouse_capture: true,
             max_subagents: 4,
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         let mut app = App::new(options, &Config::default());
         app.ui_locale = codewhale_localization::Locale::En;
@@ -298,8 +298,9 @@ mod tests {
 
     #[test]
     fn scheduled_automations_do_not_create_background_work() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.automation_panel.active_automations = 2;
         assert!(!super::model::background_has_live_work(&mut app));
     }

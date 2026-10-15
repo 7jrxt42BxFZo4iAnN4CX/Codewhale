@@ -48,7 +48,7 @@ The direct schemas deliberately stay small:
 | `read` | `path`, optional `offset`, optional `limit` | Read a bounded file window with explicit continuation or truncation notices. |
 | `write` | `path`, `content` | Create or replace a file. |
 | `edit` | `path`, `edits` | Apply one or more unambiguous text replacements against one original snapshot. |
-| `bash` | `command`, optional `timeout` | Run one cancellable foreground shell command and return a bounded tail. |
+| `bash` | `command`, optional `timeout`, optional `description` | Run one cancellable foreground shell command and return a bounded tail. The optional description is display-only. |
 | `agent` | delegated task and optional scope/context controls | Start or inspect focused child work. |
 | `workflow` | plan/script/source_path plus run controls | Coordinate multi-agent phases with dependencies and completion checks. |
 | `todo_write` | complete replacement list of `{content, status}` items | Keep optional, agent-owned progress notes for genuinely multi-step work. |
@@ -66,6 +66,13 @@ ordinary approval behavior but does not bypass hard safety or repository law.
 `update_plan` remains registered only for saved-artifact compatibility and is
 not model-visible. `tasks`, `Git`, `Run`, `Web`, `remember`, and other
 specialized capabilities are searchable rather than first-turn ceremony.
+
+A Bash description appears as a muted, bounded note under the command on the
+TUI shell card, including on automatic runs. It never replaces the command and
+is excluded from execution, exact approval keys and Auto-Review input. The
+original description remains in the recorded tool input and exports. Approval
+prompts, `/jobs`, the activity inspector, ACP and other Runtime clients keep
+showing the command; this change adds no description row to those surfaces.
 
 ## Local code execution
 
@@ -160,8 +167,21 @@ Code mode is on by default (`[features] code_mode = true`), which makes
 stay available either way. Set `code_mode = false` (or run with
 `--disable code_mode`) to go back to deferring `execute_tools` behind
 `tool_search`. The flag is session configuration, so the prompt prefix stays
-stable within a session. Without an engine turn (sub-agents), a program keeps
-the conservative profile: read-only, auto-approved native calls only, no MCP.
+stable within a session.
+
+Sub-agents get `execute_tools` on the same terms, unless their role is limited
+to the read-only evidence tools or an explicit tool list leaves it out. A
+child's nested call is planned by the child's own gate, so its grant and its
+approval path apply as for its direct calls, and it is admitted at execution
+against the child's write-scope claim and live peers. A child's program also
+stops at the child's tool timeout (time waiting on approvals is not counted)
+or its work deadline, and still returns the receipt. A program in which no
+nested call ran does not count as progress for the child's permission-denial
+guard, but the guard does not yet count a refused nested call as a denial
+either; only the child's step and time budgets end a loop of denied calls
+retried inside programs. Without an engine turn
+(a direct unit call), a program keeps the conservative profile: read-only,
+auto-approved native calls only, no MCP.
 
 ### Conversation toolbox cache
 

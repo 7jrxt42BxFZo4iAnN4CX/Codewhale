@@ -346,8 +346,8 @@ use crate::tui::footer_hints::{
 };
 
 fn session_app() -> App {
-    let mut app = crate::test_support::test_app_with_options(
-        crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+    let mut app = crate::tui::test_support::test_app_with_options(
+        crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
     );
     app.onboarding = OnboardingState::None;
     app.launch.visible = false;
@@ -776,8 +776,9 @@ fn narrow_widths_shed_the_clocks_before_the_hint_and_counts() {
 
 #[test]
 fn scheduled_count_opens_automations_directly() {
-    let mut app =
-        crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+    let mut app = crate::tui::test_support::test_app_with_options(
+        crate::tui::test_support::test_tui_options("."),
+    );
     app.automation_panel.active_automations = 2;
     let facts = super::tideline_footer_from_app(&mut app, 140);
     assert_eq!(

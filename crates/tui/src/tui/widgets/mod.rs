@@ -3762,7 +3762,7 @@ mod tests {
         let options = TuiOptions {
             model: "deepseek-v4-flash".to_string(),
             start_in_agent_mode: true,
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         let mut app = App::new(options, &Config::default());
         // Widget contracts below exercise the post-Startup conversation
@@ -3883,6 +3883,7 @@ mod tests {
             duration_ms: None,
             stale_elapsed_since_output_ms: None,
             source: ExecSource::User,
+            description: None,
             interaction: None,
             output_summary: None,
         }))

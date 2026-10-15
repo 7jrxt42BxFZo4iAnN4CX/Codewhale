@@ -22,7 +22,7 @@ workspace = true
 # effect only with debug assertions, so no optimized build ever carries it,
 # even under `--all-features`.
 [features]
-test-support = []
+test-support = ["dep:tempfile"]
 test-thread-scoped-state = []
 
 [lib]
@@ -51,6 +51,7 @@ regex = "1.11"
 serde.workspace = true
 serde_json = { workspace = true, features = ["preserve_order", "raw_value"] }
 sha2.workspace = true
+tempfile = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util = { version = "0.7.16", features = ["io"] }

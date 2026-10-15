@@ -5,7 +5,7 @@
 use crate::daemon_client::UnavailablePublication;
 use crate::daemon_socket::{
     AuthorizedPeer, ConnectionTasks, DaemonShutdownHandle, DaemonSocketError, DaemonSocketOptions,
-    SocketPathInputs, connection_context, owner_work, run_authorized_connection,
+    SocketPathInputs, connection_context, owner_work, run_authorized_connection, socket_owner_work,
 };
 use crate::{AppState, AppTransport, build_state_off_runtime};
 use anyhow::{Context as _, Result};
@@ -84,13 +84,15 @@ fn create_pipe(path: &Path, first: bool) -> Result<NamedPipeServer> {
 struct ReceiptGuard {
     parent: Arc<PrivateDirectory>,
     file: Option<File>,
+    owner_state: Option<AppState>,
 }
 impl ReceiptGuard {
     async fn retire(&mut self) -> Result<()> {
         if let Some(file) = self.file.take() {
             let parent = self.parent.clone();
+            let owner_state = self.owner_state.take();
             tokio::spawn(async move {
-                owner_work(move || {
+                socket_owner_work(owner_state, move || {
                     parent.retire_private_receipt("daemon.owner.json", &file)?;
                     Ok(())
                 })
@@ -105,7 +107,9 @@ impl Drop for ReceiptGuard {
     fn drop(&mut self) {
         let Some(file) = self.file.take() else { return };
         let parent = self.parent.clone();
+        let owner_state = self.owner_state.take();
         let retire = move || -> Result<()> {
+            let _held_owner = owner_state;
             parent.retire_private_receipt("daemon.owner.json", &file)?;
             Ok(())
         };
@@ -215,6 +219,7 @@ async fn bind(
     captured: Option<(AppState, RuntimeOwnerReceipt)>,
     recovery: Option<Arc<UnavailablePublication>>,
 ) -> Result<DaemonSocket, DaemonSocketError> {
+    let owner_state = captured.as_ref().map(|(state, _)| state.clone());
     let explicit = options.socket_path;
     let path = owner_work(move || selected_pipe_path(explicit))
         .await
@@ -233,7 +238,7 @@ async fn bind(
                 .require_same_selection(owner, &path)
                 .map_err(DaemonSocketError::State)?;
             Some(
-                owner_work(move || {
+                socket_owner_work(owner_state.clone(), move || {
                     let parent = previous.publication.parent.clone();
                     anyhow::ensure!(
                         parent.is_at_selected_path()?,
@@ -260,7 +265,7 @@ async fn bind(
         None => None,
     };
     let selected = path.clone();
-    let pipe = owner_work(move || create_pipe(&selected, true))
+    let pipe = socket_owner_work(owner_state, move || create_pipe(&selected, true))
         .await
         .map_err(DaemonSocketError::State)?;
     let (state, owner) = match captured {
@@ -274,8 +279,9 @@ async fn bind(
     };
     let receipt = if let Some(owner) = owner.as_ref() {
         let owner = owner.clone();
+        let owner_state = state.clone();
         Some(
-            owner_work(move || {
+            socket_owner_work(Some(owner_state.clone()), move || {
                 let parent = match recovered {
                     Some(parent) => parent,
                     None => Arc::new(PrivateDirectory::admit(&owner_directory()?)?),
@@ -283,6 +289,7 @@ async fn bind(
                 let mut guard = ReceiptGuard {
                     parent: parent.clone(),
                     file: None,
+                    owner_state: Some(owner_state),
                 };
                 anyhow::ensure!(
                     parent.is_at_selected_path()?,

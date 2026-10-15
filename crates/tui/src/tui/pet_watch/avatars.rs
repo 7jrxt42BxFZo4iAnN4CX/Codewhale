@@ -26,7 +26,6 @@ pub(super) struct Avatars {
     pub key: String,
     pub view: Option<String>,
     pub action: Option<String>,
-    pub fallback: bool,
     catalog: Vec<RegisteredPack>,
     workspace: PathBuf,
     next: Option<Instant>,
@@ -150,7 +149,6 @@ impl Avatars {
         self.view = None;
         self.action = None;
         self.decoded = None;
-        self.fallback = false;
         true
     }
     pub fn cycle(&mut self, forward: bool) {
@@ -206,22 +204,17 @@ impl Avatars {
         reduced: bool,
         theme: &codewhale_ratatui::Theme,
     ) -> bool {
-        let painted = self.paint_pack(area, buf, act, clock, reduced, theme);
-        self.fallback = !painted && self.pack().is_some();
-        painted
-    }
-    fn paint_pack(
-        &mut self,
-        area: Rect,
-        buf: &mut ratatui::buffer::Buffer,
-        act: &str,
-        clock: f64,
-        reduced: bool,
-        theme: &codewhale_ratatui::Theme,
-    ) -> bool {
-        let Some(pack) = self.pack() else {
+        let Some(sprite) = self.sprite(act, clock, reduced) else {
             return false;
         };
+        sprite.paint(area, buf, theme);
+        true
+    }
+    pub fn missing_atlas(&mut self, act: &str, clock: f64, reduced: bool) -> bool {
+        self.pack().is_some() && self.sprite(act, clock, reduced).is_none()
+    }
+    fn sprite(&mut self, act: &str, clock: f64, reduced: bool) -> Option<Sprite<'_>> {
+        let pack = self.pack()?;
         let sample = pack.sample(
             act,
             clock,
@@ -230,20 +223,14 @@ impl Avatars {
             self.action.as_deref(),
         );
         if self.key == "whale-girl" {
-            if let Ok(sprite) = Sprite::new(pack, whale_girl::TERMINAL, 96, 96, sample.index) {
-                sprite.paint(area, buf, theme);
-                return true;
-            }
-            return false;
+            return Sprite::new(pack, whale_girl::TERMINAL, 96, 96, sample.index).ok();
         }
-        let Some(entry) = self.catalog.iter().find(|p| p.key == self.key) else {
-            return false;
-        };
+        let entry = self.catalog.iter().find(|p| p.key == self.key)?;
         let page = entry.pack.page(sample.index);
         let cache_key = entry.image_key(page);
         let Some(png) = self.images.get(&cache_key) else {
             self.wanted = Some((entry.clone(), page));
-            return false;
+            return None;
         };
         if self.decoded.as_ref().is_none_or(|d| d.0 != cache_key) {
             self.decoded = entry.pack.validate_png(png).ok().and_then(|()| {
@@ -271,14 +258,8 @@ impl Avatars {
                 Some((cache_key, pixels, w as usize, h as usize))
             });
         }
-        let Some((_, pixels, w, h)) = &self.decoded else {
-            return false;
-        };
-        if let Ok(sprite) = Sprite::page(&entry.pack, pixels, *w, *h, sample.index) {
-            sprite.paint(area, buf, theme);
-            return true;
-        }
-        false
+        let (_, pixels, w, h) = self.decoded.as_ref()?;
+        Sprite::page(&entry.pack, pixels, *w, *h, sample.index).ok()
     }
 }
 

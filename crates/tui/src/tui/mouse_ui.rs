@@ -2391,7 +2391,7 @@ mod tests {
 
     pub(super) fn create_test_app() -> App {
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         let mut app = App::new(options, &Config::default());
         // Legacy strip geometry (see ui.rs); Bottom default has its own tests.
@@ -2406,7 +2406,7 @@ mod tests {
         let _home =
             crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", root.path().join("home"));
         let mut app = App::new(
-            crate::test_support::test_tui_options(root.path()),
+            crate::tui::test_support::test_tui_options(root.path()),
             &Config::default(),
         );
         app.surface_plugin_review_request("catalog-only", "/plugin install arbitrary-source");

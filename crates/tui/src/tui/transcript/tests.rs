@@ -198,6 +198,7 @@ fn exec_tool_cell_with_output(command: &str, output: String) -> HistoryCell {
         duration_ms: None,
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     }))
@@ -216,6 +217,7 @@ fn exec_tool_cell(command: &str) -> HistoryCell {
         duration_ms: None,
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     }))
