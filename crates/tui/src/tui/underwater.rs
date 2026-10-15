@@ -687,7 +687,7 @@ impl ShellPhase {
 
 /// Exhaustive on purpose: a new [`AppMode`] must be handed a Policy ink
 /// deliberately rather than inheriting act's by falling through a wildcard.
-fn header_mode_ink(mode: AppMode) -> ChromeInk {
+pub(crate) fn header_mode_ink(mode: AppMode) -> ChromeInk {
     match mode {
         AppMode::Plan => ChromeInk::PolicyPlan,
         AppMode::Operate => ChromeInk::PolicyOperate,
@@ -695,7 +695,7 @@ fn header_mode_ink(mode: AppMode) -> ChromeInk {
     }
 }
 
-fn header_permission_ink(mode: ApprovalMode) -> ChromeInk {
+pub(crate) fn header_permission_ink(mode: ApprovalMode) -> ChromeInk {
     match mode {
         ApprovalMode::Suggest | ApprovalMode::Never => ChromeInk::PermissionAsk,
         ApprovalMode::Auto => ChromeInk::PermissionAutoReview,
@@ -900,7 +900,7 @@ pub(crate) fn phase_marker_with_activity(
     }
 }
 
-fn mode_label(locale: Locale, mode: AppMode) -> Cow<'static, str> {
+pub(crate) fn mode_label(locale: Locale, mode: AppMode) -> Cow<'static, str> {
     match mode {
         AppMode::Agent => tr(locale, MessageId::ChipModeAct),
         AppMode::Plan => tr(locale, MessageId::ChipModePlan),
