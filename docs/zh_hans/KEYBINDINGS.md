@@ -17,7 +17,7 @@
 | `F3` | 打开提供商/模型选择器（等同于 `/provider`） |
 | `Ctrl-K` | 打开命令面板（斜杠命令查找器） |
 | `Ctrl-C` | 取消当前回合 / 关闭模态框 / 先预备再确认退出 |
-| `Ctrl-B` | 将受支持的前台 shell 等待移入 `/jobs`，使当前回合得以继续；可用 `/jobs` 或 `action: "wait"` 的 `Bash` 来查看它 |
+| `Ctrl-B` | 结束当前 shell 等待，使回合继续；前台命令转入 `/jobs`，后台任务继续运行。可用 `/jobs` 或 `action: "wait"` 的 `Bash` 查看输出 |
 | `Ctrl-D` | 退出（仅当输入框为空时） |
 | `Tab` | 当输入框为空时，循环切换 TUI 模式：Plan → Work → Operate → Plan |
 | `Shift+Tab` | 循环切换权限级别：Ask → Auto-Review → Full Access（完全访问）。无论输入框内容如何、回合是否在运行都即时生效（仅在打开设置以外的模态框时被抑制） |
@@ -27,10 +27,10 @@
 | `Ctrl-L` | 压缩对话上下文（状态行显示进度；压缩已在运行时不执行任何操作） |
 | `Ctrl-O` | 打开所选或当前回合的思考详情，与输入框内容无关 |
 | `Ctrl-Alt-O` | 打开整个回合的 Turn Inspector，与输入框内容无关 |
-| `Alt-V` / `Option-V`（macOS） | 为所选、可见或最近的工具/智能体卡片打开详情分页器；发出传统 Option-V 字符的终端也会被处理 |
+| `Alt-V` / `Option-V`（macOS） | 为所选的工具/智能体卡片打开详情分页器；未选择时，打开最新正在运行的 shell 的实时检查器，否则打开可见或最近的卡片；发出传统 Option-V 字符的终端也会被处理 |
 | `Ctrl-Shift-E` / `Cmd-Shift-E` | 在任务面板（workbar）中切换文件树 |
-| `Ctrl-]` 或 `Ctrl-Tab` | 循环切换 work dock：TODO → Agents → Jobs → Background。`Ctrl-]` 是可移植的组合键——`Ctrl-Tab` 只有在 kitty 键盘协议下才能送达 |
-| `Ctrl-Shift-Tab` | 反向循环切换 work dock |
+| `Ctrl-]` 或 `Ctrl-Tab` | Pet 主视图显示时循环切换 Pet 视图；其他时候循环切换 work dock：TODO → Agents → Jobs → Background。`Ctrl-]` 可移植；`Ctrl-Tab` 需要 kitty 键盘协议。Terminal.app 用它切换终端标签页 |
+| `Ctrl-Shift-Tab` | 终端能发送 kitty 键盘组合键时，反向循环切换 Pet 视图或 work dock。Terminal.app 用它切换终端标签页 |
 | `Alt-G` / `Alt-Shift-G` | 输入框为空时将对话记录滚动到顶部 / 底部 |
 | `Alt-1`-`Alt-8` | 当没有模态框或内联选择器打开时分发 Hotbar 槽位 1-8 |
 | `Alt-!` / `Alt-@` / `Alt-#` / `Alt-$` | 选择任务面板（workbar）的面板：Tasks / Agents / Context / Files |
@@ -142,7 +142,7 @@ Hotbar 的触发键刻意只限 `Alt-1` 到 `Alt-8`。在 macOS 键盘上，这�
 | `Alt-G` / `Alt-Shift-G` | 跳到顶部 / 底部 |
 | `Ctrl-Home` / `Ctrl-End` | 跳到顶部 / 底部（在输入框中也可用） |
 | `Alt-[` / `Alt-]` | 在工具输出块之间跳转 |
-| `Esc Esc` | 回溯到上一条用户消息（`←`/`→` 步进，`Enter` 回退） |
+| `Esc Esc` | 回溯到上一条用户消息（`←`/`→` 步进，`Enter` 回退）。只回退对话，不改动文件；用 `/undo` 把文件改回去 |
 | `Esc` | 将焦点返回输入框 |
 | `Ctrl-Y` | 输入框为空时，复制获得焦点的对话记录单元 |
 | `Alt-V` | 为获得焦点的工具或消息打开原始详情 |
@@ -266,3 +266,11 @@ Hotbar 的触发键刻意只限 `Alt-1` 到 `Alt-8`。在 macOS 键盘上，这�
 - **可配置键位（#436）和 `tui.toml`（#437）仍然延期。** `TuiPrefs` 结构体和加载器存在于 `settings.rs` 中，但未在启动时接线。允许 `~/.codewhale/tui.toml` 覆盖单个条目的命名绑定注册表仍然待办。
 - **未发现其他损坏的绑定。** 上面列出的每个其他组合都解析为 `crates/tui/src/tui/ui.rs`（按键事件分发）或 `crates/tui/src/tui/app.rs`（模式 + 状态转换）中的实时处理器。
 
+## 实时终端 dock
+
+在 `/workbar terminal` 中，点击 dock 或按 `Alt+W` 使其获得焦点。输入、
+Enter、Tab 和 Ctrl+C 会送达所选 shell。Esc 返回输入框。
+`Alt+Down` / `Alt+Up` 切换会话；`Ctrl+N` 启动新的 shell。
+鼠标滚轮和 PageUp/PageDown 滚动输出。
+
+权限边界、粘贴行为和支持的平台请参阅[终端 dock 指南](../GUIDE.md#live-terminal-dock)。

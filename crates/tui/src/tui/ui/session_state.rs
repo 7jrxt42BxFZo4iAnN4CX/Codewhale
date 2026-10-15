@@ -402,7 +402,7 @@ pub(crate) fn reconcile_turn_liveness_with(
         );
         recover_stalled_runtime_turn(
             app,
-            "Tool stalled with no progress for 10m — recovered; the command may still be running in the background. Use exec_shell_cancel or retry.",
+            "Tool stalled with no progress for 10m — recovered; the command may still be running in the background. Run /jobs to see it and /jobs cancel <id> to stop it.",
             StatusToastLevel::Error,
         );
         return true;
@@ -1183,7 +1183,7 @@ pub(crate) fn mirror_saved_api_key_in_config(
     entry.auth_mode = Some("api_key".to_string());
     entry.api_key = Some(api_key);
     entry.external_credentials = None;
-    if provider == ProviderKind::Xai {
+    if matches!(provider, ProviderKind::Xai | ProviderKind::Anthropic) {
         entry.oauth_credential_generation = None;
     }
     Ok(())
@@ -1387,7 +1387,7 @@ mod stall_outbox_tests {
         };
         let options = TuiOptions {
             start_in_agent_mode: true,
-            ..crate::test_support::test_tui_options(dir.path())
+            ..crate::tui::test_support::test_tui_options(dir.path())
         };
         let mut app = App::new(options, &config);
         assert!(app.lifecycle_outbox.is_enabled());
@@ -1447,7 +1447,7 @@ mod stall_outbox_tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let options = TuiOptions {
             start_in_agent_mode: true,
-            ..crate::test_support::test_tui_options(dir.path())
+            ..crate::tui::test_support::test_tui_options(dir.path())
         };
         let mut app = App::new(options, &Config::default());
         assert!(!app.lifecycle_outbox.is_enabled());
@@ -1482,7 +1482,7 @@ mod launch_resume_tests {
     fn resume_missing_session_leaves_the_card_up_with_a_status() {
         let dir = tempfile::tempdir().unwrap();
         let mut app = App::new(
-            crate::test_support::test_tui_options(dir.path()),
+            crate::tui::test_support::test_tui_options(dir.path()),
             &Config::default(),
         );
         app.launch.visible = true;
@@ -1504,7 +1504,7 @@ mod launch_resume_tests {
     fn keyless_submit_leaves_a_durable_recovery_that_config_acks_cannot_erase() {
         let dir = tempfile::tempdir().unwrap();
         let mut app = App::new(
-            crate::test_support::test_tui_options(dir.path()),
+            crate::tui::test_support::test_tui_options(dir.path()),
             &Config::default(),
         );
         app.onboarding_had_provider_step = true;
@@ -1541,7 +1541,7 @@ mod launch_resume_tests {
     fn keyless_submit_names_the_key_and_esc_returns_to_the_composer() {
         let dir = tempfile::tempdir().unwrap();
         let mut app = App::new(
-            crate::test_support::test_tui_options(dir.path()),
+            crate::tui::test_support::test_tui_options(dir.path()),
             &Config::default(),
         );
         app.onboarding = OnboardingState::None;
@@ -1577,7 +1577,7 @@ mod launch_resume_tests {
     fn new_session_begins_a_fresh_session_and_leaves_the_card() {
         let dir = tempfile::tempdir().unwrap();
         let mut app = App::new(
-            crate::test_support::test_tui_options(dir.path()),
+            crate::tui::test_support::test_tui_options(dir.path()),
             &Config::default(),
         );
         app.launch.visible = true;

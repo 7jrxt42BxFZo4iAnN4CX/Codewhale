@@ -324,6 +324,7 @@ fn mcp_server_config_omits_headers_when_empty() {
         disabled: false,
         enabled: true,
         required: false,
+        lazy: false,
         enabled_tools: Vec::new(),
         disabled_tools: Vec::new(),
         headers: HashMap::new(),
@@ -2892,6 +2893,7 @@ fn test_server_effective_timeouts() {
         disabled: false,
         enabled: true,
         required: false,
+        lazy: false,
         enabled_tools: Vec::new(),
         disabled_tools: Vec::new(),
         headers: HashMap::new(),
@@ -3053,6 +3055,7 @@ fn test_server_config() -> McpServerConfig {
         disabled: false,
         enabled: true,
         required: false,
+        lazy: false,
         enabled_tools: Vec::new(),
         disabled_tools: Vec::new(),
         headers: HashMap::new(),
@@ -3630,8 +3633,8 @@ async fn reload_if_config_changed_skips_when_content_unchanged() {
 
 /// #1267 part 2: when the on-disk config changes content, the next
 /// `reload_if_config_changed` call must swap in the new config and
-/// (would) drop all live connections. We can't stand up a real
-/// `McpConnection` in a unit test, so we observe the swap via the
+/// (would) drop the live connections of changed servers. We can't stand up
+/// a real `McpConnection` in a unit test, so we observe the swap via the
 /// publicly-readable side: server names go from empty to non-empty.
 #[tokio::test]
 async fn reload_if_config_changed_swaps_config_on_content_change() {
@@ -3863,6 +3866,7 @@ fn hash_mcp_config_is_stable_and_change_sensitive() {
             disabled: false,
             enabled: true,
             required: false,
+            lazy: false,
             enabled_tools: Vec::new(),
             disabled_tools: Vec::new(),
             headers: HashMap::new(),
@@ -4900,12 +4904,17 @@ async fn a_failed_server_waits_out_a_cooldown_instead_of_redialing_every_turn() 
 fn lazy_boot_scopes_pending_connects_and_tracks_in_flight() {
     let mut required_cfg = test_server_config();
     required_cfg.required = true;
+    required_cfg.lazy = true;
+    let mut selected_cfg = test_server_config();
+    selected_cfg.lazy = true;
+    let mut lazy_cfg = test_server_config();
+    lazy_cfg.lazy = true;
     let mut pool = McpPool::new(McpConfig {
         timeouts: McpTimeouts::default(),
         servers: HashMap::from([
             ("needed".to_string(), required_cfg),
-            ("selected".to_string(), test_server_config()),
-            ("lazy".to_string(), test_server_config()),
+            ("selected".to_string(), selected_cfg),
+            ("lazy".to_string(), lazy_cfg),
         ]),
     });
     let requested = vec!["mcp_selected_read".to_string()];
@@ -5183,6 +5192,7 @@ async fn mcp_connection_supports_streamable_http_event_stream_responses() {
         disabled: false,
         enabled: true,
         required: false,
+        lazy: false,
         enabled_tools: Vec::new(),
         disabled_tools: Vec::new(),
         headers: HashMap::new(),
@@ -6155,6 +6165,7 @@ async fn streamable_http_stale_session_reconnects_and_retries_tool_call() {
             disabled: false,
             enabled: true,
             required: false,
+            lazy: false,
             enabled_tools: Vec::new(),
             disabled_tools: Vec::new(),
             headers: HashMap::new(),
@@ -6301,7 +6312,7 @@ async fn legacy_sse_closed_stream_reports_unknown_outcome_and_reconnects_without
     // tests do, so this server is always reached directly.
     let _env = crate::test_support::lock_test_env();
     let _lock = lock_mcp_loopback_tests().await;
-    let _no_proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*");
+    let _no_proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let active_sse = Arc::new(Mutex::new(None::<mpsc::UnboundedSender<Option<String>>>));
@@ -6444,6 +6455,7 @@ async fn legacy_sse_closed_stream_reports_unknown_outcome_and_reconnects_without
             disabled: false,
             enabled: true,
             required: false,
+            lazy: false,
             enabled_tools: Vec::new(),
             disabled_tools: Vec::new(),
             headers: HashMap::new(),
@@ -6472,7 +6484,7 @@ async fn legacy_sse_closed_stream_reports_unknown_outcome_and_reconnects_without
     assert_eq!(tool_call_count.load(AtomicOrdering::SeqCst), 1);
     assert!(!success_seen.load(AtomicOrdering::SeqCst));
 
-    // The dead connection was dropped, so the next call reconnects.
+    // The dead connection was kept as a dead entry, so the next call reconnects.
     let result = pool
         .call_tool("mcp_dephy_search", serde_json::json!({ "query": "dephy" }))
         .await
@@ -6500,7 +6512,7 @@ async fn fallback_sse_stream_closed_while_idle_reconnects_before_dispatch() {
 
     let _env = crate::test_support::lock_test_env();
     let _lock = lock_mcp_loopback_tests().await;
-    let _no_proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*");
+    let _no_proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let active_sse = Arc::new(Mutex::new(None::<mpsc::UnboundedSender<Option<String>>>));
@@ -6731,7 +6743,7 @@ async fn custom_headers_applied_to_get_preflight() {
     // The fixture client honors an operator-configured proxy; pin loopback
     // out of any ambient proxy so a concurrent proxy-configuring test can
     // never route this GET away from the fixture server.
-    let _no_proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*");
+    let _no_proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     // The test signals success by writing to this flag — the GET handler
@@ -6976,10 +6988,10 @@ fn mcp_recovery_kind_routes_expired_aws_credentials_to_external_login() {
     // Unrelated text that merely shares substrings stays where it was.
     for (stderr, expected) in [
         ("processor token invalid", McpRecoveryKind::Diagnose),
-        ("401 Unauthorized", McpRecoveryKind::Reauth),
+        ("401 Unauthorized", McpRecoveryKind::Diagnose),
         (
             "oauth token expired; invalid_grant",
-            McpRecoveryKind::Reauth,
+            McpRecoveryKind::Diagnose,
         ),
         (
             "laws of token expiry were expired",
@@ -7782,7 +7794,7 @@ async fn needs_auth_server_advertises_synthetic_authenticate_tool() {
         auth_tool.description
     );
     assert!(
-        auth_tool.description.contains("blocks (up to 5 minutes)"),
+        auth_tool.description.contains("blocks (up to 15 minutes)"),
         "{}",
         auth_tool.description
     );
@@ -7851,7 +7863,7 @@ async fn needs_auth_server_advertises_synthetic_authenticate_tool() {
     assert!(wiki.auth_required, "{wiki:?}");
     assert!(!wiki.connected);
     let recovery = wiki
-        .recovery_kind(false)
+        .recovery_kind(true)
         .expect("a server needing auth has a recovery");
     assert_eq!(recovery, McpRecoveryKind::Reauth);
     assert_eq!(
@@ -8427,7 +8439,7 @@ async fn mid_session_revocation_for_backend(backend: McpBackend) {
         .expect("wikiserver in snapshot");
     assert!(wiki.auth_required, "{wiki:?}");
     assert!(!wiki.connected);
-    assert_eq!(wiki.recovery_kind(false), Some(McpRecoveryKind::Reauth));
+    assert_eq!(wiki.recovery_kind(true), Some(McpRecoveryKind::Reauth));
 
     assert_eq!(
         mock.frames
@@ -10840,5 +10852,11 @@ fn configured_mcp_search_excludes_disabled_and_namespace_denied_servers() {
         pool.configured_servers_for_search("mcp_.*", "regex", |_| true)
             .unwrap(),
         ["enabled"]
+    );
+    // The list named to the model passes the same gates, plus the turn's.
+    assert_eq!(pool.discoverable_configured_servers(|_| true), ["enabled"]);
+    assert!(
+        pool.discoverable_configured_servers(|name| name != "enabled")
+            .is_empty()
     );
 }

@@ -12,6 +12,15 @@ use std::{
     sync::mpsc::{self, Receiver},
 };
 
+const VIEWS: [&str; 6] = [
+    "whale",
+    "cove",
+    "braille",
+    "pixels",
+    "particles",
+    "whale-girl",
+];
+
 #[derive(Default)]
 pub(super) struct Avatars {
     pub key: String,
@@ -117,15 +126,23 @@ impl Avatars {
         }
         changed
     }
+    fn ring(&self) -> impl Iterator<Item = &str> {
+        VIEWS
+            .into_iter()
+            .chain(self.catalog.iter().map(|p| p.key.as_str()))
+    }
     pub fn choices(&self) -> String {
-        std::iter::once("whale".to_string())
-            .chain(std::iter::once("whale-girl".to_string()))
-            .chain(self.catalog.iter().map(|p| p.key.clone()))
-            .collect::<Vec<_>>()
-            .join("\n")
+        self.ring().collect::<Vec<_>>().join("\n")
+    }
+    pub fn current(&self) -> &str {
+        if self.key.is_empty() {
+            "whale"
+        } else {
+            &self.key
+        }
     }
     pub fn select(&mut self, key: &str) -> bool {
-        if !matches!(key, "whale" | "whale-girl") && !self.catalog.iter().any(|p| p.key == key) {
+        if !self.ring().any(|view| view == key) {
             return false;
         }
         self.key = key.into();
@@ -133,6 +150,19 @@ impl Avatars {
         self.action = None;
         self.decoded = None;
         true
+    }
+    pub fn cycle(&mut self, forward: bool) {
+        let ring: Vec<String> = self.ring().map(str::to_owned).collect();
+        let at = ring
+            .iter()
+            .position(|view| view == self.current())
+            .unwrap_or(0);
+        let next = if forward {
+            (at + 1) % ring.len()
+        } else {
+            (at + ring.len() - 1) % ring.len()
+        };
+        self.select(&ring[next]);
     }
     fn pack(&self) -> Option<&Pack> {
         if self.key == "whale-girl" {
@@ -172,10 +202,19 @@ impl Avatars {
         act: &str,
         clock: f64,
         reduced: bool,
+        theme: &codewhale_ratatui::Theme,
     ) -> bool {
-        let Some(pack) = self.pack() else {
+        let Some(sprite) = self.sprite(act, clock, reduced) else {
             return false;
         };
+        sprite.paint(area, buf, theme);
+        true
+    }
+    pub fn missing_atlas(&mut self, act: &str, clock: f64, reduced: bool) -> bool {
+        self.pack().is_some() && self.sprite(act, clock, reduced).is_none()
+    }
+    fn sprite(&mut self, act: &str, clock: f64, reduced: bool) -> Option<Sprite<'_>> {
+        let pack = self.pack()?;
         let sample = pack.sample(
             act,
             clock,
@@ -183,26 +222,15 @@ impl Avatars {
             self.view.as_deref(),
             self.action.as_deref(),
         );
-        let theme = codewhale_ratatui::Theme::new(codewhale_ratatui::Caps {
-            depth: codewhale_ratatui::color::ColorDepth::detect(),
-            ascii: std::env::var_os("CODEWHALE_ASCII_SAFE").is_some(),
-            appearance: codewhale_ratatui::detect::Appearance::Dark,
-        });
         if self.key == "whale-girl" {
-            if let Ok(sprite) = Sprite::new(pack, whale_girl::TERMINAL, 96, 96, sample.index) {
-                sprite.paint(area, buf, &theme);
-                return true;
-            }
-            return false;
+            return Sprite::new(pack, whale_girl::TERMINAL, 96, 96, sample.index).ok();
         }
-        let Some(entry) = self.catalog.iter().find(|p| p.key == self.key) else {
-            return false;
-        };
+        let entry = self.catalog.iter().find(|p| p.key == self.key)?;
         let page = entry.pack.page(sample.index);
         let cache_key = entry.image_key(page);
         let Some(png) = self.images.get(&cache_key) else {
             self.wanted = Some((entry.clone(), page));
-            return false;
+            return None;
         };
         if self.decoded.as_ref().is_none_or(|d| d.0 != cache_key) {
             self.decoded = entry.pack.validate_png(png).ok().and_then(|()| {
@@ -230,14 +258,8 @@ impl Avatars {
                 Some((cache_key, pixels, w as usize, h as usize))
             });
         }
-        let Some((_, pixels, w, h)) = &self.decoded else {
-            return false;
-        };
-        if let Ok(sprite) = Sprite::page(&entry.pack, pixels, *w, *h, sample.index) {
-            sprite.paint(area, buf, &theme);
-            return true;
-        }
-        false
+        let (_, pixels, w, h) = self.decoded.as_ref()?;
+        Sprite::page(&entry.pack, pixels, *w, *h, sample.index).ok()
     }
 }
 

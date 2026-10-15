@@ -3,6 +3,7 @@
 > 英文原文：[RUNTIME_API.md](../RUNTIME_API.md)。
 > 最后与英文同步日期（last synced with English revision）：2026-09-29。
 > 2026-10-06 补齐设备令牌意图、逐调用变更、技能详情、持久配置与账号宪章契约。
+> 2026-10-11 补齐工作区信任契约：`workspace_trusted` 与 `POST /v1/workspace/trust`。
 
 `codewhale app-server` 是本地运行时的规范 API 与控制面。本地 SDK、移动端/远程控制客户端
 以及编辑器集成都与它对话，而不是去抓取终端输出。它提供完整的 HTTP/SSE 运行时
@@ -51,8 +52,8 @@ local supervisor / SDK / automation harness
 | `codewhale app-server --http` | 在 `127.0.0.1:7878` 上的 HTTP/SSE | 完整的 `/v1/*` 运行时 API（规范入口） |
 | `codewhale app-server --mobile` | 回环上的 HTTP/SSE + `/mobile` | 运行时 API + 本地移动端控制页 |
 | `codewhale app-server --stdio` | 基于 stdio 的 JSON-RPC 2.0 | 本地 SDK / 控制探针（不监听端口） |
-| `codewhale app-server --socket [--socket-path P]` | 基于权限为 `0600` 的 unix 域套接字的 JSON-RPC 2.0 | 桌面守护进程：多客户端、对端 uid 校验、`daemon/attach` 认领握手（macOS/Linux；Windows 命名管道已预留但未实现） |
-| `codewhale app-server` | 在 `127.0.0.1:8787` 上的 HTTP | 旧式进程内 app-server（`/healthz`、`/thread`、`/app`、`/prompt`、`/jobs`）；`/prompt` 与 `/thread` 消息会通过运行时桥执行真实回合。它没有直接的 `/tool` 路由：工具只在 Engine 回合内部、在 Engine 的工具目录与审批姿态下运行。这个旧式服务器不呈现审批：它的桥只转发文本增量和回合的完成，并且没有决策路由，所以一个受审批门控的调用会一直等不到答复。受审批门控的工作请通过运行时 API 驱动（`/v1/threads/*` 事件与 `POST /v1/approvals/{approval_id}`） |
+| `codewhale app-server --socket [--socket-path P]` | 基于权限为 `0600` 的 Unix 域套接字（macOS/Linux）或仅限所有者的命名管道（Windows）的 JSON-RPC 2.0 | 桌面守护进程：多客户端、内核对端身份校验、`daemon/attach` 认领握手。Windows 原生应用验收仍待完成。 |
+| `codewhale app-server` | 在 `127.0.0.1:8787` 上的 HTTP | 旧式进程内 app-server（`/healthz`、`/thread`、`/app`、`/prompt`）；后台作业请用运行时 API 的 `GET /v1/jobs`；`/prompt` 与 `/thread` 消息会通过运行时桥执行真实回合。它没有直接的 `/tool` 路由：工具只在 Engine 回合内部、在 Engine 的工具目录与审批姿态下运行。这个旧式服务器不呈现审批：它的桥只转发文本增量和回合的完成，并且没有决策路由，所以一个受审批门控的调用会一直等不到答复。受审批门控的工作请通过运行时 API 驱动（`/v1/threads/*` 事件与 `POST /v1/approvals/{approval_id}`） |
 | `codewhale serve --http` / `--mobile` | 与 `app-server --http`/`--mobile` 相同的服务器 | 兼容别名 |
 
 `app-server --http` 与 `--mobile` 启动的是历史上经由 `serve --http` 访问的同一个
@@ -1038,6 +1039,9 @@ fork 还可能包含 `backtrack_depth_from_tail` 与 `dropped_turn_id`，而
 引擎与会话历史被保留，下一个回合会装上新的
 路由。
 
+有效权限发生变化时，会在线程最新回合追加一个已完成的 `status` 条目，并发布
+`thread.permissions_changed` 事件（`from`、`to`、`source`）。
+
 **回合**（线程内的）
 - `POST /v1/threads/{id}/turns`
 - `POST /v1/threads/{id}/turns/{turn_id}/steer` - 向进行中的回合注入引导。响应是一份描述实际发生了什么的回执，而不是描述尝试过什么的回执；参见 [引导送达](#引导送达)。
@@ -1506,6 +1510,16 @@ direction 为空、等待 lead 计划、缺少凭据或有
 `scripts/check-auto-merge.py --repo … --pr …
 --agent …`（退出码 0），然后是
 `scripts/auto-merge-pr.py`。不要再发明第二个检查器。
+
+**工作区信任**（持久化的项目决定）
+- `GET /v1/workspace/status` 返回 `workspace_trusted`：服务器工作区是否已在发现的用户配置中被设为可信。项目技能、命令和 MCP 配置会检查这个决定。项目钩子还需要单独批准钩子文件的精确摘要。
+- `POST /v1/workspace/trust` 接受 `{"trusted": true|false}`，记录决定并返回 `{workspace, workspace_trusted, config_path, message}`。
+
+处理器复用 `/trust on|off --save` 使用的 `config::set_workspace_trust`，再通过 `is_workspace_trusted` 读回结果。请求不接受路径，只作用于服务器已接纳的工作区。`config_path` 标识实际写入的文档。读写都使用默认配置发现规则，包括已配置的环境变量覆盖；启动运行时的显式 `--config` 参数不会选择这个信任文档。
+
+项目技能和命令会在各自现有的加载或回合边界检查信任。项目钩子还需要单独的摘要批准，并在执行前重新检查权限。重启引擎可重新建立项目 MCP 连接；本请求不会断开已有连接池或中断正在运行的回合。现有上下文加载器会独立于此标志加载 `AGENTS.md` 等项目指令文件和项目规则，因此撤销工作区信任不会移除这些指令或已持久化的历史。
+
+这个持久化的项目决定与线程的 `trust_mode` / Full Access，以及 `/trust add <path>` 的外部路径授权分别独立。`/trust on|off --save` 同时修改会话文件工具信任和持久化项目记录；本 HTTP 路由只修改项目记录。POST 使用其他状态变更路由相同的运行时写权限；watch 设备令牌可以读取状态，但不能写入信任。
 
 **内省**
 - `GET /v1/workspace/status`
@@ -2554,5 +2568,7 @@ Engine 自行读取的资料不可用或无效时，本回合改用未登录的�
 
 `GET /v1/constitution` 读取下一回合的资料与模型指导，不是活跃回合已采用新编辑
 的回执。`POST /v1/constitution/preview` 接受宪章文档，返回
-`{modelGuidance, saved:false}`，不保存。两条路由遵循普通 Runtime 授权；
+`{modelGuidance, saved:false}`，不保存。`modelGuidance` 是 Engine 渲染的指导正文；
+同一文档的 GET 与预览返回相同文本，不含会话记录中的来源行或封装。
+`source` 与 `revision` 保留来源信息。两条路由遵循普通 Runtime 授权；
 旧 Runtime 必须升级后才能接收携带账号宪章的回合。

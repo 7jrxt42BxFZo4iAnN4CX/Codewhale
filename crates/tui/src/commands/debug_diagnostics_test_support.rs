@@ -1,7 +1,6 @@
 //! Shared, host-bound test support for the FEAT-029 `debug::diagnostics` slice.
 //!
-//! This module lives at the `commands` root — outside `groups/debug`, which
-//! FEAT-045 later moves into `codewhale-commands` — so the public-surface and
+//! This module lives at the `commands` root — outside `codewhale-commands` — so the public-surface and
 //! host-regression suites share one harness and one normalisation contract
 //! instead of drifting copies.
 //!
@@ -58,9 +57,9 @@ impl DiagnosticsHarness {
             notes_path: temp.path().join("notes.txt"),
             mcp_config_path: temp.path().join("mcp.json"),
             use_memory: false,
-            ..crate::test_support::test_tui_options(temp.path())
+            ..crate::tui::test_support::test_tui_options(temp.path())
         };
-        let mut app = crate::test_support::test_app_with_options(options);
+        let mut app = crate::tui::test_support::test_app_with_options(options);
         app.api_provider = ProviderKind::Deepseek;
 
         Self {

@@ -53,6 +53,10 @@ const PRIMARY_MAX_BYTES: usize = 1024 * 1024;
     all(target_os = "linux", not(target_env = "ohos"))
 ))]
 const MAX_CLIPBOARD_HTML_BYTES: usize = 1024 * 1024;
+#[cfg(any(all(test, unix), all(target_os = "linux", not(target_env = "ohos"))))]
+const WAYLAND_CLIPBOARD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+#[cfg(any(all(test, unix), all(target_os = "linux", not(target_env = "ohos"))))]
+const WL_PASTE_MAX_BYTES: u64 = 16 * 1024 * 1024;
 
 /// Convert rich clipboard content without loading its linked resources. Keep
 /// the plain representation as a lossless fallback for empty/oversized HTML.
@@ -769,19 +773,66 @@ fn read_text_with_wlpaste() -> Result<String> {
 }
 
 #[cfg(any(all(test, unix), all(target_os = "linux", not(target_env = "ohos"))))]
+fn wait_wayland_clipboard_child(
+    mut child: std::process::Child,
+    program: &str,
+) -> Result<std::process::ExitStatus> {
+    use wait_timeout::ChildExt;
+    let waited = child.wait_timeout(WAYLAND_CLIPBOARD_TIMEOUT);
+    if let Ok(Some(status)) = waited {
+        return Ok(status);
+    }
+    let _ = child.kill();
+    let _ = std::thread::Builder::new()
+        .name("clipboard-wait".to_string())
+        .spawn(move || {
+            let _ = child.wait();
+        });
+    match waited {
+        Err(e) => bail!("Failed to wait on {program}: {e}"),
+        _ => bail!(
+            "{program} timed out after {}s",
+            WAYLAND_CLIPBOARD_TIMEOUT.as_secs()
+        ),
+    }
+}
+
+#[cfg(any(all(test, unix), all(target_os = "linux", not(target_env = "ohos"))))]
 fn read_text_with_wlpaste_using_argv(program: &str) -> Result<String> {
-    let output = Command::new(program)
+    use std::io::Read;
+    let mut child = Command::new(program)
         .arg("--no-newline")
         .arg("--type")
         .arg("text/plain")
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .output()
+        .spawn()
         .map_err(|e| anyhow::anyhow!("Failed to run {program}: {e}"))?;
-    if !output.status.success() {
-        bail!("{program} exited with {}", output.status);
+    let stdout = child.stdout.take();
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    let _ = std::thread::Builder::new()
+        .name("wl-paste-output".to_string())
+        .spawn(move || {
+            let mut bytes = Vec::new();
+            let read = match stdout {
+                Some(stdout) => stdout.take(WL_PASTE_MAX_BYTES + 1).read_to_end(&mut bytes),
+                None => Ok(0),
+            };
+            let _ = tx.send(read.map(|_| bytes));
+        });
+    let status = wait_wayland_clipboard_child(child, program)?;
+    let bytes = rx
+        .recv_timeout(WAYLAND_CLIPBOARD_TIMEOUT)
+        .map_err(|_| anyhow::anyhow!("{program} output did not close"))?
+        .map_err(|e| anyhow::anyhow!("Failed to read {program} output: {e}"))?;
+    if bytes.len() as u64 > WL_PASTE_MAX_BYTES {
+        bail!("{program} returned more than {WL_PASTE_MAX_BYTES} bytes");
     }
-    String::from_utf8(output.stdout).context("wl-paste returned non-UTF-8 text")
+    if !status.success() {
+        bail!("{program} exited with {status}");
+    }
+    String::from_utf8(bytes).context("wl-paste returned non-UTF-8 text")
 }
 
 #[cfg(all(target_os = "linux", not(target_env = "ohos"), not(test)))]
@@ -792,15 +843,22 @@ fn write_text_with_wlcopy_using_argv(program: &str, text: &str) -> Result<()> {
         .stderr(Stdio::null())
         .spawn()
         .map_err(|e| anyhow::anyhow!("Failed to run {program}: {e}"))?;
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(text.as_bytes())
-            .map_err(|e| anyhow::anyhow!("Failed to write to {program}: {e}"))?;
-    }
-    // stdin is dropped here, closing the pipe so wl-copy flushes.
-    let status = child
-        .wait()
-        .map_err(|e| anyhow::anyhow!("Failed to wait on {program}: {e}"))?;
+    let stdin = child.stdin.take();
+    let text = text.to_owned();
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    let _ = std::thread::Builder::new()
+        .name("wl-copy-input".to_string())
+        .spawn(move || {
+            let written = match stdin {
+                Some(mut stdin) => stdin.write_all(text.as_bytes()),
+                None => Ok(()),
+            };
+            let _ = tx.send(written);
+        });
+    let status = wait_wayland_clipboard_child(child, program)?;
+    rx.recv_timeout(WAYLAND_CLIPBOARD_TIMEOUT)
+        .map_err(|_| anyhow::anyhow!("{program} input did not close"))?
+        .map_err(|e| anyhow::anyhow!("Failed to write to {program}: {e}"))?;
     if !status.success() {
         bail!("{program} exited with {status}");
     }
@@ -885,22 +943,6 @@ fn osc52_sequence(text: &str) -> Result<String> {
     Ok(format!("\x1b]52;c;{encoded}\x07"))
 }
 
-/// Resolve the directory pasted images should land in. Prefers
-/// `~/.codewhale/clipboard-images/` so the path is stable across worktrees and
-/// matches the location described in user-facing docs; falls back to
-/// `<workspace>/clipboard-images/` if the home dir is unavailable.
-pub(crate) fn clipboard_images_dir(workspace: &Path) -> PathBuf {
-    let home = crate::config::effective_home_dir();
-    clipboard_images_dir_for_home(workspace, home.as_deref())
-}
-
-fn clipboard_images_dir_for_home(workspace: &Path, home: Option<&Path>) -> PathBuf {
-    if let Some(home) = home {
-        return home.join(".codewhale").join("clipboard-images");
-    }
-    workspace.join("clipboard-images")
-}
-
 /// Pinned, no-follow writer for `dir`, which is `<root>/<name>`: `root` may be a
 /// user-selected link (a relocated `~/.codewhale`), but nothing below it may be.
 #[cfg(any(
@@ -928,7 +970,7 @@ fn clipboard_image_target(
     all(target_os = "linux", not(target_env = "ohos"))
 ))]
 fn save_image_as_png(workspace: &Path, image: &ImageData) -> Result<PastedImage> {
-    save_image_as_png_in(&clipboard_images_dir(workspace), image)
+    save_image_as_png_in(&crate::config::clipboard_images_dir(workspace), image)
 }
 
 /// Lower-level variant that writes into an explicit directory. Exposed so the
@@ -1230,7 +1272,7 @@ mod tests {
         let workspace = tempfile::tempdir().unwrap();
 
         assert_eq!(
-            clipboard_images_dir_for_home(workspace.path(), Some(home.path())),
+            crate::config::clipboard_images_dir_for_home(workspace.path(), Some(home.path())),
             home.path().join(".codewhale").join("clipboard-images")
         );
     }
@@ -1240,7 +1282,7 @@ mod tests {
         let workspace = tempfile::tempdir().unwrap();
 
         assert_eq!(
-            clipboard_images_dir_for_home(workspace.path(), None),
+            crate::config::clipboard_images_dir_for_home(workspace.path(), None),
             workspace.path().join("clipboard-images")
         );
     }

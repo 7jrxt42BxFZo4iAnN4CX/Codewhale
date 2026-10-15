@@ -749,9 +749,7 @@ fn add_app_runtime_entries(builder: &mut ReportBuilder, app: &App) {
 }
 
 fn add_handoff_entry(builder: &mut ReportBuilder, workspace: &Path) {
-    let primary = workspace.join(crate::prompts::HANDOFF_RELATIVE_PATH);
-    let legacy = workspace.join(".deepseek/handoff.md");
-    let path = if primary.exists() { primary } else { legacy };
+    let (path, _) = crate::prompts::resolve_handoff_path(workspace);
     let Some(raw) = std::fs::read_to_string(&path)
         .ok()
         .filter(|raw| !raw.trim().is_empty())
@@ -882,16 +880,22 @@ fn pressure_label(percent: Option<f64>) -> &'static str {
 
 #[cfg(test)]
 pub fn format_context_report(report: &PromptSourceMap) -> String {
-    crate::diagnostics_reports::format_context_report(&project_source_map(report.clone()))
+    codewhale_commands::diagnostics_reports::format_context_report(&project_source_map(
+        report.clone(),
+    ))
 }
 
 #[cfg(test)]
 pub fn format_context_summary(report: &PromptSourceMap) -> String {
-    crate::diagnostics_reports::format_context_summary(&project_source_map(report.clone()))
+    codewhale_commands::diagnostics_reports::format_context_summary(&project_source_map(
+        report.clone(),
+    ))
 }
 
 pub fn context_report_json(report: &PromptSourceMap) -> String {
-    crate::diagnostics_reports::context_report_json(&project_source_map(report.clone()))
+    codewhale_commands::diagnostics_reports::context_report_json(&project_source_map(
+        report.clone(),
+    ))
 }
 
 #[cfg(test)]
@@ -1156,7 +1160,7 @@ mod tests {
                 mcp_config_path: tmp.path().join("mcp.json"),
                 use_memory: true,
                 start_in_agent_mode: true,
-                ..crate::test_support::test_tui_options(tmp.path())
+                ..crate::tui::test_support::test_tui_options(tmp.path())
             },
             &config,
         );
@@ -1240,7 +1244,7 @@ mod tests {
                 notes_path: tmp.path().join("notes.txt"),
                 mcp_config_path: tmp.path().join("mcp.json"),
                 start_in_agent_mode: true,
-                ..crate::test_support::test_tui_options(tmp.path())
+                ..crate::tui::test_support::test_tui_options(tmp.path())
             },
             &config,
         );

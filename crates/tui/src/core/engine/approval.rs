@@ -36,28 +36,27 @@ fn wait_announcement(what: &str, tool_id: &str, waited: Duration) -> String {
 }
 
 use super::Engine;
+use crate::core::authority::grants::GrantRef;
 
 #[derive(Debug, Clone)]
 pub(super) enum ApprovalDecision {
     Approved {
         id: String,
         by: ApprovalDecider,
+        grant: Option<GrantRef>,
     },
     Denied {
         id: String,
         by: ApprovalDecider,
+        grant: Option<GrantRef>,
     },
     /// The interactive card expired unanswered (#6101): the configured
     /// bound denied the call, not the operator.
-    TimedOut {
-        id: String,
-    },
+    TimedOut { id: String },
     /// The request could not be put in front of a person — it belonged to a
     /// turn that had already ended or been cancelled locally, or to another
     /// conversation. Recorded as `unavailable`, never as the person's denial.
-    Unavailable {
-        id: String,
-    },
+    Unavailable { id: String },
     /// Retry a tool with an elevated sandbox policy.
     RetryWithPolicy {
         id: String,
@@ -198,8 +197,22 @@ impl Engine {
         outcome: ApprovalOutcome,
         decided_by: Option<ApprovalDecider>,
     ) -> Result<(), ToolError> {
-        self.commit_approval_receipt(ApprovalReceipt::decided_with(tool_id, outcome, decided_by))
+        self.commit_approval_decision(tool_id, outcome, decided_by, None)
             .await
+    }
+
+    async fn commit_approval_decision(
+        &self,
+        tool_id: &str,
+        outcome: ApprovalOutcome,
+        decided_by: Option<ApprovalDecider>,
+        grant: Option<&GrantRef>,
+    ) -> Result<(), ToolError> {
+        let mut receipt = ApprovalReceipt::decided_with(tool_id, outcome, decided_by);
+        if let Some(grant) = grant {
+            receipt = receipt.with_grant(grant);
+        }
+        self.commit_approval_receipt(receipt).await
     }
 
     pub(super) async fn request_tool_approval(
@@ -225,8 +238,19 @@ impl Engine {
         event: Event,
         withdraw: Option<&CancellationToken>,
     ) -> Result<ApprovalResult, ToolError> {
-        self.commit_approval_receipt(ApprovalReceipt::asked(tool_id, tool_name))
-            .await?;
+        let ask = match &event {
+            Event::ApprovalRequired {
+                input, description, ..
+            } => ApprovalReceipt::asked_with(
+                tool_id,
+                tool_name,
+                input,
+                description,
+                &self.session.workspace,
+            ),
+            _ => ApprovalReceipt::asked(tool_id, tool_name),
+        };
+        self.commit_approval_receipt(ask).await?;
         if self
             .child_host
             .as_ref()
@@ -363,12 +387,12 @@ impl Engine {
                         continue;
                     }
                     match decision {
-                        ApprovalDecision::Approved { id, by } if id == tool_id => {
-                            self.commit_approval_outcome(tool_id, ApprovalOutcome::ApprovedOnce, Some(by)).await?;
+                        ApprovalDecision::Approved { id, by, grant } if id == tool_id => {
+                            self.commit_approval_decision(tool_id, ApprovalOutcome::ApprovedOnce, Some(by), grant.as_ref()).await?;
                             return Ok(ApprovalResult::Approved(by));
                         }
-                        ApprovalDecision::Denied { id, by } if id == tool_id => {
-                            self.commit_approval_outcome(tool_id, ApprovalOutcome::Denied, Some(by)).await?;
+                        ApprovalDecision::Denied { id, by, grant } if id == tool_id => {
+                            self.commit_approval_decision(tool_id, ApprovalOutcome::Denied, Some(by), grant.as_ref()).await?;
                             return Ok(ApprovalResult::Denied);
                         }
                         ApprovalDecision::TimedOut { id } if id == tool_id => {
@@ -2473,12 +2497,21 @@ mod tests {
         }
     }
 
+    /// Deadline for the extension-turn harness helpers below.
+    ///
+    /// A hang guard, not a performance assertion: a Windows runner under
+    /// full-suite load has stalled this harness past 10 s (0.10.2 run
+    /// 37723960348 failed `an_invocation_has_one_outstanding_approval_at_a_time`
+    /// with `turn deadline: Elapsed(())`), so allow generous headroom while
+    /// still failing a genuinely stuck turn.
+    const EXTENSION_HARNESS_DEADLINE: Duration = Duration::from_secs(30);
+
     /// The next approval request, whole.
     async fn next_approval_event(
         events: &Arc<tokio::sync::RwLock<tokio::sync::mpsc::Receiver<Event>>>,
         seen: &mut Vec<Event>,
     ) -> Event {
-        tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(EXTENSION_HARNESS_DEADLINE, async {
             let mut events = events.write().await;
             while let Some(event) = events.recv().await {
                 if matches!(event, Event::ApprovalRequired { .. }) {
@@ -2494,7 +2527,7 @@ mod tests {
 
     /// Finish the turn; the extension tool's JSON result, and every event.
     async fn finish_extension_turn(turn: &mut ExtensionTurn, seen: &mut Vec<Event>) -> Value {
-        tokio::time::timeout(Duration::from_secs(10), &mut turn.task)
+        tokio::time::timeout(EXTENSION_HARNESS_DEADLINE, &mut turn.task)
             .await
             .expect("turn deadline")
             .expect("turn");

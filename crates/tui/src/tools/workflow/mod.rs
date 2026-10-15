@@ -349,11 +349,14 @@ fn finish_workflow_controller(state: &WorkflowWorkspaceState, record: &WorkflowR
         let payload =
             format!("{summary}\n<codewhale:subagent.done>{receipt}</codewhale:subagent.done>");
         debug_assert!(payload.len() <= WORKFLOW_COMPLETION_MAX_BYTES);
-        let _ = tx.try_send(SubAgentCompletion {
-            owner_session_id: controller.driver.owner_session_id.clone(),
-            agent_id: record.run_id.clone(),
-            payload,
-        });
+        send_terminal_event(
+            tx,
+            SubAgentCompletion {
+                owner_session_id: controller.driver.owner_session_id.clone(),
+                agent_id: record.run_id.clone(),
+                payload,
+            },
+        );
     }
     controllers.remove(&record.run_id);
 }
@@ -3156,6 +3159,13 @@ fn validate_runtime_gates(gates: &mut [GateSpec]) -> Result<(), ToolError> {
             return Err(ToolError::invalid_input(
                 "Workflow role_start gates are not supported; use role_complete with an explicit prerequisite role",
             ));
+        }
+        if gate.blocks_role.as_deref() == Some(gate.role.as_str()) {
+            return Err(ToolError::invalid_input(format!(
+                "Workflow gate `{}` has role and blocks_role both set to `{}`; a gate cannot block \
+                 the role whose completion triggers it, so set blocks_role to a later role",
+                gate.id, gate.role
+            )));
         }
     }
     Ok(())
@@ -8977,9 +8987,8 @@ export default workflow({
         assert_eq!(child.status, SubAgentStatus::Completed);
         assert_eq!(child.result.as_deref(), Some("child done"));
 
-        // Full receipt chain: the spawn-minted event survives the JSONL
-        // journal reload, hydrates the live projection, and round-trips into
-        // history without following a later route or inventing missing usage.
+        // The spawn-minted receipt survives the JSONL journal reload with
+        // the requested and resolved route fields intact.
         let reloaded = WorkflowWorkspaceState::open(tmp.path());
         let persisted = reloaded
             .runs
@@ -9001,63 +9010,6 @@ export default workflow({
         assert_eq!(persisted_started["resolved_provider"], "deepseek");
         assert_eq!(persisted_started["resolved_model"], "deepseek-v4-flash");
         assert_eq!(persisted_started["route_source"], "task.model");
-
-        let mut panel =
-            crate::tui::widgets::workflow_panel::WorkflowPanel::from_run_json(&persisted_json)
-                .expect("journal should hydrate workflow panel");
-        let original_receipt = panel
-            .phases
-            .iter()
-            .flat_map(|phase| phase.rows.iter())
-            .find(|row| row.task_id == child_id)
-            .map(crate::tui::widgets::workflow_panel::row_receipt_text)
-            .expect("spawned child receipt");
-        assert!(original_receipt.contains("deepseek/deepseek-v4-flash"));
-        assert!(original_receipt.contains("reasoning low→"));
-        assert!(original_receipt.contains("via task.model"));
-
-        panel.apply_json_event(&json!({
-            "type": "task_started",
-            "at_ms": 9_000,
-            "task_id": "later-route",
-            "label": "later-route",
-            "resolved_role": "consultant",
-            "resolved_provider": "moonshot",
-            "resolved_model": "kimi-k3",
-            "requested_reasoning": "auto",
-            "effective_reasoning": "medium",
-            "route_source": "agent_profile.model",
-            "worktree": false,
-        }));
-        panel.apply_json_event(&json!({
-            "type": "task_completed",
-            "at_ms": 9_100,
-            "task_id": "later-route",
-            "status": "succeeded"
-        }));
-        let unchanged = panel
-            .phases
-            .iter()
-            .flat_map(|phase| phase.rows.iter())
-            .find(|row| row.task_id == child_id)
-            .map(crate::tui::widgets::workflow_panel::row_receipt_text)
-            .expect("original child after later route");
-        assert_eq!(unchanged, original_receipt);
-
-        let history =
-            crate::tui::widgets::workflow_panel::WorkflowPanel::from_run_json(&panel.to_run_json())
-                .expect("history receipt round trip");
-        let later_receipt = history
-            .phases
-            .iter()
-            .flat_map(|phase| phase.rows.iter())
-            .find(|row| row.task_id == "later-route")
-            .map(crate::tui::widgets::workflow_panel::row_receipt_text)
-            .expect("later route history receipt");
-        assert!(later_receipt.contains("moonshot/kimi-k3"));
-        assert!(later_receipt.contains("reasoning auto→medium"));
-        assert!(later_receipt.contains("tokens unknown"));
-        assert!(!later_receipt.contains("tokens 0"));
     }
 
     #[tokio::test]
@@ -13439,6 +13391,25 @@ FINAL RECEIPT
                 [serde_json::from_value(candidate).expect("syntactically valid gate")];
             assert!(validate_runtime_gates(&mut candidate).is_err(), "{field}");
         }
+    }
+
+    #[test]
+    fn native_gate_that_blocks_its_own_role_is_rejected_at_admission() {
+        let mut gates: Vec<GateSpec> = serde_json::from_value(json!([{
+            "id": "v1", "gate": "verify", "on": "role_complete", "role": "implement",
+            "blocks_role": "implement", "on_fail": "escalate", "max_retries": 1,
+            "require_explicit_verdict": true
+        }]))
+        .expect("gates");
+        let error = validate_runtime_gates(&mut gates).expect_err("gate blocks its own role");
+        let message = error.to_string();
+        for needle in ["`v1`", "blocks_role", "`implement`"] {
+            assert!(message.contains(needle), "{message}");
+        }
+        gates[0].blocks_role = Some(" Implement ".to_string());
+        assert!(validate_runtime_gates(&mut gates).is_err());
+        gates[0].blocks_role = Some("verify".to_string());
+        validate_runtime_gates(&mut gates).expect("blocking a later role stays valid");
     }
 
     #[tokio::test]

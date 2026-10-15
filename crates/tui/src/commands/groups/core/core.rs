@@ -9,7 +9,7 @@ use crate::config::{
 };
 #[cfg(test)]
 use crate::reasoning_preference::ReasoningEffort;
-use crate::tui::app::{App, AppAction};
+use crate::tui::app::{App, AppAction, AppModeUi};
 use crate::tui::views::{HelpView, ModalKind, SubAgentsView, subagent_view_agents};
 use codewhale_config::AppMode;
 use codewhale_localization::{Locale, MessageId, tr};
@@ -150,9 +150,16 @@ fn user_command_help(
 /// Clear conversation history
 pub fn clear(app: &mut App) -> CommandResult {
     if app.session_transition_blocked() {
-        return CommandResult::error(
-            tr(app.ui_locale, MessageId::ClearConversationBusy).to_string(),
-        );
+        // The same gate the lifecycle commands consult, so the refusal owes
+        // the same explanation. The sentence stays localized; a blocker row
+        // is data (id, status, elapsed, summary) and is not translated
+        // anywhere else either.
+        let mut message = tr(app.ui_locale, MessageId::ClearConversationBusy).to_string();
+        for blocker in app.session_transition_blockers() {
+            message.push_str("\n  • ");
+            message.push_str(&blocker);
+        }
+        return CommandResult::error(message);
     }
     let new_id = uuid::Uuid::new_v4().to_string();
     let queue_transition = match crate::tui::ui::prepare_offline_queue_transition(app, &new_id) {
@@ -453,17 +460,15 @@ pub fn subagents(app: &mut App) -> CommandResult {
 }
 
 /// Switch to a configured profile.
-pub fn profile_switch(_app: &mut App, arg: Option<&str>) -> CommandResult {
+pub fn profile_switch(app: &mut App, arg: Option<&str>) -> CommandResult {
     let profile_name = match arg {
         Some(name) if !name.trim().is_empty() => name.trim().to_string(),
         _ => {
-            return CommandResult::error(
-                "Usage: /profile <name>\n\nSwitch to a named config profile. Profiles are defined in ~/.codewhale/config.toml under [profiles] sections.",
-            );
+            return CommandResult::error(tr(app.ui_locale, MessageId::ProfileUsage));
         }
     };
     CommandResult::with_message_and_action(
-        format!("Switching to profile '{profile_name}'..."),
+        tr(app.ui_locale, MessageId::ProfileSwitching).replace("{name}", &profile_name),
         AppAction::SwitchProfile {
             profile: profile_name,
         },
@@ -653,7 +658,7 @@ pub fn home_dashboard(app: &mut App) -> CommandResult {
         stats,
         "{}       {}",
         tr(locale, MessageId::HomeMode),
-        app.mode.label()
+        app.mode.display_name_localized(locale)
     );
     let _ = writeln!(
         stats,
@@ -860,7 +865,7 @@ mod tests {
     fn create_test_app() -> App {
         let options = TuiOptions {
             skills_dir: PathBuf::from("/tmp/test-skills"),
-            ..crate::test_support::test_tui_options(PathBuf::from("/tmp/test-workspace"))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("/tmp/test-workspace"))
         };
         let mut app = App::new(options, &Config::default());
         app.ui_locale = codewhale_localization::Locale::En;
@@ -869,6 +874,51 @@ mod tests {
         app.auto_model = false;
         app.model_ids_passthrough = false;
         app
+    }
+
+    #[test]
+    fn profile_command_localizes_replies_and_preserves_switch_action() {
+        let _env = crate::test_support::lock_test_env();
+        for (locale, usage, switching) in [
+            (
+                Locale::En,
+                "Usage: /profile <name>",
+                "Switching to profile 'work'...",
+            ),
+            (
+                Locale::ZhHans,
+                "用法: /profile <name>",
+                "正在切换到配置文件 'work'...",
+            ),
+            (
+                Locale::De,
+                "Verwendung: /profile <name>",
+                "Wechsle zum Profil 'work'...",
+            ),
+        ] {
+            let mut app = create_test_app();
+            app.ui_locale = locale;
+            let previous_profile = app.config_profile.clone();
+
+            for command in ["/profile", "/profile   "] {
+                let result = crate::commands::execute(command, &mut app);
+                assert!(result.is_error, "{locale:?}: {command:?}");
+                assert!(result.action.is_none(), "{locale:?}: {command:?}");
+                let message = result.message.expect("profile usage");
+                assert!(message.contains(usage), "{locale:?}: {message}");
+                assert!(message.contains("~/.codewhale/config.toml"), "{message}");
+                assert!(message.contains("[profiles]"), "{message}");
+            }
+
+            let result = crate::commands::execute("/profile   work  ", &mut app);
+            assert!(!result.is_error, "{locale:?}");
+            assert_eq!(result.message.as_deref(), Some(switching), "{locale:?}");
+            assert!(matches!(
+                result.action,
+                Some(AppAction::SwitchProfile { profile }) if profile == "work"
+            ));
+            assert_eq!(app.config_profile, previous_profile, "{locale:?}");
+        }
     }
 
     #[test]

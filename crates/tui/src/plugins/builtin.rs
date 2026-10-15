@@ -90,7 +90,6 @@ const COMPUTER_USE_FILES: &[(&str, &[u8])] = &[
     bundle_file!("app/install-macos.mjs"),
     bundle_file!("app/updates.mjs"),
     bundle_file!("mcp/server.mjs"),
-    bundle_file!("mcp/turn-hold.mjs"),
     bundle_file!("src/app-handler.mjs"),
     bundle_file!("src/app-script-policy.mjs"),
     bundle_file!("src/app-socket.mjs"),
@@ -103,7 +102,6 @@ const COMPUTER_USE_FILES: &[(&str, &[u8])] = &[
     bundle_file!("src/recordings.mjs"),
     bundle_file!("src/registry.mjs"),
     bundle_file!("src/remote-runtime.mjs"),
-    bundle_file!("src/sprite-task.mjs"),
     bundle_file!("src/ssh-args.mjs"),
     bundle_file!("src/tools.mjs"),
     bundle_file!("src/trajectory.mjs"),
@@ -430,7 +428,7 @@ fn verify_snapshot(root: &Path, files: &BTreeMap<PathBuf, &[u8]>) -> io::Result<
 /// Atomic no-replace directory publication. A check followed by ordinary Unix
 /// rename is insufficient: rename is allowed to replace an existing empty dir.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn publish_snapshot(source: &Path, destination: &Path) -> io::Result<()> {
+pub(super) fn publish_snapshot(source: &Path, destination: &Path) -> io::Result<()> {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt as _;
 
@@ -461,7 +459,7 @@ fn publish_snapshot(source: &Path, destination: &Path) -> io::Result<()> {
 }
 
 #[cfg(windows)]
-fn publish_snapshot(source: &Path, destination: &Path) -> io::Result<()> {
+pub(super) fn publish_snapshot(source: &Path, destination: &Path) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt as _;
     use windows::Win32::Storage::FileSystem::{MOVEFILE_WRITE_THROUGH, MoveFileExW};
     use windows::core::PCWSTR;
@@ -485,7 +483,7 @@ fn publish_snapshot(source: &Path, destination: &Path) -> io::Result<()> {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
-fn publish_snapshot(_source: &Path, _destination: &Path) -> io::Result<()> {
+pub(super) fn publish_snapshot(_source: &Path, _destination: &Path) -> io::Result<()> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
         "atomic built-in snapshot publication is unsupported on this platform",

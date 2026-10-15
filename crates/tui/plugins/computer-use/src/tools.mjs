@@ -160,7 +160,7 @@ export const TOOLS = [
   },
   {
     name: "list_windows",
-    description: "List application windows. On macOS, app_ref selects the app; omission follows the app selected by open_application, or the frontmost app before a selection. Other platforms list all windows and reject app_ref selectors.",
+    description: "List application windows. On macOS, app_ref selects the app; omission follows the app selected by open_application, or the frontmost app before a selection. On Linux (X11), app_ref.name selects the app by exact name. Other platforms list all windows and reject app_ref selectors.",
     inputSchema: {
       type: "object",
       properties: {
@@ -204,6 +204,7 @@ export const TOOLS = [
         app_ref: { type: "object", properties: { pid: { type: "integer" }, name: { type: "string" }, bundle_id: { type: "string" } }, additionalProperties: false, description: "macOS accepts PID, name and bundle identity. Linux accepts only a unique exact AT-SPI app name. Windows accepts only a unique exact window title in name (from list_windows.title). HarmonyOS rejects explicit app selectors." },
         window_id: { type: "integer", description: "macOS only: zero-based window index within the app. Other platforms reject this selector." },
         detail: { enum: ["summary", "compact", "full"], default: "summary", description: "Summary is the concise default (controls, values, actions, layout). compact is smaller: same indices, shorter labels, no nested menus. full includes nested menus and tree paths." },
+        since: { type: "string", minLength: 1, maxLength: 128, description: "Return changed element rows since a state_id or latest, keeping a complete fresh target cache. Same app and untruncated query/role/detail view required; otherwise returns a full observation with resync_required:true. removed_indices left that view. Does not pin pixels or prove the UI stayed unchanged." },
         query: { type: "string", description: "Case-insensitive substring over label, value and role. Use this instead of downloading the whole tree." },
         role: { type: "string", description: "Exact accessibility role filter, e.g. AXButton, AXTextField." },
         limit: { type: "integer", minimum: 1, maximum: 200, description: "Max elements to return after filtering. Prefer this over a second unfiltered dump." },
@@ -221,7 +222,7 @@ export const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        app_ref: { type: "object", properties: { name: { type: "string" }, bundle_id: { type: "string" }, pid: { type: "integer" } }, description: "macOS: capture this app window even when it is in the background." },
+        app_ref: { type: "object", properties: { name: { type: "string" }, bundle_id: { type: "string" }, pid: { type: "integer" } }, description: "macOS: capture this app window even when it is in the background. Linux (X11): capture the app's window frame by exact name; the receipt names windows stacked above it." },
         display: { type: ["integer", "string"], description: "Display index or 'all'" },
         region: { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4, description: "[x, y, w, h] in screen points" },
         path: { type: "string", description: "Optional absolute .png/.jpg/.jpeg path inside the recordings directory. Omit to use a generated name there." },
@@ -409,7 +410,7 @@ export const TOOLS = [
   },
   // ---- text & keyboard ----
   {
-    name: "type", description: "Type unicode text into the focused control. Newlines in `text` are Return/Enter key presses, not literal characters — never put \\n in a composer by hoping it will send. Focus the field first (click, focus, or set_value), or pass an element `target` to focus it in the same call. On macOS the receipt carries `verified:true` only when the focused control's value actually reflects the typed text; on `verified:false` the text may have gone nowhere — observe again before relying on it.",
+    name: "type", description: "Type unicode text into the focused control. On Linux, keystrokes are refused while a menu item is open (send key escape first) and when an element target's window is not the active one. Newlines in `text` are Return/Enter key presses, not literal characters — never put \\n in a composer by hoping it will send. Focus the field first (click, focus, or set_value), or pass an element `target` to focus it in the same call. On macOS the receipt carries `verified:true` only when the focused control's value actually reflects the typed text; on `verified:false` the text may have gone nowhere — observe again before relying on it.",
     inputSchema: { type: "object", required: ["text"], properties: { text: { type: "string" }, press_enter: { type: "boolean", description: "After typing, press Return/Enter once. Prefer this to putting a newline in `text` when you want to send." }, target: { ...elementTargetSchema, description: "Element target from get_app_state; it is accessibility-focused first, then the text is typed. Element targets only." }, computer: computerParam }, additionalProperties: false },
   },
   {
@@ -448,7 +449,7 @@ export const TOOLS = [
     },
   },
   {
-    name: "run_actions", description: "Run up to 8 computer-use tools in order on this computer. Stops on the first failure. Each step is {tool, arguments}. Use for click→type→key(return)→get_value without extra round trips.",
+    name: "run_actions", description: "Run 1..8 tools in order with the same per-call guards. Each step is {tool, arguments}; args is an alias. Optional find:{query,role,app_ref,window_id} observes one unique element immediately before that step. Ambiguous/stale targets and failed wait_for conditions stop the batch. observe:true adds a compact final state, or pass get_app_state arguments. Inspect completed_steps/action_sent before retrying; sent input must not be replayed.",
     inputSchema: {
       type: "object",
       required: ["steps"],
@@ -463,10 +464,17 @@ export const TOOLS = [
             properties: {
               tool: { type: "string" },
               arguments: { type: "object" },
+              args: { type: "object", description: "Alias for arguments; use only one." },
+              find: { type: "object", properties: {
+                query: { type: "string", minLength: 1 }, role: { type: "string", minLength: 1 },
+                app_ref: { type: "object", properties: { pid: { type: "integer" }, name: { type: "string" }, bundle_id: { type: "string" } }, additionalProperties: false },
+                window_id: { type: "integer", minimum: 0 },
+              }, additionalProperties: false, description: "Fresh unique element lookup; query and/or exact role required. Cannot combine with arguments.target." },
             },
             additionalProperties: false,
           },
         },
+        observe: { oneOf: [{ type: "boolean" }, { type: "object" }], description: "Optional final get_app_state read. true uses compact detail and limit 20; an object supplies its arguments. A final read failure does not undo completed actions." },
         computer: computerParam,
       },
       additionalProperties: false,
@@ -511,7 +519,7 @@ export const TOOLS = [
   },
   {
     name: "recording_start",
-    description: "Start screen recording on a computer (mp4/mov). Darwin: ScreenCaptureKit via the native helper (timed or until recording_stop; honors region, no recorder overlay, stops on session exit). Pass app_ref to record only the selected app's window rect — captured at start and not tracked across moves. Linux and Windows: unavailable pending session-owned recorder cleanup; use screenshots. HarmonyOS: snapshot-series muxed with ffmpeg.",
+    description: "Start screen recording on a computer (mp4/mov). Darwin: ScreenCaptureKit via the native helper (timed or until recording_stop; honors region, no recorder overlay, stops on session exit). Pass app_ref to record only the selected app's window rect — captured at start and not tracked across moves. Linux (X11): ffmpeg x11grab, owned by this server and finished by recording_stop or session close; honors region and app_ref (window frame at start). Windows: unavailable; use screenshots. HarmonyOS: snapshot-series muxed with ffmpeg.",
     inputSchema: {
       type: "object",
       properties: {

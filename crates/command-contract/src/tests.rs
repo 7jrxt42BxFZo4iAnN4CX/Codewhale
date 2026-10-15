@@ -80,6 +80,25 @@ impl CommandModePolicyContext for Policy {
     fn policy_locked(&self) -> bool {
         false
     }
+    fn select_mode(&mut self, _mode: CommandMode) -> crate::facets::CommandModeSelection {
+        crate::facets::CommandModeSelection::Changed
+    }
+    fn select_yolo_compat(&mut self) -> crate::facets::CommandModeSelection {
+        crate::facets::CommandModeSelection::Changed
+    }
+    fn mode_startup_default_receipt(&self, _mode: CommandMode) -> String {
+        String::new()
+    }
+    fn setting_locked_mode_message(&self) -> String {
+        String::new()
+    }
+    fn mode_label(&self, mode: CommandMode) -> String {
+        format!("{mode:?}")
+    }
+
+    fn yolo_compat_label(&self) -> String {
+        "Full Access (Work)".to_string()
+    }
 }
 
 struct Prompt;
@@ -2235,6 +2254,9 @@ impl CommandSessionLifecycleContext for FakeLifecycle {
     fn transition_blocked(&self) -> bool {
         self.blocked
     }
+    fn transition_blockers(&self) -> Vec<String> {
+        Vec::new()
+    }
     fn branch_current_leaf_hint(&self) -> Option<String> {
         self.leaf_hint.clone()
     }
@@ -2558,6 +2580,9 @@ impl CommandSessionControlContext for FakeControl {
     fn transition_blocked(&self) -> bool {
         self.blocked
     }
+    fn transition_blockers(&self) -> Vec<String> {
+        Vec::new()
+    }
     fn relay_projection(&self) -> RelayProjection {
         self.relay
             .clone()
@@ -2640,6 +2665,7 @@ impl CommandSessionControlContext for FakeControl {
 fn control_relay_projection() -> RelayProjection {
     RelayProjection {
         compact_template: "# Session relay".to_string(),
+        handoff_path: ".codewhale/handoff.md".to_string(),
         workspace: "/workspace/control".to_string(),
         mode: "operate".to_string(),
         model: "control-model".to_string(),
@@ -3525,6 +3551,11 @@ fn structcopy_capability_preserves_all_published_identities() {
         CommandCapabilities::SESSION_STRUCTCOPY,
         CommandCapabilities::PERMISSIONS,
         CommandCapabilities::CONFIG_STATUS,
+        CommandCapabilities::CONFIG,
+        CommandCapabilities::PET,
+        CommandCapabilities::TRUST,
+        CommandCapabilities::LOGIN,
+        CommandCapabilities::WORK_SURFACE,
     ];
     let exact = CommandCapabilities::SESSION_STRUCTCOPY | CommandCapabilities::PRESENTATION;
     for (index, capability) in capabilities.into_iter().enumerate() {
@@ -3532,6 +3563,22 @@ fn structcopy_capability_preserves_all_published_identities() {
         assert_eq!(exact.contains(capability), index == 7 || index == 22);
     }
     assert!(!exact.contains(CommandCapabilities::NONE));
+}
+
+#[test]
+fn config_slots_are_optional_and_independent() {
+    assert_eq!(CommandCapabilities::CONFIG.bits_for_test(), 1 << 25);
+    assert_eq!(CommandCapabilities::PET.bits_for_test(), 1 << 26);
+    assert_eq!(CommandCapabilities::TRUST.bits_for_test(), 1 << 27);
+    let config = CommandCapabilities::CONFIG | CommandCapabilities::PRESENTATION;
+    let pet = CommandCapabilities::PET | CommandCapabilities::PRESENTATION;
+    let trust = CommandCapabilities::TRUST | CommandCapabilities::WORKSPACE;
+    assert!(!config.contains(CommandCapabilities::PET));
+    assert!(!config.contains(CommandCapabilities::TRUST));
+    assert!(!pet.contains(CommandCapabilities::CONFIG));
+    assert!(!pet.contains(CommandCapabilities::TRUST));
+    assert!(!trust.contains(CommandCapabilities::CONFIG));
+    assert!(!trust.contains(CommandCapabilities::PET));
 }
 
 #[test]
@@ -3568,6 +3615,11 @@ fn structcopy_slot_is_optional_and_does_not_grant_other_authority() {
         debug_diagnostics,
         permissions,
         config_status,
+        config,
+        pet,
+        trust,
+        login,
+        work_surface,
     } = CommandContexts::empty()
         .with_structcopy(&mut fixture)
         .with_presentation(&mut presentation)
@@ -3612,6 +3664,11 @@ fn structcopy_slot_is_optional_and_does_not_grant_other_authority() {
         debug_diagnostics.is_some(),
         permissions.is_some(),
         config_status.is_some(),
+        config.is_some(),
+        pet.is_some(),
+        trust.is_some(),
+        login.is_some(),
+        work_surface.is_some(),
     ] {
         assert!(!present);
     }

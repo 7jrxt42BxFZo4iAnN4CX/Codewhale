@@ -18,7 +18,7 @@ mod tests {
         let mut app = App::new(
             TuiOptions {
                 workspace,
-                ..crate::test_support::test_tui_options(std::path::PathBuf::from("."))
+                ..crate::tui::test_support::test_tui_options(std::path::PathBuf::from("."))
             },
             &config,
         );
@@ -157,10 +157,20 @@ workspace = {other:?}
         .expect("write permissions");
         let mut app = test_app(config_path, dir.path().to_path_buf());
 
-        let result = crate::commands::groups::config::config::config_command(
-            &mut app,
-            Some("ask-rules list"),
-        );
+        let result = {
+            let contract = crate::commands::groups::config::config::config(
+                app.command_contexts_with_config(None)
+                    .contexts(crate::commands::groups::config::config::CONFIG_CAPS),
+                Some("ask-rules list"),
+            );
+            crate::commands::CommandResult {
+                message: contract.message,
+                action: contract
+                    .action
+                    .map(crate::commands::config_host::config_action_to_app_action),
+                is_error: contract.is_error,
+            }
+        };
         let message = result.message.expect("compatibility list message");
 
         assert!(!result.is_error);

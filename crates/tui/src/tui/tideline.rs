@@ -175,6 +175,7 @@ impl InteractionTargetId {
     pub const DOCK_TAB_AGENTS: Self = Self("dock.tab.agents");
     pub const DOCK_TAB_TASKS: Self = Self("dock.tab.tasks");
     pub const DOCK_TAB_BACKGROUND: Self = Self("dock.tab.background");
+    pub const DOCK_TAB_TERMINAL: Self = Self("dock.tab.terminal");
     pub const DOCK_TAB_FILES: Self = Self("dock.tab.files");
     pub const DOCK_TAB_NOTEPAD: Self = Self("dock.tab.notepad");
     pub const DOCK_TAB_CONTEXT: Self = Self("dock.tab.context");
@@ -313,8 +314,9 @@ mod tests {
 
     #[test]
     fn ui_snapshot_uses_active_route_without_claiming_saved_defaults() {
-        let mut app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         app.pending_turn_route = Some((ProviderKind::Zai, "GLM-5.3".to_string(), false));
 
         let snapshot = UiSnapshot::from_app(&app);
@@ -334,8 +336,9 @@ mod tests {
 
     #[test]
     fn context_budget_projection_reuses_and_bounds_the_existing_estimate() {
-        let app =
-            crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+        let app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options("."),
+        );
         let (used, max_tokens, _) =
             crate::tui::ui::context_usage_snapshot(&app).expect("existing context estimate");
         let snapshot = ContextBudgetSnapshot::from_app(&app).expect("Tideline projection");

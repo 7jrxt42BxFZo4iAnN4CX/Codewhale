@@ -911,8 +911,14 @@ pub(crate) fn mcp_reload_summary(snapshot: &crate::mcp::McpManagerSnapshot) -> S
         .iter()
         .filter(|server| !server.enabled)
         .count();
+    let idle = snapshot
+        .servers
+        .iter()
+        .filter(|server| server.enabled && !server.connected && server.error.is_none())
+        .count();
     format!(
-        "MCP tool pool reloaded in process: {connected} connected, {failed} failed, {disabled} disabled. The next model turn uses this catalog."
+        "MCP tool pool reloaded in process: {connected} connected, {failed} failed, {idle} not connected, {disabled} disabled of {} configured. The next model turn uses this catalog.",
+        snapshot.servers.len()
     )
 }
 
@@ -979,8 +985,7 @@ pub(crate) fn mcp_server_diagnosis(app: &App, name: &str) -> String {
 pub(crate) fn mcp_ui_action_refreshes_discovery(action: &crate::tui::app::McpUiAction) -> bool {
     matches!(
         action,
-        crate::tui::app::McpUiAction::Validate
-            | crate::tui::app::McpUiAction::Logout { .. }
+        crate::tui::app::McpUiAction::Logout { .. }
             | crate::tui::app::McpUiAction::ImportList
             | crate::tui::app::McpUiAction::ImportApprove { .. }
     )

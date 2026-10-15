@@ -224,7 +224,8 @@ pub(crate) async fn cycle_permission_posture(
 
 /// Open the one canonical provider setup surface for onboarding. Fresh
 /// onboarding opens on the full provider catalog, hosted providers included
-/// (#5563), with `L` as the explicit opt-in local-only view. Missing-key
+/// (#5563). Local runtimes are listed, and `L` filters to them, only once one
+/// answered the startup probe or is already configured. Missing-key
 /// recovery instead focuses the already-configured route so an exact Kimi
 /// Code K3 configuration can expose its plan route before a secret is entered.
 /// Either way the picker opens on the navigable list (#4763): onboarding never
@@ -250,6 +251,7 @@ pub(crate) async fn open_onboarding_provider_picker(
             runtime_status,
         )
         .with_locale(app.ui_locale)
+        .with_local_runtime_detected(app.local_runtime_detected)
         .with_provider_health(&app.provider_health),
     );
     app.needs_redraw = true;
@@ -312,6 +314,22 @@ pub(crate) fn open_text_pager(app: &mut App, title: String, content: String) {
         &content,
         width.saturating_sub(2),
     ));
+}
+
+/// Open a unified diff in a pager, rendered like an edit in the transcript.
+pub(crate) fn open_diff_pager(app: &mut App, title: String, diff: &str) {
+    let width = app
+        .viewport
+        .last_transcript_area
+        .map(|area| area.width)
+        .unwrap_or(80);
+    // A patch is file content. Keep the terminal-injection boundary
+    // `PagerView::from_text` applies to every other pager body.
+    let mut sanitized = String::with_capacity(diff.len());
+    crate::tui::osc8::strip_ansi_into(diff, &mut sanitized);
+    let lines = crate::tui::diff_render::render_diff(&sanitized, width.saturating_sub(2));
+    app.view_stack
+        .push(PagerView::new(title, lines).with_copy_text(sanitized));
 }
 
 pub(crate) fn open_context_inspector(app: &mut App) {
@@ -531,6 +549,17 @@ pub(crate) fn push_approval_request_view(
         if let Some(agent_id) = crate::tui::pending_requests::child_agent_id(id) {
             request.owner = Some(crate::tui::pending_requests::owner_for(app, agent_id));
         }
+    } else if !request.is_repo_law_prompt() {
+        // The same edit runs without a card inside a git repository. Say why
+        // this folder asks, so two folders behaving differently is explained
+        // on the card. The engine already decided to ask; this only labels it.
+        request.asks_without_git = crate::core::authority::file_write_asks_without_git(
+            app.mode,
+            app.approval_mode,
+            &app.workspace,
+            tool_name,
+            tool_input,
+        );
     }
     app.view_stack.push(
         ApprovalView::new_with_default_selection(request, app.ui_locale, default_selection)

@@ -318,13 +318,16 @@ impl EngineHandle {
                 );
             }
         } else {
-            let (status, _) =
-                crate::tools::goal::thread_goal_status_projection(goal.status.clone());
+            let (status, pause_reason) = crate::tools::goal::thread_goal_status_projection(
+                goal.status.clone(),
+                goal.pause_reason,
+            );
             if status != crate::tools::goal::GoalStatus::Active {
-                state.sync_from_host_status(
+                state.sync_from_host_status_with_reason(
                     current.objective.as_deref(),
                     current.token_budget,
                     status,
+                    pause_reason,
                 );
             }
         }
@@ -590,11 +593,20 @@ impl EngineHandle {
     async fn send_approval(&self, decision: ApprovalDecision) -> Result<()> {
         use crate::tools::subagent::ChildApprovalOutcome;
         let child = match &decision {
-            ApprovalDecision::Approved { id, .. } => Some((id, ChildApprovalOutcome::Approved)),
-            ApprovalDecision::Denied { id, .. } => Some((id, ChildApprovalOutcome::Denied)),
+            ApprovalDecision::Approved { id, by, .. } => {
+                Some((id, ChildApprovalOutcome::Approved { by: *by }))
+            }
+            ApprovalDecision::Denied { id, by, .. } => {
+                Some((id, ChildApprovalOutcome::Denied { by: *by }))
+            }
             // An agent has no timeout outcome of its own (#6101): an expired
             // card is a deny for whichever call it was answering.
-            ApprovalDecision::TimedOut { id } => Some((id, ChildApprovalOutcome::Denied)),
+            ApprovalDecision::TimedOut { id } => Some((
+                id,
+                ChildApprovalOutcome::Denied {
+                    by: ApprovalDecider::Host,
+                },
+            )),
             ApprovalDecision::Unavailable { id } => Some((id, ChildApprovalOutcome::Unavailable)),
             // A sandbox retry only exists for the parent's own tool call.
             ApprovalDecision::RetryWithPolicy { .. } => None,
@@ -625,8 +637,28 @@ impl EngineHandle {
         id: impl Into<String>,
         by: ApprovalDecider,
     ) -> Result<()> {
-        self.send_approval(ApprovalDecision::Approved { id: id.into(), by })
-            .await
+        self.send_approval(ApprovalDecision::Approved {
+            id: id.into(),
+            by,
+            grant: None,
+        })
+        .await
+    }
+
+    /// Approve a pending tool call because a standing grant matched; the
+    /// approval receipt names the grant.
+    pub async fn approve_tool_call_by_grant(
+        &self,
+        id: impl Into<String>,
+        by: ApprovalDecider,
+        grant: crate::core::authority::grants::GrantRef,
+    ) -> Result<()> {
+        self.send_approval(ApprovalDecision::Approved {
+            id: id.into(),
+            by,
+            grant: Some(grant),
+        })
+        .await
     }
 
     /// Deny a pending tool call because a person said no.
@@ -640,8 +672,27 @@ impl EngineHandle {
         id: impl Into<String>,
         by: ApprovalDecider,
     ) -> Result<()> {
-        self.send_approval(ApprovalDecision::Denied { id: id.into(), by })
-            .await
+        self.send_approval(ApprovalDecision::Denied {
+            id: id.into(),
+            by,
+            grant: None,
+        })
+        .await
+    }
+
+    /// Deny a pending tool call because a standing deny grant matched.
+    pub async fn deny_tool_call_by_grant(
+        &self,
+        id: impl Into<String>,
+        by: ApprovalDecider,
+        grant: crate::core::authority::grants::GrantRef,
+    ) -> Result<()> {
+        self.send_approval(ApprovalDecision::Denied {
+            id: id.into(),
+            by,
+            grant: Some(grant),
+        })
+        .await
     }
 
     /// Deny a pending tool call because its interactive approval card

@@ -293,7 +293,7 @@ fn turn_metadata_includes_git_workspace_snapshot_in_repo() {
         panic!("expected text metadata block");
     };
 
-    if let Some(snapshot) = crate::tui::workspace_context::collect(root) {
+    if let Some(snapshot) = crate::git_status::collect(root) {
         assert!(
             text.contains(&format!("Git workspace: {snapshot}")),
             "turn_meta should include git snapshot: {text}"
@@ -317,7 +317,7 @@ fn turn_metadata_git_snapshot_emitted_only_on_change() {
     if init.is_err() || !init.unwrap().status.success() {
         return;
     }
-    if crate::tui::workspace_context::collect(root).is_none() {
+    if crate::git_status::collect(root).is_none() {
         return;
     }
 
@@ -435,7 +435,7 @@ fn turn_metadata_surfaces_goal_budget_only_while_goal_active() {
         let mut goal = engine.config.goal_state.lock().expect("goal lock");
         goal.create("Finish telemetry visibility".to_string(), Some(2_000))
             .expect("create goal");
-        goal.record_usage(1_000, 100);
+        goal.record_usage(1_000, 100, std::time::Instant::now());
     }
 
     let user_msg = engine

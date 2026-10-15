@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:004b3d422063 -->
+<!-- source: README.md sha256:75bb6a506af5 -->
 <div align="center">
 
 <picture>
@@ -21,9 +21,9 @@ lavoro — nel tuo terminale, con un modello ospitato o locale a tua scelta.
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-8ba2bbf.png" alt="Una sessione di terminale di Codewhale" width="760">
+<img src="web/public/codewhale-tui-0102-demo.png" alt="Una sessione di terminale di Codewhale" width="760">
 
-<sub>Acquisizione reale del terminale di una nuova installazione — nessun output simulato.</sub>
+<sub>Acquisizione reale del terminale Codewhale da una sessione demo locale configurata.</sub>
 
 </div>
 
@@ -77,7 +77,7 @@ Fix the failing tests and explain what changed.
 Lo stesso compito gira senza interfaccia da uno script o da un job di CI:
 
 ```bash
-codewhale exec "fix the failing tests and explain what changed"
+codewhale exec --auto "fix the failing tests and explain what changed"
 ```
 
 Esegui `/help` per i comandi e le scorciatoie da tastiera.
@@ -90,7 +90,7 @@ permessi si comportano allo stesso modo ovunque.
 | Comando | Cosa fa |
 | --- | --- |
 | `codewhale` | L’interfaccia interattiva nel terminale |
-| `codewhale exec "…"` | Un turno senza interfaccia da uno script o dalla CI, con JSON in streaming |
+| `codewhale exec "…"` | Un turno senza interfaccia da uno script o dalla CI; `--auto` consente gli strumenti per file e shell, `--output-format stream-json` trasmette JSON in streaming |
 | `codewhale web` | Il [client browser locale](docs/WEB.md) incluso, su `127.0.0.1` |
 | `codewhale review --pr N` | Una [revisione di pull request](docs/GITHUB_ACTION.md) a scopo consultivo; la pubblicazione è facoltativa |
 | Runtime API | Una [API HTTP locale](docs/RUNTIME_API.md) per thread, eventi e approvazioni |
@@ -137,8 +137,8 @@ Full Access rispetta comunque i limiti rigidi delle policy. La
 
 Codewhale gira sulla tua macchina con gli accessi che gli concedi. Le posture di approvazione
 e le regole del repository limitano ciò che l’agente può fare, e i comandi vengono eseguiti in
-una sandbox del sistema operativo dove supportata (Seatbelt su macOS; bubblewrap su Linux è
-facoltativo). `/preview-request` mostra la richiesta esatta, con i dati oscurati, prima che
+una sandbox del sistema operativo dove supportata (Seatbelt su macOS; bubblewrap su Linux quando è
+installato e funzionante). `/preview-request` mostra la richiesta esatta, con i dati oscurati, prima che
 venga inviato qualcosa. I prezzi dei modelli sconosciuti restano sconosciuti invece di essere
 indicati come gratuiti.
 

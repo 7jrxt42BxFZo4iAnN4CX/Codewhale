@@ -90,6 +90,21 @@ pub const HANDOFF_RELATIVE_PATH: &str = ".codewhale/handoff.md";
 /// Legacy handoff path for reading from existing installs.
 const LEGACY_HANDOFF_RELATIVE_PATH: &str = ".deepseek/handoff.md";
 
+/// The relay artifact a new session reads: the primary path when a file
+/// exists there, otherwise the legacy fallback. Returns the file to read and
+/// its workspace-relative name, so every caller names the path actually read.
+pub(crate) fn resolve_handoff_path(workspace: &Path) -> (PathBuf, &'static str) {
+    let primary = workspace.join(HANDOFF_RELATIVE_PATH);
+    if primary.exists() {
+        (primary, HANDOFF_RELATIVE_PATH)
+    } else {
+        (
+            workspace.join(LEGACY_HANDOFF_RELATIVE_PATH),
+            LEGACY_HANDOFF_RELATIVE_PATH,
+        )
+    }
+}
+
 /// Per-file size cap for `instructions = [...]` entries (#454). Mirrors
 /// the existing project-context cap in `project_context::load_context_file`
 /// so a malicious / oversized include can't blow the prompt budget on
@@ -246,14 +261,104 @@ fn translation_target_language_for_tag(locale_tag: &str) -> &'static str {
 /// path is delivered per-turn via `<turn_meta>` (see `turn_metadata_block`).
 pub(crate) fn render_environment_block(_workspace: &Path, locale_tag: &str) -> String {
     let (platform, shell) = environment_host_facts();
+    format_environment_block(locale_tag, &platform, &shell, npm_launcher_fact())
+}
 
-    format!(
+/// Format the `## Environment` block from already-resolved facts. Pure, so
+/// the plain and npm-launcher shapes can both be tested on any host.
+fn format_environment_block(
+    locale_tag: &str,
+    platform: &str,
+    shell: &str,
+    launcher: Option<&str>,
+) -> String {
+    let mut block = format!(
         "## Environment\n\
          \n\
          - lang: {locale_tag}\n\
          - platform: {platform}\n\
          - shell: {shell}"
+    );
+    if let Some(launcher) = launcher {
+        block.push_str("\n- launcher: ");
+        block.push_str(launcher);
+    }
+    block
+}
+
+/// On Windows an npm install keeps the launcher's `node.exe` as this
+/// process's parent for the whole session, and Windows ends `codewhale.exe`
+/// with it (#6827). Like `platform` and `shell`, this is stable for the life
+/// of the process and changes how commands must be written, so it belongs in
+/// the static block. It names no PID, so the prefix stays cacheable.
+const NPM_LAUNCHER_FACT: &str = "npm (node.exe is this session's parent; killing node.exe by name ends this and other npm-launched Codewhale sessions, so stop servers by PID or port)";
+
+fn launcher_fact(
+    is_windows: bool,
+    method: codewhale_release::InstallMethod,
+) -> Option<&'static str> {
+    (is_windows && method == codewhale_release::InstallMethod::Npm).then_some(NPM_LAUNCHER_FACT)
+}
+
+/// The launcher line for this process. Install detection reads the
+/// executable's path, so it runs once and only on Windows; recorded
+/// conformance environments never carry it.
+fn npm_launcher_fact() -> Option<&'static str> {
+    #[cfg(test)]
+    if RECORDED_ENVIRONMENT.with(|cell| cell.borrow().is_some()) {
+        return None;
+    }
+    if !cfg!(windows) {
+        return None;
+    }
+    static METHOD: std::sync::OnceLock<codewhale_release::InstallMethod> =
+        std::sync::OnceLock::new();
+    launcher_fact(
+        true,
+        *METHOD.get_or_init(codewhale_release::current_install_method),
     )
+}
+
+#[cfg(test)]
+mod npm_launcher_fact_tests {
+    use super::*;
+    use codewhale_release::InstallMethod;
+
+    #[test]
+    fn plain_environment_block_is_unchanged() {
+        assert_eq!(
+            format_environment_block("en", "windows", "powershell", None),
+            "## Environment\n\n- lang: en\n- platform: windows\n- shell: powershell"
+        );
+    }
+
+    #[test]
+    fn windows_npm_install_names_the_node_launcher() {
+        let block = format_environment_block(
+            "en",
+            "windows",
+            "powershell",
+            launcher_fact(true, InstallMethod::Npm),
+        );
+        assert!(
+            block.ends_with(&format!("\n- launcher: {NPM_LAUNCHER_FACT}")),
+            "{block}"
+        );
+        assert!(block.contains("stop servers by PID or port"), "{block}");
+    }
+
+    #[test]
+    fn launcher_fact_is_windows_npm_only() {
+        assert_eq!(launcher_fact(false, InstallMethod::Npm), None);
+        for method in [
+            InstallMethod::Binary,
+            InstallMethod::Cargo,
+            InstallMethod::Homebrew,
+            InstallMethod::Omarchy,
+        ] {
+            assert_eq!(launcher_fact(true, method), None);
+        }
+    }
 }
 
 /// The host facts the `## Environment` block names: this process's OS and
@@ -412,12 +517,7 @@ fn render_instructions_block(sources: &[InstructionSource]) -> Option<String> {
 /// system-prompt block. Returns `None` when the file is absent or empty so
 /// callers can keep the default-uncluttered prompt for fresh workspaces.
 fn load_handoff_block(workspace: &Path) -> Option<String> {
-    let primary = workspace.join(HANDOFF_RELATIVE_PATH);
-    let path = if primary.exists() {
-        primary
-    } else {
-        workspace.join(LEGACY_HANDOFF_RELATIVE_PATH)
-    };
+    let (path, shown) = resolve_handoff_path(workspace);
     // The relay is workspace-writable, so it gets the same per-file cap as
     // an instructions file rather than an unbounded read into the prompt.
     let (raw, full_len) = read_prompt_file_bounded(&path, INSTRUCTIONS_FILE_MAX_BYTES).ok()?;
@@ -437,13 +537,17 @@ fn load_handoff_block(workspace: &Path) -> Option<String> {
         "shorten the relay artifact",
     );
     Some(format!(
-        "## Previous Session Relay\n\nThe previous session in this workspace left a relay artifact at `{HANDOFF_RELATIVE_PATH}`. Consider it the first artifact to read on this turn — open blockers, in-flight changes, and recent decisions live there. Update or rewrite it before exiting if state changes materially.\n\n{relay}"
+        "## Previous Session Relay\n\nThe previous session in this workspace left a relay artifact at `{shown}`. Consider it the first artifact to read on this turn — open blockers, in-flight changes, and recent decisions live there. Update or rewrite it before exiting if state changes materially.\n\n{relay}"
     ))
 }
 
 /// Load the structured user-global constitution, if present, and render it as
 /// its own model-facing block.
 pub(crate) fn load_user_constitution_block() -> Option<String> {
+    load_active_user_constitution()?.render_block(None)
+}
+
+pub(crate) fn load_active_user_constitution() -> Option<Box<codewhale_config::UserConstitution>> {
     if user_constitution_disabled_by_setup_state() {
         return None;
     }
@@ -460,9 +564,7 @@ pub(crate) fn load_user_constitution_block() -> Option<String> {
     };
 
     match codewhale_config::UserConstitution::load_from(&path) {
-        codewhale_config::UserConstitutionLoad::Loaded(constitution) => {
-            constitution.render_block(None)
-        }
+        codewhale_config::UserConstitutionLoad::Loaded(constitution) => Some(constitution),
         codewhale_config::UserConstitutionLoad::Missing
         | codewhale_config::UserConstitutionLoad::Empty => None,
         codewhale_config::UserConstitutionLoad::Invalid(err) => {
@@ -486,12 +588,7 @@ pub(crate) fn load_user_constitution_block() -> Option<String> {
 
 fn user_constitution_disabled_by_setup_state() -> bool {
     match codewhale_config::SetupState::load() {
-        Ok(Some(state)) => matches!(
-            state.constitution_choice,
-            codewhale_config::ConstitutionChoice::Bundled
-                | codewhale_config::ConstitutionChoice::Deferred
-                | codewhale_config::ConstitutionChoice::ExpertOverride
-        ),
+        Ok(Some(state)) => !state.constitution_choice.applies_user_global(),
         Ok(None) => false,
         Err(err) => {
             tracing::warn!(
@@ -584,6 +681,11 @@ pub fn set_base_prompt_override(s: String) -> Result<(), String> {
 // also set an explicit opt-in flag (`CODEWHALE_ALLOW_BASE_PROMPT_OVERRIDE`).
 // This keeps replacing the global Constitution a deliberate, auditable act
 // rather than something a stray file can do.
+
+/// Target lane for the once-per-version constitution checkpoint. Bumped per
+/// release when the bundled constitution materially changes, so existing users
+/// re-acknowledge it once. 0.9.4 re-ships the Fleet/operate constitution.
+pub const CONSTITUTION_CHECKPOINT_VERSION: &str = "0.9.4";
 
 /// Relative path, under the config directory, of the optional base-prompt
 /// (constitution) override file.
@@ -1476,8 +1578,10 @@ mod tests {
     use tempfile::tempdir;
 
     /// Discriminator unique to the injected relay block (not present in the
-    /// agent prompt's own discussion of the convention).
-    const HANDOFF_BLOCK_MARKER: &str = "left a relay artifact at `.codewhale/handoff.md`";
+    /// agent prompt's own discussion of the convention). It stops before the
+    /// path because the block names whichever file was read; the tests that
+    /// care about the path assert it themselves.
+    const HANDOFF_BLOCK_MARKER: &str = "left a relay artifact at `";
 
     // Config-directory prompt override resolution (#3638). These exercise the
     // pure file resolver only; the global install path is intentionally not
@@ -2595,7 +2699,7 @@ mod tests {
 
         let mut state = codewhale_config::SetupState::default();
         state.complete_constitution_checkpoint(
-            crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+            crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
             codewhale_config::ConstitutionChoice::Bundled,
         );
         state
@@ -2953,6 +3057,30 @@ mod tests {
         assert!(prompt.contains(HANDOFF_BLOCK_MARKER));
         assert!(prompt.contains("Finish #32."));
         assert!(prompt.contains("write the basic version"));
+        // Only the legacy file exists, so the block must name it rather
+        // than send the model to a primary file that is not there.
+        assert!(prompt.contains("left a relay artifact at `.deepseek/handoff.md`"));
+        assert!(!prompt.contains("left a relay artifact at `.codewhale/handoff.md`"));
+    }
+
+    #[test]
+    fn primary_handoff_wins_over_legacy_and_is_named() {
+        let tmp = tempdir().expect("tempdir");
+        let workspace = tmp.path();
+        for (dir, body) in [
+            (".codewhale", "# Session relay\n\nprimary relay body\n"),
+            (".deepseek", "# Session relay\n\nlegacy relay body\n"),
+        ] {
+            std::fs::create_dir_all(workspace.join(dir)).unwrap();
+            std::fs::write(workspace.join(dir).join("handoff.md"), body).unwrap();
+        }
+
+        let prompt = system_prompt_flat_text(&system_prompt_for_mode_with_context(workspace, None));
+
+        assert!(prompt.contains("left a relay artifact at `.codewhale/handoff.md`"));
+        assert!(prompt.contains("primary relay body"));
+        assert!(!prompt.contains("legacy relay body"));
+        assert!(!prompt.contains("left a relay artifact at `.deepseek/handoff.md`"));
     }
 
     #[test]

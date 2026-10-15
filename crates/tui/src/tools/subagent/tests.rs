@@ -323,23 +323,42 @@ async fn child_execution_identity_cannot_replace_a_waiter_or_answer_a_later_call
             .register_child_approval("other", &first, "bash", "wrong owner")
             .is_err()
     );
-    assert!(manager.resolve_child_approval(&first, ChildApprovalOutcome::Denied));
+    assert!(manager.resolve_child_approval(
+        &first,
+        ChildApprovalOutcome::Denied {
+            by: crate::approval_log::ApprovalDecider::User
+        }
+    ));
     assert!(matches!(
         receiver.await.unwrap(),
-        ChildApprovalOutcome::Denied
+        ChildApprovalOutcome::Denied {
+            by: crate::approval_log::ApprovalDecider::User
+        }
     ));
     let (_, mut receiver) = manager
         .register_child_approval("child", &second, "bash", "two")
         .unwrap();
-    assert!(!manager.resolve_child_approval(&first, ChildApprovalOutcome::Approved));
+    assert!(!manager.resolve_child_approval(
+        &first,
+        ChildApprovalOutcome::Approved {
+            by: crate::approval_log::ApprovalDecider::User
+        }
+    ));
     assert!(matches!(
         receiver.try_recv(),
         Err(tokio::sync::oneshot::error::TryRecvError::Empty)
     ));
-    assert!(manager.resolve_child_approval(&second, ChildApprovalOutcome::Approved));
+    assert!(manager.resolve_child_approval(
+        &second,
+        ChildApprovalOutcome::Approved {
+            by: crate::approval_log::ApprovalDecider::User
+        }
+    ));
     assert!(matches!(
         receiver.await.unwrap(),
-        ChildApprovalOutcome::Approved
+        ChildApprovalOutcome::Approved {
+            by: crate::approval_log::ApprovalDecider::User
+        }
     ));
 }
 
@@ -4395,8 +4414,25 @@ fn test_parse_spawn_request_rejects_invalid_child_thinking() {
     });
     let err = parse_spawn_request(&input).expect_err("invalid thinking should fail");
     assert!(
-        err.to_string()
-            .contains("thinking must be one of: inherit, auto, off, low, medium, high, max")
+        err.to_string().contains(
+            "thinking must be one of: inherit, auto, off, low, medium, high, xhigh, max, ultra"
+        ),
+        "{err}"
+    );
+}
+
+#[test]
+fn thinking_schema_values_all_parse() {
+    // The rejection message and the schema enum both read this list. A value
+    // listed there and refused by the parser would send the model in a loop.
+    for value in SUBAGENT_THINKING_SCHEMA_VALUES {
+        SubAgentThinking::parse(value)
+            .unwrap_or_else(|err| panic!("advertised thinking value {value:?} is refused: {err}"));
+    }
+    let manager = Arc::new(RwLock::new(SubAgentManager::new(PathBuf::from("."), 1)));
+    assert_eq!(
+        AgentTool::new(manager, stub_runtime()).input_schema()["properties"]["thinking"]["enum"],
+        json!(SUBAGENT_THINKING_SCHEMA_VALUES)
     );
 }
 
@@ -5981,9 +6017,7 @@ fn subagent_tool_schemas_advertise_real_type_and_role_vocabulary() {
         "offset",
         "profile",
         "prompt",
-        "remote",
         "resume_from",
-        "runtime",
         "thinking",
         "type",
         "until",
@@ -7498,7 +7532,7 @@ async fn issue_5633_catalog_and_dispatch_are_one_grant() {
         // can never call what it cannot see. `Bash`/`exec_shell` are hidden
         // execution-compatibility aliases, so they never appear in any
         // catalog — under a non-Full grant they are still refused by name.
-        for name in ["terminal/run", "terminal/send", "task_shell_start"] {
+        for name in ["terminal/run", "terminal/send"] {
             assert_eq!(
                 catalog.contains(name),
                 full_shell,
@@ -7980,7 +8014,6 @@ fn every_named_role_has_one_complete_capability_based_surface() {
         "diagnostics",
         "edit",
         "file_search",
-        "fim_edit",
         "finance",
         "get_goal",
         "github",
@@ -8007,7 +8040,6 @@ fn every_named_role_has_one_complete_capability_based_surface() {
         "session_get",
         "session_search",
         "speech",
-        "task_shell_start",
         "task_shell_wait",
         "tasks",
         "terminal/cancel",
@@ -8325,6 +8357,7 @@ fn small_surface_starts_with_core_tools_and_read_only_goal_control() {
             "agent",
             "bash",
             "edit",
+            "file_search",
             "get_goal",
             "load_skill",
             "read",
@@ -8707,6 +8740,7 @@ fn small_surface_depth_cap_removes_only_agent() {
         [
             "bash",
             "edit",
+            "file_search",
             "get_goal",
             "load_skill",
             "read",
@@ -9623,7 +9657,7 @@ async fn scout_shell_respects_parent_shell_and_network_ceilings() {
 }
 
 #[test]
-fn implementer_catalog_inherits_patch_and_fim_when_enabled() {
+fn implementer_catalog_hides_fim_on_unsupported_route() {
     let tmp = tempdir().expect("tempdir");
     let mut runtime =
         stub_runtime().with_agent_tool_surface_options(enabled_agent_surface_options());
@@ -9638,12 +9672,16 @@ fn implementer_catalog_inherits_patch_and_fim_when_enabled() {
 
     let tools = registry.tools_for_model(&FleetRole::Builder);
     let names = tool_names(tools.clone());
-    for name in ["read", "write", "edit", "fim_edit"] {
+    for name in ["read", "write", "edit"] {
         assert!(
             names.contains(name),
             "Implementer should inherit write-capable tool {name}"
         );
     }
+    assert!(
+        !names.contains("fim_edit"),
+        "Implementer must not advertise FIM on its unsupported route"
+    );
     // The lowercase write/edit primitives carry their own path-bound schemas;
     // the legacy action-enum File family stays registered for transcripts.
     for name in ["write", "edit"] {
@@ -11572,6 +11610,142 @@ fn persist_state_rejects_state_path_outside_state_root() {
         .expect_err("outside state path should fail");
 
     assert!(format!("{err:#}").contains("must stay within state root"));
+}
+
+/// A user who keeps application state on another volume makes the workspace's
+/// `.codewhale` a junction, so `.codewhale/state/...` resolves inside that
+/// target. That target is where the state lives; refusing it failed every
+/// child at step 0.
+#[cfg(windows)]
+#[test]
+fn state_path_accepts_a_state_root_relocated_behind_a_junction() {
+    let tmp = tempdir().expect("tempdir");
+    let workspace = tmp.path().join("workspace");
+    let relocated = tmp.path().join("relocated-state");
+    std::fs::create_dir_all(&workspace).expect("mkdir workspace");
+    std::fs::create_dir_all(&relocated).expect("mkdir relocated");
+    let link = workspace.join(".codewhale");
+    let output = Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(&link)
+        .arg(&relocated)
+        .output()
+        .expect("invoke Windows junction creation");
+    assert!(
+        output.status.success(),
+        "failed to create junction: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let state_path = checked_subagent_state_path(
+        &workspace,
+        &std::path::Path::new(".codewhale")
+            .join("state")
+            .join(SUBAGENT_STATE_FILE),
+    )
+    .expect("a relocated state root must pass containment");
+
+    let resolved_target = relocated.canonicalize().expect("canonical target");
+    assert!(
+        state_path.starts_with(&resolved_target),
+        "state must land in the junction target {}: {}",
+        resolved_target.display(),
+        state_path.display()
+    );
+
+    // The re-root covers that one user-owned link, not the boundary: a path
+    // that resolves outside both roots is still refused.
+    let escaped = std::path::Path::new("..")
+        .join("escaped")
+        .join(SUBAGENT_STATE_FILE);
+    assert!(
+        checked_subagent_state_path(&workspace, &escaped).is_err(),
+        "an escape past both roots must still fail"
+    );
+
+    // `mklink /J` accepts a target that does not exist yet, and creating the
+    // junction before the first run is a normal setup order. Both sides then
+    // resolve to the link's own spelling, so containment holds until the
+    // target exists.
+    let dangling_workspace = tmp.path().join("dangling");
+    let dangling_target = tmp.path().join("not-created-yet");
+    std::fs::create_dir_all(&dangling_workspace).expect("mkdir dangling workspace");
+    let output = Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(dangling_workspace.join(".codewhale"))
+        .arg(&dangling_target)
+        .output()
+        .expect("invoke Windows junction creation");
+    assert!(
+        output.status.success(),
+        "failed to create dangling junction: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !dangling_target.exists(),
+        "the probe needs a target that does not exist yet"
+    );
+    checked_subagent_state_path(
+        &dangling_workspace,
+        &std::path::Path::new(".codewhale")
+            .join("state")
+            .join(SUBAGENT_STATE_FILE),
+    )
+    .expect("a junction whose target is not created yet must pass containment");
+}
+
+/// The guards that run after `checked_subagent_state_path` must reach the same
+/// root decision it did. Before they did, the containment check passed and the
+/// write still failed with the same message on the child's first step.
+#[cfg(windows)]
+#[test]
+fn state_writes_follow_a_relocated_state_root() {
+    let tmp = tempdir().expect("tempdir");
+    let workspace = tmp.path().join("workspace");
+    let relocated = tmp.path().join("relocated-state");
+    std::fs::create_dir_all(&workspace).expect("mkdir workspace");
+    std::fs::create_dir_all(&relocated).expect("mkdir relocated");
+    let link = workspace.join(".codewhale");
+    let output = Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(&link)
+        .arg(&relocated)
+        .output()
+        .expect("invoke Windows junction creation");
+    assert!(
+        output.status.success(),
+        "failed to create junction: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // The manager state file: write_json_atomic and read_subagent_state_file.
+    let mut manager = SubAgentManager::new(workspace.clone(), 1);
+    manager
+        .persist_state_synchronously()
+        .expect("persist under a relocated state root");
+    manager
+        .load_state()
+        .expect("load under a relocated state root");
+
+    // The child's transcript: the pre-create and append guards.
+    let state_root = normalize_subagent_workspace(&workspace);
+    let writer = SubAgentTranscriptArtifactWriter::create(&state_root, "agent_relocated")
+        .expect("transcript create under a relocated state root");
+    append_private_subagent_transcript(
+        &state_root,
+        &writer.path,
+        b"{\"kind\":\"message\"}\n",
+        true,
+    )
+    .expect("transcript append under a relocated state root");
+
+    let resolved_target = relocated.canonicalize().expect("canonical target");
+    assert!(
+        writer.path.starts_with(&resolved_target),
+        "the transcript must land in the junction target {}: {}",
+        resolved_target.display(),
+        writer.path.display()
+    );
 }
 
 #[test]
@@ -15356,7 +15530,7 @@ pub(crate) fn stub_runtime() -> SubAgentRuntime {
         fork_context: None,
         parent_mode: AppMode::Agent,
         auto_review_policy: std::sync::Arc::new(
-            crate::tui::auto_review::AutoReviewPolicy::default(),
+            crate::core::authority::auto_review::AutoReviewPolicy::default(),
         ),
         parent_can_prompt: false,
         approval_receipt_store: Some(Ok(crate::approval_log::ApprovalReceiptStore::new(
@@ -20074,7 +20248,12 @@ async fn status_waiting_is_derived_from_pending_store() {
         None,
         Some("bash".to_string()),
     );
-    assert!(inner.resolve_child_approval(&approval_id, ChildApprovalOutcome::Approved));
+    assert!(inner.resolve_child_approval(
+        &approval_id,
+        ChildApprovalOutcome::Approved {
+            by: crate::approval_log::ApprovalDecider::User
+        }
+    ));
     let record = inner.get_worker_record(&agent_id).expect("worker record");
     assert_ne!(record.status, AgentWorkerStatus::WaitingForUser);
     assert!(record.pending_request.is_none());
@@ -22040,8 +22219,8 @@ fn the_launched_authority_is_the_one_the_spawn_boundary_accepts() {
 /// Ceilings are in serialized bytes (deterministic, unlike token estimates);
 /// the stale token figure in workflows/stopship.workflow.js:1-5 is
 /// superseded by these tests.
-/// Measured 80,856B on 2026-08-02 (commit body has the receipt); +10%.
-const READ_ONLY_CHILD_ENVELOPE_BYTE_CEILING: usize = 89_000;
+/// Measured 80,856B on 2026-08-02; the ceiling includes the display-only bash description.
+const READ_ONLY_CHILD_ENVELOPE_BYTE_CEILING: usize = 89_112;
 /// Measured 85,913B on 2026-09-15 with the always-on session recall tools
 /// (#5715). Keep the next increase visible instead of adding another broad
 /// margin. Re-measured at 87,529B on 2026-09-17, with the bounded Git
@@ -22070,7 +22249,17 @@ const READ_ONLY_CHILD_ENVELOPE_BYTE_CEILING: usize = 89_000;
 // The wait-bound disclosure (#6850) adds exactly 222 UTF-8 bytes to the
 // agent schema on top of the rewrites; the runtime measurement below still
 // detects unrelated growth.
-const PARENT_SURFACE_BYTE_CEILING: usize = 90_343;
+// Re-measured 2026-10-08 at 90,667B on macOS with `pandoc` and `tesseract`
+// installed. The catalog includes `pandoc_convert` (1,347B) and `image_ocr`
+// (723B) only when those programs are on the host
+// (`dependencies::host_tool_available`), so a machine without them, including
+// the hosted CI runners, measures about 2,070B lower and cannot trip this
+// ceiling. The figure before this batch was already 90,552B on the same
+// machine, 209B over the previous ceiling, which only CI had been checking.
+// The 0.10.2 batch adds 227B: +145B for the `agent` tool sentence that
+// restores the legacy Operate contract, less 30B from the background-shell
+// schema edits, plus 112B for the display-only bash description. The ceiling keeps the 13B Linux margin.
+const PARENT_SURFACE_BYTE_CEILING: usize = 90_792;
 
 #[tokio::test]
 async fn read_only_child_envelope_stays_within_measured_ceiling() {
@@ -23797,18 +23986,35 @@ async fn refuse_worktree_spawn_and_expect_cleanup(repo: &tempfile::TempDir, bran
 
     // The removal runs on the blocking pool, off the async worker.
     let deadline = std::time::Instant::now() + Duration::from_secs(30);
-    let worktrees = loop {
-        let worktrees = git_stdout(repo.path(), &["worktree", "list", "--porcelain"]);
-        let count = worktrees
-            .lines()
-            .filter(|line| line.starts_with("worktree "))
-            .count();
-        let branch_gone = git_stdout(repo.path(), &["branch", "--list", branch]).is_empty();
-        if (count == 1 && branch_gone) || std::time::Instant::now() >= deadline {
-            break worktrees;
+    let stdout_if_ok = |args: &[&str]| {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(repo.path())
+            .output()
+            .expect("git command should run");
+        output
+            .status
+            .success()
+            .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+    };
+    loop {
+        let only_main_left =
+            stdout_if_ok(&["worktree", "list", "--porcelain"]).is_some_and(|worktrees| {
+                worktrees
+                    .lines()
+                    .filter(|line| line.starts_with("worktree "))
+                    .count()
+                    == 1
+            });
+        let branch_gone = stdout_if_ok(&["branch", "--list", branch])
+            .as_deref()
+            .is_some_and(str::is_empty);
+        if (only_main_left && branch_gone) || std::time::Instant::now() >= deadline {
+            break;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
-    };
+    }
+    let worktrees = git_stdout(repo.path(), &["worktree", "list", "--porcelain"]);
     assert_eq!(
         worktrees
             .lines()
@@ -23882,7 +24088,7 @@ mod child_permission_gate {
             crate::approval_log::ApprovalReceiptStore::new(tmp.path().join("sessions")),
         ));
         runtime = runtime.with_permission_posture(
-            std::sync::Arc::new(crate::tui::auto_review::AutoReviewPolicy::default()),
+            std::sync::Arc::new(crate::core::authority::auto_review::AutoReviewPolicy::default()),
             parent_can_prompt,
         );
         let manager = Arc::clone(&runtime.manager);
@@ -24333,7 +24539,7 @@ mod child_permission_gate {
         registry.gate_runtime.approval_receipt_store = None;
 
         let result = tokio::time::timeout(
-            std::time::Duration::from_millis(250),
+            std::time::Duration::from_secs(30),
             registry.execute("agent_gate", "bash", json!({"command": "echo gated"})),
         )
         .await
@@ -24352,10 +24558,21 @@ mod child_permission_gate {
 
     #[tokio::test]
     async fn ask_with_a_prompting_host_raises_the_prompt_and_honours_the_answer() {
-        for (answer, expect_ok) in [
-            (ChildApprovalOutcome::Approved, true),
-            (ChildApprovalOutcome::Denied, false),
-        ] {
+        use crate::approval_log::ApprovalDecider;
+        for (by, expect_ok) in [
+            ApprovalDecider::User,
+            ApprovalDecider::SessionRule,
+            ApprovalDecider::Posture,
+            ApprovalDecider::Host,
+        ]
+        .into_iter()
+        .flat_map(|by| [(by, true), (by, false)])
+        {
+            let answer = if expect_ok {
+                ChildApprovalOutcome::Approved { by }
+            } else {
+                ChildApprovalOutcome::Denied { by }
+            };
             let (registry, mut rx, manager) =
                 worker_registry(ApprovalMode::Suggest, false, true, None);
             let (receipt_store, session_id) = receipt_context(&registry);
@@ -24438,10 +24655,22 @@ mod child_permission_gate {
                 (true, Ok(output)) => assert!(output.contains("gated"), "{output}"),
                 (false, Err(err)) => {
                     assert!(
-                        matches!(err.downcast_ref::<ToolError>(), Some(ToolError::PermissionDenied { message })
-                            if message.starts_with("Tool 'bash' denied by user — ")),
+                        matches!(
+                            err.downcast_ref::<ToolError>(),
+                            Some(ToolError::PermissionDenied { .. })
+                        ),
                         "{err}"
                     );
+                    if by == ApprovalDecider::User {
+                        // Match the typed message: Display prefixes
+                        // "Failed to authorize tool execution: ".
+                        assert!(
+                            matches!(err.downcast_ref::<ToolError>(),
+                                Some(ToolError::PermissionDenied { message })
+                                    if message.starts_with("Tool 'bash' denied by user — ")),
+                            "{err}"
+                        );
+                    }
                 }
                 (true, Err(err)) => panic!("approved call must run: {err}"),
                 (false, Ok(output)) => panic!("denied call must not run: {output}"),
@@ -24457,6 +24686,7 @@ mod child_permission_gate {
                 ApprovalOutcome::Denied
             };
             assert_eq!(replay.completed[0].outcome, expected_outcome);
+            assert_eq!(replay.completed[0].decided_by, Some(by));
             assert!(matches!(
                 &replay.completed[0].ask,
                 ApprovalReceipt::Asked { tool_name, .. } if tool_name == "bash"
@@ -24506,7 +24736,7 @@ mod child_permission_gate {
         let expected = child_approval_keys("agent_gate", "bash", &input);
         let manager_for_answer = Arc::clone(&manager);
         let answerer = tokio::spawn(async move {
-            tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            tokio::time::timeout(CHILD_APPROVAL_EVENT_READINESS, async {
                 while let Some(event) = rx.recv().await {
                     if let Event::ApprovalRequired {
                         id,
@@ -24515,10 +24745,12 @@ mod child_permission_gate {
                         ..
                     } = event
                     {
-                        manager_for_answer
-                            .write()
-                            .await
-                            .resolve_child_approval(&id, ChildApprovalOutcome::Denied);
+                        manager_for_answer.write().await.resolve_child_approval(
+                            &id,
+                            ChildApprovalOutcome::Denied {
+                                by: crate::approval_log::ApprovalDecider::User,
+                            },
+                        );
                         return (approval_key, approval_grouping_key);
                     }
                 }
@@ -24644,7 +24876,12 @@ mod child_permission_gate {
                     .task_handle
                     .is_some()
             );
-            assert!(!manager.resolve_child_approval(&approval_id, ChildApprovalOutcome::Approved));
+            assert!(!manager.resolve_child_approval(
+                &approval_id,
+                ChildApprovalOutcome::Approved {
+                    by: crate::approval_log::ApprovalDecider::User
+                }
+            ));
         }
         let requested = manager.read().await.get_result(&agent_id).expect("agent");
         let settled = settle_requested_child(&manager, requested).await;
@@ -24668,12 +24905,12 @@ mod child_permission_gate {
         );
         assert_completed_receipt(&receipt_store, &session_id, ApprovalOutcome::Cancelled);
         // A late answer finds nobody waiting and applies to nothing.
-        assert!(
-            !manager
-                .write()
-                .await
-                .resolve_child_approval(&approval_id, ChildApprovalOutcome::Approved)
-        );
+        assert!(!manager.write().await.resolve_child_approval(
+            &approval_id,
+            ChildApprovalOutcome::Approved {
+                by: crate::approval_log::ApprovalDecider::User
+            }
+        ));
     }
 
     #[tokio::test]
@@ -24729,12 +24966,12 @@ mod child_permission_gate {
             let id = next_child_approval_id(&mut rx).await;
             // The person takes several tool timeouts to decide.
             tokio::time::sleep(Duration::from_secs(3)).await;
-            assert!(
-                manager_for_answer
-                    .write()
-                    .await
-                    .resolve_child_approval(&id, ChildApprovalOutcome::Approved)
-            );
+            assert!(manager_for_answer.write().await.resolve_child_approval(
+                &id,
+                ChildApprovalOutcome::Approved {
+                    by: crate::approval_log::ApprovalDecider::User
+                }
+            ));
         });
         let output = run_tool_with_person_aware_timeout(
             tool_timeout,
@@ -24807,7 +25044,7 @@ mod child_permission_gate {
             "retirement waits for channel capacity instead of dropping the event"
         );
         assert!(matches!(rx.recv().await, Some(Event::Status { .. })));
-        tokio::time::timeout(Duration::from_secs(1), delivery)
+        tokio::time::timeout(CHILD_APPROVAL_EVENT_READINESS, delivery)
             .await
             .expect("retirement is delivered once the host drains");
         assert!(matches!(
@@ -24880,12 +25117,12 @@ mod child_permission_gate {
             let approval_id = next_child_approval_id(&mut rx).await;
             std::fs::remove_file(&log_path).expect("remove log after durable ask");
             std::fs::create_dir(&log_path).expect("replace log with unwritable directory");
-            assert!(
-                manager_for_answer
-                    .write()
-                    .await
-                    .resolve_child_approval(&approval_id, ChildApprovalOutcome::Approved)
-            );
+            assert!(manager_for_answer.write().await.resolve_child_approval(
+                &approval_id,
+                ChildApprovalOutcome::Approved {
+                    by: crate::approval_log::ApprovalDecider::User
+                }
+            ));
         });
 
         let err = registry
@@ -25268,9 +25505,19 @@ mod child_permission_gate {
                 ));
                 let mut manager = manager.write().await;
                 assert_eq!(manager.pending_child_approvals(), 1);
-                assert!(manager.resolve_child_approval(&id, ChildApprovalOutcome::Denied));
+                assert!(manager.resolve_child_approval(
+                    &id,
+                    ChildApprovalOutcome::Denied {
+                        by: crate::approval_log::ApprovalDecider::User
+                    }
+                ));
                 assert!(
-                    !manager.resolve_child_approval(&id, ChildApprovalOutcome::Approved),
+                    !manager.resolve_child_approval(
+                        &id,
+                        ChildApprovalOutcome::Approved {
+                            by: crate::approval_log::ApprovalDecider::User
+                        }
+                    ),
                     "a late allow cannot replace the same denied request"
                 );
                 id
@@ -25363,7 +25610,7 @@ mod child_permission_gate {
             "rm -rf {}",
             shlex::try_quote(&build.to_string_lossy()).unwrap()
         );
-        // Parent classification is covered in tui::auto_review; this runtime
+        // Parent classification is covered in core::authority::auto_review; this runtime
         // test proves the child actually executes and preserves the gate receipt.
         registry
             .execute("agent_gate", "bash", json!({"command": command}))
@@ -25375,21 +25622,18 @@ mod child_permission_gate {
 
     /// Review finding on d1655c424: judging agent calls as foreground let a
     /// detached agent run catastrophic work. Nobody watches a detached agent,
-    /// so the floor holds for it in every posture, Full Access included.
+    /// so the floor holds for it in the reviewing postures. Full Access
+    /// judges the call exactly as the parent turn does and does not apply
+    /// the floor.
     #[tokio::test]
-    async fn a_detached_agents_catastrophic_shell_is_held_in_every_posture() {
+    async fn a_detached_agents_catastrophic_shell_is_held_in_the_reviewing_postures() {
         for mode in [
-            ApprovalMode::Bypass,
             ApprovalMode::Auto,
             ApprovalMode::Suggest,
             ApprovalMode::Never,
         ] {
-            let (registry, mut rx, manager) = worker_registry(
-                mode,
-                mode == ApprovalMode::Bypass,
-                false,
-                Some(unreachable_client()),
-            );
+            let (registry, mut rx, manager) =
+                worker_registry(mode, false, false, Some(unreachable_client()));
             assert!(registry.gate_runtime.foreground_children.is_none());
             let (receipt_store, session_id) = receipt_context(&registry);
             for (index, command) in [
@@ -25455,6 +25699,22 @@ mod child_permission_gate {
                 "{mode:?}: the floor never reaches a guardian: {receipts:?}"
             );
         }
+
+        // Full Access: the detached call runs — only the harmless fixture is
+        // dispatched, so a regression can never touch a real system path.
+        {
+            let (registry, mut rx, _) = worker_registry(ApprovalMode::Bypass, true, false, None);
+            assert!(registry.gate_runtime.foreground_children.is_none());
+            registry
+                .execute(
+                    "agent_gate",
+                    "bash",
+                    json!({ "command": "dd if=/dev/zero of=/dev/null count=0" }),
+                )
+                .await
+                .expect("Full Access runs a detached destructive call");
+            assert!(drain_gate_receipts(&mut rx).is_empty());
+        }
     }
 
     /// Review finding on d1655c424: the posture was read once, before the
@@ -25494,12 +25754,12 @@ mod child_permission_gate {
             };
             // The person tightens Permissions, then answers the open card.
             live.switch_for_tests(ApprovalMode::Never);
-            assert!(
-                manager
-                    .write()
-                    .await
-                    .resolve_child_approval(&id, ChildApprovalOutcome::Approved)
-            );
+            assert!(manager.write().await.resolve_child_approval(
+                &id,
+                ChildApprovalOutcome::Approved {
+                    by: crate::approval_log::ApprovalDecider::User
+                }
+            ));
             id
         };
         let (result, id) = tokio::join!(call, answer);
@@ -25515,16 +25775,18 @@ mod child_permission_gate {
         );
         assert_completed_receipt(&receipt_store, &session_id, ApprovalOutcome::ApprovedOnce);
         assert!(
-            !manager
-                .write()
-                .await
-                .resolve_child_approval(&id, ChildApprovalOutcome::Approved),
+            !manager.write().await.resolve_child_approval(
+                &id,
+                ChildApprovalOutcome::Approved {
+                    by: crate::approval_log::ApprovalDecider::User
+                }
+            ),
             "a late allow cannot revive the already refused call"
         );
     }
 
     #[tokio::test]
-    async fn full_access_runs_ordinary_shell_but_still_hard_blocks_the_safety_floor() {
+    async fn full_access_runs_ordinary_and_destructive_shell_without_a_prompt() {
         let (registry, mut rx, _) = worker_registry(ApprovalMode::Bypass, true, true, None);
         let output = registry
             .execute("agent_gate", "bash", json!({"command": "echo full-access"}))
@@ -25532,21 +25794,28 @@ mod child_permission_gate {
             .expect("Full Access runs ordinary shell without a prompt");
         assert!(output.contains("full-access"), "{output}");
         assert!(drain_gate_receipts(&mut rx).is_empty());
-        // This harness agent is detached (no foreground turn owns it), and
-        // destructive detached work holds in every posture, exactly as it
-        // does for a detached parent start: Full Access fails closed here.
-        let err = registry
-            .execute("agent_gate", "bash", json!({"command": "rm -rf /usr"}))
-            .await
-            .expect_err("destructive background shell stays blocked in Full Access");
-        assert!(
-            err.to_string().to_lowercase().contains("destructive")
-                || err.to_string().to_lowercase().contains("safety"),
-            "{err}"
+        // A forced recursive delete is a destructive action kind, and this
+        // harness agent is detached (no foreground turn owns it). Full Access
+        // still runs it: the floor guards the reviewing postures, not Bypass.
+        let workspace = registry.gate_runtime.context.workspace.clone();
+        let doomed = workspace.join("full-access-doomed");
+        std::fs::create_dir_all(&doomed).unwrap();
+        #[cfg(windows)]
+        let command = format!(
+            "Remove-Item -LiteralPath '{}' -Recurse -Force",
+            doomed.to_string_lossy().replace('\'', "''")
         );
-        let receipts = drain_gate_receipts(&mut rx);
-        assert_eq!(receipts.len(), 1, "{receipts:?}");
-        assert_eq!(receipts[0].1, ToolGateVerdict::Denied);
+        #[cfg(not(windows))]
+        let command = format!(
+            "rm -rf {}",
+            shlex::try_quote(&doomed.to_string_lossy()).unwrap()
+        );
+        registry
+            .execute("agent_gate", "bash", json!({ "command": command }))
+            .await
+            .expect("Full Access runs a detached destructive call");
+        assert!(!doomed.exists(), "the cleanup actually ran");
+        assert!(drain_gate_receipts(&mut rx).is_empty());
     }
 }
 
@@ -26084,6 +26353,18 @@ async fn scout_activation_makes_grep_files_dispatchable() {
         )
         .await
         .expect("grep_files must dispatch through the real tool after the taught activation");
+}
+
+#[test]
+fn agent_tool_description_states_the_operate_child_approval_rule() {
+    // `apply_session_spawn_defaults` delegates edits and the bounded Run
+    // checks to a root Operate child; other shell follows the session.
+    let text = super::AGENT_TOOL_DESCRIPTION.as_str();
+    assert!(!text.contains("arbitrary shell remains gated"), "{text}");
+    assert!(
+        text.contains("any other shell command follows the session's approval settings"),
+        "{text}"
+    );
 }
 
 #[test]

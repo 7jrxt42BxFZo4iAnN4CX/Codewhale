@@ -432,7 +432,7 @@ mod tests {
         use crate::tui::app::TuiOptions;
 
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         let mut app = App::new(options, &Config::default());
         let result = try_dispatch_user_command(&mut app, "/nonexistent-thing-12345");
@@ -448,7 +448,7 @@ mod tests {
 
     fn test_options(workspace: PathBuf) -> crate::tui::app::TuiOptions {
         crate::tui::app::TuiOptions {
-            ..crate::test_support::test_tui_options(workspace)
+            ..crate::tui::test_support::test_tui_options(workspace)
         }
     }
 
@@ -550,7 +550,7 @@ mod tests {
         );
 
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(ws.clone())
+            ..crate::tui::test_support::test_tui_options(ws.clone())
         };
         let mut app = App::new(options, &Config::default());
         let result = try_dispatch_user_command(&mut app, "/hello world");

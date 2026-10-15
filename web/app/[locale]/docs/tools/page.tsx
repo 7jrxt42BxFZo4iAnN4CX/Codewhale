@@ -33,6 +33,11 @@ export default async function ToolsPage({ params }: { params: Promise<{ locale: 
           ))}
         </div>
       </section>
+      <section id="lsp" className="scroll-mt-32">
+        <h2 className="font-display text-2xl mb-1">{t(TOOLS_COPY.lspTitle)}</h2>
+        <p className="text-ink-soft mt-3 leading-relaxed">{t(TOOLS_COPY.lspBody)}</p>
+        <a href="https://github.com/codewhale-hq/CodeWhale/blob/main/docs/LSP_PHP_CUSTOM.md" className="body-link">{t(TOOLS_COPY.lspDocs)}</a>
+      </section>
       <section id="compatibility" className="scroll-mt-32">
         <h2 className="font-display text-2xl mb-1">{t(TOOLS_COPY.compatibilityTitle)}</h2>
         <p className="text-ink-soft mt-3 leading-relaxed">{t(TOOLS_COPY.compatibility)}</p>
