@@ -2764,6 +2764,7 @@ mod tests {
             "dd if=/dev/zero of=\"/dev/sda\"",
             "cat junk | dd of=/dev/sda",
             "timeout 30 mkfs /dev/sda1",
+            r#"echo \";mkfs.ext4 /dev/sda1"#,
         ] {
             let ctx = ctx_for(
                 "exec_shell",

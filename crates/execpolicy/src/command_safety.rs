@@ -2042,6 +2042,13 @@ fn split_command_segments(command: &str) -> Vec<String> {
             continue;
         }
         match ch {
+            '\\' if chars
+                .peek()
+                .is_some_and(|next| matches!(next, '"' | '\'' | '\\')) =>
+            {
+                current.push(ch);
+                current.push(chars.next().unwrap());
+            }
             '\'' | '"' => {
                 quote = Some(ch);
                 current.push(ch);
@@ -3040,6 +3047,8 @@ mod tests {
             "echo x & rm -rf /etc",
             "echo x&rm -rf /etc",
             r#"printf "\\";rm -rf /etc"#,
+            r#"echo \";rm -rf /etc"#,
+            r#"echo \';rm -rf /etc"#,
             "npm test 2>&1&rm -rf /etc",
             "curl https://example.com & rm -rf /etc",
         ] {
