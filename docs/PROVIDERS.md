@@ -66,8 +66,10 @@ Pricing varies by model and route; consult the provider’s current catalog.
 The authority is `GET https://api.cheaperinference.com/v1/models` with your key.
 Docs: <https://cheaperinference.com/docs>.
 
-Standard Compute is an OpenAI-compatible gateway billed as a flat monthly plan
-with a compute budget; requests return HTTP 402 once the plan's budget is used.
+Standard Compute offers flat monthly plans with a compute budget. By default,
+requests return HTTP 402 when it is used; eligible plans can enable Pay as you go
+to continue with additional prepaid charges. See its
+[budget policy](https://docs.standardcompute.com/budgets-and-limits).
 The `standardcompute` model id routes each request across models and providers;
 vendor-prefixed ids such as `deepseek/deepseek-v4-pro` pin one model. The
 authority is `GET https://api.stdcmpt.com/v1/models`.
