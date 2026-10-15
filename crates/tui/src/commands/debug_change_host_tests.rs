@@ -1,8 +1,8 @@
 //! Preserved changelog parsing and host parity tests, outside the portable group.
 
 use crate::commands::CommandResult;
-use crate::commands::groups::debug::change::*;
 use crate::tui::app::AppAction;
+use codewhale_commands::debug::change::*;
 use codewhale_localization::{MessageId, tr};
 const CODEWHALE_CHANGELOG: &str = include_str!("../../CHANGELOG.md");
 fn change(app: &mut App, version: Option<&str>) -> CommandResult {
@@ -26,12 +26,12 @@ fn make_app(tmpdir: &tempfile::TempDir, locale: Locale, has_api_key: bool) -> Ap
             memory_path: tmpdir.path().join("memory.md"),
             notes_path: tmpdir.path().join("notes.txt"),
             mcp_config_path: tmpdir.path().join("mcp.json"),
-            ..crate::test_support::test_tui_options(tmpdir.path())
+            ..crate::tui::test_support::test_tui_options(tmpdir.path())
         },
         &config,
     );
     app.ui_locale = locale;
-    app.api_provider = crate::config::ApiProvider::Deepseek;
+    app.api_provider = crate::config::ProviderKind::Deepseek;
     app.model_ids_passthrough = false;
     app.onboarding_needs_api_key = !has_api_key;
     app

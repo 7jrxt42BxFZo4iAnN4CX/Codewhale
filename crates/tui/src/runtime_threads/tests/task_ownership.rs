@@ -91,6 +91,7 @@ async fn shutdown_waits_actual_engine_exit_and_terminal_monitor_before_releasing
     let (engine, handle) = Engine::new_with_model_client(
         EngineConfig {
             workspace: root.path().into(),
+            session_id: Some(thread.id.clone()),
             model: thread.model.clone(),
             subagents_enabled: false,
             snapshots_enabled: false,
@@ -115,10 +116,11 @@ async fn shutdown_waits_actual_engine_exit_and_terminal_monitor_before_releasing
         blocked.await.unwrap();
         engine.run().await;
     });
-    runtime
-        .engine_workers
-        .lock()
-        .push((handle.clone(), retained_completion(worker)));
+    runtime.engine_workers.lock().push((
+        thread.id.clone(),
+        handle.clone(),
+        retained_completion(worker),
+    ));
     let turn = runtime
         .start_turn(
             &thread.id,
@@ -152,7 +154,7 @@ async fn shutdown_waits_actual_engine_exit_and_terminal_monitor_before_releasing
             .await
             .is_err()
     );
-    let completion = runtime.engine_workers.lock()[0].1.clone();
+    let completion = runtime.engine_workers.lock()[0].2.clone();
     tokio::time::timeout(Duration::from_secs(5), async {
         while completion.try_lock().is_ok() {
             sleep(Duration::from_millis(5)).await;
@@ -189,7 +191,7 @@ async fn shutdown_drains_accepted_user_input_receipt_after_caller_disconnects() 
     let thread = runtime
         .create_thread(CreateThreadRequest::default())
         .await?;
-    let harness = mock_engine_handle();
+    let mut harness = mock_engine_handle();
     runtime
         .install_test_engine(&thread.id, harness.handle.clone())
         .await?;
@@ -238,7 +240,15 @@ async fn shutdown_drains_accepted_user_input_receipt_after_caller_disconnects() 
         "accepted detached receipt is still part of shutdown"
     );
     drop(hold_receipt);
-    tokio::time::timeout(Duration::from_secs(5), drain).await???;
+    let (drained, consumed) = tokio::join!(
+        tokio::time::timeout(Duration::from_secs(5), drain),
+        harness.recv_user_input_submission(),
+    );
+    drained???;
+    assert!(
+        consumed.is_some(),
+        "shutdown must include Engine acceptance"
+    );
     let events = runtime.events_since(&thread.id, None)?;
     assert_eq!(
         events

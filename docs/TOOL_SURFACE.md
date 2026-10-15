@@ -19,22 +19,23 @@ Implementation sources:
 
 ## Default-active contract
 
-New turns start with eleven eager native names plus synthetic `tool_search`:
+New turns start with twelve eager native names plus synthetic `tool_search`:
 
 1. `read`
 2. `write`
 3. `edit`
-4. `bash`
-5. `agent`
-6. `workflow`
-7. `todo_write`
-8. `create_goal`
-9. `get_goal`
-10. `update_goal`
-11. `load_skill`
-12. `tool_search` (synthetic, always active)
+4. `file_search`
+5. `bash`
+6. `agent`
+7. `workflow`
+8. `todo_write`
+9. `create_goal`
+10. `get_goal`
+11. `update_goal`
+12. `load_skill`
+13. `tool_search` (synthetic, always active)
 
-The eleven native names are `DEFAULT_ACTIVE_NATIVE_TOOLS` in
+The twelve native names are `DEFAULT_ACTIVE_NATIVE_TOOLS` in
 `crates/tui/src/core/engine/tool_catalog.rs`, pinned by
 `default_active_contract_keeps_discovery_and_core_tools_eager`. An authority
 boundary may remove `agent` at the maximum child depth, but route size alone
@@ -47,7 +48,7 @@ The direct schemas deliberately stay small:
 | `read` | `path`, optional `offset`, optional `limit` | Read a bounded file window with explicit continuation or truncation notices. |
 | `write` | `path`, `content` | Create or replace a file. |
 | `edit` | `path`, `edits` | Apply one or more unambiguous text replacements against one original snapshot. |
-| `bash` | `command`, optional `timeout` | Run one cancellable foreground shell command and return a bounded tail. |
+| `bash` | `command`, optional `timeout`, optional `description` | Run one cancellable foreground shell command and return a bounded tail. The optional description is display-only. |
 | `agent` | delegated task and optional scope/context controls | Start or inspect focused child work. |
 | `workflow` | plan/script/source_path plus run controls | Coordinate multi-agent phases with dependencies and completion checks. |
 | `todo_write` | complete replacement list of `{content, status}` items | Keep optional, agent-owned progress notes for genuinely multi-step work. |
@@ -65,6 +66,32 @@ ordinary approval behavior but does not bypass hard safety or repository law.
 `update_plan` remains registered only for saved-artifact compatibility and is
 not model-visible. `tasks`, `Git`, `Run`, `Web`, `remember`, and other
 specialized capabilities are searchable rather than first-turn ceremony.
+
+A Bash description appears as a muted, bounded note under the command on the
+TUI shell card, including on automatic runs. It never replaces the command and
+is excluded from execution, exact approval keys and Auto-Review input. The
+original description remains in the recorded tool input and exports. Approval
+prompts, `/jobs`, the activity inspector, ACP and other Runtime clients keep
+showing the command; this change adds no description row to those surfaces.
+
+## Local code execution
+
+`code_execution` (Python) and `js_execution` (Node.js) use the same
+permission-aware local launcher as workspace task gates and test runs. Ordinary
+approval retains the effective session policy. To retry a denied exact call
+with wider permissions, supply `sandbox_permissions` (`workspace-write` or
+`danger-full-access`) and a nonempty `justification`; Ask mode requires explicit
+one-shot user approval. The approved policy affects only that call.
+
+Both tools read source from stdin, return stdout/stderr/return_code, and keep
+the existing timeout and process-tree cleanup. They are not persistent REPLs;
+tracebacks refer to stdin rather than a temporary script path. The separate
+RLM/REPL kernel is not changed by this launcher integration.
+
+Platform/backend limits of the shared launcher still apply: no available local
+wrapper means workspace-write remains unenforced, while read-only is refused.
+An external sandbox session cannot use these local interpreter tools and must
+use its shell execution path. See [sandbox limits](SANDBOX.md).
 
 ## Deferred and dynamic tools
 
@@ -87,6 +114,14 @@ MCP tools are dynamic. Successfully connected servers register names such as
 `mcp_<server>_<tool>` from `~/.codewhale/mcp.json`; a failed or disabled server
 must not be presented as available. MCP and plugin tools are deferred unless a
 user explicitly names them in `[tools].always_load`.
+
+For an unstarted configured server, an MCP-focused `tool_search` first
+performs bounded discovery under the current turn's server/tool ceiling.
+It searches real server-provided schemas after connection, rather than
+inventing `mcp_*` definitions. A search inside `execute_tools` describes
+those schemas without activating them; a direct search uses the existing
+bounded activation cache. Ordinary unrelated searches leave optional servers
+unstarted. The CLI's standalone MCP inspection commands own a separate pool.
 
 ### Code mode (`execute_tools`)
 
@@ -132,8 +167,21 @@ Code mode is on by default (`[features] code_mode = true`), which makes
 stay available either way. Set `code_mode = false` (or run with
 `--disable code_mode`) to go back to deferring `execute_tools` behind
 `tool_search`. The flag is session configuration, so the prompt prefix stays
-stable within a session. Without an engine turn (sub-agents), a program keeps
-the conservative profile: read-only, auto-approved native calls only, no MCP.
+stable within a session.
+
+Sub-agents get `execute_tools` on the same terms, unless their role is limited
+to the read-only evidence tools or an explicit tool list leaves it out. A
+child's nested call is planned by the child's own gate, so its grant and its
+approval path apply as for its direct calls, and it is admitted at execution
+against the child's write-scope claim and live peers. A child's program also
+stops at the child's tool timeout (time waiting on approvals is not counted)
+or its work deadline, and still returns the receipt. A program in which no
+nested call ran does not count as progress for the child's permission-denial
+guard, but the guard does not yet count a refused nested call as a denial
+either; only the child's step and time budgets end a loop of denied calls
+retried inside programs. Without an engine turn
+(a direct unit call), a program keeps the conservative profile: read-only,
+auto-approved native calls only, no MCP.
 
 ### Conversation toolbox cache
 
@@ -323,7 +371,7 @@ above must report `1 passed` (the ignored metrics test reports `1 passed`
 only because `--ignored` selects it); `0 passed` means the filter matched
 nothing and the check did not run.
 
-The provider-free receipt must report the eleven default-active names listed
+The provider-free receipt must report the twelve default-active names listed
 above. A separate repository-wide tool count may include deferred, dynamic,
 feature-gated, and compatibility-only registrations; it is not the number of
 tools placed in the first-turn model catalog.

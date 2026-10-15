@@ -1795,7 +1795,7 @@ pub fn analyze_command(command: &str) -> SafetyAnalysis {
             vec![
                 "Run one command at a time".to_string(),
                 "Write multiline scripts to a file first, then execute the script".to_string(),
-                "Use task_shell_start or background shell for long interactive flows".to_string(),
+                "Use the shell tool with background=true for long interactive flows".to_string(),
             ],
         );
     }
@@ -2018,17 +2018,45 @@ fn split_command_segments(command: &str) -> Vec<String> {
     // Char-based, not byte-indexed: commands carry non-ASCII paths and slicing
     // a multibyte character in half panics. `&&` and `||` are consumed as one
     // unit so `||` cannot leave a stray `|` behind to split again.
+    //
+    // Quotes are tracked so an operator inside them stays data — the same
+    // promise the read-only grammar makes (`rg 'a && b; c' src`). Splitting
+    // regardless of quoting held `git commit -m "fix & feature"` as though it
+    // ran two commands, and invented an `rm` for `echo 'x & rm -rf /etc'` that
+    // the shell never runs.
     let mut segments = Vec::new();
     let mut current = String::new();
     let mut chars = command.chars().peekable();
+    let mut quote: Option<char> = None;
     while let Some(ch) = chars.next() {
+        if let Some(active) = quote {
+            current.push(ch);
+            if ch == '\\'
+                && active == '"'
+                && chars.peek().is_some_and(|next| matches!(next, '"' | '\\'))
+            {
+                current.push(chars.next().unwrap());
+            } else if ch == active {
+                quote = None;
+            }
+            continue;
+        }
         match ch {
+            '\'' | '"' => {
+                quote = Some(ch);
+                current.push(ch);
+            }
             '&' | '|' if chars.peek() == Some(&ch) => {
                 chars.next();
                 segments.push(std::mem::take(&mut current));
             }
             '|' | ';' => segments.push(std::mem::take(&mut current)),
-            '&' => current.push(ch),
+            // `>&` copies a file descriptor (`2>&1`, `>&2`) and `&>` is bash's
+            // combined redirect; both keep the `&` inside the word so the
+            // redirect survives as one token. Any other `&` separates commands
+            // — on POSIX shells and on cmd.exe alike.
+            '&' if current.ends_with(['>', '<']) || chars.peek() == Some(&'>') => current.push(ch),
+            '&' => segments.push(std::mem::take(&mut current)),
             _ => current.push(ch),
         }
     }
@@ -2064,6 +2092,33 @@ pub fn is_literal_rm_invocation(command: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Extract the script body a shell was asked to run — the
+/// argument after `sh -c`, `bash -lc`, and friends.
+///
+/// Only that position is a nested command line. An ordinary quoted argument
+/// that merely contains an operator (`echo 'x & rm -rf /etc'`) is data, and
+/// re-parsing it invents commands the shell never runs.
+fn nested_shell_script(words: &[String], index: usize) -> Option<String> {
+    words[..index].iter().enumerate().find_map(|(start, word)| {
+        let name = command_word(word);
+        if SHELL_WRAPPERS.contains(&name.as_str()) {
+            return shell_command_payload(&words[start + 1..])
+                .filter(|payload| std::ptr::eq(*payload, &words[index]))
+                .cloned();
+        }
+        let flag = words[index - 1].to_ascii_lowercase();
+        match name.as_str() {
+            "cmd" if matches!(flag.as_str(), "/c" | "/k") => Some(words[index].replace('\'', "")),
+            "powershell" | "pwsh"
+                if flag == "-c" || flag == "-command" || flag == "-commandwithargs" =>
+            {
+                Some(words[index].clone())
+            }
+            _ => None,
+        }
+    })
+}
+
 /// Every argv that could run as a command somewhere in `command`: each stage
 /// (`;`, `&&`, `||`, `|`), started at *every* word of it — so no wrapper's
 /// options (`sudo -u me`, `timeout -s KILL 60`, `xargs -0`) can hide the
@@ -2085,8 +2140,15 @@ pub fn command_invocations(command: &str) -> Option<Vec<Vec<String>>> {
                 let mut argv = words[index..].to_vec();
                 argv[0] = command_word(word);
                 out.push(argv);
+                // Re-parse a word only when it can be a command line of its
+                // own: the script body of `sh -c`/`bash -lc`, where nested
+                // whitespace, `;`, and `|` are real separators. Anything else
+                // is an argument — `echo 'x & rm -rf /etc'` names no `rm`, and
+                // re-parsing it both invented one and failed readable commands
+                // closed once a `&` made the word reproduce itself.
                 if word.contains(|ch: char| ch.is_whitespace() || matches!(ch, ';' | '&' | '|'))
-                    && !collect(word, depth + 1, out)
+                    && let Some(script) = nested_shell_script(&words, index)
+                    && !collect(&script, depth + 1, out)
                 {
                     return false;
                 }
@@ -2922,6 +2984,11 @@ mod tests {
             "timeout -s KILL 60 rm -rf /etc",
             "echo x | xargs rm -rf /etc",
             "bash -lc 'cd /; rm -rf /etc'",
+            "bash -c -e 'rm -rf /etc'",
+            "sh -c 'true&rm -rf /etc'",
+            "cmd /C \"echo x&rm -rf /etc\"",
+            "cmd /C \"echo 'x & rm -rf /etc & echo '\"",
+            "powershell -Command 'echo x; rm -rf /etc'",
             "\\rm -rf /etc",
             "/usr/bin/rm -rf /etc",
         ] {
@@ -2934,6 +3001,106 @@ mod tests {
             command_invocations(&nested).is_none(),
             "too deep fails closed"
         );
+    }
+
+    /// A redirect is a token inside one command, not a command separator, and
+    /// it must not fail the classifier closed. A `&` inside `2>&1` used to be
+    /// re-parsed as a nested command line, which reproduced the same word until
+    /// `MAX_WRAPPER_DEPTH` blew and every command carrying a redirect came back
+    /// unclassified. The Windows runtime floor turns that into a hard block
+    /// (reported 2026-10-09: `2>&1` could not run at all).
+    #[test]
+    fn redirects_stay_classifiable_and_a_lone_ampersand_still_separates() {
+        for command in [
+            "git log 2>&1",
+            "cargo test 2>&1 | tail -5",
+            "make > build.log 2>&1",
+            "tool &> out.txt",
+            "npm test &",
+            "npm test &>/dev/null",
+            "tool 0<&3",
+            "& $cmd auth status",
+        ] {
+            assert!(
+                command_invocations(command).is_some(),
+                "a redirect must stay readable instead of failing closed: {command}"
+            );
+        }
+
+        // A lone `&` separates commands, so a destructive second stage stays
+        // reachable whether or not the author spaced it out. Blanket-refusing
+        // these was how the redirect bug stayed invisible.
+        let has_rm = |command: &str| {
+            command_invocations(command)
+                .expect("readable")
+                .iter()
+                .any(|argv| argv[0] == "rm" && argv.iter().any(|arg| arg == "/etc"))
+        };
+        for command in [
+            "echo x & rm -rf /etc",
+            "echo x&rm -rf /etc",
+            r#"printf "\\";rm -rf /etc"#,
+            "npm test 2>&1&rm -rf /etc",
+            "curl https://example.com & rm -rf /etc",
+        ] {
+            assert!(has_rm(command), "second stage must be reached: {command}");
+        }
+    }
+
+    /// A quoted operator is data, which the read-only grammar already promises
+    /// (`rg 'a && b; c' src`). Splitting regardless of quoting held
+    /// `git commit -m "fix & feature"` as though it ran two commands, and
+    /// invented an `rm` for `echo 'x & rm -rf /etc'` that the shell never runs.
+    #[test]
+    fn a_quoted_operator_stays_data() {
+        for command in [
+            r#"git commit -m "fix & feature""#,
+            r#"echo "a & b""#,
+            "echo 'x & rm -rf /etc'",
+            r#"printf 'a;b | c'"#,
+        ] {
+            let invocations = command_invocations(command).expect("readable");
+            assert!(
+                !invocations.iter().any(|argv| argv[0] == "rm"),
+                "a quoted `rm` is data, not a command: {command}"
+            );
+            assert_eq!(
+                invocations.iter().filter(|argv| argv[0] == "git").count(),
+                usize::from(command.starts_with("git")),
+                "quoting must not split one command into two: {command}"
+            );
+        }
+    }
+    #[test]
+    fn command_invocations_read_past_a_descriptor_redirect() {
+        // `2>&1` is a redirect, not a nested command line. It used to recurse
+        // on itself to the depth limit and fail closed for every test run.
+        for command in [
+            "npm test 2>&1",
+            "npm test 2>&1 | tail -20",
+            "cargo build > /dev/null 2>&1",
+            "echo failed >&2",
+            "make check 2>&-",
+        ] {
+            let argvs = command_invocations(command).expect(command);
+            assert!(argvs.iter().all(|argv| argv[0] != "rm"), "{command}");
+        }
+        // The redirect hides nothing: the command beside it is still found,
+        // including inside a shell payload.
+        for command in [
+            "rm -rf /etc 2>&1",
+            "sudo rm -rf /etc > /dev/null 2>&1",
+            "bash -c 'rm -rf /etc 2>&1'",
+            "npm test 2>&1; rm -rf /etc",
+        ] {
+            assert!(
+                command_invocations(command)
+                    .expect(command)
+                    .iter()
+                    .any(|argv| argv[0] == "rm" && argv.iter().any(|arg| arg == "/etc")),
+                "{command}"
+            );
+        }
     }
     use super::*;
 
@@ -3672,7 +3839,7 @@ mod tests {
             analysis
                 .suggestions
                 .iter()
-                .any(|suggestion| suggestion.contains("task_shell_start")),
+                .any(|suggestion| suggestion.contains("background=true")),
             "{:?}",
             analysis.suggestions
         );

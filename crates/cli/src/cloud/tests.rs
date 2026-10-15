@@ -241,18 +241,18 @@ fn parses_cloud_command_matrix_and_rejects_inline_keys() {
             "computers",
             "create",
             "Trial",
-            "--boat-trial",
+            "--computer-trial",
             "--eu-compute-opt-in"
         ]),
         CloudCommand::Computers(CloudComputersArgs {
             command: CloudComputersCommand::Create {
-                boat_trial: true,
+                computer_trial: true,
                 eu_compute_opt_in: true,
                 ..
             }
         })
     ));
-    for lone_flag in ["--boat-trial", "--eu-compute-opt-in"] {
+    for lone_flag in ["--computer-trial", "--eu-compute-opt-in"] {
         assert!(
             Cli::try_parse_from([
                 "codewhale",
@@ -474,7 +474,7 @@ fn user_codes_and_key_inputs_match_the_server_contract() {
 #[test]
 fn device_flow_handles_pending_then_authorized_without_printing_tokens() {
     for (no_open, browser_opens) in [(false, true), (false, false), (true, false)] {
-        let (temp, config) = test_config();
+        let (temp, mut config) = test_config();
         let _keep_temp = temp;
         let (secrets, _) = test_secrets();
         let transport = FakeTransport::new(vec![
@@ -512,7 +512,7 @@ fn device_flow_handles_pending_then_authorized_without_printing_tokens() {
             }),
             "work",
             "https://api.codewhale.net",
-            &config,
+            &mut config,
             &secrets,
             &secrets,
             &machine::MachineKeyEnv::default(),
@@ -559,6 +559,113 @@ fn device_flow_handles_pending_then_authorized_without_printing_tokens() {
     }
 }
 
+fn login_responses() -> Vec<CloudResponse> {
+    vec![
+        response(
+            200,
+            json!({
+                "deviceCode": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                "userCode": "ABCD-EFGH-JKLM",
+                "verificationUri": "https://app.codewhale.net/cli/authorize",
+                "verificationUriComplete": "https://app.codewhale.net/cli/authorize?user_code=ABCD-EFGH-JKLM",
+                "expiresIn": 600,
+                "interval": 1
+            }),
+        ),
+        response(
+            200,
+            auth_json("access-never-print", "refresh-never-print", "acct-123"),
+        ),
+        response(200, account("acct-123")),
+    ]
+}
+
+fn run_login(config: &mut ConfigStore, secrets: &Secrets) -> String {
+    let transport = FakeTransport::new(login_responses());
+    let mut output = Vec::new();
+    let mut key_reader = |_| bail!("key reader should not be called");
+    let mut opener = |_: String| false;
+    let mut sleeper = |_| {};
+    run_with(
+        command(&["codewhale", "cloud", "login", "--no-open"]),
+        "work",
+        "https://api.codewhale.net",
+        config,
+        secrets,
+        secrets,
+        &machine::MachineKeyEnv::default(),
+        &transport,
+        &mut output,
+        &mut key_reader,
+        &mut opener,
+        &mut sleeper,
+    )
+    .unwrap();
+    String::from_utf8(output).unwrap()
+}
+
+#[test]
+fn login_selects_managed_route_when_provider_is_default() {
+    let (temp, mut config) = test_config();
+    assert_eq!(config.config.provider, ProviderKind::default());
+    let (secrets, _) = test_secrets();
+    let output = run_login(&mut config, &secrets);
+    assert!(
+        output.contains("Using your Codewhale account route"),
+        "{output}"
+    );
+    let saved = ConfigStore::load(Some(temp.path().join("config.toml"))).unwrap();
+    assert_eq!(saved.config.provider, ProviderKind::Codewhale);
+    assert_eq!(saved.config.model.as_deref(), Some("auto"));
+}
+
+#[test]
+fn login_keeps_explicitly_configured_route() {
+    let (temp, mut config) = test_config();
+    config.config.provider = ProviderKind::Openai;
+    config.save().unwrap();
+    let (secrets, _) = test_secrets();
+    let output = run_login(&mut config, &secrets);
+    assert!(
+        output.contains("Keeping your configured openai route."),
+        "{output}"
+    );
+    let saved = ConfigStore::load(Some(temp.path().join("config.toml"))).unwrap();
+    assert_eq!(saved.config.provider, ProviderKind::Openai);
+    assert_eq!(saved.config.model, None);
+}
+
+#[test]
+fn login_keeps_an_explicit_deepseek_route() {
+    // DeepSeek is the default provider; choosing it explicitly must survive sign-in.
+    let (temp, _) = test_config();
+    std::fs::write(temp.path().join("config.toml"), "provider = \"deepseek\"\n").unwrap();
+    let mut config = ConfigStore::load(Some(temp.path().join("config.toml"))).unwrap();
+    let (secrets, _) = test_secrets();
+    let output = run_login(&mut config, &secrets);
+    assert!(
+        output.contains("Keeping your configured deepseek route."),
+        "{output}"
+    );
+    let saved = ConfigStore::load(Some(temp.path().join("config.toml"))).unwrap();
+    assert_eq!(saved.config.provider, ProviderKind::Deepseek);
+    assert_eq!(saved.config.model, None);
+}
+
+#[test]
+fn login_keeps_the_default_route_when_it_has_a_local_key() {
+    let (temp, mut config) = test_config();
+    let (secrets, _) = test_secrets();
+    secrets.set("deepseek", "sk-local-never-print").unwrap();
+    let output = run_login(&mut config, &secrets);
+    assert!(
+        output.contains("Keeping your configured deepseek route."),
+        "{output}"
+    );
+    let saved = ConfigStore::load(Some(temp.path().join("config.toml"))).unwrap();
+    assert_eq!(saved.config.provider, ProviderKind::Deepseek);
+}
+
 #[test]
 fn cloud_sessions_are_isolated_by_profile_and_api_origin() {
     let (secrets, _) = test_secrets();
@@ -598,7 +705,7 @@ fn cloud_sessions_are_isolated_by_profile_and_api_origin() {
 
 #[test]
 fn status_refreshes_once_on_unauthorized_and_never_displays_tokens() {
-    let (temp, config) = test_config();
+    let (temp, mut config) = test_config();
     let _keep_temp = temp;
     let (secrets, _) = test_secrets();
     let transport = FakeTransport::new(vec![
@@ -624,7 +731,7 @@ fn status_refreshes_once_on_unauthorized_and_never_displays_tokens() {
         CloudCommand::Status,
         "default",
         "https://api.codewhale.net",
-        &config,
+        &mut config,
         &secrets,
         &secrets,
         &machine::MachineKeyEnv::default(),
@@ -653,7 +760,7 @@ fn status_refreshes_once_on_unauthorized_and_never_displays_tokens() {
 
 #[test]
 fn account_pull_refuses_to_claim_unimplemented_local_import() {
-    let (temp, config) = test_config();
+    let (temp, mut config) = test_config();
     let config_path = config.path().to_path_buf();
     let (secrets, _) = test_secrets();
     let transport = FakeTransport::new(vec![]);
@@ -666,7 +773,7 @@ fn account_pull_refuses_to_claim_unimplemented_local_import() {
         command(&["codewhale", "account", "pull"]),
         "default",
         "https://api.codewhale.net",
-        &config,
+        &mut config,
         &secrets,
         &secrets,
         &machine::MachineKeyEnv::default(),
@@ -697,7 +804,7 @@ fn account_pull_refuses_to_claim_unimplemented_local_import() {
 
 #[test]
 fn account_pull_dry_run_is_truthful_and_read_only() {
-    let (temp, config) = test_config();
+    let (temp, mut config) = test_config();
     let config_path = config.path().to_path_buf();
     let (secrets, _) = test_secrets();
     let transport = FakeTransport::new(vec![response(200, account("acct-pull"))]);
@@ -713,7 +820,7 @@ fn account_pull_dry_run_is_truthful_and_read_only() {
         command(&["codewhale", "account", "pull", "--dry-run"]),
         "default",
         "https://api.codewhale.net",
-        &config,
+        &mut config,
         &secrets,
         &secrets,
         &machine::MachineKeyEnv::default(),
@@ -921,7 +1028,7 @@ fn terminal_refresh_auth_failures_clear_the_local_session() {
 
 #[test]
 fn set_list_and_remove_use_account_routes_without_secret_output() {
-    let (temp, config) = test_config();
+    let (temp, mut config) = test_config();
     let _keep_temp = temp;
     let (secrets, _) = test_secrets();
     let list_account = json!({
@@ -972,7 +1079,7 @@ fn set_list_and_remove_use_account_routes_without_secret_output() {
             cmd,
             "default",
             "https://api.codewhale.net",
-            &config,
+            &mut config,
             &secrets,
             &secrets,
             &machine::MachineKeyEnv::default(),
@@ -1040,7 +1147,7 @@ fn from_local_uses_config_without_printing_or_requiring_an_inline_key() {
         ]),
         "work",
         "https://api.codewhale.net",
-        &config,
+        &mut config,
         &secrets,
         &secrets,
         &machine::MachineKeyEnv::default(),
@@ -1095,7 +1202,7 @@ fn catalog_ids_map_to_local_providers_through_the_catalog_not_a_compiled_table()
         ]),
         "default",
         "https://api.codewhale.net",
-        &config,
+        &mut config,
         &secrets,
         &secrets,
         &machine::MachineKeyEnv::default(),
@@ -1119,7 +1226,7 @@ fn catalog_ids_map_to_local_providers_through_the_catalog_not_a_compiled_table()
 
 #[test]
 fn an_id_outside_the_account_catalog_is_refused_and_names_what_is_available() {
-    let (temp, config) = test_config();
+    let (temp, mut config) = test_config();
     let _keep_temp = temp;
     let (secrets, _) = test_secrets();
     let transport = FakeTransport::new(vec![
@@ -1137,7 +1244,7 @@ fn an_id_outside_the_account_catalog_is_refused_and_names_what_is_available() {
         command(&["codewhale", "cloud", "keys", "remove", "not-a-provider"]),
         "default",
         "https://api.codewhale.net",
-        &config,
+        &mut config,
         &secrets,
         &secrets,
         &machine::MachineKeyEnv::default(),
@@ -1203,7 +1310,7 @@ fn from_local_uses_config_before_the_provider_secret_store() {
 
 #[test]
 fn logout_recovers_from_a_corrupt_local_session_record() {
-    let (temp, config) = test_config();
+    let (temp, mut config) = test_config();
     let _keep_temp = temp;
     let (secrets, store) = test_secrets();
     let slot = cloud_auth_slot("default", "https://api.codewhale.net");
@@ -1217,7 +1324,7 @@ fn logout_recovers_from_a_corrupt_local_session_record() {
         CloudCommand::Logout,
         "default",
         "https://api.codewhale.net",
-        &config,
+        &mut config,
         &secrets,
         &secrets,
         &machine::MachineKeyEnv::default(),
@@ -1318,7 +1425,7 @@ fn account_login_timeout_fails_the_command() {
     // must return Err so run_cli maps it to ExitCode::FAILURE. Verified live
     // against a stub server: `error: Codewhale account login timed out` now
     // exits 1.
-    let (temp, config) = test_config();
+    let (temp, mut config) = test_config();
     let _keep_temp = temp;
     let (secrets, _) = test_secrets();
     // Device start succeeds once; every token poll stays pending forever.
@@ -1361,7 +1468,7 @@ fn account_login_timeout_fails_the_command() {
         ]),
         "default",
         "https://api.codewhale.net",
-        &config,
+        &mut config,
         &secrets,
         &secrets,
         &machine::MachineKeyEnv::default(),
@@ -1399,7 +1506,7 @@ fn run_account(
     secrets: &Secrets,
     transport: &FakeTransport,
 ) -> (Result<()>, String) {
-    let (temp, config) = test_config();
+    let (temp, mut config) = test_config();
     let _keep_temp = temp;
     let mut output = Vec::new();
     let mut key_reader = |_| bail!("key reader should not be called");
@@ -1409,7 +1516,7 @@ fn run_account(
         command(argv),
         "default",
         "https://api.codewhale.net",
-        &config,
+        &mut config,
         secrets,
         secrets,
         machine,
@@ -1975,7 +2082,7 @@ fn logout_preserves_custody_until_server_confirms_revocation_or_dead_session() {
 #[test]
 fn account_computers_use_the_same_account_api_and_report_queued_starts() {
     const ID: &str = "123e4567-e89b-42d3-a456-426614174000";
-    let (_temp, config) = test_config();
+    let (_temp, mut config) = test_config();
     let (secrets, _) = test_secrets();
     let store = AccountSessionStore::new(secrets.clone(), Some("default"), DEFAULT_API_BASE);
     store
@@ -2007,14 +2114,21 @@ fn account_computers_use_the_same_account_api_and_report_queued_starts() {
         vec!["codewhale", "account", "computers", "show", ID],
         vec!["codewhale", "account", "computers", "start", ID],
         vec!["codewhale", "account", "computers", "pause", ID],
-        vec!["codewhale", "account", "computers", "delete", ID],
+        vec![
+            "codewhale",
+            "account",
+            "computers",
+            "delete",
+            ID,
+            "--discard-files",
+        ],
     ];
     for argv in commands {
         run_with(
             command(&argv),
             "default",
             DEFAULT_API_BASE,
-            &config,
+            &mut config,
             &secrets,
             &secrets,
             &machine::MachineKeyEnv::default(),
@@ -2106,7 +2220,7 @@ fn account_computers_refuse_unsafe_ids_machine_keys_and_unconfirmed_delete() {
 #[test]
 fn account_computers_json_preserves_server_metering_and_entitlement() {
     const ID: &str = "123e4567-e89b-42d3-a456-426614174000";
-    let (_temp, config) = test_config();
+    let (_temp, mut config) = test_config();
     let (secrets, _) = test_secrets();
     let account = AccountSessionStore::new(secrets.clone(), Some("default"), DEFAULT_API_BASE);
     account
@@ -2146,7 +2260,7 @@ fn account_computers_json_preserves_server_metering_and_entitlement() {
             command(&argv),
             "default",
             DEFAULT_API_BASE,
-            &config,
+            &mut config,
             &secrets,
             &secrets,
             &machine::MachineKeyEnv::default(),
@@ -2167,7 +2281,7 @@ fn account_computers_json_preserves_server_metering_and_entitlement() {
 #[test]
 fn account_computers_boat_trial_and_usage_send_explicit_consent_and_read_receipts() {
     const ID: &str = "123e4567-e89b-42d3-a456-426614174000";
-    let (_temp, config) = test_config();
+    let (_temp, mut config) = test_config();
     let (secrets, _) = test_secrets();
     AccountSessionStore::new(secrets.clone(), Some("default"), DEFAULT_API_BASE)
         .save(auth("access-secret", "refresh-secret", "acct-123"))
@@ -2197,7 +2311,7 @@ fn account_computers_boat_trial_and_usage_send_explicit_consent_and_read_receipt
             "computers",
             "create",
             "Trial",
-            "--boat-trial",
+            "--computer-trial",
             "--eu-compute-opt-in",
         ],
         vec!["codewhale", "account", "computers", "usage", ID, "--json"],
@@ -2209,7 +2323,7 @@ fn account_computers_boat_trial_and_usage_send_explicit_consent_and_read_receipt
             command(&argv),
             "default",
             DEFAULT_API_BASE,
-            &config,
+            &mut config,
             &secrets,
             &secrets,
             &machine::MachineKeyEnv::default(),
@@ -2249,7 +2363,7 @@ fn account_computers_boat_trial_and_usage_send_explicit_consent_and_read_receipt
 
 #[test]
 fn account_agents_create_model_bound_thread_and_send_with_same_session() {
-    let (_temp, config) = test_config();
+    let (_temp, mut config) = test_config();
     let (secrets, _) = test_secrets();
     AccountSessionStore::new(secrets.clone(), Some("default"), DEFAULT_API_BASE)
         .save(auth("access-secret", "refresh-secret", "acct-123"))
@@ -2336,7 +2450,7 @@ fn account_agents_create_model_bound_thread_and_send_with_same_session() {
             command(&argv),
             "default",
             DEFAULT_API_BASE,
-            &config,
+            &mut config,
             &secrets,
             &secrets,
             &machine::MachineKeyEnv::default(),
@@ -2794,6 +2908,8 @@ fn account_agent_work_records_one_idempotent_request_without_allocating_compute(
             agent: "Whale".into(),
             objective: "Fix the build".into(),
             message_id: "work-request-1".into(),
+            context_file: None,
+            file_refs: Vec::new(),
         },
         &client,
         &machine::MachineKeyEnv::default(),
@@ -3295,12 +3411,20 @@ fn projects_step() -> Scripted {
     )
 }
 
-fn boat_quote() -> serde_json::Value {
+fn work_offer() -> serde_json::Value {
+    json!({
+        "mode": "trial", "sku": "task-small", "region": "eu", "minSeconds": 60,
+        "maxSeconds": 300, "model": { "provider": "deepseek", "model": "deepseek-flash" },
+        "funding": "trial_credit", "computeRemainingSeconds": null, "emptyWorkspace": false
+    })
+}
+
+fn work_quote() -> serde_json::Value {
     json!({
         "runner": {},
-        "quote": { "sku": "boat-small", "adapter": "boat", "target": "eu", "pricingStatus": "provider_trial" },
+        "quote": { "sku": "task-small", "target": "eu", "pricingStatus": "provider_trial" },
         "disclosure": {
-            "funding": "provider_trial", "customerCreditsChargedUsd": 0,
+            "funding": "trial_credit", "customerCreditsChargedUsd": 0,
             "providerCostEstimateUsd": 0.0207, "sandboxTargetRegion": "eu",
             "euPlacementConsentRequired": true,
             "modelInference": { "billing": "byok_external" },
@@ -3310,8 +3434,8 @@ fn boat_quote() -> serde_json::Value {
             "token": "tok.abc-123_DEF", "expiresAt": "2026-09-30T12:00:00.000Z", "workRunId": WORK_ID
         },
         "confirmCopy": {
-            "title": "Run this five-minute Boat trial Work?",
-            "body": "Boat trial credit covers its computer time.\u{1b}[31m",
+            "title": "Run this five-minute trial Work?",
+            "body": "Trial credit covers its computer time.\u{1b}[31m",
             "confirmLabel": "Start trial Work"
         }
     })
@@ -3323,7 +3447,7 @@ fn cloud_session() -> serde_json::Value {
         "id": format!("session_{WORK_ID}"),
         "run": { "id": WORK_ID, "state": "planning" },
         "attempt": { "status": "accepted" },
-        "sandbox": { "provider": "boat", "providerId": "bx_abcd1234", "status": "running" },
+        "sandbox": { "status": "running" },
         "sandboxTargetRegion": "eu",
         "quote": { "customerCreditsChargedUsd": 0 },
         "initialTurn": { "status": "queued" }
@@ -3339,7 +3463,7 @@ const QUOTE_ARGV: [&str; 7] = [
     "--operation-key",
     "launch-1",
 ];
-const LAUNCH_ARGV: [&str; 10] = [
+const LAUNCH_ARGV: [&str; 12] = [
     "codewhale",
     "account",
     "agents",
@@ -3349,6 +3473,8 @@ const LAUNCH_ARGV: [&str; 10] = [
     "launch-1",
     "--confirmation",
     "tok.abc-123_DEF",
+    "--seconds",
+    "300",
     "--confirm-eu-compute",
 ];
 
@@ -3870,7 +3996,7 @@ fn work_result_summarises_evidence_pr_route_and_boat_usage() {
         "Draft PR: https://github.com/octo-org/app/pull/42",
         "Blockers: checks_failed",
         "Model route: deepseek/deepseek-flash",
-        "Boat usage:",
+        "Computer usage:",
         "Provider seconds: 212",
         "Provider list price: $0.0011",
         "Codewhale credits charged: $0",
@@ -3878,7 +4004,7 @@ fn work_result_summarises_evidence_pr_route_and_boat_usage() {
         "Provider VM: stopped",
         "Provider cleanup: confirmed",
         "Attempts: 2",
-        "#1 launch failed (error boat_task_stop_unconfirmed)",
+        "#1 launch failed (error: The cloud computer stopped but its state is unconfirmed)",
         "#2 recovery settled",
         "Evidence through event 57",
     ] {
@@ -3943,7 +4069,7 @@ fn work_result_never_shows_a_link_that_is_not_a_github_pull_request_and_survives
     assert!(output.contains("Artifacts: none"));
     assert!(output.contains("Draft PR: none"));
     assert!(output.contains("Model route: not reported"));
-    assert!(!output.contains("Boat usage:"));
+    assert!(!output.contains("Computer usage:"));
     // Another run's record is refused.
     let transport = FakeTransport::new(vec![response(
         200,
@@ -3996,7 +4122,8 @@ fn work_quote_builds_the_c5_request_from_served_records_and_prints_the_disclosur
             "defaultRepoProvider": "github", "defaultRepo": "octo-org/app"
         }] }),
         ),
-        response(200, boat_quote()),
+        response(200, work_offer()),
+        response(200, work_quote()),
     ]);
     let (result, output) = run_agent_command(&transport, &secrets, &QUOTE_ARGV);
     result.unwrap();
@@ -4010,16 +4137,17 @@ fn work_quote_builds_the_c5_request_from_served_records_and_prints_the_disclosur
             format!("/api/runs/{WORK_ID}").as_str(),
             "/api/agents",
             "/api/projects",
+            "/api/sandbox/work-offer",
             "/api/sandbox/launch-quote"
         ]
     );
-    assert_eq!(requests[3].method, HttpMethod::Post);
+    assert_eq!(requests[4].method, HttpMethod::Post);
     assert_eq!(
-        body_of(&requests[3]),
+        body_of(&requests[4]),
         json!({
             "workRunId": WORK_ID, "agentId": "agent-1", "projectId": "project-codewhale",
             "repo": "octo-org/app", "provider": "github", "prompt": "Fix the build",
-            "runnerKind": "hosted", "sandboxSku": "boat-small", "estimatedSeconds": 300,
+            "runnerKind": "hosted", "sandboxSku": "task-small", "estimatedSeconds": 300,
             "modelProvider": "deepseek", "model": "deepseek-flash",
             "billingMode": "byok_external", "computeRegion": "eu",
             "sandboxTargetRegion": "eu", "crossRegionSandboxOptIn": true,
@@ -4030,12 +4158,12 @@ fn work_quote_builds_the_c5_request_from_served_records_and_prints_the_disclosur
         "Nothing has started and nothing is charged.",
         "Repository: octo-org/app",
         "deepseek/deepseek-flash",
-        "boat-small on Boat in the EU, up to 300 seconds",
-        "Funding: provider trial; Codewhale credits charged: $0",
+        "small cloud computer in the EU, up to 300 seconds",
+        "Funding: trial credit; Codewhale credits charged: $0",
         "Provider cost estimate: $0.0207",
         "EU placement",
-        "Run this five-minute Boat trial Work?",
-        "Boat trial credit covers its computer time.[31m",
+        "Run this five-minute trial Work?",
+        "Trial credit covers its computer time.[31m",
         "Confirmation: tok.abc-123_DEF",
         "Operation key: launch-1",
         &format!(
@@ -4070,7 +4198,7 @@ fn work_quote_refuses_before_quoting_anything_it_cannot_launch_or_would_charge_f
     let (result, _) = run_agent_command(&transport, &secrets, &QUOTE_ARGV);
     assert!(chain(&result.unwrap_err()).contains("no longer bound to this Work's Project"));
 
-    // A non-GitHub Work cannot use the Boat trial.
+    // A non-GitHub Work cannot use cloud Work.
     let mut cnb = work_run("queued");
     cnb["run"]["repoProvider"] = json!("cnb");
     let transport = FakeTransport::new(vec![response(200, cnb)]);
@@ -4084,11 +4212,10 @@ fn work_quote_refuses_before_quoting_anything_it_cannot_launch_or_would_charge_f
             quote["disclosure"]["customerCreditsChargedUsd"] = json!(0.4)
         },
         |quote: &mut serde_json::Value| quote["disclosure"]["funding"] = json!("membership"),
-        |quote: &mut serde_json::Value| quote["quote"]["sku"] = json!("boat-large"),
+        |quote: &mut serde_json::Value| quote["quote"]["sku"] = json!("task-large"),
         |quote: &mut serde_json::Value| {
             quote["disclosure"]["sandboxTargetRegion"] = json!("us-west")
         },
-        |quote: &mut serde_json::Value| quote["quote"]["adapter"] = json!("other"),
         |quote: &mut serde_json::Value| {
             quote["disclosure"]["computerTime"]["estimatedSeconds"] = json!(301)
         },
@@ -4097,7 +4224,7 @@ fn work_quote_refuses_before_quoting_anything_it_cannot_launch_or_would_charge_f
             quote["disclosure"]["modelInference"]["billing"] = json!("managed_wallet")
         },
     ] {
-        let mut quote = boat_quote();
+        let mut quote = work_quote();
         tamper(&mut quote);
         let transport = FakeTransport::new(vec![
             response(200, work_run("queued")),
@@ -4109,6 +4236,7 @@ fn work_quote_refuses_before_quoting_anything_it_cannot_launch_or_would_charge_f
                 "defaultRepoProvider": "github", "defaultRepo": "octo-org/app"
             }] }),
             ),
+            response(200, work_offer()),
             response(200, quote),
         ]);
         let (result, output) = run_agent_command(&transport, &secrets, &QUOTE_ARGV);
@@ -4121,21 +4249,23 @@ fn work_quote_refuses_before_quoting_anything_it_cannot_launch_or_would_charge_f
         reply(200, work_run("queued")),
         agents_step(),
         projects_step(),
-        reply(404, json!({ "code": "boat_work_trial_unavailable" })),
+        reply(200, work_offer()),
+        reply(404, json!({ "code": "work_vm_trial_unavailable" })),
     ]);
     let (result, _) = run_agent_command(&transport, &secrets, &QUOTE_ARGV);
     let message = chain(&result.unwrap_err());
-    assert!(message.contains("boat_work_trial_unavailable"));
+    assert!(message.contains("work_vm_trial_unavailable"));
     assert!(message.contains("not available for this account"));
 
     // The printed retry command must not carry remote shell metacharacters.
     for token in ["tok.$(command)", "tok.`command`", "tok.abc;command"] {
-        let mut quote = boat_quote();
+        let mut quote = work_quote();
         quote["confirmation"]["token"] = json!(token);
         let transport = ScriptedTransport::new(vec![
             reply(200, work_run("queued")),
             agents_step(),
             projects_step(),
+            reply(200, work_offer()),
             reply(200, quote),
         ]);
         let (result, output) = run_agent_command(&transport, &secrets, &QUOTE_ARGV);
@@ -4227,7 +4357,17 @@ fn work_confirmation_stdin_proof_reaches_only_the_confirmed_request() {
     let client = CloudClient::new(&transport, &secrets, "default", DEFAULT_API_BASE);
     let proof = work::read_confirmation(&b"consent.private-proof\n"[..]).unwrap();
     let mut output = Vec::new();
-    work::launch(&client, &mut output, WORK_ID, "launch-stdin", &proof, true).unwrap();
+    work::launch(
+        &client,
+        &mut output,
+        WORK_ID,
+        "launch-stdin",
+        &proof,
+        true,
+        Some(300),
+        None,
+    )
+    .unwrap();
     assert_eq!(
         body_of(&transport.requests()[3])["launchQuoteConfirmation"],
         proof
@@ -4281,7 +4421,7 @@ fn work_launch_requires_eu_consent_and_sends_the_confirmed_c5_request() {
         json!({
             "workRunId": WORK_ID, "agentId": "agent-1", "projectId": "project-codewhale",
             "repo": "octo-org/app", "provider": "github", "prompt": "Fix the build",
-            "runnerKind": "hosted", "sandboxSku": "boat-small", "estimatedSeconds": 300,
+            "runnerKind": "hosted", "sandboxSku": "task-small", "estimatedSeconds": 300,
             "modelProvider": "deepseek", "model": "deepseek-flash",
             "billingMode": "byok_external", "computeRegion": "eu",
             "sandboxTargetRegion": "eu", "crossRegionSandboxOptIn": true,
@@ -4291,10 +4431,10 @@ fn work_launch_requires_eu_consent_and_sends_the_confirmed_c5_request() {
         })
     );
     for expected in [
-        "Work launched on bounded Boat trial compute.",
+        "Work launched on a cloud computer.",
         &format!("Work ID: {WORK_ID}"),
         "Status: planning",
-        "Computer: boat (running)",
+        "Computer: running",
         "Compute region: eu",
         "Codewhale credits charged: $0",
         "Attempt: accepted",
@@ -4797,7 +4937,7 @@ fn account_errors_stay_typed_so_callers_can_tell_refusals_from_unknown_outcomes(
     ));
     assert_eq!(
         refusal.to_string(),
-        "Codewhale account request failed (HTTP 422, code boat_work_trial_seconds_invalid)"
+        "Codewhale account request failed (HTTP 422)"
     );
     assert!(!outcome_unknown(&refusal));
     for status in [500, 502, 503, 504, 408] {

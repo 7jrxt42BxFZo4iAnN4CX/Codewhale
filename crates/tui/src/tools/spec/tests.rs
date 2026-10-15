@@ -638,6 +638,8 @@ fn test_resolve_home_path_unknown_home_fails_explicitly_without_cwd_guessing() {
 
 #[test]
 fn test_tool_context_resolve_path_home_prefix_inside_workspace() {
+    // The fixture lives inside the home, so the home must be the test's own.
+    let _sealed = crate::test_support::SealedHome::new();
     let real_home = crate::config::effective_home_dir().expect("test home must be available");
     let home_temp = tempfile::Builder::new()
         .prefix("cw_spec_test_home_")
@@ -677,6 +679,8 @@ fn test_tool_context_resolve_path_home_prefix_restricted_refusal() {
 
 #[test]
 fn test_tool_context_resolve_path_home_prefix_trusted_external_path() {
+    // The fixture lives inside the home, so the home must be the test's own.
+    let _sealed = crate::test_support::SealedHome::new();
     let real_home = crate::config::effective_home_dir().expect("test home must be available");
     let trusted_dir = tempfile::Builder::new()
         .prefix("cw_spec_trusted_home_")
@@ -743,4 +747,26 @@ fn test_tool_context_resolve_path_no_shell_expansion() {
         .resolve_path("~otheruser/file.txt")
         .expect("should treat as workspace child");
     assert!(resolved_other.to_string_lossy().contains("~otheruser"));
+}
+
+#[test]
+fn delegated_shell_is_refused_outright_when_the_session_lacks_it() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let mut ctx = ToolContext::new(workspace.path());
+
+    // Leaving the flag out would fall back to the host default, which may
+    // allow shell: a session without full shell must store an explicit "no".
+    ctx.shell_policy = crate::worker_profile::ShellPolicy::None;
+    assert_eq!(ctx.cap_delegated_authority(None, None, None).0, Some(false));
+    assert_eq!(
+        ctx.cap_delegated_authority(Some(true), None, None).0,
+        Some(false)
+    );
+
+    ctx.shell_policy = crate::worker_profile::ShellPolicy::Full;
+    assert_eq!(ctx.cap_delegated_authority(None, None, None).0, None);
+    assert_eq!(
+        ctx.cap_delegated_authority(Some(true), None, None).0,
+        Some(true)
+    );
 }

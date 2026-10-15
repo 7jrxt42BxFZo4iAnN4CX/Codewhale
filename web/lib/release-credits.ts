@@ -15,24 +15,18 @@
  * See also:
  *   - .github/AUTHOR_MAP for identity mapping
  *   - CHANGELOG.md for the full release narrative
- *   - https://github.com/Hmbown/CodeWhale/graphs/contributors for the live list
+ *   - https://github.com/codewhale-hq/CodeWhale/graphs/contributors for the live list
  */
 
 /** Contributors whose PRs were merged or harvested into this release. */
 export const RELEASE_CONTRIBUTORS: string[] = [
-  "@Andrea-Bruno",
-  "@aiapienthusiast",
+  "@SparkofSpike",
+  "@dajiaohuang",
   "@gaord",
   "@Lstarsky0",
-  "@aboimpinto",
-  "@dajiaohuang",
-  "@Water-Run",
-  "@wuisabel-gif",
-  "@SparkofSpike",
-  "@zhuowp",
-  "@harryvgiunta",
+  "@jayanthvee",
   "@asto18089",
-  "@qiuYliangM",
+  "@LIghtJUNction",
 ];
 
 /**
@@ -40,10 +34,13 @@ export const RELEASE_CONTRIBUTORS: string[] = [
  * one. scripts/check-contributor-credit.py requires them here now; the release
  * cut moves them into RELEASE_CONTRIBUTORS with that release's changelog block.
  */
-export const UNRELEASED_CONTRIBUTORS: string[] = [];
+export const UNRELEASED_CONTRIBUTORS: string[] = [
+  "@aboimpinto",
+  "@printf033",
+];
 
 /**
  * Contributors who helped with reports, reproductions, and verification.
- * Credit covers the 0.10.1 reports recorded in docs/CONTRIBUTORS.md.
+ * Credit covers the 0.10.2 reports recorded in docs/CONTRIBUTORS.md.
  */
-export const RELEASE_HELPERS: string[] = ["@BX166", "@cenab"];
+export const RELEASE_HELPERS: string[] = ["@BX166"];

@@ -1,5 +1,6 @@
 use super::headers::{MCP_HTTP_ACCEPT, is_safe_custom_header, with_default_mcp_http_headers};
-use super::http::{HttpTransport, McpHttpAuth};
+use super::http::HttpTransport;
+use super::http_client::McpHttpAuth;
 use super::streamable_http::StreamableHttpTransport;
 use super::wire::{
     find_sse_event_separator, find_sse_event_separator_bytes, is_mcp_stale_session_error,
@@ -7,11 +8,10 @@ use super::wire::{
 };
 use super::*;
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
+use serde_json::{Value, json};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex, OnceLock};
-#[cfg(unix)]
-use tokio::io::AsyncBufReadExt;
 
 fn test_http_client() -> reqwest::Client {
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -324,6 +324,7 @@ fn mcp_server_config_omits_headers_when_empty() {
         disabled: false,
         enabled: true,
         required: false,
+        lazy: false,
         enabled_tools: Vec::new(),
         disabled_tools: Vec::new(),
         headers: HashMap::new(),
@@ -783,19 +784,34 @@ fn default_mcp_http_post_accepts_json_and_event_stream() {
     );
 }
 
-#[test]
-fn streamable_http_transport_stores_headers() {
+#[tokio::test]
+async fn streamable_http_transport_prepares_configured_headers() {
     let mut headers = HashMap::new();
     headers.insert("Authorization".to_string(), "Bearer xyz".to_string());
+    let url = "https://example.invalid/mcp";
     let transport = StreamableHttpTransport::new(
-        test_mcp_http_client("https://example.invalid/mcp"),
-        "https://example.invalid/mcp".to_string(),
-        McpHttpAuth {
-            headers: headers.clone(),
+        test_mcp_http_client(url).with_mcp_auth(McpHttpAuth {
+            headers,
             ..Default::default()
-        },
+        }),
+        url.to_string(),
     );
-    assert_eq!(transport.auth.headers, headers);
+    let request = transport
+        .client
+        .prepare_mcp_request(transport.client.post(&transport.url), true)
+        .await
+        .unwrap()
+        .build()
+        .unwrap();
+    assert_eq!(
+        request.headers().get("Authorization").unwrap(),
+        "Bearer xyz"
+    );
+    assert_eq!(request.headers().get(ACCEPT).unwrap(), MCP_HTTP_ACCEPT);
+    assert_eq!(
+        request.headers().get(CONTENT_TYPE).unwrap(),
+        "application/json"
+    );
 }
 
 #[test]
@@ -1886,12 +1902,13 @@ async fn plugin_stdio_authority_cancellation_terminates_an_idle_child() {
         cancellation.clone(),
     )
     .unwrap();
-    assert!(transport.child.lock().await.try_wait().unwrap().is_none());
+    let child = transport.session.child_for_tests();
+    assert!(child.lock().await.try_wait().unwrap().is_none());
 
     cancellation.cancel();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
     loop {
-        if transport.child.lock().await.try_wait().unwrap().is_some() {
+        if child.lock().await.try_wait().unwrap().is_some() {
             break;
         }
         assert!(
@@ -2005,7 +2022,7 @@ async fn dead_stdio_child_stops_reading_ready_without_a_call_in_flight() {
         tokio_util::sync::CancellationToken::new(),
     )
     .unwrap();
-    let child = Arc::clone(&transport.child);
+    let child = transport.session.child_for_tests();
     let connection = test_connection(Box::new(transport));
 
     // Alive child: the Ready state flag is the whole answer.
@@ -2733,6 +2750,49 @@ fn init_mcp_config_rejects_traversal_before_parent_creation() {
     );
 }
 
+/// A workspace's `.codewhale/mcp.json` is never written through a link: not
+/// when `.codewhale` itself is a link, and not when the file is. Reads stay
+/// unchanged and the outside directory is never touched.
+#[cfg(unix)]
+#[test]
+fn project_mcp_config_writes_refuse_links_out_of_the_workspace() {
+    use std::os::unix::fs::symlink;
+    let workspace = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    symlink(outside.path(), workspace.path().join(".codewhale")).unwrap();
+    let path = workspace_mcp_config_path(workspace.path());
+
+    let err = init_config(&path, false).expect_err("a linked .codewhale is refused");
+    assert!(
+        format!("{err:#}").contains("Refusing symlinked"),
+        "got: {err:#}"
+    );
+    let err = mutate_config(&path, None, |_| Ok(())).expect_err("mutation is refused too");
+    assert!(
+        format!("{err:#}").contains("Refusing symlinked"),
+        "got: {err:#}"
+    );
+    assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+
+    // A linked file inside a real `.codewhale` is refused as well.
+    let other = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(other.path().join(".codewhale")).unwrap();
+    let target = outside.path().join("target.json");
+    symlink(&target, other.path().join(".codewhale").join("mcp.json")).unwrap();
+    assert!(init_config(&workspace_mcp_config_path(other.path()), false).is_err());
+    assert!(
+        !target.exists(),
+        "a link at the file name must not be created through"
+    );
+
+    // An ordinary workspace still works.
+    let plain = tempfile::tempdir().unwrap();
+    assert_eq!(
+        init_config(&workspace_mcp_config_path(plain.path()), false).unwrap(),
+        McpWriteStatus::Created
+    );
+}
+
 #[test]
 fn test_mcp_config_manager_actions_round_trip() {
     let dir = tempfile::tempdir().unwrap();
@@ -2833,6 +2893,7 @@ fn test_server_effective_timeouts() {
         disabled: false,
         enabled: true,
         required: false,
+        lazy: false,
         enabled_tools: Vec::new(),
         disabled_tools: Vec::new(),
         headers: HashMap::new(),
@@ -2994,6 +3055,7 @@ fn test_server_config() -> McpServerConfig {
         disabled: false,
         enabled: true,
         required: false,
+        lazy: false,
         enabled_tools: Vec::new(),
         disabled_tools: Vec::new(),
         headers: HashMap::new(),
@@ -3027,6 +3089,7 @@ fn test_connection(transport: Box<dyn McpTransport>) -> McpConnection {
         authority_revocation_reason: Arc::new(std::sync::Mutex::new(None)),
         authority_watch: None,
         catalog_generation: 0,
+        decision_key: None,
     }
 }
 
@@ -3570,8 +3633,8 @@ async fn reload_if_config_changed_skips_when_content_unchanged() {
 
 /// #1267 part 2: when the on-disk config changes content, the next
 /// `reload_if_config_changed` call must swap in the new config and
-/// (would) drop all live connections. We can't stand up a real
-/// `McpConnection` in a unit test, so we observe the swap via the
+/// (would) drop the live connections of changed servers. We can't stand up
+/// a real `McpConnection` in a unit test, so we observe the swap via the
 /// publicly-readable side: server names go from empty to non-empty.
 #[tokio::test]
 async fn reload_if_config_changed_swaps_config_on_content_change() {
@@ -3803,6 +3866,7 @@ fn hash_mcp_config_is_stable_and_change_sensitive() {
             disabled: false,
             enabled: true,
             required: false,
+            lazy: false,
             enabled_tools: Vec::new(),
             disabled_tools: Vec::new(),
             headers: HashMap::new(),
@@ -3921,7 +3985,10 @@ async fn discover_tools_sorts_by_name_for_cache_stability() {
         ]),
     };
     let mut conn = test_connection(Box::new(transport));
-    conn.discover_tools().await.expect("discover");
+    conn.tools = conn
+        .discover_tools(&mut McpCatalogBudget::new())
+        .await
+        .expect("discover");
 
     let names: Vec<&str> = conn.tools.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(
@@ -3957,7 +4024,7 @@ async fn discover_tools_rejects_a_repeated_pagination_cursor_without_publishing_
     let mut conn = test_connection(Box::new(transport));
 
     let error = conn
-        .discover_tools()
+        .discover_tools(&mut McpCatalogBudget::new())
         .await
         .expect_err("repeated cursor must abort discovery");
     assert!(error.to_string().contains("repeated pagination cursor"));
@@ -4837,12 +4904,17 @@ async fn a_failed_server_waits_out_a_cooldown_instead_of_redialing_every_turn() 
 fn lazy_boot_scopes_pending_connects_and_tracks_in_flight() {
     let mut required_cfg = test_server_config();
     required_cfg.required = true;
+    required_cfg.lazy = true;
+    let mut selected_cfg = test_server_config();
+    selected_cfg.lazy = true;
+    let mut lazy_cfg = test_server_config();
+    lazy_cfg.lazy = true;
     let mut pool = McpPool::new(McpConfig {
         timeouts: McpTimeouts::default(),
         servers: HashMap::from([
             ("needed".to_string(), required_cfg),
-            ("selected".to_string(), test_server_config()),
-            ("lazy".to_string(), test_server_config()),
+            ("selected".to_string(), selected_cfg),
+            ("lazy".to_string(), lazy_cfg),
         ]),
     });
     let requested = vec!["mcp_selected_read".to_string()];
@@ -5120,6 +5192,7 @@ async fn mcp_connection_supports_streamable_http_event_stream_responses() {
         disabled: false,
         enabled: true,
         required: false,
+        lazy: false,
         enabled_tools: Vec::new(),
         disabled_tools: Vec::new(),
         headers: HashMap::new(),
@@ -5282,26 +5355,22 @@ fn invalid_json_preview_collapses_lines_and_redacts_secrets() {
 #[cfg(unix)]
 #[tokio::test]
 async fn stdio_transport_shutdown_terminates_child() {
-    use tokio::process::Command as TokioCommand;
-    let mut cmd = TokioCommand::new("cat");
-    cmd.stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true);
-    let mut child = cmd.spawn().expect("spawn cat");
-    let pid = child.id().expect("child pid");
-    let stdin = child.stdin.take().expect("child stdin");
-    let stdout = child.stdout.take().expect("child stdout");
-    let mut transport = StdioTransport {
-        child: Arc::new(tokio::sync::Mutex::new(child)),
-        stdin,
-        reader: tokio::io::BufReader::new(stdout),
-        pending_line: Vec::new(),
-        stderr_tail: StderrTail::new(),
-        authority_cancel_watch: None,
-        _reviewed_launch: None,
-        process_tree: None,
-    };
+    let mut config = test_server_config();
+    config.command = Some("cat".to_string());
+    let mut transport = StdioTransport::spawn(
+        "shutdown-test",
+        "cat",
+        &config,
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .expect("spawn cat through the production broker");
+    let pid = transport
+        .session
+        .child_for_tests()
+        .lock()
+        .await
+        .id()
+        .expect("child pid");
 
     // shutdown() should send SIGTERM and complete within the grace window.
     let start = std::time::Instant::now();
@@ -5377,7 +5446,13 @@ async fn stdio_transport_drop_kills_child_that_ignores_cleanup() {
     )
     .expect("spawn unresponsive fixture");
     assert_eq!(transport.recv().await.unwrap(), b"ready");
-    let pid = transport.child.lock().await.id().expect("live child");
+    let pid = transport
+        .session
+        .child_for_tests()
+        .lock()
+        .await
+        .id()
+        .expect("live child");
     drop(transport);
     tokio::time::timeout(STDIO_SHUTDOWN_GRACE + Duration::from_secs(1), async {
         // Signal zero only observes the process; the owned Child sends kills.
@@ -5396,42 +5471,19 @@ async fn stdio_transport_drop_kills_child_that_ignores_cleanup() {
 #[cfg(unix)]
 #[tokio::test]
 async fn stdio_transport_recv_error_includes_stderr_tail() {
-    use tokio::process::Command as TokioCommand;
-
-    let mut cmd = TokioCommand::new("sh");
-    cmd.arg("-c")
-        .arg("echo 'mcp-server: failed to load plugin' 1>&2; exit 1")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
-
-    let mut child = cmd.spawn().expect("spawn sh");
-    let stdin = child.stdin.take().expect("stdin");
-    let stdout = child.stdout.take().expect("stdout");
-    let stderr = child.stderr.take().expect("stderr");
-
-    let stderr_tail = StderrTail::new();
-    {
-        let tail = Arc::clone(&stderr_tail);
-        tokio::spawn(async move {
-            let mut lines = tokio::io::BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                tail.push(line).await;
-            }
-        });
-    }
-
-    let mut transport = StdioTransport {
-        child: Arc::new(tokio::sync::Mutex::new(child)),
-        stdin,
-        reader: tokio::io::BufReader::new(stdout),
-        pending_line: Vec::new(),
-        stderr_tail,
-        authority_cancel_watch: None,
-        _reviewed_launch: None,
-        process_tree: None,
-    };
+    let mut config = test_server_config();
+    config.command = Some("sh".to_string());
+    config.args = vec![
+        "-c".to_string(),
+        "echo 'mcp-server: failed to load plugin' 1>&2; exit 1".to_string(),
+    ];
+    let mut transport = StdioTransport::spawn(
+        "stderr-test",
+        "sh",
+        &config,
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .expect("spawn sh through the production broker");
 
     // Give the subprocess time to write its stderr line and exit.
     tokio::time::sleep(Duration::from_millis(300)).await;
@@ -5515,15 +5567,10 @@ async fn sse_connect_waits_for_endpoint_before_first_send() {
 
     let url = format!("http://{addr}/sse");
     let client = test_mcp_http_client(&url);
-    let mut transport = SseTransport::connect(
-        client,
-        url,
-        McpHttpAuth::default(),
-        cancel_token.clone(),
-        Duration::from_secs(2),
-    )
-    .await
-    .unwrap();
+    let mut transport =
+        SseTransport::connect(client, url, cancel_token.clone(), Duration::from_secs(2))
+            .await
+            .unwrap();
 
     transport
         .send(json_frame(serde_json::json!({
@@ -5606,15 +5653,10 @@ async fn sse_connect_accepts_crlf_endpoint_events() {
 
     let url = format!("http://{addr}/sse");
     let client = test_mcp_http_client(&url);
-    let mut transport = SseTransport::connect(
-        client,
-        url,
-        McpHttpAuth::default(),
-        cancel_token.clone(),
-        Duration::from_secs(2),
-    )
-    .await
-    .unwrap();
+    let mut transport =
+        SseTransport::connect(client, url, cancel_token.clone(), Duration::from_secs(2))
+            .await
+            .unwrap();
 
     transport
         .send(json_frame(serde_json::json!({
@@ -5709,12 +5751,11 @@ async fn sse_transport_applies_custom_headers_to_get_and_post() {
     let mut headers = HashMap::new();
     headers.insert("X-Custom-Auth".to_string(), "my-test-token".to_string());
     let mut transport = SseTransport::connect(
-        client,
-        url,
-        McpHttpAuth {
+        client.with_mcp_auth(McpHttpAuth {
             headers,
             ..Default::default()
-        },
+        }),
+        url,
         cancel_token.clone(),
         Duration::from_secs(2),
     )
@@ -5798,15 +5839,10 @@ async fn sse_post_error_includes_response_body_excerpt() {
 
     let url = format!("http://{addr}/sse");
     let client = test_mcp_http_client(&url);
-    let mut transport = SseTransport::connect(
-        client,
-        url,
-        McpHttpAuth::default(),
-        cancel_token.clone(),
-        Duration::from_secs(2),
-    )
-    .await
-    .unwrap();
+    let mut transport =
+        SseTransport::connect(client, url, cancel_token.clone(), Duration::from_secs(2))
+            .await
+            .unwrap();
 
     let err = transport
         .send(json_frame(serde_json::json!({
@@ -6129,6 +6165,7 @@ async fn streamable_http_stale_session_reconnects_and_retries_tool_call() {
             disabled: false,
             enabled: true,
             required: false,
+            lazy: false,
             enabled_tools: Vec::new(),
             disabled_tools: Vec::new(),
             headers: HashMap::new(),
@@ -6199,7 +6236,6 @@ async fn legacy_sse_session_expiry_is_marked_stale() {
     let mut transport = SseTransport {
         client: test_mcp_http_client(&format!("http://{addr}/sse")),
         base_url: format!("http://{addr}/sse"),
-        auth: McpHttpAuth::default(),
         endpoint_url: Some(format!("http://{addr}/messages")),
         receiver,
         sse_task,
@@ -6276,7 +6312,7 @@ async fn legacy_sse_closed_stream_reports_unknown_outcome_and_reconnects_without
     // tests do, so this server is always reached directly.
     let _env = crate::test_support::lock_test_env();
     let _lock = lock_mcp_loopback_tests().await;
-    let _no_proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*");
+    let _no_proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let active_sse = Arc::new(Mutex::new(None::<mpsc::UnboundedSender<Option<String>>>));
@@ -6419,6 +6455,7 @@ async fn legacy_sse_closed_stream_reports_unknown_outcome_and_reconnects_without
             disabled: false,
             enabled: true,
             required: false,
+            lazy: false,
             enabled_tools: Vec::new(),
             disabled_tools: Vec::new(),
             headers: HashMap::new(),
@@ -6447,7 +6484,7 @@ async fn legacy_sse_closed_stream_reports_unknown_outcome_and_reconnects_without
     assert_eq!(tool_call_count.load(AtomicOrdering::SeqCst), 1);
     assert!(!success_seen.load(AtomicOrdering::SeqCst));
 
-    // The dead connection was dropped, so the next call reconnects.
+    // The dead connection was kept as a dead entry, so the next call reconnects.
     let result = pool
         .call_tool("mcp_dephy_search", serde_json::json!({ "query": "dephy" }))
         .await
@@ -6475,7 +6512,7 @@ async fn fallback_sse_stream_closed_while_idle_reconnects_before_dispatch() {
 
     let _env = crate::test_support::lock_test_env();
     let _lock = lock_mcp_loopback_tests().await;
-    let _no_proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*");
+    let _no_proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let active_sse = Arc::new(Mutex::new(None::<mpsc::UnboundedSender<Option<String>>>));
@@ -6614,7 +6651,6 @@ fn session_id_starts_none() {
     let transport = StreamableHttpTransport::new(
         test_mcp_http_client("https://example.invalid/mcp"),
         "https://example.invalid/mcp".to_string(),
-        McpHttpAuth::default(),
     );
     assert!(transport.session_id.is_none());
 }
@@ -6662,8 +6698,7 @@ async fn session_id_captured_from_post_response_and_replayed() {
     });
 
     let url = format!("http://{addr}/mcp");
-    let mut transport =
-        StreamableHttpTransport::new(test_mcp_http_client(&url), url, McpHttpAuth::default());
+    let mut transport = StreamableHttpTransport::new(test_mcp_http_client(&url), url);
 
     // First send: server returns Mcp-Session-Id.
     transport
@@ -6708,7 +6743,7 @@ async fn custom_headers_applied_to_get_preflight() {
     // The fixture client honors an operator-configured proxy; pin loopback
     // out of any ambient proxy so a concurrent proxy-configuring test can
     // never route this GET away from the fixture server.
-    let _no_proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*");
+    let _no_proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     // The test signals success by writing to this flag — the GET handler
@@ -6738,12 +6773,11 @@ async fn custom_headers_applied_to_get_preflight() {
     headers.insert("X-Custom-Auth".to_string(), "my-test-token".to_string());
 
     let mut transport = HttpTransport::new(
-        test_mcp_http_client(&url),
-        url,
-        McpHttpAuth {
+        test_mcp_http_client(&url).with_mcp_auth(McpHttpAuth {
             headers,
             ..Default::default()
-        },
+        }),
+        url,
         tokio_util::sync::CancellationToken::new(),
         Duration::from_secs(10),
     );
@@ -6954,10 +6988,10 @@ fn mcp_recovery_kind_routes_expired_aws_credentials_to_external_login() {
     // Unrelated text that merely shares substrings stays where it was.
     for (stderr, expected) in [
         ("processor token invalid", McpRecoveryKind::Diagnose),
-        ("401 Unauthorized", McpRecoveryKind::Reauth),
+        ("401 Unauthorized", McpRecoveryKind::Diagnose),
         (
             "oauth token expired; invalid_grant",
-            McpRecoveryKind::Reauth,
+            McpRecoveryKind::Diagnose,
         ),
         (
             "laws of token expiry were expired",
@@ -7360,6 +7394,7 @@ fn mcp_recovery_kind_names_real_login_and_reload_commands() {
 struct OAuthMcpMock {
     addr: std::net::SocketAddr,
     token_requests: Arc<AtomicUsize>,
+    frames: Arc<Mutex<Vec<Value>>>,
     /// When set, the provider has revoked every grant: `/mcp` 401s even with
     /// the previously accepted bearer and `/token` rejects every refresh
     /// with `invalid_grant` — a mid-session revocation.
@@ -7448,6 +7483,8 @@ impl OAuthMcpMock {
         let server_token_requests = Arc::clone(&token_requests);
         let revoked = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let server_revoked = Arc::clone(&revoked);
+        let frames = Arc::new(Mutex::new(Vec::new()));
+        let server_frames = Arc::clone(&frames);
         let task = tokio::spawn(async move {
             loop {
                 let Ok((mut socket, _)) = listener.accept().await else {
@@ -7455,6 +7492,7 @@ impl OAuthMcpMock {
                 };
                 let token_requests = Arc::clone(&server_token_requests);
                 let revoked = Arc::clone(&server_revoked);
+                let frames = Arc::clone(&server_frames);
                 tokio::spawn(async move {
                     let request = read_request(&mut socket).await;
                     let first_line = request.lines().next().unwrap_or("").to_string();
@@ -7528,6 +7566,8 @@ impl OAuthMcpMock {
                             write_empty(&mut socket, "405 Method Not Allowed").await;
                             return;
                         }
+                        let frame: Value = serde_json::from_str(&body).unwrap();
+                        frames.lock().unwrap().push(frame);
                         if !authorized {
                             write_empty(&mut socket, "401 Unauthorized").await;
                             return;
@@ -7564,6 +7604,7 @@ impl OAuthMcpMock {
         OAuthMcpMock {
             addr,
             token_requests,
+            frames,
             revoked,
             task,
         }
@@ -7753,7 +7794,7 @@ async fn needs_auth_server_advertises_synthetic_authenticate_tool() {
         auth_tool.description
     );
     assert!(
-        auth_tool.description.contains("blocks (up to 5 minutes)"),
+        auth_tool.description.contains("blocks (up to 15 minutes)"),
         "{}",
         auth_tool.description
     );
@@ -7822,7 +7863,7 @@ async fn needs_auth_server_advertises_synthetic_authenticate_tool() {
     assert!(wiki.auth_required, "{wiki:?}");
     assert!(!wiki.connected);
     let recovery = wiki
-        .recovery_kind(false)
+        .recovery_kind(true)
         .expect("a server needing auth has a recovery");
     assert_eq!(recovery, McpRecoveryKind::Reauth);
     assert_eq!(
@@ -8283,11 +8324,33 @@ async fn invalidation_never_deletes_a_credential_rotated_after_the_re_read() {
 
 #[tokio::test]
 async fn mid_session_revocation_lands_in_the_same_auth_required_state() {
+    mid_session_revocation_for_backend(McpBackend::Rust).await;
+}
+#[tokio::test(flavor = "current_thread")]
+async fn host_mid_session_revocation_lands_in_the_same_auth_required_state_without_replay() {
+    mid_session_revocation_for_backend(McpBackend::Host).await;
+}
+async fn mid_session_revocation_for_backend(backend: McpBackend) {
     let _env = crate::test_support::lock_test_env();
     let dir = tempfile::tempdir().unwrap();
     let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", dir.path());
     let _backend = crate::test_support::EnvVarGuard::set("CODEWHALE_SECRET_BACKEND", "file");
     let _loopback = lock_mcp_loopback_tests().await;
+    let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(true);
+    let manager = (backend == McpBackend::Host).then(|| {
+        let node = crate::extension_host::tests::node_for_tests("Host revoked OAuth parity")
+            .expect("Host parity requires Node");
+        Arc::new(crate::extension_host::ExtensionHostManager::new(
+            crate::extension_host::ExtensionHostOptions {
+                root: Some(dir.path().to_path_buf()),
+                node_override: Some(node),
+                ..Default::default()
+            },
+        ))
+    });
+    let _manager = manager
+        .as_ref()
+        .map(|manager| crate::extension_host::TestManagerGuard::install(Arc::clone(manager)));
 
     let mock = OAuthMcpMock::spawn().await;
     let url = mock.url();
@@ -8303,7 +8366,7 @@ async fn mid_session_revocation_lands_in_the_same_auth_required_state() {
     );
     let mut mcp_config = McpConfig::default();
     mcp_config.servers.insert("wikiserver".to_string(), config);
-    let mut pool = McpPool::new(mcp_config);
+    let mut pool = McpPool::new(mcp_config).with_backend(backend);
     let errors = pool.connect_all().await;
     assert!(errors.is_empty(), "{errors:?}");
     assert!(!pool.server_needs_auth("wikiserver"));
@@ -8376,8 +8439,22 @@ async fn mid_session_revocation_lands_in_the_same_auth_required_state() {
         .expect("wikiserver in snapshot");
     assert!(wiki.auth_required, "{wiki:?}");
     assert!(!wiki.connected);
-    assert_eq!(wiki.recovery_kind(false), Some(McpRecoveryKind::Reauth));
+    assert_eq!(wiki.recovery_kind(true), Some(McpRecoveryKind::Reauth));
 
+    assert_eq!(
+        mock.frames
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|frame| frame["method"] == "tools/call")
+            .count(),
+        1,
+        "rejected refresh must not replay a tool"
+    );
+    pool.shutdown_all().await;
+    if let Some(manager) = manager {
+        manager.shutdown().await;
+    }
     mock.task.abort();
 }
 
@@ -8804,13 +8881,13 @@ async fn mcp_ceiling_child_scoped_meta_calls_do_not_widen_or_mutate_sibling_poli
         ("list_mcp_resource_templates", "templates"),
     ] {
         let child = pool
-            .call_tool_with_disallowed(method, serde_json::json!({}), &child_rules)
+            .call_tool_with_disallowed(method, serde_json::json!({}), &child_rules, None)
             .await
             .unwrap();
         assert_eq!(child[field].as_array().unwrap().len(), 1);
         assert_eq!(child[field][0]["server"], "public");
         let sibling = pool
-            .call_tool_with_disallowed(method, serde_json::json!({}), &[])
+            .call_tool_with_disallowed(method, serde_json::json!({}), &[], None)
             .await
             .unwrap();
         assert_eq!(sibling[field].as_array().unwrap().len(), 2);
@@ -8819,19 +8896,25 @@ async fn mcp_ceiling_child_scoped_meta_calls_do_not_widen_or_mutate_sibling_poli
         pool.call_tool_with_disallowed(
             "read_mcp_resource",
             serde_json::json!({"server":"private_a","uri":"memory://one"}),
-            &child_rules
+            &child_rules,
+            None
         )
         .await
         .is_err()
     );
     assert!(
-        pool.call_tool_with_disallowed("mcp_private_a_read", serde_json::json!({}), &child_rules)
-            .await
-            .is_err()
+        pool.call_tool_with_disallowed(
+            "mcp_private_a_read",
+            serde_json::json!({}),
+            &child_rules,
+            None
+        )
+        .await
+        .is_err()
     );
     assert!(sent.lock().unwrap().is_empty());
     assert_eq!(
-        pool.call_tool_with_disallowed("mcp_private_a_read", serde_json::json!({}), &[])
+        pool.call_tool_with_disallowed("mcp_private_a_read", serde_json::json!({}), &[], None)
             .await
             .unwrap(),
         serde_json::json!({"ok":true})
@@ -8906,7 +8989,8 @@ async fn mcp_ceiling_preserves_ordinary_tool_result_tools_field() {
         pool.call_tool_with_disallowed(
             "mcp_public_read",
             serde_json::json!({}),
-            &["mcp_private_*".to_string()]
+            &["mcp_private_*".to_string()],
+            None
         )
         .await
         .unwrap(),
@@ -10170,5 +10254,609 @@ async fn mcp_server_instructions_exclude_servers_whose_tools_are_all_denied() {
     assert_eq!(
         pool.model_server_instructions(visible),
         vec![("guided".to_string(), "Use search.".to_string())]
+    );
+}
+
+#[tokio::test]
+async fn computer_use_call_carries_an_attested_decision_only_when_a_person_approved() {
+    let respond = |id: u64| {
+        json_frame(serde_json::json!({"jsonrpc": "2.0", "id": id, "result": {"ok": true}}))
+    };
+    let sent = Arc::new(Mutex::new(Vec::new()));
+    let mut connection = test_connection(Box::new(ScriptedValueTransport {
+        sent: Arc::clone(&sent),
+        responses: VecDeque::from([respond(1), respond(2), respond(3)]),
+    }));
+    let key = [7_u8; 32];
+    connection.decision_key = Some(key);
+    let args = serde_json::json!({"action": "allow", "app": "Safari", "remember": 1.0});
+    let decision = crate::core::engine::HumanDecision::for_test("mcp_fixture_consent", &args);
+    connection
+        .call_tool_decided("consent", args.clone(), 5, Some(&decision))
+        .await
+        .expect("decided call");
+    connection
+        .call_tool_decided("consent", args.clone(), 5, None)
+        .await
+        .expect("plain call");
+    connection.decision_key = None;
+    connection
+        .call_tool_decided("consent", args.clone(), 5, Some(&decision))
+        .await
+        .expect("call without a shared key");
+
+    let sent = sent.lock().unwrap().clone();
+    let attested = &sent[0]["params"]["_meta"][COMPUTER_USE_DECISION_META];
+    let nonce = attested["nonce"].as_str().expect("nonce");
+    let args_json = attested["args_json"].as_str().expect("args_json");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(args_json).unwrap(),
+        sent[0]["params"]["arguments"]
+    );
+    let message = [
+        b"consent".as_slice(),
+        b"\0",
+        args_json.as_bytes(),
+        b"\0",
+        nonce.as_bytes(),
+    ]
+    .concat();
+    let expected = ring::hmac::sign(
+        &ring::hmac::Key::new(ring::hmac::HMAC_SHA256, &key),
+        &message,
+    );
+    assert_eq!(attested["mac"], hex_encode(expected.as_ref()));
+    assert!(sent[1]["params"].get("_meta").is_none(), "{}", sent[1]);
+    assert!(sent[2]["params"].get("_meta").is_none(), "{}", sent[2]);
+}
+
+#[tokio::test]
+async fn copied_human_decision_cannot_authorize_another_mcp_call() {
+    let input = serde_json::json!({"action": "allow", "app": "Safari"});
+    let decision = crate::core::engine::HumanDecision::for_test("mcp_fixture_consent", &input);
+    let mut pool = McpPool::new(McpConfig::default());
+    for (name, arguments) in [
+        (
+            "mcp_fixture_consent",
+            serde_json::json!({"action": "allow", "app": "Terminal"}),
+        ),
+        ("mcp_other_consent", input.clone()),
+    ] {
+        let error = pool
+            .call_tool_with_decision(name, arguments, Some(&decision))
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("does not authorize this exact MCP call"),
+            "{error:#}"
+        );
+    }
+    assert!(decision.authorizes("mcp_fixture_consent", &input));
+}
+
+/// Actual shipped plugin, reviewed and staged by the normal plugin authority.
+/// Every backend and state path is isolated; this fixture never drives a real app.
+pub(crate) fn computer_use_test_fixture() -> (
+    tempfile::TempDir,
+    Arc<crate::plugins::PluginRegistry>,
+    McpPool,
+    String,
+) {
+    let root = tempfile::tempdir().expect("private fixture root");
+    let workspace = root.path().join("workspace");
+    fs::create_dir(&workspace).unwrap();
+    let plugin_base = root.path().join("plugins/computer-use");
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins/computer-use");
+    let mut pending = vec![(source, plugin_base.clone())];
+    while let Some((from, to)) = pending.pop() {
+        fs::create_dir_all(&to).unwrap();
+        for entry in fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let destination = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                pending.push((entry.path(), destination));
+            } else {
+                fs::copy(entry.path(), destination).unwrap();
+            }
+        }
+    }
+    let state = root.path().join("cu-state");
+    let recordings = root.path().join("recordings");
+    let fake = plugin_base.join("tests/fixtures/fake-backend.mjs");
+    fs::write(
+        plugin_base.join("plugin.toml"),
+        format!(
+            "schema_version = 1\n[plugin]\nname = \"computer-use\"\nversion = \"1.0.0\"\n\
+             [mcp_servers.local]\ncommand = \"node\"\nargs = [\"mcp/server.mjs\"]\nconnect_timeout = 5\n\
+             [mcp_servers.local.env]\nCODEWHALE_CU_APP = \"off\"\n\
+             CODEWHALE_CU_STATE_DIR = {}\nCODEWHALE_CU_RECORDINGS_DIR = {}\nCODEWHALE_CU_TEST_BACKEND = {}\n",
+            serde_json::to_string(&state.to_string_lossy()).unwrap(),
+            serde_json::to_string(&recordings.to_string_lossy()).unwrap(),
+            serde_json::to_string(&fake.to_string_lossy()).unwrap(),
+        ),
+    )
+    .unwrap();
+    let discovery = crate::plugins::discovery::DiscoveryConfig {
+        workspace,
+        user_plugins_dir: root.path().join("plugins"),
+        workspace_plugins_dir: root.path().join("unused-workspace-plugins"),
+        builtin_plugin_dirs: Vec::new(),
+        state_path: root.path().join("plugin-state/state.json"),
+    };
+    let mut registry = crate::plugins::discovery::discover_with_config(&discovery);
+    registry.trust("computer-use").unwrap();
+    registry.enable("computer-use").unwrap();
+    let plugin = registry.get("computer-use").unwrap().clone();
+    let authority = registry.authority_for("computer-use").unwrap();
+    let config = merge_plugin_mcp_servers_from_plugins(
+        McpConfig::default(),
+        vec![("computer-use".to_string(), plugin, authority)],
+    )
+    .unwrap();
+    let server = config
+        .servers
+        .keys()
+        .next()
+        .expect("plugin MCP server")
+        .clone();
+    (root, Arc::new(registry), McpPool::new(config), server)
+}
+
+#[tokio::test]
+async fn computer_use_real_plugin_host_handshake_rejects_tamper_replay_and_late_keys() {
+    // The bundled Computer Use plugin applies only to macOS hosts; elsewhere
+    // there is no live plugin to start.
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let _env = crate::test_support::lock_test_env();
+    let (root, _registry, mut pool, server) = computer_use_test_fixture();
+    let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", root.path());
+    let _backend = crate::test_support::EnvVarGuard::set("CODEWHALE_SECRET_BACKEND", "file");
+    let connection = pool
+        .get_or_connect(&server)
+        .await
+        .expect("actual reviewed Node plugin");
+    let key = connection
+        .decision_key
+        .expect("first-message key from the host");
+    let args = serde_json::json!({"scope":"foreground", "remember":false});
+    let decision = crate::core::engine::HumanDecision::for_test("mcp_fixture_consent_allow", &args);
+    let decode = |result: serde_json::Value| {
+        serde_json::from_str::<serde_json::Value>(result["content"][0]["text"].as_str().unwrap())
+            .unwrap()
+    };
+    let unsigned = decode(
+        connection
+            .call_tool_decided("consent_allow", args.clone(), 5, None)
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        unsigned["error"]["code"], "consent_needs_user",
+        "{unsigned}"
+    );
+    let approved = decode(
+        connection
+            .call_tool_decided("consent_allow", args.clone(), 5, Some(&decision))
+            .await
+            .unwrap(),
+    );
+    assert_eq!(approved["ok"], true, "{approved}");
+
+    // A later key notification must not replace the first connection key.
+    let wrong_key = [8_u8; 32];
+    connection.send(serde_json::json!({"jsonrpc":"2.0","method":COMPUTER_USE_HOST_KEYS_METHOD,"params":{"decision_key":hex_encode(&wrong_key)}})).await.unwrap();
+    let fresh = attest_decision(&key, "consent_revoke", &args).unwrap();
+    for (tool, arguments, tag) in [
+        (
+            "consent_revoke",
+            args.clone(),
+            attest_decision(&wrong_key, "consent_revoke", &args).unwrap(),
+        ),
+        (
+            "consent_revoke",
+            serde_json::json!({"scope":"foreground","remember":true}),
+            fresh.clone(),
+        ),
+        ("consent_allow", args.clone(), fresh.clone()),
+    ] {
+        let rejected = decode(connection.call_method("tools/call", serde_json::json!({"name":tool,"arguments":arguments,"_meta":{COMPUTER_USE_DECISION_META:tag}}), 5).await.unwrap());
+        assert_eq!(
+            rejected["error"]["code"], "consent_needs_user",
+            "{rejected}"
+        );
+    }
+    let exact = serde_json::json!({"name":"consent_revoke","arguments":args,"_meta":{COMPUTER_USE_DECISION_META:fresh}});
+    let allowed = decode(
+        connection
+            .call_method("tools/call", exact.clone(), 5)
+            .await
+            .unwrap(),
+    );
+    assert_eq!(
+        allowed["ok"], true,
+        "the original key remains authoritative: {allowed}"
+    );
+    let replay = decode(
+        connection
+            .call_method("tools/call", exact, 5)
+            .await
+            .unwrap(),
+    );
+    assert_eq!(replay["error"]["code"], "consent_needs_user", "{replay}");
+    pool.shutdown_all().await;
+}
+
+#[tokio::test]
+async fn discover_all_rejects_combined_item_budget_without_publishing_any_family() {
+    let sent = Arc::new(Mutex::new(Vec::new()));
+    let tools = (0..MAX_MCP_CATALOG_ITEMS)
+        .map(|i| serde_json::json!({"name": format!("tool_{i}"), "inputSchema": {}}))
+        .collect::<Vec<_>>();
+    let transport = ScriptedValueTransport {
+        sent: Arc::clone(&sent),
+        responses: VecDeque::from([
+            json_frame(serde_json::json!({"jsonrpc":"2.0", "id":1, "result":{"tools":tools}})),
+            json_frame(
+                serde_json::json!({"jsonrpc":"2.0", "id":2, "result":{"resources":[{"uri":"file:///over-limit", "name":"over-limit"}]}}),
+            ),
+        ]),
+    };
+    let mut conn = test_connection(Box::new(transport));
+    conn.server_capabilities = Some(McpServerCapabilities {
+        tools: true,
+        resources: true,
+        prompts: true,
+    });
+    conn.tools = vec![
+        serde_json::from_value(serde_json::json!({"name":"previous", "inputSchema":{}})).unwrap(),
+    ];
+    conn.resources = vec![
+        serde_json::from_value(serde_json::json!({"uri":"file:///previous", "name":"previous"}))
+            .unwrap(),
+    ];
+    conn.resource_templates = vec![
+        serde_json::from_value(
+            serde_json::json!({"uriTemplate":"file:///{key}", "name":"previous"}),
+        )
+        .unwrap(),
+    ];
+    conn.prompts = vec![serde_json::from_value(serde_json::json!({"name":"previous"})).unwrap()];
+
+    let error = conn
+        .discover_all()
+        .await
+        .expect_err("combined count must refuse");
+    assert!(
+        error
+            .to_string()
+            .contains("resources/list exceeded the 4096-item")
+    );
+    assert_eq!(conn.tools.len(), 1);
+    assert_eq!(conn.tools[0].name, "previous");
+    assert_eq!(conn.resources[0].uri, "file:///previous");
+    assert_eq!(conn.resource_templates[0].name, "previous");
+    assert_eq!(conn.prompts[0].name, "previous");
+    assert_eq!(
+        sent.lock().unwrap().len(),
+        2,
+        "poisoned budget must prevent subsequent RPCs"
+    );
+}
+
+#[tokio::test]
+async fn discover_all_rejects_combined_page_budget_without_publishing() {
+    let sent = Arc::new(Mutex::new(Vec::new()));
+    let mut responses = VecDeque::new();
+    for page in 1..=MAX_MCP_CATALOG_PAGES {
+        let mut result = serde_json::json!({"tools":[]});
+        if page < MAX_MCP_CATALOG_PAGES {
+            result["nextCursor"] = serde_json::json!(format!("page_{page}"));
+        }
+        responses.push_back(json_frame(
+            serde_json::json!({"jsonrpc":"2.0", "id":page, "result":result}),
+        ));
+    }
+    responses.push_back(json_frame(serde_json::json!({"jsonrpc":"2.0", "id":MAX_MCP_CATALOG_PAGES+1, "result":{"resources":[]}})));
+    let mut conn = test_connection(Box::new(ScriptedValueTransport {
+        sent: Arc::clone(&sent),
+        responses,
+    }));
+    conn.server_capabilities = Some(McpServerCapabilities {
+        tools: true,
+        resources: true,
+        prompts: false,
+    });
+    conn.tools = vec![
+        serde_json::from_value(serde_json::json!({"name":"previous", "inputSchema":{}})).unwrap(),
+    ];
+    let error = conn
+        .discover_all()
+        .await
+        .expect_err("page budget must span families");
+    assert!(
+        error
+            .to_string()
+            .contains("resources/list exceeded the 64-page")
+    );
+    assert_eq!(conn.tools[0].name, "previous");
+    assert_eq!(sent.lock().unwrap().len(), MAX_MCP_CATALOG_PAGES + 1);
+}
+
+#[test]
+fn catalog_cursor_refusal_is_scoped_by_family_and_latched() {
+    let mut budget = McpCatalogBudget::new();
+    let page = serde_json::json!({"nextCursor":"shared-value"});
+    budget.observe_page("tools/list", &page, 0).unwrap();
+    budget.observe_page("resources/list", &page, 0).unwrap();
+    let error = budget.observe_page("tools/list", &page, 0).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("tools/list repeated pagination cursor")
+    );
+    let error = budget
+        .observe_page("prompts/list", &serde_json::json!({}), 0)
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("tools/list repeated pagination cursor")
+    );
+}
+
+#[test]
+fn catalog_byte_budget_cannot_reset_between_families() {
+    let mut budget = McpCatalogBudget::new();
+    // Put the real shared counter at the boundary without a 32MiB allocation.
+    let page = serde_json::json!({});
+    budget.bytes = MAX_MCP_CATALOG_BYTES - serde_json::to_vec(&page).unwrap().len();
+    budget.observe_page("tools/list", &page, 0).unwrap();
+    let error = budget.observe_page("resources/list", &page, 0).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("resources/list exceeded the 33554432-byte aggregate")
+    );
+    assert!(budget.ensure_available().is_err());
+}
+
+#[tokio::test]
+async fn discover_all_success_replaces_unavailable_old_families() {
+    let mut conn = test_connection(Box::new(ScriptedValueTransport {
+        sent: Arc::new(Mutex::new(Vec::new())),
+        responses: VecDeque::from([json_frame(
+            serde_json::json!({"jsonrpc":"2.0", "id":1, "result":{"tools":[]}}),
+        )]),
+    }));
+    conn.server_capabilities = Some(McpServerCapabilities {
+        tools: true,
+        resources: false,
+        prompts: false,
+    });
+    conn.resources = vec![
+        serde_json::from_value(serde_json::json!({"uri":"file:///old", "name":"old"})).unwrap(),
+    ];
+    conn.prompts = vec![serde_json::from_value(serde_json::json!({"name":"old"})).unwrap()];
+    conn.discover_all().await.unwrap();
+    assert!(conn.tools.is_empty());
+    assert!(conn.resources.is_empty());
+    assert!(conn.prompts.is_empty());
+}
+
+/// The selected Host and Rust default share the same real Rust OAuth store,
+/// refresh endpoint and connection recovery. Only loopback fixture credentials
+/// exist; no provider/browser or token bytes cross the extension RPC wire.
+#[tokio::test(flavor = "current_thread")]
+async fn http_backend_parity_reactive_refresh_reuses_exact_facade_id_once() {
+    let _env = crate::test_support::lock_test_env();
+    let _backend = crate::test_support::EnvVarGuard::set("CODEWHALE_SECRET_BACKEND", "file");
+    let _loopback = lock_mcp_loopback_tests().await;
+    let node = crate::extension_host::tests::node_for_tests("HTTP OAuth Host parity")
+        .expect("Host parity requires Node");
+    for backend in [McpBackend::Rust, McpBackend::Host] {
+        let dir = tempfile::tempdir().unwrap();
+        let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", dir.path());
+        let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(true);
+        let manager = Arc::new(crate::extension_host::ExtensionHostManager::new(
+            crate::extension_host::ExtensionHostOptions {
+                root: Some(dir.path().to_path_buf()),
+                node_override: Some(node.clone()),
+                ..Default::default()
+            },
+        ));
+        let _manager = crate::extension_host::TestManagerGuard::install(Arc::clone(&manager));
+        let mock = OAuthMcpMock::spawn().await;
+        let url = mock.url();
+        // The local expiry trusts this token; only the explicit peer 401 may
+        // force refresh. A token-expiry fixture would not exercise this arm.
+        seed_oauth_tokens(
+            "wikiserver",
+            &url,
+            "cw-unaccepted-but-unexpired",
+            "rt-fresh",
+            Some(millis_from_now(3_600_000)),
+        );
+        let mut pool = McpPool::new(McpConfig {
+            servers: [("wikiserver".into(), mock_oauth_server_config(mock.addr))].into(),
+            ..Default::default()
+        })
+        .with_backend(backend);
+        assert!(pool.connect_all().await.is_empty(), "{backend:?}");
+        assert_eq!(mock.token_requests.load(AtomicOrdering::SeqCst), 1);
+        let frames = mock.frames.lock().unwrap().clone();
+        let initializes: Vec<_> = frames
+            .iter()
+            .filter(|frame| frame["method"] == "initialize")
+            .collect();
+        assert_eq!(initializes.len(), 2);
+        assert_eq!(
+            initializes[0], initializes[1],
+            "same admitted frame, exact original Rust ID and params"
+        );
+        assert_eq!(initializes[0]["id"], "1");
+        assert_eq!(
+            frames
+                .iter()
+                .filter(|frame| frame["method"] == "notifications/initialized")
+                .count(),
+            1
+        );
+        pool.call_tool("mcp_wikiserver_wiki_lookup", json!({}))
+            .await
+            .unwrap();
+        assert_eq!(
+            mock.frames
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|frame| frame["method"] == "tools/call")
+                .count(),
+            1
+        );
+        pool.shutdown_all().await;
+        manager.shutdown().await;
+        mock.task.abort();
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn shared_http_refresh_revalidates_authority_before_any_second_write() {
+    let _env = crate::test_support::lock_test_env();
+    let dir = tempfile::tempdir().unwrap();
+    let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", dir.path());
+    let _backend = crate::test_support::EnvVarGuard::set("CODEWHALE_SECRET_BACKEND", "file");
+    let _loopback = lock_mcp_loopback_tests().await;
+    let mock = OAuthMcpMock::spawn().await;
+    let config = mock_oauth_server_config(mock.addr);
+    let url = mock.url();
+    seed_oauth_tokens(
+        "wikiserver",
+        &url,
+        "cw-unaccepted-but-unexpired",
+        "rt-fresh",
+        Some(millis_from_now(3_600_000)),
+    );
+    let runtime = oauth::McpOAuthRuntime::from_server_config(
+        "wikiserver",
+        &config,
+        reqwest::header::HeaderMap::new(),
+    )
+    .await
+    .unwrap();
+    let client = super::http_client::McpHttpClient::new(
+        &url,
+        false,
+        false,
+        false,
+        None,
+        Duration::from_secs(5),
+        Duration::from_secs(5),
+    )
+    .unwrap()
+    .with_mcp_auth(McpHttpAuth::from_config("wikiserver", &config, runtime));
+    let checks = std::sync::atomic::AtomicUsize::new(0);
+    let error = client
+        .send_mcp_request(
+            client.post(&url).body(
+                json!({"jsonrpc":"2.0","id":"original-rust-id","method":"initialize","params":{}})
+                    .to_string(),
+            ),
+            true,
+            false,
+            true,
+            || {
+                // This is the actual post-refresh validation point, not a mock
+                // success result: the token endpoint really answered first.
+                if mock.token_requests.load(AtomicOrdering::SeqCst) != 0 {
+                    checks.fetch_add(1, AtomicOrdering::SeqCst);
+                    anyhow::bail!("fixture authority withdrawn during refresh");
+                }
+                Ok(())
+            },
+            |_| Ok(()),
+        )
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("authority withdrawn"));
+    assert_eq!(checks.load(AtomicOrdering::SeqCst), 1);
+    assert_eq!(mock.token_requests.load(AtomicOrdering::SeqCst), 1);
+    let frames = mock.frames.lock().unwrap();
+    assert_eq!(
+        frames.len(),
+        1,
+        "no second MCP network write after withdrawal"
+    );
+    assert_eq!(frames[0]["id"], "original-rust-id");
+    drop(frames);
+    mock.task.abort();
+}
+
+#[test]
+fn configured_mcp_search_matches_real_names_and_bounds_the_admitted_set() {
+    let mut config = McpConfig::default();
+    for index in 0..12 {
+        config.servers.insert(
+            format!("server{index:02}"),
+            serde_json::from_value(json!({"command":"unused"})).unwrap(),
+        );
+    }
+    let pool = McpPool::new(config);
+    assert!(
+        pool.configured_servers_for_search(".*", "regex", |_| true)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        pool.configured_servers_for_search("unrelated search", "bm25", |_| true)
+            .unwrap()
+            .is_empty()
+    );
+    let names = pool
+        .configured_servers_for_search("mcp_.*", "regex", |name| name >= "server04")
+        .unwrap();
+    assert_eq!(names.len(), 8);
+    assert_eq!(names[0], "server04");
+    assert_eq!(names[7], "server11");
+    assert_eq!(
+        pool.configured_servers_for_search("^mcp_server05_actual_method$", "regex", |_| true)
+            .unwrap(),
+        ["server05"]
+    );
+    assert!(
+        pool.configured_servers_for_search("mcp_[", "regex", |_| true)
+            .is_err()
+    );
+}
+
+#[test]
+fn configured_mcp_search_excludes_disabled_and_namespace_denied_servers() {
+    let mut config = McpConfig::default();
+    config.servers.insert(
+        "enabled".into(),
+        serde_json::from_value(json!({"command":"unused"})).unwrap(),
+    );
+    config.servers.insert(
+        "disabled".into(),
+        serde_json::from_value(json!({"command":"unused", "enabled":false})).unwrap(),
+    );
+    config.servers.insert(
+        "denied".into(),
+        serde_json::from_value(json!({"command":"unused"})).unwrap(),
+    );
+    let pool = McpPool::new(config).with_disallowed_tools(vec!["mcp_denied_*".into()]);
+    assert_eq!(
+        pool.configured_servers_for_search("mcp_.*", "regex", |_| true)
+            .unwrap(),
+        ["enabled"]
+    );
+    // The list named to the model passes the same gates, plus the turn's.
+    assert_eq!(pool.discoverable_configured_servers(|_| true), ["enabled"]);
+    assert!(
+        pool.discoverable_configured_servers(|name| name != "enabled")
+            .is_empty()
     );
 }

@@ -20,6 +20,7 @@ export const chrome: ChromeDict = {
   navCommunity: "المجتمع",
   navContribute: "المساهمة",
 
+  navFeatures: "القدرات",
   navProduct: "المنتج",
   navModels: "النماذج",
   navPlugins: "الإضافات",
@@ -45,7 +46,7 @@ export const chrome: ChromeDict = {
   themeTitle: "السمة · تلقائي / فاتح / داكن",
 
   footerTagline:
-    "اصنع ما تريد وأتمت العمل اليومي باستخدام النماذج التي تختارها.",
+    "ابنِ تطبيقات وأتمت العمل باستخدام نماذجك وأدواتك المتصلة.",
   footerProduct: "المنتج",
   footerProject: "المشروع",
   footerDocs: "التوثيق",

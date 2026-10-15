@@ -4,7 +4,7 @@
 //! engine session maintenance code. Keeping them here prevents the top-level
 //! engine module from accumulating unrelated context-policy details.
 
-use crate::config::ApiProvider;
+use crate::config::ProviderKind;
 use crate::context_budget::ContextBudget;
 #[cfg(test)]
 pub(super) use crate::route_budget::effective_max_output_tokens;
@@ -543,8 +543,39 @@ fn compact_structured_tool_result_for_context(
         // content actually parses as a gate result, so non-gate `tasks`
         // results fall through to the generic path unchanged.
         "task_gate_run" | "tasks" => compact_task_gate_run_result_for_context(raw),
-        _ => None,
+        _ => compact_todo_write_result_for_context(raw, metadata),
     }
+}
+
+fn compact_todo_write_result_for_context(
+    raw: &str,
+    metadata: Option<&Value>,
+) -> Option<ContextSummary> {
+    let metadata = metadata?;
+    if metadata.get("canonical_tool").and_then(Value::as_str) != Some("todo_write") {
+        return None;
+    }
+    let header = raw
+        .lines()
+        .next()
+        .filter(|line| line.starts_with("Todo list updated ("))?;
+    let active = metadata
+        .pointer("/task_updates/checklist/items")?
+        .as_array()?
+        .iter()
+        .find(|item| item.get("status").and_then(Value::as_str) == Some("in_progress"));
+    let text = match active {
+        Some(item) => format!(
+            "{header}\nIn progress: #{} {}",
+            item.get("id").and_then(Value::as_u64).unwrap_or_default(),
+            item.get("content")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .trim(),
+        ),
+        None => format!("{header}\nNo item in progress"),
+    };
+    Some(ContextSummary { text, lossy: false })
 }
 
 #[cfg(test)]
@@ -553,11 +584,11 @@ pub(crate) fn compact_tool_result_for_context(
     tool_name: &str,
     output: &ToolResult,
 ) -> String {
-    compact_tool_result_for_route(ApiProvider::Deepseek, model, None, tool_name, output)
+    compact_tool_result_for_route(ProviderKind::Deepseek, model, None, tool_name, output)
 }
 
 pub(crate) fn compact_tool_result_for_route(
-    provider: ApiProvider,
+    provider: ProviderKind,
     model: &str,
     route_limits: Option<RouteLimits>,
     tool_name: &str,
@@ -580,7 +611,7 @@ pub(crate) fn compact_tool_result_for_route(
 /// sub-agent snapshots) keep their shape, scale their detail with the same
 /// budget, and follow the same rule whenever they leave something out.
 pub(crate) fn tool_result_context_view(
-    provider: ApiProvider,
+    provider: ProviderKind,
     model: &str,
     route_limits: Option<RouteLimits>,
     tool_name: &str,
@@ -718,7 +749,7 @@ pub(super) fn extract_compaction_summary_prompt(
 /// compaction on otherwise valid large-window inputs.
 #[cfg(test)]
 pub(super) fn context_input_budget_for_provider(
-    provider: ApiProvider,
+    provider: ProviderKind,
     model: &str,
 ) -> Option<usize> {
     context_input_budget_for_route(provider, model, None, 0)
@@ -731,7 +762,7 @@ pub(super) fn context_input_budget_for_provider(
 /// instead of re-deriving those constants and silently drifting from the engine.
 /// Pass `input_tokens = 0` to get the full emergency input budget for the route.
 pub fn context_input_budget_for_route(
-    provider: ApiProvider,
+    provider: ProviderKind,
     model: &str,
     route_limits: Option<RouteLimits>,
     input_tokens: usize,
@@ -742,7 +773,7 @@ pub fn context_input_budget_for_route(
 
 #[cfg(test)]
 pub(super) fn route_context_budget_for_provider(
-    provider: ApiProvider,
+    provider: ProviderKind,
     model: &str,
     input_tokens: usize,
 ) -> Option<ContextBudget> {
@@ -750,7 +781,7 @@ pub(super) fn route_context_budget_for_provider(
 }
 
 pub(super) fn route_context_budget_for_route(
-    provider: ApiProvider,
+    provider: ProviderKind,
     model: &str,
     route_limits: Option<RouteLimits>,
     input_tokens: usize,

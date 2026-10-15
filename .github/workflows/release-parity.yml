@@ -21,7 +21,9 @@ env:
 jobs:
   parity:
     name: Workspace parity
-    timeout-minutes: 45
+    # Cold check, Clippy, executable and test builds exceeded the old 45m
+    # limit before the suite started. Retain the full CI test-job budget.
+    timeout-minutes: 165
     runs-on: ubuntu-latest
     steps:
       # Every caller's resolve job already proved GITHUB_SHA equals the
@@ -30,7 +32,7 @@ jobs:
       # CodeQL treats a *sha* ref as an untrusted checkout on workflow_dispatch
       # (default-branch cache write).
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master 2026-07-18
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master 2026-07-18
         with:
           toolchain: stable
           components: clippy, rustfmt
@@ -53,7 +55,8 @@ jobs:
             echo "apt-get update failed (attempt $i); retrying in 15s"
             sleep 15
           done
-          sudo apt-get install -y libdbus-1-dev pkg-config
+          sudo apt-get install -y libdbus-1-dev pkg-config bubblewrap apparmor-profiles
+          sh scripts/prepare-linux-test-sandbox.sh
       # Restore after the trusted lockfile is on disk. Key is OS + arch +
       # explicit stable toolchain + rust-cache's Cargo.lock / rust-toolchain
       # hash. Never interpolate github.event, github.ref, github.sha, or inputs.
@@ -80,6 +83,13 @@ jobs:
             -A clippy::uninlined_format_args \
             -A clippy::too_many_arguments \
             -A clippy::unnecessary_map_or
+      - name: Build headroom
+        # Same fixed ephemeral-runner provisioning as CI Safety, Lint, and Test.
+        # Resource headroom is preventive; a shutdown alone does not prove OOM.
+        shell: bash
+        run: bash scripts/prepare-ubuntu-build-headroom.sh
+      - name: Build canonical executable for acceptance tests
+        run: cargo build -p codewhale-cli --bin codewhale --all-features --locked
       - name: Workspace tests
         # Same test binaries as `cargo test`, run by cargo-nextest: one process
         # per test. This gate used libtest, where every test shares one process,
@@ -89,7 +99,21 @@ jobs:
         # same source, and every one of them passes in isolation. Match the lane
         # that gates every merge; doctests are the next step, because nextest
         # does not run them.
-        run: sh scripts/with-hermetic-test-home.sh cargo nextest run --workspace --all-features --locked --profile ci
+        # The runner has been shut down during this step's build on several
+        # candidates (exit 143, no test result). The same headroom trace as
+        # ci.yml's test step records whether memory or disk ran out, starting
+        # with what the earlier check and clippy steps left behind.
+        shell: bash
+        run: |
+          echo "[headroom] before tests: $(free -m | awk '/^Mem:/{print "mem used " $3 "/" $2 " MiB"} /^Swap:/{print "swap used " $3 "/" $2 " MiB"}' | paste -sd ' ') disk free $(df -h / | awk 'NR==2{print $4}') target $(du -sh target 2>/dev/null | cut -f1)"
+          ( while sleep 30; do
+              echo "[headroom] $(free -m | awk '/^Mem:/{print "mem used " $3 "/" $2 " MiB"} /^Swap:/{print "swap used " $3 "/" $2 " MiB"}' | paste -sd ' ') disk free $(df -h / | awk 'NR==2{print $4}')"
+            done ) &
+          monitor=$!
+          status=0
+          sh scripts/with-hermetic-test-home.sh cargo nextest run --workspace --all-features --locked --profile ci || status=$?
+          kill "$monitor" 2>/dev/null || true
+          exit "$status"
         env:
           # Match the CI test lane: test threads get the same stack the product
           # gives itself (main.rs CODEWHALE_MAIN_STACK_BYTES). See the note in

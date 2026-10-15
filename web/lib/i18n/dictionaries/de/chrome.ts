@@ -25,6 +25,7 @@ export const chrome: ChromeDict = {
   navCommunity: "Community",
   navContribute: "Mitwirken",
 
+  navFeatures: "Funktionen",
   navProduct: "Produkt",
   navModels: "Modelle",
   navPlugins: "Plugins",
@@ -50,7 +51,7 @@ export const chrome: ChromeDict = {
   themeTitle: "Design · auto / hell / dunkel",
 
   footerTagline:
-    "Erstelle, was du möchtest, und automatisiere alltägliche Arbeit mit den Modellen deiner Wahl.",
+    "Baue Apps und automatisiere Arbeit mit deinen eigenen Modellen und verbundenen Werkzeugen.",
   footerProduct: "Produkt",
   footerProject: "Projekt",
   footerDocs: "Dokumentation",

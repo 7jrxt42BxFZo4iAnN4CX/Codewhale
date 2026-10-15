@@ -12,10 +12,14 @@
 //! `thread_id`/`session_id` routing envelope is dropped; liveness heartbeats
 //! are dropped; UUIDs, timestamps, temp paths and durations are masked; the
 //! system prompt and tool catalog bodies are replaced by a marker because the
-//! prompt family owns those bytes; runs of adjacent `tool_call_complete`
-//! events are ordered by tool call id because parallel completions race.
-//! Adjacent `operation_activity_completed` observations are likewise ordered
-//! by their established span id. No start, error, or other event is crossed.
+//! prompt family owns those bytes; an uninterrupted run of completion events
+//! is put in a canonical order because parallel completions race and their
+//! pairs interleave: `operation_activity_completed` by span id, then
+//! `tool_call_complete` by tool call id. The activity events of one announced
+//! parallel batch (the events after the `Executing N ... parallel chunk(s)`
+//! status) are ordered the same way, starts first, because a fast tool can
+//! finish before its sibling has started. Only a causally valid batch is
+//! reordered; no error or other event is crossed.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::path::Path;
@@ -196,10 +200,14 @@ fn approval_mode(case: &Value) -> ApprovalMode {
 
 pub(super) fn send_message_op(case: &Value, config: &Config) -> Op {
     let model = case["model"].as_str().expect("case.model");
-    let route =
-        crate::route_runtime::resolve_runtime_route(config, config.api_provider(), Some(model))
-            .expect("resolve conformance route");
+    let route = crate::route_runtime::resolve_runtime_route(
+        config,
+        config.active_provider_identity().unwrap().provider,
+        Some(model),
+    )
+    .expect("resolve conformance route");
     Op::SendMessage(TurnSpec {
+        profile_constitution: None,
         max_output_tokens: None,
         submission_id: None,
         content: case["user_message"]
@@ -520,29 +528,126 @@ pub(super) fn normalize_events(events: &[Event], masker: &mut Masker) -> Vec<Val
         masker.value(&mut value);
         lines.push(golden::canonical(&value));
     }
+    order_parallel_batches(&mut lines);
     order_parallel_completions(&mut lines);
     lines
 }
 
-fn order_parallel_completions(lines: &mut [Value]) {
-    let mut start = 0;
-    while start < lines.len() {
-        let (kind, key) = match lines[start]["event"].as_str() {
-            Some("tool_call_complete") => ("tool_call_complete", "tool_call_id"),
-            Some("operation_activity_completed") => ("operation_activity_completed", "span_id"),
-            _ => {
-                start += 1;
-                continue;
+/// The activity and tool events a parallel batch emits.
+fn batch_rank(line: &Value) -> Option<(u8, &'static str)> {
+    match line["event"].as_str() {
+        Some("operation_activity_started") => Some((0, "span_id")),
+        Some("operation_activity_completed") => Some((1, "span_id")),
+        Some("tool_call_complete") => Some((2, "tool_call_id")),
+        _ => None,
+    }
+}
+
+/// Whether `run` is a legal interleaving of parallel tools: every span starts
+/// once and completes at most once after its start, and a tool's completion
+/// follows its own activity completion. A run that fails this is left in
+/// its recorded order so the golden reports the violation.
+fn batch_is_causal(run: &[Value]) -> bool {
+    let mut started = std::collections::BTreeSet::new();
+    let mut completed = std::collections::BTreeSet::new();
+    let mut finished_calls = std::collections::BTreeSet::new();
+    for line in run {
+        let span = line["span_id"].as_str().unwrap_or_default();
+        let call = span.split('#').next().unwrap_or_default();
+        match line["event"].as_str() {
+            Some("operation_activity_started") => {
+                if !started.insert(span) {
+                    return false;
+                }
             }
-        };
+            Some("operation_activity_completed") => {
+                if !started.contains(span) || !completed.insert(span) {
+                    return false;
+                }
+            }
+            Some("tool_call_complete") => {
+                finished_calls.insert(line["tool_call_id"].as_str().unwrap_or_default());
+            }
+            _ => {}
+        }
+        // A tool completion may not precede its own activity completion.
+        if line["event"].as_str() == Some("operation_activity_completed")
+            && finished_calls.contains(call)
+        {
+            return false;
+        }
+    }
+    true
+}
+
+/// Parallel tools in one announced batch run concurrently, so one tool can
+/// start, finish and report before its sibling has started (a blocking-pool
+/// read that completes before its first poll). The run of activity and tool
+/// events after the batch's `Executing N ... parallel chunk(s)` status is put
+/// in one canonical order: starts by span, activity completions by span, tool
+/// completions by call id. Only a causally valid run is reordered, and every
+/// event, outcome and boundary is kept.
+fn order_parallel_batches(lines: &mut [Value]) {
+    let mut at = 0;
+    while at < lines.len() {
+        let announces_batch = lines[at]["event"].as_str() == Some("status")
+            && lines[at]["message"].as_str().is_some_and(|message| {
+                message.starts_with("Executing ") && message.ends_with(" parallel chunk(s)")
+            });
+        at += 1;
+        if !announces_batch {
+            continue;
+        }
+        let start = at;
         let mut end = start;
-        while end < lines.len() && lines[end]["event"] == kind {
+        while end < lines.len() && batch_rank(&lines[end]).is_some() {
             end += 1;
         }
-        if end - start > 1 {
-            lines[start..end].sort_by(|left, right| left[key].as_str().cmp(&right[key].as_str()));
+        if batch_is_causal(&lines[start..end]) {
+            lines[start..end].sort_by(|left, right| {
+                let (left_rank, left_key) = batch_rank(left).unwrap_or((0, "span_id"));
+                let (right_rank, right_key) = batch_rank(right).unwrap_or((0, "span_id"));
+                left_rank
+                    .cmp(&right_rank)
+                    .then_with(|| left[left_key].as_str().cmp(&right[right_key].as_str()))
+            });
         }
-        start = end.max(start + 1);
+        at = end;
+    }
+}
+
+/// Parallel tools race to report: each emits its activity completion and then
+/// its tool completion, and under load the two tools' pairs interleave. One
+/// uninterrupted run of completion events is therefore put in a canonical
+/// order: activity completions by span, then tool completions by call id.
+/// Every event, its outcome and the run's boundaries are kept; only the order
+/// inside the run is normalized.
+fn order_parallel_completions(lines: &mut [Value]) {
+    fn completion(line: &Value) -> Option<(u8, &'static str)> {
+        match line["event"].as_str() {
+            Some("operation_activity_completed") => Some((0, "span_id")),
+            Some("tool_call_complete") => Some((1, "tool_call_id")),
+            _ => None,
+        }
+    }
+    let mut start = 0;
+    while start < lines.len() {
+        if completion(&lines[start]).is_none() {
+            start += 1;
+            continue;
+        }
+        let mut end = start;
+        while end < lines.len() && completion(&lines[end]).is_some() {
+            end += 1;
+        }
+        lines[start..end].sort_by(|left, right| {
+            let (left_kind, left_key) = completion(left).unwrap_or((0, "span_id"));
+            let (right_kind, right_key) = completion(right).unwrap_or((0, "span_id"));
+            left_kind
+                .cmp(&right_kind)
+                .then_with(|| left[left_key].as_str().cmp(&right[right_key].as_str()))
+        });
+        start = end;
     }
 }
 
@@ -575,6 +680,27 @@ fn parallel_completion_projection_keeps_outcomes_spans_and_causal_boundaries() {
     assert_eq!(normalized, expected);
     assert_eq!(normalized.len(), original.len());
 
+    // Two tools' completion pairs interleaved under load normalize to the
+    // same order as the uninterleaved run.
+    let tool = |id: &str| json!({"event": "tool_call_complete", "tool_call_id": id});
+    let activity = |span: &str| json!({"event": "operation_activity_completed", "span_id": span, "outcome": "succeeded"});
+    let mut interleaved = vec![
+        activity("call_b#2"),
+        tool("call_b"),
+        activity("call_a#1"),
+        tool("call_a"),
+    ];
+    order_parallel_completions(&mut interleaved);
+    assert_eq!(
+        interleaved,
+        vec![
+            activity("call_a#1"),
+            activity("call_b#2"),
+            tool("call_a"),
+            tool("call_b")
+        ]
+    );
+
     let mut wrong_outcome = original.clone();
     wrong_outcome[1]["outcome"] = json!("succeeded");
     order_parallel_completions(&mut wrong_outcome);
@@ -587,6 +713,117 @@ fn parallel_completion_projection_keeps_outcomes_spans_and_causal_boundaries() {
         wrong_span, expected,
         "wrong span relationship was normalized away"
     );
+}
+
+#[test]
+fn parallel_batch_projection_orders_legal_interleavings_and_keeps_violations() {
+    let status =
+        json!({"event": "status", "message": "Executing 2 read-only tools in 1 parallel chunk(s)"});
+    let start = |span: &str| json!({"event": "operation_activity_started", "span_id": span});
+    let done = |span: &str, outcome: &str| json!({"event": "operation_activity_completed", "span_id": span, "outcome": outcome});
+    let tool = |id: &str| json!({"event": "tool_call_complete", "tool_call_id": id});
+    let tail = json!({"event": "session_updated"});
+    let canonical = vec![
+        status.clone(),
+        start("a#1"),
+        start("b#2"),
+        done("a#1", "succeeded"),
+        done("b#2", "succeeded"),
+        tool("a"),
+        tool("b"),
+        tail.clone(),
+    ];
+    let with_tail = |run: Vec<Value>| {
+        let mut lines = vec![status.clone()];
+        lines.extend(run);
+        lines.push(tail.clone());
+        lines
+    };
+    // Recorded: both start, then both finish. Hosted CI also saw one tool
+    // finish before its sibling started, and both pairs fully interleaved.
+    for run in [
+        vec![
+            start("a#1"),
+            start("b#2"),
+            done("a#1", "succeeded"),
+            done("b#2", "succeeded"),
+            tool("a"),
+            tool("b"),
+        ],
+        vec![
+            start("a#1"),
+            done("a#1", "succeeded"),
+            start("b#2"),
+            done("b#2", "succeeded"),
+            tool("a"),
+            tool("b"),
+        ],
+        vec![
+            start("a#1"),
+            done("a#1", "succeeded"),
+            tool("a"),
+            start("b#2"),
+            done("b#2", "succeeded"),
+            tool("b"),
+        ],
+        vec![
+            start("b#2"),
+            start("a#1"),
+            done("b#2", "succeeded"),
+            tool("b"),
+            done("a#1", "succeeded"),
+            tool("a"),
+        ],
+    ] {
+        let mut lines = with_tail(run);
+        order_parallel_batches(&mut lines);
+        order_parallel_completions(&mut lines);
+        assert_eq!(lines, canonical);
+    }
+
+    // Outcomes survive the reordering.
+    let mut lines = with_tail(vec![
+        start("a#1"),
+        done("a#1", "failed"),
+        start("b#2"),
+        done("b#2", "succeeded"),
+        tool("a"),
+        tool("b"),
+    ]);
+    order_parallel_batches(&mut lines);
+    assert_eq!(lines[3], done("a#1", "failed"));
+
+    // An illegal run is left exactly as recorded: a completion with no start,
+    // a repeated start, a repeated completion, a tool completion before its
+    // activity completion.
+    for run in [
+        vec![done("a#1", "succeeded"), start("a#1"), tool("a")],
+        vec![
+            start("a#1"),
+            start("a#1"),
+            done("a#1", "succeeded"),
+            tool("a"),
+        ],
+        vec![
+            start("a#1"),
+            done("a#1", "succeeded"),
+            done("a#1", "succeeded"),
+            tool("a"),
+        ],
+        vec![start("a#1"), tool("a"), done("a#1", "succeeded")],
+    ] {
+        let recorded = with_tail(run);
+        let mut lines = recorded.clone();
+        order_parallel_batches(&mut lines);
+        assert_eq!(lines, recorded, "an illegal run was normalized away");
+    }
+
+    // Without an announced parallel batch nothing is reordered: a serial run
+    // that starts its second tool early is a real change.
+    let serial = vec![start("b#2"), done("b#2", "succeeded"), start("a#1")];
+    let mut lines = serial.clone();
+    order_parallel_batches(&mut lines);
+    assert_eq!(lines, serial);
 }
 
 fn check_invariants(case: &Value, workspace: &Path, provider: &ScriptedProvider) -> Vec<String> {

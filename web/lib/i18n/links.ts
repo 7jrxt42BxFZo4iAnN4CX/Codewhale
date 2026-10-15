@@ -10,7 +10,7 @@
  */
 import type { ChromeDict } from "./dictionaries/types";
 
-export const REPO_URL = "https://github.com/Hmbown/CodeWhale";
+export const REPO_URL = "https://github.com/codewhale-hq/CodeWhale";
 export const REPO_ISSUES_URL = `${REPO_URL}/issues`;
 export const REPO_RELEASES_URL = `${REPO_URL}/releases`;
 export const REPO_LICENSE_URL = `${REPO_URL}/blob/main/LICENSE`;
@@ -37,6 +37,7 @@ export interface ChromeLink {
 export function navLinks(locale: string, chrome: ChromeDict): ChromeLink[] {
   return [
     { href: `/${locale}/product`, label: chrome.navProduct },
+    { href: `/${locale}/features`, label: chrome.navFeatures },
     { href: `/${locale}/models`, label: chrome.navModels },
     { href: `/${locale}/plugins`, label: chrome.navPlugins },
     { href: `/${locale}/docs`, label: chrome.navDocs },
@@ -48,6 +49,7 @@ export function secondaryNavLinks(locale: string, chrome: ChromeDict): ChromeLin
   return [
     { href: `/${locale}/docs/guide`, label: chrome.navStart },
     { href: `/${locale}/install`, label: chrome.navInstall },
+    { href: `/${locale}/ratatui`, label: "Ratatui" },
     { href: `/${locale}/faq`, label: chrome.navFaq },
     { href: `/${locale}/community`, label: chrome.navCommunity },
     { href: `/${locale}/contribute`, label: chrome.navContribute },
@@ -58,11 +60,13 @@ export function secondaryNavLinks(locale: string, chrome: ChromeDict): ChromeLin
 export function footerProductLinks(locale: string, chrome: ChromeDict): ChromeLink[] {
   return [
     { href: `/${locale}/product`, label: chrome.navProduct },
+    { href: `/${locale}/features`, label: chrome.navFeatures },
     { href: `/${locale}/docs`, label: chrome.footerDocs },
     { href: `/${locale}/docs/guide`, label: chrome.footerGuide },
     { href: `/${locale}/install`, label: chrome.footerInstall },
     { href: `/${locale}/models`, label: chrome.footerModels },
     { href: `/${locale}/plugins`, label: chrome.navPlugins },
+    { href: `/${locale}/ratatui`, label: "Ratatui" },
     { href: `/${locale}/runtime`, label: chrome.footerRuntime },
     { href: `/${locale}/faq`, label: chrome.footerFaq },
     { href: `/${locale}/changelog`, label: chrome.footerChangelog },

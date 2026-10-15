@@ -77,10 +77,9 @@
   margin: 0;
   padding: var(--space-4);
   color: var(--text);
-  font-family: var(--font-mono);
-  font-size: var(--text-mono);
+  font-family: var(--font-body);
+  font-size: var(--text-body);
   line-height: 1.6;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .trace-cites { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: 0 var(--space-4) var(--space-3); }
@@ -183,3 +182,8 @@
 .legal-tabs { margin-bottom: var(--space-6); }
 .legal-doc > section > h2 { margin-top: var(--space-6); }
 .legal-doc .status-line { margin-top: var(--space-7); }
+.feature-catalogue { display: grid; gap: 0; margin-block: 1.5rem; }
+.feature-entry { padding-block: 1.5rem; border-block-start: 1px solid var(--line); min-width: 0; scroll-margin-top: 6rem; }
+.feature-entry h2 { margin-block: 0 0.5rem; }
+.feature-entry p { overflow-wrap: anywhere; }
+.feature-states { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1rem; margin-block: 1rem; }

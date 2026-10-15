@@ -196,6 +196,11 @@ pub enum ConstitutionChoice {
 }
 
 impl ConstitutionChoice {
+    #[must_use]
+    pub const fn applies_user_global(self) -> bool {
+        !matches!(self, Self::Bundled | Self::Deferred | Self::ExpertOverride)
+    }
+
     /// True for any value other than [`Unset`](ConstitutionChoice::Unset).
     #[must_use]
     pub fn is_explicit(self) -> bool {

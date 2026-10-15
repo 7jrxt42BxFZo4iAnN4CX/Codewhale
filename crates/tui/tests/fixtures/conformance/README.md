@@ -95,11 +95,16 @@ Each line is `codewhale_protocol::EventMsg` as serialized (`"event"` tag), with:
   `elapsed_ms`, `pinned_combined_hash` → `"<masked>"`; temp paths →
   `<WORKSPACE>` / `<HOME>` / `<TMP>`;
 - `tool_catalog` and `system_prompt` bodies → `"<pinned by the prompt family>"`;
-- runs of adjacent `tool_call_complete` events ordered by `tool_call_id`
-  (parallel completions race);
-- runs of adjacent `operation_activity_completed` observations ordered by
-  the established `span_id` for the same reason; outcomes, span relationships,
-  and event counts stay exact, and no start/error/other event is crossed;
+- an uninterrupted run of completion events put in a canonical order,
+  because parallel completions race and two tools' pairs can interleave:
+  `operation_activity_completed` observations by the established `span_id`,
+  then `tool_call_complete` events by `tool_call_id`; outcomes, span
+  relationships, and event counts stay exact, and no error or other event
+  is crossed. The activity events after a parallel batch's `Executing N ...
+  parallel chunk(s)` status are ordered the same way with starts first (a fast
+  tool can finish before its sibling starts), only when the run is causally
+  valid: every span starts once and completes once after its start, and a
+  tool completes after its own activity;
 - keys sorted.
 
 The last line is `{"harness_summary": {model_requests, non_streaming_requests,

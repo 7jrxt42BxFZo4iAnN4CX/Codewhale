@@ -11,13 +11,32 @@ export const docsSandbox: DocsSandboxDict = {
     "批准一条命令，决定的是它能不能运行；沙箱决定的是它运行之后能碰到什么。只要操作系统提供沙箱，Codewhale 就会使用它；没有沙箱时，也会如实告诉你。",
   sections: [
     {
+      "id": "execution-policy",
+      "title": "检查执行策略规则",
+      "blocks": [
+        {
+          "code": "/permissions",
+          "lang": "Codewhale"
+        },
+        {
+          "p": "类型化权限依次按 User、Agent、BuiltinDefault 选择规则。同一来源层中，deny 优先于 ask 与 allow；匹配精度用于打破同级平局。"
+        },
+        {
+          "p": "硬性拒绝的命令前缀不能被类型化 allow 覆盖。allow 不会移除后续安全检查、仓库限制或沙箱边界。"
+        },
+        {
+          "p": "[阅读授权顺序与匹配规则](https://github.com/codewhale-hq/CodeWhale/blob/main/docs/AUTHORIZATION_ORDER.md)"
+        }
+      ]
+    },
+    {
       id: "platforms",
       title: "查看你的平台提供了什么",
       blocks: [
         {
           rows: [
             ["macOS", "Seatbelt，启动检查通过后自动启用。命令可以广泛读取，写入范围由沙箱模式限定，只有模式允许时才能联网。"],
-            ["Linux", "bubblewrap，但需要你手动开启（见下文）。不开启时，命令在没有操作系统沙箱的情况下运行。"],
+            ["Linux", "bubblewrap，安装并验证可用后自动启用（退出见下文）。不可用时，命令在没有操作系统沙箱的情况下运行。"],
             ["Windows", "目前没有操作系统沙箱。你的审批设置和 Windows 自身的权限仍然有效。"],
             ["外部服务", "设置 `sandbox_backend = \"opensandbox\"` 后，shell 命令会在你配置的 OpenSandbox 兼容服务上运行；隔离效果由该服务负责保证。"],
           ],
@@ -31,18 +50,18 @@ export const docsSandbox: DocsSandboxDict = {
     },
     {
       id: "linux",
-      title: "开启 Linux 沙箱",
+      title: "启用（或关闭）Linux 沙箱",
       blocks: [
-        { p: "先安装 bubblewrap，再在 `~/.codewhale/config.toml` 中加一行来启用：" },
+        { p: "安装 bubblewrap 后 Codewhale 默认使用它。想让 Linux 命令不被包装，在 `~/.codewhale/config.toml` 中加一行退出：" },
         {
           code: `sudo apt install bubblewrap      # Fedora: dnf install bubblewrap · Arch: pacman -S bubblewrap
 
 # ~/.codewhale/config.toml
-prefer_bwrap = true`,
+prefer_bwrap = false`,
           lang: "终端 / config.toml",
         },
         {
-          p: "只有当 `/usr/bin/bwrap` 存在且可执行时，Codewhale 才会使用它。此后，命令看到的是只读的系统视图，只能写入沙箱模式允许的位置，除非模式允许，否则无法联网。",
+          p: "只有当 `/usr/bin/bwrap` 存在、可执行，且探测证明它能创建沙箱命名空间时，Codewhale 才会使用它——装了但被系统拦住的 bwrap 按不存在处理。此后，命令看到的是只读的系统视图，只能写入沙箱模式允许的位置，除非模式允许，否则无法联网。",
         },
       ],
     },

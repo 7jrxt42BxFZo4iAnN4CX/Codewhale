@@ -65,6 +65,8 @@ pub enum RailPanel {
     Tasks,
     /// Background shells and durable tasks. Scheduled work has its own manager.
     Background,
+    /// Live workspace PTYs shared with the model, with explicit input focus.
+    Terminal,
     /// Files edited this session (`+/−`) and files read into context.
     Files,
     /// Per-workspace plain-text notes (`.codewhale/notes.md`).
@@ -79,10 +81,11 @@ pub enum RailPanel {
 
 impl RailPanel {
     /// Cycle order — also the tab order in the dock strip.
-    pub const ORDER: [RailPanel; 8] = [
+    pub const ORDER: [RailPanel; 9] = [
         Self::Tasks,
         Self::Agents,
         Self::Background,
+        Self::Terminal,
         Self::Files,
         Self::Notepad,
         Self::Context,
@@ -128,6 +131,7 @@ impl RailPanel {
             "agents" | "subagents" | "sub-agents" => Self::Agents,
             "tasks" | "todo" | "todos" => Self::Tasks,
             "background" | "shells" | "jobs" => Self::Background,
+            "terminal" | "terminals" => Self::Terminal,
             "files" | "changes" => Self::Files,
             "notepad" | "notes" => Self::Notepad,
             "context" | "session" => Self::Context,
@@ -143,6 +147,7 @@ impl RailPanel {
             Self::Agents => "agents",
             Self::Tasks => "tasks",
             Self::Background => "background",
+            Self::Terminal => "terminal",
             Self::Files => "files",
             Self::Notepad => "notepad",
             Self::Context => "context",
@@ -163,6 +168,7 @@ impl RailPanel {
             Self::Agents => "AGENTS",
             Self::Tasks => "TODO",
             Self::Background => "BACKGROUND",
+            Self::Terminal => "TERMINAL",
             Self::Files => "FILES",
             Self::Notepad => "NOTEPAD",
             Self::Context => "CONTEXT",
@@ -329,6 +335,8 @@ pub(crate) struct SessionInstanceScope {
 
 #[derive(Debug, Clone)]
 pub struct WorkSurfaceState {
+    #[cfg(all(unix, not(target_env = "ohos")))]
+    pub(super) terminal: super::terminal::TerminalDock,
     pub placement: WorkSurfacePlacement,
     pub(super) effective_placement: WorkSurfacePlacement,
     /// Panel selection — orthogonal to placement.
@@ -434,6 +442,8 @@ impl WorkSurfaceState {
             placement,
             effective_placement: placement,
             panel: RailPanel::default(),
+            #[cfg(all(unix, not(target_env = "ohos")))]
+            terminal: super::terminal::TerminalDock::default(),
             explicit_view: false,
             file_activity: SettledFileActivity::default(),
             top_height: top_height.clamp(TOP_HEIGHT_MIN, TOP_HEIGHT_MAX),
@@ -881,6 +891,7 @@ fn view_has_work(app: &mut App, panel: RailPanel) -> bool {
         // tasks are work. Scheduled automation configuration belongs in /automation.
         RailPanel::Background => background_has_live_work(app),
         RailPanel::Files
+        | RailPanel::Terminal
         | RailPanel::Notepad
         | RailPanel::Context
         | RailPanel::Git
@@ -970,14 +981,23 @@ fn durable_task_rows(app: &App) -> Vec<WorkRow> {
                 detail: format!("{status} · {}", entry.id),
                 tone: bucket_tone(bucket),
                 selectable: true,
-                primary_action: Some(SidebarRowAction::Command(format!(
-                    "/jobs show {}",
-                    entry.id
-                ))),
+                primary_action: task_show_action(entry),
                 agent: None,
             }
         })
         .collect()
+}
+
+fn task_show_action(entry: &TaskPanelEntry) -> Option<SidebarRowAction> {
+    (!entry.id.starts_with("rlm-"))
+        .then(|| SidebarRowAction::Command(format!("/task show {}", entry.id)))
+}
+
+fn shell_show_action(entry: &TaskPanelEntry) -> Option<SidebarRowAction> {
+    Some(SidebarRowAction::Command(format!(
+        "/jobs show {}",
+        entry.id
+    )))
 }
 
 /// Finished shells and durable tasks, muted, each saying how it ended:
@@ -1009,11 +1029,7 @@ fn finished_background_rows(app: &App) -> Vec<WorkRow> {
                     detail: format!("{outcome} · {}", entry.id),
                     tone,
                     selectable: true,
-                    primary_action: Some(SidebarRowAction::InspectWork {
-                        title: format!("Shell {}", entry.id),
-                        body: shell_inspector_body(app, entry, &command, &outcome),
-                        stop_action: None,
-                    }),
+                    primary_action: shell_show_action(entry),
                     agent: Some(AgentRowFacts {
                         role_label: "shell".to_string(),
                         status: outcome,
@@ -1048,10 +1064,7 @@ fn finished_background_rows(app: &App) -> Vec<WorkRow> {
                     ),
                     tone,
                     selectable: true,
-                    primary_action: Some(SidebarRowAction::Command(format!(
-                        "/jobs show {}",
-                        entry.id
-                    ))),
+                    primary_action: task_show_action(entry),
                     agent: None,
                 }
             }
@@ -1151,6 +1164,7 @@ pub(super) fn visible_rows_for(app: &mut App, panel: RailPanel) -> Vec<WorkRow> 
         RailPanel::Agents => agents_view_rows(app),
         RailPanel::Tasks => project_visible(app),
         RailPanel::Background => background_view_rows(app),
+        RailPanel::Terminal => Vec::new(),
         RailPanel::Files => super::views::files_rows(app),
         RailPanel::Notepad => super::views::notepad_rows(app),
         RailPanel::Context => super::views::context_rows(app),
@@ -2623,14 +2637,7 @@ fn shell_work_rows(app: &App) -> Vec<WorkRow> {
                 detail: format!("{status} · {}", entry.id),
                 tone: WorkTone::Live,
                 selectable: true,
-                primary_action: Some(SidebarRowAction::InspectWork {
-                    title: format!("Shell {}", entry.id),
-                    body: shell_inspector_body(app, entry, command, status),
-                    stop_action: Some(Box::new(SidebarRowAction::Command(format!(
-                        "/jobs cancel {}",
-                        entry.id
-                    )))),
-                }),
+                primary_action: shell_show_action(entry),
                 agent: Some(AgentRowFacts {
                     role_label: "shell".to_string(),
                     status: status.to_string(),
@@ -2683,33 +2690,6 @@ fn shells_section_heading(shells: &[WorkRow]) -> WorkRow {
         }),
         agent: None,
     }
-}
-
-fn shell_inspector_body(app: &App, entry: &TaskPanelEntry, command: &str, status: &str) -> String {
-    let mut body = format!(
-        "Job: {}\nStatus: {status}\nCommand: {command}\n\nCancel: /jobs cancel {}\n",
-        entry.id, entry.id
-    );
-    let session = app.current_session_id.as_deref().unwrap_or("");
-    if let Some(manager) = app.runtime_services.shell_manager.as_ref()
-        && let Ok(mut manager) = manager.try_lock()
-        && let Ok(detail) = manager.inspect_job_for_session(session, &entry.id)
-    {
-        if !detail.stdout.is_empty() {
-            body.push_str("\nSTDOUT:\n");
-            body.push_str(&detail.stdout);
-        }
-        if !detail.stderr.is_empty() {
-            body.push_str("\nSTDERR:\n");
-            body.push_str(&detail.stderr);
-        }
-        if detail.stdout.is_empty() && detail.stderr.is_empty() {
-            body.push_str("\n(no output yet — reopen this row to watch the shell)");
-        }
-    } else {
-        body.push_str("\nOpen this row to watch live output.");
-    }
-    body
 }
 
 fn graph_node_row(snapshot: &WorkGraphSnapshot, node: &WorkNode) -> WorkRow {
@@ -3182,7 +3162,7 @@ mod tests {
             TuiOptions {
                 model: "deepseek-v4-flash".to_string(),
                 start_in_agent_mode: true,
-                ..crate::test_support::test_tui_options(std::path::PathBuf::from(
+                ..crate::tui::test_support::test_tui_options(std::path::PathBuf::from(
                     "/workspace/project",
                 ))
             },
@@ -3227,6 +3207,7 @@ mod tests {
             git_branch: None,
             agent_type: crate::tools::subagent::FleetRole::Worker,
             assignment: crate::tools::subagent::SubAgentAssignment {
+                native_preset: None,
                 objective: "sweep the lane".to_string(),
                 role: Some("builder".to_string()),
             },
@@ -4368,24 +4349,14 @@ mod tests {
         // #6565: the command leads; the id stays in the detail.
         assert_eq!(shell.label, "cd /workspace/example-project");
         assert!(shell.detail.contains("shell_a1b2c3d4"), "{}", shell.detail);
-        let Some(SidebarRowAction::InspectWork {
-            title,
-            body,
-            stop_action,
-        }) = shell.primary_action.as_ref()
-        else {
-            panic!(
-                "shell row must open live output, got {:?}",
-                shell.primary_action
-            );
-        };
-        assert!(title.contains("shell_a1b2c3d4"), "{title}");
-        assert!(body.contains("Job: shell_a1b2c3d4"), "{body}");
-        assert!(body.contains("/jobs cancel shell_a1b2c3d4"), "{body}");
-        assert!(matches!(
-            stop_action.as_deref(),
-            Some(SidebarRowAction::Command(command)) if command == "/jobs cancel shell_a1b2c3d4"
-        ));
+        assert!(
+            matches!(
+                shell.primary_action.as_ref(),
+                Some(SidebarRowAction::Command(command)) if command == "/jobs show shell_a1b2c3d4"
+            ),
+            "shell row must open the live inspector, got {:?}",
+            shell.primary_action
+        );
         let facts = shell
             .agent
             .as_ref()
@@ -4618,7 +4589,7 @@ mod tests {
                     .find(|row| row.id.0 == format!("task:{id}"))
                     .expect("task row");
                 assert!(
-                    matches!(&row.primary_action, Some(SidebarRowAction::Command(command)) if command == &format!("/jobs show {id}"))
+                    matches!(&row.primary_action, Some(SidebarRowAction::Command(command)) if command == &format!("/task show {id}"))
                 );
             }
         }

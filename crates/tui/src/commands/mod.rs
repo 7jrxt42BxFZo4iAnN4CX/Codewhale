@@ -6,9 +6,15 @@
 //! module keeps registry construction, user-command precedence, and the
 //! fall-through behaviour.
 
+mod config_group;
+mod config_host;
+mod config_main_host;
+mod config_main_import_host;
+#[cfg(test)]
+mod config_policy_host;
 mod contract;
 pub mod discovery;
-mod groups;
+pub(crate) mod groups;
 
 // FEAT-025 host services for the session-export slice: the shared recovery
 // writer and the protected export-destination resolver/writer. Declared at the
@@ -22,6 +28,12 @@ pub mod user_registry;
 #[cfg(test)]
 #[path = "epic_dispatch_acceptance.rs"]
 mod epic_dispatch_acceptance;
+
+// Extension slash commands through the real command table and `App` dispatch;
+// they cannot live in `extension_host`, a runtime module that may not depend
+// on this one.
+#[cfg(test)]
+mod extension_host_tests;
 
 #[cfg(test)]
 #[path = "epic_discovery_acceptance.rs"]
@@ -52,7 +64,17 @@ mod session_lifecycle_regression_tests;
 
 use std::sync::OnceLock;
 
-pub(crate) use groups::config::config::set_workspace_trust;
+pub(crate) use config_main_host::{set_workspace_trust, trust_change_note};
+pub(crate) use groups::core::open_constitution_manager;
+
+/// Stage a rollback of the last exchange for the UI to apply, or `None` when
+/// there is no user message to roll back. Nothing is mutated here.
+pub(crate) fn staged_conversation_undo(
+    app: &mut crate::tui::app::App,
+) -> Option<codewhale_command_contract::facets::SessionSyncPayload> {
+    let undone = contract::debug_operations::undo_conversation_for_engine(app);
+    (undone.removed > 0).then_some(undone.sync)
+}
 pub use traits::CommandInfo;
 
 // Long-standing public paths that predate the group layout.
@@ -186,6 +208,77 @@ pub fn registry() -> &'static traits::CommandRegistry {
     REGISTRY.get_or_init(build_registry)
 }
 
+/// The built-in command table as the extension host asks about it: the one
+/// read-only metadata snapshot and built-in collision check. The
+/// composition root installs it at startup (`lib.rs`), so the runtime-side host
+/// never depends on this module.
+pub(crate) struct CommandTable;
+
+impl crate::command_catalog::CommandCatalog for CommandTable {
+    fn answers_to(&self, name: &str) -> bool {
+        // `jihua` and `zidong` are mode aliases the dispatcher answers ahead
+        // of the registry.
+        matches!(name, "jihua" | "zidong") || registry().get(name).is_some()
+    }
+
+    fn builtins(&self) -> Vec<crate::command_catalog::BuiltinCommand> {
+        command_infos()
+            .into_iter()
+            .map(|info| crate::command_catalog::BuiltinCommand {
+                name: info.name.to_string(),
+                aliases: info
+                    .aliases
+                    .iter()
+                    .map(|alias| (*alias).to_string())
+                    .collect(),
+                usage: info.usage.to_string(),
+                description_id: info.description_id,
+                subcommands: info.subcommands().into_iter().map(str::to_string).collect(),
+                takes_arguments: user_registry::usage_describes_arguments(info.name, info.usage),
+                requires_argument: info.requires_argument(),
+                requires_required_argument: info.requires_required_argument(),
+                composer_wants_trailing_space: info.composer_wants_trailing_space(),
+                palette_runs_directly: info.palette_runs_directly(),
+                show_in_empty_discovery: info.show_in_empty_discovery(),
+                discovery: info.discovery(),
+                unlisted: info.is_unlisted(),
+            })
+            .collect()
+    }
+
+    fn user_commands(
+        &self,
+        workspace: &std::path::Path,
+    ) -> Vec<crate::command_catalog::UserCommand> {
+        user_registry::with_registry_for_workspace(Some(workspace), |registry| {
+            let mut bindings = std::collections::HashMap::<String, Vec<String>>::new();
+            for info in command_infos() {
+                for spelling in std::iter::once(info.name).chain(info.aliases.iter().copied()) {
+                    if let Some(command) = registry.get(spelling) {
+                        bindings
+                            .entry(command.name.clone())
+                            .or_default()
+                            .push(spelling.to_string());
+                    }
+                }
+            }
+            registry
+                .iter()
+                .map(|metadata| crate::command_catalog::UserCommand {
+                    name: metadata.name.clone(),
+                    aliases: metadata.aliases.clone(),
+                    description: metadata.description.clone(),
+                    usage: metadata.display_usage().map(str::to_string),
+                    takes_arguments: metadata.takes_arguments(),
+                    hidden: metadata.hidden,
+                    extension: metadata.extension.is_some(),
+                    builtin_bindings: bindings.remove(&metadata.name).unwrap_or_default(),
+                })
+                .collect()
+        })
+    }
+}
+
 pub fn command_infos() -> Vec<&'static CommandInfo> {
     registry().infos()
 }
@@ -194,8 +287,26 @@ pub fn get_command_info(name: &str) -> Option<&'static CommandInfo> {
     registry().get_info(name)
 }
 
-/// Execute a slash command
+/// Execute a slash command with its captured active configuration.
+pub fn execute_with_config(
+    cmd: &str,
+    app: &mut App,
+    config: &crate::config::Config,
+) -> CommandResult {
+    execute_in_context(cmd, app, Some(config))
+}
+
+/// Legacy fixture entry; it cannot authorize a model route change.
+#[cfg(test)]
 pub fn execute(cmd: &str, app: &mut App) -> CommandResult {
+    execute_in_context(cmd, app, None)
+}
+
+fn execute_in_context(
+    cmd: &str,
+    app: &mut App,
+    config: Option<&crate::config::Config>,
+) -> CommandResult {
     // Keep the command's raw remainder available for commands whose payload is
     // byte-sensitive. Most slash commands intentionally receive a normalized
     // argument below; `/preview-request --prompt`, however, must describe the
@@ -257,14 +368,10 @@ pub fn execute(cmd: &str, app: &mut App) -> CommandResult {
     // command's `CommandInfo` metadata.
     match command.as_str() {
         "jihua" => {
-            return groups::config::dispatch(app, "jihua", arg).unwrap_or_else(|| {
-                CommandResult::error("The /jihua alias could not be dispatched.")
-            });
+            return config_group::mode_alias(app, "plan");
         }
         "zidong" => {
-            return groups::config::dispatch(app, "zidong", arg).unwrap_or_else(|| {
-                CommandResult::error("The /zidong alias could not be dispatched.")
-            });
+            return config_group::mode_alias(app, "yolo");
         }
         _ => {}
     }
@@ -290,7 +397,7 @@ pub fn execute(cmd: &str, app: &mut App) -> CommandResult {
                     capabilities,
                     handler: contextual,
                 } => {
-                    let mut bundle = app.command_contexts();
+                    let mut bundle = app.command_contexts_with_config(config);
                     contextual(bundle.contexts(capabilities), command_arg)
                 }
             };
@@ -317,10 +424,9 @@ pub fn execute(cmd: &str, app: &mut App) -> CommandResult {
             if let Some(result) = groups::skills::run_skill_by_name(app, command.as_str(), arg) {
                 return result;
             }
-            let suggestions =
-                user_registry::with_registry_for_workspace(Some(&app.workspace), |user_commands| {
-                    suggest_command_names(command.as_str(), 3, user_commands)
-                });
+            let suggestions = user_registry::with_registry_for_app(app, |user_commands| {
+                suggest_command_names(command.as_str(), 3, user_commands)
+            });
             if suggestions.is_empty() {
                 CommandResult::error(format!(
                     "Unknown command: /{command}. Type /help for available commands."
@@ -341,12 +447,16 @@ pub fn execute(cmd: &str, app: &mut App) -> CommandResult {
 
 /// Update a configuration value programmatically (used by interactive UI views).
 pub fn set_config_value(app: &mut App, key: &str, value: &str, persist: bool) -> CommandResult {
-    groups::config::config::set_config_value(app, key, value, persist)
+    let locale = app.ui_locale;
+    config_host::render_config_reply(
+        config_main_host::set_config_value(app, key, value, persist),
+        locale,
+    )
 }
 
 /// Switch the interaction mode (plan / work / operate).
 pub fn switch_mode(app: &mut App, mode: AppMode) -> String {
-    groups::config::config::switch_mode(app, mode)
+    config_main_host::switch_mode(app, mode)
 }
 
 fn edit_distance(a: &str, b: &str) -> usize {
@@ -468,13 +578,12 @@ fn suggest_command_names(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{ApiProvider, Config};
+    use crate::config::{Config, ProviderKind};
     use crate::tools::plan::{PlanItemArg, StepStatus, UpdatePlanArgs};
     use crate::tools::todo::TodoStatus;
     use crate::tui::app::{App, AppAction, TuiOptions};
     use crate::tui::work_surface::{RailPanel, WorkSurfacePlacement};
     use codewhale_localization::{Locale, MessageId};
-    use std::ffi::OsString;
     use std::path::{Path, PathBuf};
     use tempfile::tempdir;
 
@@ -491,7 +600,7 @@ mod tests {
 
     fn create_test_app() -> App {
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         App::new(options, &Config::default())
     }
@@ -531,8 +640,9 @@ mod tests {
         )
         .unwrap();
 
-        let mut app = create_test_app();
-        app.workspace = temp.path().to_path_buf();
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(temp.path()),
+        );
         super::user_registry::reload(Some(temp.path()));
 
         let result = execute("/help now", &mut app);
@@ -552,8 +662,9 @@ mod tests {
         let command_path = commands_dir.join("help.md");
         std::fs::write(&command_path, "user help").unwrap();
 
-        let mut app = create_test_app();
-        app.workspace = temp.path().to_path_buf();
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(temp.path()),
+        );
         super::user_registry::reload(Some(temp.path()));
         assert!(matches!(
             execute("/help config", &mut app).action,
@@ -652,7 +763,7 @@ mod tests {
     #[test]
     fn login_slash_command_reports_status_and_key_opens_picker() {
         let mut app = create_test_app();
-        let status = execute("/login", &mut app);
+        let status = execute("/login status", &mut app);
         assert!(!status.is_error);
         let message = status.message.expect("login status");
         assert!(message.contains("Codewhale login"), "{message}");
@@ -663,6 +774,12 @@ mod tests {
         assert!(!message.contains("Daytona"), "{message}");
         assert!(!message.contains("set-slot"), "{message}");
 
+        assert!(
+            execute("/login", &mut app)
+                .message
+                .expect("login status")
+                .contains("Codewhale login")
+        );
         let key = execute("/login key", &mut app);
         assert!(!key.is_error);
         assert_eq!(key.action, Some(AppAction::OpenProviderPicker));
@@ -671,11 +788,24 @@ mod tests {
         assert!(daytona.is_error);
         let err = daytona.message.expect("usage");
         assert!(err.contains("Usage: /login [status|account|key]"), "{err}");
+        assert!(err.contains("/connect <provider>"), "{err}");
 
         let unknown = execute("/login oauth", &mut app);
         assert!(unknown.is_error);
         let err = unknown.message.expect("usage");
         assert!(err.contains("Usage: /login"), "{err}");
+
+        assert_eq!(
+            execute("/connect", &mut app).action,
+            Some(AppAction::OpenProviderPicker)
+        );
+        let connect = execute("/connect nothing-enabled", &mut app);
+        assert!(connect.is_error);
+        let err = connect.message.expect("usage");
+        assert!(err.contains("Usage: /connect [<provider>]"), "{err}");
+        assert!(err.contains("`/login`"), "{err}");
+        assert!(execute("/disconnect", &mut app).is_error);
+        assert!(execute("/disconnect nothing-enabled", &mut app).is_error);
     }
 
     #[test]
@@ -789,14 +919,18 @@ mod tests {
                 .message
                 .as_deref()
                 .unwrap_or_default()
-                .contains(".deepseek/handoff.md")
+                .contains(crate::prompts::HANDOFF_RELATIVE_PATH)
         );
         let Some(AppAction::SendMessage(message)) = result.action else {
             panic!("expected SendMessage action");
         };
         assert!(message.contains("session relay"));
         assert!(message.contains("接力"));
-        assert!(message.contains("Write or update `.deepseek/handoff.md`"));
+        // The relay is written where the next session reads it first.
+        assert!(message.contains(&format!(
+            "Write or update `{}`",
+            crate::prompts::HANDOFF_RELATIVE_PATH
+        )));
         assert!(message.contains("# Session relay"));
         assert!(message.contains("Requested relay focus: verify install"));
         assert!(message.contains("Goal objective: Unify the work surface"));
@@ -1010,9 +1144,9 @@ mod tests {
                 has_config = true;
                 assert_eq!(
                     commands.len(),
-                    17,
+                    19,
                     "config group (group-local metadata exception) expected \
-                     exactly 17 commands, got {}",
+                     exactly 19 commands, got {}",
                     commands.len()
                 );
             }
@@ -1040,8 +1174,8 @@ mod tests {
 
         // Consistency: group-iterated command count must match registry.
         // FEAT-015 registers one test-only contextual command (`/feat015ctx`)
-        // under `#[cfg(test)]` to prove the dual-path seam (D6); the nine
-        // production groups remain exactly 96 commands.
+        // under `#[cfg(test)]` to prove the dual-path seam (D6); it is not
+        // part of any production group.
         let test_only_count = command_infos()
             .iter()
             .filter(|info| info.name == "feat015ctx")
@@ -1172,7 +1306,6 @@ mod tests {
     fn flagship_orchestration_and_workspace_commands_are_visible_at_the_palette_root() {
         for name in [
             "auto",
-            "dispatch",
             "goal",
             "hooks",
             "tokens",
@@ -1482,7 +1615,7 @@ mod tests {
             let msg = result.message.expect("links commands should return text");
             assert!(msg.contains("https://codewhale.net/en/docs"));
             assert!(msg.contains("https://codewhale.net/en/community"));
-            assert!(msg.contains("https://github.com/Hmbown/CodeWhale"));
+            assert!(msg.contains("https://github.com/codewhale-hq/CodeWhale"));
             assert!(msg.contains("https://app.codewhale.net"));
             assert!(msg.contains("separate sign-in"));
             assert!(msg.contains("not connected to the current local session"));
@@ -1525,35 +1658,24 @@ mod tests {
         assert!(deepseek_result.action.is_none());
     }
 
+    /// Seals the user's home *and* points the config at the fixture's own
+    /// file. Dispatching every command reaches credentials, sessions, snapshots,
+    /// plugin bundles, audit logs and the `/import-claude` report — all of which
+    /// resolve under the home, so pinning the config path alone (as this once
+    /// did) left them on the developer's real profile.
     struct ConfigPathGuard {
-        previous: Option<OsString>,
-        _lock: crate::test_support::TestEnvLock,
+        // Fields drop in order: restore the config path, then the seal.
+        _config_path: crate::test_support::EnvVarGuard,
+        _home: crate::test_support::SealedHome,
     }
 
     impl ConfigPathGuard {
         fn new(config_path: &Path) -> Self {
-            let lock = crate::test_support::lock_test_env();
-            let previous = std::env::var_os("DEEPSEEK_CONFIG_PATH");
-            // Safety: test-only environment mutation guarded by a global mutex.
-            unsafe {
-                std::env::set_var("DEEPSEEK_CONFIG_PATH", config_path);
-            }
+            let home = crate::test_support::SealedHome::new();
+            let config = crate::test_support::EnvVarGuard::set("DEEPSEEK_CONFIG_PATH", config_path);
             Self {
-                previous,
-                _lock: lock,
-            }
-        }
-    }
-
-    impl Drop for ConfigPathGuard {
-        fn drop(&mut self) {
-            // Safety: test-only environment mutation guarded by a global mutex.
-            unsafe {
-                if let Some(previous) = self.previous.take() {
-                    std::env::set_var("DEEPSEEK_CONFIG_PATH", previous);
-                } else {
-                    std::env::remove_var("DEEPSEEK_CONFIG_PATH");
-                }
+                _config_path: config,
+                _home: home,
             }
         }
     }
@@ -1576,7 +1698,7 @@ mod tests {
             memory_path: workspace.join("memory.md"),
             notes_path: workspace.join("notes.txt"),
             mcp_config_path: workspace.join("mcp.json"),
-            ..crate::test_support::test_tui_options(workspace.clone())
+            ..crate::tui::test_support::test_tui_options(workspace.clone())
         };
         let app = App::new(options, &Config::default());
         assert!(
@@ -1825,9 +1947,9 @@ mod tests {
     fn balance_command_dispatches_live_fetch_for_prepaid_providers() {
         let mut app = create_test_app();
         for provider in [
-            ApiProvider::Deepseek,
-            ApiProvider::Openrouter,
-            ApiProvider::Siliconflow,
+            ProviderKind::Deepseek,
+            ProviderKind::Openrouter,
+            ProviderKind::Siliconflow,
         ] {
             app.api_provider = provider;
             let result = execute("/balance", &mut app);
@@ -1842,7 +1964,7 @@ mod tests {
     #[test]
     fn balance_command_reports_unsupported_provider_clearly() {
         let mut app = create_test_app();
-        app.api_provider = ApiProvider::Ollama;
+        app.set_provider_identity(ProviderKind::Ollama, "ollama");
 
         let result = execute("/balance", &mut app);
         let msg = result
@@ -2052,7 +2174,6 @@ mod tests {
             // FEAT-018 utility group.
             "attach",
             "automation",
-            "dispatch",
             "jobs",
             "mcp",
             "network",
@@ -2094,6 +2215,27 @@ mod tests {
             "export",
             // FEAT-026 completes the session structural-copy slice.
             "structcopy",
+            // FEAT-027 config policy/status slice.
+            "permissions",
+            "status",
+            // FEAT-028 completes the config group (all 19 commands portable).
+            "config",
+            "import-claude",
+            "login",
+            "connect",
+            "disconnect",
+            "auth",
+            "workbar",
+            "pet",
+            "settings",
+            "statusline",
+            "mode",
+            "fullscreen",
+            "inline",
+            "theme",
+            "verbose",
+            "trust",
+            "logout",
             // FEAT-029 complete debug group, including receipts and mutation.
             "tokens",
             "cost",
@@ -2334,7 +2476,7 @@ mod tests {
         let options = TuiOptions {
             memory_path: tmpdir.path().join("memory.md"),
             use_memory: true,
-            ..crate::test_support::test_tui_options(tmpdir.path())
+            ..crate::tui::test_support::test_tui_options(tmpdir.path())
         };
         App::new(options, &Config::default())
     }
@@ -2385,44 +2527,17 @@ mod tests {
     // is asserted by the migration fixtures and live gate.
     // ---------------------------------------------------------------------
 
-    /// Pins HOME to a tempdir so global skill discovery stays hermetic.
-    struct Feat022ScopedHome {
-        prev: Option<std::ffi::OsString>,
-        _home: tempfile::TempDir,
-        _guard: crate::test_support::TestEnvLock,
-    }
-    impl Drop for Feat022ScopedHome {
-        fn drop(&mut self) {
-            // SAFETY: process-wide lock still held.
-            unsafe {
-                match self.prev.take() {
-                    Some(v) => std::env::set_var("HOME", v),
-                    None => std::env::remove_var("HOME"),
-                }
-            }
-        }
-    }
-    fn feat022_scoped_home(_tmp: &tempfile::TempDir) -> Feat022ScopedHome {
-        let guard = crate::test_support::lock_test_env();
-        let prev = std::env::var_os("HOME");
-        let home = tempfile::TempDir::new().expect("home tempdir");
-        // SAFETY: serialised by the global env lock.
-        unsafe {
-            std::env::set_var("HOME", home.path());
-        }
-        Feat022ScopedHome {
-            prev,
-            _home: home,
-            _guard: guard,
-        }
+    /// Seals the user's home so global skill discovery stays hermetic.
+    fn feat022_scoped_home(_tmp: &tempfile::TempDir) -> crate::test_support::SealedHome {
+        crate::test_support::SealedHome::new()
     }
 
     fn feat022_test_app(tmp: &tempfile::TempDir) -> App {
         // The fixture's skills dir lives inside its workspace.
         crate::test_support::trust_workspace(tmp.path());
-        let mut options = crate::test_support::test_tui_options(tmp.path());
+        let mut options = crate::tui::test_support::test_tui_options(tmp.path());
         options.skills_dir = tmp.path().join("skills");
-        crate::test_support::test_app_with_options(options)
+        crate::tui::test_support::test_app_with_options(options)
     }
 
     fn feat022_write_skill(dir: &std::path::Path, name: &str) {
@@ -2670,7 +2785,7 @@ mod tests {
         )
         .unwrap();
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(tmpdir.path())
+            ..crate::tui::test_support::test_tui_options(tmpdir.path())
         };
         let mut app = App::new(options, &Config::default());
         let discovery = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv();
@@ -2724,6 +2839,7 @@ mod tests {
 
     #[test]
     fn feat020_plugin_dispatches_through_public_seam() {
+        let _home = crate::test_support::SealedHome::new();
         let tmpdir = tempfile::TempDir::new().unwrap();
         let mut app = plugin_test_app(&tmpdir);
 
@@ -2747,6 +2863,7 @@ mod tests {
 
     #[test]
     fn feat020_public_dispatch_never_panics_on_plugin_commands() {
+        let _home = crate::test_support::SealedHome::new();
         let tmpdir = tempfile::TempDir::new().unwrap();
         let mut app = plugin_test_app(&tmpdir);
         for command in [
@@ -2871,6 +2988,7 @@ mod tests {
 
     #[test]
     fn feat023_lifecycle_commands_dispatch_through_public_seam() {
+        let _home = crate::test_support::SealedHome::new();
         let mut app = create_test_app();
         app.workspace = PathBuf::from(".");
 
@@ -2924,6 +3042,7 @@ mod tests {
 
     #[test]
     fn feat024_control_commands_dispatch_through_public_seam() {
+        let _home = crate::test_support::SealedHome::new();
         let mut app = create_test_app();
         app.workspace = PathBuf::from(".");
 
@@ -2932,7 +3051,7 @@ mod tests {
         let relay = execute("/relay handoff notes", &mut app);
         assert_eq!(
             relay.message.as_deref(),
-            Some("Preparing session relay at .deepseek/handoff.md...")
+            Some("Preparing session relay at .codewhale/handoff.md...")
         );
         let relay_message = match relay.action {
             Some(AppAction::SendMessage(message)) => message,
@@ -3092,3 +3211,10 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod config_policy_host_tests;
+#[cfg(test)]
+mod config_policy_permissions_tests;
+#[cfg(test)]
+mod config_policy_status_tests;

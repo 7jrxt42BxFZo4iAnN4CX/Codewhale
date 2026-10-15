@@ -317,8 +317,8 @@ mod tests {
 
     #[test]
     fn pending_work_from_app_skips_non_background_entries() {
-        let options = crate::test_support::test_tui_options(std::path::PathBuf::from("."));
-        let app = crate::test_support::test_app_with_options(options);
+        let options = crate::tui::test_support::test_tui_options(std::path::PathBuf::from("."));
+        let app = crate::tui::test_support::test_app_with_options(options);
         assert!(
             pending_work_from_app(&app).items.is_empty(),
             "bare app has no pending background work"
@@ -328,8 +328,8 @@ mod tests {
     #[test]
     fn pending_work_from_app_picks_up_shell_and_agent_entries() {
         use crate::tui::app::TaskPanelEntry;
-        let options = crate::test_support::test_tui_options(std::path::PathBuf::from("."));
-        let mut app = crate::test_support::test_app_with_options(options);
+        let options = crate::tui::test_support::test_tui_options(std::path::PathBuf::from("."));
+        let mut app = crate::tui::test_support::test_app_with_options(options);
         app.task_panel.push(TaskPanelEntry {
             exit_code: None,
             id: "shell_a1b2c3d4".to_string(),
@@ -402,8 +402,8 @@ mod tests {
     #[test]
     fn durable_work_projection_keeps_queued_and_running_states() {
         use crate::tui::app::TaskPanelEntry;
-        let options = crate::test_support::test_tui_options(std::path::PathBuf::from("."));
-        let mut app = crate::test_support::test_app_with_options(options);
+        let options = crate::tui::test_support::test_tui_options(std::path::PathBuf::from("."));
+        let mut app = crate::tui::test_support::test_app_with_options(options);
         app.task_panel.extend([
             TaskPanelEntry {
                 exit_code: None,
@@ -461,8 +461,8 @@ mod tests {
         use crate::tools::subagent::{
             FleetRole, SubAgentAssignment, SubAgentResult, SubAgentStatus,
         };
-        let options = crate::test_support::test_tui_options(std::path::PathBuf::from("."));
-        let mut app = crate::test_support::test_app_with_options(options);
+        let options = crate::tui::test_support::test_tui_options(std::path::PathBuf::from("."));
+        let mut app = crate::tui::test_support::test_app_with_options(options);
         let running = |agent_id: &str, name: &str| SubAgentResult {
             usage: None,
             name: name.to_string(),
@@ -473,6 +473,7 @@ mod tests {
             git_branch: None,
             agent_type: FleetRole::Worker,
             assignment: SubAgentAssignment {
+                native_preset: None,
                 objective: "sweep the lane".to_string(),
                 role: Some("builder".to_string()),
             },

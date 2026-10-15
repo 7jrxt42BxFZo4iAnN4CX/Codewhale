@@ -72,10 +72,9 @@ use previews::{
 pub use view::ApprovalOption;
 pub use view::ApprovalView;
 
-pub use policy::{
-    ApprovalStakes, RiskLevel, ToolCategory, classify_risk, classify_stakes,
-    get_tool_category_for_call,
-};
+pub use policy::{ApprovalStakes, ToolCategory, classify_stakes, get_tool_category_for_call};
+
+use crate::core::authority::{RiskLevel, classify_risk};
 
 /// User's decision for a pending approval
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,6 +138,9 @@ pub struct ApprovalRequest {
     pub persistent_allow_rules: Vec<ToolAskRule>,
     /// The agent that raised this request, when it is a child's card.
     pub owner: Option<ApprovalOwner>,
+    /// This file write asks only because the folder has no git repository;
+    /// in one it would run without a card. The card says so in one line.
+    pub asks_without_git: bool,
 }
 
 /// Key approval details rendered prominently in the approval card.
@@ -149,6 +151,7 @@ pub struct ApprovalDetail {
     /// Preformatted shell lines for commands that benefit from safe wrapping
     /// or a compact write-file preview. `value` remains the original command.
     pub shell_lines: Option<Vec<String>>,
+    pub is_preview: bool,
 }
 
 impl ApprovalRequest {
@@ -242,6 +245,7 @@ impl ApprovalRequest {
             persistent_ask_rules,
             persistent_allow_rules,
             owner: None,
+            asks_without_git: false,
         }
     }
 
@@ -269,11 +273,11 @@ impl ApprovalRequest {
 
     pub fn description_for_locale(&self, locale: Locale) -> String {
         match locale {
-            Locale::ZhHans => localized_description_zh_hans(self.category),
-            _ if self.category == ToolCategory::Shell => {
+            Locale::En if self.category == ToolCategory::Shell => {
                 "Review the command before it runs.".to_string()
             }
-            _ => self.description.clone(),
+            Locale::En => self.description.clone(),
+            _ => localized_description(self.category, locale),
         }
     }
 
@@ -334,9 +338,10 @@ impl ApprovalRequest {
                 if matches!(detail.label.as_str(), "File" | "Path" | "Dir") {
                     detail.value = workspace_relative(&detail.value, &self.workspace);
                 }
-                let is_preview = detail.label == "Preview";
                 detail.label = localize_detail_label(&detail.label, locale).to_string();
-                if is_preview && let Some(lines) = detail.shell_lines.as_mut() {
+                if detail.is_preview
+                    && let Some(lines) = detail.shell_lines.as_mut()
+                {
                     for line in lines.iter_mut() {
                         *line = localize_preview_shell_line(semantic_tool_name, line, locale)
                             .to_string();
@@ -457,8 +462,7 @@ fn build_impact_summary(tool_name: &str, category: ToolCategory, params: &Value)
     impacts
 }
 
-fn localized_description_zh_hans(category: ToolCategory) -> String {
-    let locale = Locale::ZhHans;
+fn localized_description(category: ToolCategory, locale: Locale) -> String {
     match category {
         ToolCategory::Safe => tr(locale, MessageId::ApprovalDescSafe).to_string(),
         ToolCategory::FileWrite => tr(locale, MessageId::ApprovalDescFileWrite).to_string(),
@@ -562,6 +566,7 @@ fn build_prominent_details(
             label,
             value,
             shell_lines: None,
+            is_preview: false,
         })
         .collect();
     match category {
@@ -571,6 +576,7 @@ fn build_prominent_details(
                     label: "Command".to_string(),
                     shell_lines: Some(format_shell_command_for_approval(&command)),
                     value: command,
+                    is_preview: false,
                 });
             }
             if let Some(workdir) = param_preview(params, &["workdir", "cwd"], 96) {
@@ -578,6 +584,7 @@ fn build_prominent_details(
                     label: "Dir".to_string(),
                     value: workdir,
                     shell_lines: None,
+                    is_preview: false,
                 });
             }
         }
@@ -587,6 +594,7 @@ fn build_prominent_details(
                     label: "File".to_string(),
                     value: path,
                     shell_lines: None,
+                    is_preview: false,
                 });
             }
             if let Some(preview_lines) = file_write_preview_lines(tool_name, params) {
@@ -594,6 +602,7 @@ fn build_prominent_details(
                     label: "Preview".to_string(),
                     value: preview_lines.join("\n"),
                     shell_lines: Some(preview_lines),
+                    is_preview: true,
                 });
             }
         }
@@ -603,6 +612,7 @@ fn build_prominent_details(
                     label: "Path".to_string(),
                     value: path,
                     shell_lines: None,
+                    is_preview: false,
                 });
             }
         }
@@ -614,6 +624,7 @@ fn build_prominent_details(
                     label: "Target".to_string(),
                     value: target,
                     shell_lines: None,
+                    is_preview: false,
                 });
             }
         }
@@ -626,6 +637,7 @@ fn build_prominent_details(
                     label: label.to_string(),
                     value,
                     shell_lines: None,
+                    is_preview: false,
                 });
             }
         }
@@ -635,6 +647,7 @@ fn build_prominent_details(
                     label: "Action".to_string(),
                     value: action,
                     shell_lines: None,
+                    is_preview: false,
                 });
             }
             if let Some(kind) = param_preview(params, &["type"], 40) {
@@ -642,6 +655,7 @@ fn build_prominent_details(
                     label: "Type".to_string(),
                     value: kind,
                     shell_lines: None,
+                    is_preview: false,
                 });
             }
             if let Some(prompt) = param_preview(params, &["prompt", "task", "message"], 200) {
@@ -649,6 +663,7 @@ fn build_prominent_details(
                     label: "Prompt".to_string(),
                     value: prompt,
                     shell_lines: None,
+                    is_preview: false,
                 });
             }
         }
@@ -662,6 +677,7 @@ fn build_prominent_details(
                     label: "Input".to_string(),
                     value: input,
                     shell_lines: None,
+                    is_preview: false,
                 });
             }
         }

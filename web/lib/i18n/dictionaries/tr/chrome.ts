@@ -22,6 +22,7 @@ export const chrome: ChromeDict = {
   navCommunity: "Topluluk",
   navContribute: "Katkı",
 
+  navFeatures: "Özellikler",
   navProduct: "Ürün",
   navModels: "Modeller",
   navPlugins: "Eklentiler",
@@ -47,7 +48,7 @@ export const chrome: ChromeDict = {
   themeTitle: "Tema · otomatik / açık / koyu",
 
   footerTagline:
-    "Seçtiğin modellerle istediğini oluştur ve günlük işleri otomatikleştir.",
+    "Kendi modellerin ve bağlı araçlarınla uygulamalar geliştir, işleri otomatikleştir.",
   footerProduct: "Ürün",
   footerProject: "Proje",
   footerDocs: "Belgeler",

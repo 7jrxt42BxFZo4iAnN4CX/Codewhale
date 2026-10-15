@@ -24,8 +24,23 @@ pub fn snapshot_dir_for(workspace: &Path) -> io::Result<PathBuf> {
     // An explicit profile must never read or create ambient snapshots. The
     // shared resolver also preserves legacy stores and rejects invalid
     // overrides; do not silently fall back to the OS home or working directory.
-    let base = codewhale_config::resolve_state_dir("snapshots").map_err(io::Error::other)?;
+    let base = snapshot_state_base()?;
     Ok(snapshot_dir_with_base(workspace, &base))
+}
+
+/// The shared snapshot store. An unsealed test gets a private one: a snapshot
+/// repo opened by a fixture must not land in the developer's real store.
+#[cfg(test)]
+fn snapshot_state_base() -> io::Result<PathBuf> {
+    match crate::test_support::unsealed_state_dir("snapshots") {
+        Some(base) => Ok(base),
+        None => codewhale_config::resolve_state_dir("snapshots").map_err(io::Error::other),
+    }
+}
+
+#[cfg(not(test))]
+fn snapshot_state_base() -> io::Result<PathBuf> {
+    codewhale_config::resolve_state_dir("snapshots").map_err(io::Error::other)
 }
 
 fn snapshot_dir_with_base(workspace: &Path, base: &Path) -> PathBuf {
@@ -53,7 +68,7 @@ pub fn ensure_snapshot_dir(workspace: &Path) -> io::Result<PathBuf> {
 /// Strip a trailing `.worktrees/<name>` segment so all worktrees of the
 /// same checkout share a `project_hash`. If the path doesn't look like a
 /// worktree it's returned unchanged.
-fn strip_worktree_suffix(path: &Path) -> PathBuf {
+pub(crate) fn strip_worktree_suffix(path: &Path) -> PathBuf {
     let mut components: Vec<_> = path.components().collect();
     if components.len() >= 2
         && let Some(parent) = components.get(components.len() - 2)
@@ -71,7 +86,11 @@ fn strip_worktree_suffix(path: &Path) -> PathBuf {
 
 /// Hex-encoded deterministic FNV-1a digest. This is only a directory tag, not
 /// a security boundary, but it must remain stable across process launches.
-fn stable_hex(path: &Path) -> String {
+///
+/// `pub(crate)` because the workspace drive lease derives its own file layout
+/// from the same project/worktree split (`workspace_lease::WorkspaceDriveLease::lease_path`),
+/// and two copies of this hash would be two things to keep in step.
+pub(crate) fn stable_hex(path: &Path) -> String {
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
     for byte in path.to_string_lossy().as_bytes() {
         hash ^= u64::from(*byte);

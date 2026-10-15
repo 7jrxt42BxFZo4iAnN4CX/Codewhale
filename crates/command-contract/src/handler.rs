@@ -5,13 +5,14 @@
 //! `CommandHandler<crate::commands::CommandResult>`.
 
 use crate::facets::{
-    CommandCostContext, CommandDebugChangeContext, CommandDebugDiagnosticsContext,
-    CommandDebugDiffContext, CommandDebugHistoryContext, CommandDebugReceiptsContext,
-    CommandDebugUndoContext, CommandMediaContext, CommandMemoryContext, CommandModePolicyContext,
-    CommandModelContext, CommandPluginContext, CommandPresentationContext, CommandProjectContext,
-    CommandSessionContext, CommandSessionControlContext, CommandSessionExportContext,
-    CommandSessionLifecycleContext, CommandSessionStructcopyContext, CommandSkillGroupContext,
-    CommandSkillsContext, CommandSystemPromptContext, CommandWorkspaceContext,
+    CommandConfigStatusContext, CommandCostContext, CommandDebugChangeContext,
+    CommandDebugDiagnosticsContext, CommandDebugDiffContext, CommandDebugHistoryContext,
+    CommandDebugReceiptsContext, CommandDebugUndoContext, CommandMediaContext,
+    CommandMemoryContext, CommandModePolicyContext, CommandModelContext, CommandPermissionsContext,
+    CommandPluginContext, CommandPresentationContext, CommandProjectContext, CommandSessionContext,
+    CommandSessionControlContext, CommandSessionExportContext, CommandSessionLifecycleContext,
+    CommandSessionStructcopyContext, CommandSkillGroupContext, CommandSkillsContext,
+    CommandSystemPromptContext, CommandWorkspaceContext,
 };
 
 /// Exact host capabilities exposed to one contextual command handler.
@@ -81,6 +82,25 @@ impl CommandCapabilities {
 
     /// One human-selected structural copy; independent from export/recovery.
     pub const SESSION_STRUCTCOPY: Self = Self(1 << 22);
+    /// Permission observations and token-checked removal, independent of status.
+    pub const PERMISSIONS: Self = Self(1 << 23);
+    /// Read-only status observations, with no permission mutation authority.
+    pub const CONFIG_STATUS: Self = Self(1 << 24);
+    /// Config-group host data (FEAT-028 D3), the next non-conflicting bit after
+    /// `CONFIG_STATUS`. Read/write settings, keys, presets, the editability
+    /// audit and login/logout observations for the config command group. It does
+    /// not grant pet, trust, mode, or workspace authority.
+    pub const CONFIG: Self = Self(1 << 25);
+    /// Pet presence/mode/sound/habitat host data (FEAT-028 D3), independent of
+    /// general configuration and system settings.
+    pub const PET: Self = Self(1 << 26);
+    /// Workspace trust and trusted-path allow-list host data (FEAT-028 D3),
+    /// independent of the general config facet and of `WORKSPACE` path reads.
+    pub const TRUST: Self = Self(1 << 27);
+    /// Account/provider session state for `/login` and `/logout` (FEAT-028 D3).
+    pub const LOGIN: Self = Self(1 << 28);
+    /// Workbar placement/panel state for `/workbar` (FEAT-028 D3).
+    pub const WORK_SURFACE: Self = Self(1 << 29);
 
     /// Raw bit pattern, for tests that pin the capability-space capacity.
     ///
@@ -147,6 +167,13 @@ pub struct CommandContexts<'a> {
     debug_diff: Option<&'a mut dyn CommandDebugDiffContext>,
     debug_undo: Option<&'a mut dyn CommandDebugUndoContext>,
     debug_diagnostics: Option<&'a mut dyn CommandDebugDiagnosticsContext>,
+    permissions: Option<&'a mut dyn CommandPermissionsContext>,
+    config_status: Option<&'a mut dyn CommandConfigStatusContext>,
+    config: Option<&'a mut dyn crate::config::CommandConfigContext>,
+    pet: Option<&'a mut dyn crate::config::CommandPetContext>,
+    trust: Option<&'a mut dyn crate::config::CommandTrustContext>,
+    login: Option<&'a mut dyn crate::config::CommandLoginContext>,
+    work_surface: Option<&'a mut dyn crate::config::CommandWorkSurfaceContext>,
 }
 
 /// Consumed envelope used when one handler needs several independent facets.
@@ -174,6 +201,13 @@ pub struct ContextParts<'a> {
     pub debug_diff: Option<&'a mut dyn CommandDebugDiffContext>,
     pub debug_undo: Option<&'a mut dyn CommandDebugUndoContext>,
     pub debug_diagnostics: Option<&'a mut dyn CommandDebugDiagnosticsContext>,
+    pub permissions: Option<&'a mut dyn CommandPermissionsContext>,
+    pub config_status: Option<&'a mut dyn CommandConfigStatusContext>,
+    pub config: Option<&'a mut dyn crate::config::CommandConfigContext>,
+    pub pet: Option<&'a mut dyn crate::config::CommandPetContext>,
+    pub trust: Option<&'a mut dyn crate::config::CommandTrustContext>,
+    pub login: Option<&'a mut dyn crate::config::CommandLoginContext>,
+    pub work_surface: Option<&'a mut dyn crate::config::CommandWorkSurfaceContext>,
 }
 
 impl<'a> CommandContexts<'a> {
@@ -202,6 +236,13 @@ impl<'a> CommandContexts<'a> {
             debug_diff: None,
             debug_undo: None,
             debug_diagnostics: None,
+            permissions: None,
+            config_status: None,
+            config: None,
+            pet: None,
+            trust: None,
+            login: None,
+            work_surface: None,
         }
     }
 
@@ -230,7 +271,69 @@ impl<'a> CommandContexts<'a> {
             debug_diff: self.debug_diff,
             debug_undo: self.debug_undo,
             debug_diagnostics: self.debug_diagnostics,
+            permissions: self.permissions,
+            config_status: self.config_status,
+            config: self.config,
+            pet: self.pet,
+            trust: self.trust,
+            login: self.login,
+            work_surface: self.work_surface,
         }
+    }
+
+    pub fn with_config(mut self, value: &'a mut dyn crate::config::CommandConfigContext) -> Self {
+        assert!(
+            self.config.replace(value).is_none(),
+            "config facet already set"
+        );
+        self
+    }
+
+    pub fn with_pet(mut self, value: &'a mut dyn crate::config::CommandPetContext) -> Self {
+        assert!(self.pet.replace(value).is_none(), "pet facet already set");
+        self
+    }
+
+    pub fn with_trust(mut self, value: &'a mut dyn crate::config::CommandTrustContext) -> Self {
+        assert!(
+            self.trust.replace(value).is_none(),
+            "trust facet already set"
+        );
+        self
+    }
+
+    pub fn with_login(mut self, value: &'a mut dyn crate::config::CommandLoginContext) -> Self {
+        assert!(
+            self.login.replace(value).is_none(),
+            "login facet already set"
+        );
+        self
+    }
+
+    pub fn with_work_surface(
+        mut self,
+        value: &'a mut dyn crate::config::CommandWorkSurfaceContext,
+    ) -> Self {
+        assert!(
+            self.work_surface.replace(value).is_none(),
+            "work-surface facet already set"
+        );
+        self
+    }
+
+    pub fn with_permissions(mut self, value: &'a mut dyn CommandPermissionsContext) -> Self {
+        assert!(
+            self.permissions.replace(value).is_none(),
+            "permissions facet already set"
+        );
+        self
+    }
+    pub fn with_config_status(mut self, value: &'a mut dyn CommandConfigStatusContext) -> Self {
+        assert!(
+            self.config_status.replace(value).is_none(),
+            "config status facet already set"
+        );
+        self
     }
 
     pub fn with_session(mut self, value: &'a mut dyn CommandSessionContext) -> Self {

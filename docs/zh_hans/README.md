@@ -27,6 +27,7 @@
 4. [PROVIDERS.md](./PROVIDERS.md) —— 查看你所用模型的提供商是否在 Codewhale 官方支持的列表中，以及各提供商的配置方法
 5. [DOCKER.md](./DOCKER.md) —— 用容器运行 Codewhale，含挂载、权限与常见坑
 6. [ACCESSIBILITY.md](./ACCESSIBILITY.md) —— 无障碍与低动态模式、对比度与屏幕阅读器
+7. [PET_MODE.md](./PET_MODE.md) —— Pet 模式：每个终端一头鲸鱼，一眼看清工作中、等你、完成或失败，按需查看回复与智能体
 
 ## 三、进阶用户（已经有充足了解，追求效率、安全与定制）
 
@@ -83,7 +84,7 @@
 
 ## 翻译状态
 
-若想问询文档的翻译排期与逐篇状态，可在 [issue #5482](https://github.com/Hmbown/CodeWhale/issues/5482) 跟踪。
+若想问询文档的翻译排期与逐篇状态，可在 [issue #5482](https://github.com/codewhale-hq/CodeWhale/issues/5482) 跟踪。
 
 截至 2026-09-29，本目录已收录上文列出的全部中文译文。译文可能落后于英文原版：请以各篇顶部的 `last synced with English revision` 日期为准，并对照英文原版核对命令、参数与配置项。
 

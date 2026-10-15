@@ -102,11 +102,10 @@ fn composer_line_bounds(text: &str, pos: usize) -> (usize, usize) {
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
-use unicode_segmentation::UnicodeSegmentation;
 
 use crate::tui::app::{App, SidebarRowAction, StatusToastLevel};
 use crate::tui::command_palette::{
-    CommandPaletteView, build_entries as build_command_palette_entries,
+    CommandPaletteView, build_entries_with_plugins as build_command_palette_entries,
 };
 use crate::tui::context_menu::{ContextMenuEntry, ContextMenuView};
 use crate::tui::scrolling::{ScrollDirection, TranscriptScroll};
@@ -167,106 +166,30 @@ fn toggle_tool_run_expand(app: &mut App, mouse: MouseEvent) -> bool {
 /// in the composer input string. Uses the canonical prompt-adjusted text rect
 /// for coordinate mapping, and accounts for vertical padding and scroll offset.
 fn mouse_pos_to_char_index(app: &App, col: u16, row: u16, text_area: Rect) -> Option<usize> {
-    let rel_col = col.saturating_sub(text_area.x) as usize;
-    let rel_row = row.saturating_sub(text_area.y) as usize;
-
-    if app.input.is_empty() {
-        return Some(0);
-    }
-
-    let width = text_area.width.max(1) as usize;
-    let wrapped = crate::tui::widgets::wrap_input_lines_for_mouse(&app.input, width);
-
-    // Subtract the vertical top-padding (centering of short inputs).
-    let text_row = rel_row.saturating_sub(app.viewport.last_composer_top_padding);
-
-    // Add the scroll offset (lines scrolled out of view).
-    let absolute_row = text_row + app.viewport.last_composer_scroll_offset;
-
-    if absolute_row >= wrapped.len() {
-        return Some(app.input.chars().count());
-    }
-
-    let (line_start, line_text) = &wrapped[absolute_row];
-
-    let mut char_offset = 0usize;
-    let mut col_used = 0usize;
-    for g in line_text.graphemes(true) {
-        // Painted cells: ratatui strips control characters, so a tab takes
-        // no column here, matching the wrap and caret math.
-        let gw = crate::tui::widgets::visible_grapheme_width(g);
-        if col_used + gw > rel_col {
-            break;
-        }
-        col_used += gw;
-        char_offset += g.chars().count();
-    }
-    Some(line_start + char_offset)
+    Some(codewhale_ratatui::native_composer_source_at(
+        &app.input,
+        usize::from(text_area.width.max(1)),
+        usize::from(col.saturating_sub(text_area.x)),
+        usize::from(row.saturating_sub(text_area.y)),
+        app.viewport.last_composer_scroll_offset,
+        app.viewport.last_composer_top_padding,
+    ))
 }
 
-fn composer_wrapped_cursor_row_col(
-    input: &str,
-    cursor: usize,
-    wrapped: &[(usize, String)],
-) -> (usize, usize) {
-    let total = input.chars().count();
-    let cursor = cursor.min(total);
-
-    for (idx, (line_start, line_text)) in wrapped.iter().enumerate() {
-        let next_start = wrapped
-            .get(idx + 1)
-            .map(|(start, _)| *start)
-            .unwrap_or_else(|| total.saturating_add(1));
-
-        if cursor >= *line_start && cursor < next_start {
-            let line_len = line_text.chars().count();
-            return (idx, cursor.saturating_sub(*line_start).min(line_len));
-        }
-    }
-
-    let row = wrapped.len().saturating_sub(1);
-    let col = wrapped
-        .get(row)
-        .map(|(_, line_text)| line_text.chars().count())
-        .unwrap_or(0);
-    (row, col)
-}
-
-/// Move the composer caret by wrapped rows. Returns whether the caret actually
-/// moved: a draft that is empty, unwrapped, or already at the boundary in this
-/// direction reports `false` so the wheel can reach the transcript instead of
-/// dying in the composer (#5223).
+/// Wheel dispatch stays with the existing editor; row projection is shared
+/// with painting and caret geometry, preserving its scalar-column policy.
 fn move_composer_cursor_by_wrapped_rows(app: &mut App, text_area: Rect, rows: isize) -> bool {
-    if app.input.is_empty() || rows == 0 {
+    let Some(cursor) = codewhale_ratatui::native_composer_step_row(
+        &app.input,
+        app.cursor_position,
+        usize::from(text_area.width.max(1)),
+        rows,
+        codewhale_ratatui::NativeComposerRowColumn::SourceScalars,
+    ) else {
         return false;
-    }
-
-    let width = text_area.width.max(1) as usize;
-    let wrapped = crate::tui::widgets::wrap_input_lines_for_mouse(&app.input, width);
-    if wrapped.len() <= 1 {
-        return false;
-    }
-
-    let (current_row, current_col) =
-        composer_wrapped_cursor_row_col(&app.input, app.cursor_position, &wrapped);
-    let max_row = wrapped.len().saturating_sub(1);
-    let target_row = if rows.is_negative() {
-        current_row.saturating_sub(rows.unsigned_abs())
-    } else {
-        current_row.saturating_add(rows as usize).min(max_row)
     };
-
-    if target_row == current_row {
-        return false;
-    }
-
-    let (target_start, target_text) = &wrapped[target_row];
-    let target_len = target_text.chars().count();
-    let total = app.input.chars().count();
     app.clear_selection();
-    app.cursor_position = target_start
-        .saturating_add(current_col.min(target_len))
-        .min(total);
+    app.cursor_position = cursor;
     app.needs_redraw = true;
     true
 }
@@ -296,16 +219,14 @@ fn handle_plugin_cta_mouse(app: &mut App, mouse: MouseEvent) -> Option<Vec<ViewE
         let _ = app.dismiss_plugin_cta();
         return Some(Vec::new());
     }
-    // Only the labelled button acts, and it opens `/plugin show <name>`;
-    // install, trust, and enable stay the person's own next command. A click
-    // elsewhere on the row is consumed and does nothing.
+    // Only the labelled Review button opens the existing inventory. A click
+    // elsewhere is consumed; no suggested command or mutation is dispatched.
     if mouse_hits_rect(mouse, app.viewport.last_plugin_cta_review_area)
-        && let Some(command) = app.accept_plugin_cta_command()
+        && let Some(tab) = app.accept_plugin_cta_review()
+        && app.view_stack.top_kind() != Some(crate::tui::views::ModalKind::Extensions)
     {
-        return Some(apply_sidebar_row_action(
-            app,
-            crate::tui::app::SidebarRowAction::Command(command),
-        ));
+        app.view_stack
+            .push(crate::tui::views::extensions::ExtensionsView::new(app, tab));
     }
     Some(Vec::new())
 }
@@ -562,6 +483,25 @@ pub(crate) fn handle_mouse_event(app: &mut App, mouse: MouseEvent) -> Vec<ViewEv
         return app.view_stack.handle_mouse(mouse);
     }
 
+    if crate::tui::pet_watch::main_view(app) {
+        if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+            && mouse_hits_rect(mouse, app.pet_watch.inspect_area)
+        {
+            crate::tui::pet_watch::open_habitat(app);
+            return Vec::new();
+        }
+        if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+            && mouse_hits_rect(mouse, app.pet_watch.view_area)
+        {
+            crate::tui::pet_watch::cycle_view(app, true);
+            return Vec::new();
+        }
+        if mouse_hits_rect(mouse, app.pet_watch.area) {
+            crate::tui::pet_watch::command(app, crate::tui::pet_watch::Control::Mouse(mouse));
+            return Vec::new();
+        }
+    }
+
     // A drag can finish outside the composer/transcript that started it.
     // Publish once before other visible surfaces consume the release event.
     if matches!(mouse.kind, MouseEventKind::Up(MouseButton::Left))
@@ -796,6 +736,17 @@ pub(crate) fn handle_mouse_event(app: &mut App, mouse: MouseEvent) -> Vec<ViewEv
                 return Vec::new();
             }
 
+            // The pinned prompt header names the user message scrolled just
+            // above the viewport; a click returns to it. Resolve the message
+            // against the current layout so a rewrite between paint and click
+            // cannot jump to a stale line offset.
+            if mouse_hits_rect(mouse, app.viewport.pinned_prompt_area) {
+                if let Some(line) = app.pinned_prompt_target_line() {
+                    app.scroll_to_transcript_line(line);
+                }
+                return Vec::new();
+            }
+
             if toggle_tool_run_expand(app, mouse) {
                 return Vec::new();
             }
@@ -804,6 +755,8 @@ pub(crate) fn handle_mouse_event(app: &mut App, mouse: MouseEvent) -> Vec<ViewEv
                 app.viewport.transcript_selection.anchor = Some(point);
                 app.viewport.transcript_selection.head = Some(point);
                 app.viewport.transcript_selection.dragging = true;
+                app.viewport.transcript_selection.owner =
+                    app.transcript_owner_at_line(point.line_index);
                 app.needs_redraw = true;
 
                 if app.is_loading
@@ -1661,6 +1614,19 @@ fn push_work_row_entries(app: &App, mouse: MouseEvent, entries: &mut Vec<Context
             entries.push(row(app.tr(MessageId::CtxMenuOpen).into_owned(), action).primary());
         }
         Some(SidebarRowAction::Command(command)) => {
+            if let Some(id) = command.strip_prefix("/jobs show ")
+                && app.task_panel.iter().any(|entry| {
+                    entry.id == id && crate::tui::background_indicator::is_live_shell_entry(entry)
+                })
+            {
+                stop = Some(
+                    row(
+                        app.tr(MessageId::CtxMenuStopWork).into_owned(),
+                        SidebarRowAction::Command(format!("/jobs cancel {id}")),
+                    )
+                    .confirm(confirm()),
+                );
+            }
             let label = app
                 .tr(MessageId::CtxMenuRunCommand)
                 .replace("{command}", &command);
@@ -1803,12 +1769,16 @@ pub(crate) fn apply_context_menu_action(
                 }
             }
         }
-        ContextMenuAction::CopyText { text } => {
-            app.status_message = Some(match app.clipboard.write_text_status(&text) {
-                Ok(transport) => copy_receipt(app, transport, app.tr(MessageId::ClipboardCopied)),
-                Err(error) => format!("Copy failed: {error}"),
-            });
-        }
+        ContextMenuAction::CopyText { text } => match app.clipboard.write_text_status(&text) {
+            Ok(transport) => {
+                let receipt = copy_receipt(app, transport, app.tr(MessageId::ClipboardCopied));
+                app.push_status_toast(receipt, StatusToastLevel::Info, None);
+            }
+            Err(error) => {
+                let receipt = copy_failed_receipt(app, error);
+                app.push_status_toast(receipt, StatusToastLevel::Error, None);
+            }
+        },
         ContextMenuAction::ToggleWindowPin => {
             crate::tui::window_control::toggle_pin(app);
         }
@@ -1824,6 +1794,7 @@ pub(crate) fn apply_context_menu_action(
                     &app.workspace,
                     &app.mcp_config_path,
                     app.mcp_snapshot.as_ref(),
+                    app.extension_plugin_view().as_ref(),
                 ),
             ));
         }
@@ -1832,8 +1803,7 @@ pub(crate) fn apply_context_menu_action(
         }
         ContextMenuAction::OpenHelp => {
             let help =
-                HelpView::new_for_workspace(app.ui_locale, &app.workspace, &app.cached_skills)
-                    .with_groups_expanded(app.help_expand_groups);
+                HelpView::new_for_app(app, false).with_groups_expanded(app.help_expand_groups);
             app.view_stack.push(help);
         }
         ContextMenuAction::OpenFileAtLine { path, line } => {
@@ -1999,6 +1969,11 @@ pub(crate) fn copy_receipt(
     }
 }
 
+pub(crate) fn copy_failed_receipt(app: &App, error: impl std::fmt::Display) -> String {
+    app.tr(MessageId::ClipboardCopyFailed)
+        .replace("{error}", &error.to_string())
+}
+
 /// Ctrl+X on a composer selection. The text is deleted only after a native
 /// clipboard confirmed the copy; an OSC 52 / tmux copy is never confirmed,
 /// so the text stays and the receipt says why.
@@ -2009,15 +1984,20 @@ pub(crate) fn cut_selection(app: &mut App) {
     }
     match app.clipboard.write_text_status(&sel) {
         Ok(crate::tui::clipboard::CopyTransport::Native) => {
-            app.push_status_toast("Cut to clipboard", StatusToastLevel::Info, None);
+            app.push_status_toast(
+                app.tr(MessageId::ClipboardCopied),
+                StatusToastLevel::Info,
+                None,
+            );
             app.delete_selection();
         }
         Ok(crate::tui::clipboard::CopyTransport::Terminal) => {
             let receipt = app.tr(MessageId::ClipboardCutKeptText).into_owned();
             app.push_status_toast(receipt, StatusToastLevel::Info, None);
         }
-        Err(_) => {
-            app.push_status_toast("Cut failed", StatusToastLevel::Error, None);
+        Err(error) => {
+            let receipt = copy_failed_receipt(app, error);
+            app.push_status_toast(receipt, StatusToastLevel::Error, None);
         }
     }
 }
@@ -2108,10 +2088,14 @@ pub(crate) fn copy_active_selection(app: &mut App) {
     if !sel.is_empty() {
         match app.clipboard.write_text_status(&sel) {
             Ok(transport) => {
-                app.status_message = Some(copy_receipt(app, transport, "Selection copied"));
+                let receipt = copy_receipt(app, transport, app.tr(MessageId::ClipboardCopied));
+                app.push_status_toast(receipt, StatusToastLevel::Info, None);
                 app.clear_selection();
             }
-            Err(_) => app.status_message = Some("Copy failed".to_string()),
+            Err(error) => {
+                let receipt = copy_failed_receipt(app, error);
+                app.push_status_toast(receipt, StatusToastLevel::Error, None);
+            }
         }
         return;
     }
@@ -2133,25 +2117,22 @@ pub(crate) fn copy_active_selection(app: &mut App) {
             .map(|text| (text, None))
     });
     if let Some((text, markdown_cells)) = payload {
-        let written = app.clipboard.write_text_status(&text);
-        if let Ok(crate::tui::clipboard::CopyTransport::Terminal) = written {
-            app.status_message = Some(copy_receipt(
-                app,
-                crate::tui::clipboard::CopyTransport::Terminal,
-                "",
-            ));
-        } else if written.is_ok() {
-            match markdown_cells {
-                Some(cells) => {
-                    let toast = app
+        match app.clipboard.write_text_status(&text) {
+            Ok(transport) => {
+                let receipt = match (transport, markdown_cells) {
+                    (crate::tui::clipboard::CopyTransport::Native, Some(cells)) => app
                         .tr(MessageId::SelectionCopiedAsMarkdown)
-                        .replace("{count}", &cells.to_string());
-                    app.push_status_toast(toast, StatusToastLevel::Info, None);
-                }
-                None => app.status_message = Some("Selection copied".to_string()),
+                        .replace("{count}", &cells.to_string()),
+                    (transport, _) => {
+                        copy_receipt(app, transport, app.tr(MessageId::ClipboardCopied))
+                    }
+                };
+                app.push_status_toast(receipt, StatusToastLevel::Info, None);
             }
-        } else {
-            app.status_message = Some("Copy failed".to_string());
+            Err(error) => {
+                let receipt = copy_failed_receipt(app, error);
+                app.push_status_toast(receipt, StatusToastLevel::Error, None);
+            }
         }
     } else {
         clear_transcript_selection(app);
@@ -2410,12 +2391,48 @@ mod tests {
 
     pub(super) fn create_test_app() -> App {
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         let mut app = App::new(options, &Config::default());
         // Legacy strip geometry (see ui.rs); Bottom default has its own tests.
         app.work_surface.placement = crate::tui::work_surface::WorkSurfacePlacement::Top;
         app
+    }
+
+    #[test]
+    fn plugin_review_click_opens_inventory_and_emits_no_install_or_trust_command() {
+        let _lock = crate::test_support::lock_test_env();
+        let root = tempdir().unwrap();
+        let _home =
+            crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", root.path().join("home"));
+        let mut app = App::new(
+            crate::tui::test_support::test_tui_options(root.path()),
+            &Config::default(),
+        );
+        app.surface_plugin_review_request("catalog-only", "/plugin install arbitrary-source");
+        assert!(app.plugin_cta.phase.is_visible());
+        let before = app.plugin_registry.list().len();
+        let area = Rect::new(0, 0, 140, 1);
+        let mut buffer = ratatui::buffer::Buffer::empty(area);
+        crate::tui::plugin_suggestions::draw_plugin_cta(&mut app, area, &mut buffer);
+        assert!(
+            super::handle_plugin_cta_mouse(&mut app, left_click(0, 0))
+                .unwrap()
+                .is_empty()
+        );
+        assert!(app.view_stack.is_empty());
+        assert!(app.plugin_cta.phase.is_visible());
+        let button = app.viewport.last_plugin_cta_review_area.unwrap();
+        let events =
+            super::handle_plugin_cta_mouse(&mut app, left_click(button.x, button.y)).unwrap();
+        assert!(
+            events.is_empty(),
+            "review navigation must not dispatch commands"
+        );
+        assert_eq!(app.view_stack.top_kind(), Some(ModalKind::Extensions));
+        assert!(!app.plugin_cta.phase.is_visible());
+        assert_eq!(app.plugin_registry.list().len(), before);
+        assert!(app.plugin_registry.get("catalog-only").is_none());
     }
 
     #[test]
@@ -2575,6 +2592,7 @@ mod tests {
             title: "refactor the parser".to_string(),
             updated_at: chrono::Utc::now(),
             message_count: 12,
+            interrupted: false,
         }];
         app.launch.row_hitboxes = vec![(
             crate::tui::app::LaunchRowId::Recent("sess-1".to_string()),
@@ -3333,7 +3351,10 @@ mod tests {
         select(&mut app);
         super::apply_context_menu_action(&mut app, ContextMenuAction::CopySelection);
         assert_eq!(app.clipboard.last_written_text(), Some("hello"));
-        assert_eq!(app.status_message.as_deref(), Some("Selection copied"));
+        assert_eq!(
+            app.status_toasts.back().map(|toast| toast.text.as_str()),
+            Some("Copied to the clipboard")
+        );
 
         select(&mut app);
         super::apply_context_menu_action(&mut app, ContextMenuAction::OpenSelection);
@@ -3410,7 +3431,7 @@ mod tests {
 
     /// Ctrl+X deletes the selection only when a native clipboard confirmed
     /// the copy. A terminal (OSC 52 / tmux) copy keeps the text and says why;
-    /// a failed copy keeps it and says the cut failed.
+    /// a failed copy keeps it and says the copy failed.
     #[test]
     fn cut_deletes_only_after_a_native_copy() {
         fn select_all(app: &mut App, text: &str) {
@@ -3427,7 +3448,7 @@ mod tests {
         super::cut_selection(&mut app);
         assert_eq!(app.clipboard.last_written_text(), Some("hello"));
         assert_eq!(app.input, "", "a native copy cuts");
-        assert_eq!(last_toast(&app), Some("Cut to clipboard"));
+        assert_eq!(last_toast(&app), Some("Copied to the clipboard"));
 
         app.clipboard = crate::tui::clipboard::ClipboardHandler::terminal_only_for_test();
         select_all(&mut app, "kept");
@@ -3447,7 +3468,11 @@ mod tests {
         select_all(&mut app, "also kept");
         super::cut_selection(&mut app);
         assert_eq!(app.input, "also kept", "a failed copy keeps the text");
-        assert_eq!(last_toast(&app), Some("Cut failed"));
+        assert!(
+            last_toast(&app).is_some_and(|toast| toast.starts_with("Clipboard copy failed: ")),
+            "{:?}",
+            last_toast(&app)
+        );
     }
 
     /// A right-click on a row's inline stop zone opens the row's own menu;
@@ -3489,6 +3514,10 @@ mod tests {
     /// the text was sent to the terminal, not that it was copied.
     #[test]
     fn copy_receipts_name_the_transport() {
+        fn last_toast(app: &App) -> Option<&str> {
+            app.status_toasts.back().map(|toast| toast.text.as_str())
+        }
+
         let mut app = create_test_app();
         super::apply_context_menu_action(
             &mut app,
@@ -3497,10 +3526,7 @@ mod tests {
             },
         );
         assert_eq!(app.clipboard.last_written_text(), Some("agent_1"));
-        assert_eq!(
-            app.status_message.as_deref(),
-            Some("Copied to the clipboard")
-        );
+        assert_eq!(last_toast(&app), Some("Copied to the clipboard"));
 
         app.clipboard = crate::tui::clipboard::ClipboardHandler::terminal_only_for_test();
         super::apply_context_menu_action(
@@ -3510,7 +3536,7 @@ mod tests {
             },
         );
         assert_eq!(
-            app.status_message.as_deref(),
+            last_toast(&app),
             Some("Sent to the terminal clipboard (terminals do not confirm it)")
         );
 
@@ -3528,7 +3554,7 @@ mod tests {
         app.cursor_position = 5;
         super::apply_context_menu_action(&mut app, ContextMenuAction::CopySelection);
         assert_eq!(
-            app.status_message.as_deref(),
+            last_toast(&app),
             Some("Sent to the terminal clipboard (terminals do not confirm it)")
         );
 
@@ -3540,11 +3566,9 @@ mod tests {
             },
         );
         assert!(
-            app.status_message
-                .as_deref()
-                .is_some_and(|status| status.starts_with("Copy failed")),
+            last_toast(&app).is_some_and(|toast| toast.starts_with("Clipboard copy failed: ")),
             "{:?}",
-            app.status_message
+            last_toast(&app)
         );
     }
 

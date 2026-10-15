@@ -113,7 +113,7 @@ fn undo_retry_apply_path_keeps_engine_request_and_reopened_session_consistent() 
         config.set_feature("mcp", false).unwrap();
         config.set_feature("subagents", false).unwrap();
         let mut app = App::new(
-            crate::test_support::test_tui_options(workspace.path()),
+            crate::tui::test_support::test_tui_options(workspace.path()),
             &config,
         );
         app.onboarding_needs_api_key = false;
@@ -125,6 +125,7 @@ fn undo_retry_apply_path_keeps_engine_request_and_reopened_session_consistent() 
             canned::simple_text_turn("retry answer one"),
             canned::simple_text_turn("retry answer two"),
             canned::simple_text_turn("answer after reopen"),
+            canned::simple_text_turn("edited answer"),
         ]));
         let (engine, mut handle) = Engine::new_with_model_client(
             EngineConfig {
@@ -467,6 +468,46 @@ fn undo_retry_apply_path_keeps_engine_request_and_reopened_session_consistent() 
         assert!(!inbound.contains("undone answer"));
         assert!(!inbound.contains("retry answer"));
 
+        // `/edit` then submit replaces the last exchange: the old prompt and
+        // its answer leave the transcript, the provider request and the saved
+        // session, and the edited prompt takes their place.
+        let loaded = commands::execute("/edit", &mut app);
+        assert!(!loaded.is_error, "{:?}", loaded.message);
+        assert_eq!(app.input, "after reopen");
+        assert!(app.edit_in_progress);
+        let result = super::super::event_loop::edit_replacement_result(&mut app, "edited prompt")
+            .expect("a pending edit stages a replacement");
+        assert!(!app.edit_in_progress);
+        apply_command_result(
+            &mut terminal,
+            &mut app,
+            &mut handle,
+            &tasks,
+            &mut config,
+            result,
+        )
+        .await
+        .unwrap();
+        settled(&mut app, &handle, "edited answer").await;
+        let requests = mock.captured_requests();
+        assert_eq!(requests.len(), 6);
+        assert_eq!(
+            prompts(&requests.last().unwrap().messages),
+            ["keep this", "edited prompt"]
+        );
+        let inbound = serde_json::to_string(&requests.last().unwrap().messages).unwrap();
+        assert!(!inbound.contains("after reopen"));
+        assert_eq!(prompts(&app.api_messages), ["keep this", "edited prompt"]);
+        assert_eq!(
+            prompts(&manager.load_session(&id).unwrap().messages),
+            ["keep this"],
+            "the edit rollback is durable before the replacement turn"
+        );
+        // With no edit pending, a submit is an ordinary turn.
+        assert!(
+            super::super::event_loop::edit_replacement_result(&mut app, "plain").is_none()
+        );
+
         // Return to the retained exchange before probing durable-save failure.
         let result = commands::execute("/undo", &mut app);
         apply_command_result(
@@ -498,7 +539,7 @@ fn undo_retry_apply_path_keeps_engine_request_and_reopened_session_consistent() 
         .unwrap();
         assert_eq!(
             mock.captured_requests().len(),
-            5,
+            6,
             "save failure must forbid retry inference"
         );
         assert!(
@@ -549,9 +590,110 @@ fn undo_retry_apply_path_keeps_engine_request_and_reopened_session_consistent() 
                 .text
                 .contains("retry was not sent")
         );
-        assert_eq!(mock.captured_requests().len(), 5);
+        assert_eq!(mock.captured_requests().len(), 6);
         tasks.shutdown_and_wait().await.unwrap();
         assert!(actor.try_send(PersistRequest::Shutdown));
         actor_task.await.unwrap();
     });
+}
+
+/// A refused `/edit` rollback has already consumed the revision from the
+/// composer. It must come back, with edit mode re-armed, not be lost.
+#[tokio::test]
+async fn refused_edit_rollback_returns_the_revision_to_the_composer() {
+    use crate::task_manager::{
+        TaskExecutionResult, TaskManagerConfig, TaskStatus, TaskTerminalReason,
+    };
+    struct Idle;
+    #[async_trait::async_trait]
+    impl crate::task_manager::TaskExecutor for Idle {
+        async fn execute(
+            &self,
+            _: crate::task_manager::ExecutionTask,
+            _: tokio::sync::mpsc::Sender<crate::task_manager::TaskExecutionEvent>,
+            _: tokio_util::sync::CancellationToken,
+        ) -> TaskExecutionResult {
+            TaskExecutionResult {
+                status: TaskStatus::Completed,
+                result_text: None,
+                error: None,
+                terminal_reason: TaskTerminalReason::Completed,
+            }
+        }
+    }
+    let root = TempDir::new().unwrap();
+    let tasks = TaskManager::start_with_executor(
+        TaskManagerConfig {
+            data_dir: root.path().into(),
+            worker_count: 1,
+            default_workspace: root.path().into(),
+            default_model: "fixture".into(),
+            default_mode: "plan".into(),
+            allow_shell: false,
+            trust_mode: false,
+            execution_limits: crate::task_manager::TaskExecutionLimits::default(),
+        },
+        Arc::new(Idle),
+    )
+    .await
+    .unwrap();
+    let mut backend = ColorCompatBackend::new(
+        std::io::stdout(),
+        codewhale_palette::ColorDepth::Monochrome,
+        codewhale_palette::PaletteMode::Dark,
+    );
+    backend.set_terminal_size(Size::new(80, 24));
+    let mut terminal = Terminal::new(backend).unwrap();
+    let mut config = Config::default();
+    let mut engine = mock_engine_handle();
+
+    let mut app = create_test_app();
+    app.push_history_cell(HistoryCell::User {
+        content: "original prompt".into(),
+    });
+    let loaded = commands::execute("/edit", &mut app);
+    assert!(!loaded.is_error, "{:?}", loaded.message);
+    assert!(app.edit_in_progress);
+    // The user revises the prompt and presses Enter: the composer is consumed
+    // and the replacement is staged behind a rollback.
+    app.input = "revised prompt".into();
+    let submitted = std::mem::take(&mut app.input);
+    let result = super::super::event_loop::edit_replacement_result(&mut app, &submitted)
+        .expect("a pending edit stages a replacement");
+    assert!(!app.edit_in_progress);
+    assert!(app.input.is_empty());
+    // Force the refusal: the rollback is only allowed on an idle app.
+    app.is_loading = true;
+
+    apply_command_result(
+        &mut terminal,
+        &mut app,
+        &mut engine.handle,
+        &tasks,
+        &mut config,
+        result,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(app.input, "revised prompt", "the revision is restored");
+    assert_eq!(app.cursor_position, "revised prompt".chars().count());
+    assert!(app.edit_in_progress, "edit mode is active again");
+    assert!(
+        app.history.iter().any(
+            |cell| matches!(cell, HistoryCell::User { content } if content == "original prompt")
+        ),
+        "the refused rollback leaves the original exchange alone"
+    );
+    assert!(
+        app.status_toasts
+            .iter()
+            .any(|toast| toast.text.contains("rollback failed")),
+        "the refusal is still reported"
+    );
+    assert!(
+        engine.rx_op.try_recv().is_err(),
+        "nothing reached the engine"
+    );
+    tasks.shutdown_and_wait().await.unwrap();
 }
