@@ -36,6 +36,7 @@ export interface ChromeDict {
    * dictionary for the compact sheet's second group and the footer.
    */
   navProduct: string;
+  navFeatures: string;
   navModels: string;
   navPlugins: string;
 
@@ -121,6 +122,21 @@ export interface ChromeDict {
   partialBadge: string;
 }
 
+export interface FeaturesDict {
+  title: string;
+  description: string;
+  notice: string;
+  stable: string;
+  flagged: string;
+  experimental: string;
+  partial: string;
+  preview: string;
+  none: string;
+  docs: string;
+  source: string;
+  exportJson: string;
+}
+
 export interface HomeDict {
   /**
    * `<title>` and meta description for the locale home route, consumed by
@@ -146,8 +162,6 @@ export interface HomeDict {
 
   /** Screenshot caption, first item of the dot chain, e.g. "Terminal preview". */
   shotPreview: string;
-  /** Screenshot caption, build item with a `{version}` token. */
-  shotBuild: string;
   /** Screenshot alt text for the current media manifest capture. */
   screenshotAlt: string;
 
@@ -159,13 +173,8 @@ export interface HomeDict {
   sourceCandidate: string;
   /** "released" / "unreleased" — the machine-readable source-state label. */
   publishedRelease: string;
-  figcaptionSourceCandidate: string;
-  /** Running head of the terminal chapter ("01 / Your terminal"). */
-  chapterTerminal: string;
-  /** Title of the terminal chapter, above the live capture. */
-  chapterTerminalTitle: string;
 
-  /** What a person gains: heading, lede, and three [title, body] columns. */
+  /** What a person gains: heading, lede, and three [title, body] rows. */
   gainHeading: string;
   gainLede: string;
   gain: [string, string][];
@@ -692,6 +701,8 @@ export type DocsSubagentsDict = DocsPageDict;
 export type DocsWebDict = DocsPageDict;
 
 export type DocsWorkDict = DocsPageDict;
+
+export type DocsPetDict = DocsPageDict;
 
 /** Copy for `app/[locale]/computer-use/page.tsx` and the install page's Computer Use section. */
 export interface ComputerUseDict {

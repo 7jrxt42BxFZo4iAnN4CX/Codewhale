@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:604da19bff2c -->
+<!-- source: README.md sha256:75bb6a506af5 -->
 <div align="center">
 
 <picture>
@@ -21,9 +21,9 @@ trabajo — en tu terminal, con un modelo alojado o local que tú eliges.
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-8ba2bbf.png" alt="Una sesión de terminal de Codewhale" width="760">
+<img src="web/public/codewhale-tui-0102-demo.png" alt="Una sesión de terminal de Codewhale" width="760">
 
-<sub>Captura real de la terminal en una instalación nueva — sin salida preparada.</sub>
+<sub>Captura real de la terminal de Codewhale en una sesión de demostración local configurada.</sub>
 
 </div>
 
@@ -58,6 +58,12 @@ en la misma máquina terminan disputándose el `PATH`.
 
 ## Inicio rápido
 
+**Las claves API de tus proveedores, en un solo lugar.** [Crea una cuenta de Codewhale](https://app.codewhale.net/register)
+o ejecuta `codewhale login` para iniciar sesión. Guarda y actualiza tus claves API en tu cuenta
+y úsalas a través de la ruta de modelos de Codewhale en los dispositivos donde hayas iniciado sesión.
+[Configura las claves de tu cuenta](docs/CONFIGURATION.md#account-provider-keys).
+Iniciar sesión no sube las claves locales existentes; puedes seguir usando Codewhale localmente sin una cuenta.
+
 1. **Abre tu proyecto.** Ejecuta `codewhale` en la carpeta en la que quieres trabajar.
 2. **Conecta un modelo.** Ejecuta `/provider` (o presiona `F3`) para agregar una
    clave alojada o elegir un entorno local. Si Ollama ya se está ejecutando con
@@ -71,7 +77,7 @@ Fix the failing tests and explain what changed.
 La misma tarea se puede ejecutar sin interfaz desde un script o un trabajo de CI:
 
 ```bash
-codewhale exec "fix the failing tests and explain what changed"
+codewhale exec --auto "fix the failing tests and explain what changed"
 ```
 
 Ejecuta `/help` para ver los comandos y los atajos de teclado.
@@ -84,7 +90,7 @@ las herramientas y los permisos se comportan igual en todas partes.
 | Comando | Qué hace |
 | --- | --- |
 | `codewhale` | La interfaz interactiva de terminal |
-| `codewhale exec "…"` | Un turno sin interfaz desde un script o CI, con salida JSON en streaming |
+| `codewhale exec "…"` | Un turno sin interfaz desde un script o CI; `--auto` permite las herramientas de archivos y de shell, `--output-format stream-json` transmite JSON |
 | `codewhale web` | El [cliente de navegador local](docs/WEB.md) incluido, en `127.0.0.1` |
 | `codewhale review --pr N` | Una [revisión de pull request](docs/GITHUB_ACTION.md) de carácter orientativo; publicarla es opcional |
 | Runtime API | Una [API HTTP local](docs/RUNTIME_API.md) para hilos, eventos y aprobaciones |
@@ -135,7 +141,7 @@ Full Access sigue respetando los límites estrictos de las políticas. La
 Codewhale se ejecuta en tu equipo con el acceso que le otorgues. Las posturas de
 aprobación y las reglas del repositorio limitan lo que el agente puede hacer, y
 los comandos se ejecutan dentro de un sandbox del sistema operativo donde es
-compatible (Seatbelt en macOS; bubblewrap en Linux es opcional).
+compatible (Seatbelt en macOS; bubblewrap en Linux cuando está instalado y funciona).
 `/preview-request` muestra la solicitud exacta, con los datos sensibles
 redactados, antes de enviar nada. Los precios de modelos desconocidos siguen
 siendo desconocidos en lugar de presentarse como gratuitos.

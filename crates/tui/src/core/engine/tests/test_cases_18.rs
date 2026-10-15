@@ -21,6 +21,7 @@ async fn interactive_thinking_only_drop_preserves_nothing_and_never_claims_it_di
 
     handle
         .send(Op::SendMessage(TurnSpec {
+            profile_constitution: None,
             max_output_tokens: None,
             content: "solve the task".to_string(),
             images: Vec::new(),
@@ -255,6 +256,7 @@ async fn run_reasoning_only_turn_with_reprompts(
     let run_task = tokio::spawn(engine.run());
     handle
         .send(Op::SendMessage(TurnSpec {
+            profile_constitution: None,
             max_output_tokens: None,
             content: "solve the task".to_string(),
             images: Vec::new(),
@@ -1468,7 +1470,7 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
         serde_json::to_vec(&serde_json::json!({
             "servers": {
                 "eager": { "command": node, "args": [server, "eager", tmp.path()], "required": true },
-                "lazy": { "command": node, "args": [server, "lazy", tmp.path()] }
+                "lazy": { "command": node, "args": [server, "lazy", tmp.path()], "lazy": true }
             }
         }))
         .unwrap(),
@@ -1640,11 +1642,11 @@ readline.createInterface({input:process.stdin}).on('line', line => {
     fs::write(
         &config_path,
         serde_json::to_vec(&json!({"servers": {
-            "engram": {"command":node,"args":[server,"engram",tmp.path()],"required":false},
-            "unrelated": {"command":node,"args":[server,"unrelated",tmp.path()],"required":false},
+            "engram": {"command":node,"args":[server,"engram",tmp.path()],"required":false,"lazy":true},
+            "unrelated": {"command":node,"args":[server,"unrelated",tmp.path()],"required":false,"lazy":true},
             "disabled": {"command":node,"args":[server,"disabled",tmp.path()],"enabled":false},
-            "stalled": {"command":node,"args":[server,"stalled",tmp.path()],"required":false},
-            "failed": {"command":"codewhale-missing-mcp-discovery-6828"}
+            "stalled": {"command":node,"args":[server,"stalled",tmp.path()],"required":false,"lazy":true},
+            "failed": {"command":"codewhale-missing-mcp-discovery-6828","lazy":true}
         }}))
         .unwrap(),
     )

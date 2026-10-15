@@ -56,7 +56,7 @@ fn create_test_app_with_tmpdir(tmpdir: &TempDir) -> App {
         memory_path: tmpdir.path().join("memory.md"),
         notes_path: tmpdir.path().join("notes.txt"),
         mcp_config_path: tmpdir.path().join("mcp.json"),
-        ..crate::test_support::test_tui_options(tmpdir.path())
+        ..crate::tui::test_support::test_tui_options(tmpdir.path())
     };
     App::new(options, &Config::default())
 }
@@ -471,11 +471,14 @@ fn new_session_force_cannot_detach_an_in_flight_turn() {
     assert!(result.action.is_none());
     assert_eq!(app.current_session_id.as_deref(), Some("old-session"));
     assert_eq!(app.api_messages.len(), 1);
+    let message = result.message.as_deref().unwrap_or_default();
     assert!(
-        result
-            .message
-            .as_deref()
-            .is_some_and(|message| message.contains("only discards draft or queued input"))
+        message.contains("Cannot start a new session while runtime work is active"),
+        "{message}"
+    );
+    assert!(
+        message.contains("the session is still busy with the current turn"),
+        "the refusal names the live turn: {message}"
     );
 }
 

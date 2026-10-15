@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:604da19bff2c -->
+<!-- source: README.md sha256:75bb6a506af5 -->
 <div align="center">
 
 <picture>
@@ -21,9 +21,9 @@ Codewhale はプロジェクトを読み、ファイルを編集し、コマン�
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-8ba2bbf.png" alt="Codewhale のターミナルセッション" width="760">
+<img src="web/public/codewhale-tui-0102-demo.png" alt="Codewhale のターミナルセッション" width="760">
 
-<sub>新規インストール直後の実際のターミナル画面です。演出は加えていません。</sub>
+<sub>設定済みのローカルデモセッションから取得した、実際の Codewhale ターミナル画面です。</sub>
 
 </div>
 
@@ -57,6 +57,12 @@ Docker、Nix、Linux 上の Homebrew、Android/Termux、チェックサム検証
 
 ## クイックスタート
 
+**プロバイダーの API キーを一か所で管理。** [Codewhale アカウントを作成](https://app.codewhale.net/register)するか、
+`codewhale login` を実行してログインしてください。API キーをアカウントに保存・更新すると、
+ログイン済みのデバイスから Codewhale のモデルルート経由で利用できます。
+[アカウントのキーを設定する](docs/CONFIGURATION.md#account-provider-keys)。
+ログインしても既存のローカルキーはアップロードされません。アカウントなしでもローカルで利用できます。
+
 1. **プロジェクトを開く。** 作業したいフォルダーで `codewhale` を実行します。
 2. **モデルを接続する。** `/provider`（または `F3`）を実行して、ホスト型のキーを追加するか、ローカルランタイムを選びます。
    チャットモデルを載せた Ollama がすでに起動していれば、Codewhale は自動的にそれへ切り替わります。モデルの変更は `/model` で行います。
@@ -69,7 +75,7 @@ Fix the failing tests and explain what changed.
 同じタスクを、スクリプトや CI ジョブからヘッドレスで実行することもできます。
 
 ```bash
-codewhale exec "fix the failing tests and explain what changed"
+codewhale exec --auto "fix the failing tests and explain what changed"
 ```
 
 コマンドとキーボードショートカットは `/help` で確認できます。
@@ -81,7 +87,7 @@ codewhale exec "fix the failing tests and explain what changed"
 | コマンド | 内容 |
 | --- | --- |
 | `codewhale` | 対話型のターミナルインターフェース |
-| `codewhale exec "…"` | スクリプトや CI からヘッドレスで 1 ターン実行し、JSON をストリーミング出力 |
+| `codewhale exec "…"` | スクリプトや CI からヘッドレスで 1 ターン実行します。`--auto` でファイルおよびシェルツールを許可し、`--output-format stream-json` で JSON をストリーミング出力します |
 | `codewhale web` | `127.0.0.1` で動作する、同梱の[ローカルブラウザークライアント](docs/WEB.md) |
 | `codewhale review --pr N` | 参考情報としての[プルリクエストレビュー](docs/GITHUB_ACTION.md)。投稿は任意で有効化 |
 | Runtime API | スレッド、イベント、承認のための[ローカル HTTP API](docs/RUNTIME_API.md) |
@@ -125,7 +131,7 @@ Full Access でも、ハードなポリシー境界は守られます。
 ## 安全性
 
 Codewhale はあなたのマシン上で、あなたが与えたアクセス権の範囲で動作します。承認ポスチャーとリポジトリのルールがエージェントにできることを制限し、
-対応環境ではコマンドは OS のサンドボックス内で実行されます（macOS は Seatbelt、Linux の bubblewrap は任意で有効化）。
+対応環境ではコマンドは OS のサンドボックス内で実行されます（macOS は Seatbelt、Linux では bubblewrap がインストールされ正常に動作する場合）。
 `/preview-request` は、何かを送信する前に、機密情報を伏せたリクエストそのものを表示します。
 価格が不明なモデルは「不明」のまま扱われ、無料として報告されることはありません。
 

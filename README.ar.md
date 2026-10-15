@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:604da19bff2c -->
+<!-- source: README.md sha256:75bb6a506af5 -->
 <div align="center">
 
 <picture>
@@ -21,9 +21,9 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-8ba2bbf.png" alt="جلسة Codewhale في الطرفية" width="760">
+<img src="web/public/codewhale-tui-0102-demo.png" alt="جلسة Codewhale في الطرفية" width="760">
 
-<sub>لقطة حقيقية للطرفية من تثبيت جديد — دون مخرجات مُعدّة مسبقًا.</sub>
+<sub>لقطة حقيقية لطرفية Codewhale من جلسة عرض محلية مُهيّأة.</sub>
 
 </div>
 
@@ -57,6 +57,12 @@ cargo install codewhale-cli --locked  # build from crates.io
 
 ## البدء السريع
 
+**مفاتيح API لمزوّديك، في مكان واحد.** [أنشئ حساب Codewhale](https://app.codewhale.net/register)
+أو شغّل `codewhale login` لتسجيل الدخول. احفظ مفاتيح API وحدّثها في حسابك،
+ثم استخدمها عبر مسار النماذج في Codewhale على الأجهزة التي سجّلت الدخول عليها.
+[إعداد مفاتيح الحساب](docs/CONFIGURATION.md#account-provider-keys).
+تسجيل الدخول لا يرفع المفاتيح المحلية الموجودة؛ ويمكنك مواصلة الاستخدام المحلي دون حساب.
+
 1. **افتح مشروعك.** شغّل `codewhale` في المجلد الذي تريد العمل عليه.
 2. **اربط نموذجًا.** شغّل `/provider` (أو اضغط `F3`) لإضافة مفتاح مستضاف أو اختيار
    بيئة تشغيل محلية. إذا كان Ollama يعمل بالفعل مع نموذج محادثة، ينتقل Codewhale إليه
@@ -70,7 +76,7 @@ Fix the failing tests and explain what changed.
 تعمل المهمة نفسها دون واجهة من سكربت أو من مهمة CI:
 
 ```bash
-codewhale exec "fix the failing tests and explain what changed"
+codewhale exec --auto "fix the failing tests and explain what changed"
 ```
 
 شغّل `/help` لعرض الأوامر واختصارات لوحة المفاتيح.
@@ -83,7 +89,7 @@ codewhale exec "fix the failing tests and explain what changed"
 | الأمر | ما يفعله |
 | --- | --- |
 | `codewhale` | واجهة الطرفية التفاعلية |
-| `codewhale exec "…"` | دورة واحدة دون واجهة من سكربت أو CI، مع بث JSON |
+| `codewhale exec "…"` | دورة واحدة دون واجهة من سكربت أو CI؛ يسمح `--auto` بأدوات الملفات والصدفة، ويبث `--output-format stream-json` بيانات JSON |
 | `codewhale web` | [عميل المتصفح المحلي](docs/WEB.md) المضمَّن على `127.0.0.1` |
 | `codewhale review --pr N` | [مراجعة pull request](docs/GITHUB_ACTION.md) استشارية؛ والنشر اختياري |
 | Runtime API | [واجهة HTTP محلية](docs/RUNTIME_API.md) للخيوط والأحداث والموافقات |
@@ -129,7 +135,7 @@ codewhale exec "fix the failing tests and explain what changed"
 
 يعمل Codewhale على جهازك بالصلاحيات التي تمنحها له. تحدّ أوضاع الموافقة وقواعد
 المستودع مما يجوز للوكيل فعله، وتعمل الأوامر داخل صندوق حماية لنظام التشغيل حيثما
-كان مدعومًا (Seatbelt على macOS؛ وbubblewrap على Linux اختياري). يعرض
+كان مدعومًا (Seatbelt على macOS؛ وbubblewrap على Linux عند تثبيته وعمله). يعرض
 `/preview-request` الطلب المحجوب بياناته الحساسة (redacted) كما هو تمامًا قبل إرسال أي شيء.
 تبقى أسعار النماذج غير المعروفة غير معروفة بدل أن تُعرض على أنها مجانية.
 

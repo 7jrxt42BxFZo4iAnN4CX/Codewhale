@@ -22,11 +22,12 @@ use super::constants::{TOOL_OUTPUT_HEAD_LINES, TOOL_OUTPUT_LINE_LIMIT, TOOL_OUTP
 use super::thinking::cached_color_depth;
 use super::{
     ASSISTANT_GLYPH, ExecCell, ExecSource, GenericToolCell, HistoryCell, PlanUpdateCell,
-    REASONING_CURSOR, REASONING_OPENER, REASONING_RAIL, RenderMode, ThinkingFold, ToolCell,
-    ToolStatus, TranscriptRenderOptions, WebSearchCell, assistant_label_style_for,
+    REASONING_CURSOR, REASONING_OPENER, REASONING_RAIL, RenderMode, ToolCell, ToolStatus,
+    TranscriptFold, TranscriptRenderOptions, WebSearchCell, assistant_label_style_for,
     extract_reasoning_summary, render_spillover_annotation, render_thinking,
     render_thinking_with_analysis, running_status_label_with_elapsed,
 };
+use crate::session_manager::{SessionManager, create_saved_session};
 use crate::tools::plan::{PlanSnapshot, StepStatus};
 use crate::tui::motion::MotionMode;
 use crate::tui::ui_text::{
@@ -35,6 +36,7 @@ use crate::tui::ui_text::{
 use codewhale_models::{ContentBlock, Message, Role};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use tempfile::tempdir;
 
 #[test]
 fn extension_prompt_snapshots_and_withdrawal_show_the_complete_model_input() {
@@ -53,6 +55,16 @@ fn extension_prompt_snapshots_and_withdrawal_show_the_complete_model_input() {
             None => assert!(content.contains("withdrawn")),
         }
     }
+    let message = crate::runtime_handoff::mcp_server_instructions_runtime_message(&[(
+        "guided".into(),
+        "Search before fetching.".into(),
+    )]);
+    let cells = super::history_cells_from_message(&message);
+    assert!(
+        matches!(cells.as_slice(), [HistoryCell::System { content }]
+            if content.contains("Search before fetching.")),
+        "the transcript shows what the model saw"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +108,7 @@ fn exec_tool(command: &str, status: ToolStatus) -> ExecCell {
         duration_ms: None,
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     }
@@ -112,6 +125,87 @@ fn calm_options() -> TranscriptRenderOptions {
     TranscriptRenderOptions {
         low_motion: true,
         ..TranscriptRenderOptions::default()
+    }
+}
+
+#[test]
+fn ordinary_cell_fold_preserves_body_metadata_and_full_exports() {
+    let content = format!(
+        "[reference](https://example.com/reference)\n\n{}",
+        (1..=12)
+            .map(|line| format!("paragraph {line:02}"))
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    );
+    let mut tool = exec_tool("example", ToolStatus::Failed);
+    tool.output = Some(content.clone());
+    let cells = [
+        HistoryCell::User {
+            content: content.clone(),
+        },
+        HistoryCell::Assistant {
+            content: content.clone(),
+            streaming: false,
+        },
+        HistoryCell::Assistant {
+            content: content.clone(),
+            streaming: true,
+        },
+        HistoryCell::System {
+            content: content.clone(),
+        },
+        HistoryCell::Error {
+            message: content.clone(),
+            severity: crate::error_taxonomy::ErrorSeverity::Error,
+        },
+        HistoryCell::Tool(ToolCell::Exec(tool)),
+    ];
+    for cell in cells {
+        let options = calm_options();
+        let full = cell.lines_with_copy_metadata(80, options);
+        let (preview, action) =
+            cell.lines_with_copy_metadata_folded(80, options, Some(TranscriptFold::Collapsed));
+        assert!(
+            preview.len() < full.len(),
+            "a folded long body stays bounded"
+        );
+        assert_eq!(action, Some(super::CellFoldAction::Expand));
+        assert_eq!(preview[0].copy_prefix_width, preview[0].line.width());
+        assert!(preview[0].links.is_empty());
+        let body = &preview[1..];
+        for (index, line) in body.iter().enumerate() {
+            assert_eq!(line.line, full[index].line);
+            assert_eq!(line.links, full[index].links);
+            assert_eq!(line.copy_prefix_width, full[index].copy_prefix_width);
+            if index + 1 < body.len() {
+                assert_eq!(line.copy_separator_after, full[index].copy_separator_after);
+            }
+        }
+        assert_eq!(
+            body.last().unwrap().copy_separator_after,
+            crate::tui::ui_text::CopyLineSeparator::Newline
+        );
+        let (plain, plain_action) =
+            cell.lines_with_options_folded(80, options, Some(TranscriptFold::Collapsed));
+        assert_eq!(plain_action, action);
+        assert_eq!(
+            plain,
+            preview
+                .iter()
+                .map(|line| line.line.clone())
+                .collect::<Vec<_>>()
+        );
+        let (restored, action) =
+            cell.lines_with_copy_metadata_folded(80, options, Some(TranscriptFold::Expanded));
+        assert!(action.is_none());
+        assert_eq!(restored.len(), full.len());
+        for (restored, original) in restored.iter().zip(&full) {
+            assert_eq!(restored.line, original.line);
+            assert_eq!(restored.links, original.links);
+            assert_eq!(restored.copy_prefix_width, original.copy_prefix_width);
+            assert_eq!(restored.copy_separator_after, original.copy_separator_after);
+        }
+        assert!(lines_text(&cell.transcript_lines(80)).contains("paragraph 12"));
     }
 }
 
@@ -464,6 +558,102 @@ fn whatever_live_truncates_the_transcript_still_holds() {
     assert!(transcript_text.contains("row 23 plain content"));
 }
 
+/// A successful run shows three rows of output. They used to be the first two
+/// and the very last, so `npm test` showed a blank row, the script banner and
+/// a timing line, and hid whether the tests passed. The rows that say how the
+/// run went must be among the three, blank rows must not take a slot, and
+/// every hidden row must be announced, including rows after the last one shown.
+#[test]
+fn a_successful_run_preview_shows_how_the_run_ended() {
+    let node_test = "\n> trip-timer@1.0.0 test\n> node --test\n\n\
+                     ✔ formats minutes (0.5ms)\n\
+                     ✔ trips over an hour show remainder minutes (0.1ms)\n\
+                     ℹ tests 2\nℹ suites 0\nℹ pass 2\nℹ fail 0\nℹ cancelled 0\n\
+                     ℹ skipped 0\nℹ todo 0\nℹ duration_ms 57.924542";
+    let cargo_test = "   Compiling demo v0.1.0\n     Running unittests src/lib.rs\n\n\
+                      running 2 tests\ntest a ... ok\ntest b ... ok\n\n\
+                      test result: ok. 2 passed; 0 failed; finished in 0.00s\n\n";
+    let plain = numbered_output(30);
+
+    // (case, output, rows that must be shown, omission markers in order)
+    let cases: [(&str, &str, &[&str], &[&str]); 3] = [
+        (
+            "totals followed by other lines",
+            node_test,
+            &["> trip-timer@1.0.0 test", "ℹ pass 2", "ℹ fail 0"],
+            &["5 lines omitted", "4 lines omitted"],
+        ),
+        (
+            "result followed by blank lines",
+            cargo_test,
+            &[
+                "Compiling demo v0.1.0",
+                "test b ... ok",
+                "test result: ok. 2 passed; 0 failed",
+            ],
+            &["3 lines omitted"],
+        ),
+        (
+            "nothing states an outcome",
+            &plain,
+            &[
+                "row 00 plain content",
+                "row 28 plain content",
+                "row 29 plain content",
+            ],
+            &["27 lines omitted"],
+        ),
+    ];
+
+    for (case, output, shown, markers) in cases {
+        let cell = {
+            let mut exec = exec_tool("npm test", ToolStatus::Success);
+            exec.output = Some(output.to_string());
+            exec.duration_ms = Some(120);
+            HistoryCell::Tool(ToolCell::Exec(exec))
+        };
+        let live = cell.lines_with_options(80, calm_options());
+        let live_text = lines_text(&live);
+
+        for row in shown {
+            assert!(
+                live_text.contains(row),
+                "[{case}] `{row}` hidden: {live_text}"
+            );
+        }
+        let source_rows_shown = output
+            .lines()
+            .filter(|line| !line.trim().is_empty() && live_text.contains(line.trim()))
+            .count();
+        assert_eq!(
+            source_rows_shown,
+            shown.len(),
+            "[{case}] the preview keeps its three-row budget: {live_text}"
+        );
+        let announced: Vec<String> = live
+            .iter()
+            .map(line_text)
+            .filter(|line| line.contains("lines omitted"))
+            .collect();
+        assert_eq!(
+            announced.len(),
+            markers.len(),
+            "[{case}] every gap is announced once: {live_text}"
+        );
+        for (line, marker) in announced.iter().zip(markers) {
+            assert!(line.contains(marker), "[{case}] `{marker}`: {live_text}");
+        }
+
+        let transcript_text = lines_text(&cell.transcript_lines(80));
+        for line in output.lines() {
+            assert!(
+                transcript_text.contains(line.trim()),
+                "[{case}] the transcript keeps `{line}`: {transcript_text}"
+            );
+        }
+    }
+}
+
 /// Repro for #80: a `git diff --stat`-shaped result must keep its newlines on
 /// the transcript surface — one file per row, not squashed into one line.
 #[test]
@@ -535,12 +725,12 @@ fn reasoning_folds_in_live_and_the_fold_is_reversible() {
         // the intent is not re-read through the preference.
         let expanded = lines_text(
             &cell
-                .lines_with_options_folded(80, options, Some(ThinkingFold::Expanded))
+                .lines_with_options_folded(80, options, Some(TranscriptFold::Expanded))
                 .0,
         );
         let collapsed = lines_text(
             &cell
-                .lines_with_options_folded(80, options, Some(ThinkingFold::Collapsed))
+                .lines_with_options_folded(80, options, Some(TranscriptFold::Collapsed))
                 .0,
         );
 
@@ -593,15 +783,15 @@ fn explicit_thinking_fold_outranks_every_preference_baseline() {
         (None, true, false, true),
         (None, true, true, true),
         // An explicit expand renders expanded whatever the preferences say.
-        (Some(ThinkingFold::Expanded), false, false, true),
-        (Some(ThinkingFold::Expanded), false, true, true),
-        (Some(ThinkingFold::Expanded), true, false, true),
-        (Some(ThinkingFold::Expanded), true, true, true),
+        (Some(TranscriptFold::Expanded), false, false, true),
+        (Some(TranscriptFold::Expanded), false, true, true),
+        (Some(TranscriptFold::Expanded), true, false, true),
+        (Some(TranscriptFold::Expanded), true, true, true),
         // And an explicit collapse renders collapsed whatever they say.
-        (Some(ThinkingFold::Collapsed), false, false, false),
-        (Some(ThinkingFold::Collapsed), false, true, false),
-        (Some(ThinkingFold::Collapsed), true, false, false),
-        (Some(ThinkingFold::Collapsed), true, true, false),
+        (Some(TranscriptFold::Collapsed), false, false, false),
+        (Some(TranscriptFold::Collapsed), false, true, false),
+        (Some(TranscriptFold::Collapsed), true, false, false),
+        (Some(TranscriptFold::Collapsed), true, true, false),
     ] {
         let options = TranscriptRenderOptions {
             verbose,
@@ -689,7 +879,7 @@ fn streaming_reasoning_shows_its_newest_line_not_a_placeholder() {
 ///
 /// Replaces three tests.
 #[test]
-fn a_foreground_shell_wait_offers_the_escape_hatch_not_the_command_echo() {
+fn a_foreground_shell_wait_names_its_command_without_a_key_hint() {
     let command = "cargo test --workspace --all-features";
     let running = {
         let mut exec = exec_tool(command, ToolStatus::Running);
@@ -706,17 +896,16 @@ fn a_foreground_shell_wait_offers_the_escape_hatch_not_the_command_echo() {
         ),
     ] {
         assert!(
-            text.contains("Ctrl+B"),
-            "[{label}] the backgrounding chord is the point of the card: {text}"
+            text.contains(command),
+            "[{label}] the card names what is running: {text}"
+        );
+        assert!(
+            !text.contains("Ctrl+B"),
+            "[{label}] a long wait moves itself to the background: {text}"
         );
         assert!(
             !text.contains("running line 1"),
             "[{label}] the live tail belongs to the sidebar and /jobs: {text}"
-        );
-        assert!(
-            !text.contains(command),
-            "[{label}] the header already carries the summary; do not echo the \
-             command target: {text}"
         );
         assert!(!text.contains("command:"), "[{label}] {text}");
     }
@@ -823,7 +1012,7 @@ fn the_copy_prefix_skips_every_decoration_and_keeps_the_payload() {
     ));
     let copied = slice_visible_columns(&body, header.copy_prefix_width, text_visible_width(&body));
     assert!(
-        copied.contains("run Done"),
+        copied.contains("run done"),
         "receipt text was clipped away: {copied:?}"
     );
     for glyph in decorations {
@@ -1238,16 +1427,17 @@ fn a_card_verb_agrees_with_its_own_label_in_every_locale() {
     for (label, expected_en, expected_zh, forbidden_en) in [
         (
             "Searching for `TranscriptScroll`",
-            "find Done",
+            "find done",
             "find 完成",
-            "read Done",
+            "read done",
         ),
-        ("Reading src/foo.rs", "read Done", "read 完成", "find Done"),
+        ("Reading src/foo.rs", "read done", "read 完成", "find done"),
     ] {
         let cell = super::ExploringCell {
             entries: vec![super::ExploringEntry {
                 label: label.to_string(),
                 status: ToolStatus::Success,
+                error: None,
             }],
         };
 
@@ -1290,7 +1480,7 @@ fn receipts_count_only_what_they_actually_counted() {
     use crate::tui::widgets::tool_card::ToolFamily;
     use codewhale_localization::Locale;
 
-    for (locale, done, unit) in [(Locale::En, "Done", "line"), (Locale::ZhHans, "完成", "行")] {
+    for (locale, done, unit) in [(Locale::En, "done", "line"), (Locale::ZhHans, "完成", "行")] {
         let label = |family, status, output| {
             super::tool_receipt_label(family, status, Some(output), locale)
         };
@@ -1372,7 +1562,7 @@ fn shell_headers_stay_truthful_through_the_output_formatters() {
         cell.duration_ms = Some(42);
 
         for (locale, done, unit) in [
-            (Locale::En, "Done", "lines"),
+            (Locale::En, "done", "lines"),
             (Locale::ZhHans, "完成", "行"),
         ] {
             let header = line_text(&cell.render_with_locale(80, true, RenderMode::Live, locale)[0]);
@@ -1907,11 +2097,12 @@ fn a_checklist_update_shows_only_the_item_that_changed() {
         },
         80,
         true,
+        codewhale_localization::Locale::En,
     );
     assert!(lines.len() >= 3, "header, change, summary: {}", lines.len());
 
     let change = line_text(&lines[1]);
-    for needle in ["#2", "Write the test", "in_progress"] {
+    for needle in ["#2", "Write the test", "in progress"] {
         assert!(change.contains(needle), "missing {needle:?}: {change:?}");
     }
     for other in ["Land the PR", "Read the spec"] {
@@ -1947,6 +2138,7 @@ fn a_checklist_update_shows_only_the_item_that_changed() {
         },
         80,
         true,
+        codewhale_localization::Locale::En,
     );
     let change = line_text(&lines[1]);
     assert!(change.contains("#99") && change.contains("(missing title)"));
@@ -2018,7 +2210,7 @@ fn fan_out_prompts_replace_the_inline_argument_summary() {
     );
 
     let mut plain = generic_tool("file_search", ToolStatus::Running);
-    plain.input_summary = Some("query: foo".to_string());
+    plain.input_summary = Some("query: foo, path: src".to_string());
     let text = lines_text(&HistoryCell::Tool(ToolCell::Generic(plain)).lines(80));
     assert!(
         text.contains("query: foo"),
@@ -2387,7 +2579,7 @@ fn a_collapsed_run_summary_names_what_actually_happened() {
                 ..Default::default()
             }
         )),
-        "Explored 4 files, 1 search: read_file, list_dir"
+        "Explored 4 files, 1 search: read file, list dir"
     );
 
     assert_eq!(
@@ -2399,7 +2591,7 @@ fn a_collapsed_run_summary_names_what_actually_happened() {
                 ..Default::default()
             }
         )),
-        "Explored 2 files: read_file, ran 2 commands: run_tests, validate_data",
+        "Explored 2 files: read file, ran 2 commands: run tests, validate data",
         "each clause lists only its own families"
     );
 
@@ -2428,7 +2620,7 @@ fn a_collapsed_run_summary_names_what_actually_happened() {
     assert_eq!(commands[0].activity.commands, 3);
     assert_eq!(
         super::tool_run_summary(&commands[0]),
-        "Ran 3 commands: run_tests, run_verifiers, validate_data"
+        "Ran 3 commands: run tests, run verifiers, validate data"
     );
 
     let git = super::detect_tool_runs(
@@ -2442,7 +2634,7 @@ fn a_collapsed_run_summary_names_what_actually_happened() {
     assert_eq!(git[0].activity.files, 3);
     assert_eq!(
         super::tool_run_summary(&git[0]),
-        "Explored 3 files: git_log, git_show, git_blame"
+        "Explored 3 files: git log, git show, git blame"
     );
 }
 
@@ -2621,6 +2813,7 @@ fn exploring_cell_status_keeps_the_loudest_terminal_state() {
             .map(|status| ExploringEntry {
                 label: "Reading src/foo.rs".to_string(),
                 status: *status,
+                error: None,
             })
             .collect(),
     };
@@ -3066,9 +3259,9 @@ fn calm1_settled_reasoning_is_one_localized_row_and_stays_expandable() {
             "{}",
             lines_text(&lines)
         );
-        assert_eq!(action, Some(super::ReasoningAction::Expand));
+        assert_eq!(action, Some(super::CellFoldAction::Expand));
         let expanded = cell
-            .lines_with_options_folded(80, options, Some(ThinkingFold::Expanded))
+            .lines_with_options_folded(80, options, Some(TranscriptFold::Expanded))
             .0;
         assert!(lines_text(&expanded).contains("private reasoning body"));
     }
@@ -3092,4 +3285,154 @@ fn calm1_calm_and_hidden_details_share_one_card_budget() {
         rendered.push(lines_text(&lines));
     }
     assert!(rendered.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+/// #4681: reopening a session must not surface `<turn_meta>` machine
+/// blocks in the transcript. Covers the current trailing shape and the
+/// legacy leading shape (sessions saved before the turn-meta tail move),
+/// while the loaded API history keeps both envelopes intact for replay.
+#[test]
+fn rehydrated_turn_meta_blocks_never_render_in_history_cells() {
+    let tmp = tempdir().expect("tempdir");
+    let manager = SessionManager::new(tmp.path().join("sessions")).expect("new");
+
+    let turn_meta = "<turn_meta>\nCurrent local date: 2026-08-01\n</turn_meta>";
+    let trailing_shape = Message {
+        role: Role::User,
+        content: vec![
+            ContentBlock::Text {
+                text: "Fix the flaky test".to_string(),
+                cache_control: None,
+            },
+            ContentBlock::Text {
+                text: turn_meta.to_string(),
+                cache_control: None,
+            },
+        ],
+    };
+    let legacy_leading_shape = Message {
+        role: Role::User,
+        content: vec![
+            ContentBlock::Text {
+                text: turn_meta.to_string(),
+                cache_control: None,
+            },
+            ContentBlock::Text {
+                text: "Now add the docs".to_string(),
+                cache_control: None,
+            },
+        ],
+    };
+    let messages = vec![
+        trailing_shape,
+        Message {
+            role: Role::Assistant,
+            content: vec![ContentBlock::Text {
+                text: "Done.".to_string(),
+                cache_control: None,
+            }],
+        },
+        legacy_leading_shape,
+    ];
+    let session = create_saved_session(&messages, "test-model", tmp.path(), 100, None);
+    let session_id = session.metadata.id.clone();
+    manager.save_session(&session).expect("save");
+
+    let loaded = manager.load_session(&session_id).expect("load");
+
+    // Display path: no rendered cell may carry turn_meta markup.
+    let rendered: Vec<HistoryCell> = loaded
+        .messages
+        .iter()
+        .flat_map(super::history_cells_from_message)
+        .collect();
+    let user_texts: Vec<&str> = rendered
+        .iter()
+        .filter_map(|cell| match cell {
+            HistoryCell::User { content } => Some(content.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(user_texts, vec!["Fix the flaky test", "Now add the docs"]);
+    assert!(
+        !user_texts.iter().any(|text| text.contains("<turn_meta")),
+        "rendered cells must not contain turn_meta markup: {user_texts:?}"
+    );
+
+    // Model-facing replay: the persisted envelopes survive the round trip.
+    let replayed_envelopes = loaded
+        .messages
+        .iter()
+        .flat_map(|message| &message.content)
+        .filter(|block| {
+            matches!(block, ContentBlock::Text { text, .. } if text.contains("<turn_meta>"))
+        })
+        .count();
+    assert_eq!(replayed_envelopes, 2);
+}
+
+#[test]
+fn save_and_load_session_preserves_rich_update_plan_tool_payload() {
+    let tmp = tempdir().expect("tempdir");
+    let manager = SessionManager::new(tmp.path().join("sessions")).expect("new");
+    let messages = vec![
+        Message {
+            role: Role::User,
+            content: vec![ContentBlock::Text {
+                text: "plan this carefully".to_string(),
+                cache_control: None,
+            }],
+        },
+        Message {
+            role: Role::Assistant,
+            content: vec![ContentBlock::ToolUse {
+                execution_id: None,
+                id: "plan-1".to_string(),
+                name: "update_plan".to_string(),
+                input: serde_json::json!({
+                    "objective": "Make Plan mode reviewable",
+                    "sources_used": ["gh issue view 2691"],
+                    "critical_files": ["crates/tui/src/tools/plan.rs"],
+                    "constraints": ["Preserve legacy update_plan payloads"],
+                    "verification_plan": "Run focused plan tests",
+                    "handoff_packet": "Next agent should inspect replay",
+                    "plan": [
+                        { "step": "render replay card", "status": "completed" }
+                    ]
+                }),
+                caller: None,
+                thought_signature: None,
+            }],
+        },
+        Message {
+            role: Role::User,
+            content: vec![ContentBlock::ToolResult {
+                execution_id: None,
+                tool_use_id: "plan-1".to_string(),
+                content: "Plan updated".to_string(),
+                is_error: None,
+                content_blocks: None,
+            }],
+        },
+    ];
+    let session = create_saved_session(&messages, "deepseek-v4-flash", tmp.path(), 42, None);
+    let session_id = session.metadata.id.clone();
+
+    manager.save_session(&session).expect("save");
+    let loaded = manager.load_session(&session_id).expect("load");
+
+    assert_eq!(loaded.messages.len(), 3);
+    let cells = super::history_cells_from_message(&loaded.messages[1]);
+    let Some(HistoryCell::Tool(ToolCell::PlanUpdate(cell))) = cells.first() else {
+        panic!("expected loaded update_plan to replay as a PlanUpdate cell");
+    };
+    assert_eq!(
+        cell.snapshot.objective.as_deref(),
+        Some("Make Plan mode reviewable")
+    );
+    assert_eq!(
+        cell.snapshot.critical_files,
+        vec!["crates/tui/src/tools/plan.rs"]
+    );
+    assert_eq!(cell.snapshot.items[0].status, StepStatus::Completed);
 }

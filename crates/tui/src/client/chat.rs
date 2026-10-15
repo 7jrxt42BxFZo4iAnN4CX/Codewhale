@@ -23,7 +23,6 @@ use crate::config::{
 
 use crate::config::ProviderKind;
 use crate::llm_client::StreamEventBox;
-use crate::llm_client::sanitize_http_error_body;
 use crate::logging;
 use codewhale_models::{
     ContentBlock, ContentBlockStart, Delta, Message, MessageDelta, MessageRequest, MessageResponse,
@@ -584,7 +583,13 @@ pub(super) fn apply_route_reasoning_controls(
     model: &str,
     effort: Option<&str>,
 ) {
-    apply_reasoning_effort(body, effort, provider);
+    let reasoning_provider =
+        if provider == ProviderKind::Custom && requires_reasoning_content(model) {
+            ProviderKind::Deepseek
+        } else {
+            provider
+        };
+    apply_reasoning_effort(body, effort, reasoning_provider);
     apply_modelstudio_route_reasoning_controls(body, provider, base_url, model, effort);
     apply_minimax_route_reasoning_controls(body, provider, base_url, model, effort);
     apply_inkling_reasoning_effort(body, provider, model, effort);
@@ -1271,7 +1276,7 @@ impl CodewhaleClient {
     ) -> Result<MessageResponse> {
         let body = &prepared.body;
 
-        let response_cache_key = if cacheable {
+        let response_cache_key = if cacheable && self.plugin_provider.is_none() {
             let wire_body =
                 serde_json::to_vec(&body).context("Failed to serialize Chat API cache key")?;
             let key = crate::llm_response_cache::ResponseCache::make_key(
@@ -1299,8 +1304,8 @@ impl CodewhaleClient {
         crate::client::record_provider_response(self.api_provider, status.as_u16());
         if !status.is_success() {
             let raw_error_text = bounded_error_text(response, ERROR_BODY_MAX_BYTES).await;
-            let error_text = sanitize_http_error_body(
-                Some(self.api_provider.provider().display_name()),
+            let error_text = self.disclosed_http_error_body(
+                &super::ErrorBodyDisclosure::Full,
                 status.as_u16(),
                 &raw_error_text,
             );
@@ -1343,10 +1348,14 @@ impl CodewhaleClient {
                         self.http1_fallback_client(),
                         policy,
                     );
-                    Ok(client
-                        .post(url)
-                        .header(reqwest::header::CONTENT_TYPE, "application/json")
-                        .json(body)
+                    Ok(self
+                        .authorize_plugin_request(
+                            client
+                                .post(url)
+                                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                                .json(body),
+                        )
+                        .await?
                         .send()
                         .await?)
                 }
@@ -1385,8 +1394,8 @@ impl CodewhaleClient {
         crate::client::record_provider_response(self.api_provider, status.as_u16());
         if !status.is_success() {
             let raw_error_text = bounded_error_text(response, ERROR_BODY_MAX_BYTES).await;
-            let error_text = sanitize_http_error_body(
-                Some(self.api_provider.provider().display_name()),
+            let error_text = self.disclosed_http_error_body(
+                &super::ErrorBodyDisclosure::Full,
                 status.as_u16(),
                 &raw_error_text,
             );

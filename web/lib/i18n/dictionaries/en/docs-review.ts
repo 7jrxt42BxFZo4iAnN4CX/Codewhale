@@ -17,6 +17,25 @@ export const docsReview: DocsReviewDict = {
     "Codewhale shows you each edit as it happens and keeps a snapshot of your workspace before and after every turn. Use this page to check what changed, put files back, and get a second opinion before you push.",
   sections: [
     {
+      "id": "receipts",
+      "title": "See what a session did",
+      "blocks": [
+        {
+          "p": "Session receipts list recorded file changes, commands, tools, agents, approvals and failures. Review receipts below cover a separate code review."
+        },
+        {
+          "code": "/receipts\n/receipts json\ncodewhale receipts --last --format md\nGET /v1/threads/{id}/receipt\nGET /v1/threads/{id}/turns/{turn_id}/receipt",
+          "lang": "Codewhale / Terminal / HTTP"
+        },
+        {
+          "p": "These surfaces only read records. They never call a provider, run tools or change session state."
+        },
+        {
+          "note": "A Runtime receipt does not itemize files changed by shell commands. The terminal can report changes from its turn snapshots; older records may omit who decided an approval."
+        }
+      ]
+    },
+    {
       id: "diff",
       title: "See the changes",
       blocks: [
@@ -43,7 +62,7 @@ export const docsReview: DocsReviewDict = {
           lang: "Codewhale",
         },
         {
-          p: "Restoring changes files, so it needs a trusted workspace (`/trust on`) or Full Access; anyone can list snapshots. You can also just ask — “undo your last edit” — and Codewhale can roll back its own turn.",
+          p: "Restoring changes files, so it needs a trusted workspace (`/trust on`) or Full Access; anyone can list snapshots. You can also ask in plain language: “undo your last edit” rolls back Codewhale's own turn.",
         },
         {
           p: "`/undo` is different: it removes the last exchange from the conversation. Use `/restore` when you want files back.",
@@ -76,7 +95,7 @@ codewhale review --pr 123             # a GitHub pull request (needs gh)`,
       ],
     },
     {
-      id: "receipts",
+      id: "review-receipts",
       title: "Keep a receipt of the review",
       blocks: [
         {
@@ -93,9 +112,6 @@ codewhale review --base origin/main --check-receipt`,
             "`--check-receipt` makes no model call. It exits non-zero if the diff has changed since the receipt, if the review left unresolved risk, or if an attached check did not pass — so it works as a pre-push gate.",
             "`--receipt-path <file>` writes or reads a specific receipt instead of the latest one.",
           ],
-        },
-        {
-          note: "Receipts cover code reviews today. A receipt for an ordinary agent turn — every tool call, approval, and file change in one export — is designed but not built yet.",
         },
       ],
     },

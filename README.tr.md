@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:604da19bff2c -->
+<!-- source: README.md sha256:75bb6a506af5 -->
 <div align="center">
 
 <picture>
@@ -21,9 +21,9 @@ kontrol eder — terminalinizde, seçtiğiniz barındırılan veya yerel bir mod
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-8ba2bbf.png" alt="Bir Codewhale terminal oturumu" width="760">
+<img src="web/public/codewhale-tui-0102-demo.png" alt="Bir Codewhale terminal oturumu" width="760">
 
-<sub>Yeni bir kurulumun gerçek terminal kaydı — hazırlanmış çıktı yok.</sub>
+<sub>Yapılandırılmış yerel bir demo oturumundan gerçek Codewhale terminal görüntüsü.</sub>
 
 </div>
 
@@ -57,6 +57,12 @@ Tek bir yol seçin: aynı makinedeki birden fazla kurulum `PATH` üzerinde birbi
 
 ## Hızlı başlangıç
 
+**Sağlayıcı API anahtarlarınızı tek bir yerden yönetin.** [Codewhale hesabı oluşturun](https://app.codewhale.net/register)
+veya oturum açmak için `codewhale login` komutunu çalıştırın. API anahtarlarınızı hesabınıza kaydedip güncelleyin,
+ardından oturum açtığınız cihazlarda Codewhale model rotası üzerinden kullanın.
+[Hesap anahtarlarını ayarlayın](docs/CONFIGURATION.md#account-provider-keys).
+Oturum açmak mevcut yerel anahtarları yüklemez; hesap olmadan da yerel kullanım mümkündür.
+
 1. **Projenizi açın.** Üzerinde çalışmak istediğiniz klasörde `codewhale` çalıştırın.
 2. **Bir model bağlayın.** Barındırılan bir anahtar eklemek veya yerel bir çalışma ortamı
    seçmek için `/provider` komutunu çalıştırın (veya `F3` tuşuna basın). Ollama zaten bir
@@ -71,7 +77,7 @@ Fix the failing tests and explain what changed.
 Aynı görev bir betikten veya CI işinden arayüzsüz de çalışır:
 
 ```bash
-codewhale exec "fix the failing tests and explain what changed"
+codewhale exec --auto "fix the failing tests and explain what changed"
 ```
 
 Komutlar ve klavye kısayolları için `/help` çalıştırın.
@@ -84,7 +90,7 @@ izinler her yerde aynı şekilde davranır.
 | Komut | Ne yapar |
 | --- | --- |
 | `codewhale` | Etkileşimli terminal arayüzü |
-| `codewhale exec "…"` | Bir betikten veya CI'dan tek bir arayüzsüz tur, JSON akışıyla |
+| `codewhale exec "…"` | Bir betikten veya CI'dan tek bir arayüzsüz tur; `--auto` dosya ve kabuk araçlarına izin verir, `--output-format stream-json` JSON akışı sağlar |
 | `codewhale web` | `127.0.0.1` üzerinde paketle gelen [yerel tarayıcı istemcisi](docs/WEB.md) |
 | `codewhale review --pr N` | Tavsiye niteliğinde bir [pull request incelemesi](docs/GITHUB_ACTION.md); yayınlamak isteğe bağlıdır |
 | Runtime API | İş parçacıkları, olaylar ve onaylar için [yerel bir HTTP API](docs/RUNTIME_API.md) |
@@ -131,7 +137,7 @@ Full Access de katı politika sınırlarına uyar.
 
 Codewhale makinenizde, ona verdiğiniz erişimle çalışır. Onay duruşları ve depo kuralları
 ajanın yapabileceklerini sınırlar; komutlar, desteklenen yerlerde bir işletim sistemi
-korumalı alanı içinde çalışır (macOS'ta Seatbelt; Linux'ta bubblewrap isteğe bağlıdır).
+korumalı alanı içinde çalışır (macOS'ta Seatbelt; Linux'ta bubblewrap, kurulu ve çalışıyorsa).
 `/preview-request`, herhangi bir şey gönderilmeden önce tam ve gizlenmiş (redacted)
 isteği gösterir. Fiyatı bilinmeyen modeller ücretsiz olarak gösterilmez, bilinmeyen olarak kalır.
 

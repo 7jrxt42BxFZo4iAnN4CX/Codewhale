@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:604da19bff2c -->
+<!-- source: README.md sha256:75bb6a506af5 -->
 <div align="center">
 
 <picture>
@@ -22,9 +22,9 @@ Codewhale은 프로젝트를 읽고, 파일을 편집하고, 명령을 실행하
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-8ba2bbf.png" alt="Codewhale 터미널 세션" width="760">
+<img src="web/public/codewhale-tui-0102-demo.png" alt="Codewhale 터미널 세션" width="760">
 
-<sub>새로 설치한 환경에서 캡처한 실제 터미널 화면입니다. 연출된 출력은 없습니다.</sub>
+<sub>설정된 로컬 데모 세션에서 캡처한 실제 Codewhale 터미널 화면입니다.</sub>
 
 </div>
 
@@ -60,6 +60,12 @@ Docker, Nix, Linux의 Homebrew, Android/Termux, 체크섬 검증을 포함한 �
 
 ## 빠른 시작
 
+**공급자 API 키를 한곳에서 관리하세요.** [Codewhale 계정을 만들거나](https://app.codewhale.net/register)
+`codewhale login`을 실행해 로그인하세요. 계정에서 API 키를 저장하고 업데이트한 뒤,
+로그인한 기기에서 Codewhale 모델 경로를 통해 사용할 수 있습니다.
+[계정 키 설정하기](docs/CONFIGURATION.md#account-provider-keys).
+로그인해도 기존 로컬 키는 업로드되지 않으며, 계정 없이도 로컬에서 사용할 수 있습니다.
+
 1. **프로젝트를 엽니다.** 작업할 폴더에서 `codewhale`을 실행합니다.
 2. **모델을 연결합니다.** `/provider`를 실행하거나 `F3`을 눌러 호스팅 모델
    키를 추가하거나 로컬 런타임을 고릅니다. Ollama가 채팅 모델과 함께 이미
@@ -74,7 +80,7 @@ Fix the failing tests and explain what changed.
 같은 작업을 스크립트나 CI 작업에서 헤드리스로 실행할 수도 있습니다.
 
 ```bash
-codewhale exec "fix the failing tests and explain what changed"
+codewhale exec --auto "fix the failing tests and explain what changed"
 ```
 
 명령과 단축키는 `/help`에서 확인하세요.
@@ -87,7 +93,7 @@ codewhale exec "fix the failing tests and explain what changed"
 | 명령 | 하는 일 |
 | --- | --- |
 | `codewhale` | 대화형 터미널 인터페이스 |
-| `codewhale exec "…"` | 스크립트나 CI에서 JSON을 스트리밍하며 헤드리스로 한 턴 실행 |
+| `codewhale exec "…"` | 스크립트나 CI에서 헤드리스로 한 턴 실행. `--auto`는 파일 및 셸 도구를 허용하고, `--output-format stream-json`은 JSON을 스트리밍 |
 | `codewhale web` | `127.0.0.1`에서 제공되는 내장 [로컬 브라우저 클라이언트](docs/WEB.md) |
 | `codewhale review --pr N` | 참고용 [풀 리퀘스트 리뷰](docs/GITHUB_ACTION.md). 게시는 직접 선택해야 합니다 |
 | Runtime API | 스레드, 이벤트, 승인을 다루는 [로컬 HTTP API](docs/RUNTIME_API.md) |
@@ -137,7 +143,7 @@ Full Access에서도 강제 정책의 경계는 지켜집니다.
 Codewhale은 사용자의 컴퓨터에서 사용자가 부여한 권한으로 실행됩니다. 승인
 방식과 저장소 규칙이 에이전트가 할 수 있는 일을 제한하며, 지원되는 환경에서는
 명령이 OS 샌드박스 안에서 실행됩니다(macOS는 Seatbelt, Linux의 bubblewrap은
-선택 사항). `/preview-request`는 무언가 전송되기 전에 민감 정보를 가린 실제
+설치되어 정상 작동하는 경우). `/preview-request`는 무언가 전송되기 전에 민감 정보를 가린 실제
 요청 내용을 그대로 보여 줍니다. 가격을 알 수 없는 모델은 무료로 표시하지 않고
 알 수 없음으로 둡니다.
 

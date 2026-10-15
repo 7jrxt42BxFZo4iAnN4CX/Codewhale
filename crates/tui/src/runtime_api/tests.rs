@@ -15,7 +15,12 @@ use tokio::time::sleep;
 use uuid::Uuid;
 
 mod command_catalog;
+#[cfg(unix)]
+mod control_socket_selection;
 mod headless_catalog;
+#[cfg(unix)]
+mod owner_bootstrap;
+mod profile_constitution;
 #[cfg(any(unix, windows))]
 mod runtime_store_convergence;
 mod workspace_instructions;
@@ -465,6 +470,7 @@ fn messages_from_thread_detail_batches_tool_results() {
         duration_ms: Some(0),
         usage: None,
         model_request_diagnostics: None,
+        operation_activity: None,
         routing_settlement: false,
         effective_route_usage: None,
         permission_posture: Some("ask".to_string()),
@@ -983,6 +989,12 @@ async fn spawn_test_server_with_root_token_mobile_workspace(
 
 #[derive(Default)]
 struct TestServerOverrides {
+    automation_handles: Option<
+        oneshot::Sender<(
+            crate::automation_manager::SharedAutomationManager,
+            crate::task_manager::SharedTaskManager,
+        )>,
+    >,
     /// Publish the exact manager using the production owner/frontend factory.
     owner_socket: Option<PathBuf>,
     /// Capture the actual owner's service table for cache/lifetime assertions.
@@ -1126,13 +1138,15 @@ fn spawn_product_stack_server(
         .shutdown
         .get_or_insert_with(RuntimeServerShutdown::default)
         .clone();
+    let catalog = crate::command_catalog::installed();
     std::thread::Builder::new()
         .name("runtime-api-test-server".to_string())
-        .stack_size(crate::CODEWHALE_MAIN_STACK_BYTES)
+        .stack_size(codewhale_runtime::CODEWHALE_MAIN_STACK_BYTES)
         .spawn(move || {
             // Adopted for the thread's lifetime; the scope's generation check
             // refuses enrollment once the sealing test has ended.
             let _membership = crate::test_support::join_env_scope(env_ticket);
+            let _catalog = catalog.map(crate::command_catalog::CatalogGuard::install);
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -1269,6 +1283,9 @@ async fn build_test_server(
         root.join("automations"),
     )?));
     runtime_threads.attach_automation_manager(automations.clone());
+    if let Some(sender) = overrides.automation_handles {
+        let _ = sender.send((automations.clone(), manager.clone()));
+    }
 
     let auth_required = runtime_token.is_some();
     let sub_agent_manager = overrides
@@ -1345,7 +1362,7 @@ async fn build_test_server(
         let model = runtime_request_model(&state.config.read(), None)
             .map_err(|error| anyhow::anyhow!(error.message))?;
         let (owner, compatibility) =
-            bind_captured_runtime_frontends(&state, Some(socket), model, 1, false).await?;
+            bind_captured_runtime_frontends(&state, Some(socket), model, 1, false, None).await?;
         (Some(owner), Some(compatibility))
     } else {
         (None, None)
@@ -2436,9 +2453,25 @@ async fn workspace_file_search_auth_matching_and_bounds() -> Result<()> {
 
 #[tokio::test]
 async fn workspace_and_automation_endpoints_work() -> Result<()> {
-    let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
+    let root = tempfile::tempdir()?;
+    let (automation_tx, automation_rx) = oneshot::channel();
+    let Some((addr, _runtime_threads, handle)) =
+        spawn_test_server_with_root_token_mobile_workspace_and_overrides(
+            root.path().to_path_buf(),
+            root.path().join("sessions"),
+            None,
+            false,
+            root.path().join("workspace"),
+            TestServerOverrides {
+                automation_handles: Some(automation_tx),
+                ..Default::default()
+            },
+        )
+        .await?
+    else {
         return Ok(());
     };
+    let (automations, tasks) = automation_rx.await?;
     let client = crate::tls::reqwest_client();
 
     let workspace: serde_json::Value = client
@@ -2539,6 +2572,48 @@ async fn workspace_and_automation_endpoints_work() -> Result<()> {
         "expected at least one run entry"
     );
 
+    // The admitted occurrence must survive deletion until its real task and
+    // the production scheduler have settled its durable run receipt.
+    let refused = client
+        .delete(format!("http://{addr}/v1/automations/{automation_id}"))
+        .send()
+        .await?;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    assert!(refused.text().await?.contains("still active"));
+    let task_id = run_now["task_id"].as_str().context("missing task id")?;
+    let run_id = run_now["id"].as_str().context("missing run id")?;
+    let task = crate::task_manager::wait_for_terminal_state(
+        &tasks,
+        task_id,
+        ci_scaled(Duration::from_secs(15)),
+    )
+    .await?;
+    assert_eq!(task.status, crate::task_manager::TaskStatus::Completed);
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let _cancel_on_drop = cancel.clone().drop_guard();
+    let scheduler = spawn_scheduler(
+        automations.clone(),
+        tasks,
+        cancel.clone(),
+        crate::automation_manager::AutomationSchedulerConfig::default(),
+    );
+    tokio::time::timeout(ci_scaled(Duration::from_secs(15)), async {
+        loop {
+            let runs = automations.lock().await.list_runs(&automation_id, None)?;
+            if runs.iter().any(|run| {
+                run.id == run_id
+                    && run.status == crate::automation_manager::AutomationRunStatus::Completed
+            }) {
+                return Ok::<_, anyhow::Error>(());
+            }
+            sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .context("automation scheduler did not settle the completed task")??;
+    cancel.cancel();
+    scheduler.await?;
+
     let _deleted: serde_json::Value = client
         .delete(format!("http://{addr}/v1/automations/{automation_id}"))
         .send()
@@ -2553,6 +2628,12 @@ async fn workspace_and_automation_endpoints_work() -> Result<()> {
         .await?
         .status();
     assert_eq!(missing_status, StatusCode::NOT_FOUND);
+    let archived = automations
+        .lock()
+        .await
+        .list_archived_runs(&automation_id)?;
+    assert_eq!(archived.len(), 1);
+    assert_eq!(archived[0].task_id.as_deref(), Some(task_id));
 
     handle.abort();
     Ok(())
@@ -4207,7 +4288,7 @@ async fn turn_operation_lookup_is_authenticated_read_only_and_survives_restart()
     let workspace = dir.path().join("workspace");
     let token = "turn-lookup-local-fixture";
     let _backend = EnvVarGuard::set("CODEWHALE_SECRET_BACKEND", "file");
-    let _proxy = EnvVarGuard::set("NO_PROXY", "*");
+    let _proxy = EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
     let (addr, manager, server) = spawn_test_server_with_root_token_mobile_workspace(
         root.clone(),
         sessions.clone(),
@@ -5443,7 +5524,24 @@ async fn steer_and_interrupt_endpoints_work_on_active_turn() -> Result<()> {
         .json()
         .await?;
     assert_eq!(steer_resp["id"], turn_id);
-    assert_eq!(steer_resp["steer_count"], 1);
+    let deadline = tokio::time::Instant::now() + ci_scaled(Duration::from_secs(10));
+    while !runtime_threads
+        .events_since(&thread_id, None)?
+        .iter()
+        .any(|ev| ev.event == "turn.steered")
+    {
+        if tokio::time::Instant::now() >= deadline {
+            bail!("timed out waiting for the steer on {turn_id} to settle");
+        }
+        sleep(Duration::from_millis(25)).await;
+    }
+    assert_eq!(
+        runtime_threads
+            .test_store()
+            .load_turn(&turn_id)?
+            .steer_count,
+        1
+    );
 
     let interrupt_resp: serde_json::Value = client
         .post(format!(
@@ -9240,6 +9338,107 @@ async fn list_threads_archived_only_filter_matches_only_archived() -> Result<()>
     Ok(())
 }
 
+/// The exact-ID filter must run before the result limit so an owned older
+/// thread remains visible even when newer threads belong to other callers.
+#[tokio::test]
+async fn list_thread_summary_filters_ids_before_limit() -> Result<()> {
+    let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
+        return Ok(());
+    };
+    let client = crate::tls::reqwest_client();
+    let mut owned_ids = Vec::new();
+
+    for _ in 0..2 {
+        let created: serde_json::Value = client
+            .post(format!("http://{addr}/v1/threads"))
+            .json(&json!({}))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        owned_ids.push(
+            created["id"]
+                .as_str()
+                .context("missing thread id")?
+                .to_string(),
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    for _ in 0..8 {
+        client
+            .post(format!("http://{addr}/v1/threads"))
+            .json(&json!({}))
+            .send()
+            .await?
+            .error_for_status()?;
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+
+    let recent: serde_json::Value = client
+        .get(format!(
+            "http://{addr}/v1/threads/summary?limit=8&include_archived=true"
+        ))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let recent_ids: Vec<&str> = recent
+        .as_array()
+        .context("summary must be an array")?
+        .iter()
+        .filter_map(|thread| thread["id"].as_str())
+        .collect();
+    assert!(
+        owned_ids
+            .iter()
+            .all(|id| !recent_ids.contains(&id.as_str()))
+    );
+
+    let mut filtered_url = reqwest::Url::parse(&format!(
+        "http://{addr}/v1/threads/summary?limit=8&include_archived=true"
+    ))?;
+    filtered_url
+        .query_pairs_mut()
+        .append_pair("thread_ids", &owned_ids.join(","));
+    let filtered: serde_json::Value = client
+        .get(filtered_url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let filtered_ids: Vec<&str> = filtered
+        .as_array()
+        .context("filtered summary must be an array")?
+        .iter()
+        .filter_map(|thread| thread["id"].as_str())
+        .collect();
+    assert_eq!(filtered_ids.len(), owned_ids.len());
+    assert!(
+        owned_ids
+            .iter()
+            .all(|id| filtered_ids.contains(&id.as_str()))
+    );
+
+    let mut oversized_url =
+        reqwest::Url::parse(&format!("http://{addr}/v1/threads/summary?limit=8"))?;
+    oversized_url
+        .query_pairs_mut()
+        .append_pair("thread_ids", &vec!["fixture-id"; 201].join(","));
+    let rejected = client.get(oversized_url).send().await?;
+    assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+    let at_limit = format!(
+        "http://{addr}/v1/threads/summary?limit=8&thread_ids={}",
+        vec!["fixture-id"; 200].join(",")
+    );
+    assert_eq!(client.get(at_limit).send().await?.status(), StatusCode::OK);
+
+    handle.abort();
+    Ok(())
+}
+
 /// #564 / whalescale#261 — `GET /v1/usage` aggregates per-turn token +
 /// cost data. With no threads the response is well-formed and totals are
 /// zero with empty buckets (never a 404).
@@ -9420,6 +9619,58 @@ async fn thread_receipt_routes_require_auth_and_return_the_receipt_shape() -> Re
     Ok(())
 }
 
+/// The four canonical thread-history controls mutate or inspect shared store
+/// state, so they sit behind the same bearer + workspace-scope middleware as
+/// every other `/v1` route: anonymous and wrong-token posts are refused before
+/// the handler runs. Authorized coverage lives in
+/// `runtime_store_convergence.rs`.
+#[tokio::test]
+async fn thread_history_operation_routes_require_auth() -> Result<()> {
+    let root = std::env::temp_dir().join(format!("codewhale-history-auth-{}", Uuid::new_v4()));
+    let sessions_dir = root.join("sessions");
+    let token = "history-auth-test-token".to_string();
+    let Some((addr, _threads, handle)) =
+        spawn_test_server_with_root_and_token(root, sessions_dir, Some(token.clone())).await?
+    else {
+        return Ok(());
+    };
+    let client = crate::tls::reqwest_client();
+
+    for path in [
+        "/v1/thread-history/operations/lookup",
+        "/v1/thread-history/operations/recover",
+        "/v1/thread-history/mutate",
+        "/v1/thread-history/import",
+    ] {
+        let anonymous = client
+            .post(format!("http://{addr}{path}"))
+            .json(&json!({}))
+            .send()
+            .await?;
+        assert_eq!(anonymous.status(), StatusCode::UNAUTHORIZED, "{path}");
+        let wrong = client
+            .post(format!("http://{addr}{path}"))
+            .bearer_auth("not-the-runtime-token")
+            .json(&json!({}))
+            .send()
+            .await?;
+        assert_eq!(wrong.status(), StatusCode::UNAUTHORIZED, "{path}");
+        // The token gate admits the request; the handler then rejects the
+        // empty body itself, which is the same 4xx the route gave when these
+        // were reachable without auth — anything but 401 proves we reached it.
+        let authorized = client
+            .post(format!("http://{addr}{path}"))
+            .bearer_auth(&token)
+            .json(&json!({}))
+            .send()
+            .await?;
+        assert_ne!(authorized.status(), StatusCode::UNAUTHORIZED, "{path}");
+    }
+
+    handle.abort();
+    Ok(())
+}
+
 /// `GET /v1/approvals` serves the account-wide approval history behind the
 /// approvals log: decided rows carry their outcome + decision time, pending
 /// asks read "pending" with no decision time, newest ask first. A corrupt
@@ -9453,6 +9704,8 @@ async fn approvals_endpoint_lists_decided_and_pending_newest_first() -> Result<(
             tool_call_id: "tool-1".into(),
             tool_name: "exec_shell".into(),
             created_at: at(10),
+            target: Some("api.example.com".into()),
+            summary: Some("curl api.example.com".into()),
         },
     )?;
     store.append(
@@ -9463,6 +9716,8 @@ async fn approvals_endpoint_lists_decided_and_pending_newest_first() -> Result<(
             outcome: ApprovalOutcome::Denied,
             created_at: at(11),
             decided_by: Some(crate::approval_log::ApprovalDecider::User),
+            grant_id: None,
+            matched_label: None,
         },
     )?;
     store.append(
@@ -9472,6 +9727,8 @@ async fn approvals_endpoint_lists_decided_and_pending_newest_first() -> Result<(
             tool_call_id: "tool-2".into(),
             tool_name: "write_file".into(),
             created_at: at(12),
+            target: None,
+            summary: None,
         },
     )?;
     let corrupt_dir = store.log_path("sess-corrupt")?;
@@ -9494,6 +9751,10 @@ async fn approvals_endpoint_lists_decided_and_pending_newest_first() -> Result<(
     assert_eq!(rows[1]["tool_name"], "exec_shell");
     assert_eq!(rows[1]["outcome"], "denied");
     assert_eq!(rows[1]["decided_by"], "user");
+    assert_eq!(rows[1]["target"], "api.example.com");
+    assert_eq!(rows[1]["summary"], "curl api.example.com");
+    assert!(rows[0].get("target").is_none());
+    assert!(rows[0].get("summary").is_none());
     assert!(rows[0].get("decided_by").is_none());
     assert_eq!(rows[1]["asked_at"], "2026-09-10T10:00:00Z");
     assert_eq!(rows[1]["decided_at"], "2026-09-10T11:00:00Z");
@@ -9568,6 +9829,7 @@ async fn session_save_merges_thread_cost_split_and_records_coverage() -> Result<
             ..Usage::default()
         }),
         model_request_diagnostics: None,
+        operation_activity: None,
         routing_settlement: false,
         effective_route_usage: None,
         permission_posture: None,
@@ -9767,6 +10029,7 @@ async fn session_save_persists_parent_cny_unpriced_reasons_without_double_count(
             ..Usage::default()
         }),
         model_request_diagnostics: None,
+        operation_activity: None,
         routing_settlement: false,
         effective_route_usage: None,
         permission_posture: None,
@@ -9856,6 +10119,107 @@ async fn session_save_persists_parent_cny_unpriced_reasons_without_double_count(
     assert!(cost.coverage_recorded);
     assert!(!cost.coverage_is_legacy_unknown());
 
+    handle.abort();
+    Ok(())
+}
+
+#[tokio::test]
+async fn watch_client_token_refuses_runtime_mutations_and_upgrades() -> Result<()> {
+    let _lock = lock_test_env();
+    let root = tempfile::tempdir()?;
+    let _home = EnvVarGuard::set("CODEWHALE_HOME", root.path());
+    let Some((addr, _, handle)) = spawn_test_server_with_root_and_token(
+        root.path().to_path_buf(),
+        root.path().join("sessions"),
+        Some("watch-scope-fixture-master".to_string()),
+    )
+    .await?
+    else {
+        bail!("the owned client-token HTTP fixture could not bind");
+    };
+    let client = crate::tls::reqwest_client();
+    let base = format!("http://{addr}");
+    let info: Value = client
+        .get(format!("{base}/v1/runtime/info"))
+        .send()
+        .await?
+        .json()
+        .await?;
+    assert_eq!(info["capabilities"]["client_token_intents"], true);
+    let mint = |body: Value| {
+        client
+            .post(format!("{base}/v1/auth/client-tokens"))
+            .bearer_auth("watch-scope-fixture-master")
+            .json(&body)
+    };
+    let watch: Value = mint(json!({"device_id": "read-device", "label": "cwc-seat:drive"}))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(watch["intent"], "watch");
+    let watch_token = watch["token"].as_str().context("watch token")?;
+    let reads = client
+        .get(format!("{base}/v1/threads/summary"))
+        .bearer_auth(watch_token)
+        .send()
+        .await?;
+    assert_eq!(reads.status(), StatusCode::OK);
+    for (method, path) in [
+        (Method::POST, "/v1/threads"),
+        (Method::PUT, "/v1/workspace/files"),
+        (Method::DELETE, "/v1/memory"),
+        (Method::POST, "/v1/approvals/not-pending"),
+    ] {
+        let refused = client
+            .request(method, format!("{base}{path}"))
+            .bearer_auth(watch_token)
+            .json(&json!({}))
+            .send()
+            .await?;
+        assert_eq!(refused.status(), StatusCode::FORBIDDEN, "{path}");
+    }
+    let upgrade = client
+        .get(format!("{base}/v1/threads/summary"))
+        .bearer_auth(watch_token)
+        .header(header::UPGRADE, "websocket")
+        .send()
+        .await?;
+    assert_eq!(upgrade.status(), StatusCode::FORBIDDEN);
+    let drive: Value = mint(json!({"device_id": "write-device", "intent": "drive"}))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(drive["intent"], "drive");
+    let created = client
+        .post(format!("{base}/v1/threads"))
+        .bearer_auth(drive["token"].as_str().context("drive token")?)
+        .json(&json!({}))
+        .send()
+        .await?;
+    assert_eq!(created.status(), StatusCode::CREATED);
+    let invalid = mint(json!({"device_id": "bad-device", "intent": "admin"}))
+        .send()
+        .await?;
+    assert_eq!(invalid.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let revoked = client
+        .delete(format!(
+            "{base}/v1/auth/client-tokens/{}",
+            watch["id"].as_str().context("watch id")?
+        ))
+        .bearer_auth("watch-scope-fixture-master")
+        .send()
+        .await?;
+    assert_eq!(revoked.status(), StatusCode::NO_CONTENT);
+    let expired_read = client
+        .get(format!("{base}/v1/threads/summary"))
+        .bearer_auth(watch_token)
+        .send()
+        .await?;
+    assert_eq!(expired_read.status(), StatusCode::UNAUTHORIZED);
     handle.abort();
     Ok(())
 }
@@ -11014,6 +11378,7 @@ fn seed_summary_search_transcript(
             duration_ms: Some(0),
             usage: None,
             model_request_diagnostics: None,
+            operation_activity: None,
             routing_settlement: false,
             effective_route_usage: None,
             permission_posture: None,
@@ -16971,6 +17336,245 @@ fn create_managed_skill(root_dir: &std::path::Path, name: &str) -> Result<(PathB
 }
 
 #[tokio::test]
+async fn skill_detail_returns_body_and_routing_metadata() -> Result<()> {
+    let _env = lock_test_env();
+    let tmp = tempfile::tempdir()?;
+    let root = tmp.path().join("runtime");
+    let workspace = tmp.path().to_path_buf();
+    let _config = EnvVarGuard::set("CODEWHALE_CONFIG_PATH", tmp.path().join("config.toml"));
+    crate::test_support::trust_workspace(&workspace);
+    let sessions_dir = root.join("sessions");
+    fs::create_dir_all(&root)?;
+
+    // A skill with routing metadata and a body a client can activate.
+    let skill_dir = workspace
+        .join(".codewhale")
+        .join("skills")
+        .join("activatable");
+    fs::create_dir_all(&skill_dir)?;
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        "---\nname: activatable\ndescription: Activate me\naliases-for: activate-me\nargument-hint: <target>\n---\nDo the thing.\n",
+    )?;
+
+    let Some((addr, _runtime_threads, handle)) =
+        spawn_test_server_with_root_token_mobile_workspace(
+            root,
+            sessions_dir,
+            None,
+            false,
+            workspace,
+        )
+        .await?
+    else {
+        return Ok(());
+    };
+    let client = crate::tls::reqwest_client();
+
+    let detail: serde_json::Value = client
+        .get(format!("http://{addr}/v1/skills/activatable"))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+    assert_eq!(detail["name"], "activatable");
+    assert_eq!(detail["description"], "Activate me");
+    assert_eq!(detail["source"], "native");
+    assert_eq!(detail["invocation"], "model+user");
+    assert_eq!(detail["aliases"][0], "activate-me");
+    assert!(
+        detail["body"]
+            .as_str()
+            .is_some_and(|b| b.contains("Do the thing.")),
+        "detail body must carry the SKILL.md instructions, got {:?}",
+        detail["body"]
+    );
+    assert!(
+        detail["path"]
+            .as_str()
+            .is_some_and(|p| p.ends_with("SKILL.md")),
+        "native skill detail must name its SKILL.md path"
+    );
+    // The alias resolves to the same body, so a client can activate by either
+    // spelling without a second lookup table.
+    let by_alias: serde_json::Value = client
+        .get(format!("http://{addr}/v1/skills/activate-me"))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(by_alias["name"], "activatable");
+
+    handle.abort();
+    Ok(())
+}
+
+#[tokio::test]
+async fn skill_detail_404s_for_unknown_skill() -> Result<()> {
+    let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
+        return Ok(());
+    };
+    let client = crate::tls::reqwest_client();
+
+    let resp = client
+        .get(format!("http://{addr}/v1/skills/no-such-skill"))
+        .send()
+        .await?;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    handle.abort();
+    Ok(())
+}
+
+#[tokio::test]
+async fn skill_list_rows_carry_routing_metadata() -> Result<()> {
+    let _env = lock_test_env();
+    let tmp = tempfile::tempdir()?;
+    let root = tmp.path().join("runtime");
+    let workspace = tmp.path().to_path_buf();
+    let _config = EnvVarGuard::set("CODEWHALE_CONFIG_PATH", tmp.path().join("config.toml"));
+    crate::test_support::trust_workspace(&workspace);
+    let sessions_dir = root.join("sessions");
+    fs::create_dir_all(&root)?;
+
+    let skill_dir = workspace.join(".codewhale").join("skills").join("listed");
+    fs::create_dir_all(&skill_dir)?;
+    fs::write(
+        skill_dir.join("SKILL.md"),
+        "---\nname: listed\ndescription: Listed skill\ninvocation: explicit-only\n---\nbody\n",
+    )?;
+
+    let Some((addr, _runtime_threads, handle)) =
+        spawn_test_server_with_root_token_mobile_workspace(
+            root,
+            sessions_dir,
+            None,
+            false,
+            workspace,
+        )
+        .await?
+    else {
+        return Ok(());
+    };
+    let client = crate::tls::reqwest_client();
+
+    let list: serde_json::Value = client
+        .get(format!("http://{addr}/v1/skills"))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let listed = list["skills"]
+        .as_array()
+        .expect("skills array")
+        .iter()
+        .find(|sk| sk["name"] == "listed")
+        .expect("listed skill present");
+    assert_eq!(listed["invocation"], "explicit-only");
+    assert_eq!(listed["is_bundled"], false);
+    // A custom skill has no curated tier; the field is present but null.
+    assert!(listed["bundled_tier"].is_null());
+
+    handle.abort();
+    Ok(())
+}
+
+#[tokio::test]
+async fn listed_tier_belongs_to_the_bundled_copy_only() -> Result<()> {
+    let _env = lock_test_env();
+    let tmp = tempfile::tempdir()?;
+    let root = tmp.path().join("runtime");
+    let workspace = tmp.path().to_path_buf();
+    let _config = EnvVarGuard::set("CODEWHALE_CONFIG_PATH", tmp.path().join("config.toml"));
+    crate::test_support::trust_workspace(&workspace);
+    let sessions_dir = root.join("sessions");
+    fs::create_dir_all(&root)?;
+
+    // A bundled name at the bundled path: the shipped skill, grouped.
+    let bundled = workspace.join(".codewhale").join("skills").join("help");
+    fs::create_dir_all(&bundled)?;
+    fs::write(
+        bundled.join("SKILL.md"),
+        "---\nname: help\ndescription: Shipped\n---\nbody\n",
+    )?;
+    // A bundled *name* somewhere else: a community skill that shares the name
+    // of a shipped one. It is not the shipped copy, so it is not in the
+    // shipped tier either — the two fields have to agree.
+    let impostor = workspace.join(".agents").join("skills").join("pdf");
+    fs::create_dir_all(&impostor)?;
+    fs::write(
+        impostor.join("SKILL.md"),
+        "---\nname: pdf\ndescription: Mine, not the shipped one\n---\nbody\n",
+    )?;
+
+    let Some((addr, _runtime_threads, handle)) =
+        spawn_test_server_with_root_token_mobile_workspace(
+            root,
+            sessions_dir,
+            None,
+            false,
+            workspace,
+        )
+        .await?
+    else {
+        return Ok(());
+    };
+    let client = crate::tls::reqwest_client();
+
+    let list: serde_json::Value = client
+        .get(format!("http://{addr}/v1/skills"))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let rows = list["skills"].as_array().expect("skills array");
+    let row = |name: &str| {
+        rows.iter()
+            .find(|sk| sk["name"] == name)
+            .unwrap_or_else(|| panic!("{name} must be listed"))
+    };
+    assert_eq!(row("help")["is_bundled"], true);
+    assert_eq!(row("help")["bundled_tier"], "tools");
+    assert_eq!(row("pdf")["is_bundled"], false);
+    assert!(
+        row("pdf")["bundled_tier"].is_null(),
+        "a non-bundled copy of a bundled name must not claim the shipped tier: {}",
+        row("pdf")["bundled_tier"]
+    );
+
+    handle.abort();
+    Ok(())
+}
+
+#[tokio::test]
+async fn runtime_info_advertises_skill_detail_capability() -> Result<()> {
+    let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
+        return Ok(());
+    };
+    let client = crate::tls::reqwest_client();
+
+    let info: serde_json::Value = client
+        .get(format!("http://{addr}/v1/runtime/info"))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(
+        info["capabilities"]["skill_detail"], true,
+        "runtime/info must advertise skill_detail capability"
+    );
+
+    handle.abort();
+    Ok(())
+}
+
+#[tokio::test]
 async fn skill_lifecycle_uninstall_removes_installed_skill() -> Result<()> {
     let _env = lock_test_env();
     let tmp = tempfile::tempdir()?;
@@ -17337,6 +17941,9 @@ async fn skill_lifecycle_endpoints_require_auth_when_token_is_set() -> Result<()
         ("POST", "/v1/skills/any/update"),
         ("DELETE", "/v1/skills/any"),
         ("POST", "/v1/skills/any/trust"),
+        // The detail route hands back a SKILL.md body, so it is as sensitive
+        // as the listing plus the file it names.
+        ("GET", "/v1/skills/any"),
     ] {
         let resp = client
             .request(
@@ -17862,6 +18469,7 @@ async fn plugin_api_404s_for_unknown_selector() -> Result<()> {
 
 #[tokio::test]
 async fn dsh_package_preview_then_exact_install_over_http() -> Result<()> {
+    let _home = crate::test_support::SealedHome::new();
     let tmp = tempfile::tempdir()?;
     let root = tmp.path().join("runtime");
     let workspace = tmp.path().join("ws");
@@ -18856,7 +19464,7 @@ async fn native_notification_replay_rechecks_requests_settled_during_the_read() 
     let temp = tempfile::tempdir()?;
     let _home = EnvVarGuard::set("CODEWHALE_HOME", temp.path().join("home"));
     let _backend = EnvVarGuard::set("CODEWHALE_SECRET_BACKEND", "file");
-    let _proxy = EnvVarGuard::set("NO_PROXY", "*");
+    let _proxy = EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
     let path = temp.path().join("config.toml");
     fs::write(
         &path,
@@ -18896,7 +19504,7 @@ async fn native_notification_replay_rechecks_requests_settled_during_the_read() 
             "input_summary": "silent settlement fixture", "created_at": Utc::now()
         }))?;
         manager.test_store().save_turn(&turn)?;
-        let mock = crate::core::engine::mock_engine_handle();
+        let mut mock = crate::core::engine::mock_engine_handle();
         manager
             .install_test_engine(&thread.id, mock.handle.clone())
             .await?;
@@ -18962,7 +19570,12 @@ async fn native_notification_replay_rechecks_requests_settled_during_the_read() 
                 ExternalApprovalDecision::Allow { remember: false }
             );
         } else {
-            assert!(manager.cancel_user_input(&thread.id, "request").await?);
+            let (canceled, consumed) = tokio::join!(
+                manager.cancel_user_input(&thread.id, "request"),
+                mock.recv_user_input_cancellation(),
+            );
+            assert!(canceled?);
+            assert_eq!(consumed.as_deref(), Some("request"));
         }
         let settled = manager.get_thread_detail(&thread.id).await?;
         assert!(settled.pending_approvals.is_empty());
@@ -19535,6 +20148,60 @@ async fn workspace_file_put_keeps_the_edited_files_mode() -> Result<()> {
     }
 
     handle.abort();
+    Ok(())
+}
+
+#[cfg(any(unix, windows))]
+#[test]
+fn workspace_file_concurrent_creates_preserve_the_first_publication() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let relative = Path::new("notes/new.txt");
+    fs::write(tmp.path().join("unrelated.txt"), b"keep me\n")?;
+
+    // Admit both creators while the destination is absent, before either
+    // publishes. This makes the stale-create race independent of scheduling.
+    let files = [
+        crate::fleet::files::WorkspaceFile::open_shared(tmp.path(), relative, true)?,
+        crate::fleet::files::WorkspaceFile::open_shared(tmp.path(), relative, true)?,
+    ];
+    assert!(!tmp.path().join(relative).exists());
+    let payloads = [
+        b"first creator\n".as_slice(),
+        b"second creator\n".as_slice(),
+    ];
+    let barrier = std::sync::Barrier::new(2);
+    let results = std::thread::scope(|scope| {
+        let handles: Vec<_> = files
+            .into_iter()
+            .zip(payloads)
+            .map(|(file, bytes)| {
+                let barrier = &barrier;
+                scope.spawn(move || {
+                    barrier.wait();
+                    workspace::publish_workspace_file(&file, bytes, true)
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("creator worker must not panic"))
+            .collect::<Vec<_>>()
+    });
+
+    let winners: Vec<_> = results
+        .iter()
+        .enumerate()
+        .filter_map(|(index, result)| result.is_ok().then_some(index))
+        .collect();
+    assert_eq!(winners.len(), 1, "exactly one create may publish");
+    let error = results
+        .iter()
+        .find_map(|result| result.as_ref().err())
+        .unwrap();
+    assert_eq!(error.status, StatusCode::CONFLICT);
+    assert!(error.message.contains("read it before overwriting"));
+    assert_eq!(fs::read(tmp.path().join(relative))?, payloads[winners[0]]);
+    assert_eq!(fs::read(tmp.path().join("unrelated.txt"))?, b"keep me\n");
     Ok(())
 }
 
@@ -20331,6 +20998,399 @@ async fn turn_artifact_routes_list_and_read_by_reference() -> Result<()> {
     assert_eq!(body["content"], "big output\n");
     assert_eq!(body["artifact"]["kind"], "tool_output");
     assert!(body["current"].is_null());
+
+    handle.abort();
+    Ok(())
+}
+
+/// One tool call's changes, read from the workspace restore points the engine
+/// recorded around it: a shell command's own writes belong to that command,
+/// every path and revision comes from the span's own two trees rather than
+/// from the work tree as it is now, and a call the engine never bounded — or
+/// whose closing snapshot was lost — says so instead of handing back an empty
+/// list that would read as "this call changed nothing".
+#[tokio::test]
+async fn call_change_route_reads_one_calls_workspace_span() -> Result<()> {
+    if git_missing() {
+        return Ok(());
+    }
+    let _env = lock_test_env();
+    let tmp = tempfile::tempdir()?;
+    let _home = EnvVarGuard::set("CODEWHALE_HOME", tmp.path().join("home"));
+    let workspace = tmp.path().join("workspace");
+    fs::create_dir_all(&workspace)?;
+    fs::write(workspace.join("kept.md"), "kept\n")?;
+    let rev = |bytes: &[u8]| crate::hashing::sha256_hex(bytes);
+    // The model endpoint's own id for the call, verbatim: the shape a gateway
+    // really hands back, `|` and all. A record-id charset check would refuse it
+    // and answer "no such call" for a call the turn plainly recorded, so this
+    // literal is the regression this test exists for.
+    const SHELL_CALL: &str =
+        "call_01_f3d82rL5aT1NDbpsh4w63727|f8912d4c-2f79-46eb-91d4-9ed4998156f9";
+    // A call whose receipts survived while the trees they name did not: the
+    // side repo keeps only its newest snapshots, so an older turn's span is
+    // regularly unreachable.
+    const PRUNED_CALL: &str = "call_00_prunedForTest";
+    // A call on a workspace whose snapshot store does not exist at all: the
+    // receipts survived, the whole store did not.
+    const STORELESS_CALL: &str = "call_00_storelessForTest";
+
+    let (addr, runtime_threads, handle) = spawn_test_server_with_root_token_mobile_workspace(
+        tmp.path().join("runtime"),
+        tmp.path().join("sessions"),
+        Some("call-changes-token".to_string()),
+        false,
+        workspace.clone(),
+    )
+    .await?
+    .context("call change test requires a loopback listener")?;
+    let thread = runtime_threads
+        .create_thread(CreateThreadRequest {
+            workspace: Some(workspace.clone()),
+            ..Default::default()
+        })
+        .await?;
+
+    // The call's own span: its `tool:` receipt before the command ran and its
+    // `post-tool` partner after. `out.md` is the command's own write;
+    // `script.py` is a path it modified. Afterwards the work tree moves on
+    // again — the route must report the span, not what is on disk now.
+    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace)?;
+    fs::write(workspace.join("script.py"), "print('v1')\n")?;
+    let tool = repo.take_snapshot(&format!("tool:{SHELL_CALL}"), Some(&thread.id))?;
+    fs::write(workspace.join("out.md"), "written by the command\n")?;
+    fs::write(workspace.join("script.py"), "print('v2')\n")?;
+    let post_tool = repo.take_snapshot(&format!("post-tool:{SHELL_CALL}"), Some(&thread.id))?;
+    fs::write(workspace.join("out.md"), "edited long after the call\n")?;
+    fs::write(workspace.join("after.md"), "after the span\n")?;
+
+    // A second thread on its own workspace, which never had a snapshot store.
+    let storeless_workspace = tmp.path().join("storeless-workspace");
+    fs::create_dir_all(&storeless_workspace)?;
+    let storeless_thread = runtime_threads
+        .create_thread(CreateThreadRequest {
+            workspace: Some(storeless_workspace),
+            ..Default::default()
+        })
+        .await?;
+
+    let store = runtime_threads.test_store();
+    let shell_item: crate::runtime_threads::TurnItemRecord = serde_json::from_value(json!({
+        "id": "item_shell", "turn_id": "turn_call_changes", "kind": "command_execution",
+        "status": "completed", "summary": "exec_shell started",
+        "metadata": { "tool_use_id": SHELL_CALL, "tool_name": "exec_shell" },
+    }))?;
+    store.save_item(&shell_item)?;
+    // A call the engine judged read-only: the turn has its item, and no
+    // restore point was ever taken for it.
+    let read_item: crate::runtime_threads::TurnItemRecord = serde_json::from_value(json!({
+        "id": "item_read", "turn_id": "turn_call_changes", "kind": "command_execution",
+        "status": "completed", "summary": "exec_shell started",
+        "metadata": { "tool_use_id": "call_read", "tool_name": "exec_shell" },
+    }))?;
+    store.save_item(&read_item)?;
+    let pruned_item: crate::runtime_threads::TurnItemRecord = serde_json::from_value(json!({
+        "id": "item_pruned", "turn_id": "turn_call_changes", "kind": "command_execution",
+        "status": "completed", "summary": "bash started",
+        "metadata": { "tool_use_id": PRUNED_CALL, "tool_name": "bash" },
+    }))?;
+    store.save_item(&pruned_item)?;
+    // A call whose closing snapshot was lost: the opening receipt is recorded
+    // and the span will never resolve.
+    let half_item: crate::runtime_threads::TurnItemRecord = serde_json::from_value(json!({
+        "id": "item_half", "turn_id": "turn_call_half", "kind": "command_execution",
+        "status": "completed", "summary": "exec_shell started",
+        "metadata": { "tool_use_id": "call_half", "tool_name": "exec_shell" },
+    }))?;
+    store.save_item(&half_item)?;
+    let storeless_item: crate::runtime_threads::TurnItemRecord = serde_json::from_value(json!({
+        "id": "item_storeless", "turn_id": "turn_storeless", "kind": "command_execution",
+        "status": "completed", "summary": "bash started",
+        "metadata": { "tool_use_id": STORELESS_CALL, "tool_name": "bash" },
+    }))?;
+    store.save_item(&storeless_item)?;
+
+    let turn: TurnRecord = serde_json::from_value(json!({
+        "id": "turn_call_changes", "thread_id": thread.id, "status": "completed",
+        "input_summary": "run the script", "created_at": Utc::now(),
+        "item_ids": ["item_shell", "item_read", "item_pruned"],
+        "workspace_snapshots": [
+            {
+                "kind": "tool", "snapshot_id": tool.id.as_str(), "tree_id": tool.tree.as_str(),
+                "session_id": thread.id, "tool_call_id": SHELL_CALL,
+                "write_paths": null,
+            },
+            {
+                "kind": "post_tool", "snapshot_id": post_tool.id.as_str(),
+                "tree_id": post_tool.tree.as_str(), "session_id": thread.id,
+                "tool_call_id": SHELL_CALL, "changed_paths": ["out.md", "script.py"],
+            },
+            {
+                "kind": "tool", "snapshot_id": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+                "tree_id": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+                "session_id": thread.id, "tool_call_id": PRUNED_CALL,
+            },
+            {
+                "kind": "post_tool", "snapshot_id": "feedfacefeedfacefeedfacefeedfacefeedface",
+                "tree_id": "feedfacefeedfacefeedfacefeedfacefeedface",
+                "session_id": thread.id, "tool_call_id": PRUNED_CALL,
+                "changed_paths": ["gone.txt"],
+            },
+        ],
+        "workspace": { "state": "settled" },
+    }))?;
+    store.save_turn(&turn)?;
+    let half_turn: TurnRecord = serde_json::from_value(json!({
+        "id": "turn_call_half", "thread_id": thread.id, "status": "completed",
+        "input_summary": "run the script", "created_at": Utc::now(),
+        "item_ids": ["item_half"],
+        "workspace_snapshots": [{
+            "kind": "tool", "snapshot_id": tool.id.as_str(), "tree_id": tool.tree.as_str(),
+            "session_id": thread.id, "tool_call_id": "call_half",
+        }],
+        "workspace": { "state": "unavailable", "reason": "snapshot_failed" },
+    }))?;
+    store.save_turn(&half_turn)?;
+    // The same pair of receipts, on a workspace whose store is gone rather
+    // than merely pruned: one answer, not an internal error.
+    let storeless_turn: TurnRecord = serde_json::from_value(json!({
+        "id": "turn_storeless", "thread_id": storeless_thread.id, "status": "completed",
+        "input_summary": "run the script", "created_at": Utc::now(),
+        "item_ids": ["item_storeless"],
+        "workspace_snapshots": [
+            {
+                "kind": "tool", "snapshot_id": "aa".repeat(20), "tree_id": "aa".repeat(20),
+                "session_id": storeless_thread.id, "tool_call_id": STORELESS_CALL,
+            },
+            {
+                "kind": "post_tool", "snapshot_id": "bb".repeat(20), "tree_id": "bb".repeat(20),
+                "session_id": storeless_thread.id, "tool_call_id": STORELESS_CALL,
+                "changed_paths": ["gone.txt"],
+            },
+        ],
+        "workspace": { "state": "settled" },
+    }))?;
+    store.save_turn(&storeless_turn)?;
+
+    let client = crate::tls::reqwest_client();
+    let base = format!("http://{addr}");
+    let url = |thread_id: &str, turn_id: &str, call: &str| {
+        format!("{base}/v1/threads/{thread_id}/turns/{turn_id}/calls/{call}/changes")
+    };
+    let get = |thread_id: &str,
+               turn_id: &str,
+               call: &str|
+     -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Value>> + Send + '_>,
+    > {
+        let client = client.clone();
+        let url = url(thread_id, turn_id, call);
+        Box::pin(async move {
+            Ok(client
+                .get(url)
+                .bearer_auth("call-changes-token")
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await?)
+        })
+    };
+
+    // The item's persisted lifecycle owns the wait: an opening receipt with
+    // no partner is normal while queued or running, not a permanent loss.
+    let mut active_turn = half_turn.clone();
+    active_turn.id = "turn_call_active".to_string();
+    active_turn.status = RuntimeTurnStatus::InProgress;
+    active_turn.item_ids = vec!["item_active".to_string()];
+    active_turn.workspace = None;
+    store.save_turn(&active_turn)?;
+    let mut active_item = half_item.clone();
+    active_item.id = "item_active".to_string();
+    active_item.turn_id = active_turn.id.clone();
+    for status in [
+        TurnItemLifecycleStatus::Queued,
+        TurnItemLifecycleStatus::InProgress,
+    ] {
+        active_item.status = status;
+        store.save_item(&active_item)?;
+        let pending = get(&thread.id, &active_turn.id, "call_half").await?;
+        assert_eq!(pending["state"], "pending");
+        assert_eq!(pending["reason"], Value::Null);
+        assert_eq!(pending["files"].as_array().unwrap().len(), 0);
+    }
+    active_turn
+        .workspace_snapshots
+        .push(serde_json::from_value(json!({
+            "kind": "post_tool", "snapshot_id": post_tool.id.as_str(),
+            "tree_id": post_tool.tree.as_str(), "session_id": thread.id,
+            "tool_call_id": "call_half", "changed_paths": ["out.md", "script.py"],
+        }))?);
+    active_turn.status = RuntimeTurnStatus::Completed;
+    active_item.status = TurnItemLifecycleStatus::Completed;
+    store.save_item(&active_item)?;
+    store.save_turn(&active_turn)?;
+    let settled = get(&thread.id, &active_turn.id, "call_half").await?;
+    assert_eq!(settled["state"], "captured");
+    assert_eq!(settled["reason"], Value::Null);
+    assert_eq!(settled["files"].as_array().unwrap().len(), 2);
+
+    let body = get(&thread.id, "turn_call_changes", SHELL_CALL).await?;
+    assert_eq!(body["state"], "captured");
+    assert_eq!(body["reason"], Value::Null);
+    assert_eq!(body["tool_name"], "exec_shell");
+    assert_eq!(body["truncated"], false);
+    let files = body["files"].as_array().expect("files");
+    let paths: Vec<&str> = files
+        .iter()
+        .map(|file| file["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        paths,
+        ["out.md", "script.py"],
+        "the span's own paths, in git's order: {files:?}"
+    );
+
+    let created = &files[0];
+    assert_eq!(created["change"], "created");
+    assert_eq!(created["added"], 1);
+    assert_eq!(created["removed"], 0);
+    // The span's end, not the work tree's newer bytes.
+    assert_eq!(created["revision"], rev(b"written by the command\n"));
+    assert_eq!(created["size"].as_u64(), Some(23));
+    assert_eq!(
+        created["restore_snapshot_id"],
+        tool.tree.as_str(),
+        "the revert point is the call's own `tool:` receipt"
+    );
+    assert!(
+        created["diff"]
+            .as_str()
+            .unwrap()
+            .contains("+written by the command"),
+        "{}",
+        created["diff"]
+    );
+    assert_eq!(created["diff_truncated"], false);
+
+    let modified = &files[1];
+    assert_eq!(modified["change"], "updated");
+    assert_eq!(modified["added"], 1);
+    assert_eq!(modified["removed"], 1);
+    let patch = modified["diff"].as_str().unwrap();
+    assert!(patch.contains("-print('v1')"), "{patch}");
+    assert!(patch.contains("+print('v2')"), "{patch}");
+    assert!(
+        !body.to_string().contains("after.md"),
+        "a write after the span is not the call's: {body}"
+    );
+
+    // A call the turn recorded but the engine never bounded: known, and not
+    // reported as "changed nothing".
+    let unbounded = get(&thread.id, "turn_call_changes", "call_read").await?;
+    assert_eq!(unbounded["state"], "unavailable");
+    assert_eq!(unbounded["reason"], "call_not_bounded");
+    assert_eq!(unbounded["files"].as_array().unwrap().len(), 0);
+
+    // A span whose trees have been pruned is a fact about the store, not a
+    // failure of the read: the receipt's own path list is what a client keeps.
+    let pruned = get(&thread.id, "turn_call_changes", PRUNED_CALL).await?;
+    assert_eq!(pruned["state"], "unavailable");
+    assert_eq!(pruned["reason"], "snapshots_pruned");
+    assert_eq!(pruned["files"].as_array().unwrap().len(), 0);
+
+    // A workspace with no snapshot store at all answers the same way: the
+    // receipts cannot be resolved, and that is not a server failure.
+    let storeless: Value = client
+        .get(url(&storeless_thread.id, "turn_storeless", STORELESS_CALL))
+        .bearer_auth("call-changes-token")
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(storeless["state"], "unavailable");
+    assert_eq!(storeless["reason"], "snapshots_pruned");
+
+    // A span whose closing receipt is gone will never resolve, and says why.
+    let half = get(&thread.id, "turn_call_half", "call_half").await?;
+    assert_eq!(half["state"], "unavailable");
+    assert_eq!(half["reason"], "post_snapshot_missing");
+
+    // A corrupt item cannot turn a known call into an unavailable span.
+    let item_path = tmp
+        .path()
+        // This harness roots the Runtime store at <root>/runtime/runtime.
+        .join("runtime")
+        .join("runtime")
+        .join("runtime")
+        .join("items")
+        .join(format!("{}.json", half_item.id));
+    let saved_item = fs::read(&item_path)?;
+    fs::write(&item_path, b"invalid runtime item JSON\n")?;
+    let response = client
+        .get(url(&thread.id, "turn_call_half", "call_half"))
+        .bearer_auth("call-changes-token")
+        .send()
+        .await;
+    fs::write(&item_path, saved_item)?;
+    let response = response?;
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let error: Value = response.json().await?;
+    assert!(
+        error.to_string().contains("Failed to parse item"),
+        "{error}"
+    );
+
+    // A call this turn never ran, an unknown turn, and a turn of another
+    // thread are 404s rather than empty answers.
+    for (thread_id, turn_id, call) in [
+        (thread.id.as_str(), "turn_call_changes", "call_never"),
+        (thread.id.as_str(), "turn_missing", "call_shell"),
+        (thread.id.as_str(), "turn_call_half", "call_shell"),
+        ("thread_missing", "turn_call_changes", SHELL_CALL),
+    ] {
+        let status = client
+            .get(url(thread_id, turn_id, call))
+            .bearer_auth("call-changes-token")
+            .send()
+            .await?
+            .status();
+        assert_eq!(
+            status,
+            StatusCode::NOT_FOUND,
+            "{thread_id}/{turn_id}/{call}"
+        );
+    }
+    let status = client
+        .get(format!(
+            "{}?limit=0",
+            url(&thread.id, "turn_call_changes", SHELL_CALL)
+        ))
+        .bearer_auth("call-changes-token")
+        .send()
+        .await?
+        .status();
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // A store is present, but git cannot read its metadata. Preserve the
+    // operational failure rather than telling clients these trees were pruned.
+    let head = repo.git_dir().join("HEAD");
+    let saved_head = fs::read(&head)?;
+    fs::write(&head, b"invalid snapshot repository metadata\n")?;
+    let response = client
+        .get(url(&thread.id, "turn_call_changes", SHELL_CALL))
+        .bearer_auth("call-changes-token")
+        .send()
+        .await;
+    fs::write(&head, saved_head)?;
+    let response = response?;
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let error: Value = response.json().await?;
+    assert!(
+        error.to_string().contains("snapshot tree lookup failed"),
+        "{error}"
+    );
 
     handle.abort();
     Ok(())
@@ -24733,5 +25793,213 @@ async fn session_export_keeps_execution_identity_and_rejects_invalid_item_correl
     );
     assert_eq!(fs::read(saved_path)?, before);
     handle.abort();
+    Ok(())
+}
+
+/// The two halves a client needs to settle workspace trust, over HTTP.
+///
+/// The write is asserted through the *response* rather than a second request,
+/// because the response's `workspace_trusted` is the gate's verdict read back
+/// inside the same request: the handler writes with `config::set_workspace_trust`
+/// and re-reads with `config::is_workspace_trusted`, so a `true` here is proof the
+/// record landed where that gate looks. A second GET cannot add to that proof in
+/// this harness and would only be flaky — `unsealed_test_state_root` hands a
+/// thread that resolves the config through `with_test_env_lock` a root keyed by
+/// *its own* thread id, so two requests served by different blocking workers
+/// legitimately resolve two different test config files (verified by probe).
+/// `workspace_bootstrap_status_reports_the_trust_gate` covers the projection
+/// deterministically on one thread.
+#[tokio::test]
+async fn workspace_trust_is_reported_and_written_through_the_api() -> Result<()> {
+    let root = std::env::temp_dir().join(format!("codewhale-workspace-trust-{}", Uuid::new_v4()));
+    let sessions_dir = root.join("sessions");
+    let workspace = root.join("workspace");
+    fs::create_dir_all(&workspace)?;
+    fs::create_dir_all(&sessions_dir)?;
+
+    let Some((addr, _runtime_threads, handle)) =
+        spawn_test_server_with_root_token_mobile_workspace_and_overrides(
+            root,
+            sessions_dir,
+            None,
+            false,
+            workspace.clone(),
+            TestServerOverrides::default(),
+        )
+        .await?
+    else {
+        return Ok(());
+    };
+    let client = crate::tls::reqwest_client();
+    let expected_workspace = fs::canonicalize(&workspace)?;
+
+    let before: serde_json::Value = client
+        .get(format!("http://{addr}/v1/workspace/status"))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(
+        before["workspace_trusted"],
+        json!(false),
+        "a workspace nothing has vouched for must report untrusted: {before}"
+    );
+
+    let granted: serde_json::Value = client
+        .post(format!("http://{addr}/v1/workspace/trust"))
+        .json(&json!({ "trusted": true }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(
+        granted["workspace_trusted"],
+        json!(true),
+        "the write must land where the gate reads it back: {granted}"
+    );
+    assert_eq!(
+        granted["workspace"]
+            .as_str()
+            .and_then(|path| fs::canonicalize(path).ok()),
+        Some(expected_workspace.clone()),
+        "the route trusts the server's own workspace, never a caller-supplied one"
+    );
+    // The named document is checked rather than taken on faith: a client shows
+    // this path to the user as the record of their decision.
+    let granted_config = granted["config_path"]
+        .as_str()
+        .context("the response must name the document it wrote")?;
+    let record: toml::Value = toml::from_str(&fs::read_to_string(granted_config)?)?;
+    assert_eq!(
+        record["projects"][expected_workspace.to_string_lossy().as_ref()]["trust_level"].as_str(),
+        Some("trusted"),
+        "the named document must carry the record the gate reads: {granted_config}"
+    );
+
+    // A switch, not a one-way latch: revoking has to reverse it too, and the
+    // verdict it reports is the read-back rather than an echo of the request.
+    let revoked: serde_json::Value = client
+        .post(format!("http://{addr}/v1/workspace/trust"))
+        .json(&json!({ "trusted": false }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    assert_eq!(revoked["workspace_trusted"], json!(false));
+    let revoked_config = revoked["config_path"]
+        .as_str()
+        .context("the revoke response must name its document")?;
+    let record: toml::Value = toml::from_str(&fs::read_to_string(revoked_config)?)?;
+    assert_eq!(
+        record["projects"][expected_workspace.to_string_lossy().as_ref()]["trust_level"].as_str(),
+        Some("untrusted"),
+        "revoking must rewrite the same record: {revoked_config}"
+    );
+
+    handle.abort();
+    Ok(())
+}
+
+/// A malformed body is refused before anything is written.
+///
+/// `deny_unknown_fields` is part of the contract, not decoration: this route
+/// records a security decision, and a typo in the field name must fail loudly
+/// rather than silently revoke the workspace's trust (the `false` default a
+/// permissive parse would supply).
+#[tokio::test]
+async fn workspace_trust_route_refuses_malformed_bodies() -> Result<()> {
+    let root =
+        std::env::temp_dir().join(format!("codewhale-workspace-trust-body-{}", Uuid::new_v4()));
+    let sessions_dir = root.join("sessions");
+    let workspace = root.join("workspace");
+    fs::create_dir_all(&workspace)?;
+    fs::create_dir_all(&sessions_dir)?;
+
+    let Some((addr, _runtime_threads, handle)) =
+        spawn_test_server_with_root_token_mobile_workspace_and_overrides(
+            root,
+            sessions_dir,
+            None,
+            false,
+            workspace.clone(),
+            TestServerOverrides::default(),
+        )
+        .await?
+    else {
+        return Ok(());
+    };
+    let client = crate::tls::reqwest_client();
+
+    // Trust it first, so a write that slipped through would be visible as a
+    // changed record rather than as a config file nobody reads.
+    let granted: serde_json::Value = client
+        .post(format!("http://{addr}/v1/workspace/trust"))
+        .json(&json!({ "trusted": true }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let config_path = granted["config_path"]
+        .as_str()
+        .context("the response must name the document it wrote")?
+        .to_string();
+    let before = fs::read(&config_path)?;
+
+    for body in [json!({}), json!({ "trusted": true, "extra": 1 })] {
+        let refused = client
+            .post(format!("http://{addr}/v1/workspace/trust"))
+            .json(&body)
+            .send()
+            .await?;
+        assert_eq!(
+            refused.status(),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "a malformed body must be refused before any write: {body}"
+        );
+    }
+
+    assert_eq!(
+        fs::read(&config_path)?,
+        before,
+        "a refused request must leave the document byte-identical: {config_path}"
+    );
+
+    handle.abort();
+    Ok(())
+}
+
+/// `GET /v1/workspace/status` reports the gate's verdict, not a constant.
+///
+/// Run on one thread and sealed, so the write and the read below resolve the
+/// same config document: this is the deterministic half of the pair above. The
+/// route is the same function the handler spawns, so what is proven here is what
+/// the HTTP read serves.
+#[test]
+fn workspace_bootstrap_status_reports_the_trust_gate() -> Result<()> {
+    let _home = crate::test_support::SealedHome::new();
+    let tmp = tempfile::tempdir()?;
+    let workspace = tmp.path().join("project");
+    fs::create_dir_all(&workspace)?;
+
+    assert!(
+        !collect_workspace_status(&workspace).workspace_trusted,
+        "a fresh workspace must report untrusted"
+    );
+
+    crate::config::set_workspace_trust(&workspace, true)?;
+    assert!(
+        collect_workspace_status(&workspace).workspace_trusted,
+        "the status projection must follow the gate"
+    );
+
+    crate::config::set_workspace_trust(&workspace, false)?;
+    assert!(
+        !collect_workspace_status(&workspace).workspace_trusted,
+        "revoking must be visible to the status projection too"
+    );
     Ok(())
 }

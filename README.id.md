@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:604da19bff2c -->
+<!-- source: README.md sha256:75bb6a506af5 -->
 <div align="center">
 
 <picture>
@@ -22,9 +22,9 @@ pilihan Anda.
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-8ba2bbf.png" alt="Sesi terminal Codewhale" width="760">
+<img src="web/public/codewhale-tui-0102-demo.png" alt="Sesi terminal Codewhale" width="760">
 
-<sub>Tangkapan terminal sungguhan dari instalasi baru, tanpa keluaran yang direkayasa.</sub>
+<sub>Tangkapan terminal Codewhale sungguhan dari sesi demo lokal yang sudah dikonfigurasi.</sub>
 
 </div>
 
@@ -60,6 +60,12 @@ satu mesin akan saling berebut `PATH`.
 
 ## Mulai cepat
 
+**Kelola kunci API penyedia Anda di satu tempat.** [Buat akun Codewhale](https://app.codewhale.net/register)
+atau jalankan `codewhale login` untuk masuk. Simpan dan perbarui kunci API di akun Anda,
+lalu gunakan melalui rute model Codewhale pada perangkat yang sudah masuk.
+[Siapkan kunci akun](docs/CONFIGURATION.md#account-provider-keys).
+Masuk tidak mengunggah kunci lokal yang sudah ada; penggunaan lokal tetap tersedia tanpa akun.
+
 1. **Buka proyek Anda.** Jalankan `codewhale` di folder yang ingin Anda kerjakan.
 2. **Hubungkan model.** Jalankan `/provider` (atau tekan `F3`) untuk menambahkan
    kunci model hosted atau memilih runtime lokal. Jika Ollama sudah berjalan
@@ -74,7 +80,7 @@ Fix the failing tests and explain what changed.
 Tugas yang sama dapat dijalankan secara headless dari skrip atau job CI:
 
 ```bash
-codewhale exec "fix the failing tests and explain what changed"
+codewhale exec --auto "fix the failing tests and explain what changed"
 ```
 
 Jalankan `/help` untuk melihat perintah dan pintasan keyboard.
@@ -87,7 +93,7 @@ alat, dan izin berperilaku sama di mana pun.
 | Perintah | Fungsinya |
 | --- | --- |
 | `codewhale` | Antarmuka terminal interaktif |
-| `codewhale exec "…"` | Satu giliran headless dari skrip atau CI, dengan keluaran JSON streaming |
+| `codewhale exec "…"` | Satu giliran headless dari skrip atau CI; `--auto` mengizinkan alat berkas dan shell, `--output-format stream-json` men-streaming JSON |
 | `codewhale web` | [Klien peramban lokal](docs/WEB.md) bawaan di `127.0.0.1` |
 | `codewhale review --pr N` | [Tinjauan pull request](docs/GITHUB_ACTION.md) yang bersifat saran; pengiriman hasilnya opsional |
 | Runtime API | [API HTTP lokal](docs/RUNTIME_API.md) untuk thread, event, dan persetujuan |
@@ -139,7 +145,7 @@ Full Access tetap menghormati batasan kebijakan yang bersifat mutlak.
 Codewhale berjalan di mesin Anda dengan akses yang Anda berikan. Posture
 persetujuan dan aturan repositori membatasi apa yang boleh dilakukan agen, dan
 perintah dijalankan di dalam sandbox OS jika didukung (Seatbelt di macOS;
-bubblewrap di Linux bersifat opsional). `/preview-request` menampilkan permintaan
+bubblewrap di Linux jika terpasang dan berfungsi). `/preview-request` menampilkan permintaan
 persis yang sudah disamarkan sebelum apa pun dikirim. Harga model yang tidak
 diketahui tetap dicatat sebagai tidak diketahui, bukan dilaporkan gratis.
 

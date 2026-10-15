@@ -346,8 +346,8 @@ use crate::tui::footer_hints::{
 };
 
 fn session_app() -> App {
-    let mut app = crate::test_support::test_app_with_options(
-        crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+    let mut app = crate::tui::test_support::test_app_with_options(
+        crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
     );
     app.onboarding = OnboardingState::None;
     app.launch.visible = false;
@@ -367,6 +367,7 @@ fn set_uses(app: &mut App, key: &str, uses: u8) {
 #[test]
 fn cycle_keys_show_at_zero_and_one_use_and_go_bare_at_two() {
     let mut app = session_app();
+    app.approval_mode = codewhale_execpolicy::ApprovalMode::Suggest;
     let facts = tideline_footer_from_app(&mut app, 120);
     assert_eq!(facts.permission_key.as_deref(), Some("Shift+Tab to change"));
     assert_eq!(facts.mode_key, Some("Tab"));
@@ -509,6 +510,42 @@ fn agent_arrow_hints_show_at_zero_and_one_use_and_clear_at_two() {
 
     set_uses(&mut app, AGENT_ARROWS, 2);
     assert!(tideline_footer_from_app(&mut app, 120).hint.is_none());
+}
+
+/// Esc Esc rewinds the conversation and leaves the files as they are. The
+/// notice gets half the row and loses whole trailing sentences that do not
+/// fit, so the file fact comes first: it is still on screen at 80 columns,
+/// and the pointer to `/undo` joins it once the row is wide enough. The
+/// notice used to read `Rewound to previous user message` and said nothing
+/// about files.
+#[test]
+fn rewind_notice_states_the_file_fact_first_and_names_undo_when_it_fits() {
+    use crate::tui::history::HistoryCell;
+    let mut app = session_app();
+    app.add_message(HistoryCell::User {
+        content: "make whole hours read 2h".to_string(),
+    });
+    app.add_message(HistoryCell::Assistant {
+        content: "Updated duration.mjs".to_string(),
+        streaming: false,
+    });
+
+    crate::tui::ui::apply_backtrack(&mut app, 0);
+
+    assert_eq!(app.input, "make whole hours read 2h");
+    let shown = |app: &mut App, width: u16| {
+        tideline_footer_from_app(app, width)
+            .right
+            .map(|(text, _)| text)
+    };
+    assert_eq!(
+        shown(&mut app, 80).as_deref(),
+        Some("Files not changed. /undo puts them back.")
+    );
+    assert_eq!(
+        shown(&mut app, 124).as_deref(),
+        Some("Files not changed. /undo puts them back. Conversation rewound.")
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -739,8 +776,9 @@ fn narrow_widths_shed_the_clocks_before_the_hint_and_counts() {
 
 #[test]
 fn scheduled_count_opens_automations_directly() {
-    let mut app =
-        crate::test_support::test_app_with_options(crate::test_support::test_tui_options("."));
+    let mut app = crate::tui::test_support::test_app_with_options(
+        crate::tui::test_support::test_tui_options("."),
+    );
     app.automation_panel.active_automations = 2;
     let facts = super::tideline_footer_from_app(&mut app, 140);
     assert_eq!(

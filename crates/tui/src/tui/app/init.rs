@@ -561,7 +561,7 @@ impl App {
         // YOLO is a permission change. A locked policy must not be sidestepped
         // by --yolo, default_mode=yolo, /zidong, or Alt+Y.
         let yolo_compat = yolo_requested && !approval_policy_locked;
-        let needs_workspace_trust = !yolo_compat && crate::tui::onboarding::needs_trust(&workspace);
+        let needs_workspace_trust = !yolo_compat && crate::config::needs_trust(&workspace);
         // The language screen is required only when the locale cannot be
         // confidently inferred from settings or the environment; returning
         // users never see it.
@@ -806,6 +806,7 @@ impl App {
             api_message_stamps: Vec::new(),
             session_journal: crate::session_tree::SessionJournal::new(),
             completed_assistant_outputs: Vec::new(),
+            pending_plan_handoff: None,
             context_token_cache: std::cell::RefCell::new(Default::default()),
             remote_control: crate::remote_control::RemoteControlController::default(),
             start_remote_control_on_launch: start_remote_control,
@@ -874,7 +875,7 @@ impl App {
             configured_sandbox_mode: config.sandbox_mode.clone(),
             configured_sandbox_network: config.sandbox_network_access,
             sandbox_backend: crate::sandbox::get_platform_sandbox_with_bwrap_preference(
-                config.prefer_bwrap.unwrap_or(false),
+                config.prefers_bwrap(),
             ),
             // #4022: the worker thread is spawned lazily on first submit, so
             // constructing an App never costs a thread.
@@ -934,6 +935,7 @@ impl App {
             show_tool_details,
             inline_diff_mode,
             ui_locale,
+            constitution_reviewed_digest: None,
             cost_currency,
             billing_presentation: provider_identity.as_ref().map_or(
                 crate::route_billing::BillingPresentation::Unknown,
@@ -1005,6 +1007,7 @@ impl App {
                 && onboarding == OnboardingState::Language,
             onboarding_had_provider_step: !was_onboarded && needs_api_key,
             onboarding_had_trust_step: !was_onboarded && needs_workspace_trust,
+            local_runtime_detected: false,
             api_key_env_only,
             hooks,
             lifecycle_outbox,
@@ -1132,6 +1135,7 @@ impl App {
             constitution_draft_cell: std::sync::Arc::new(std::sync::Mutex::new(None)),
             mcp_login: None,
             mcp_retries: Vec::new(),
+            mcp_login_reconnect: None,
             prompt_suggestion_cell: std::sync::Arc::new(std::sync::Mutex::new(None)),
             balance_initiated: false,
             last_balance_fetch: None,
@@ -1182,7 +1186,7 @@ impl App {
             prefix_drift_count: 0,
             prefix_context_updates: 0,
             collapsed_cells: HashSet::new(),
-            thinking_folds: HashMap::new(),
+            cell_folds: HashMap::new(),
             collapsed_cell_map: Vec::new(),
             edit_in_progress: false,
             lsp_enabled: config.lsp.as_ref().and_then(|l| l.enabled).unwrap_or(true),
@@ -1209,6 +1213,11 @@ impl App {
             receipt_started_at: None,
             tool_evidence: Vec::new(),
         };
+        // Restore presentation only; the visible-frame tick owns companion startup.
+        app.pet_watch.enabled = settings.pet_mode;
+        if settings.pet_mode {
+            app.launch.visible = false;
+        }
         if yolo_compat {
             app.notify_yolo_compat_once();
         }

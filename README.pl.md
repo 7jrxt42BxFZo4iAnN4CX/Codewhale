@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:604da19bff2c -->
+<!-- source: README.md sha256:75bb6a506af5 -->
 <div align="center">
 
 <picture>
@@ -22,9 +22,9 @@ wybierzesz.
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-8ba2bbf.png" alt="Sesja Codewhale w terminalu" width="760">
+<img src="web/public/codewhale-tui-0102-demo.png" alt="Sesja Codewhale w terminalu" width="760">
 
-<sub>Prawdziwy zrzut terminala po świeżej instalacji — bez reżyserowanego wyjścia.</sub>
+<sub>Prawdziwy zrzut terminala Codewhale ze skonfigurowanej lokalnej sesji demonstracyjnej.</sub>
 
 </div>
 
@@ -60,6 +60,12 @@ na jednej maszynie zaczyna się kłócić o `PATH`.
 
 ## Szybki start
 
+**Klucze API dostawców w jednym miejscu.** [Utwórz konto Codewhale](https://app.codewhale.net/register)
+lub uruchom `codewhale login`, aby się zalogować. Zapisuj i aktualizuj klucze API na swoim koncie,
+a następnie korzystaj z nich przez trasę modeli Codewhale na urządzeniach, na których się zalogowano.
+[Skonfiguruj klucze konta](docs/CONFIGURATION.md#account-provider-keys).
+Logowanie nie przesyła istniejących kluczy lokalnych; korzystanie lokalne jest nadal możliwe bez konta.
+
 1. **Otwórz projekt.** Uruchom `codewhale` w folderze, z którym chcesz pracować.
 2. **Połącz model.** Uruchom `/provider` (lub naciśnij `F3`), aby dodać klucz
    hostowanego dostawcy albo wybrać lokalne środowisko. Jeśli Ollama już działa
@@ -74,7 +80,7 @@ Fix the failing tests and explain what changed.
 To samo zadanie można uruchomić bez interfejsu, ze skryptu lub zadania CI:
 
 ```bash
-codewhale exec "fix the failing tests and explain what changed"
+codewhale exec --auto "fix the failing tests and explain what changed"
 ```
 
 Polecenia i skróty klawiszowe pokaże `/help`.
@@ -87,7 +93,7 @@ narzędzia i uprawnienia zachowują się wszędzie tak samo.
 | Polecenie | Co robi |
 | --- | --- |
 | `codewhale` | Interaktywny interfejs terminalowy |
-| `codewhale exec "…"` | Jedna tura bez interfejsu ze skryptu lub CI, ze strumieniowanym JSON |
+| `codewhale exec "…"` | Jedna tura bez interfejsu ze skryptu lub CI; `--auto` zezwala na narzędzia plików i powłoki, `--output-format stream-json` strumieniuje JSON |
 | `codewhale web` | Wbudowany [lokalny klient przeglądarkowy](docs/WEB.md) pod `127.0.0.1` |
 | `codewhale review --pr N` | Doradczy [przegląd pull requesta](docs/GITHUB_ACTION.md); publikowanie trzeba włączyć |
 | Runtime API | [Lokalne HTTP API](docs/RUNTIME_API.md) dla wątków, zdarzeń i zatwierdzeń |
@@ -138,7 +144,7 @@ Full Access nadal przestrzega twardych granic polityki. Każdą opcję wyjaśnia
 Codewhale działa na Twoim komputerze z dostępem, który mu przyznasz. Postawy
 zatwierdzania i reguły repozytorium ograniczają to, co agent może zrobić, a
 polecenia działają wewnątrz piaskownicy systemowej tam, gdzie jest obsługiwana
-(Seatbelt w macOS; bubblewrap w Linuksie włącza się opcjonalnie).
+(Seatbelt w macOS; bubblewrap w Linuksie, gdy jest zainstalowany i działa).
 `/preview-request` pokazuje dokładne zapytanie z zredagowanymi sekretami, zanim
 cokolwiek zostanie wysłane. Nieznane ceny modeli pozostają nieznane, zamiast być
 podawane jako darmowe.

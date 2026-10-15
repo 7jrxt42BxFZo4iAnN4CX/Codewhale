@@ -58,14 +58,25 @@ fn task_shell_wait_input(mut input: Value) -> Value {
     input
 }
 
+/// Whether a `task_shell_wait` call asks to stop its task rather than poll it.
+///
+/// Only an absent, null or false `cancel` is a poll. Any other value counts as
+/// a stop here, so approval holds the call and names it as one before
+/// execution judges the value's type.
+pub(crate) fn task_shell_wait_requests_cancel(input: &Value) -> bool {
+    input
+        .get("cancel")
+        .is_some_and(|cancel| !cancel.is_null() && cancel.as_bool() != Some(false))
+}
+
 /// Unified durable-task tool (piagent phase B).
 ///
 /// The model sees one tool, `tasks`, with an `action` parameter routing to
 /// the per-action logic below. The per-action `task_*` / `pr_attempt_*`
 /// execution aliases were removed in v0.9.3.
 ///
-/// `TaskShellStartTool` / `TaskShellWaitTool` stay separate: the registry
-/// gates them behind `allow_shell` (see `with_runtime_task_shell_tools`),
+/// `TaskShellWaitTool` stays separate: the registry gates it behind
+/// `allow_shell` (see `with_runtime_task_shell_tools`),
 /// which differs from every other action in this family.
 pub struct TasksTool {
     name: &'static str,
@@ -73,7 +84,6 @@ pub struct TasksTool {
     read_only: bool,
 }
 
-pub struct TaskShellStartTool;
 pub struct TaskShellWaitTool;
 
 /// Actions the Plan-mode read-only surface exposes.
@@ -201,7 +211,7 @@ impl ToolSpec for TasksTool {
                 "Inspect durable tasks and their PR attempts. Actions: \"list\", \"read\", \"pr_attempt_list\", \"pr_attempt_read\"."
             }
             _ => {
-                "Manage durable background tasks through TaskManager. Durable tasks are restart-aware executable work, distinct from sub-agents. Actions: \"create\" (enqueue; approval), \"list\", \"read\", \"cancel\" (approval), \"gate_run\" (run an approved verification gate command and return structured evidence; approval), \"pr_attempt_record\" (approval), \"pr_attempt_list\", \"pr_attempt_read\", \"pr_attempt_preflight\" (approval). Use task_shell_start for long-running shell work."
+                "Manage durable background tasks through TaskManager. Durable tasks are restart-aware executable work, distinct from sub-agents. Actions: \"create\" (enqueue; approval), \"list\", \"read\", \"cancel\" (approval), \"gate_run\" (run an approved verification gate command and return structured evidence; approval), \"pr_attempt_record\" (approval), \"pr_attempt_list\", \"pr_attempt_read\", \"pr_attempt_preflight\" (approval). Run long shell work with the shell tool (background=true to detach immediately; a foreground command still running after 30s moves to the background by itself)."
             }
         }
     }
@@ -920,89 +930,23 @@ impl TasksTool {
 }
 
 #[async_trait]
-impl ToolSpec for TaskShellStartTool {
-    fn name(&self) -> &'static str {
-        "task_shell_start"
-    }
-
-    fn description(&self) -> &'static str {
-        "Start a long-running shell command in the background and return a shell task_id immediately. Completion is delivered automatically as an internal runtime event and remains visible in the task/status surface; use task_shell_wait only for early output, explicit barriers, or gate evidence on the active durable task."
-    }
-
-    fn input_schema(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "command": { "type": "string" },
-                "cwd": { "type": "string", "description": "Optional working directory within the workspace." },
-                "timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 600000, "description": "Accepted for interface compatibility but not enforced: the command always starts in the background and is not bounded by this timeout. A running shell task can be stopped from the model surface via exec_shell with action=cancel and the returned task_id; otherwise it ends when the command finishes." },
-                "stdin": { "type": "string" },
-                "tty": { "type": "boolean" }
-            },
-            "required": ["command"],
-            "additionalProperties": false
-        })
-    }
-
-    fn capabilities(&self) -> Vec<ToolCapability> {
-        vec![
-            ToolCapability::ExecutesCode,
-            ToolCapability::RequiresApproval,
-        ]
-    }
-
-    fn approval_requirement(&self) -> ApprovalRequirement {
-        ApprovalRequirement::Required
-    }
-
-    fn starts_detached_for(&self, input: &Value) -> bool {
-        input.get("command").and_then(Value::as_str).is_some()
-    }
-
-    async fn execute(&self, input: Value, context: &ToolContext) -> Result<ToolResult, ToolError> {
-        crate::core::engine::tool_catalog::enforce_tool_denial(context, self.name(), &input)?;
-        let mut shell_input = json!({
-            "command": required_str(&input, "command")?,
-            "background": true,
-            "timeout_ms": optional_u64(&input, "timeout_ms", DEFAULT_GATE_TIMEOUT_MS)?
-                .clamp(1_000, MAX_GATE_TIMEOUT_MS),
-        });
-        if let Some(cwd) = optional_str(&input, "cwd")? {
-            let cwd = resolve_cwd(context, Some(cwd))?;
-            shell_input["cwd"] = json!(cwd);
-        }
-        if let Some(stdin) = optional_str(&input, "stdin")? {
-            shell_input["stdin"] = json!(stdin);
-        }
-        if optional_bool(&input, "tty", false)? {
-            shell_input["tty"] = json!(true);
-        }
-        let mut result = BashTool::new("Bash").execute(shell_input, context).await?;
-        if let Some(metadata) = result.metadata.as_mut() {
-            metadata["background"] = json!(true);
-            metadata["task_shell"] = json!(true);
-        }
-        Ok(result)
-    }
-}
-
-#[async_trait]
 impl ToolSpec for TaskShellWaitTool {
     fn name(&self) -> &'static str {
         "task_shell_wait"
     }
 
     fn description(&self) -> &'static str {
-        "Poll a background shell task without blocking the agent indefinitely. Completion is delivered automatically; use this only for early output, explicit barriers, or gate evidence. If `gate` is supplied and the shell task has completed, records structured gate evidence on the active durable task."
+        "Poll a background shell task without blocking the agent indefinitely, or stop it with cancel=true. Completion is delivered automatically; use this only for early output, explicit barriers, or gate evidence. If `gate` is supplied and the shell task has completed, records structured gate evidence on the active durable task."
     }
 
     fn input_schema(&self) -> Value {
         json!({
             "type": "object",
             "properties": {
-                "task_id": { "type": "string", "description": "Background shell task id returned by task_shell_start." },
+                "task_id": { "type": "string", "description": "Background shell task id." },
                 "wait": { "type": "boolean", "default": false },
                 "timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 600000 },
+                "cancel": { "type": "boolean", "description": "Stop (kill) the task instead of polling; not valid with gate." },
                 "gate": { "type": "string", "enum": ["fmt", "check", "clippy", "test", "custom"] },
                 "command": { "type": "string", "description": "Original command, used when recording gate evidence." }
             },
@@ -1031,11 +975,31 @@ impl ToolSpec for TaskShellWaitTool {
     }
 
     fn is_read_only_for(&self, input: &Value) -> bool {
-        input.get("gate").is_none_or(Value::is_null)
+        // Recording a gate writes task evidence and `cancel` kills a process;
+        // neither is a read-only poll.
+        input.get("gate").is_none_or(Value::is_null) && !task_shell_wait_requests_cancel(input)
     }
 
     async fn execute(&self, input: Value, context: &ToolContext) -> Result<ToolResult, ToolError> {
         crate::core::engine::tool_catalog::enforce_tool_denial(context, self.name(), &input)?;
+        // The shell cancel action lives on the hidden compatibility tool, which
+        // no model catalog offers. Without this route a model that owns a stuck
+        // background command can watch it but never stop it. The delegate
+        // re-checks deny rules under `exec_shell_cancel` and only kills a task
+        // this session owns.
+        if optional_bool(&input, "cancel", false)? {
+            if optional_str(&input, "gate")?.is_some() {
+                return Err(ToolError::invalid_input(
+                    "cancel=true stops the task and cannot record a gate; nothing was stopped. Send `gate` on a separate call without cancel.",
+                ));
+            }
+            return BashTool::alias("exec_shell_cancel", "cancel")
+                .execute(
+                    json!({"task_id": required_str(&input, "task_id")?}),
+                    context,
+                )
+                .await;
+        }
         let shell_input = task_shell_wait_input(input.clone());
         let result = BashTool::alias("exec_shell_wait", "wait")
             .execute(shell_input, context)
@@ -1600,32 +1564,9 @@ mod tests {
 
     #[test]
     fn background_shell_schema_is_explicit() {
-        let schema = TaskShellStartTool.input_schema();
-        assert_eq!(schema["required"][0], "command");
-        assert_eq!(schema["properties"]["timeout_ms"]["maximum"], 600000);
-
         let wait_schema = TaskShellWaitTool.input_schema();
         assert_eq!(wait_schema["required"][0], "task_id");
         assert!(wait_schema["properties"]["gate"].is_object());
-    }
-
-    // `timeout_ms` rides along for interface compatibility only: the shell
-    // always starts in the background, where no deadline enforces it. The
-    // schema must say so instead of implying a bounded run.
-    #[test]
-    fn background_shell_timeout_disclosure_admits_it_is_not_enforced() {
-        let schema = TaskShellStartTool.input_schema();
-        let timeout_ms = schema["properties"]["timeout_ms"]["description"]
-            .as_str()
-            .expect("timeout_ms must carry a description");
-        assert!(
-            timeout_ms.contains("not enforced"),
-            "timeout_ms must disclose that the background run is unbounded: {timeout_ms}"
-        );
-        assert!(
-            timeout_ms.contains("cancel"),
-            "timeout_ms must point at the exec_shell cancel path that can stop the run: {timeout_ms}"
-        );
     }
 
     // The gate blocks dangerous commands unless auto-approve is on, and the
@@ -1697,8 +1638,8 @@ mod tests {
     async fn task_shell_wait_null_is_a_nonblocking_snapshot() {
         let workspace = tempfile::tempdir().expect("workspace");
         let context = ToolContext::new(workspace.path());
-        let started = TaskShellStartTool
-            .execute(json!({"command": "sleep 2", "timeout_ms": 5_000}), &context)
+        let started = BashTool::new("Bash")
+            .execute(json!({"command": "sleep 2", "background": true}), &context)
             .await
             .expect("start background shell");
         let task_id = started
@@ -1734,6 +1675,71 @@ mod tests {
             .execute(json!({"task_id": task_id}), &context)
             .await
             .expect("cancel background shell");
+    }
+
+    // A foreground command that outlives its wait moves to the background, and
+    // the model that owns it sees only the task shell tools: the shell cancel
+    // action is on a hidden tool. `task_shell_wait` has to be able to stop the
+    // task it polls, and stopping is not a read-only poll.
+    #[tokio::test]
+    async fn task_shell_wait_cancel_stops_the_background_task() {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let context = ToolContext::new(workspace.path());
+        let started = BashTool::new("Bash")
+            .execute(json!({"command": "sleep 30", "background": true}), &context)
+            .await
+            .expect("start background shell");
+        let task_id = started
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("task_id"))
+            .and_then(Value::as_str)
+            .expect("task id")
+            .to_string();
+
+        let tool = TaskShellWaitTool;
+        assert!(tool.input_schema()["properties"]["cancel"].is_object());
+        for held in [json!(true), json!("true"), json!(1)] {
+            let input = json!({"task_id": task_id, "cancel": held});
+            assert_eq!(
+                tool.approval_requirement_for(&input),
+                ApprovalRequirement::Required,
+                "{input}"
+            );
+            assert!(!tool.is_read_only_for(&input), "{input}");
+        }
+        for polled in [json!(false), Value::Null] {
+            let input = json!({"task_id": task_id, "cancel": polled});
+            assert!(tool.is_read_only_for(&input), "{input}");
+        }
+
+        let with_gate = tool
+            .execute(
+                json!({"task_id": task_id, "cancel": true, "gate": "test"}),
+                &context,
+            )
+            .await
+            .expect_err("cancel cannot record a gate");
+        assert!(with_gate.to_string().contains("cancel=true"), "{with_gate}");
+
+        let canceled = tool
+            .execute(json!({"task_id": task_id, "cancel": true}), &context)
+            .await
+            .expect("cancel background shell");
+        assert!(
+            canceled.content.contains("Canceled background command")
+                && canceled.content.contains(&task_id),
+            "{}",
+            canceled.content
+        );
+        assert_eq!(
+            canceled
+                .metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("status"))
+                .and_then(Value::as_str),
+            Some("Killed")
+        );
     }
 
     /// Creating a task from a session runs it on the posture that session

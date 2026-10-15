@@ -176,7 +176,7 @@ impl<'a> ApprovalWidget<'a> {
         } else {
             let mut rendered_detail = false;
             for detail in details.iter().take(4) {
-                let is_change_preview = matches!(detail.label.as_str(), "Preview" | "预览");
+                let is_change_preview = detail.is_preview;
                 if let Some(shell_lines) = detail.shell_lines.as_deref() {
                     let command_width = area.width.saturating_sub(10) as usize;
                     // A short approval band has room for only one detail row
@@ -718,14 +718,18 @@ fn build_approval_controls(
         } else {
             Span::raw("  ")
         };
-        controls.push(Line::from(vec![
+        let mut spans = vec![
             lead,
             Span::styled(
                 format!("[{}] ", opt.key_hint),
                 shortcut_style.add_modifier(Modifier::BOLD),
             ),
             Span::styled(opt.label.to_string(), option_style),
-        ]));
+        ];
+        if is_selected {
+            spans.push(Span::styled(" (Enter)", shortcut_style));
+        }
+        controls.push(Line::from(spans));
     }
     controls.push(Line::from(vec![
         Span::raw("  "),

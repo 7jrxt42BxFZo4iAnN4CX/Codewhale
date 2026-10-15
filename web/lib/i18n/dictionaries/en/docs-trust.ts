@@ -16,6 +16,25 @@ export const docsTrust: DocsTrustDict = {
     "Codewhale runs on your computer and talks to the model provider you choose. This page lists what goes where, what the anonymous usage count contains, and how to switch it off — as built today.",
   sections: [
     {
+      "id": "preview-request",
+      "title": "See the request before sending",
+      "blocks": [
+        {
+          "p": "/preview-request shows a redacted manifest of the next primary turn. This human command never sends a request or writes conversation or Work state."
+        },
+        {
+          "code": "/preview-request\n/preview-request json\n/preview-request json --prompt explain this project",
+          "lang": "Codewhale"
+        },
+        {
+          "note": "Without --prompt, route and body are unavailable. A configured classifier, hooks or pending runtime work can also prevent an exact preview; the manifest states why."
+        },
+        {
+          "p": "[Read the request preview contract](https://github.com/codewhale-hq/CodeWhale/blob/main/docs/PREVIEW_REQUEST.md)"
+        }
+      ]
+    },
+    {
       id: "boundaries",
       title: "Where your work goes",
       blocks: [

@@ -59,6 +59,7 @@ use tempfile::TempDir;
 
 mod conversation_undo;
 mod model_picker_actions;
+mod plan_handoff;
 mod runtime_store_binding;
 
 #[test]
@@ -230,10 +231,10 @@ fn frame_cursor_is_hidden_during_diff_then_positioned_before_reveal() {
 
 #[test]
 fn workbar_rows_sit_under_the_status_row_one_per_workflow() {
-    let mut app = crate::test_support::test_app_with_options(crate::tui::app::TuiOptions {
+    let mut app = crate::tui::test_support::test_app_with_options(crate::tui::app::TuiOptions {
         model: "deepseek-v4-flash".to_string(),
         start_in_agent_mode: true,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     });
     app.onboarding = crate::tui::app::OnboardingState::None;
     app.launch.visible = false;
@@ -339,11 +340,12 @@ fn composer_rows_stay_pinned_across_turn_state_transitions() {
     // displace the composer, relocate the route into the footer, or drop
     // the phase verb from the footer's left half.
     fn frame_app() -> App {
-        let mut app = crate::test_support::test_app_with_options(crate::tui::app::TuiOptions {
-            model: "deepseek-v4-flash".to_string(),
-            start_in_agent_mode: true,
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
-        });
+        let mut app =
+            crate::tui::test_support::test_app_with_options(crate::tui::app::TuiOptions {
+                model: "deepseek-v4-flash".to_string(),
+                start_in_agent_mode: true,
+                ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
+            });
         app.onboarding = crate::tui::app::OnboardingState::None;
         app.launch.visible = false;
         app.ui_locale = codewhale_localization::Locale::En;
@@ -886,15 +888,25 @@ fn bracketed_paste_returns_dock_focus_to_the_visible_composer() {
 /// One representative terminal encoding per shell binding.
 fn shell_binding_probe(id: ShellBindingId) -> KeyEvent {
     match id {
+        ShellBindingId::TerminalNew => KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL),
+        ShellBindingId::TerminalNext => KeyEvent::new(KeyCode::Down, KeyModifiers::ALT),
+        ShellBindingId::TerminalPrevious => KeyEvent::new(KeyCode::Up, KeyModifiers::ALT),
+        ShellBindingId::TerminalDetach => KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
         ShellBindingId::ElevationUp => KeyEvent::new(KeyCode::Up, KeyModifiers::NONE),
         ShellBindingId::ElevationDown => KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
         ShellBindingId::ElevationConfirm => KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
         ShellBindingId::ElevationAbort => KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+        ShellBindingId::PetInspect => KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE),
         ShellBindingId::PetResultUp => KeyEvent::new(KeyCode::Up, KeyModifiers::NONE),
         ShellBindingId::PetResultDown => KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
         ShellBindingId::PetResultPageUp => KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
         ShellBindingId::PetResultPageDown => KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE),
         ShellBindingId::PetBack => KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+        ShellBindingId::PetResultStart => KeyEvent::new(KeyCode::Home, KeyModifiers::NONE),
+        ShellBindingId::PetResultEnd => KeyEvent::new(KeyCode::End, KeyModifiers::NONE),
+        ShellBindingId::PetFocusAgents => KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
+        ShellBindingId::PetOpenAgent => KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+        ShellBindingId::PetCopyReply => KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE),
         ShellBindingId::PetSound => KeyEvent::new(KeyCode::F(6), KeyModifiers::NONE),
         ShellBindingId::PetBrowser => KeyEvent::new(KeyCode::F(8), KeyModifiers::NONE),
         ShellBindingId::PetWindow => KeyEvent::new(KeyCode::F(9), KeyModifiers::NONE),
@@ -962,9 +974,13 @@ fn no_shell_binding_changes_meaning_once_the_composer_has_text() {
             .focus
             .admits(crate::tui::shell_key_routing::Focus::Composer)
         {
-            assert_eq!(
-                on_typed, None,
-                "exclusive view keys must not act on a draft"
+            // A chord may serve a different owner: Tab cycles the composer's
+            // mode and switches panes inside pet mode. The modal binding
+            // itself must never act on the composer draft.
+            assert_ne!(
+                on_typed,
+                Some(binding.id),
+                "exclusive view bindings must not act on a draft"
             );
             continue;
         }
@@ -1420,11 +1436,7 @@ fn canonical_background_bash_keeps_live_task_identity_for_follow_up_actions() {
     assert_eq!(exec.shell_task_id.as_deref(), Some("shell-42"));
     assert_eq!(exec.command, "cargo test --workspace");
     assert!(exec.output.is_none());
-    assert!(
-        exec.live_output
-            .as_deref()
-            .is_some_and(|output| { output.contains("Background task started: shell-42") })
-    );
+    assert!(exec.live_output.is_none());
 }
 
 #[test]
@@ -2776,7 +2788,10 @@ fn plain_mcp_show_refreshes_discovery_counts() {
         !mcp_ui_action_refreshes_discovery(&McpUiAction::Show),
         "plain /mcp snapshots the engine-owned live pool, not a UI discovery pool"
     );
-    assert!(mcp_ui_action_refreshes_discovery(&McpUiAction::Validate));
+    assert!(
+        !mcp_ui_action_refreshes_discovery(&McpUiAction::Validate),
+        "validate reports the last observed live pool, not a UI discovery pool"
+    );
     assert!(!mcp_ui_action_refreshes_discovery(&McpUiAction::Login {
         name: "fixture".to_string(),
         scopes: Vec::new(),
@@ -3164,7 +3179,7 @@ async fn mcp_login_stalled_discovery_is_cancellable_and_repeat_clicks_keep_one_o
     let temp = tempfile::tempdir().unwrap();
     let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", temp.path());
     let _backend = crate::test_support::EnvVarGuard::set("CODEWHALE_SECRET_BACKEND", "file");
-    let _proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*");
+    let _proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut app = create_test_app();
     app.workspace = temp.path().to_path_buf();
@@ -3303,14 +3318,7 @@ fn mcp_login_progress_preserves_cancel_until_finish_and_ignores_cancelled_mailbo
     *progress.lock().unwrap() = Some(McpLoginProgress::Finished(Ok(())));
     poll_mcp_login(&mut app);
     assert!(app.mcp_login.is_none());
-    assert!(
-        app.status_toasts
-            .back()
-            .unwrap()
-            .text
-            .as_str()
-            .contains("Stored OAuth credentials")
-    );
+    assert_eq!(app.mcp_login_reconnect.as_deref(), Some("fixture"));
     assert!(token.is_cancelled());
     let completed = app.status_toasts.back().unwrap().text.clone();
     *progress.lock().unwrap() = Some(McpLoginProgress::Finished(Err("late failure".into())));
@@ -4438,7 +4446,7 @@ fn selection_to_text_copies_rendered_transcript_block() {
         !selected.contains("Ctrl+O"),
         "detail affordance leaked into the selection: {selected:?}"
     );
-    assert!(selected.contains("run Done · cargo check"), "{selected:?}");
+    assert!(selected.contains("run done · cargo check"), "{selected:?}");
     assert!(selected.contains("copy assistant"), "{selected:?}");
     // #1163: tool-card middle lines are rendered with a `│ ` left rail
     // glyph, but that decoration must not leak into copied text. Assert
@@ -4452,13 +4460,13 @@ fn selection_to_text_copies_rendered_transcript_block() {
 
     // The same stored body becomes selectable when the reader expands it.
     // This distinguishes correct folding from losing reasoning altogether.
-    app.thinking_folds.insert(2, ThinkingFold::Expanded);
+    app.cell_folds.insert(2, TranscriptFold::Expanded);
     app.viewport.transcript_cache.ensure_split(
         &[&app.history],
         &app.history_revisions,
         80,
         app.transcript_render_options(),
-        &app.thinking_folds,
+        &app.cell_folds,
         None,
         None,
     );
@@ -4637,8 +4645,8 @@ fn mouse_selection_fragment_drag_copies_exact_text() {
         "must not round out to the whole cell, got {copied:?}"
     );
     assert_eq!(
-        app.status_message.as_deref(),
-        Some("Selection copied"),
+        app.status_toasts.back().map(|toast| toast.text.as_str()),
+        Some("Copied to the clipboard"),
         "fragment copy reports through the text-fallback receipt"
     );
     assert!(
@@ -5783,12 +5791,12 @@ fn tool_path_relevance_extracts_paths_from_command_text() {
 }
 
 fn create_test_app() -> App {
-    let mut app = crate::test_support::test_app_with_options(TuiOptions {
+    let mut app = crate::tui::test_support::test_app_with_options(TuiOptions {
         // Keep UI tests independent from the developer's saved
         // `default_mode` setting.
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     });
     // These suites assert legacy strip geometry (work surface above the
     // transcript). The Bottom default (round 3, 2026-09-01) has dedicated
@@ -6659,18 +6667,22 @@ fn running_exec_cell() -> HistoryCell {
         duration_ms: Some(20),
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     }))
 }
 
 #[test]
-fn completed_answer_clears_stale_reasoning_expand_hint() {
+fn completed_answer_space_round_trip_keeps_its_owner_and_clears_reasoning_hint() {
     let mut app = create_test_app();
     app.history = vec![
         long_reasoning("reasoning", false),
         HistoryCell::Assistant {
-            content: "The answer is complete.".to_string(),
+            content: (1..=8)
+                .map(|line| format!("answer line {line:02}"))
+                .collect::<Vec<_>>()
+                .join("\n\n"),
             streaming: false,
         },
     ];
@@ -6688,7 +6700,136 @@ fn completed_answer_clears_stale_reasoning_expand_hint() {
         "a reasoning cell must not advertise Space while cell 1 owns the key: {surface}"
     );
     assert!(handle_transcript_space(&mut app));
-    assert!(app.collapsed_cells.contains(&1));
+    assert_eq!(app.cell_folds.get(&1), Some(&TranscriptFold::Collapsed));
+    assert!(app.collapsed_cells.is_empty());
+    let folded = render_underwater_test_app(&mut app, 100, 32);
+    assert!(folded.contains("answer line 01"), "{folded}");
+    assert!(!folded.contains("answer line 08"), "{folded}");
+    assert!(folded.contains("Space:expand"), "{folded}");
+    assert_eq!(
+        app.viewport
+            .transcript_cache
+            .fold_action_target()
+            .map(|target| target.owner.cell_index),
+        Some(1)
+    );
+
+    // Hiding reasoning must not disable an ordinary answer's expand control.
+    app.show_thinking = false;
+    let _ = render_underwater_test_app(&mut app, 100, 32);
+    assert!(handle_transcript_space(&mut app));
+    assert_eq!(app.cell_folds.get(&1), Some(&TranscriptFold::Expanded));
+    assert!(!app.cell_folds.contains_key(&0));
+    assert!(
+        !handle_transcript_space(&mut app),
+        "a rendered action is single-use"
+    );
+    let expanded = render_underwater_test_app(&mut app, 100, 32);
+    assert!(expanded.contains("answer line 08"), "{expanded}");
+    assert!(!expanded.contains("Space:expand"), "{expanded}");
+    assert!(app.collapsed_cells.is_empty());
+    let HistoryCell::Assistant { content, .. } = &app.history[1] else {
+        panic!("answer retained");
+    };
+    assert!(content.contains("answer line 08"));
+}
+
+#[test]
+fn answer_fold_survives_hidden_index_mapping_and_keeps_copy_boundaries() {
+    use crate::tui::mouse_ui::apply_context_menu_action;
+    use crate::tui::views::ContextMenuAction;
+
+    let mut app = create_test_app();
+    app.history = vec![
+        HistoryCell::User {
+            content: "EXPLICITLY_HIDDEN".into(),
+        },
+        HistoryCell::Assistant {
+            content: "preview_word ".repeat(120),
+            streaming: false,
+        },
+        HistoryCell::Assistant {
+            content: "NEXT_MESSAGE".into(),
+            streaming: false,
+        },
+    ];
+    app.resync_history_revisions();
+    let _ = apply_context_menu_action(&mut app, ContextMenuAction::HideCell { cell_index: 0 });
+    let full = render_underwater_test_app(&mut app, 60, 32);
+    assert!(!full.contains("EXPLICITLY_HIDDEN"));
+    assert_eq!(app.collapsed_cell_map, vec![1, 2]);
+    select_original_cell(&mut app, 1);
+    let middle = TranscriptSelectionPoint {
+        line_index: app.viewport.transcript_selection.anchor.unwrap().line_index + 8,
+        column: 5,
+    };
+    app.viewport.transcript_selection.anchor = Some(middle);
+    app.viewport.transcript_selection.head = Some(middle);
+    let _ = render_underwater_test_app(&mut app, 60, 32);
+    assert!(handle_transcript_space(&mut app));
+    let folded = render_underwater_test_app(&mut app, 60, 32);
+    assert!(folded.contains("Space:expand"), "{folded}");
+    assert_eq!(app.collapsed_cell_map, vec![1, 2]);
+    assert_eq!(
+        app.transcript_action_owner().map(|owner| owner.cell_index),
+        Some(1)
+    );
+    assert!(
+        handle_transcript_space(&mut app),
+        "second Space needs no reselection"
+    );
+    assert_eq!(app.cell_folds.get(&1), Some(&TranscriptFold::Expanded));
+    assert!(
+        !app.cell_folds.contains_key(&2),
+        "newer answer stays untouched"
+    );
+    let _ = render_underwater_test_app(&mut app, 60, 32);
+    assert!(handle_transcript_space(&mut app));
+    let _ = render_underwater_test_app(&mut app, 60, 32);
+    app.viewport.transcript_selection.anchor = Some(TranscriptSelectionPoint {
+        line_index: 0,
+        column: 0,
+    });
+    app.viewport.transcript_selection.head = Some(TranscriptSelectionPoint {
+        line_index: app
+            .viewport
+            .transcript_cache
+            .total_lines()
+            .saturating_sub(1),
+        column: 60,
+    });
+    let copied = selection_to_text(&app).expect("folded selection");
+    let next = copied
+        .lines()
+        .find(|line| line.contains("NEXT_MESSAGE"))
+        .expect("next message retained");
+    assert!(
+        !next.contains("preview_word"),
+        "truncation must not join separate messages: {copied}"
+    );
+    assert!(
+        !copied.contains("Space:") && !copied.contains('…'),
+        "control row is not body: {copied}"
+    );
+
+    let _ = apply_context_menu_action(&mut app, ContextMenuAction::HideCell { cell_index: 1 });
+    let hidden = render_underwater_test_app(&mut app, 60, 32);
+    assert!(
+        !hidden.contains("preview_word"),
+        "explicit Hide removes the preview too"
+    );
+    assert_eq!(app.collapsed_cell_map, vec![2]);
+    let _ = apply_context_menu_action(&mut app, ContextMenuAction::ShowCell { cell_index: 1 });
+    let _ = render_underwater_test_app(&mut app, 60, 32);
+    assert_eq!(app.collapsed_cell_map, vec![1, 2]);
+    select_original_cell(&mut app, 1);
+    let _ = render_underwater_test_app(&mut app, 60, 32);
+    assert!(handle_transcript_space(&mut app));
+    assert_eq!(app.cell_folds.get(&1), Some(&TranscriptFold::Expanded));
+    assert_eq!(app.collapsed_cells, HashSet::from([0]));
+    let _ = apply_context_menu_action(&mut app, ContextMenuAction::ShowAllHidden);
+    let _ = render_underwater_test_app(&mut app, 60, 32);
+    assert!(app.collapsed_cells.is_empty());
 }
 
 #[test]
@@ -6722,14 +6863,14 @@ fn selected_reasoning_hint_and_space_share_one_owner() {
     );
     assert!(handle_transcript_space(&mut app));
     assert_eq!(
-        app.thinking_folds.get(&0),
-        Some(&ThinkingFold::Expanded),
+        app.cell_folds.get(&0),
+        Some(&TranscriptFold::Expanded),
         "Space on a collapsed cell records an explicit expand"
     );
     assert!(!handle_transcript_space(&mut app));
     assert_eq!(
-        app.thinking_folds.get(&0),
-        Some(&ThinkingFold::Expanded),
+        app.cell_folds.get(&0),
+        Some(&TranscriptFold::Expanded),
         "rendered action is single-use"
     );
 
@@ -6738,20 +6879,20 @@ fn selected_reasoning_hint_and_space_share_one_owner() {
     assert!(!expanded.contains("Space:expand"));
     assert!(!expanded.contains("Space:collapse"));
     assert_eq!(
-        app.viewport.transcript_cache.reasoning_action_target(),
-        Some(crate::tui::history::ReasoningActionTarget {
+        app.viewport.transcript_cache.fold_action_target(),
+        Some(crate::tui::history::CellFoldActionTarget {
             owner: crate::tui::history::TranscriptActionOwner {
                 cell_index: 0,
                 identity_epoch: app.transcript_identity_epoch,
             },
-            action: crate::tui::history::ReasoningAction::Collapse,
+            action: crate::tui::history::CellFoldAction::Collapse,
         })
     );
 
     app.history[0] = oversized_reasoning("selected", false);
     app.bump_history_cell(0);
     let _ = render_underwater_test_app(&mut app, 100, 32);
-    assert_eq!(app.thinking_folds.get(&0), Some(&ThinkingFold::Expanded));
+    assert_eq!(app.cell_folds.get(&0), Some(&TranscriptFold::Expanded));
     assert!(
         app.viewport
             .transcript_cache
@@ -6763,8 +6904,8 @@ fn selected_reasoning_hint_and_space_share_one_owner() {
 
     assert!(handle_transcript_space(&mut app));
     assert_eq!(
-        app.thinking_folds.get(&0),
-        Some(&ThinkingFold::Collapsed),
+        app.cell_folds.get(&0),
+        Some(&TranscriptFold::Collapsed),
         "Space on an expanded cell records an explicit collapse"
     );
     let collapsed_again = render_underwater_test_app(&mut app, 100, 32);
@@ -6773,14 +6914,14 @@ fn selected_reasoning_hint_and_space_share_one_owner() {
 
 #[test]
 fn selected_reasoning_actions_roundtrip_for_every_expansion_baseline() {
-    use crate::tui::history::ReasoningAction;
+    use crate::tui::history::CellFoldAction;
 
     for verbose in [false, true] {
         for default_expanded in [false, true] {
             for initial_fold in [
                 None,
-                Some(ThinkingFold::Expanded),
-                Some(ThinkingFold::Collapsed),
+                Some(TranscriptFold::Expanded),
+                Some(TranscriptFold::Collapsed),
             ] {
                 let mut app = create_test_app();
                 app.verbose_transcript = verbose;
@@ -6788,7 +6929,7 @@ fn selected_reasoning_actions_roundtrip_for_every_expansion_baseline() {
                 app.thinking_preview_lines = 4;
                 app.history = vec![oversized_reasoning("baseline", false)];
                 if let Some(fold) = initial_fold {
-                    app.thinking_folds.insert(0, fold);
+                    app.cell_folds.insert(0, fold);
                 }
                 app.resync_history_revisions();
                 // Keep a long body so expanded and collapsed states are
@@ -6797,8 +6938,8 @@ fn selected_reasoning_actions_roundtrip_for_every_expansion_baseline() {
                 select_original_cell(&mut app, 0);
 
                 let initially_expanded = match initial_fold {
-                    Some(ThinkingFold::Expanded) => true,
-                    Some(ThinkingFold::Collapsed) => false,
+                    Some(TranscriptFold::Expanded) => true,
+                    Some(TranscriptFold::Collapsed) => false,
                     None => verbose || default_expanded,
                 };
                 for (step, expanded) in
@@ -6823,15 +6964,15 @@ fn selected_reasoning_actions_roundtrip_for_every_expansion_baseline() {
                     let target = app
                         .viewport
                         .transcript_cache
-                        .reasoning_action_target()
+                        .fold_action_target()
                         .expect("selected reasoning has a rendered action");
                     assert_eq!(target.owner.cell_index, 0);
                     assert_eq!(
                         target.action,
                         if expanded {
-                            ReasoningAction::Collapse
+                            CellFoldAction::Collapse
                         } else {
-                            ReasoningAction::Expand
+                            CellFoldAction::Expand
                         }
                     );
                     if step < 2 {
@@ -6841,11 +6982,11 @@ fn selected_reasoning_actions_roundtrip_for_every_expansion_baseline() {
                 // Two toggles land back on the state the cell started in —
                 // now recorded outright rather than inferred from a baseline.
                 assert_eq!(
-                    app.thinking_folds.get(&0),
+                    app.cell_folds.get(&0),
                     Some(&if initially_expanded {
-                        ThinkingFold::Expanded
+                        TranscriptFold::Expanded
                     } else {
-                        ThinkingFold::Collapsed
+                        TranscriptFold::Collapsed
                     }),
                 );
             }
@@ -6954,7 +7095,7 @@ fn mouse_selection_redraws_and_retargets_reasoning_with_unchanged_revisions() {
     let _ = render_underwater_test_app(&mut app, 100, 32);
     assert_eq!(reasoning_hint_cells(&app), vec![0]);
     assert!(handle_transcript_space(&mut app));
-    assert_eq!(app.thinking_folds.get(&0), Some(&ThinkingFold::Expanded));
+    assert_eq!(app.cell_folds.get(&0), Some(&TranscriptFold::Expanded));
 }
 
 #[test]
@@ -6987,8 +7128,16 @@ fn mouse_up_preserves_the_single_click_action_and_detail_owner() {
     assert_eq!(detail_target_cell_index(&app), Some(0));
     let _ = render_underwater_test_app(&mut app, 100, 32);
     assert!(handle_transcript_space(&mut app));
-    assert!(app.collapsed_cells.contains(&0));
-    assert!(!app.collapsed_cells.contains(&1));
+    assert_eq!(app.cell_folds.get(&0), Some(&TranscriptFold::Collapsed));
+    assert!(!app.cell_folds.contains_key(&1));
+    assert!(app.collapsed_cells.is_empty());
+    let _ = render_underwater_test_app(&mut app, 100, 32);
+    assert_eq!(
+        app.transcript_action_owner().map(|owner| owner.cell_index),
+        Some(0)
+    );
+    assert!(handle_transcript_space(&mut app));
+    assert_eq!(app.cell_folds.get(&0), Some(&TranscriptFold::Expanded));
 }
 
 #[test]
@@ -7030,13 +7179,13 @@ fn calm1_reasoning_frames_keep_fixed_budgets_and_explicit_expansion() {
             app.history = vec![reasoning_with_lines("fixture", 20, streaming)];
             app.resync_history_revisions();
             if expanded {
-                app.thinking_folds.insert(0, ThinkingFold::Expanded);
+                app.cell_folds.insert(0, TranscriptFold::Expanded);
             }
             let surface = render_underwater_test_app(&mut app, width, height);
             let rows = app.viewport.last_transcript_total;
             if expanded {
                 assert!(rows >= 21);
-                assert_eq!(app.thinking_folds.get(&0), Some(&ThinkingFold::Expanded));
+                assert_eq!(app.cell_folds.get(&0), Some(&TranscriptFold::Expanded));
                 assert!(surface.contains("fixture line 20"), "{surface}");
             } else {
                 assert_eq!(rows, if streaming { 4 } else { 1 }, "{surface}");
@@ -7070,7 +7219,7 @@ fn advertised_reasoning_space_dispatches_after_first_char_paste_hold() {
     let space = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE);
     assert!(handle_plain_key_before_composer(&mut app, &space, now));
     assert!(
-        app.thinking_folds.is_empty(),
+        app.cell_folds.is_empty(),
         "Space remains ambiguous until the first-character hold expires"
     );
     assert!(app.input.is_empty(), "Space must not enter the composer");
@@ -7083,8 +7232,8 @@ fn advertised_reasoning_space_dispatches_after_first_char_paste_hold() {
         now + crate::tui::paste_burst::PasteBurst::recommended_flush_delay()
     ));
     assert_eq!(
-        app.thinking_folds.get(&0),
-        Some(&ThinkingFold::Expanded),
+        app.cell_folds.get(&0),
+        Some(&TranscriptFold::Expanded),
         "a lone Space must dispatch the rendered transcript action after the hold"
     );
     assert!(
@@ -7124,7 +7273,7 @@ fn raw_paste_beginning_with_space_preserves_payload_over_reasoning_action() {
         now + Duration::from_millis(1),
     ));
     assert!(
-        app.thinking_folds.is_empty(),
+        app.cell_folds.is_empty(),
         "a leading-space raw paste must not trigger transcript actions"
     );
     assert!(flush_paste_burst_before_composer(
@@ -7213,7 +7362,7 @@ fn active_raw_paste_keeps_space_as_payload_over_reasoning_action() {
         now + Duration::from_millis(1),
     ));
     assert!(
-        app.thinking_folds.is_empty(),
+        app.cell_folds.is_empty(),
         "an in-flight raw paste must not trigger transcript actions"
     );
     assert!(app.flush_paste_burst_if_due(
@@ -7367,7 +7516,7 @@ fn active_streaming_reasoning_keeps_its_visible_owner_across_a_delta() {
     assert_ne!(app.history_version, rendered_version);
     assert_eq!(app.transcript_identity_epoch, rendered_epoch);
     assert!(handle_transcript_space(&mut app));
-    assert_eq!(app.thinking_folds.get(&1), Some(&ThinkingFold::Expanded));
+    assert_eq!(app.cell_folds.get(&1), Some(&TranscriptFold::Expanded));
 }
 
 #[test]
@@ -7390,7 +7539,7 @@ fn interrupted_active_reasoning_remains_actionable_after_flush() {
     assert!(app.active_cell.is_none());
     assert_eq!(app.transcript_identity_epoch, epoch);
     assert!(handle_transcript_space(&mut app));
-    assert_eq!(app.thinking_folds.get(&0), Some(&ThinkingFold::Expanded));
+    assert_eq!(app.cell_folds.get(&0), Some(&TranscriptFold::Expanded));
     let _ = render_underwater_test_app(&mut app, 60, 16);
 }
 
@@ -7426,7 +7575,7 @@ fn pending_scroll_retargets_reasoning_in_the_same_frame() {
     assert_eq!(
         app.viewport
             .transcript_cache
-            .reasoning_action_target()
+            .fold_action_target()
             .map(|target| target.owner.cell_index),
         Some(0)
     );
@@ -7458,7 +7607,7 @@ fn visible_older_reasoning_owns_space_over_a_newer_offscreen_tool() {
     );
     assert_eq!(detail_target_cell_index(&app), Some(1));
     assert!(handle_transcript_space(&mut app));
-    assert_eq!(app.thinking_folds.get(&0), Some(&ThinkingFold::Expanded));
+    assert_eq!(app.cell_folds.get(&0), Some(&TranscriptFold::Expanded));
     assert!(!app.collapsed_cells.contains(&1) && app.expanded_tool_runs.is_empty());
 }
 
@@ -7474,21 +7623,16 @@ fn hidden_reasoning_is_unhidden_instead_of_folded() {
     app.collapsed_cells.insert(0);
     assert!(handle_transcript_space(&mut app));
     assert!(!app.collapsed_cells.contains(&0));
-    assert!(!app.thinking_folds.contains_key(&0));
+    assert!(!app.cell_folds.contains_key(&0));
 
     app.collapsed_cells.insert(0);
     let surface = render_underwater_test_app(&mut app, 60, 16);
     assert!(!surface.contains("Space:expand"));
-    assert!(
-        app.viewport
-            .transcript_cache
-            .reasoning_action_target()
-            .is_none()
-    );
+    assert!(app.viewport.transcript_cache.fold_action_target().is_none());
 
     assert!(handle_transcript_space(&mut app));
     assert!(!app.collapsed_cells.contains(&0));
-    assert!(!app.thinking_folds.contains_key(&0));
+    assert!(!app.cell_folds.contains_key(&0));
     let visible = render_underwater_test_app(&mut app, 60, 16);
     assert!(visible.contains("Space:expand"));
 }
@@ -7504,11 +7648,11 @@ fn stale_rendered_reasoning_owner_cannot_toggle_replacement() {
     app.push_history_cell(long_reasoning("replacement", false));
     assert_ne!(app.transcript_identity_epoch, rendered_epoch);
     assert!(!handle_transcript_space(&mut app));
-    assert!(app.thinking_folds.is_empty());
+    assert!(app.cell_folds.is_empty());
 
     let _ = render_underwater_test_app(&mut app, 80, 24);
     assert!(handle_transcript_space(&mut app));
-    assert_eq!(app.thinking_folds.get(&0), Some(&ThinkingFold::Expanded));
+    assert_eq!(app.cell_folds.get(&0), Some(&TranscriptFold::Expanded));
 }
 
 #[test]
@@ -7526,10 +7670,10 @@ fn pop_and_truncate_prune_index_state_before_replacement() {
     for set in [&mut app.collapsed_cells, &mut app.expanded_tool_runs] {
         set.insert(1);
     }
-    app.thinking_folds.insert(1, ThinkingFold::Expanded);
+    app.cell_folds.insert(1, TranscriptFold::Expanded);
     app.collapsed_cell_map = vec![0, 1];
     app.pop_history();
-    assert!(app.collapsed_cells.is_empty() && app.thinking_folds.is_empty());
+    assert!(app.collapsed_cells.is_empty() && app.cell_folds.is_empty());
     assert!(app.expanded_tool_runs.is_empty() && app.collapsed_cell_map.is_empty());
     app.push_history_cell(HistoryCell::Assistant {
         content: "after pop".into(),
@@ -7542,14 +7686,14 @@ fn pop_and_truncate_prune_index_state_before_replacement() {
     for set in [&mut app.collapsed_cells, &mut app.expanded_tool_runs] {
         set.insert(1);
     }
-    app.thinking_folds.insert(1, ThinkingFold::Expanded);
+    app.cell_folds.insert(1, TranscriptFold::Expanded);
     app.truncate_history_to(1);
     app.push_history_cell(HistoryCell::Assistant {
         content: "after truncate".into(),
         streaming: false,
     });
     assert!(!handle_transcript_space(&mut app));
-    assert!(app.collapsed_cells.is_empty() && app.thinking_folds.is_empty());
+    assert!(app.collapsed_cells.is_empty() && app.cell_folds.is_empty());
     assert!(render_underwater_test_app(&mut app, 60, 16).contains("after truncate"));
 }
 
@@ -7566,7 +7710,7 @@ fn dispatch_rollback_prunes_tail_state_and_keeps_revisions_monotonic() {
     .expect("prepare");
     let _ = render_underwater_test_app(&mut app, 60, 16);
     app.collapsed_cells.insert(0);
-    app.thinking_folds.insert(0, ThinkingFold::Expanded);
+    app.cell_folds.insert(0, TranscriptFold::Expanded);
     app.expanded_tool_runs.insert(0);
     app.collapsed_cell_map.push(0);
     let next_revision = app.next_history_revision;
@@ -7579,7 +7723,7 @@ fn dispatch_rollback_prunes_tail_state_and_keeps_revisions_monotonic() {
     // version it had before would let a later cell reuse a key a frame has
     // already seen.
     assert_ne!(app.history_version, version_before_echo);
-    assert!(app.collapsed_cells.is_empty() && app.thinking_folds.is_empty());
+    assert!(app.collapsed_cells.is_empty() && app.cell_folds.is_empty());
     assert!(app.expanded_tool_runs.is_empty() && app.collapsed_cell_map.is_empty());
     app.push_history_cell(HistoryCell::Assistant {
         content: "replacement".into(),
@@ -7603,7 +7747,7 @@ fn dispatch_rollback_prunes_tail_state_and_keeps_revisions_monotonic() {
 fn restored_reasoning_and_answer_clear_prior_fold_ownership() {
     let mut app = create_test_app();
     app.push_history_cell(long_reasoning("old session", false));
-    app.thinking_folds.insert(0, ThinkingFold::Expanded);
+    app.cell_folds.insert(0, TranscriptFold::Expanded);
     let _ = render_underwater_test_app(&mut app, 80, 24);
     let old_epoch = app.transcript_identity_epoch;
     let session = saved_session_with_messages(vec![codewhale_models::Message {
@@ -7625,7 +7769,7 @@ fn restored_reasoning_and_answer_clear_prior_fold_ownership() {
     }]);
 
     apply_loaded_session(&mut app, &mut Config::default(), &session).expect("restore session");
-    assert!(app.thinking_folds.is_empty());
+    assert!(app.cell_folds.is_empty());
     assert_ne!(app.transcript_identity_epoch, old_epoch);
     assert!(matches!(
         app.history.first(),
@@ -7689,8 +7833,8 @@ fn filtered_selection_toggles_the_original_reasoning_index() {
     let _ = render_underwater_test_app(&mut app, 60, 16);
     assert_eq!(reasoning_hint_cells(&app), vec![1]);
     assert!(handle_transcript_space(&mut app));
-    assert_eq!(app.thinking_folds.get(&1), Some(&ThinkingFold::Expanded));
-    assert!(!app.thinking_folds.contains_key(&0));
+    assert_eq!(app.cell_folds.get(&1), Some(&TranscriptFold::Expanded));
+    assert!(!app.cell_folds.contains_key(&0));
 }
 
 #[test]
@@ -8404,6 +8548,56 @@ fn child_approval_card_hides_always_allow_in_repo() {
     }
 }
 
+/// Lesson 1: the same edit asked in a plain folder and ran unasked in a
+/// repository, and nothing on screen said why.
+#[test]
+fn file_edit_card_says_when_it_asks_for_lack_of_a_git_repository() {
+    let plain = tempfile::tempdir().expect("plain folder");
+    let repo = tempfile::tempdir().expect("repository");
+    std::fs::create_dir(repo.path().join(".git")).expect("git marker");
+    let edit = serde_json::json!({"path": "duration.mjs", "search": "a", "replace": "b"});
+    let shell = serde_json::json!({"command": "npm test"});
+    for (workspace, tool, input, expected) in [
+        (plain.path(), "edit_file", &edit, true),
+        // A card that still opens in a repository asks for another reason.
+        (repo.path(), "edit_file", &edit, false),
+        // Git never changes whether a command asks.
+        (plain.path(), "exec_shell", &shell, false),
+    ] {
+        let mut app = create_test_app();
+        app.mode = AppMode::Agent;
+        app.approval_mode = ApprovalMode::Suggest;
+        app.workspace = workspace.to_path_buf();
+        push_approval_request_view(
+            &mut app,
+            "call-1",
+            tool,
+            "Needs approval",
+            input,
+            "approval-key",
+            "",
+            None,
+            crate::config::ApprovalDefaultSelection::Deny,
+            None,
+        );
+        let mut view = app.view_stack.pop().expect("approval view");
+        let approval = view
+            .as_any_mut()
+            .downcast_mut::<ApprovalView>()
+            .expect("approval view");
+        let area = ratatui::layout::Rect::new(0, 0, 120, 40);
+        let mut buf = ratatui::buffer::Buffer::empty(area);
+        approval.render(area, &mut buf);
+        let text: String = buf.content.iter().map(|cell| cell.symbol()).collect();
+        assert_eq!(
+            text.contains("No Git repository here, so edits ask first."),
+            expected,
+            "{tool} in {}:\n{text}",
+            workspace.display()
+        );
+    }
+}
+
 #[test]
 fn app_auto_approval_helper_covers_bypass_only() {
     let mut app = create_test_app();
@@ -8424,7 +8618,7 @@ fn create_test_options() -> TuiOptions {
         // `default_mode` setting.
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     }
 }
 
@@ -8461,7 +8655,7 @@ fn setup_checkpoint_waits_for_onboarding_and_skip_flag() {
         .expect("setup state");
     assert_eq!(
         state.constitution_checkpoint_completed_for.as_deref(),
-        Some(crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION)
+        Some(crate::prompts::CONSTITUTION_CHECKPOINT_VERSION)
     );
     assert_eq!(
         state.constitution_choice,
@@ -8502,7 +8696,7 @@ fn setup_runtime_preset_apply_persists_settings_config_and_state() {
         codewhale_config::StepEntry::new(
             codewhale_config::StepStatus::Verified,
             true,
-            crate::tui::setup::CONSTITUTION_CHECKPOINT_VERSION,
+            crate::prompts::CONSTITUTION_CHECKPOINT_VERSION,
         )
         .with_result(preset.result_summary()),
     );
@@ -8650,7 +8844,7 @@ fn setup_runtime_presets_preserve_environment_authority_and_state() {
                 "{canonical}: canonical wins when both are set"
             );
 
-            let mut options = crate::test_support::test_tui_options(home._tmp.path());
+            let mut options = crate::tui::test_support::test_tui_options(home._tmp.path());
             options.config_path = Some(config_path.clone());
             options.allow_shell = config.allow_shell.unwrap_or(false);
             options.start_in_agent_mode = true;
@@ -9809,6 +10003,11 @@ fn backtrack_prefill_rehydrates_attachment_rows() {
 
     assert_eq!(app.input, user_text);
     assert_eq!(app.composer_attachment_count(), 1);
+    // The rewind leaves files alone: the footer says so and names `/undo`.
+    assert_eq!(
+        app.status_message.as_deref(),
+        Some("Files not changed. /undo puts them back. Conversation rewound.")
+    );
 }
 
 #[test]
@@ -9826,6 +10025,7 @@ fn refresh_shell_exec_live_output_finalizes_restored_missing_shell_job() {
         duration_ms: Some(1_234),
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -9861,6 +10061,7 @@ fn shell_live_output_update_matches_exact_task_id_only() {
         duration_ms: Some(111),
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -9876,6 +10077,7 @@ fn shell_live_output_update_matches_exact_task_id_only() {
         duration_ms: None,
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -9971,6 +10173,7 @@ fn shell_live_output_update_marks_stale_running_job_static() {
         duration_ms: Some(90_000),
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -9991,7 +10194,7 @@ fn shell_live_output_update_marks_stale_running_job_static() {
             stdout_len: 14,
             stderr_len: 0,
             stdin_available: false,
-            stale: true,
+            stale: false,
             elapsed_since_output_ms: Some(61_000),
             linked_task_id: None,
             owner_agent_id: None,
@@ -10034,7 +10237,7 @@ fn shell_live_output_update_marks_stale_running_job_static() {
         .iter()
         .map(|span| span.content.as_ref())
         .collect::<String>();
-    assert!(header_text.contains("running · stale · no output 1m 01s"));
+    assert!(header_text.contains("running · no output for 1m 01s"));
     assert!(!header_text.contains("running ("));
 }
 
@@ -10053,6 +10256,7 @@ fn shell_live_output_update_finalizes_background_exec_output() {
         duration_ms: None,
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -10143,6 +10347,7 @@ fn shell_live_output_update_skips_finalized_exec_cell() {
         duration_ms: Some(10),
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     })));
@@ -10763,7 +10968,15 @@ async fn adopting_a_local_model_closes_the_connect_picker_and_names_it() {
     .await;
 
     assert_eq!(app.api_provider, ProviderKind::Ollama);
-    assert_eq!(app.onboarding, crate::tui::app::OnboardingState::None);
+    assert!(
+        matches!(
+            app.onboarding,
+            crate::tui::app::OnboardingState::TrustDirectory
+                | crate::tui::app::OnboardingState::Ready
+        ),
+        "{:?}",
+        app.onboarding
+    );
     assert_ne!(
         app.view_stack.top_kind(),
         Some(crate::tui::views::ModalKind::ProviderPicker)
@@ -10815,9 +11028,7 @@ fn first_run_route_starts_with_configured_provider_and_model() {
         let mut app = App::new(options, &config);
         assert_eq!(app.api_provider, ProviderKind::Openai);
         assert_eq!(app.model, "gpui-fixture");
-        assert!(!crate::local_ollama::should_adopt_live_local_ollama(
-            &mut app
-        ));
+        assert!(!app.should_adopt_live_local_ollama());
         assert!(codewhale_config::SetupState::load().unwrap().is_none());
         assert_eq!(
             Config::load(None, None).unwrap().default_model(),
@@ -10845,9 +11056,7 @@ async fn first_run_route_keeps_explicit_choice_when_credentials_are_missing() {
         app.onboarding_needs_api_key = true;
         app.onboarding_missing_key_recovery = true;
         sync_config_provider_from_app(&mut config, &app);
-        assert!(!crate::local_ollama::should_adopt_live_local_ollama(
-            &mut app
-        ));
+        assert!(!app.should_adopt_live_local_ollama());
 
         let mut engine = mock_engine_handle();
         super::event_loop::adopt_live_local_ollama_catalog(
@@ -10970,10 +11179,7 @@ async fn first_run_route_generated_config_restart_keeps_local_discovery() {
         app.onboarding_needs_api_key = true;
         sync_config_provider_from_app(&mut config, &app);
         assert!(!app.startup_route_configured, "launch {launch}");
-        assert!(
-            crate::local_ollama::should_adopt_live_local_ollama(&mut app),
-            "launch {launch}"
-        );
+        assert!(app.should_adopt_live_local_ollama(), "launch {launch}");
         if launch == 1 {
             let mut engine = mock_engine_handle();
             super::event_loop::adopt_live_local_ollama_catalog(
@@ -11019,9 +11225,7 @@ async fn first_run_route_endpoint_only_keeps_route_when_credentials_are_missing(
         app.onboarding_needs_api_key = true;
         app.onboarding_missing_key_recovery = true;
         assert!(app.startup_route_configured, "{document:?}");
-        assert!(!crate::local_ollama::should_adopt_live_local_ollama(
-            &mut app
-        ));
+        assert!(!app.should_adopt_live_local_ollama());
         let mut engine = mock_engine_handle();
         super::event_loop::adopt_live_local_ollama_catalog(
             &mut app,
@@ -11071,8 +11275,7 @@ async fn first_run_switch_to_keyed_route_clears_launch_missing_key_state() {
     assert_eq!(app.api_provider, ProviderKind::Deepseek);
     assert!(app.onboarding_needs_api_key);
     assert!(app.onboarding_missing_key_recovery);
-    assert_eq!(app.onboarding, OnboardingState::Provider);
-    app.onboarding = OnboardingState::None;
+    assert_eq!(app.onboarding, OnboardingState::None);
 
     let mut engine = mock_engine_handle();
     assert!(
@@ -11092,9 +11295,7 @@ async fn first_run_switch_to_keyed_route_clears_launch_missing_key_state() {
     assert_eq!(app.api_provider, ProviderKind::Openai);
     assert!(!app.onboarding_needs_api_key);
     assert!(!app.onboarding_missing_key_recovery);
-    assert!(!crate::local_ollama::should_adopt_live_local_ollama(
-        &mut app
-    ));
+    assert!(!app.should_adopt_live_local_ollama());
 }
 
 /// A key supplied only through the environment is a working hosted route:
@@ -11116,9 +11317,7 @@ fn first_run_route_env_key_only_is_not_replaced() {
     assert!(!app.onboarding_needs_api_key);
     assert!(!app.onboarding_missing_key_recovery);
     assert_eq!(app.api_provider, ProviderKind::Deepseek);
-    assert!(!crate::local_ollama::should_adopt_live_local_ollama(
-        &mut app
-    ));
+    assert!(!app.should_adopt_live_local_ollama());
 }
 
 #[tokio::test]
@@ -11635,7 +11834,7 @@ fn local_ollama_probe_leaves_a_picker_the_person_is_using_alone() {
         None,
     ));
     assert!(
-        crate::local_ollama::should_adopt_live_local_ollama(&mut app),
+        app.should_adopt_live_local_ollama(),
         "an untouched first-run picker still adopts a live local model"
     );
 
@@ -11643,7 +11842,7 @@ fn local_ollama_probe_leaves_a_picker_the_person_is_using_alone() {
         .view_stack
         .handle_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     assert!(
-        !crate::local_ollama::should_adopt_live_local_ollama(&mut app),
+        !app.should_adopt_live_local_ollama(),
         "a picker the person has used is not closed by the background probe"
     );
     assert_eq!(app.view_stack.top_kind(), Some(ModalKind::ProviderPicker));
@@ -14652,6 +14851,7 @@ async fn dispatch_non_resume_message_preserves_paused_command_state() {
     assert!(!engine.handle.is_paused());
     match engine.rx_op.recv().await.expect("send message op") {
         crate::core::ops::Op::SendMessage(TurnSpec {
+            profile_constitution: None,
             content,
             goal_objective,
             ..
@@ -14693,6 +14893,7 @@ async fn dispatch_resume_message_restores_paused_command_goal() {
     assert!(!engine.handle.is_paused());
     match engine.rx_op.recv().await.expect("send message op") {
         crate::core::ops::Op::SendMessage(TurnSpec {
+            profile_constitution: None,
             content,
             goal_objective,
             ..
@@ -15691,6 +15892,9 @@ async fn stall_dispatch_task_overrun_reports_and_restores_message() {
 
 #[tokio::test]
 async fn stall_dispatch_task_panic_still_reports_back() {
+    let _lock = crate::test_support::lock_test_env();
+    let crash_home = tempfile::tempdir().expect("tempdir");
+    let _profile = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", crash_home.path());
     let mut app = create_test_app();
     let config = Config::default();
     let prepare = prepare_user_dispatch(
@@ -15718,6 +15922,216 @@ async fn stall_dispatch_task_panic_still_reports_back() {
     );
     assert!(!app.dispatch_in_flight);
     assert_eq!(app.input, "panicking dispatch");
+}
+
+#[test]
+fn turn_liveness_preserves_pending_user_input_beyond_tool_timeout() {
+    // The outstanding request owns the wait independently of its tool cell
+    // or modal presentation. Code Mode currently refuses nested questions.
+    for tool_name in [None, Some("request_user_input"), Some("execute_tools")] {
+        let mut app = create_test_app();
+        let now = Instant::now();
+        let started_at = now - TOOL_HANG_WATCHDOG_TIMEOUT - Duration::from_secs(3600);
+        app.is_loading = true;
+        app.runtime_turn_status = Some("in_progress".into());
+        app.turn_started_at = Some(started_at);
+        app.turn_last_activity_at = Some(started_at);
+        app.pending_user_input_prompt = Some((
+            "question-1".into(),
+            crate::tools::user_input::UserInputRequest {
+                questions: Vec::new(),
+            },
+        ));
+        app.view_stack.push(UserInputView::new(
+            "question-1",
+            crate::tools::user_input::UserInputRequest {
+                questions: Vec::new(),
+            },
+        ));
+        // A hidden modal is not an answer or a cancellation. Engine still
+        // owns an indefinite wait; the UI must not manufacture a timeout.
+        app.view_stack.pop();
+        if let Some(name) = tool_name {
+            let mut active = ActiveCell::new();
+            active.push_tool(
+                "question-1",
+                HistoryCell::Tool(ToolCell::Generic(GenericToolCell {
+                    name: name.into(),
+                    status: ToolStatus::Running,
+                    input_summary: None,
+                    output: None,
+                    prompts: None,
+                    spillover_path: None,
+                    output_summary: None,
+                    is_diff: false,
+                })),
+            );
+            app.active_cell = Some(active);
+        }
+
+        assert!(
+            !reconcile_turn_liveness(&mut app, now, false),
+            "{tool_name:?}"
+        );
+        assert!(app.is_loading);
+        assert!(app.pending_user_input_prompt.is_some());
+        assert!(app.status_toasts.is_empty());
+
+        // Delivery retires the exemption and gives resumed work a fresh
+        // window, even before the next Engine event reaches this frame.
+        apply_user_input_submission_result(&mut app, "question-1", Ok(()));
+        assert!(app.pending_user_input_prompt.is_none());
+        let resumed_at = app.turn_last_activity_at.expect("answer is activity");
+        assert!(resumed_at >= now);
+        assert!(
+            !reconcile_turn_liveness(&mut app, resumed_at, false),
+            "{tool_name:?} recovered before resumed work could run"
+        );
+        let stalled_at = resumed_at + TOOL_HANG_WATCHDOG_TIMEOUT + Duration::from_secs(1);
+        assert!(
+            reconcile_turn_liveness(&mut app, stalled_at, false),
+            "{tool_name:?}"
+        );
+        assert!(!app.is_loading);
+    }
+}
+
+fn install_pending_question(app: &mut App, id: &str) {
+    let request = crate::tools::user_input::UserInputRequest {
+        questions: Vec::new(),
+    };
+    app.pending_user_input_prompt = Some((id.into(), request.clone()));
+    app.view_stack.push(UserInputView::new(id, request));
+    app.push_status_toast_record(
+        StatusToast::new("Answer question", StatusToastLevel::Warning, None).for_action(id),
+    );
+}
+
+#[test]
+fn user_input_timeout_retires_only_matching_question_even_when_completion_is_filtered() {
+    let mut app = create_test_app();
+    app.is_loading = true;
+    app.runtime_turn_status = Some("in_progress".into());
+    install_pending_question(&mut app, "input-timeout");
+    app.view_stack.push(ApprovalView::new(ApprovalRequest::new(
+        "unrelated-approval",
+        "exec_shell",
+        "Review command",
+        &serde_json::json!({"command": "git status"}),
+        "unrelated-key",
+    )));
+    app.push_status_toast_record(
+        StatusToast::new("Review command", StatusToastLevel::Warning, None)
+            .for_action("unrelated-approval"),
+    );
+    let completion = EngineEvent::ToolCallComplete {
+        id: "input-timeout".into(),
+        model_call: None,
+        name: "request_user_input".into(),
+        result: Err(crate::tools::spec::ToolError::Timeout { seconds: 1 }),
+    };
+    assert!(suppress_engine_event_after_local_cancel(&completion));
+    observe_human_request_settlement(&mut app, &completion);
+    assert!(app.pending_user_input_prompt.is_none());
+    assert!(!app.view_stack.contains_kind(ModalKind::UserInput));
+    assert!(app.view_stack.contains_approval_id("unrelated-approval"));
+    assert_eq!(app.view_stack.top_kind(), Some(ModalKind::Approval));
+    assert_eq!(app.status_toasts.len(), 1);
+    assert_eq!(app.status_toasts[0].text, "Review command");
+}
+
+#[test]
+fn user_input_completion_preserves_newer_question_and_dispatch() {
+    let mut app = create_test_app();
+    app.is_loading = true;
+    app.runtime_turn_status = Some("in_progress".into());
+    let activity = Instant::now() - Duration::from_secs(30);
+    app.turn_last_activity_at = Some(activity);
+    install_pending_question(&mut app, "input-new");
+    let completion = |id: &str| EngineEvent::ToolCallComplete {
+        id: id.into(),
+        model_call: None,
+        name: "execute_tools".into(),
+        result: Err(crate::tools::spec::ToolError::Timeout { seconds: 1 }),
+    };
+    // Neither a previous request nor a wrapping call's different id owns it.
+    observe_human_request_settlement(&mut app, &completion("input-old"));
+    observe_human_request_settlement(&mut app, &completion("outer-call"));
+    apply_user_input_submission_result(&mut app, "input-old", Ok(()));
+    assert_eq!(app.turn_last_activity_at, Some(activity));
+    assert_eq!(
+        app.pending_user_input_prompt
+            .as_ref()
+            .map(|(id, _)| id.as_str()),
+        Some("input-new")
+    );
+    app.suppress_stream_events_until_turn_complete = true;
+    observe_human_request_settlement(
+        &mut app,
+        &EngineEvent::TurnComplete {
+            usage: Usage::default(),
+            parent_route_usage: Usage::default(),
+            routed_usage_dropped_records: 0,
+            status: crate::core::events::TurnOutcomeStatus::Interrupted,
+            error: None,
+            tool_catalog: None,
+            base_url: None,
+        },
+    );
+    assert!(app.pending_user_input_prompt.is_some());
+    assert!(app.view_stack.contains_kind(ModalKind::UserInput));
+    assert_eq!(app.status_toasts.len(), 1);
+}
+
+#[test]
+fn user_input_turn_end_cancel_and_disconnect_retire_question_views() {
+    for boundary in ["completed", "interrupted", "failed", "cancel", "disconnect"] {
+        let mut app = create_test_app();
+        app.is_loading = true;
+        app.runtime_turn_status = Some("in_progress".into());
+        install_pending_question(&mut app, "input-boundary");
+        app.view_stack.push(ApprovalView::new(ApprovalRequest::new(
+            "parent-approval",
+            "exec_shell",
+            "Review command",
+            &serde_json::json!({"command": "git status"}),
+            "keep-key",
+        )));
+        match boundary {
+            "cancel" => mark_active_turn_cancelled_locally(&mut app),
+            "disconnect" => assert!(recover_engine_event_disconnect(&mut app)),
+            _ => observe_human_request_settlement(
+                &mut app,
+                &EngineEvent::TurnComplete {
+                    usage: Usage::default(),
+                    parent_route_usage: Usage::default(),
+                    routed_usage_dropped_records: 0,
+                    status: match boundary {
+                        "completed" => crate::core::events::TurnOutcomeStatus::Completed,
+                        "interrupted" => crate::core::events::TurnOutcomeStatus::Interrupted,
+                        _ => crate::core::events::TurnOutcomeStatus::Failed,
+                    },
+                    error: None,
+                    tool_catalog: None,
+                    base_url: None,
+                },
+            ),
+        }
+        assert!(app.pending_user_input_prompt.is_none(), "{boundary}");
+        assert!(
+            !app.view_stack.contains_kind(ModalKind::UserInput),
+            "{boundary}"
+        );
+        assert!(
+            !app.view_stack.contains_approval_id("parent-approval"),
+            "{boundary}"
+        );
+        assert!(
+            !app.status_toasts
+                .iter()
+                .any(|toast| toast.text == "Answer question")
+        );
+    }
 }
 
 #[test]
@@ -15758,6 +16172,10 @@ fn turn_liveness_recovers_running_tool_without_heartbeat() {
     let toast = app.status_toasts.back().expect("tool hang toast");
     assert_eq!(toast.level, StatusToastLevel::Error);
     assert!(toast.text.contains("Tool stalled with no progress"));
+    // The toast is read by a person: it names the command they can type, not
+    // a tool name only the model ever had.
+    assert!(toast.text.contains("/jobs cancel"), "{}", toast.text);
+    assert!(!toast.text.contains("exec_shell"), "{}", toast.text);
 }
 
 #[test]
@@ -19202,8 +19620,8 @@ fn apply_slash_menu_selection_honors_user_argument_metadata_and_builtin_override
     .expect("write argument command");
     // Workspace commands load only in a trusted workspace.
     crate::config::save_workspace_trust(tmp.path()).expect("trust test workspace");
-    let mut app = crate::test_support::test_app_with_options(
-        crate::test_support::test_tui_options(tmp.path()),
+    let mut app = crate::tui::test_support::test_app_with_options(
+        crate::tui::test_support::test_tui_options(tmp.path()),
     );
     let entries = vec![
         crate::tui::widgets::SlashMenuEntry {
@@ -19393,7 +19811,7 @@ fn workspace_context_refresh_respects_ttl_before_requerying_git() {
     std::fs::write(repo.path().join("dirty.txt"), "dirty").expect("write dirty marker");
     // #6565: the badge reads the shared git probe, which the chrome tick
     // keeps fresh; stand in for that tick.
-    crate::tui::git_status::force_refresh(repo.path());
+    crate::git_status::force_refresh(repo.path());
 
     let before_ttl = start + Duration::from_secs(crate::tui::workspace_context::REFRESH_SECS - 1);
     crate::tui::workspace_context::refresh_if_needed(&mut app, before_ttl, true);
@@ -19815,7 +20233,7 @@ async fn redaction_confirmation_restores_history_before_first_local_provider_req
     let _lock = lock_test_env();
     let temp = tempfile::tempdir().unwrap();
     let _home = EnvVarGuard::set("CODEWHALE_HOME", temp.path());
-    let _proxy = EnvVarGuard::set("NO_PROXY", "*");
+    let _proxy = EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
     let server = MockServer::builder()
         .body_print_limit(wiremock::BodyPrintLimit::Limited(0))
         .start()
@@ -19835,9 +20253,9 @@ async fn redaction_confirmation_restores_history_before_first_local_provider_req
         server.uri()
     )).unwrap();
     let config = Config::load(Some(config_path), None).unwrap();
-    let mut app = crate::test_support::test_app_with_options(TuiOptions {
+    let mut app = crate::tui::test_support::test_app_with_options(TuiOptions {
         start_in_agent_mode: true,
-        ..crate::test_support::test_tui_options(temp.path())
+        ..crate::tui::test_support::test_tui_options(temp.path())
     });
     app.auto_model = false;
     app.onboarding = OnboardingState::None;
@@ -19879,7 +20297,7 @@ async fn redaction_confirmation_restores_history_before_first_local_provider_req
         );
         assert!(server.received_requests().await.unwrap().is_empty());
     }
-    crate::tui::redaction_gate::record_confirmation(&config).unwrap();
+    config.record_redaction_confirmation().unwrap();
     engine.send(Op::Shutdown).await.unwrap();
     let replacement = spawn_tui_engine_with_session(&mut app, &config)
         .await
@@ -19893,7 +20311,7 @@ async fn redaction_confirmation_restores_history_before_first_local_provider_req
         app.current_session_id.as_deref(),
         Some("local-consent-resumed-session")
     );
-    assert!(!crate::tui::redaction_gate::confirmation_required(&config));
+    assert!(!config.redaction_confirmation_required());
     app.redaction_gate = false;
     app.redaction_gate_confirming = false;
     submit_initial_input_if_ready(&mut app, &config, &replacement)
@@ -19953,36 +20371,19 @@ async fn steer_user_message_records_prompt_for_cancel_restore() {
 }
 
 #[tokio::test]
-async fn steer_user_message_backgrounds_foreground_shell_before_dispatch() {
+async fn steer_user_message_detaches_session_shell_waits_before_dispatch() {
     let mut app = create_test_app();
     app.is_loading = true;
-    let shell_manager = app
-        .runtime_services
-        .shell_manager
-        .clone()
-        .expect("test app shell manager");
-    let mut active = ActiveCell::new();
-    active.push_tool(
-        "foreground-shell",
-        HistoryCell::Tool(ToolCell::Exec(ExecCell {
-            command: "cargo test --workspace".to_string(),
-            status: ToolStatus::Running,
-            output: None,
-            live_output: None,
-            shell_task_id: None,
-            owner_agent_id: None,
-            owner_agent_name: None,
-            started_at: Some(Instant::now()),
-            duration_ms: None,
-            stale_elapsed_since_output_ms: None,
-            source: ExecSource::Assistant,
-            interaction: None,
-            output_summary: None,
-        })),
-    );
-    app.active_cell = Some(active);
+    app.current_session_id = Some("steer-session".to_string());
+    let shell_manager = app.runtime_services.shell_manager.clone().unwrap();
+    let (waiting, foreign) = {
+        let mut manager = shell_manager.lock().unwrap();
+        (
+            manager.register_shell_wait_for_test("steer-session"),
+            manager.register_shell_wait_for_test("other-session"),
+        )
+    };
     let mut engine = crate::core::engine::mock_engine_handle();
-
     steer_user_message(
         &mut app,
         &Config::default(),
@@ -19991,14 +20392,8 @@ async fn steer_user_message_backgrounds_foreground_shell_before_dispatch() {
     )
     .await
     .expect("steer user message");
-
-    assert!(
-        shell_manager
-            .lock()
-            .expect("shell manager lock")
-            .foreground_background_requested_for_test(),
-        "foreground shell must receive its detach request"
-    );
+    assert!(waiting.load(std::sync::atomic::Ordering::Acquire));
+    assert!(!foreign.load(std::sync::atomic::Ordering::Acquire));
     assert_eq!(
         engine.rx_steer.recv().await.as_deref(),
         Some("use the partial results")
@@ -20275,6 +20670,168 @@ fn session_transition_waits_for_pending_dispatch_and_cancelled_turn() {
     app.suppress_stream_events_until_turn_complete = false;
     app.dispatch_in_flight = true;
     assert!(app.session_transition_blocked());
+}
+
+/// Every predicate that closes the gate must also name itself. A predicate
+/// added to the list without an explanation would ship a bare "runtime work is
+/// active" refusal — the defect this change removes — so each arm is driven
+/// alone and checked for its own wording.
+#[test]
+fn transition_blockers_follow_the_gate_and_name_every_predicate() {
+    fn assert_named(label: &str, arm: impl FnOnce(&mut App), expected: &str) {
+        let mut app = create_test_app();
+        arm(&mut app);
+        let blockers = app.session_transition_blockers();
+        assert!(
+            app.session_transition_blocked(),
+            "{label}: the gate must be closed"
+        );
+        assert!(
+            blockers.iter().any(|blocker| blocker.contains(expected)),
+            "{label}: expected a blocker mentioning {expected:?}, got {blockers:?}"
+        );
+    }
+
+    let app = create_test_app();
+    assert!(!app.session_transition_blocked());
+    assert!(app.session_transition_blockers().is_empty());
+
+    assert_named(
+        "is_loading",
+        |app| app.is_loading = true,
+        "still busy with the current turn",
+    );
+    assert_named(
+        "dispatch_in_flight",
+        |app| app.dispatch_in_flight = true,
+        "still resolving its route",
+    );
+    assert_named(
+        "suppress_stream_events_until_turn_complete",
+        |app| app.suppress_stream_events_until_turn_complete = true,
+        "cancelled turn is still settling",
+    );
+    assert_named(
+        "runtime_turn_status",
+        |app| app.runtime_turn_status = Some("in_progress".to_string()),
+        "turn in progress",
+    );
+    assert_named(
+        "is_compacting",
+        |app| app.is_compacting = true,
+        "compaction is running",
+    );
+    assert_named(
+        "manual_compaction_queued",
+        |app| app.manual_compaction_queued = true,
+        "manual compaction is queued",
+    );
+    assert_named(
+        "is_purging",
+        |app| app.is_purging = true,
+        "cleanup is running",
+    );
+    assert_named(
+        "task_panel",
+        |app| {
+            app.task_panel.push(crate::tui::app::TaskPanelEntry {
+                exit_code: None,
+                id: "shell_a3f2".to_string(),
+                status: "running".to_string(),
+                prompt_summary: "shell: cw-leftovers.ps1".to_string(),
+                duration_ms: Some(5 * 60 * 60 * 1_000 + 18 * 60 * 1_000),
+                kind: crate::tui::app::TaskPanelEntryKind::Shell,
+                stale: false,
+                elapsed_since_output_ms: None,
+                owner_agent_id: None,
+                owner_agent_name: None,
+                current_tool: None,
+                role: None,
+                files_touched: 0,
+            });
+        },
+        "cw-leftovers.ps1",
+    );
+}
+
+/// The row names the shell, its state, how long it has run, and its command —
+/// stripped of the panel's `shell: ` prefix, with its owner when a sub-agent
+/// owns it.
+#[test]
+fn transition_blocker_rows_name_the_command_and_its_owner() {
+    let mut app = create_test_app();
+    app.task_panel.push(crate::tui::app::TaskPanelEntry {
+        exit_code: None,
+        id: "shell_a3f2".to_string(),
+        status: "running".to_string(),
+        prompt_summary: "shell: cw-leftovers.ps1".to_string(),
+        duration_ms: Some(5 * 60 * 60 * 1_000 + 18 * 60 * 1_000),
+        kind: crate::tui::app::TaskPanelEntryKind::Shell,
+        stale: false,
+        elapsed_since_output_ms: None,
+        owner_agent_id: Some("agent_9c81".to_string()),
+        owner_agent_name: Some("verifier".to_string()),
+        current_tool: None,
+        role: None,
+        files_touched: 0,
+    });
+    let blockers = app.session_transition_blockers();
+    assert_eq!(blockers.len(), 1, "{blockers:?}");
+    let row = &blockers[0];
+    assert!(row.contains("shell_a3f2"), "{row:?}");
+    assert!(row.contains("running"), "{row:?}");
+    assert!(row.contains("5h 18m"), "{row:?}");
+    assert!(row.contains("(by verifier) cw-leftovers.ps1"), "{row:?}");
+    assert!(
+        !row.contains("shell: "),
+        "the panel prefix is stripped: {row:?}"
+    );
+}
+
+#[test]
+fn transition_blockers_summarize_past_the_fifth_task_and_bound_each_summary() {
+    use unicode_width::UnicodeWidthStr as _;
+
+    let mut app = create_test_app();
+    for index in 0..6 {
+        app.task_panel.push(crate::tui::app::TaskPanelEntry {
+            exit_code: None,
+            id: format!("shell_{index:04}"),
+            status: "queued".to_string(),
+            // 100 CJK characters are 200 display columns: a character-count
+            // budget cannot keep this row inside a terminal, display width
+            // can.
+            prompt_summary: "汉".repeat(100),
+            duration_ms: None,
+            kind: crate::tui::app::TaskPanelEntryKind::Shell,
+            stale: false,
+            elapsed_since_output_ms: None,
+            owner_agent_id: None,
+            owner_agent_name: None,
+            current_tool: None,
+            role: None,
+            files_touched: 0,
+        });
+    }
+    let blockers = app.session_transition_blockers();
+    assert_eq!(
+        blockers.len(),
+        6,
+        "five rows plus the remainder line: {blockers:?}"
+    );
+    assert_eq!(blockers[5], "…and 1 more");
+    assert!(
+        blockers[..5].iter().all(|row| row.as_str().width() <= 74),
+        "rows must fit the 74-column Note body: {blockers:?}"
+    );
+    assert!(
+        blockers[..5].iter().all(|row| row.contains("...")),
+        "an over-long summary is truncated, not dropped: {blockers:?}"
+    );
+    assert!(
+        blockers[..5].iter().all(|row| row.contains("  -  ")),
+        "a missing duration keeps its column with the shared placeholder: {blockers:?}"
+    );
 }
 
 #[test]
@@ -20771,7 +21328,7 @@ fn trust_directory_continue_untrusted_advances_without_recording_trust() {
     assert!(!app.trust_mode);
     assert_eq!(app.onboarding, OnboardingState::Ready);
     assert!(
-        crate::tui::onboarding::needs_trust(&app.workspace),
+        crate::config::needs_trust(&app.workspace),
         "declining trust must not write a trusted marker"
     );
     let notice = app.status_message.expect("restricted-mode notice");
@@ -20947,7 +21504,7 @@ fn open_tool_details_pager_supports_active_virtual_tool_cell() {
         &[1],
         100,
         app.transcript_render_options(),
-        &app.thinking_folds,
+        &app.cell_folds,
         None,
         None,
     );
@@ -21229,6 +21786,7 @@ fn spillover_pager_uses_session_artifact_for_specialized_bash_cell() {
         duration_ms: None,
         stale_elapsed_since_output_ms: None,
         source: ExecSource::Assistant,
+        description: None,
         interaction: None,
         output_summary: None,
     }))];
@@ -21295,6 +21853,7 @@ fn terminal_pause_has_live_owner_only_for_running_exec_cells() {
             duration_ms: None,
             stale_elapsed_since_output_ms: None,
             source: ExecSource::Assistant,
+            description: None,
             interaction: Some("interactive".to_string()),
             output_summary: None,
         })),
@@ -21324,43 +21883,38 @@ fn terminal_pause_has_live_owner_only_for_running_exec_cells() {
 }
 
 #[test]
-fn active_foreground_shell_running_excludes_detached_background_jobs() {
+fn shell_wait_key_detaches_only_live_waits_of_current_session() {
     let mut app = create_test_app();
-    let mut active = ActiveCell::new();
-    active.push_tool(
-        "shell",
-        HistoryCell::Tool(ToolCell::Exec(ExecCell {
-            command: "cargo test --workspace".to_string(),
-            status: ToolStatus::Running,
-            output: None,
-            live_output: None,
-            shell_task_id: Some("shell-42".to_string()),
-            owner_agent_id: None,
-            owner_agent_name: None,
-            started_at: Some(Instant::now()),
-            duration_ms: None,
-            stale_elapsed_since_output_ms: None,
-            source: ExecSource::Assistant,
-            interaction: None,
-            output_summary: None,
-        })),
-    );
-    app.active_cell = Some(active);
-
-    assert!(
-        !active_foreground_shell_running(&app),
-        "a detached job remains Running but is no longer a foreground wait"
-    );
-
-    let Some(HistoryCell::Tool(ToolCell::Exec(exec))) = app
-        .active_cell
-        .as_mut()
-        .and_then(|active| active.entry_mut(0))
-    else {
-        panic!("running shell cell");
+    app.current_session_id = Some("key-session".to_string());
+    let manager = app.runtime_services.shell_manager.clone().unwrap();
+    let (waiting, foreign) = {
+        let mut manager = manager.lock().unwrap();
+        (
+            manager.register_shell_wait_for_test("key-session"),
+            manager.register_shell_wait_for_test("other-session"),
+        )
     };
-    exec.shell_task_id = None;
-    assert!(active_foreground_shell_running(&app));
+    request_shell_wait_detach(&mut app);
+    assert!(waiting.load(std::sync::atomic::Ordering::Acquire));
+    assert!(!foreign.load(std::sync::atomic::Ordering::Acquire));
+    drop(waiting);
+    assert!(
+        !manager
+            .lock()
+            .unwrap()
+            .request_shell_wait_detach("key-session")
+    );
+    let next = manager
+        .lock()
+        .unwrap()
+        .register_shell_wait_for_test("key-session");
+    assert!(
+        !next.load(std::sync::atomic::Ordering::Acquire),
+        "old requests must expire"
+    );
+    app.current_session_id = Some("absent-session".to_string());
+    request_shell_wait_detach(&mut app);
+    assert!(!next.load(std::sync::atomic::Ordering::Acquire));
 }
 
 #[test]
@@ -21995,8 +22549,8 @@ fn completed_exec_tool_result_still_renders_run_done() {
 
     assert_eq!(exec.status, ToolStatus::Success);
     let text = rendered_text(&exec.lines_with_motion(100, true));
-    assert!(text.contains("run Done"), "{text}");
-    assert!(!text.contains("tool loaded - retry required"), "{text}");
+    assert!(text.contains("run done"), "{text}");
+    assert!(!text.contains("loaded, not run"), "{text}");
 }
 
 /// #6566: the tool output the person reads drops the engine's approval note
@@ -22082,8 +22636,8 @@ fn hydrated_exec_tool_result_renders_retry_required_not_run_done() {
 
     assert_eq!(exec.status, ToolStatus::Hydrated);
     let text = rendered_text(&exec.lines_with_motion(120, true));
-    assert!(text.contains("run tool loaded - retry required"), "{text}");
-    assert!(!text.contains("run Done"), "{text}");
+    assert!(text.contains("run loaded, not run"), "{text}");
+    assert!(!text.contains("run done"), "{text}");
 }
 
 #[test]
@@ -22120,8 +22674,8 @@ fn hydrated_tool_with_validation_body_still_uses_hydrated_status() {
 
     assert_eq!(generic.status, ToolStatus::Hydrated);
     let text = rendered_text(&HistoryCell::Tool(ToolCell::Generic(generic.clone())).lines(120));
-    assert!(text.contains("tool loaded - retry required"), "{text}");
-    assert!(!text.contains("tool Done"), "{text}");
+    assert!(text.contains("tool loaded, not run"), "{text}");
+    assert!(!text.contains("tool done"), "{text}");
 }
 
 #[test]
@@ -22156,8 +22710,8 @@ fn failed_tool_result_with_hydration_metadata_stays_failed() {
 
     assert_eq!(generic.status, ToolStatus::Failed);
     let text = rendered_text(&HistoryCell::Tool(ToolCell::Generic(generic.clone())).lines(120));
-    assert!(text.contains("tool issue"), "{text}");
-    assert!(!text.contains("tool loaded - retry required"), "{text}");
+    assert!(text.contains("tool failed"), "{text}");
+    assert!(!text.contains("loaded, not run"), "{text}");
 }
 
 #[test]
@@ -23713,7 +24267,7 @@ fn auto_route_receipt_survives_session_snapshot_and_restore() {
         restored_app.last_effective_reasoning_effort,
         Some(EffectiveReasoningEffort::Tier(ReasoningEffort::High))
     );
-    assert_eq!(restored_app.reasoning_effort_display_label(), "auto: high");
+    assert_eq!(restored_app.reasoning_effort_display_label(), "auto→high");
 }
 
 #[test]
@@ -23746,7 +24300,7 @@ fn app_new_restores_saved_model_and_reasoning_effort() {
         model: "auto".to_string(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let config = Config {
         reasoning_effort: Some("max".to_string()),
@@ -23774,7 +24328,7 @@ fn app_new_restores_saved_reasoning_effort_for_auto_model() {
         model: "deepseek-v4-pro".to_string(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
 
     let app = App::new(options, &Config::default());
@@ -23799,7 +24353,7 @@ fn app_new_auto_model_preserves_explicit_config_reasoning() {
         model: "deepseek-v4-pro".to_string(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let config = Config {
         reasoning_effort: Some("medium".to_string()),
@@ -23830,7 +24384,7 @@ fn app_new_auto_model_without_saved_reasoning_keeps_auto_default() {
         model: "deepseek-v4-pro".to_string(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
 
     let app = App::new(options, &Config::default());
@@ -23854,7 +24408,7 @@ fn app_new_auto_model_ignores_reasoning_inferred_from_legacy_alias() {
         model: "deepseek-v4-pro".to_string(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let config = Config {
         reasoning_effort: Some("high".to_string()),
@@ -23969,7 +24523,7 @@ async fn model_picker_startup_default_overrides_configured_xai_route_after_resta
         model: config.default_model(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let mut app = App::new(initial_options, &config);
     assert_eq!(app.api_provider, ProviderKind::Xai);
@@ -24016,7 +24570,7 @@ async fn model_picker_startup_default_overrides_configured_xai_route_after_resta
         model: restart_config.default_model(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let restarted = App::new(restart_options, &restart_config);
     assert_eq!(restarted.api_provider, ProviderKind::Deepseek);
@@ -24704,14 +25258,38 @@ fn orphan_during_active_keeps_subsequent_completion_routed_correctly() {
     // mid-active, it pushes a real history cell that bumps virtual indices
     // by one. A subsequent legitimate completion must still find its entry.
     let mut app = create_test_app();
+    app.tool_collapse_threshold = 0;
     handle_tool_call_started(
         &mut app,
         "live",
         "exec_shell",
         &serde_json::json!({"command": "ls"}),
     );
+    let _ = render_underwater_test_app(&mut app, 80, 24);
+    assert!(handle_transcript_space(&mut app));
+    let _ = render_underwater_test_app(&mut app, 80, 24);
+    assert_eq!(app.cell_folds.get(&0), Some(&TranscriptFold::Collapsed));
+    let rendered_epoch = app.transcript_identity_epoch;
     // Orphan completion arrives FIRST (before live's completion).
     handle_tool_call_complete(&mut app, "ghost", "weird_tool", &ok_result("ghost-out"));
+    assert!(
+        !app.cell_folds.contains_key(&0),
+        "orphan cannot inherit active fold"
+    );
+    assert_eq!(app.cell_folds.get(&1), Some(&TranscriptFold::Collapsed));
+    assert_ne!(app.transcript_identity_epoch, rendered_epoch);
+    assert!(
+        !handle_transcript_space(&mut app),
+        "pre-insertion action cannot target orphan"
+    );
+    let _ = render_underwater_test_app(&mut app, 80, 24);
+    assert_eq!(
+        app.viewport
+            .transcript_cache
+            .fold_action_target()
+            .map(|target| target.owner.cell_index),
+        Some(1)
+    );
     // Now complete the live tool — it should still mutate the active entry,
     // not silently drop or hit a stale index.
     handle_tool_call_complete(&mut app, "live", "exec_shell", &ok_result("hello"));
@@ -24733,6 +25311,49 @@ fn orphan_during_active_keeps_subsequent_completion_routed_correctly() {
     // Flush settles the active exec into history below the orphan.
     app.flush_active_cell();
     assert_eq!(app.history.len(), 2);
+    assert_eq!(app.cell_folds.get(&1), Some(&TranscriptFold::Collapsed));
+    let _ = render_underwater_test_app(&mut app, 80, 24);
+    assert!(handle_transcript_space(&mut app));
+    assert_eq!(app.cell_folds.get(&1), Some(&TranscriptFold::Expanded));
+}
+
+#[test]
+fn mid_turn_history_insert_rebases_hide_without_changing_finalized_choices() {
+    use crate::tui::mouse_ui::apply_context_menu_action;
+    use crate::tui::views::ContextMenuAction;
+
+    let mut app = create_test_app();
+    app.tool_collapse_threshold = 0;
+    app.add_message(HistoryCell::Assistant {
+        content: "finalized answer".into(),
+        streaming: false,
+    });
+    app.cell_folds.insert(0, TranscriptFold::Collapsed);
+    handle_tool_call_started(
+        &mut app,
+        "live",
+        "exec_shell",
+        &serde_json::json!({"command": "ls"}),
+    );
+    let _ = apply_context_menu_action(&mut app, ContextMenuAction::HideCell { cell_index: 1 });
+    let _ = render_underwater_test_app(&mut app, 80, 24);
+    assert_eq!(app.collapsed_cell_map, vec![0]);
+    handle_tool_call_complete(&mut app, "ghost", "weird_tool", &ok_result("orphan result"));
+    assert_eq!(
+        app.cell_folds,
+        HashMap::from([(0, TranscriptFold::Collapsed)])
+    );
+    assert_eq!(app.collapsed_cells, HashSet::from([2]));
+    let _ = render_underwater_test_app(&mut app, 80, 24);
+    assert_eq!(
+        app.collapsed_cell_map,
+        vec![0, 1],
+        "orphan remains visible, active Hide follows its row"
+    );
+    let _ = apply_context_menu_action(&mut app, ContextMenuAction::ShowCell { cell_index: 2 });
+    let _ = render_underwater_test_app(&mut app, 80, 24);
+    assert_eq!(app.collapsed_cell_map, vec![0, 1, 2]);
+    assert_eq!(app.cell_folds.get(&0), Some(&TranscriptFold::Collapsed));
 }
 
 #[test]
@@ -25295,6 +25916,7 @@ fn turn_inspector_renders_overview_sections_for_active_turn() {
             duration_ms: Some(2400),
             stale_elapsed_since_output_ms: None,
             source: ExecSource::Assistant,
+            description: None,
             interaction: None,
             output_summary: None,
         })),
@@ -25455,6 +26077,7 @@ fn turn_inspector_timeline_numbers_semantic_entries_and_checkpoint_actions() {
             duration_ms: Some(1250),
             stale_elapsed_since_output_ms: None,
             source: ExecSource::Assistant,
+            description: None,
             interaction: None,
             output_summary: None,
         })),
@@ -25761,6 +26384,7 @@ fn turn_handoff_markdown_renders_compact_sections_for_active_turn() {
             duration_ms: Some(2400),
             stale_elapsed_since_output_ms: None,
             source: ExecSource::Assistant,
+            description: None,
             interaction: None,
             output_summary: None,
         })),
@@ -26534,7 +27158,7 @@ fn fallback_switch_status_shows_one_based_position_and_reason() {
         ..Default::default()
     };
     let mut app = App::new(
-        crate::test_support::test_tui_options(std::path::PathBuf::from(".")),
+        crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
         &config,
     );
     app.api_provider = ProviderKind::Deepseek;
@@ -27210,11 +27834,13 @@ async fn stale_parent_approval_is_resolved_unavailable_not_dropped() {
             questions: Vec::new(),
         },
     };
-    assert!(resolve_stale_parent_request(&app, &mock.handle, &question).await);
-    assert_eq!(
-        mock.recv_user_input_cancellation().await.as_deref(),
-        Some("stale-question")
+    let handle = mock.handle.clone();
+    let (resolved, canceled) = tokio::join!(
+        resolve_stale_parent_request(&app, &handle, &question),
+        mock.recv_user_input_cancellation(),
     );
+    assert!(resolved);
+    assert_eq!(canceled.as_deref(), Some("stale-question"));
 }
 
 #[tokio::test]
@@ -27825,6 +28451,7 @@ async fn keyless_engine_error_stays_visible_after_a_config_ack() {
     let run = tokio::spawn(engine.run());
     handle
         .send(Op::SendMessage(TurnSpec {
+            profile_constitution: None,
             content: "hello without a key".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
@@ -31121,7 +31748,7 @@ async fn refused_route_change_does_not_pin_a_startup_default_and_says_so() {
         model: config.default_model(),
         start_in_agent_mode: true,
         skip_onboarding: false,
-        ..crate::test_support::test_tui_options(PathBuf::from("."))
+        ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
     };
     let mut app = App::new(options, &config);
     let previous_effort = app.reasoning_effort;
@@ -33468,6 +34095,26 @@ fn extension_prompt_origin_keeps_denials_and_other_policy_holds() {
 }
 
 #[test]
+fn account_profile_fallback_notice_stays_in_the_transcript() {
+    let _home = SettingsHomeGuard::new();
+    let mut app = App::new(create_test_options(), &Config::default());
+    let notice = app
+        .tr(MessageId::ProfileConstitutionUnavailableLocal)
+        .to_string();
+    let before = app.history.len();
+    assert!(super::event_loop::apply_engine_status(
+        &mut app,
+        notice.clone()
+    ));
+    assert!(!super::event_loop::apply_engine_status(
+        &mut app,
+        "Executing tools sequentially".into()
+    ));
+    assert_eq!(app.history.len(), before + 1);
+    assert!(matches!(&app.history[before], HistoryCell::System { content } if *content == notice));
+}
+
+#[test]
 fn engine_retry_status_receipts_survive_footer_overwrite_in_the_existing_transcript() {
     let _home = SettingsHomeGuard::new();
     let mut app = App::new(create_test_options(), &Config::default());
@@ -33522,4 +34169,226 @@ fn engine_retry_receipt_projection_keeps_quiet_history_without_internal_status_r
         "Retry recovery: stream recovered after 1 retries".into()
     ));
     assert_eq!(app.history.len(), before + 1);
+}
+
+#[test]
+fn a_foreground_shell_wait_is_one_tool_card_not_also_a_background_job() {
+    use super::task_projection::project_shell_jobs;
+    use crate::tools::shell::ShellStatus;
+    let mut app = create_test_app();
+    app.current_session_id = Some("fg".into());
+    let mut foreground = shell_job("shell_fg", "ls | head -40", ShellStatus::Running, None);
+    foreground.background = false;
+    foreground.finished_at = None;
+    let mut entries = Vec::new();
+    project_shell_jobs(&mut app, &mut entries, std::slice::from_ref(&foreground));
+    assert!(entries.is_empty(), "{entries:?}");
+
+    // Ctrl+B detaches it into /jobs: now it is exactly one background job.
+    foreground.background = true;
+    project_shell_jobs(&mut app, &mut entries, &[foreground]);
+    assert_eq!(entries.len(), 1);
+}
+
+fn human_wait_test_app(running_tool: bool) -> App {
+    let mut app = create_test_app();
+    let started = Instant::now() - TOOL_HANG_WATCHDOG_TIMEOUT - Duration::from_secs(60);
+    app.is_loading = true;
+    app.runtime_turn_status = Some("in_progress".into());
+    app.turn_started_at = Some(started);
+    app.turn_last_activity_at = Some(started);
+    if running_tool {
+        let mut active = ActiveCell::new();
+        active.push_tool(
+            "human-wait-call",
+            HistoryCell::Tool(ToolCell::Generic(GenericToolCell {
+                name: "exec_shell".into(),
+                status: ToolStatus::Running,
+                input_summary: None,
+                output: None,
+                prompts: None,
+                spillover_path: None,
+                output_summary: None,
+                is_diff: false,
+            })),
+        );
+        app.active_cell = Some(active);
+    }
+    app
+}
+
+fn add_human_wait_approval(app: &mut App, id: &str) {
+    push_approval_request_view(
+        app,
+        id,
+        "exec_shell",
+        "Review this command",
+        &serde_json::json!({"command":"pwd"}),
+        "key",
+        "group",
+        None,
+        crate::config::ApprovalDefaultSelection::Deny,
+        None,
+    );
+}
+
+#[test]
+fn turn_liveness_keeps_buried_indefinite_approvals_alive_until_withdrawn() {
+    for running_tool in [false, true] {
+        let mut app = human_wait_test_app(running_tool);
+        add_human_wait_approval(&mut app, "human-wait-call");
+        app.view_stack.push(HelpView::default());
+        assert!(!reconcile_turn_liveness(&mut app, Instant::now(), false));
+        assert!(app.is_loading);
+        assert!(crate::tui::pending_requests::observe_engine_event(
+            &mut app,
+            &EngineEvent::ApprovalWithdrawn {
+                id: "human-wait-call".into()
+            }
+        ));
+        assert!(!app.view_stack.contains_approval_id("human-wait-call"));
+        assert!(reconcile_turn_liveness(&mut app, Instant::now(), false));
+    }
+}
+
+#[test]
+fn turn_liveness_keeps_elevation_alive_and_retires_its_exact_card() {
+    let mut app = human_wait_test_app(true);
+    app.view_stack
+        .push(crate::tui::approval::ElevationView::new(
+            crate::tui::approval::ElevationRequest::generic(
+                "human-wait-call",
+                "exec_shell",
+                "denied",
+            ),
+            app.ui_locale,
+        ));
+    app.view_stack.push(HelpView::default());
+    assert!(!reconcile_turn_liveness(&mut app, Instant::now(), false));
+    assert!(crate::tui::pending_requests::observe_engine_event(
+        &mut app,
+        &EngineEvent::ApprovalWithdrawn {
+            id: "human-wait-call".into()
+        }
+    ));
+    assert!(!app.view_stack.contains_kind(ModalKind::Elevation));
+    assert!(reconcile_turn_liveness(&mut app, Instant::now(), false));
+}
+
+#[test]
+fn turn_liveness_scopes_hidden_child_decisions_to_the_current_session() {
+    let id = "agent:child-wait:approval:boot:1";
+    for foreign in [false, true] {
+        let mut app = human_wait_test_app(true);
+        app.current_session_id = Some("current-session".into());
+        app.child_agent_sessions.insert(
+            "child-wait".into(),
+            if foreign {
+                "another-session"
+            } else {
+                "current-session"
+            }
+            .into(),
+        );
+        crate::tui::pending_requests::record(
+            &mut app,
+            id,
+            crate::tui::pending_requests::PendingChildRequest {
+                agent_id: "child-wait".into(),
+                tool_name: "exec_shell".into(),
+                description: "Review child command".into(),
+                input: serde_json::json!({"command":"pwd"}),
+                approval_key: "key".into(),
+                approval_grouping_key: "group".into(),
+                intent_summary: None,
+                requested_at: Instant::now(),
+            },
+        );
+        assert_eq!(
+            reconcile_turn_liveness(&mut app, Instant::now(), false),
+            foreign
+        );
+    }
+}
+
+#[test]
+fn human_decision_delivery_gives_work_a_new_window_without_disabling_recovery() {
+    let mut app = human_wait_test_app(true);
+    note_human_decision_delivered(&mut app, "human-wait-call");
+    let activity = app.turn_last_activity_at.expect("reply activity");
+    assert!(!reconcile_turn_liveness(&mut app, Instant::now(), false));
+    assert!(reconcile_turn_liveness(
+        &mut app,
+        activity + TOOL_HANG_WATCHDOG_TIMEOUT + Duration::from_secs(1),
+        false
+    ));
+}
+
+#[test]
+fn human_decision_from_another_session_does_not_refresh_this_turn() {
+    let mut app = human_wait_test_app(true);
+    let before = app.turn_last_activity_at;
+    app.current_session_id = Some("current-session".into());
+    app.child_agent_sessions
+        .insert("child-wait".into(), "another-session".into());
+    note_human_decision_delivered(&mut app, "agent:child-wait:approval:boot:1");
+    assert_eq!(app.turn_last_activity_at, before);
+}
+
+#[test]
+fn child_elevation_footer_tracks_the_visible_decision_without_initial_approval_authority() {
+    let mut app = human_wait_test_app(true);
+    let id = "agent:child-wait:approval:boot:1";
+    crate::tui::pending_requests::record(
+        &mut app,
+        id,
+        crate::tui::pending_requests::PendingChildRequest {
+            agent_id: "child-wait".into(),
+            tool_name: "exec_shell".into(),
+            description: "Review child command".into(),
+            input: serde_json::json!({"command": "pwd"}),
+            approval_key: "key".into(),
+            approval_grouping_key: "group".into(),
+            intent_summary: None,
+            requested_at: Instant::now(),
+        },
+    );
+    assert_eq!(crate::tui::pending_requests::footer_rows(&app).len(), 1);
+    app.view_stack
+        .push(crate::tui::approval::ElevationView::new(
+            crate::tui::approval::ElevationRequest::generic(id, "exec_shell", "denied"),
+            app.ui_locale,
+        ));
+    assert_eq!(app.view_stack.top_approval_id(), None);
+    assert!(crate::tui::pending_requests::footer_rows(&app).is_empty());
+    add_human_wait_approval(&mut app, "other-decision");
+    assert_eq!(crate::tui::pending_requests::footer_rows(&app).len(), 1);
+    crate::tui::pending_requests::retire(&mut app, id);
+    assert!(crate::tui::pending_requests::footer_rows(&app).is_empty());
+    assert!(app.view_stack.contains_approval_id("other-decision"));
+}
+
+#[test]
+fn ended_parent_turn_retires_approvals_and_elevations_but_keeps_child_requests() {
+    let mut app = human_wait_test_app(true);
+    add_human_wait_approval(&mut app, "parent-card");
+    add_human_wait_approval(&mut app, "agent:child-wait:approval:boot:1");
+    app.view_stack
+        .push(crate::tui::approval::ElevationView::new(
+            crate::tui::approval::ElevationRequest::generic(
+                "parent-elevation",
+                "exec_shell",
+                "denied",
+            ),
+            app.ui_locale,
+        ));
+    assert!(app.view_stack.contains_tool_decision_id("parent-elevation"));
+    assert!(!app.view_stack.contains_approval_id("parent-elevation"));
+    settle_pending_human_requests(&mut app);
+    assert!(!app.view_stack.contains_approval_id("parent-card"));
+    assert!(!app.view_stack.contains_tool_decision_id("parent-elevation"));
+    assert!(
+        app.view_stack
+            .contains_approval_id("agent:child-wait:approval:boot:1")
+    );
 }

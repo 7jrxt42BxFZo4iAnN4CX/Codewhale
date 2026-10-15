@@ -572,9 +572,9 @@ pub(crate) fn estimate_tokens_for_message(message: &Message, include_thinking: b
             // assistant messages and across later user turns.
             ContentBlock::Thinking { thinking, .. } if include_thinking => thinking.len() / 4,
             ContentBlock::Thinking { .. } => 0,
-            ContentBlock::ToolUse { input, .. } => serde_json::to_string(input)
-                .map(|s| s.len() / 4)
-                .unwrap_or(100),
+            ContentBlock::ToolUse { input, .. } => {
+                compact_json_len(input).map_or(100, |len| len / 4)
+            }
             ContentBlock::ToolResult {
                 content,
                 content_blocks,
@@ -596,13 +596,21 @@ pub(crate) fn estimate_tokens_for_message(message: &Message, include_thinking: b
             // tiles are typically ~1k tokens); erring high compacts slightly
             // early rather than overflowing.
             ContentBlock::ImageUrl { .. } => IMAGE_TOKEN_ESTIMATE,
-            ContentBlock::ServerToolUse { input, .. } => input.to_string().len() / 4,
+            ContentBlock::ServerToolUse { input, .. } => {
+                compact_json_len(input).unwrap_or_default() / 4
+            }
             ContentBlock::ToolSearchToolResult { content, .. }
             | ContentBlock::CodeExecutionToolResult { content, .. } => {
-                content.to_string().len() / 4
+                compact_json_len(content).unwrap_or_default() / 4
             }
         })
         .sum::<usize>()
+}
+
+fn compact_json_len(value: &serde_json::Value) -> Option<usize> {
+    let mut counter = crate::utils::CountingWriter::new();
+    serde_json::to_writer(&mut counter, value).ok()?;
+    Some(counter.count())
 }
 
 /// Conservative flat token estimate for an inline image (`ContentBlock::ImageUrl`).
@@ -753,8 +761,7 @@ pub fn compaction_pressure_reached_with_billed(
     // Billing alone proving pressure short-circuits the walk (#perf-r5):
     // `estimated.max(billed) >= threshold` is unconditionally true when
     // `billed >= threshold`, so estimating cannot change the answer and the
-    // O(transcript) pass is skipped. Over-pressure sessions pay this check
-    // multiple times per step (pressure gate + decision re-check).
+    // O(transcript) pass is skipped.
     if billed >= config.token_threshold {
         return true;
     }
@@ -2218,12 +2225,13 @@ fn is_context_window_error(e: &anyhow::Error) -> bool {
         return false;
     }
 
+    // Only genuine overflow wording drops history. The category alone is far
+    // too wide: it now covers every rejected request (#6843), so a bare
+    // `token` or `maximum` ("max_tokens must be <= 8192", "temperature exceeds
+    // maximum 2") must not peel the summary input away on each retry.
     let lower = text.to_lowercase();
-    lower.contains("context")
-        || lower.contains("token")
-        || lower.contains("prompt is too long")
-        || lower.contains("requested")
-        || lower.contains("maximum")
+    is_context_window_error_message(&text)
+        || (lower.contains("requested") && lower.contains("tokens") && lower.contains("maximum"))
 }
 
 /// Collect text from a user message without treating tool-result payloads
@@ -2341,6 +2349,60 @@ mod tests {
             restore_compaction_checkpoint(vec![legacy.clone(), legacy], Some(&summary));
         assert_eq!(legacy_restored.len(), 1);
         assert!(is_wire_compaction_checkpoint_message(&legacy_restored[0]));
+    }
+
+    #[test]
+    fn restore_anchors_at_the_real_carrier_when_a_pasted_summary_precedes_it() {
+        // Mirror order of the duplicate-carrier test above: the pasted full
+        // summary comes BEFORE the real provenance carrier — the order in
+        // which a content-based anchor would land on the pasted turn's
+        // index. Restore must anchor at the real carrier's index, replace
+        // the carrier with the saved summary there, and keep the pasted
+        // turn verbatim as user content. The carrier's text differs from
+        // the saved summary so the assertions cannot pass by leaving the
+        // history untouched.
+        let pasted_summary = SystemPrompt::Text(build_compaction_summary_block_text(
+            "Please analyze this text",
+            "",
+        ));
+        let pasted = Message {
+            role: Role::User,
+            content: vec![ContentBlock::Text {
+                text: summary_prompt_text(&pasted_summary),
+                cache_control: None,
+            }],
+        };
+        assert!(
+            !is_wire_compaction_checkpoint_message(&pasted),
+            "a pasted summary without the provenance block is user content"
+        );
+        let carrier = compaction_checkpoint_message(&SystemPrompt::Text(
+            build_compaction_summary_block_text("Compacted summary", ""),
+        ));
+        let authoritative = SystemPrompt::Text(build_compaction_summary_block_text(
+            "Authoritative summary",
+            "",
+        ));
+        let restored =
+            restore_compaction_checkpoint(vec![pasted.clone(), carrier], Some(&authoritative));
+        assert_eq!(
+            restored.len(),
+            2,
+            "restore must not drop the pasted turn: {restored:?}"
+        );
+        assert_eq!(
+            restored[0], pasted,
+            "the pasted full summary must survive restore verbatim"
+        );
+        assert!(
+            is_wire_compaction_checkpoint_message(&restored[1]),
+            "the real carrier keeps the anchor position: {restored:?}"
+        );
+        assert_eq!(
+            restored[1],
+            compaction_checkpoint_message(&authoritative),
+            "the saved summary replaces the carrier at its index: {restored:?}"
+        );
     }
 
     #[test]
@@ -2554,6 +2616,17 @@ mod tests {
         assert!(!is_context_window_error(&anyhow::anyhow!(
             "503 Service Unavailable"
         )));
+        // A rejected parameter names a token or a maximum without being a
+        // length overflow; dropping history cannot fix it.
+        for msg in [
+            r#"Invalid request (400): {"message":"max_tokens must be <= 8192","type":"invalid_request_error"}"#,
+            "HTTP 422: temperature exceeds maximum 2",
+        ] {
+            assert!(
+                !is_context_window_error(&anyhow::anyhow!(msg)),
+                "a non-length rejection must not trigger the drop-oldest ladder: `{msg}`",
+            );
+        }
     }
 
     #[test]

@@ -3,10 +3,10 @@
 //! `commands::debug_diagnostics` filter; mutation-only tests stay in the group.
 
 use super::debug_mutation_host_tests::{create_test_app, test_tool};
-use super::groups::debug::cache_format::format_tokens;
 use crate::client::CacheWarmupKey;
 use crate::tui::app::{App, AppAction, TurnCacheRecord};
 use crate::tui::history::HistoryCell;
+use codewhale_commands::debug::cache_format::format_tokens;
 use codewhale_models::Role;
 use codewhale_models::{ContentBlock, Message, SystemBlock, SystemPrompt};
 use std::time::Instant;
@@ -49,7 +49,7 @@ fn cache(app: &mut App, arg: Option<&str>) -> crate::commands::CommandResult {
 fn format_warmup_status(last: Option<&CacheWarmupKey>, current: &CacheWarmupKey) -> String {
     let previous = last.cloned().map(super::contract::project_debug_warmup_key);
     let projected = super::contract::project_debug_warmup_key(current.clone());
-    super::groups::debug::cache_format::format_warmup_status(
+    codewhale_commands::debug::cache_format::format_warmup_status(
         previous.as_ref(),
         &projected,
         last.map(CacheWarmupKey::hash_short).as_deref(),
@@ -1488,7 +1488,7 @@ mod cost_breakdown_tests {
     fn test_app() -> App {
         let options = TuiOptions {
             skills_dir: PathBuf::from("/tmp/test-skills"),
-            ..crate::test_support::test_tui_options(PathBuf::from("/tmp/test-workspace"))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("/tmp/test-workspace"))
         };
         let mut app = App::new(options, &Config::default());
         app.ui_locale = codewhale_localization::Locale::En;
@@ -1627,7 +1627,12 @@ mod cost_breakdown_tests {
         );
         // 0.07 + 0.14 accumulated in ring order equals the parent component's
         // accumulation, so the route line shows the whole parent spend.
-        let route_amount = app.format_cost_amount_precise(components.parent_turns);
+        let route_amount = codewhale_commands::diagnostics_reports::format_cost_amount_precise(
+            components.parent_turns,
+            crate::commands::contract::to_command_currency(
+                app.cost_display_currency(app.cost_currency),
+            ),
+        );
         assert!(
             msg.contains(&format!("deepseek/deepseek-chat: {route_amount}")),
             "{msg}"
@@ -1684,7 +1689,7 @@ mod route_tests {
             .pop()
             .unwrap();
         assert_eq!(
-            crate::commands::groups::debug::cache_format::format_turn_cache_route(&turn),
+            codewhale_commands::debug::cache_format::format_turn_cache_route(&turn),
             "lm-studio/local-code-..."
         );
     }
@@ -1699,7 +1704,7 @@ mod zones_tests {
     #[test]
     fn cache_zones_output_reports_real_wiring() {
         let mut app = App::new(
-            crate::test_support::test_tui_options(PathBuf::from(".")),
+            crate::tui::test_support::test_tui_options(PathBuf::from(".")),
             &Config::default(),
         );
         app.api_messages = std::sync::Arc::new(Vec::new());
@@ -1741,7 +1746,7 @@ mod arg_tests {
 
     fn app() -> App {
         App::new(
-            crate::test_support::test_tui_options(PathBuf::from(".")),
+            crate::tui::test_support::test_tui_options(PathBuf::from(".")),
             &Config::default(),
         )
     }
@@ -1789,7 +1794,7 @@ mod preview_host_tests {
 
     #[test]
     fn unknown_argument_is_rejected_without_touching_state() {
-        let options = crate::test_support::test_tui_options(std::path::PathBuf::from(
+        let options = crate::tui::test_support::test_tui_options(std::path::PathBuf::from(
             "/tmp/test-workspace-preview-request",
         ));
         let mut app = App::new(options, &Config::default());
@@ -1814,7 +1819,7 @@ mod preview_host_tests {
 
     #[test]
     fn command_delegates_to_the_engine_and_mutates_nothing() {
-        let options = crate::test_support::test_tui_options(std::path::PathBuf::from(
+        let options = crate::tui::test_support::test_tui_options(std::path::PathBuf::from(
             "/tmp/test-workspace-preview-request-pure",
         ));
         let mut app = App::new(options, &Config::default());

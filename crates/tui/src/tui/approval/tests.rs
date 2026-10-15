@@ -380,6 +380,97 @@ fn prominent_details_edit_file_includes_search_replace_preview() {
     assert!(preview.iter().any(|line| line == "+ new_call();"));
 }
 
+fn edit_card_preview(params: Value) -> Vec<String> {
+    ApprovalRequest::new(
+        "test-id",
+        "edit_file",
+        "Edit a file on disk",
+        &params,
+        "tool:edit_file",
+    )
+    .prominent_detail_items(Locale::En)
+    .into_iter()
+    .find(|detail| detail.label == "Preview")
+    .and_then(|detail| detail.shell_lines)
+    .expect("edit preview")
+}
+
+/// A newcomer's first edit: the model quotes the whole function to change
+/// one line. The card used to show "edit 1 / replace this" and cut the rest.
+#[test]
+fn edit_card_preview_shows_only_the_lines_that_change() {
+    let old = "export function formatDuration(totalMinutes) {\n  const hours = Math.floor(totalMinutes / 60);\n  return `${hours}h ${totalMinutes}m`;\n}";
+    let new = "export function formatDuration(totalMinutes) {\n  const hours = Math.floor(totalMinutes / 60);\n  return `${hours}h ${totalMinutes % 60}m`;\n}";
+    let expected = vec![
+        "-   return `${hours}h ${totalMinutes}m`;",
+        "+   return `${hours}h ${totalMinutes % 60}m`;",
+    ];
+
+    assert_eq!(
+        edit_card_preview(json!({
+            "path": "duration.mjs",
+            "edits": [{ "oldText": old, "newText": new }]
+        })),
+        expected
+    );
+    assert_eq!(
+        edit_card_preview(json!({ "path": "duration.mjs", "search": old, "replace": new })),
+        expected
+    );
+}
+
+#[test]
+fn edit_card_preview_stays_bounded_and_counts_what_it_leaves_out() {
+    // An insertion or a deletion has one side only.
+    assert_eq!(
+        edit_card_preview(json!({ "path": "a.txt", "search": "a\nb", "replace": "a\nb\nc" })),
+        vec!["+ c"]
+    );
+    assert_eq!(
+        edit_card_preview(json!({ "path": "a.txt", "search": "a\nb\nc", "replace": "a\nc" })),
+        vec!["- b"]
+    );
+    // Each side is capped, and the cut is counted.
+    assert_eq!(
+        edit_card_preview(json!({
+            "path": "a.txt",
+            "search": "1\n2\n3\n4\n5",
+            "replace": "6\n7"
+        })),
+        vec!["- 1", "- 2", "- 3", "... (+2 more lines)", "+ 6", "+ 7"]
+    );
+    // Several edits are numbered and share the card.
+    assert_eq!(
+        edit_card_preview(json!({
+            "path": "a.txt",
+            "edits": [
+                { "oldText": "a", "newText": "b" },
+                { "oldText": "k\n1\n2\nz", "newText": "k\n9\nz" },
+                { "oldText": "c", "newText": "d" },
+                { "oldText": "e", "newText": "f" }
+            ]
+        })),
+        vec![
+            "edit 1",
+            "- a",
+            "+ b",
+            "edit 2",
+            "- 1",
+            "... (+1 more lines)",
+            "+ 9",
+            "edit 3",
+            "- c",
+            "+ d",
+            "... (+1 more edits)"
+        ]
+    );
+    // A line-ending-only edit has no narrower region; both sides show.
+    assert_eq!(
+        edit_card_preview(json!({ "path": "a.txt", "search": "a\r\nb", "replace": "a\nb" })),
+        vec!["- a", "- b", "+ a", "+ b"]
+    );
+}
+
 #[test]
 fn prominent_details_apply_patch_includes_diff_preview() {
     let patch = r#"diff --git a/src/lib.rs b/src/lib.rs
@@ -611,10 +702,9 @@ fn preview_sublabels_are_localized_for_zh_hans() {
         .find(|detail| detail.label == "预览")
         .and_then(|detail| detail.shell_lines)
         .expect("localized edit preview");
-    assert!(edit_preview.iter().any(|line| line == "替换此内容"));
-    assert!(edit_preview.iter().any(|line| line == "替换为"));
-    assert!(edit_preview.iter().any(|line| line == "- with this"));
-    assert!(edit_preview.iter().any(|line| line == "+ replace this"));
+    // The card spends its rows on the change, not on sub-labels; file text
+    // that happens to read like a label is shown as written.
+    assert_eq!(edit_preview, vec!["- with this", "+ replace this"]);
 }
 
 #[test]
@@ -1957,6 +2047,74 @@ fn stakes_split_routine_elevated_critical() {
 }
 
 #[test]
+fn stderr_redirect_does_not_change_the_effect_badge() {
+    // The same test run must read the same however the model spells it.
+    let run = |command: &str| {
+        ApprovalRequest::new(
+            "test-id",
+            "exec_shell",
+            "Run a shell command",
+            &json!({ "command": command }),
+            "tool:exec_shell",
+        )
+    };
+    for command in [
+        "npm test",
+        "npm test 2>&1",
+        "npm test 2>&1 | tail -20",
+        "cargo build > /dev/null 2>&1",
+    ] {
+        let request = run(command);
+        assert_eq!(request.stakes(), ApprovalStakes::Elevated, "{command}");
+        let joined = render_lines(&ApprovalView::new(request), 100, 40).join("\n");
+        assert!(joined.contains("Runs a command"), "{command}:\n{joined}");
+        assert!(!joined.contains("Can't be undone"), "{command}:\n{joined}");
+    }
+    // A redirect does not hide a destructive command either.
+    assert_eq!(run("rm -rf /etc 2>&1").stakes(), ApprovalStakes::Critical);
+}
+
+#[test]
+fn highlighted_option_row_names_enter() {
+    // Deny is highlighted by default (#5293). The row says so, so a newcomer
+    // sees that Enter refuses and `y` allows.
+    let tagged = |view: &ApprovalView| {
+        render_lines(view, 100, 40)
+            .into_iter()
+            .filter(|line| line.contains("(Enter)"))
+            .collect::<Vec<_>>()
+    };
+    let rows = tagged(&ApprovalView::new(shell_request()));
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert!(
+        rows[0].contains("[3 / d / n] Don't allow (Enter)"),
+        "{rows:?}"
+    );
+
+    // The tag follows the highlight; it is not a claim about Deny.
+    let rows = tagged(&ApprovalView::new_with_default_selection(
+        shell_request(),
+        Locale::En,
+        ApprovalDefaultSelection::AllowOnce,
+    ));
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert!(rows[0].contains("[1 / y] Allow once (Enter)"), "{rows:?}");
+
+    // The default Deny row still fits one 40-column row in every language,
+    // so the tag never pushes a control off a narrow band.
+    for &locale in Locale::shipped() {
+        let view = ApprovalView::new_for_locale(shell_request(), locale);
+        let rows = tagged(&view);
+        assert_eq!(rows.len(), 1, "{locale:?}: {rows:?}");
+        let narrow = render_lines(&view, 40, 40)
+            .into_iter()
+            .filter(|line| line.contains("(Enter)"))
+            .count();
+        assert_eq!(narrow, 1, "{locale:?}: the tag wrapped at 40 columns");
+    }
+}
+
+#[test]
 fn agent_tool_is_classified_and_renders_calm() {
     assert_eq!(get_tool_category("agent"), ToolCategory::Agent);
 
@@ -2228,6 +2386,7 @@ fn test_elevation_view_initial_state() {
             None,
             "elevation is not an initial approval"
         );
+        assert_eq!(view.tool_decision_request_id(), Some("test-id"));
     }
 }
 
@@ -2418,10 +2577,13 @@ fn test_elevation_render_en_has_expected_strings() {
     let lines = render_elevation_lines(&view, 70, 22);
     let joined = compact_elevation_text(&lines);
     assert!(
-        joined.contains("SandboxDenied"),
+        joined.contains("SandboxElevationRequired"),
         "missing en title:\n{joined}"
     );
-    assert!(joined.contains("Tool:"), "missing en tool label:\n{joined}");
+    assert!(
+        !joined.contains("Tool:"),
+        "the command row already names the shell:\n{joined}"
+    );
     assert!(joined.contains("Cmd:"), "missing en cmd label:\n{joined}");
     assert!(
         joined.contains("Reason:"),
@@ -2459,7 +2621,7 @@ fn elevation_always_paints_every_option_including_the_safe_exit() {
                 );
             }
             assert!(
-                joined.contains("SandboxDenied") || joined.contains("SandboxElevationRequired"),
+                joined.contains("SandboxElevationRequired"),
                 "{w}x{h}: the card lost its title:\n{joined}"
             );
             for key in ["↑/↓", "Enter", "Esc"] {
@@ -2484,11 +2646,7 @@ fn test_elevation_render_zh_hans_localizes_copy() {
     let view = ElevationView::new(elevation_shell_request(), Locale::ZhHans);
     let lines = render_elevation_lines(&view, 70, 22);
     let joined = compact_elevation_text(&lines);
-    assert!(joined.contains("沙箱拒绝"), "missing zh title:\n{joined}");
-    assert!(
-        joined.contains("工具："),
-        "missing zh tool label:\n{joined}"
-    );
+    assert!(joined.contains("沙箱提权"), "missing zh title:\n{joined}");
     assert!(joined.contains("命令："), "missing zh cmd label:\n{joined}");
     assert!(
         joined.contains("原因："),
@@ -2499,7 +2657,7 @@ fn test_elevation_render_zh_hans_localizes_copy() {
         "missing zh impact header:\n{joined}"
     );
     let en_artifacts = [
-        "SandboxDenied",
+        "SandboxElevationRequired",
         "Tool:",
         "Cmd:",
         "Reason:",
@@ -2524,12 +2682,8 @@ fn test_elevation_render_ja_has_translated_copy() {
     let lines = render_elevation_lines(&view, 70, 22);
     let joined = compact_elevation_text(&lines);
     assert!(
-        joined.contains("サンドボックス拒否"),
+        joined.contains("サンドボックス昇格"),
         "missing ja title:\n{joined}"
-    );
-    assert!(
-        joined.contains("ツール："),
-        "missing ja tool label:\n{joined}"
     );
     assert!(
         joined.contains("コマンド："),
@@ -2539,7 +2693,7 @@ fn test_elevation_render_ja_has_translated_copy() {
         joined.contains("理由："),
         "missing ja reason label:\n{joined}"
     );
-    for eng in &["SandboxDenied", "Tool:", "Cmd:", "Reason:"] as &[&str] {
+    for eng in &["SandboxElevationRequired", "Tool:", "Cmd:", "Reason:"] as &[&str] {
         assert!(
             !joined.contains(eng),
             "English leak '{eng}' in ja:\n{joined}"
@@ -2553,12 +2707,8 @@ fn test_elevation_render_zh_hant_has_translated_copy() {
     let lines = render_elevation_lines(&view, 70, 22);
     let joined = compact_elevation_text(&lines);
     assert!(
-        joined.contains("沙箱拒絕"),
+        joined.contains("沙箱提權"),
         "missing zh-Hant title:\n{joined}"
-    );
-    assert!(
-        joined.contains("工具："),
-        "missing zh-Hant tool label:\n{joined}"
     );
     assert!(
         joined.contains("指令："),
@@ -2604,7 +2754,7 @@ fn test_elevation_option_descriptions() {
             .description()
             .contains("filesystem and network access")
     );
-    assert!(ElevationOption::Abort.description().contains("Cancel"));
+    assert!(ElevationOption::Abort.description().contains("Skip"));
 }
 
 #[test]

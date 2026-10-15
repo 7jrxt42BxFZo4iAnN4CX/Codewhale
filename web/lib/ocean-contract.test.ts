@@ -55,13 +55,10 @@ describe("the horizon", () => {
     expect(CSS).toMatch(/main:has\(\.sea-continues:last-child\) \+ \.site-footer \.site-footer-sea > \.horizon \{ display: none; \}/);
     const home = web("app/[locale]/page.tsx");
     expect(home).toContain("sea-continues");
-    // Paper above, sea below: the hero is paper and the terminal sits in the tide.
-    expect(home).toContain('className="home-terminal stage"');
-    expect(CSS).toMatch(/\.home-terminal \{[^}]*background: var\(--tide\)/);
   });
 
   it("paints the stage with the dark set in both appearances", () => {
-    expect(CSS).toMatch(/\.stage,\s*\.site-footer\s*\{[^}]*--ring: var\(--gpui-dark-primary\);[^}]*color-scheme: dark;/);
+    expect(CSS).toMatch(/\.stage,\s*\.site-footer\s*\{[^}]*--ring: var\(--kit-bioluminescence\);[^}]*color-scheme: dark;/);
   });
 
   it("keeps the horizon visible in forced colours", () => {

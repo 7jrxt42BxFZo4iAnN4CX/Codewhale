@@ -353,7 +353,7 @@ pub(crate) async fn handle_setup_constitution_model_draft(
     app.status_message = Some(match locale {
         codewhale_localization::Locale::ZhHans => {
             format!(
-                "{model_label} 正在生成协作准则草案……（最多 {}s）",
+                "{model_label} 正在生成宪章草案……（最多 {}s）",
                 DRAFT_TIMEOUT.as_secs()
             )
         }
@@ -646,6 +646,10 @@ pub(crate) fn poll_mcp_login(app: &mut App) {
         McpLoginProgress::Finished(outcome) => {
             app.mcp_login = None;
             match outcome {
+                Ok(()) if crate::mcp::mcp_name_is_command_safe(&server) => {
+                    app.mcp_login_reconnect = Some(server);
+                    return;
+                }
                 Ok(()) => (
                     app.tr(MessageId::McpLoginStored)
                         .replace("{server}", &server)
@@ -732,7 +736,7 @@ fn refresh_open_extensions(app: &mut App) {
 /// on the UI loop. While a turn runs, the op waits in the engine mailbox and
 /// runs as soon as the turn ends — the person asked once, so they are not
 /// told to ask again.
-fn start_mcp_retry(app: &mut App, engine_handle: &EngineHandle, name: String) {
+pub(crate) fn start_mcp_retry(app: &mut App, engine_handle: &EngineHandle, name: String) {
     use crate::tui::app::PendingMcpRetry;
 
     let already = app
@@ -909,7 +913,65 @@ pub(crate) async fn handle_mcp_ui_action(
     let action_result = match action {
         crate::tui::app::McpUiAction::Diagnose { name } => {
             let receipt = mcp_server_diagnosis(app, &name);
+            if app.view_stack.extensions_is_top() {
+                open_text_pager(app, name.clone(), receipt.clone());
+            }
             report_mcp_login(app, receipt, StatusToastLevel::Info);
+            return;
+        }
+        crate::tui::app::McpUiAction::Validate => {
+            let path = path.clone();
+            let workspace = app.workspace.clone();
+            let plugins = app.plugin_registry.clone();
+            #[cfg(test)]
+            let ticket = crate::test_support::env_scope_ticket();
+            let configured = tokio::task::spawn_blocking(move || {
+                #[cfg(test)]
+                let _membership = crate::test_support::join_env_scope(ticket);
+                mcp::load_config_with_workspace_and_plugins(&path, &workspace, plugins.as_ref())
+            })
+            .await
+            .unwrap_or_else(|_| Err(anyhow::anyhow!("MCP config read failed")));
+            let mut names: std::collections::BTreeSet<String> = app
+                .mcp_snapshot
+                .iter()
+                .flat_map(|snapshot| snapshot.servers.iter().map(|server| server.name.clone()))
+                .collect();
+            let mut sections = Vec::new();
+            let config_loaded = match configured {
+                Ok(config) => {
+                    names.extend(config.servers.into_keys());
+                    true
+                }
+                Err(err) => {
+                    sections.push(format!(
+                        "MCP config could not be loaded: {}. Fix it, then run /mcp reload.",
+                        mcp::format_mcp_error_for_display(&err)
+                    ));
+                    false
+                }
+            };
+            if app.mcp_reload_required {
+                sections.push(
+                    "MCP config changed since the live pool loaded. Run /mcp reload to apply it."
+                        .to_string(),
+                );
+            }
+            if names.is_empty() && config_loaded {
+                sections.push(app.tr(MessageId::ExtensionsMcpEmpty).into_owned());
+            }
+            sections.extend(names.iter().map(|name| mcp_server_diagnosis(app, name)));
+            let receipt = sections.join("\n\n");
+            if !app.view_stack.extensions_is_top() {
+                open_mcp_extensions(app);
+            }
+            open_text_pager(
+                app,
+                app.tr(MessageId::ConfigSectionMcp).into_owned(),
+                receipt.clone(),
+            );
+            add_mcp_message(app, receipt);
+            app.needs_redraw = true;
             return;
         }
         crate::tui::app::McpUiAction::Show => Ok(()),
@@ -1050,7 +1112,7 @@ pub(crate) async fn handle_mcp_ui_action(
                 Err(_) => Err(anyhow::anyhow!("MCP import failed")),
             }
         }
-        crate::tui::app::McpUiAction::Validate | crate::tui::app::McpUiAction::Reload => Ok(()),
+        crate::tui::app::McpUiAction::Reload => Ok(()),
         // Dispatched before this match.
         crate::tui::app::McpUiAction::Retry { .. } => Ok(()),
     };
@@ -1131,6 +1193,7 @@ pub(crate) async fn handle_mcp_ui_action(
                 // the reload-started line.
                 app.mcp_reload_required = false;
                 app.mcp_reload_in_flight = true;
+                app.mcp_initializing = true;
                 if is_reload {
                     add_mcp_message(
                         app,
@@ -1230,14 +1293,7 @@ pub(crate) fn handle_shell_job_action(app: &mut App, action: crate::tui::app::Sh
     match action {
         crate::tui::app::ShellJobAction::List => {
             let jobs = manager.list_jobs_for_session(&active_session_id);
-            let mut text = format_shell_job_list(&jobs);
-            if let Ok(cloud) =
-                crate::cloud_dispatch::CloudJobStore::from_env().and_then(|store| store.list())
-                && !cloud.is_empty()
-            {
-                text.push_str("\n\n");
-                text.push_str(&crate::cloud_dispatch::format_job_list(&cloud));
-            }
+            let text = format_shell_job_list(&jobs);
             add_shell_job_message(app, text);
         }
         crate::tui::app::ShellJobAction::Show { id } => {
@@ -1246,30 +1302,20 @@ pub(crate) fn handle_shell_job_action(app: &mut App, action: crate::tui::app::Sh
                 Err(err) => add_shell_job_message(app, format!("Command lookup failed: {err}")),
             }
         }
-        crate::tui::app::ShellJobAction::Poll { id, wait } => {
-            match manager.poll_delta_for_session(
-                &active_session_id,
-                &id,
-                wait,
-                if wait { 5_000 } else { 1_000 },
-            ) {
-                Ok(delta) => add_shell_job_message(app, format_shell_poll(&delta.result)),
-                Err(err) => add_shell_job_message(app, format!("Command poll failed: {err}")),
-            }
-        }
         crate::tui::app::ShellJobAction::SendStdin { id, input, close } => {
             match manager.write_stdin_for_session(&active_session_id, &id, &input, close) {
-                Ok(()) => {
-                    match manager.poll_delta_for_session(&active_session_id, &id, false, 1_000) {
-                        Ok(delta) => add_shell_job_message(app, format_shell_poll(&delta.result)),
-                        Err(err) => {
-                            add_shell_job_message(
-                                app,
-                                format!("Command input sent; poll failed: {err}"),
-                            );
-                        }
+                Ok(()) => match manager.inspect_job_for_session(&active_session_id, &id) {
+                    Ok(detail) => add_shell_job_message(
+                        app,
+                        format_shell_job_list(std::slice::from_ref(&detail.snapshot)),
+                    ),
+                    Err(err) => {
+                        add_shell_job_message(
+                            app,
+                            format!("Command input sent; poll failed: {err}"),
+                        );
                     }
-                }
+                },
                 Err(err) => add_shell_job_message(app, format!("Command input failed: {err}")),
             }
         }
@@ -1481,6 +1527,245 @@ async fn handle_theme_selection_updated(
     Ok(false)
 }
 
+/// Whether a settled question is the host's own Plan hand-off rather than an
+/// engine `request_user_input` call. The engine's request is recorded in
+/// `pending_user_input_prompt` before its view opens, so a provider-chosen
+/// tool-call id equal to the hand-off id still reaches the engine.
+pub(crate) fn is_plan_handoff_request(app: &App, tool_id: &str) -> bool {
+    (tool_id == crate::tui::plan_handoff::REQUEST_ID
+        || tool_id.starts_with(&format!("{}:", crate::tui::plan_handoff::REQUEST_ID)))
+        && app
+            .pending_user_input_prompt
+            .as_ref()
+            .is_none_or(|(id, _)| id != tool_id)
+}
+
+fn plan_handoff_seed_title(plan: &crate::tui::plan_handoff::PendingPlanHandoff) -> String {
+    // Match the graph's trimmed title without changing the approved message.
+    plan.text
+        .trim()
+        .chars()
+        .take(1024)
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+/// Stage one graph-owned item for a prose plan without replacing existing work.
+async fn seed_plan_handoff_todos(
+    app: &App,
+    plan: &mut crate::tui::plan_handoff::PendingPlanHandoff,
+) -> Result<(), String> {
+    if plan.has_current_checklist {
+        return Ok(());
+    }
+    let work = app
+        .runtime_services
+        .work
+        .as_ref()
+        .ok_or_else(|| "Work state is unavailable".to_string())?;
+    let mut todos = work.current_todos().await?;
+    let content = plan_handoff_seed_title(plan);
+    if let Some(id) = plan.seeded_todo_id {
+        return if todos.items.iter().any(|item| {
+            item.id == id
+                && item.content == content
+                && item.status == crate::tools::todo::TodoStatus::Pending
+        }) {
+            Ok(())
+        } else {
+            Err("The approved plan's To-do changed; review the plan again".to_string())
+        };
+    }
+    let id = todos
+        .items
+        .iter()
+        .map(|item| item.id)
+        .max()
+        .unwrap_or(0)
+        .checked_add(1)
+        .ok_or_else(|| "To-do item IDs are exhausted".to_string())?;
+    todos.items.push(crate::tools::todo::TodoItem {
+        id,
+        content,
+        status: crate::tools::todo::TodoStatus::Pending,
+    });
+    work.apply_todo_update(&plan.session_id, "todo_write", &todos)
+        .await?;
+    plan.seeded_todo_id = Some(id);
+    Ok(())
+}
+
+/// Remove only this unchanged seed from the latest projection. Unprojected
+/// graph history remains; operation_parent cannot adopt an unprojected step.
+async fn rollback_plan_handoff_seed(
+    app: &App,
+    plan: &mut crate::tui::plan_handoff::PendingPlanHandoff,
+) -> Result<(), String> {
+    let Some(id) = plan.seeded_todo_id else {
+        return Ok(());
+    };
+    if app.current_session_id.as_deref() != Some(plan.session_id.as_str()) {
+        return Err("The plan belongs to another session".to_string());
+    }
+    let work = app
+        .runtime_services
+        .work
+        .as_ref()
+        .ok_or_else(|| "Work state is unavailable".to_string())?;
+    let mut todos = work.current_todos().await?;
+    if let Some(item) = todos.items.iter().find(|item| item.id == id) {
+        if item.content != plan_handoff_seed_title(plan)
+            || item.status != crate::tools::todo::TodoStatus::Pending
+        {
+            return Err(
+                "The approved plan's To-do changed; review it before continuing".to_string(),
+            );
+        }
+        todos.items.retain(|item| item.id != id);
+        work.apply_todo_update(&plan.session_id, "todo_write", &todos)
+            .await?;
+    }
+    plan.seeded_todo_id = None;
+    Ok(())
+}
+
+fn reopen_plan_handoff(
+    app: &mut App,
+    plan: &crate::tui::plan_handoff::PendingPlanHandoff,
+    reason: &str,
+) {
+    app.view_stack.push(UserInputView::new(
+        plan.request_id.clone(),
+        crate::tui::plan_handoff::request(app.ui_locale),
+    ));
+    let notice = app
+        .tr(MessageId::SessionSaveFailed)
+        .replace("{id}", &plan.session_id)
+        .replace("{error}", reason);
+    app.push_status_toast(notice, StatusToastLevel::Warning, Some(8_000));
+}
+
+/// Carry out only the answer bound to this exact completed Plan response.
+pub(crate) async fn apply_plan_handoff(
+    app: &mut App,
+    config: &Config,
+    engine_handle: &EngineHandle,
+    request_id: &str,
+    choice: crate::tui::plan_handoff::PlanHandoffChoice,
+) -> Result<()> {
+    apply_plan_handoff_with_checkpoint(app, config, engine_handle, request_id, choice, |app| {
+        Box::pin(persist_pending_work_checkpoint(app))
+    })
+    .await
+}
+
+type PlanHandoffCheckpoint =
+    for<'a> fn(&'a mut App) -> Pin<Box<dyn Future<Output = Result<bool, String>> + 'a>>;
+
+/// The checkpoint callback keeps the existing admission boundary explicit;
+/// tests can refuse admission without mutating the global persistence actor.
+pub(crate) async fn apply_plan_handoff_with_checkpoint(
+    app: &mut App,
+    config: &Config,
+    engine_handle: &EngineHandle,
+    request_id: &str,
+    choice: crate::tui::plan_handoff::PlanHandoffChoice,
+    checkpoint: PlanHandoffCheckpoint,
+) -> Result<()> {
+    use crate::tui::plan_handoff::PlanHandoffChoice;
+
+    let Some(mut plan) = app
+        .pending_plan_handoff
+        .clone()
+        .filter(|plan| app.plan_handoff_is_current(plan, request_id))
+    else {
+        return Ok(());
+    };
+    if !matches!(&choice, PlanHandoffChoice::Work(_))
+        && let Err(reason) = rollback_plan_handoff_seed(app, &mut plan).await
+    {
+        app.pending_plan_handoff = Some(plan.clone());
+        reopen_plan_handoff(app, &plan, &reason);
+        return Ok(());
+    }
+    let message = match choice {
+        PlanHandoffChoice::KeepPlanning => {
+            app.pending_plan_handoff = None;
+            return Ok(());
+        }
+        PlanHandoffChoice::Revise(feedback) => QueuedMessage::new(feedback, None),
+        PlanHandoffChoice::Work(posture) => {
+            if !enter_work_for_plan(app, config, engine_handle, posture).await {
+                return Ok(());
+            }
+            let staged = seed_plan_handoff_todos(app, &mut plan).await;
+            app.pending_plan_handoff = Some(plan.clone());
+            let checkpoint = match staged {
+                Ok(()) => checkpoint(app).await.map(|_| ()),
+                Err(reason) => Err(reason),
+            };
+            if let Err(reason) = checkpoint {
+                // Undo our unpublished projection before the event loop can
+                // retry an ordinary checkpoint. Never roll back other work.
+                // An already queued write cannot be recalled by this repair.
+                let reason = match rollback_plan_handoff_seed(app, &mut plan).await {
+                    Ok(()) => reason,
+                    Err(cleanup) => format!("{reason}; {cleanup}"),
+                };
+                app.pending_plan_handoff = Some(plan.clone());
+                apply_mode_update(app, engine_handle, config, AppMode::Plan).await;
+                reopen_plan_handoff(app, &plan, &reason);
+                return Ok(());
+            }
+            QueuedMessage::new(
+                format!("{}\n\n{}", app.tr(MessageId::PlanHandoffProceed), plan.text),
+                None,
+            )
+        }
+    };
+    // Consume before ordinary composer admission. Its existing recovery owns
+    // the exact user message on an offline/failed send; a repeated answer
+    // cannot enqueue another execution.
+    app.pending_plan_handoff = None;
+    let action = ComposerSubmitAction::Submit(app.decide_submit_disposition());
+    dispatch_composer_message(
+        app,
+        config,
+        engine_handle,
+        message,
+        DispatchRecovery::Immediate,
+        action,
+    )
+    .await
+}
+
+/// Leave Plan for Work with the chosen permission. Returns `false`, with the
+/// reason on screen, when the permission or the mode could not be applied;
+/// the session then stays where it was and nothing is sent.
+pub(crate) async fn enter_work_for_plan(
+    app: &mut App,
+    config: &Config,
+    engine_handle: &EngineHandle,
+    posture: ApprovalMode,
+) -> bool {
+    if engine_handle.tx_op.is_closed() {
+        return false;
+    }
+    if app.agent_approval_baseline() != posture
+        && let Err(reason) = app.apply_agent_posture(posture)
+    {
+        app.push_status_toast(reason, StatusToastLevel::Warning, Some(8_000));
+        return false;
+    }
+    apply_mode_update(app, engine_handle, config, AppMode::Agent).await;
+    if engine_handle.tx_op.is_closed() {
+        app.set_mode(AppMode::Plan);
+        return false;
+    }
+    app.mode == AppMode::Agent
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn handle_view_events(
     terminal: &mut AppTerminal,
@@ -1655,8 +1940,26 @@ pub(crate) async fn handle_view_events(
                     }
                 };
                 if result.is_ok() {
+                    note_human_decision_delivered(app, &tool_id);
                     app.retire_action_notices(Some(&tool_id));
                 }
+            }
+            ViewEvent::UserInputSubmitted { tool_id, response }
+                if is_plan_handoff_request(app, &tool_id) =>
+            {
+                let choice = crate::tui::plan_handoff::choice(app.ui_locale, &response);
+                apply_plan_handoff(app, config, engine_handle, &tool_id, choice).await?;
+            }
+            // Esc follows the same owned-seed cleanup as Keep planning.
+            ViewEvent::UserInputCancelled { tool_id } if is_plan_handoff_request(app, &tool_id) => {
+                apply_plan_handoff(
+                    app,
+                    config,
+                    engine_handle,
+                    &tool_id,
+                    crate::tui::plan_handoff::PlanHandoffChoice::KeepPlanning,
+                )
+                .await?;
             }
             ViewEvent::UserInputSubmitted { tool_id, response } => {
                 let result = engine_handle
@@ -2791,6 +3094,15 @@ pub(crate) async fn handle_view_events(
                 );
                 refresh_config_view_if_open(app, "provider");
             }
+            ViewEvent::ProviderPickerClaudeOAuthRequested => {
+                let switched =
+                    run_claude_login_from_tui(terminal, app, engine_handle, config).await?;
+                complete_provider_picker_onboarding_if_switched(
+                    app,
+                    ProviderKind::Anthropic,
+                    switched,
+                );
+            }
             ViewEvent::ProviderPickerXaiOAuthRequested => {
                 let switched =
                     run_xai_device_login_from_tui(terminal, app, engine_handle, config).await?;
@@ -2802,6 +3114,19 @@ pub(crate) async fn handle_view_events(
                 complete_provider_picker_onboarding_if_switched(
                     app,
                     ProviderKind::OpenaiCodex,
+                    switched,
+                );
+            }
+            ViewEvent::ProviderPickerPluginOAuthRequested { provider } => {
+                run_plugin_oauth_from_tui(terminal, app, config, provider, false).await?;
+            }
+            ViewEvent::ProviderPickerOrcarouterOAuthRequested => {
+                let switched =
+                    run_orcarouter_pkce_login_from_tui(terminal, app, engine_handle, config)
+                        .await?;
+                complete_provider_picker_onboarding_if_switched(
+                    app,
+                    ProviderKind::Orcarouter,
                     switched,
                 );
             }

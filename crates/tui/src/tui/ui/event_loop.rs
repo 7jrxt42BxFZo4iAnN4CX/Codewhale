@@ -64,8 +64,11 @@ pub(super) fn apply_engine_session_projection(
     {
         surface_goal_persistence_failure(app, &error);
     }
-    app.context_token_cache.borrow_mut().clear();
-    app.set_api_messages(messages);
+    let unchanged = app.set_api_messages(messages);
+    app.context_token_cache
+        .get_mut()
+        .message_tokens
+        .truncate(unchanged);
     // #6190: the projection is the engine's own record, so it is where a
     // steer's acceptance becomes observable — and the only place the steer's
     // real message index is known. Promote before anything else reads the
@@ -355,6 +358,28 @@ pub(crate) fn ensure_runtime_session_id(app: &mut App) -> String {
     session_id
 }
 
+/// How long a startup-screen submit waits for the engine to install the
+/// session it just began before dispatching the input anyway.
+const LAUNCH_SESSION_SYNC_WAIT: Duration = Duration::from_secs(2);
+
+/// Wait until the engine has processed every operation queued so far.
+///
+/// The App mints a session id and tells the engine with `Op::SyncSession`,
+/// which the engine installs later, on its own task. Until then the two
+/// disagree, and anything the App resolves by session id against engine-owned
+/// state misses: the extension host identifies this caller by the engine's
+/// session id, so a plugin command selected for the caller read as unknown.
+/// The operation channel is FIFO, so the snapshot reply proves the sync ahead
+/// of it was applied. Bounded: an engine that does not answer in time costs
+/// only the old behaviour, never a stuck composer.
+pub(crate) async fn await_engine_session_sync(engine_handle: &EngineHandle) {
+    let _ = tokio::time::timeout(
+        LAUNCH_SESSION_SYNC_WAIT,
+        engine_handle.get_session_snapshot(),
+    )
+    .await;
+}
+
 fn persist_current_session_goal(app: &App) -> Result<(), String> {
     let session_id = app
         .current_session_id
@@ -377,8 +402,7 @@ pub(crate) fn surface_goal_persistence_failure(app: &mut App, error: &str) {
 
 /// Apply Space only to the owner stored by the final render pass.
 pub(super) fn handle_transcript_space(app: &mut App) -> bool {
-    let Some((owner, reasoning_target)) = app.viewport.transcript_cache.take_transcript_action()
-    else {
+    let Some((owner, fold_target)) = app.viewport.transcript_cache.take_transcript_action() else {
         return false;
     };
     let idx = owner.cell_index;
@@ -389,28 +413,63 @@ pub(super) fn handle_transcript_space(app: &mut App) -> bool {
         return false;
     };
     let is_thinking = matches!(cell, HistoryCell::Thinking { .. });
-    if let Some(target) = reasoning_target.filter(|_| !app.collapsed_cells.contains(&idx)) {
+    let selected_first_line = app
+        .viewport
+        .transcript_selection
+        .ordered_endpoints()
+        .filter(|(start, _)| {
+            app.viewport
+                .transcript_cache
+                .line_meta()
+                .get(start.line_index)
+                .and_then(|meta| meta.cell_line())
+                .is_some_and(|(rendered, _)| app.original_cell_index_for_rendered(rendered) == idx)
+        })
+        .and_then(|_| {
+            app.viewport
+                .transcript_cache
+                .line_meta()
+                .iter()
+                .position(|meta| {
+                    meta.cell_line().is_some_and(|(rendered, _)| {
+                        app.original_cell_index_for_rendered(rendered) == idx
+                    })
+                })
+        });
+    if let Some(target) = fold_target.filter(|_| !app.collapsed_cells.contains(&idx)) {
         if target.owner != owner {
             return false;
         }
-        if !app.show_thinking || !is_thinking {
+        if is_thinking && !app.show_thinking {
             return false;
         }
         // The rendered action names the state the user is asking for, so
         // record that outright. A relative bit would be re-read as its
         // opposite the next time a display preference changed (#5847).
         let intent = match target.action {
-            ReasoningAction::Expand => ThinkingFold::Expanded,
-            ReasoningAction::Collapse => ThinkingFold::Collapsed,
+            CellFoldAction::Expand => TranscriptFold::Expanded,
+            CellFoldAction::Collapse => TranscriptFold::Collapsed,
         };
-        app.thinking_folds.insert(idx, intent);
+        app.cell_folds.insert(idx, intent);
     } else if app.toggle_tool_run_expansion_at(idx) {
         return true;
     } else if !app.collapsed_cells.remove(&idx) {
         if is_thinking {
             return false;
         }
-        app.collapsed_cells.insert(idx);
+        app.cell_folds.insert(idx, TranscriptFold::Collapsed);
+    }
+    if let Some(line_index) = selected_first_line {
+        // A middle-body row may disappear or become another cell after the
+        // fold. Keep the selected owner at its stable first row (#6876).
+        let point = crate::tui::selection::TranscriptSelectionPoint {
+            line_index,
+            column: 0,
+        };
+        app.viewport.transcript_selection.clear();
+        app.viewport.transcript_selection.anchor = Some(point);
+        app.viewport.transcript_selection.head = Some(point);
+        app.viewport.transcript_selection.owner = Some(owner);
     }
     app.mark_history_updated();
     true
@@ -444,7 +503,11 @@ pub(super) fn flush_paste_burst_before_composer(app: &mut App, now: Instant) -> 
     }
     match app.take_paste_burst_flush_if_enabled(now) {
         crate::tui::paste_burst::FlushResult::Paste(text) => {
-            app.insert_str(&text);
+            // Terminals without bracketed paste deliver a dropped file the
+            // same way; attach it exactly as `insert_paste_text` would.
+            if !app.attach_pasted_image_paths(&text) {
+                app.insert_str(&text);
+            }
             true
         }
         crate::tui::paste_burst::FlushResult::Typed(' ')
@@ -1079,7 +1142,7 @@ pub async fn run_tui(
     // masking boundary only after an explicit one-time confirmation on this
     // startup gate. Arm the gate before the engine spawns so it owns the first
     // screen; answering it rebuilds the engine with the confirmed mode.
-    app.redaction_gate = crate::tui::redaction_gate::confirmation_required(config);
+    app.redaction_gate = config.redaction_confirmation_required();
 
     // Restore before admitting initial input, including resumed conversations.
     let engine_handle = spawn_tui_engine_with_session(&mut app, config).await?;
@@ -1151,16 +1214,6 @@ pub async fn run_tui(
     // to empty would leave the file behind and resend it on the next boot.
     if restored_offline_queue {
         persist_offline_queue_state(&app);
-    }
-
-    // A launch without a usable key opens the picker immediately (#6566).
-    // A configured user's picker focuses the saved route so recovery cannot
-    // silently replace it; an unconfigured user sees the provider list rather
-    // than the built-in default's missing key.
-    if app.onboarding == OnboardingState::Provider && app.onboarding_missing_key_recovery {
-        let recover_configured_route = app.onboarding_recovers_configured_route();
-        open_onboarding_provider_picker(&mut app, config, &engine_handle, recover_configured_route)
-            .await;
     }
 
     // #4605: create the dispatch completion channel before any submit path so
@@ -1460,6 +1513,10 @@ async fn dispatch_launch_composer_submit(
     if apply_command_result(terminal, app, engine_handle, task_manager, config, result).await? {
         return Ok(true);
     }
+    // The input below is dispatched in this same keypress. Let the engine
+    // install the new session first, so a plugin command or skill typed on the
+    // startup screen resolves for this session instead of reading as unknown.
+    await_engine_session_sync(engine_handle).await;
     // The transition is applied; only now consume the draft it carries.
     let Some(input) = app.handle_composer_enter() else {
         return Ok(false);
@@ -1496,6 +1553,19 @@ pub(super) fn present_turn_failure(
     error: Option<&str>,
 ) {
     let failed = matches!(status, crate::core::events::TurnOutcomeStatus::Failed);
+    if failed
+        && app.turn_error_posted
+        && let Some(notice) = app.turn_error_notice.clone()
+        && let Some(index) = (0..app.virtual_cell_count()).rev().find(|&index| {
+            matches!(
+                app.cell_at_virtual_index(index),
+                Some(HistoryCell::Error { message, .. }) if *message == notice
+            )
+        })
+        && let Some(HistoryCell::Error { severity, .. }) = app.cell_at_virtual_index_mut(index)
+    {
+        *severity = crate::error_taxonomy::ErrorSeverity::Error;
+    }
     // What the transcript shows for this turn's failure: the error cell an
     // earlier `Event::Error` already posted, or the notice added here.
     let shown = if app.turn_error_posted {
@@ -1505,7 +1575,7 @@ pub(super) fn present_turn_failure(
         if failed {
             app.add_message(HistoryCell::Error {
                 message: notice.clone(),
-                severity: crate::error_taxonomy::ErrorSeverity::Warning,
+                severity: crate::error_taxonomy::ErrorSeverity::Error,
             });
         }
         app.set_sticky_status(notice.clone(), StatusToastLevel::Error, None);
@@ -1578,8 +1648,24 @@ async fn submit_decided_composer_input(
     let slash_menu_open = !slash_menu_entries.is_empty();
     let selecting_inline_skill = slash_menu_open
         && partial_inline_skill_mention_at_cursor(&app.input, app.cursor_position).is_some();
+    let typed_before_selection = app.input.trim().to_string();
     if slash_menu_open && apply_slash_menu_selection(app, &slash_menu_entries, false) {
         app.close_slash_menu();
+        let resolved = app
+            .input
+            .trim()
+            .trim_start_matches('/')
+            .to_ascii_lowercase();
+        if !selecting_inline_skill
+            && !typed_before_selection.eq_ignore_ascii_case(app.input.trim())
+            && matches!(
+                resolved.as_str(),
+                "exit" | "quit" | "clear" | "new" | "logout" | "restore"
+            )
+        {
+            app.cursor_position = app.input.chars().count();
+            return Ok(false);
+        }
         if selecting_inline_skill {
             return Ok(false);
         }
@@ -1815,7 +1901,7 @@ pub(crate) async fn run_event_loop(
         tokio::task::JoinHandle<Option<crate::local_ollama::LiveLocalOllamaCatalog>>,
     > = crate::local_ollama::spawn_local_ollama_adoption_probe(
         config,
-        crate::local_ollama::should_adopt_live_local_ollama(app),
+        app.should_adopt_live_local_ollama(),
     );
 
     // Startup version-change hint: once per version, never on first run.
@@ -1940,7 +2026,7 @@ pub(crate) async fn run_event_loop(
             if let Err(err) = completion {
                 tracing::warn!(error = %err, "background terminal clipboard write failed");
                 app.push_status_toast(
-                    format!("Clipboard copy failed: {err}"),
+                    crate::tui::mouse_ui::copy_failed_receipt(app, &err),
                     StatusToastLevel::Error,
                     None,
                 );
@@ -1954,6 +2040,17 @@ pub(crate) async fn run_event_loop(
             let _ = apply(app, &engine_handle, &*config);
             // Drain this completion immediately: a later completion cannot replace an edit.
             super::feedback_host::dispatch_ready(app, config, &engine_handle).await?;
+        }
+
+        if app.onboarding == OnboardingState::Provider && app.view_stack.top_kind().is_none() {
+            let recover_configured_route = app.onboarding_recovers_configured_route();
+            open_onboarding_provider_picker(
+                app,
+                &*config,
+                &engine_handle,
+                recover_configured_route,
+            )
+            .await;
         }
 
         // Drain the version-check handle once; re-assign None so we
@@ -1988,6 +2085,7 @@ pub(crate) async fn run_event_loop(
             local_done = handle.is_finished();
         }
         if local_done && let Ok(Some(catalog)) = local_ollama_probe.take().unwrap().await {
+            app.local_runtime_detected = true;
             adopt_live_local_ollama_catalog(app, &mut engine_handle, config, catalog).await;
         }
 
@@ -2147,6 +2245,9 @@ pub(crate) async fn run_event_loop(
             if refresh_shell_exec_live_output(app) {
                 app.needs_redraw = true;
             }
+            if crate::tui::shell_job_routing::refresh_live_shell_job_pager(app) {
+                app.needs_redraw = true;
+            }
             if app
                 .runtime_services
                 .work
@@ -2218,6 +2319,9 @@ pub(crate) async fn run_event_loop(
 
         // Discovery and callback delivery never park terminal input.
         poll_mcp_login(app);
+        if let Some(server) = app.mcp_login_reconnect.take() {
+            start_mcp_retry(app, &engine_handle, server);
+        }
         poll_mcp_retries(app);
 
         // #1830/#2317: service any already-arrived terminal keys before a
@@ -2279,6 +2383,7 @@ pub(crate) async fn run_event_loop(
                 let redraw_requested_before_event = received_engine_event;
                 received_engine_event = true;
                 capture_turn_started_metadata(app, &event);
+                observe_human_request_settlement(app, &event);
                 // Child approval bookkeeping runs before every filter: it is
                 // keyed by approval id and agent, not by the active session,
                 // so a withdrawal always retires its card (approvals M1).
@@ -2779,6 +2884,7 @@ pub(crate) async fn run_event_loop(
                         app.ocean_completion_started_at = None;
                         app.ocean_receipt_settle_start = None;
                         app.ocean_turn_history_start = app.history.len();
+                        app.pending_plan_handoff = None;
                         app.suppress_stream_events_until_turn_complete = false;
                         app.is_loading = true;
                         app.offline_mode = false;
@@ -2805,7 +2911,7 @@ pub(crate) async fn run_event_loop(
                         // to interrupt a long-running turn (#1367). Only
                         // surface when the status_message slot is empty so
                         // we don't trample over a real transient message
-                        // (e.g. "/queue saved", "Selection copied"); the
+                        // (e.g. "/queue saved"); the
                         // hint then auto-clears as soon as anything else
                         // updates the slot.
                         if app.status_message.is_none() {
@@ -3456,6 +3562,42 @@ pub(crate) async fn run_event_loop(
                             });
                         }
 
+                        // Plan hand-off freezes this successful turn's exact
+                        // completed response, including prose-only plans.
+                        // Only on an idle screen — a modal that takes digit
+                        // keys must never land on a draft, a queued follow-up
+                        // or another open view, and the answer goes to this
+                        // session, not to a focused agent.
+                        if queued_to_send.is_none()
+                            && !newer_dispatch_owns_turn_state
+                            && !app.is_loading
+                            && !app.dispatch_in_flight
+                            && app.pending_steers.is_empty()
+                            && !app.remote_control.runtime_chat_blocks_local_dispatch()
+                            && app.queued_message_count() == 0
+                            && app.queued_draft.is_none()
+                            && app.input.is_empty()
+                            && app.view_stack.is_empty()
+                            && app.agent_focus.is_none()
+                        {
+                            let todos = app.todos.lock().await.snapshot();
+                            let has_open_todos =
+                                todos.items.iter().any(|item| !item.status.is_settled());
+                            if !was_locally_cancelled
+                                && let Some(request_id) = app.prepare_plan_handoff(
+                                    status,
+                                    completed_turn.as_ref().map(|turn| turn.turn_id.as_str()),
+                                    has_open_todos,
+                                )
+                            {
+                                app.view_stack.push(UserInputView::new(
+                                    request_id,
+                                    crate::tui::plan_handoff::request(app.ui_locale),
+                                ));
+                                app.needs_redraw = true;
+                            }
+                        }
+
                         if queued_to_send.is_none() && !newer_dispatch_owns_turn_state {
                             queued_to_send = app.pop_queued_message();
                         }
@@ -3571,7 +3713,8 @@ pub(crate) async fn run_event_loop(
                     }
                     EngineEvent::GoalContinuationWaiting { delay_seconds } => {
                         app.goal_continuation_waiting = true;
-                        let delay = crate::elapsed::format_elapsed_secs(delay_seconds);
+                        let delay =
+                            codewhale_command_contract::elapsed::format_elapsed_secs(delay_seconds);
                         app.status_message = Some(
                             app.tr(MessageId::GoalContinuationWaiting)
                                 .replace("{delay}", &delay),
@@ -4689,7 +4832,7 @@ pub(crate) async fn run_event_loop(
             // The git cache TTL follows the same quiet clock, set every
             // iteration so a stale back-off can never outlive the activity
             // that ended it (a turn does not reach the probe block below).
-            crate::tui::git_status::set_probe_backoff(crate::tui::git_status::probe_is_backed_off(
+            crate::git_status::set_probe_backoff(crate::git_status::probe_is_backed_off(
                 git_probe_quiet_for(app, quiet_for),
             ));
         }
@@ -4770,6 +4913,7 @@ pub(crate) async fn run_event_loop(
 
         let now = Instant::now();
         flush_paste_burst_before_composer(app, now);
+        crate::tui::work_surface::poll_terminal(app);
         app.sync_status_message_to_toasts();
         // Drain background-LLM cost (compaction summaries, seam
         // recompaction, cycle briefings) accumulated since the last
@@ -4838,8 +4982,7 @@ pub(crate) async fn run_event_loop(
             let should_probe = slot
                 .lock()
                 .map(|mut last| {
-                    let due =
-                        crate::tui::git_status::probe_due(last.map(|t| t.elapsed()), quiet_for);
+                    let due = crate::git_status::probe_due(last.map(|t| t.elapsed()), quiet_for);
                     if due {
                         *last = Some(Instant::now());
                     }
@@ -4849,7 +4992,7 @@ pub(crate) async fn run_event_loop(
             if should_probe {
                 let workspace = app.workspace.clone();
                 std::thread::spawn(move || {
-                    crate::tui::git_status::refresh_if_stale(&workspace);
+                    crate::git_status::refresh_if_stale(&workspace);
                 });
             }
         }
@@ -4927,6 +5070,9 @@ pub(crate) async fn run_event_loop(
         if let Some(until_anim) = frame_requester.due_in(now) {
             poll_timeout = poll_timeout.min(until_anim);
         }
+        if let Some(until_pet) = app.pet_watch.next_frame_in(Instant::now()) {
+            poll_timeout = poll_timeout.min(until_pet);
+        }
         // While the quit-confirmation prompt is armed, ensure we wake up to
         // expire it on time even if no input event arrives.
         if let Some(deadline) = app.quit_armed_until {
@@ -4939,6 +5085,11 @@ pub(crate) async fn run_event_loop(
         if let Some(state) = app.viewport.selection_autoscroll {
             let remaining = state.next_tick.saturating_duration_since(now);
             poll_timeout = poll_timeout.min(remaining);
+        }
+        if app.work_surface.panel == crate::tui::work_surface::RailPanel::Terminal
+            && app.work_surface.last_area.is_some()
+        {
+            poll_timeout = poll_timeout.min(Duration::from_millis(100));
         }
         poll_timeout = clamp_event_poll_timeout(poll_timeout);
 
@@ -5030,6 +5181,9 @@ pub(crate) async fn run_event_loop(
                 }
             }
             if let Event::Paste(text) = &evt {
+                if crate::tui::work_surface::handle_terminal_paste(app, text) {
+                    continue;
+                }
                 if app.launch.return_to_session && app.view_stack.is_empty() {
                     app.launch.dismiss();
                 }
@@ -5285,7 +5439,7 @@ pub(crate) async fn run_event_loop(
                             app.redaction_gate_confirming = true;
                             app.redaction_gate_scroll.set(0);
                         } else {
-                            match crate::tui::redaction_gate::record_confirmation(config) {
+                            match config.record_redaction_confirmation() {
                                 Ok(_) => {
                                     // The engine already spawned with masking on
                                     // (the unconfirmed safe default). Rebuild it so
@@ -5448,6 +5602,10 @@ pub(crate) async fn run_event_loop(
                     }
                 }
                 submit_initial_input_if_ready(app, config, &engine_handle).await?;
+                continue;
+            }
+
+            if crate::tui::pet_watch::handle_key(app, &key) {
                 continue;
             }
 
@@ -5947,11 +6105,9 @@ pub(crate) async fn run_event_loop(
                 && key_shortcuts::has_control_like_modifier(key.modifiers)
                 && app.view_stack.is_empty()
             {
-                // #3032/#3859: Ctrl+B moves the active foreground shell wait
-                // into /jobs instead of opening a two-step shell-control menu.
-                // When nothing is movable, the status message tells the user
-                // what's going on.
-                request_foreground_shell_background(app);
+                // Release foreground or background shell waits in this session
+                // without canceling their commands (#3032/#3859/#6909).
+                request_shell_wait_detach(app);
                 app.needs_redraw = true;
                 continue;
             }
@@ -6346,18 +6502,7 @@ pub(crate) async fn run_event_loop(
                 KeyCode::Char('c') | KeyCode::Char('C')
                     if key_shortcuts::is_copy_shortcut(&key) =>
                 {
-                    let sel = app.selected_text();
-                    if !sel.is_empty() {
-                        if let Ok(transport) = app.clipboard.write_text_status(&sel) {
-                            let receipt = copy_receipt(app, transport, "Copied to clipboard");
-                            app.push_status_toast(receipt, StatusToastLevel::Info, None);
-                            app.clear_selection();
-                        } else {
-                            app.push_status_toast("Copy failed", StatusToastLevel::Error, None);
-                        }
-                    } else {
-                        copy_active_selection(app);
-                    }
+                    copy_active_selection(app);
                 }
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                     // Four behaviors layered on Ctrl+C in priority order — see
@@ -7262,7 +7407,7 @@ pub(super) async fn adopt_live_local_ollama_catalog(
     config: &mut Config,
     catalog: crate::local_ollama::LiveLocalOllamaCatalog,
 ) {
-    if !crate::local_ollama::should_adopt_live_local_ollama(app) {
+    if !app.should_adopt_live_local_ollama() {
         return;
     }
     let Some(tag) = catalog.preferred_tag().map(str::to_string) else {
@@ -7283,14 +7428,14 @@ pub(super) async fn adopt_live_local_ollama_catalog(
     app.onboarding_needs_api_key = false;
     app.onboarding_missing_key_recovery = false;
     // A launch with no key opens the provider picker (#6566). The local model
-    // just answered that question, so close the picker and its onboarding
-    // step rather than leave a stale "connect a model" screen whose Esc would
-    // now walk back to the welcome screen.
+    // just answered that question, so close the picker and advance past its
+    // onboarding step rather than leave a stale "connect a model" screen whose
+    // Esc would now walk back to the welcome screen.
     if app.onboarding == OnboardingState::Provider {
         if app.view_stack.top_kind() == Some(ModalKind::ProviderPicker) {
             app.view_stack.pop();
         }
-        app.onboarding = OnboardingState::None;
+        crate::tui::onboarding::advance_onboarding_after_provider(app);
     }
     // Say plainly which model is in use and how to change it, instead of the
     // endpoint it was discovered from (#6566).
@@ -7367,6 +7512,158 @@ pub(crate) async fn run_xai_device_login_from_tui(
     Ok(switched)
 }
 
+pub(crate) async fn run_claude_login_from_tui(
+    terminal: &mut AppTerminal,
+    app: &mut App,
+    engine_handle: &mut EngineHandle,
+    config: &mut Config,
+) -> Result<bool> {
+    pause_terminal(
+        terminal,
+        app.use_alt_screen(),
+        app.use_mouse_capture,
+        app.use_bracketed_paste,
+    )?;
+    let result = crate::oauth::login(crate::oauth::OAuthProvider::Claude).await;
+    resume_terminal(
+        terminal,
+        app.use_alt_screen(),
+        app.use_mouse_capture,
+        app.use_bracketed_paste,
+        app.synchronized_output_enabled,
+    )?;
+    let switched = match result {
+        Ok(pending) => {
+            apply_codewhale_owned_login(
+                app,
+                engine_handle,
+                config,
+                ProviderKind::Anthropic,
+                pending,
+                "Claude sign-in complete",
+                "Claude sign-in",
+            )
+            .await
+        }
+        Err(error) => {
+            app.push_status_toast(
+                format!("Claude sign-in failed: {error}"),
+                StatusToastLevel::Error,
+                Some(App::STICKY_ERROR_TTL_MS),
+            );
+            false
+        }
+    };
+    app.needs_redraw = true;
+    Ok(switched)
+}
+
+pub(crate) async fn run_plugin_oauth_from_tui(
+    terminal: &mut AppTerminal,
+    app: &mut App,
+    config: &mut Config,
+    provider: String,
+    logout: bool,
+) -> Result<()> {
+    let entry = match crate::plugins::providers::plugin_auth_entry(config, &provider) {
+        Ok(entry) => entry,
+        Err(error) => {
+            app.push_status_toast(
+                error.to_string(),
+                StatusToastLevel::Error,
+                Some(App::STICKY_ERROR_TTL_MS),
+            );
+            return Ok(());
+        }
+    };
+    let identity = config
+        .resolve_provider_pin_identity(&provider)
+        .map_err(anyhow::Error::msg)?;
+    pause_terminal(
+        terminal,
+        app.use_alt_screen(),
+        app.use_mouse_capture,
+        app.use_bracketed_paste,
+    )?;
+    let result: Result<()> = async {
+        let base_url = entry.base_url.clone().context("Missing plugin endpoint")?;
+        let oauth = entry
+            .oauth
+            .clone()
+            .context("Missing plugin OAuth declaration")?;
+        let authority = entry
+            .plugin_authority
+            .clone()
+            .context("Missing plugin review")?;
+        if logout {
+            let provider = provider.clone();
+            let policy = crate::plugins::activation::extension_host_policy_enabled();
+            tokio::task::spawn_blocking(move || {
+                let _scope = crate::plugins::activation::PolicyScope::propagate(policy);
+                crate::plugins::providers::verify_provider_binding(
+                    &authority, &provider, &base_url, &oauth, None,
+                )
+                .map_err(anyhow::Error::msg)?;
+                crate::oauth::plugin_oauth_logout(&provider, &base_url, &oauth)
+            })
+            .await??;
+        } else {
+            crate::oauth::plugin_oauth_login(provider.clone(), base_url, oauth, authority).await?;
+        }
+        let ticket = crate::provider_catalog_live::begin_refresh_for_identity(
+            identity.provider,
+            &provider,
+            &config.base_url_for_route(&identity),
+        );
+        if !logout {
+            let mut scoped = config.clone();
+            scoped
+                .scope_to_provider_identity(&identity)
+                .map_err(anyhow::Error::msg)?;
+            let client = crate::client::CodewhaleClient::for_catalog_refresh(&scoped)?;
+            let delta = client
+                .fetch_catalog_delta()
+                .await
+                .map_err(|error| anyhow::anyhow!("{error:?}"))?;
+            crate::provider_catalog_live::record_success_if_current(&ticket, delta)
+                .context("Catalog refresh superseded")?;
+        }
+        Ok(())
+    }
+    .await;
+    resume_terminal(
+        terminal,
+        app.use_alt_screen(),
+        app.use_mouse_capture,
+        app.use_bracketed_paste,
+        app.synchronized_output_enabled,
+    )?;
+    match result {
+        Ok(()) => {
+            let message = if logout {
+                MessageId::PluginOAuthLocalLogout
+            } else {
+                MessageId::PluginOAuthReady
+            };
+            app.push_status_toast(
+                tr(app.ui_locale, message).replace("{provider}", &provider),
+                StatusToastLevel::Success,
+                Some(8_000),
+            );
+            if !logout {
+                open_model_picker_for_provider(app, config, &identity);
+            }
+        }
+        Err(error) => app.push_status_toast(
+            format!("{provider}: {error}"),
+            StatusToastLevel::Error,
+            Some(App::STICKY_ERROR_TTL_MS),
+        ),
+    }
+    app.needs_redraw = true;
+    Ok(())
+}
+
 pub(crate) async fn run_chatgpt_pkce_login_from_tui(
     terminal: &mut AppTerminal,
     app: &mut App,
@@ -7411,6 +7708,113 @@ pub(crate) async fn run_chatgpt_pkce_login_from_tui(
     };
     app.needs_redraw = true;
     Ok(switched)
+}
+
+/// OrcaRouter PKCE sign-in from the `/auth orcarouter` command and the provider
+/// picker's "Connect with OrcaRouter" option.
+///
+/// The TUI is suspended for the same reason as ChatGPT/Xai sign-in: the flow
+/// prints the consent URL and blocks on a loopback callback, so it must own the
+/// terminal. Unlike those flows it returns an [`crate::oauth::OrcaCredential`] —
+/// a durable API key — which is stored through the ordinary provider credential
+/// path, so the live route ends up identical to the API-key adapter's.
+pub(crate) async fn run_orcarouter_pkce_login_from_tui(
+    terminal: &mut AppTerminal,
+    app: &mut App,
+    engine_handle: &mut EngineHandle,
+    config: &mut Config,
+) -> Result<bool> {
+    pause_terminal(
+        terminal,
+        app.use_alt_screen(),
+        app.use_mouse_capture,
+        app.use_bracketed_paste,
+    )?;
+    let login_result = tokio::task::spawn_blocking(|| {
+        let inputs = crate::oauth::OrcaLoginInputs::from_env();
+        let mut challenge = crate::oauth::cli_challenge_writer()?;
+        crate::oauth::orcarouter_pkce_login(&inputs, challenge.as_mut())
+    })
+    .await
+    .context("OrcaRouter PKCE login worker failed")
+    .and_then(|result| result);
+    resume_terminal(
+        terminal,
+        app.use_alt_screen(),
+        app.use_mouse_capture,
+        app.use_bracketed_paste,
+        app.synchronized_output_enabled,
+    )?;
+
+    let mut login_message = "OrcaRouter sign-in complete".to_string();
+    let switched = match login_result {
+        Ok(credential) => {
+            let scope_note = (!credential.scope_satisfies_purpose()).then(|| {
+                format!(
+                    "OrcaRouter granted scope \"{}\" while this client asked for \"{}\"; the narrower grant is reused as-is.",
+                    credential.granted_scope(),
+                    crate::oauth::ORCAROUTER_SCOPE
+                )
+            });
+            match crate::oauth::activate_orcarouter_credential(
+                &credential,
+                app.config_path.as_deref(),
+            ) {
+                Ok(saved) => {
+                    login_message = format!(
+                        "OrcaRouter is ready; stored the key in {}",
+                        saved.describe()
+                    );
+                    if let Some(note) = scope_note {
+                        login_message.push('\n');
+                        login_message.push_str(&note);
+                    }
+                    apply_orcarouter_credential_login(app, engine_handle, config).await
+                }
+                Err(err) => {
+                    let message = format!("OrcaRouter sign-in failed: {err:#}");
+                    app.add_message(HistoryCell::System {
+                        content: message.clone(),
+                    });
+                    app.status_message = Some(message);
+                    false
+                }
+            }
+        }
+        Err(err) => {
+            let message = format!("OrcaRouter sign-in failed: {err:#}");
+            app.add_message(HistoryCell::System {
+                content: message.clone(),
+            });
+            app.status_message = Some(message);
+            false
+        }
+    };
+    app.needs_redraw = true;
+    if switched {
+        app.add_message(HistoryCell::System {
+            content: login_message,
+        });
+    }
+    Ok(switched)
+}
+
+/// Switch the live route onto OrcaRouter after its credential landed, using the
+/// same store the API-key adapter wrote to. The key itself never passes through
+/// here — only the identity.
+async fn apply_orcarouter_credential_login(
+    app: &mut App,
+    engine_handle: &mut EngineHandle,
+    config: &mut Config,
+) -> bool {
+    let identity = match config.builtin_provider_identity(ProviderKind::Orcarouter) {
+        Ok(identity) => identity,
+        Err(reason) => {
+            app.push_status_toast(reason, StatusToastLevel::Error, Some(8_000));
+            return false;
+        }
+    };
+    switch_provider(app, engine_handle, config, identity, None).await
 }
 
 /// Move held permission receipts into the transcript: those for `tool_id`
@@ -7475,7 +7879,7 @@ mod session_boot_event_tests {
     }
 
     fn test_app() -> App {
-        crate::test_support::test_app_with_options(crate::test_support::test_tui_options(
+        crate::tui::test_support::test_app_with_options(crate::tui::test_support::test_tui_options(
             PathBuf::from("."),
         ))
     }
@@ -7738,13 +8142,85 @@ mod session_boot_event_tests {
 }
 
 #[cfg(test)]
+mod launch_session_sync_tests {
+    use super::await_engine_session_sync;
+    use crate::config::Config;
+    use crate::core::engine::{Engine, EngineConfig};
+    use crate::core::ops::Op;
+    use crate::extension_host::{
+        ExtensionHostManager, ExtensionHostOptions, TestManagerGuard, caller_view,
+    };
+    use crate::features::Feature;
+    use crate::plugins::PluginRegistry;
+    use crate::plugins::activation::TestPolicyGuard;
+    use codewhale_config::AppMode;
+    use std::sync::Arc;
+
+    /// A submit on the startup screen begins a session and runs its input in
+    /// one keypress. The extension host knows this caller by the engine's
+    /// session id, which only moves when the engine processes the sync: before
+    /// the wait the App's new id finds no caller (the 0.10.1 "Unknown command"
+    /// on a plugin command's first use), after it the caller is found.
+    #[tokio::test]
+    async fn launch_submit_waits_for_the_engine_to_install_the_new_session() {
+        // No native code runs here: the caller identity is all this needs.
+        let _policy = TestPolicyGuard::extension_host(false);
+        let manager = Arc::new(ExtensionHostManager::new(ExtensionHostOptions::default()));
+        let _manager = TestManagerGuard::install(Arc::clone(&manager));
+        let workspace = tempfile::tempdir().expect("tempdir");
+        let mut engine_config = EngineConfig {
+            workspace: workspace.path().to_path_buf(),
+            session_id: Some("startup-session".to_string()),
+            plugin_registry: Some(Arc::new(PluginRegistry::empty(workspace.path()))),
+            snapshots_enabled: false,
+            subagents_enabled: false,
+            ..EngineConfig::default()
+        };
+        engine_config.features.enable(Feature::ExtensionHost);
+        let model = engine_config.model.clone();
+        let (engine, handle) = Engine::new(engine_config, &Config::default());
+        let run = tokio::spawn(engine.run());
+        assert!(
+            caller_view(workspace.path(), Some("startup-session"), None).is_some(),
+            "the engine attaches under the session it was started with"
+        );
+
+        handle
+            .send(Op::SyncSession {
+                session_id: Some("launch-session".to_string()),
+                messages: Vec::new(),
+                system_prompt: None,
+                system_prompt_override: false,
+                model,
+                workspace: workspace.path().to_path_buf(),
+                mode: AppMode::Agent,
+            })
+            .await
+            .expect("sync session");
+        assert!(
+            caller_view(workspace.path(), Some("launch-session"), None).is_none(),
+            "queued is not installed: the engine has not run the sync yet"
+        );
+
+        await_engine_session_sync(&handle).await;
+        assert!(
+            caller_view(workspace.path(), Some("launch-session"), None).is_some(),
+            "after the wait the new session resolves to this engine's caller"
+        );
+        assert!(caller_view(workspace.path(), Some("startup-session"), None).is_none());
+
+        run.abort();
+    }
+}
+
+#[cfg(test)]
 mod telemetry_notice_tests {
     use super::telemetry_notice_may_enter_transcript;
 
     #[test]
     fn telemetry_notice_waits_for_the_launch_card_to_leave() {
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(std::env::temp_dir()),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(std::env::temp_dir()),
         );
         app.launch.visible = true;
         app.launch.dissolve_started_ms = None;
@@ -8104,7 +8580,13 @@ pub(super) fn route_key_to_view_stack(
 /// Keep only the Engine's retry receipts in the existing transcript. Ordinary
 /// status/footer behavior and internal/model-only status projection stay intact.
 pub(super) fn apply_engine_status(app: &mut App, message: String) -> bool {
-    let retain = crate::core::events::is_retry_status_receipt(&message);
+    if crate::core::events::is_retry_status_receipt(&message) {
+        app.add_message(HistoryCell::System { content: message });
+        return true;
+    }
+    // The account-profile fallback notice is sent once per engine; keep it in
+    // the transcript so the next turn's status line cannot erase it.
+    let retain = app.tr(MessageId::ProfileConstitutionUnavailableLocal) == message.as_str();
     if retain {
         app.add_message(HistoryCell::System {
             content: message.clone(),

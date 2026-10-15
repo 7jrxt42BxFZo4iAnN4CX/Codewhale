@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:604da19bff2c -->
+<!-- source: README.md sha256:75bb6a506af5 -->
 <div align="center">
 
 <picture>
@@ -21,9 +21,9 @@ Codewhale आपका प्रोजेक्ट पढ़ता है, फ�
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-8ba2bbf.png" alt="टर्मिनल में चलता Codewhale सेशन" width="760">
+<img src="web/public/codewhale-tui-0102-demo.png" alt="टर्मिनल में चलता Codewhale सेशन" width="760">
 
-<sub>नए इंस्टॉल का असली टर्मिनल कैप्चर — कोई तैयार किया हुआ आउटपुट नहीं।</sub>
+<sub>कॉन्फ़िगर किए गए स्थानीय डेमो सत्र से Codewhale के असली टर्मिनल का कैप्चर।</sub>
 
 </div>
 
@@ -57,6 +57,12 @@ Docker, Linux पर Nix और Homebrew, Android/Termux, चेकसम सत
 
 ## क्विकस्टार्ट
 
+**अपने प्रदाताओं की API कुंजियाँ एक ही जगह सँभालें।** [Codewhale खाता बनाएँ](https://app.codewhale.net/register)
+या साइन इन करने के लिए `codewhale login` चलाएँ। अपने खाते में API कुंजियाँ सहेजें और अपडेट करें,
+फिर साइन इन किए हुए उपकरणों पर Codewhale के मॉडल रूट के ज़रिए उनका इस्तेमाल करें।
+[खाते की कुंजियाँ सेट अप करें](docs/CONFIGURATION.md#account-provider-keys)।
+साइन इन करने से मौजूदा स्थानीय कुंजियाँ अपलोड नहीं होतीं; बिना खाते के भी स्थानीय रूप से काम कर सकते हैं।
+
 1. **अपना प्रोजेक्ट खोलें।** जिस फ़ोल्डर में काम करना है, उसमें `codewhale` चलाएँ।
 2. **कोई मॉडल जोड़ें।** होस्टेड कुंजी जोड़ने या कोई लोकल रनटाइम चुनने के लिए `/provider`
    चलाएँ (या `F3` दबाएँ)। अगर Ollama पहले से किसी चैट मॉडल के साथ चल रहा है, तो
@@ -70,7 +76,7 @@ Fix the failing tests and explain what changed.
 यही काम किसी स्क्रिप्ट या CI जॉब से बिना इंटरफ़ेस के भी चलता है:
 
 ```bash
-codewhale exec "fix the failing tests and explain what changed"
+codewhale exec --auto "fix the failing tests and explain what changed"
 ```
 
 कमांड और कीबोर्ड शॉर्टकट देखने के लिए `/help` चलाएँ।
@@ -83,7 +89,7 @@ codewhale exec "fix the failing tests and explain what changed"
 | कमांड | क्या करता है |
 | --- | --- |
 | `codewhale` | इंटरैक्टिव टर्मिनल इंटरफ़ेस |
-| `codewhale exec "…"` | किसी स्क्रिप्ट या CI से एक बिना इंटरफ़ेस वाला टर्न, JSON स्ट्रीम के साथ |
+| `codewhale exec "…"` | किसी स्क्रिप्ट या CI से एक बिना इंटरफ़ेस वाला टर्न; `--auto` फ़ाइल और शेल टूल की अनुमति देता है, `--output-format stream-json` JSON स्ट्रीम करता है |
 | `codewhale web` | `127.0.0.1` पर पैकेज में शामिल [लोकल ब्राउज़र क्लाइंट](docs/WEB.md) |
 | `codewhale review --pr N` | सलाह के रूप में [pull request समीक्षा](docs/GITHUB_ACTION.md); पोस्ट करना वैकल्पिक है |
 | Runtime API | थ्रेड, इवेंट और अनुमोदन के लिए [लोकल HTTP API](docs/RUNTIME_API.md) |
@@ -130,7 +136,7 @@ Full Access भी नीति की बाध्यकारी सीमा�
 
 Codewhale आपकी मशीन पर उतने ही एक्सेस के साथ चलता है जितना आप उसे देते हैं। अनुमोदन की
 स्थितियाँ और रिपॉज़िटरी के नियम एजेंट की गतिविधियों को सीमित करते हैं, और जहाँ समर्थन है
-वहाँ कमांड OS सैंडबॉक्स के भीतर चलते हैं (macOS पर Seatbelt; Linux पर bubblewrap वैकल्पिक है)।
+वहाँ कमांड OS सैंडबॉक्स के भीतर चलते हैं (macOS पर Seatbelt; Linux पर bubblewrap, जब वह इंस्टॉल हो और ठीक से काम कर रहा हो)।
 कुछ भी भेजे जाने से पहले `/preview-request` सटीक, संपादित (redacted) अनुरोध दिखाता है।
 जिन मॉडलों की कीमत ज्ञात नहीं है, उन्हें मुफ़्त बताने के बजाय अज्ञात ही दिखाया जाता है।
 

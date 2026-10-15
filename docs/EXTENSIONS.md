@@ -166,8 +166,10 @@ require another review. See [bundle rules](PLUGIN_BUNDLES.md).
 Export a Cordis plugin function or an object with `apply`. The host supplies
 one shared Cordis and the supported DSH compatibility services. The example's
 `inject = ['tools', 'commands']` asks for the tool and command registries. The
-supplied service names are `tools`, `commands`, `prompt`, `storage`, `skills`, `shellHooks`, `mcp`, `logger`,
-`events`, `reflect` and `registry`. A tool can ask the core to run a core tool through
+supplied service names are `tools`, `commands`, `prompt`, `storage`, `skills`, `shellHooks`, `avatars`, `mcp`, `logger`,
+`events`, `reflect` and `registry`. `ctx.avatars.registerPack({path})` registers a
+reviewed bundle-relative avatar pack; see
+[the whale-avatar example](examples/plugins/whale-avatar/README.md). A tool can ask the core to run a core tool through
 `exec.core` (see [Asking the core to run a tool](#asking-the-core-to-run-a-tool));
 Reviewed Native entries can propose MCP definitions through `ctx.mcp` as
 described below. Programmable pre-execute listeners use `ctx.on` as described below. A required
@@ -464,8 +466,8 @@ its tool `<tool>`") and decides whether one is shown.
 
 **When `exec.core` exists.** Only when the model called your tool directly and
 the turn loop is serving its permission gate for that call. It is absent for a
-command, a timer, activation code, a sub-agent's call, and a tool run from
-inside `execute_tools` (code mode gives nested tools no gate); the core refuses
+command, a timer, activation code, and a tool run from inside
+`execute_tools` (code mode gives nested tools no gate); the core refuses
 a `core/call` from any of them. It also ends with the call: when your `execute`
 returns, fails, times out or is cancelled, or your plugin is disabled, or the
 host exits, pending core calls are cancelled and a waiting approval card is

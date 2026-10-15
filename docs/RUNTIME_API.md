@@ -54,8 +54,8 @@ For the read-only record of what a thread or turn did, see
 | `codewhale app-server --http` | HTTP/SSE on `127.0.0.1:7878` | Full `/v1/*` runtime API (canonical) |
 | `codewhale app-server --mobile` | HTTP/SSE on loopback + `/mobile` | Runtime API + local mobile control page |
 | `codewhale app-server --stdio` | JSON-RPC 2.0 over stdio | Local SDK / control probe (no listener) |
-| `codewhale app-server --socket [--socket-path P]` | JSON-RPC 2.0 over a `0600` unix domain socket | Desktop daemon: multi-client, peer-uid checked, `daemon/attach` claim handshake (macOS/Linux; Windows named pipe reserved, not implemented) |
-| `codewhale app-server` | HTTP on `127.0.0.1:8787` | Legacy in-process app-server (`/healthz`, `/thread`, `/app`, `/prompt`, `/jobs`); `/prompt` and `/thread` messages execute real turns via the runtime bridge. There is no direct `/tool` route: tools run only inside Engine turns, under the Engine's tool catalog and approval posture. This legacy server does not surface approvals: its bridge forwards only text deltas and the turn's completion, and it has no decision route, so an approval-gated call waits unanswered. Drive approval-gated work through the Runtime API (`/v1/threads/*` events and `POST /v1/approvals/{approval_id}`) |
+| `codewhale app-server --socket [--socket-path P]` | JSON-RPC 2.0 over a `0600` Unix domain socket (macOS/Linux) or an owner-only named pipe (Windows) | Desktop daemon: multi-client, kernel peer identity checked, `daemon/attach` claim handshake. Windows native-app qualification remains open. |
+| `codewhale app-server` | HTTP on `127.0.0.1:8787` | Legacy in-process app-server (`/healthz`, `/thread`, `/app`, `/prompt`); background jobs are `GET /v1/jobs` on the Runtime API; `/prompt` and `/thread` messages execute real turns via the runtime bridge. There is no direct `/tool` route: tools run only inside Engine turns, under the Engine's tool catalog and approval posture. This legacy server does not surface approvals: its bridge forwards only text deltas and the turn's completion, and it has no decision route, so an approval-gated call waits unanswered. Drive approval-gated work through the Runtime API (`/v1/threads/*` events and `POST /v1/approvals/{approval_id}`) |
 | `codewhale serve --http` / `--mobile` | same server as `app-server --http`/`--mobile` | Compatibility aliases |
 
 `app-server --http` and `--mobile` launch the same mature runtime API server
@@ -67,6 +67,23 @@ bind. The `serve` compatibility aliases keep their `--insecure` flag.
 The legacy in-process `codewhale app-server` also requires an explicit
 `--auth-token` or `CODEWHALE_APP_SERVER_TOKEN` before binding a non-loopback
 host; its generated one-time `cwapp_*` token is loopback-only.
+
+Device tokens minted by the master through `POST /v1/auth/client-tokens`
+have an immutable `intent`: `watch` (the default when omitted) or explicit
+`drive`. Labels do not grant authority. Watch permits ordinary GET/HEAD reads,
+Computer display and one-use display tickets; it cannot mutate Runtime state,
+upgrade a protected HTTP read into a write channel, acquire/release control,
+or forward display input. Drive retains the existing Runtime/control authority
+but cannot mint, list or revoke device tokens. Display tickets retain the
+issuing principal's intent; input still requires its current, live control lease.
+
+`GET /v1/runtime/info` advertises `capabilities.client_token_intents: true`,
+and the mint receipt returns `device_id`, `intent` and `expires_at`. A relay
+grant issuer must require this capability before minting and validate that
+receipt against the requested device/intent before exposing a token. Older
+Engines lack enforcement and must refuse relay grants through this issuer;
+an intent-like label or a successful legacy mint is insufficient. This change
+does not add account/Computer ownership scopes to Engine-local device tokens.
 
 ### Workspace file suggestions
 
@@ -272,6 +289,69 @@ Routes:
   - A `tool_output` or `media` reference is read under the session artifact
     root the writer used. The same confinement, image-manifest and integrity
     checks apply as for the session route.
+- `GET /v1/threads/{id}/turns/{turn_id}/calls/{tool_call_id}/changes?limit=`
+  returns what **one** tool call changed, read from the same two restore
+  points the engine recorded around it (the call's `tool:` receipt and its
+  `post-tool:` partner on this turn):
+
+  ```json
+  {
+    "thread_id": "thr_1a2b3c4d", "turn_id": "turn_…", "tool_call_id": "call_…",
+    "tool_name": "exec_shell",
+    "state": "captured", "reason": null, "truncated": false,
+    "files": [
+      {
+        "path": "out/result.json", "change": "created",
+        "added": 12, "removed": 0, "size": 210, "revision": "<sha256 hex>",
+        "restore_snapshot_id": "<pre tree id>",
+        "diff": "@@ -0,0 +1,12 @@\n+{}\n", "diff_truncated": false
+      }
+    ]
+  }
+  ```
+
+  - This is the per-call counterpart of the turn aggregate, and the only
+    surface on which a **shell command's own writes** are attributable to that
+    command: a command produces no `metadata.mutation`, so nothing else names
+    what it wrote. The files a file tool changed are here too, read from the
+    same span.
+  - `change` is `created`, `updated` or `deleted` (git's `A`/`M`/`D`, with a
+    type change read as `updated`; the diff runs with `--no-renames`, so a move
+    is a delete plus a create). `added`/`removed` are `null` for a binary path.
+  - `size` and `revision` are the span's **end**, never the work tree as it is
+    now. `revision` is bare SHA-256 hex; pass `sha256:` followed by that hex as
+    `file-revert`'s `expected_hash`, or `absent` for a path deleted by the call.
+    Both are `null` when the path was deleted here or is too large to read.
+  - `diff` is the patch between the two restore points, cut at 64 KiB on a char
+    boundary (`diff_truncated` says so). It is `null` when there is nothing to
+    render: a binary path, a change with no content delta, or no patch.
+  - `state: "pending"` means the recorded call is queued or in progress and
+    its snapshot pair is incomplete. `reason` is `null` and `files` is empty;
+    read again after settlement. Once both receipts exist, the state is
+    `captured`, including when the call changed nothing.
+  - `state: "unavailable"` means the settled span cannot be resolved, and `reason`
+    says why: `call_not_bounded` (the call took no receipt — the engine judged
+    it read-only, or the turn predates receipts), `post_snapshot_missing` (the
+    opening receipt exists and the closing one was lost), `pre_snapshot_missing`,
+    or `snapshots_pruned` (the receipts are still on the turn, but the side repo
+    no longer holds the trees they name — snapshots are pruned to the newest few
+    while turn records are durable, so an older turn's span is regularly
+    unrecoverable, and a workspace whose store was deleted reads the same way).
+    This is **not** the same answer as an empty `files` list, which means the
+    span changed nothing, and the receipt's own `changed_paths` remain readable
+    on the turn record either way.
+  - `limit` (default 200, max 1000) caps the list; `truncated` says it was cut,
+    and how many paths were left off is not counted.
+  - Reading the span runs `git diff` inside the side repo. Neither the work
+    tree nor the index is touched.
+
+| Status | When |
+| --- | --- |
+| 404 | Unknown thread or turn, a turn of another thread, or a `tool_call_id` this turn has no item or receipt for. |
+| 400 | `limit` outside `1..=1000`. |
+| 500 | A runtime item record could not be read or parsed, or an operational failure occurred reading the snapshot repository; this is not evidence that the call was unbounded or snapshots were pruned. |
+
+The artifact routes answer:
 
 | Status | When |
 | --- | --- |
@@ -976,8 +1056,15 @@ and live state comes only from a resumed thread's SSE stream.
 
 **Threads** (durable runtime data model)
 - `GET /v1/threads?limit=50&include_archived=false&archived_only=false`
-- `GET /v1/threads/summary?limit=50&search=<optional>&include_archived=false&archived_only=false`
+- `GET /v1/threads/summary?limit=50&search=<optional>&include_archived=false&archived_only=false&thread_ids=<id>,<id>`
 - `GET /v1/threads/running`
+- `GET /v1/goals?limit=50&cursor=<opaque>&status=<status>` — read-only index of
+  the per-thread goal records across threads, newest update first. Returns
+  `{"goals": [ThreadGoal...], "next_cursor": "<opaque>"}`; `next_cursor` is
+  absent on the last page. `limit` is 1-200 (default 50); `status` is one of
+  `active`, `paused`, `blocked`, `usage_limited`, `budget_limited`, `complete`;
+  goals whose thread no longer exists are omitted; a bad `status` or `cursor`, or a cursor issued under a different `status`, is `400`. Same auth as every other `/v1` read.
+  Goal creation, completion and removal stay on `/v1/threads/{id}/goal`.
 - `GET /v1/threads/{id}/notices`
 - `DELETE /v1/threads/{id}/notices/{notice_id}`
 - `POST /v1/threads`
@@ -989,6 +1076,11 @@ and live state comes only from a resumed thread's SSE stream.
   (read-only; shape in [RECEIPTS.md](RECEIPTS.md))
 - `GET /v1/threads/{id}/turns/{turn_id}/receipt` — the same, for one turn;
   `404` for an unknown thread or a turn that is not this thread's
+
+`thread_ids` is a comma-separated list of up to 200 IDs (each at most 128 bytes).
+The route filters exact IDs before applying `limit`, preserving newest-first
+order. This is a selection filter, not an ownership or authorization check;
+the Runtime bearer token remains the access boundary.
 
 `POST /v1/threads` accepts optional execution defaults in addition to the
 provider, model, workspace, and permission fields:
@@ -1104,6 +1196,10 @@ new provider's default model; an `auto` thread stays `auto`. The loaded
 engine and conversation history are kept, and the next turn installs the new
 route.
 
+A change of effective permission adds a completed `status` item to the thread's
+latest turn and publishes a `thread.permissions_changed` event (`from`, `to`,
+`source`).
+
 **Turns** (within a thread)
 - `POST /v1/threads/{id}/turns`
 - `POST /v1/threads/{id}/turns/{turn_id}/steer` - inject guidance into the running turn. The response is a receipt for what actually happened, not for what was attempted; see [Steer delivery](#steer-delivery).
@@ -1134,6 +1230,19 @@ one turn through another provider. The saved thread keeps its provider.
 Without `model`, the turn uses that provider's default model (an `auto` thread
 stays `auto`). The override is always preflighted and is part of the
 `operation_key` fingerprint.
+
+Account-owned model turns require `capabilities.account_model_owner: true` before
+submission. Set `account_model_owner` to the signed-in account ID, both
+`model_provider` and `model_provider_id` to `codewhale`, and `model` to the exact
+`provider/model` account route. The Runtime requires current model access for
+that same secure account session and uses only that account credential; missing,
+expired or revoked access is refused. Local keys and other configured routes are
+not substitutes. A supplied profile constitution must belong to the same account.
+The owner participates in the durable operation fingerprint; replay of an
+already completed exact operation returns its receipt before fresh credential
+admission. The account gateway resolves the selected provider's current saved
+API key at use. Ordinary turns and saved Chat defaults retain their existing
+behavior. The Runtime Chat relay carries the same assertion as `accountModelOwner`.
 
 Resolution is deterministic: a turn override wins over the thread default,
 which wins over the Runtime's normal configuration. For tools, reaching normal
@@ -1228,6 +1337,24 @@ an incomplete admission before a later lookup, but GET itself never does so.
 **Approvals**
 - `POST /v1/approvals/{approval_id}` with body
   `{ "decision": "allow" | "deny", "remember": false }`
+- `GET /v1/approvals?limit=` (1-500, default 100) is the read-only history:
+  decided and still-pending approvals across all sessions, newest ask first.
+
+Each history row carries `approval_id`, `tool_name`, `outcome`, `asked_at` and
+`decided_at` (null while pending), plus optional `decided_by` (`user`,
+`session_rule`, `posture`, `host`), `target` and `summary`. `outcome` is one of
+`allowed_once`, `denied`, `timeout`, `cancelled`, `unavailable`,
+`retry_with_policy`, or `pending`. `standing_rule` (`allow` or `deny`) is present
+only when a remembered session rule or grant answered rather than a person
+(`decided_by: session_rule`); `outcome` is unchanged. `target` is the host of a
+URL or a workspace-relative path (absolute paths outside the workspace are
+reduced to `.../<basename>`); `summary` is a one-line description of what was
+asked. Both are redacted conservatively when the ask is recorded: a shell
+command keeps only the program name and plain arguments, and any quoted,
+`KEY=VALUE`, credential-like or unrecognised argument replaces all arguments
+with `[args redacted]`. Whitespace is collapsed and text is capped at 120
+characters. Rows recorded before these fields existed
+omit `target` and `summary`.
 
 `approval_id` is minted by the Runtime, not by the model or the provider. It is
 an opaque `approval_<32 hex>` capability, unique per prompt, bound to the thread
@@ -1580,6 +1707,34 @@ Create and update requests accept an optional `model`. When present, each
 scheduled or manually triggered run uses that model; omitting it keeps the
 runtime's default task model.
 
+**Automation mutation preconditions.** `GET /v1/runtime/info` advertises
+`capabilities.automation_mutation_preconditions: true`; require it before
+relying on the behavior below (older Engines ignore both inputs).
+
+- Every `AutomationRecord` carries an integer `revision`: `1` on create, `+1`
+  on each `PATCH`, `pause` and `resume`; legacy records read as `0`. Scheduler
+  bookkeeping (`next_run_at`, `last_run_at`) does not change it.
+- `expected_revision` is an optional precondition on `PATCH`, `run`, `pause`
+  and `resume`: a JSON body field on `PATCH`, or the `?expected_revision=N`
+  query parameter on any of the four. On mismatch nothing is written and the
+  response is `409` with
+  `{"error":{"code":"revision_conflict","current_revision":N,...}}`. Omitting
+  it behaves as before.
+- `Idempotency-Key` (1-255 visible ASCII characters) is optional on `POST
+  /v1/automations`, `PATCH`, `run`, `pause` and `resume`. The first successful
+  response (2xx) is persisted in `idempotency.json` beside the automation
+  store, bounded to 1024 entries and a 24 hour TTL. A retry with the same key
+  and identical request returns the stored status and body with
+  `Idempotency-Replayed: true` and performs no second create or run. The same
+  key with a different request is `422` `idempotency_key_reuse`. Failed
+  attempts are not stored, so they can be retried. Keys are scoped to the
+  route and automation id. If the record cannot be persisted after the
+  mutation committed, the success response is still returned (the failure is
+  logged), so a retry of that request is not deduplicated. An unparseable
+  `idempotency.json` is renamed to `idempotency.corrupt-<timestamp>.json` and
+  that request fails with `500`; later requests start from an empty store.
+  `DELETE` is not covered.
+
 **Operate** (always-on named operation; same `OperateRecord` as CWC
 `20de981` / PR #284)
 
@@ -1614,12 +1769,32 @@ human gate. Auto-merge is `scripts/check-auto-merge.py --repo … --pr …
 --agent …` from codewhale-ops `origin/main` (exit 0), then
 `scripts/auto-merge-pr.py`. Do not invent a second checker.
 
+**Workspace trust** (the persisted project decision)
+- `GET /v1/workspace/status` reports `workspace_trusted`: whether the server’s workspace is trusted in the discovered user config. Project skills, commands and MCP configuration consult this decision. Project hooks require both workspace trust and separate approval of the exact hooks file.
+- `POST /v1/workspace/trust` with `{"trusted": true|false}` records that decision and answers `{workspace, workspace_trusted, config_path, message}`.
+
+The handler reuses `config::set_workspace_trust`, the writer behind `/trust on|off --save`, and reads the decision back through `is_workspace_trusted`. The request accepts no path; it applies only to the server’s admitted workspace. `config_path` identifies the document written. Both read and write use default config discovery, including configured environment overrides; a runtime’s explicit `--config` argument does not select this trust document.
+
+Project skills and commands consult trust at their existing load or turn boundaries. Project hooks also need their separate digest approval and recheck authority before execution. Restart the engine to rebuild project MCP connections; this request does not disconnect an existing pool or interrupt a running turn. Project instruction files such as `AGENTS.md` and project rules are loaded by the existing context loader independently of this flag, so revoking workspace trust does not remove those instructions or their persisted history.
+
+This persisted project decision is separate from a thread’s `trust_mode` / Full Access and from `/trust add <path>` external-path grants. `/trust on|off --save` changes session file-tool trust and the persisted project record. This HTTP route changes only the persisted project record. Its POST requires the same Runtime write authority as other state-changing routes; watch device tokens can read status but cannot write trust.
+
 **Introspection**
 - `GET /v1/workspace/status`
 - `GET /v1/workspace/files/search?query=<partial>&limit=<1-100>` (see workspace file suggestions above)
 - `GET /v1/workspace/files?path=<dir>&limit=<1-2000>`, `GET /v1/workspace/files/read?path=<file>&offset=&limit=`
   and `PUT /v1/workspace/files` (see workspace files and session artifacts above)
 - `GET /v1/skills`
+- `GET /v1/skills/{name}` — one skill's routing metadata (`source`,
+  `invocation`, `aliases`, `bundled_tier`, `enabled`) plus its full
+  `SKILL.md` body, so a client can compose an activation instruction for its
+  own next turn the way TUI's `/skill <name>` does. `404` for a name no
+  discovery root holds; `403` for a plugin snapshot whose authority is no
+  longer current; native rows whose file has since been deleted also `404`
+  rather than serving the stale body. Advertised as
+  `capabilities.skill_detail` on `GET /v1/runtime/info`, which is the source a
+  client should use rather than probing this path: a `404` here means "no such
+  skill" and is indistinguishable from "no such route".
 - `GET /v1/apps/mcp/servers`
 - `GET /v1/apps/mcp/tools?server=<optional>`
 
@@ -1627,6 +1802,10 @@ Skill activation toggles are persisted under a cross-process transaction lock.
 Each mutation reloads and merges the latest exact-name state before an atomic
 write, and `GET /v1/skills` refreshes that shared state so another Codewhale
 process's successful toggle is visible without restarting the Runtime API.
+
+Skill rows on `GET /v1/skills` carry `invocation`, `aliases`, and
+`bundled_tier` alongside the fields they always carried, so a client can build
+a picker, autocomplete, or activation gate without a second request per row.
 
 **Usage** (token/cost aggregation across threads)
 - `GET /v1/usage?since=<rfc3339>&until=<rfc3339>&group_by=<day|model|provider|thread>`
@@ -2707,3 +2886,39 @@ matrix, no secrets leaked):
 scripts/release/app-server-smoke.sh --matrix        # dry-run plan
 bash scripts/release/app-server-smoke.test.sh       # parser self-test (fake binary)
 ```
+
+## Profile constitution
+
+`profile_constitution` in runtime capabilities enables profile snapshots on
+`POST /v1/threads/{id}/turns`. The optional `profile_constitution` field contains
+`{accountId, revision, constitution}`. `constitution` is exactly
+`{schemaVersion: 1, detail, initiative, collaboration, notes}`; choices are
+`brief|balanced|detailed`, `check|judgment|moving`, and `direct|critical|coach`.
+Notes are limited to 4,000 Unicode characters. Invalid data is refused.
+
+The authenticated account transport supplies the snapshot, which participates in
+the turn's replay identity. The Engine renders it through its existing personal
+constitution renderer and records it in native session history. The snapshot is
+unchanged across provider retries and compaction. A new snapshot fully replaces
+earlier personal preferences. Permissions and approval policy are unaffected.
+Internal follow-ups and RLM child calls inherit the admitted preferences;
+they do not re-read the host operator's account in the middle of that work.
+
+Without a supplied snapshot, the Engine reads the signed-in profile from the
+configured account service at turn admission. When that Engine-loaded profile is
+unavailable or invalid, the turn uses the signed-out local constitution and shows
+a notice once per session; an invalid host-supplied `profile_constitution` snapshot still fails
+the turn, and `GET /v1/constitution` still reports the error. An account without saved
+preferences uses an explicit default snapshot; a signed-out account uses the
+existing local constitution. Hosted transports always supply the owning
+account snapshot, including defaults, so local preferences cannot leak between
+accounts.
+
+`GET /v1/constitution` reads the next-turn profile and its model guidance. It is
+not a receipt that an active turn adopted the edit. `POST /v1/constitution/preview`
+accepts a constitution document and returns `{modelGuidance, saved:false}` without
+saving anything. `modelGuidance` is the Engine-rendered guidance body: GET and
+preview return identical text for the same document. It excludes the session
+record's attribution line or envelope; `source` and `revision` carry provenance.
+Both routes use normal Runtime authorization. Older runtimes
+must be upgraded before account transports submit profile-bearing turns.

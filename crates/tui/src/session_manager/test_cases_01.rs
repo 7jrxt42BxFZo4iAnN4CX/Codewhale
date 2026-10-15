@@ -1,8 +1,6 @@
 
     use super::*;
     use crate::approval_log::ApprovalOutcome;
-    use crate::tools::plan::StepStatus;
-    use crate::tui::history::{HistoryCell, ToolCell, history_cells_from_message};
     use codewhale_models::ContentBlock;
     use codewhale_models::Role;
     use std::fs;

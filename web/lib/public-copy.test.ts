@@ -16,7 +16,7 @@ describe("public website copy contracts", () => {
     expect(layout).toContain("docs-portal-band");
     // The hero copy is dictionary-driven now (#5337), so assert it where the
     // string actually lives rather than in the TSX.
-    expect(EN_DOCS_SHELL.heroTitle).toBe("Get something done with Codewhale.");
+    expect(EN_DOCS_SHELL.heroTitle).toBe("Install and use Codewhale");
     expect(layout).not.toContain("Section 02");
     expect(layout).not.toContain("How Codewhale works: ego");
     expect(layout).not.toContain("<Seal");
@@ -53,7 +53,7 @@ describe("public website copy contracts", () => {
   });
 
   it("describes ACP and the VS Code extension at their implemented capability level", () => {
-    const runtime = pageSource("runtime/page.tsx");
+    const runtime = readFileSync(new URL("./content/runtime-integrations.ts", import.meta.url), "utf8") + pageSource("runtime/page.tsx");
     const sourceDocTargets = [
       ...new Set(
         [...runtime.matchAll(/REPO_BLOB_BASE}\/([^`]+)`/g)].map((match) => match[1]),
@@ -61,7 +61,7 @@ describe("public website copy contracts", () => {
     ];
 
     expect(runtime).toContain("ACP (Agent Client Protocol)");
-    expect(runtime).toContain("Baseline JSON-RPC adapter over stdio");
+    expect(runtime).toContain("ACP stdio connects compatible editors to the existing Engine");
     expect(runtime).toContain("Early companion for the local runtime");
     expect(runtime).not.toContain("Agent Communication Protocol");
     expect(runtime).not.toContain("IETF-standard");
@@ -99,7 +99,7 @@ describe("public website copy contracts", () => {
     expect(homepage).not.toContain("releases/tag/v${version}");
     expect(homepage).not.toMatch(/Codewhale v0\.9\.1|\"v0\.9\.1 \u00b7/);
     // Installation examples come from the verified guide, never the candidate version.
-    expect(install).toContain("INSTALL_GUIDE.chunks");
+    expect(install).toContain('from "@/lib/install-guide.generated"');
     expect(install).not.toContain("facts.version");
     expect(install).not.toContain('"v0.8.x"');
     expect(install).not.toContain("cnbInstall(facts.version");

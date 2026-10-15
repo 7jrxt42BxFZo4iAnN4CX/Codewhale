@@ -37,6 +37,7 @@ export interface ChromeLink {
 export function navLinks(locale: string, chrome: ChromeDict): ChromeLink[] {
   return [
     { href: `/${locale}/product`, label: chrome.navProduct },
+    { href: `/${locale}/features`, label: chrome.navFeatures },
     { href: `/${locale}/models`, label: chrome.navModels },
     { href: `/${locale}/plugins`, label: chrome.navPlugins },
     { href: `/${locale}/docs`, label: chrome.navDocs },
@@ -59,6 +60,7 @@ export function secondaryNavLinks(locale: string, chrome: ChromeDict): ChromeLin
 export function footerProductLinks(locale: string, chrome: ChromeDict): ChromeLink[] {
   return [
     { href: `/${locale}/product`, label: chrome.navProduct },
+    { href: `/${locale}/features`, label: chrome.navFeatures },
     { href: `/${locale}/docs`, label: chrome.footerDocs },
     { href: `/${locale}/docs/guide`, label: chrome.footerGuide },
     { href: `/${locale}/install`, label: chrome.footerInstall },

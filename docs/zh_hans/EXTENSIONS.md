@@ -82,7 +82,8 @@ CommonJS 解析也需要 Node；这些情况会明确提示使用
 导入可在两种运行时中使用。
 
 宿主提供同一个 Cordis、schemastery、cosmokit 及有限的 DSH 兼容导出。支持的服务名为
-`tools`、`commands`、`prompt`、`storage`、`skills`、`shellHooks`、`mcp`、`logger`、`events`、`reflect`、`registry`。
+`tools`、`commands`、`prompt`、`storage`、`skills`、`shellHooks`、`avatars`、`mcp`、`logger`、`events`、`reflect`、`registry`。`ctx.avatars.registerPack({path})` 注册已审查包内的头像包，
+参见 [whale-avatar 示例](../examples/plugins/whale-avatar/README.md)。
 需要未提供服务的插件会激活失败，并显示原因。目前没有已发布的插件编写 SDK；
 普通 ESM 示例使用这些文档规定的适配服务。
 
@@ -258,7 +259,7 @@ async execute({ path }, exec) {
 
 核心调用沿用 allow/deny、hooks、Auto-Review、仓库规则、worker 权限和审批检查。
 审批卡片及来源由 Rust 生成，插件不能批准或指定票据。该句柄不出现在激活、timer、
-用户命令、sub-agent 调用或 `execute_tools` 中的嵌套扩展工具执行里；调用结束、取消、
+用户命令或 `execute_tools` 中的嵌套扩展工具执行里；调用结束、取消、
 插件停用或宿主退出后失效，等待中的审批以取消结果撤回。
 
 嵌套 shell 和网络调用强制要求用户审批，已记住的授权不满足它们；Ask 和

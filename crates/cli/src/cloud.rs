@@ -7,6 +7,7 @@
 
 use std::io::{self, IsTerminal, Read, Write};
 use std::net::IpAddr;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
@@ -29,6 +30,10 @@ pub(crate) mod machine;
 mod work;
 
 const MAX_RESPONSE_BYTES: u64 = 256 * 1024;
+const MAX_FILE_DOWNLOAD_BYTES: u64 = 25 * 1024 * 1024;
+const MAX_COMPUTER_FILE_SAVE_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_COMPUTER_FILE_RESTORE_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_FILE_VERSION: u64 = 9_007_199_254_740_991;
 const MIN_API_KEY_BYTES: usize = 8;
 const MAX_API_KEY_BYTES: u64 = 4096;
 const MAX_API_KEY_STDIN_BYTES: u64 = MAX_API_KEY_BYTES + 1024;
@@ -234,7 +239,7 @@ enum CloudAgentsCommand {
         #[arg(long, default_value_t = 0)]
         since_seq: u64,
     },
-    /// Give a named Agent durable repository Work. This records a request; it does not start compute.
+    /// Give a named Agent durable Work. This records a request; it does not start compute.
     ///
     /// The Agent reads the message first: a plain instruction becomes Work, a
     /// command such as "stop" is applied to its active Work, a correction
@@ -249,6 +254,44 @@ enum CloudAgentsCommand {
         /// Stable message ID for safe retry after an uncertain response.
         #[arg(long)]
         message_id: String,
+        #[arg(long, help = "UTF-8 source context file, at most 64000 UTF-16 units")]
+        context_file: Option<PathBuf>,
+        #[arg(
+            long = "file",
+            help = "Saved account file reference FILE_ID@VERSION; repeat for up to ten files"
+        )]
+        file_refs: Vec<String>,
+    },
+    /// Record Work, review its quote, and start it on a new cloud computer.
+    ///
+    /// Without --yes and --confirm-eu-compute, a terminal asks before launching
+    /// and a script refuses; nothing starts without that consent. Reuse
+    /// --operation-key and --message-id to retry after an uncertain response.
+    Dispatch {
+        objective: String,
+        /// Agent name or ID; omitted, the account's repository-free default Agent.
+        #[arg(long)]
+        agent: Option<String>,
+        /// Task time in seconds; defaults to what the account's offer allows.
+        #[arg(long)]
+        seconds: Option<u64>,
+        #[arg(long, help = "UTF-8 source context file, at most 64000 UTF-16 units")]
+        context_file: Option<PathBuf>,
+        #[arg(
+            long = "file",
+            help = "Saved account file reference FILE_ID@VERSION; repeat for up to ten files"
+        )]
+        file_refs: Vec<String>,
+        #[arg(long)]
+        operation_key: Option<String>,
+        #[arg(long)]
+        message_id: Option<String>,
+        /// Do not ask before launching (also needs --confirm-eu-compute).
+        #[arg(long)]
+        yes: bool,
+        /// Agree that repository code and Work files run on EU compute.
+        #[arg(long)]
+        confirm_eu_compute: bool,
     },
     /// Read the account-owned status of a Work request.
     WorkStatus { id: String },
@@ -275,7 +318,7 @@ enum CloudAgentsCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Quote bounded Boat trial computer time for queued Work. Nothing starts.
+    /// Quote offered computer time for Work. Nothing starts.
     ///
     /// Prints the funding, EU placement and time disclosure plus a short-lived
     /// confirmation for `work-launch`. Reuse one --operation-key for the quote
@@ -285,12 +328,22 @@ enum CloudAgentsCommand {
         /// Stable launch ID, reused by `work-launch` so a retry cannot start two computers.
         #[arg(long)]
         operation_key: String,
+        #[arg(
+            long,
+            help = "Whole seconds within the served offer; defaults to its maximum"
+        )]
+        seconds: Option<u64>,
+        #[arg(
+            long,
+            help = "Failed workspace ID to recover on a fresh computer with the same Work ID"
+        )]
+        recovery_from: Option<String>,
     },
-    /// Start quoted Boat trial Work on EU compute (five minutes at most, $0 Codewhale charge).
+    /// Start quoted Work on EU compute using the reviewed computer balance or trial.
     ///
     /// Requires the confirmation printed by `work-quote` and --confirm-eu-compute,
-    /// which agrees that repository code and Work files run on Boat's EU
-    /// compute. Re-running with the same --operation-key and --confirmation is
+    /// which agrees that repository code and Work files run on a cloud
+    /// computer in the EU. Re-running with the same --operation-key and --confirmation is
     /// safe: it replays the launch instead of starting another computer.
     WorkLaunch {
         id: String,
@@ -302,6 +355,13 @@ enum CloudAgentsCommand {
         /// Agree that repository code and Work files run on EU compute.
         #[arg(long)]
         confirm_eu_compute: bool,
+        #[arg(
+            long,
+            help = "Exact whole seconds printed by work-quote; default is what your current offer allows"
+        )]
+        seconds: Option<u64>,
+        #[arg(long, help = "Exact failed workspace ID used for the recovery quote")]
+        recovery_from: Option<String>,
     },
 }
 
@@ -322,11 +382,11 @@ enum CloudComputersCommand {
     /// Save a Computer identity; compute is allocated only when it starts.
     Create {
         name: String,
-        /// Try Boat compute in the EU for this Computer.
-        #[arg(long, requires = "eu_compute_opt_in")]
-        boat_trial: bool,
-        /// Confirm that Boat trial code and files run on EU compute.
-        #[arg(long, requires = "boat_trial")]
+        /// Try cloud compute in the EU for this Computer.
+        #[arg(long, alias = "boat-trial", requires = "eu_compute_opt_in")]
+        computer_trial: bool,
+        /// Confirm that trial code and files run on EU compute.
+        #[arg(long, requires = "computer_trial")]
         eu_compute_opt_in: bool,
     },
     /// Show one Computer; --json includes allowance and meter data.
@@ -335,7 +395,7 @@ enum CloudComputersCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Read Boat trial usage receipts for one Computer.
+    /// Read trial usage receipts for one Computer.
     Usage {
         id: String,
         /// Print the full metering response.
@@ -347,7 +407,73 @@ enum CloudComputersCommand {
     /// Pause a Computer.
     Pause { id: String },
     /// Permanently delete a Computer and its provider allocation.
-    Delete { id: String },
+    Delete {
+        id: String,
+        #[arg(
+            long,
+            required = true,
+            help = "Confirm discarding files still on this computer"
+        )]
+        discard_files: bool,
+    },
+    #[command(
+        about = "Save and restore computer files, or inspect and download account file versions"
+    )]
+    Files {
+        #[command(subcommand)]
+        command: CloudComputerFilesCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum CloudComputerFilesCommand {
+    #[command(about = "Save a nonempty workspace file up to 16 MiB to account storage")]
+    Save {
+        computer_id: String,
+        path: String,
+        #[arg(
+            long,
+            help = "Stable save request ID; reuse it when retrying the same save"
+        )]
+        request_id: String,
+        #[arg(long, requires = "expected_version")]
+        file_id: Option<String>,
+        #[arg(long, requires = "file_id", value_parser = clap::value_parser!(u64).range(1..=MAX_FILE_VERSION))]
+        expected_version: Option<u64>,
+        #[arg(long)]
+        expected_revision: Option<String>,
+        #[arg(long)]
+        name: Option<String>,
+    },
+    #[command(
+        about = "Restore an account file version up to 4 MiB; existing destinations need --expected-revision"
+    )]
+    Restore {
+        computer_id: String,
+        file_id: String,
+        path: String,
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..=MAX_FILE_VERSION))]
+        version: u64,
+        #[arg(
+            long,
+            help = "Current destination SHA-256, required to replace an existing file"
+        )]
+        expected_revision: Option<String>,
+    },
+    #[command(about = "Read a computer workspace file's size and current SHA-256 revision")]
+    Revision { computer_id: String, path: String },
+    #[command(about = "List an account file's saved versions, sizes and SHA-256 hashes")]
+    Versions { file_id: String },
+    #[command(
+        about = "Download and verify one account file version without overwriting local files"
+    )]
+    Download {
+        file_id: String,
+        #[arg(long, value_parser = clap::value_parser!(u64).range(1..=MAX_FILE_VERSION))]
+        version: u64,
+        #[arg(long)]
+        output: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -440,6 +566,13 @@ struct ComputerResponse {
 struct ComputerDeleteResponse {
     deleted: bool,
     computer_id: String,
+}
+
+#[derive(Deserialize)]
+struct AccountFileVersion {
+    version: u64,
+    size: u64,
+    sha256: String,
 }
 
 #[derive(Deserialize)]
@@ -550,6 +683,22 @@ struct AccountAgentWork {
     status: String,
     #[serde(default)]
     objective: String,
+    #[serde(default)]
+    task_context_digest: String,
+}
+
+#[derive(Serialize)]
+struct WorkTaskContext {
+    text: String,
+    #[serde(rename = "fileRefs")]
+    file_refs: Vec<WorkFileRef>,
+}
+
+#[derive(Serialize)]
+struct WorkFileRef {
+    #[serde(rename = "fileId")]
+    file_id: String,
+    version: u64,
 }
 
 #[derive(Deserialize)]
@@ -693,6 +842,17 @@ impl CloudTransport for ReqwestTransport {
             .base
             .join(request.path.trim_start_matches('/'))
             .context("failed to construct the Codewhale account request URL")?;
+        let file_download = request.method == HttpMethod::Get
+            && url
+                .path()
+                .strip_prefix("/v1/files/")
+                .and_then(|path| path.strip_suffix("/content"))
+                .is_some_and(|id| validate_account_file_id(id).is_ok());
+        let max_response_bytes = if file_download {
+            MAX_FILE_DOWNLOAD_BYTES
+        } else {
+            MAX_RESPONSE_BYTES
+        };
         let method = match request.method {
             HttpMethod::Get => reqwest::Method::GET,
             HttpMethod::Post => reqwest::Method::POST,
@@ -700,10 +860,14 @@ impl CloudTransport for ReqwestTransport {
             HttpMethod::Put => reqwest::Method::PUT,
             HttpMethod::Delete => reqwest::Method::DELETE,
         };
-        let mut builder = self
-            .client
-            .request(method, url)
-            .header(reqwest::header::ACCEPT, "application/json");
+        let mut builder = self.client.request(method, url).header(
+            reqwest::header::ACCEPT,
+            if file_download {
+                "application/octet-stream"
+            } else {
+                "application/json"
+            },
+        );
         // Hosted launch waits for provider creation and guest bootstrap. Its
         // HTTP deadline is separate from the guest's bounded trial runtime.
         if request.method == HttpMethod::Post && request.path == "/api/cloud-sessions" {
@@ -728,12 +892,12 @@ impl CloudTransport for ReqwestTransport {
             .and_then(|value| value.trim().parse::<u64>().ok());
         let mut body = Vec::new();
         response
-            .take(MAX_RESPONSE_BYTES + 1)
+            .take(max_response_bytes + 1)
             .read_to_end(&mut body)
             .map_err(|source| {
                 CloudTransportError::new("failed to read the Codewhale service response", source)
             })?;
-        if body.len() as u64 > MAX_RESPONSE_BYTES {
+        if body.len() as u64 > max_response_bytes {
             return Err(CloudTransportError::new(
                 "The Codewhale service returned an unexpectedly large response",
                 std::io::Error::other("response exceeded the account API size limit"),
@@ -1155,20 +1319,22 @@ impl<'a, T: CloudTransport> CloudClient<'a, T> {
         agent_id: &str,
         objective: &str,
         message_id: &str,
+        task_context: Option<&WorkTaskContext>,
     ) -> Result<AgentWorkMessageResponse> {
         let agent_id = validate_resource_id(agent_id, "Agent")?;
         let objective = objective.trim();
-        if objective.is_empty() || objective.chars().count() > 32_000 {
+        if objective.is_empty() || objective.encode_utf16().count() > 32_000 {
             bail!("Work objective must contain 1-32000 characters");
         }
         let message_id = validate_operation_key(message_id)?;
+        let mut body = serde_json::json!({ "messageId": message_id, "text": objective });
+        if let Some(context) = task_context {
+            body["taskContext"] = serde_json::to_value(context)?;
+        }
         let response = self.execute_authenticated(
             HttpMethod::Post,
             &format!("/api/agents/{agent_id}/messages"),
-            Some(json_body(&serde_json::json!({
-                "messageId": message_id,
-                "text": objective,
-            }))?),
+            Some(json_body(&body)?),
         )?;
         if ![200, 201, 202].contains(&response.status) {
             return Err(response_error(&response));
@@ -1211,11 +1377,11 @@ impl<'a, T: CloudTransport> CloudClient<'a, T> {
     fn create_computer(
         &self,
         name: &str,
-        boat_trial: bool,
+        computer_trial: bool,
         eu_compute_opt_in: bool,
     ) -> Result<AccountComputer> {
-        if boat_trial != eu_compute_opt_in {
-            bail!("Boat trial requires both --boat-trial and --eu-compute-opt-in");
+        if computer_trial != eu_compute_opt_in {
+            bail!("A computer trial requires both --computer-trial and --eu-compute-opt-in");
         }
         let name = validate_computer_name(name)?;
         let response = self.execute_authenticated(
@@ -1223,8 +1389,8 @@ impl<'a, T: CloudTransport> CloudClient<'a, T> {
             "/api/computers",
             Some(json_body(&ComputerCreateRequest {
                 name: &name,
-                provider: boat_trial.then_some("boat"),
-                boat_eu_compute_opt_in: boat_trial.then_some(true),
+                provider: computer_trial.then_some("boat"),
+                boat_eu_compute_opt_in: computer_trial.then_some(true),
             })?),
         )?;
         let result: ComputerResponse = expect_json(response, &[200, 201])?;
@@ -1255,12 +1421,105 @@ impl<'a, T: CloudTransport> CloudClient<'a, T> {
 
     fn delete_computer(&self, id: &str) -> Result<()> {
         let id = validate_computer_id(id)?;
-        let response =
-            self.execute_authenticated(HttpMethod::Delete, &format!("/api/computers/{id}"), None)?;
+        let response = self.execute_authenticated(
+            HttpMethod::Delete,
+            &format!("/api/computers/{id}"),
+            Some(json_body(&serde_json::json!({ "discardFiles": true }))?),
+        )?;
         let result: ComputerDeleteResponse = expect_json(response, &[200])?;
         if !result.deleted || result.computer_id != id {
             bail!("The Codewhale service did not confirm deletion of Computer {id}");
         }
+        Ok(())
+    }
+
+    fn computer_file_revision(&self, computer_id: &str, path: &str) -> Result<serde_json::Value> {
+        let id = validate_computer_id(computer_id)?;
+        validate_computer_file_path(path)?;
+        let mut url = Url::parse("https://codewhale.invalid/")?;
+        url.set_path(&format!("/api/computers/{id}/files/revision"));
+        url.query_pairs_mut().append_pair("path", path);
+        let response = self.execute_authenticated(
+            HttpMethod::Get,
+            &format!("{}?{}", url.path(), url.query().unwrap_or_default()),
+            None,
+        )?;
+        let value: serde_json::Value = expect_json(response, &[200])?;
+        if value["computerId"].as_str() != Some(id)
+            || value["path"].as_str() != Some(path)
+            || value["size"].as_u64().is_none()
+        {
+            bail!("The Codewhale service returned an invalid file revision");
+        }
+        validate_file_revision(value["revision"].as_str().unwrap_or_default())?;
+        Ok(value)
+    }
+
+    fn computer_file_action(
+        &self,
+        computer_id: &str,
+        action: &str,
+        payload: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        let id = validate_computer_id(computer_id)?;
+        let response = self.execute_authenticated(
+            HttpMethod::Post,
+            &format!("/api/computers/{id}/files/{action}"),
+            Some(json_body(&payload)?),
+        )?;
+        expect_json(response, &[200, 201])
+    }
+
+    fn account_file(&self, file_id: &str) -> Result<serde_json::Value> {
+        let id = validate_account_file_id(file_id)?;
+        let response =
+            self.execute_authenticated(HttpMethod::Get, &format!("/v1/files/{id}"), None)?;
+        let value: serde_json::Value = expect_json(response, &[200])?;
+        if value["file"]["id"].as_str() != Some(id) {
+            bail!("The Codewhale service returned a different account file");
+        }
+        Ok(value)
+    }
+
+    fn download_account_file(&self, file_id: &str, version: u64, output: &Path) -> Result<()> {
+        let id = validate_account_file_id(file_id)?;
+        match std::fs::symlink_metadata(output) {
+            Ok(_) => bail!("The output path already exists; choose another file name"),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error).context("could not inspect the output path"),
+        }
+        let metadata = account_file_version(&self.account_file(id)?, version)?;
+        let response = self.execute_authenticated(
+            HttpMethod::Get,
+            &format!("/v1/files/{id}/content?version={version}"),
+            None,
+        )?;
+        if response.status != 200 {
+            return Err(response_error(&response));
+        }
+        if response.body.len() as u64 != metadata.size
+            || crate::update::sha256_hex(&response.body) != metadata.sha256
+        {
+            bail!(
+                "The downloaded file did not match its saved size and SHA-256; nothing was written"
+            );
+        }
+        let parent = output
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        let mut pending = tempfile::NamedTempFile::new_in(parent)
+            .context("could not prepare the download beside its destination")?;
+        pending
+            .write_all(&response.body)
+            .context("could not write the verified download")?;
+        pending
+            .as_file()
+            .sync_all()
+            .context("could not sync the verified download")?;
+        pending
+            .persist_noclobber(output)
+            .context("could not save the download without replacing an existing file")?;
         Ok(())
     }
 
@@ -1424,6 +1683,65 @@ fn validate_computer_id(value: &str) -> Result<&str> {
     validate_resource_id(value, "Computer")
 }
 
+fn validate_account_file_id(value: &str) -> Result<&str> {
+    let suffix = value.strip_prefix("file_").unwrap_or_default();
+    if !(16..=64).contains(&suffix.len())
+        || !suffix
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        bail!("Account file ID must be file_ followed by 16-64 letters, digits, `-`, or `_`");
+    }
+    Ok(value)
+}
+
+fn validate_computer_file_path(value: &str) -> Result<()> {
+    let bytes = value.as_bytes();
+    if value.is_empty()
+        || value.len() > 4096
+        || value.starts_with('/')
+        || value.contains('\\')
+        || value.chars().any(char::is_control)
+        || bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+        || value.split('/').any(|part| matches!(part, "" | "." | ".."))
+    {
+        bail!(
+            "Choose a relative file path inside the computer workspace, without `.` or `..` segments"
+        );
+    }
+    Ok(())
+}
+
+fn validate_file_revision(value: &str) -> Result<&str> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        bail!("File revision must be a lowercase SHA-256 hash of 64 characters");
+    }
+    Ok(value)
+}
+
+fn account_file_version(value: &serde_json::Value, version: u64) -> Result<AccountFileVersion> {
+    if !(1..=MAX_FILE_VERSION).contains(&version) {
+        bail!("Choose an explicit positive saved file version");
+    }
+    let versions: Vec<AccountFileVersion> = serde_json::from_value(value["versions"].clone())
+        .context("The Codewhale service returned invalid file versions")?;
+    let mut matches = versions
+        .into_iter()
+        .filter(|entry| entry.version == version);
+    let selected = matches
+        .next()
+        .ok_or_else(|| anyhow!("That saved file version is unavailable"))?;
+    if matches.next().is_some() || selected.size == 0 || selected.size > MAX_FILE_DOWNLOAD_BYTES {
+        bail!("The Codewhale service returned invalid saved file metadata");
+    }
+    validate_file_revision(&selected.sha256)?;
+    Ok(selected)
+}
+
 fn validate_resource_id<'a>(value: &'a str, kind: &str) -> Result<&'a str> {
     let id = value.trim();
     let bytes = id.as_bytes();
@@ -1566,6 +1884,141 @@ fn assert_catalog_route<'a>(
         "`{}/{}` is not listed in the live Codewhale model catalog (GET /api/model-providers), so no conversation was created. {listed}",
         printable(provider),
         printable(model)
+    )
+}
+
+fn work_objective_and_context(
+    objective: &str,
+    context_file: Option<&Path>,
+    file_refs: &[String],
+) -> Result<(String, Option<WorkTaskContext>)> {
+    let objective = objective.trim();
+    if objective.is_empty() || objective.encode_utf16().count() > 32_000 {
+        bail!("Work objective must contain 1-32000 UTF-16 units");
+    }
+    let mut context = work::task_context(context_file, file_refs)?;
+    if objective.encode_utf16().count() > 12_000 {
+        let context = context.get_or_insert_with(|| WorkTaskContext {
+            text: String::new(),
+            file_refs: Vec::new(),
+        });
+        context.text = if context.text.is_empty() {
+            objective.to_string()
+        } else {
+            format!("{objective}\n\n{}", context.text)
+        };
+        if context.text.encode_utf16().count() > 64_000 {
+            bail!("Task source context exceeds 64000 UTF-16 units");
+        }
+    }
+    Ok((objective.to_string(), context))
+}
+
+fn prepare_work_agent<T: CloudTransport>(
+    client: &CloudClient<'_, T>,
+    selector: Option<&str>,
+) -> Result<AccountAgent> {
+    let selected = match selector {
+        Some(selector) => {
+            let listing: AgentListResponse = serde_json::from_value(client.agents()?)
+                .context("The Codewhale service returned an invalid Agent list")?;
+            let agent = resolve_account_agent(&listing.agents, selector)?;
+            if !agent.project_id.is_empty() {
+                return Ok(agent);
+            }
+            Some(agent)
+        }
+        None => None,
+    };
+    let response: AgentResponse = expect_json(
+        client.execute_authenticated(
+            HttpMethod::Post,
+            "/api/work-box",
+            Some(json_body(&serde_json::json!({}))?),
+        )?,
+        &[200],
+    )?;
+    match selected {
+        Some(selected)
+            if response.agent.id != selected.id || response.agent.project_id.is_empty() =>
+        {
+            bail!(
+                "This Agent cannot use the account's repository-free task context. Use Agent {}",
+                printable(&response.agent.name)
+            )
+        }
+        None if response.agent.project_id.is_empty() => {
+            bail!("The account has no default Agent for repository-free tasks")
+        }
+        _ => Ok(response.agent),
+    }
+}
+
+fn dispatch_stamp(objective: &str) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_nanos());
+    let seed = format!("{nanos}:{}:{objective}", std::process::id());
+    crate::update::sha256_hex(seed.as_bytes())[..24].to_string()
+}
+
+pub(crate) enum AccountDispatch {
+    Run {
+        objective: String,
+        agent: Option<String>,
+        seconds: Option<u64>,
+        context_file: Option<PathBuf>,
+        file_refs: Vec<String>,
+        operation_key: Option<String>,
+        message_id: Option<String>,
+        yes: bool,
+        confirm_eu_compute: bool,
+    },
+    Status(String),
+    Cancel(String),
+}
+
+pub(crate) fn run_dispatch(
+    call: AccountDispatch,
+    profile: Option<&str>,
+    config: &mut ConfigStore,
+) -> Result<()> {
+    let command = match call {
+        AccountDispatch::Run {
+            objective,
+            agent,
+            seconds,
+            context_file,
+            file_refs,
+            operation_key,
+            message_id,
+            yes,
+            confirm_eu_compute,
+        } => CloudAgentsCommand::Dispatch {
+            objective,
+            agent,
+            seconds,
+            context_file,
+            file_refs,
+            operation_key,
+            message_id,
+            yes,
+            confirm_eu_compute,
+        },
+        AccountDispatch::Status(id) => CloudAgentsCommand::WorkStatus { id },
+        AccountDispatch::Cancel(id) => CloudAgentsCommand::WorkCancel {
+            id,
+            queue: None,
+            reason: None,
+        },
+    };
+    run(
+        CloudArgs {
+            api_base: None,
+            command: CloudCommand::Agents(CloudAgentsArgs { command }),
+        },
+        profile,
+        config,
     )
 }
 
@@ -2086,17 +2539,65 @@ fn run_agents<T: CloudTransport, W: Write>(
             agent,
             objective,
             message_id,
+            context_file,
+            file_refs,
         } => {
-            let listing: AgentListResponse = serde_json::from_value(client.agents()?)
-                .context("The Codewhale service returned an invalid Agent list")?;
-            let selected = resolve_account_agent(&listing.agents, &agent)?;
-            if selected.project_id.is_empty() {
-                bail!(
-                    "Agent {} needs a repository Project before it can do Work",
-                    printable(&selected.name)
-                );
-            }
-            work::assign(client, out, &selected, &objective, &message_id)
+            let (objective, context) =
+                work_objective_and_context(&objective, context_file.as_deref(), &file_refs)?;
+            validate_operation_key(&message_id)?;
+            let selected = prepare_work_agent(client, Some(&agent))?;
+            work::assign(
+                client,
+                out,
+                &selected,
+                &objective,
+                &message_id,
+                context.as_ref(),
+            )
+            .map(|_| ())
+        }
+        CloudAgentsCommand::Dispatch {
+            objective,
+            agent,
+            seconds,
+            context_file,
+            file_refs,
+            operation_key,
+            message_id,
+            yes,
+            confirm_eu_compute,
+        } => {
+            let (objective, context) =
+                work_objective_and_context(&objective, context_file.as_deref(), &file_refs)?;
+            let stamp = dispatch_stamp(&objective);
+            let message_id = message_id.unwrap_or_else(|| format!("dispatch-m-{stamp}"));
+            let operation_key = operation_key.unwrap_or_else(|| format!("dispatch-o-{stamp}"));
+            validate_operation_key(&message_id)?;
+            validate_operation_key(&operation_key)?;
+            let selected = prepare_work_agent(client, agent.as_deref())?;
+            let interactive = io::stdin().is_terminal() && io::stdout().is_terminal();
+            work::dispatch(
+                client,
+                out,
+                &selected,
+                &objective,
+                context.as_ref(),
+                work::DispatchOptions {
+                    seconds,
+                    operation_key: &operation_key,
+                    message_id: &message_id,
+                    yes,
+                    confirm_eu_compute,
+                    interactive,
+                },
+                &mut || {
+                    let mut line = String::new();
+                    io::stdin()
+                        .read_line(&mut line)
+                        .context("failed to read the answer from stdin")?;
+                    Ok(line)
+                },
+            )
         }
         CloudAgentsCommand::WorkStatus { id } => {
             let result = client.agent_work_status(&id)?;
@@ -2122,20 +2623,41 @@ fn run_agents<T: CloudTransport, W: Write>(
             if let Some(title) = run.get("title").and_then(|value| value.as_str()) {
                 writeln!(out, "Objective: {}", printable(title))?;
             }
+            if let Some(workspace) = run
+                .get("workspaceId")
+                .and_then(|value| value.as_str())
+                .filter(|id| !id.is_empty())
+            {
+                writeln!(out, "Workspace ID: {}", printable(workspace))?;
+            }
             Ok(())
         }
         CloudAgentsCommand::WorkCancel { id, queue, reason } => {
             work::cancel(client, out, &id, queue, reason.as_deref())
         }
         CloudAgentsCommand::WorkResult { id, json } => work::result(client, out, &id, json),
-        CloudAgentsCommand::WorkQuote { id, operation_key } => {
-            work::quote(client, out, &id, &operation_key)
-        }
+        CloudAgentsCommand::WorkQuote {
+            id,
+            operation_key,
+            seconds,
+            recovery_from,
+        } => work::quote(
+            client,
+            out,
+            &id,
+            &operation_key,
+            seconds,
+            recovery_from.as_deref(),
+            true,
+        )
+        .map(|_| ()),
         CloudAgentsCommand::WorkLaunch {
             id,
             operation_key,
             confirmation,
             confirm_eu_compute,
+            seconds,
+            recovery_from,
         } => {
             let confirmation = if confirmation == "-" && confirm_eu_compute {
                 if io::stdin().is_terminal() {
@@ -2154,6 +2676,8 @@ fn run_agents<T: CloudTransport, W: Write>(
                 &operation_key,
                 &confirmation,
                 confirm_eu_compute,
+                seconds,
+                recovery_from.as_deref(),
             )
         }
     }
@@ -2209,10 +2733,10 @@ fn run_computers<T: CloudTransport, W: Write>(
         }
         CloudComputersCommand::Create {
             name,
-            boat_trial,
+            computer_trial,
             eu_compute_opt_in,
         } => {
-            let computer = client.create_computer(&name, boat_trial, eu_compute_opt_in)?;
+            let computer = client.create_computer(&name, computer_trial, eu_compute_opt_in)?;
             write_computer(out, &computer)?;
             writeln!(
                 out,
@@ -2254,9 +2778,146 @@ fn run_computers<T: CloudTransport, W: Write>(
             let result = client.computer_action(&id, "pause")?;
             write_computer(out, &result.computer)
         }
-        CloudComputersCommand::Delete { id } => {
+        CloudComputersCommand::Delete { id, discard_files } => {
+            if !discard_files {
+                bail!(
+                    "Deleting a computer discards its remaining files; save them first, then pass --discard-files"
+                );
+            }
             client.delete_computer(&id)?;
             writeln!(out, "Deleted Computer {}.", validate_computer_id(&id)?)?;
+            Ok(())
+        }
+        CloudComputersCommand::Files { command } => run_computer_files(command, client, out),
+    }
+}
+
+fn run_computer_files<T: CloudTransport, W: Write>(
+    command: CloudComputerFilesCommand,
+    client: &CloudClient<'_, T>,
+    out: &mut W,
+) -> Result<()> {
+    match command {
+        CloudComputerFilesCommand::Save {
+            computer_id,
+            path,
+            request_id,
+            file_id,
+            expected_version,
+            expected_revision,
+            name,
+        } => {
+            let id = validate_computer_id(&computer_id)?;
+            validate_computer_file_path(&path)?;
+            let request_id = validate_turn_id(&request_id)?;
+            if file_id.is_some() != expected_version.is_some()
+                || expected_version.is_some_and(|version| !(1..MAX_FILE_VERSION).contains(&version))
+            {
+                bail!("Saving another version needs both --file-id and a valid --expected-version");
+            }
+            if let Some(file_id) = &file_id {
+                validate_account_file_id(file_id)?;
+            }
+            if let Some(revision) = &expected_revision {
+                validate_file_revision(revision)?;
+            }
+            let result = client.computer_file_action(id, "save", serde_json::json!({
+                "path": path, "requestId": request_id, "fileId": file_id,
+                "expectedVersion": expected_version.unwrap_or(0), "expectedRevision": expected_revision, "name": name,
+            }))?;
+            let saved_id = result["file"]["id"].as_str().unwrap_or_default();
+            validate_account_file_id(saved_id)?;
+            let sha256 = result["file"]["sha256"].as_str().unwrap_or_default();
+            validate_file_revision(sha256)?;
+            if result["saved"]["computerId"].as_str() != Some(id)
+                || result["saved"]["path"].as_str() != Some(path.as_str())
+                || result["saved"]["revision"].as_str() != Some(sha256)
+                || result["file"]["version"].as_u64() != Some(expected_version.unwrap_or(0) + 1)
+                || !result["file"]["size"]
+                    .as_u64()
+                    .is_some_and(|size| (1..=MAX_COMPUTER_FILE_SAVE_BYTES).contains(&size))
+                || file_id
+                    .as_deref()
+                    .is_some_and(|expected| expected != saved_id)
+                || expected_revision
+                    .as_deref()
+                    .is_some_and(|expected| expected != sha256)
+            {
+                bail!("The save receipt could not be verified; retry using the same --request-id");
+            }
+            write_computer_json(out, &result)
+        }
+        CloudComputerFilesCommand::Restore {
+            computer_id,
+            file_id,
+            path,
+            version,
+            expected_revision,
+        } => {
+            let id = validate_computer_id(&computer_id)?;
+            validate_computer_file_path(&path)?;
+            if let Some(revision) = &expected_revision {
+                validate_file_revision(revision)?;
+            }
+            let metadata = account_file_version(&client.account_file(&file_id)?, version)?;
+            if metadata.size > MAX_COMPUTER_FILE_RESTORE_BYTES {
+                bail!("Restore supports files up to 4 MiB; download this version instead");
+            }
+            match client.computer_file_revision(id, &path) {
+                Ok(current) => match expected_revision.as_deref() {
+                    Some(expected) if current["revision"].as_str() == Some(expected) => {}
+                    Some(_) => {
+                        bail!("The destination revision changed; inspect it before restoring")
+                    }
+                    None => bail!(
+                        "The destination exists; inspect its revision and pass --expected-revision to replace it"
+                    ),
+                },
+                Err(error)
+                    if expected_revision.is_none()
+                        && error.downcast_ref::<CloudHttpError>().is_some_and(|error| {
+                            error.status == 404
+                                && error.code.as_deref() == Some("computer_file_not_found")
+                        }) => {}
+                Err(error) => return Err(error),
+            }
+            let result = client.computer_file_action(id, "restore", serde_json::json!({
+                "path": path, "fileId": file_id, "version": version, "expectedRevision": expected_revision,
+            }))?;
+            let restored = &result["restored"];
+            if restored["computerId"].as_str() != Some(id)
+                || restored["path"].as_str() != Some(path.as_str())
+                || restored["fileId"].as_str() != Some(file_id.as_str())
+                || restored["version"].as_u64() != Some(version)
+                || restored["size"].as_u64() != Some(metadata.size)
+                || restored["revision"].as_str() != Some(metadata.sha256.as_str())
+                || restored["created"].as_bool().is_none()
+            {
+                bail!(
+                    "The restore receipt could not be verified; inspect the destination revision before retrying"
+                );
+            }
+            write_computer_json(out, &result)
+        }
+        CloudComputerFilesCommand::Revision { computer_id, path } => {
+            write_computer_json(out, &client.computer_file_revision(&computer_id, &path)?)
+        }
+        CloudComputerFilesCommand::Versions { file_id } => {
+            write_computer_json(out, &client.account_file(&file_id)?)
+        }
+        CloudComputerFilesCommand::Download {
+            file_id,
+            version,
+            output,
+        } => {
+            client.download_account_file(&file_id, version, &output)?;
+            writeln!(
+                out,
+                "Downloaded {} version {} to {} (size and SHA-256 verified).",
+                file_id,
+                version,
+                printable(&output.display().to_string())
+            )?;
             Ok(())
         }
     }
@@ -2267,7 +2928,7 @@ enum KeyReadMode {
     HiddenPrompt(String),
 }
 
-pub(crate) fn run(args: CloudArgs, profile: Option<&str>, config: &ConfigStore) -> Result<()> {
+pub(crate) fn run(args: CloudArgs, profile: Option<&str>, config: &mut ConfigStore) -> Result<()> {
     let machine = machine::MachineKeyEnv::from_process_env();
     let requested_base = machine::resolve_api_base(
         args.api_base.as_deref(),
@@ -2324,7 +2985,7 @@ pub(crate) fn run_account_login(
     no_open: bool,
     timeout_seconds: u64,
     profile: Option<&str>,
-    config: &ConfigStore,
+    config: &mut ConfigStore,
 ) -> Result<()> {
     run(
         CloudArgs {
@@ -2348,12 +3009,46 @@ pub(crate) fn reject_inline_api_key(api_key: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// On account sign-in, point a never-configured local route at the managed
+/// Codewhale provider so chat works immediately. A provider the user chose
+/// explicitly, or one that already has a local key (config, secret store or
+/// environment), is left alone: the default provider is DeepSeek, so equality
+/// with the default cannot tell "never configured" from "chose DeepSeek".
+fn select_managed_route_on_login<W: Write>(
+    config: &mut ConfigStore,
+    provider_secrets: &Secrets,
+    out: &mut W,
+) -> Result<()> {
+    let explicit_provider = config
+        .original_body()
+        .and_then(|body| body.parse::<toml::Table>().ok())
+        .is_some_and(|table| table.contains_key("provider"));
+    let has_local_key =
+        resolve_local_key(config, provider_secrets, config.config.provider)?.is_some();
+    if config.config.provider == ProviderKind::default() && !explicit_provider && !has_local_key {
+        config.config.provider = ProviderKind::Codewhale;
+        config.config.model = Some("auto".to_string());
+        config.save()?;
+        writeln!(
+            out,
+            "Using your Codewhale account route (provider codewhale, model auto)."
+        )?;
+    } else {
+        writeln!(
+            out,
+            "Keeping your configured {} route.",
+            config.config.provider.as_str()
+        )?;
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_with<T: CloudTransport, W: Write>(
     command: CloudCommand,
     profile: &str,
     api_base: &str,
-    config: &ConfigStore,
+    config: &mut ConfigStore,
     cloud_secrets: &Secrets,
     provider_secrets: &Secrets,
     machine: &machine::MachineKeyEnv,
@@ -2394,6 +3089,7 @@ fn run_with<T: CloudTransport, W: Write>(
                 client.poll_device(&device, Duration::from_secs(login.timeout_seconds), sleeper)?;
             let user = client.me()?;
             write_account(out, "Signed in to Codewhale.", profile, api_base, &user)?;
+            select_managed_route_on_login(config, provider_secrets, out)?;
             Ok(())
         }
         CloudCommand::Status => match client.load_auth()? {
@@ -2542,10 +3238,11 @@ fn run_with<T: CloudTransport, W: Write>(
                 out,
                 "dry-run: remote settings import is not available; local config unchanged"
             )?;
-            // Show the invariant: Bearer custody stays in the OS keyring, never in config.toml.
+            // Show the invariant: account session tokens stay in the private
+            // Codewhale secrets file, never in config.toml.
             writeln!(
                 out,
-                "Secure custody: Bearer tokens remain in the OS keyring"
+                "Secure custody: account session tokens stay in the private Codewhale secrets file, never in config.toml"
             )?;
             Ok(())
         }
@@ -2909,14 +3606,77 @@ impl CloudHttpError {
 
 impl std::fmt::Display for CloudHttpError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.code {
-            Some(code) => write!(
+        match self.code.as_deref().and_then(neutral_error_text) {
+            Some(text) => write!(
                 f,
-                "Codewhale account request failed (HTTP {}, code {code})",
+                "Codewhale account request failed (HTTP {}): {text}",
                 self.status
             ),
-            None => write!(f, "Codewhale account request failed (HTTP {})", self.status),
+            None => match self.code.as_deref().filter(|code| !is_vendor_code(code)) {
+                Some(code) => write!(
+                    f,
+                    "Codewhale account request failed (HTTP {}, code {code})",
+                    self.status
+                ),
+                None => write!(f, "Codewhale account request failed (HTTP {})", self.status),
+            },
         }
+    }
+}
+
+pub(crate) fn vendor_safe_prose(text: String) -> String {
+    if is_vendor_code(&text) {
+        "The cloud service reported an unrecognised condition".to_string()
+    } else {
+        text
+    }
+}
+
+fn is_vendor_code(code: &str) -> bool {
+    code.split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|token| {
+            matches!(
+                token.to_ascii_lowercase().as_str(),
+                "boat" | "daytona" | "sprite" | "sprites" | "agentbay" | "alibaba"
+            )
+        })
+}
+
+fn neutral_error_text(code: &str) -> Option<&'static str> {
+    Some(match code {
+        "boat_task_replay_expired" | "work_task_replay_expired" => {
+            "The earlier request can no longer be replayed and needs operator reconciliation"
+        }
+        "boat_task_create_in_progress" | "work_task_create_in_progress" => {
+            "The cloud computer is still being created"
+        }
+        "boat_task_cleanup_pending" | "work_task_cleanup_pending" => {
+            "The cloud computer is still being cleaned up"
+        }
+        "boat_task_receipt_invalid" | "work_task_receipt_invalid" => {
+            "The cloud computer's receipt could not be verified"
+        }
+        "boat_task_authority_changed" | "work_task_authority_changed" => {
+            "Your account authority changed while the cloud computer was starting"
+        }
+        "boat_task_stop_unconfirmed" | "work_task_stop_unconfirmed" => {
+            "The cloud computer stopped but its state is unconfirmed"
+        }
+        "boat_task_usage_pending" | "work_task_usage_pending" => {
+            "Usage for the cloud computer is still being finalized"
+        }
+        "boat_task_outcome_unknown" | "work_task_outcome_unknown" => {
+            "The cloud computer outcome is unknown"
+        }
+        _ => return None,
+    })
+}
+
+pub(crate) fn display_error_code(code: &str) -> String {
+    match neutral_error_text(code) {
+        Some(text) => text.to_string(),
+        None if is_vendor_code(code) => "unrecognised cloud error".to_string(),
+        None => code.to_string(),
     }
 }
 

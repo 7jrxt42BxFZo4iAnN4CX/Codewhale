@@ -444,6 +444,7 @@ pub enum RegisterKind {
     PromptSection,
     PromptTemplate,
     SkillRoot,
+    AvatarPack,
     ShellHook,
     McpServer,
 }
@@ -499,7 +500,7 @@ impl RegisterParams {
             RegisterKind::Command if spec.input_schema.is_some() => {
                 Err("a command registration has no `spec.input_schema`".to_string())
             }
-            RegisterKind::Hook | RegisterKind::PromptSection | RegisterKind::PromptTemplate | RegisterKind::SkillRoot | RegisterKind::ShellHook | RegisterKind::McpServer
+            RegisterKind::Hook | RegisterKind::PromptSection | RegisterKind::PromptTemplate | RegisterKind::SkillRoot | RegisterKind::AvatarPack | RegisterKind::ShellHook | RegisterKind::McpServer
                 if spec.input_schema.is_some() || spec.argument_hint.is_some() =>
             {
                 Err(
@@ -1056,8 +1057,8 @@ pub struct ToolCallParams {
     pub workspace: Option<String>,
     /// The invocation ticket: present only when this call runs under the turn
     /// loop's permission gate, and what `core/call` must present. Absent for a
-    /// call with no gate (a sub-agent, one nested in `execute_tools`, a test),
-    /// whose tool then has no way to ask the core for anything.
+    /// call with no gate (one nested in `execute_tools`, a test), whose tool
+    /// then has no way to ask the core for anything.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ticket: Option<String>,
     /// Per-invocation identity; never cached at activation or by the host root.

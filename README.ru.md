@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:604da19bff2c -->
+<!-- source: README.md sha256:75bb6a506af5 -->
 <div align="center">
 
 <picture>
@@ -22,9 +22,9 @@ Codewhale читает ваш проект, редактирует файлы, �
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-8ba2bbf.png" alt="Сессия Codewhale в терминале" width="760">
+<img src="web/public/codewhale-tui-0102-demo.png" alt="Сессия Codewhale в терминале" width="760">
 
-<sub>Настоящий снимок терминала после чистой установки — без постановочного вывода.</sub>
+<sub>Настоящий снимок терминала Codewhale из настроенного локального демонстрационного сеанса.</sub>
 
 </div>
 
@@ -60,6 +60,12 @@ Docker, Nix, Homebrew в Linux, Android/Termux, ручная загрузка с
 
 ## Быстрый старт
 
+**Ключи API ваших провайдеров — в одном месте.** [Создайте аккаунт Codewhale](https://app.codewhale.net/register)
+или выполните `codewhale login`, чтобы войти. Сохраняйте и обновляйте ключи API в аккаунте,
+затем используйте их через маршрут моделей Codewhale на устройствах, где вы вошли в аккаунт.
+[Настройка ключей аккаунта](docs/CONFIGURATION.md#account-provider-keys).
+Вход не загружает существующие локальные ключи в аккаунт; локальная работа доступна и без аккаунта.
+
 1. **Откройте проект.** Запустите `codewhale` в папке, с которой хотите
    работать.
 2. **Подключите модель.** Выполните `/provider` (или нажмите `F3`), чтобы
@@ -75,7 +81,7 @@ Fix the failing tests and explain what changed.
 Ту же задачу можно выполнить без интерфейса — из скрипта или задания CI:
 
 ```bash
-codewhale exec "fix the failing tests and explain what changed"
+codewhale exec --auto "fix the failing tests and explain what changed"
 ```
 
 Команды и сочетания клавиш показывает `/help`.
@@ -88,7 +94,7 @@ codewhale exec "fix the failing tests and explain what changed"
 | Команда | Что делает |
 | --- | --- |
 | `codewhale` | Интерактивный терминальный интерфейс |
-| `codewhale exec "…"` | Один ход без интерфейса из скрипта или CI, с потоковым выводом JSON |
+| `codewhale exec "…"` | Один ход без интерфейса из скрипта или CI; `--auto` разрешает инструменты работы с файлами и оболочкой, `--output-format stream-json` выводит JSON потоком |
 | `codewhale web` | Встроенный [локальный браузерный клиент](docs/WEB.md) на `127.0.0.1` |
 | `codewhale review --pr N` | Рекомендательный [обзор pull request](docs/GITHUB_ACTION.md); публикация включается отдельно |
 | Runtime API | [Локальный HTTP API](docs/RUNTIME_API.md) для тредов, событий и подтверждений |
@@ -140,7 +146,7 @@ Full Access по-прежнему соблюдает жёсткие границ
 Codewhale работает на вашей машине с теми правами доступа, которые вы ему
 дали. Режимы подтверждения и правила репозитория ограничивают действия агента,
 а команды выполняются внутри песочницы ОС там, где она поддерживается (Seatbelt
-в macOS; bubblewrap в Linux включается отдельно). `/preview-request` показывает
+в macOS; bubblewrap в Linux, если установлен и работает). `/preview-request` показывает
 точный запрос с вычеркнутыми секретами до того, как что-либо будет отправлено.
 Неизвестные цены моделей остаются неизвестными, а не выдаются за бесплатные.
 

@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:604da19bff2c -->
+<!-- source: README.md sha256:75bb6a506af5 -->
 <div align="center">
 
 <picture>
@@ -21,9 +21,9 @@ Codewhale 會讀取你的專案、編輯檔案、執行指令並檢查自己的�
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-8ba2bbf.png" alt="一次 Codewhale 終端機工作階段" width="760">
+<img src="web/public/codewhale-tui-0102-demo.png" alt="一次 Codewhale 終端機工作階段" width="760">
 
-<sub>全新安裝後的真實終端機截圖——未經任何擺拍。</sub>
+<sub>已設定的本機示範工作階段中的真實 Codewhale 終端機截圖。</sub>
 
 </div>
 
@@ -57,6 +57,11 @@ Docker、Nix、Linux 上的 Homebrew、Android/Termux、附校驗碼驗證的手
 
 ## 快速開始
 
+**在同一個地方管理你的模型 API 金鑰。** [註冊 Codewhale 帳號](https://app.codewhale.net/register)，
+或執行 `codewhale login` 登入。將 API 金鑰儲存至帳號後，即可集中更新，並在已登入的裝置上
+透過 Codewhale 模型路由使用。[設定帳號金鑰](docs/CONFIGURATION.md#account-provider-keys)。
+登入不會上傳既有的本機金鑰；不註冊帳號也可以繼續在本機使用。
+
 1. **開啟你的專案。** 在要處理的資料夾中執行 `codewhale`。
 2. **連接模型。** 執行 `/provider`（或按 `F3`）新增託管服務的金鑰，或選擇本機執行環境。
    如果 Ollama 已在執行並載入聊天模型，Codewhale 會自動切換到它。使用 `/model` 更換模型。
@@ -69,7 +74,7 @@ Fix the failing tests and explain what changed.
 同一項任務也可以在腳本或 CI 工作中以無介面方式執行：
 
 ```bash
-codewhale exec "fix the failing tests and explain what changed"
+codewhale exec --auto "fix the failing tests and explain what changed"
 ```
 
 執行 `/help` 查看指令與鍵盤快速鍵。
@@ -81,7 +86,7 @@ codewhale exec "fix the failing tests and explain what changed"
 | 指令 | 作用 |
 | --- | --- |
 | `codewhale` | 互動式終端機介面 |
-| `codewhale exec "…"` | 在腳本或 CI 中執行一次無介面回合，以串流 JSON 輸出 |
+| `codewhale exec "…"` | 在腳本或 CI 中執行一次無介面回合；`--auto` 允許使用檔案和 shell 工具，`--output-format stream-json` 以串流輸出 JSON |
 | `codewhale web` | 內建的[本機瀏覽器用戶端](docs/WEB.md)，監聽 `127.0.0.1` |
 | `codewhale review --pr N` | 僅供參考的[拉取請求審查](docs/GITHUB_ACTION.md)；是否張貼留言需主動開啟 |
 | Runtime API | 用於執行緒、事件與核准的[本機 HTTP API](docs/RUNTIME_API.md) |
@@ -122,7 +127,7 @@ Full Access 仍然遵守硬性政策邊界。
 ## 安全
 
 Codewhale 在你的機器上執行，只擁有你授予它的存取權限。核准姿態與儲存庫規則會限制代理可以做的事，
-在支援的平台上，指令會在作業系統沙箱中執行（macOS 上為 Seatbelt；Linux 上的 bubblewrap 需主動啟用）。
+在支援的平台上，指令會在作業系統沙箱中執行（macOS 上為 Seatbelt；Linux 上的 bubblewrap 在已安裝且可用時）。
 `/preview-request` 會在送出任何內容之前顯示經過遮蔽的完整請求。
 未知的模型價格會維持「未知」，而不會被回報為免費。
 

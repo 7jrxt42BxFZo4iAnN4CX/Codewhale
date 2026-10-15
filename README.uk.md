@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:604da19bff2c -->
+<!-- source: README.md sha256:75bb6a506af5 -->
 <div align="center">
 
 <picture>
@@ -21,9 +21,9 @@ Codewhale читає ваш проєкт, редагує файли, викон�
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-8ba2bbf.png" alt="Сесія Codewhale в терміналі" width="760">
+<img src="web/public/codewhale-tui-0102-demo.png" alt="Сесія Codewhale в терміналі" width="760">
 
-<sub>Справжній знімок терміналу після чистого встановлення — без постановочного виводу.</sub>
+<sub>Справжній знімок терміналу Codewhale з налаштованого локального демонстраційного сеансу.</sub>
 
 </div>
 
@@ -59,6 +59,12 @@ Docker, Nix, Homebrew у Linux, Android/Termux, ручне завантажен�
 
 ## Швидкий старт
 
+**Ключі API ваших провайдерів — в одному місці.** [Створіть обліковий запис Codewhale](https://app.codewhale.net/register)
+або виконайте `codewhale login`, щоб увійти. Зберігайте й оновлюйте ключі API в обліковому записі,
+а потім використовуйте їх через маршрут моделей Codewhale на пристроях, де ви ввійшли.
+[Налаштування ключів облікового запису](docs/CONFIGURATION.md#account-provider-keys).
+Вхід не завантажує наявні локальні ключі до облікового запису; локальна робота доступна й без нього.
+
 1. **Відкрийте проєкт.** Запустіть `codewhale` у теці, з якою хочете працювати.
 2. **Підключіть модель.** Виконайте `/provider` (або натисніть `F3`), щоб додати
    ключ хмарного провайдера чи вибрати локальний рантайм. Якщо Ollama вже
@@ -73,7 +79,7 @@ Fix the failing tests and explain what changed.
 Те саме завдання можна виконати без інтерфейсу — зі скрипту чи завдання CI:
 
 ```bash
-codewhale exec "fix the failing tests and explain what changed"
+codewhale exec --auto "fix the failing tests and explain what changed"
 ```
 
 Команди й комбінації клавіш показує `/help`.
@@ -86,7 +92,7 @@ codewhale exec "fix the failing tests and explain what changed"
 | Команда | Що робить |
 | --- | --- |
 | `codewhale` | Інтерактивний термінальний інтерфейс |
-| `codewhale exec "…"` | Один хід без інтерфейсу зі скрипту чи CI, з потоковим виводом JSON |
+| `codewhale exec "…"` | Один хід без інтерфейсу зі скрипту чи CI; `--auto` дозволяє інструменти роботи з файлами та оболонкою, `--output-format stream-json` виводить JSON потоком |
 | `codewhale web` | Вбудований [локальний браузерний клієнт](docs/WEB.md) на `127.0.0.1` |
 | `codewhale review --pr N` | Рекомендаційний [огляд pull request](docs/GITHUB_ACTION.md); публікація вмикається окремо |
 | Runtime API | [Локальний HTTP API](docs/RUNTIME_API.md) для тредів, подій і підтверджень |
@@ -138,7 +144,7 @@ Full Access, як і раніше, дотримується жорстких м�
 Codewhale працює на вашій машині з тими правами доступу, які ви йому надали.
 Режими підтвердження та правила репозиторію обмежують дії агента, а команди
 виконуються всередині пісочниці ОС там, де вона підтримується (Seatbelt у
-macOS; bubblewrap у Linux вмикається окремо). `/preview-request` показує точний
+macOS; bubblewrap у Linux, якщо встановлений і працює). `/preview-request` показує точний
 запит із вилученими секретами до того, як щось буде надіслано. Невідомі ціни
 моделей лишаються невідомими, а не видаються за безкоштовні.
 

@@ -6,9 +6,15 @@
 //! module keeps registry construction, user-command precedence, and the
 //! fall-through behaviour.
 
+mod config_group;
+mod config_host;
+mod config_main_host;
+mod config_main_import_host;
+#[cfg(test)]
+mod config_policy_host;
 mod contract;
 pub mod discovery;
-mod groups;
+pub(crate) mod groups;
 
 // FEAT-025 host services for the session-export slice: the shared recovery
 // writer and the protected export-destination resolver/writer. Declared at the
@@ -58,7 +64,8 @@ mod session_lifecycle_regression_tests;
 
 use std::sync::OnceLock;
 
-pub(crate) use groups::config::config::set_workspace_trust;
+pub(crate) use config_main_host::{set_workspace_trust, trust_change_note};
+pub(crate) use groups::core::open_constitution_manager;
 
 /// Stage a rollback of the last exchange for the UI to apply, or `None` when
 /// there is no user message to roll back. Nothing is mutated here.
@@ -202,16 +209,73 @@ pub fn registry() -> &'static traits::CommandRegistry {
 }
 
 /// The built-in command table as the extension host asks about it: the one
-/// read-only question "does a built-in command answer to this name?". The
+/// read-only metadata snapshot and built-in collision check. The
 /// composition root installs it at startup (`lib.rs`), so the runtime-side host
 /// never depends on this module.
-pub(crate) struct BuiltinCommandNames;
+pub(crate) struct CommandTable;
 
-impl crate::extension_host::command::BuiltinCommandCatalog for BuiltinCommandNames {
+impl crate::command_catalog::CommandCatalog for CommandTable {
     fn answers_to(&self, name: &str) -> bool {
         // `jihua` and `zidong` are mode aliases the dispatcher answers ahead
         // of the registry.
         matches!(name, "jihua" | "zidong") || registry().get(name).is_some()
+    }
+
+    fn builtins(&self) -> Vec<crate::command_catalog::BuiltinCommand> {
+        command_infos()
+            .into_iter()
+            .map(|info| crate::command_catalog::BuiltinCommand {
+                name: info.name.to_string(),
+                aliases: info
+                    .aliases
+                    .iter()
+                    .map(|alias| (*alias).to_string())
+                    .collect(),
+                usage: info.usage.to_string(),
+                description_id: info.description_id,
+                subcommands: info.subcommands().into_iter().map(str::to_string).collect(),
+                takes_arguments: user_registry::usage_describes_arguments(info.name, info.usage),
+                requires_argument: info.requires_argument(),
+                requires_required_argument: info.requires_required_argument(),
+                composer_wants_trailing_space: info.composer_wants_trailing_space(),
+                palette_runs_directly: info.palette_runs_directly(),
+                show_in_empty_discovery: info.show_in_empty_discovery(),
+                discovery: info.discovery(),
+                unlisted: info.is_unlisted(),
+            })
+            .collect()
+    }
+
+    fn user_commands(
+        &self,
+        workspace: &std::path::Path,
+    ) -> Vec<crate::command_catalog::UserCommand> {
+        user_registry::with_registry_for_workspace(Some(workspace), |registry| {
+            let mut bindings = std::collections::HashMap::<String, Vec<String>>::new();
+            for info in command_infos() {
+                for spelling in std::iter::once(info.name).chain(info.aliases.iter().copied()) {
+                    if let Some(command) = registry.get(spelling) {
+                        bindings
+                            .entry(command.name.clone())
+                            .or_default()
+                            .push(spelling.to_string());
+                    }
+                }
+            }
+            registry
+                .iter()
+                .map(|metadata| crate::command_catalog::UserCommand {
+                    name: metadata.name.clone(),
+                    aliases: metadata.aliases.clone(),
+                    description: metadata.description.clone(),
+                    usage: metadata.display_usage().map(str::to_string),
+                    takes_arguments: metadata.takes_arguments(),
+                    hidden: metadata.hidden,
+                    extension: metadata.extension.is_some(),
+                    builtin_bindings: bindings.remove(&metadata.name).unwrap_or_default(),
+                })
+                .collect()
+        })
     }
 }
 
@@ -304,14 +368,10 @@ fn execute_in_context(
     // command's `CommandInfo` metadata.
     match command.as_str() {
         "jihua" => {
-            return groups::config::dispatch(app, "jihua", arg).unwrap_or_else(|| {
-                CommandResult::error("The /jihua alias could not be dispatched.")
-            });
+            return config_group::mode_alias(app, "plan");
         }
         "zidong" => {
-            return groups::config::dispatch(app, "zidong", arg).unwrap_or_else(|| {
-                CommandResult::error("The /zidong alias could not be dispatched.")
-            });
+            return config_group::mode_alias(app, "yolo");
         }
         _ => {}
     }
@@ -387,12 +447,16 @@ fn execute_in_context(
 
 /// Update a configuration value programmatically (used by interactive UI views).
 pub fn set_config_value(app: &mut App, key: &str, value: &str, persist: bool) -> CommandResult {
-    groups::config::config::set_config_value(app, key, value, persist)
+    let locale = app.ui_locale;
+    config_host::render_config_reply(
+        config_main_host::set_config_value(app, key, value, persist),
+        locale,
+    )
 }
 
 /// Switch the interaction mode (plan / work / operate).
 pub fn switch_mode(app: &mut App, mode: AppMode) -> String {
-    groups::config::config::switch_mode(app, mode)
+    config_main_host::switch_mode(app, mode)
 }
 
 fn edit_distance(a: &str, b: &str) -> usize {
@@ -536,7 +600,7 @@ mod tests {
 
     fn create_test_app() -> App {
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(PathBuf::from("."))
+            ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         App::new(options, &Config::default())
     }
@@ -576,8 +640,8 @@ mod tests {
         )
         .unwrap();
 
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(temp.path()),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(temp.path()),
         );
         super::user_registry::reload(Some(temp.path()));
 
@@ -598,8 +662,8 @@ mod tests {
         let command_path = commands_dir.join("help.md");
         std::fs::write(&command_path, "user help").unwrap();
 
-        let mut app = crate::test_support::test_app_with_options(
-            crate::test_support::test_tui_options(temp.path()),
+        let mut app = crate::tui::test_support::test_app_with_options(
+            crate::tui::test_support::test_tui_options(temp.path()),
         );
         super::user_registry::reload(Some(temp.path()));
         assert!(matches!(
@@ -699,7 +763,7 @@ mod tests {
     #[test]
     fn login_slash_command_reports_status_and_key_opens_picker() {
         let mut app = create_test_app();
-        let status = execute("/login", &mut app);
+        let status = execute("/login status", &mut app);
         assert!(!status.is_error);
         let message = status.message.expect("login status");
         assert!(message.contains("Codewhale login"), "{message}");
@@ -710,6 +774,12 @@ mod tests {
         assert!(!message.contains("Daytona"), "{message}");
         assert!(!message.contains("set-slot"), "{message}");
 
+        assert!(
+            execute("/login", &mut app)
+                .message
+                .expect("login status")
+                .contains("Codewhale login")
+        );
         let key = execute("/login key", &mut app);
         assert!(!key.is_error);
         assert_eq!(key.action, Some(AppAction::OpenProviderPicker));
@@ -718,11 +788,24 @@ mod tests {
         assert!(daytona.is_error);
         let err = daytona.message.expect("usage");
         assert!(err.contains("Usage: /login [status|account|key]"), "{err}");
+        assert!(err.contains("/connect <provider>"), "{err}");
 
         let unknown = execute("/login oauth", &mut app);
         assert!(unknown.is_error);
         let err = unknown.message.expect("usage");
         assert!(err.contains("Usage: /login"), "{err}");
+
+        assert_eq!(
+            execute("/connect", &mut app).action,
+            Some(AppAction::OpenProviderPicker)
+        );
+        let connect = execute("/connect nothing-enabled", &mut app);
+        assert!(connect.is_error);
+        let err = connect.message.expect("usage");
+        assert!(err.contains("Usage: /connect [<provider>]"), "{err}");
+        assert!(err.contains("`/login`"), "{err}");
+        assert!(execute("/disconnect", &mut app).is_error);
+        assert!(execute("/disconnect nothing-enabled", &mut app).is_error);
     }
 
     #[test]
@@ -836,14 +919,18 @@ mod tests {
                 .message
                 .as_deref()
                 .unwrap_or_default()
-                .contains(".deepseek/handoff.md")
+                .contains(crate::prompts::HANDOFF_RELATIVE_PATH)
         );
         let Some(AppAction::SendMessage(message)) = result.action else {
             panic!("expected SendMessage action");
         };
         assert!(message.contains("session relay"));
         assert!(message.contains("接力"));
-        assert!(message.contains("Write or update `.deepseek/handoff.md`"));
+        // The relay is written where the next session reads it first.
+        assert!(message.contains(&format!(
+            "Write or update `{}`",
+            crate::prompts::HANDOFF_RELATIVE_PATH
+        )));
         assert!(message.contains("# Session relay"));
         assert!(message.contains("Requested relay focus: verify install"));
         assert!(message.contains("Goal objective: Unify the work surface"));
@@ -1057,9 +1144,9 @@ mod tests {
                 has_config = true;
                 assert_eq!(
                     commands.len(),
-                    17,
+                    19,
                     "config group (group-local metadata exception) expected \
-                     exactly 17 commands, got {}",
+                     exactly 19 commands, got {}",
                     commands.len()
                 );
             }
@@ -1087,8 +1174,8 @@ mod tests {
 
         // Consistency: group-iterated command count must match registry.
         // FEAT-015 registers one test-only contextual command (`/feat015ctx`)
-        // under `#[cfg(test)]` to prove the dual-path seam (D6); the nine
-        // production groups remain exactly 96 commands.
+        // under `#[cfg(test)]` to prove the dual-path seam (D6); it is not
+        // part of any production group.
         let test_only_count = command_infos()
             .iter()
             .filter(|info| info.name == "feat015ctx")
@@ -1219,7 +1306,6 @@ mod tests {
     fn flagship_orchestration_and_workspace_commands_are_visible_at_the_palette_root() {
         for name in [
             "auto",
-            "dispatch",
             "goal",
             "hooks",
             "tokens",
@@ -1612,7 +1698,7 @@ mod tests {
             memory_path: workspace.join("memory.md"),
             notes_path: workspace.join("notes.txt"),
             mcp_config_path: workspace.join("mcp.json"),
-            ..crate::test_support::test_tui_options(workspace.clone())
+            ..crate::tui::test_support::test_tui_options(workspace.clone())
         };
         let app = App::new(options, &Config::default());
         assert!(
@@ -2088,7 +2174,6 @@ mod tests {
             // FEAT-018 utility group.
             "attach",
             "automation",
-            "dispatch",
             "jobs",
             "mcp",
             "network",
@@ -2130,6 +2215,27 @@ mod tests {
             "export",
             // FEAT-026 completes the session structural-copy slice.
             "structcopy",
+            // FEAT-027 config policy/status slice.
+            "permissions",
+            "status",
+            // FEAT-028 completes the config group (all 19 commands portable).
+            "config",
+            "import-claude",
+            "login",
+            "connect",
+            "disconnect",
+            "auth",
+            "workbar",
+            "pet",
+            "settings",
+            "statusline",
+            "mode",
+            "fullscreen",
+            "inline",
+            "theme",
+            "verbose",
+            "trust",
+            "logout",
             // FEAT-029 complete debug group, including receipts and mutation.
             "tokens",
             "cost",
@@ -2370,7 +2476,7 @@ mod tests {
         let options = TuiOptions {
             memory_path: tmpdir.path().join("memory.md"),
             use_memory: true,
-            ..crate::test_support::test_tui_options(tmpdir.path())
+            ..crate::tui::test_support::test_tui_options(tmpdir.path())
         };
         App::new(options, &Config::default())
     }
@@ -2429,9 +2535,9 @@ mod tests {
     fn feat022_test_app(tmp: &tempfile::TempDir) -> App {
         // The fixture's skills dir lives inside its workspace.
         crate::test_support::trust_workspace(tmp.path());
-        let mut options = crate::test_support::test_tui_options(tmp.path());
+        let mut options = crate::tui::test_support::test_tui_options(tmp.path());
         options.skills_dir = tmp.path().join("skills");
-        crate::test_support::test_app_with_options(options)
+        crate::tui::test_support::test_app_with_options(options)
     }
 
     fn feat022_write_skill(dir: &std::path::Path, name: &str) {
@@ -2679,7 +2785,7 @@ mod tests {
         )
         .unwrap();
         let options = TuiOptions {
-            ..crate::test_support::test_tui_options(tmpdir.path())
+            ..crate::tui::test_support::test_tui_options(tmpdir.path())
         };
         let mut app = App::new(options, &Config::default());
         let discovery = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv();
@@ -2945,7 +3051,7 @@ mod tests {
         let relay = execute("/relay handoff notes", &mut app);
         assert_eq!(
             relay.message.as_deref(),
-            Some("Preparing session relay at .deepseek/handoff.md...")
+            Some("Preparing session relay at .codewhale/handoff.md...")
         );
         let relay_message = match relay.action {
             Some(AppAction::SendMessage(message)) => message,
@@ -3105,3 +3211,10 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod config_policy_host_tests;
+#[cfg(test)]
+mod config_policy_permissions_tests;
+#[cfg(test)]
+mod config_policy_status_tests;

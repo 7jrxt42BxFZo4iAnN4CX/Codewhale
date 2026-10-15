@@ -538,7 +538,9 @@ const PROTECTED_BUILTINS: &[&str] = &[
     "auth",
     "auto",
     "config",
+    "connect",
     "constitution",
+    "disconnect",
     "hooks",
     "login",
     "logout",
@@ -1167,7 +1169,7 @@ mod tests {
 
     fn test_app(workspace: PathBuf) -> App {
         let options = crate::tui::app::TuiOptions {
-            ..crate::test_support::test_tui_options(workspace)
+            ..crate::tui::test_support::test_tui_options(workspace)
         };
         App::new(options, &crate::config::Config::default())
     }

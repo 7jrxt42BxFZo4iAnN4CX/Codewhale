@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:604da19bff2c -->
+<!-- source: README.md sha256:75bb6a506af5 -->
 <div align="center">
 
 <picture>
@@ -22,9 +22,9 @@ bộ do bạn chọn.
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-8ba2bbf.png" alt="Một phiên terminal của Codewhale" width="760">
+<img src="web/public/codewhale-tui-0102-demo.png" alt="Một phiên terminal của Codewhale" width="760">
 
-<sub>Ảnh chụp terminal thật sau một lần cài mới, không dàn dựng đầu ra.</sub>
+<sub>Ảnh chụp terminal Codewhale thật từ một phiên demo cục bộ đã được cấu hình.</sub>
 
 </div>
 
@@ -60,6 +60,12 @@ một máy sẽ xung đột với nhau về `PATH`.
 
 ## Bắt đầu nhanh
 
+**Quản lý khóa API của các nhà cung cấp ở một nơi.** [Tạo tài khoản Codewhale](https://app.codewhale.net/register)
+hoặc chạy `codewhale login` để đăng nhập. Lưu và cập nhật khóa API trong tài khoản,
+rồi sử dụng chúng qua tuyến mô hình Codewhale trên các thiết bị đã đăng nhập.
+[Thiết lập khóa trong tài khoản](docs/CONFIGURATION.md#account-provider-keys).
+Đăng nhập không tải các khóa cục bộ hiện có lên tài khoản; bạn vẫn có thể sử dụng cục bộ mà không cần tài khoản.
+
 1. **Mở dự án của bạn.** Chạy `codewhale` trong thư mục bạn muốn làm việc.
 2. **Kết nối mô hình.** Chạy `/provider` (hoặc nhấn `F3`) để thêm khóa của mô
    hình lưu trữ trực tuyến hoặc chọn runtime cục bộ. Nếu Ollama đang chạy sẵn
@@ -74,7 +80,7 @@ Fix the failing tests and explain what changed.
 Cùng tác vụ đó có thể chạy ở chế độ headless từ một script hoặc job CI:
 
 ```bash
-codewhale exec "fix the failing tests and explain what changed"
+codewhale exec --auto "fix the failing tests and explain what changed"
 ```
 
 Chạy `/help` để xem các lệnh và phím tắt.
@@ -87,7 +93,7 @@ công cụ và quyền hạn hoạt động giống nhau ở mọi nơi.
 | Lệnh | Chức năng |
 | --- | --- |
 | `codewhale` | Giao diện terminal tương tác |
-| `codewhale exec "…"` | Một lượt chạy headless từ script hoặc CI, phát trực tiếp JSON |
+| `codewhale exec "…"` | Một lượt chạy headless từ script hoặc CI; `--auto` cho phép công cụ tệp và shell, `--output-format stream-json` phát trực tiếp JSON |
 | `codewhale web` | [Client trình duyệt cục bộ](docs/WEB.md) đi kèm tại `127.0.0.1` |
 | `codewhale review --pr N` | [Đánh giá pull request](docs/GITHUB_ACTION.md) mang tính tham khảo; việc đăng là tùy chọn |
 | Runtime API | [API HTTP cục bộ](docs/RUNTIME_API.md) cho thread, sự kiện và phê duyệt |
@@ -139,7 +145,7 @@ Full Access vẫn tuân thủ các ranh giới chính sách cứng.
 Codewhale chạy trên máy của bạn với quyền truy cập bạn cấp. Các posture phê duyệt
 và quy tắc của kho mã giới hạn những gì tác nhân được phép làm, và lệnh chạy bên
 trong sandbox của hệ điều hành ở nơi được hỗ trợ (Seatbelt trên macOS; bubblewrap
-trên Linux là tùy chọn). `/preview-request` hiển thị chính xác yêu cầu đã được che
+trên Linux khi đã cài đặt và hoạt động). `/preview-request` hiển thị chính xác yêu cầu đã được che
 thông tin nhạy cảm trước khi bất cứ thứ gì được gửi đi. Giá của mô hình chưa biết
 vẫn được giữ là chưa biết, không bị báo cáo là miễn phí.
 

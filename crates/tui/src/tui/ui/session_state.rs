@@ -284,6 +284,15 @@ pub(crate) fn reconcile_turn_liveness_with(
     // overdue (a quiet model, a live stream). Its watchdog owns that bound;
     // the UI does not second-guess it with a timer of its own.
     let engine_owns_wait = heartbeat.is_some_and(|snapshot| snapshot.engine_owns_live_wait());
+    // #6872: human decisions can wait indefinitely. Their configured timeout,
+    // answer or withdrawal owns the wait, including buried or hidden cards.
+    let awaiting_human_decision = app.pending_user_input_prompt.is_some()
+        || app.view_stack.contains_kind(ModalKind::Approval)
+        || app.view_stack.contains_kind(ModalKind::Elevation)
+        || app
+            .pending_child_requests
+            .keys()
+            .any(|id| !crate::tui::pending_requests::is_foreign_child_request(app, id));
     if app.is_loading
         && app.runtime_turn_status.is_none()
         && !has_running_agents
@@ -306,6 +315,7 @@ pub(crate) fn reconcile_turn_liveness_with(
         // it before clearing turn state so `--continue` keeps the prompt
         // instead of loading the previous save.
         persist_recovery_snapshot(app);
+        settle_pending_human_requests(app);
         app.is_loading = false;
         app.dispatch_started_at = None;
         app.turn_started_at = None;
@@ -331,6 +341,7 @@ pub(crate) fn reconcile_turn_liveness_with(
         && !app.is_compacting
         && !app.is_purging
     {
+        settle_pending_human_requests(app);
         app.is_loading = false;
         app.dispatch_started_at = None;
         app.turn_started_at = None;
@@ -353,6 +364,7 @@ pub(crate) fn reconcile_turn_liveness_with(
         && matches!(app.runtime_turn_status.as_deref(), Some("in_progress"))
         && !has_running_agents
         && !engine_owns_wait
+        && !awaiting_human_decision
         && !app.is_compacting
         && !active_turn_has_running_tool(app)
         && let Some(last_activity) = app.turn_last_activity_at.or(app.turn_started_at)
@@ -375,6 +387,7 @@ pub(crate) fn reconcile_turn_liveness_with(
     if app.is_loading
         && matches!(app.runtime_turn_status.as_deref(), Some("in_progress"))
         && !has_running_agents
+        && !awaiting_human_decision
         && !app.is_compacting
         && !app.is_purging
         && active_turn_has_running_tool(app)
@@ -389,7 +402,7 @@ pub(crate) fn reconcile_turn_liveness_with(
         );
         recover_stalled_runtime_turn(
             app,
-            "Tool stalled with no progress for 10m — recovered; the command may still be running in the background. Use exec_shell_cancel or retry.",
+            "Tool stalled with no progress for 10m — recovered; the command may still be running in the background. Run /jobs to see it and /jobs cancel <id> to stop it.",
             StatusToastLevel::Error,
         );
         return true;
@@ -461,6 +474,7 @@ pub(crate) fn maybe_throttled_recovery_snapshot(
 }
 
 pub(crate) fn recover_stalled_runtime_turn(app: &mut App, message: &str, level: StatusToastLevel) {
+    settle_pending_human_requests(app);
     // Capture the turn identity before the reset below clears it; the
     // outbox event must name the turn that stalled.
     let stalled_turn_id = app.runtime_turn_id.clone();
@@ -540,6 +554,7 @@ pub(crate) fn recover_engine_event_disconnect(app: &mut App) -> bool {
         || app.is_purging
         || matches!(app.runtime_turn_status.as_deref(), Some("in_progress"))
         || app.pending_turn_route.is_some()
+        || app.pending_user_input_prompt.is_some()
         || app.active_turn.is_some()
         || app.suppress_stream_events_until_turn_complete
         || app.streaming_message_index.is_some()
@@ -552,6 +567,8 @@ pub(crate) fn recover_engine_event_disconnect(app: &mut App) -> bool {
     if !had_live_work {
         return false;
     }
+
+    settle_pending_human_requests(app);
 
     streaming_thinking::finalize_current(app);
     app.finalize_streaming_assistant_as_interrupted();
@@ -879,16 +896,18 @@ pub(crate) async fn switch_workspace(
     workspace: PathBuf,
 ) {
     if app.is_loading {
-        app.status_message =
-            Some("Cannot switch workspace while a request is running.".to_string());
-        app.add_message(HistoryCell::System {
-            content: "Cannot switch workspace while a request is running.".to_string(),
-        });
+        let busy = app.tr(MessageId::WorkspaceSwitchBusy).into_owned();
+        app.status_message = Some(busy.clone());
+        app.add_message(HistoryCell::System { content: busy });
         return;
     }
 
+    let shown = workspace.display().to_string();
     if app.workspace == workspace {
-        app.status_message = Some(format!("Workspace unchanged: {}", workspace.display()));
+        app.status_message = Some(
+            app.tr(MessageId::WorkspaceUnchanged)
+                .replace("{path}", &shown),
+        );
         return;
     }
 
@@ -912,10 +931,11 @@ pub(crate) async fn switch_workspace(
             .await;
     }
 
-    app.add_message(HistoryCell::System {
-        content: format!("Switched workspace to {}", workspace.display()),
-    });
-    app.status_message = Some(format!("Workspace: {}", workspace.display()));
+    let switched = app
+        .tr(MessageId::WorkspaceSwitched)
+        .replace("{path}", &shown);
+    app.add_message(HistoryCell::System { content: switched });
+    app.status_message = Some(app.tr(MessageId::WorkspaceStatus).replace("{path}", &shown));
 }
 
 /// A message submitted with no usable key (#6566). Nothing reached a model:
@@ -1163,7 +1183,7 @@ pub(crate) fn mirror_saved_api_key_in_config(
     entry.auth_mode = Some("api_key".to_string());
     entry.api_key = Some(api_key);
     entry.external_credentials = None;
-    if provider == ProviderKind::Xai {
+    if matches!(provider, ProviderKind::Xai | ProviderKind::Anthropic) {
         entry.oauth_credential_generation = None;
     }
     Ok(())
@@ -1367,7 +1387,7 @@ mod stall_outbox_tests {
         };
         let options = TuiOptions {
             start_in_agent_mode: true,
-            ..crate::test_support::test_tui_options(dir.path())
+            ..crate::tui::test_support::test_tui_options(dir.path())
         };
         let mut app = App::new(options, &config);
         assert!(app.lifecycle_outbox.is_enabled());
@@ -1427,7 +1447,7 @@ mod stall_outbox_tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let options = TuiOptions {
             start_in_agent_mode: true,
-            ..crate::test_support::test_tui_options(dir.path())
+            ..crate::tui::test_support::test_tui_options(dir.path())
         };
         let mut app = App::new(options, &Config::default());
         assert!(!app.lifecycle_outbox.is_enabled());
@@ -1462,7 +1482,7 @@ mod launch_resume_tests {
     fn resume_missing_session_leaves_the_card_up_with_a_status() {
         let dir = tempfile::tempdir().unwrap();
         let mut app = App::new(
-            crate::test_support::test_tui_options(dir.path()),
+            crate::tui::test_support::test_tui_options(dir.path()),
             &Config::default(),
         );
         app.launch.visible = true;
@@ -1484,7 +1504,7 @@ mod launch_resume_tests {
     fn keyless_submit_leaves_a_durable_recovery_that_config_acks_cannot_erase() {
         let dir = tempfile::tempdir().unwrap();
         let mut app = App::new(
-            crate::test_support::test_tui_options(dir.path()),
+            crate::tui::test_support::test_tui_options(dir.path()),
             &Config::default(),
         );
         app.onboarding_had_provider_step = true;
@@ -1521,7 +1541,7 @@ mod launch_resume_tests {
     fn keyless_submit_names_the_key_and_esc_returns_to_the_composer() {
         let dir = tempfile::tempdir().unwrap();
         let mut app = App::new(
-            crate::test_support::test_tui_options(dir.path()),
+            crate::tui::test_support::test_tui_options(dir.path()),
             &Config::default(),
         );
         app.onboarding = OnboardingState::None;
@@ -1557,7 +1577,7 @@ mod launch_resume_tests {
     fn new_session_begins_a_fresh_session_and_leaves_the_card() {
         let dir = tempfile::tempdir().unwrap();
         let mut app = App::new(
-            crate::test_support::test_tui_options(dir.path()),
+            crate::tui::test_support::test_tui_options(dir.path()),
             &Config::default(),
         );
         app.launch.visible = true;
