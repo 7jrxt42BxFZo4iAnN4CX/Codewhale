@@ -508,9 +508,42 @@ fn spawn_tui_engine(
     handle
 }
 
-async fn replace_tui_engine(app: &mut App, api_config: &Config, engine_handle: &mut EngineHandle) {
+async fn retire_tui_engine(
+    app: &mut App,
+    engine_handle: &EngineHandle,
+) -> Option<crate::mcp::McpHandoff> {
     let mcp_handoff = engine_handle.retire_mcp_for_handoff();
+    let active = app
+        .active_compaction
+        .as_ref()
+        .map(|active| (active.id.clone(), active.auto));
+    let queued = (app.manual_compaction_queued && app.deferred_manual_compaction.is_none())
+        .then(|| app.manual_compaction_id.clone().unwrap_or_default());
+    for id in active.iter().map(|(id, _)| id).chain(queued.iter()) {
+        let _ = engine_handle.cancel_compaction(id.clone());
+    }
     let _ = engine_handle.send(Op::Shutdown).await;
+    if active.is_some() || queued.is_some() {
+        let (id, auto) = active.unwrap_or_else(|| (queued.unwrap_or_default(), false));
+        app.manual_compaction_queued = false;
+        app.manual_compaction_id = None;
+        apply_compaction_cancelled(
+            app,
+            &id,
+            auto,
+            "Making room stopped; the conversation was not changed".to_string(),
+        );
+    }
+    if std::mem::take(&mut app.is_purging) {
+        let text = "Session cleanup was abandoned with the replaced engine; the conversation was not changed".to_string();
+        add_compaction_receipt(app, &text);
+        set_explicit_compaction_status(app, text, StatusToastLevel::Warning, false);
+    }
+    mcp_handoff
+}
+
+async fn replace_tui_engine(app: &mut App, api_config: &Config, engine_handle: &mut EngineHandle) {
+    let mcp_handoff = retire_tui_engine(app, engine_handle).await;
     *engine_handle = spawn_tui_engine(app, api_config, mcp_handoff);
 }
 

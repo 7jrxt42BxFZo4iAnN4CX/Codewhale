@@ -5455,8 +5455,7 @@ pub(crate) async fn run_event_loop(
                                     // The engine already spawned with masking on
                                     // (the unconfirmed safe default). Rebuild it so
                                     // its client picks up the confirmed opt-out.
-                                    let mcp_handoff = engine_handle.retire_mcp_for_handoff();
-                                    let _ = engine_handle.send(Op::Shutdown).await;
+                                    let mcp_handoff = retire_tui_engine(app, &engine_handle).await;
                                     engine_handle =
                                         spawn_tui_engine_with_session(app, config, mcp_handoff)
                                             .await?;

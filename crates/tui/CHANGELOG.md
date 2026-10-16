@@ -36,6 +36,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`-H "Authorization: Bearer $TOKEN"`) is not affected, and other upload
   tools (scp, rsync, nc, httpie, `aws s3 cp`) and secrets inside an ordinary
   file are not detected. Full Access is unchanged (Refs CW-7236).
+- Switching provider, model route, profile or workspace, or changing plugins,
+  while Making room is running or queued no longer leaves the session stuck.
+  The pass on the replaced engine is stopped and the transcript says "Making
+  room stopped; the conversation was not changed". Before, `/new`,
+  `/new --force`, `/resume` and `/compact` were refused with "context
+  compaction is running" or "a manual compaction is queued" until Codewhale
+  was restarted. A `/compact` still waiting for a free engine slot is carried
+  to the new engine as before. A context purge caught by a switch cannot be
+  stopped: the replaced engine may still finish and bill its request, and the
+  transcript now says "Session cleanup was abandoned with the replaced engine;
+  the conversation was not changed" instead of blocking `/new` with "session
+  cleanup is running". A turn still running when the engine is replaced is not
+  covered and can keep `/new` refused. Thanks @luestr for reporting the
+  refusal in #6981; this is one way to reach it, and the report stays open
+  until the blocker that 0.10.2 names confirms its cause (Refs #6981).
 
 ## [0.10.2] - 2026-10-13
 
