@@ -710,7 +710,15 @@ fn deterministic_fallback(
     if ctx.approval_mode != ApprovalMode::Bypass {
         if !ctx.credential_uploads.is_empty() {
             return AutoReviewDecision::safety_gate(
-                "credential upload requires durable review: the request body carries a credential file or secret-named variable",
+                if ctx
+                    .credential_uploads
+                    .iter()
+                    .all(|upload| upload == UNPARSED_CREDENTIAL_UPLOAD)
+                {
+                    "credential upload requires durable review: a curl/wget in this call is too large or too deeply nested to check"
+                } else {
+                    "credential upload requires durable review: the request body carries a credential file or secret-named variable"
+                },
             );
         }
         match (ctx.action_kind, ctx.run_origin) {
@@ -1238,10 +1246,12 @@ pub(crate) const UNPARSED_CREDENTIAL_UPLOAD: &str = "<unparsed>";
 
 const CREDENTIAL_SCAN_MAX_BYTES: usize = 64 * 1024;
 
+const CREDENTIAL_SCAN_MAX_WORDS: usize = 4096;
+
 fn names_upload_program(text: &str) -> bool {
     let mut window = [0u8; 4];
     text.bytes()
-        .filter(|byte| !matches!(byte, b'"' | b'\'' | b'\\'))
+        .filter(|byte| !matches!(byte, b'"' | b'\'' | b'\\' | b'\n'))
         .any(|byte| {
             window = [window[1], window[2], window[3], byte.to_ascii_lowercase()];
             matches!(&window, b"curl" | b"wget")
@@ -1252,9 +1262,13 @@ fn shell_command_credential_uploads(command: &str) -> Vec<String> {
     if !names_upload_program(command) {
         return Vec::new();
     }
-    let argvs = (command.len() <= CREDENTIAL_SCAN_MAX_BYTES)
-        .then(|| codewhale_execpolicy::command_safety::command_invocations(command))
-        .flatten();
+    let argvs = (command.len() <= CREDENTIAL_SCAN_MAX_BYTES
+        && command
+            .split_ascii_whitespace()
+            .nth(CREDENTIAL_SCAN_MAX_WORDS)
+            .is_none())
+    .then(|| codewhale_execpolicy::command_safety::command_invocations(command))
+    .flatten();
     let Some(argvs) = argvs else {
         return vec![UNPARSED_CREDENTIAL_UPLOAD.to_string()];
     };

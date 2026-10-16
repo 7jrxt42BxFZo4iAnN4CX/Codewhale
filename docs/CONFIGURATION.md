@@ -2369,8 +2369,10 @@ reasoning contract, and all four membership ids omit generic sampling fields.
   safety floor covers publish-like actions, destructive background/headless
   actions, and `curl`/`wget` uploads whose request body carries a credential
   file or a secret-named variable, or reads stdin fed from one of those or
-  from `env`/`printenv`, even if an allow rule matches; a `curl`/`wget` too
-  large (over 64 KiB) or too deeply nested to read is held too. Outside Full
+  from `env`/`printenv`, even if an allow rule matches; a shell command,
+  shell input or verifier over 64 KiB or 4,096 words whose text contains
+  `curl` or `wget` anywhere, or one nested too deeply to read, is held too.
+  Outside Full
   Access it also refuses, in every posture, a
   shell command, shell input or verifier containing a hidden Unicode character
   (bidirectional controls, zero-width and other invisible characters, tag

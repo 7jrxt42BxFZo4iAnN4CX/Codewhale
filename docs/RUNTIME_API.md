@@ -1391,8 +1391,9 @@ shell input or verifier whose `curl`/`wget` request body carries a credential
 file or a secret-named variable, or reads stdin fed from one of those or from
 `env`/`printenv`, `summary` reads ``Upload credentials (`…`) with `…` ``; the
 built-in safety gate holds that call, so a session grant or saved allow rule
-cannot answer it. A `curl`/`wget` too large (over 64 KiB) or too deeply nested
-to read is held the same way under its ordinary `summary`. A shell
+cannot answer it. A shell command, shell input or verifier over 64 KiB or
+4,096 words whose text contains `curl` or `wget` anywhere, or one nested too
+deeply to read, is held the same way under its ordinary `summary`. A shell
 command containing a hidden Unicode character is refused before any
 approval is created.
 
