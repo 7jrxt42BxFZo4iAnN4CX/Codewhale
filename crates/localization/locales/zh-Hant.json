@@ -2335,7 +2335,7 @@
   "ConfigHintThinkingHighlight": "填滿模型推理背景；關閉時虛線側欄仍可見",
   "ConfigHintSynchronizedOutput": "auto | on | off；終端機重繪節奏，不是模型速度",
   "ConfigHintDefaultMode": "act (agent) | plan | operate",
-  "ConfigHintMaxHistory": "整數（允許 0）",
+  "ConfigHintMaxHistory": "整數（允許 0） · 保留的已傳送訊息數，用於叫出和歷史搜尋",
   "ConfigHintAutoCompactThreshold": "10..=100 · 壓縮門檻：觸發自動壓縮時占可用上下文長度的百分比",
   "ConfigHintDefaultModel": "僅 DeepSeek 的舊版後備；其他供應商使用上方按供應商劃分的模型",
   "ConfigHintReasoningEffort": "default 會恢復該模型自身的預設值；常開思考模型沒有 off",

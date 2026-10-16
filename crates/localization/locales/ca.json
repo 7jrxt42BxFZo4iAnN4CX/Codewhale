@@ -2337,7 +2337,7 @@
   "ConfigHintThinkingHighlight": "omple el fons del raonament del model; el rail discontinu continua visible quan està desactivat",
   "ConfigHintSynchronizedOutput": "auto | on | off; ritme de redibuixat del terminal, no velocitat del model",
   "ConfigHintDefaultMode": "act (agent) | plan | operate",
-  "ConfigHintMaxHistory": "enter (0 permès)",
+  "ConfigHintMaxHistory": "enter (0 permès) · nombre de missatges enviats que es conserven per recuperar-los i cercar a l'historial",
   "ConfigHintAutoCompactThreshold": "10..=100 · llindar de compactació: percentatge de la longitud de context utilitzable en què es dispara la compactació automàtica",
   "ConfigHintDefaultModel": "reserva antiga només per a DeepSeek; els altres proveïdors usen el model per proveïdor de dalt",
   "ConfigHintReasoningEffort": "default restaura el predeterminat del model; els models que sempre raonen ometen off",

@@ -2337,7 +2337,7 @@
   "ConfigHintThinkingHighlight": "मॉडल तर्क की पृष्ठभूमि भरें; बंद होने पर बिंदीदार रेल दिखती रहती है",
   "ConfigHintSynchronizedOutput": "auto | on | off; टर्मिनल के पुनः चित्रण की गति, मॉडल की गति नहीं",
   "ConfigHintDefaultMode": "act (agent) | plan | operate",
-  "ConfigHintMaxHistory": "पूर्णांक (0 मान्य)",
+  "ConfigHintMaxHistory": "पूर्णांक (0 मान्य) · दोबारा लाने और इतिहास खोज के लिए रखे जाने वाले भेजे गए संदेशों की संख्या",
   "ConfigHintAutoCompactThreshold": "10..=100 · संपीड़न सीमा: उपयोग योग्य संदर्भ लंबाई का वह प्रतिशत जिस पर स्वतः संपीड़न चलता है",
   "ConfigHintDefaultModel": "केवल DeepSeek के लिए पुराना फ़ॉलबैक; अन्य प्रदाता ऊपर अपने प्रदाता-विशिष्ट मॉडल का उपयोग करते हैं",
   "ConfigHintReasoningEffort": "default मॉडल का अपना डिफ़ॉल्ट लौटाता है; हमेशा सोचने वाले मॉडल में off नहीं होता",

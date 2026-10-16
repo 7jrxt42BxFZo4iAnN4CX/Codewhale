@@ -2337,7 +2337,7 @@
   "ConfigHintThinkingHighlight": "заливати тло міркувань моделі; за вимк пунктирна лінія залишається видимою",
   "ConfigHintSynchronizedOutput": "auto | on | off; темп перемальовування термінала, а не швидкість моделі",
   "ConfigHintDefaultMode": "act (agent) | plan | operate",
-  "ConfigHintMaxHistory": "ціле число (0 допускається)",
+  "ConfigHintMaxHistory": "ціле число (0 допускається) · скільки надісланих повідомлень зберігати для повторення та пошуку в історії",
   "ConfigHintAutoCompactThreshold": "10..=100 · поріг стиснення: відсоток використовуваної довжини контексту, за якого спрацьовує автостиснення",
   "ConfigHintDefaultModel": "застарілий запасний варіант лише для DeepSeek; інші провайдери використовують свою модель вище",
   "ConfigHintReasoningEffort": "default повертає власне типове значення моделі; у моделей, які завжди міркують, немає off",

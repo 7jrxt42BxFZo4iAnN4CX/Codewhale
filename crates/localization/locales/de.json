@@ -2337,7 +2337,7 @@
   "ConfigHintThinkingHighlight": "Hintergrund des Modell-Reasonings füllen; die gestrichelte Leiste bleibt bei aus sichtbar",
   "ConfigHintSynchronizedOutput": "auto | on | off; Terminal-Neuzeichentakt, nicht Modellgeschwindigkeit",
   "ConfigHintDefaultMode": "act (agent) | plan | operate",
-  "ConfigHintMaxHistory": "Ganzzahl (0 erlaubt)",
+  "ConfigHintMaxHistory": "Ganzzahl (0 erlaubt) · Anzahl gesendeter Nachrichten, die zum Abrufen und für die Verlaufssuche aufbewahrt werden",
   "ConfigHintAutoCompactThreshold": "10..=100 · Verdichtungsschwelle: Prozent der nutzbaren Kontextlänge, bei dem die automatische Verdichtung auslöst",
   "ConfigHintDefaultModel": "Alt-Fallback nur für DeepSeek; andere Anbieter nutzen ihr anbieterspezifisches Modell oben",
   "ConfigHintReasoningEffort": "default stellt den Standard des Modells wieder her; Modelle, die immer denken, lassen off weg",

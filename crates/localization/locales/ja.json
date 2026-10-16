@@ -2337,7 +2337,7 @@
   "ConfigHintThinkingHighlight": "モデル推論の背景を塗りつぶします。オフでも破線のレールは見えます",
   "ConfigHintSynchronizedOutput": "auto | on | off。端末の再描画ペースであり、モデルの速度ではありません",
   "ConfigHintDefaultMode": "act (agent) | plan | operate",
-  "ConfigHintMaxHistory": "整数 (0 も可)",
+  "ConfigHintMaxHistory": "整数 (0 も可) · 呼び出しと履歴検索のために保持する送信済みメッセージの数",
   "ConfigHintAutoCompactThreshold": "10..=100 · 圧縮しきい値: 自動圧縮が発火する、使用可能なコンテキスト長に対する割合",
   "ConfigHintDefaultModel": "DeepSeek 専用のレガシーフォールバック。他のプロバイダーは上のプロバイダー別モデルを使います",
   "ConfigHintReasoningEffort": "default はモデル自身の既定に戻します。常時思考モデルには off がありません",

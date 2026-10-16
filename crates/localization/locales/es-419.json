@@ -2337,7 +2337,7 @@
   "ConfigHintThinkingHighlight": "rellena el fondo del razonamiento del modelo; el riel punteado sigue visible cuando está desactivado",
   "ConfigHintSynchronizedOutput": "auto | on | off; ritmo de redibujado de la terminal, no velocidad del modelo",
   "ConfigHintDefaultMode": "act (agent) | plan | operate",
-  "ConfigHintMaxHistory": "entero (0 permitido)",
+  "ConfigHintMaxHistory": "entero (0 permitido) · cantidad de mensajes enviados que se conservan para recuperarlos y buscar en el historial",
   "ConfigHintAutoCompactThreshold": "10..=100 · umbral de compactación: porcentaje de la longitud de contexto utilizable en que se dispara la compactación automática",
   "ConfigHintDefaultModel": "respaldo heredado solo para DeepSeek; otros proveedores usan el modelo por proveedor de arriba",
   "ConfigHintReasoningEffort": "default restaura el predeterminado del modelo; los modelos que siempre razonan omiten off",

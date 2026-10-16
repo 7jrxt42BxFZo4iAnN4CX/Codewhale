@@ -2337,7 +2337,7 @@
   "ConfigHintThinkingHighlight": "заливать фон рассуждений модели; при выкл пунктирная линия остаётся видна",
   "ConfigHintSynchronizedOutput": "auto | on | off; темп перерисовки терминала, а не скорость модели",
   "ConfigHintDefaultMode": "act (agent) | plan | operate",
-  "ConfigHintMaxHistory": "целое число (0 допускается)",
+  "ConfigHintMaxHistory": "целое число (0 допускается) · сколько отправленных сообщений хранить для повтора и поиска по истории",
   "ConfigHintAutoCompactThreshold": "10..=100 · порог сжатия: процент используемой длины контекста, при котором срабатывает автосжатие",
   "ConfigHintDefaultModel": "устаревший запасной вариант только для DeepSeek; другие провайдеры используют свою модель выше",
   "ConfigHintReasoningEffort": "default возвращает собственное значение модели по умолчанию; у моделей, которые всегда рассуждают, нет off",

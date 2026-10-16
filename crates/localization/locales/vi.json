@@ -2337,7 +2337,7 @@
   "ConfigHintThinkingHighlight": "tô nền suy luận của mô hình; thanh ray nét đứt vẫn hiện khi tắt",
   "ConfigHintSynchronizedOutput": "auto | on | off; nhịp vẽ lại của terminal, không phải tốc độ mô hình",
   "ConfigHintDefaultMode": "act (agent) | plan | operate",
-  "ConfigHintMaxHistory": "số nguyên (cho phép 0)",
+  "ConfigHintMaxHistory": "số nguyên (cho phép 0) · số tin nhắn đã gửi được giữ lại để gọi lại và tìm kiếm lịch sử",
   "ConfigHintAutoCompactThreshold": "10..=100 · ngưỡng nén: phần trăm độ dài ngữ cảnh khả dụng mà tại đó tự động nén được kích hoạt",
   "ConfigHintDefaultModel": "dự phòng cũ chỉ cho DeepSeek; nhà cung cấp khác dùng mô hình theo nhà cung cấp ở trên",
   "ConfigHintReasoningEffort": "default khôi phục mặc định của chính mô hình; mô hình luôn suy luận không có off",

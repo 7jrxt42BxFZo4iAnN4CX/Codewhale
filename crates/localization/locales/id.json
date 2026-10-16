@@ -2337,7 +2337,7 @@
   "ConfigHintThinkingHighlight": "mengisi latar penalaran model; rel putus-putus tetap terlihat saat nonaktif",
   "ConfigHintSynchronizedOutput": "auto | on | off; tempo gambar ulang terminal, bukan kecepatan model",
   "ConfigHintDefaultMode": "act (agent) | plan | operate",
-  "ConfigHintMaxHistory": "bilangan bulat (0 diperbolehkan)",
+  "ConfigHintMaxHistory": "bilangan bulat (0 diperbolehkan) · jumlah pesan terkirim yang disimpan untuk dipanggil kembali dan pencarian riwayat",
   "ConfigHintAutoCompactThreshold": "10..=100 · ambang pemadatan: persentase panjang konteks yang dapat dipakai saat pemadatan otomatis dipicu",
   "ConfigHintDefaultModel": "cadangan lama khusus DeepSeek; penyedia lain memakai model per penyedia di atas",
   "ConfigHintReasoningEffort": "default mengembalikan bawaan model; model yang selalu berpikir tidak punya off",

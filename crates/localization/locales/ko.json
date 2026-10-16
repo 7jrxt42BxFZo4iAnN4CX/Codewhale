@@ -2337,7 +2337,7 @@
   "ConfigHintThinkingHighlight": "모델 추론 배경을 채움. 끄면 점선 레일은 계속 보임",
   "ConfigHintSynchronizedOutput": "auto | on | off. 터미널 다시 그리기 속도이며 모델 속도가 아님",
   "ConfigHintDefaultMode": "act (agent) | plan | operate",
-  "ConfigHintMaxHistory": "정수 (0 허용)",
+  "ConfigHintMaxHistory": "정수 (0 허용) · 다시 불러오기와 기록 검색을 위해 보관하는 보낸 메시지 수",
   "ConfigHintAutoCompactThreshold": "10..=100 · 압축 임계값: 자동 압축이 실행되는 사용 가능 컨텍스트 길이의 백분율",
   "ConfigHintDefaultModel": "DeepSeek 전용 레거시 대체. 다른 제공자는 위의 제공자별 모델 사용",
   "ConfigHintReasoningEffort": "default는 모델 자체 기본값으로 복원. 항상 사고하는 모델은 off가 없음",
