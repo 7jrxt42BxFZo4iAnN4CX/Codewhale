@@ -152,8 +152,8 @@ live mode again is how you make it durable; Codewhale confirms with a
 
 While a turn is running, every change to the live route is refused — mode,
 model, thinking level, and provider — no matter which surface you use. That
-now includes the slash surfaces (`/mode`, `/model`, `/config <key> <value>`,
-`/config preset`), which are reachable mid-turn. Press
+now includes the slash surfaces (`/mode`, `/model`, `/provider`,
+`/config <key> <value>`, `/config preset`), which are reachable mid-turn. Press
 Esc to interrupt first. The restart-only `default_mode` key is exempt, because
 it does not touch the running turn.
 
