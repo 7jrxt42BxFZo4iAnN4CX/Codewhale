@@ -1267,6 +1267,8 @@
   "ContextCompactionQueueFull": "Die Kontextkomprimierung konnte nicht eingereiht werden, weil die Engine ausgelastet ist; versuche es nach Abschluss des Zugs erneut.",
   "ContextCompactionQueueClosed": "Die Kontextkomprimierung ist nicht verfügbar, weil die Engine nicht mehr läuft.",
   "ContextCompactionRouteInvalid": "Die Komprimierung ist nicht möglich, weil die aktive Provider-Route ungültig ist: {error}",
+  "ContextCompactionStoppedOnEngineSwitch": "Kontextkomprimierung gestoppt; die Unterhaltung wurde nicht geändert",
+  "ContextPurgeAbandonedOnEngineSwitch": "Die Sitzungsbereinigung wurde mit der ersetzten Engine abgebrochen; die Unterhaltung wurde nicht geändert",
   "CtxInspTitle": "Kontext-Inspektor",
   "CtxInspSessionContext": "Sitzungskontext",
   "CtxInspSystemPrompt": "System-Prompt-Struktur",

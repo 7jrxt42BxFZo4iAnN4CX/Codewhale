@@ -1288,6 +1288,8 @@
   "ContextCompactionQueueFull": "Không thể đưa việc nén ngữ cảnh vào hàng đợi vì bộ máy đang bận; hãy thử lại sau khi lượt này kết thúc.",
   "ContextCompactionQueueClosed": "Tính năng nén ngữ cảnh không khả dụng vì bộ máy không còn chạy.",
   "ContextCompactionRouteInvalid": "Không thể nén vì tuyến của nhà cung cấp đang hoạt động không hợp lệ: {error}",
+  "ContextCompactionStoppedOnEngineSwitch": "Đã dừng nén ngữ cảnh; cuộc trò chuyện không bị thay đổi",
+  "ContextPurgeAbandonedOnEngineSwitch": "Đã bỏ dở việc dọn dẹp phiên cùng bộ máy bị thay thế; cuộc trò chuyện không bị thay đổi",
   "CtxInspTitle": "Trình kiểm tra ngữ cảnh",
   "CtxInspSessionContext": "Ngữ cảnh phiên",
   "CtxInspSystemPrompt": "Cấu trúc lời nhắc hệ thống",

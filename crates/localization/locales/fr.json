@@ -1267,6 +1267,8 @@
   "ContextCompactionQueueFull": "La compression du contexte n’a pas pu être mise en file d’attente car le moteur est occupé ; réessayez une fois le tour terminé.",
   "ContextCompactionQueueClosed": "La compression du contexte est indisponible car le moteur ne fonctionne plus.",
   "ContextCompactionRouteInvalid": "Impossible de compacter, car la route du fournisseur actif n’est pas valide : {error}",
+  "ContextCompactionStoppedOnEngineSwitch": "Compression du contexte arrêtée ; la conversation n’a pas été modifiée",
+  "ContextPurgeAbandonedOnEngineSwitch": "Nettoyage de la session abandonné avec le moteur remplacé ; la conversation n’a pas été modifiée",
   "CtxInspTitle": "Inspecteur de contexte",
   "CtxInspSessionContext": "Contexte de la session",
   "CtxInspSystemPrompt": "Structure du prompt système",

@@ -1267,6 +1267,8 @@
   "ContextCompactionQueueFull": "इंजन व्यस्त होने के कारण संदर्भ संपीड़न को कतार में नहीं लगाया जा सका; टर्न पूरा होने के बाद फिर कोशिश करें।",
   "ContextCompactionQueueClosed": "संदर्भ संपीड़न उपलब्ध नहीं है क्योंकि इंजन अब नहीं चल रहा है।",
   "ContextCompactionRouteInvalid": "संपीड़ित नहीं किया जा सकता क्योंकि सक्रिय प्रोवाइडर रूट अमान्य है: {error}",
+  "ContextCompactionStoppedOnEngineSwitch": "संदर्भ संपीड़न रोक दिया गया; बातचीत में कोई बदलाव नहीं हुआ",
+  "ContextPurgeAbandonedOnEngineSwitch": "बदले गए इंजन के साथ सत्र की सफ़ाई छोड़ दी गई; बातचीत में कोई बदलाव नहीं हुआ",
   "CtxInspTitle": "कॉन्टेक्स्ट इंस्पेक्टर",
   "CtxInspSessionContext": "सत्र कॉन्टेक्स्ट",
   "CtxInspSystemPrompt": "सिस्टम प्रॉम्प्ट संरचना",

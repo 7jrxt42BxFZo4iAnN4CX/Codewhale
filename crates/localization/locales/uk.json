@@ -1267,6 +1267,8 @@
   "ContextCompactionQueueFull": "Не вдалося поставити стиснення контексту в чергу, оскільки рушій зайнятий; повторіть спробу після завершення ходу.",
   "ContextCompactionQueueClosed": "Стиснення контексту недоступне, оскільки рушій більше не працює.",
   "ContextCompactionRouteInvalid": "Неможливо виконати стиснення, оскільки активний маршрут провайдера недійсний: {error}",
+  "ContextCompactionStoppedOnEngineSwitch": "Стиснення контексту зупинено; розмову не змінено",
+  "ContextPurgeAbandonedOnEngineSwitch": "Очищення сеансу скасовано разом із заміненим рушієм; розмову не змінено",
   "CtxInspTitle": "Інспектор контексту",
   "CtxInspSessionContext": "Контекст сесії",
   "CtxInspSystemPrompt": "Структура системного промпту",

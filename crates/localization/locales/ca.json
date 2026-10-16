@@ -1267,6 +1267,8 @@
   "ContextCompactionQueueFull": "No s'ha pogut posar la compactació del context a la cua perquè el motor està ocupat; torna-ho a provar quan acabi el torn.",
   "ContextCompactionQueueClosed": "La compactació del context no està disponible perquè el motor ja no s'està executant.",
   "ContextCompactionRouteInvalid": "No es pot compactar perquè la ruta del proveïdor actiu no és vàlida: {error}",
+  "ContextCompactionStoppedOnEngineSwitch": "S'ha aturat la compactació del context; la conversa no s'ha modificat",
+  "ContextPurgeAbandonedOnEngineSwitch": "La neteja de la sessió s'ha abandonat amb el motor substituït; la conversa no s'ha modificat",
   "CtxInspTitle": "Inspector de context",
   "CtxInspSessionContext": "Context de la sessió",
   "CtxInspSystemPrompt": "Estructura del prompt del sistema",

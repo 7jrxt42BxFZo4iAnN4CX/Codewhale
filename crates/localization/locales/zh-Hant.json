@@ -1288,6 +1288,8 @@
   "ContextCompactionQueueFull": "上下文壓縮需要等待：引擎忙碌中。請在本回合結束後再試一次。",
   "ContextCompactionQueueClosed": "無法壓縮上下文：引擎已停止。",
   "ContextCompactionRouteInvalid": "無法壓縮，因為目前的供應商路由無效：{error}",
+  "ContextCompactionStoppedOnEngineSwitch": "已停止壓縮上下文；對話未被變更",
+  "ContextPurgeAbandonedOnEngineSwitch": "工作階段清理已隨被替換的引擎一併放棄；對話未被變更",
   "CtxInspTitle": "上下文檢查器",
   "CtxInspSessionContext": "工作階段上下文",
   "CtxInspSystemPrompt": "系統提示結構",

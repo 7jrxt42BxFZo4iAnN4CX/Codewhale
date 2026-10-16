@@ -527,17 +527,17 @@ async fn retire_tui_engine(
         let (id, auto) = active.unwrap_or_else(|| (queued.unwrap_or_default(), false));
         app.manual_compaction_queued = false;
         app.manual_compaction_id = None;
-        apply_compaction_cancelled(
-            app,
-            &id,
-            auto,
-            "Making room stopped; the conversation was not changed".to_string(),
-        );
+        let text = app
+            .tr(MessageId::ContextCompactionStoppedOnEngineSwitch)
+            .into_owned();
+        apply_compaction_cancelled(app, &id, auto, text);
     }
     if std::mem::take(&mut app.is_purging) {
-        let text = "Session cleanup was abandoned with the replaced engine; the conversation was not changed".to_string();
+        let text = app
+            .tr(MessageId::ContextPurgeAbandonedOnEngineSwitch)
+            .into_owned();
         add_compaction_receipt(app, &text);
-        set_explicit_compaction_status(app, text, StatusToastLevel::Warning, false);
+        app.push_status_toast(text, StatusToastLevel::Warning, Some(5_000));
     }
     mcp_handoff
 }

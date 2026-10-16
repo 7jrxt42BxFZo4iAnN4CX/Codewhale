@@ -1290,6 +1290,8 @@
   "ContextCompactionQueueFull": "Making room has to wait — the engine is busy. Try again after this turn.",
   "ContextCompactionQueueClosed": "Can't make room — the engine stopped.",
   "ContextCompactionRouteInvalid": "Can't compact — the active provider route is invalid: {error}",
+  "ContextCompactionStoppedOnEngineSwitch": "Making room stopped; the conversation was not changed",
+  "ContextPurgeAbandonedOnEngineSwitch": "Session cleanup was abandoned with the replaced engine; the conversation was not changed",
   "CtxInspTitle": "Context inspector",
   "CtxInspSessionContext": "Session Context",
   "CtxInspSystemPrompt": "System Prompt Structure",

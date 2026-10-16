@@ -1290,6 +1290,8 @@
   "ContextCompactionQueueFull": "엔진이 사용 중이어서 컨텍스트 압축을 대기열에 추가할 수 없습니다. 턴이 끝난 후 다시 시도하세요.",
   "ContextCompactionQueueClosed": "엔진이 더 이상 실행 중이 아니므로 컨텍스트 압축을 사용할 수 없습니다.",
   "ContextCompactionRouteInvalid": "현재 프로바이더 경로가 올바르지 않아 압축할 수 없습니다: {error}",
+  "ContextCompactionStoppedOnEngineSwitch": "컨텍스트 압축을 중지했습니다. 대화는 변경되지 않았습니다",
+  "ContextPurgeAbandonedOnEngineSwitch": "교체된 엔진과 함께 세션 정리가 중단되었습니다. 대화는 변경되지 않았습니다",
   "CtxInspTitle": "컨텍스트 인스펙터",
   "CtxInspSessionContext": "세션 컨텍스트",
   "CtxInspSystemPrompt": "시스템 프롬프트 구조",

@@ -1267,6 +1267,8 @@
   "ContextCompactionQueueFull": "Не удалось поставить сжатие контекста в очередь, потому что движок занят; повторите попытку после завершения хода.",
   "ContextCompactionQueueClosed": "Сжатие контекста недоступно, потому что движок больше не работает.",
   "ContextCompactionRouteInvalid": "Невозможно выполнить сжатие, потому что активный маршрут провайдера недействителен: {error}",
+  "ContextCompactionStoppedOnEngineSwitch": "Сжатие контекста остановлено; разговор не изменён",
+  "ContextPurgeAbandonedOnEngineSwitch": "Очистка сессии прервана вместе с заменённым движком; разговор не изменён",
   "CtxInspTitle": "Инспектор контекста",
   "CtxInspSessionContext": "Контекст сессии",
   "CtxInspSystemPrompt": "Структура системного промпта",

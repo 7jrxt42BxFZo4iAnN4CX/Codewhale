@@ -1288,6 +1288,8 @@
   "ContextCompactionQueueFull": "No se pudo poner en cola la compactación del contexto porque el motor está ocupado; inténtalo de nuevo cuando termine el turno.",
   "ContextCompactionQueueClosed": "La compactación del contexto no está disponible porque el motor ya no está en ejecución.",
   "ContextCompactionRouteInvalid": "No se puede compactar porque la ruta del proveedor activo no es válida: {error}",
+  "ContextCompactionStoppedOnEngineSwitch": "Se detuvo la compactación del contexto; la conversación no cambió",
+  "ContextPurgeAbandonedOnEngineSwitch": "La limpieza de la sesión se abandonó con el motor reemplazado; la conversación no cambió",
   "CtxInspTitle": "Inspector de contexto",
   "CtxInspSessionContext": "Contexto de la sesión",
   "CtxInspSystemPrompt": "Estructura del prompt del sistema",

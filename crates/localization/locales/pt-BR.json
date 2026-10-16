@@ -1288,6 +1288,8 @@
   "ContextCompactionQueueFull": "Não foi possível enfileirar a compactação do contexto porque o mecanismo está ocupado; tente novamente após o término do turno.",
   "ContextCompactionQueueClosed": "A compactação do contexto está indisponível porque o mecanismo não está mais em execução.",
   "ContextCompactionRouteInvalid": "Não é possível compactar porque a rota do provedor ativo é inválida: {error}",
+  "ContextCompactionStoppedOnEngineSwitch": "A compactação do contexto foi interrompida; a conversa não foi alterada",
+  "ContextPurgeAbandonedOnEngineSwitch": "A limpeza da sessão foi abandonada com o mecanismo substituído; a conversa não foi alterada",
   "CtxInspTitle": "Inspetor de contexto",
   "CtxInspSessionContext": "Contexto da sessão",
   "CtxInspSystemPrompt": "Estrutura do prompt do sistema",

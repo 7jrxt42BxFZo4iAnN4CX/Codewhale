@@ -1267,6 +1267,8 @@
   "ContextCompactionQueueFull": "Pemadatan konteks tidak dapat dimasukkan ke antrean karena mesin sedang sibuk; coba lagi setelah giliran selesai.",
   "ContextCompactionQueueClosed": "Pemadatan konteks tidak tersedia karena mesin tidak lagi berjalan.",
   "ContextCompactionRouteInvalid": "Tidak dapat memadatkan karena rute penyedia aktif tidak valid: {error}",
+  "ContextCompactionStoppedOnEngineSwitch": "Pemadatan konteks dihentikan; percakapan tidak diubah",
+  "ContextPurgeAbandonedOnEngineSwitch": "Pembersihan sesi dibatalkan bersama mesin yang diganti; percakapan tidak diubah",
   "CtxInspTitle": "Inspektor konteks",
   "CtxInspSessionContext": "Konteks Sesi",
   "CtxInspSystemPrompt": "Struktur System Prompt",
