@@ -75,7 +75,7 @@ alone does not prove it. Required Visual C++ runtime DLLs must also be present.
 | Native x64 CLI/TUI | Windows 10 x64 1607, build 14393 | Final release bytes need an actual oldest-OS startup receipt |
 | ConPTY API | Windows 10 1809, build 17763; Windows Server 2019 | This is Microsoft's API minimum; Codewhale's terminal-session routes remain Unix-only and return 501 on Windows |
 | Current Windows Terminal | Windows 10 2004, build 19041, or later | This terminal has a newer prerequisite than the ConPTY API; use the legacy console for the x64 compatibility target |
-| Native ARM64 CLI/TUI | Windows 11 ARM64 is the target | Candidate evidence exists on build 26300; no minimum Windows 11 build or Windows 10 ARM64 support is inferred from that run |
+| Native ARM64 CLI/TUI | Windows 11 ARM64 is the target | Exports observed on build 26300 (debug candidate) and build 26200 (release build, hosted probe); no minimum Windows 11 build or Windows 10 ARM64 support is inferred from those runs |
 | NSIS installer | x86 setup/plugins under WOW64, installing x64 runtime bytes | Native ARM64 installation uses its archive/npm assets; generated Uninstall.exe and actual install behavior need separate receipts |
 
 [Microsoft's ConPTY requirements](https://learn.microsoft.com/en-us/windows/console/createpseudoconsole)
@@ -92,6 +92,17 @@ The Native extension host still requires its runtime capability APIs and
 isolation probes; where DeriveCapabilitySidsFromName is absent it reports
 Unsupported rather than weakening its sandbox. This feature limit is distinct
 from CLI startup compatibility.
+
+When a candidate's windows-arm64 import check stops on pairs the arm64
+profile has not seen, requalify it with
+[`windows-arm64-export-probe.yml`](../.github/workflows/windows-arm64-export-probe.yml).
+Dispatch it with the candidate run's `run_id` and `source_sha`. On a
+GitHub-hosted Windows 11 ARM64 runner it loads each imported DLL from System32
+in a native ARM64 process, resolves every pair with GetProcAddress, and
+uploads a probe JSON with module paths and hashes. Add only probe-resolved
+pairs to the profile, record the run, runner OS build, binary SHA256 and counts
+in its qualification, and rerun the candidate. The probe resolves exports
+statically and does not launch the executables.
 
 ### Recorded 0.10.2 candidate evidence
 
@@ -115,6 +126,14 @@ InitCommonControls in the x86 Windows SDK 10.0.26100.0 import library and stock
 SysWOW64 DLL. Its [documented minimum is Vista](https://learn.microsoft.com/en-us/windows/win32/api/commctrl/nf-commctrl-initcommoncontrols).
 The manifest retains official source URLs, image hashes, counts and the ordinal
 identity; these qualify static contracts without claiming a 1607 installer run.
+
+On 2026-10-16, probe run 38890634267 (Windows 11 ARM64 build 26200.9457)
+resolved all 445 imports of the release-build windows-arm64 executables from
+candidate run 38867608774, and the 7 pairs the 2026-10-13 profile had not seen
+were added. Release candidate 38899652987 on the frozen 0.10.2 source
+`14683c9983` then passed the import check on every Windows target: 445 imports
+on ARM64, 453 on x64 including the installer payload, and 163 for the x86
+setup.
 
 At this snapshot, startup/installation of the final release bytes on an actual
 1607 machine and the candidate's generated uninstaller were still unqualified.

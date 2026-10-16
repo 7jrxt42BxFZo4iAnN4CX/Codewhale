@@ -68,7 +68,7 @@ CODEWHALE_PROVIDER=vllm VLLM_BASE_URL=http://127.0.0.1:8000/v1 VLLM_MODEL=<id> \
 | 原生 x64 CLI/TUI | Windows 10 x64 1607，内部版本 14393 | 最终发布文件仍需真实旧系统启动回执 |
 | ConPTY API | Windows 10 1809，内部版本 17763；Windows Server 2019 | 这是微软的 API 前提；Codewhale 终端会话接口仍仅限 Unix，Windows 返回 501 |
 | 当前 Windows Terminal | Windows 10 2004，内部版本 19041，或更高版本 | 它的前提比 ConPTY API 更新；x64 旧系统兼容性目标使用传统控制台 |
-| 原生 ARM64 CLI/TUI | 目标是 Windows 11 ARM64 | 候选版本在内部版本 26300 上有验证；不能由此推断最低 Windows 11 版本或 Windows 10 ARM64 支持 |
+| 原生 ARM64 CLI/TUI | 目标是 Windows 11 ARM64 | 导出在内部版本 26300（debug 候选）和 26200（发布构建，托管探测）上得到验证；不能由此推断最低 Windows 11 版本或 Windows 10 ARM64 支持 |
 | NSIS 安装器 | x86 安装程序和插件在 WOW64 下运行，安装 x64 程序 | ARM64 使用原生压缩包/npm；生成的 Uninstall.exe 与实际安装行为需独立验收 |
 
 [ConPTY API 前提](https://learn.microsoft.com/en-us/windows/console/createpseudoconsole)
@@ -80,6 +80,14 @@ CODEWHALE_PROVIDER=vllm VLLM_BASE_URL=http://127.0.0.1:8000/v1 VLLM_MODEL=<id> \
 核对的静态导入契约，不认证整个运行时、安装依赖或最低 OS 版本。Native 扩展宿主
 仍需要对应的运行时能力 API 和隔离检查；缺少 DeriveCapabilitySidsFromName 时明确
 返回 Unsupported，不会降低沙箱隔离。此限制与 CLI 启动兼容性不同。
+
+若候选版本的 windows-arm64 导入检查因 arm64 基线未见过的导入而失败，用
+[`windows-arm64-export-probe.yml`](../../.github/workflows/windows-arm64-export-probe.yml)
+重新验收：以该候选运行的 `run_id` 和 `source_sha` 手动触发。它在 GitHub 托管的
+Windows 11 ARM64 运行器上，于原生 ARM64 进程中从 System32 加载每个导入的 DLL，用
+GetProcAddress 解析每一对导入，并上传记录模块路径与哈希的探测 JSON。只把探测解析成功
+的导入加入基线，在其验收记录中写明运行、运行器系统版本、程序 SHA256 与数量，然后重新
+运行候选版本。该探测只做静态导出解析，不启动程序。
 
 2026-10-13 的候选源代码为
 [`cf7199b52e`](https://github.com/codewhale-hq/Codewhale/commit/cf7199b52ecb9147e4670ae7874924ffc30a6a67)。
@@ -97,6 +105,11 @@ x86 NSIS 基线有 189 个微软文档标明早于 1607 的命名 API，以及�
 COMCTL32 #17（InitCommonControls）：x86 SDK 10.0.26100.0 导入库与系统 SysWOW64
 DLL 的身份一致，[该 API 的文档前提是 Vista](https://learn.microsoft.com/en-us/windows/win32/api/commctrl/nf-commctrl-initcommoncontrols)。
 基线文件包含对应的官方 URL、文件哈希、数量与序号身份；这不等于在 1607 上安装成功。
+
+2026-10-16，探测运行 38890634267（Windows 11 ARM64 内部版本 26200.9457）解析了候选运行
+38867608774 中 windows-arm64 发布程序的全部 445 个导入，2026-10-13 基线未见过的 7 对导入
+已加入。随后冻结的 0.10.2 源代码 `14683c9983` 上的发布候选 38899652987 在所有 Windows
+目标上通过导入检查：ARM64 445 个，x64（含安装器内程序）453 个，x86 安装程序 163 个。
 
 此快照中，最终发布文件在真实 1607 上启动/安装及候选程序生成的卸载器仍未验收。
 最终冻结源码、发布导入记录、各安装途径、打包/原生应用崩溃恢复和最低 OS 回执应
