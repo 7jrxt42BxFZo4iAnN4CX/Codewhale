@@ -228,7 +228,14 @@ impl Engine {
         config
             .workspace
             .get_or_insert_with(|| self.config.workspace.clone());
+        let (image_input, image_cap) = self.request_image_policy(
+            &self.image_route_provider_key(),
+            &config.model,
+            config.image_input,
+        );
+        config.image_input = image_input;
         let mut prepared = PreparedCompactionEnvelope::new(config);
+        prepared.image_cap = image_cap;
         prepared.session_id = Some(self.session.id.clone());
         prepared.notice_sink = Some(std::sync::Arc::new(EngineCompactionNoticeSink {
             tx: self.tx_event.clone(),

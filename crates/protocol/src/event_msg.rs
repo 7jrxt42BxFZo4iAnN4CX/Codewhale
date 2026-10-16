@@ -300,6 +300,18 @@ pub enum EventMsg {
         omitted_tool_count: u64,
     },
 
+    RequestImageWindow {
+        thread_id: ThreadId,
+        session_id: SessionId,
+        provider: String,
+        model: String,
+        total: u64,
+        elided: u64,
+        cap: u64,
+        cap_source: String,
+        message: String,
+    },
+
     /// Workspace snapshots (undo) are off for this workspace. `reason` is one
     /// rendered, localized line: the consequence, the gate that refused, and
     /// the recovery that actually lifts *that* gate (the size cap's config key
@@ -800,6 +812,7 @@ pub struct EventEnvelope {
 /// proves the list and `kind_str` agree.
 pub const EVENT_KINDS: &[&str] = &[
     "tool_projection_warning",
+    "request_image_window",
     "message_started",
     "response_delta",
     "message_complete",
@@ -856,6 +869,7 @@ impl EventMsg {
     pub fn kind_str(&self) -> &'static str {
         match self {
             Self::ToolProjectionWarning { .. } => "tool_projection_warning",
+            Self::RequestImageWindow { .. } => "request_image_window",
             Self::SnapshotsDisabled { .. } => "snapshots_disabled",
             Self::MessageStarted { .. } => "message_started",
             Self::ResponseDelta { .. } => "response_delta",
@@ -915,6 +929,7 @@ impl EventMsg {
     pub fn thread_id(&self) -> &ThreadId {
         match self {
             Self::ToolProjectionWarning { thread_id, .. }
+            | Self::RequestImageWindow { thread_id, .. }
             | Self::SnapshotsDisabled { thread_id, .. }
             | Self::MessageStarted { thread_id, .. }
             | Self::ResponseDelta { thread_id, .. }
@@ -974,6 +989,7 @@ impl EventMsg {
     pub fn session_id(&self) -> &SessionId {
         match self {
             Self::ToolProjectionWarning { session_id, .. }
+            | Self::RequestImageWindow { session_id, .. }
             | Self::SnapshotsDisabled { session_id, .. }
             | Self::MessageStarted { session_id, .. }
             | Self::ResponseDelta { session_id, .. }
@@ -1080,6 +1096,17 @@ mod tests {
                 provider: "openai".into(),
                 omitted_tool_names: vec!["a".into()],
                 omitted_tool_count: 3,
+            },
+            EventMsg::RequestImageWindow {
+                thread_id: t.clone(),
+                session_id: s.clone(),
+                provider: "vllm".into(),
+                model: "m".into(),
+                total: 6,
+                elided: 3,
+                cap: 3,
+                cap_source: "provider_rejection".into(),
+                message: "m".into(),
             },
             EventMsg::MessageStarted {
                 thread_id: t.clone(),

@@ -175,6 +175,15 @@ impl Engine {
                         Ok(false) => {}
                     }
                 }
+                if self.rlm_host.is_none()
+                    && let Some(rejection) =
+                        crate::llm_client::image_count_rejection(&format!("{e:#}").to_lowercase())
+                    && let Some(result) = self
+                        .recover_image_count_rejection(progress, &stream_request, rejection, &e)
+                        .await
+                {
+                    return result;
+                }
                 if let Some(recovery) = self.recover_child_request(progress, &e).await {
                     return recovery;
                 }
@@ -201,23 +210,9 @@ impl Engine {
                     && is_image_input_rejection_message(&message)
                     && self.active_route_capabilities.image_input != CapabilityState::Unsupported
                     && !progress.image_rejection_recovered
+                    && crate::image_attach::count_request_images(&stream_request.messages) > 0
                 {
-                    progress.image_rejection_recovered = true;
-                    // This path tells the user itself; the resend must
-                    // not announce the same omission a second time.
-                    progress.image_omission_notified = true;
-                    self.active_route_capabilities.image_input = CapabilityState::Unsupported;
-                    crate::logging::warn(format!(
-                        "model {} rejected image content; resending with images replaced by text",
-                        self.session.model
-                    ));
-                    let status = codewhale_localization::tr(
-                        codewhale_localization::resolve_locale(&self.config.locale_tag),
-                        codewhale_localization::MessageId::ImageInputRejectedResent,
-                    )
-                    .replace("{model}", &self.session.model);
-                    let _ = self.send_event(Event::status(status)).await;
-                    return PhaseResult::Retry;
+                    return self.resend_without_images(progress).await;
                 }
                 let display_message = self.decorate_auth_error_message(
                     initial_stream_error_user_message(&self.config.locale_tag, &e),
@@ -1040,6 +1035,71 @@ impl Engine {
             prepared_output_tokens: stream_request.max_tokens,
         })
     }
+    async fn resend_without_images(
+        &mut self,
+        progress: &mut TurnLoopProgress,
+    ) -> PhaseResult<AcceptedModelStep> {
+        progress.image_rejection_recovered = true;
+        // This path tells the user itself; the resend must
+        // not announce the same omission a second time.
+        progress.image_omission_notified = true;
+        self.active_route_capabilities.image_input = CapabilityState::Unsupported;
+        crate::logging::warn(format!(
+            "model {} rejected image content; resending with images replaced by text",
+            self.session.model
+        ));
+        let status = codewhale_localization::tr(
+            codewhale_localization::resolve_locale(&self.config.locale_tag),
+            codewhale_localization::MessageId::ImageInputRejectedResent,
+        )
+        .replace("{model}", &self.session.model);
+        let _ = self.send_event(Event::status(status)).await;
+        PhaseResult::Retry
+    }
+
+    async fn recover_image_count_rejection(
+        &mut self,
+        progress: &mut TurnLoopProgress,
+        request: &codewhale_models::MessageRequest,
+        rejection: crate::llm_client::ImageCountRejection,
+        error: &anyhow::Error,
+    ) -> Option<PhaseResult<AcceptedModelStep>> {
+        let sent = crate::image_attach::count_request_images(&request.messages);
+        let model = self.session.model.clone();
+        let cap = self.learn_image_cap(&model, sent, rejection)?;
+        if cap == 0 {
+            if self.active_route_capabilities.image_input != CapabilityState::Unsupported
+                && !progress.image_rejection_recovered
+            {
+                return Some(self.resend_without_images(progress).await);
+            }
+        } else if progress.image_count_recoveries < MAX_IMAGE_COUNT_RECOVERIES {
+            progress.image_count_recoveries = progress.image_count_recoveries.saturating_add(1);
+            return Some(PhaseResult::Retry);
+        }
+        let hint = codewhale_localization::tr(
+            codewhale_localization::resolve_locale(&self.config.locale_tag),
+            codewhale_localization::MessageId::ImageCountRejected,
+        )
+        .replace("{model}", &model)
+        .replace("{count}", &sent.to_string());
+        let detail = self.decorate_auth_error_message(initial_stream_error_user_message(
+            &self.config.locale_tag,
+            error,
+        ));
+        let display_message = format!("{hint}\n{detail}");
+        progress.turn_error = Some(display_message.clone());
+        let _ = self
+            .send_event(Event::error(
+                crate::error_taxonomy::ErrorEnvelope::image_count_exceeded(display_message),
+            ))
+            .await;
+        Some(PhaseResult::Return((
+            TurnOutcomeStatus::Failed,
+            progress.turn_error.take(),
+        )))
+    }
+
     async fn recover_child_request(
         &mut self,
         progress: &mut TurnLoopProgress,

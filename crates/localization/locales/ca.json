@@ -370,6 +370,8 @@
   "ScreenModeUnchanged": "Pantalla sense canvis: {reason}.",
   "ImageInputRejectedResent": "{model} no accepta imatges — s'han reenviat com a text; usa image_ocr per llegir-les",
   "ImageInputOmitted": "{model} no pot veure imatges — {count} imatge(s) s'han enviat com a text en aquest torn; usa image_ocr per llegir-les o /model per canviar",
+  "RequestImageWindow": "{model} accepta com a màxim {cap} imatge(s) per sol·licitud: s'envien les {kept} més recents de {total}; {elided} imatge(s) més antigues van com a notes de text",
+  "ImageCountRejected": "{model} ha rebutjat les {count} imatge(s) d'aquesta sol·licitud; Codewhale no l'ha tornat a enviar sense canvis. Torna a enviar per reintentar-ho amb menys imatges, o canvia de model",
   "ProviderToolCallMissing": "El proveïdor ha acabat amb `{reason}`, però no ha proporcionat cap crida a una eina. Torna a provar aquest torn per continuar.",
   "ConfigLabelShowThinking": "Raonament del model al xat",
   "ConfigLabelThinkingHighlight": "Ressaltat de fons del raonament",

@@ -46,7 +46,8 @@
 | 会话构建 | `initial` |
 
 历史重置会合法地让尾部（而不是头部）失效，记录为 `reset:<what>`——
-`reset:compaction`、`reset:clear`。
+`reset:compaction`、`reset:clear`，以及在提供方的单请求图像上限移动请求图像窗口时记录的
+`reset:image_window`（最早的图像以固定的文本说明代替）。
 
 除此之外，任何在**没有**声明原因的情况下改动头部字节的行为都算**漂移**：
 它会记为 `drift:<component>`，原来的固定点被**保留**下来。同一个未声明的前缀

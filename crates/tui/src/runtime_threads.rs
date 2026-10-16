@@ -18772,6 +18772,48 @@ impl RuntimeThreadManager {
                     )
                     .await?;
                 }
+                EngineEvent::RequestImageWindow {
+                    provider,
+                    model,
+                    total,
+                    elided,
+                    cap,
+                    cap_source,
+                    message,
+                } => {
+                    let item = TurnItemRecord {
+                        schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
+                        id: runtime_record_id("item"),
+                        turn_id: turn_id.clone(),
+                        kind: TurnItemKind::Status,
+                        status: TurnItemLifecycleStatus::Completed,
+                        summary: summarize_text(&message, SUMMARY_LIMIT),
+                        detail: Some(message),
+                        metadata: Some(json!({
+                            "code": "request_image_window",
+                            "provider": provider,
+                            "model": model,
+                            "total": total,
+                            "elided": elided,
+                            "cap": cap,
+                            "cap_source": cap_source,
+                        })),
+                        artifact_refs: Vec::new(),
+                        artifacts: Vec::new(),
+                        started_at: Some(Utc::now()),
+                        ended_at: Some(Utc::now()),
+                    };
+                    self.store.save_item(&item)?;
+                    self.attach_item_to_turn(&turn_id, &item.id)?;
+                    self.emit_event(
+                        &thread_id,
+                        Some(&turn_id),
+                        Some(&item.id),
+                        "item.completed",
+                        json!({ "item": item }),
+                    )
+                    .await?;
+                }
                 EngineEvent::Error { envelope, .. } => {
                     turn_status = Some(RuntimeTurnStatus::Failed);
                     turn_error = Some(envelope.message.clone());

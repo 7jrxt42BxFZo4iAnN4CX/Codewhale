@@ -371,6 +371,8 @@
   "ScreenModeUnchanged": "屏幕未改变：{reason}。",
   "ImageInputRejectedResent": "{model} 不接受图像，已将图像替换为文本重新发送；请使用 image_ocr 读取图像",
   "ImageInputOmitted": "{model} 无法查看图像，本回合 {count} 张图像已作为文本发送；请使用 image_ocr 读取，或用 /model 切换模型",
+  "RequestImageWindow": "{model} 每个请求最多接受 {cap} 张图像：发送 {total} 张中最新的 {kept} 张；较早的 {elided} 张以文本说明代替",
+  "ImageCountRejected": "{model} 拒绝了此请求中的 {count} 张图像；Codewhale 没有原样重发。再次发送将以更少的图像重试，或切换模型",
   "ProviderToolCallMissing": "提供商以 `{reason}` 结束响应，但未提供工具调用。请重试本回合以继续。",
   "ConfigLabelShowThinking": "对话中显示模型推理",
   "ConfigLabelThinkingHighlight": "思考背景高亮",

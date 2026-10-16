@@ -370,6 +370,8 @@
   "ScreenModeUnchanged": "Écran inchangé : {reason}.",
   "ImageInputRejectedResent": "{model} n’accepte pas les images — elles ont été renvoyées sous forme de texte ; utilisez image_ocr pour les lire",
   "ImageInputOmitted": "{model} ne voit pas les images — {count} image(s) envoyée(s) sous forme de texte à ce tour ; utilisez image_ocr pour les lire ou /model pour changer",
+  "RequestImageWindow": "{model} accepte au plus {cap} image(s) par requête : envoi des {kept} plus récentes sur {total} ; {elided} image(s) plus ancienne(s) partent sous forme de notes texte",
+  "ImageCountRejected": "{model} a refusé les {count} image(s) de cette requête ; Codewhale ne l'a pas renvoyée telle quelle. Renvoyez pour réessayer avec moins d'images, ou changez de modèle",
   "ProviderToolCallMissing": "Le fournisseur a terminé avec `{reason}`, mais sans fournir d’appel d’outil. Réessayez ce tour pour continuer.",
   "ConfigLabelShowThinking": "Raisonnement du modèle dans le chat",
   "ConfigLabelThinkingHighlight": "Surlignage du fond du raisonnement",

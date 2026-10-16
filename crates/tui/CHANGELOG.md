@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- A long session whose history holds more images than its model accepts in
+  one request no longer becomes permanently unsendable. When a provider
+  refuses the number of images (for example vLLM's "At most 3 image(s) may
+  be provided in one prompt", "too many images" or "maximum number of
+  images"), Codewhale learns that limit for the provider and model (the
+  number the provider states, otherwise half the images sent) and resends
+  with only the newest images attached. Each older image is replaced by a
+  fixed note telling the model it remains in the session and not to guess
+  what it showed; a tool image's note says to take a fresh observation, such
+  as a new screenshot, rather than repeat the action. Each resend carries
+  strictly fewer images, there are at most three per turn and never an
+  unchanged one; after that the turn ends with an `image_count_exceeded`
+  error and the next message uses the learned limit. A stated limit of 0
+  sends images as text, as for a model without image input. Before, a count
+  rejection either ended every later turn the same way or was misread as
+  "no image input" and stripped every image. The window moves in steps of a
+  quarter of the limit, so the cached history prefix changes only once every
+  few new images. Each change is recorded as a `request_image_window` event
+  (runtime threads store it as a status item with that code, `exec
+  --output-format stream-json` prints it and the TUI shows it), and
+  `/preview-request` and the compaction summary request apply the same
+  window. A sub-agent no longer retries a count rejection as a transient
+  failure. Known limits: nothing changes until a provider has refused once,
+  and no documented per-model limits are applied; the learned limit is kept
+  in memory per engine and per sub-agent, so a restart learns it again with
+  one refused request; the oldest images go first, user attachments
+  included; a refusal that arrives mid-stream ends that request and only the
+  next send uses the limit; a gateway that reports the refusal as a 5xx is
+  retried unchanged by the transport first; and a request-body size (HTTP
+  413) refusal on an ordinary turn still has no recovery (Refs CW-7235).
 - Switching provider is now refused while a turn is running, as model,
   thinking and permission changes already were. The refusal covers
   `/provider <id>`, the provider picker, a custom provider, setup and login

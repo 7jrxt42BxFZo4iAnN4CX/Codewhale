@@ -15137,6 +15137,10 @@ fn is_transient_subagent_provider_error(error: &anyhow::Error) -> bool {
     // quota error mentioning "429" is not a transient rate limit. Retain the
     // transport fallback for generic/parse errors and relay HTTP 400s, which
     // can carry an upstream timeout rather than an invalid request.
+    let message = format!("{error:#}").to_ascii_lowercase();
+    if crate::llm_client::image_count_rejection(&message).is_some() {
+        return false;
+    }
     match error.downcast_ref::<LlmError>() {
         Some(
             LlmError::QuotaExhausted(_)
@@ -15150,7 +15154,6 @@ fn is_transient_subagent_provider_error(error: &anyhow::Error) -> bool {
         _ => {}
     }
 
-    let message = format!("{error:#}").to_ascii_lowercase();
     [
         "did not receive response headers",
         "response headers",

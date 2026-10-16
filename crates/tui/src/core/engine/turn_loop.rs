@@ -28,6 +28,7 @@ use codewhale_core::request::{PrimaryTurnRequest, prepare_primary_turn_request};
 use codewhale_models::Role;
 
 const MAX_APPROVAL_INTENT_SUMMARY_CHARS: usize = 2_000;
+const MAX_IMAGE_COUNT_RECOVERIES: u8 = 3;
 
 // Private bookkeeping for this one outer loop. The existing TurnContext,
 // Engine session, clocks, event queue, prompt and approval owners remain authoritative.
@@ -38,6 +39,7 @@ struct TurnLoopProgress {
     context_recovery_attempts: u8,
     auto_compaction_suppressed: bool,
     image_rejection_recovered: bool,
+    image_count_recoveries: u8,
     mode: AppMode,
     tool_catalog: Vec<codewhale_models::Tool>,
     active_tool_names: std::collections::HashSet<String>,
@@ -1564,6 +1566,7 @@ impl Engine {
             context_recovery_attempts,
             auto_compaction_suppressed,
             image_rejection_recovered,
+            image_count_recoveries: 0,
             mode,
             tool_catalog,
             active_tool_names,
@@ -4550,6 +4553,27 @@ impl Engine {
                     let message = self.decorate_auth_error_message(e.to_string());
                     let user_message =
                         stream_read_error_user_message(&message, any_content_received);
+                    if self.rlm_host.is_none()
+                        && let Some(rejection) = crate::llm_client::image_count_rejection(
+                            &format!("{e:#}").to_lowercase(),
+                        )
+                    {
+                        let sent =
+                            crate::image_attach::count_request_images(&stream_request.messages);
+                        let model = self.session.model.clone();
+                        if self.learn_image_cap(&model, sent, rejection).is_some() {
+                            terminal_stream_error = true;
+                            stream_error.get_or_insert(user_message.clone());
+                            let _ = self
+                                .send_stream_event(Event::error(
+                                    crate::error_taxonomy::ErrorEnvelope::image_count_exceeded(
+                                        user_message,
+                                    ),
+                                ))
+                                .await;
+                            break;
+                        }
+                    }
                     let envelope =
                         crate::error_taxonomy::envelope_for_llm_error(e, user_message.clone());
                     if self.child_host.is_some() {

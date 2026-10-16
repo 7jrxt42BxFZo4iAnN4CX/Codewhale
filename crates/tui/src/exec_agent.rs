@@ -923,6 +923,29 @@ pub(crate) async fn run_exec_agent(
                     )
                 );
             }
+            Event::RequestImageWindow {
+                provider,
+                model,
+                total,
+                elided,
+                cap,
+                cap_source,
+                message,
+            } => {
+                if output_format == ExecOutputFormat::StreamJson {
+                    emit_exec_stream_event(&ExecStreamEvent::RequestImageWindow {
+                        provider,
+                        model,
+                        total,
+                        elided,
+                        cap,
+                        cap_source,
+                        message,
+                    })?;
+                } else if !json_output {
+                    eprintln!("{message}");
+                }
+            }
             Event::ToolCallStarted {
                 id, name, input, ..
             } => {

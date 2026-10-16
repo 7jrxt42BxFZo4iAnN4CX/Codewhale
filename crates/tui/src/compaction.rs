@@ -105,6 +105,7 @@ pub struct PreparedCompactionEnvelope {
     /// request that omits it shares no cacheable prefix with the turn it
     /// summarizes and re-bills the whole history uncached.
     pub reasoning_effort: Option<String>,
+    pub image_cap: Option<usize>,
     /// User-visible progress sink supplied by the host that owns the run
     /// (the interactive engine, typically). `None` keeps every notice in the
     /// log only — the pass itself never depends on it.
@@ -118,6 +119,7 @@ impl std::fmt::Debug for PreparedCompactionEnvelope {
             .field("session_id", &self.session_id)
             .field("tools", &self.tools)
             .field("reasoning_effort", &self.reasoning_effort)
+            .field("image_cap", &self.image_cap)
             .field("notice_sink", &self.notice_sink.as_ref().map(|_| "<sink>"))
             .finish()
     }
@@ -131,6 +133,7 @@ impl PartialEq for PreparedCompactionEnvelope {
             && self.session_id == other.session_id
             && self.tools == other.tools
             && self.reasoning_effort == other.reasoning_effort
+            && self.image_cap == other.image_cap
     }
 }
 
@@ -142,6 +145,7 @@ impl PreparedCompactionEnvelope {
             session_id: None,
             tools: None,
             reasoning_effort: None,
+            image_cap: None,
             notice_sink: None,
         }
     }
@@ -1447,6 +1451,7 @@ pub async fn compact_messages_safe(
             system_prompt,
             prepared.tools.as_deref(),
             prepared.reasoning_effort.as_deref(),
+            prepared.image_cap,
             prepared.notice_sink.as_deref(),
             &mut quality_retries,
             invocation_usage,
@@ -1613,6 +1618,7 @@ async fn compact_messages(
         None,
         None,
         None,
+        None,
         &mut quality_retries,
         &mut invocation_usage,
     )
@@ -1627,6 +1633,7 @@ async fn compact_messages_with_metadata(
     system_prompt: Option<&SystemPrompt>,
     tools: Option<&[Tool]>,
     reasoning_effort: Option<&str>,
+    image_cap: Option<usize>,
     notice_sink: Option<&dyn CompactionNoticeSink>,
     quality_retries: &mut u32,
     invocation_usage: &mut Usage,
@@ -1642,6 +1649,7 @@ async fn compact_messages_with_metadata(
         system_prompt,
         tools,
         reasoning_effort,
+        image_cap,
         notice_sink,
         quality_retries,
         invocation_usage,
@@ -1877,6 +1885,7 @@ async fn create_summary(
     system_prompt: Option<&SystemPrompt>,
     tools: Option<&[Tool]>,
     reasoning_effort: Option<&str>,
+    image_cap: Option<usize>,
     notice_sink: Option<&dyn CompactionNoticeSink>,
     quality_retries: &mut u32,
     invocation_usage: &mut Usage,
@@ -1894,6 +1903,20 @@ async fn create_summary(
         logging::warn(format!(
             "Compaction omitted {stripped_images} image block(s) unsupported by its route"
         ));
+    }
+    if let Some(cap) = image_cap {
+        let window = crate::image_attach::cap_request_images(&mut request_messages, cap);
+        if window.elided > 0 {
+            let message = format!(
+                "Making room: the summary request sends the newest {} of {} images; {} older go as text notes (limit {} per request).",
+                window.total - window.elided,
+                window.total,
+                window.elided,
+                window.cap,
+            );
+            logging::warn(&message);
+            deliver_compaction_notice(notice_sink, message);
+        }
     }
     request_messages.push(Message {
         role: Role::User,

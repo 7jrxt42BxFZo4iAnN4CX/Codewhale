@@ -1053,6 +1053,8 @@ pub struct Engine {
     /// key, and wire protocol. Part of the route identity the input-bill
     /// carry-over is keyed on; `None` until a route is installed.
     active_route_endpoint: Option<codewhale_config::route::ResolvedEndpoint>,
+    learned_image_caps: HashMap<(String, String), usize>,
+    last_image_window: Option<(String, String, usize, usize)>,
     rx_op: mpsc::Receiver<Op>,
     live_runtime_authority: Arc<StdMutex<LiveRuntimeAuthorityState>>,
     compaction_cancellation: Arc<StdMutex<CompactionCancellationState>>,
@@ -1748,6 +1750,97 @@ impl Engine {
         format!("{message}\n\n{hint}")
     }
 
+    pub(super) fn image_route_provider_key(&self) -> String {
+        self.api_provider_identity.as_ref().map_or_else(
+            || self.api_provider.as_str().to_string(),
+            |identity| identity.key.to_string(),
+        )
+    }
+
+    pub(super) fn request_image_policy(
+        &self,
+        provider: &str,
+        model: &str,
+        route_image_input: CapabilityState,
+    ) -> (CapabilityState, Option<usize>) {
+        match self
+            .learned_image_caps
+            .get(&(provider.to_string(), model.to_string()))
+        {
+            Some(0) => (CapabilityState::Unsupported, None),
+            cap => (route_image_input, cap.copied()),
+        }
+    }
+
+    pub(super) fn learn_image_cap(
+        &mut self,
+        model: &str,
+        sent: usize,
+        rejection: crate::llm_client::ImageCountRejection,
+    ) -> Option<usize> {
+        if sent == 0 {
+            return None;
+        }
+        let cap = match rejection.limit {
+            Some(limit) if limit < sent => limit,
+            _ if sent <= 1 => 0,
+            _ => sent / 2,
+        };
+        let key = (self.image_route_provider_key(), model.to_string());
+        let learned = self.learned_image_caps.entry(key).or_insert(cap);
+        *learned = (*learned).min(cap);
+        crate::logging::warn(format!(
+            "request_images: model {model} refused {sent} image(s) in one request (stated limit {:?}); learned cap {}",
+            rejection.limit, *learned
+        ));
+        Some(*learned)
+    }
+
+    pub(super) async fn note_request_image_window(
+        &mut self,
+        provider: String,
+        window: crate::image_attach::ImageWindow,
+    ) {
+        let model = self.session.model.clone();
+        let current = (window.elided > 0)
+            .then(|| (provider.clone(), model.clone(), window.cap, window.elided));
+        if current == self.last_image_window {
+            return;
+        }
+        self.last_image_window = current;
+        if window.elided == 0 {
+            return;
+        }
+        let cap_source = "provider_rejection";
+        crate::logging::warn(format!(
+            "request_images: provider={provider} model={model} total={} elided={} cap={} cap_source={cap_source}",
+            window.total, window.elided, window.cap
+        ));
+        if let Some(pm) = self.session.prefix_stability.as_mut() {
+            pm.note_history_reset("image_window");
+        }
+        let message = codewhale_localization::tr(
+            codewhale_localization::resolve_locale(&self.config.locale_tag),
+            codewhale_localization::MessageId::RequestImageWindow,
+        )
+        .replace("{model}", &model)
+        .replace("{cap}", &window.cap.to_string())
+        .replace("{kept}", &(window.total - window.elided).to_string())
+        .replace("{total}", &window.total.to_string())
+        .replace("{elided}", &window.elided.to_string());
+        let _ = self
+            .send_event(Event::RequestImageWindow {
+                provider,
+                model,
+                total: window.total,
+                elided: window.elided,
+                cap: window.cap,
+                cap_source: cap_source.to_string(),
+                message,
+            })
+            .await;
+    }
+
     /// A provider's input bill describes one route's tokenization of one
     /// prompt. The auto-compaction gate and the preflight guard lift the
     /// honest estimate to the last bill, so a bill carried across a route
@@ -2361,6 +2454,8 @@ impl Engine {
             active_route_limits,
             active_route_capabilities: codewhale_config::route::RouteCapabilities::default(),
             active_route_endpoint: None,
+            learned_image_caps: HashMap::new(),
+            last_image_window: None,
             rx_op,
             live_runtime_authority: Arc::clone(&live_runtime_authority),
             compaction_cancellation: Arc::clone(&compaction_cancellation),

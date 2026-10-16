@@ -608,9 +608,15 @@ impl Engine {
         // outbound copy is rewritten, and it is rewritten to text that says
         // why rather than being dropped.
         let fresh_images = crate::image_attach::images_since_last_user_prompt(&request.messages);
+        let image_provider = self.image_route_provider_key();
+        let (image_input, image_cap) = self.request_image_policy(
+            &image_provider,
+            &self.session.model,
+            self.active_route_capabilities.image_input,
+        );
         let stripped_images = crate::image_attach::strip_images_when_unsupported(
             &mut request.messages,
-            self.active_route_capabilities.image_input,
+            image_input,
             &self.session.model,
         );
         if stripped_images > 0 {
@@ -628,6 +634,10 @@ impl Engine {
                 .replace("{count}", &fresh_images.to_string());
                 let _ = self.send_event(Event::status(status)).await;
             }
+        }
+        if let Some(cap) = image_cap {
+            let window = crate::image_attach::cap_request_images(&mut request.messages, cap);
+            self.note_request_image_window(image_provider, window).await;
         }
         let tool_request_snapshot =
             crate::tool_inspection::ToolInspectionSnapshot::from_prepared_request_with_surface(

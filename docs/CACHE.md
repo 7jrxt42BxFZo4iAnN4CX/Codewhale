@@ -49,7 +49,9 @@ one-request miss):
 | Session construction | `initial` |
 
 History resets that legitimately invalidate the tail (not the header) are
-logged as `reset:<what>` — `reset:compaction`, `reset:clear`.
+logged as `reset:<what>` — `reset:compaction`, `reset:clear`, and
+`reset:image_window` when a provider's per-request image limit moves the
+request image window (the oldest images go as fixed text notes).
 
 Anything else that changes the header bytes with **no** declared reason is
 **drift**: it is logged as `drift:<component>`, the original pin is **kept**

@@ -369,6 +369,8 @@
   "ScreenModeUnchanged": "畫面未變更：{reason}。",
   "ImageInputRejectedResent": "{model} 不接受圖片，已將圖片替換為文字重新傳送；請使用 image_ocr 讀取圖片",
   "ImageInputOmitted": "{model} 無法檢視圖片，本回合 {count} 張圖片已作為文字傳送；請使用 image_ocr 讀取，或用 /model 切換模型",
+  "RequestImageWindow": "{model} 每個請求最多接受 {cap} 張圖片：傳送 {total} 張中最新的 {kept} 張；較早的 {elided} 張以文字說明代替",
+  "ImageCountRejected": "{model} 拒絕了此請求中的 {count} 張圖片；Codewhale 沒有原樣重送。再次傳送將以更少的圖片重試，或切換模型",
   "ProviderToolCallMissing": "供應商以 `{reason}` 結束回應，但未提供工具呼叫。請重試本回合以繼續。",
   "ConfigLabelShowThinking": "對話中顯示模型推理",
   "ConfigLabelThinkingHighlight": "思考背景醒目提示",

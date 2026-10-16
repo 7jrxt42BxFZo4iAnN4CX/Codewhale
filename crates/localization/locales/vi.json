@@ -370,6 +370,8 @@
   "ScreenModeUnchanged": "Màn hình không thay đổi: {reason}.",
   "ImageInputRejectedResent": "{model} không chấp nhận hình ảnh — đã gửi lại dưới dạng văn bản; hãy dùng image_ocr để đọc chúng",
   "ImageInputOmitted": "{model} không thể xem hình ảnh — {count} hình ảnh đã được gửi dưới dạng văn bản trong lượt này; hãy dùng image_ocr để đọc hoặc /model để chuyển",
+  "RequestImageWindow": "{model} chỉ nhận tối đa {cap} hình ảnh mỗi yêu cầu: gửi {kept} hình mới nhất trong {total}; {elided} hình cũ hơn được gửi dưới dạng ghi chú văn bản",
+  "ImageCountRejected": "{model} đã từ chối {count} hình ảnh trong yêu cầu này; Codewhale không gửi lại nguyên trạng. Gửi lại để thử với ít hình ảnh hơn, hoặc đổi mô hình",
   "ProviderToolCallMissing": "Nhà cung cấp kết thúc với `{reason}` nhưng không gửi lệnh gọi công cụ nào. Hãy thử lại lượt này để tiếp tục.",
   "ConfigLabelShowThinking": "Hiển thị suy luận trong trò chuyện",
   "ConfigLabelThinkingHighlight": "Tô nền phần suy luận",

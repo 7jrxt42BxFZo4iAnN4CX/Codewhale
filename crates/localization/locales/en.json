@@ -371,6 +371,8 @@
   "ScreenModeUnchanged": "Screen unchanged: {reason}.",
   "ImageInputRejectedResent": "{model} does not accept images — resent as text; use image_ocr to read them",
   "ImageInputOmitted": "{model} can't see images — {count} image(s) sent as text this turn; use image_ocr to read them or /model to switch",
+  "RequestImageWindow": "{model} accepts at most {cap} image(s) per request: sending the newest {kept} of {total}; {elided} older image(s) go as text notes",
+  "ImageCountRejected": "{model} refused the {count} image(s) in this request; Codewhale did not resend it unchanged. Send again to retry with fewer images, or switch models",
   "ProviderToolCallMissing": "Provider ended with `{reason}` but supplied no tool call. Retry the turn to continue.",
   "ConfigLabelShowThinking": "Model reasoning in chat",
   "ConfigLabelThinkingHighlight": "Thinking background highlight",

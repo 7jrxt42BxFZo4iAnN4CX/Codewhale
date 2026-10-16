@@ -872,6 +872,11 @@ pub(super) fn context_does_not_fit_message(
 
 pub(super) fn is_image_input_rejection_message(message: &str) -> bool {
     let lower = message.to_lowercase();
+    if crate::llm_client::image_count_rejection(&lower)
+        .is_some_and(|rejection| rejection.limit != Some(0))
+    {
+        return false;
+    }
     let image_signal = lower.contains("image_url")
         || lower.contains("content.type")
         || lower.contains("content type")

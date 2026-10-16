@@ -370,6 +370,8 @@
   "ScreenModeUnchanged": "Bildschirm unverändert: {reason}.",
   "ImageInputRejectedResent": "{model} akzeptiert keine Bilder — sie wurden als Text erneut gesendet; nutze image_ocr zum Lesen",
   "ImageInputOmitted": "{model} kann keine Bilder sehen — {count} Bild(er) wurden in diesem Zug als Text gesendet; nutze image_ocr zum Lesen oder /model zum Wechseln",
+  "RequestImageWindow": "{model} akzeptiert höchstens {cap} Bild(er) pro Anfrage: Die neuesten {kept} von {total} werden gesendet; {elided} ältere Bild(er) gehen als Textnotizen mit",
+  "ImageCountRejected": "{model} hat die {count} Bild(er) dieser Anfrage abgelehnt; Codewhale hat sie nicht unverändert erneut gesendet. Sende erneut, um es mit weniger Bildern zu versuchen, oder wechsle das Modell",
   "ProviderToolCallMissing": "Der Anbieter hat mit `{reason}` beendet, aber keinen Werkzeugaufruf geliefert. Wiederhole diesen Durchgang, um fortzufahren.",
   "ConfigLabelShowThinking": "Modell-Reasoning im Chat",
   "ConfigLabelThinkingHighlight": "Reasoning-Hintergrund hervorheben",

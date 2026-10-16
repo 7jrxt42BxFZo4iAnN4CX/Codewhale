@@ -787,6 +787,70 @@ pub(crate) fn is_context_length_message(lower: &str) -> bool {
     .any(|phrase| lower.contains(phrase))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ImageCountRejection {
+    pub limit: Option<usize>,
+}
+
+pub(crate) fn image_count_rejection(lower: &str) -> Option<ImageCountRejection> {
+    if is_context_length_message(lower) {
+        return None;
+    }
+    let phrase = [
+        "too many images",
+        "maximum number of images",
+        "max number of images",
+        "max images",
+        "maximum images",
+        "images per request",
+        "images per prompt",
+        "images per message",
+        "image(s) may be provided",
+        "images may be provided",
+    ]
+    .iter()
+    .find_map(|phrase| lower.find(*phrase));
+    let number_of_images = lower.find("number of images").filter(|_| {
+        ["exceed", "more than", "at most", "limit"]
+            .iter()
+            .any(|word| lower.contains(*word))
+    });
+    let at_most_images = lower.match_indices("at most ").find_map(|(index, marker)| {
+        let rest = &lower[index + marker.len()..];
+        let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        (digits > 0 && rest[digits..].trim_start().starts_with("image")).then_some(index)
+    });
+    let start = phrase.or(number_of_images).or(at_most_images)?;
+    let clause_start = lower[..start]
+        .rfind(['.', '\n', '{', '"'])
+        .map_or(0, |index| index + 1);
+    let clause = &lower[clause_start..];
+    let limit = [
+        "at most ",
+        "maximum of ",
+        "max of ",
+        "max is ",
+        "maximum is ",
+        "limit is ",
+        "limit of ",
+        "up to ",
+        "allowed: ",
+        "allowed ",
+        "maximum: ",
+        "max: ",
+        "max ",
+        "maximum ",
+    ]
+    .iter()
+    .find_map(|marker| {
+        let rest = &clause[clause.find(*marker)? + marker.len()..];
+        let rest = rest.trim_start();
+        let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        rest[..digits].parse::<usize>().ok()
+    });
+    Some(ImageCountRejection { limit })
+}
+
 fn explicit_quota_code(body: &str) -> Option<String> {
     let value: Value = serde_json::from_str(body).ok()?;
     [

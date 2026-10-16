@@ -3691,6 +3691,9 @@ pub(crate) async fn run_event_loop(
                             .replace("{tools}", &tools);
                         app.push_status_toast(message, StatusToastLevel::Warning, Some(12_000));
                     }
+                    EngineEvent::RequestImageWindow { message, .. } => {
+                        app.push_status_toast(message, StatusToastLevel::Warning, Some(12_000));
+                    }
                     EngineEvent::SnapshotsDisabled { reason, .. } => {
                         // Undo is silently off otherwise: the engine's stderr
                         // notice never reaches the alternate screen (#5930).

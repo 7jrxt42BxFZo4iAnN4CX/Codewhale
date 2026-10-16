@@ -13887,6 +13887,16 @@ struct ExecStreamInputAnalysis {
 enum ExecStreamEvent {
     #[serde(rename = "status")]
     Status { message: String },
+    #[serde(rename = "request_image_window")]
+    RequestImageWindow {
+        provider: String,
+        model: String,
+        total: usize,
+        elided: usize,
+        cap: usize,
+        cap_source: String,
+        message: String,
+    },
     #[serde(rename = "content")]
     Content { content: String },
     #[serde(rename = "tool_use")]

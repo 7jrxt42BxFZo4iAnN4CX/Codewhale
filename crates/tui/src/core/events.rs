@@ -208,6 +208,16 @@ pub enum Event {
         omitted_tool_count: usize,
     },
 
+    RequestImageWindow {
+        provider: String,
+        model: String,
+        total: usize,
+        elided: usize,
+        cap: usize,
+        cap_source: String,
+        message: String,
+    },
+
     /// Workspace snapshots (undo) could not be enabled for this workspace.
     /// Emitted once per session/workspace so another session cannot consume
     /// its notice. The disabled state also remains visible in `/status` (#5930).

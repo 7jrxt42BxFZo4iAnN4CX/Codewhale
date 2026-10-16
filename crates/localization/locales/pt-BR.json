@@ -370,6 +370,8 @@
   "ScreenModeUnchanged": "Tela inalterada: {reason}.",
   "ImageInputRejectedResent": "{model} não aceita imagens — reenviado como texto; use image_ocr para lê-las",
   "ImageInputOmitted": "{model} não consegue ver imagens — {count} imagem(ns) enviada(s) como texto neste turno; use image_ocr para lê-las ou /model para trocar",
+  "RequestImageWindow": "{model} aceita no máximo {cap} imagem(ns) por solicitação: enviando as {kept} mais recentes de {total}; {elided} imagem(ns) mais antiga(s) vão como notas de texto",
+  "ImageCountRejected": "{model} recusou as {count} imagem(ns) desta solicitação; o Codewhale não a reenviou sem alterações. Envie novamente para tentar com menos imagens, ou troque de modelo",
   "ProviderToolCallMissing": "O provedor encerrou com `{reason}`, mas não forneceu nenhuma chamada de ferramenta. Tente este turno novamente para continuar.",
   "ConfigLabelShowThinking": "Raciocínio do modelo no chat",
   "ConfigLabelThinkingHighlight": "Destaque do fundo do raciocínio",

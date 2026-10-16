@@ -370,6 +370,8 @@
   "ScreenModeUnchanged": "Layar tidak berubah: {reason}.",
   "ImageInputRejectedResent": "{model} tidak menerima gambar — gambar dikirim ulang sebagai teks; gunakan image_ocr untuk membacanya",
   "ImageInputOmitted": "{model} tidak dapat melihat gambar — {count} gambar dikirim sebagai teks pada giliran ini; gunakan image_ocr untuk membacanya atau /model untuk beralih",
+  "RequestImageWindow": "{model} menerima paling banyak {cap} gambar per permintaan: mengirim {kept} terbaru dari {total}; {elided} gambar lama dikirim sebagai catatan teks",
+  "ImageCountRejected": "{model} menolak {count} gambar dalam permintaan ini; Codewhale tidak mengirimnya ulang tanpa perubahan. Kirim lagi untuk mencoba dengan lebih sedikit gambar, atau ganti model",
   "ProviderToolCallMissing": "Penyedia mengakhiri respons dengan `{reason}`, tetapi tidak menyertakan panggilan alat. Coba ulang giliran ini untuk melanjutkan.",
   "ConfigLabelShowThinking": "Penalaran model di chat",
   "ConfigLabelThinkingHighlight": "Sorotan latar penalaran",
