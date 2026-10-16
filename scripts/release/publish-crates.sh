@@ -91,8 +91,8 @@ if (( ${#reused[@]} > 0 )); then
     printf '  %s\n' "${reused[@]}"
     echo "Cargo treats crates served from its temporary package registry as immutable by name and version. It skips extraction once .cargo-ok exists and keeps compiled units that do not track their sources, so this run would verify old code. Nothing was deleted."
     echo "Rerun from a new, empty Cargo home and build directory. Every run leaves state the next run at this version refuses, so publish and each partial-publish rerun need their own root:"
-    echo "  mkdir -p \"${cache_root}\" && mkdir \"${verify_root}\" &&"
-    echo "    CARGO_HOME=\"${verify_root}/cargo-home\" CARGO_TARGET_DIR=\"${verify_root}/target\" python3 \"$(dirname "${script_dir}")/build-lock.py\" \"${CODEWHALE_BUILD_LOCK_FILE:-${cache_root}/build.lock}\" -- $0 ${mode}"
+    echo "  cd \"$(cd "${script_dir}/../.." && pwd)\" && mkdir -p \"${cache_root}\" && mkdir \"${verify_root}\" &&"
+    echo "    CARGO_HOME=\"${verify_root}/cargo-home\" CARGO_TARGET_DIR=\"${verify_root}/target\" python3 \"$(dirname "${script_dir}")/build-lock.py\" \"${CODEWHALE_BUILD_LOCK_FILE:-${cache_root}/build.lock}\" -- \"${script_dir}/publish-crates.sh\" ${mode}"
     echo "CARGO_TARGET_DIR moves the build directory with plain cargo and with scripts/dev-cargo.sh, and build-lock.py holds the machine build lock whichever cargo is on PATH."
     echo "For publish mode, pass the crates.io token as CARGO_REGISTRY_TOKEN for that one command, so Cargo writes no credentials.toml under the new root. After cargo login with that CARGO_HOME instead, run cargo logout with it once the publish finishes. See docs/RELEASE_RUNBOOK.md."
   } >&2

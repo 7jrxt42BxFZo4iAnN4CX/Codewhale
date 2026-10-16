@@ -165,7 +165,9 @@ That run was a cold build of about 19 GB and 962 compile steps, so check
 `scripts/dev-cache.sh`. `CARGO_TARGET_DIR` moves the build directory with
 plain Cargo and with `scripts/dev-cargo.sh`, which honors an inherited target
 directory, and `scripts/build-lock.py` holds the machine build lock whichever
-`cargo` is on `PATH`. The 0.10.2 receipt run set `CODEWHALE_CACHE_ROOT`
+`cargo` is on `PATH`. That lock serializes only with `scripts/dev-cargo.sh`
+and other `build-lock.py` users; a `cargo` wrapper with its own build slots
+does not take it. The 0.10.2 receipt run set `CODEWHALE_CACHE_ROOT`
 instead, which only `scripts/dev-cargo.sh` reads, and kept its lock inside the
 new root. `mkdir` without `-p` refuses a root that already exists, and the
 `&&` chain stops the run there. Every run leaves state that the next run at
@@ -186,9 +188,11 @@ does not use.
 
 If a dry-run is interrupted (Ctrl-C, or a shell that gets killed), inspect the
 half-packed `package/` directory in Cargo's build directory before retrying and
-coordinate with active builds. With plain Cargo that is `target/package`;
-`scripts/dev-cargo.sh` moves it under `${CODEWHALE_CACHE_ROOT}/build/`, and
-`cargo metadata --format-version 1 --no-deps` reports it as `build_directory`.
+coordinate with active builds. For a run from the blocks above that is
+`${root}/target/package` with any `cargo`. Otherwise plain Cargo uses
+`target/package` and `scripts/dev-cargo.sh` moves it under
+`${CODEWHALE_CACHE_ROOT}/build/`; `cargo metadata --format-version 1
+--no-deps` reports it as `build_directory`.
 Cargo can resume against it and every unpacked tarball may then fail with
 `error: Current directory is invalid:
 No such file or directory (os error 2)` — which looks like a compiler or
@@ -396,13 +400,12 @@ and fails branch-only release sources before assets are published.
    `main`, with `HEAD` still matching the immutable remote release tag:
 
    ```bash
-   ./scripts/release/require-release-tag-checkout.sh X.Y.Z
-   {
+   ./scripts/release/require-release-tag-checkout.sh X.Y.Z && {
      mode=publish
      cache="${CODEWHALE_CACHE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/codewhale}"
      lock="${CODEWHALE_BUILD_LOCK_FILE:-${cache}/build.lock}"
      root="${cache}/release-verify-$(git rev-parse --short=10 HEAD)-${mode}-$(date -u +%Y%m%dT%H%M%SZ)"
-     printf 'crates.io token: ' >&2; read -rs token; echo >&2
+     token=; while [ -z "${token}" ]; do printf 'crates.io token: ' >&2; read -rs token || break; echo >&2; done
      [ -n "${token}" ] && mkdir -p "${cache}" && mkdir "${root}" &&
        CARGO_REGISTRY_TOKEN="${token}" CARGO_HOME="${root}/cargo-home" \
        CARGO_TARGET_DIR="${root}/target" \
@@ -420,9 +423,12 @@ and fails branch-only release sources before assets are published.
    empty `CARGO_HOME` and build directory of its own, as the package preflight
    above describes; the dry run's state makes it refuse otherwise. The braces
    make the shell read the whole block before `read` runs, so a pasted or
-   piped block never takes its own next line as the token. `read -rs` keeps
-   the token out of shell history, an empty token stops the block, and the
-   environment variable keeps the token out of `credentials.toml`.
+   piped block never takes its own next line as the token, and the prompt
+   repeats on an empty line, so a stray blank line from a paste is not
+   taken as the token. `read -rs` keeps the token out of shell history,
+   end of input stops the block, and the environment variable keeps the
+   token out of `credentials.toml`. The tag check is chained with `&&`, so a
+   failed check asks for no token.
    If shared `main` advances or the checkout becomes dirty, stop and coordinate
    a new candidate or separately authorized recovery with Hunter. Do not switch
    branches, create another checkout, force-fetch a conflicting tag or bypass
@@ -619,12 +625,12 @@ for that version — bump to the next patch instead.
   `403 {"errors":[{"detail":"this action can only be performed on the
   crates.io website"}]}` even for a good token (checked 2026-09-21 with a
   token that `cargo owner` accepts), so a 403 there proves nothing about the
-  credential.
+  credential. A good token prints the owner, e.g. `Hmbown (Hunter Bown)`:
 
   ```bash
   {
-    printf 'crates.io token: ' >&2; read -rs token; echo >&2
-    [ -n "${token}" ] && CARGO_REGISTRY_TOKEN="${token}" cargo owner --list codewhale-tui   # prints the owner, e.g. `Hmbown (Hunter Bown)`
+    token=; while [ -z "${token}" ]; do printf 'crates.io token: ' >&2; read -rs token || break; echo >&2; done
+    [ -n "${token}" ] && CARGO_REGISTRY_TOKEN="${token}" cargo owner --list codewhale-tui
     unset token
   }
   ```
