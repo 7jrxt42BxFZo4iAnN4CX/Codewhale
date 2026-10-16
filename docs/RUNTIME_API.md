@@ -1386,7 +1386,13 @@ arguments only, never from model text ("Search the web for 'espresso'",
 "Write notes/espresso.md"); paths inside the workspace are workspace-relative.
 Clients show it first and keep the raw arguments behind it. For task and
 automation create/update, `summary` also names the requested trust mode,
-shell, auto-approve, mode and workspace.
+shell, auto-approve, mode and workspace. For a shell command, task gate,
+shell input or verifier whose `curl`/`wget` request body carries a credential
+file, a secret-named variable or a credential fed through stdin, `summary`
+reads ``Upload credentials (`…`) with `…` ``; the built-in safety gate holds
+that call, so a session grant or saved allow rule cannot answer it. A shell
+command containing a hidden Unicode character is refused before any
+approval is created.
 
 `"remember": true` on an `allow` records a **session grant** for that tool and
 argument class (the approval grouping key: a shell command family for a

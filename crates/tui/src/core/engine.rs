@@ -9216,8 +9216,14 @@ pub(crate) fn auto_review_plan_decision_for_context(
             }
             crate::core::authority::auto_review::AutoReviewAction::Block => {
                 AutoReviewPlanDecision::Block(format!(
-                    "Auto-review policy blocked tool '{}': {}",
-                    context.tool_name, decision.reason
+                    "{} blocked tool '{}': {}",
+                    if decision.built_in_safety_gate {
+                        "Built-in safety gate"
+                    } else {
+                        "Auto-review policy"
+                    },
+                    context.tool_name,
+                    decision.reason
                 ))
             }
         }

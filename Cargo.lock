@@ -1203,6 +1203,7 @@ dependencies = [
 name = "codewhale-sanitize"
 version = "0.10.2"
 dependencies = [
+ "icu_properties",
  "regex",
  "serde_json",
  "url",

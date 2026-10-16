@@ -1388,6 +1388,7 @@
   "FooterWorkedChip": "работал {duration}",
   "FooterPermissionKeyHint": "{key} — изменить",
   "ApprovalSummaryRunCommand": "Выполнить `{command}`",
+  "ApprovalSummaryUploadCredentials": "Отправить учётные данные ({credentials}) с помощью `{command}`",
   "ApprovalSummaryRunShell": "Выполнить команду оболочки",
   "ApprovalSummaryShellWait": "Дождаться выполняемой команды оболочки",
   "ApprovalSummaryShellInput": "Отправить ввод выполняемой команде оболочки",

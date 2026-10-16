@@ -1411,6 +1411,7 @@
   "FooterWorkedChip": "已运行{duration}",
   "FooterPermissionKeyHint": "{key} 切换",
   "ApprovalSummaryRunCommand": "运行 `{command}`",
+  "ApprovalSummaryUploadCredentials": "上传凭据（{credentials}）：`{command}`",
   "ApprovalSummaryRunShell": "运行一条 shell 命令",
   "ApprovalSummaryShellWait": "等待正在运行的 shell 命令",
   "ApprovalSummaryShellInput": "向正在运行的 shell 命令发送输入",

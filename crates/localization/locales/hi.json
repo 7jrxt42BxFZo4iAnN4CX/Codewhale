@@ -1388,6 +1388,7 @@
   "FooterWorkedChip": "{duration} काम किया",
   "FooterPermissionKeyHint": "बदलने के लिए {key}",
   "ApprovalSummaryRunCommand": "`{command}` चलाएँ",
+  "ApprovalSummaryUploadCredentials": "`{command}` से क्रेडेंशियल ({credentials}) अपलोड करें",
   "ApprovalSummaryRunShell": "एक शेल कमांड चलाएँ",
   "ApprovalSummaryShellWait": "चल रहे शेल कमांड की प्रतीक्षा करें",
   "ApprovalSummaryShellInput": "चल रहे शेल कमांड को इनपुट भेजें",

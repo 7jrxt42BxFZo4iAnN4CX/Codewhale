@@ -47,6 +47,26 @@ pub fn approval_summary_in(
         tr(locale, id).replace(&format!("{{{slot}}}"), value)
     };
 
+    let credential_uploads =
+        crate::core::authority::auto_review::credential_upload_texts(tool_name, input);
+    if let Some((command, _)) = credential_uploads.first() {
+        let uploads: Vec<&str> = credential_uploads
+            .iter()
+            .flat_map(|(_, uploads)| uploads.iter().map(String::as_str))
+            .collect();
+        let uploads = code(&clip_to(&uploads.join(", "), MAX_QUOTED_CHARS / 2));
+        let template = tr(locale, MessageId::ApprovalSummaryUploadCredentials);
+        let (before, after) = template
+            .split_once("`{command}`")
+            .unwrap_or((&*template, ""));
+        return format!(
+            "{}{}{}",
+            before.replace("{credentials}", &uploads),
+            code(&clip_command(command, MAX_QUOTED_CHARS)),
+            after.replace("{credentials}", &uploads),
+        );
+    }
+
     match name {
         "exec_shell" | "task_shell_start" => match text("command") {
             Some(command) => run_command_summary(locale, command),

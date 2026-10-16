@@ -1388,6 +1388,7 @@
   "FooterWorkedChip": "bekerja {duration}",
   "FooterPermissionKeyHint": "{key} untuk mengubah",
   "ApprovalSummaryRunCommand": "Jalankan `{command}`",
+  "ApprovalSummaryUploadCredentials": "Unggah kredensial ({credentials}) dengan `{command}`",
   "ApprovalSummaryRunShell": "Jalankan perintah shell",
   "ApprovalSummaryShellWait": "Tunggu perintah shell yang sedang berjalan",
   "ApprovalSummaryShellInput": "Kirim masukan ke perintah shell yang sedang berjalan",

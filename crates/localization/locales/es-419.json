@@ -1409,6 +1409,7 @@
   "FooterWorkedChip": "trabajó {duration}",
   "FooterPermissionKeyHint": "{key} para cambiar",
   "ApprovalSummaryRunCommand": "Ejecutar `{command}`",
+  "ApprovalSummaryUploadCredentials": "Subir credenciales ({credentials}) con `{command}`",
   "ApprovalSummaryRunShell": "Ejecutar un comando de shell",
   "ApprovalSummaryShellWait": "Esperar un comando de shell en ejecución",
   "ApprovalSummaryShellInput": "Enviar entrada a un comando de shell en ejecución",

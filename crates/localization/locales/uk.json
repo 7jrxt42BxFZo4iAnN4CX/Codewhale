@@ -1388,6 +1388,7 @@
   "FooterWorkedChip": "працював {duration}",
   "FooterPermissionKeyHint": "{key} — змінити",
   "ApprovalSummaryRunCommand": "Виконати `{command}`",
+  "ApprovalSummaryUploadCredentials": "Надіслати облікові дані ({credentials}) за допомогою `{command}`",
   "ApprovalSummaryRunShell": "Виконати команду оболонки",
   "ApprovalSummaryShellWait": "Дочекатися виконуваної команди оболонки",
   "ApprovalSummaryShellInput": "Надіслати введення виконуваній команді оболонки",

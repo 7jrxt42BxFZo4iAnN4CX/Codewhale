@@ -60,6 +60,13 @@ impl AutoReviewDecision {
         }
     }
 
+    fn safety_block(reason: impl Into<String>) -> Self {
+        Self {
+            action: AutoReviewAction::Block,
+            ..Self::safety_gate(reason)
+        }
+    }
+
     fn with_rule(mut self, rule_id: impl Into<String>) -> Self {
         self.rule_id = Some(rule_id.into());
         self
@@ -141,6 +148,9 @@ impl ToolActionKind {
 
         if matches!(category, ToolCategory::Shell) && shell_params_are_publish_like(params) {
             return Self::Publish;
+        }
+        if !credential_upload_texts(tool_name, params).is_empty() {
+            return Self::Destructive;
         }
         if matches!(category, ToolCategory::Shell)
             && shell_params_are_destructive_like(params, workspace)
@@ -423,6 +433,8 @@ pub struct AutoReviewContext<'a> {
     /// untracked, or changed since they were last staged. Empty for every
     /// non-write call (D-2).
     pub unrecoverable_deletes: Vec<String>,
+    hidden_unicode: Vec<(ExecutionInput, usize, char)>,
+    credential_uploads: Vec<String>,
 }
 
 impl<'a> AutoReviewContext<'a> {
@@ -540,6 +552,21 @@ impl<'a> AutoReviewContext<'a> {
                         .unwrap_or(deletes)
                 }
             },
+            hidden_unicode: execution_texts(name, params)
+                .into_iter()
+                .flat_map(|(input, text)| {
+                    codewhale_sanitize::sanitize::hidden_chars(&text)
+                        .into_iter()
+                        .filter(move |&(_, ch)| {
+                            input != ExecutionInput::Stdin || !ch.is_ascii_control()
+                        })
+                        .map(move |(position, ch)| (input, position, ch))
+                })
+                .collect(),
+            credential_uploads: credential_upload_texts(name, params)
+                .into_iter()
+                .flat_map(|(_, uploads)| uploads)
+                .collect(),
             tool_name,
         }
     }
@@ -633,7 +660,12 @@ impl AutoReviewPolicy {
             "write_targets_bounded": ctx.write_targets_bounded,
             "outbound_web_request": ctx.outbound_web_request,
             "unrecoverable_deletes": ctx.unrecoverable_deletes.len(),
-            "decision": if decision.built_in_safety_gate { "hold_for_review" } else { decision.action.as_str() },
+            "hidden_unicode": ctx.hidden_unicode.len(),
+            "credential_uploads": ctx.credential_uploads.len(),
+            "decision": match (decision.built_in_safety_gate, decision.action) {
+                (true, AutoReviewAction::AskUser) => "hold_for_review",
+                (_, action) => action.as_str(),
+            },
             "reason": decision.reason,
             "rule_id": decision.rule_id.as_deref(),
         })
@@ -645,6 +677,17 @@ fn deterministic_fallback(
     ctx: &AutoReviewContext<'_>,
     allow_rule: Option<&AutoReviewRule>,
 ) -> AutoReviewDecision {
+    if ctx.approval_mode != ApprovalMode::Bypass
+        && let Some(&(input, position, ch)) = ctx.hidden_unicode.first()
+    {
+        return AutoReviewDecision::safety_block(hidden_unicode_reason(
+            input,
+            position,
+            ch,
+            ctx.hidden_unicode.len(),
+        ));
+    }
+
     // A native session can also kill a neighboring npm launcher's Node process.
     // Therefore this hold applies to all Windows callers outside Full Access,
     // ahead of allow rules, rather than trusting an npm marker or a model warning.
@@ -665,6 +708,11 @@ fn deterministic_fallback(
     // skips the built-in holds entirely: the floors guard the postures that
     // still review, and never override the person's explicit grant.
     if ctx.approval_mode != ApprovalMode::Bypass {
+        if !ctx.credential_uploads.is_empty() {
+            return AutoReviewDecision::safety_gate(
+                "credential upload requires durable review: the request body carries a credential file or secret-named variable",
+            );
+        }
         match (ctx.action_kind, ctx.run_origin) {
             (ToolActionKind::Publish, _) => {
                 return AutoReviewDecision::safety_gate(
@@ -870,11 +918,7 @@ fn paths_git_cannot_restore(workspace: &std::path::Path, paths: &[String]) -> Ve
 }
 
 fn shell_params_are_auto_review_routine(params: &Value) -> bool {
-    let Some(command) = params
-        .get("command")
-        .or_else(|| params.get("cmd"))
-        .and_then(Value::as_str)
-    else {
+    let Some(command) = shell_command_param(params) else {
         return false;
     };
 
@@ -1099,54 +1143,254 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
     needles.iter().any(|needle| haystack.contains(needle))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExecutionInput {
+    Command,
+    Stdin,
+    Unjoinable,
+}
+
+fn shell_command_param(params: &Value) -> Option<&str> {
+    params
+        .get("command")
+        .or_else(|| params.get("cmd"))
+        .and_then(Value::as_str)
+}
+
 /// Supplied execution text only, from the existing canonical tool contracts.
 /// Do not guess what default verifier scripts, packages or stored code will do.
-fn windows_tool_runtime_risk(tool_name: &str, params: &Value) -> Option<SessionRuntimeRisk> {
-    let canonical = crate::tools::canonical_action::canonical_action_alias(tool_name, params);
-    match canonical {
-        "exec_shell" | "task_shell_start" | "task_gate_run" => {
-            let command = params
-                .get("command")
-                .or_else(|| params.get("cmd"))
-                .and_then(Value::as_str)
-                .and_then(windows_session_runtime_risk);
-            command.or_else(|| {
-                if canonical == "task_gate_run" {
-                    None
-                } else {
-                    windows_shell_stdin_risk(params)
-                }
-            })
-        }
-        "exec_shell_interact" | "exec_interact" => windows_shell_stdin_risk(params),
+fn execution_texts<'a>(tool_name: &str, params: &'a Value) -> Vec<(ExecutionInput, Cow<'a, str>)> {
+    let command = move || {
+        shell_command_param(params).map(|command| (ExecutionInput::Command, Cow::Borrowed(command)))
+    };
+    // Match Bash's first non-null alias exactly. Wrong types remain refused by
+    // the existing tool schema; this projection never admits an execution.
+    let stdin = move || {
+        ["stdin", "input", "data"]
+            .into_iter()
+            .find_map(|name| params.get(name).filter(|value| !value.is_null()))
+            .and_then(Value::as_str)
+            .map(|stdin| (ExecutionInput::Stdin, Cow::Borrowed(stdin)))
+    };
+    match crate::tools::canonical_action::canonical_action_alias(tool_name, params) {
+        "exec_shell" | "task_shell_start" => command().into_iter().chain(stdin()).collect(),
+        "task_gate_run" => command().into_iter().collect(),
+        "exec_shell_interact" | "exec_interact" => stdin().into_iter().collect(),
         "run_verifiers" => params
             .get("commands")
-            .and_then(Value::as_array)?
-            .iter()
-            .find_map(|row| {
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|row| {
                 let program = row.get("program").and_then(Value::as_str)?;
                 let args = row.get("args").and_then(Value::as_array);
                 let words = std::iter::once(program)
                     .chain(args.into_iter().flatten().filter_map(Value::as_str));
-                match shlex::try_join(words) {
-                    Ok(command) => windows_session_runtime_risk(&command),
-                    Err(_) => Some(SessionRuntimeRisk::UnclassifiedWindowsInvocation),
-                }
-            }),
-        _ => None,
+                Some(match shlex::try_join(words.clone()) {
+                    Ok(command) => (ExecutionInput::Command, Cow::Owned(command)),
+                    Err(_) => (
+                        ExecutionInput::Unjoinable,
+                        Cow::Owned(words.collect::<Vec<_>>().join(" ")),
+                    ),
+                })
+            })
+            .collect(),
+        _ => Vec::new(),
     }
 }
 
-fn windows_shell_stdin_risk(params: &Value) -> Option<SessionRuntimeRisk> {
-    // Match Bash's first non-null alias exactly. Wrong types remain refused by
-    // the existing tool schema; this projection never admits an execution.
-    // Stdin runs in a persistent session, so `$var` proofs stay off: an
-    // earlier payload may have primed the variable this one names.
-    ["stdin", "input", "data"]
+fn windows_tool_runtime_risk(tool_name: &str, params: &Value) -> Option<SessionRuntimeRisk> {
+    execution_texts(tool_name, params)
         .into_iter()
-        .find_map(|name| params.get(name).filter(|value| !value.is_null()))
-        .and_then(Value::as_str)
-        .and_then(|stdin| windows_session_runtime_risk_scoped(stdin, false))
+        .find_map(|(input, text)| match input {
+            ExecutionInput::Command => windows_session_runtime_risk(&text),
+            // Stdin runs in a persistent session, so `$var` proofs stay off: an
+            // earlier payload may have primed the variable this one names.
+            ExecutionInput::Stdin => windows_session_runtime_risk_scoped(&text, false),
+            ExecutionInput::Unjoinable => Some(SessionRuntimeRisk::UnclassifiedWindowsInvocation),
+        })
+}
+
+fn hidden_unicode_reason(input: ExecutionInput, position: usize, ch: char, count: usize) -> String {
+    let what = match input {
+        ExecutionInput::Stdin => "shell input",
+        ExecutionInput::Command | ExecutionInput::Unjoinable => "command",
+    };
+    let kind = if codewhale_sanitize::sanitize::is_bidi_control(ch) {
+        "bidirectional control"
+    } else {
+        "invisible character"
+    };
+    let mut bytes = [0; 4];
+    let escape: String = ch
+        .encode_utf8(&mut bytes)
+        .bytes()
+        .map(|byte| format!("\\{byte:03o}"))
+        .collect();
+    format!(
+        "the {what} contains {count} hidden Unicode character(s), first the {kind} U+{:04X} at character {}, so what a reviewer reads is not what runs; resend it without the character, or written as a shell escape such as $(printf '{escape}')",
+        u32::from(ch),
+        position + 1,
+    )
+}
+
+fn shell_command_credential_uploads(command: &str) -> Vec<String> {
+    let Some(argvs) = codewhale_execpolicy::command_safety::command_invocations(command) else {
+        return if command.contains("curl") || command.contains("wget") {
+            vec!["<unparsed>".to_string()]
+        } else {
+            Vec::new()
+        };
+    };
+    let fed_from_credential = || {
+        command.split_whitespace().any(names_credential_file)
+            || argvs.iter().any(
+                |argv| matches!(argv.as_slice(), [word] if word == "env" || word == "printenv"),
+            )
+    };
+    let mut uploads: Vec<String> = Vec::new();
+    for argv in &argvs {
+        let Some((program, args)) = argv.split_first() else {
+            continue;
+        };
+        for (kind, value) in upload_values(program, args) {
+            let candidates: Vec<&str> = match kind {
+                UploadValue::Data => value
+                    .find(['@', '<'])
+                    .map(|at| value[at + 1..].split(';').next().unwrap_or_default())
+                    .into_iter()
+                    .collect(),
+                UploadValue::File => vec![value],
+                UploadValue::Header => value.strip_prefix('@').into_iter().collect(),
+                UploadValue::Literal => Vec::new(),
+            };
+            let reads_stdin = candidates
+                .iter()
+                .any(|candidate| matches!(*candidate, "-" | "/dev/stdin"));
+            let substitutes =
+                kind != UploadValue::Header && (value.contains("$(") || value.contains('`'));
+            let credential = (kind != UploadValue::Header && names_secret_variable(value))
+                || candidates
+                    .iter()
+                    .any(|candidate| names_credential_file(candidate))
+                || ((reads_stdin || substitutes) && fed_from_credential());
+            if credential && !uploads.iter().any(|upload| upload == value) {
+                uploads.push(value.to_string());
+            }
+        }
+    }
+    uploads
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UploadValue {
+    Data,
+    Literal,
+    File,
+    Header,
+}
+
+fn upload_values<'a>(program: &str, args: &'a [String]) -> Vec<(UploadValue, &'a str)> {
+    let long_kind = |name: &str| match (program, name) {
+        (
+            "curl",
+            "data" | "data-ascii" | "data-binary" | "data-urlencode" | "json" | "form"
+            | "url-query",
+        ) => Some(UploadValue::Data),
+        ("curl", "data-raw" | "form-string") | ("wget", "post-data" | "body-data") => {
+            Some(UploadValue::Literal)
+        }
+        ("curl", "upload-file") | ("wget", "post-file" | "body-file") => Some(UploadValue::File),
+        ("curl", "header") => Some(UploadValue::Header),
+        _ => None,
+    };
+    if !matches!(program, "curl" | "wget") {
+        return Vec::new();
+    }
+    let mut values = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        let arg = args[index].as_str();
+        index += 1;
+        if arg == "--" {
+            break;
+        }
+        let (kind, inline) = if let Some(long) = arg.strip_prefix("--") {
+            let (name, inline) = long
+                .split_once('=')
+                .map_or((long, None), |(name, value)| (name, Some(value)));
+            match long_kind(name) {
+                Some(kind) => (kind, inline),
+                None => continue,
+            }
+        } else if program == "curl"
+            && let Some(cluster) = arg.strip_prefix('-')
+            && let Some(at) = cluster.find(|flag: char| "AbcCdDeEFHKmoPQrtTuUwxXyYz".contains(flag))
+        {
+            let rest = &cluster[at + 1..];
+            let kind = match cluster.as_bytes()[at] {
+                b'd' | b'F' => UploadValue::Data,
+                b'T' => UploadValue::File,
+                b'H' => UploadValue::Header,
+                _ => {
+                    if rest.is_empty() {
+                        index += 1;
+                    }
+                    continue;
+                }
+            };
+            (kind, (!rest.is_empty()).then_some(rest))
+        } else {
+            continue;
+        };
+        let value = match inline {
+            Some(value) => Some(value),
+            None => {
+                index += 1;
+                args.get(index - 1).map(String::as_str)
+            }
+        };
+        if let Some(value) = value {
+            values.push((kind, value));
+        }
+    }
+    values
+}
+
+fn names_secret_variable(value: &str) -> bool {
+    value.match_indices('$').any(|(at, _)| {
+        let rest = &value[at + 1..];
+        let rest = rest.strip_prefix('{').unwrap_or(rest);
+        let end = rest
+            .find(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '_'))
+            .unwrap_or(rest.len());
+        end > 0 && codewhale_sanitize::sanitize::is_sensitive_key_name(&rest[..end])
+    })
+}
+
+fn names_credential_file(text: &str) -> bool {
+    let components: Vec<String> = text
+        .split(|ch: char| ch.is_whitespace() || "@<=/\\:;,\"'()`{}[]".contains(ch))
+        .filter(|component| !component.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect();
+    !components.last().is_some_and(|last| last.ends_with(".pub"))
+        && components
+            .iter()
+            .any(|component| crate::core::authority::is_credential_file_name(component))
+}
+
+pub(crate) fn credential_upload_texts<'a>(
+    tool_name: &str,
+    params: &'a Value,
+) -> Vec<(Cow<'a, str>, Vec<String>)> {
+    execution_texts(tool_name, params)
+        .into_iter()
+        .filter_map(|(_, text)| {
+            let uploads = shell_command_credential_uploads(&text);
+            (!uploads.is_empty()).then_some((text, uploads))
+        })
+        .collect()
 }
 
 fn ps_invocation_word(argv: &[String]) -> &str {
@@ -1542,11 +1786,7 @@ fn windows_name_can_include_node(name: &str) -> bool {
 }
 
 fn shell_params_are_publish_like(params: &Value) -> bool {
-    let Some(command) = params
-        .get("command")
-        .or_else(|| params.get("cmd"))
-        .and_then(Value::as_str)
-    else {
+    let Some(command) = shell_command_param(params) else {
         return false;
     };
 
@@ -1571,11 +1811,7 @@ fn shell_params_are_destructive_like(params: &Value, workspace: Option<&std::pat
     use codewhale_execpolicy::command_safety::{
         SafetyLevel, analyze_command, command_invocations, is_literal_rm_invocation,
     };
-    let Some(command) = params
-        .get("command")
-        .or_else(|| params.get("cmd"))
-        .and_then(Value::as_str)
-    else {
+    let Some(command) = shell_command_param(params) else {
         return false;
     };
 

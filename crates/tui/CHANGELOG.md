@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- A shell command, shell input or verifier that contains an invisible or
+  bidirectional Unicode character is now refused before any approval card or
+  reviewer call in Ask, Auto-Review and Never. This covers zero-width spaces
+  and joiners, bidi marks, overrides, embeddings and isolates such as U+202E,
+  tag characters, stray variation selectors and terminal control characters;
+  ASCII control keys sent as input to a running program, such as Ctrl-C or an
+  arrow key, stay allowed. The refusal names the code point and its position,
+  because the approval card and other clients cannot show the character: the
+  terminal drops it and other renderers may reorder the line around it. To
+  use the character on purpose, resend the command with it written as a shell
+  escape, for example `$(printf '\342\200\256')`. Emoji sequences, keycaps,
+  subdivision flags and one variation selector after CJK or emoji text are
+  unaffected; a joiner or mark inside Persian, Arabic-script, Indic or Hebrew
+  words is refused too.
+  The executed command is never rewritten, and Full Access is unchanged
+  (Refs CW-7236).
+- A `curl` or `wget` whose request body uploads a credential is now held by
+  the built-in safety gate. This covers `-d`/`--data*`/`--json`/`-F`/
+  `--url-query`/`-T`/`--upload-file`/`-H @file`/`--post-file`/`--post-data`
+  carrying `.env`, `~/.ssh/id_*` (public `.pub` keys excepted),
+  `~/.aws/credentials`, `.netrc`, a key file, a secret-named variable such as
+  `$GITHUB_TOKEN` or `$OPENAI_API_KEY`, or a credential piped in on stdin or
+  through command substitution. Ask shows a card headed "Upload credentials
+  (…) with `…`" that a session grant or saved allow rule cannot answer;
+  Auto-Review and Never deny the call. Runtime clients receive the same
+  heading as the approval `summary`. A literal request header
+  (`-H "Authorization: Bearer $TOKEN"`) is not affected, and other upload
+  tools (scp, rsync, nc, httpie, `aws s3 cp`) and secrets inside an ordinary
+  file are not detected. Full Access is unchanged (Refs CW-7236).
+
 ## [0.10.2] - 2026-10-13
 
 - The footer preview in `/settings` now uses the footer's own words and

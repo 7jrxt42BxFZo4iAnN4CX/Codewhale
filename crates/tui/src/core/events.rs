@@ -778,7 +778,7 @@ pub fn bounded_tool_projection_warning_names(omitted_tool_names: &[String]) -> V
         .map(|name| {
             let cleaned: String = name
                 .chars()
-                .filter(|c| !c.is_control() && !is_bidi_format_control(*c))
+                .filter(|c| !c.is_control() && !codewhale_sanitize::sanitize::is_bidi_control(*c))
                 .collect();
             let collapsed = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
             let collapsed = if collapsed.is_empty() {
@@ -1003,7 +1003,7 @@ pub fn bounded_gate_reason(reason: &str) -> String {
     const MAX_CHARS: usize = 220;
     let cleaned: String = reason
         .chars()
-        .filter(|c| !c.is_control() && !is_bidi_format_control(*c))
+        .filter(|c| !c.is_control() && !codewhale_sanitize::sanitize::is_bidi_control(*c))
         .collect();
     let collapsed = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
     if collapsed.chars().count() <= MAX_CHARS {
@@ -1012,13 +1012,6 @@ pub fn bounded_gate_reason(reason: &str) -> String {
     let mut out: String = collapsed.chars().take(MAX_CHARS - 1).collect();
     out.push('…');
     out
-}
-
-pub(crate) fn is_bidi_format_control(c: char) -> bool {
-    matches!(
-        c,
-        '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
-    )
 }
 
 #[cfg(test)]

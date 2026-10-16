@@ -1409,6 +1409,7 @@
   "FooterWorkedChip": "経過{duration}",
   "FooterPermissionKeyHint": "{key}で変更",
   "ApprovalSummaryRunCommand": "`{command}` を実行",
+  "ApprovalSummaryUploadCredentials": "認証情報（{credentials}）を `{command}` でアップロード",
   "ApprovalSummaryRunShell": "シェルコマンドを実行",
   "ApprovalSummaryShellWait": "実行中のシェルコマンドを待機",
   "ApprovalSummaryShellInput": "実行中のシェルコマンドに入力を送信",

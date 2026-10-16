@@ -1409,6 +1409,7 @@
   "FooterWorkedChip": "đã chạy {duration}",
   "FooterPermissionKeyHint": "{key} để đổi",
   "ApprovalSummaryRunCommand": "Chạy `{command}`",
+  "ApprovalSummaryUploadCredentials": "Tải lên thông tin xác thực ({credentials}) bằng `{command}`",
   "ApprovalSummaryRunShell": "Chạy một lệnh shell",
   "ApprovalSummaryShellWait": "Chờ một lệnh shell đang chạy",
   "ApprovalSummaryShellInput": "Gửi dữ liệu nhập cho một lệnh shell đang chạy",

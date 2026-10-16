@@ -1411,6 +1411,7 @@
   "FooterWorkedChip": "worked {duration}",
   "FooterPermissionKeyHint": "{key} to change",
   "ApprovalSummaryRunCommand": "Run `{command}`",
+  "ApprovalSummaryUploadCredentials": "Upload credentials ({credentials}) with `{command}`",
   "ApprovalSummaryRunShell": "Run a shell command",
   "ApprovalSummaryShellWait": "Wait for a running shell command",
   "ApprovalSummaryShellInput": "Send input to a running shell command",

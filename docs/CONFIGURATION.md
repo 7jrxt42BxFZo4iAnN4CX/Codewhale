@@ -2363,10 +2363,18 @@ reasoning contract, and all four membership ids omit generic sampling fields.
   This layer sits on top of the existing permission posture; it can hold or block a
   tool call, but it is not an auto-push, auto-merge, or hosted review service.
   Block rules are checked first, then the built-in safety floor, then allow
-  rules. In Ask, a safety hold opens approval; in Auto-Review, Full Access,
-  or a non-interactive `never` posture it fails closed as a hard block. The
-  safety floor still covers publish-like actions and destructive
-  background/headless actions even if an allow rule matches.
+  rules. In Ask, a safety hold opens approval that no session grant or allow
+  rule can answer; in Auto-Review or a non-interactive `never` posture it
+  fails closed as a hard block. Full Access skips the built-in floor. The
+  safety floor covers publish-like actions, destructive background/headless
+  actions, and `curl`/`wget` uploads whose request body carries a credential
+  file, a secret-named variable or a credential fed through stdin, even if an
+  allow rule matches. Outside Full Access it also refuses, in every posture, a
+  shell command, shell input or verifier containing a hidden Unicode character
+  (bidirectional controls, zero-width and other invisible characters, tag
+  characters, stray variation selectors, and terminal control characters
+  except ASCII control keys in shell input), naming the code point and its
+  position.
 
   ```toml
   [[auto_review.allow]]
