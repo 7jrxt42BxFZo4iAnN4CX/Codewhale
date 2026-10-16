@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-13
+
 - `/resume`, `/load`, and a provider, profile or plugin change keep
   configured stdio MCP servers running, as `/new` already did: the replacement
   engine adopts each live process when its workspace, MCP backend and server
@@ -30,8 +32,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   core service `subagents`", as it already did for `agents`, `approval` and
   the other core names. Codewhale's own sub-agents and the tools they can use
   are unchanged (CW-7054).
-
-## [0.10.2] - 2026-10-13
 
 - OpenHarmony builds on Windows select Ninja, with an SDK-bundled fallback and
   a clear error when it is unavailable. The CLI keeps its download and Work
