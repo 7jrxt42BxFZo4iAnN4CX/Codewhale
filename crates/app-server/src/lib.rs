@@ -247,7 +247,7 @@ pub struct AppState {
     owner_frontend: Option<Arc<dyn RuntimeOwnerFrontend>>,
     config_path: Option<PathBuf>,
     config: Arc<RwLock<codewhale_config::ConfigToml>>,
-    /// Bookkeeping config/jobs and read-only historical archive access.
+    /// Bookkeeping config and read-only historical archive access.
     /// Actual turns and transcript writes belong to the captured owner.
     runtime: Arc<RwLock<Runtime>>,
     registry: ModelRegistry,
@@ -4983,8 +4983,7 @@ mod tests {
         let (state, _tmp) = capability_test_state();
         let first = state.runtime.read().await;
         let second = state.runtime.read().await;
-        assert!(first.app_status().ok);
-        assert!(second.app_status().ok);
+        assert_eq!(first.config.provider, second.config.provider);
     }
 
     #[tokio::test]

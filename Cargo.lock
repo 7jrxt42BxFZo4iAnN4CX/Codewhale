@@ -982,8 +982,6 @@ dependencies = [
 name = "codewhale-core"
 version = "0.10.2"
 dependencies = [
- "anyhow",
- "chrono",
  "codewhale-config",
  "codewhale-hooks",
  "codewhale-protocol",
@@ -995,7 +993,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
- "tracing",
  "uuid",
 ]
 
