@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Queued messages restored from an earlier launch or another session are no
+  longer sent automatically. They wait in the queue until `/queue send <n>`
+  sends one or `/queue clear` discards them. The restore notice says so and
+  is now also written to the transcript, because the "Resumed session" status
+  used to hide it. Messages queued in the current session still send in order after each turn,
+  ahead of the held ones. Before, restored messages went out one by one after
+  your next message. On a machine where the queue file could not be cleared,
+  that re-sent the same old messages at every launch (#6978). Editing a held
+  message with ↑ and cancelling the edit puts it back as an ordinary queued
+  message (Refs #6978).
 - A long session whose history holds more images than its model accepts in
   one request no longer becomes permanently unsendable. When a provider
   refuses the number of images (for example vLLM's "At most 3 image(s) may
