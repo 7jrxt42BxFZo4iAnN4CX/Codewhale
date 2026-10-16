@@ -21,6 +21,7 @@
 /** Contributors whose PRs were merged or harvested into this release. */
 export const RELEASE_CONTRIBUTORS: string[] = [
   "@henrikdukefoss",
+  "@shenjackyuanjie",
   "@SparkofSpike",
   "@dajiaohuang",
   "@gaord",
