@@ -148,30 +148,29 @@ directory's `*/deps/` that names such a directory. The refusal lists what it
 found and deletes nothing; removing shared cache directories still needs
 explicit cleanup approval. It prints, with the paths filled in, the kind of
 rerun that produced the 0.10.2 receipt at 14683c9983 on 2026-10-16: a new,
-empty `CARGO_HOME` and `CODEWHALE_CACHE_ROOT`.
+empty `CARGO_HOME` and build directory.
 
 ```bash
 mode=dry-run
 cache="${CODEWHALE_CACHE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/codewhale}"
 lock="${CODEWHALE_BUILD_LOCK_FILE:-${cache}/build.lock}"
 root="${cache}/release-verify-$(git rev-parse --short=10 HEAD)-${mode}-$(date -u +%Y%m%dT%H%M%SZ)"
-mkdir "${root}"
-CODEWHALE_BUILD_LOCK_FILE="${lock}" CARGO_HOME="${root}/cargo-home" \
-  CODEWHALE_CACHE_ROOT="${root}" ./scripts/release/publish-crates.sh "${mode}"
+mkdir -p "${cache}" && mkdir "${root}" &&
+  CARGO_HOME="${root}/cargo-home" CARGO_TARGET_DIR="${root}/target" \
+  python3 scripts/build-lock.py "${lock}" -- ./scripts/release/publish-crates.sh "${mode}"
 ```
 
 That run was a cold build of about 19 GB and 962 compile steps, so check
 `df -h` first. `cache` and `lock` use the same fallbacks as
-`scripts/dev-cache.sh`. `CODEWHALE_CACHE_ROOT` and `CODEWHALE_BUILD_LOCK_FILE`
-take effect only when `cargo` on `PATH` is `scripts/dev-cargo.sh` or a wrapper
-that execs it, such as the strict dry-run wrapper used for the 0.10.2 receipt.
-That run kept its lock file inside the new root and did not serialize with
-other builds on the machine; `CODEWHALE_BUILD_LOCK_FILE` keeps the machine
-lock. Plain Cargo ignores both variables and takes no machine lock: set
-`CARGO_TARGET_DIR="${root}/target"` in place of `CODEWHALE_CACHE_ROOT`, and
-wrap the command in `python3 scripts/build-lock.py "${lock}" --` if other
-builds may run. Every run leaves state that the next run at the same version
-refuses, so the root name carries the SHA, the mode and a UTC timestamp:
+`scripts/dev-cache.sh`. `CARGO_TARGET_DIR` moves the build directory with
+plain Cargo and with `scripts/dev-cargo.sh`, which honors an inherited target
+directory, and `scripts/build-lock.py` holds the machine build lock whichever
+`cargo` is on `PATH`. The 0.10.2 receipt run set `CODEWHALE_CACHE_ROOT`
+instead, which only `scripts/dev-cargo.sh` reads, and kept its lock inside the
+new root. `mkdir` without `-p` refuses a root that already exists, and the
+`&&` chain stops the run there. Every run leaves state that the next run at
+the same version refuses, so the root name carries the SHA, the mode and a
+UTC timestamp:
 publish mode (step 5 of the Rust crates release) and each partial-publish
 rerun get their own root. Pass the crates.io token to publish mode as
 `CARGO_REGISTRY_TOKEN` for that one command, as step 5 shows; Cargo then
@@ -398,16 +397,18 @@ and fails branch-only release sources before assets are published.
 
    ```bash
    ./scripts/release/require-release-tag-checkout.sh X.Y.Z
-   mode=publish
-   cache="${CODEWHALE_CACHE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/codewhale}"
-   lock="${CODEWHALE_BUILD_LOCK_FILE:-${cache}/build.lock}"
-   root="${cache}/release-verify-$(git rev-parse --short=10 HEAD)-${mode}-$(date -u +%Y%m%dT%H%M%SZ)"
-   mkdir "${root}"
-   read -rs token
-   CARGO_REGISTRY_TOKEN="${token}" CODEWHALE_BUILD_LOCK_FILE="${lock}" \
-     CARGO_HOME="${root}/cargo-home" CODEWHALE_CACHE_ROOT="${root}" \
-     ./scripts/release/publish-crates.sh "${mode}"
-   unset token
+   {
+     mode=publish
+     cache="${CODEWHALE_CACHE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/codewhale}"
+     lock="${CODEWHALE_BUILD_LOCK_FILE:-${cache}/build.lock}"
+     root="${cache}/release-verify-$(git rev-parse --short=10 HEAD)-${mode}-$(date -u +%Y%m%dT%H%M%SZ)"
+     printf 'crates.io token: ' >&2; read -rs token; echo >&2
+     [ -n "${token}" ] && mkdir -p "${cache}" && mkdir "${root}" &&
+       CARGO_REGISTRY_TOKEN="${token}" CARGO_HOME="${root}/cargo-home" \
+       CARGO_TARGET_DIR="${root}/target" \
+       python3 scripts/build-lock.py "${lock}" -- ./scripts/release/publish-crates.sh "${mode}"
+     unset token
+   }
    ```
 
    Both Cargo and npm publication fail closed unless `HEAD`, the clean local
@@ -416,12 +417,12 @@ and fails branch-only release sources before assets are published.
    second handwritten order in this runbook. The helper waits for each new
    version to appear on crates.io before moving to dependents and safely skips
    versions that are already public on a rerun. The block runs it from a new,
-   empty `CARGO_HOME` and cache root of its own, as the package preflight
-   above describes; the dry run's state makes it refuse otherwise. `read -rs`
-   keeps the token out of shell history, and the environment variable keeps
-   it out of `credentials.toml`. The cache and lock variables take effect only
-   through `scripts/dev-cargo.sh` or a wrapper that execs it; see the package
-   preflight for plain Cargo.
+   empty `CARGO_HOME` and build directory of its own, as the package preflight
+   above describes; the dry run's state makes it refuse otherwise. The braces
+   make the shell read the whole block before `read` runs, so a pasted or
+   piped block never takes its own next line as the token. `read -rs` keeps
+   the token out of shell history, an empty token stops the block, and the
+   environment variable keeps the token out of `credentials.toml`.
    If shared `main` advances or the checkout becomes dirty, stop and coordinate
    a new candidate or separately authorized recovery with Hunter. Do not switch
    branches, create another checkout, force-fetch a conflicting tag or bypass
@@ -621,15 +622,17 @@ for that version — bump to the next patch instead.
   credential.
 
   ```bash
-  read -rs token
-  CARGO_REGISTRY_TOKEN="${token}" cargo owner --list codewhale-tui   # prints the owner, e.g. `Hmbown (Hunter Bown)`
-  unset token
+  {
+    printf 'crates.io token: ' >&2; read -rs token; echo >&2
+    [ -n "${token}" ] && CARGO_REGISTRY_TOKEN="${token}" cargo owner --list codewhale-tui   # prints the owner, e.g. `Hmbown (Hunter Bown)`
+    unset token
+  }
   ```
 
   A 403 or `401` from this call, or `cargo publish` refusing credentials,
   means the token is missing/expired. Create a new token, check it with this
   call, then rerun the step 5 block. It makes another new `CARGO_HOME` and
-  cache root, which the rerun needs because the failed run's own state makes
+  build directory, which the rerun needs because the failed run's own state makes
   the guard refuse otherwise, and it keeps the token out of that root.
 - **npm:** the OIDC job publishes only if the npmjs.com Trusted Publisher for
   `codewhale-hq` / `Codewhale` / workflow `release.yml` / blank environment is
@@ -652,7 +655,7 @@ for that version — bump to the next patch instead.
     with these commands
 - Crates publish partially:
   - rerun the Rust crates release step 5 block; its timestamped root gives
-    each rerun another new, empty `CARGO_HOME` and cache root, and the failed
+    each rerun another new, empty `CARGO_HOME` and build directory, and the failed
     run's own state makes `publish-crates.sh publish` refuse otherwise
   - already-published crate versions will be skipped
 - GitHub assets missing or checksum manifest incomplete:

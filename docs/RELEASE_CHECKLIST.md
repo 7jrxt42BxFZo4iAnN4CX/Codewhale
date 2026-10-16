@@ -215,7 +215,7 @@ known limitations and publication approval. These proofs are separate.
 - [ ] Publish Cargo manually within the approved scope with the
       [runbook's step 5 block](RELEASE_RUNBOOK.md#rust-crates-release), which
       runs `./scripts/release/publish-crates.sh publish` from a new, empty
-      `CARGO_HOME` and cache root with the token in `CARGO_REGISTRY_TOKEN`. It
+      `CARGO_HOME` and build directory with the token in `CARGO_REGISTRY_TOKEN`. It
       verifies every package, skips already-published versions and waits for
       each new dependency to appear. npm normally uses Trusted Publishing;
       manual recovery keeps the same clean-source and public-asset guards.
