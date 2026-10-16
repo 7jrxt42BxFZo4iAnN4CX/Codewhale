@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The footer preview in `/settings` now uses the footer's own words and
+  colours, in the UI language: Startup mode Work previews `● ask   work`
+  and Plan previews `● read only   plan`, as the footer under the composer
+  shows them. Thanks @Lstarsky0 (#6993, Refs #6466).
+
 ## [0.10.2] - 2026-10-13
 
 - `/resume`, `/load`, and a provider, profile or plugin change keep
