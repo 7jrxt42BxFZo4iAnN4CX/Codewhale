@@ -1214,7 +1214,7 @@
     {
       "kind": "MinimaxAnthropic",
       "id": "minimax-anthropic",
-      "label": "MiniMax",
+      "label": "MiniMax (Anthropic API)",
       "base_url": "https://api.minimax.io/anthropic",
       "default_model": "MiniMax-M3",
       "env_vars": [
@@ -1896,7 +1896,7 @@
     {
       "kind": "ModelstudioTokenPlanAnthropic",
       "id": "modelstudio-token-plan-anthropic",
-      "label": "Alibaba Cloud Model Studio",
+      "label": "Alibaba Cloud Model Studio (Token Plan, Anthropic API)",
       "base_url": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic",
       "default_model": "qwen3.8-max",
       "env_vars": [
@@ -1933,7 +1933,7 @@
     {
       "kind": "ModelstudioCodingPlan",
       "id": "modelstudio-coding-plan",
-      "label": "Alibaba Cloud Model Studio",
+      "label": "Alibaba Cloud Model Studio (Coding Plan)",
       "base_url": "https://coding-intl.dashscope.aliyuncs.com/v1",
       "default_model": "qwen3.8-max",
       "env_vars": [
@@ -1970,7 +1970,7 @@
     {
       "kind": "ModelstudioCodingPlanAnthropic",
       "id": "modelstudio-coding-plan-anthropic",
-      "label": "Alibaba Cloud Model Studio",
+      "label": "Alibaba Cloud Model Studio (Coding Plan, Anthropic API)",
       "base_url": "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic",
       "default_model": "qwen3.8-max",
       "env_vars": [

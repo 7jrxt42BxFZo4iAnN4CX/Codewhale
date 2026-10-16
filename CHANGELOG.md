@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   engine adopts each live process when its workspace, MCP backend and server
   config are unchanged. A workspace switch still restarts every server, and
   servers added at runtime still close (CW-7430).
+- Provider lists no longer show two "MiniMax" rows or four "Alibaba Cloud
+  Model Studio" rows. The variant endpoints are labelled "MiniMax (Anthropic
+  API)", "Alibaba Cloud Model Studio (Token Plan, Anthropic API)", "Alibaba
+  Cloud Model Studio (Coding Plan)" and "Alibaba Cloud Model Studio (Coding
+  Plan, Anthropic API)"; the default MiniMax and Model Studio rows keep their
+  names (CW-7408).
 
 ## [0.10.2] - 2026-10-13
 
