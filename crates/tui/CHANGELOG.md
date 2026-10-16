@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without `success: true` still fails. Thanks @luestr for the response headers
   and sanitized body in #6981; the `/new` refusal reported there is not
   changed by this fix.
+- Experimental extension host: a plugin can no longer provide the core
+  `subagents` service. Its activation fails with "extension may not provide
+  core service `subagents`", as it already did for `agents`, `approval` and
+  the other core names. Codewhale's own sub-agents and the tools they can use
+  are unchanged (CW-7054).
 
 ## [0.10.2] - 2026-10-13
 

@@ -14277,6 +14277,7 @@ var init_root = __esm({
       // one host-owned composition loader; plugins may not replace it
       "approval",
       "agents",
+      "subagents",
       "sessions",
       "llm",
       "sandboxPolicy",
