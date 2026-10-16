@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `GET /v1/settings/schema` accepts `?locale=<tag>` and resolves row labels,
+  descriptions and option labels in that locale, with the configured
+  `locale` as the default. The desktop sends the interface language it
+  shows, so a desktop opened from the Finder or the Dock on a Chinese
+  system, which has no `LANG`, no longer lists its Settings rows in English
+  under Chinese headings (Refs CW-7406).
 - `codewhale --continue` reopens a session whose terminal was closed or
   killed mid-turn. It used to print "Recovered interrupted session" and then
   exit with "session … is open in an interactive Codewhale session": the
