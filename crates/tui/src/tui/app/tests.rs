@@ -1504,8 +1504,20 @@ fn reasoning_effort_preserves_grok_46_ladder_only_on_exact_xai_route() {
             "https://gateway.example/v1",
             model,
         ),
-        ReasoningEffort::Medium,
-        "catalog effort lists are model metadata; the Chat wire still omits them on a custom endpoint"
+        ReasoningEffort::High,
+        "a custom endpoint must not inherit the official catalog effort ladder"
+    );
+    let custom = "https://gateway.example/v1";
+    assert!(ReasoningEffort::offering_for_reasoning(ProviderKind::Xai, custom, model).is_none());
+    assert!(ReasoningEffort::catalog_effort_values(ProviderKind::Xai, custom, model).is_none());
+    assert_eq!(
+        crate::tui::model_picker::picker_efforts_for_route(ProviderKind::Xai, custom, model, false),
+        vec![
+            ReasoningEffort::Auto,
+            ReasoningEffort::Off,
+            ReasoningEffort::High,
+            ReasoningEffort::Max,
+        ]
     );
 }
 
@@ -7881,10 +7893,7 @@ fn ctrl_t_skips_catalog_rungs_that_resolve_to_an_offered_tier() {
             wire_model_id: model.to_string(),
             endpoint_key: "chat".to_string(),
             reasoning_options: vec![serde_json::json!({ "type": "effort", "values": values })],
-            source: codewhale_config::catalog::CatalogSource::Live {
-                base_url_fingerprint: "models-dev-capabilities".to_string(),
-                fetched_at,
-            },
+            source: codewhale_config::catalog::CatalogSource::ModelsDevLive { fetched_at },
             ..Default::default()
         }
     };

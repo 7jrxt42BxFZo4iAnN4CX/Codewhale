@@ -321,6 +321,59 @@ pub fn selected_route(path: &Path) -> Result<(String, String, codewhale_config::
     Ok((provider, config.default_model(), source))
 }
 
+pub fn resolve_model(
+    path: &Path,
+    provider_identity: &str,
+    base_url: &str,
+    model: Option<&str>,
+) -> Result<codewhale_config::route::ReadyRouteCandidate> {
+    crate::models_dev_live::maybe_load_persisted_cache();
+    let store = codewhale_config::ConfigStore::load(Some(path.to_path_buf()))?;
+    let mut config = saved_config(&store)?;
+    let identity = config
+        .resolve_provider_selection_identity(provider_identity)
+        .map_err(anyhow::Error::msg)?;
+    config.set_provider_base_url_override(&identity, Some(base_url.into()))?;
+    crate::provider_catalog_live::maybe_load_persisted_cache_for_config(&config);
+    let route = crate::route_runtime::resolve_runtime_route_for_identity(&config, &identity, model)
+        .map_err(anyhow::Error::msg);
+    if !route.as_ref().is_ok_and(|route| {
+        (route.identity.provider == ProviderKind::OpenaiCodex
+            && crate::codex_model_cache::model_roster_for(&route.config)
+                .metadata_for(route.candidate.wire_model_id().as_str())
+                .is_some())
+            || crate::provider_lake::configured_catalog_offering_for_route(
+                &route.config,
+                route.identity.provider,
+                route.identity.key.as_str(),
+                &route.candidate.endpoint().base_url,
+                route.candidate.wire_model_id().as_str(),
+            )
+            .is_some()
+    }) {
+        if crate::provider_catalog_live::cached_entry_for_route(
+            identity.provider,
+            identity.key.as_str(),
+            base_url,
+        )?
+        .is_some_and(|entry| entry.fetched_at > 0)
+        {
+            return Err(
+                codewhale_agent::ModelResolutionError::ModelNotAvailableForProvider {
+                    provider: identity.provider,
+                    requested: model.unwrap_or("auto").to_string(),
+                }
+                .into(),
+            );
+        }
+        codewhale_agent::ModelRegistry::default().resolve(
+            model.filter(|model| *model != "auto"),
+            Some(identity.provider),
+        )?;
+    }
+    Ok(route?.candidate)
+}
+
 /// Save one explicit route preference after atomically adopting legacy choices.
 pub fn set(path: &Path, key: &str, value: &str) -> Result<()> {
     persistence::mutate_config_document(path, |doc| set_document(path, doc, key, value))

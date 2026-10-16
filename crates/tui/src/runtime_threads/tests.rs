@@ -13262,7 +13262,7 @@ async fn user_input_tool_timeout_and_cancel_clear_snapshot_before_turn_end() -> 
                 result: Err(error),
             })
             .await?;
-        tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::time::timeout(TURN_SETTLEMENT_DEADLOCK_TIMEOUT, async {
             loop {
                 let detail = manager.get_thread_detail(&thread.id).await?;
                 let events = manager.events_since(&thread.id, None)?;
@@ -17543,7 +17543,7 @@ async fn steer_turn_on_active_turn_records_item_and_event() -> Result<()> {
         .await?;
 
     let steer_text = "add bullet list".to_string();
-    manager
+    let steered_turn = manager
         .steer_turn(
             &thread.id,
             &turn.id,
@@ -17552,36 +17552,48 @@ async fn steer_turn_on_active_turn_records_item_and_event() -> Result<()> {
             },
         )
         .await?;
+    assert!(matches!(steered_turn.steer_count, 0 | 1));
     let observed_steer = steer_seen_rx
         .await
         .context("driver did not receive steer")?;
     assert_eq!(observed_steer, steer_text);
 
+    tokio::time::timeout(TURN_SETTLEMENT_DEADLOCK_TIMEOUT, async {
+        loop {
+            let events = manager.events_since(&thread.id, None)?;
+            let delivered = events.iter().any(|event| {
+                event.turn_id.as_deref() == Some(turn.id.as_str()) && event.event == "turn.steered"
+            });
+            let completed = events.iter().any(|event| {
+                event.turn_id.as_deref() == Some(turn.id.as_str())
+                    && event.event == "item.completed"
+                    && event.payload["item"]["detail"] == steer_text
+            });
+            if delivered && completed {
+                return Ok::<_, anyhow::Error>(());
+            }
+            sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .context("steer delivery did not settle")??;
+    assert_eq!(manager.store.load_turn(&turn.id)?.steer_count, 1);
+
     let final_turn = wait_for_terminal_turn(&manager, &turn.id).await?;
     assert_eq!(final_turn.status, RuntimeTurnStatus::Completed);
+    assert_eq!(final_turn.steer_count, 1);
 
-    let deadline = Instant::now() + TURN_SETTLEMENT_DEADLOCK_TIMEOUT;
-    loop {
-        let events = manager.events_since(&thread.id, None)?;
-        let steered = events.iter().any(|ev| ev.event == "turn.steered");
-        let completed = events.iter().any(|ev| {
-            ev.event == "item.completed"
-                && ev
-                    .payload
-                    .get("item")
-                    .and_then(|item| item.get("detail"))
-                    .and_then(Value::as_str)
-                    == Some("add bullet list")
-        });
-        if steered && completed {
-            break;
-        }
-        if Instant::now() >= deadline {
-            bail!("steer receipts were not persisted: steered={steered}, completed={completed}");
-        }
-        sleep(Duration::from_millis(20)).await;
-    }
-    assert_eq!(manager.store.load_turn(&turn.id)?.steer_count, 1);
+    let events = manager.events_since(&thread.id, None)?;
+    assert!(events.iter().any(|ev| ev.event == "turn.steered"));
+    assert!(events.iter().any(|ev| {
+        ev.event == "item.completed"
+            && ev
+                .payload
+                .get("item")
+                .and_then(|item| item.get("detail"))
+                .and_then(Value::as_str)
+                == Some("add bullet list")
+    }));
     Ok(())
 }
 

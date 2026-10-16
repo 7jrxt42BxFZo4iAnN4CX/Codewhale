@@ -4470,7 +4470,11 @@ fn save_deepseek_key_uses_isolated_file_store_without_plaintext_config() -> Resu
             .lines()
             .any(|line| line.trim_start().starts_with("api_key ="))
     );
-    assert!(config.contains("auth_mode = \"api_key\""));
+    let parsed: toml::Value = toml::from_str(&config)?;
+    assert_eq!(
+        parsed["providers"]["deepseek"]["auth_mode"].as_str(),
+        Some("api_key")
+    );
     // Saving a key leaves the model to the provider default.
     assert!(!config.contains("default_text_model"), "{config}");
     assert_eq!(
@@ -16920,6 +16924,7 @@ mod released_provider_serde {
                 currency: Currency::Usd,
                 provenance: PricingProvenance::UserOverride,
                 cloud_facts: None,
+                pricing_schedule: None,
                 input_per_million: input,
                 output_per_million: output,
                 cache_read_per_million: None,

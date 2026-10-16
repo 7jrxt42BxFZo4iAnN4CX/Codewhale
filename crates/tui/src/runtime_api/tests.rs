@@ -5563,24 +5563,39 @@ async fn steer_and_interrupt_endpoints_work_on_active_turn() -> Result<()> {
         .json()
         .await?;
     assert_eq!(steer_resp["id"], turn_id);
-    let deadline = tokio::time::Instant::now() + ci_scaled(Duration::from_secs(10));
-    while !runtime_threads
-        .events_since(&thread_id, None)?
-        .iter()
-        .any(|ev| ev.event == "turn.steered")
-    {
-        if tokio::time::Instant::now() >= deadline {
-            bail!("timed out waiting for the steer on {turn_id} to settle");
+    assert!(matches!(steer_resp["steer_count"].as_u64(), Some(0 | 1)));
+
+    tokio::time::timeout(ci_scaled(Duration::from_secs(10)), async {
+        loop {
+            let events = runtime_threads.events_since(&thread_id, None)?;
+            let delivered = events.iter().any(|event| {
+                event.turn_id.as_deref() == Some(turn_id.as_str()) && event.event == "turn.steered"
+            });
+            let completed = events.iter().any(|event| {
+                event.turn_id.as_deref() == Some(turn_id.as_str())
+                    && event.event == "item.completed"
+                    && event.payload["item"]["detail"] == "please steer"
+            });
+            if delivered && completed {
+                return Ok::<_, anyhow::Error>(());
+            }
+            sleep(Duration::from_millis(25)).await;
         }
-        sleep(Duration::from_millis(25)).await;
-    }
-    assert_eq!(
-        runtime_threads
-            .test_store()
-            .load_turn(&turn_id)?
-            .steer_count,
-        1
-    );
+    })
+    .await
+    .context("steer delivery did not settle before interrupt")??;
+    let detail: serde_json::Value = client
+        .get(format!("http://{addr}/v1/threads/{thread_id}"))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let settled_turn = detail["turns"]
+        .as_array()
+        .and_then(|turns| turns.iter().find(|turn| turn["id"] == turn_id))
+        .context("steered turn missing from thread detail")?;
+    assert_eq!(settled_turn["steer_count"], 1);
 
     let interrupt_resp: serde_json::Value = client
         .post(format!(
@@ -12898,6 +12913,7 @@ fn provider_model_catalog_paginates_all_six_hundred_rows_without_truncation() {
             reasoning_effort: codewhale_config::route::CapabilityState::Unknown,
             reasoning_effort_levels: Vec::new(),
             reasoning_effort_source: None,
+            facts: None,
             output_token_limit: codewhale_config::route::CapabilityState::Unknown,
             id: format!("openrouter/model-{index:03}"),
             image_input: codewhale_config::route::CapabilityState::Unknown,
@@ -12954,6 +12970,7 @@ fn provider_model_catalog_applies_filter_before_cursor_and_rejects_cross_scope_r
             reasoning_effort: codewhale_config::route::CapabilityState::Unknown,
             reasoning_effort_levels: Vec::new(),
             reasoning_effort_source: None,
+            facts: None,
             output_token_limit: codewhale_config::route::CapabilityState::Unknown,
             id: id.to_string(),
             image_input: codewhale_config::route::CapabilityState::Unknown,
@@ -13012,6 +13029,7 @@ fn provider_model_cursor_rejects_catalog_change_between_pages() {
             reasoning_effort: codewhale_config::route::CapabilityState::Unknown,
             reasoning_effort_levels: Vec::new(),
             reasoning_effort_source: None,
+            facts: None,
             output_token_limit: codewhale_config::route::CapabilityState::Unknown,
             id: id.to_string(),
             image_input: codewhale_config::route::CapabilityState::Unknown,
@@ -13035,6 +13053,7 @@ fn provider_model_cursor_rejects_catalog_change_between_pages() {
         reasoning_effort: codewhale_config::route::CapabilityState::Unknown,
         reasoning_effort_levels: Vec::new(),
         reasoning_effort_source: None,
+        facts: None,
         output_token_limit: codewhale_config::route::CapabilityState::Unknown,
         id: "alpha".to_string(),
         image_input: codewhale_config::route::CapabilityState::Unknown,
@@ -13082,6 +13101,7 @@ fn provider_model_cursor_round_trips_multibyte_filter_at_the_allowed_limit() {
             reasoning_effort: codewhale_config::route::CapabilityState::Unknown,
             reasoning_effort_levels: Vec::new(),
             reasoning_effort_source: None,
+            facts: None,
             output_token_limit: codewhale_config::route::CapabilityState::Unknown,
             id: format!("{filter}{suffix}"),
             image_input: codewhale_config::route::CapabilityState::Unknown,
@@ -19914,6 +19934,7 @@ fn runtime_image_named_catalog_cursor_binds_identity_endpoint_and_catalog() -> R
             reasoning_effort: codewhale_config::route::CapabilityState::Unknown,
             reasoning_effort_levels: Vec::new(),
             reasoning_effort_source: None,
+            facts: None,
             id: id.into(),
             output_token_limit: codewhale_config::route::CapabilityState::Unknown,
             image_input: codewhale_config::route::CapabilityState::Supported,

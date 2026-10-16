@@ -332,6 +332,7 @@ pub struct CodewhaleClient {
     /// they must not reconstruct output caps with `None` and discard a custom
     /// route's context window.
     route_limits: Option<RouteLimits>,
+    route_facts: Option<Arc<codewhale_config::catalog::CatalogOffering>>,
     /// Verified ChatGPT subject captured with Codewhale's own selected grant.
     pub(super) codex_account_id: Option<String>,
     /// Opaque reasoning is bound to this verified grant identity, stable across
@@ -668,6 +669,7 @@ impl Clone for CodewhaleClient {
             billing_mode: self.billing_mode,
             configured_models: Arc::clone(&self.configured_models),
             route_limits: self.route_limits,
+            route_facts: self.route_facts.clone(),
             codex_account_id: self.codex_account_id.clone(),
             chatgpt_reasoning_api: self.chatgpt_reasoning_api.clone(),
             wire_format: self.wire_format,
@@ -1889,6 +1891,14 @@ impl CodewhaleClient {
         }
         .build()?;
 
+        let route_facts = crate::provider_lake::configured_catalog_offering_for_route(
+            config,
+            api_provider,
+            admitted_identity.key.as_str(),
+            &base_url,
+            &default_model,
+        )
+        .map(Arc::new);
         let catalog_error_secret_values = Arc::new(catalog_error_secret_values(
             &api_key,
             &http_headers,
@@ -1916,6 +1926,7 @@ impl CodewhaleClient {
             billing_mode,
             configured_models: Arc::new(config.custom_models.clone().unwrap_or_default()),
             route_limits,
+            route_facts,
             codex_account_id,
             chatgpt_reasoning_api,
             wire_format,
@@ -2032,6 +2043,7 @@ impl CodewhaleClient {
         status: u16,
         body: &str,
         retry_after: Option<Duration>,
+        body_retry_after: Option<Duration>,
     ) -> LlmError {
         let route = self.admitted_identity.key.as_str();
         let error = match status {
@@ -2049,7 +2061,12 @@ impl CodewhaleClient {
                     .with_fix(auth_fix_hint(route, &self.api_key_source)),
                 ),
             ),
-            _ => LlmError::from_http_response_with_retry_after(status, body, retry_after),
+            _ => LlmError::from_http_response_with_retry_hints(
+                status,
+                body,
+                retry_after,
+                body_retry_after,
+            ),
         };
         match error {
             LlmError::ModelError(message) => LlmError::ModelError(format!(
@@ -2209,6 +2226,24 @@ impl CodewhaleClient {
             })
     }
 
+    fn catalog_facts_for_model(
+        &self,
+        model: &str,
+    ) -> Option<Arc<codewhale_config::catalog::CatalogOffering>> {
+        let mut config = Config::default();
+        let _ = config
+            .custom_models
+            .replace(self.configured_models.as_ref().clone());
+        crate::provider_lake::configured_catalog_offering_for_route(
+            &config,
+            self.api_provider,
+            self.admitted_identity.key.as_str(),
+            &self.base_url,
+            model,
+        )
+        .map(Arc::new)
+    }
+
     /// Resolve `model` through the central route resolver and rebuild this
     /// client whenever its exact wire identity, limits, or protocol differs
     /// from the route bound at construction (#5042). `Ok(None)` means the
@@ -2242,6 +2277,7 @@ impl CodewhaleClient {
             let mut rebound = self.clone();
             rebound.default_model = candidate.wire_model_id().as_str().to_string();
             rebound.route_limits = candidate_limits;
+            rebound.route_facts = rebound.catalog_facts_for_model(&rebound.default_model);
             return Ok(Some(rebound));
         }
         let config = config.ok_or_else(|| {
@@ -2255,6 +2291,7 @@ impl CodewhaleClient {
         })?;
         let mut rebound = Self::from_candidate(config, &candidate)?;
         rebound.configured_models = Arc::clone(&self.configured_models);
+        rebound.route_facts = rebound.catalog_facts_for_model(&rebound.default_model);
         Ok(Some(rebound))
     }
 
@@ -2907,6 +2944,93 @@ impl CodewhaleClient {
         let (request, request_route_limits) =
             self.bind_request_to_protocol(self.prepare_model_bound_request(request))?;
         let mut request = clamp_output_cap(request, request_route_limits);
+        let facts = if request.model == self.default_model {
+            self.route_facts.clone()
+        } else {
+            self.catalog_facts_for_model(&request.model)
+        }
+        .filter(|facts| facts.wire_model_id == request.model);
+        if let Some(facts) = facts.as_deref() {
+            if facts.temperature == Some(false) {
+                request.temperature = None;
+                request.top_p = None;
+            }
+            if facts.tool_call == Some(false)
+                && request
+                    .tools
+                    .as_ref()
+                    .is_some_and(|tools| !tools.is_empty())
+            {
+                anyhow::bail!("The selected provider offering does not support tool calls");
+            }
+            if codewhale_config::models_dev::image_input_support(facts.modalities.as_ref())
+                == codewhale_config::route::CapabilityState::Unsupported
+                && request
+                    .messages
+                    .iter()
+                    .flat_map(|message| &message.content)
+                    .any(|block| matches!(block, ContentBlock::ImageUrl { .. }))
+            {
+                anyhow::bail!("The selected provider offering does not support image input");
+            }
+            if facts.reasoning == Some(false) {
+                request.reasoning_effort = None;
+                request.thinking = None;
+            } else {
+                for option in &facts.reasoning_options {
+                    if option.get("type").and_then(Value::as_str) != Some("effort") {
+                        continue;
+                    }
+                    if request
+                        .reasoning_effort
+                        .as_deref()
+                        .is_some_and(|effort| matches!(effort, "auto" | "default"))
+                    {
+                        request.reasoning_effort = option
+                            .get("default")
+                            .and_then(Value::as_str)
+                            .map(str::to_string);
+                    }
+                    let wire_effort = if matches!(self.wire_format, WireFormat::ChatCompletions) {
+                        request.reasoning_effort.as_deref().and_then(|effort| {
+                            let provider = self.chat_shape_provider(&request.model);
+                            let model = crate::config::wire_model_for_provider_route(
+                                provider,
+                                &self.base_url,
+                                &request.model,
+                            );
+                            let mut body = json!({ "model": model });
+                            chat::apply_route_reasoning_controls(
+                                &mut body,
+                                provider,
+                                &self.base_url,
+                                &model,
+                                Some(effort),
+                            );
+                            body.get("reasoning_effort")
+                                .or_else(|| body.pointer("/reasoning/effort"))
+                                .and_then(Value::as_str)
+                                .map(str::to_string)
+                        })
+                    } else {
+                        request.reasoning_effort.clone()
+                    };
+                    if let Some(effort) = wire_effort.as_deref()
+                        && let Some(values) = option.get("values").and_then(Value::as_array)
+                        && !values.iter().any(|value| value.as_str() == Some(effort))
+                        && !(matches!(effort, "off" | "disabled" | "false")
+                            && (values.iter().any(|value| value.as_str() == Some("none"))
+                                || facts.reasoning_options.iter().any(|option| {
+                                    option.get("type").and_then(Value::as_str) == Some("toggle")
+                                })))
+                    {
+                        anyhow::bail!(
+                            "The selected provider offering does not support the configured reasoning effort; inspect model details and choose a published value"
+                        );
+                    }
+                }
+            }
+        }
         let declared_wire_model = self.declared_wire_model(&request.model).map(str::to_string);
         if self.is_local_ds4_model(&request.model)
             && let Some(tools) = request.tools.as_mut()
@@ -4046,10 +4170,14 @@ impl CodewhaleClient {
                     }
                     let header_retry_after = extract_retry_after(response.headers());
                     let raw = bounded_error_text(response, ERROR_BODY_MAX_BYTES).await;
-                    let retry_after =
-                        header_retry_after.or_else(|| retry_delay_from_error_body(&raw));
+                    let body_retry_after = retry_delay_from_error_body(&raw);
                     let body = self.disclosed_http_error_body(disclosure, status.as_u16(), &raw);
-                    Err(self.http_error_with_route_context(status.as_u16(), &body, retry_after))
+                    Err(self.http_error_with_route_context(
+                        status.as_u16(),
+                        &body,
+                        header_retry_after,
+                        body_retry_after,
+                    ))
                 }
             },
             Some(Box::new(move |err, attempt, delay| {
@@ -4165,11 +4293,15 @@ impl CodewhaleClient {
                         }
                         let header_retry_after = extract_retry_after(response.headers());
                         let raw = bounded_error_text(response, ERROR_BODY_MAX_BYTES).await;
-                        let retry_after =
-                            header_retry_after.or_else(|| retry_delay_from_error_body(&raw));
+                        let body_retry_after = retry_delay_from_error_body(&raw);
                         let body =
                             self.disclosed_http_error_body(disclosure, status.as_u16(), &raw);
-                        Err(self.http_error_with_route_context(status.as_u16(), &body, retry_after))
+                        Err(self.http_error_with_route_context(
+                            status.as_u16(),
+                            &body,
+                            header_retry_after,
+                            body_retry_after,
+                        ))
                     }
                 },
                 Some(Box::new(|err, attempt, delay| {
@@ -6243,6 +6375,11 @@ mod configured_model_client_tests {
     fn alternate_declared_model_freezes_wire_limits_and_price() {
         let _env = crate::test_support::lock_test_env();
         let mut config = config();
+        let mut initial = config.custom_models.as_ref().unwrap()[0].clone();
+        initial.id = "initial-model".into();
+        initial.tool_call = Some(true);
+        config.custom_models.as_mut().unwrap()[0].tool_call = Some(false);
+        config.custom_models.as_mut().unwrap().push(initial);
         let client = CodewhaleClient::from_parts(
             "https://api.deepseek.com".into(),
             "initial-model".into(),
@@ -6269,6 +6406,7 @@ mod configured_model_client_tests {
             .as_mut()
             .unwrap()
             .output = Some(99.0);
+        config.custom_models.as_mut().unwrap()[0].tool_call = Some(true);
 
         assert_eq!(client.effective_max_output_tokens(model), 32);
         let prepared = client
@@ -6280,12 +6418,41 @@ mod configured_model_client_tests {
         assert_eq!(prepared.wire_model, model);
         assert_eq!(prepared.body["model"], model);
         assert_eq!(prepared.body["max_tokens"], 32);
+        let mut tool_request = translation_message_request("hello", model.into(), "English", 4096);
+        tool_request.tools = Some(vec![codewhale_models::Tool {
+            tool_type: None,
+            name: "fixture".into(),
+            description: "read-only fixture".into(),
+            input_schema: json!({ "type": "object", "properties": {} }),
+            allowed_callers: None,
+            defer_loading: Some(false),
+            input_examples: None,
+            strict: Some(true),
+            cache_control: None,
+        }]);
+        assert!(
+            client
+                .prepare_outbound_request(tool_request.clone(), false)
+                .is_err()
+        );
+        let mut initial_request = tool_request.clone();
+        initial_request.model = "initial-model".into();
+        assert!(
+            client
+                .prepare_outbound_request(initial_request, false)
+                .is_ok()
+        );
         let rebound = client
             .rebound_for_model_protocol(Some(&config), model)
             .unwrap()
             .unwrap();
         assert_eq!(rebound.default_model, model);
         assert_eq!(rebound.route_limits.unwrap().output_tokens, Some(32));
+        assert!(
+            rebound
+                .prepare_outbound_request(tool_request, false)
+                .is_err()
+        );
         let envelope = rebound.effective_route_envelope(model, chrono::Utc::now());
         assert_eq!(envelope.model, model);
         let quote = serde_json::to_value(envelope.provider_live_pricing.unwrap()).unwrap();

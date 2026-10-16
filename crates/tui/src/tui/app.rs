@@ -1931,6 +1931,7 @@ pub struct App {
     pub launch: LaunchState,
     /// Mouse-selected launch action, consumed by the async UI loop.
     pub pending_launch_action: Option<crate::tui::underwater::LaunchAction>,
+    pub(crate) pending_claude_login: Option<bool>,
     /// Mouse click on the live composer's `[↵]` send target. The async UI loop
     /// consumes it through the same submit dispatcher as Enter.
     pub pending_composer_submit: Option<ComposerSubmitChord>,
@@ -7196,7 +7197,9 @@ impl App {
         } else if let Some(effort) = inferred {
             ReasoningEffort::from_setting(effort)
                 .normalize_for_route(provider, base_url, wire_model)
-        } else if let Some(default) = ReasoningEffort::catalog_default(provider, wire_model) {
+        } else if let Some(default) =
+            ReasoningEffort::catalog_default(provider, base_url, wire_model)
+        {
             default
         } else {
             self.reasoning_effort

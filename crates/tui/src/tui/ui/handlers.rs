@@ -227,7 +227,7 @@ pub(crate) fn handle_bracketed_paste(app: &mut App, text: &str) {
     // so fast typing / IME commits / autocomplete bursts don't get
     // mis-classified as a paste.
     app.bracketed_paste_seen = true;
-    if app.is_history_search_active() {
+    if app.is_history_search_active() && app.view_stack.is_empty() {
         app.history_search_insert_str(text);
     } else if paste_text_into_provider_picker(app, text) || app.view_stack.handle_paste(text) {
         // Modal consumed the paste (e.g. provider picker key entry).
@@ -3094,13 +3094,7 @@ pub(crate) async fn handle_view_events(
                 refresh_config_view_if_open(app, "provider");
             }
             ViewEvent::ProviderPickerClaudeOAuthRequested => {
-                let switched =
-                    run_claude_login_from_tui(terminal, app, engine_handle, config).await?;
-                complete_provider_picker_onboarding_if_switched(
-                    app,
-                    ProviderKind::Anthropic,
-                    switched,
-                );
+                app.pending_claude_login = Some(true);
             }
             ViewEvent::ProviderPickerXaiOAuthRequested => {
                 let switched =

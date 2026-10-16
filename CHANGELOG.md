@@ -7,16 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Contributors
-
-- **[@printf033](https://github.com/printf033)** — replaced the SELinux-denied root-directory anchor of confined-file I/O with an `O_PATH` walk (Linux-cfg-gated) and a re-materialized final parent, restoring workflow journal, compaction checkpoint and artifact writes on Android/Termux ([#6983](https://github.com/codewhale-hq/Codewhale/pull/6983)); reported the Android confined-I/O failure with strace evidence and an on-device reproducer ([#6980](https://github.com/codewhale-hq/Codewhale/issues/6980)).
-
-## [0.10.2] - 2026-10-10
+## [0.10.2] - 2026-10-13
 
 - OpenHarmony builds on Windows select Ninja, with an SDK-bundled fallback and
   a clear error when it is unavailable. The CLI keeps its download and Work
   context integrity checks available on OHOS by sharing an ungated SHA-256
   helper (thanks @shenjackyuanjie, #6989; reported in #6988).
+
+- Windows mouse-wheel scrolling is restored after returning from the external
+  editor. The handoff now releases both Windows console mouse capture and
+  terminal mouse modes. Thanks @SparkofSpike for distinguishing terminal
+  scrollback from transcript scrolling in #6652; the separate hours-long
+  scrolling slowdown still needs reproduction.
+- Shell classification accepts PowerShell’s call operator, quoted ampersands
+  and combined output redirection without losing destructive commands in
+  nested shell payloads or after command separators. Thanks @SparkofSpike
+  for the diagnosis and fix in #6929, and @jayanthvee for the detailed
+  Windows report in #6963.
+- Windows commands that cannot be classified use the normal approval path
+  with a direct explanation. Ask can request approval and Auto-Review can
+  consult its reviewer; an unclassified command is no longer reported as an
+  npm-launcher kill. Actual unbounded `node.exe` image kills keep their hold
+  in reviewing modes; Full Access continues to bypass that floor. Thanks
+  @jayanthvee for separating these cases in #6963.
+- Pasting while a modal is open no longer changes a history-search query
+  hidden underneath it. Existing modal key ownership and hidden-caret guards
+  remain in place. Windows Terminal IME preedit is still controlled by the
+  terminal; native IME retesting remains open (#2323).
+
+- Model lists, resolution, picker controls and Runtime facts use the same
+  endpoint-scoped catalog facts. Cost estimates preserve complete price tiers,
+  calculate exact decimal amounts per request, and freeze rates at dispatch.
+  Missing rates or required usage breakdowns stay unpriced; public prices do
+  not establish account access. The offline seed records its source snapshot
+  and keeps absent default wire IDs as dated compatibility fallbacks. Refs #6396.
 
 - Desktop and HTTP app-server turns feed an existing shared pet companion when
   its followed session has no live producer. Automatic selection is checked
@@ -134,7 +158,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or run commands.
 - `bash` now moves a foreground command to the background after 30 s and
   reports the elapsed time and how long ago it last printed output.
-  `task_shell_start` is removed; use `bash` with `background=true`.
+  `task_shell_start` is removed.
 - Every change of effective permission now writes a `Permissions changed to …`
   line in the transcript, and runtime threads record it as a `status` item and
   a `thread.permissions_changed` event.
@@ -154,6 +178,13 @@ launcher guidance.
 
 ### Added
 
+- Standard Compute is available as a bundled compatible provider, with the
+  `standardcompute` router default and authenticated model discovery. Its
+  billing basis remains Unknown (#6985).
+- Sub-agents retain permitted code-mode tool composition. Nested calls keep
+  the child's approvals, write scope, tool timeout and work deadline; approval
+  waits do not consume that tool timeout. Refused nested calls still do not
+  count toward Fleet's denial-loop guard. Refs #6841 (CW-7033).
 - `/connect [<provider>]` signs in to a model provider that a plugin adds,
   inside the TUI, and `/disconnect <provider>` removes that sign-in.
   `/login` and `/logout` are for your Codewhale account only. Plugins that
@@ -229,6 +260,25 @@ launcher guidance.
   `CODEWHALE_TELEMETRY_SURFACE`, including `vscode-extension`. This changes the
   session label while preserving collection settings and opt-outs
   ([#6916](https://github.com/codewhale-hq/Codewhale/pull/6916)).
+- `codewhale account computers files` saves a Computer's workspace file (up to
+  16 MiB) to account storage, lists its versions, and restores (up to 4 MiB)
+  or downloads one. Restoring over an existing file needs its current
+  `--expected-revision`; a download verifies size and SHA-256 and never
+  overwrites a local file. `codewhale account computers delete` now asks for
+  `--discard-files`. This is experimental.
+- Runtime API: `GET /v1/goals` lists goal records across threads, newest
+  update first, with `status` and cursor paging. Goals whose thread no longer
+  exists are left out, and a cursor issued under a different `status` is `400`.
+- Runtime API: `GET /v1/approvals` rows add a redacted `target` (a URL's host
+  or a workspace path) and a one-line `summary`, plus `standing_rule` (`allow`
+  or `deny`) when a remembered rule or grant answered instead of a person. A
+  shell command keeps only its program name and plain arguments. Rows recorded
+  earlier omit these fields.
+- Runtime API: automations carry a `revision`. `PATCH`, `run`, `pause` and
+  `resume` accept `expected_revision` and answer `409` `revision_conflict` on a
+  mismatch. Create and those four accept an `Idempotency-Key`; a retry replays
+  the first success instead of creating or running twice. `DELETE` honors
+  neither. Clients check `capabilities.automation_mutation_preconditions`.
 
 ### Changed
 
@@ -293,16 +343,38 @@ launcher guidance.
   this package" now lists the skipped rows, each with its package and reason,
   and the Native composition refusal names the unresolved rows. Both name at
   most five rows and count the rest.
+- Full Access runs the calls it grants. The built-in Auto-Review floor
+  (publish-like commands, destructive background or headless work, and the
+  Windows npm-launcher hold) applies only in Ask, Auto-Review and Never, and no
+  longer blocks a call under Full Access, including a detached agent's.
+- `file_search` is one of the model's default tools from the first turn
+  instead of being loaded through `tool_search`
+  ([#6934](https://github.com/codewhale-hq/Codewhale/issues/6934)).
+- `fim_edit` is offered only on routes that can run it: Chat Completions
+  routes other than OpenCode Zen. The default DeepSeek Flash route speaks
+  Responses and no longer lists it
+  ([#6933](https://github.com/codewhale-hq/Codewhale/issues/6933)).
+- Runtime session grants (`"remember": true`) are stored in the Runtime data
+  directory instead of memory. After a restart a thread's grants stay
+  suspended, and matching calls ask again, until an authenticated client
+  resumes the thread. A grant store that cannot be read holds no grants, so
+  every call asks.
 
 ### Fixed
 
-- Windows 10 1607 starts again. 0.10.1 stopped at load with 0xC0000139
-  because `DeriveCapabilitySidsFromName` is missing there; it is now resolved
-  at runtime (#6953).
+- Runtime child completions retain their original parent turn after the parent
+  becomes idle or starts a newer turn; terminal receipts remain durable and
+  deduplicated (CW-7414).
+- Windows Native extension hosts resolve `DeriveCapabilitySidsFromName`
+  at runtime and return an unsupported error during LPAC setup when the
+  export is unavailable (#6953). Windows 10 1607 startup and Native-host
+  acceptance remain unverified.
 - `codewhale resume` no longer refuses a session whose saved history still
   holds a raw sub-agent handoff (#6954).
 - A saved session over 8 MiB can be resumed and forked again. Journal entries
   off the current branch are archived instead of refusing the session (#6955).
+  A session whose current branch alone is over 8 MiB is still refused, and the
+  refusal now gives its size.
 - Snapshot restore and `/undo` work with older git, such as the 2.43 that
   Ubuntu 24.04 ships. They failed there with "only one reference expected".
 - Cancelling your own background shell job no longer reports it as finished
@@ -339,10 +411,26 @@ launcher guidance.
   a recorded session message outside the system-prompt layer.
 - The pet shows sub-agents while they run, and a finished one no longer stays
   "working". Half-block pet sprites are drawn crisply instead of blurred.
-- A provider's retry delay is honored when a 429 carries it in the body
-  instead of a `Retry-After` header (#6923).
+- A rate-limit 429 with a body retry delay of up to 120 s retries the interrupted
+  model request. This includes ambiguous current-quota wording with billing
+  guidance when the body supplies a bounded delay; explicit exhausted account,
+  billing and subscription limits remain terminal (Refs #6923, thanks @Statter).
+- Claude sign-in keeps its PKCE verifier out of the sign-in URL and gives its
+  pasted authorization code one terminal input reader. Failed input restores
+  the TUI; live subscription sign-in remains experimental (Refs #6932).
+- Oversized-session refusals preserve compaction errors and no longer assume
+  that the active conversation alone caused the remaining size limit
+  (Refs #6955, thanks @7jrxt42BxFZo4iAnN4CX).
 - A Codewhale home reached through a symlink or Windows junction keeps saving
   artifacts and compacting (#6947).
+- Sub-agent state and transcripts also save through a relocated Codewhale
+  home when its junction target already exists. Containment checks use the
+  same resolved state root throughout the operation (Refs #6949, thanks
+  @SparkofSpike).
+- Saving a DeepSeek key in the TUI writes the provider's durable-key marker,
+  so its saved credential remains visible after restart while another
+  provider is active. Older saves missing that marker need one re-save
+  (Refs #6972, thanks @gaord).
 - A workflow gate that blocks its own role is rejected when the plan is
   admitted instead of deadlocking the run (#6945).
 - Auto-Review gives its guardian an output budget a reasoning model can think
@@ -448,17 +536,37 @@ launcher guidance.
   a reused process ID, or a publication from another user, store or config
   is still refused
   ([#6915](https://github.com/codewhale-hq/Codewhale/issues/6915)).
+- `/network allow <host>` and `/network deny <host>` take effect on the next
+  tool call without a restart
+  ([#6928](https://github.com/codewhale-hq/Codewhale/pull/6928)). Under a
+  managed `[network]` overlay or a Fleet `network_access = false`, editing your
+  own `[network]` table cannot widen the policy: a denial from either layer
+  stands, a deny-by-default authority keeps its own allow list, proxy and
+  fake-IP exceptions, a prompt-by-default authority adds your hosts to its own,
+  and audit logging stays on if either layer asks for it.
+- A workflow's final receipt is no longer dropped when its completion inbox is
+  full, and each agent's queue of messages to its parent holds at most 64; a
+  send past that returns an error instead of growing without bound
+  ([#6560](https://github.com/codewhale-hq/Codewhale/issues/6560)).
+- `cargo +<toolchain> build`, `scripts/dev-test.sh` and `scripts/dev-cargo.sh`,
+  also through a wrapper, count as heavy commands for resource admission
+  ([#6560](https://github.com/codewhale-hq/Codewhale/issues/6560)).
+- Sub-agent state is written atomically, with the file and its directory
+  flushed before the rename
+  ([#6555](https://github.com/codewhale-hq/Codewhale/issues/6555)), and image
+  search reads its seed and result bodies through the size cap
+  ([#6554](https://github.com/codewhale-hq/Codewhale/issues/6554)).
 
 ### Known limits
 
+- Ambiguous current-quota 429s without a body retry delay of at most 120 s
+  still end the turn; a header alone does not change that classification.
+  Explicit exhausted account, billing and subscription limits remain terminal
+  regardless of a retry hint. Gemini limits without an accepted body delay are
+  not automatically retried
+  ([#6923](https://github.com/codewhale-hq/Codewhale/issues/6923)).
 - Idle CPU has not been measured on FreeBSD or Linux for this release
   ([#6728](https://github.com/codewhale-hq/Codewhale/issues/6728)).
-- Models.dev prices with context tiers are not applied. A turn at or above a
-  model's first context tier reads as unpriced ("pricing tier unavailable")
-  and is counted as missing from the cost total, instead of being priced at
-  its base rate. The bundled catalog has no tiered rows, so this appears only
-  after a live models.dev refresh
-  ([#6396](https://github.com/codewhale-hq/Codewhale/issues/6396)).
 - Shell commands run by delegated agents appear in `/jobs` and the work dock
   with their owner, not in the agent's own detail view; named terminal
   sessions live in the terminal dock
@@ -467,6 +575,13 @@ launcher guidance.
   be changed inside the `F5` inspector. The browser studio and the macOS
   window are not views in the cycle, and `Ctrl+]` cannot open the work bar
   while the pet main view is showing.
+- Computer Use is a preview. Its observation diffs, fresh element targets and
+  named action batches were checked against a macOS fixture app only;
+  packaged installs, installed-model use and sharing the desktop with a person
+  working at the same time have not been qualified.
+- The `GET /v1/approvals` `target` and `summary` redaction is heuristic: a
+  secret passed as a plain word argument is not recognized, so treat approval
+  history as sensitive.
 
 ### Maintenance
 
@@ -478,13 +593,15 @@ launcher guidance.
 
 ### Contributors
 
-- **[@henrikdukefoss](https://github.com/henrikdukefoss)** — added the Standard Compute compatible-host descriptor, with live model discovery and its billing basis kept Unknown ([#6985](https://github.com/codewhale-hq/Codewhale/pull/6985)).
 - **[@shenjackyuanjie](https://github.com/shenjackyuanjie)** — diagnosed and fixed the Windows OpenHarmony CMake generator and CLI hashing-module build failures ([#6988](https://github.com/codewhale-hq/Codewhale/issues/6988), [#6989](https://github.com/codewhale-hq/Codewhale/pull/6989)).
+- **[@printf033](https://github.com/printf033)** — replaced the SELinux-denied root-directory anchor of confined-file I/O with an `O_PATH` walk (Linux-cfg-gated) and a re-materialized final parent, restoring workflow journal, compaction checkpoint and artifact writes on Android/Termux ([#6983](https://github.com/codewhale-hq/Codewhale/pull/6983)); reported the Android confined-I/O failure with strace evidence and an on-device reproducer ([#6980](https://github.com/codewhale-hq/Codewhale/issues/6980)). Source change; compiled Android and device acceptance remain unqualified.
+- **[@aboimpinto](https://github.com/aboimpinto)** — moved config-command parsing and replies onto portable contracts while the host retains effects ([#6973](https://github.com/codewhale-hq/Codewhale/pull/6973)).
+- **[@henrikdukefoss](https://github.com/henrikdukefoss)** — added the Standard Compute compatible-host descriptor, with live model discovery and its billing basis kept Unknown ([#6985](https://github.com/codewhale-hq/Codewhale/pull/6985)).
 - **[@LIghtJUNction](https://github.com/LIghtJUNction)** — plugin shell install and in-TUI plugin OAuth sign-in ([#6950](https://github.com/codewhale-hq/Codewhale/pull/6950)).
-- **[@SparkofSpike](https://github.com/SparkofSpike)** — live network-policy updates and goal milestone hand-back ([#6928](https://github.com/codewhale-hq/Codewhale/pull/6928), [#6930](https://github.com/codewhale-hq/Codewhale/pull/6930)), and a relocated Codewhale home ([#6947](https://github.com/codewhale-hq/Codewhale/issues/6947)).
+- **[@SparkofSpike](https://github.com/SparkofSpike)** — live network-policy updates and goal milestone hand-back ([#6928](https://github.com/codewhale-hq/Codewhale/pull/6928), [#6930](https://github.com/codewhale-hq/Codewhale/pull/6930)), Windows ampersand classification ([#6929](https://github.com/codewhale-hq/Codewhale/pull/6929)), and a relocated Codewhale home including sub-agent state ([#6947](https://github.com/codewhale-hq/Codewhale/issues/6947), [#6949](https://github.com/codewhale-hq/Codewhale/pull/6949)).
 - **[@dajiaohuang](https://github.com/dajiaohuang)** — cache-write token accounting ([#6913](https://github.com/codewhale-hq/Codewhale/pull/6913)).
-- **[@gaord](https://github.com/gaord)** — embedder telemetry surface support ([#6916](https://github.com/codewhale-hq/Codewhale/pull/6916)).
-- **[@Lstarsky0](https://github.com/Lstarsky0)** — localized profile replies ([#6919](https://github.com/codewhale-hq/Codewhale/pull/6919)) and workflow gates that block their own role ([#6952](https://github.com/codewhale-hq/Codewhale/pull/6952)).
+- **[@gaord](https://github.com/gaord)** — embedder telemetry surface support ([#6916](https://github.com/codewhale-hq/Codewhale/pull/6916)) and the DeepSeek saved-key marker diagnosis and fix ([#6972](https://github.com/codewhale-hq/Codewhale/issues/6972), [#6974](https://github.com/codewhale-hq/Codewhale/pull/6974)).
+- **[@Lstarsky0](https://github.com/Lstarsky0)** — localized profile replies ([#6919](https://github.com/codewhale-hq/Codewhale/pull/6919)), workflow gates that block their own role ([#6952](https://github.com/codewhale-hq/Codewhale/pull/6952)), proxy-independent MCP loopback checks ([#6971](https://github.com/codewhale-hq/Codewhale/pull/6971), [#6975](https://github.com/codewhale-hq/Codewhale/pull/6975)), and durable steering/child-approval acceptance checks ([#6967](https://github.com/codewhale-hq/Codewhale/pull/6967), [#6966](https://github.com/codewhale-hq/Codewhale/pull/6966)).
 - **[@jayanthvee](https://github.com/jayanthvee)** — Windows npm launcher guidance ([#6906](https://github.com/codewhale-hq/Codewhale/pull/6906)).
 - **[@asto18089](https://github.com/asto18089)** — callback-window reference fix for longer browser sign-in waits ([#6865](https://github.com/codewhale-hq/Codewhale/issues/6865)).
 - **[@BX166](https://github.com/BX166)** — reported three provider failure modes measured on AICraft's own traffic: a cold model that reads as a dead connection, a listed model that fails on every call, and a response cut at the output ceiling that reports `stop` ([#6889](https://github.com/codewhale-hq/Codewhale/issues/6889)).

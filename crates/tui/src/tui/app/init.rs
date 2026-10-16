@@ -500,10 +500,14 @@ impl App {
             reasoning_effort =
                 reasoning_effort.normalize_for_route(provider, &active_route_base_url, &model);
         } else if !auto_model && !reasoning_effort_explicit {
-            if let Some(default) = ReasoningEffort::catalog_default(provider, &model) {
+            if let Some(default) =
+                ReasoningEffort::catalog_default(provider, &active_route_base_url, &model)
+            {
                 reasoning_effort = default;
             }
-        } else if !auto_model && ReasoningEffort::catalog_effort_values(provider, &model).is_some()
+        } else if !auto_model
+            && ReasoningEffort::catalog_effort_values(provider, &active_route_base_url, &model)
+                .is_some()
         {
             reasoning_effort =
                 reasoning_effort.normalize_for_route(provider, &active_route_base_url, &model);
@@ -921,6 +925,7 @@ impl App {
             focus_texture,
             launch,
             pending_launch_action: None,
+            pending_claude_login: None,
             pending_composer_submit: None,
             pending_hotbar_slot: None,
             synchronized_output_enabled,

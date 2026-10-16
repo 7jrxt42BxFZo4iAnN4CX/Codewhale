@@ -94,10 +94,11 @@ Sources to keep in sync:
 - `crates/config/assets/catalog_corrections.json` `reviewed` - intrinsic facts,
   scoped selector aliases, completion references and pure transport metadata.
   The existing seed renderer embeds this reviewed supplement in Models.dev.
-- `crates/agent/src/lib.rs` - compatibility projection of those shared selector
-  rows, used by `codewhale model resolve` (and the `[model]` config surface).
-  `codewhale model list` reads the resolved provider lake instead, so a single
-  list shows bundled, live and configured rows together.
+- `crates/tui/src/provider_lake.rs` and `route_runtime.rs` - resolve current
+  model facts for both CLI model commands, the picker and Runtime API. Public
+  catalog facts, provider/account rosters and explicit configuration retain
+  their separate ownership. `crates/agent/src/lib.rs` keeps the legacy selector
+  compatibility projection; it does not decide the CLI's current route.
 - `config.example.toml` and `docs/CONFIGURATION.md` - user-facing config
   examples and environment variable reference.
 - `scripts/check-provider-registry.py` - drift check for canonical provider
@@ -1129,16 +1130,26 @@ price. Flash ships the published $0.15/$0.50 list. A live call can still
 
 ## Static Model Registry
 
-This table describes the static registry, which `codewhale model resolve` (and
-the `[model]` config surface) still use to resolve selector aliases.
+This table records legacy selector compatibility. Current `codewhale model
+resolve`, `codewhale model list`, the picker and Runtime API use the shared
+provider lake and route resolver. `models --update` refreshes the existing
+catalog cache; later routes see new metadata, while dispatched requests retain
+their admitted limits and price receipt.
 
-`codewhale model resolve` projects the reviewed `selections` in
-`crates/config/assets/catalog_corrections.json` through
-`crates/agent/src/lib.rs`. There is no independent Rust model roster. These
-ordered aliases and flags are compatibility metadata, not account availability
-or executable route permission. This differs from live `/models` discovery.
-Use `/models` or `codewhale models` to fetch model IDs from the active API
-endpoint when the endpoint supports model listing.
+The reviewed `selections` in `crates/config/assets/catalog_corrections.json`
+remain compatibility metadata for legacy callers. They do not establish account
+availability or executable route permission. Public discovery can contain
+metadata-only models; an authenticated provider roster establishes a different
+fact. A same-named custom endpoint keeps its own declared limits and prices.
+
+`codewhale model resolve MODEL --provider PROVIDER` reports the exact wire ID,
+canonical ID when declared, limits and implemented capabilities. Runtime
+`GET /v1/providers/PROVIDER/models` adds source, fetch/expiry metadata, published
+price structure, reasoning options, configured effective limits and the price
+status. `account_access: unverified` means these facts have not established the
+selected account's access. Context responses distinguish an active engine
+window from the static route's resolution source, including any fallback.
+See [Catalog refresh](CATALOG_REFRESH.md) for freshness and estimate boundaries.
 
 | Provider | Static registry entries | Tool calls | Registry reasoning flag |
 | --- | --- | --- | --- |
@@ -1226,7 +1237,7 @@ while bare `k3` can use an entitled 1M override.
 
 | Provider/model class | Context window | Max output metadata | Thinking support | Cache telemetry | FIM endpoint |
 | --- | --- | --- | --- | --- | --- |
-| DeepSeek V4 (`deepseek-v4-pro`, `deepseek-v4-flash`) | 1,000,000 | 384,000 | yes | yes | DeepSeek beta only |
+| DeepSeek V4 (`deepseek-v4-pro`, `deepseek-v4-flash`) | 1,000,000 | 384,000 | yes | yes | DeepSeek beta only, on Chat Completions routes; not on the default Flash route, which speaks Responses |
 | DeepSeek V4 Flash Vision experimental (`deepseek-v4-flash-vision-exp`) | 1,000,000 inherited from Flash | 384,000 inherited from Flash | yes, inherited | yes, inherited | not claimed; Chat Completions route only |
 | DeepSeek compatibility aliases (`deepseek-chat`, `deepseek-reasoner`) | 1,000,000 | 384,000 | yes | yes | DeepSeek beta only |
 | NVIDIA NIM V4 registry models | 1,000,000 | 384,000 | yes | yes | not documented in code |
@@ -1445,6 +1456,9 @@ provider docs work, but they are not native shipped behavior in this checkout:
 
 ## Sign in with Claude
 
+This is an experimental 0.10.2 candidate flow; live sign-in, inference and
+provider authorization are not release-qualified.
+
 Run `codewhale auth claude` (or `/auth claude` in a running session), open the
 printed Claude sign-in URL, and paste the complete `code#state` callback.
 `/provider setup anthropic` also offers API-key and Claude Pro / Max choices.
@@ -1455,7 +1469,9 @@ Codewhale stores the grant in its private credentials directory, commits the
 provider's credential pointer atomically, and refreshes it before requests on a
 worker. Subscription tokens go only to `https://api.anthropic.com`; a custom
 endpoint is rejected. Each request keeps the existing Messages adapter, tool
-protocol, cache prefix, and Codewhale client identity. No Claude Code credential
+protocol, cache prefix, and Codewhale inference-client identity. The login
+registration is a separate fact: this candidate uses Claude Code’s OAuth
+client ID, not a Codewhale-issued registration. No Claude Code credential
 file or keychain entry is read or modified.
 
 `codewhale auth claude-revoke` (or `/auth claude-revoke`) removes the owned local
@@ -1465,5 +1481,13 @@ to use an API key. Login and inference follow Anthropic's provider-side
 availability; local checks do not
 establish that an account is eligible or that live subscription inference works.
 
-The callback and JSON token exchange follow the interoperable flow used by
-[pi's Anthropic OAuth adapter](https://github.com/fivewillow/badlogic-pi-mono/blob/main/packages/ai/src/utils/oauth/anthropic.ts).
+Reference refreshed on 2026-10-13: upstream Pi is now `earendil-works/pi`.
+Its [v1.2.0 OAuth adapter](https://github.com/earendil-works/pi/blob/06a466935536f8c9bcacb2d5efc0fc021be1bdff/packages/ai/src/auth/oauth/anthropic.ts)
+supports loopback and copy-code flows and uses `platform.claude.com` token and
+copy-code endpoints; this candidate still uses `console.anthropic.com`.
+Pi also uses [Claude Code inference identity](https://github.com/earendil-works/pi/blob/06a466935536f8c9bcacb2d5efc0fc021be1bdff/packages/ai/src/api/anthropic-messages.ts),
+which Codewhale does not adopt. Pi's implementation is a compatibility
+reference, not proof of account eligibility, billing behavior or permission
+to offer the same flow. See Anthropic's current
+[authentication guidance](https://code.claude.com/docs/en/legal-and-compliance#authentication-and-credential-use)
+and [Agent SDK plan guidance](https://support.claude.com/en/articles/15036540-use-the-claude-agent-sdk-with-your-claude-plan).
