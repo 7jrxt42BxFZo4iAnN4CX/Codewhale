@@ -626,6 +626,9 @@ pub(crate) async fn switch_provider(
     identity: crate::config::ProviderIdentity,
     model_override: Option<String>,
 ) -> bool {
+    if app.reject_setting_change_while_busy(MessageId::SettingSubjectProvider) {
+        return false;
+    }
     if let Err(reason) = config.verify_provider_identity(&identity) {
         app.push_status_toast(reason, StatusToastLevel::Error, Some(8_000));
         return false;

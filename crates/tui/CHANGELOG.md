@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Switching provider is now refused while a turn is running, as model,
+  thinking and permission changes already were. The refusal covers
+  `/provider <id>`, the provider picker, a custom provider, setup and login
+  flows, and adopting a local Ollama. The status line reads "Provider is
+  locked while a turn is running — press Esc to interrupt first". Before, a
+  mid-turn `/provider <id>` replaced the engine under the running turn
+  (Refs #2982).
 - `/init` now asks the model to write `AGENTS.md` in the interface language
   (for example Simplified Chinese when the TUI runs in zh-Hans), headings
   included, keeping commands, file paths and code identifiers as they are.
