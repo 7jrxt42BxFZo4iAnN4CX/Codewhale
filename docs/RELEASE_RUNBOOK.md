@@ -133,8 +133,51 @@ source edits, but the final release receipt must describe the frozen source.
 It stops without uploading. CI/RC does not verify Cargo publication tarballs
 and cannot replace this gate. Publish mode necessarily verifies them again.
 
+Cargo treats every crate it serves from that temporary registry as immutable by
+name and version, so a later run at the same version can verify an earlier
+run's code. It skips extracting a crate under `$CARGO_HOME/registry/src/` once
+`.cargo-ok` exists, and it keeps compiled units of those crates in the build
+directory because they track no source files. At 0.10.2 one dry run failed with
+`E0432 unresolved import anyhow` in codewhale-core from an older extraction;
+after that extraction was moved aside, the next run passed while linking
+codewhale-state and codewhale-config built from older sources. Before
+packaging, both modes therefore refuse to start when they find a release
+crate's `<crate>-<version>` directory under any `$CARGO_HOME/registry/src/*`
+other than crates.io's `index.crates.io-*`, or a dep-info file under the build
+directory's `*/deps/` that names such a directory. The refusal lists what it
+found and deletes nothing; removing shared cache directories still needs
+explicit cleanup approval. It prints, with the paths filled in, the rerun that
+produced the 0.10.2 receipt at 14683c9983 on 2026-10-16: a new, empty
+`CARGO_HOME` and `CODEWHALE_CACHE_ROOT`.
+
+```bash
+lock="${CODEWHALE_CACHE_ROOT}/build.lock"
+root="${CODEWHALE_CACHE_ROOT}/release-verify-$(git rev-parse --short=10 HEAD)"
+mkdir "${root}"
+CODEWHALE_BUILD_LOCK_FILE="${lock}" CARGO_HOME="${root}/cargo-home" \
+  CODEWHALE_CACHE_ROOT="${root}" ./scripts/release/publish-crates.sh dry-run
+```
+
+That run was a cold build of about 19 GB and 962 compile steps, so check
+`df -h` first. It kept its lock file inside the new root and did not serialize
+with other builds on the machine; `CODEWHALE_BUILD_LOCK_FILE` keeps the machine
+lock. `CODEWHALE_CACHE_ROOT` moves the build directory only when `cargo` runs
+through `scripts/dev-cargo.sh`; with plain Cargo, set
+`CARGO_TARGET_DIR="${root}/target"` instead. Every run leaves state that the
+next run at the same version refuses, so publish mode needs another new root,
+with `cargo login` run for that `CARGO_HOME` (the token lives there). The CNB
+`work/v*` release preflight in `.cnb.yml` calls this script in a fresh
+container, where the check finds nothing. Known limits: the check also refuses
+compiled units recorded against a different `CARGO_HOME`, which Cargo would
+rebuild rather than reuse, and it does not scan `<target-triple>/`
+subdirectories of the build directory, which host-only package verification
+does not use.
+
 If a dry-run is interrupted (Ctrl-C, or a shell that gets killed), inspect the
-half-packed `target/package` before retrying and coordinate with active builds.
+half-packed `package/` directory in Cargo's build directory before retrying and
+coordinate with active builds. With plain Cargo that is `target/package`;
+`scripts/dev-cargo.sh` moves it under `${CODEWHALE_CACHE_ROOT}/build/`, and
+`cargo metadata --format-version 1 --no-deps` reports it as `build_directory`.
 Cargo can resume against it and every unpacked tarball may then fail with
 `error: Current directory is invalid:
 No such file or directory (os error 2)` — which looks like a compiler or
@@ -351,7 +394,9 @@ and fails branch-only release sources before assets are published.
    dependency order lives in `scripts/release/crates.sh`; do not maintain a
    second handwritten order in this runbook. The helper waits for each new
    version to appear on crates.io before moving to dependents and safely skips
-   versions that are already public on a rerun.
+   versions that are already public on a rerun. Run it from a new, empty
+   `CARGO_HOME` and cache root, as the package preflight above describes; the
+   dry run's state makes it refuse otherwise.
    If shared `main` advances or the checkout becomes dirty, stop and coordinate
    a new candidate or separately authorized recovery with Hunter. Do not switch
    branches, create another checkout, force-fetch a conflicting tag or bypass
@@ -576,7 +621,9 @@ for that version — bump to the next patch instead.
   - keep [docs/INSTALL.md](INSTALL.md#roll-back-to-a-previous-release) in sync
     with these commands
 - Crates publish partially:
-  - rerun `./scripts/release/publish-crates.sh publish`
+  - rerun `./scripts/release/publish-crates.sh publish` from another new,
+    empty `CARGO_HOME` and cache root (see the package preflight); the failed
+    run's own state makes it refuse otherwise
   - already-published crate versions will be skipped
 - GitHub assets missing or checksum manifest incomplete:
   - fix `.github/workflows/release.yml`, but do not rerun it over an existing
