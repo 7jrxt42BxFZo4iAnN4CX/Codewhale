@@ -1113,6 +1113,7 @@ version = "0.10.2"
 dependencies = [
  "codewhale-command-contract",
  "codewhale-protocol",
+ "codewhale-sanitize",
  "serde_json",
 ]
 
