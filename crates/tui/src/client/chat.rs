@@ -3733,6 +3733,18 @@ fn parse_chat_message_for_route(
     provider: ProviderKind,
     base_url: &str,
 ) -> Result<MessageResponse> {
+    let payload = match (
+        payload.get("choices"),
+        payload.get("success"),
+        payload.get("data"),
+    ) {
+        (None, Some(Value::Bool(true)), Some(data))
+            if data.get("choices").is_some_and(Value::is_array) =>
+        {
+            data
+        }
+        _ => payload,
+    };
     let id = payload
         .get("id")
         .and_then(Value::as_str)

@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Cloud Model Studio (Coding Plan)" and "Alibaba Cloud Model Studio (Coding
   Plan, Anthropic API)"; the default MiniMax and Model Studio rows keep their
   names (CW-7408).
+- Compaction no longer fails with "Chat API response missing choices" on
+  gateways that wrap a non-streaming Chat Completions response as
+  `{"data": {"choices": ...}, "success": true}`, such as Sub2API in front of
+  Cline. A response with top-level `choices` parses as before, and an envelope
+  without `success: true` still fails. Thanks @luestr for the response headers
+  and sanitized body in #6981; the `/new` refusal reported there is not
+  changed by this fix.
 
 ## [0.10.2] - 2026-10-13
 
