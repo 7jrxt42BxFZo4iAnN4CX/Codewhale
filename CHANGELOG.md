@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `/init` now asks the model to write `AGENTS.md` in the interface language
+  (for example Simplified Chinese when the TUI runs in zh-Hans), headings
+  included, keeping commands, file paths and code identifiers as they are.
+  Before, the prompt always said "Write in English". The non-interactive
+  `codewhale init` template is unchanged and still English
+  ([#6964](https://github.com/codewhale-hq/Codewhale/issues/6964)).
 - A shell command, shell input or verifier that contains an invisible or
   bidirectional Unicode character is now refused before any approval card or
   reviewer call in Ask, Auto-Review and Never. This covers zero-width spaces

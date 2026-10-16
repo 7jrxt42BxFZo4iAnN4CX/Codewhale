@@ -2188,6 +2188,10 @@ impl CommandPresentationContext for PresentationAdapter<'_> {
         apply_named_replacements(&template, replacements)
             .ok_or_else(|| "invalid translation replacement contract".to_string())
     }
+
+    fn language_name(&self) -> &'static str {
+        self.host.app.borrow().ui_locale.translation_target_name()
+    }
 }
 
 /// Resolve session-control and structural-copy runtime keys to the current

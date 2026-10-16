@@ -128,6 +128,10 @@ pub trait CommandWorkspaceContext {
 pub trait CommandPresentationContext {
     /// Resolve a stable message key with its named replacements.
     fn translate(&self, key: &str, replacements: &[(&str, &str)]) -> Result<String, String>;
+
+    fn language_name(&self) -> &'static str {
+        "English"
+    }
 }
 
 /// Portable receipt for a successful atomic media attachment (FEAT-018 D4).
