@@ -219,6 +219,26 @@ impl Engine {
         ))
     }
 
+    fn learn_summary_image_cap(
+        &mut self,
+        prepared: &PreparedCompactionEnvelope,
+        err: &anyhow::Error,
+    ) -> Option<usize> {
+        let rejection =
+            crate::llm_client::image_count_rejection(&format!("{err:#}").to_lowercase())?;
+        let mut messages = self.session.messages.to_vec();
+        crate::image_attach::strip_images_when_unsupported(
+            &mut messages,
+            prepared.config.image_input,
+            &prepared.config.model,
+        );
+        if let Some(cap) = prepared.image_cap {
+            crate::image_attach::cap_request_images(&mut messages, cap);
+        }
+        let sent = crate::image_attach::count_request_images(&messages);
+        self.learn_image_cap(&prepared.config.model, sent, rejection)
+    }
+
     pub(super) fn prepare_compaction_envelope(
         &self,
         mut config: CompactionConfig,
@@ -471,6 +491,7 @@ impl Engine {
                 }
             }
             Err(err) => {
+                self.learn_summary_image_cap(&prepared, &err);
                 let message = crate::compaction::report_compaction_failure(
                     "Making room failed",
                     &id,
@@ -743,6 +764,7 @@ impl Engine {
                 }
                 Err(err) => {
                     *auto_compaction_suppressed = true;
+                    self.learn_summary_image_cap(&prepared, &err);
                     // Log error but continue with original messages (never corrupt)
                     let message = crate::compaction::report_compaction_failure(
                         "Making room failed",
@@ -859,6 +881,15 @@ impl Engine {
         let result = match compaction_result {
             Ok(result) => result,
             Err(err) => {
+                if let Some(cap) = self.learn_summary_image_cap(&prepared, &err) {
+                    let message = format!(
+                        "Making room: {} refused the summary request's images; retrying with at most {cap} per request. Original conversation was preserved.",
+                        prepared.config.model
+                    );
+                    self.emit_compaction_failed(id.clone(), true, message).await;
+                    self.finish_compaction(&id);
+                    return true;
+                }
                 let message = if is_provider_rejection(&err) {
                     // The turn's error line carries the provider's answer;
                     // this receipt only closes the recovery attempt.

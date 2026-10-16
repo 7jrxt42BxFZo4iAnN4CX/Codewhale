@@ -5053,6 +5053,26 @@ impl Engine {
                     let unreadable = crate::error_taxonomy::unreadable_error_notice(raw_message);
                     let message = unreadable.as_deref().unwrap_or(raw_message);
                     crate::logging::warn(format!("Provider stream error event: {message}"));
+                    if self.rlm_host.is_none()
+                        && let Some(rejection) =
+                            crate::llm_client::image_count_rejection(&message.to_lowercase())
+                    {
+                        let sent =
+                            crate::image_attach::count_request_images(&stream_request.messages);
+                        let model = self.session.model.clone();
+                        if self.learn_image_cap(&model, sent, rejection).is_some() {
+                            terminal_stream_error = true;
+                            stream_error.get_or_insert(message.to_string());
+                            let _ = self
+                                .send_stream_event(Event::error(
+                                    crate::error_taxonomy::ErrorEnvelope::image_count_exceeded(
+                                        message.to_string(),
+                                    ),
+                                ))
+                                .await;
+                            break;
+                        }
+                    }
                     // #6795: a gateway can report a transient upstream failure
                     // as an error frame inside a 200. With nothing actionable
                     // streamed that is a no-content stream death like a

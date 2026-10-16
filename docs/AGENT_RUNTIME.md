@@ -145,8 +145,9 @@ The Runtime execution ledger persists the worker's own event stream rather than
 a separate, simulated taxonomy. Compatibility APIs and types still expose this
 through the `Fleet...` prefix. `codewhale exec --output-format stream-json`
 emits
-`{"type": "content" | "tool_use" | "tool_result" | "sandbox_denied" |
-"workflow_event" | "session_capture" | "turn_usage" | "metadata" | "done" |
+`{"type": "content" | "tool_use" | "tool_result" | "agent_spawned" |
+"sandbox_denied" | "workflow_event" | "session_capture" | "service_released" |
+"turn_usage" | "metadata" | "status" | "request_image_window" | "done" |
 "error"}` lines, which map onto the Runtime ledger's compatibility type
 `FleetWorkerEventPayload` (`RunningTool`, `WorkflowEvent`, `Running`,
 `Completed`, `Failed`, …). `workflow_event` carries the typed

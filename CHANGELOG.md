@@ -28,15 +28,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (runtime threads store it as a status item with that code, `exec
   --output-format stream-json` prints it and the TUI shows it), and
   `/preview-request` and the compaction summary request apply the same
-  window. A sub-agent no longer retries a count rejection as a transient
+  window. A summary request refused for its image count teaches the limit
+  too, and the context recovery that sent it retries under that limit. A
+  sub-agent no longer retries a count rejection as a transient
   failure. Known limits: nothing changes until a provider has refused once,
   and no documented per-model limits are applied; the learned limit is kept
   in memory per engine and per sub-agent, so a restart learns it again with
   one refused request; the oldest images go first, user attachments
   included; a refusal that arrives mid-stream ends that request and only the
   next send uses the limit; a gateway that reports the refusal as a 5xx is
-  retried unchanged by the transport first; and a request-body size (HTTP
-  413) refusal on an ordinary turn still has no recovery (Refs CW-7235).
+  retried unchanged by the transport first; a request-body size (HTTP
+  413) refusal on an ordinary turn still has no recovery; and the context
+  budget estimate still counts every stored image, including those the
+  window sends as notes, so a small context window can still trip context
+  recovery (Refs CW-7235).
 - Switching provider is now refused while a turn is running, as model,
   thinking and permission changes already were. The refusal covers
   `/provider <id>`, the provider picker, a custom provider, setup and login

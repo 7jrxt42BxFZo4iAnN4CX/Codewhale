@@ -78,7 +78,7 @@ Workflow IR 另有一个默认的结构校验上限：最多五层嵌套节点�
 
 ## 事件词汇
 
-Runtime 执行账本持久化的是 worker 自己的事件流，而不是另一套模拟出来的分类。兼容性 API 和类型仍以 `Fleet...` 前缀暴露它。`codewhale exec --output-format stream-json` 会输出 `{"type": "content" | "tool_use" | "tool_result" | "sandbox_denied" | "workflow_event" | "session_capture" | "turn_usage" | "metadata" | "done" | "error"}` 形式的行，它们映射到 Runtime 账本的兼容类型 `FleetWorkerEventPayload`（`RunningTool`、`WorkflowEvent`、`Running`、`Completed`、`Failed` 等）。`workflow_event` 在 Workflow 运行期间携带带类型的 run/phase/task/gate 回执，并作为带类型的 `WorkflowEvent` 保留在 Runtime 执行账本中；终态的 `done` 或 `error` 仍由外层 Runtime worker 负责。一套词汇，两个表面。
+Runtime 执行账本持久化的是 worker 自己的事件流，而不是另一套模拟出来的分类。兼容性 API 和类型仍以 `Fleet...` 前缀暴露它。`codewhale exec --output-format stream-json` 会输出 `{"type": "content" | "tool_use" | "tool_result" | "agent_spawned" | "sandbox_denied" | "workflow_event" | "session_capture" | "service_released" | "turn_usage" | "metadata" | "status" | "request_image_window" | "done" | "error"}` 形式的行，它们映射到 Runtime 账本的兼容类型 `FleetWorkerEventPayload`（`RunningTool`、`WorkflowEvent`、`Running`、`Completed`、`Failed` 等）。`workflow_event` 在 Workflow 运行期间携带带类型的 run/phase/task/gate 回执，并作为带类型的 `WorkflowEvent` 保留在 Runtime 执行账本中；终态的 `done` 或 `error` 仍由外层 Runtime worker 负责。一套词汇，两个表面。
 
 `session_capture` 在 exec 运行把自己的对话记录保存为会话时发出一次，并且只在一个位置携带可恢复的 id：
 

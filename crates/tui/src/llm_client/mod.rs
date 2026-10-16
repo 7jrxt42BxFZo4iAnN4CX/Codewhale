@@ -807,6 +807,7 @@ pub(crate) fn image_count_rejection(lower: &str) -> Option<ImageCountRejection> 
         "images per message",
         "image(s) may be provided",
         "images may be provided",
+        "images can be provided",
     ]
     .iter()
     .find_map(|phrase| lower.find(*phrase));
@@ -815,16 +816,41 @@ pub(crate) fn image_count_rejection(lower: &str) -> Option<ImageCountRejection> 
             .iter()
             .any(|word| lower.contains(*word))
     });
-    let at_most_images = lower.match_indices("at most ").find_map(|(index, marker)| {
-        let rest = &lower[index + marker.len()..];
-        let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
-        (digits > 0 && rest[digits..].trim_start().starts_with("image")).then_some(index)
-    });
-    let start = phrase.or(number_of_images).or(at_most_images)?;
+    let bounded_images = ["at most ", "maximum of ", "max of ", "up to "]
+        .iter()
+        .find_map(|marker| {
+            lower.match_indices(*marker).find_map(|(index, marker)| {
+                let rest = &lower[index + marker.len()..];
+                let digits =
+                    rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+                (digits > 0 && rest[digits..].trim_start().starts_with("image")).then_some(index)
+            })
+        });
+    let start = phrase.or(number_of_images).or(bounded_images)?;
     let clause_start = lower[..start]
-        .rfind(['.', '\n', '{', '"'])
+        .rfind(['.', '\n', '{', '"', ';'])
         .map_or(0, |index| index + 1);
-    let clause = &lower[clause_start..];
+    let clause_end = lower[start..]
+        .find(['\n', '}', '"', ';'])
+        .map_or(lower.len(), |index| start + index);
+    let clause = &lower[clause_start..clause_end];
+    let sentence = &lower[clause_start
+        ..lower[start..clause_end]
+            .find('.')
+            .map_or(clause_end, |index| start + index)];
+    let read = |text: &str, marker: &str| {
+        text.match_indices(marker).find_map(|(index, marker)| {
+            let rest = text[index + marker.len()..].trim_start();
+            let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+            let unit = ["mb", "kb", "gb", "px", "pixel", "token", "byte", "%", ">"]
+                .iter()
+                .any(|unit| rest[digits..].trim_start().starts_with(unit));
+            if digits == 0 || unit {
+                return None;
+            }
+            rest[..digits].parse::<usize>().ok()
+        })
+    };
     let limit = [
         "at most ",
         "maximum of ",
@@ -842,11 +868,11 @@ pub(crate) fn image_count_rejection(lower: &str) -> Option<ImageCountRejection> 
         "maximum ",
     ]
     .iter()
-    .find_map(|marker| {
-        let rest = &clause[clause.find(*marker)? + marker.len()..];
-        let rest = rest.trim_start();
-        let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
-        rest[..digits].parse::<usize>().ok()
+    .find_map(|marker| read(clause, marker))
+    .or_else(|| {
+        [": ", " is "]
+            .iter()
+            .find_map(|marker| read(sentence, marker))
     });
     Some(ImageCountRejection { limit })
 }
