@@ -52,7 +52,7 @@
     {
       "kind": "DeepseekAnthropic",
       "id": "deepseek-anthropic",
-      "label": "DeepSeek",
+      "label": "DeepSeek (Anthropic API)",
       "base_url": "https://api.deepseek.com/anthropic",
       "default_model": "deepseek-flash",
       "env_vars": [

@@ -230,7 +230,7 @@
     {
       "id": "deepseek-anthropic",
       "family": "deepseek",
-      "label": "DeepSeek",
+      "label": "DeepSeek (Anthropic API)",
       "endpoint": "https://api.deepseek.com/anthropic",
       "wire": "anthropic-messages",
       "defaultModel": "deepseek-flash",
