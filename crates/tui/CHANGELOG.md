@@ -70,6 +70,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from plugins stay on demand. Finishing an OAuth login reconnects just that
   server, and `/mcp reload` redials every server that is not `lazy` and reports
   how many are not connected out of the configured total.
+- `/new` keeps configured stdio MCP servers running: the next conversation
+  adopts each live process when its workspace, MCP backend and server config
+  are unchanged, and dials only what is missing. HTTP/SSE, plugin and
+  runtime-added servers reconnect so they pick up current credentials and
+  network policy. After a provider or workspace switch, `/resume` or `/load`,
+  the MCP panel and `/mcp` show the new engine's status instead of staying
+  stale (CW-7430).
+- Resuming a session whose offline queue still holds unsent messages now shows
+  a warning naming how many will send after your next message and how to drop
+  them with `/queue clear`; it previously hid behind the resume notice. A
+  failed queue write is logged with the OS error and session id. Thanks
+  @SergiuSSoluS for reporting the re-delivered turns in #6978. Restored
+  messages still send automatically after your next message.
+- The mobile page retires an approval card's Allow and Deny buttons when that
+  approval is decided from another client, cancelled or timed out, and shows
+  which happened (CW-6880).
+- Settings name compaction "Compact at" with a plain-language hint, explain
+  Input history as the number of sent messages kept for recall, and label the
+  Anthropic-compatible DeepSeek endpoint "DeepSeek (Anthropic API)"
+  (CW-7406, CW-7408).
 - Running shell commands open an inspector with their output and status. It
   follows new output until you scroll back, and drops Stop once the command
   ends. `Alt+V` opens the card you clicked, even after newer cards arrive or a
