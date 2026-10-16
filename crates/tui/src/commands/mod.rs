@@ -2370,7 +2370,10 @@ mod tests {
         use codewhale_command_contract::handler::{CommandCapabilities, CommandHandler};
 
         for (name, expected) in [
-            ("init", CommandCapabilities::WORKSPACE),
+            (
+                "init",
+                CommandCapabilities::WORKSPACE.union(CommandCapabilities::PRESENTATION),
+            ),
             ("lsp", CommandCapabilities::PROJECT),
             ("share", CommandCapabilities::SESSION_EXPORT),
             (
