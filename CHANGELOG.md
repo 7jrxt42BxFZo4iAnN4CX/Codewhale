@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `codewhale --continue` reopens a session whose terminal was closed or
+  killed mid-turn. It used to print "Recovered interrupted session" and then
+  exit with "session … is open in an interactive Codewhale session": the
+  recovery had registered the session as this process's own live session,
+  and the resume step that follows refused it. Recovery now holds the
+  session's lease only while it promotes the checkpoint, as `--resume <id>`
+  does (Refs CW-7446).
 - Queued messages restored from an earlier launch or another session are no
   longer sent automatically. They wait in the queue until `/queue send <n>`
   sends one or `/queue clear` discards them. The restore notice says so and

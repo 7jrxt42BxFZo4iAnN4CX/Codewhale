@@ -12828,14 +12828,14 @@ fn recover_interrupted_checkpoint_for_resume(launch_workspace: &Path) -> Option<
 
     let session_id = best.session.metadata.id.clone();
 
-    // Take the session's live lease before promoting or clearing anything:
+    // Hold the session's live lease while promoting or clearing anything:
     // the liveness filter above is a check, and another terminal can attach
-    // between it and these writes. The TUI's own attach then finds the lease
-    // already held by this process. Losing the race leaves every file alone.
-    match manager.reserve_session_for_attach(&session_id) {
-        Ok(lease) => lease.commit(),
-        Err(_) => return None,
-    }
+    // between it and these writes. Losing the race leaves every file alone.
+    // The lease is released on return, as `--resume <id>` does, so the resume
+    // capture that follows can take it.
+    let Ok(_lease) = manager.reserve_session_for_attach(&session_id) else {
+        return None;
+    };
 
     // Persist the checkpoint as a regular session so the TUI can load it by
     // id — unless a newer regular session file for the same id already
