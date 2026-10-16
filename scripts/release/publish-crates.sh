@@ -85,15 +85,16 @@ if [[ -d "${deps_dirs[0]}" ]]; then
 fi
 if (( ${#reused[@]} > 0 )); then
   cache_root="${CODEWHALE_CACHE_ROOT:-${XDG_CACHE_HOME:-${HOME}/.cache}/codewhale}"
-  verify_root="${cache_root}/release-verify-$(git rev-parse --short=10 HEAD 2>/dev/null || echo candidate)"
+  verify_root="${cache_root}/release-verify-$(git rev-parse --short=10 HEAD 2>/dev/null || echo candidate)-${mode}-$(date -u +%Y%m%dT%H%M%SZ)"
   {
     echo "Refusing to package release crates: Cargo would reuse ${workspace_version} state from an earlier package run instead of the current sources:"
     printf '  %s\n' "${reused[@]}"
     echo "Cargo treats crates served from its temporary package registry as immutable by name and version. It skips extraction once .cargo-ok exists and keeps compiled units that do not track their sources, so this run would verify old code. Nothing was deleted."
-    echo "Rerun from a new, empty Cargo home and cache root:"
+    echo "Rerun from a new, empty Cargo home and cache root. Every run leaves state the next run at this version refuses, so publish and each partial-publish rerun need their own root:"
     echo "  mkdir \"${verify_root}\""
     echo "  CODEWHALE_BUILD_LOCK_FILE=\"${CODEWHALE_BUILD_LOCK_FILE:-${cache_root}/build.lock}\" CARGO_HOME=\"${verify_root}/cargo-home\" CODEWHALE_CACHE_ROOT=\"${verify_root}\" $0 ${mode}"
-    echo "If cargo is not scripts/dev-cargo.sh, set CARGO_TARGET_DIR=\"${verify_root}/target\" in place of CODEWHALE_CACHE_ROOT. Publish mode also needs cargo login with that CARGO_HOME. See docs/RELEASE_RUNBOOK.md."
+    echo "CODEWHALE_CACHE_ROOT and CODEWHALE_BUILD_LOCK_FILE take effect only when cargo on PATH is scripts/dev-cargo.sh or a wrapper that execs it. Plain cargo ignores both and takes no machine build lock; with it, set CARGO_TARGET_DIR=\"${verify_root}/target\" in place of CODEWHALE_CACHE_ROOT."
+    echo "For publish mode, pass the crates.io token as CARGO_REGISTRY_TOKEN for that one command, so Cargo writes no credentials.toml under the new root. After cargo login with that CARGO_HOME instead, run cargo logout with it once the publish finishes. See docs/RELEASE_RUNBOOK.md."
   } >&2
   exit 1
 fi
