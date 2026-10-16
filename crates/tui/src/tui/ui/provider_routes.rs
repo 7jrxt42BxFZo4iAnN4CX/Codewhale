@@ -786,8 +786,7 @@ pub(crate) async fn switch_provider(
         app.session.last_completion_tokens = None;
     }
 
-    let _ = engine_handle.send(Op::Shutdown).await;
-    *engine_handle = spawn_tui_engine(app, config);
+    replace_tui_engine(app, config, engine_handle).await;
     // A successful in-session switch must refresh the same key-scoped live
     // catalog as startup. TelecomJS is currently the only provider using this
     // seam; failures preserve the existing/static rows.

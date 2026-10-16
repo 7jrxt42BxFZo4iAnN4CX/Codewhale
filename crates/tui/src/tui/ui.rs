@@ -489,8 +489,16 @@ mod memory_quick_add_tests {
     }
 }
 
-fn spawn_tui_engine(app: &mut App, api_config: &Config) -> EngineHandle {
-    let handle = spawn_engine(build_engine_config(app, api_config), api_config);
+fn spawn_tui_engine(
+    app: &mut App,
+    api_config: &Config,
+    mcp_handoff: Option<crate::mcp::McpHandoff>,
+) -> EngineHandle {
+    let handle = spawn_engine(
+        build_engine_config(app, api_config),
+        api_config,
+        mcp_handoff,
+    );
     app.mcp_snapshot_generation = 0;
     app.mcp_snapshot_generation_invalidated = false;
     // Prime durable agent + coordination state through the same engine event
@@ -500,11 +508,21 @@ fn spawn_tui_engine(app: &mut App, api_config: &Config) -> EngineHandle {
     handle
 }
 
+async fn replace_tui_engine(app: &mut App, api_config: &Config, engine_handle: &mut EngineHandle) {
+    let mcp_handoff = engine_handle.retire_mcp_for_handoff();
+    let _ = engine_handle.send(Op::Shutdown).await;
+    *engine_handle = spawn_tui_engine(app, api_config, mcp_handoff);
+}
+
 /// Startup and consent-triggered replacement restore the same conversation
 /// before admitting any pending input. The existing engine remains the sole
 /// owner of model-facing history and the frozen system prefix.
-async fn spawn_tui_engine_with_session(app: &mut App, config: &Config) -> Result<EngineHandle> {
-    let handle = spawn_tui_engine(app, config);
+async fn spawn_tui_engine_with_session(
+    app: &mut App,
+    config: &Config,
+    mcp_handoff: Option<crate::mcp::McpHandoff>,
+) -> Result<EngineHandle> {
+    let handle = spawn_tui_engine(app, config, mcp_handoff);
     let restored = async {
         if !app.api_messages.is_empty() {
             handle

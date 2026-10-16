@@ -694,7 +694,7 @@ pub(crate) async fn run_exec_agent(
             .unwrap_or_else(crate::tools::subagent::AdvisorConfig::disabled),
     };
 
-    let engine_handle = spawn_engine(engine_config, &execution_config);
+    let engine_handle = spawn_engine(engine_config, &execution_config, None);
     // The Full Access posture travels in the op's auto_approve/approval_mode
     // fields; modes no longer carry permission.
     let mode = AppMode::Agent;

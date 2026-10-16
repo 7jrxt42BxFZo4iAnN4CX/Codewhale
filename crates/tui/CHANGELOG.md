@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `/resume`, `/load`, and a provider, profile or plugin change keep
+  configured stdio MCP servers running, as `/new` already did: the replacement
+  engine adopts each live process when its workspace, MCP backend and server
+  config are unchanged. A workspace switch still restarts every server, and
+  servers added at runtime still close (CW-7430).
+
 ## [0.10.2] - 2026-10-13
 
 - OpenHarmony builds on Windows select Ninja, with an SDK-bundled fallback and

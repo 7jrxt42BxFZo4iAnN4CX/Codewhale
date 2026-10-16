@@ -1145,7 +1145,7 @@ pub async fn run_tui(
     app.redaction_gate = config.redaction_confirmation_required();
 
     // Restore before admitting initial input, including resumed conversations.
-    let engine_handle = spawn_tui_engine_with_session(&mut app, config).await?;
+    let engine_handle = spawn_tui_engine_with_session(&mut app, config, None).await?;
     crate::startup_trace::mark("engine_spawned");
     // The translation client is optional: it never crashes the TUI on
     // startup, even when the API key is missing, the base URL is malformed,
@@ -4562,8 +4562,7 @@ pub(crate) async fn run_event_loop(
             apply_provider_fallback_switch(app, &mut engine_handle, config, rollback).await;
         }
         if let Some(rollback_warning) = respawn_after_provider_rollback {
-            let _ = engine_handle.send(Op::Shutdown).await;
-            engine_handle = spawn_tui_engine(app, config);
+            replace_tui_engine(app, config, &mut engine_handle).await;
             if !app.api_messages.is_empty() {
                 let _ = engine_handle
                     .send(Op::SyncSession {
@@ -5456,9 +5455,11 @@ pub(crate) async fn run_event_loop(
                                     // The engine already spawned with masking on
                                     // (the unconfirmed safe default). Rebuild it so
                                     // its client picks up the confirmed opt-out.
+                                    let mcp_handoff = engine_handle.retire_mcp_for_handoff();
                                     let _ = engine_handle.send(Op::Shutdown).await;
                                     engine_handle =
-                                        spawn_tui_engine_with_session(app, config).await?;
+                                        spawn_tui_engine_with_session(app, config, mcp_handoff)
+                                            .await?;
                                     app.retire_redaction_gate_notice(
                                         RedactionGateNotice::EnterGuidance,
                                     );

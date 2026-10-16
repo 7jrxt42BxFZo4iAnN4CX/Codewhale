@@ -763,6 +763,14 @@ pub struct EngineHandle {
     /// reading approvals for a long time.
     subagent_manager: SharedSubAgentManager,
     terminal_worker_events: Option<Arc<TerminalEventDelivery>>,
+    mcp_pool_slot: Arc<StdMutex<McpPoolSlot>>,
+}
+
+#[derive(Default)]
+struct McpPoolSlot {
+    pool: std::sync::Weak<AsyncMutex<McpPool>>,
+    handoff: Option<crate::mcp::McpHandoff>,
+    handed_off: bool,
 }
 
 const MAX_PENDING_COMPACTION_CANCELLATIONS: usize = 64;
@@ -1004,7 +1012,7 @@ pub struct Engine {
     /// Abort the supervisor's reconnect handshakes when its pool is retired.
     mcp_supervisor_task: Option<tokio::task::AbortHandle>,
     mcp_boot_done: Option<tokio::sync::watch::Receiver<bool>>,
-    mcp_handoff: Option<crate::mcp::McpHandoff>,
+    mcp_pool_slot: Arc<StdMutex<McpPoolSlot>>,
     /// Generation owned by the currently installed boot receiver. Terminal
     /// cleanup is conditional on this exact value so an older pass can never
     /// clear a newer receiver.
@@ -2338,7 +2346,7 @@ impl Engine {
             mcp_supervisor_rx: None,
             mcp_supervisor_task: None,
             mcp_boot_done: None,
-            mcp_handoff: None,
+            mcp_pool_slot: Arc::default(),
             mcp_boot_generation: None,
             mcp_boot_task: None,
             mcp_event_generation: 0,
@@ -2411,6 +2419,7 @@ impl Engine {
                 .subagent_execution_limits
                 .as_ref()
                 .map(|limits| limits.terminal_events.clone()),
+            mcp_pool_slot: Arc::clone(&engine.mcp_pool_slot),
         };
 
         (engine, handle)
@@ -3114,7 +3123,11 @@ impl Engine {
         // both conversations use the same workspace, so the old pool retires.
         // The sync handler starts the session boot once the new session is
         // installed.
-        self.mcp_handoff = if self.child_host.is_none() {
+        let mut slot = self
+            .mcp_pool_slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        slot.handoff = if self.child_host.is_none() && !slot.handed_off {
             self.mcp_pool
                 .as_ref()
                 .and_then(|pool| pool.try_lock().ok())
@@ -3122,6 +3135,7 @@ impl Engine {
         } else {
             None
         };
+        drop(slot);
         self.drop_mcp_pool();
         // C02-17: cumulative usage belongs to the conversation that spent
         // it. The sync carries no prior total for the installed session, so
@@ -3481,6 +3495,10 @@ impl Engine {
                 crate::mcp::format_mcp_error_for_display(&error)
             );
         }
+        self.mcp_pool_slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .handoff = None;
 
         loop {
             let Some(input) = self.next_run_input(host_managed_turns).await else {
@@ -4048,7 +4066,10 @@ impl Engine {
                                 crate::mcp::format_mcp_error_for_display(&error)
                             );
                         }
-                        self.mcp_handoff = None;
+                        self.mcp_pool_slot
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .handoff = None;
                         // SessionUpdated acknowledges the sync. A generic status
                         // would immediately cover the host's confirmed resume receipt.
                         self.emit_session_updated().await;
@@ -7661,7 +7682,16 @@ impl Engine {
             self.config.mcp_oauth_callback_port,
             self.config.mcp_oauth_callback_url.clone(),
         );
+        let mut slot = self
+            .mcp_pool_slot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot.handed_off {
+            let _ = pool.retire_for_handoff();
+        }
         let pool = Arc::new(AsyncMutex::new(pool));
+        slot.pool = Arc::downgrade(&pool);
+        drop(slot);
         self.mcp_pool = Some(Arc::clone(&pool));
         self.ensure_mcp_supervisor();
         Ok(pool)
@@ -8225,10 +8255,6 @@ impl Engine {
     /// pool, skipped a session boot). Progress and the finished receipt flow
     /// as `Event::McpSessionBoot` updates under that generation.
     async fn start_mcp_session_boot(&mut self, refresh: McpConnectRefresh) -> anyhow::Result<u64> {
-        let handoff = self
-            .mcp_handoff
-            .take()
-            .filter(|_| matches!(refresh, McpConnectRefresh::IfChanged));
         if matches!(refresh, McpConnectRefresh::IfChanged)
             && (self.child_host.is_some() || !self.config.features.enabled(Feature::Mcp))
         {
@@ -8266,8 +8292,14 @@ impl Engine {
                 // so a failed explicit reload leaves the live pool intact.
                 McpConnectRefresh::Force => pool.force_reload_config_sources()?,
             }
-            if let Some(handoff) = handoff {
-                pool.adopt_handoff(handoff);
+            if matches!(refresh, McpConnectRefresh::IfChanged) {
+                let mut slot = self
+                    .mcp_pool_slot
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if let Some(handoff) = slot.handoff.take() {
+                    pool.adopt_handoff(handoff);
+                }
             }
             let eager = pool.eager_boot_server_names(&requested);
             let (pending, auth_errors) = pool.collect_pending_connects(Some(&eager));
@@ -9418,8 +9450,17 @@ fn apply_patch_permission_paths(input: &Value) -> Vec<String> {
 }
 
 /// Spawn the engine in a background task
-pub fn spawn_engine(config: EngineConfig, api_config: &Config) -> EngineHandle {
+pub fn spawn_engine(
+    config: EngineConfig,
+    api_config: &Config,
+    mcp_handoff: Option<crate::mcp::McpHandoff>,
+) -> EngineHandle {
     let (engine, handle) = Engine::new(config, api_config);
+    engine
+        .mcp_pool_slot
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .handoff = mcp_handoff;
 
     // Box the run future before supervision. An extra async wrapper embeds
     // the large engine state again in both its own and the supervisor's poll
@@ -9628,6 +9669,7 @@ pub(crate) fn mock_engine_handle() -> MockEngineHandle {
             1,
         ),
         terminal_worker_events: Some(Arc::new(TerminalEventDelivery::default())),
+        mcp_pool_slot: Arc::default(),
     };
 
     MockEngineHandle {

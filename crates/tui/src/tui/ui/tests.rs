@@ -20292,7 +20292,7 @@ async fn redaction_confirmation_restores_history_before_first_local_provider_req
     app.input = "What color did I give you?".to_string();
     app.cursor_position = app.input.chars().count();
     app.auto_submit_initial_input = true;
-    let engine = spawn_tui_engine_with_session(&mut app, &config)
+    let engine = spawn_tui_engine_with_session(&mut app, &config, None)
         .await
         .unwrap();
     for confirming in [false, true] {
@@ -20310,7 +20310,7 @@ async fn redaction_confirmation_restores_history_before_first_local_provider_req
     }
     config.record_redaction_confirmation().unwrap();
     engine.send(Op::Shutdown).await.unwrap();
-    let replacement = spawn_tui_engine_with_session(&mut app, &config)
+    let replacement = spawn_tui_engine_with_session(&mut app, &config, None)
         .await
         .unwrap();
     let snapshot = replacement.get_session_snapshot().await.unwrap();

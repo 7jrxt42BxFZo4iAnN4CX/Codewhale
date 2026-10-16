@@ -914,8 +914,7 @@ pub(crate) async fn switch_workspace(
     apply_workspace_runtime_state(app, config, workspace.clone());
     sync_runtime_workspace_state(task_manager, workspace.clone()).await;
 
-    let _ = engine_handle.send(Op::Shutdown).await;
-    *engine_handle = spawn_tui_engine(app, config);
+    replace_tui_engine(app, config, engine_handle).await;
     if !app.api_messages.is_empty() {
         let _ = engine_handle
             .send(Op::SyncSession {

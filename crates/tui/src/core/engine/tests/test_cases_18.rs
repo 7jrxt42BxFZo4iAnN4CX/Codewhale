@@ -893,6 +893,7 @@ fn engine_handle_try_send_does_not_block_when_op_channel_is_full() {
             1,
         ),
         terminal_worker_events: None,
+        mcp_pool_slot: Arc::default(),
     };
 
     // Fill the op channel with one message (capacity = 1).

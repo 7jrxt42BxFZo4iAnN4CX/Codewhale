@@ -2029,8 +2029,7 @@ pub(crate) async fn handle_view_events(
                         // order (drop = engine/UI desync). A wedge is possible
                         // only while a saturated engine finishes its turn.
                         if respawn {
-                            let _ = engine_handle.send(Op::Shutdown).await;
-                            *engine_handle = spawn_tui_engine(app, config);
+                            replace_tui_engine(app, config, engine_handle).await;
                         } else {
                             let _ = engine_handle
                                 .send(Op::SetModel {
