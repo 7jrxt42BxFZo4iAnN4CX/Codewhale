@@ -5300,25 +5300,26 @@ impl ConfigView {
         let context_percent = self.snapshot.context_budget.as_ref().map_or(0, |budget| {
             u8::try_from(budget.percent_basis_points / 100).unwrap_or(100)
         });
-        let mode = value_of("default_mode").unwrap_or_else(|| "agent".to_string());
-        let mode_ink = match mode.as_str() {
-            "plan" => palette::ChromeInk::PolicyPlan,
-            "operate" => palette::ChromeInk::PolicyOperate,
-            _ => palette::ChromeInk::PolicyAct,
-        };
-        let permission = value_of("approval_mode")
+        let mode = value_of("default_mode").map_or(codewhale_config::AppMode::Agent, |value| {
+            codewhale_config::AppMode::from_setting(&value)
+        });
+        let approval = value_of("approval_mode")
             .or_else(|| value_of("permission_posture"))
-            .unwrap_or_else(|| "ask".to_string());
-        let permission_ink = match permission.as_str() {
-            "auto-review" => palette::ChromeInk::PermissionAutoReview,
-            "full-access" => palette::ChromeInk::PermissionFullAccess,
-            _ => palette::ChromeInk::PermissionAsk,
-        };
+            .and_then(|value| codewhale_execpolicy::ApprovalMode::from_config_value(&value))
+            .unwrap_or(codewhale_execpolicy::ApprovalMode::Suggest);
+        let mode_label = crate::tui::underwater::mode_label(self.locale, mode);
+        let permission = crate::core::authority::permission_label_for(self.locale, mode, approval);
         let footer = crate::tui::phase_strip::TidelineFooter::new(
             &theme,
-            (permission.as_str(), permission_ink),
+            (
+                permission.as_ref(),
+                crate::tui::underwater::header_permission_ink(approval),
+            ),
         )
-        .mode_chip(Some((mode.as_str(), mode_ink)))
+        .mode_chip(Some((
+            mode_label.as_ref(),
+            crate::tui::underwater::header_mode_ink(mode),
+        )))
         .context_percent(context_percent);
         crate::tui::phase_strip::render_tideline_footer(
             Rect {
