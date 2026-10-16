@@ -1388,9 +1388,11 @@ Clients show it first and keep the raw arguments behind it. For task and
 automation create/update, `summary` also names the requested trust mode,
 shell, auto-approve, mode and workspace. For a shell command, task gate,
 shell input or verifier whose `curl`/`wget` request body carries a credential
-file, a secret-named variable or a credential fed through stdin, `summary`
-reads ``Upload credentials (`…`) with `…` ``; the built-in safety gate holds
-that call, so a session grant or saved allow rule cannot answer it. A shell
+file or a secret-named variable, or reads stdin fed from one of those or from
+`env`/`printenv`, `summary` reads ``Upload credentials (`…`) with `…` ``; the
+built-in safety gate holds that call, so a session grant or saved allow rule
+cannot answer it. A `curl`/`wget` too large (over 64 KiB) or too deeply nested
+to read is held the same way under its ordinary `summary`. A shell
 command containing a hidden Unicode character is refused before any
 approval is created.
 

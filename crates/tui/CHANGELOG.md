@@ -26,16 +26,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A `curl` or `wget` whose request body uploads a credential is now held by
   the built-in safety gate. This covers `-d`/`--data*`/`--json`/`-F`/
   `--url-query`/`-T`/`--upload-file`/`-H @file`/`--post-file`/`--post-data`
-  carrying `.env`, `~/.ssh/id_*` (public `.pub` keys excepted),
+  (and wget's abbreviations of them) carrying `.env`, `~/.ssh/id_*` (public
+  `.pub` keys excepted, judged per file in `{a,b}` and comma lists),
   `~/.aws/credentials`, `.netrc`, a key file, a secret-named variable such as
-  `$GITHUB_TOKEN` or `$OPENAI_API_KEY`, or a credential piped in on stdin or
-  through command substitution. Ask shows a card headed "Upload credentials
-  (…) with `…`" that a session grant or saved allow rule cannot answer;
-  Auto-Review and Never deny the call. Runtime clients receive the same
-  heading as the approval `summary`. A literal request header
+  `$GITHUB_TOKEN` or `$OPENAI_API_KEY`, or stdin fed from one of those, from
+  `env`/`printenv`, or from `echo`/`printf`/`<<<` of a secret-named variable.
+  A `curl` or `wget` too large (over 64 KiB) or too deeply nested to read is
+  held the same way under its ordinary heading. Ask shows a card headed
+  "Upload credentials (…) with `…`" that a session grant or saved allow rule
+  cannot answer; Auto-Review and Never deny the call. Runtime clients receive
+  the same heading as the approval `summary`. A literal request header
   (`-H "Authorization: Bearer $TOKEN"`) is not affected, and other upload
-  tools (scp, rsync, nc, httpie, `aws s3 cp`) and secrets inside an ordinary
-  file are not detected. Full Access is unchanged (Refs CW-7236).
+  tools (scp, rsync, nc, httpie, `aws s3 cp`), secrets inside an ordinary
+  file, here-documents and `$(printenv NAME)` inside a value are not
+  detected. Full Access is unchanged (Refs CW-7236).
 - Switching provider, model route, profile or workspace, or changing plugins,
   while a `/compact` is running or queued no longer leaves the session stuck.
   The pass on the replaced engine is stopped and the transcript says "Making

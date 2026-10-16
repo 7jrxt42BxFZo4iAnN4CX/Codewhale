@@ -1192,10 +1192,11 @@ Engine 的工具执行 ID 另行以 `tool_call_id` 出现在
 “Write notes/espresso.md”）；工作区内的路径为工作区相对路径。
 客户端应先展示它，并把原始参数留在其后。对任务与自动化的创建/更新，
 `summary` 还会写出所请求的信任模式、shell、自动批准、模式和工作区。
-对 shell 命令、任务门禁、shell 输入或校验器，若其 `curl`/`wget` 请求体携带凭据文件、
-名称表明是机密的变量，或经 stdin 送入的凭据，`summary` 显示为
+对 shell 命令、任务门禁、shell 输入或校验器，若其 `curl`/`wget` 请求体携带凭据文件
+或名称表明是机密的变量，或读取由这两者或 `env`/`printenv` 送入的 stdin，`summary` 显示为
 ``Upload credentials (`…`) with `…` ``；内置安全闸会拦住该调用，
-会话授权或已保存的 allow 规则都无法应答它。含有隐藏 Unicode 字符的 shell 命令
+会话授权或已保存的 allow 规则都无法应答它。过大（超过 64 KiB）或嵌套过深而无法读取的
+`curl`/`wget` 同样会被拦住，`summary` 保持普通内容。含有隐藏 Unicode 字符的 shell 命令
 会在创建任何审批之前被拒绝。
 
 在 `allow` 上带上 `"remember": true` 会为该工具及其参数类别记录一份**会话授权**

@@ -47,8 +47,19 @@ pub fn approval_summary_in(
         tr(locale, id).replace(&format!("{{{slot}}}"), value)
     };
 
-    let credential_uploads =
-        crate::core::authority::auto_review::credential_upload_texts(tool_name, input);
+    let credential_uploads: Vec<_> =
+        crate::core::authority::auto_review::credential_upload_texts(tool_name, input)
+            .into_iter()
+            .filter_map(|(command, uploads)| {
+                let uploads: Vec<String> = uploads
+                    .into_iter()
+                    .filter(|upload| {
+                        upload != crate::core::authority::auto_review::UNPARSED_CREDENTIAL_UPLOAD
+                    })
+                    .collect();
+                (!uploads.is_empty()).then_some((command, uploads))
+            })
+            .collect();
     if let Some((command, _)) = credential_uploads.first() {
         let uploads: Vec<&str> = credential_uploads
             .iter()

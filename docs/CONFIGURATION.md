@@ -2368,8 +2368,10 @@ reasoning contract, and all four membership ids omit generic sampling fields.
   fails closed as a hard block. Full Access skips the built-in floor. The
   safety floor covers publish-like actions, destructive background/headless
   actions, and `curl`/`wget` uploads whose request body carries a credential
-  file, a secret-named variable or a credential fed through stdin, even if an
-  allow rule matches. Outside Full Access it also refuses, in every posture, a
+  file or a secret-named variable, or reads stdin fed from one of those or
+  from `env`/`printenv`, even if an allow rule matches; a `curl`/`wget` too
+  large (over 64 KiB) or too deeply nested to read is held too. Outside Full
+  Access it also refuses, in every posture, a
   shell command, shell input or verifier containing a hidden Unicode character
   (bidirectional controls, zero-width and other invisible characters, tag
   characters, stray variation selectors, and terminal control characters

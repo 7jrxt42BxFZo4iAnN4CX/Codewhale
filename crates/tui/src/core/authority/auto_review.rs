@@ -1234,19 +1234,48 @@ fn hidden_unicode_reason(input: ExecutionInput, position: usize, ch: char, count
     )
 }
 
+pub(crate) const UNPARSED_CREDENTIAL_UPLOAD: &str = "<unparsed>";
+
+const CREDENTIAL_SCAN_MAX_BYTES: usize = 64 * 1024;
+
+fn names_upload_program(text: &str) -> bool {
+    let mut window = [0u8; 4];
+    text.bytes()
+        .filter(|byte| !matches!(byte, b'"' | b'\'' | b'\\'))
+        .any(|byte| {
+            window = [window[1], window[2], window[3], byte.to_ascii_lowercase()];
+            matches!(&window, b"curl" | b"wget")
+        })
+}
+
 fn shell_command_credential_uploads(command: &str) -> Vec<String> {
-    let Some(argvs) = codewhale_execpolicy::command_safety::command_invocations(command) else {
-        return if command.contains("curl") || command.contains("wget") {
-            vec!["<unparsed>".to_string()]
-        } else {
-            Vec::new()
-        };
+    if !names_upload_program(command) {
+        return Vec::new();
+    }
+    let argvs = (command.len() <= CREDENTIAL_SCAN_MAX_BYTES)
+        .then(|| codewhale_execpolicy::command_safety::command_invocations(command))
+        .flatten();
+    let Some(argvs) = argvs else {
+        return vec![UNPARSED_CREDENTIAL_UPLOAD.to_string()];
     };
-    let fed_from_credential = || {
+    let fed_from_credential_file = || {
         command.split_whitespace().any(names_credential_file)
             || argvs.iter().any(
                 |argv| matches!(argv.as_slice(), [word] if word == "env" || word == "printenv"),
             )
+    };
+    let fed_from_secret_variable = || {
+        argvs.iter().any(|argv| match argv.as_slice() {
+            [program, names @ ..] if program == "printenv" => names
+                .iter()
+                .any(|name| codewhale_sanitize::sanitize::is_sensitive_key_name(name)),
+            [program, ..]
+                if matches!(program.as_str(), "echo" | "printf") || program.starts_with("<<<") =>
+            {
+                argv.iter().any(|word| names_secret_variable(word))
+            }
+            _ => false,
+        })
     };
     let mut uploads: Vec<String> = Vec::new();
     for argv in &argvs {
@@ -1273,7 +1302,9 @@ fn shell_command_credential_uploads(command: &str) -> Vec<String> {
                 || candidates
                     .iter()
                     .any(|candidate| names_credential_file(candidate))
-                || ((reads_stdin || substitutes) && fed_from_credential());
+                || ((reads_stdin || substitutes)
+                    && (fed_from_credential_file()
+                        || (kind != UploadValue::Header && fed_from_secret_variable())));
             if credential && !uploads.iter().any(|upload| upload == value) {
                 uploads.push(value.to_string());
             }
@@ -1291,18 +1322,21 @@ enum UploadValue {
 }
 
 fn upload_values<'a>(program: &str, args: &'a [String]) -> Vec<(UploadValue, &'a str)> {
-    let long_kind = |name: &str| match (program, name) {
-        (
-            "curl",
-            "data" | "data-ascii" | "data-binary" | "data-urlencode" | "json" | "form"
-            | "url-query",
-        ) => Some(UploadValue::Data),
-        ("curl", "data-raw" | "form-string") | ("wget", "post-data" | "body-data") => {
-            Some(UploadValue::Literal)
+    let long_kind = |name: &str| {
+        let wget = |option: &str| program == "wget" && name.len() >= 6 && option.starts_with(name);
+        match (program, name) {
+            (
+                "curl",
+                "data" | "data-ascii" | "data-binary" | "data-urlencode" | "json" | "form"
+                | "url-query",
+            ) => Some(UploadValue::Data),
+            ("curl", "data-raw" | "form-string") => Some(UploadValue::Literal),
+            ("curl", "upload-file") => Some(UploadValue::File),
+            ("curl", "header") => Some(UploadValue::Header),
+            _ if wget("post-data") || wget("body-data") => Some(UploadValue::Literal),
+            _ if wget("post-file") || wget("body-file") => Some(UploadValue::File),
+            _ => None,
         }
-        ("curl", "upload-file") | ("wget", "post-file" | "body-file") => Some(UploadValue::File),
-        ("curl", "header") => Some(UploadValue::Header),
-        _ => None,
     };
     if !matches!(program, "curl" | "wget") {
         return Vec::new();
@@ -1369,15 +1403,17 @@ fn names_secret_variable(value: &str) -> bool {
 }
 
 fn names_credential_file(text: &str) -> bool {
-    let components: Vec<String> = text
-        .split(|ch: char| ch.is_whitespace() || "@<=/\\:;,\"'()`{}[]".contains(ch))
-        .filter(|component| !component.is_empty())
-        .map(str::to_ascii_lowercase)
-        .collect();
-    !components.last().is_some_and(|last| last.ends_with(".pub"))
-        && components
-            .iter()
-            .any(|component| crate::core::authority::is_credential_file_name(component))
+    text.split(|ch: char| ",{}|&>".contains(ch)).any(|path| {
+        let components: Vec<String> = path
+            .split(|ch: char| ch.is_whitespace() || "@<=/\\:;\"'()`[]".contains(ch))
+            .filter(|component| !component.is_empty())
+            .map(str::to_ascii_lowercase)
+            .collect();
+        !components.last().is_some_and(|last| last.ends_with(".pub"))
+            && components
+                .iter()
+                .any(|component| crate::core::authority::is_credential_file_name(component))
+    })
 }
 
 pub(crate) fn credential_upload_texts<'a>(
