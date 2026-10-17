@@ -268,6 +268,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when the provider reports none (Refs CW-7450).
 - The `/statusline` picker's item hints are localized in all 15 UI languages
   instead of always showing English.
+- A custom OpenAI-compatible relay's model list is now discovered. Four
+  separate defects kept it out of `/model`: a roster answering both `data` and
+  `models` was rejected as a duplicate field; only the active route was probed;
+  `/v1/models` was authenticated with `x-api-key` whenever the route declared
+  `wire = "anthropic"`, which a relay that rejects that header answered with
+  `401 missing_api_key`; and the picker's default view then hid the relay's own
+  rows. The startup probe now covers every configured relay, a built-in
+  provider name pointed at a private endpoint (`[providers.openai]` against a
+  relay) counts as a relay, and the provider panel no longer reports its
+  catalog missing while listing it.
 
 ## [0.10.2] - 2026-10-13
 
