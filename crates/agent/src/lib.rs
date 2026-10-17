@@ -823,7 +823,7 @@ mod tests {
         let resolved = registry.resolve_ok(None, Some(ProviderKind::XiaomiMimo));
 
         assert_eq!(resolved.resolved.provider, ProviderKind::XiaomiMimo);
-        assert_eq!(resolved.resolved.id, "mimo-v2.5-pro");
+        assert_eq!(resolved.resolved.id, "mimo-v2.6-pro");
         assert!(resolved.resolved.supports_reasoning);
     }
 
@@ -938,7 +938,7 @@ mod tests {
 
         let resolved = registry.resolve_ok(Some("omni"), Some(ProviderKind::XiaomiMimo));
         assert_eq!(resolved.resolved.provider, ProviderKind::XiaomiMimo);
-        assert_eq!(resolved.resolved.id, "mimo-v2.5");
+        assert_eq!(resolved.resolved.id, "mimo-v2.6-flash");
         assert!(resolved.resolved.supports_tools);
     }
 

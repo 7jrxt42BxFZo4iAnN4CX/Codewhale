@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The model catalog now carries current models from Anthropic, Google and
+  Meta. Anthropic: `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`
+  and `claude-fable-5-1`; the Auto router's cheap tier and the Scout companion
+  stay on `claude-haiku-4-5`. The default stays `claude-sonnet-4-6`, because
+  Codewhale does not yet apply the 5.5 models' request rules, and no default
+  uses `claude-sonnet-4-5`, which retires on 2026-11-30. OpenAI's GPT-6
+  family (`gpt-6-sol`, `gpt-6.1-sol`, `gpt-6-luna` and `gpt-6-astra`) is left
+  out of the direct route because OpenAI does not support normal tool calling
+  for them over Chat Completions. Google: `gemini-4-argon` and
+  `gemini-3.8-flash`. Z.ai: `GLM-5.3-FlashX` is not offered because the
+  Coding Plan endpoint the zai route defaults to does not serve it. Meta:
+  `muse-spark-1.3`, `muse-spark-1.3-contributor` and the `muse-wonder-1.0`
+  preview join the route, which stays on its previous `muse-spark-1.2`
+  default.
+  Several ids are retired. Xiaomi MiMo now defaults to `mimo-v2.6-pro`, and
+  configs naming `mimo-v2.5-pro` or `mimo-v2.5` send `mimo-v2.6-pro` and
+  `mimo-v2.6-flash`, because Xiaomi rejects the old names from 2026-10-21.
+  `gemini-3.7-flash` and `gemini-3.5-flash`, which Google already serves as
+  `gemini-3.8-flash` and `gemini-3.6-flash`, are now selector aliases of those
+  models. `qwen3.8-max-preview` is gone from the Model Studio rosters. MiniMax
+  M2.7 and M2.5 (including highspeed) leave the fallback picker before
+  MiniMax closes them to new users on 2026-10-19, and keep working for
+  existing configs until they retire on 2026-11-18.
 - Direct DeepSeek routes now send `deepseek-flash` for `deepseek-chat`,
   `deepseek-reasoner`, the `flash`, `deepseek-v4flash`, `flash-vision` and
   `deepseek-v4flashvisionexp` shorthands, and the Auto router's fast tier.

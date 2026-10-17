@@ -65,12 +65,16 @@ fn catalog_family_candidates(
         ProviderKind::Anthropic
             if matches!(
                 lower.as_str(),
-                "claude-opus-4-8" | "claude-sonnet-4-6" | "claude-sonnet-5"
+                "claude-opus-4-8"
+                    | "claude-sonnet-4-6"
+                    | "claude-sonnet-5"
+                    | "claude-opus-5-5"
+                    | "claude-sonnet-5-5"
             ) =>
         {
             Some("claude-haiku-4-5".to_string())
         }
-        ProviderKind::XiaomiMimo if lower == "mimo-v2.5-pro" => Some("mimo-v2.5".to_string()),
+        ProviderKind::XiaomiMimo if lower == "mimo-v2.6-pro" => Some("mimo-v2.6-flash".to_string()),
         ProviderKind::Arcee
             if matches!(
                 lower.as_str(),
@@ -3260,7 +3264,7 @@ mod tests {
                 "claude-sonnet-4-6",
                 "claude-haiku-4-5",
             ),
-            (ProviderKind::XiaomiMimo, "mimo-v2.5-pro", "mimo-v2.5"),
+            (ProviderKind::XiaomiMimo, "mimo-v2.6-pro", "mimo-v2.6-flash"),
             (
                 ProviderKind::Arcee,
                 "trinity-large-thinking",

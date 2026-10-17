@@ -827,6 +827,9 @@ fn direct_openai_long_context_tier_is_unpriced(
             | "gpt-5.6-sol"
             | "gpt-5.6-terra"
             | "gpt-5.6-luna"
+            | "gpt-6-sol"
+            | "gpt-6.1-sol"
+            | "gpt-6-luna"
     ) || has_date_snapshot_suffix(&model_lower, "gpt-5.4-")
         || has_date_snapshot_suffix(&model_lower, "gpt-5.4-pro-")
         || has_date_snapshot_suffix(&model_lower, "gpt-5.5-");
@@ -2396,6 +2399,9 @@ fn provider_owned_hand_pricing_at(
                 | "gpt-5.6-sol"
                 | "gpt-5.6-terra"
                 | "gpt-5.6-luna"
+                | "gpt-6-sol"
+                | "gpt-6.1-sol"
+                | "gpt-6-luna"
         ),
         ProviderKind::Anthropic => matches!(
             model_lower.as_str(),
@@ -2405,6 +2411,9 @@ fn provider_owned_hand_pricing_at(
                 | "claude-fable-5"
                 | "claude-sonnet-5"
                 | "claude-opus-5"
+                | "claude-opus-5-5"
+                | "claude-sonnet-5-5"
+                | "claude-fable-5-1"
         ),
         ProviderKind::Xai => is_grok_tiered(&model_lower),
         // GLM-5.3 is deliberately absent: this allowlist declares that Z.ai
@@ -2441,13 +2450,17 @@ fn provider_owned_hand_pricing_at(
                 | "codestral"
         ),
         ProviderKind::Arcee => model_lower == "trinity-large-thinking",
-        // 1.2 and its contributor tier own hand-written rows the same way 1.1
-        // does (see `pricing_for_model_at`). 1.2 is now `DEFAULT_META_MODEL`,
-        // so omitting them here left the default Meta route without a
+        // Every Muse tier owns a hand-written row the same way 1.1 does (see
+        // `pricing_for_model_at`), so `DEFAULT_META_MODEL` (1.3) always has a
         // provider-owned fallback row.
         ProviderKind::Meta => matches!(
             model_lower.as_str(),
-            "muse-spark-1.1" | "muse-spark-1.2" | "muse-spark-1.2-contributor"
+            "muse-spark-1.1"
+                | "muse-spark-1.2"
+                | "muse-spark-1.2-contributor"
+                | "muse-spark-1.3"
+                | "muse-spark-1.3-contributor"
+                | "muse-wonder-1.0"
         ),
         // Deployment-style ids (Fireworks account prefix, OpenCode Zen
         // gateway) have no Models.dev cost fields. When the live control
@@ -4353,7 +4366,7 @@ mod tests {
 
         for (provider, model) in [
             (ProviderKind::Zai, "GLM-5.3"),
-            (ProviderKind::XiaomiMimo, "mimo-v2.5-pro"),
+            (ProviderKind::XiaomiMimo, "mimo-v2.6-pro"),
             (ProviderKind::ModelstudioTokenPlan, "qwen3.8-max"),
         ] {
             let offering =

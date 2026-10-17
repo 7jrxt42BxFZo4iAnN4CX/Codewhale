@@ -4363,6 +4363,10 @@ fn canonical_xiaomi_mimo_model_id(model: &str) -> Option<&'static str> {
     match normalized.as_str() {
         "mimo"
         | DEFAULT_XIAOMI_MIMO_MODEL
+        | "mimo-v2-6-pro"
+        | "xiaomi-mimo-v2.6-pro"
+        | "xiaomi-mimo-v2-6-pro"
+        | "mimo-v2.5-pro"
         | "mimo-v2-5-pro"
         | "xiaomi-mimo-v2.5-pro"
         | "xiaomi-mimo-v2-5-pro" => Some(DEFAULT_XIAOMI_MIMO_MODEL),
@@ -4372,7 +4376,11 @@ fn canonical_xiaomi_mimo_model_id(model: &str) -> Option<&'static str> {
         | "xiaomi-mimo-v2-5-pro-ultraspeed"
         | "ultraspeed"
         | "pro-ultraspeed" => Some(XIAOMI_MIMO_V2_5_PRO_ULTRASPEED_MODEL),
-        "omni"
+        XIAOMI_MIMO_V2_6_FLASH_MODEL
+        | "mimo-v2-6-flash"
+        | "xiaomi-mimo-v2.6-flash"
+        | "xiaomi-mimo-v2-6-flash"
+        | "omni"
         | "mimo-omni"
         | "v2.5-omni"
         | "v25-omni"
@@ -4385,7 +4393,7 @@ fn canonical_xiaomi_mimo_model_id(model: &str) -> Option<&'static str> {
         | "xiaomi-mimo-v2.5"
         | "xiaomi-mimo-v2-5"
         | "xiaomi-mimo-v2.5-omni"
-        | "xiaomi-mimo-v2-5-omni" => Some(XIAOMI_MIMO_V2_5_OMNI_MODEL),
+        | "xiaomi-mimo-v2-5-omni" => Some(XIAOMI_MIMO_V2_6_FLASH_MODEL),
         "asr" | "mimo-asr" | "mimo-v2.5-asr" | "speech-to-text" | "transcribe" => {
             Some(XIAOMI_MIMO_ASR_MODEL)
         }

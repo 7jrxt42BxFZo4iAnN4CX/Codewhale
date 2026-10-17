@@ -8121,7 +8121,7 @@ fn normalize_model_name_for_provider_maps_recent_openrouter_aliases() {
 fn normalize_xiaomi_mimo_aliases_for_provider() {
     assert_eq!(
         normalize_model_name_for_provider(ProviderKind::XiaomiMimo, "omni").as_deref(),
-        Some("mimo-v2.5")
+        Some("mimo-v2.6-flash")
     );
     assert_eq!(
         normalize_model_name_for_provider(ProviderKind::XiaomiMimo, "tts").as_deref(),
@@ -8143,7 +8143,7 @@ fn model_completion_scenario() {
     // from model_completion_names_for_xiaomi_mimo_include_chat_models
     {
         let models = model_completion_names_for_provider(ProviderKind::XiaomiMimo);
-        for expected in ["mimo-v2.5-pro", "mimo-v2.5"] {
+        for expected in ["mimo-v2.6-pro", "mimo-v2.6-flash"] {
             assert!(models.contains(&expected), "missing {expected}");
         }
         for deprecated in ["mimo-v2-pro", "mimo-v2-omni", "mimo-v2-flash"] {
@@ -8291,10 +8291,6 @@ fn model_completion_scenario_2() {
 
         for expected in [
             DEFAULT_MINIMAX_MODEL,
-            MINIMAX_M2_7_MODEL,
-            MINIMAX_M2_7_HIGHSPEED_MODEL,
-            MINIMAX_M2_5_MODEL,
-            MINIMAX_M2_5_HIGHSPEED_MODEL,
             MINIMAX_M2_1_MODEL,
             MINIMAX_M2_1_HIGHSPEED_MODEL,
             MINIMAX_M2_MODEL,
@@ -8311,7 +8307,7 @@ fn model_completion_scenario_2() {
         let models = model_completion_names_for_provider(ProviderKind::MinimaxAnthropic);
 
         assert!(models.contains(&DEFAULT_MINIMAX_MODEL));
-        assert!(models.contains(&MINIMAX_M2_7_MODEL));
+        assert!(models.contains(&MINIMAX_M2_1_MODEL));
     }
     // from model_completion_names_for_sakana_include_fugu_models
     {
@@ -9223,7 +9219,7 @@ fn xiaomi_mimo_scenario() -> Result<()> {
             config.active_provider_identity().unwrap().provider,
             ProviderKind::XiaomiMimo
         );
-        assert_eq!(config.default_model(), "mimo-v2.5");
+        assert_eq!(config.default_model(), "mimo-v2.6-flash");
         assert_eq!(
             config.active_route_base_url(),
             "https://token-plan-cn.xiaomimimo.com/v1"
@@ -9398,7 +9394,7 @@ default_text_model = "deepseek/deepseek-v4-pro"
 [providers.xiaomi]
 api_key = "mimo-table-key"
 base_url = "https://token-plan-sgp.xiaomimimo.com/v1"
-model = "mimo-v2.5-pro"
+model = "mimo-v2.6-pro"
 "#,
     )?;
 
@@ -9425,7 +9421,7 @@ provider = "xiaomi-mimo"
 [providers.xiaomi_mimo]
 api_key = "tp-test-token-plan-key"
 base_url = "https://api.xiaomimimo.com/v1"
-model = "mimo-v2.5-pro"
+model = "mimo-v2.6-pro"
 "#,
     )?;
 
@@ -12831,7 +12827,7 @@ fn provider_capability_scenario_2() {
     // from provider_capability_xiaomi_mimo_has_thinking_no_cache
     {
         let cap = provider_capability(ProviderKind::XiaomiMimo, DEFAULT_XIAOMI_MIMO_MODEL);
-        assert_eq!(cap.context_window, 1_000_000);
+        assert_eq!(cap.context_window, 1_048_576);
         assert_eq!(cap.max_output, Some(131_072));
         assert!(cap.thinking_supported);
         assert!(!cap.cache_telemetry_supported);
@@ -12840,8 +12836,8 @@ fn provider_capability_scenario_2() {
             RequestPayloadMode::ChatCompletions
         );
 
-        let omni = provider_capability(ProviderKind::XiaomiMimo, XIAOMI_MIMO_V2_5_OMNI_MODEL);
-        assert_eq!(omni.context_window, 1_000_000);
+        let omni = provider_capability(ProviderKind::XiaomiMimo, XIAOMI_MIMO_V2_6_FLASH_MODEL);
+        assert_eq!(omni.context_window, 1_048_576);
         assert_eq!(omni.max_output, Some(131_072));
         assert!(omni.thinking_supported);
         assert!(!omni.cache_telemetry_supported);
