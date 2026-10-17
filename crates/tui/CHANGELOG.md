@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The middle working mode is called Work everywhere in the TUI: the footer
+  chip, the mode name and description, the hotbar action, settings errors,
+  `/context` and exports, and the matching locale strings, which now use each
+  language pack's existing word for it. The hook contract is unchanged:
+  `DEEPSEEK_MODE` and `DEEPSEEK_PREVIOUS_MODE` still report `ACT`, and saved
+  settings still read and write `agent` (Refs #6466).
 - The model catalog now carries current models from Anthropic, Google and
   Meta. Anthropic: `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`
   and `claude-fable-5-1`; the Auto router's cheap tier and the Scout companion
