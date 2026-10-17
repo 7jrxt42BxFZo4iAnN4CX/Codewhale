@@ -1657,6 +1657,9 @@ mod tests {
             ..Usage::default()
         };
         Event::TurnComplete {
+            turn_id: None,
+            submission_id: None,
+            compaction_id: None,
             usage: usage.clone(),
             parent_route_usage: usage,
             routed_usage_dropped_records: 0,

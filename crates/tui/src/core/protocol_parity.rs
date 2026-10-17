@@ -609,6 +609,9 @@ pub fn event_to_protocol(event: &Event, ids: &ProtocolIds) -> wire::EventMsg {
             route: route_to_wire(route),
         },
         Event::TurnComplete {
+            turn_id,
+            submission_id,
+            compaction_id,
             usage,
             parent_route_usage,
             routed_usage_dropped_records,
@@ -619,7 +622,9 @@ pub fn event_to_protocol(event: &Event, ids: &ProtocolIds) -> wire::EventMsg {
         } => wire::EventMsg::TurnComplete {
             thread_id,
             session_id,
-            turn_id: None,
+            turn_id: turn_id.clone(),
+            submission_id: submission_id.clone(),
+            compaction_id: compaction_id.clone(),
             status: outcome_status_to_wire(*status),
             error: error.clone(),
             usage: usage_to_wire(usage),
@@ -1390,6 +1395,9 @@ mod tests {
         };
         let complete = event_to_protocol(
             &Event::TurnComplete {
+                turn_id: None,
+                submission_id: None,
+                compaction_id: None,
                 usage: total.clone(),
                 parent_route_usage: parent.clone(),
                 routed_usage_dropped_records: 3,
@@ -1459,6 +1467,26 @@ mod tests {
         }
     }
 
+    #[test]
+    fn manual_compaction_terminal_keeps_its_operation_id_in_projection() {
+        let event = Event::TurnComplete {
+            turn_id: None,
+            submission_id: None,
+            compaction_id: Some("compact-1".into()),
+            usage: Usage::default(),
+            parent_route_usage: Usage::default(),
+            routed_usage_dropped_records: 0,
+            status: TurnOutcomeStatus::Failed,
+            error: Some("route rejected".into()),
+            tool_catalog: None,
+            base_url: None,
+        };
+        let value = serde_json::to_value(event.to_protocol(&ids())).unwrap();
+        assert_eq!(value["compaction_id"], "compact-1");
+        assert!(value.get("turn_id").is_none());
+        assert!(value.get("submission_id").is_none());
+    }
+
     /// The guard is the exhaustive `match` in `event_to_protocol`: this test
     /// exists so the guard has a name in the test log and so the projection
     /// is proven to agree with the protocol's wire-tag table.
@@ -1508,6 +1536,9 @@ mod tests {
                 submission_id: Some("sub-host-1".into()),
             },
             Event::TurnComplete {
+                turn_id: Some("turn-1".into()),
+                submission_id: Some("sub-host-1".into()),
+                compaction_id: None,
                 usage: usage.clone(),
                 parent_route_usage: usage.clone(),
                 routed_usage_dropped_records: 0,
@@ -1615,6 +1646,10 @@ mod tests {
             serde_json::to_value(events[8].to_protocol(&ids)).unwrap()["status"],
             "interrupted"
         );
+        let terminal = serde_json::to_value(events[8].to_protocol(&ids)).unwrap();
+        assert_eq!(terminal["turn_id"], "turn-1");
+        assert_eq!(terminal["submission_id"], "sub-host-1");
+        assert!(terminal.get("compaction_id").is_none());
         let error = events
             .iter()
             .find(|event| matches!(event, Event::Error { .. }))

@@ -16080,6 +16080,9 @@ fn user_input_completion_preserves_newer_question_and_dispatch() {
     observe_human_request_settlement(
         &mut app,
         &EngineEvent::TurnComplete {
+            turn_id: None,
+            submission_id: None,
+            compaction_id: None,
             usage: Usage::default(),
             parent_route_usage: Usage::default(),
             routed_usage_dropped_records: 0,
@@ -16114,6 +16117,9 @@ fn user_input_turn_end_cancel_and_disconnect_retire_question_views() {
             _ => observe_human_request_settlement(
                 &mut app,
                 &EngineEvent::TurnComplete {
+                    turn_id: None,
+                    submission_id: None,
+                    compaction_id: None,
                     usage: Usage::default(),
                     parent_route_usage: Usage::default(),
                     routed_usage_dropped_records: 0,
@@ -18693,6 +18699,9 @@ fn local_cancel_marks_late_stream_events_for_suppression() {
     ));
     assert!(!suppress_engine_event_after_local_cancel(
         &EngineEvent::TurnComplete {
+            turn_id: None,
+            submission_id: None,
+            compaction_id: None,
             usage: Usage::default(),
             parent_route_usage: Usage::default(),
             routed_usage_dropped_records: 0,
@@ -18713,6 +18722,76 @@ fn local_cancel_marks_late_stream_events_for_suppression() {
     assert!(!suppress_engine_event_after_local_cancel(
         &stream_drop_approval_event()
     ));
+}
+
+#[test]
+fn turn_end_outbox_uses_the_terminal_events_owner() {
+    let mut app = create_test_app();
+    app.runtime_turn_id = Some("turn-model".to_string());
+
+    let model_terminal = EngineEvent::TurnComplete {
+        turn_id: Some("turn-model".to_string()),
+        submission_id: None,
+        compaction_id: None,
+        usage: Usage::default(),
+        parent_route_usage: Usage::default(),
+        routed_usage_dropped_records: 0,
+        status: crate::core::events::TurnOutcomeStatus::Completed,
+        error: None,
+        tool_catalog: None,
+        base_url: None,
+    };
+    let model = super::event_loop::turn_end_lifecycle_event(
+        &app,
+        super::event_loop::TurnEndLifecycleReceipt::capture(&model_terminal)
+            .expect("terminal lifecycle data"),
+        Duration::from_millis(37),
+    );
+    assert_eq!(model.kind, "turn.completed");
+    assert_eq!(model.turn_id.as_deref(), Some("turn-model"));
+
+    let rejected_terminal = EngineEvent::TurnComplete {
+        turn_id: None,
+        submission_id: Some("submission-rejected".to_string()),
+        compaction_id: None,
+        usage: Usage::default(),
+        parent_route_usage: Usage::default(),
+        routed_usage_dropped_records: 0,
+        status: crate::core::events::TurnOutcomeStatus::Failed,
+        error: Some("route rejected".to_string()),
+        tool_catalog: None,
+        base_url: None,
+    };
+    let rejected = super::event_loop::turn_end_lifecycle_event(
+        &app,
+        super::event_loop::TurnEndLifecycleReceipt::capture(&rejected_terminal)
+            .expect("terminal lifecycle data"),
+        Duration::ZERO,
+    );
+    assert_eq!(rejected.kind, "turn.failed");
+    assert!(rejected.turn_id.is_none());
+
+    let compaction_terminal = EngineEvent::TurnComplete {
+        turn_id: None,
+        submission_id: None,
+        compaction_id: Some("compact-manual".to_string()),
+        usage: Usage::default(),
+        parent_route_usage: Usage::default(),
+        routed_usage_dropped_records: 0,
+        status: crate::core::events::TurnOutcomeStatus::Completed,
+        error: None,
+        tool_catalog: None,
+        base_url: None,
+    };
+    let manual_compaction = super::event_loop::turn_end_lifecycle_event(
+        &app,
+        super::event_loop::TurnEndLifecycleReceipt::capture(&compaction_terminal)
+            .expect("terminal lifecycle data"),
+        Duration::ZERO,
+    );
+    assert_eq!(manual_compaction.kind, "turn.completed");
+    assert!(manual_compaction.turn_id.is_none());
+    assert_eq!(app.runtime_turn_id.as_deref(), Some("turn-model"));
 }
 
 /// A turn the Engine stopped itself (here its per-turn wall-clock budget)
