@@ -1125,6 +1125,7 @@ impl App {
             pending_gate_receipts: Vec::new(),
             child_gate_receipts: std::collections::HashMap::new(),
             queued_messages: VecDeque::new(),
+            held_restored_queue: 0,
             queued_draft: None,
             pending_steers: VecDeque::new(),
             inflight_steers: VecDeque::new(),

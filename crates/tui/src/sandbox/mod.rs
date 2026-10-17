@@ -464,20 +464,21 @@ fn expand_home_prefix(path: PathBuf) -> PathBuf {
     path
 }
 
-/// The bubblewrap arguments that hide `path` from a sandboxed command: an
-/// empty tmpfs over an existing directory, `/dev/null` bound over an existing
-/// file, nothing for a path that does not exist (there is nothing to deny).
-/// Blocking. Platform-neutral so it is exercised on every host; only the
-/// Linux bwrap builder emits it.
+/// The bubblewrap arguments that hide `path` from a sandboxed command, aimed
+/// at its resolved location because bubblewrap cannot mount through a
+/// symlink: an empty tmpfs over an existing directory, `/dev/null` bound over
+/// an existing file, nothing for a path that does not exist (there is nothing
+/// to deny). Blocking. Platform-neutral so it is exercised on every host; only
+/// the Linux bwrap builder emits it.
 fn bwrap_mask_args(path: &std::path::Path) -> Vec<String> {
-    let Ok(meta) = std::fs::metadata(path) else {
+    let Ok(resolved) = std::fs::canonicalize(path) else {
         return Vec::new();
     };
-    let path = path.to_string_lossy().into_owned();
-    if meta.is_dir() {
-        vec!["--tmpfs".to_string(), path]
+    let spelled = resolved.to_string_lossy().into_owned();
+    if resolved.is_dir() {
+        vec!["--tmpfs".to_string(), spelled]
     } else {
-        vec!["--ro-bind".to_string(), "/dev/null".to_string(), path]
+        vec!["--ro-bind".to_string(), "/dev/null".to_string(), spelled]
     }
 }
 

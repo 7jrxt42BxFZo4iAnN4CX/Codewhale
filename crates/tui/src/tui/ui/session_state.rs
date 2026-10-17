@@ -63,6 +63,7 @@ pub(crate) fn install_offline_queue_transition(
         app.clear_input();
     }
     app.queued_messages.clear();
+    app.held_restored_queue = 0;
     app.current_session_id = Some(transition.lease.session_id().to_string());
     app.offline_queue_lease = Some(transition.lease);
     transition
@@ -143,6 +144,7 @@ pub(crate) fn restore_matching_offline_queue_state(
         .into_iter()
         .map(queued_session_to_ui)
         .collect();
+    app.held_restored_queue = app.queued_messages.len();
     if let Some(draft) = state.draft.map(queued_session_to_ui) {
         app.input.clone_from(&draft.display);
         app.cursor_position = app.input.chars().count();
@@ -716,6 +718,9 @@ pub(crate) fn restore_queued_message(app: &mut App, index: Option<usize>, messag
     if let Some(index) = index
         && index <= app.queued_messages.len()
     {
+        if index < app.held_restored_queue {
+            app.held_restored_queue += 1;
+        }
         app.queued_messages.insert(index, message);
     } else {
         app.queue_message(message);
