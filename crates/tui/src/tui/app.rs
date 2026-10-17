@@ -2404,6 +2404,7 @@ pub struct App {
     pub child_gate_receipts: std::collections::HashMap<String, Vec<(String, String)>>,
     /// User messages queued while a turn is running
     pub queued_messages: VecDeque<QueuedMessage>,
+    pub held_restored_queue: usize,
     /// Draft queued message being edited
     pub queued_draft: Option<QueuedMessage>,
     /// Legacy pending-steer bucket retained for session compatibility. New
@@ -6584,11 +6585,15 @@ impl App {
     }
 
     pub fn pop_queued_message(&mut self) -> Option<QueuedMessage> {
-        self.queued_messages.pop_front()
+        self.queued_messages.remove(self.held_restored_queue)
     }
 
     pub fn remove_queued_message(&mut self, index: usize) -> Option<QueuedMessage> {
-        self.queued_messages.remove(index)
+        let message = self.queued_messages.remove(index)?;
+        if index < self.held_restored_queue {
+            self.held_restored_queue -= 1;
+        }
+        Some(message)
     }
 
     pub fn queued_message_count(&self) -> usize {
@@ -6610,6 +6615,7 @@ impl App {
         let Some(msg) = self.queued_messages.pop_back() else {
             return false;
         };
+        self.held_restored_queue = self.held_restored_queue.min(self.queued_messages.len());
         self.input = msg.display.clone();
         self.cursor_position = char_count(&self.input);
         self.selected_attachment_index = None;
@@ -6767,7 +6773,10 @@ impl App {
             return Vec::new();
         }
         match self.enter_with_double_tap() {
-            Some(SubmitDisposition::Steer) => self.queued_messages.drain(..).collect(),
+            Some(SubmitDisposition::Steer) => {
+                self.held_restored_queue = 0;
+                self.queued_messages.drain(..).collect()
+            }
             _ => Vec::new(),
         }
     }

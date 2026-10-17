@@ -12093,7 +12093,8 @@ async fn set_config(
 /// This route projects it for HTTP clients — current values resolved from
 /// the owning store (settings.toml via [`crate::settings::Settings`],
 /// config.toml, or the notifications table), labels and descriptions
-/// resolved through the locale pack. Writes stay on `POST /v1/config`;
+/// resolved through the locale pack: the `?locale=` the client displays,
+/// else the configured `locale`. Writes stay on `POST /v1/config`;
 /// this route never invents a value, an option, or a validator.
 #[derive(Debug, Serialize)]
 struct SettingsSchemaResponse {
@@ -12210,8 +12211,14 @@ fn toml_value_at_path<'a>(document: &'a toml::Value, segments: &[&str]) -> Optio
     Some(current)
 }
 
+#[derive(Debug, Deserialize)]
+struct SettingsSchemaQuery {
+    locale: Option<String>,
+}
+
 async fn get_settings_schema(
     State(state): State<RuntimeApiState>,
+    Query(query): Query<SettingsSchemaQuery>,
 ) -> Result<Json<SettingsSchemaResponse>, ApiError> {
     use codewhale_config::notifications::NotificationSetting;
     use codewhale_config::settings_schema::{
@@ -12221,7 +12228,13 @@ async fn get_settings_schema(
 
     let config = state.config.read().clone();
     let settings = crate::settings::Settings::load_persisted().unwrap_or_default();
-    let locale = resolve_locale(&settings.locale);
+    let locale = resolve_locale(
+        query
+            .locale
+            .as_deref()
+            .filter(|tag| !tag.trim().is_empty())
+            .unwrap_or(&settings.locale),
+    );
     let notifications = config.notifications_config();
 
     // Conditional pairs share the TUI's rule: exactly one member is shown,

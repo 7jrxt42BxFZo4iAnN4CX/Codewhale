@@ -320,7 +320,7 @@ drives turns through Chat Completions.
 1. Before sending user input, the TUI writes a checkpoint snapshot to `~/.codewhale/sessions/checkpoints/latest.json`
 2. Startup remains fresh by default; prior sessions are resumed explicitly via `--resume`/`--continue` (or `Ctrl+R` in TUI)
 3. While degraded/offline, new prompts are queued in-memory and mirrored to `~/.codewhale/sessions/checkpoints/offline_queue.json`
-4. Queue edits (`/queue ...`) are persisted continuously so drafts and queued prompts survive restarts
+4. Queue edits (`/queue ...`) are persisted continuously so drafts and queued prompts survive restarts. Messages restored from an earlier launch or another session are held: they are sent only by `/queue send <n>` and discarded by `/queue clear`
 5. Successful turn completion clears the active checkpoint and writes a durable session snapshot
 6. Action-capable turns also take pre/post-turn side-git workspace snapshots under `~/.codewhale/snapshots/<project_hash>/<worktree_hash>/.git`; `/restore N` and `revert_turn` restore file state without changing conversation history or the user's `.git`
 
