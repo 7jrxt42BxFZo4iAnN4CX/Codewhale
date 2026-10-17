@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:75bb6a506af5 -->
+<!-- source: README.md sha256:0dfd433f3147 -->
 <div align="center">
 
 <picture>
@@ -183,6 +183,8 @@ Codewhale bắt đầu từ `deepseek-tui` và vẫn đọc cấu hình cùng c�
 không liên kết với bất kỳ nhà cung cấp mô hình nào. Cảm ơn
 [mọi người đóng góp](docs/CONTRIBUTORS.md) và các cộng đồng mã nguồn mở đã giúp
 dự án lớn mạnh.
+
+[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
 
 [MIT](LICENSE). Các phần được điều chỉnh từ những dự án mã nguồn mở khác được ghi
 lại trong [thông báo bên thứ ba](docs/THIRD_PARTY_NOTICES.md).

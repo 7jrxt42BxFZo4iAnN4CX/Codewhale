@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:75bb6a506af5 -->
+<!-- source: README.md sha256:0dfd433f3147 -->
 <div align="center">
 
 <picture>
@@ -166,6 +166,8 @@ Codewhale はあなたのマシン上で、あなたが与えたアクセス権�
 Codewhale は `deepseek-tui` として始まり、今もそのプロジェクトの設定とセッションを読み込みます。
 現在は特定のプロバイダーに依存せず、独立して保守されており、どのモデルプロバイダーとも提携していません。
 [すべてのコントリビューター](docs/CONTRIBUTORS.md)と、成長を支えてくれたオープンソースコミュニティに感謝します。
+
+[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
 
 [MIT](LICENSE)。他のオープンソースプロジェクトから改変して取り入れた部分は、
 [サードパーティ通知](docs/THIRD_PARTY_NOTICES.md)に記載しています。

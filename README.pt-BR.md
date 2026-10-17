@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:75bb6a506af5 -->
+<!-- source: README.md sha256:0dfd433f3147 -->
 <div align="center">
 
 <picture>
@@ -182,6 +182,8 @@ desse projeto. Agora ele é neutro quanto a provedores, mantido de forma
 independente e não é afiliado a nenhum provedor de modelos. Agradecemos a
 [todos os colaboradores](docs/CONTRIBUTORS.md) e às comunidades de código aberto
 que ajudaram o projeto a crescer.
+
+[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
 
 [MIT](LICENSE). Trechos adaptados de outros projetos de código aberto estão
 registrados nos [avisos de terceiros](docs/THIRD_PARTY_NOTICES.md).

@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:75bb6a506af5 -->
+<!-- source: README.md sha256:0dfd433f3147 -->
 <div align="center">
 
 <picture>
@@ -162,6 +162,8 @@ Codewhale 在你的机器上运行，只拥有你授予它的访问权限。审�
 Codewhale 最初名为 `deepseek-tui`，至今仍会读取该项目的配置和会话。
 它现在与具体提供商无关，由独立团队维护，与任何模型提供商均无隶属关系。
 感谢[每一位贡献者](docs/CONTRIBUTORS.md)，以及帮助它成长的开源社区。
+
+[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
 
 [MIT](LICENSE)。改编自其他开源项目的部分记录在
 [第三方声明](docs/THIRD_PARTY_NOTICES.md)中。

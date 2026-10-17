@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:75bb6a506af5 -->
+<!-- source: README.md sha256:0dfd433f3147 -->
 <div align="center">
 
 <picture>
@@ -179,6 +179,8 @@ Codewhale은 `deepseek-tui`에서 시작했으며 지금도 그 프로젝트의 
 읽습니다. 현재는 특정 제공업체에 얽매이지 않고 독립적으로 유지되며, 어떤 모델
 제공업체와도 제휴 관계가 없습니다. 성장에 도움을 준
 [모든 기여자](docs/CONTRIBUTORS.md)와 오픈 소스 커뮤니티에 감사드립니다.
+
+[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
 
 [MIT](LICENSE). 다른 오픈 소스 프로젝트에서 가져와 수정한 부분은
 [서드파티 고지](docs/THIRD_PARTY_NOTICES.md)에 기록되어 있습니다.

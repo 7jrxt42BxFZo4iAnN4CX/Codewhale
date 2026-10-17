@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:75bb6a506af5 -->
+<!-- source: README.md sha256:0dfd433f3147 -->
 <div align="center">
 
 <picture>
@@ -183,6 +183,8 @@ Codewhale починався як `deepseek-tui` і досі читає конф
 пов’язаний з жодним постачальником моделей. Дякуємо
 [всім учасникам](docs/CONTRIBUTORS.md) та спільнотам відкритого коду, які
 допомогли йому зрости.
+
+[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
 
 [MIT](LICENSE). Фрагменти, адаптовані з інших проєктів із відкритим кодом,
 перелічено в [повідомленнях про сторонні компоненти](docs/THIRD_PARTY_NOTICES.md).
