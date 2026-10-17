@@ -73,6 +73,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   thinking, because that returns a 400.
 - A DeepSeek Chat response that ends with `insufficient_system_resource` or
   `aborted` is now treated as incomplete, not as a finished answer.
+- On DeepSeek, the Auto-Review guardian now asks for low reasoning effort.
+  It used to leave thinking at DeepSeek's default (high), so the reasoning
+  could use up the guardian's 4,096-token answer budget, report the review
+  as unavailable, and stall auto-approval.
 - Durability and blocking-call fixes from the #6553 and #6555 audits:
   - On Windows the updater syncs the staged binary, tries an atomic replace
     first, and reports where the previous binary is if restoring it fails.
