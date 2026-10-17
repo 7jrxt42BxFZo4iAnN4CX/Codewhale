@@ -2363,7 +2363,10 @@ impl Engine {
             });
         let sandbox_enforcement = if sandbox_backend.is_some() {
             crate::sandbox::policy::SandboxEnforcement::ExternalBackend
-        } else if crate::sandbox::get_platform_sandbox_with_bwrap_preference(config.prefer_bwrap)
+        } else if shell_manager
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .configured_sandbox_type()
             .is_some()
         {
             crate::sandbox::policy::SandboxEnforcement::LocalOs

@@ -2910,7 +2910,10 @@ async fn run_async_main_dispatch(
                 let workspace = resolve_workspace(&cli);
                 integrations::cli::run(&config, &workspace, command)
             }
-            Commands::Sandbox(args) => run_sandbox_command(args),
+            Commands::Sandbox(args) => {
+                let config = load_config_from_cli(&cli)?;
+                run_sandbox_command(&config, args)
+            }
             Commands::Serve(args) => {
                 let workspace = cli.workspace.clone().unwrap_or_else(|| {
                     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
@@ -12415,7 +12418,7 @@ fn is_scoped_npm_package_arg(command: &str, argument: &str) -> bool {
         })
 }
 
-fn run_sandbox_command(args: SandboxArgs) -> Result<()> {
+fn run_sandbox_command(config: &Config, args: SandboxArgs) -> Result<()> {
     use crate::sandbox::{CommandSpec, SandboxManager};
 
     let SandboxCommand::Run {
@@ -12444,8 +12447,20 @@ fn run_sandbox_command(args: SandboxArgs) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Command is required"))?;
     let spec =
         CommandSpec::program(program, args.to_vec(), cwd.clone(), timeout).with_policy(policy);
-    let manager = SandboxManager::new();
+    let mut manager = SandboxManager::new();
+    manager.set_prefer_bwrap(config.prefers_bwrap());
+    manager.set_bwrap_extensions(crate::sandbox::BwrapMountExtensions {
+        read_only_roots: config.bwrap_ro_roots.clone(),
+        device_roots: config.bwrap_dev_roots.clone(),
+    });
+    manager.set_denied_read_subpaths(config.effective_sandbox_denied_read_paths());
     let exec_env = manager.prepare(&spec);
+    if spec.sandbox_policy.should_sandbox() && !exec_env.is_sandboxed() {
+        bail!(
+            "no OS sandbox can enforce the {} policy on this host; nothing was run",
+            spec.sandbox_policy.posture_label()
+        );
+    }
 
     let mut cmd = Command::new(exec_env.program());
     cmd.args(exec_env.args())

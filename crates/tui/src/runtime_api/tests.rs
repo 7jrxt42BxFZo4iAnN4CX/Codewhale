@@ -18199,6 +18199,7 @@ async fn terminal_routes_serve_a_live_engine_session_over_http() -> Result<()> {
         "pane",
         &workspace,
         crate::sandbox::SandboxPolicy::DangerFullAccess,
+        &crate::tools::shell::new_shared_shell_manager(workspace.clone()),
     )
     .map_err(anyhow::Error::msg)?;
 

@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Commands that start outside the shell tool now get the same sandbox as
+  shell commands:
+  - `terminal_*` PTY sessions used a default sandbox with no credential
+    deny-list, so on macOS they could read `~/.ssh` or `~/.aws` while `bash`
+    could not. On Linux they skipped bubblewrap, so workspace-write refused
+    them. They now use the session's shell sandbox, and they refuse to start
+    when commands run in an external sandbox backend.
+  - Runtime API thread jobs (`POST /v1/threads/{id}/jobs`) started before the
+    thread's first turn ran without bubblewrap and without the deny-list.
+    They now get both, and they are refused when an external sandbox backend
+    is configured, since a job starts a local process.
+  - `codewhale run sandbox run` ignored `prefer_bwrap` and the deny-list.
+    When no OS sandbox could enforce the policy, it ran the command
+    unconfined. It now refuses.
+  - On Windows, `bash` with `interactive: true` skipped the read-only check
+    that every other command path applies. It is now refused like the
+    others.
+  - A sub-agent's posture line could say the local OS sandbox applied when
+    its shell did not use one. It now reports what that shell actually
+    uses.
 - `write` refuses to replace an existing file that has not been read in this
   session, or that changed after it was read. The File `edit` action already
   made this check. Before, a whole-file write could overwrite contents the
