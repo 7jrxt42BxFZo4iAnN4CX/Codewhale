@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- An ACP client that asks how to turn on Full Access is now told the
+  routes that work: start the server with `codewhale --yolo serve --acp`,
+  or set `yolo = true` in config.toml. The hint used to recommend
+  `--approval-policy full-access` or `approval_policy = "full-access"` in
+  config.toml. Both are refused when Codewhale starts, because config.toml's
+  `approval_policy` only accepts on-request, untrusted, never, auto and
+  suggest. Thanks @harryvizcaino-oss for the Paseo report (Refs #6992).
 - On Linux, a credential directory the sandbox hides no longer breaks every
   sandboxed command when it is reached through a symlink, such as `~/.kube`
   linked into a synced dotfiles folder or a `~/.config` that links
