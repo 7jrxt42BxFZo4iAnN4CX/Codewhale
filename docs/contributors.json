@@ -330,7 +330,8 @@
   {
    "login": "BH8GCJ",
    "credited_for": [
-    "changelog credit"
+    "changelog credit",
+    "co-author"
    ]
   },
   {
@@ -515,7 +516,9 @@
   {
    "login": "cian-lien",
    "credited_for": [
+    "changelog credit",
     "commit",
+    "contributor record",
     "merged pull request"
    ]
   },
@@ -885,7 +888,11 @@
   {
    "login": "FluxForgeLab",
    "credited_for": [
+    "changelog credit",
+    "co-author",
     "commit",
+    "contributor record",
+    "harvested pull request",
     "merged pull request"
    ]
   },
