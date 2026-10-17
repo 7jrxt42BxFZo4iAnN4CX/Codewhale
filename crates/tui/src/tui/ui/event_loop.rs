@@ -1055,6 +1055,9 @@ pub async fn run_tui(
         let restored = app
             .tr(MessageId::QueueRestoredFromPreviousSession)
             .replace("{count}", &app.queued_message_count().to_string());
+        app.add_message(HistoryCell::System {
+            content: restored.clone(),
+        });
         app.push_status_toast(restored, StatusToastLevel::Warning, None);
     }
 
