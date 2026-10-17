@@ -1582,7 +1582,7 @@ impl StatusItem {
     #[must_use]
     pub fn hint(self) -> &'static str {
         match self {
-            StatusItem::Mode => "plan · act · operate",
+            StatusItem::Mode => "plan · work · operate",
             StatusItem::Model => "the model id you'll send to",
             StatusItem::Cost => "running total for this session",
             StatusItem::Cache => "% of prompt served from cache",
