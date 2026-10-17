@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- On Linux, a credential directory the sandbox hides no longer breaks every
+  sandboxed command when it is reached through a symlink, such as `~/.kube`
+  linked into a synced dotfiles folder or a `~/.config` that links
+  elsewhere. Each command used to abort before running with a bubblewrap
+  mount error ("Can't mount on symlink destination"), because the mask was
+  placed on the link. The mask now goes on the directory the link resolves
+  to, so the credentials stay hidden through the link. Thanks @rafacouto for
+  the report and the standalone bubblewrap reproduction (Refs #7007).
+- `/help` keeps its head-noun shortening to English. In German and
+  Indonesian it had kept the first and last words of a long description,
+  which can say something else (`Periksa penyedia aktif` instead of
+  `Periksa saldo akun`). Other languages now shorten to whole words from the
+  start. Thanks @Lstarsky0 (#6995).
+- `/theme` right-aligns its row numbers, so names, swatches and taglines in
+  rows 10 and later line up with rows 1–9. Thanks @Lstarsky0 (#6998).
 - `GET /v1/settings/schema` accepts `?locale=<tag>` and resolves row labels,
   descriptions and option labels in that locale, with the configured
   `locale` as the default. The desktop sends the interface language it
