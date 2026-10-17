@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Direct DeepSeek routes now send `deepseek-flash` for `deepseek-chat`,
+  `deepseek-reasoner`, the `flash`, `deepseek-v4flash`, `flash-vision` and
+  `deepseek-v4flashvisionexp` shorthands, and the Auto router's fast tier.
+  `codewhale model set` and `/provider` now write `deepseek-flash` for those
+  shorthands too, matching what `model = "flash"` and `/model flash` resolve
+  to.
+  DeepSeek has retired the V4 Flash and V4 Flash vision models. It still
+  accepts `deepseek-v4-flash` and `deepseek-v4-flash-vision-exp`, but serves
+  them with V4.1 Flash, bills them at the Flash price, and calls that routing
+  temporary. Turns on either name from 2026-09-10 04:00 UTC are now priced at
+  the Flash rates ($0.003 cache hit, $0.15 cache miss, $0.60 output per
+  million tokens off-peak, doubled at peak) instead of the old V4 Flash rates,
+  which overstated a cache hit by about 2.3 times. The vision name was not
+  priced at all before. Earlier turns keep the rates they were billed at,
+  including turns recorded under a shorthand. On NVIDIA NIM, OpenRouter,
+  Novita, Fireworks, SiliconFlow, SGLang, vLLM, DeepInfra and Together,
+  `deepseek-flash` selects that host's V4 Flash model, so the `flash`
+  shorthand keeps working there.
 - When a `tool_search` activation pushes an earlier deferred tool out of the
   bounded conversation toolbox (8 tools, 16 KiB of schemas), the search
   result now names it under `evicted_tool_references`. Before, the tool

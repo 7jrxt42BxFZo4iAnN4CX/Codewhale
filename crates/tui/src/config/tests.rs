@@ -7549,20 +7549,17 @@ fn normalize_model_name_preserves_v_series_snapshots() {
     );
     assert_eq!(
         normalize_model_name("flash").as_deref(),
-        Some("deepseek-v4-flash")
+        Some("deepseek-flash")
     );
     for alias in ["flash-vision", "deepseek-v4flashvisionexp"] {
-        assert_eq!(
-            canonical_model_name(alias),
-            Some("deepseek-v4-flash-vision-exp")
-        );
+        assert_eq!(canonical_model_name(alias), Some("deepseek-flash"));
         assert_eq!(
             normalize_model_name(alias).as_deref(),
-            Some("deepseek-v4-flash-vision-exp")
+            Some("deepseek-flash")
         );
         assert_eq!(
             normalize_model_name_for_provider(ProviderKind::Deepseek, alias).as_deref(),
-            Some("deepseek-v4-flash-vision-exp")
+            Some("deepseek-flash")
         );
         assert!(validate_route(ProviderKind::Deepseek, alias).is_ok());
     }
@@ -12746,7 +12743,7 @@ fn provider_capability_scenario() {
             .as_ref()
             .expect("alias deprecation metadata");
         assert_eq!(deprecation.alias, "deepseek-chat");
-        assert_eq!(deprecation.replacement, "deepseek-v4-flash");
+        assert_eq!(deprecation.replacement, "deepseek-flash");
         assert_eq!(deprecation.retirement_date, "2026-07-24");
         assert_eq!(deprecation.retirement_utc, "2026-07-24T15:59:00Z");
     }
@@ -12766,7 +12763,7 @@ fn provider_capability_scenario() {
             .as_ref()
             .expect("alias deprecation metadata");
         assert_eq!(deprecation.alias, "deepseek-reasoner");
-        assert_eq!(deprecation.replacement, "deepseek-v4-flash");
+        assert_eq!(deprecation.replacement, "deepseek-flash");
     }
     // from provider_capability_deepseek_v4_flash_has_no_alias_deprecation
     {

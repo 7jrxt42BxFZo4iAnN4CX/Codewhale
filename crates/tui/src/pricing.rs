@@ -14,8 +14,8 @@ use codewhale_config::pricing::{
 #[cfg(test)]
 use crate::config::DEFAULT_STEPFUN_MODEL;
 use crate::config::{
-    DEEPSEEK_ALIAS_REPLACEMENT, DEEPSEEK_ALIAS_RETIREMENT_UTC, DEFAULT_STEPFUN_BASE_URL,
-    DEFAULT_STEPFUN_PLAN_BASE_URL, ProviderKind, canonical_model_id_for_provider,
+    DEEPSEEK_ALIAS_RETIREMENT_UTC, DEFAULT_STEPFUN_BASE_URL, DEFAULT_STEPFUN_PLAN_BASE_URL,
+    ProviderKind, canonical_model_id_for_provider,
 };
 use codewhale_models::{Usage, has_date_snapshot_suffix};
 
@@ -721,10 +721,16 @@ fn pricing_for_model_at(model: &str, now: DateTime<Utc>) -> Option<ModelPricing>
     }
     // A new or expiring model ID does not inherit a neighboring model's
     // rates. Keep this metadata lookup as exact as the billing route owner.
-    match lower.as_str() {
+    deepseek_time_aware_pricing(&lower, now)
+}
+
+fn deepseek_time_aware_pricing(model_lower: &str, now: DateTime<Utc>) -> Option<ModelPricing> {
+    match model_lower {
         "deepseek-v4-pro" => Some(deepseek_v4_pro_pricing(now)),
-        "deepseek-v4-flash" => Some(deepseek_v4_flash_pricing(now)),
-        "deepseek-flash" => Some(deepseek_flash_pricing(now)),
+        "deepseek-v4-flash" | "deepseek-flash" => Some(deepseek_v4_flash_pricing(now)),
+        "deepseek-v4-flash-vision-exp" => {
+            (now >= deepseek_flash_effective_from()).then(|| deepseek_flash_pricing(now))
+        }
         _ => None,
     }
 }
@@ -965,11 +971,7 @@ fn deepseek_is_peak(now: DateTime<Utc>) -> bool {
 #[must_use]
 pub(crate) fn deepseek_time_tier(model: &str, now: DateTime<Utc>) -> Option<bool> {
     let lower = model.trim().to_ascii_lowercase();
-    matches!(
-        lower.as_str(),
-        "deepseek-v4-pro" | "deepseek-v4-flash" | "deepseek-flash"
-    )
-    .then(|| deepseek_is_peak(now))
+    deepseek_time_aware_pricing(&lower, now).map(|_| deepseek_is_peak(now))
 }
 
 fn deepseek_v4_pro_pricing(now: DateTime<Utc>) -> ModelPricing {
@@ -1045,7 +1047,16 @@ fn deepseek_flash_pricing(now: DateTime<Utc>) -> ModelPricing {
     }
 }
 
+fn deepseek_flash_effective_from() -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, 9, 10, 4, 0, 0)
+        .single()
+        .expect("2026-09-10T04:00Z is a valid UTC instant")
+}
+
 fn deepseek_v4_flash_pricing(now: DateTime<Utc>) -> ModelPricing {
+    if now >= deepseek_flash_effective_from() {
+        return deepseek_flash_pricing(now);
+    }
     let peak = deepseek_is_peak(now);
     let (hit, miss, out) = if peak {
         (0.014, 0.44, 1.32)
@@ -1566,7 +1577,15 @@ fn audit_turn_cost_for_provider_on_endpoint_for_identity_at(
         if recorded_at >= retirement.with_timezone(&Utc) {
             return TurnCostAudit::unpriced(UnpricedReason::RetiredAlias);
         }
-        DEEPSEEK_ALIAS_REPLACEMENT.to_string()
+        "deepseek-v4-flash".to_string()
+    } else if direct_deepseek
+        && matches!(
+            model_lower.as_str(),
+            "flash-vision" | "deepseek-v4flashvisionexp"
+        )
+        && recorded_at < deepseek_flash_effective_from()
+    {
+        "deepseek-v4-flash-vision-exp".to_string()
     } else {
         canonical_model
     };
@@ -2361,7 +2380,10 @@ fn provider_owned_hand_pricing_at(
             // just because DeepSeek does.
             matches!(
                 model_lower.as_str(),
-                "deepseek-v4-pro" | "deepseek-v4-flash" | "deepseek-flash"
+                "deepseek-v4-pro"
+                    | "deepseek-v4-flash"
+                    | "deepseek-v4-flash-vision-exp"
+                    | "deepseek-flash"
             )
         }
         ProviderKind::Openai => matches!(
@@ -2465,7 +2487,7 @@ fn provider_owned_hand_pricing_at(
 /// DeepSeek's $0.0028 cache-hit card — Fireworks publishes $0.028.
 fn fireworks_bundled_fallback_pricing(model_lower: &str) -> Option<ModelPricing> {
     match fireworks_deployment_id(model_lower) {
-        "deepseek-v4-flash" | "deepseek-v4-flash-0731" => {
+        "deepseek-flash" | "deepseek-v4-flash" | "deepseek-v4-flash-0731" => {
             Some(hosted_deepseek_v4_flash_standard_pricing())
         }
         "deepseek-v4-pro" => Some(hosted_deepseek_v4_pro_standard_pricing()),

@@ -4041,16 +4041,12 @@ fn deepseek_family_model_id(model: &str) -> Option<String> {
     if trimmed.is_empty() {
         return None;
     }
-    match trimmed.to_ascii_lowercase().as_str() {
-        "pro" | "deepseek-v4pro" => return Some("deepseek-v4-pro".to_string()),
-        "flash" | "deepseek-v4flash" => return Some("deepseek-v4-flash".to_string()),
-        "flash-vision" | "deepseek-v4flashvisionexp" => {
-            return Some("deepseek-v4-flash-vision-exp".to_string());
-        }
-        _ => {}
-    }
-
     let normalized = trimmed.to_ascii_lowercase();
+    if let Some(canonical) =
+        crate::catalog::reviewed::compatibility_alias("canonical_model_name", &normalized)
+    {
+        return Some(canonical.to_string());
+    }
     if !normalized.starts_with("deepseek") && !normalized.contains("/deepseek") {
         return None;
     }
@@ -4253,43 +4249,45 @@ fn normalize_model_for_provider(provider: ProviderKind, model: &str) -> String {
         }
         (
             ProviderKind::NvidiaNim,
-            "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat" | "deepseek-reasoner"
-            | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
+            "deepseek-flash" | "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat"
+            | "deepseek-reasoner" | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
         ) => DEFAULT_NVIDIA_NIM_FLASH_MODEL.to_string(),
         (ProviderKind::Openrouter, "deepseek-v4-pro" | "deepseek-v4pro") => {
             DEFAULT_OPENROUTER_MODEL.to_string()
         }
         (
             ProviderKind::Openrouter,
-            "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat" | "deepseek-reasoner"
-            | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
+            "deepseek-flash" | "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat"
+            | "deepseek-reasoner" | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
         ) => DEFAULT_OPENROUTER_FLASH_MODEL.to_string(),
         (ProviderKind::Orcarouter, "deepseek-v4-pro" | "deepseek-v4pro") => {
             DEFAULT_ORCAROUTER_MODEL.to_string()
         }
         (
             ProviderKind::Orcarouter,
-            "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat" | "deepseek-reasoner"
-            | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
+            "deepseek-flash" | "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat"
+            | "deepseek-reasoner" | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
         ) => DEFAULT_ORCAROUTER_FLASH_MODEL.to_string(),
         (ProviderKind::Novita, "deepseek-v4-pro" | "deepseek-v4pro") => {
             DEFAULT_NOVITA_MODEL.to_string()
         }
         (
             ProviderKind::Novita,
-            "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat" | "deepseek-reasoner"
-            | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
+            "deepseek-flash" | "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat"
+            | "deepseek-reasoner" | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
         ) => DEFAULT_NOVITA_FLASH_MODEL.to_string(),
         (ProviderKind::Fireworks, "deepseek-v4-pro" | "deepseek-v4pro") => {
             DEFAULT_FIREWORKS_MODEL.to_string()
         }
+        (ProviderKind::Fireworks, "deepseek-flash") => "deepseek-v4-flash".to_string(),
         (
             ProviderKind::Siliconflow | ProviderKind::SiliconflowCN,
             "deepseek-v4-pro" | "deepseek-v4pro" | "deepseek-reasoner" | "deepseek-r1",
         ) => DEFAULT_SILICONFLOW_MODEL.to_string(),
         (
             ProviderKind::Siliconflow | ProviderKind::SiliconflowCN,
-            "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat" | "deepseek-v3",
+            "deepseek-flash" | "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat"
+            | "deepseek-v3",
         ) => DEFAULT_SILICONFLOW_FLASH_MODEL.to_string(),
         (
             ProviderKind::Arcee,
@@ -4320,40 +4318,40 @@ fn normalize_model_for_provider(provider: ProviderKind, model: &str) -> String {
         }
         (
             ProviderKind::Sglang,
-            "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat" | "deepseek-reasoner"
-            | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
+            "deepseek-flash" | "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat"
+            | "deepseek-reasoner" | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
         ) => DEFAULT_SGLANG_FLASH_MODEL.to_string(),
         (ProviderKind::Vllm, "deepseek-v4-pro" | "deepseek-v4pro") => {
             DEFAULT_VLLM_MODEL.to_string()
         }
         (
             ProviderKind::Vllm,
-            "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat" | "deepseek-reasoner"
-            | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
+            "deepseek-flash" | "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat"
+            | "deepseek-reasoner" | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
         ) => DEFAULT_VLLM_FLASH_MODEL.to_string(),
         (ProviderKind::Huggingface, "deepseek-v4-pro" | "deepseek-v4pro") => {
             DEFAULT_HUGGINGFACE_MODEL.to_string()
         }
         (
             ProviderKind::Huggingface,
-            "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat" | "deepseek-reasoner"
-            | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
+            "deepseek-flash" | "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat"
+            | "deepseek-reasoner" | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
         ) => DEFAULT_HUGGINGFACE_FLASH_MODEL.to_string(),
         (ProviderKind::Together, "deepseek-v4-pro" | "deepseek-v4pro") => {
             DEFAULT_TOGETHER_MODEL.to_string()
         }
         (
             ProviderKind::Together,
-            "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat" | "deepseek-reasoner"
-            | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
+            "deepseek-flash" | "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat"
+            | "deepseek-reasoner" | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
         ) => DEFAULT_TOGETHER_FLASH_MODEL.to_string(),
         (ProviderKind::Deepinfra, "deepseek-v4-pro" | "deepseek-v4pro") => {
             DEFAULT_DEEPINFRA_MODEL.to_string()
         }
         (
             ProviderKind::Deepinfra,
-            "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat" | "deepseek-reasoner"
-            | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
+            "deepseek-flash" | "deepseek-v4-flash" | "deepseek-v4flash" | "deepseek-chat"
+            | "deepseek-reasoner" | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
         ) => DEFAULT_DEEPINFRA_FLASH_MODEL.to_string(),
         _ => model.to_string(),
     }

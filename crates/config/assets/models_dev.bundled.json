@@ -6960,6 +6960,9 @@
       "deepseek-ai/deepseek-v4pro": "deepseek-v4-pro",
       "deepseek/deepseek-v4-pro": "deepseek-v4-pro",
       "deepseek/deepseek-v4pro": "deepseek-v4-pro",
+      "deepseek-flash": "deepseek-flash",
+      "deepseek-ai/deepseek-flash": "deepseek-flash",
+      "deepseek/deepseek-flash": "deepseek-flash",
       "deepseek-v4-flash": "deepseek-v4-flash",
       "deepseek-v4flash": "deepseek-v4-flash",
       "deepseek-ai/deepseek-v4-flash": "deepseek-v4-flash",
@@ -7000,24 +7003,30 @@
         "provider": "deepseek"
       },
       {
-        "id": "deepseek-v4-flash",
+        "id": "deepseek-flash",
         "aliases": [
           "deepseek-chat",
           "deepseek-reasoner",
           "deepseek-r1",
           "deepseek-v3",
-          "deepseek-v3.2"
+          "deepseek-v3.2",
+          "flash-vision",
+          "deepseek-v4flashvisionexp"
         ],
         "supports_tools": true,
         "supports_reasoning": true,
         "provider": "deepseek"
       },
       {
+        "id": "deepseek-v4-flash",
+        "aliases": [],
+        "supports_tools": true,
+        "supports_reasoning": true,
+        "provider": "deepseek"
+      },
+      {
         "id": "deepseek-v4-flash-vision-exp",
-        "aliases": [
-          "flash-vision",
-          "deepseek-v4flashvisionexp"
-        ],
+        "aliases": [],
         "supports_tools": true,
         "supports_reasoning": true,
         "provider": "deepseek"
@@ -9411,7 +9420,7 @@
       "XAI_GROK_COMPOSER_2_5_FAST_MODEL": "grok-composer-2.5-fast",
       "XAI_GROK_4_20_0309_REASONING_MODEL": "grok-4.20-0309-reasoning",
       "XAI_GROK_4_20_0309_NON_REASONING_MODEL": "grok-4.20-0309-non-reasoning",
-      "DEEPSEEK_ALIAS_REPLACEMENT": "deepseek-v4-flash"
+      "DEEPSEEK_ALIAS_REPLACEMENT": "deepseek-flash"
     },
     "groups": {
       "RECENT_OPENROUTER_LARGE_MODELS": [
@@ -11068,10 +11077,10 @@
       "canonical_model_name": {
         "pro": "deepseek-v4-pro",
         "deepseek-v4pro": "deepseek-v4-pro",
-        "flash": "deepseek-v4-flash",
-        "deepseek-v4flash": "deepseek-v4-flash",
-        "flash-vision": "deepseek-v4-flash-vision-exp",
-        "deepseek-v4flashvisionexp": "deepseek-v4-flash-vision-exp"
+        "flash": "deepseek-flash",
+        "deepseek-v4flash": "deepseek-flash",
+        "flash-vision": "deepseek-flash",
+        "deepseek-v4flashvisionexp": "deepseek-flash"
       },
       "canonical_direct_deepseek_model_id": {
         "deepseek-chat": "$DEEPSEEK_ALIAS_REPLACEMENT",
