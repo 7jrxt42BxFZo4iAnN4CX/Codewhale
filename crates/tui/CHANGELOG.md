@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `codewhale exec` warns again when the sandbox posture asks for confinement
+  but no OS sandbox can enforce it, for example on a Linux host or container
+  where bubblewrap cannot start. With no external sandbox backend configured,
+  which is the default, the check read the absent backend as present, so the
+  warning never printed and commands ran unrestricted with no notice on
+  stderr. Found while proving the #7007 fix end to end in a container.
 - The middle working mode is called Work everywhere in the TUI: the footer
   chip, the mode name and description, the hotbar action, settings errors,
   `/context` and exports, and the matching locale strings, which now use each

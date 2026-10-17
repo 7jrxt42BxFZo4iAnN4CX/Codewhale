@@ -725,8 +725,7 @@ pub(crate) async fn run_exec_agent(
             .sandbox_backend
             .as_deref()
             .unwrap_or("none"),
-    )
-    .is_none()
+    ) == Some(crate::sandbox::backend::SandboxKind::None)
         && crate::sandbox::get_platform_sandbox_with_bwrap_preference(
             execution_config.prefers_bwrap(),
         )
