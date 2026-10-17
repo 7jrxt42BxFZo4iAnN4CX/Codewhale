@@ -13998,6 +13998,8 @@ enum ExecStreamEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         reasoning_replay_tokens: Option<u32>,
         duration_ms: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        finish_reason: Option<String>,
     },
     #[serde(rename = "metadata")]
     Metadata { meta: Box<ExecStreamMeta> },

@@ -15121,7 +15121,11 @@ impl RuntimeThreadManager {
         let route_limits = known_route_limits(route.candidate.limits());
         let max_output_tokens = req.max_output_tokens.and_then(|requested| {
             std::num::NonZeroU32::new(crate::route_budget::effective_max_output_tokens_for_turn(
-                provider, &model, route_limits, Some(requested),
+                provider,
+                &model,
+                route_limits,
+                Some(requested),
+                reasoning_effort.as_deref(),
             ))
         });
         let settings = crate::settings::Settings::load().unwrap_or_default();
@@ -18877,6 +18881,7 @@ impl RuntimeThreadManager {
                     duration_ms,
                     first_token_ms,
                     request_ms,
+                    finish_reason: _,
                 } => {
                     self.emit_event(
                         &thread_id,

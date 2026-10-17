@@ -244,6 +244,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/new` refused. Thanks @luestr for reporting the refusal in #6981; this is
   one way to reach it, and the report stays open until the blocker that
   0.10.2 names confirms its cause (Refs #6981).
+- DeepSeek on the Responses route (the `deepseek-flash` default) no longer
+  fails with `400 reasoning_text must be passed back` when a session replays a
+  tool call that has no stored DeepSeek reasoning: a turn that was interrupted,
+  ran with thinking off, or came from another provider. Codewhale now sends the
+  same `(reasoning omitted)` placeholder the Chat route already uses, before
+  that turn's tool calls. A live probe on 2026-10-17 returned 400 without it and
+  200 with it. On Chat, DeepSeek enforces this only for tool-call turns, which
+  were already covered (Refs CW-7450).
+- At reasoning effort `max`, the first-party DeepSeek route now asks for up to
+  131,072 output tokens, DeepSeek's documented default at that effort, instead
+  of 65,536. Every other provider and effort keeps 65,536, and explicit
+  overrides and route limits still apply (Refs CW-7450).
+- `codewhale exec --output-format stream-json` adds the provider's
+  `finish_reason` to each `turn_usage` record, so a tool-call stop can be told
+  apart from an output-limit stop or a provider abort. The field is omitted
+  when the provider reports none (Refs CW-7450).
+- The `/statusline` picker's item hints are localized in all 15 UI languages
+  instead of always showing English.
 
 ## [0.10.2] - 2026-10-13
 
@@ -302,9 +320,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   remain in place. Windows Terminal IME preedit is still controlled by the
   terminal; native IME retesting remains open (#2323).
 
-- Model lists, resolution, picker controls and Runtime facts use the same
-  endpoint-scoped catalog facts. Cost estimates preserve complete price tiers,
-  calculate exact decimal amounts per request, and freeze rates at dispatch.
+- `codewhale model list`, the model picker, sub-agent model validation and
+  Runtime facts read the same endpoint-scoped catalog facts. `model resolve`
+  and `model set`, the app-server model registry and route admission still
+  read the static registry; moving them is tracked in #6396. Cost estimates
+  preserve complete price tiers, calculate exact decimal amounts per request,
+  and freeze rates at dispatch.
   Missing rates or required usage breakdowns stay unpriced; public prices do
   not establish account access. The offline seed records its source snapshot
   and keeps absent default wire IDs as dated compatibility fallbacks. Refs #6396.
