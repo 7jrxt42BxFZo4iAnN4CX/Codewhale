@@ -384,7 +384,9 @@ Instead, choose the closest shipped route and override its endpoint/model:
 - Multiple named OpenAI-compatible gateways, or local routes you want to pin
   from an AgentProfile, can use a custom table such as
   `[providers.lm-studio] kind = "openai-compatible"` and select it with
-  `provider = "lm-studio"` or a profile `provider = "lm-studio"`.
+  `provider = "lm-studio"` or a profile `provider = "lm-studio"`. Such a table
+  speaks Chat Completions unless it sets `wire = "responses"` (OpenAI
+  Responses at `<base_url>/responses`) or `wire = "anthropic"`.
 - Local OpenAI-compatible runtimes: use `provider = "vllm"`, `"sglang"`, or
   `"ollama"` with the matching provider-specific base URL/model values.
 

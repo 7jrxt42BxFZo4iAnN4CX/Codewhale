@@ -601,6 +601,19 @@ Custom provider names may be selected with `provider = "<name>"`,
 `--provider <name>`, or an AgentProfile `provider = "<name>"` when the matching
 `[providers.<name>]` table exists.
 
+A custom table sends Chat Completions requests by default. Add
+`wire = "responses"` to send OpenAI Responses requests to
+`<base_url>/responses` instead, or `wire = "anthropic"` for Anthropic Messages:
+
+```toml
+[providers.my-gateway]
+kind = "openai-compatible"
+base_url = "https://gateway.example/v1"
+api_key_env = "MY_GATEWAY_API_KEY"
+model = "gpt-5.6"
+wire = "responses"
+```
+
 StepFun has a first-class provider entry, so keep Coding Plan credentials and
 base URL scoped to `[providers.stepfun]`:
 
