@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `validate_data`, `review` and `verify` honor the read deny-list, as `read`
+  does. They read files such as a workspace `.env`, or in trust mode
+  `~/.aws/credentials`, without the check. `validate_data`'s TOML parse
+  error could quote a line of such a file back to the model, and `review`
+  and `verify` sent the whole file to the provider.
 - Commands that start outside the shell tool now get the same sandbox as
   shell commands:
   - `terminal_*` PTY sessions used a default sandbox with no credential
