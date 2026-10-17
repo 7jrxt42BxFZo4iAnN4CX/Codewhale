@@ -1206,7 +1206,10 @@ pub(crate) async fn run_exec_agent(
                 }
             }
             Event::TurnUsage {
-                usage, duration_ms, ..
+                usage,
+                duration_ms,
+                finish_reason,
+                ..
             } => {
                 if output_format == ExecOutputFormat::StreamJson {
                     turn_usage_seq = turn_usage_seq.saturating_add(1);
@@ -1220,6 +1223,7 @@ pub(crate) async fn run_exec_agent(
                         prompt_cache_write_tokens: usage.prompt_cache_write_tokens,
                         reasoning_replay_tokens: usage.reasoning_replay_tokens,
                         duration_ms,
+                        finish_reason,
                     })?;
                 }
             }

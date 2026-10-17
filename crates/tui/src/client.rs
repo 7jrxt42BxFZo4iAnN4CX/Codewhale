@@ -2974,8 +2974,11 @@ impl CodewhaleClient {
         let outbound_dialect = WireDialect::from_wire_format(self.wire_format);
         role_placement::reject_unsupported_roles(&request.messages, outbound_dialect)?;
         let clamp_output_cap = |mut request: MessageRequest, route_limits: Option<RouteLimits>| {
-            let route_cap =
-                self.effective_max_output_tokens_with_limits(&request.model, route_limits);
+            let route_cap = self.effective_max_output_tokens_with_limits(
+                &request.model,
+                route_limits,
+                request.reasoning_effort.as_deref(),
+            );
             if request.max_tokens > route_cap {
                 tracing::debug!(
                     requested_max_tokens = request.max_tokens,
@@ -3246,7 +3249,7 @@ impl CodewhaleClient {
                 .ok()
                 .and_then(|candidate| crate::route_budget::known_route_limits(candidate.limits()))
         };
-        self.effective_max_output_tokens_with_limits(requested_model, route_limits)
+        self.effective_max_output_tokens_with_limits(requested_model, route_limits, None)
     }
 
     #[must_use]
@@ -3254,12 +3257,15 @@ impl CodewhaleClient {
         &self,
         requested_model: &str,
         route_limits: Option<RouteLimits>,
+        reasoning_effort: Option<&str>,
     ) -> u32 {
         let wire_model = self.wire_model_for_route(requested_model);
-        crate::route_budget::effective_max_output_tokens_for_route(
+        crate::route_budget::effective_max_output_tokens_for_turn(
             self.api_provider,
             &wire_model,
             route_limits,
+            None,
+            reasoning_effort,
         )
     }
 

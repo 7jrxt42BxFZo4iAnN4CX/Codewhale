@@ -31,7 +31,7 @@ SIBLINGS = ["codewhale-cu-plugin", "codewhale-ratatui", "codewhale-plugin-market
 DATA = ROOT / "docs" / "contributors.json"
 WALL = ROOT / "docs" / "assets" / "contributors.png"
 CACHE = ROOT / "target" / "contributor-avatars"
-NOREPLY = re.compile(r"^(?:\d+\+)?([A-Za-z0-9-]+)@users\.noreply\.github\.com$", re.I)
+NOREPLY = re.compile(r"^(?:(\d+)\+)?([A-Za-z0-9-]+)@users\.noreply\.github\.com$", re.I)
 NOT_PEOPLE = re.compile(
     r"\[bot\]|^bot$|copilot|dependabot|github-actions|^claude|anthropic|codex|cursor|devin|jules|grok|deepseek-v4|"
     r"^codewhale|openclaw|autoghclaw|g1 agent|^bot_|^hmbown$|^hunter b(own)?$|^username$|^handle$|^host$", re.I)
@@ -75,6 +75,7 @@ def refresh() -> None:
     amap = author_map()
     sources: dict[str, set[str]] = {}
     names: dict[str, set[str]] = {}
+    ids: dict[str, str] = {}
 
     def credit(login: str, why: str) -> None:
         if login and not NOT_PEOPLE.search(login):
@@ -85,8 +86,10 @@ def refresh() -> None:
             return
         handle = amap.get(email.lower()) or amap.get(name.lower())
         m = NOREPLY.match(email)
+        if m and m.group(1):
+            ids[m.group(2).lower()] = m.group(1)
         if handle or m:
-            credit(handle or m.group(1), why)
+            credit(handle or m.group(2), why)
         else:
             names.setdefault(name.strip(), set()).add(why)
 
@@ -112,6 +115,13 @@ def refresh() -> None:
             if row["type"] == "User":
                 credit(row["login"], "merged pull request")
     known = users_exist(set(sources))
+    for login in set(sources):
+        uid = ids.get(login.lower())
+        if login.lower() not in known and uid:
+            out = subprocess.run(["gh", "api", f"/user/{uid}"], cwd=ROOT, capture_output=True, text=True).stdout
+            user = json.loads(out or "{}")
+            if user.get("login"):
+                known[login.lower()] = {"login": user["login"], "name": user.get("name")}
     people: dict[str, set[str]] = {}
     for login, why in sources.items():
         user = known.get(login.lower())
