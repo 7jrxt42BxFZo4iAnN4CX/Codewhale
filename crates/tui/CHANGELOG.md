@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- A `tool_call_before` hook that answers `ask` now always shows the approval
+  prompt, as `docs/HOOKS.md` promises. Before, an earlier "approve for
+  session" or a conversation grant for the same command answered it
+  silently, so a hook could not re-gate a command the person had already
+  approved once.
 - `validate_data`, `review` and `verify` honor the read deny-list, as `read`
   does. They read files such as a workspace `.env`, or in trust mode
   `~/.aws/credentials`, without the check. `validate_data`'s TOML parse
