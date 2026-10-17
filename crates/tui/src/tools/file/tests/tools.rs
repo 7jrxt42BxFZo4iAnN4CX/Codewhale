@@ -812,6 +812,7 @@ async fn contract_write_over_crlf_file_preserves_crlf_line_endings() {
     let ctx = ToolContext::new(tmp.path().to_path_buf());
     let path = tmp.path().join("crlf.txt");
     fs::write(&path, b"alpha\r\nbeta\r\n").expect("initial CRLF write");
+    ctx.note_file_read(&ctx.resolve_path("crlf.txt").expect("resolve"));
 
     WriteFileTool::execute_contract_write(
         json!({"path": "crlf.txt", "content": "gamma\ndelta\n"}),

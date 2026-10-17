@@ -1698,6 +1698,9 @@ impl WriteFileTool {
 
         let prior = load_contract_source(&file_path, false, context).await?;
         let existed_before = prior.is_some();
+        if existed_before {
+            context.require_fresh_read_before_write(&file_path, path_str)?;
+        }
         let prior_bytes = prior.unwrap_or_default();
         let prior_contents = String::from_utf8_lossy(&prior_bytes);
 

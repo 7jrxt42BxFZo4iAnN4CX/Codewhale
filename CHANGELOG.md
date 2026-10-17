@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `write` refuses to replace an existing file that has not been read in this
+  session, or that changed after it was read. The File `edit` action already
+  made this check. Before, a whole-file write could overwrite contents the
+  model never saw, or a change you or another agent made after the model's
+  last read. Creating a new file is unchanged, and a file Codewhale wrote
+  itself counts as read. The refusal names the recovery: read the file, then
+  write again (CW-7450).
 - `codewhale exec` warns again when the sandbox posture asks for confinement
   but no OS sandbox can enforce it, for example on a Linux host or container
   where bubblewrap cannot start. With no external sandbox backend configured,
