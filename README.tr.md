@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:75bb6a506af5 -->
+<!-- source: README.md sha256:0dfd433f3147 -->
 <div align="center">
 
 <picture>
@@ -173,6 +173,8 @@ Codewhale, `deepseek-tui` olarak başladı ve hâlâ o projenin yapılandırmas�
 oturumlarını okuyor. Artık sağlayıcıdan bağımsız, bağımsız olarak sürdürülüyor ve hiçbir
 model sağlayıcısıyla bağlantılı değil. [Tüm katkıda bulunanlara](docs/CONTRIBUTORS.md) ve
 büyümesine yardım eden açık kaynak topluluklarına teşekkürler.
+
+[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
 
 [MIT](LICENSE). Diğer açık kaynak projelerden uyarlanan bölümler
 [üçüncü taraf bildirimlerinde](docs/THIRD_PARTY_NOTICES.md) kayıtlıdır.

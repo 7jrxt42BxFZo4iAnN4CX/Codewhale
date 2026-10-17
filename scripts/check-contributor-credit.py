@@ -107,6 +107,21 @@ def main() -> int:
             missing.append(f"  @{handle} ({why}) -- not in: {', '.join(absent)}")
 
     print(f"Contributor credit since {since}: {len(owed)} contributor(s) found.")
+    amap = author_map()
+    lost = []
+    for entry in sh("git", "log", f"{since}..HEAD", "--format=%h\t%an\t%ae\t%B%x00").split("\0"):
+        parts = entry.strip().split("\t", 3)
+        if len(parts) < 4:
+            continue
+        sha, name, email, body = parts
+        m = re.search(r"\d+\+([^@<>\s]+)@users\.noreply\.github\.com", email)
+        author = (amap.get(email.lower()) or amap.get(name.lower()) or (m.group(1) if m else name)).lower()
+        for handle in re.findall(r"(?i)harvested from PR #\d+ by @([A-Za-z0-9-]+)", body):
+            if handle.lower() != author:
+                lost.append(f"  {sha} harvested @{handle} but is authored by {name}")
+    if lost:
+        print("\nHarvested commits not authored by the contributor (GitHub's contributor list will miss them):\n")
+        print("\n".join(lost))
     if missing:
         print("\nUncredited work landed in this release:\n")
         print("\n".join(missing))

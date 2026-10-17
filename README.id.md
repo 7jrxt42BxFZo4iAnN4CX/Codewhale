@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:75bb6a506af5 -->
+<!-- source: README.md sha256:0dfd433f3147 -->
 <div align="center">
 
 <picture>
@@ -185,6 +185,8 @@ proyek itu. Kini proyek ini netral terhadap penyedia, dipelihara secara mandiri,
 dan tidak berafiliasi dengan penyedia model mana pun. Terima kasih kepada
 [setiap kontributor](docs/CONTRIBUTORS.md) dan komunitas sumber terbuka yang
 membantunya berkembang.
+
+[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
 
 [MIT](LICENSE). Bagian yang diadaptasi dari proyek sumber terbuka lain dicatat di
 [pemberitahuan pihak ketiga](docs/THIRD_PARTY_NOTICES.md).

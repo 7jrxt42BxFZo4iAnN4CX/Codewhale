@@ -177,5 +177,7 @@ not affiliated with any model provider. Thanks to
 [every contributor](docs/CONTRIBUTORS.md) and to the open-source communities
 that helped it grow.
 
+[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
+
 [MIT](LICENSE). Portions adapted from other open-source projects are recorded
 in [third-party notices](docs/THIRD_PARTY_NOTICES.md).

@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:75bb6a506af5 -->
+<!-- source: README.md sha256:0dfd433f3147 -->
 <div align="center">
 
 <picture>
@@ -175,6 +175,8 @@ progetto. Ora è indipendente da qualsiasi provider, mantenuto in modo autonomo 
 affiliato ad alcun fornitore di modelli. Grazie a
 [tutti i contributori](docs/CONTRIBUTORS.md) e alle comunità open source che
 hanno aiutato la sua crescita.
+
+[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
 
 [MIT](LICENSE). Le parti adattate da altri progetti open source sono riportate negli
 [avvisi di terze parti](docs/THIRD_PARTY_NOTICES.md).

@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:75bb6a506af5 -->
+<!-- source: README.md sha256:0dfd433f3147 -->
 <div align="center">
 
 <picture>
@@ -172,6 +172,8 @@ Codewhale की शुरुआत `deepseek-tui` के रूप में �
 और सेशन पढ़ता है। अब यह किसी प्रोवाइडर पर निर्भर नहीं है, स्वतंत्र रूप से अनुरक्षित है और किसी भी
 मॉडल प्रोवाइडर से संबद्ध नहीं है। [हर योगदानकर्ता](docs/CONTRIBUTORS.md) और प्रोजेक्ट को आगे
 बढ़ाने वाले ओपन सोर्स समुदायों का धन्यवाद।
+
+[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
 
 [MIT](LICENSE)। अन्य ओपन सोर्स प्रोजेक्ट से लिए और अनुकूलित किए गए हिस्से
 [थर्ड-पार्टी नोटिस](docs/THIRD_PARTY_NOTICES.md) में दर्ज हैं।
