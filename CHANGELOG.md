@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- When a `tool_search` activation pushes an earlier deferred tool out of the
+  bounded conversation toolbox (8 tools, 16 KiB of schemas), the search
+  result now names it under `evicted_tool_references`. Before, the tool
+  silently disappeared from the next request, and a model could go on
+  calling it. Thanks @asto18089 for the cost and correctness analysis
+  (Refs #6969).
 - An ACP client that asks how to turn on Full Access is now told the
   routes that work: start the server with `codewhale --yolo serve --acp`,
   or set `yolo = true` in config.toml. The hint used to recommend
