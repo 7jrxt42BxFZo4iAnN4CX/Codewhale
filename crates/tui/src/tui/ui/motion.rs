@@ -161,8 +161,12 @@ pub(crate) fn status_animation_interval_ms(app: &App) -> u64 {
     } else if matches!(
         app.view_stack.top_kind(),
         Some(ModalKind::Approval | ModalKind::Elevation | ModalKind::UserInput)
-    ) {
-        UI_DECISION_PROMPT_STATUS_ANIMATION_MS
+    ) || !(app.is_loading
+        || app.is_compacting
+        || app.is_purging
+        || crate::tui::subagent_routing::running_agent_count(app) > 0)
+    {
+        UI_QUIET_STATUS_ANIMATION_MS
     } else {
         // Keep the braille marker on its fixed 5 Hz table for width stability;
         // only atmosphere uses the measured display cadence.

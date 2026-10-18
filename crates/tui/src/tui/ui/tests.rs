@@ -1260,6 +1260,7 @@ fn underwater_motion_keeps_its_smoother_cadence_during_live_status() {
     app.low_motion = false;
     app.fancy_animations = true;
     app.constrained_frame_rate = false;
+    app.is_loading = true;
 
     use crate::tui::display_refresh::DrawCadenceTier;
     assert_eq!(
