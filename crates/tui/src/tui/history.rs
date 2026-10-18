@@ -300,7 +300,7 @@ impl HistoryCell {
             {
                 false
             }
-            HistoryCell::Tool(ToolCell::Exec(exec)) if exec.awaiting_approval => false,
+            HistoryCell::Tool(ToolCell::Exec(exec)) if exec.waiting.is_some() => false,
             HistoryCell::Tool(tool) => tool.is_running(),
             HistoryCell::User { .. }
             | HistoryCell::System { .. }
@@ -1040,6 +1040,12 @@ pub enum ToolStatus {
     Failed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecWait {
+    Approval,
+    Queue,
+}
+
 /// Shell command execution rendering data.
 #[derive(Debug, Clone)]
 pub struct ExecCell {
@@ -1054,7 +1060,7 @@ pub struct ExecCell {
     pub started_at: Option<Instant>,
     pub duration_ms: Option<u64>,
     pub stale_elapsed_since_output_ms: Option<u64>,
-    pub awaiting_approval: bool,
+    pub waiting: Option<ExecWait>,
     pub source: ExecSource,
     pub interaction: Option<String>,
     /// Cached output summary — avoids re-parsing JSON every frame.
@@ -1101,11 +1107,14 @@ impl ExecCell {
             .interaction
             .as_deref()
             .or(Some(command_summary.as_str()));
-        let held_status = if self.awaiting_approval && self.status == ToolStatus::Running {
-            Some("waiting for approval".to_string())
-        } else {
-            self.stale_elapsed_since_output_ms
-                .map(stale_shell_status_label)
+        let held_status = match (self.waiting, self.status) {
+            (Some(ExecWait::Approval), ToolStatus::Running) => {
+                Some("waiting for approval".to_string())
+            }
+            (Some(ExecWait::Queue), ToolStatus::Running) => Some("queued".to_string()),
+            _ => self
+                .stale_elapsed_since_output_ms
+                .map(stale_shell_status_label),
         };
         let receipt = tool_receipt_label(
             crate::tui::widgets::tool_card::ToolFamily::Run,

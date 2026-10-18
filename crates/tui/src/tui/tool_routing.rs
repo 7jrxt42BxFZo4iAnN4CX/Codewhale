@@ -12,7 +12,7 @@ use crate::tools::spec::{ToolError, ToolResult};
 use crate::tui::active_cell::ActiveCell;
 use crate::tui::app::{App, ToolDetailRecord, ToolEvidence};
 use crate::tui::history::{
-    ExecCell, ExecSource, ExploringEntry, GenericToolCell, HistoryCell, McpToolCell,
+    ExecCell, ExecSource, ExecWait, ExploringEntry, GenericToolCell, HistoryCell, McpToolCell,
     PatchSummaryCell, PlanUpdateCell, ReviewCell, ToolCell, ToolStatus, ViewImageCell,
     WebSearchCell, output_looks_like_diff, summarize_mcp_output, summarize_tool_args,
     summarize_tool_output,
@@ -109,10 +109,10 @@ pub(super) fn handle_tool_call_started(
                     shell_task_id: None,
                     owner_agent_id: None,
                     owner_agent_name: None,
-                    started_at: Some(Instant::now()),
+                    started_at: None,
                     duration_ms: None,
                     stale_elapsed_since_output_ms: None,
-                    awaiting_approval: false,
+                    waiting: None,
                     source,
                     description: None,
                     interaction: Some(summary.clone()),
@@ -148,10 +148,10 @@ pub(super) fn handle_tool_call_started(
                 shell_task_id: None,
                 owner_agent_id: None,
                 owner_agent_name: None,
-                started_at: Some(Instant::now()),
+                started_at: None,
                 duration_ms: None,
                 stale_elapsed_since_output_ms: None,
-                awaiting_approval: false,
+                waiting: None,
                 source,
                 description: input
                     .get("description")
@@ -329,20 +329,51 @@ fn push_active_tool_cell(
     app.mark_history_updated();
 }
 
-pub(crate) fn set_exec_card_awaiting_approval(app: &mut App, tool_id: &str, awaiting: bool) {
-    let Some(&index) = app.tool_cells.get(tool_id) else {
-        return;
-    };
+pub(crate) fn hold_exec_cards_for_approval(app: &mut App, tool_id: &str) {
+    if !crate::tools::subagent::SubAgentManager::is_child_approval_id(tool_id) {
+        let queued: Vec<usize> = app
+            .tool_cells
+            .iter()
+            .filter(|(id, _)| id.as_str() != tool_id)
+            .map(|(_, &index)| index)
+            .filter(|&index| {
+                matches!(
+                    app.cell_at_virtual_index(index),
+                    Some(HistoryCell::Tool(ToolCell::Exec(exec)))
+                        if exec.status == ToolStatus::Running
+                            && exec.started_at.is_none()
+                            && exec.waiting.is_none()
+                )
+            })
+            .collect();
+        for index in queued {
+            set_exec_card_waiting(app, index, Some(ExecWait::Queue));
+        }
+    }
+    if let Some(&index) = app.tool_cells.get(tool_id) {
+        set_exec_card_waiting(app, index, Some(ExecWait::Approval));
+    }
+}
+
+pub(crate) fn start_exec_card(app: &mut App, tool_id: &str) {
+    if let Some(&index) = app.tool_cells.get(tool_id) {
+        set_exec_card_waiting(app, index, None);
+    }
+}
+
+fn set_exec_card_waiting(app: &mut App, index: usize, waiting: Option<ExecWait>) {
     let is_change = matches!(
         app.cell_at_virtual_index(index),
-        Some(HistoryCell::Tool(ToolCell::Exec(exec))) if exec.awaiting_approval != awaiting
+        Some(HistoryCell::Tool(ToolCell::Exec(exec)))
+            if exec.status == ToolStatus::Running
+                && (exec.waiting != waiting || (waiting.is_none() && exec.started_at.is_none()))
     );
     if !is_change {
         return;
     }
     if let Some(HistoryCell::Tool(ToolCell::Exec(exec))) = app.cell_at_virtual_index_mut(index) {
-        exec.awaiting_approval = awaiting;
-        exec.started_at = (!awaiting).then(Instant::now);
+        exec.waiting = waiting;
+        exec.started_at = waiting.is_none().then(Instant::now);
         app.needs_redraw = true;
     }
 }
@@ -2791,7 +2822,7 @@ mod tests {
             started_at: None,
             duration_ms: Some(120),
             stale_elapsed_since_output_ms: None,
-            awaiting_approval: false,
+            waiting: None,
             source: ExecSource::Assistant,
             description: None,
             interaction: None,

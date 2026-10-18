@@ -107,7 +107,7 @@ fn exec_tool(command: &str, status: ToolStatus) -> ExecCell {
         started_at: None,
         duration_ms: None,
         stale_elapsed_since_output_ms: None,
-        awaiting_approval: false,
+        waiting: None,
         source: ExecSource::Assistant,
         description: None,
         interaction: None,

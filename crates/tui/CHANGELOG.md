@@ -21,8 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the lines together.
 - A shell card whose command is waiting on your approval now says
   "waiting for approval" with a still mark, instead of "running (Ns)" with
-  a spinner. Its elapsed time starts when you approve and the command
-  actually runs.
+  a spinner. A command queued behind it in the same step says "queued".
+  Elapsed time starts when a command actually begins to run.
 - `/color` gives a chat's composer box its own color. Bare `/color` cycles
   through red, orange, amber, green, cyan, blue, purple and pink; `/color
   <name>` picks one and `/color off` returns to the theme. The color is
