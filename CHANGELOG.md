@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `grep_files` (also `File search_content`) aimed at a single file, `rlm`
+  `open` with `file_path`, and the cache-maximal working set now honor the
+  read deny-list. Each read files such as `.env` past the check and returned
+  their lines to the model. A deny-listed working-set file is skipped with a
+  note.
 - A `tool_call_before` hook that answers `ask` now always shows the approval
   prompt, as `docs/HOOKS.md` promises. Before, an earlier "approve for
   session" or a conversation grant for the same command answered it
