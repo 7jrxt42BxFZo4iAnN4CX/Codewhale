@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/statusline` shows its last two items, Workspace and Git branch, without
   scrolling. The picker had not counted its padding rows. Thanks @Lstarsky0
   (#7022).
+- A shell or gate command that the safety check will refuse, such as one
+  spanning several lines, is refused at once instead of first asking you to
+  approve it.
 - Diffs in the TUI number each line only on its own side: a removed line
   shows its old line number and an added line its new one. Unchanged
   context lines keep their indentation instead of starting at the left

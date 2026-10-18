@@ -1614,6 +1614,14 @@ pub trait ToolSpec: Send + Sync {
         false
     }
 
+    fn refusal_before_approval(
+        &self,
+        _input: &Value,
+        _context: &ToolContext,
+    ) -> Option<ToolResult> {
+        None
+    }
+
     /// Resolve input-specific policy without performing external side effects.
     ///
     /// Resource claims deliberately default to global exclusivity until a
