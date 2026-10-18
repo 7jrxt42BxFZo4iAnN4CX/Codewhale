@@ -2191,12 +2191,17 @@ impl CodewhaleClient {
     pub(crate) fn resolve_model_route(&self, model: &str) -> Result<ReadyRouteCandidate> {
         static RESOLVER: OnceLock<RouteResolver> = OnceLock::new();
         let resolver = RESOLVER.get_or_init(RouteResolver::new);
+        // Pin the transport's own wire: a custom-table client constructed
+        // from a wire-true candidate keeps speaking that wire even when this
+        // internal re-resolution runs config-free (an engine-internal model
+        // switch must not silently downgrade the table's dialect).
         let request = RouteRequest {
             explicit_provider: Some(self.api_provider),
             model_selector: Some(LogicalModelRef::from(model)),
             saved_provider_model: None,
             base_url_override: Some(self.base_url.clone()),
             limit_overrides: Vec::new(),
+            wire_override: (self.api_provider == ProviderKind::Custom).then_some(self.wire_format),
         };
         if self.configured_models.is_empty() || self.api_provider == ProviderKind::OpenaiCodex {
             resolver.resolve(&request)
@@ -2714,37 +2719,11 @@ fn provider_wire_format_for_config(
 }
 
 fn wire_config_prefers_anthropic(wire: Option<&str>) -> bool {
-    let Some(raw) = wire.map(str::trim).filter(|value| !value.is_empty()) else {
-        return false;
-    };
-    let normalized = raw.to_ascii_lowercase().replace(['_', ' '], "-");
-    matches!(
-        normalized.as_str(),
-        "anthropic"
-            | "anthropic-messages"
-            | "messages"
-            | "claude"
-            | "anthropic-compatible"
-            | "anthropic-compat"
-    )
+    codewhale_config::provider::wire_dialect_prefers_anthropic(wire)
 }
 
 fn wire_config_prefers_responses(wire: Option<&str>) -> bool {
-    let Some(raw) = wire.map(str::trim).filter(|value| !value.is_empty()) else {
-        return false;
-    };
-    let normalized = raw.to_ascii_lowercase().replace(['_', ' '], "-");
-    matches!(
-        normalized.as_str(),
-        "responses"
-            | "responses-api"
-            | "openai-responses"
-            | "openai-responses-api"
-            | "response"
-            | "response-api"
-            | "openai-responses-compat"
-            | "responses-compat"
-    )
+    codewhale_config::provider::wire_dialect_prefers_responses(wire)
 }
 
 fn api_provider_skips_models_probe(api_provider: ProviderKind) -> bool {
