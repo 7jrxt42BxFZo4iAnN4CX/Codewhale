@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Shell cards in the TUI:
+  - A tool card that finished inside a turn that is still running opens its
+    raw detail (tool id, input, output) with Alt-V or a click, instead of a
+    rendered message view.
+  - The work dock no longer shows a ✓ for a background job that was killed
+    or timed out. Killed jobs get a neutral mark; timed-out jobs get the
+    failure mark.
+  - The keybinding docs now say what Alt-V opens with nothing selected, and
+    that clicking a card keeps Alt-V on it while newer cards arrive.
 - Six fixes from @asto18089, several ported from the Pinvou/CodeWhale fork
   with @zhuowp:
   - Claude 5 models and Haiku 5.5 no longer receive `temperature`/`top_p` on
