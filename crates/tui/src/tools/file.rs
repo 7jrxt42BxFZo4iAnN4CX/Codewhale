@@ -36,7 +36,7 @@ use unicode_normalization::UnicodeNormalization;
 /// A file's hash is taken over its raw bytes, always before any windowing,
 /// truncation, or rendering, so the value `read` reports is the value `write`,
 /// `edit`, and `patch` verify.
-pub(super) fn content_hash(bytes: &[u8]) -> String {
+pub(crate) fn content_hash(bytes: &[u8]) -> String {
     format!("sha256:{}", crate::hashing::sha256_hex(bytes))
 }
 

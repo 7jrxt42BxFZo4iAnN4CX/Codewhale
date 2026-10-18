@@ -24615,12 +24615,23 @@ mod thread_snapshot_ownership {
         /// Run one real turn whose model writes each `(path, content)` with
         /// `write_file`, then answers. Returns the settled turn record.
         async fn write_turn(&self, thread_id: &str, writes: &[(&str, &str)]) -> Result<Value> {
+            let mut current: std::collections::HashMap<&str, Vec<u8>> = writes
+                .iter()
+                .filter_map(|(path, _)| {
+                    fs::read(self.workspace.join(path)).ok().map(|b| (*path, b))
+                })
+                .collect();
             for (path, content) in writes {
                 let call_id = format!("call_{}", &Uuid::new_v4().simple().to_string()[..12]);
+                let mut args = json!({ "path": path, "content": content });
+                if let Some(bytes) = current.get(path) {
+                    args["expected_hash"] = json!(crate::tools::file::content_hash(bytes));
+                }
+                current.insert(path, content.as_bytes().to_vec());
                 self.mock.push_turn(canned::tool_call_turn(
                     &call_id,
                     "write_file",
-                    &json!({ "path": path, "content": content }).to_string(),
+                    &args.to_string(),
                 ));
             }
             self.mock.push_turn(canned::simple_text_turn("done"));
