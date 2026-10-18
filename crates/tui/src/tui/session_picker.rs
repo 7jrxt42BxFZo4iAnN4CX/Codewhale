@@ -2132,6 +2132,7 @@ mod tests {
                 thinking: "silent deliberation".to_string(),
                 signature: None,
                 state: None,
+                redacted_data: None,
             }],
         };
         let saved = saved_session_with_messages(vec![

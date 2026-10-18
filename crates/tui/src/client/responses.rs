@@ -706,7 +706,15 @@ impl CodewhaleClient {
                             thinking,
                             signature: None,
                             state: None,
+                            redacted_data: None,
                         },
+                        // Redacted thinking does not occur on Responses
+                        // routes (encrypted reasoning rides the reasoning
+                        // item's `encrypted_content` instead); keep the
+                        // match total without inventing a block shape.
+                        ContentBlockStart::RedactedThinking { .. } => {
+                            continue;
+                        }
                         ContentBlockStart::ToolUse {
                             id,
                             name,

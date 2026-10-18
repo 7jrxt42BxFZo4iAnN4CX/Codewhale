@@ -134,6 +134,12 @@ struct StreamOutcome {
     current_thinking: String,
     current_thinking_signature: Option<String>,
     current_thinking_state: Option<codewhale_models::OpaqueReasoningState>,
+    /// Thinking blocks already terminated by a `content_block_stop`, in wire
+    /// order. Adaptive/interleaved thinking emits several per assistant turn;
+    /// Anthropic requires the whole sequence replayed unmodified, so finished
+    /// blocks are parked here instead of being overwritten by the next one.
+    /// Redacted thinking blocks park here the moment they arrive.
+    completed_thinking: Vec<ContentBlock>,
     tool_uses: Vec<ToolUseState>,
     usage: Usage,
     usage_reported: bool,
@@ -174,6 +180,34 @@ pub(super) fn preview_request_error_user_message(
     error: &anyhow::Error,
 ) -> String {
     format!("{error:#}")
+}
+
+/// Park a finished thinking block (deltas + signature + optional Responses
+/// continuity state) into the turn's ordered completed list.
+///
+/// A block survives only if the provider actually emitted reasoning: readable
+/// text (minus the wire-only "(reasoning omitted)" placeholder) or an
+/// encrypted Responses state — the same guard the persistence site applies to
+/// the still-open block, so parking cannot mint a block the old single-slot
+/// persistence would have dropped.
+fn flush_thinking_block(
+    thinking: &mut String,
+    signature: &mut Option<String>,
+    state: &mut Option<codewhale_models::OpaqueReasoningState>,
+    completed: &mut Vec<ContentBlock>,
+) {
+    let placeholder_only = crate::client::is_reasoning_replay_placeholder(thinking);
+    if (!thinking.is_empty() && !placeholder_only) || state.is_some() {
+        completed.push(ContentBlock::Thinking {
+            thinking: std::mem::take(thinking),
+            signature: std::mem::take(signature),
+            state: state.take(),
+            redacted_data: None,
+        });
+    }
+    thinking.clear();
+    *signature = None;
+    *state = None;
 }
 
 /// Preserve text before either execution branch publishes it to the UI or history.
@@ -4365,6 +4399,12 @@ impl Engine {
         // thinking block; must be replayed verbatim in tool loops.
         let mut current_thinking_signature: Option<String> = None;
         let mut current_thinking_state: Option<codewhale_models::OpaqueReasoningState> = None;
+        // Thinking blocks the stream already terminated (stop event seen or a
+        // new block started), in wire order: adaptive/interleaved thinking
+        // emits several per turn, and a redacted block parks here the moment
+        // it arrives. Anthropic replays the whole sequence unmodified, so a
+        // later block must never overwrite an earlier one.
+        let mut completed_thinking: Vec<ContentBlock> = Vec::new();
         let mut tool_uses: Vec<ToolUseState> = Vec::new();
         let mut usage = Usage {
             input_tokens: 0,
@@ -4850,15 +4890,59 @@ impl Engine {
                             .await;
                     }
                     ContentBlockStart::Thinking { thinking } => {
+                        // A previous thinking block that never saw a stop
+                        // event still counts as finished; park it so the new
+                        // block cannot overwrite it.
+                        flush_thinking_block(
+                            &mut current_thinking,
+                            &mut current_thinking_signature,
+                            &mut current_thinking_state,
+                            &mut completed_thinking,
+                        );
                         current_thinking = thinking;
-                        current_thinking_signature = None;
-                        current_thinking_state = None;
                         current_block_kind = Some(ContentBlockKind::Thinking);
                         let _ = self
                             .send_stream_event(Event::ThinkingStarted {
                                 index: index as usize,
                             })
                             .await;
+                    }
+                    ContentBlockStart::RedactedThinking { data } => {
+                        // Anthropic withheld this whole thinking block for
+                        // safety and replaced it with an encrypted payload.
+                        // There are no deltas; the block arrives complete at
+                        // start and must be replayed byte-exact, so park it
+                        // immediately. No UI events: there is no readable
+                        // content to stream.
+                        if data.is_empty() {
+                            // With serde's default this can only come from a
+                            // contract-violating block (missing `data`). It
+                            // still parks so the failure surfaces at replay
+                            // with a diagnosable shape.
+                            crate::logging::warn(
+                                "Captured a redacted thinking block with an empty payload; it will replay verbatim and the API may reject the request",
+                            );
+                        }
+                        flush_thinking_block(
+                            &mut current_thinking,
+                            &mut current_thinking_signature,
+                            &mut current_thinking_state,
+                            &mut completed_thinking,
+                        );
+                        completed_thinking.push(ContentBlock::Thinking {
+                            thinking: String::new(),
+                            signature: None,
+                            state: None,
+                            redacted_data: Some(data),
+                        });
+                        // Kind is cleared so the block's stop event needs no
+                        // handling — it was parked above and has no deltas —
+                        // and so a stale kind cannot emit a ThinkingComplete
+                        // for a provider that skips stops.
+                        current_block_kind = None;
+                        crate::logging::info(
+                            "Captured redacted thinking block for verbatim replay",
+                        );
                     }
                     ContentBlockStart::ToolUse {
                         id,
@@ -4999,6 +5083,16 @@ impl Engine {
                                     index: index as usize,
                                 })
                                 .await;
+                            // The block is finished: park it in wire order so
+                            // a following thinking block cannot overwrite it
+                            // (adaptive/interleaved thinking emits several per
+                            // turn; Anthropic replays the whole sequence).
+                            flush_thinking_block(
+                                &mut current_thinking,
+                                &mut current_thinking_signature,
+                                &mut current_thinking_state,
+                                &mut completed_thinking,
+                            );
                         }
                         Some(ContentBlockKind::ToolUse) | None => {}
                     }
@@ -5146,6 +5240,7 @@ impl Engine {
             current_thinking,
             current_thinking_signature,
             current_thinking_state,
+            completed_thinking,
             tool_uses,
             usage,
             usage_reported,
@@ -6258,6 +6353,9 @@ fn stream_event_has_actionable_content(event: &StreamEvent) -> bool {
         StreamEvent::ContentBlockStart { content_block, .. } => match content_block {
             ContentBlockStart::Text { text } => !text.is_empty(),
             ContentBlockStart::Thinking { thinking } => !thinking.is_empty(),
+            // A redacted thinking block is provider-owned encrypted content —
+            // its arrival is actionable reasoning output even without text.
+            ContentBlockStart::RedactedThinking { .. } => true,
             ContentBlockStart::ToolUse { .. } | ContentBlockStart::ServerToolUse { .. } => true,
         },
         StreamEvent::ContentBlockDelta { delta, .. } => match delta {
@@ -6290,6 +6388,9 @@ fn stream_event_content_bytes(event: &StreamEvent) -> usize {
         StreamEvent::ContentBlockStart { content_block, .. } => match content_block {
             ContentBlockStart::Text { text } => text.len(),
             ContentBlockStart::Thinking { thinking } => thinking.len(),
+            // The redacted payload is the block's whole captured body; it
+            // counts like the reasoning bytes it stands in for.
+            ContentBlockStart::RedactedThinking { data } => data.len(),
             ContentBlockStart::ToolUse {
                 id, name, input, ..
             }
@@ -7207,6 +7308,88 @@ mod tests {
         assert!(stream_event_has_actionable_content(
             &canned::tool_use_block_start(0, "call-1", "read_file")
         ));
+        // A redacted thinking block is provider-owned content the moment it
+        // arrives, even though it carries no readable text.
+        assert!(stream_event_has_actionable_content(
+            &StreamEvent::ContentBlockStart {
+                index: 0,
+                content_block: codewhale_models::ContentBlockStart::RedactedThinking {
+                    data: "ENC".to_string(),
+                },
+            }
+        ));
+    }
+
+    #[test]
+    fn flush_parks_finished_thinking_and_drops_placeholder_only_blocks() {
+        // Readable text parks; the slot clears so the next block starts
+        // clean.
+        let mut completed = Vec::new();
+        flush_thinking_block(
+            &mut "readable reasoning".to_string(),
+            &mut Some("sig-1".to_string()),
+            &mut None,
+            &mut completed,
+        );
+        assert_eq!(completed.len(), 1);
+        match &completed[0] {
+            ContentBlock::Thinking {
+                thinking,
+                signature,
+                redacted_data,
+                ..
+            } => {
+                assert_eq!(thinking, "readable reasoning");
+                assert_eq!(signature.as_deref(), Some("sig-1"));
+                assert!(redacted_data.is_none());
+            }
+            other => panic!("expected a thinking block: {other:?}"),
+        }
+
+        // The wire-only "(reasoning omitted)" placeholder never persists —
+        // the same rule the persistence site applies to the open block.
+        completed.clear();
+        flush_thinking_block(
+            &mut "(reasoning omitted)".to_string(),
+            &mut None,
+            &mut None,
+            &mut completed,
+        );
+        assert!(
+            completed.is_empty(),
+            "placeholder-only blocks must not park: {completed:?}"
+        );
+
+        // A block with only Responses continuity state parks even though the
+        // readable text is empty.
+        flush_thinking_block(
+            &mut String::new(),
+            &mut None,
+            &mut Some(codewhale_models::OpaqueReasoningState {
+                provider: "openai-codex".to_string(),
+                api: "openai-responses".to_string(),
+                model: "gpt-5-codex".to_string(),
+                id: None,
+                encrypted_content: "enc".to_string(),
+            }),
+            &mut completed,
+        );
+        assert_eq!(completed.len(), 1, "state-only blocks persist");
+    }
+
+    #[test]
+    fn redacted_block_start_counts_its_payload_as_content_bytes() {
+        // The encrypted payload is the block's whole body: the max-content
+        // cap must see it like reasoning text.
+        assert_eq!(
+            stream_event_content_bytes(&StreamEvent::ContentBlockStart {
+                index: 0,
+                content_block: codewhale_models::ContentBlockStart::RedactedThinking {
+                    data: "ENC".to_string(),
+                },
+            }),
+            3
+        );
     }
 
     /// Regression test for the OpenAI streaming batch tool_calls bug.

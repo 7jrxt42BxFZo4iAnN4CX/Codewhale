@@ -326,6 +326,7 @@ impl Engine {
             current_thinking,
             current_thinking_signature,
             current_thinking_state,
+            mut completed_thinking,
             mut tool_uses,
             usage,
             usage_reported,
@@ -624,11 +625,17 @@ impl Engine {
                 ));
             }
         }
+        // `completed_thinking` is part of "something" too: a block already
+        // flushed at its stop event is received content, and silently
+        // re-running the request would double-bill for it. A stream that
+        // died after completing thinking must surface its error like any
+        // other post-content death.
         let stream_died_with_nothing = stream_errors > 0
             && !terminal_stream_error
             && tool_uses.is_empty()
             && current_text_visible.trim().is_empty()
             && current_thinking.trim().is_empty()
+            && completed_thinking.is_empty()
             && !pending_message_complete;
         let pending_resume = match pending_resume {
             Some(resume) => Some(resume),
@@ -684,6 +691,10 @@ impl Engine {
                     // variable is still empty at this point and will be
                     // rebuilt on the next round.
                     let mut resume_blocks: Vec<ContentBlock> = Vec::new();
+                    // Thinking blocks the stream already terminated stay in
+                    // the retry prefix, in wire order, ahead of the block
+                    // that was still open when the stream died.
+                    resume_blocks.append(&mut completed_thinking);
                     // A wire-only placeholder must not ride into the
                     // retry prefix as stored reasoning either.
                     let thinking_is_placeholder_only =
@@ -695,6 +706,7 @@ impl Engine {
                             thinking: current_thinking.clone(),
                             signature: current_thinking_signature.clone(),
                             state: current_thinking_state.clone(),
+                            redacted_data: None,
                         });
                     }
                     if !current_text_visible.is_empty() {
@@ -875,6 +887,12 @@ impl Engine {
         // that compatibility value to the outgoing JSON only. Persisting
         // it here leaked an invented "(reasoning omitted)" block into the
         // transcript and every provider-neutral session replay.
+        // `completed_thinking` holds every thinking/redacted block the
+        // stream already terminated, in wire order; the guard below keeps
+        // a trailing block whose stop event never arrived. Both must
+        // survive — Anthropic replays the whole thinking sequence
+        // unmodified.
+        content_blocks.append(&mut completed_thinking);
         let thinking_is_placeholder_only =
             crate::client::is_reasoning_replay_placeholder(&current_thinking);
         if (!current_thinking.is_empty() && !thinking_is_placeholder_only)
@@ -884,6 +902,7 @@ impl Engine {
                 thinking: current_thinking.clone(),
                 signature: current_thinking_signature.clone(),
                 state: current_thinking_state.clone(),
+                redacted_data: None,
             });
         }
 
@@ -984,8 +1003,9 @@ impl Engine {
                 ContentBlock::Thinking {
                     thinking,
                     state,
+                    redacted_data,
                     ..
-                } if !thinking.trim().is_empty() || state.is_some()
+                } if !thinking.trim().is_empty() || state.is_some() || redacted_data.is_some()
             )
         });
 
