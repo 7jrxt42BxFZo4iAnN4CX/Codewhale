@@ -2830,10 +2830,15 @@ pub(crate) async fn run_event_loop(
                     | EngineEvent::ToolResultContent { .. } => {}
                     EngineEvent::ToolCallHeartbeat => {}
                     // Typed owner activity is a pet-facing projection;
-                    // `pet_watch::observe` above already consumed it, and the
-                    // transcript renders from the ToolCall* events.
-                    EngineEvent::OperationActivityStarted { .. }
-                    | EngineEvent::OperationActivityCompleted { .. } => {}
+                    // `pet_watch::observe` above already consumed it. The
+                    // transcript renders from the ToolCall* events, except
+                    // that a start begins a shell card's clock.
+                    EngineEvent::OperationActivityStarted { span_id, .. } => {
+                        if let Some((call_id, _)) = span_id.rsplit_once('#') {
+                            crate::tui::tool_routing::start_exec_card(app, call_id);
+                        }
+                    }
+                    EngineEvent::OperationActivityCompleted { .. } => {}
                     EngineEvent::ToolCallComplete {
                         id,
                         name,
@@ -8595,7 +8600,7 @@ pub(super) async fn handle_approval_required_event(
                 config.approval_default_selection(),
                 config.approval_timeout(),
             );
-            crate::tui::tool_routing::set_exec_card_awaiting_approval(app, &id, true);
+            crate::tui::tool_routing::hold_exec_cards_for_approval(app, &id);
             if let Some(agent_id) = crate::tui::pending_requests::child_agent_id(&id) {
                 crate::tui::pending_requests::record(
                     app,

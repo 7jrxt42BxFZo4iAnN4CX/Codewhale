@@ -3232,7 +3232,7 @@ pub(crate) fn observe_human_request_settlement(app: &mut App, event: &EngineEven
 }
 
 pub(crate) fn note_human_decision_delivered(app: &mut App, tool_id: &str) {
-    crate::tui::tool_routing::set_exec_card_awaiting_approval(app, tool_id, false);
+    crate::tui::tool_routing::start_exec_card(app, tool_id);
     if (app.is_loading || matches!(app.runtime_turn_status.as_deref(), Some("in_progress")))
         && !app.suppress_stream_events_until_turn_complete
         && !crate::tui::pending_requests::is_foreign_child_request(app, tool_id)

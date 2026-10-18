@@ -3171,11 +3171,29 @@ impl Engine {
                         requested_sandbox_escalation(&tool_name, &tool_input, batch_sandbox_policy)
                             .expect("sandbox escalation was validated while planning")
                             .map(|(policy, _)| policy);
+                    let refusal_before_approval = if plan.approval_required {
+                        tool_registry
+                            .and_then(|registry| registry.get(&tool_name))
+                            .zip(batch_tool_context.as_ref())
+                            .and_then(|(spec, context)| {
+                                spec.refusal_before_approval(&tool_input, context)
+                            })
+                    } else {
+                        None
+                    };
                     let (result_override, context_override, approval_stamp): (
                         Option<Result<ToolResult, ToolError>>,
                         Option<crate::tools::ToolContext>,
                         Option<ToolApprovalStamp>,
-                    ) = if plan.approval_required {
+                    ) = if let Some(refusal) = refusal_before_approval {
+                        nested_gate_env.tool_call_budget.refund();
+                        emit_tool_audit(json!({
+                            "event": "tool.refused_before_approval",
+                            "tool_id": tool_id.clone(),
+                            "tool_name": tool_name.clone(),
+                        }));
+                        (Some(Ok(refusal)), None, None)
+                    } else if plan.approval_required {
                         emit_tool_audit(json!({
                             "event": "tool.approval_required",
                             "tool_id": tool_id.clone(),

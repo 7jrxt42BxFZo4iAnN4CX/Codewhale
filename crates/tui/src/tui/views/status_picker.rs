@@ -205,10 +205,10 @@ impl ModalView for StatusPickerView {
 
     fn render(&self, area: Rect, buf: &mut Buffer) {
         // Two header lines + one row per StatusItem + the wrapping action
-        // footer that now lives inside the body (one row more than the old
-        // border footer). centered_modal_area clamps this to the frame and
-        // lets the scroll offset absorb any remaining overflow.
-        let needed_height = (self.rows.len() as u16).saturating_add(5);
+        // footer that now lives inside the body, plus the border and padding
+        // rows above and below. centered_modal_area clamps this to the frame
+        // and lets the scroll offset absorb any remaining overflow.
+        let needed_height = (self.rows.len() as u16).saturating_add(7);
         let popup_area = centered_modal_area(area, 64, needed_height, 40, 8);
 
         render_modal_surface(area, popup_area, buf);
