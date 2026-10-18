@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The other whole-file writers now refuse to replace an existing file that
+  is unread or stale, as `write` does: `apply_patch` with `replace`, and the
+  `write_file` and `File action=write` paths that older prompts still call.
+  A successful patch counts as a read, so patch-then-write still works.
+  `fim_edit` honors the read deny-list. It also refuses to write when the
+  file changed while its completion was running, which used to overwrite
+  your edit.
 - `grep_files` (also `File search_content`) aimed at a single file, `rlm`
   `open` with `file_path`, and the cache-maximal working set now honor the
   read deny-list. Each read files such as `.env` past the check and returned

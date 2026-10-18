@@ -1856,6 +1856,8 @@ impl ToolSpec for WriteFileTool {
                 )));
             }
             verify_expected_hash(Some(expected), prior_contents.as_bytes(), "write", path_str)?;
+        } else if existed_before {
+            context.require_fresh_read_before_write(&file_path, path_str)?;
         }
 
         // Create parent directories if needed
