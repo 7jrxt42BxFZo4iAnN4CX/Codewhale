@@ -2094,7 +2094,7 @@ impl ShellManager {
     /// Prepare a program for a tool that runs workspace code outside
     /// `exec_shell`, under the policy and sandbox configuration a shell
     /// command would get in this session.
-    fn prepare_runner(
+    pub(crate) fn prepare_runner(
         &self,
         program: &str,
         args: Vec<String>,
@@ -2404,6 +2404,9 @@ impl ShellManager {
             .with_policy(policy)
             .with_env(extra_env);
         let exec_env = self.sandbox_manager.prepare(&spec);
+        if matches!(spec.sandbox_policy, ExecutionSandboxPolicy::ReadOnly) {
+            require_native_readonly_execution(&exec_env)?;
+        }
 
         Self::execute_interactive_sandboxed(command, &work_dir, timeout_ms, &exec_env)
     }

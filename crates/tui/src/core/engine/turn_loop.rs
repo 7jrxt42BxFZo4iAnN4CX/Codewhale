@@ -2139,6 +2139,7 @@ impl Engine {
             // ORs `approval_required`.
             if hook_requires_approval && !self.session.auto_approve {
                 approval_required = true;
+                approval_force_prompt = true;
             }
 
             if blocked_error.is_none() {

@@ -393,6 +393,7 @@ impl Engine {
         // fail by name when there is none) instead of passing for a finished
         // answer or being re-requested unchanged. The diagnostics above keep
         // the reason the provider sent.
+        let provider_finish_reason = stop_reason.clone();
         let stop_reason = if stop_contradicts_output_ceiling(
             stop_reason.as_deref(),
             usage_reported.then_some(usage.output_tokens),
@@ -449,6 +450,7 @@ impl Engine {
                         u64::try_from(request_dispatched_at.elapsed().as_millis())
                             .unwrap_or(u64::MAX),
                     ),
+                    finish_reason: provider_finish_reason,
                 })
                 .await;
         }

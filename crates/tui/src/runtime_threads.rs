@@ -15121,7 +15121,11 @@ impl RuntimeThreadManager {
         let route_limits = known_route_limits(route.candidate.limits());
         let max_output_tokens = req.max_output_tokens.and_then(|requested| {
             std::num::NonZeroU32::new(crate::route_budget::effective_max_output_tokens_for_turn(
-                provider, &model, route_limits, Some(requested),
+                provider,
+                &model,
+                route_limits,
+                Some(requested),
+                reasoning_effort.as_deref(),
             ))
         });
         let settings = crate::settings::Settings::load().unwrap_or_default();
@@ -16497,13 +16501,28 @@ impl RuntimeThreadManager {
         create: bool,
     ) -> Result<Option<SharedShellManager>> {
         let thread = self.get_thread(thread_id).await?;
+        let (prefer_bwrap, bwrap_extensions, denied_read_paths) = {
+            let cfg = self.read_config();
+            (
+                cfg.prefers_bwrap(),
+                crate::sandbox::BwrapMountExtensions {
+                    read_only_roots: cfg.bwrap_ro_roots.clone(),
+                    device_roots: cfg.bwrap_dev_roots.clone(),
+                },
+                cfg.effective_sandbox_denied_read_paths(),
+            )
+        };
         let mut active = self.active.lock().await;
         let manager = match active.shell_managers.entry(thread_id.to_string()) {
             std::collections::hash_map::Entry::Occupied(entry) => Some(entry.get().clone()),
             std::collections::hash_map::Entry::Vacant(entry) => create.then(|| {
-                entry
-                    .insert(new_shared_shell_manager(thread.workspace.clone()))
-                    .clone()
+                let manager = new_shared_shell_manager(thread.workspace.clone());
+                if let Ok(mut guard) = manager.lock() {
+                    guard.set_prefer_bwrap(prefer_bwrap);
+                    guard.set_bwrap_extensions(bwrap_extensions);
+                    guard.set_denied_read_subpaths(denied_read_paths);
+                }
+                entry.insert(manager).clone()
             }),
         };
         drop(active);
@@ -18878,6 +18897,7 @@ impl RuntimeThreadManager {
                     duration_ms,
                     first_token_ms,
                     request_ms,
+                    finish_reason: _,
                 } => {
                     self.emit_event(
                         &thread_id,
