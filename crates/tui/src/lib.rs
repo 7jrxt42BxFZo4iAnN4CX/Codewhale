@@ -1415,7 +1415,8 @@ struct ReviewArgs {
     /// is only printed locally.
     #[arg(long, requires = "pr")]
     post: bool,
-    /// Base ref to diff against (e.g. origin/main)
+    /// Base ref to diff against (e.g. origin/main). The reviewer also gets the
+    /// base..HEAD commit messages as the author's stated intent.
     #[arg(long, conflicts_with_all = ["staged", "pr"])]
     base: Option<String>,
     /// Limit diff to a specific path
@@ -10294,6 +10295,12 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
         pr_view.as_ref().map(|(_, view)| view),
         &std::env::current_dir()?,
     )?;
+    let commits = match (&args.base, args.pr) {
+        (Some(base), None) => {
+            collect_base_commit_messages(base, args.path.as_deref(), &std::env::current_dir()?)?
+        }
+        _ => String::new(),
+    };
     if diff.trim().is_empty() {
         bail!("No diff to review.");
     }
@@ -10321,9 +10328,12 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
             .features
             .enabled(crate::features::Feature::ReviewHost)
         {
-            crate::tools::review_host::cli_prompt(&diff, &review_context).await?
+            crate::tools::review_host::cli_prompt(&diff, &commits, &review_context).await?
         } else {
-            format!("Review the following diff and provide feedback:\n\n{diff}\n\nEnd of diff.")
+            format!(
+                "{}Review the following diff and provide feedback:\n\n{diff}\n\nEnd of diff.",
+                crate::tools::review::commit_intent_preamble(&commits)
+            )
         }]
     };
     let model = resolve_review_model(config, args.model.as_deref());
@@ -11649,6 +11659,46 @@ fn collect_diff(
         ensure_local_review_diff_fits(&diff, args.max_chars)?;
     }
     Ok(diff)
+}
+
+fn collect_base_commit_messages(
+    base: &str,
+    path: Option<&std::path::Path>,
+    workspace: &std::path::Path,
+) -> Result<String> {
+    let mut cmd = crate::dependencies::Git::review_command(workspace)?;
+    cmd.current_dir(workspace)
+        .args([
+            "log",
+            "--no-merges",
+            "--no-color",
+            "--no-notes",
+            "--no-show-signature",
+            "--format=commit %h%n%B",
+        ])
+        .arg(format!("{base}..HEAD"));
+    if let Some(path) = path {
+        cmd.arg("--").arg(path);
+    }
+    let output = cmd
+        .output()
+        .map_err(|e| anyhow::anyhow!("Failed to run git log. Is git installed? ({e})"))?;
+    if !output.status.success() {
+        bail!(
+            "git log failed: {}",
+            first_stderr_line(&String::from_utf8_lossy(&output.stderr))
+        );
+    }
+    let log = String::from_utf8_lossy(&output.stdout);
+    let log = log.trim();
+    let limit = crate::tools::review::MAX_REVIEW_COMMIT_MESSAGE_CHARS;
+    if log.chars().count() <= limit {
+        return Ok(log.to_string());
+    }
+    let kept: String = log.chars().take(limit).collect();
+    Ok(format!(
+        "{kept}\n[commit messages truncated at {limit} characters]"
+    ))
 }
 
 /// Outside a work tree `git diff` prints its whole `--no-index` usage; say

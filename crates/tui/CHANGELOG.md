@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `codewhale review --base <ref>` gives the reviewer the `base..HEAD` commit
+  messages as the author's stated intent, ahead of the diff, so it stops
+  flagging changes their commit messages already explain. The messages are
+  treated as claims to check, not instructions, and are capped at 16,000
+  characters.
 - `codewhale --resume <id>` after the TUI was killed mid-turn keeps the
   interrupted turn. Before, the resume stamped the older saved document as
   newer than the crash checkpoint, and the checkpoint, the only copy of
