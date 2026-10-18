@@ -1,6 +1,6 @@
 {
  "generated_by": "scripts/contributor-wall.py refresh",
- "github_contributor_list": 205,
+ "github_contributor_list": 203,
  "people": [
   {
    "login": "0gl20shk0sbt36",
@@ -533,12 +533,6 @@
    "credited_for": [
     "changelog credit",
     "contributor record"
-   ]
-  },
-  {
-   "login": "codalume-maintainer",
-   "credited_for": [
-    "commit"
    ]
   },
   {
@@ -1933,16 +1927,6 @@
    ]
   },
   {
-   "login": "nanookclaw",
-   "credited_for": [
-    "changelog credit",
-    "co-author",
-    "commit",
-    "contributor record",
-    "merged pull request"
-   ]
-  },
-  {
    "login": "NASLXTO",
    "credited_for": [
     "changelog credit",
@@ -3126,21 +3110,19 @@
  ],
  "unlinked_commit_names": [
   "AccMoment",
-  "Alexander Kireev",
   "AmosLeeeeeeee",
   "artanis",
   "Assassin-D007",
   "bluth",
+  "chatman-media",
   "codgo",
-  "Happy",
-  "Horace Liu",
+  "douglarek",
   "kurise",
   "LeHaiDang",
   "lei",
-  "Leo Douglas",
+  "liuhq",
   "liushiao",
   "liuyang",
-  "maple",
   "markchang",
   "ningjingkun",
   "ornn.ban",
@@ -3150,6 +3132,7 @@
   "v_wanghuanping01",
   "wangfeng",
   "xiedongsheng",
+  "yekern",
   "z27014",
   "zero",
   "Zhiping",
@@ -3182,6 +3165,10 @@
   "Chun Tse": "",
   "masonxhuang": "",
   "samhandsome": "",
-  "庄表伟": ""
+  "庄表伟": "",
+  "Horace Liu": "liuhq",
+  "Leo Douglas": "douglarek",
+  "maple": "yekern",
+  "Alexander Kireev": "chatman-media"
  }
 }

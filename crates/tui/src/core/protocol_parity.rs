@@ -641,6 +641,7 @@ pub fn event_to_protocol(event: &Event, ids: &ProtocolIds) -> wire::EventMsg {
             duration_ms,
             first_token_ms,
             request_ms,
+            finish_reason: _,
         } => wire::EventMsg::TurnUsage {
             max_output_tokens: *max_output_tokens,
             thread_id,
@@ -1444,6 +1445,7 @@ mod tests {
                     duration_ms: 12,
                     first_token_ms: Some(2),
                     request_ms: Some(10),
+                    finish_reason: None,
                 },
                 "turn_usage",
             ),
@@ -1570,6 +1572,7 @@ mod tests {
                 duration_ms: 12,
                 first_token_ms: Some(3),
                 request_ms: None,
+                finish_reason: None,
             },
             Event::Error {
                 envelope: ErrorEnvelope {

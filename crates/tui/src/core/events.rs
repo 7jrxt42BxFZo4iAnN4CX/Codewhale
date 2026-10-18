@@ -388,6 +388,7 @@ pub enum Event {
         /// measured (for example an aggregate REPL child receipt). This is
         /// the denominator for effective session-average throughput.
         request_ms: Option<u64>,
+        finish_reason: Option<String>,
     },
 
     /// Usage telemetry for a programmatic provider call whose cost is carried

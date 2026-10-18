@@ -2363,7 +2363,10 @@ impl Engine {
             });
         let sandbox_enforcement = if sandbox_backend.is_some() {
             crate::sandbox::policy::SandboxEnforcement::ExternalBackend
-        } else if crate::sandbox::get_platform_sandbox_with_bwrap_preference(config.prefer_bwrap)
+        } else if shell_manager
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .configured_sandbox_type()
             .is_some()
         {
             crate::sandbox::policy::SandboxEnforcement::LocalOs
@@ -5928,6 +5931,10 @@ impl Engine {
                 // (plan-mode role override above is intentionally before this).
                 rt.worker_profile.denied_tools =
                     self.config.disallowed_tools.clone().unwrap_or_default();
+                if let Some(allowed) = allowed_tools.as_ref() {
+                    rt.worker_profile.tools =
+                        crate::worker_profile::ToolScope::Explicit(allowed.clone());
+                }
                 if let Some(context) = fork_context_for_runtime.clone() {
                     rt = rt.with_fork_context(context);
                 }
@@ -7431,6 +7438,9 @@ impl Engine {
             rt.worker_profile = WorkerRuntimeProfile::for_role(FleetRole::Planner);
         }
         rt.worker_profile.denied_tools = self.config.disallowed_tools.clone().unwrap_or_default();
+        if let Some(allowed) = self.config.allowed_tools.as_ref() {
+            rt.worker_profile.tools = crate::worker_profile::ToolScope::Explicit(allowed.clone());
+        }
         Some(rt)
     }
 
