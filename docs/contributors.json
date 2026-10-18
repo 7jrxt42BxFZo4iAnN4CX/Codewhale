@@ -1,6 +1,6 @@
 {
  "generated_by": "scripts/contributor-wall.py refresh",
- "github_contributor_list": 205,
+ "github_contributor_list": 203,
  "people": [
   {
    "login": "0gl20shk0sbt36",
@@ -533,12 +533,6 @@
    "credited_for": [
     "changelog credit",
     "contributor record"
-   ]
-  },
-  {
-   "login": "codalume-maintainer",
-   "credited_for": [
-    "commit"
    ]
   },
   {
@@ -1933,16 +1927,6 @@
    ]
   },
   {
-   "login": "nanookclaw",
-   "credited_for": [
-    "changelog credit",
-    "co-author",
-    "commit",
-    "contributor record",
-    "merged pull request"
-   ]
-  },
-  {
    "login": "NASLXTO",
    "credited_for": [
     "changelog credit",
@@ -3132,7 +3116,6 @@
   "Assassin-D007",
   "bluth",
   "codgo",
-  "Happy",
   "Horace Liu",
   "kurise",
   "LeHaiDang",
