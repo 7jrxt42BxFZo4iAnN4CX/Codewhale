@@ -7,6 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Three session data-loss paths are closed:
+  - `/load` of an older exported copy of a session no longer replaces the
+    newer saved conversation with the same id. It refuses and points to
+    `/resume`. Before, the next autosave deleted every turn made after the
+    export.
+  - A journal archive append that was cut short (disk full, or a kill)
+    is trimmed back to its last complete line before the next append.
+    Before, the next save glued new entries onto the torn line. That made
+    the whole archive unreadable, and the document had already dropped
+    those entries.
+  - Launching with a legacy crash checkpoint keeps it when migrating it to
+    the per-session format fails, instead of deleting it.
+- Sub-agents stay within a turn's tool allow-list. `exec --allowed-tools`, a
+  Runtime API `allowed_tools`, and a command's `allowed-tools:` frontmatter
+  narrowed only the parent. A sub-agent it started got the full tool
+  surface, including `bash`, `write` and `edit`.
+- A `workflow` plan written with `nodes` (the declarative shape in
+  `docs/WORKFLOW_AUTHORING.md`) is now judged for approval from its compiled
+  plan, the same one the run uses. The old reader missed fields nested inside
+  `agent` and `branch` nodes. A plan with write children could then start
+  with no approval card, the card could say "Read-only plan", and the
+  receipt recorded the run as approved.
+- The other whole-file writers now refuse to replace an existing file that
+  is unread or stale, as `write` does: `apply_patch` with `replace`, and the
+  `write_file` and `File action=write` paths that older prompts still call.
+  A successful patch counts as a read, so patch-then-write still works.
+  `fim_edit` honors the read deny-list. It also refuses to write when the
+  file changed while its completion was running, which used to overwrite
+  your edit.
+- `grep_files` (also `File search_content`) aimed at a single file, `rlm`
+  `open` with `file_path`, and the cache-maximal working set now honor the
+  read deny-list. Each read files such as `.env` past the check and returned
+  their lines to the model. A deny-listed working-set file is skipped with a
+  note.
+- A `tool_call_before` hook that answers `ask` now always shows the approval
+  prompt, as `docs/HOOKS.md` promises. Before, an earlier "approve for
+  session" or a conversation grant for the same command answered it
+  silently, so a hook could not re-gate a command the person had already
+  approved once.
+- `validate_data`, `review` and `verify` honor the read deny-list, as `read`
+  does. They read files such as a workspace `.env`, or in trust mode
+  `~/.aws/credentials`, without the check. `validate_data`'s TOML parse
+  error could quote a line of such a file back to the model, and `review`
+  and `verify` sent the whole file to the provider.
+- Commands that start outside the shell tool now get the same sandbox as
+  shell commands:
+  - `terminal_*` PTY sessions used a default sandbox with no credential
+    deny-list, so on macOS they could read `~/.ssh` or `~/.aws` while `bash`
+    could not. On Linux they skipped bubblewrap, so workspace-write refused
+    them. They now use the session's shell sandbox, and they refuse to start
+    when commands run in an external sandbox backend.
+  - Runtime API thread jobs (`POST /v1/threads/{id}/jobs`) started before the
+    thread's first turn ran without bubblewrap and without the deny-list.
+    They now get both, and they are refused when an external sandbox backend
+    is configured, since a job starts a local process.
+  - `codewhale run sandbox run` ignored `prefer_bwrap` and the deny-list.
+    When no OS sandbox could enforce the policy, it ran the command
+    unconfined. It now refuses.
+  - On Windows, `bash` with `interactive: true` skipped the read-only check
+    that every other command path applies. It is now refused like the
+    others.
+  - A sub-agent's posture line could say the local OS sandbox applied when
+    its shell did not use one. It now reports what that shell actually
+    uses.
+- `write` refuses to replace an existing file that has not been read in this
+  session, or that changed after it was read. The File `edit` action already
+  made this check. Before, a whole-file write could overwrite contents the
+  model never saw, or a change you or another agent made after the model's
+  last read. Creating a new file is unchanged, and a file Codewhale wrote
+  itself counts as read. The refusal names the recovery: read the file, then
+  write again (CW-7450).
+- `codewhale exec` warns again when the sandbox posture asks for confinement
+  but no OS sandbox can enforce it, for example on a Linux host or container
+  where bubblewrap cannot start. With no external sandbox backend configured,
+  which is the default, the check read the absent backend as present, so the
+  warning never printed and commands ran unrestricted with no notice on
+  stderr. Found while proving the #7007 fix end to end in a container.
+- The middle working mode is called Work everywhere in the TUI: the footer
+  chip, the mode name and description, the hotbar action, settings errors,
+  `/context` and exports, and the matching locale strings, which now use each
+  language pack's existing word for it. The hook contract is unchanged:
+  `DEEPSEEK_MODE` and `DEEPSEEK_PREVIOUS_MODE` still report `ACT`, and saved
+  settings still read and write `agent` (Refs #6466).
 - The model catalog now carries current models from Anthropic, Google and
   Meta. Anthropic: `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`
   and `claude-fable-5-1`; the Auto router's cheap tier and the Scout companion
@@ -244,6 +327,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/new` refused. Thanks @luestr for reporting the refusal in #6981; this is
   one way to reach it, and the report stays open until the blocker that
   0.10.2 names confirms its cause (Refs #6981).
+- DeepSeek on the Responses route (the `deepseek-flash` default) no longer
+  fails with `400 reasoning_text must be passed back` when a session replays a
+  tool call that has no stored DeepSeek reasoning: a turn that was interrupted,
+  ran with thinking off, or came from another provider. Codewhale now sends the
+  same `(reasoning omitted)` placeholder the Chat route already uses, before
+  that turn's tool calls. A live probe on 2026-10-17 returned 400 without it and
+  200 with it. On Chat, DeepSeek enforces this only for tool-call turns, which
+  were already covered (Refs CW-7450).
+- At reasoning effort `max`, the first-party DeepSeek route now asks for up to
+  131,072 output tokens, DeepSeek's documented default at that effort, instead
+  of 65,536. Every other provider and effort keeps 65,536, and explicit
+  overrides and route limits still apply (Refs CW-7450).
+- `codewhale exec --output-format stream-json` adds the provider's
+  `finish_reason` to each `turn_usage` record, so a tool-call stop can be told
+  apart from an output-limit stop or a provider abort. The field is omitted
+  when the provider reports none (Refs CW-7450).
+- The `/statusline` picker's item hints are localized in all 15 UI languages
+  instead of always showing English.
+- A custom OpenAI-compatible relay's model list is now discovered. Four
+  separate defects kept it out of `/model`: a roster answering both `data` and
+  `models` was rejected as a duplicate field; only the active route was probed;
+  `/v1/models` was authenticated with `x-api-key` whenever the route declared
+  `wire = "anthropic"`, which a relay that rejects that header answered with
+  `401 missing_api_key`; and the picker's default view then hid the relay's own
+  rows. The startup probe now covers every configured relay, a built-in
+  provider name pointed at a private endpoint (`[providers.openai]` against a
+  relay) counts as a relay, and the provider panel no longer reports its
+  catalog missing while listing it.
 
 ## [0.10.2] - 2026-10-13
 
@@ -302,9 +413,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   remain in place. Windows Terminal IME preedit is still controlled by the
   terminal; native IME retesting remains open (#2323).
 
-- Model lists, resolution, picker controls and Runtime facts use the same
-  endpoint-scoped catalog facts. Cost estimates preserve complete price tiers,
-  calculate exact decimal amounts per request, and freeze rates at dispatch.
+- `codewhale model list`, the model picker, sub-agent model validation and
+  Runtime facts read the same endpoint-scoped catalog facts. `model resolve`
+  and `model set`, the app-server model registry and route admission still
+  read the static registry; moving them is tracked in #6396. Cost estimates
+  preserve complete price tiers, calculate exact decimal amounts per request,
+  and freeze rates at dispatch.
   Missing rates or required usage breakdowns stay unpriced; public prices do
   not establish account access. The offline seed records its source snapshot
   and keeps absent default wire IDs as dated compatibility fallbacks. Refs #6396.
