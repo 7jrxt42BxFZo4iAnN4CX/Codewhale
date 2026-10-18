@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `codewhale --resume <id>` after the TUI was killed mid-turn keeps the
+  interrupted turn. Before, the resume stamped the older saved document as
+  newer than the crash checkpoint, and the checkpoint, the only copy of
+  that turn, was then discarded as stale. `--continue` was not affected.
 - Three session data-loss paths are closed:
   - `/load` of an older exported copy of a session no longer replaces the
     newer saved conversation with the same id. It refuses and points to

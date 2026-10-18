@@ -3577,7 +3577,7 @@ impl SessionManager {
     /// consume it. Callers hold the session's attach lease. A stale checkpoint
     /// never replaces a newer document; an unreadable document and a failed
     /// save leave both files as they were.
-    fn promote_interrupted_checkpoint(&self, id: &str) {
+    pub(crate) fn promote_interrupted_checkpoint(&self, id: &str) {
         let Ok(Some(checkpoint)) = self.load_session_checkpoint(id) else {
             return;
         };

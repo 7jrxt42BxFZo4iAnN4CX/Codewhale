@@ -9967,9 +9967,12 @@ async fn prepare_mounted_session(
         } else {
             manager.resolve_session_id_prefix(&selector)?
         };
-        // Capture the complete document and separate local goal under the
-        // same existing inactive-session guard; neither read repairs history.
+        // Under the existing inactive-session guard, promote any crash
+        // checkpoint first: the mount below stamps a newer document, and the
+        // later attach would then discard the checkpoint as stale. Then
+        // capture the complete document and separate local goal.
         let _source_lease = manager.reserve_session_for_external_write(&id)?;
+        manager.promote_interrupted_checkpoint(&id);
         let saved = manager.load_session_snapshot_bounded(&id, MAX_CANONICAL_HISTORY_BYTES)?;
         // Project grants were captured for this launch before awaiting. The
         // existing restore changes App workspace, so it cannot silently apply
