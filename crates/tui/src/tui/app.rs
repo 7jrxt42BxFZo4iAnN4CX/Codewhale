@@ -5586,9 +5586,16 @@ impl App {
         if let Some(detail) = self.tool_details_by_cell.get(&index) {
             return Some(detail);
         }
-        self.active_tool_details
-            .values()
-            .find(|detail| self.tool_cells.get(&detail.tool_id).copied() == Some(index))
+        let active_entry = |tool_id: &str| {
+            self.active_cell
+                .as_ref()
+                .and_then(|active| active.entry_index_for_tool(tool_id))
+                .map(|entry| self.history.len() + entry)
+        };
+        self.active_tool_details.values().find(|detail| {
+            self.tool_cells.get(&detail.tool_id).copied() == Some(index)
+                || active_entry(&detail.tool_id) == Some(index)
+        })
     }
 
     /// Whether a virtual transcript cell can open a meaningful `v` detail
