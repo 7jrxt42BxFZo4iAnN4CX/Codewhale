@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Six fixes from @asto18089, several ported from the Pinvou/CodeWhale fork
+  with @zhuowp:
+  - Claude 5 models and Haiku 5.5 no longer receive `temperature`/`top_p` on
+    routes without exact catalog facts (custom or proxy base URLs, dated
+    snapshot ids, Messages-wire gateways), which those models reject with a
+    400 (#7014).
+  - Kimi keeps a tool whose schema has an empty `items`: the empty node is
+    dropped, as Moonshot's schema rules allow, instead of excluding the whole
+    tool (#7015).
+  - In a session that already has a stamped compaction checkpoint, a user turn
+    that pastes a legacy summary header stays an ordinary turn: it anchors the
+    round, is kept verbatim and no longer counts as a duplicated summary
+    (#7017).
+  - Turn-complete events carry their own `turn_id`, `submission_id` and
+    `compaction_id`. A send whose route fails to install, and a manual
+    compaction whose route is rejected, now end with a failed terminal event
+    instead of only an error, so waiting hosts no longer hang (#7018).
+  - Anthropic `redacted_thinking` blocks are captured and replayed byte-exact
+    on native Anthropic routes, so a tool loop after a redacted block no
+    longer fails with the same 400 on every retry. Other hosts withhold the
+    block (#7019).
+  - A named `[providers.<name>]` table with `wire = "responses"` or
+    `"anthropic"` now uses that wire on every turn and across model switches,
+    not only for the first request. The app-server's legacy
+    `[providers.custom]` table now refuses a non-Chat wire with
+    `provider_wire_format_unsupported` instead of forwarding a Chat body
+    (#7020; Refs #6997).
 - A background shell job that finishes while the agent is still working now
   reaches the model before its next step, instead of only when the turn ends.
   In `codewhale exec`, which stops at the end of the turn, that output used to
