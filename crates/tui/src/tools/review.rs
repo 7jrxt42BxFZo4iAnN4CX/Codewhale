@@ -1721,7 +1721,7 @@ async fn resolve_review_source(
 }
 
 fn resolve_file_target(target: &str, context: &ToolContext) -> Result<ReviewSource, ToolError> {
-    let path = context.resolve_path(target)?;
+    let path = crate::tools::file::resolve_guarded_read_path(context, target, "review")?;
     if !path.is_file() {
         return Err(ToolError::invalid_input(format!(
             "Target is not a file: {}",
