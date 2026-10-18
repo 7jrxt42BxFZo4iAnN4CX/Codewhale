@@ -2877,7 +2877,7 @@ impl SessionManager {
         session_id: &str,
         entries: &[&SessionEntry],
     ) -> io::Result<()> {
-        use std::io::{Seek as _, SeekFrom, Write as _};
+        use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
         if entries.is_empty() {
             return Ok(());
         }
@@ -2901,9 +2901,27 @@ impl SessionManager {
         }
         let created_file = !path.exists();
         let mut file = open_private_lock_file(&path)?;
-        file.seek(SeekFrom::End(0))?;
-        file.write_all(&buf)?;
-        file.sync_all()?;
+        let mut start = file.seek(SeekFrom::End(0))?;
+        if start > 0 {
+            let mut last = [0u8; 1];
+            file.seek(SeekFrom::End(-1))?;
+            file.read_exact(&mut last)?;
+            if last[0] != b'\n' {
+                let mut raw = Vec::new();
+                file.seek(SeekFrom::Start(0))?;
+                file.read_to_end(&mut raw)?;
+                start = raw
+                    .iter()
+                    .rposition(|byte| *byte == b'\n')
+                    .map_or(0, |index| index as u64 + 1);
+                file.set_len(start)?;
+            }
+            file.seek(SeekFrom::Start(start))?;
+        }
+        if let Err(error) = file.write_all(&buf).and_then(|()| file.sync_all()) {
+            let _ = file.set_len(start).and_then(|()| file.sync_all());
+            return Err(error);
+        }
         #[cfg(unix)]
         if created_file || created_dir {
             // Make the new directory entries durable, not only the bytes.
@@ -3608,6 +3626,19 @@ impl SessionManager {
                 .map(|(recovery, lease)| (recovery.session, lease));
         }
         let lease = self.reserve_session_for_attach(&parsed.metadata.id)?;
+        if let Ok(saved) = self.load_session_metadata_by_id(&parsed.metadata.id)
+            && saved.updated_at > parsed.metadata.updated_at
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!(
+                    "session {} has a newer saved record than {}; continue it with `/resume {}`, or move that record aside before loading this older copy",
+                    parsed.metadata.id,
+                    path.display(),
+                    parsed.metadata.id
+                ),
+            ));
+        }
         let mut session = parsed;
         if let Some(journal) = session.journal.as_ref() {
             validate_saved_journal(journal)?;

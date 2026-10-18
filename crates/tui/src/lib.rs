@@ -2910,7 +2910,10 @@ async fn run_async_main_dispatch(
                 let workspace = resolve_workspace(&cli);
                 integrations::cli::run(&config, &workspace, command)
             }
-            Commands::Sandbox(args) => run_sandbox_command(args),
+            Commands::Sandbox(args) => {
+                let config = load_config_from_cli(&cli)?;
+                run_sandbox_command(&config, args)
+            }
             Commands::Serve(args) => {
                 let workspace = cli.workspace.clone().unwrap_or_else(|| {
                     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
@@ -12415,7 +12418,7 @@ fn is_scoped_npm_package_arg(command: &str, argument: &str) -> bool {
         })
 }
 
-fn run_sandbox_command(args: SandboxArgs) -> Result<()> {
+fn run_sandbox_command(config: &Config, args: SandboxArgs) -> Result<()> {
     use crate::sandbox::{CommandSpec, SandboxManager};
 
     let SandboxCommand::Run {
@@ -12444,8 +12447,20 @@ fn run_sandbox_command(args: SandboxArgs) -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Command is required"))?;
     let spec =
         CommandSpec::program(program, args.to_vec(), cwd.clone(), timeout).with_policy(policy);
-    let manager = SandboxManager::new();
+    let mut manager = SandboxManager::new();
+    manager.set_prefer_bwrap(config.prefers_bwrap());
+    manager.set_bwrap_extensions(crate::sandbox::BwrapMountExtensions {
+        read_only_roots: config.bwrap_ro_roots.clone(),
+        device_roots: config.bwrap_dev_roots.clone(),
+    });
+    manager.set_denied_read_subpaths(config.effective_sandbox_denied_read_paths());
     let exec_env = manager.prepare(&spec);
+    if spec.sandbox_policy.should_sandbox() && !exec_env.is_sandboxed() {
+        bail!(
+            "no OS sandbox can enforce the {} policy on this host; nothing was run",
+            spec.sandbox_policy.posture_label()
+        );
+    }
 
     let mut cmd = Command::new(exec_env.program());
     cmd.args(exec_env.args())
@@ -12903,8 +12918,9 @@ fn preserve_interrupted_checkpoint_for_explicit_resume(launch_workspace: &Path) 
     if newest.source == session_manager::CheckpointSource::Legacy {
         // Migrate legacy single-slot checkpoint to per-session format
         // before clearing the legacy file, or the data is unrecoverable.
-        let _ = manager.save_checkpoint(&newest.session);
-        let _ = manager.clear_legacy_checkpoint();
+        if manager.save_checkpoint(&newest.session).is_ok() {
+            let _ = manager.clear_legacy_checkpoint();
+        }
     }
 
     let age_str = checkpoint_age_label(newest.age);
@@ -13503,6 +13519,10 @@ async fn run_interactive_prepared(
     // alongside the Models.dev snapshot. Currently active for TelecomJS, whose
     // model list is not covered by the Models.dev catalog.
     crate::client::CodewhaleClient::spawn_active_provider_catalog_refresh(config);
+    // The picker lists every configured route, so the relays this session is
+    // not currently on are probed too; otherwise a relay's roster stays empty
+    // until the user switches to it.
+    crate::client::CodewhaleClient::spawn_configured_provider_catalog_refresh(config);
 
     // Boot janitors — snapshot prune (7-day default), spillover prune
     // (#422), and managed-session cleanup (v0.8.44) — are best-effort disk
@@ -13998,6 +14018,8 @@ enum ExecStreamEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         reasoning_replay_tokens: Option<u32>,
         duration_ms: u64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        finish_reason: Option<String>,
     },
     #[serde(rename = "metadata")]
     Metadata { meta: Box<ExecStreamMeta> },

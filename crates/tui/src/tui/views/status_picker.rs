@@ -290,15 +290,16 @@ impl ModalView for StatusPickerView {
 
             if is_cursor {
                 let selected_style = menu_style::selected_row_style();
-                let line = status_row_text(pointer, mark, item, content.width as usize);
+                let line =
+                    status_row_text(pointer, mark, item, self.locale, content.width as usize);
                 lines.push(Line::from(Span::styled(line, selected_style)));
             } else {
                 let label = item.label();
-                let hint = item.hint();
+                let hint = item.hint(self.locale);
                 let prefix = format!(" {pointer} {mark} {label}  (");
                 let truncated_hint = crate::tui::ui_text::semantic_truncate_between_affixes(
                     &prefix,
-                    hint,
+                    hint.as_ref(),
                     ")",
                     usize::from(content.width),
                 );
@@ -328,10 +329,20 @@ fn visible_row_start(total_rows: usize, cursor: usize, visible_rows: usize) -> u
         .min(max_start)
 }
 
-fn status_row_text(pointer: &str, mark: &str, item: &StatusItem, width: usize) -> String {
+fn status_row_text(
+    pointer: &str,
+    mark: &str,
+    item: &StatusItem,
+    locale: Locale,
+    width: usize,
+) -> String {
     let prefix = format!(" {pointer} {mark} {}  (", item.label());
-    let mut text =
-        crate::tui::ui_text::semantic_truncate_with_affixes(&prefix, item.hint(), ")", width);
+    let mut text = crate::tui::ui_text::semantic_truncate_with_affixes(
+        &prefix,
+        item.hint(locale).as_ref(),
+        ")",
+        width,
+    );
     let current_width = text.width();
     if current_width < width {
         text.push_str(&" ".repeat(width - current_width));
@@ -494,14 +505,14 @@ mod tests {
 
     #[test]
     fn selected_row_text_fills_available_width() {
-        let text = status_row_text("▸", "[ ]", &StatusItem::Cache, 40);
+        let text = status_row_text("▸", "[ ]", &StatusItem::Cache, Locale::En, 40);
         assert_eq!(text.width(), 40);
         assert!(text.starts_with(" ▸ [ ] Prompt cache hit rate"));
     }
 
     #[test]
     fn selected_row_text_semantically_truncates_hint_at_narrow_width() {
-        let text = status_row_text("▸", "[ ]", &StatusItem::Cache, 44);
+        let text = status_row_text("▸", "[ ]", &StatusItem::Cache, Locale::En, 44);
         assert_eq!(text.width(), 44);
         // Cut at a word boundary, never mid-word.
         assert!(text.contains("% of…"), "{text:?}");
