@@ -65,8 +65,12 @@ controls do not blur together.
   `.codewhale/constitution.json`, described below.
 - **`AGENTS.md`** — cross-agent **project instructions** (prose). This is the
   canonical file for "how should an agent work in this repo." Run `/init` to
-  scaffold one. `CLAUDE.md` and `.claude/instructions.md` are read as
-  compatibility fallbacks.
+  scaffold one. Instruction files written for other tools (`CLAUDE.md`,
+  `.claude/instructions.md`, `.cursorrules`, `.github/copilot-instructions.md`
+  and similar) are read only when you opt in with the top-level
+  `project_instruction_imports` key, for example `["claude"]`, `["cursor"]` or
+  `["all"]` (see `config.example.toml`); Codewhale warns when it finds one it
+  did not load.
 - **Memory and handoffs** — recalled state. Useful, but lower authority than
   constitutions and project instructions.
 
