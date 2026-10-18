@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Sub-agents stay within a turn's tool allow-list. `exec --allowed-tools`, a
+  Runtime API `allowed_tools`, and a command's `allowed-tools:` frontmatter
+  narrowed only the parent. A sub-agent it started got the full tool
+  surface, including `bash`, `write` and `edit`.
 - A `workflow` plan written with `nodes` (the declarative shape in
   `docs/WORKFLOW_AUTHORING.md`) is now judged for approval from its compiled
   plan, the same one the run uses. The old reader missed fields nested inside

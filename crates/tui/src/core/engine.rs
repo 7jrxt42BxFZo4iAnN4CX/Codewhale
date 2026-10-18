@@ -5894,6 +5894,10 @@ impl Engine {
                 // (plan-mode role override above is intentionally before this).
                 rt.worker_profile.denied_tools =
                     self.config.disallowed_tools.clone().unwrap_or_default();
+                if let Some(allowed) = allowed_tools.as_ref() {
+                    rt.worker_profile.tools =
+                        crate::worker_profile::ToolScope::Explicit(allowed.clone());
+                }
                 if let Some(context) = fork_context_for_runtime.clone() {
                     rt = rt.with_fork_context(context);
                 }
@@ -7360,6 +7364,9 @@ impl Engine {
             rt.worker_profile = WorkerRuntimeProfile::for_role(FleetRole::Planner);
         }
         rt.worker_profile.denied_tools = self.config.disallowed_tools.clone().unwrap_or_default();
+        if let Some(allowed) = self.config.allowed_tools.as_ref() {
+            rt.worker_profile.tools = crate::worker_profile::ToolScope::Explicit(allowed.clone());
+        }
         Some(rt)
     }
 
