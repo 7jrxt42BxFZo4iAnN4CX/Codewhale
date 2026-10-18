@@ -9557,37 +9557,11 @@ fn xiaomi_mimo_env_api_key_for_runtime(
 }
 
 fn wire_config_prefers_anthropic(wire: Option<&str>) -> bool {
-    let Some(raw) = wire.map(str::trim).filter(|value| !value.is_empty()) else {
-        return false;
-    };
-    let normalized = raw.to_ascii_lowercase().replace(['_', ' '], "-");
-    matches!(
-        normalized.as_str(),
-        "anthropic"
-            | "anthropic-messages"
-            | "messages"
-            | "claude"
-            | "anthropic-compatible"
-            | "anthropic-compat"
-    )
+    codewhale_config::provider::wire_dialect_prefers_anthropic(wire)
 }
 
 fn wire_config_prefers_responses(wire: Option<&str>) -> bool {
-    let Some(raw) = wire.map(str::trim).filter(|value| !value.is_empty()) else {
-        return false;
-    };
-    let normalized = raw.to_ascii_lowercase().replace(['_', ' '], "-");
-    matches!(
-        normalized.as_str(),
-        "responses"
-            | "responses-api"
-            | "openai-responses"
-            | "openai-responses-api"
-            | "response"
-            | "response-api"
-            | "openai-responses-compat"
-            | "responses-compat"
-    )
+    codewhale_config::provider::wire_dialect_prefers_responses(wire)
 }
 
 fn modelstudio_mode_is_coding_plan(provider: ProviderKind, mode: Option<&str>) -> bool {
