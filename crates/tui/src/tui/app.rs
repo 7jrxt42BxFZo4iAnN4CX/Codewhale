@@ -3452,8 +3452,8 @@ impl App {
     ) {
         let context = self
             .base_hook_context()
-            .with_mode(self.mode.label())
-            .with_previous_mode(previous_mode.label());
+            .with_mode(self.mode.hook_label())
+            .with_previous_mode(previous_mode.hook_label());
         if let Err(error) = self.submit_hooks(HookEvent::ModeChange, context) {
             self.surface_observer_hook_submission_failure(error);
         }
@@ -4281,7 +4281,7 @@ impl App {
                 origin_turn_id: self.runtime_turn_id.clone(),
                 origin_call_id: None,
             })
-            .with_mode(self.mode.label())
+            .with_mode(self.mode.hook_label())
             .with_workspace(self.workspace.clone())
             .with_model(&self.model)
             .with_session_id(self.hooks.session_id())
