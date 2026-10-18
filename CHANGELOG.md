@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     failure mark.
   - The keybinding docs now say what Alt-V opens with nothing selected, and
     that clicking a card keeps Alt-V on it while newer cards arrive.
+- On Windows, Codewhale processes that start at the same moment no longer
+  lose the built-in plugins. The rename that publishes the built-in plugin
+  snapshot now retries a brief sharing or access refusal, as the other atomic
+  writers already did, instead of starting without built-in plugins.
 - Six fixes from @asto18089, several ported from the Pinvou/CodeWhale fork
   with @zhuowp:
   - Claude 5 models and Haiku 5.5 no longer receive `temperature`/`top_p` on

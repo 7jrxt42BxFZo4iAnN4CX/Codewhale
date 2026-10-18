@@ -379,9 +379,9 @@ fn hard_link_count(_path: &Path) -> Option<u64> {
 /// lock violation that clears on its own, while a real permission failure
 /// repeats until the attempts run out.
 ///
-/// The ordinary and confined Fleet writers share this classification
-/// and schedule, to tolerate brief sharing conflicts without letting
-/// either path invent a broader retry of its own. Only the rename is
+/// The Fleet writers, the plugin state writer and plugin snapshot publication
+/// share this classification and schedule, to tolerate brief sharing conflicts
+/// without letting any path invent a broader retry of its own. Only the rename is
 /// re-attempted: callers keep the temporary they already wrote and synced, so a
 /// retry never rewrites bytes or widens the window in which data can be lost.
 ///
