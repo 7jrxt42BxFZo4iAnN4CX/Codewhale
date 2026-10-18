@@ -26,8 +26,8 @@ use ratatui::{
 use crate::config::{ProviderKind, StatusItem};
 use crate::tui::menu_style;
 use crate::tui::views::{
-    ActionHint, ModalKind, ModalView, ViewAction, ViewEvent, centered_modal_area,
-    render_modal_footer, render_modal_surface,
+    ActionHint, ModalKind, ModalView, ViewAction, ViewEvent, action_footer_lines,
+    centered_modal_area, render_modal_footer, render_modal_surface,
 };
 use codewhale_localization::{Locale, MessageId, tr};
 use codewhale_palette as palette;
@@ -204,11 +204,27 @@ impl ModalView for StatusPickerView {
     }
 
     fn render(&self, area: Rect, buf: &mut Buffer) {
-        // Two header lines + one row per StatusItem + the wrapping action
-        // footer that now lives inside the body, plus the border and padding
-        // rows above and below. centered_modal_area clamps this to the frame
-        // and lets the scroll offset absorb any remaining overflow.
-        let needed_height = (self.rows.len() as u16).saturating_add(7);
+        let hints = [
+            ActionHint::new(
+                "Space",
+                tr(self.locale, MessageId::StatusPickerActionToggle),
+            ),
+            ActionHint::new("a", tr(self.locale, MessageId::StatusPickerActionAll)),
+            ActionHint::new("n", tr(self.locale, MessageId::StatusPickerActionNone)),
+            ActionHint::new("Enter", tr(self.locale, MessageId::StatusPickerActionSave)),
+            ActionHint::new("Esc", tr(self.locale, MessageId::StatusPickerActionCancel)),
+        ];
+        // Two header lines + one row per StatusItem + the action footer rows
+        // as they wrap at the popup's inner width, plus the border and
+        // padding rows above and below. centered_modal_area clamps this to
+        // the frame and lets the scroll offset absorb any remaining overflow.
+        let popup_width = centered_modal_area(area, 64, 8, 40, 8).width;
+        let footer_rows = action_footer_lines(&hints, popup_width.saturating_sub(4))
+            .len()
+            .max(1) as u16;
+        let needed_height = (self.rows.len() as u16)
+            .saturating_add(6)
+            .saturating_add(footer_rows);
         let popup_area = centered_modal_area(area, 64, needed_height, 40, 8);
 
         render_modal_surface(area, popup_area, buf);
@@ -228,20 +244,7 @@ impl ModalView for StatusPickerView {
         let inner = block.inner(popup_area);
         block.render(popup_area, buf);
 
-        let content = render_modal_footer(
-            inner,
-            buf,
-            &[
-                ActionHint::new(
-                    "Space",
-                    tr(self.locale, MessageId::StatusPickerActionToggle),
-                ),
-                ActionHint::new("a", tr(self.locale, MessageId::StatusPickerActionAll)),
-                ActionHint::new("n", tr(self.locale, MessageId::StatusPickerActionNone)),
-                ActionHint::new("Enter", tr(self.locale, MessageId::StatusPickerActionSave)),
-                ActionHint::new("Esc", tr(self.locale, MessageId::StatusPickerActionCancel)),
-            ],
-        );
+        let content = render_modal_footer(inner, buf, &hints);
 
         self.row_hitboxes.borrow_mut().clear();
         let visible_rows = content.height.saturating_sub(2) as usize;

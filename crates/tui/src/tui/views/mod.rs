@@ -4489,7 +4489,7 @@ impl ModalView for ConfigView {
                         Rect {
                             x: inner.x,
                             y: line_y,
-                            width: inner.width,
+                            width: inner.width.saturating_sub(u16::from(scrolls)),
                             height: 1,
                         },
                         choice_idx,
