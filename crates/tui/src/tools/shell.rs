@@ -3124,6 +3124,9 @@ impl ShellManager {
             .get_mut(task_id)
             .ok_or_else(|| anyhow!("Task {task_id} not found"))?;
         wait_while_running(shell, wait, timeout_ms);
+        if shell.status != ShellStatus::Running && shell.owner_agent.is_some() {
+            shell.completion_reported = true;
+        }
 
         let (
             stdout_delta,
@@ -3757,7 +3760,7 @@ impl ShellManager {
             .map(|(id, shell)| {
                 (
                     id.clone(),
-                    shell.completion_reported,
+                    shell.completion_reported || shell.owner_agent.is_some(),
                     // Oldest by finish, like the age rule in `cleanup`.
                     shell.finished_at.unwrap_or(shell.started_at),
                     shell.retained_output_bytes(),
@@ -3771,7 +3774,8 @@ impl ShellManager {
         if finished.len() <= MAX_FINISHED_SHELL_RECORDS && total_bytes <= MAX_FINISHED_SHELL_BYTES {
             return;
         }
-        // Undelivered completions last, then oldest first.
+        // Undelivered parent completions last, then oldest first. Child-owned
+        // results never reach the parent model, so they rank with delivered.
         finished.sort_by(|a, b| a.1.cmp(&b.1).reverse().then_with(|| a.2.cmp(&b.2)));
         let mut remaining_count = finished.len();
         let mut remaining_bytes = total_bytes;

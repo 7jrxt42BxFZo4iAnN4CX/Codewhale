@@ -10290,23 +10290,29 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
         Some(number) => Some((number, run_gh_pr_view(number, args.repo.as_deref())?)),
         None => None,
     };
+    if let Some(base) = args.base.as_deref() {
+        anyhow::ensure!(
+            !base.starts_with('-'),
+            "--base must name a commit or ref, not an option: {base}"
+        );
+    }
     let diff = collect_diff(
         &args,
         pr_view.as_ref().map(|(_, view)| view),
         &std::env::current_dir()?,
     )?;
-    let commits = match (&args.base, args.pr) {
-        (Some(base), None) => {
-            collect_base_commit_messages(base, args.path.as_deref(), &std::env::current_dir()?)?
-        }
-        _ => String::new(),
-    };
     if diff.trim().is_empty() {
         bail!("No diff to review.");
     }
     if args.check_receipt {
         return run_review_receipt_check(&diff, &args, pr_view.as_ref().map(|(_, view)| view));
     }
+    let commits = match (&args.base, args.pr) {
+        (Some(base), None) => {
+            collect_base_commit_messages(base, args.path.as_deref(), &std::env::current_dir()?)?
+        }
+        _ => String::new(),
+    };
 
     let pr_plan = pr_view
         .as_ref()

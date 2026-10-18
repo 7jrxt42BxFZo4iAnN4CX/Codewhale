@@ -1214,11 +1214,13 @@ impl Engine {
     ///
     /// Known limitation: a job still running when the model ends its turn
     /// reaches it only through the idle wake, on hosts that keep the Engine
-    /// alive; headless exec shuts down and stops it unseen. ACP turns and
-    /// child engines never receive runtime shell completions and use
-    /// `task_shell_wait` instead.
+    /// alive; headless exec shuts down and stops it unseen. ACP turns, child
+    /// engines and RLM hosts never receive runtime shell completions; the RLM
+    /// and child hosts share the parent's shell manager and session id, so a
+    /// drain there would take the parent's completions. ACP and child turns
+    /// use `task_shell_wait` instead.
     pub(super) async fn deliver_shell_completions(&mut self, timing: &str) -> bool {
-        if self.child_host.is_some() {
+        if self.child_host.is_some() || self.rlm_host.is_some() {
             return false;
         }
         let completions = self.drain_shell_completion_events();
