@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:4102e79c1672 -->
+<!-- source: README.md sha256:2712306ab5f7 -->
 <div align="center">
 
 <picture>
@@ -175,10 +175,7 @@ sağlayıcıya yaparsınız; yerel modeller anahtar gerektirmez. Alt bilgi satı
 `/cost`, fiyat biliniyorsa bir oturumun maliyetini gösterir; bilinmeyen bir fiyat
 asla ücretsiz olarak değil, bilinmeyen olarak gösterilir.
 
-Hesaba ihtiyacınız yok. Bir hesapla (`codewhale login`) sağlayıcı anahtarlarınızı
-[Codewhale hesabınızda](docs/CONFIGURATION.md#account-provider-keys) saklayabilirsiniz;
-başka bir cihazda bunları kullanmak için oturum açın ve `/provider` içinde
-Codewhale'i seçin. Oturum açmak, makinenizde zaten bulunan anahtarları yüklemez.
+Hesaba ihtiyacınız yok.
 
 ## Güvenlik ve gizlilik
 

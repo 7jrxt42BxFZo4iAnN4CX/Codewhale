@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:4102e79c1672 -->
+<!-- source: README.md sha256:2712306ab5f7 -->
 <div align="center">
 
 <picture>
@@ -179,11 +179,7 @@ płacisz bezpośrednio dostawcy; modele lokalne nie wymagają klucza. Stopka i
 `/cost` pokazują koszt sesji, gdy cena jest znana; nieznana cena jest
 pokazywana jako nieznana, nigdy jako darmowa.
 
-Konto nie jest wymagane. Jeśli je masz (`codewhale login`), możesz przechowywać
-klucze dostawców na swoim
-[koncie Codewhale](docs/CONFIGURATION.md#account-provider-keys); na innym
-urządzeniu zaloguj się i wybierz Codewhale w `/provider`, aby z nich korzystać.
-Logowanie nie przesyła kluczy, które już są na Twoim komputerze.
+Konto nie jest wymagane.
 
 ## Bezpieczeństwo i prywatność
 

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-18
+
+Codewhale v0.10.2 adds an animated pet view (`/pet on`), a live Terminal work
+dock and per-chat composer colors (`/color`). It closes three session
+data-loss paths, holds a `curl` or `wget` that uploads a credential, refuses
+shell commands containing invisible Unicode, keeps the Linux sandbox working when a
+hidden credential directory is a symlink, and uses much less CPU while the
+TUI waits on you. `/undo` takes back a whole request, `/diff` works outside a
+Git repository, DeepSeek's Responses route no longer rejects replayed tool
+history, and contributor fixes improve token accounting, relay model lists,
+localized replies and Windows launcher guidance.
+
+### Latest fixes
+
 - `/settings` choice lists that don't fit, such as Language and Theme, show
   a scroll rail. Thanks @Lstarsky0 (#7024).
 - During an `/mcp` search that finds nothing, the status line says "No
@@ -446,8 +460,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   relay) counts as a relay, and the provider panel no longer reports its
   catalog missing while listing it.
 
-## [0.10.2] - 2026-10-13
-
 - The footer preview in `/settings` now uses the footer's own words and
   colours, in the UI language: Startup mode Work previews `● ask   work`
   and Plan previews `● read only   plan`, as the footer under the composer
@@ -661,12 +673,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Computer Use and bridge fixes and the MIT license.
 - `codewhale app-server` no longer serves `GET /jobs`, which was always empty;
   background jobs are `GET /v1/jobs` on the Runtime API (#6513).
-
-Codewhale v0.10.2 adds an animated pet view (`/pet on`) and a live Terminal work
-dock, and improves recovery, plugin approval and provider reliability. `/undo`
-takes back a whole request, `/diff` works outside a Git repository, and
-contributor fixes improve token accounting, localized replies and Windows
-launcher guidance.
 
 ### Added
 

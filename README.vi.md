@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:4102e79c1672 -->
+<!-- source: README.md sha256:2712306ab5f7 -->
 <div align="center">
 
 <picture>
@@ -174,11 +174,7 @@ bạn trả tiền trực tiếp cho nhà cung cấp; mô hình cục bộ khôn
 dưới cùng và `/cost` hiển thị chi phí của một phiên khi biết giá, còn giá chưa
 biết được hiển thị là chưa biết, không bao giờ là miễn phí.
 
-Bạn không cần tài khoản. Nếu có tài khoản (`codewhale login`), bạn có thể lưu
-khóa của các nhà cung cấp trong
-[tài khoản Codewhale](docs/CONFIGURATION.md#account-provider-keys); trên thiết
-bị khác, hãy đăng nhập và chọn Codewhale trong `/provider` để dùng các khóa đó.
-Việc đăng nhập không tải lên các khóa đã có sẵn trên máy của bạn.
+Bạn không cần tài khoản.
 
 ## An toàn và quyền riêng tư
 

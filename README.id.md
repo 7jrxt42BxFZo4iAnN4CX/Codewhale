@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:4102e79c1672 -->
+<!-- source: README.md sha256:2712306ab5f7 -->
 <div align="center">
 
 <picture>
@@ -177,11 +177,7 @@ langsung ke penyedia; model lokal tidak memerlukan kunci. Footer dan `/cost`
 menampilkan biaya sesi jika harganya diketahui, dan harga yang tidak diketahui
 ditampilkan sebagai tidak diketahui, tidak pernah sebagai gratis.
 
-Anda tidak memerlukan akun. Dengan akun (`codewhale login`), Anda dapat
-menyimpan kunci penyedia di
-[akun Codewhale](docs/CONFIGURATION.md#account-provider-keys) Anda; di perangkat
-lain, masuk lalu pilih Codewhale di `/provider` untuk memakainya. Masuk tidak
-mengunggah kunci yang sudah ada di mesin Anda.
+Anda tidak memerlukan akun.
 
 ## Keamanan dan privasi
 

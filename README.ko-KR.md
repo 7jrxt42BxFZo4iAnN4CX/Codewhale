@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:4102e79c1672 -->
+<!-- source: README.md sha256:2712306ab5f7 -->
 <div align="center">
 
 <picture>
@@ -173,10 +173,7 @@ Codewhale은 무료이며 MIT 라이선스로 배포됩니다. 자신의 API 키
 있으면 하단 표시줄과 `/cost`에 세션 비용이 표시되며, 가격을 알 수 없으면 무료가
 아니라 알 수 없음으로 표시합니다.
 
-계정은 없어도 됩니다. 계정이 있으면(`codewhale login`) 제공업체 키를
-[Codewhale 계정](docs/CONFIGURATION.md#account-provider-keys)에 보관할 수 있고,
-다른 기기에서는 로그인한 뒤 `/provider`에서 Codewhale을 선택해 그 키를 사용할
-수 있습니다. 로그인해도 이미 컴퓨터에 있는 키는 업로드되지 않습니다.
+계정은 없어도 됩니다.
 
 ## 안전과 개인정보
 

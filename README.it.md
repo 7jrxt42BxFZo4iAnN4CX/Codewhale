@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:4102e79c1672 -->
+<!-- source: README.md sha256:2712306ab5f7 -->
 <div align="center">
 
 <picture>
@@ -176,11 +176,7 @@ direttamente il provider; i modelli locali non richiedono una chiave. Il piè di
 pagina e `/cost` mostrano quanto è costata una sessione quando il prezzo è
 noto; un prezzo sconosciuto viene mostrato come sconosciuto, mai come gratuito.
 
-Non ti serve un account. Con un account (`codewhale login`) puoi conservare le
-chiavi dei provider nel tuo
-[account Codewhale](docs/CONFIGURATION.md#account-provider-keys); su un altro
-dispositivo, accedi e scegli Codewhale in `/provider` per usarle. L’accesso non
-carica le chiavi già presenti sulla tua macchina.
+Non ti serve un account.
 
 ## Sicurezza e privacy
 

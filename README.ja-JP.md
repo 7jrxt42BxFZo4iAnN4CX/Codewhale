@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:4102e79c1672 -->
+<!-- source: README.md sha256:2712306ab5f7 -->
 <div align="center">
 
 <picture>
@@ -157,9 +157,6 @@ Codewhale は無料で、MIT ライセンスです。
 価格が不明な場合は「不明」と表示され、無料として表示されることはありません。
 
 アカウントは必須ではありません。
-アカウントがあれば（`codewhale login`）、プロバイダーのキーを [Codewhale アカウント](docs/CONFIGURATION.md#account-provider-keys)に保存できます。
-別のデバイスでは、サインインして `/provider` で Codewhale を選ぶと、それらのキーを使えます。
-サインインしても、すでにマシン上にあるキーはアップロードされません。
 
 ## 安全性とプライバシー
 

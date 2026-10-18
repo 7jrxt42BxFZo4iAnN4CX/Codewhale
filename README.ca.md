@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:4102e79c1672 -->
+<!-- source: README.md sha256:2712306ab5f7 -->
 <div align="center">
 
 <picture>
@@ -178,11 +178,7 @@ directament al proveïdor; els models locals no necessiten clau. La barra
 inferior i `/cost` mostren quant ha costat una sessió quan se’n coneix el preu,
 i un preu desconegut es mostra com a desconegut, mai com a gratuït.
 
-No necessites cap compte. Amb un compte (`codewhale login`), pots desar les
-claus dels proveïdors al teu
-[compte de Codewhale](docs/CONFIGURATION.md#account-provider-keys); en un altre
-dispositiu, inicia la sessió i tria Codewhale a `/provider` per fer-les servir.
-Iniciar la sessió no puja les claus que ja tens a la teva màquina.
+No necessites cap compte.
 
 ## Seguretat i privadesa
 

@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:4102e79c1672 -->
+<!-- source: README.md sha256:2712306ab5f7 -->
 <div align="center">
 
 <picture>
@@ -154,9 +154,7 @@ Codewhale 免費，並採用 MIT 授權。使用你自己的 API 金鑰時，費
 不需要金鑰。價格已知時，底部狀態列與 `/cost` 會顯示工作階段目前的花費；價格未知時會顯示為
 未知，絕不會顯示為免費。
 
-你不需要帳號。有帳號時（`codewhale login`），你可以把供應商金鑰保存在你的
-[Codewhale 帳號](docs/CONFIGURATION.md#account-provider-keys)中；在另一台裝置上，登入後在
-`/provider` 中選擇 Codewhale 即可使用這些金鑰。登入不會上傳你機器上既有的金鑰。
+你不需要帳號。
 
 ## 安全與隱私
 

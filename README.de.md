@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:4102e79c1672 -->
+<!-- source: README.md sha256:2712306ab5f7 -->
 <div align="center">
 
 <picture>
@@ -178,12 +178,7 @@ Schlüssel. Die Fußzeile und `/cost` zeigen, was eine Sitzung gekostet hat, wen
 der Preis bekannt ist; ein unbekannter Preis wird als unbekannt angezeigt, nie
 als kostenlos.
 
-Du brauchst kein Konto. Mit einem Konto (`codewhale login`) kannst du
-Anbieterschlüssel in deinem
-[Codewhale-Konto](docs/CONFIGURATION.md#account-provider-keys) speichern; auf
-einem anderen Gerät meldest du dich an und wählst in `/provider` Codewhale, um
-sie zu verwenden. Beim Anmelden werden Schlüssel, die schon auf deinem Rechner
-liegen, nicht hochgeladen.
+Du brauchst kein Konto.
 
 ## Sicherheit und Datenschutz
 

@@ -171,10 +171,7 @@ directly; local models need no key. The footer and `/cost` show what a session
 has cost when the price is known, and an unknown price is shown as unknown,
 never as free.
 
-You don't need an account. With one (`codewhale login`), you can keep provider
-keys in your [Codewhale account](docs/CONFIGURATION.md#account-provider-keys);
-on another device, sign in and choose Codewhale in `/provider` to use them.
-Signing in does not upload keys already on your machine.
+You don't need an account.
 
 ## Safety and privacy
 

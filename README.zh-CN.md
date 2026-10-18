@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:4102e79c1672 -->
+<!-- source: README.md sha256:2712306ab5f7 -->
 <div align="center">
 
 <picture>
@@ -154,9 +154,7 @@ Codewhale 免费，采用 MIT 许可证。使用你自己的 API 密钥时，费
 本地模型不需要密钥。价格已知时，底部状态栏和 `/cost` 会显示一次会话的花费；
 价格未知时会显示为未知，而不会显示为免费。
 
-你不需要账号。有了账号（`codewhale login`）后，你可以把提供商密钥保存在你的
-[Codewhale 账号](docs/CONFIGURATION.md#account-provider-keys)中；在另一台设备上登录，
-并在 `/provider` 中选择 Codewhale，即可使用这些密钥。登录不会上传你机器上已有的密钥。
+你不需要账号。
 
 ## 安全与隐私
 

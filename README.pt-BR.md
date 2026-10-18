@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:4102e79c1672 -->
+<!-- source: README.md sha256:2712306ab5f7 -->
 <div align="center">
 
 <picture>
@@ -177,11 +177,7 @@ paga diretamente ao provedor; modelos locais não precisam de chave. O rodapé e
 `/cost` mostram quanto uma sessão custou quando o preço é conhecido, e um preço
 desconhecido aparece como desconhecido, nunca como gratuito.
 
-Você não precisa de uma conta. Com uma (`codewhale login`), você pode guardar
-chaves de provedores na sua
-[conta Codewhale](docs/CONFIGURATION.md#account-provider-keys); em outro
-dispositivo, entre na conta e escolha Codewhale em `/provider` para usá-las.
-Entrar na conta não envia as chaves que já estão na sua máquina.
+Você não precisa de uma conta.
 
 ## Segurança e privacidade
 
