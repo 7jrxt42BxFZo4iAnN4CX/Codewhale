@@ -627,17 +627,20 @@ impl Engine {
                 ));
             }
         }
-        // `completed_thinking` is part of "something" too: a block already
-        // flushed at its stop event is received content, and silently
-        // re-running the request would double-bill for it. A stream that
-        // died after completing thinking must surface its error like any
-        // other post-content death.
+        // A flushed redacted block or non-blank thinking is received content,
+        // the same rule `current_thinking` follows.
         let stream_died_with_nothing = stream_errors > 0
             && !terminal_stream_error
             && tool_uses.is_empty()
             && current_text_visible.trim().is_empty()
             && current_thinking.trim().is_empty()
-            && completed_thinking.is_empty()
+            && completed_thinking.iter().all(|block| {
+                matches!(
+                    block,
+                    ContentBlock::Thinking { thinking, redacted_data: None, .. }
+                        if thinking.trim().is_empty()
+                )
+            })
             && !pending_message_complete;
         let pending_resume = match pending_resume {
             Some(resume) => Some(resume),
