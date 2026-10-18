@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Three session data-loss paths are closed:
+  - `/load` of an older exported copy of a session no longer replaces the
+    newer saved conversation with the same id. It refuses and points to
+    `/resume`. Before, the next autosave deleted every turn made after the
+    export.
+  - A journal archive append that was cut short (disk full, or a kill)
+    is trimmed back to its last complete line before the next append.
+    Before, the next save glued new entries onto the torn line. That made
+    the whole archive unreadable, and the document had already dropped
+    those entries.
+  - Launching with a legacy crash checkpoint keeps it when migrating it to
+    the per-session format fails, instead of deleting it.
 - Sub-agents stay within a turn's tool allow-list. `exec --allowed-tools`, a
   Runtime API `allowed_tools`, and a command's `allowed-tools:` frontmatter
   narrowed only the parent. A sub-agent it started got the full tool

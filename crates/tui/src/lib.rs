@@ -12918,8 +12918,9 @@ fn preserve_interrupted_checkpoint_for_explicit_resume(launch_workspace: &Path) 
     if newest.source == session_manager::CheckpointSource::Legacy {
         // Migrate legacy single-slot checkpoint to per-session format
         // before clearing the legacy file, or the data is unrecoverable.
-        let _ = manager.save_checkpoint(&newest.session);
-        let _ = manager.clear_legacy_checkpoint();
+        if manager.save_checkpoint(&newest.session).is_ok() {
+            let _ = manager.clear_legacy_checkpoint();
+        }
     }
 
     let age_str = checkpoint_age_label(newest.age);
