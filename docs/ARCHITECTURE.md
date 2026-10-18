@@ -206,8 +206,10 @@ The engine and protocol projection preserve the operation's original identity:
 - Model turns echo their actual `TurnStarted.turn_id` and the submitted
   `submission_id` on completion, failure and interruption. Runtime self-starts
   carry no host submission token.
-- Send/edit rejection before `TurnStarted` emits a failed terminal with the
-  rejected `submission_id` and no `turn_id`. It does not claim a previous turn.
+- A route-install failure or an `edit_last_turn` rejection before
+  `TurnStarted` emits a failed terminal with the rejected `submission_id` and
+  no `turn_id`. It does not claim a previous turn. Image and constitution
+  rejections in `handle_send_message` still emit only `Error`.
 - Manual compaction terminals carry only their `compaction_id`, including route
   rejection and cancellation. Automatic compaction remains part of its owning
   model turn. Purge operations carry none of these identities.

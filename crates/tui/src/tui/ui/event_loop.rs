@@ -3083,8 +3083,9 @@ pub(crate) async fn run_event_loop(
                         // (#6190).
                         crate::tui::ui::dispatch::settle_unaccepted_steers_at_turn_end(app);
                         let completed_turn = app.active_turn.take();
-                        // TurnComplete carries no turn id. After a local
-                        // cancel the UI is idle, so `is_loading` can only be
+                        // TUI dispatches carry no submission id, so
+                        // TurnComplete cannot name the dispatch it closes.
+                        // After a local cancel the UI is idle, so `is_loading` can only be
                         // true again because a newer dispatch set it: this
                         // terminal event belongs to the cancelled turn and
                         // must not close the newer one's loading, dispatch,
