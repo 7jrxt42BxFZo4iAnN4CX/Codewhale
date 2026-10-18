@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Read and list cards show a path inside the workspace relative to it
+  ("Reading src/lib.rs") instead of the full absolute path the model sent.
 - `/statusline` shows its last two items, Workspace and Git branch, without
   scrolling. The picker had not counted its padding rows. Thanks @Lstarsky0
   (#7022).

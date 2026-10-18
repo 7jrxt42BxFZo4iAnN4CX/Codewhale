@@ -1063,6 +1063,20 @@ pub fn url_encode(input: &str) -> String {
     encoded
 }
 
+/// Show `value` relative to `workspace` when it is an absolute path inside
+/// it, so a card never spends a row on the workspace prefix.
+pub fn workspace_relative(value: &str, workspace: &Path) -> String {
+    let path = Path::new(value);
+    if workspace.as_os_str().is_empty() || !path.is_absolute() {
+        return value.to_string();
+    }
+    match path.strip_prefix(workspace) {
+        Ok(relative) if relative.as_os_str().is_empty() => ".".to_string(),
+        Ok(relative) => relative.display().to_string(),
+        Err(_) => value.to_string(),
+    }
+}
+
 /// Render a path for **user-facing display** with the home directory
 /// contracted to `~`. Use this in the TUI, doctor/setup stdout, and any
 /// other place a viewer might see the output (screenshot, video,

@@ -45,7 +45,7 @@ pub(super) fn handle_tool_call_started(
     }
 
     if is_exploring_tool(semantic_name) {
-        let label = exploring_label(semantic_name, input);
+        let label = exploring_label(semantic_name, input, &app.workspace);
         // ensure_exploring + append_to_exploring keeps all parallel exploring
         // starts in a single ExploringCell entry.
         let active = app.active_cell.as_mut().expect("active_cell just ensured");
@@ -1693,20 +1693,23 @@ pub(super) fn refreshes_workspace_context_on_completion(name: &str) -> bool {
     )
 }
 
-pub(super) fn exploring_label(name: &str, input: &serde_json::Value) -> String {
+pub(super) fn exploring_label(
+    name: &str,
+    input: &serde_json::Value,
+    workspace: &std::path::Path,
+) -> String {
     let fallback = format!("{name} tool");
     let obj = input.as_object();
+    let path = || {
+        obj.and_then(|o| o.get("path"))
+            .and_then(|v| v.as_str())
+            .map(|path| crate::utils::workspace_relative(path, workspace))
+    };
     match name {
-        "read_file" => obj
-            .and_then(|o| o.get("path"))
-            .and_then(|v| v.as_str())
-            .map_or(fallback, |path| format!("Reading {path}")),
-        "list_dir" => obj
-            .and_then(|o| o.get("path"))
-            .and_then(|v| v.as_str())
-            .map_or("Listing directory".to_string(), |path| {
-                format!("Listing {path}")
-            }),
+        "read_file" => path().map_or(fallback, |path| format!("Reading {path}")),
+        "list_dir" => path().map_or("Listing directory".to_string(), |path| {
+            format!("Listing {path}")
+        }),
         "grep_files" => {
             let pattern = obj
                 .and_then(|o| o.get("pattern"))
