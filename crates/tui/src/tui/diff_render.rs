@@ -251,8 +251,7 @@ pub fn render_diff_body_bounded(diff: &str, width: u16, max_rows: usize) -> Boun
             continue;
         }
 
-        if raw.starts_with(' ') {
-            let content = &raw[1..];
+        if let Some(content) = raw.strip_prefix(' ') {
             collector.extend(render_diff_line(
                 content,
                 width,
