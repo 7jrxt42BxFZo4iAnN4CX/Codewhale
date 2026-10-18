@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `/settings` choice lists that don't fit, such as Language and Theme, show
+  a scroll rail. Thanks @Lstarsky0 (#7024).
+- During an `/mcp` search that finds nothing, the status line says "No
+  matches" like the list does, instead of "Nothing on this tab". Thanks
+  @Lstarsky0 (#7023).
 - Read and list cards show a path inside the workspace relative to it
   ("Reading src/lib.rs") instead of the full absolute path the model sent.
 - `/statusline` shows its last two items, Workspace and Git branch, without
