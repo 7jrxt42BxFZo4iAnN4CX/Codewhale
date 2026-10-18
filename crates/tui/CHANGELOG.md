@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- A `workflow` plan written with `nodes` (the declarative shape in
+  `docs/WORKFLOW_AUTHORING.md`) is now judged for approval from its compiled
+  plan, the same one the run uses. The old reader missed fields nested inside
+  `agent` and `branch` nodes. A plan with write children could then start
+  with no approval card, the card could say "Read-only plan", and the
+  receipt recorded the run as approved.
 - The other whole-file writers now refuse to replace an existing file that
   is unread or stale, as `write` does: `apply_patch` with `replace`, and the
   `write_file` and `File action=write` paths that older prompts still call.
