@@ -8595,6 +8595,7 @@ pub(super) async fn handle_approval_required_event(
                 config.approval_default_selection(),
                 config.approval_timeout(),
             );
+            crate::tui::tool_routing::set_exec_card_awaiting_approval(app, &id, true);
             if let Some(agent_id) = crate::tui::pending_requests::child_agent_id(&id) {
                 crate::tui::pending_requests::record(
                     app,

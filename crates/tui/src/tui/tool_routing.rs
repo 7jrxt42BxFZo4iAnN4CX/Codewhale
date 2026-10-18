@@ -112,6 +112,7 @@ pub(super) fn handle_tool_call_started(
                     started_at: Some(Instant::now()),
                     duration_ms: None,
                     stale_elapsed_since_output_ms: None,
+                    awaiting_approval: false,
                     source,
                     description: None,
                     interaction: Some(summary.clone()),
@@ -150,6 +151,7 @@ pub(super) fn handle_tool_call_started(
                 started_at: Some(Instant::now()),
                 duration_ms: None,
                 stale_elapsed_since_output_ms: None,
+                awaiting_approval: false,
                 source,
                 description: input
                     .get("description")
@@ -325,6 +327,24 @@ fn push_active_tool_cell(
     let virtual_index = app.history.len() + entry_idx;
     register_tool_cell(app, tool_id, tool_name, input, virtual_index);
     app.mark_history_updated();
+}
+
+pub(crate) fn set_exec_card_awaiting_approval(app: &mut App, tool_id: &str, awaiting: bool) {
+    let Some(&index) = app.tool_cells.get(tool_id) else {
+        return;
+    };
+    let is_change = matches!(
+        app.cell_at_virtual_index(index),
+        Some(HistoryCell::Tool(ToolCell::Exec(exec))) if exec.awaiting_approval != awaiting
+    );
+    if !is_change {
+        return;
+    }
+    if let Some(HistoryCell::Tool(ToolCell::Exec(exec))) = app.cell_at_virtual_index_mut(index) {
+        exec.awaiting_approval = awaiting;
+        exec.started_at = (!awaiting).then(Instant::now);
+        app.needs_redraw = true;
+    }
 }
 
 fn register_tool_cell(
@@ -2771,6 +2791,7 @@ mod tests {
             started_at: None,
             duration_ms: Some(120),
             stale_elapsed_since_output_ms: None,
+            awaiting_approval: false,
             source: ExecSource::Assistant,
             description: None,
             interaction: None,

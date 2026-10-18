@@ -300,6 +300,7 @@ impl HistoryCell {
             {
                 false
             }
+            HistoryCell::Tool(ToolCell::Exec(exec)) if exec.awaiting_approval => false,
             HistoryCell::Tool(tool) => tool.is_running(),
             HistoryCell::User { .. }
             | HistoryCell::System { .. }
@@ -1053,6 +1054,7 @@ pub struct ExecCell {
     pub started_at: Option<Instant>,
     pub duration_ms: Option<u64>,
     pub stale_elapsed_since_output_ms: Option<u64>,
+    pub awaiting_approval: bool,
     pub source: ExecSource,
     pub interaction: Option<String>,
     /// Cached output summary — avoids re-parsing JSON every frame.
@@ -1099,26 +1101,26 @@ impl ExecCell {
             .interaction
             .as_deref()
             .or(Some(command_summary.as_str()));
-        let stale_status = self
-            .stale_elapsed_since_output_ms
-            .map(stale_shell_status_label);
+        let held_status = if self.awaiting_approval && self.status == ToolStatus::Running {
+            Some("waiting for approval".to_string())
+        } else {
+            self.stale_elapsed_since_output_ms
+                .map(stale_shell_status_label)
+        };
         let receipt = tool_receipt_label(
             crate::tui::widgets::tool_card::ToolFamily::Run,
             self.status,
             self.output.as_deref(),
             locale,
         );
-        let status_text = stale_status
-            .as_deref()
-            .map(Cow::Borrowed)
-            .unwrap_or(receipt);
+        let status_text = held_status.as_deref().map(Cow::Borrowed).unwrap_or(receipt);
         lines.push(render_tool_header_with_summary(
             "Shell",
             header_summary,
             status_text.as_ref(),
             self.status,
             self.started_at,
-            low_motion || stale_status.is_some(),
+            low_motion || held_status.is_some(),
         ));
 
         if let Some(description) = self.description.as_deref() {
