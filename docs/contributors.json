@@ -3110,20 +3110,19 @@
  ],
  "unlinked_commit_names": [
   "AccMoment",
-  "Alexander Kireev",
   "AmosLeeeeeeee",
   "artanis",
   "Assassin-D007",
   "bluth",
+  "chatman-media",
   "codgo",
-  "Horace Liu",
+  "douglarek",
   "kurise",
   "LeHaiDang",
   "lei",
-  "Leo Douglas",
+  "liuhq",
   "liushiao",
   "liuyang",
-  "maple",
   "markchang",
   "ningjingkun",
   "ornn.ban",
@@ -3133,6 +3132,7 @@
   "v_wanghuanping01",
   "wangfeng",
   "xiedongsheng",
+  "yekern",
   "z27014",
   "zero",
   "Zhiping",
@@ -3165,6 +3165,10 @@
   "Chun Tse": "",
   "masonxhuang": "",
   "samhandsome": "",
-  "庄表伟": ""
+  "庄表伟": "",
+  "Horace Liu": "liuhq",
+  "Leo Douglas": "douglarek",
+  "maple": "yekern",
+  "Alexander Kireev": "chatman-media"
  }
 }
