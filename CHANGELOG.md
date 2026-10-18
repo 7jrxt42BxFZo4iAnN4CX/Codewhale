@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `/statusline` shows its last two items, Workspace and Git branch, without
+  scrolling. The picker had not counted its padding rows. Thanks @Lstarsky0
+  (#7022).
+- Diffs in the TUI number each line only on its own side: a removed line
+  shows its old line number and an added line its new one. Unchanged
+  context lines keep their indentation instead of starting at the left
+  edge.
+- A shell card shows a multiline command one line per row instead of running
+  the lines together.
 - A shell card whose command is waiting on your approval now says
   "waiting for approval" with a still mark, instead of "running (Ns)" with
   a spinner. Its elapsed time starts when you approve and the command

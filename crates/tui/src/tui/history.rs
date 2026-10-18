@@ -2396,8 +2396,10 @@ fn render_command_mode(command: &str, width: u16, mode: RenderMode) -> Vec<Line<
         RenderMode::Live => TOOL_COMMAND_LINE_LIMIT,
         RenderMode::Transcript => usize::MAX,
     };
-    for (count, chunk) in wrap_text(command, width.saturating_sub(4).max(1) as usize)
-        .into_iter()
+    let wrap_width = width.saturating_sub(4).max(1) as usize;
+    for (count, chunk) in command
+        .lines()
+        .flat_map(|line| wrap_text(line, wrap_width))
         .enumerate()
     {
         if count >= cap {
