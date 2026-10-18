@@ -466,6 +466,7 @@
   "CmdBalanceDescription": "Check your provider account balance",
   "CmdImportClaudeDescription": "Plan a reviewable import of Claude Code settings and servers",
   "CmdClearDescription": "Clear conversation history",
+  "CmdColorDescription": "Set this chat's composer box color",
   "CmdCompactDescription": "Shrink the context to free space",
   "CmdPurgeDescription": "Let the agent prune or offload history to free context",
   "CmdConfigDescription": "Inspect and change settings — raw keys under advanced detail",

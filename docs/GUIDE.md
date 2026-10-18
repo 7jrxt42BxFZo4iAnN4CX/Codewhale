@@ -388,6 +388,7 @@ Common commands for first-time users:
 | `/workflows` | Open the live Workflow run dashboard: every run this workspace's journal keeps, with phases, children, progress, and host-side cancel |
 | `/config` | Edit runtime and provider settings |
 | `/statusline` | Choose which footer status chips are visible |
+| `/color` | Give this chat's composer box its own color: bare `/color` cycles red, orange, amber, green, cyan, blue, purple and pink, `/color blue` picks one, `/color off` returns to the theme |
 | `/receipts` | List what this session did: files changed, commands run, web and MCP calls, agents, approvals and who gave them, failures |
 | `/compact` | Summarize long context to recover token budget |
 | `/copy` | Copy the last completed assistant response to the clipboard |

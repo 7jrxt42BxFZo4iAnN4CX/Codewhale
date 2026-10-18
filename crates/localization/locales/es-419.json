@@ -466,6 +466,7 @@
   "CmdBalanceDescription": "Consultar el saldo de la cuenta del proveedor activo",
   "CmdImportClaudeDescription": "Planificar una importación revisable de la configuración y los servidores MCP de Claude Code",
   "CmdClearDescription": "Limpiar el historial de la conversación",
+  "CmdColorDescription": "Definir el color del cuadro de mensaje de este chat",
   "CmdCompactDescription": "Compactar el contexto para liberar espacio",
   "CmdPurgeDescription": "Permite al agente eliminar quirúrgicamente historial innecesario para liberar espacio de contexto",
   "CmdConfigDescription": "Inspeccionar y cambiar ajustes (claves crudas en detalle avanzado)",

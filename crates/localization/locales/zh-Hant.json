@@ -464,6 +464,7 @@
   "CmdBalanceDescription": "檢視目前供應商帳戶餘額",
   "CmdImportClaudeDescription": "產生可審閱的 Claude Code 設定與 MCP 伺服器匯入計畫",
   "CmdClearDescription": "清除對話歷史",
+  "CmdColorDescription": "設定此對話輸入框的顏色",
   "CmdCompactDescription": "觸發上下文壓縮以釋放空間",
   "CmdPurgeDescription": "讓 Agent 分析對話歷史，精確保留有用資訊並移除冗餘內容",
   "CmdConfigDescription": "檢視與修改設定（原始鍵在高級詳情）",

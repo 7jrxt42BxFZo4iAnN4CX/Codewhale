@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `/color` gives a chat's composer box its own color. Bare `/color` cycles
+  through red, orange, amber, green, cyan, blue, purple and pink; `/color
+  <name>` picks one and `/color off` returns to the theme. The color is
+  saved with that session and survives resume; other chats and the theme are
+  untouched. It shows while you are typing, so the focus signal stays.
+- Importing a session container or starting a new chat from the launch
+  screen no longer carries the previous chat's `/title` onto the new one.
 - Shell cards in the TUI:
   - A tool card that finished inside a turn that is still running opens its
     raw detail (tool id, input, output) with Alt-V or a click, instead of a

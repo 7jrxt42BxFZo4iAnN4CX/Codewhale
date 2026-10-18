@@ -1209,6 +1209,7 @@ impl App {
             workspace_follow_symlinks: settings.workspace_follow_symlinks,
             session_title: None,
             window_title: None,
+            composer_color: None,
             title_default: config
                 .title
                 .as_deref()

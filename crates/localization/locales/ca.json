@@ -463,6 +463,7 @@
   "CmdBalanceDescription": "Consulta el saldo del compte del proveïdor actiu",
   "CmdImportClaudeDescription": "Planifica una importació revisable de la configuració i els servidors MCP de Claude Code",
   "CmdClearDescription": "Esborra l'historial de la conversació",
+  "CmdColorDescription": "Defineix el color del quadre de redacció d'aquest xat",
   "CmdCompactDescription": "Dispara la compactació del context per alliberar espai",
   "CmdPurgeDescription": "Permet que l'agent podi quirúrgicament l'historial de la conversació per alliberar espai de context",
   "CmdConfigDescription": "Inspecciona i canvia la configuració (claus en brut com a detall avançat)",

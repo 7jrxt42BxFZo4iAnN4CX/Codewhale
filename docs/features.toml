@@ -531,6 +531,15 @@ docs = "docs/schemas/user-theme.schema.json"
 owner = "crates/palette"
 
 [[feature]]
+id = "chat-color"
+name = "Chat color"
+summary = "/color gives one chat's composer box its own color, kept with that session."
+status = "stable"
+surfaces = { tui = "stable" }
+docs = "docs/GUIDE.md"
+owner = "crates/tui/src/commands/groups/session/color.rs"
+
+[[feature]]
 id = "localization"
 name = "Localization"
 summary = "Interface text in 15 locales."

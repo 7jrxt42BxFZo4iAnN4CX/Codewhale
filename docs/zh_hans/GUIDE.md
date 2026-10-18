@@ -254,6 +254,7 @@ Operate 保持直接的工具面及其审批、沙箱、shell、ask 规则和仓
 | `/workflows` | 打开实时 Workflow 运行仪表盘：该工作区日志记录的每一次运行，含阶段、子项、进度和主机侧取消 |
 | `/config` | 编辑运行时与提供商设置 |
 | `/statusline` | 选择哪些底部状态芯片可见 |
+| `/color` | 为当前对话的输入框设置单独的颜色：直接输入 `/color` 依次切换 red、orange、amber、green、cyan、blue、purple、pink，`/color blue` 直接选择，`/color off` 恢复主题颜色 |
 | `/receipts` | 列出本次会话做过的事：改动的文件、运行的命令、网页和 MCP 调用、智能体、审批及审批人、失败 |
 | `/compact` | 压缩长上下文以回收 token 预算 |
 | `/copy` | 把最近一条已完成的助手回复复制到剪贴板 |

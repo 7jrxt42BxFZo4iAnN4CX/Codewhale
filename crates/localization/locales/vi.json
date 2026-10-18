@@ -466,6 +466,7 @@
   "CmdBalanceDescription": "Kiểm tra số dư tài khoản của nhà cung cấp dịch vụ đang hoạt động",
   "CmdImportClaudeDescription": "Lập kế hoạch nhập có thể xem lại cho cài đặt và máy chủ MCP của Claude Code",
   "CmdClearDescription": "Xóa lịch sử trò chuyện",
+  "CmdColorDescription": "Đặt màu ô soạn tin cho cuộc trò chuyện này",
   "CmdCompactDescription": "Kích hoạt nén ngữ cảnh để giải phóng không gian",
   "CmdPurgeDescription": "Cho agent cắt gọn lịch sử trò chuyện để giải phóng ngữ cảnh",
   "CmdConfigDescription": "Xem và đổi cài đặt (khóa thô ở chi tiết nâng cao)",

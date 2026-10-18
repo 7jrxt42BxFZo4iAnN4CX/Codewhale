@@ -466,6 +466,7 @@
   "CmdBalanceDescription": "アクティブなプロバイダーのアカウント残高を確認",
   "CmdImportClaudeDescription": "Claude Code の設定と MCP サーバーの確認可能なインポート計画を作成",
   "CmdClearDescription": "会話履歴をクリア",
+  "CmdColorDescription": "このチャットの入力欄の色を設定",
   "CmdCompactDescription": "コンテキスト圧縮で容量を確保",
   "CmdPurgeDescription": "エージェントに会話履歴を分析させ、不要なメッセージを削除・要約",
   "CmdConfigDescription": "設定を確認・変更（生キーは詳細/高度）",

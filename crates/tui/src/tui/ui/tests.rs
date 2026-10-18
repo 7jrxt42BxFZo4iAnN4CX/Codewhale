@@ -9347,6 +9347,7 @@ fn saved_session_with_messages(messages: Vec<Message>) -> SavedSession {
         approval_receipts: Vec::new(),
         work_state: None,
         window_title: None,
+        composer_color: None,
         last_auto_route: None,
         turn_outcomes: Vec::new(),
     }

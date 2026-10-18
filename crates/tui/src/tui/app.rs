@@ -2673,6 +2673,7 @@ pub struct App {
     /// [`session_title`](Self::session_title), which is the session *name*
     /// shown in the composer border and session picker.
     pub window_title: Option<String>,
+    pub composer_color: Option<String>,
     /// Default tab/window title from the `title` config key (or a profile
     /// overlay). Used when the current session has no explicit
     /// [`window_title`](Self::window_title).

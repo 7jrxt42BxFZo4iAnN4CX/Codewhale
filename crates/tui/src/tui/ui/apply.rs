@@ -4623,6 +4623,7 @@ pub(crate) fn apply_loaded_session_with_goal(
     app.session_artifacts = session.artifacts;
     app.session_turn_outcomes = session.turn_outcomes;
     app.window_title = session.window_title;
+    app.composer_color = session.composer_color;
     app.workspace_context = None;
     app.workspace_is_linked_worktree = false;
     app.workspace_context_refreshed_at = None;

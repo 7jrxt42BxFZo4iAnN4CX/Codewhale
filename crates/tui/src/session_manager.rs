@@ -1176,6 +1176,8 @@ pub struct SavedSession {
     /// config default instead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window_title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub composer_color: Option<String>,
     /// Most recent accepted/completed Auto decision, when the saved model mode
     /// is `auto`. Optional for backward-compatible session loads.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1362,6 +1364,7 @@ impl SavedSession {
             approval_receipts: Vec::new(),
             work_state: None,
             window_title: None,
+            composer_color: None,
             last_auto_route: None,
             turn_outcomes: Vec::new(),
         })
@@ -4737,6 +4740,7 @@ fn create_saved_session_inner(
         approval_receipts: Vec::new(),
         work_state: None,
         window_title: None,
+        composer_color: None,
         last_auto_route: None,
         turn_outcomes: Vec::new(),
     }
