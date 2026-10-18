@@ -1849,8 +1849,20 @@ mod tests {
                 Some(f64::from(0.7f32)),
                 "{model} keeps temperature"
             );
+            assert!(
+                body.get("top_p").is_none(),
+                "{model}: never send both: {body}"
+            );
         }
-        assert!(body.get("top_p").is_none(), "never send both: {body}");
+        let body = client.build_anthropic_body(
+            &request_with("claude-sonnet-4-6", None, None, Some(0.9)),
+            true,
+        );
+        assert_eq!(
+            body.get("top_p").and_then(Value::as_f64),
+            Some(f64::from(0.9f32)),
+            "top_p alone passes through: {body}"
+        );
     }
 
     #[test]

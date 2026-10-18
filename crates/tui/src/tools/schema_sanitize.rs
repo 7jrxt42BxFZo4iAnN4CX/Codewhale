@@ -2067,9 +2067,9 @@ fn mfjs_schema_can_terminate(
             if obj.get("minItems").and_then(Value::as_u64).unwrap_or(0) == 0 {
                 return Ok(true);
             }
-            let items = obj
-                .get("items")
-                .ok_or(KimiParameterSchemaError::InvalidSchemaNode)?;
+            let Some(items) = obj.get("items") else {
+                return Ok(true);
+            };
             mfjs_schema_can_terminate(items, document, visiting_refs, structural_depth + 1)
         }
         Some(schema_type) if is_mfjs_concrete_type(schema_type) => Ok(true),

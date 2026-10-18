@@ -517,9 +517,9 @@ pub(crate) fn is_compaction_checkpoint_message(message: &Message) -> bool {
 /// A stamped carrier postdates stamping, so within that history only the
 /// stamped form is a checkpoint: a user turn whose text merely starts with a
 /// legacy summary header (a pasted transcript, for example) is content. A
-/// history without one predates the stamp — there the pasted header is
-/// indistinguishable from the saved bare carrier, so the loose form keeps
-/// applying. The signal is the history's content, not the session's age: it
+/// history without one (a legacy session, or any session not yet compacted)
+/// keeps the loose form, so a pasted legacy header still reads as a
+/// checkpoint at a session's first compaction. The signal is the history's content, not the session's age: it
 /// is one-way and destructible (`/edit` or a host rewind can truncate away
 /// the only stamped carrier), and typed input cannot forge the two-block
 /// form.

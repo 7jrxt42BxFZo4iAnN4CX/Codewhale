@@ -92,9 +92,9 @@ Rust now:
   provenance block) recognizes only stamped carriers as checkpoints, so a
   user turn that pastes a bare legacy summary header stays content: it
   anchors the round, is retained verbatim, and does not count as a duplicated
-  summary. A history without a stamped carrier predates stamping — there the
-  pasted header is indistinguishable from the saved bare carrier, so the
-  loose legacy matching keeps applying. The receipt count reads the
+  summary. A history without a stamped carrier (a legacy session, or any
+  session not yet compacted) keeps the loose legacy matching, so a pasted
+  legacy header still reads as a checkpoint at a session's first compaction. The receipt count reads the
   replacement in its own era, except that a post-provenance original raises
   the bar to a stamped carrier: the engine stamps every replacement it
   builds, and the stamp is the only form request rewriting relocates.
