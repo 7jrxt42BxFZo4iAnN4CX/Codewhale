@@ -4367,6 +4367,7 @@ impl ModalView for ConfigView {
 
         let inner =
             render_underwater_surface(area, buf, self.tr(MessageId::ConfigModalTitle).to_string());
+        let mut choice_rail = None;
         let (lines, footer) = if let Some(edit) = self.editing.as_ref() {
             *self.last_choice_hitboxes.borrow_mut() = Vec::new();
             *self.last_editor_controls.borrow_mut() = Vec::new();
@@ -4463,6 +4464,21 @@ impl ModalView for ConfigView {
                     .min(max_start);
                 let end = (start + visible_options).min(choices.len());
                 let mut hitboxes = Vec::new();
+                let scrolls = visible_options < choices.len();
+                if scrolls {
+                    choice_rail = Some((
+                        Rect {
+                            x: inner.x,
+                            y: inner.y.saturating_add(lines.len() as u16),
+                            width: inner.width,
+                            height: u16::try_from(visible_options).unwrap_or(u16::MAX),
+                        },
+                        choices.len(),
+                        start,
+                        visible_options,
+                    ));
+                }
+                let label_width = usize::from(inner.width).saturating_sub(8 + usize::from(scrolls));
 
                 for (choice_idx, choice) in choices.iter().enumerate().take(end).skip(start) {
                     let selected = choice_idx == edit.selected_choice;
@@ -4481,7 +4497,7 @@ impl ModalView for ConfigView {
                     let mut line = Line::from(format!(
                         "  {marker} {:>2}. {}",
                         choice_idx + 1,
-                        truncate_view_text(&label, usize::from(inner.width).saturating_sub(8))
+                        truncate_view_text(&label, label_width)
                     ));
                     line.style = if selected {
                         menu_style::selected_row_style()
@@ -4547,6 +4563,9 @@ impl ModalView for ConfigView {
             .style(Style::default().fg(palette::TEXT_PRIMARY))
             .scroll((0, 0))
             .render(body, buf);
+        if let Some((rail, total, offset, visible)) = choice_rail {
+            render_panel_scroll_rail(rail, buf, total, offset, visible, true);
+        }
         if content.height > 0 {
             self.render_editor_controls(
                 Rect {
