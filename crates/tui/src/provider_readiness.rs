@@ -417,7 +417,7 @@ pub(crate) fn route_is_valid_for_model(
             })
             .flatten(),
     };
-    RouteResolver::new()
+    RouteResolver::bundled()
         .resolve(&request)
         .is_ok_and(|candidate| candidate.validation().ok)
 }
