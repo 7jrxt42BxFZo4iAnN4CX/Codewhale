@@ -3444,6 +3444,7 @@ mod tests {
                             thinking: "retained reasoning ".repeat(2000),
                             signature: None,
                             state: None,
+                            redacted_data: None,
                         },
                     );
                 }
@@ -4069,6 +4070,7 @@ mod tests {
                     ContentBlock::Thinking {
                         signature: None,
                         state: None,
+                        redacted_data: None,
                         thinking: thinking.clone(),
                     },
                     ContentBlock::ToolUse {

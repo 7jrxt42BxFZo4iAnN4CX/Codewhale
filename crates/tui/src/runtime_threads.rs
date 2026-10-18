@@ -16983,6 +16983,7 @@ impl RuntimeThreadManager {
                                 thinking,
                                 signature: None,
                                 state: None,
+                                redacted_data: None,
                             });
                         }
                     }
