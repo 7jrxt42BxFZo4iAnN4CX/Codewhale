@@ -3576,7 +3576,11 @@ impl ShellManager {
             let owned = active_session_id.is_none_or(|session_id| {
                 !session_id.is_empty() && shell.owner_session_id == session_id
             });
-            if owned && shell.status != ShellStatus::Running && !shell.completion_reported {
+            if owned
+                && shell.owner_agent.is_none()
+                && shell.status != ShellStatus::Running
+                && !shell.completion_reported
+            {
                 shell.completion_reported = true;
                 completions.push(shell.completion_evidence());
                 // The bytes are now in the caller's hands (they become a durable
@@ -5384,8 +5388,13 @@ fn finish_contract_bash_result(
             tail_lines(output.trim(), 20)
         };
         let notice = promotion_notice(context, task_id, result.duration_ms / 1_000, &output);
+        let completion = if context.owner_agent_id.is_some() {
+            "Its completion stays in task/status and is not injected into the parent model."
+        } else {
+            "Its completion reaches you as a runtime event before your next step; if you end the turn first, a headless run stops it unseen."
+        };
         return Ok(ToolResult::success(format!(
-            "{notice}\n\nOutput so far:\n{so_far}\n\nCompletion will appear as a runtime event. To see more output or block until it finishes, call `task_shell_wait` directly with task_id=\"{task_id}\"; do not sleep-poll with bash. To stop it, send the same call with cancel=true. It also stops when the session ends."
+            "{notice}\n\nOutput so far:\n{so_far}\n\n{completion} To see more output or block until it finishes, call `task_shell_wait` directly with task_id=\"{task_id}\"; do not sleep-poll with bash. To stop it, send the same call with cancel=true. It also stops when the session ends."
         )).with_metadata(metadata));
     }
     if result.status != ShellStatus::Completed {
@@ -6491,7 +6500,7 @@ impl ToolSpec for BashTool {
                     let completion_contract = if context.owner_agent_id.is_some() {
                         "completion stays in task/status and is not injected into the parent model."
                     } else {
-                        "completion is delivered to the model as an internal runtime event and shown in task/status state."
+                        "completion is delivered to the model as an internal runtime event before its next step and shown in task/status state; if the turn ends first, a headless run stops the task unseen."
                     };
                     if backgrounded_foreground {
                         let seconds = result.duration_ms / 1_000;

@@ -6396,22 +6396,7 @@ impl Engine {
         // Deliver completions that arrived after the previous turn before the
         // next user request is sent. This keeps background shell work
         // model-visible without requiring an explicit wait/poll tool call.
-        let shell_completions = if self.is_acp_turn() {
-            Vec::new()
-        } else {
-            self.drain_shell_completion_events()
-        };
-        if !shell_completions.is_empty() {
-            self.add_session_message(crate::runtime_handoff::shell_completion_runtime_message(
-                &shell_completions,
-            ))
-            .await;
-            if let Some(status) =
-                crate::core::engine::turn_loop::shell_completion_status_text(&shell_completions, "")
-            {
-                let _ = self.send_event(Event::status(status)).await;
-            }
-        }
+        self.deliver_shell_completions("").await;
 
         // A person writing to a goal that only the runtime stopped (a failed
         // or timed-out continuation) is continuing the work: resume it as a

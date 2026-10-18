@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- A background shell job that finishes while the agent is still working now
+  reaches the model before its next step, instead of only when the turn ends.
+  In `codewhale exec`, which stops at the end of the turn, that output used to
+  be lost. The background notice now says that a job still running when the
+  turn ends is stopped unseen in a headless run, so the model knows to wait
+  explicitly when its answer depends on it. Sub-agents no longer pick up the
+  parent's finished jobs, and the parent no longer consumes a sub-agent's.
 - `codewhale review --base <ref>` gives the reviewer the `base..HEAD` commit
   messages as the author's stated intent, ahead of the diff, so it stops
   flagging changes their commit messages already explain. The messages are

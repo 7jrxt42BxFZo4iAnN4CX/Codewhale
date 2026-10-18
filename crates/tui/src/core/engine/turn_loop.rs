@@ -1152,9 +1152,6 @@ impl Engine {
             .unwrap_or_default();
         completions
             .into_iter()
-            // Child-owned output stays in task/status for explicit child
-            // waits. Only unowned jobs belong in the parent model stream.
-            .filter(|completion| completion.event.owner_agent_id.is_none())
             .map(|mut completion| {
                 let tool_call_id =
                     format!("background-shell-completion-{}", completion.event.task_id);
@@ -1175,6 +1172,31 @@ impl Engine {
                 completion.event
             })
             .collect()
+    }
+
+    /// Hand finished background shell jobs to the model as one runtime
+    /// message. Called at turn start, after each tool batch and when the turn
+    /// is finishing; returns whether anything was delivered.
+    ///
+    /// Known limitation: a job still running when the model ends its turn
+    /// reaches it only through the idle wake, on hosts that keep the Engine
+    /// alive; headless exec shuts down and stops it unseen. ACP turns and
+    /// child engines never receive runtime shell completions and use
+    /// `task_shell_wait` instead.
+    pub(super) async fn deliver_shell_completions(&mut self, timing: &str) -> bool {
+        if self.child_host.is_some() {
+            return false;
+        }
+        let completions = self.drain_shell_completion_events();
+        if completions.is_empty() {
+            return false;
+        }
+        self.add_session_message(shell_completion_runtime_message(&completions))
+            .await;
+        if let Some(status) = shell_completion_status_text(&completions, timing) {
+            let _ = self.send_event(Event::status(status)).await;
+        }
+        true
     }
 
     /// Keep workers alive while their tracked background shell work is still
