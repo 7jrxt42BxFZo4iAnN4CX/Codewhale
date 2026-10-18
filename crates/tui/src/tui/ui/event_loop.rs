@@ -4435,6 +4435,7 @@ pub(crate) async fn run_event_loop(
                         duration_ms,
                         first_token_ms,
                         request_ms,
+                        finish_reason: _,
                     } => {
                         // Per-step usage receipt. The session metrics strip
                         // folds each model call's timing (stream time, TTFT,
