@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     failure mark.
   - The keybinding docs now say what Alt-V opens with nothing selected, and
     that clicking a card keeps Alt-V on it while newer cards arrive.
+- The TUI uses less CPU while it waits on you. With an approval, elevation
+  or question prompt open, the status spinner and elapsed-time labels behind
+  it refresh once a second instead of five times a second.
 - On Windows, Codewhale processes that start at the same moment no longer
   lose the built-in plugins. The rename that publishes the built-in plugin
   snapshot now retries a brief sharing or access refusal, as the other atomic
