@@ -2567,5 +2567,10 @@
   "PluginOAuthReady": "{provider}：ログインしました。モデルを選択してください。",
   "PluginOAuthLocalLogout": "{provider}：この端末の認証情報を削除しました。サーバーの認可は解除されていません。",
   "CmdConnectDescription": "ブラウザーのログインでプラグインプロバイダーに接続します",
-  "CmdDisconnectDescription": "プラグインプロバイダーのこの端末のログイン情報を削除します"
+  "CmdDisconnectDescription": "プラグインプロバイダーのこの端末のログイン情報を削除します",
+  "ExecAutoHelp": "ツールを自動承認と Full Access（シェルのサンドボックスなし、信頼モード有効）で有効にします。より厳しいサンドボックス設定がある場合はそれに従います。ファイルとシェルの書き込みを制限するには --sandbox workspace-write を指定してください。",
+  "ExecSandboxHelp": "この実行のサンドボックスポリシー。danger-full-access 以外の --sandbox（または設定内の同等の sandbox_mode）は信頼モードを無効にします。",
+  "ExecAfterHelp": "使用例:\n  codewhale exec \"この関数を説明して\"\n  codewhale exec --auto \"ls で crates/ の内容を表示して\"\n  codewhale exec --auto --output-format stream-json \"失敗しているテストを修正して\"\n\n通常の `codewhale exec` はモデルの単発応答です。他の実行と同じシステム\nプロンプトを使い、ツールなしで Engine を 1 ターン実行します。対話なしで\nツールを使うエージェントを実行するには `--auto` を指定してください。\nツールが提供されるのは `--auto`、`--yolo`、`--allowed-tools` の指定時、\nまたはセッションの再開時のみです。`--max-turns`、`--disallowed-tools`、\n`--sandbox` などの制限や出力形式を指定してもツールは追加されません。\nプロバイダーの出力上限で途切れた応答は同じターン内で続行されます。\n`--max-turns` で変更しない限り、モデルのステップ数は最大 8 回です。\n--auto は既定で Full Access です。シェルのサンドボックスはなく、信頼モードが有効です。シェルのサンドボックスと、ファイルツールのワークスペース制限を維持するには --sandbox workspace-write を指定してください。設定済みのより厳しいポリシーも適用されます。サンドボックスで拒否された操作の再試行には --allow-sandbox-elevation または --sandbox danger-full-access が必要です。\nツールを提供する実行、stream-json の実行、再開したセッションは保存され、codewhale sessions、exec --continue、codewhale receipts <id> で利用できます。応答のみの text/--json 実行は、圧縮時に復旧用の保存が必要な場合を除いて保存されません。\ndanger-full-access 以外の --sandbox（または設定内の同等の sandbox_mode）は信頼モードを無効にします。\n",
+  "ExecPromptHelp": "モデルに送信するプロンプト。- で始まる場合や exec のフラグを文字列として含む場合は、プロンプトの前に -- を置いてください。標準入力を読むには --prompt-file - を使用してください。",
+  "ExecFlagAfterPrompt": "{flag} がプロンプトの後にあり、文字列として扱われます。フラグはプロンプトの前に置くか、文字列として渡す場合は -- の後に置いてください。"
 }

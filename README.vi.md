@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:eefdc9e645b6 -->
+<!-- source: README.md sha256:30c9b9765b04 -->
 <div align="center">
 
 <picture>
@@ -86,12 +86,15 @@ trò chuyện, `n` từ chối. `/undo` hoàn tác yêu cầu gần nhất của
 đổi tệp của nó (ở 0.10.1, hãy chạy `/trust on` trước). `/help` liệt kê các lệnh
 và phím tắt.
 
-Với script và CI, `codewhale exec` chạy một tác vụ mà không cần giao diện. Với
-`--auto`, nó chỉnh sửa tệp và chạy lệnh shell mà không hỏi, vì vậy hãy chạy nó
-trong một container hoặc một bản checkout dùng một lần:
+Với script và CI, `codewhale exec` chạy một tác vụ mà không cần giao diện. Theo
+mặc định, `--auto` dùng Full Access: công cụ chạy mà không hỏi, lệnh shell
+không bị sandbox của Codewhale giới hạn, và chế độ tin cậy cho phép công cụ
+tệp ghi ra ngoài không gian làm việc. Thêm `--sandbox workspace-write` để giữ
+sandbox cho shell và giới hạn công cụ tệp trong không gian làm việc, đồng thời
+tắt chế độ tin cậy:
 
 ```bash
-codewhale exec --auto "fix the failing tests and explain what changed"
+codewhale exec --auto --sandbox workspace-write "fix the failing tests and explain what changed"
 ```
 
 ## Chế độ và quyền
@@ -158,6 +161,13 @@ lại từng lệnh gọi công cụ một. `/restore` đưa toàn bộ không g
 snapshot trước đó; vì thao tác này ghi đè các chỉnh sửa sau đó, nó cần
 `/trust on` hoặc Full Access. Xem [Biên nhận](docs/RECEIPTS.md).
 
+Các lần chạy exec có sẵn công cụ đều được lưu ở mọi định dạng đầu ra,
+vì vậy `codewhale receipts --last` dùng được sau `exec --auto`, kể cả khi dùng
+`--json`. Các lần chạy chỉ trả lời bằng văn bản hoặc `--json` chỉ được lưu khi
+tiếp tục cuộc trò chuyện hoặc khi bắt đầu nén cuộc trò chuyện; dùng
+`--output-format stream-json` để luôn lưu chúng cho biên nhận hoặc
+`exec --continue`.
+
 ### Công việc dài hơi
 
 `/goal` đặt một mục tiêu được giữ qua các lượt. Codewhale có thể chia việc cho
@@ -196,7 +206,7 @@ quyền truy cập của nó và bật nó lên
 | Lệnh | Chức năng |
 | --- | --- |
 | `codewhale` | Ứng dụng terminal tương tác |
-| `codewhale exec "…"` | Một tác vụ không có giao diện. Khi không kèm cờ, nó trả lời mà không dùng công cụ; `--auto` cho phép nó chỉnh sửa tệp và chạy lệnh, còn `--output-format stream-json` phát trực tiếp các sự kiện dưới dạng JSON |
+| `codewhale exec "…"` | Một tác vụ không có giao diện. Khi không kèm cờ, nó trả lời mà không dùng công cụ; `--auto` bật công cụ với Full Access theo mặc định, `--sandbox workspace-write` giới hạn chúng, còn `--output-format stream-json` phát trực tiếp các sự kiện dưới dạng JSON |
 | `codewhale web` | Giao diện web cục bộ tại `127.0.0.1` ([hướng dẫn](docs/WEB.md)) |
 | `codewhale review --pr N` | Đánh giá mang tính tham khảo cho một pull request trên GitHub. Nó không đăng gì trừ khi bạn thêm `--post`; [GitHub Action](docs/GITHUB_ACTION.md) chạy cùng kiểu đánh giá đó trong CI |
 | `codewhale app-server --http` | [Runtime API](docs/RUNTIME_API.md), một API HTTP cục bộ cho thread, sự kiện, phê duyệt và các thay đổi tệp của từng lượt |

@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:eefdc9e645b6 -->
+<!-- source: README.md sha256:30c9b9765b04 -->
 <div align="center">
 
 <picture>
@@ -88,11 +88,14 @@ teva última petició i els canvis que va fer als fitxers (a la 0.10.1, executa
 primer `/trust on`). `/help` llista les ordres i les tecles.
 
 Per a scripts i CI, `codewhale exec` executa una sola tasca sense la interfície.
-Amb `--auto` edita fitxers i executa ordres de shell sense preguntar, així que
-fes-lo servir en un contenidor o en una còpia de treball d’un sol ús:
+Per defecte, `--auto` fa servir Full Access: les eines s’executen sense preguntar,
+les ordres de shell no tenen cap sandbox de Codewhale i el mode de confiança
+permet que les eines de fitxers escriguin fora de l’espai de treball. Afegeix
+`--sandbox workspace-write` per mantenir el sandbox de shell i les restriccions
+de les eines de fitxers a l’espai de treball, amb el mode de confiança desactivat:
 
 ```bash
-codewhale exec --auto "fix the failing tests and explain what changed"
+codewhale exec --auto --sandbox workspace-write "fix the failing tests and explain what changed"
 ```
 
 ## Modes i permisos
@@ -160,6 +163,13 @@ crida d’eina cada vegada. `/restore` torna tot l’espai de treball a una
 instantània anterior; com que això sobreescriu les edicions posteriors,
 necessita `/trust on` o Full Access. Consulta [Rebuts](docs/RECEIPTS.md).
 
+Les execucions d’exec que ofereixen eines es desen en tots els formats de
+sortida, de manera que `codewhale receipts --last` funciona després
+d’`exec --auto`, també amb `--json`. Les execucions que només donen una resposta
+en text o amb `--json` només es desen quan es reprèn una conversa o quan
+comença la compactació de la conversa; fes servir `--output-format stream-json`
+per desar-les sempre per als rebuts o per a `exec --continue`.
+
 ### Feines més llargues
 
 `/goal` defineix un objectiu que es manté entre torns. Codewhale pot repartir la
@@ -199,7 +209,7 @@ l’accés i l’actives ([guia](crates/tui/plugins/computer-use/README.md)).
 | Ordre | Què fa |
 | --- | --- |
 | `codewhale` | L’aplicació interactiva de terminal |
-| `codewhale exec "…"` | Una tasca sense la interfície. Per si sol respon sense fer servir eines; `--auto` li permet editar fitxers i executar ordres, i `--output-format stream-json` emet els esdeveniments en streaming com a JSON |
+| `codewhale exec "…"` | Una tasca sense la interfície. Per si sol respon sense fer servir eines; `--auto` activa les eines amb Full Access per defecte, `--sandbox workspace-write` les restringeix, i `--output-format stream-json` emet els esdeveniments en streaming com a JSON |
 | `codewhale web` | Una interfície web local a `127.0.0.1` ([guia](docs/WEB.md)) |
 | `codewhale review --pr N` | Una revisió orientativa d’un pull request de GitHub. No publica res tret que hi afegeixis `--post`; la [GitHub Action](docs/GITHUB_ACTION.md) executa la mateixa revisió a CI |
 | `codewhale app-server --http` | La [Runtime API](docs/RUNTIME_API.md), una API HTTP local per a fils, esdeveniments, aprovacions i els canvis de fitxers de cada torn |

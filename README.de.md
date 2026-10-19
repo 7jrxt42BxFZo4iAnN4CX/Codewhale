@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:eefdc9e645b6 -->
+<!-- source: README.md sha256:30c9b9765b04 -->
 <div align="center">
 
 <picture>
@@ -89,12 +89,16 @@ Rest der Unterhaltung, `n` lehnt ab. `/undo` macht deine letzte Anfrage samt
 ihren Dateiänderungen rückgängig (in 0.10.1 führe vorher `/trust on` aus).
 `/help` listet Befehle und Tasten auf.
 
-Für Skripte und CI führt `codewhale exec` eine Aufgabe ohne Oberfläche aus. Mit
-`--auto` bearbeitet es Dateien und führt Shell-Befehle aus, ohne zu fragen; gib
-ihm deshalb einen Container oder einen Wegwerf-Checkout:
+Für Skripte und CI führt `codewhale exec` eine Aufgabe ohne Oberfläche aus.
+Standardmäßig nutzt `--auto` Full Access: Tools laufen ohne Nachfrage,
+Shell-Befehle haben keine Codewhale-Sandbox, und der Vertrauensmodus erlaubt
+Datei-Tools, außerhalb des Arbeitsbereichs zu schreiben. Füge
+`--sandbox workspace-write` hinzu, um die Shell-Sandbox und die Beschränkung
+der Datei-Tools auf den Arbeitsbereich beizubehalten, bei ausgeschaltetem
+Vertrauensmodus:
 
 ```bash
-codewhale exec --auto "fix the failing tests and explain what changed"
+codewhale exec --auto --sandbox workspace-write "fix the failing tests and explain what changed"
 ```
 
 ## Modi und Berechtigungen
@@ -164,6 +168,13 @@ Arbeitsbereich auf einen früheren Snapshot zurück; weil dabei spätere
 Änderungen überschrieben werden, braucht es `/trust on` oder Full Access. Siehe
 [Belege](docs/RECEIPTS.md).
 
+Exec-Läufe, die Tools anbieten, werden in jedem Ausgabeformat gespeichert,
+sodass `codewhale receipts --last` nach `exec --auto` funktioniert, auch mit
+`--json`. Läufe, die nur antworten, werden im Textformat und mit `--json` nur
+beim Fortsetzen oder beim Beginn der Gesprächskompaktierung gespeichert;
+verwende `--output-format stream-json`, um sie immer für Belege oder
+`exec --continue` zu speichern.
+
 ### Längere Arbeit
 
 `/goal` setzt ein Ziel, das über mehrere Turns bestehen bleibt. Codewhale kann
@@ -204,7 +215,7 @@ bis du seine Zugriffsrechte geprüft und es aktiviert hast
 | Befehl | Was er tut |
 | --- | --- |
 | `codewhale` | Die interaktive Terminal-App |
-| `codewhale exec "…"` | Eine Aufgabe ohne Oberfläche. Ohne weitere Optionen antwortet es, ohne Tools zu verwenden; `--auto` erlaubt ihm, Dateien zu bearbeiten und Befehle auszuführen, und `--output-format stream-json` streamt Ereignisse als JSON |
+| `codewhale exec "…"` | Eine Aufgabe ohne Oberfläche. Ohne weitere Optionen antwortet es, ohne Tools zu verwenden; `--auto` aktiviert Tools standardmäßig mit Full Access, `--sandbox workspace-write` schränkt sie ein, und `--output-format stream-json` streamt Ereignisse als JSON |
 | `codewhale web` | Eine lokale Web-Oberfläche auf `127.0.0.1` ([Anleitung](docs/WEB.md)) |
 | `codewhale review --pr N` | Ein beratendes Review eines GitHub-Pull-Requests. Es veröffentlicht nichts, solange du nicht `--post` angibst; die [GitHub Action](docs/GITHUB_ACTION.md) führt dasselbe Review in der CI aus |
 | `codewhale app-server --http` | Die [Runtime API](docs/RUNTIME_API.md), eine lokale HTTP-API für Threads, Ereignisse, Freigaben und die Dateiänderungen jedes Turns |

@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:eefdc9e645b6 -->
+<!-- source: README.md sha256:30c9b9765b04 -->
 <div align="center">
 
 <picture>
@@ -88,11 +88,14 @@ değişikliklerini geri alır (0.10.1'de önce `/trust on` çalıştırın). `/h
 komutları ve tuşları listeler.
 
 Betikler ve CI için `codewhale exec`, tek bir görevi arayüz olmadan çalıştırır.
-`--auto` ile dosyaları düzenler ve kabuk komutlarını sormadan çalıştırır; bu yüzden
-ona bir konteyner veya atılabilir bir checkout verin:
+Varsayılan olarak `--auto`, Full Access kullanır: araçlar sormadan çalışır,
+kabuk komutları için Codewhale korumalı alanı yoktur ve güven modu, dosya
+araçlarının çalışma alanı dışına yazmasına izin verir. Kabuk korumalı alanını
+ve dosya araçlarının çalışma alanı kısıtlamalarını güven modu kapalı olarak
+korumak için `--sandbox workspace-write` ekleyin:
 
 ```bash
-codewhale exec --auto "fix the failing tests and explain what changed"
+codewhale exec --auto --sandbox workspace-write "fix the failing tests and explain what changed"
 ```
 
 ## Modlar ve izinler
@@ -158,6 +161,13 @@ geri alır; 0.10.1'de dosyalar için `/trust on` gerektirir ve her seferinde bir
 döndürür; bu, sonraki düzenlemelerin üzerine yazdığı için `/trust on` veya Full
 Access gerektirir. Bkz. [Makbuzlar](docs/RECEIPTS.md).
 
+Araçların kullanılabilir olduğu exec çalıştırmaları her çıktı biçiminde
+kaydedilir; böylece `codewhale receipts --last`, `--json` dahil olmak üzere
+`exec --auto` sonrasında çalışır. Yalnızca yanıt üreten metin ve `--json`
+çalıştırmaları ancak devam ettirilirken veya konuşma sıkıştırması başladığında
+kaydedilir; makbuzlar veya `exec --continue` için bunları her zaman kaydetmek
+üzere `--output-format stream-json` kullanın.
+
 ### Daha uzun işler
 
 `/goal`, turlar boyunca geçerli kalan bir hedef belirler. Codewhale işi
@@ -197,7 +207,7 @@ erişimini gözden geçirip etkinleştirene kadar kapalı kalır
 | Komut | Ne yapar |
 | --- | --- |
 | `codewhale` | Etkileşimli terminal uygulaması |
-| `codewhale exec "…"` | Arayüz olmadan tek bir görev. Tek başına araç kullanmadan yanıt verir; `--auto` dosyaları düzenlemesine ve komutları çalıştırmasına izin verir, `--output-format stream-json` olayları JSON olarak akış halinde verir |
+| `codewhale exec "…"` | Arayüz olmadan tek bir görev. Tek başına araç kullanmadan yanıt verir; `--auto` varsayılan olarak araçları Full Access ile etkinleştirir, `--sandbox workspace-write` bunları kısıtlar, `--output-format stream-json` olayları JSON olarak akış halinde verir |
 | `codewhale web` | `127.0.0.1` üzerinde yerel bir web arayüzü ([kılavuz](docs/WEB.md)) |
 | `codewhale review --pr N` | Bir GitHub pull request'inin tavsiye niteliğinde incelemesi. `--post` eklemediğiniz sürece hiçbir şey yayınlamaz; [GitHub Action](docs/GITHUB_ACTION.md) aynı incelemeyi CI'da çalıştırır |
 | `codewhale app-server --http` | [Runtime API](docs/RUNTIME_API.md); iş parçacıkları, olaylar, onaylar ve her turun dosya değişiklikleri için yerel bir HTTP API |

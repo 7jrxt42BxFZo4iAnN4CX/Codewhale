@@ -10,9 +10,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
-#[cfg(test)]
-use clap::CommandFactory;
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use tempfile::NamedTempFile;
 use wait_timeout::ChildExt;
 
@@ -406,22 +404,10 @@ enum SessionsCommand {
 }
 
 #[derive(Args, Debug, Clone)]
-#[command(after_help = "\
-Examples:
-  codewhale exec \"explain this function\"
-  codewhale exec --auto \"list crates/ with ls\"
-  codewhale exec --auto --output-format stream-json \"fix the failing test\"
-
-Plain `codewhale exec` is a one-shot model response: one Engine turn with the
-same system prompt as every other run, and no tools. Use `--auto` for
-non-interactive agent-with-tools execution. Tools are offered only with
-`--auto`, `--yolo`, `--allowed-tools`, or when resuming a session; limits such
-as `--max-turns`, `--disallowed-tools` or `--sandbox`, and the output format,
-never add tools. A reply cut off at the provider's output limit is continued
-in the same turn, at most 8 model steps unless `--max-turns` says otherwise.
-`--auto` does not change the sandbox posture or elevate a denied tool. Use `--sandbox danger-full-access`
-or `--allow-sandbox-elevation` to explicitly authorize sandbox elevation.
-")]
+#[command(after_help = codewhale_localization::tr(
+    codewhale_localization::resolve_locale("auto"),
+    codewhale_localization::MessageId::ExecAfterHelp,
+))]
 struct ExecArgs {
     /// Override model for this run
     #[arg(long)]
@@ -437,12 +423,15 @@ struct ExecArgs {
     /// Accepted values: auto, off, low, medium, high, max.
     #[arg(long = "reasoning-effort", value_name = "EFFORT")]
     reasoning_effort: Option<String>,
-    /// Enable agent-with-tools mode with automatic tool approvals. This does
-    /// not authorize sandbox elevation.
-    #[arg(long, default_value_t = false)]
+    #[arg(long, default_value_t = false, help = codewhale_localization::tr(
+        codewhale_localization::resolve_locale("auto"),
+        codewhale_localization::MessageId::ExecAutoHelp,
+    ))]
     auto: bool,
-    /// Sandbox policy for this exec run; independent from --auto.
-    #[arg(long, value_name = "POLICY")]
+    #[arg(long, value_name = "POLICY", help = codewhale_localization::tr(
+        codewhale_localization::resolve_locale("auto"),
+        codewhale_localization::MessageId::ExecSandboxHelp,
+    ))]
     sandbox: Option<String>,
     /// Explicitly allow a denied tool to retry with danger-full-access.
     #[arg(long, default_value_t = false)]
@@ -497,15 +486,52 @@ struct ExecArgs {
     /// prompts past the OS per-argument limit (~128 KiB on Linux).
     #[arg(long, value_name = "PATH", conflicts_with = "prompt")]
     prompt_file: Option<PathBuf>,
-    /// Prompt to send to the model. Taken literally, including a lone `-`;
-    /// use `--prompt-file -` to read stdin.
     #[arg(
         value_name = "PROMPT",
         required_unless_present = "prompt_file",
         trailing_var_arg = true,
-        allow_hyphen_values = true
+        help = codewhale_localization::tr(
+            codewhale_localization::resolve_locale("auto"),
+            codewhale_localization::MessageId::ExecPromptHelp,
+        )
     )]
     prompt: Vec<String>,
+}
+
+fn parse_cli_args(args: &[impl AsRef<str>]) -> Result<Cli, clap::Error> {
+    let mut command = Cli::command();
+    let matches = command.try_get_matches_from_mut(args.iter().map(|arg| arg.as_ref()))?;
+    let cli = Cli::from_arg_matches(&matches)?;
+    if let Some(Commands::Exec(exec)) = &cli.command {
+        let prompt_start = args.len().saturating_sub(exec.prompt.len());
+        if !args[..prompt_start]
+            .last()
+            .is_some_and(|arg| arg.as_ref() == "--")
+        {
+            let command = command.find_subcommand_mut("exec").expect("exec command");
+            for word in exec.prompt.iter().take_while(|word| *word != "--") {
+                let flag = word.split_once('=').map_or(word.as_str(), |(flag, _)| flag);
+                if flag.strip_prefix("--").is_some_and(|name| {
+                    command.get_arguments().any(|arg| {
+                        arg.get_long() == Some(name)
+                            || arg
+                                .get_all_aliases()
+                                .is_some_and(|aliases| aliases.contains(&name))
+                    })
+                }) {
+                    return Err(command.error(
+                        clap::error::ErrorKind::UnknownArgument,
+                        codewhale_localization::tr(
+                            codewhale_localization::resolve_locale("auto"),
+                            codewhale_localization::MessageId::ExecFlagAfterPrompt,
+                        )
+                        .replace("{flag}", flag),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(cli)
 }
 
 #[derive(Args, Debug, Clone)]
@@ -1983,7 +2009,7 @@ fn run_with_args(options: RuntimeOptions, args: Vec<String>) -> Result<()> {
     // configuration, MCP, trust, sandbox, executable lookup, or plugin
     // discovery. Plugin discovery therefore runs first, and the loader below
     // admits only built-in provider credential names from a stable file read.
-    let cli = match Cli::try_parse_from(args) {
+    let cli = match parse_cli_args(&args) {
         Ok(mut cli) => {
             cli.options = options.merge(cli.options)?;
             cli
@@ -2845,7 +2871,6 @@ async fn run_async_main_dispatch(
                         auto_mode,
                         args.allow_sandbox_elevation,
                         args.sandbox.as_deref(),
-                        auto_mode,
                         args.json,
                         resume_session,
                         force_configured_route,
@@ -14885,6 +14910,7 @@ fn persist_exec_session(
     system_prompt: &Option<SystemPrompt>,
     session_id: Option<&str>,
     total_tokens: u64,
+    turn_failure: Option<&str>,
     session_manager: Option<&SessionManager>,
 ) -> Result<String> {
     let default_manager;
@@ -14933,6 +14959,12 @@ fn persist_exec_session(
         provider_route.id,
         workspace,
     );
+    if let Some(error) = turn_failure {
+        session_manager::push_turn_outcome(
+            &mut saved.turn_outcomes,
+            session_manager::SavedTurnOutcome::failed(error, messages.len()),
+        );
+    }
     let id = saved.metadata.id.clone();
     manager
         .save_session(&saved)

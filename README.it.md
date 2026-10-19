@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:eefdc9e645b6 -->
+<!-- source: README.md sha256:30c9b9765b04 -->
 <div align="center">
 
 <picture>
@@ -86,12 +86,16 @@ simili per il resto della conversazione, `n` lo rifiuta. `/undo` annulla la tua
 ultima richiesta e le relative modifiche ai file (nella 0.10.1, esegui prima
 `/trust on`). `/help` elenca comandi e tasti.
 
-Per script e CI, `codewhale exec` esegue un compito senza interfaccia. Con
-`--auto` modifica i file ed esegue comandi di shell senza chiedere, quindi
-dagli un container o un checkout usa e getta:
+Per script e CI, `codewhale exec` esegue un compito senza interfaccia. Per
+impostazione predefinita, `--auto` usa Full Access: gli strumenti vengono
+eseguiti senza chiedere, i comandi di shell non hanno la sandbox di Codewhale
+e la modalità di fiducia consente agli strumenti per i file di scrivere fuori
+dall’area di lavoro. Aggiungi `--sandbox workspace-write` per mantenere la
+sandbox della shell e le restrizioni degli strumenti per i file all’area di
+lavoro, con la modalità di fiducia disattivata:
 
 ```bash
-codewhale exec --auto "fix the failing tests and explain what changed"
+codewhale exec --auto --sandbox workspace-write "fix the failing tests and explain what changed"
 ```
 
 ## Modalità e permessi
@@ -157,6 +161,13 @@ chiamata di strumento alla volta. `/restore` riporta l’intera area di lavoro a
 uno snapshot precedente; poiché sovrascrive le modifiche successive, richiede
 `/trust on` o Full Access. Vedi [Ricevute](docs/RECEIPTS.md).
 
+Le esecuzioni di exec che offrono strumenti vengono salvate in ogni formato di
+output, quindi `codewhale receipts --last` funziona dopo `exec --auto`, anche
+con `--json`. Le esecuzioni che forniscono solo una risposta in testo o con
+`--json` vengono salvate solo quando si riprende una conversazione o quando
+inizia la compattazione della conversazione; usa `--output-format stream-json`
+per salvarle sempre per le ricevute o per `exec --continue`.
+
 ### Lavori più lunghi
 
 `/goal` imposta un obiettivo che resta valido da un turno all’altro. Codewhale
@@ -198,7 +209,7 @@ controlli gli accessi e lo abiliti
 | Comando | Cosa fa |
 | --- | --- |
 | `codewhale` | L’app interattiva nel terminale |
-| `codewhale exec "…"` | Un compito senza interfaccia. Da solo risponde senza usare strumenti; `--auto` gli consente di modificare file ed eseguire comandi, e `--output-format stream-json` trasmette gli eventi in streaming come JSON |
+| `codewhale exec "…"` | Un compito senza interfaccia. Da solo risponde senza usare strumenti; `--auto` abilita gli strumenti con Full Access per impostazione predefinita, `--sandbox workspace-write` li limita, e `--output-format stream-json` trasmette gli eventi in streaming come JSON |
 | `codewhale web` | Un’interfaccia web locale su `127.0.0.1` ([guida](docs/WEB.md)) |
 | `codewhale review --pr N` | Una revisione consultiva di una pull request GitHub. Non pubblica nulla a meno che tu non aggiunga `--post`; la [GitHub Action](docs/GITHUB_ACTION.md) esegue la stessa revisione in CI |
 | `codewhale app-server --http` | La [Runtime API](docs/RUNTIME_API.md), un’API HTTP locale per thread, eventi, approvazioni e le modifiche ai file di ogni turno |

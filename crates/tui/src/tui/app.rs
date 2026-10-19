@@ -5407,6 +5407,8 @@ impl App {
             .truncate(unchanged.min(self.api_message_stamps.len()));
         self.api_message_stamps
             .resize_with(messages.len(), Utc::now);
+        self.session_turn_outcomes
+            .retain(|outcome| outcome.after_message_count <= unchanged);
         self.api_messages = messages;
         unchanged
     }
@@ -5471,12 +5473,15 @@ impl App {
         self.api_messages_mut().truncate(new_len);
         self.api_message_stamps
             .resize_with(self.api_messages.len(), Utc::now);
+        self.session_turn_outcomes
+            .retain(|outcome| outcome.after_message_count <= self.api_messages.len());
     }
 
     pub fn clear_api_messages(&mut self) {
         self.session_journal = crate::session_tree::SessionJournal::new();
         self.api_messages_mut().clear();
         self.api_message_stamps.clear();
+        self.session_turn_outcomes.clear();
     }
 
     #[must_use]

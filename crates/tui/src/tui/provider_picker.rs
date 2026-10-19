@@ -2008,24 +2008,7 @@ impl ProviderPickerView {
     #[must_use]
     pub(crate) fn with_local_runtime_detected(mut self, detected: bool) -> Self {
         self.local_runtime_detected = detected;
-        if !self.rows.is_empty() && !self.row_visible(self.selected_idx) {
-            self.selected_idx = (0..self.rows.len())
-                .find(|idx| self.row_visible(*idx))
-                .unwrap_or(0);
-        }
         self
-    }
-
-    fn hides_undetected_local(&self, idx: usize) -> bool {
-        self.onboarding_mode
-            && !self.local_runtime_detected
-            && !self.rows[idx].is_configured
-            && self.rows[idx]
-                .provider
-                .provider()
-                .credential_help()
-                .acquisition
-                == CredentialAcquisition::LocalOptional
     }
 
     fn tr(&self, id: MessageId) -> Cow<'static, str> {
@@ -2188,9 +2171,6 @@ impl ProviderPickerView {
     }
 
     fn row_visible(&self, idx: usize) -> bool {
-        if self.hides_undetected_local(idx) {
-            return false;
-        }
         let query = self.query.trim();
         if !query.is_empty() {
             return self.rows[idx].matches_query(query);
@@ -8434,6 +8414,10 @@ mod tests {
             "OPENAI_API_KEY",
             "OPENAI_BASE_URL",
             "DEEPSEEK_BASE_URL",
+            "OLLAMA_API_KEY",
+            "OLLAMA_BASE_URL",
+            "VLLM_API_KEY",
+            "VLLM_BASE_URL",
         ]
         .into_iter()
         .map(EnvVarGuard::remove)
@@ -8503,10 +8487,39 @@ mod tests {
             assert_eq!(app.onboarding, crate::tui::app::OnboardingState::None);
             assert!(!app.onboarding_recovers_configured_route());
             assert!(app.should_adopt_live_local_ollama());
-            let picker =
-                ProviderPickerView::new_for_onboarding(app.api_provider, None, &config, None);
+            assert!(!app.local_runtime_detected);
+            let mut picker =
+                ProviderPickerView::new_for_onboarding(app.api_provider, None, &config, None)
+                    .with_local_runtime_detected(app.local_runtime_detected);
             assert_eq!(picker.stage, Stage::List);
             assert_eq!(picker.selected_provider(), ProviderKind::Deepseek);
+            for (query, provider) in [
+                ("olla", ProviderKind::Ollama),
+                ("local", ProviderKind::Ollama),
+                ("vllm", ProviderKind::Vllm),
+            ] {
+                for ch in query.chars() {
+                    picker.handle_key(key(KeyCode::Char(ch)));
+                }
+                assert_eq!(picker.query, query);
+                assert!(
+                    picker
+                        .filtered_rows()
+                        .iter()
+                        .any(|(_, row)| row.provider == provider)
+                );
+                move_to_provider(&mut picker, provider);
+                assert_eq!(
+                    picker.rows[picker.selected_idx].readiness,
+                    ResolvedProviderReadiness::LocalUnchecked
+                );
+                assert!(matches!(
+                    picker.handle_key(key(KeyCode::Enter)),
+                    ViewAction::EmitAndClose(ViewEvent::ProviderPickerApplied { identity })
+                        if identity.provider == provider
+                ));
+                picker.handle_key(key(KeyCode::Esc));
+            }
             let runtime = tokio::runtime::Runtime::new().unwrap();
             runtime
                 .block_on(crate::tui::setup::record_configured_route(&app))
@@ -8564,7 +8577,8 @@ mod tests {
         let _lock = crate::test_support::lock_test_env();
         let config = Config::default();
         let picker =
-            ProviderPickerView::new_for_onboarding(ProviderKind::Deepseek, None, &config, None);
+            ProviderPickerView::new_for_onboarding(ProviderKind::Deepseek, None, &config, None)
+                .with_local_runtime_detected(false);
 
         // First-run setup opens on the full catalog with the active provider
         // (DeepSeek) selected — hosted APIs are visible immediately, not

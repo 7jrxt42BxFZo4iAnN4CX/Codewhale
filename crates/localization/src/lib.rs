@@ -2808,6 +2808,11 @@ pub enum MessageId {
     PluginOAuthReady,
     PluginOAuthLocalLogout,
     PlanHandoffProceed,
+    ExecAutoHelp,
+    ExecSandboxHelp,
+    ExecAfterHelp,
+    ExecPromptHelp,
+    ExecFlagAfterPrompt,
 }
 
 #[allow(dead_code)]
@@ -5382,6 +5387,11 @@ pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::PluginOAuthReady,
     MessageId::PluginOAuthLocalLogout,
     MessageId::PlanHandoffProceed,
+    MessageId::ExecAutoHelp,
+    MessageId::ExecSandboxHelp,
+    MessageId::ExecAfterHelp,
+    MessageId::ExecPromptHelp,
+    MessageId::ExecFlagAfterPrompt,
 ];
 
 pub fn tr(locale: Locale, id: MessageId) -> Cow<'static, str> {

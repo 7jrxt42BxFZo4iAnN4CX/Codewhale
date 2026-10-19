@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:eefdc9e645b6 -->
+<!-- source: README.md sha256:30c9b9765b04 -->
 <div align="center">
 
 <picture>
@@ -80,10 +80,11 @@ Fix the failing tests and explain what changed.
 `/help` でコマンドとキーの一覧を表示します。
 
 スクリプトや CI では、`codewhale exec` がインターフェースなしで 1 つのタスクを実行します。
-`--auto` を付けると確認なしでファイルを編集し、シェルコマンドを実行するため、コンテナか使い捨てのチェックアウトで実行してください。
+既定では、`--auto` はフルアクセスを使います。ツールは確認なしで実行され、シェルコマンドには Codewhale のサンドボックスが適用されず、信頼モードによりファイルツールはワークスペースの外にも書き込めます。
+`--sandbox workspace-write` を追加すると、信頼モードをオフにし、シェルのサンドボックスとファイルツールのワークスペース制限を維持できます。
 
 ```bash
-codewhale exec --auto "fix the failing tests and explain what changed"
+codewhale exec --auto --sandbox workspace-write "fix the failing tests and explain what changed"
 ```
 
 ## モードと権限
@@ -138,6 +139,10 @@ DeepSeek は 2026-10-17 にこれを DeepSeek-V4.1-Flash-1017 に切り替えま
 それ以降の編集を上書きするため、`/trust on` またはフルアクセスが必要です。
 [レシート](docs/RECEIPTS.md)を参照してください。
 
+ツールを利用できる exec の実行は、どの出力形式でも保存されるため、`--json` を含む `exec --auto` の実行後に `codewhale receipts --last` を使えます。
+回答のみを返すテキスト出力や `--json` の実行は、再開時か会話の圧縮が始まるときにだけ保存されます。
+レシートや `exec --continue` のために常に保存するには、`--output-format stream-json` を使ってください。
+
 ### 長い作業
 
 `/goal` は、ターンをまたいで持続する目標を設定します。
@@ -166,7 +171,7 @@ Codewhale は `AGENTS.md` を自動で読み込みます。
 | コマンド | 内容 |
 | --- | --- |
 | `codewhale` | 対話型のターミナルアプリ |
-| `codewhale exec "…"` | インターフェースなしで 1 つのタスクを実行します。オプションなしではツールを使わずに回答し、`--auto` でファイルの編集とコマンドの実行を許可し、`--output-format stream-json` でイベントを JSON としてストリーミングします |
+| `codewhale exec "…"` | インターフェースなしで 1 つのタスクを実行します。オプションなしではツールを使わずに回答し、`--auto` は既定でフルアクセスでツールを有効にし、`--sandbox workspace-write` はそれらを制限し、`--output-format stream-json` でイベントを JSON としてストリーミングします |
 | `codewhale web` | `127.0.0.1` で動作するローカル Web UI（[ガイド](docs/WEB.md)） |
 | `codewhale review --pr N` | GitHub のプルリクエストに対する参考としてのレビュー。`--post` を付けない限り何も投稿しません。[GitHub Action](docs/GITHUB_ACTION.md) は同じレビューを CI で実行します |
 | `codewhale app-server --http` | [Runtime API](docs/RUNTIME_API.md)。スレッド、イベント、承認、各ターンのファイル変更のためのローカル HTTP API |
