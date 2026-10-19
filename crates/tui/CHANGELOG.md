@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- While a slash command is in the composer, the TUI rereads your command
+  folders and `config.toml` at most once a second instead of on every frame.
+  A command file you add still shows up in completion within about a second.
 - In a session long enough to fold its oldest transcript cells (past
   5,000), tool details, expanded tool runs, sub-agent cards and a streaming
   reply keep pointing at the right rows. Each fold had shifted them one row
