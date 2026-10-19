@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Pasting text that contains an escape sequence written out, such as
+  `print("\x1b[?25l")`, keeps it as pasted. Before, part of it was removed
+  from the message box as if it were a stray mouse report.
 - `/new` and `/clear` start without the previous conversation's goal.
   Before, a paused goal followed you into the new conversation, where
   `/goal resume` picked it up again. The old session keeps its saved goal.
