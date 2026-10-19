@@ -621,6 +621,11 @@ impl CommandSessionLifecycleContext for SessionLifecycleAdapter<'_> {
     }
 
     fn fork_from(&mut self, session_id_or_prefix: &str) -> Result<SessionForkFromReceipt, String> {
+        let mut config = self
+            .host
+            .config
+            .ok_or_else(|| "The fork command has no active provider configuration.".to_string())?
+            .clone();
         let mut app = self.host.app.borrow_mut();
         let manager = match crate::session_manager::SessionManager::default_location() {
             Ok(m) => m,
@@ -681,35 +686,24 @@ impl CommandSessionLifecycleContext for SessionLifecycleAdapter<'_> {
         forked.artifacts = source_session.artifacts.clone();
         forked.work_state = source_session.work_state.clone();
         forked.last_auto_route = source_session.last_auto_route.clone();
-        let queue_transition =
-            crate::tui::ui::prepare_offline_queue_transition(&app, &forked.metadata.id)?;
         if let Err(err) = manager.save_session(&forked) {
             return Err(format!("Failed to save forked session: {err}"));
         }
-        crate::tui::ui::install_offline_queue_transition(&mut app, queue_transition);
-        app.current_session_id = Some(forked.metadata.id.clone());
-        app.current_session_metadata = Some(forked.metadata.clone());
-        app.restore_api_messages(forked.messages.clone(), &forked);
-        app.session_title = Some(forked.metadata.title.clone());
-        // A fork starts as its own session: no inherited tab/window title.
-        app.window_title = None;
-        app.composer_color = None;
         let parent_label =
             crate::session_manager::truncate_id(&source_session.metadata.id).to_string();
         let fork_label = crate::session_manager::truncate_id(&forked.metadata.id).to_string();
+        let spawn_depth = forked.metadata.spawn_depth;
+        crate::tui::ui::apply_loaded_session_with_goal(&mut app, &mut config, forked, None)?;
         let mode = to_command_mode(app.mode);
         Ok(SessionForkFromReceipt {
             parent_label,
             fork_label,
-            spawn_depth: forked.metadata.spawn_depth.into(),
+            spawn_depth: spawn_depth.into(),
             sync: SessionSyncPayload {
-                session_id: Some(forked.metadata.id.clone()),
-                messages: forked.messages.clone(),
-                system_prompt: forked
-                    .system_prompt
-                    .as_ref()
-                    .map(|s| codewhale_models::SystemPrompt::Text(s.clone())),
-                model: forked.metadata.model.clone(),
+                session_id: app.current_session_id.clone(),
+                messages: app.api_messages.as_ref().clone(),
+                system_prompt: app.system_prompt.clone(),
+                model: app.model.clone(),
                 workspace: app.workspace.clone(),
                 mode,
             },
@@ -6949,8 +6943,12 @@ mod tests {
                 .messages
                 .len()
         };
+        app.add_message(HistoryCell::System {
+            content: "another conversation".to_string(),
+        });
+        let config = crate::config::Config::default();
         {
-            let mut bundle = app.command_contexts();
+            let mut bundle = app.command_contexts_with_config(Some(&config));
             let mut parts = bundle.parts();
             let facet = parts.lifecycle.as_deref_mut().expect("lifecycle slot");
             let forked = facet.fork_from(&parent_id).expect("explicit fork ok");
@@ -6961,6 +6959,10 @@ mod tests {
             );
             assert_eq!(forked.sync.messages.len(), 1);
         }
+        assert!(matches!(
+            app.history.as_slice(),
+            [HistoryCell::User { content }] if content == "parent turn"
+        ));
         let manager = crate::session_manager::SessionManager::default_location().unwrap();
         let reloaded = manager
             .load_session(&parent_id)
