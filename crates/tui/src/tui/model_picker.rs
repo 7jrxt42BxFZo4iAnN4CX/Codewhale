@@ -2688,7 +2688,10 @@ fn push_auto_model_row(rows: &mut Vec<ModelPickerRow>, app: &App, config: &Confi
 }
 
 fn auto_picker_hint(app: &App, config: &Config) -> String {
-    let inventory = match crate::model_inventory::ModelInventory::from_config(config) {
+    // The hint words four router facts. Building the whole inventory for them
+    // walked every configured route's every model through runtime route
+    // resolution, which measured as 308 ms of a 1048 ms picker build.
+    let inventory = match crate::model_inventory::ModelInventory::auto_router_only(config) {
         Ok(inventory) => inventory,
         Err(reason) => {
             return format!("{} · {reason}", app.tr(MessageId::ModelPickerAutoLocalHint));
