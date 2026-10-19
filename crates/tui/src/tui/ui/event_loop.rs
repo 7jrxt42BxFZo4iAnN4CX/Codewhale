@@ -1755,24 +1755,39 @@ async fn submit_decided_composer_input(
             return Ok(true);
         }
     } else {
-        // #383: /edit — if the user invoked /edit to revise the last
-        // message, undo the last exchange before dispatching the
-        // replacement. Sync the engine session so it also drops the old
-        // exchange.
-        if let Some(result) = edit_replacement_result(app, &input) {
-            return apply_command_result(
-                terminal,
-                app,
-                engine_handle,
-                task_manager,
-                config,
-                result,
-            )
-            .await;
-        }
-        let (queued, recovery) = message_from_submitted_input(app, input);
-        dispatch_composer_message(app, config, engine_handle, queued, recovery, action).await?;
+        return dispatch_submitted_composer_message(
+            terminal,
+            app,
+            engine_handle,
+            task_manager,
+            config,
+            input,
+            action,
+        )
+        .await;
     }
+    Ok(false)
+}
+
+async fn dispatch_submitted_composer_message(
+    terminal: &mut AppTerminal,
+    app: &mut App,
+    engine_handle: &mut EngineHandle,
+    task_manager: &SharedTaskManager,
+    config: &mut Config,
+    input: String,
+    action: ComposerSubmitAction,
+) -> Result<bool> {
+    // #383: /edit — if the user invoked /edit to revise the last
+    // message, undo the last exchange before dispatching the
+    // replacement. Sync the engine session so it also drops the old
+    // exchange.
+    if let Some(result) = edit_replacement_result(app, &input) {
+        return apply_command_result(terminal, app, engine_handle, task_manager, config, result)
+            .await;
+    }
+    let (queued, recovery) = message_from_submitted_input(app, input);
+    dispatch_composer_message(app, config, engine_handle, queued, recovery, action).await?;
     Ok(false)
 }
 
@@ -6971,17 +6986,18 @@ pub(crate) async fn run_event_loop(
                             {
                                 return Ok(());
                             }
-                        } else {
-                            let (queued, recovery) = message_from_submitted_input(app, input);
-                            dispatch_composer_message(
-                                app,
-                                config,
-                                &engine_handle,
-                                queued,
-                                recovery,
-                                action,
-                            )
-                            .await?;
+                        } else if dispatch_submitted_composer_message(
+                            terminal,
+                            app,
+                            &mut engine_handle,
+                            &task_manager,
+                            config,
+                            input,
+                            action,
+                        )
+                        .await?
+                        {
+                            return Ok(());
                         }
                     }
                 }
