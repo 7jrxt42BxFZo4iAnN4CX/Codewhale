@@ -1185,6 +1185,9 @@ pub enum ViewAction {
 
 pub trait ModalView: std::any::Any {
     fn kind(&self) -> ModalKind;
+    fn input_context_id(&self) -> usize {
+        0
+    }
     fn handle_key(&mut self, key: KeyEvent) -> ViewAction;
     /// Returns `true` if the modal consumed the paste; `false` to let the
     /// host route the text elsewhere (e.g. drop it because a modal is open,
@@ -1250,10 +1253,10 @@ pub struct ViewStack {
     /// Theme snapshot for the texture pass, set alongside the mode each
     /// frame. `None` (e.g. tests that never opt in) disables the texture.
     focus_texture_theme: Option<codewhale_palette::UiTheme>,
-    /// When the view now on top became the top view — pushed, or revealed
-    /// by closing or removing the views above it. A key observed before
+    /// When the input context on top became visible — pushed, advanced, or
+    /// revealed by closing or removing the views above it. A key observed before
     /// this instant was typed at something else and must never answer an
-    /// approval or elevation card that only then became visible (approvals M2).
+    /// approval, elevation or question prompt that only then became visible.
     top_since: Option<std::time::Instant>,
 }
 
@@ -1275,16 +1278,19 @@ impl ViewStack {
         }
     }
 
-    /// Identity of the top view, for noticing when a different view becomes
-    /// the top one.
-    fn top_identity(&self) -> Option<*const ()> {
-        self.views
-            .last()
-            .map(|view| std::ptr::from_ref::<dyn ModalView>(view.as_ref()).cast::<()>())
+    /// Identity of the top view and input context, for noticing when a
+    /// different view or question becomes the top one.
+    fn top_identity(&self) -> Option<(*const (), usize)> {
+        self.views.last().map(|view| {
+            (
+                std::ptr::from_ref::<dyn ModalView>(view.as_ref()).cast::<()>(),
+                view.input_context_id(),
+            )
+        })
     }
 
     /// Restamp `top_since` when the top view changed since `before`.
-    fn note_top_change(&mut self, before: Option<*const ()>) {
+    fn note_top_change(&mut self, before: Option<(*const (), usize)>) {
         if self.top_identity() != before {
             self.top_since = Some(std::time::Instant::now());
         }
@@ -1376,13 +1382,14 @@ impl ViewStack {
     }
 
     /// Whether a key observed at `observed_at` predates the moment the
-    /// approval or elevation card on top became visible — raised, or revealed
-    /// by closing the card above it — i.e. it was typed ahead and must not
-    /// answer that card. Two quick answers cannot confirm the card beneath.
+    /// approval, elevation or question prompt on top became visible — raised,
+    /// advanced, or revealed by closing the card above it — i.e. it was typed
+    /// ahead and must not answer that prompt. Two quick answers cannot confirm
+    /// the next prompt.
     pub fn key_predates_top_approval(&self, observed_at: std::time::Instant) -> bool {
         matches!(
             self.top_kind(),
-            Some(ModalKind::Approval | ModalKind::Elevation)
+            Some(ModalKind::Approval | ModalKind::Elevation | ModalKind::UserInput)
         ) && self
             .top_since
             .is_some_and(|top_since| observed_at < top_since)
@@ -1478,11 +1485,13 @@ impl ViewStack {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> Vec<ViewEvent> {
+        let top = self.top_identity();
         let action = self
             .views
             .last_mut()
             .map(|view| view.handle_key(key))
             .unwrap_or(ViewAction::None);
+        self.note_top_change(top);
         self.apply_action(action)
     }
 
