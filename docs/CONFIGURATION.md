@@ -3323,6 +3323,7 @@ ignored:
 | Tavily | `time_range` | not sent (Tavily takes country names) |
 | SearXNG | `time_range` | `language`, as given |
 | Serply | not sent (undocumented) | `hl` language, `gl` country |
+| DeepSeek | not sent | not sent (`localization` takes an IP address) |
 
 Recency is rounded up to the backend's nearest window (day, week, month,
 year), so `recency = 10` searches the last month. Other backends ignore both
@@ -3391,6 +3392,17 @@ title, URL, and snippet. Set `[search] api_key` to your Serply key, or the
 `SERPLY_API_KEY` env var. This is a search-tool backend only; it does not add a
 Serply model provider.
 
+**DeepSeek** ([docs](https://api-docs.deepseek.com/guides/search)) uses
+`POST https://api.deepseek.com/v1/tools/search`. Set `provider = "deepseek"`
+(`deep-seek` and `deepseek-search` are also accepted) and supply `[search] api_key`
+or the `DEEPSEEK_API_KEY` env var, in that order. The saved DeepSeek model-provider
+key is not reused by this search backend. Queries are truncated to 128 Unicode
+characters. The backend clamps counts to 1–50; the shared search tool currently
+caps requests at 10 results. Query operators such as `site:`, `lang:`,
+`after:`, and `before:` are passed through; the `recency` and `locale` knobs are
+ignored. Results include title, URL, and snippet, falling back to summary when a
+snippet is empty.
+
 **Tavily** ([tavily.com](https://tavily.com)) is selected automatically when a
 Tavily key is present and no provider is pinned: `TAVILY_API_KEY` set, or
 `[search] api_key` / `CODEWHALE_SEARCH_API_KEY` in the `tvly-` family. Doctor
@@ -3404,7 +3416,7 @@ any non-empty `[search] api_key` and is configured by that key or
 
 ```toml
 [search]
-provider = "firecrawl" # also duckduckgo | bing | tavily | bocha | metaso | searxng | baidu | volcengine | sofya | serply
+provider = "firecrawl" # also duckduckgo | bing | tavily | bocha | metaso | searxng | baidu | volcengine | sofya | serply | deepseek
 # base_url = "https://search.example/" # optional with provider = "duckduckgo"; required with "searxng"
 # api_key = "YOUR_KEY" # optional for firecrawl; required by the other API providers
 # native = false # provider-native search: unset = only when no provider is configured

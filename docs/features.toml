@@ -70,7 +70,7 @@ owner = "crates/tui/src/tools/subagent"
 [[feature]]
 id = "web-search"
 name = "Web search"
-summary = "Searches and fetches the web for the agent (web.run, with the web_search alias)."
+summary = "Searches and fetches the web for the agent, including DeepSeek Search (web.run, with the web_search alias)."
 status = "stable"
 surfaces = { tui = "stable" }
 since = "0.1.0"
