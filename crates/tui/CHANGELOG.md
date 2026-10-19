@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- With a sub-agent open in the main pane, scrolling and redraws reuse its
+  rendered transcript instead of re-rendering every message on every frame,
+  and a finished sub-agent's transcript file is no longer reread from disk
+  every 400 ms.
 - While a slash command is in the composer, the TUI rereads your command
   folders and `config.toml` at most once a second instead of on every frame.
   A command file you add still shows up in completion within about a second.
