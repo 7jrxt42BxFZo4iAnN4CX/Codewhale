@@ -1029,6 +1029,8 @@ fork 还可能包含 `backtrack_depth_from_tail` 与 `dropped_turn_id`，而
 }
 ```
 
+`system_prompt` 的修改从下一个回合开始生效：已加载的引擎会被卸载，并用新的提示词根据线程历史重建。与修改 `workspace` 一样，线程有正在运行的回合时会拒绝该修改。
+
 `model_provider` 切换该线程未来回合所用的提供商。它
 接受内置种类（`deepseek`、`xai`、...）或已配置的路由名，与
 `/provider` 一样。`model_provider_id` 指名一个精确的 `[providers.<id>]` 表，

@@ -11675,14 +11675,22 @@ impl RuntimeThreadManager {
             }
 
             let workspace_changed = changes.contains_key("workspace");
-            if workspace_changed
+            let rebuild_engine = workspace_changed || changes.contains_key("system_prompt");
+            if rebuild_engine
                 && active
                     .engines
                     .get(id)
                     .and_then(|state| state.active_turn.as_ref())
                     .is_some()
             {
-                bail!("workspace cannot be changed while the thread has an active turn");
+                bail!(
+                    "{} cannot be changed while the thread has an active turn",
+                    if workspace_changed {
+                        "workspace"
+                    } else {
+                        "system_prompt"
+                    }
+                );
             }
 
             // A posture/mode edit must reach the live engine even while a
@@ -11700,14 +11708,14 @@ impl RuntimeThreadManager {
             } else {
                 thread.updated_at = Utc::now();
                 self.store.save_thread(&thread)?;
-                if workspace_changed {
+                if rebuild_engine {
                     active.lru.retain(|thread_id| thread_id != id);
                     active.engines.remove(id).map(|state| state.engine)
                 } else {
                     None
                 }
             };
-            let posture_engine = if posture_changed && !workspace_changed {
+            let posture_engine = if posture_changed && !rebuild_engine {
                 active.engines.get(id).map(|state| state.engine.clone())
             } else {
                 None

@@ -1188,6 +1188,10 @@ accept an empty string to clear a previously-set value. Added in v0.8.10 (#562):
 }
 ```
 
+A `system_prompt` change applies from the next turn: a loaded engine is
+unloaded and rebuilt from the thread's history with the new prompt. Like a
+`workspace` change, it is refused while the thread has a running turn.
+
 `model_provider` switches the provider the thread's future turns use. It
 takes a built-in kind (`deepseek`, `xai`, ...) or a configured route name, as
 `/provider` does. `model_provider_id` names one exact `[providers.<id>]` table

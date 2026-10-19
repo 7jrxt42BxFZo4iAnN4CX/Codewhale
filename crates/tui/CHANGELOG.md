@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Runtime API fixes:
+  - `PATCH /v1/threads/{id}` with a new `system_prompt` now takes effect
+    on the next turn. Before, a thread whose engine was already loaded kept
+    the old prompt. The change is refused while a turn is running.
   - `POST /v1/threads/{id}/retry` with a blank prompt now answers 400
     without first creating a fork.
   - Connecting a remote computer stops reading the probe response at
