@@ -4450,6 +4450,7 @@ impl Engine {
         // later block must never overwrite an earlier one.
         let mut completed_thinking: Vec<ContentBlock> = Vec::new();
         let mut tool_uses: Vec<ToolUseState> = Vec::new();
+        let mut settled_usage = Usage::default();
         let mut usage = Usage {
             input_tokens: 0,
             output_tokens: 0,
@@ -4751,6 +4752,14 @@ impl Engine {
                             );
                         match retry_stream_result {
                             Ok(fresh) => {
+                                if usage_has_reported_data(&usage) {
+                                    crate::core::turn::add_usage_to(
+                                        &mut settled_usage,
+                                        &std::mem::take(&mut usage),
+                                    );
+                                } else {
+                                    usage = Usage::default();
+                                }
                                 stream = fresh;
                                 stream_start = Instant::now();
                                 // Roll back the error counter — this one
@@ -5294,6 +5303,14 @@ impl Engine {
             };
             let _ = self.send_retry_status(message).await;
         }
+        let usage = if usage_has_reported_data(&settled_usage) {
+            if usage_has_reported_data(&usage) {
+                crate::core::turn::add_usage_to(&mut settled_usage, &usage);
+            }
+            settled_usage
+        } else {
+            usage
+        };
         StreamOutcome {
             current_text_raw,
             current_text_visible,

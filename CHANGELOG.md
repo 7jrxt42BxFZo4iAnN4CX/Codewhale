@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- When a provider stream fails before any content and Codewhale quietly
+  resends the request, the tokens the failed attempt reported are now added
+  to the session, goal and sub-agent totals instead of being merged away.
+  The context meter still reflects only the request that succeeded.
 - Esc, or a Runtime interrupt, now stops a `tool_call_before` hook that is
   still running: its process tree is killed and reaped, hooks queued behind
   it are skipped, and the turn stops at once. Before, the turn waited for the

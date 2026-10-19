@@ -4512,12 +4512,14 @@ pub(crate) async fn run_event_loop(
                         // (#5577). Reviewer/REPL child receipts also arrive
                         // here, but their prompt is never larger than the
                         // parent context, and the meter takes a max.
-                        if usage.input_tokens > 0 {
+                        let prompt_tokens = usage
+                            .request_usages
+                            .last()
+                            .map_or(usage.input_tokens, |last| last.input_tokens);
+                        if prompt_tokens > 0 {
                             app.last_billed_input_tokens = Some(
                                 app.last_billed_input_tokens
-                                    .map_or(usage.input_tokens, |prior| {
-                                        prior.max(usage.input_tokens)
-                                    }),
+                                    .map_or(prompt_tokens, |prior| prior.max(prompt_tokens)),
                             );
                         }
                         // Live cost: price this call against the route that
