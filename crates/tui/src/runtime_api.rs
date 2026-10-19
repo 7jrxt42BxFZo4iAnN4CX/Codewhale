@@ -7727,6 +7727,9 @@ struct UndoTurnRequest {
     /// How many turns back to undo (default 0 = last turn only).
     #[serde(default)]
     depth: Option<usize>,
+    /// The user turn to undo, with every turn after it. Wins over `depth`.
+    #[serde(default)]
+    turn_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -7745,12 +7748,25 @@ async fn undo_thread_turn(
     Path(id): Path<String>,
     Json(req): Json<UndoTurnRequest>,
 ) -> Result<(StatusCode, Json<UndoTurnResponse>), ApiError> {
-    let depth = req.depth.unwrap_or(0);
-    let (forked_thread, original_user_text, original_user_images, _) = state
-        .runtime_threads
-        .fork_at_user_message_in_sessions_dir(&id, depth, &state.sessions_dir)
-        .await
-        .map_err(map_thread_err)?;
+    let (forked_thread, original_user_text, original_user_images, _) = match req.turn_id {
+        Some(turn_id) => {
+            state
+                .runtime_threads
+                .fork_dropping_user_turn_in_sessions_dir(&id, &turn_id, &state.sessions_dir)
+                .await
+        }
+        None => {
+            state
+                .runtime_threads
+                .fork_at_user_message_in_sessions_dir(
+                    &id,
+                    req.depth.unwrap_or(0),
+                    &state.sessions_dir,
+                )
+                .await
+        }
+    }
+    .map_err(map_thread_err)?;
     Ok((
         StatusCode::CREATED,
         Json(UndoTurnResponse {

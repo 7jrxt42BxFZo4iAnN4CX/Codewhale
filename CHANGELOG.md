@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Runtime API fixes:
+  - `POST /v1/threads/{id}/undo` accepts `{"turn_id": "turn_…"}` to
+    remove that user turn and everything after it. A client that edits a
+    message can name it, instead of counting messages back, so a turn
+    another client appends meanwhile can no longer make it edit the wrong
+    message.
   - Goal events on a thread's event stream now follow the order the goal
     changed in. A set and a clear racing each other could leave the stream
     reporting an active goal after it was deleted.

@@ -13023,6 +13023,37 @@ impl RuntimeThreadManager {
         )?
     }
 
+    pub(crate) async fn fork_dropping_user_turn_in_sessions_dir(
+        &self,
+        id: &str,
+        turn_id: &str,
+        sessions_dir: &Path,
+    ) -> Result<(
+        ThreadRecord,
+        Option<String>,
+        Vec<codewhale_protocol::runtime::RuntimeImageInput>,
+        Option<std::num::NonZeroU32>,
+    )> {
+        let (admission, _) = self.thread_restore_guard(id).await?;
+        let runtime = self.clone();
+        let id = id.to_string();
+        let turn_id = turn_id.to_string();
+        let dir = sessions_dir.to_path_buf();
+        tokio::spawn(async move {
+            let _admission = admission;
+            let turns = runtime.store.list_turns_for_thread(&id)?;
+            let items_by_turn = runtime.prepared_items_for_turns(&turns)?;
+            let (_, _, depth_from_tail) =
+                runtime.fork_cut_for_user_turn(&turns, &items_by_turn, &turn_id)?;
+            let prepared = runtime
+                .prepare_fork_at_user_message_in_sessions_dir(&id, depth_from_tail, &dir)
+                .await?;
+            runtime.publish_prepared_fork(prepared).await
+        })
+        .await
+        .context("native backtrack outcome uncertain; inspect retained source and fork records")?
+    }
+
     /// How many turns a named anchor keeps, the first user turn it drops, and
     /// its distance from the tail.
     ///
