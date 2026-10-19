@@ -774,12 +774,12 @@ codewhale serve --mobile [...] [--insecure]
 攻击者有严格比这个竞争更简单的本地途径。
 Web 请求需要会话 cookie 加上一个限定于源（origin）的请求证明；
 流使用一张新的一次性票据。初始重定向把证明放在 fragment 中，客户端将其移除并
-保存到限定于源的 `sessionStorage`。重新加载或在第二个标签页中打开时，
-当 `Sec-Fetch-Site` 为 `same-origin` 或 `none`（直接导航）时，
-经过认证的 `GET /` 还会把证明嵌入一个 meta 标签。该页面使用 `no-store`、
-禁止被嵌入框架，也不授予任何跨源读取权限。这让新标签页无需复用 bootstrap URL
-即可恢复，包括存储不可用的情况。不支持 Fetch Metadata 的客户端只能复用 fragment
-或它已存储的证明；恢复不会延长服务器会话，也不会替换已过期的 cookie。
+保存到限定于源的 `sessionStorage`；只要浏览器允许会话存储，重新加载该标签页
+仍可继续使用。服务器从不把证明写进页面：会话 cookie 只限定主机而不限定端口，
+另一个回环端口上的监听者可能收到它，因此仅凭 cookie 不能取回证明。通过手动输入
+地址打开的新标签页没有证明；请使用原来的标签页、复制该标签页，或重新启动
+`codewhale web` 获取新的一次性会话。该页面使用 `no-store`、禁止被嵌入框架，
+也不授予任何跨源读取权限。任何操作都不会延长服务器会话，也不会替换已过期的 cookie。
 跨源的 Fetch Metadata 或不匹配的 Origin 会在 web API 请求上被拒绝。显式的
 bearer 与 Runtime 令牌 header 客户端保持其既有行为。暂时性的流票据失败会以
 有上限的退避重试；HTTP 401/403 会停止票据重试，直到打开新的会话。

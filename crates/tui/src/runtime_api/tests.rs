@@ -2124,9 +2124,7 @@ async fn web_bootstrap_sets_strict_cookie_once_and_preserves_v1_auth() -> Result
             .send()
             .await?;
         assert_eq!(reloaded.headers()[header::CACHE_CONTROL], "no-store");
-        assert!(reloaded.text().await?.contains(&format!(
-            "name=\"codewhale-web-request\" content=\"{proof}\""
-        )));
+        assert!(!reloaded.text().await?.contains(&proof));
     }
     for method in [reqwest::Method::GET, reqwest::Method::POST] {
         for metadata in [false, true] {

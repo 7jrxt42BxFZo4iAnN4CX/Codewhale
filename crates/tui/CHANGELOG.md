@@ -11,16 +11,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Codewhale v0.10.2 adds an animated pet view (`/pet on`), a live Terminal work
 dock and per-chat composer colors (`/color`). It closes three session
-data-loss paths, holds a `curl` or `wget` that uploads a credential, refuses
-shell commands containing invisible Unicode, keeps the Linux sandbox working when a
-hidden credential directory is a symlink, and uses much less CPU while the
-TUI waits on you. `/undo` takes back a whole request, `/diff` works outside a
-Git repository, DeepSeek's Responses route no longer rejects replayed tool
-history, and contributor fixes improve token accounting, relay model lists,
-localized replies and Windows launcher guidance.
+data-loss paths, a sandbox escape through the Runtime daemon socket and a
+`codewhale web` session leak; holds a `curl` or `wget` that uploads a
+credential; refuses shell commands containing invisible Unicode; keeps the
+Linux sandbox working when a hidden credential directory is a symlink; and
+uses much less CPU while the TUI waits on you. `/undo` takes back a whole
+request, `/diff` works outside a Git repository, DeepSeek's Responses route no
+longer rejects replayed tool history, and contributor fixes improve token
+accounting, relay model lists, localized replies and Windows launcher
+guidance.
 
 ### Latest fixes
 
+- Sandboxed commands can no longer reach Codewhale's Runtime daemon socket.
+  On Linux with bubblewrap, and on macOS with sandbox network access on, a
+  command the agent ran (a test script or a postinstall hook, say) could read
+  the owner receipt and attach to the socket that `codewhale serve`, the
+  desktop app, the VS Code extension or an ACP session holds. From there it
+  could change the sandbox mode, the approval policy or a provider's base URL
+  in your config, or start an unsandboxed turn. The daemon's default run
+  directories are now on the sandbox's default deny-list, and on macOS no
+  socket under a denied path can be connected to. Turning the default
+  deny-list off (`sandbox_read_denylist_defaults = false`) also turns this
+  off.
+- `codewhale web` no longer gives its request proof to whoever holds the
+  session cookie. The cookie is scoped to the host, not the port, so a
+  listener on another `127.0.0.1` port could receive it, and `GET /` then
+  returned the proof that unlocks the whole Runtime API. The proof now stays
+  in the tab that opened the session, which keeps working across reloads
+  when the browser allows session storage; a new tab opened by typing the
+  address needs a fresh `codewhale web`.
+- The `codewhale web` approval card shows the request summary, Codewhale's
+  reason for asking (such as a sandbox escalation) and every argument of the
+  call in full, with the model's own description below, labeled as such.
+  Before, when the model had written anything, the card showed only that
+  text and never the command, so a prompt-injected model could describe a
+  harmful command as a harmless one.
 - `/settings` choice lists that don't fit, such as Language and Theme, show
   a scroll rail. Thanks @Lstarsky0 (#7024).
 - During an `/mcp` search that finds nothing, the status line says "No
@@ -1057,6 +1083,25 @@ localized replies and Windows launcher guidance.
 
 ### Known limits
 
+- From a pre-release security review of the local network surfaces, not yet
+  fixed: `codewhale serve --insecure` and `codewhale app-server
+  --insecure-no-auth` check neither the `Host` nor the `Origin` header, so
+  with either flag a website can reach the Runtime API through DNS
+  rebinding; use them only on a machine you trust. The one-time
+  `codewhale web` and `--mobile` bootstrap capability passes through the
+  browser launcher's arguments, where another local OS user can read it. The
+  opt-in control socket (`[control_socket] enabled = true`) does not check
+  the connecting user and can be reached from sandboxed commands. OAuth
+  loopback callbacks end a sign-in on the first malformed request, so a page
+  or local process can make one fail.
+- The sandbox deny-list for the Runtime daemon socket covers its default
+  locations as this process sees them. It does not cover a daemon started
+  with `--socket-path` or with a different `XDG_RUNTIME_DIR` or
+  `CODEWHALE_HOME`; a run directory created after a long-running sandboxed
+  command started is not hidden from that command; and on macOS, when the
+  workspace is your home directory or another folder above the daemon's
+  directory, a sandboxed command can still move that directory out of the
+  denied path.
 - Ambiguous current-quota 429s without a body retry delay of at most 120 s
   still end the turn; a header alone does not change that classification.
   Explicit exhausted account, billing and subscription limits remain terminal

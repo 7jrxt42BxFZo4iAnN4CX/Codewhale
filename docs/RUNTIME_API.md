@@ -908,13 +908,15 @@ attacker has strictly easier local avenues than this race.
 Web fetches require the session cookie plus an origin-scoped request proof;
 streams use a fresh single-use ticket. The initial redirect carries the proof
 in a fragment, which the client removes and saves in origin-scoped
-`sessionStorage`. On reload or in a second tab, an authenticated `GET /` also
-embeds the proof in a meta tag when `Sec-Fetch-Site` is `same-origin` or `none`
-(direct navigation). The page uses `no-store`, disallows framing, and grants no
-cross-origin read access. This lets a new tab recover without reusing the
-bootstrap URL, including when storage is unavailable. Clients without Fetch
-Metadata can only reuse the fragment or their existing stored proof; recovery
-does not extend the server session or replace an expired cookie.
+`sessionStorage`, so a reload of that tab keeps working when the browser
+allows session storage. The server never puts
+the proof in a page: the session cookie is host-scoped, not port-scoped, so a
+listener on another loopback port can receive it, and the cookie alone must
+not be enough to recover the proof. A new tab opened by typing the address
+therefore has no proof; use the original tab, duplicate it, or restart
+`codewhale web` for a fresh one-time session. The page uses `no-store`,
+disallows framing, and grants no cross-origin read access. Nothing extends the
+server session or replaces an expired cookie.
 Cross-origin Fetch Metadata or a mismatched Origin is rejected on web API
 requests. Explicit bearer and Runtime-token header clients keep their existing
 behavior. Transient stream-ticket failures retry with capped backoff; HTTP
