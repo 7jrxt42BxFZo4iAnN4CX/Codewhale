@@ -883,7 +883,67 @@ pub(super) fn convert_messages_to_responses_input(
                 }
             }
             RolePlacement::Assistant | RolePlacement::InterruptedAssistant => {
-                let mut reasoning_emitted = false;
+                let reasoning_item = |block: &ContentBlock| -> Option<Value> {
+                    let ContentBlock::Thinking {
+                        thinking, state, ..
+                    } = block
+                    else {
+                        return None;
+                    };
+                    if let Some(state) = state {
+                        let matches = state.provider == provider.as_str()
+                            && if provider == ProviderKind::OpenaiCodex {
+                                reasoning_api.is_some_and(|api| state.api == api)
+                            } else {
+                                state.api == "openai-responses"
+                            }
+                            && state.model == request.model;
+                        if !matches {
+                            return None;
+                        }
+                        let mut item = json!({
+                            "type": "reasoning",
+                            "summary": [],
+                            "encrypted_content": state.encrypted_content,
+                        });
+                        if let Some(id) = state.id.as_ref() {
+                            item["id"] = json!(id);
+                        }
+                        return Some(item);
+                    }
+                    is_deepseek.then(|| {
+                        let text = if thinking.trim().is_empty() {
+                            REASONING_REPLAY_PLACEHOLDER
+                        } else {
+                            thinking.as_str()
+                        };
+                        json!({
+                            "type": "reasoning",
+                            "content": [{
+                                "type": "reasoning_text",
+                                "text": text,
+                            }],
+                        })
+                    })
+                };
+                if is_deepseek {
+                    let before = items.len();
+                    items.extend(msg.content.iter().filter_map(&reasoning_item));
+                    if items.len() == before
+                        && msg
+                            .content
+                            .iter()
+                            .any(|block| matches!(block, ContentBlock::ToolUse { .. }))
+                    {
+                        items.push(json!({
+                            "type": "reasoning",
+                            "content": [{
+                                "type": "reasoning_text",
+                                "text": REASONING_REPLAY_PLACEHOLDER,
+                            }],
+                        }));
+                    }
+                }
                 for block in &msg.content {
                     match block {
                         ContentBlock::Text { text, .. } => {
@@ -908,16 +968,6 @@ pub(super) fn convert_messages_to_responses_input(
                         ContentBlock::ToolUse {
                             id, name, input, ..
                         } => {
-                            if is_deepseek && !reasoning_emitted {
-                                items.push(json!({
-                                    "type": "reasoning",
-                                    "content": [{
-                                        "type": "reasoning_text",
-                                        "text": REASONING_REPLAY_PLACEHOLDER,
-                                    }],
-                                }));
-                                reasoning_emitted = true;
-                            }
                             let (call_id, _item_id) = parse_tool_use_id(id);
                             let mut item = json!({
                                 "type": "function_call",
@@ -930,38 +980,9 @@ pub(super) fn convert_messages_to_responses_input(
                             }
                             items.push(item);
                         }
-                        ContentBlock::Thinking {
-                            thinking, state, ..
-                        } => {
-                            if let Some(state) = state {
-                                if state.provider == provider.as_str()
-                                    && if provider == ProviderKind::OpenaiCodex {
-                                        reasoning_api.is_some_and(|api| state.api == api)
-                                    } else {
-                                        state.api == "openai-responses"
-                                    }
-                                    && state.model == request.model
-                                {
-                                    let mut item = json!({
-                                        "type": "reasoning",
-                                        "summary": [],
-                                        "encrypted_content": state.encrypted_content,
-                                    });
-                                    if let Some(id) = state.id.as_ref() {
-                                        item["id"] = json!(id);
-                                    }
-                                    items.push(item);
-                                    reasoning_emitted = true;
-                                }
-                            } else if is_deepseek {
-                                items.push(json!({
-                                    "type": "reasoning",
-                                    "content": [{
-                                        "type": "reasoning_text",
-                                        "text": thinking,
-                                    }],
-                                }));
-                                reasoning_emitted = true;
+                        ContentBlock::Thinking { .. } if !is_deepseek => {
+                            if let Some(item) = reasoning_item(block) {
+                                items.push(item);
                             }
                         }
                         _ => {}

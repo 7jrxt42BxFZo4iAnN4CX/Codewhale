@@ -549,11 +549,15 @@ guidance.
 - DeepSeek on the Responses route (the `deepseek-flash` default) no longer
   fails with `400 reasoning_text must be passed back` when a session replays a
   tool call that has no stored DeepSeek reasoning: a turn that was interrupted,
-  ran with thinking off, or came from another provider. Codewhale now sends the
-  same `(reasoning omitted)` placeholder the Chat route already uses, before
-  that turn's tool calls. A live probe on 2026-10-17 returned 400 without it and
-  200 with it. On Chat, DeepSeek enforces this only for tool-call turns, which
-  were already covered (Refs CW-7450).
+  ran with thinking off, came from another provider, or where the model wrote
+  text before its tool calls without visible reasoning. Codewhale now sends each
+  assistant turn's reasoning first, ahead of its text and tool calls, using the
+  same `(reasoning omitted)` placeholder the Chat route already uses when there
+  is none. Live probes on 2026-10-19 returned 400 for text → reasoning → tool
+  call and for no reasoning, and 200 for reasoning → text → tool call. The same
+  multi-step task that failed in 2 of 4 runs on the first 0.10.2 candidate
+  passed 6 of 6 with the fix. On Chat, DeepSeek enforces this only for
+  tool-call turns, which were already covered (Refs CW-7450).
 - At reasoning effort `max`, the first-party DeepSeek route now asks for up to
   131,072 output tokens, DeepSeek's documented default at that effort, instead
   of 65,536. Every other provider and effort keeps 65,536, and explicit
