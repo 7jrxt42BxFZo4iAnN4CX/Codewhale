@@ -8684,18 +8684,42 @@ async fn retry_thread_turn(
     Json(req): Json<RetryTurnRequest>,
 ) -> Result<(StatusCode, Json<RetryTurnResponse>), ApiError> {
     let depth = req.depth.unwrap_or(0);
-    let (forked_thread, original_user_text, original_user_images, max_output_tokens) = state
+    let (reservation, _) = state
         .runtime_threads
-        .fork_at_user_message_in_sessions_dir(&id, depth, &state.sessions_dir)
+        .thread_restore_guard(&id)
         .await
         .map_err(map_thread_err)?;
-
-    let retry_prompt = req.prompt.or(original_user_text).unwrap_or_default();
-    if retry_prompt.trim().is_empty() {
-        return Err(ApiError::bad_request(
-            "No user message to retry — the dropped turn had no user text",
-        ));
-    }
+    let runtime = state.runtime_threads.clone();
+    let sessions_dir = state.sessions_dir.clone();
+    let prompt = req.prompt;
+    let (forked_thread, retry_prompt, original_user_images, max_output_tokens) =
+        tokio::spawn(async move {
+            let _reservation = reservation;
+            let prepared = runtime
+                .prepare_fork_at_user_message_in_sessions_dir(&id, depth, &sessions_dir)
+                .await
+                .map_err(map_thread_err)?;
+            let retry_prompt = prompt
+                .or_else(|| prepared.original_user_text().map(str::to_string))
+                .unwrap_or_default();
+            if retry_prompt.trim().is_empty() {
+                return Err(ApiError::bad_request(
+                    "No user message to retry — the dropped turn had no user text",
+                ));
+            }
+            let (forked_thread, _, original_user_images, max_output_tokens) = runtime
+                .publish_prepared_fork(prepared)
+                .await
+                .map_err(map_thread_err)?;
+            Ok((
+                forked_thread,
+                retry_prompt,
+                original_user_images,
+                max_output_tokens,
+            ))
+        })
+        .await
+        .map_err(|e| ApiError::internal(format!("Retry fork task failed: {e}")))??;
 
     let turn = state
         .runtime_threads
@@ -9943,10 +9967,10 @@ fn take_compat_turn_event(
         return None;
     }
     *last_seq = event.seq;
-    Some((
-        map_compat_stream_event(event),
-        event.event == "turn.completed",
-    ))
+    let terminal = event.event == "turn.completed"
+        || (event.event == crate::runtime_threads::RUNTIME_STORE_FAILURE_EVENT
+            && event.payload.get("terminal").and_then(Value::as_bool) == Some(true));
+    Some((map_compat_stream_event(event), terminal))
 }
 
 fn runtime_event_payload(event: crate::runtime_threads::RuntimeEventRecord) -> serde_json::Value {

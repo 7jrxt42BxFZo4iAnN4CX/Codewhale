@@ -6279,6 +6279,10 @@ impl PreparedThreadFork {
     pub(crate) fn dropped_turns(&self) -> &[DroppedTurnSnapshots] {
         &self.dropped_turns
     }
+
+    pub(crate) fn original_user_text(&self) -> Option<&str> {
+        self.original_user_text.as_deref()
+    }
 }
 
 /// One turn a fork drops, as a turn-scoped file undo sees it.

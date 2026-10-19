@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Runtime API fixes:
+  - `POST /v1/threads/{id}/retry` with a blank prompt now answers 400
+    without first creating a fork.
+  - Connecting a remote computer stops reading the probe response at
+    64 KiB instead of buffering all of it first.
+  - The computer event cursor can no longer move past an event that has
+    not been published yet.
+  - `POST /v1/stream` ends when the turn's own record fails to save,
+    instead of sending keepalives forever.
 - `web_search` can use DeepSeek's new Search API: set
   `[search] provider = "deepseek"` and give it your DeepSeek key through
   `[search] api_key` or `DEEPSEEK_API_KEY`. It returns raw results without
