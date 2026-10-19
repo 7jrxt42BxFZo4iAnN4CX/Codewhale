@@ -27,7 +27,7 @@ use crate::config::{ProviderKind, StatusItem};
 use crate::tui::menu_style;
 use crate::tui::views::{
     ActionHint, ModalKind, ModalView, ViewAction, ViewEvent, action_footer_lines,
-    centered_modal_area, render_modal_footer, render_modal_surface,
+    centered_modal_area, render_modal_footer, render_modal_surface, render_panel_scroll_rail,
 };
 use codewhale_localization::{Locale, MessageId, tr};
 use codewhale_palette as palette;
@@ -252,6 +252,9 @@ impl ModalView for StatusPickerView {
         self.row_hitboxes.borrow_mut().clear();
         let visible_rows = content.height.saturating_sub(2) as usize;
         let row_start = visible_row_start(self.rows.len(), self.cursor, visible_rows);
+        let row_width = content
+            .width
+            .saturating_sub(u16::from(visible_rows < self.rows.len()));
 
         let mut lines: Vec<Line> = Vec::with_capacity(visible_rows + 2);
         lines.push(Line::from(Span::styled(
@@ -272,7 +275,7 @@ impl ModalView for StatusPickerView {
                 Rect::new(
                     content.x,
                     content.y + 2 + (idx - row_start) as u16,
-                    content.width,
+                    row_width,
                     1,
                 ),
             ));
@@ -297,7 +300,7 @@ impl ModalView for StatusPickerView {
             if is_cursor {
                 let selected_style = menu_style::selected_row_style();
                 let line =
-                    status_row_text(pointer, mark, item, self.locale, content.width as usize);
+                    status_row_text(pointer, mark, item, self.locale, usize::from(row_width));
                 lines.push(Line::from(Span::styled(line, selected_style)));
             } else {
                 let label = item.label();
@@ -307,7 +310,7 @@ impl ModalView for StatusPickerView {
                     &prefix,
                     hint.as_ref(),
                     ")",
-                    usize::from(content.width),
+                    usize::from(row_width),
                 );
                 lines.push(Line::from(vec![
                     Span::styled(format!(" {pointer} "), row_style),
@@ -321,6 +324,18 @@ impl ModalView for StatusPickerView {
         }
 
         Paragraph::new(lines).render(content, buf);
+        render_panel_scroll_rail(
+            Rect {
+                y: content.y.saturating_add(2),
+                height: content.height.saturating_sub(2),
+                ..content
+            },
+            buf,
+            self.rows.len(),
+            row_start,
+            visible_rows,
+            true,
+        );
     }
 }
 
