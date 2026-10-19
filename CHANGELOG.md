@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `/new` and `/clear` start without the previous conversation's goal.
+  Before, a paused goal followed you into the new conversation, where
+  `/goal resume` picked it up again. The old session keeps its saved goal.
 - In `/resume`, pressing `d` and then scrolling with the mouse before
   answering `y` could delete the session you scrolled to instead of the one
   you chose. The prompt now ignores the mouse, and `y` deletes only the
