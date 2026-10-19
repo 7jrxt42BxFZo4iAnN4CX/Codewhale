@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- In `/resume`, pressing `d` and then scrolling with the mouse before
+  answering `y` could delete the session you scrolled to instead of the one
+  you chose. The prompt now ignores the mouse, and `y` deletes only the
+  session `d` was pressed on.
 - Runtime API fixes:
   - `POST /v1/threads/{id}/undo` accepts `{"turn_id": "turn_…"}` to
     remove that user turn and everything after it. A client that edits a
