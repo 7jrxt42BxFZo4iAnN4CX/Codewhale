@@ -4357,6 +4357,16 @@ async fn compact_lifecycle_outlives_caller_and_preserves_concurrent_thread_updat
             base_url: None,
         })
         .await?;
+    loop {
+        match tokio::time::timeout(Duration::from_secs(5), harness.rx_op.recv()).await? {
+            Some(Op::GetSessionSnapshot { tx }) => {
+                answer_session_snapshot(&tx, "settled");
+                break;
+            }
+            Some(_) => {}
+            None => bail!("engine mailbox closed before the settled-history snapshot"),
+        }
+    }
     let terminal = wait_for_terminal_turn(&manager, &turn_id).await?;
     assert_eq!(terminal.status, RuntimeTurnStatus::Completed);
     assert_eq!(manager.active_turn_flags(&thread.id, &turn_id).await, None);
@@ -18287,6 +18297,31 @@ async fn failed_turn_cancels_pending_user_input_and_clears_snapshot() -> Result<
     Ok(())
 }
 
+fn answer_session_snapshot(
+    tx: &Arc<
+        std::sync::Mutex<Option<tokio::sync::oneshot::Sender<crate::core::ops::SessionSnapshot>>>,
+    >,
+    text: &str,
+) {
+    let messages: Vec<Message> = serde_json::from_value(json!([
+        {"role": "user", "content": [{"type": "text", "text": text}]}
+    ]))
+    .expect("snapshot message");
+    if let Some(tx) = tx.lock().expect("snapshot sender").take() {
+        let _ = tx.send(crate::core::ops::SessionSnapshot {
+            session_id: String::new(),
+            messages,
+            total_tokens: 0,
+            model: String::new(),
+            model_provider: String::new(),
+            model_provider_id: None,
+            workspace: PathBuf::new(),
+            system_prompt: None,
+            mode: String::new(),
+        });
+    }
+}
+
 #[tokio::test]
 async fn compaction_lifecycle_emits_item_events_with_compaction_counts() -> Result<()> {
     let manager = test_manager(test_runtime_dir())?;
@@ -18310,8 +18345,20 @@ async fn compaction_lifecycle_emits_item_events_with_compaction_counts() -> Resu
     let tx_event = harness.tx_event;
     tokio::spawn(async move {
         let mut op_count = 0usize;
+        let mut snapshots = 0usize;
         while let Some(op) = rx_op.recv().await {
             match op {
+                Op::GetSessionSnapshot { tx } => {
+                    snapshots = snapshots.saturating_add(1);
+                    answer_session_snapshot(
+                        &tx,
+                        if snapshots == 1 {
+                            "auto settled"
+                        } else {
+                            "manual settled"
+                        },
+                    );
+                }
                 Op::SendMessage(TurnSpec { .. }) => {
                     op_count = op_count.saturating_add(1);
                     let _ = tx_event
@@ -18411,7 +18458,7 @@ async fn compaction_lifecycle_emits_item_events_with_compaction_counts() -> Resu
                 }
                 _ => {}
             }
-            if op_count >= 2 {
+            if op_count >= 2 && snapshots >= 2 {
                 break;
             }
         }
@@ -18482,15 +18529,16 @@ async fn compaction_lifecycle_emits_item_events_with_compaction_counts() -> Resu
             && ev.payload.get("messages_after").and_then(Value::as_u64) == Some(2)
     }));
 
-    // The manual compact carried a summary_prompt → it must be persisted into
-    // the thread record so engine reloads restore it. The auto compact carried
-    // None → exactly one summary section, from the manual pass.
+    // Each compacting turn stores the history the engine settled on; a
+    // reload restores the newest one instead of replaying the turns it
+    // replaced, and the thread record carries no summary of its own.
     let record = manager.get_thread(&thread.id).await?;
-    let record_prompt = record.system_prompt.expect("record keeps a system prompt");
-    assert!(record_prompt.contains(COMPACTION_SUMMARY_BEGIN));
-    assert!(record_prompt.contains("Conversation Summary (Auto-Generated)"));
-    assert!(record_prompt.contains("key facts."));
-    assert_eq!(record_prompt.matches(COMPACTION_SUMMARY_BEGIN).count(), 1);
+    assert_eq!(record.system_prompt, None);
+    let restored = manager.restore_thread_messages(&record)?;
+    let expected: Vec<Message> = serde_json::from_value(json!([
+        {"role": "user", "content": [{"type": "text", "text": "manual settled"}]}
+    ]))?;
+    assert_eq!(restored, expected);
     Ok(())
 }
 
@@ -19167,73 +19215,6 @@ async fn fork_at_user_message_does_not_mutate_source() -> Result<()> {
         );
     }
     Ok(())
-}
-
-// ── compaction summary persistence (merge_summary_into_prompt) ──
-
-#[test]
-fn summary_merge_scenario() {
-    // Scenario consolidation of: summary_merge_appends_section_to_base_prompt, summary_merge_replaces_existing_section_idempotently, summary_merge_handles_missing_base
-    // from summary_merge_appends_section_to_base_prompt
-    {
-        let merged = merge_summary_into_prompt(
-            Some("You are a helpful agent."),
-            "## 📋 Conversation Summary (Auto-Generated)\n\nUser prefers lists.",
-        );
-        assert!(merged.starts_with("You are a helpful agent."));
-        assert!(merged.contains(COMPACTION_SUMMARY_BEGIN));
-        assert!(merged.contains("User prefers lists."));
-        assert!(merged.ends_with(COMPACTION_SUMMARY_END));
-        // Reload restore keys on the marker: SyncSession migrates this carrier
-        // into one ordinary history checkpoint before provider dispatch.
-        assert!(merged.contains("Conversation Summary (Auto-Generated)"));
-    }
-    // from summary_merge_replaces_existing_section_idempotently
-    {
-        let first = merge_summary_into_prompt(Some("Base prompt."), "summary v1");
-        let second = merge_summary_into_prompt(Some(&first), "summary v2");
-        assert!(second.contains("summary v2"));
-        assert!(!second.contains("summary v1"));
-        assert_eq!(
-            second.matches(COMPACTION_SUMMARY_BEGIN).count(),
-            1,
-            "repeated compactions must swap the section, not stack duplicates"
-        );
-        assert!(second.starts_with("Base prompt."));
-    }
-    // from summary_merge_handles_missing_base
-    {
-        let merged = merge_summary_into_prompt(None, "only summary");
-        assert!(merged.starts_with(COMPACTION_SUMMARY_BEGIN));
-        assert!(merged.contains("only summary"));
-        let empty_base = merge_summary_into_prompt(Some(""), "only summary");
-        assert!(empty_base.starts_with(COMPACTION_SUMMARY_BEGIN));
-    }
-}
-
-#[test]
-fn summary_strip_scenario() {
-    // Scenario consolidation of: summary_strip_preserves_text_after_section, summary_strip_handles_missing_end_sentinel
-    // from summary_strip_preserves_text_after_section
-    {
-        let with_tail = format!(
-            "Base.\n\n{COMPACTION_SUMMARY_BEGIN}\nold summary\n{COMPACTION_SUMMARY_END}\n\nTrailing rules."
-        );
-        let stripped = strip_summary_section(&with_tail);
-        assert!(stripped.contains("Base."));
-        assert!(stripped.contains("Trailing rules."));
-        assert!(!stripped.contains("old summary"));
-        // Re-merge keeps the tail intact.
-        let merged = merge_summary_into_prompt(Some(&with_tail), "new summary");
-        assert!(merged.contains("Trailing rules."));
-        assert!(merged.contains("new summary"));
-    }
-    // from summary_strip_handles_missing_end_sentinel
-    {
-        let broken = format!("Base.\n\n{COMPACTION_SUMMARY_BEGIN}\ntruncated…");
-        let stripped = strip_summary_section(&broken);
-        assert_eq!(stripped, "Base.");
-    }
 }
 
 /// Release acceptance: the full two-task Agent Mail matrix in one run, with

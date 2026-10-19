@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- In the desktop and web apps, a conversation stays compacted after
+  Codewhale restarts or unloads it. Before, reloading replayed every earlier
+  turn and then added the summary, so the next request carried everything
+  compaction had removed. Each compacting turn now stores the history the
+  model continued from, and forks, `/undo` and session exports start from
+  it as well.
 - When a provider stream fails before any content and Codewhale quietly
   resends the request, the tokens the failed attempt reported are now added
   to the session, goal and sub-agent totals instead of being merged away.

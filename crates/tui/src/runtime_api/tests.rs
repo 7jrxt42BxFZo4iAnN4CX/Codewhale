@@ -592,7 +592,19 @@ fn messages_from_thread_detail_batches_tool_results() {
         approval_grants: Vec::new(),
     };
 
-    let messages = messages_from_thread_detail(&detail).expect("rebuild thread history");
+    let mut items_by_turn = std::collections::HashMap::new();
+    for item in &detail.items {
+        items_by_turn
+            .entry(item.turn_id.clone())
+            .or_insert_with(Vec::new)
+            .push(item.clone());
+    }
+    let messages =
+        crate::runtime_threads::RuntimeThreadManager::reconstruct_messages_from_turns_with(
+            &detail.turns,
+            &items_by_turn,
+        )
+        .expect("rebuild thread history");
     let roles = messages
         .iter()
         .map(|message| message.role.as_str())
@@ -25769,7 +25781,7 @@ async fn session_export_keeps_execution_identity_and_rejects_invalid_item_correl
         .seed_thread_from_messages(&thread.id, &original)
         .await?;
     let detail = runtime.get_thread_detail(&thread.id).await?;
-    assert_eq!(messages_from_thread_detail(&detail)?, original);
+    assert_eq!(messages_from_thread_detail(&runtime, &detail)?, original);
 
     // A completed live item contains both sides. It must not become only a
     // result when the same thread is saved through the API's projection.
@@ -25801,7 +25813,7 @@ async fn session_export_keeps_execution_identity_and_rejects_invalid_item_correl
     for turn in &mut coalesced.turns {
         turn.item_ids.retain(|id| id != &result_item.id);
     }
-    assert_eq!(messages_from_thread_detail(&coalesced)?, original);
+    assert_eq!(messages_from_thread_detail(&runtime, &coalesced)?, original);
 
     let client = crate::tls::reqwest_client();
     let exported = client

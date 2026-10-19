@@ -917,6 +917,29 @@ enum EngineHostSetup {
     Rlm(rlm_host::RlmHostSetup),
 }
 
+/// Rewrite the text of every tool result in `message`, including text
+/// content blocks, with `redact`.
+pub(crate) fn redact_tool_result_blocks(message: &mut Message, redact: impl Fn(&str) -> String) {
+    for block in &mut message.content {
+        let ContentBlock::ToolResult {
+            content,
+            content_blocks,
+            ..
+        } = block
+        else {
+            continue;
+        };
+        *content = redact(content);
+        for value in content_blocks.iter_mut().flatten() {
+            if value.get("type").and_then(serde_json::Value::as_str) == Some("text")
+                && let Some(serde_json::Value::String(text)) = value.get_mut("text")
+            {
+                *text = redact(text);
+            }
+        }
+    }
+}
+
 pub(crate) fn compaction_checkpoint_for_restore(
     messages: &[codewhale_models::Message],
     system_prompt: Option<codewhale_models::SystemPrompt>,
@@ -4661,24 +4684,7 @@ impl Engine {
     /// written to disk live. Honors the confirmed `[redaction] model_bound`
     /// opt-out the same way the request boundary does.
     fn redact_tool_results_for_transcript(&self, message: &mut Message) {
-        for block in &mut message.content {
-            let ContentBlock::ToolResult {
-                content,
-                content_blocks,
-                ..
-            } = block
-            else {
-                continue;
-            };
-            *content = self.redact_tool_output_for_transcript(content);
-            for value in content_blocks.iter_mut().flatten() {
-                if value.get("type").and_then(serde_json::Value::as_str) == Some("text")
-                    && let Some(serde_json::Value::String(text)) = value.get_mut("text")
-                {
-                    *text = self.redact_tool_output_for_transcript(text);
-                }
-            }
-        }
+        redact_tool_result_blocks(message, |text| self.redact_tool_output_for_transcript(text));
     }
 
     fn redact_tool_output_for_transcript(&self, text: &str) -> String {

@@ -242,53 +242,16 @@ async fn coalesce_stream_delta(
     }
 }
 
-/// Sentinel delimiters wrapping the compaction summary section persisted in a
-/// thread record's `system_prompt`. The section carries the engine-rendered
-/// summary (which contains the compaction summary marker). On reload,
-/// `SyncSession` migrates that carrier into one ordinary history checkpoint
-/// and strips it from the model's standing system prompt. Delimiters make
-/// replacement idempotent: each completed
-/// compaction swaps the section in place instead of stacking duplicates.
-/// External `PATCH /v1/threads/{id}` callers that rewrite `system_prompt`
-/// should preserve this section verbatim or the summary is lost on reload.
-const COMPACTION_SUMMARY_BEGIN: &str = "<!-- compaction-summary:begin -->";
-const COMPACTION_SUMMARY_END: &str = "<!-- compaction-summary:end -->";
-
-/// Merge a rendered compaction summary into a thread record's system prompt,
-/// replacing any previously persisted summary section.
-fn merge_summary_into_prompt(base: Option<&str>, summary_text: &str) -> String {
-    let stripped = base.map(strip_summary_section).unwrap_or_default();
-    let mut out = stripped.trim_end().to_string();
-    if !out.is_empty() {
-        out.push_str("\n\n");
+/// The system prompt a sync installs. A history that already carries its
+/// compaction checkpoint outranks a legacy summary section persisted in the
+/// thread record's prompt, which would otherwise replace that checkpoint.
+fn synced_system_prompt(prompt: Option<&str>, messages: &[Message]) -> Option<SystemPrompt> {
+    let prompt = prompt.map(|text| SystemPrompt::Text(text.to_string()));
+    if crate::compaction::history_is_post_provenance(messages) {
+        crate::compaction::strip_compaction_summaries(prompt.as_ref())
+    } else {
+        prompt
     }
-    out.push_str(COMPACTION_SUMMARY_BEGIN);
-    out.push('\n');
-    out.push_str(summary_text.trim());
-    out.push('\n');
-    out.push_str(COMPACTION_SUMMARY_END);
-    out
-}
-
-/// Remove a previously persisted compaction summary section, if present.
-fn strip_summary_section(base: &str) -> String {
-    let Some(start) = base.find(COMPACTION_SUMMARY_BEGIN) else {
-        return base.to_string();
-    };
-    let end = base[start..]
-        .find(COMPACTION_SUMMARY_END)
-        .map(|rel| start + rel + COMPACTION_SUMMARY_END.len());
-    let mut out = base[..start].trim_end().to_string();
-    if let Some(end) = end {
-        let tail = base[end..].trim_start();
-        if !tail.is_empty() {
-            if !out.is_empty() {
-                out.push_str("\n\n");
-            }
-            out.push_str(tail);
-        }
-    }
-    out
 }
 
 /// A fresh durable record id: `<prefix>_<32 hex>`. Records live in flat
@@ -994,9 +957,8 @@ fn projected_user_text(message: &Message) -> Option<String> {
     // An engine-owned compaction checkpoint is not a turn's prompt. No turn
     // record can reproduce one — the compaction ran in the engine, between
     // records — so a document that carries it would read as drifted from the
-    // records it was rebuilt from. Every fork of a compacted source inherits
-    // the summary in its system prompt, and the engine installs the checkpoint
-    // into the synced history on the fork's first load, so leaving it in took
+    // records it was rebuilt from. A fork of a compacted source starts from
+    // the settled history that carries the checkpoint, so leaving it in took
     // the cut away from the fork itself: `/undo`, retry and fork-again each
     // refused with "cannot identify an exact saved-history boundary".
     if crate::compaction::is_wire_compaction_checkpoint_message(message) {
@@ -1174,9 +1136,9 @@ fn session_recovery_projection(messages: &[Message]) -> Vec<Value> {
 /// the kept turns hands every reader of that document — the session view,
 /// `restore_thread_messages` — a run of prompts with the agent's
 /// output missing, because nothing is left for it to rebuild the turns from.
-/// The turn store is not rewritten by compaction, so the records can: they are
-/// what the fork rebuilds the kept exchanges from
-/// (`reconstruct_messages_from_turns_with`).
+/// The records can: a compacting turn stores the history its engine settled
+/// on, and the fork rebuilds the kept exchanges from the newest one it keeps
+/// plus the raw turns after it (`RuntimeThreadStore::history_from_records`).
 ///
 /// The compaction names the turn it ran for, so the records answer the
 /// question directly. Any compaction in the thread is enough: the turns before
@@ -3176,6 +3138,116 @@ impl RuntimeThreadStore {
             self.note_item_in_index(&item.turn_id, &item.id);
         }
         Ok(())
+    }
+
+    /// The engine history a compacting turn settled on, stored once under
+    /// its digest beside the items (listings read only `.json`). Forks share
+    /// it by reference, so it is never removed.
+    fn settled_history_path(&self, digest: &str) -> Result<PathBuf> {
+        Self::record_path(&self.items_dir, digest, "history", "settled history digest")
+    }
+
+    pub(crate) fn save_settled_history(&self, messages: &[Message]) -> Result<Value> {
+        let bytes = serde_json::to_vec(messages)?;
+        let digest = hex_digest(Sha256::digest(&bytes));
+        let path = self.settled_history_path(&digest)?;
+        reject_symlinked_store_file(&path)?;
+        crate::utils::write_atomic(&path, &bytes)
+            .with_context(|| format!("Failed to write settled history {}", path.display()))?;
+        Ok(json!({ "sha256": digest, "messages": messages.len() }))
+    }
+
+    /// The newest settled history among `turns`, and how many of them it
+    /// covers. A reference whose file is missing, altered or unreadable is an
+    /// error: replaying the raw turns instead would silently undo compaction.
+    fn settled_history(
+        &self,
+        turns: &[TurnRecord],
+        items_by_turn: &HashMap<String, Vec<TurnItemRecord>>,
+    ) -> Result<Option<(usize, Vec<Message>)>> {
+        for (index, turn) in turns.iter().enumerate().rev() {
+            let Some((item, reference)) = items_by_turn
+                .get(&turn.id)
+                .into_iter()
+                .flatten()
+                .rev()
+                .filter(|item| item.kind == TurnItemKind::ContextCompaction)
+                .find_map(|item| {
+                    let reference = item.metadata.as_ref()?.get("settled_history")?;
+                    Some((item, reference))
+                })
+            else {
+                continue;
+            };
+            let digest = reference
+                .get("sha256")
+                .and_then(Value::as_str)
+                .filter(|digest| {
+                    digest.len() == 64
+                        && digest
+                            .bytes()
+                            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                })
+                .with_context(|| {
+                    format!(
+                        "Compaction item {} on turn {} names an invalid settled history",
+                        item.id, turn.id
+                    )
+                })?;
+            let expected = reference
+                .get("messages")
+                .and_then(Value::as_u64)
+                .and_then(|count| usize::try_from(count).ok())
+                .with_context(|| {
+                    format!(
+                        "Compaction item {} on turn {} names no settled history length",
+                        item.id, turn.id
+                    )
+                })?;
+            let path = self.settled_history_path(digest)?;
+            reject_symlinked_store_file(&path)?;
+            let bytes = fs::read(&path).with_context(|| {
+                format!(
+                    "Settled history for turn {} is unreadable: {}",
+                    turn.id,
+                    path.display()
+                )
+            })?;
+            anyhow::ensure!(
+                hex_digest(Sha256::digest(&bytes)) == digest,
+                "Settled history {} for turn {} does not match its digest",
+                path.display(),
+                turn.id
+            );
+            let messages: Vec<Message> = serde_json::from_slice(&bytes)
+                .with_context(|| format!("Failed to parse settled history {}", path.display()))?;
+            anyhow::ensure!(
+                messages.len() == expected,
+                "Settled history {} for turn {} holds {} messages, not {expected}",
+                path.display(),
+                turn.id,
+                messages.len()
+            );
+            return Ok(Some((index + 1, messages)));
+        }
+        Ok(None)
+    }
+
+    /// The model-visible history the records hold: the newest settled
+    /// history, then every later turn rebuilt from its items.
+    pub(crate) fn history_from_records(
+        &self,
+        turns: &[TurnRecord],
+        items_by_turn: &HashMap<String, Vec<TurnItemRecord>>,
+    ) -> Result<Vec<Message>> {
+        let (covered, mut messages) = self
+            .settled_history(turns, items_by_turn)?
+            .unwrap_or_default();
+        messages.extend(RuntimeThreadManager::reconstruct_messages_from_turns_with(
+            &turns[covered..],
+            items_by_turn,
+        )?);
+        Ok(messages)
     }
 
     /// Journal for one history seed into an existing thread (#6555), kept
@@ -6878,8 +6950,7 @@ impl HeldRuntimeStore {
             }
             let turn_ids: Vec<String> = turns.iter().map(|turn| turn.id.clone()).collect();
             let items = store.list_items_for_turns_map(&turn_ids)?;
-            let messages =
-                RuntimeThreadManager::reconstruct_messages_from_turns_with(&turns, &items)?;
+            let messages = store.history_from_records(&turns, &items)?;
             if messages.is_empty() {
                 continue;
             }
@@ -12012,7 +12083,8 @@ impl RuntimeThreadManager {
     ) -> Result<()> {
         let thread = self.get_thread(thread_id).await?;
         let engine = self.ensure_engine_loaded(&thread).await?;
-        let system_prompt = thread.system_prompt.clone().map(SystemPrompt::Text);
+        let system_prompt =
+            synced_system_prompt(thread.system_prompt.as_deref(), &session.messages);
         let expected = {
             let checkpoint = crate::core::engine::compaction_checkpoint_for_restore(
                 &session.messages,
@@ -12027,8 +12099,8 @@ impl RuntimeThreadManager {
             .send(Op::SyncSession {
                 session_id: Some(thread.id.clone()),
                 messages: session.messages.clone(),
+                system_prompt_override: system_prompt.is_some(),
                 system_prompt,
-                system_prompt_override: thread.system_prompt.is_some(),
                 model: thread.model.clone(),
                 workspace: thread.workspace.clone(),
                 mode: RuntimePolicyProjection::from_persisted(
@@ -12686,7 +12758,8 @@ impl RuntimeThreadManager {
             .await?;
         let fork_prefix = if saved_transcript_is_compacted(&source_turns, &items_by_turn) {
             (
-                Self::reconstruct_messages_from_turns_with(&source_turns, &items_by_turn)?,
+                self.store
+                    .history_from_records(&source_turns, &items_by_turn)?,
                 source_turns.len(),
             )
         } else {
@@ -13228,10 +13301,8 @@ impl RuntimeThreadManager {
             let (prefix, covered_turns) = match retained_messages {
                 Some(retained) => (messages[..retained].to_vec(), kept_turns),
                 None => (
-                    Self::reconstruct_messages_from_turns_with(
-                        &source_turns[..cutoff_turn_idx],
-                        &items_by_turn,
-                    )?,
+                    self.store
+                        .history_from_records(&source_turns[..cutoff_turn_idx], &items_by_turn)?,
                     cutoff_turn_idx,
                 ),
             };
@@ -13295,7 +13366,7 @@ impl RuntimeThreadManager {
         }
         if fork_prefix.is_none() {
             fork_prefix = Some((
-                Self::reconstruct_messages_from_turns_with(
+                self.store.history_from_records(
                     &source_turns[..cutoff_turn_idx],
                     &self.prepared_items_for_turns(&source_turns[..cutoff_turn_idx])?,
                 )?,
@@ -16223,10 +16294,8 @@ impl RuntimeThreadManager {
                 ));
             }
 
-            let sys_prompt = thread
-                .system_prompt
-                .as_ref()
-                .map(|s| SystemPrompt::Text(s.clone()));
+            let sys_prompt =
+                synced_system_prompt(thread.system_prompt.as_deref(), &session_messages);
             if !session_messages.is_empty() || sys_prompt.is_some() {
                 engine
                     .send(Op::SyncSession {
@@ -16234,9 +16303,9 @@ impl RuntimeThreadManager {
                         // re-sync of the same conversation, never a
                         // conversation boundary.
                         session_id: Some(thread.id.clone()),
+                        system_prompt_override: sys_prompt.is_some(),
                         messages: session_messages,
                         system_prompt: sys_prompt,
-                        system_prompt_override: thread.system_prompt.is_some(),
                         model: route_model.clone(),
                         workspace: thread.workspace.clone(),
                         mode: RuntimePolicyProjection::from_persisted(
@@ -16619,7 +16688,7 @@ impl RuntimeThreadManager {
 
     fn restore_thread_messages(&self, thread: &ThreadRecord) -> Result<Vec<Message>> {
         let turns = self.store.list_turns_for_thread(&thread.id)?;
-        let (mut messages, covered) = match self.saved_session_prefix(thread, &turns) {
+        let (mut messages, mut covered) = match self.saved_session_prefix(thread, &turns) {
             Ok(prefix) => prefix.unwrap_or_default(),
             Err(error) => {
                 let Some(stale) = error.downcast_ref::<StaleSessionBinding>() else {
@@ -16632,7 +16701,18 @@ impl RuntimeThreadManager {
                 (Vec::new(), 0)
             }
         };
-        messages.extend(self.reconstruct_messages_from_turns(&turns[covered..])?);
+        let items_by_turn = self.prepared_items_for_turns(&turns[covered..])?;
+        if let Some((settled, history)) = self
+            .store
+            .settled_history(&turns[covered..], &items_by_turn)?
+        {
+            messages = history;
+            covered += settled;
+        }
+        messages.extend(Self::reconstruct_messages_from_turns_with(
+            &turns[covered..],
+            &items_by_turn,
+        )?);
         Ok(messages)
     }
 
@@ -16865,6 +16945,7 @@ impl RuntimeThreadManager {
         Ok((messages, covered))
     }
 
+    #[cfg(test)]
     fn reconstruct_messages_from_turns(&self, turns: &[TurnRecord]) -> Result<Vec<Message>> {
         // One batch read for the whole set. `list_items_for_turn` scans the
         // store's entire items directory to answer for a single turn, so a
@@ -16872,6 +16953,14 @@ impl RuntimeThreadManager {
         // saved-session link — paid one scan per turn.
         let items_by_turn = self.prepared_items_for_turns(turns)?;
         Self::reconstruct_messages_from_turns_with(turns, &items_by_turn)
+    }
+
+    pub(crate) fn history_from_records(
+        &self,
+        turns: &[TurnRecord],
+        items_by_turn: &HashMap<String, Vec<TurnItemRecord>>,
+    ) -> Result<Vec<Message>> {
+        self.store.history_from_records(turns, items_by_turn)
     }
 
     pub(crate) fn reconstruct_messages_from_turns_with(
@@ -17207,6 +17296,8 @@ impl RuntimeThreadManager {
         let mut current_reasoning_item: Option<TurnItemRecord> = None;
         let mut tool_items: HashMap<String, String> = HashMap::new();
         let mut compaction_items: HashMap<String, String> = HashMap::new();
+        let mut completed_compaction_item: Option<String> = None;
+        let mut terminal_received = false;
         let mut turn_usage: Option<Usage> = None;
         let mut turn_effective_route_usage: Option<Usage> = None;
         let mut turn_routed_usage_dropped_records = 0_u64;
@@ -18022,36 +18113,11 @@ impl RuntimeThreadManager {
                     message,
                     messages_before,
                     messages_after,
-                    summary_prompt,
+                    summary_prompt: _,
                     post_input_tokens: _,
                 } => {
-                    // Persist the summary in the legacy thread-record carrier
-                    // so reloads survive LRU eviction/restart. SyncSession
-                    // migrates it into one ordinary history checkpoint and
-                    // strips the carrier from the standing system prompt.
-                    if let Some(summary) =
-                        summary_prompt.as_deref().filter(|s| !s.trim().is_empty())
-                    {
-                        let persist_summary = (|| -> Result<()> {
-                            let _thread_mutation = self.store.thread_mutation.lock();
-                            let mut thread = self.store.load_thread(&thread_id)?;
-                            let merged =
-                                merge_summary_into_prompt(thread.system_prompt.as_deref(), summary);
-                            if thread.system_prompt.as_deref() != Some(merged.as_str()) {
-                                thread.system_prompt = Some(merged);
-                                thread.updated_at = Utc::now();
-                                self.store.save_thread(&thread)?;
-                            }
-                            Ok(())
-                        })();
-                        if let Err(e) = persist_summary {
-                            tracing::warn!(
-                                thread_id = %thread_id,
-                                "Failed to persist compaction summary to thread record: {e}"
-                            );
-                        }
-                    }
                     if let Some(item_id) = compaction_items.remove(&id) {
+                        completed_compaction_item = Some(item_id.clone());
                         let mut item = self.store.load_item(&item_id)?;
                         item.status = TurnItemLifecycleStatus::Completed;
                         item.summary = summarize_text(&message, SUMMARY_LIMIT);
@@ -19016,6 +19082,7 @@ impl RuntimeThreadManager {
                     if let Some(err) = error {
                         turn_error = Some(err);
                     }
+                    terminal_received = true;
                     break;
                 }
                 EngineEvent::GoalUpdated { snapshot } => {
@@ -19172,6 +19239,31 @@ impl RuntimeThreadManager {
 
         self.settle_dynamic_tools_for_terminal_turn(&thread_id, &turn_id)
             .await?;
+
+        if terminal_received
+            && !self.cancel_token.is_cancelled()
+            && let Some(item_id) = completed_compaction_item.as_deref()
+        {
+            let mut messages = engine.get_session_snapshot().await?.messages;
+            for message in &mut messages {
+                crate::core::engine::redact_tool_result_blocks(message, |text| {
+                    crate::client::redact_model_bound_text(text, &receipt_secrets)
+                });
+            }
+            let store = self.store.clone();
+            let reference =
+                tokio::task::spawn_blocking(move || store.save_settled_history(&messages))
+                    .await
+                    .context("settled history write task failed")??;
+            let mut item = self.store.load_item(item_id)?;
+            let mut metadata = item.metadata.take().unwrap_or_else(|| json!({}));
+            let Some(fields) = metadata.as_object_mut() else {
+                bail!("Compaction item {item_id} has non-object metadata");
+            };
+            fields.insert("settled_history".to_string(), reference);
+            item.metadata = Some(metadata);
+            self.store.save_item(&item)?;
+        }
 
         // Publish the terminal projection as one snapshot boundary. The
         // duplicate scan is offloaded while this guard is held, so public
