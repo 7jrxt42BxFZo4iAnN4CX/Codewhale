@@ -821,13 +821,15 @@ impl codewhale_app_server::RuntimeOwnerFrontend for CapturedRuntimeFrontend {
             // the global signal registration or stop shared schedulers/managers.
             let shutdown = RuntimeServerShutdown::default();
             state.shutdown = shutdown.clone();
-            let app =
+            let app = with_loopback_host_guard(
                 build_router(state).merge(codewhale_app_server::runtime_compatibility_router(
                     compatibility,
                     &options.cors_origins,
                     resolved.token.clone(),
                     Some(workspace),
-                ));
+                )),
+                resolved.token.is_none(),
+            );
             let ready = RuntimeFrontendReady {
                 endpoint,
                 auth_required: resolved.token.is_some(),
@@ -2090,6 +2092,7 @@ pub async fn run_http_server(
         runtime_token.clone(),
         Some(listener_workspace),
     ));
+    let app = with_loopback_host_guard(app, runtime_token.is_none());
     let owned_stdio = matches!(
         options.control_frontend.as_ref(),
         Some(
@@ -2486,6 +2489,41 @@ fn validate_runtime_listener_security(options: &RuntimeApiOptions) -> Result<()>
         );
     }
     Ok(())
+}
+
+fn with_loopback_host_guard(app: Router, unauthenticated: bool) -> Router {
+    if unauthenticated {
+        app.layer(middleware::from_fn(require_loopback_host_header))
+    } else {
+        app
+    }
+}
+
+async fn require_loopback_host_header(request: Request, next: middleware::Next) -> Response {
+    let loopback = request
+        .headers()
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .is_none_or(host_header_is_loopback);
+    if loopback {
+        return next.run(request).await;
+    }
+    (
+        StatusCode::MISDIRECTED_REQUEST,
+        "This unauthenticated Runtime only answers requests addressed to 127.0.0.1, ::1 or localhost.",
+    )
+        .into_response()
+}
+
+fn host_header_is_loopback(value: &str) -> bool {
+    let host = match value.strip_prefix('[') {
+        Some(rest) => rest.split_once(']').map_or(rest, |(host, _)| host),
+        None => value.rsplit_once(':').map_or(value, |(host, _)| host),
+    };
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
 }
 
 fn is_loopback_bind_host(host: &str) -> bool {

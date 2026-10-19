@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `codewhale serve --insecure` and `codewhale app-server --insecure-no-auth`
+  answer only requests addressed to `127.0.0.1`, `::1` or `localhost`.
+  Without auth, a website could point its own domain at 127.0.0.1 (DNS
+  rebinding) and drive the Runtime API from your browser; such requests now
+  get `421 Misdirected Request`. Servers with auth are unchanged.
+
 ## [0.10.2] - 2026-10-18
 
 Codewhale v0.10.2 adds an animated pet view (`/pet on`), a live Terminal work
@@ -1085,9 +1091,9 @@ guidance.
 
 - From a pre-release security review of the local network surfaces, not yet
   fixed: `codewhale serve --insecure` and `codewhale app-server
-  --insecure-no-auth` check neither the `Host` nor the `Origin` header, so
-  with either flag a website can reach the Runtime API through DNS
-  rebinding; use them only on a machine you trust. The one-time
+  --insecure-no-auth` do not check the `Origin` header, so with either flag
+  a page on an allowed development origin (`localhost:3000`, `:1420`) can
+  drive the Runtime API; use them only on a machine you trust. The one-time
   `codewhale web` and `--mobile` bootstrap capability passes through the
   browser launcher's arguments, where another local OS user can read it. The
   opt-in control socket (`[control_socket] enabled = true`) does not check
