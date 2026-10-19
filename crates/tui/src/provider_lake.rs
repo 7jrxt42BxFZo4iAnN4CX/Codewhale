@@ -44,12 +44,9 @@ struct SharedSnapshot {
     /// `catalog_partition_key(provider) -> rows`, built once with the
     /// snapshot.
     ///
-    /// The picker asks for one provider's rows once per model row, and the
-    /// old implementation walked every offering in the process for each ask,
-    /// computing a `trim().to_string()` partition key per offering. On a
-    /// catalog with a few thousand offerings that is tens of millions of
-    /// string allocations per `/model` open, and it measured as 662 ms of a
-    /// 757 ms build.
+    /// Callers ask for one provider's rows per model row; scanning every
+    /// offering in the process for each ask computed a `trim().to_string()`
+    /// partition key per offering.
     by_provider: BTreeMap<String, Vec<Arc<CatalogOffering>>>,
 }
 
@@ -681,28 +678,20 @@ type SourceRowsCacheEntry = (
     Arc<BTreeMap<(String, String), CatalogOffering>>,
 );
 
+/// One provider's bundled + Models.dev rows, memoized per live generation.
+///
+/// `live_generation` must be sampled **before** the caller reads
+/// `LIVE_SNAPSHOT`: tagging a snapshot read with a newer generation would let a
+/// concurrent refresh leave stale rows cached under the current generation.
 fn source_rows_for_provider(
     provider: &str,
+    live_generation: u64,
     models_dev: Option<&SharedSnapshot>,
     cloud: Option<&codewhale_config::cloud_facts::overlay::OverlaySnapshot>,
 ) -> Arc<BTreeMap<(String, String), CatalogOffering>> {
-    // The inputs are the live layer and the signed cloud layer; both bump a
-    // generation when they change, so a cached partition is valid until one
-    // does. `catalog_offering_for_route` calls this once per model row, and
-    // opening `/model` on a 176-row relay rebuilt this provider's whole owned
-    // map 176 times.
     let generation = (
-        LIVE_GENERATION.load(Ordering::SeqCst),
-        // `None` means the signed cloud layer does not describe this route.
-        // A sentinel keeps that distinct from a real overlay whose generation
-        // happens to be zero, so an unclouded partition can never be served a
-        // partition the overlay already patched.
+        live_generation,
         cloud.map_or(u64::MAX, |cloud| cloud.generation),
-        // The live layer's own presence is part of the key. A caller whose
-        // `LIVE_SNAPSHOT` read failed passes `None` under the *current*
-        // generation, and keying on the generation alone would then cache a
-        // bundled-only partition that shadows Models.dev rows until the next
-        // bump.
         models_dev.is_some(),
     );
     if let Ok(cache) = SOURCE_ROWS_CACHE.read()
@@ -982,14 +971,19 @@ pub(crate) fn runtime_catalog_resolver_for_identity(
                 Vec::new()
             };
             let lower = if !matches!(provider, ProviderKind::Custom | ProviderKind::OpenaiCodex) {
-                source_rows_for_provider(catalog_id.as_ref(), live.models_dev.as_ref(), route_cloud)
+                source_rows_for_provider(
+                    catalog_id.as_ref(),
+                    generation,
+                    live.models_dev.as_ref(),
+                    route_cloud,
+                )
             } else {
                 Arc::new(BTreeMap::new())
             };
             (exact_matches, rows, lower)
         } else {
             let lower = if !matches!(provider, ProviderKind::Custom | ProviderKind::OpenaiCodex) {
-                source_rows_for_provider(catalog_id.as_ref(), None, route_cloud)
+                source_rows_for_provider(catalog_id.as_ref(), generation, None, route_cloud)
             } else {
                 Arc::new(BTreeMap::new())
             };
@@ -1356,14 +1350,21 @@ pub(crate) fn catalog_offering_for_route(
                 let route_cloud =
                     cloud_facts_apply_to_route(provider, identity, base_url).then_some(&cloud);
                 let catalog_id = catalog_provider_id_for_identity(provider, Some(identity));
+                let live_generation = LIVE_GENERATION.load(Ordering::SeqCst);
                 let lower_rows = if let Ok(live) = LIVE_SNAPSHOT.read() {
                     source_rows_for_provider(
                         catalog_id.as_ref(),
+                        live_generation,
                         live.models_dev.as_ref(),
                         route_cloud,
                     )
                 } else {
-                    source_rows_for_provider(catalog_id.as_ref(), None, route_cloud)
+                    source_rows_for_provider(
+                        catalog_id.as_ref(),
+                        live_generation,
+                        None,
+                        route_cloud,
+                    )
                 };
                 if let Some(lower) = lower_rows.get(&(row.provider.clone(), model.to_string())) {
                     row.complete_from(lower, Some(base_url));
@@ -1580,10 +1581,12 @@ pub(crate) fn catalog_models_for_route(
     }
     // Do not borrow a live partition published for another endpoint.
     let catalog_id = catalog_provider_id(provider);
+    let live_generation = LIVE_GENERATION.load(Ordering::SeqCst);
     let live = LIVE_SNAPSHOT.read().ok();
     let cloud = codewhale_config::cloud_facts::overlay::snapshot();
     let rows = source_rows_for_provider(
         catalog_id,
+        live_generation,
         live.as_ref().and_then(|live| live.models_dev.as_ref()),
         cloud_facts_apply_to_route(provider, identity, base_url).then_some(&cloud),
     );

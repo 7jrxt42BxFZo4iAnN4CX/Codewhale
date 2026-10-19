@@ -208,11 +208,9 @@ impl ModelInventory {
     /// The Auto-router decision alone, without the per-model candidate
     /// inventory.
     ///
-    /// Wording one line of `/model`'s `auto` hint needs four router facts, and
-    /// building the full inventory for them walks every configured route's
-    /// every model through runtime route resolution -- measured at 308 ms of a
-    /// 1048 ms picker build. The router block below never reads `candidates`,
-    /// so the same code answers both callers; only the loop is skipped.
+    /// Wording one line of `/model`'s `auto` hint needs four router facts.
+    /// The router block below never reads `candidates`, so the same code
+    /// answers both callers; only the loop is skipped.
     pub(crate) fn auto_router_only(config: &Config) -> Result<Self, String> {
         Self::from_config_scoped(
             config,
