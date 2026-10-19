@@ -536,6 +536,7 @@ name = "Chat color"
 summary = "/color gives one chat's composer box its own color, kept with that session."
 status = "stable"
 surfaces = { tui = "stable" }
+since = "0.10.2"
 docs = "docs/GUIDE.md"
 owner = "crates/tui/src/commands/groups/session/color.rs"
 
@@ -577,7 +578,7 @@ owner = "crates/tui/src/commands/groups/core/home.rs"
 [[feature]]
 id = "account-login"
 name = "Account login"
-summary = "/login signs in to Codewhale or stores provider keys; plugin providers connect with /connect."
+summary = "/login signs in to an optional Codewhale account; plugin providers connect with /connect."
 status = "stable"
 surfaces = { tui = "stable" }
 owner = "crates/tui/src/commands/groups/config/config.rs"
@@ -637,6 +638,7 @@ name = "Terminal dock"
 summary = "/workbar terminal shows workspace PTYs with live output, human input, session selection and a fresh shell; macOS/Linux."
 status = "stable"
 surfaces = { tui = "stable" }
+since = "0.10.2"
 owner = "crates/tui/src/tui/work_surface/terminal.rs"
 
 # --- Operations and platforms ---

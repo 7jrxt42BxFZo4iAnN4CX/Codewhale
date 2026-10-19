@@ -193,29 +193,18 @@ allow_shell = true
 
 ### 账号提供商密钥
 
-Codewhale 账号的直接好处是：**在一个地方管理模型提供商的 API 密钥**。
-[注册](https://app.codewhale.net/register)或[登录](https://app.codewhale.net/login)后，
-可以在[提供商设置](https://app.codewhale.net/providers)中添加、更换或移除密钥，
-也可以使用终端：
+新的 Codewhale 账号暂未开放，本指南也不建议把提供商密钥保存在账号中。请用 `/provider`
+或 `codewhale auth set --provider <provider>` 把密钥保存在你自己的机器上；使用本地密钥或
+本地模型从不需要账号。
+
+如果你已经有账号，以下命令用于管理保存在账号中的密钥：
 
 ```bash
-codewhale login                         # 浏览器登录；也可用 account login
-codewhale account keys set deepseek      # 隐藏输入，添加或更换密钥
-codewhale account keys list              # 只显示配置状态，不显示密钥
-codewhale --provider codewhale           # 使用账号的模型通道
+codewhale account keys list              # configured status, never secret values
+codewhale account keys remove deepseek   # remove the account's saved key
 ```
 
-账号密钥保存在服务端，用于经过账号通道的请求。在另一台设备上登录并在
-`/provider` 中选择 Codewhale，即可使用这些密钥，无需再次粘贴。`/models`
-列出该账号可用的模型。更换账号中保存的密钥会影响此通道的后续请求，但不会改变
-独立的本地副本，也不会撤销提供商侧的密钥。`codewhale account keys remove deepseek`
-移除账号中保存的密钥。
-
-登录**不会**自动上传已有的本地密钥。若希望复制本地密钥，请明确使用
-`codewhale account keys set deepseek --from-local`。本地提供商仍通过
-`codewhale auth set --provider <provider>` 配置；使用本地密钥或本地模型不需要
-Codewhale 账号。登录会保留显式选择或已配置的本地提供商；需要切换到账号通道时，
-使用 `--provider codewhale`。
+登录绝不会上传本地密钥；移除账号中的密钥不会改变本地副本，也不会撤销提供商侧的密钥。
 
 账号会话与提供商密钥分开保存。`codewhale account status` 查看会话；
 `codewhale account logout` 移除所选 `--profile` 的账号会话，不删除提供商密钥。

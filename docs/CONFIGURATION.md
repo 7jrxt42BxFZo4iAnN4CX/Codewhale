@@ -346,31 +346,20 @@ equivalent is unset.
 
 ### Account provider keys
 
-A Codewhale account lets you **manage your provider API keys in one place**.
-[Register](https://app.codewhale.net/register) or [sign in](https://app.codewhale.net/login),
-then add, replace or remove keys in [Providers settings](https://app.codewhale.net/providers)
-or from the terminal:
+New Codewhale accounts are not open, and this guide does not recommend storing
+provider keys in an account. Keep keys on your machine with `/provider` or
+`codewhale auth set --provider <provider>`; local keys and local models never
+need an account.
+
+If you already have an account, these commands manage keys saved there:
 
 ```bash
-codewhale login                         # browser sign-in; also: account login
-codewhale account keys set deepseek      # hidden prompt; add or replace a key
 codewhale account keys list              # configured status, never secret values
-codewhale --provider codewhale           # use the account's model route
+codewhale account keys remove deepseek   # remove the account's saved key
 ```
 
-Account keys stay on the service and are used for account-routed requests.
-Sign in on another device and choose Codewhale in `/provider` to use them
-without pasting keys again. `/models` lists models available to that account.
-Replacing a saved account key affects subsequent requests through this route;
-it does not change independent local copies or revoke keys at the provider.
-`codewhale account keys remove deepseek` removes the account's saved key.
-
-Login does **not** upload existing local keys. If you want to copy one, choose
-`codewhale account keys set deepseek --from-local` explicitly. Normal local
-provider setup remains `codewhale auth set --provider <provider>`; local keys
-and local models work without a Codewhale account. Signing in preserves an
-explicit or already configured local provider. Choose `--provider codewhale`
-when you want the account route instead.
+Login never uploads local keys, and removing an account key does not change
+local copies or revoke the key at the provider.
 
 The account session is separate from provider keys. `codewhale account status`
 inspects it; `codewhale account logout` removes it for the selected `--profile`
