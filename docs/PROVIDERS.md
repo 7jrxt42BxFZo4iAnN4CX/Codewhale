@@ -1021,7 +1021,7 @@ upload to Hugging Face and does not perform direct Hugging Face Hub HTTP search.
 work. The chat picker also exposes `mimo-v2.6-flash` (the replacement for the
 retired Omni model `mimo-v2.5`) and `mimo-v2.5-pro-ultraspeed`. Xiaomi MiMo TTS is available through
 `codewhale --provider xiaomi-mimo speech "text" --model tts` (or the `tts`
-alias). In Act and Operate, the provider-specific `speech` / `tts` tools are
+alias). In Work and Operate, the provider-specific `speech` / `tts` tools are
 available through deferred discovery when the Xiaomi MiMo route is configured.
 
 `/provider xiaomi-mimo ultraspeed` and `/provider xiaomi-mimo pro-ultraspeed`

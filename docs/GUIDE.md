@@ -351,8 +351,8 @@ direct. Multi-step delegation uses a compact Workflow plan with dependencies,
 bounded scopes, and completion evidence passed between steps. Fleet configures
 and manages those same sub-agents and their roles. One bounded, independent
 task can use a direct agent; continued work reuses it through `followup`.
-Heavy work can also run on a cloud computer with `codewhale dispatch "<task>"`,
-which goes through the signed-in account with a quote and EU-compute consent.
+`codewhale dispatch "<task>"` (running work on a Codewhale cloud computer) is
+not available: cloud computers and accounts are paused for new users.
 
 For trusted workspaces where you intentionally want actions to proceed without
 approval prompts, select the Full Access permission posture with `Shift+Tab`.
