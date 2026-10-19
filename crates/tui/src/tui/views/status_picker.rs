@@ -215,17 +215,20 @@ impl ModalView for StatusPickerView {
             ActionHint::new("Esc", tr(self.locale, MessageId::StatusPickerActionCancel)),
         ];
         // Two header lines + one row per StatusItem + the action footer rows
-        // as they wrap at the popup's inner width, plus the border and
-        // padding rows above and below. centered_modal_area clamps this to
-        // the frame and lets the scroll offset absorb any remaining overflow.
+        // as they wrap at the popup's inner width, plus the border rows, and
+        // the padding rows above and below when the whole list fits.
+        // centered_modal_area clamps this to the frame and lets the scroll
+        // offset absorb any remaining overflow.
         let popup_width = centered_modal_area(area, 64, 8, 40, 8).width;
         let footer_rows = action_footer_lines(&hints, popup_width.saturating_sub(4))
             .len()
             .max(1) as u16;
-        let needed_height = (self.rows.len() as u16)
-            .saturating_add(6)
+        let unpadded_height = (self.rows.len() as u16)
+            .saturating_add(4)
             .saturating_add(footer_rows);
-        let popup_area = centered_modal_area(area, 64, needed_height, 40, 8);
+        let pad = u16::from(unpadded_height.saturating_add(2) <= area.height.saturating_sub(2));
+        let popup_area =
+            centered_modal_area(area, 64, unpadded_height.saturating_add(2 * pad), 40, 8);
 
         render_modal_surface(area, popup_area, buf);
 
@@ -239,7 +242,7 @@ impl ModalView for StatusPickerView {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(palette::BORDER_COLOR))
             .style(Style::default().bg(palette::WHALE_BG))
-            .padding(Padding::uniform(1));
+            .padding(Padding::new(1, 1, pad, pad));
 
         let inner = block.inner(popup_area);
         block.render(popup_area, buf);
