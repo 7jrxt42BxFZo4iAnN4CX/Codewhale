@@ -809,6 +809,20 @@ pub(crate) async fn save_session_in_runtime(
         }
     };
 
+    let detail = runtime
+        .get_thread_detail(&thread_id)
+        .await
+        .map_err(map_thread_err)?;
+    if thread_detail_has_live_work(&detail) {
+        return Err(ApiError {
+            status: StatusCode::CONFLICT,
+            message: format!(
+                "Thread {thread_id} has a queued or active turn; wait for completion before saving the session"
+            ),
+            code: None,
+        });
+    }
+
     // Get the engine handle (loads the thread into an engine if needed),
     // then request a session snapshot. This reuses the same code path as
     // TUI's `build_session_snapshot`: the engine holds the authoritative

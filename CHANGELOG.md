@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Runtime API fixes:
+  - `PUT /v1/sessions` for a thread with a queued or running turn now
+    answers 409. Before, it waited for that turn to finish while blocking
+    new turns, steering and compaction on every thread.
   - `PATCH /v1/threads/{id}` with a new `system_prompt` now takes effect
     on the next turn. Before, a thread whose engine was already loaded kept
     the old prompt. The change is refused while a turn is running.
