@@ -1150,7 +1150,7 @@ pub fn live_per_provider_models(provider: ProviderKind) -> Vec<String> {
 /// Precedence: live Models.dev rows (when published) override bundled offline
 /// rows on `(provider, wire_model_id)`; if the merged catalog still has no rows
 /// for the provider, fall back to
-/// [`crate::config::model_completion_names_for_provider`] so CodeWhale-only /
+/// `crate::config::model_completion_names_for_provider` so CodeWhale-only /
 /// local providers (and gateways not yet in the offline seed) keep defaults.
 #[must_use]
 pub fn all_catalog_models_for_provider(provider: ProviderKind) -> Vec<String> {
