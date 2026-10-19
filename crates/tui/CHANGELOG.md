@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- In a session long enough to fold its oldest transcript cells (past
+  5,000), tool details, expanded tool runs, sub-agent cards and a streaming
+  reply keep pointing at the right rows. Each fold had shifted them one row
+  too far, so the inspector opened the previous cell's details.
+- A sub-agent started with the parent's context that ends without writing
+  anything no longer reports the parent's last message as its own result.
 - When one reply carries several text blocks, as the Responses route sends
   for separate message items, the conversation now keeps all of them. Before,
   each new block replaced the previous one in the history sent back to the
