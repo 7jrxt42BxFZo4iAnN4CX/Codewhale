@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Esc, or a Runtime interrupt, now stops a `tool_call_before` hook that is
+  still running: its process tree is killed and reaped, hooks queued behind
+  it are skipped, and the turn stops at once. Before, the turn waited for the
+  hook to finish, and the hook could still change files after the turn was
+  reported as stopped.
 - With a sub-agent open in the main pane, scrolling and redraws reuse its
   rendered transcript instead of re-rendering every message on every frame,
   and a finished sub-agent's transcript file is no longer reread from disk

@@ -1983,6 +1983,7 @@ impl Engine {
                 match run_tool_call_before_hooks_for_context(
                     hook_context.as_ref(),
                     self.config.hook_executor.as_ref(),
+                    &self.cancel_token,
                     self.extension_host.as_ref().filter(|_| {
                         self.config
                             .features
@@ -8594,6 +8595,7 @@ mod tests {
 pub(crate) async fn run_tool_call_before_hooks_for_context(
     context: Option<&crate::tools::spec::ToolContext>,
     hooks: Option<&Arc<crate::hooks::HookExecutor>>,
+    cancel: &CancellationToken,
     attachment: Option<&crate::extension_host::HostAttachment>,
     name: &str,
     id: &str,
@@ -8610,9 +8612,14 @@ pub(crate) async fn run_tool_call_before_hooks_for_context(
             "hook caller context is unavailable",
         ));
     }
-    let bound = hooks.map(|hooks| match context {
-        Some(context) => Arc::new(hooks.bind_caller(crate::hooks::HookCaller::from_tool(context))),
-        None => Arc::clone(hooks),
+    let bound = hooks.map(|hooks| {
+        Arc::new(
+            match context {
+                Some(context) => hooks.bind_caller(crate::hooks::HookCaller::from_tool(context)),
+                None => hooks.as_ref().clone(),
+            }
+            .with_cancel(cancel.clone()),
+        )
     });
     run_tool_call_before_hooks(
         bound.as_ref(),
