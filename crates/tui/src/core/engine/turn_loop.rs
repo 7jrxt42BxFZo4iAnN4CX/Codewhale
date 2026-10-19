@@ -4907,15 +4907,23 @@ impl Engine {
                     content_block,
                 } => match content_block {
                     ContentBlockStart::Text { text } => {
-                        current_text_raw = text;
-                        current_text_visible.clear();
+                        if last_text_index.is_some_and(|last| last != index as usize) {
+                            if !current_text_raw.is_empty() {
+                                current_text_raw.push_str("\n\n");
+                            }
+                            if !current_text_visible.trim().is_empty() {
+                                current_text_visible.push_str("\n\n");
+                            }
+                        } else {
+                            current_text_raw.clear();
+                            current_text_visible.clear();
+                        }
+                        current_text_raw.push_str(&text);
                         tool_call_filter = ToolCallDeltaFilterState::default();
-                        let filtered = filter_tool_call_delta_with_state(
-                            &current_text_raw,
-                            &mut tool_call_filter,
-                        );
+                        let filtered =
+                            filter_tool_call_delta_with_state(&text, &mut tool_call_filter);
                         if !fake_wrapper_notice_emitted
-                            && filtered.len() < current_text_raw.len()
+                            && filtered.len() < text.len()
                             && contains_fake_tool_wrapper(&current_text_raw)
                         {
                             let _ = self
@@ -4931,6 +4939,14 @@ impl Engine {
                                 index: index as usize,
                             })
                             .await;
+                        if !filtered.is_empty() {
+                            let _ = self
+                                .send_stream_event(Event::MessageDelta {
+                                    index: index as usize,
+                                    content: filtered,
+                                })
+                                .await;
+                        }
                     }
                     ContentBlockStart::Thinking { thinking } => {
                         // A previous thinking block that never saw a stop

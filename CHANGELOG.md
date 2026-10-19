@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- When one reply carries several text blocks, as the Responses route sends
+  for separate message items, the conversation now keeps all of them. Before,
+  each new block replaced the previous one in the history sent back to the
+  model, so it forgot what it had just said even though you saw it. Text a
+  provider puts in a block's opening event is also shown now.
 - `codewhale serve --insecure` and `codewhale app-server --insecure-no-auth`
   answer only requests addressed to `127.0.0.1`, `::1` or `localhost`.
   Without auth, a website could point its own domain at 127.0.0.1 (DNS
