@@ -993,6 +993,7 @@ jobs:
           if [ -n "$monitor" ]; then kill "$monitor" 2>/dev/null || true; fi
           exit "$status"
         env:
+          CARGO_BUILD_JOBS: '1'
           QA_PTY_DIAGNOSTICS_DIR: ${{ runner.temp }}/pty-failures
           CODEWHALE_EXT_HOST_TESTS: '1'
           CODEWHALE_EXT_HOST_BUN_TESTS: '1'
@@ -1030,6 +1031,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.workspace_test_mode == 'shared-process-twice' && matrix.os == 'ubuntu-latest'
         shell: bash
         env:
+          CARGO_BUILD_JOBS: '1'
           EXPECTED_SHA: ${{ inputs.expected_sha }}
           CODEWHALE_EXT_HOST_TESTS: '1'
           CODEWHALE_EXT_HOST_BUN_TESTS: '1'
