@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:2712306ab5f7 -->
+<!-- source: README.md sha256:eefdc9e645b6 -->
 <div align="center">
 
 <picture>
@@ -6,14 +6,14 @@
   <img src="brand/wordmark.svg" alt="Codewhale" width="320">
 </picture>
 
-**Ein Coding-Agent für dein Terminal, der mit jedem Modell arbeitet.**
+**Ein Open-Source-Coding-Agent für dein Terminal, der mit jedem Modell arbeitet.**
 
 Gib Codewhale eine Aufgabe, und es liest das Repository, bearbeitet Dateien und
 führt Befehle aus, bis die Aufgabe erledigt ist oder es eine Eingabe von dir
 braucht. Es arbeitet mit mehr als 40 eingebauten Anbietern, standardmäßig mit
-DeepSeek, und mit Modellen, die auf deinem eigenen Rechner laufen. `/receipts`
-listet die Dateien auf, die es geändert hat, die Befehle, die es ausgeführt hat,
-und die Web- und MCP-Aufrufe, die es gemacht hat.
+DeepSeek V4.1 Flash, und mit Modellen, die auf deinem eigenen Rechner laufen.
+`/receipts` listet die Dateien auf, die es geändert hat, die Befehle, die es
+ausgeführt hat, und die Web- und MCP-Aufrufe, die es gemacht hat.
 
 [![CI](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml/badge.svg)](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/codewhale-cli?label=crates.io)](https://crates.io/crates/codewhale-cli)
@@ -27,7 +27,7 @@ und die Web- und MCP-Aufrufe, die es gemacht hat.
 
 <img src="web/public/codewhale-tui-0102-demo.png" alt="Eine Codewhale-Terminalsitzung" width="760">
 
-<sub>Aufgenommen in einer lokalen Demositzung.</sub>
+<sub>Ein Entwicklungs-Build von 0.10.2 mit einem geskripteten Testmodell, in Full Access in einem Wegwerf-Arbeitsbereich. Die Änderung, drei Tests und ein Review durch einen Sub-Agenten liefen wirklich.</sub>
 
 </div>
 
@@ -43,7 +43,10 @@ Das Installationsskript legt `codewhale` und den kurzen Alias `codew` nach
 Prüfsummenkontrolle in `~/.local/bin` ab. Meldet deine Shell danach
 `command not found`, führe die PATH-Zeile aus, die das Skript ausgibt
 ([Details](docs/INSTALL.md#put-it-on-your-path)).
-`codewhale update` aktualisiert es.
+`codewhale update` aktualisiert es. Diese Befehle installieren das neueste
+Release. Diese Seite folgt `main`; eine mit einer Version markierte Funktion
+kommt also mit diesem Release, und der [Changelog](CHANGELOG.md) listet, was
+jedes Release hinzufügt.
 
 <details>
 <summary><b>Windows, npm, Cargo und weitere Installationswege</b></summary>
@@ -51,7 +54,7 @@ Prüfsummenkontrolle in `~/.local/bin` ab. Meldet deine Shell danach
 ```bash
 winget install HunterBown.CodeWhale  # Windows x64 (or Scoop, or the installer from GitHub Releases)
 npm install -g codewhale            # wraps the same release binaries
-cargo install codewhale-cli --locked  # build from crates.io
+cargo install codewhale-cli --locked  # crates.io; can trail GitHub Releases
 ```
 
 Vorkompilierte Binärdateien gibt es für Linux, macOS und Windows auf x64 und
@@ -72,7 +75,8 @@ die zuerst kommt.
    API-Schlüssel ein und wähle ein Modell. DeepSeek ist der Standardanbieter.
    Ohne Schlüssel wählst du stattdessen eine lokale Runtime. Ist kein Anbieter
    konfiguriert und stellt Ollama bereits ein Chat-Modell bereit, verwendet
-   Codewhale es automatisch.
+   Codewhale es automatisch; ab 0.10.2 bietet es dir das Modell an, sobald du
+   deine erste Nachricht sendest.
 3. Gib eine Aufgabe ein:
 
 ```text
@@ -82,7 +86,8 @@ Fix the failing tests and explain what changed.
 Befehle, die nur lesen, laufen sofort. Bei jedem anderen Shell-Befehl fragt
 Codewhale vorher: `y` führt ihn einmal aus, `a` erlaubt ähnliche Befehle für den
 Rest der Unterhaltung, `n` lehnt ab. `/undo` macht deine letzte Anfrage samt
-ihren Dateiänderungen rückgängig. `/help` listet Befehle und Tasten auf.
+ihren Dateiänderungen rückgängig (in 0.10.1 führe vorher `/trust on` aus).
+`/help` listet Befehle und Tasten auf.
 
 Für Skripte und CI führt `codewhale exec` eine Aufgabe ohne Oberfläche aus. Mit
 `--auto` bearbeitet es Dateien und führt Shell-Befehle aus, ohne zu fragen; gib
@@ -105,21 +110,59 @@ Details stehen in der [Anleitung zu Modi und Berechtigungen](docs/MODES.md).
 
 ## Was es kann
 
+### Kommt mit 0.10.2
+
+Diese Funktionen sind in `main` gemergt, aber noch in keinem veröffentlichten
+Release; [baue `main`](docs/INSTALL.md#test-and-contribute-to-current-source),
+um sie jetzt auszuprobieren.
+
+- `/pet on` verwandelt dein Terminal in einen animierten Wal, der zeigt, was der
+  Agent gerade tut, während das Nachrichtenfeld weiter benutzbar bleibt. Seine
+  980 Partikel schreiben den aktuellen Schritt auf Englisch, Chinesisch oder
+  Japanisch.
+- `/workbar terminal` zeigt die Shells, die der Agent ausführt, während sie
+  laufen. Tippe in eine davon, oder drücke `Ctrl+N` für eine eigene Shell
+  (macOS und Linux).
+- `/undo` macht deine gesamte letzte Anfrage in einem Schritt rückgängig,
+  einschließlich jeder Datei, die sie geändert hat, und `/diff` funktioniert in
+  Ordnern ohne Git.
+- Endet ein Plan mit offenen Schritten, fragt Codewhale, ob es Work mit Ask
+  oder Auto-Review starten oder weiterplanen soll.
+- `/color` gibt jedem Chat eine eigene Farbe für das Nachrichtenfeld, die mit
+  der Sitzung gespeichert wird.
+- `web_search` kann die neue Search API von DeepSeek verwenden: setze
+  `[search] provider = "deepseek"` mit einem DeepSeek-Schlüssel.
+- Außerhalb von Full Access läuft ein `curl` oder `wget`, das Zugangsdaten
+  hochladen würde, nie ohne deine Freigabe, und ein Befehl, der unsichtbares
+  Unicode versteckt, wird abgelehnt. `write` ersetzt keine Datei mehr, die der
+  Agent nicht gelesen hat oder die sich geändert hat, nachdem er sie gelesen
+  hat.
+
 ### Modelle
 
 Mehr als 40 Anbieter sind eingebaut, darunter Anthropic, OpenAI, DeepSeek,
 Google, Mistral, Moonshot, OpenRouter und xAI. Jeder OpenAI-kompatible Endpunkt
-funktioniert, ebenso lokale Modelle über Ollama, vLLM oder SGLang. `/model`
-wechselt das Modell zwischen den Turns. Siehe [Anbieter](docs/PROVIDERS.md).
+funktioniert, ebenso lokale Modelle über Ollama, vLLM oder SGLang. Standard ist
+`deepseek-flash` von DeepSeek, das DeepSeek am 2026-10-17 auf
+DeepSeek-V4.1-Flash-1017 umgestellt hat; 0.10.1 nutzt es ohne Update
+([Details](docs/PROVIDERS.md#deepseek-v41-flash)).
+
+`/model` wechselt das Modell zwischen den Turns, und `/model auto` wählt für
+jeden Turn eines aus (`/router` legt fest, wie). `/turn inspect` zeigt, welches
+Modell ein Turn verwendet hat, was er gekostet hat und wie lange er gedauert
+hat. Mit `codewhale auth chatgpt` kannst du statt eines API-Schlüssels ein
+ChatGPT-Abo verwenden (experimentell). Siehe [Anbieter](docs/PROVIDERS.md).
 
 ### Belege und Rückgängigmachen
 
 `/receipts`, oder nach dem Beenden `codewhale receipts --last`, listet geänderte
 Dateien, ausgeführte Befehle, Web- und MCP-Aufrufe, gestartete Agenten,
 Freigaben und wer sie erteilt hat sowie Fehlschläge auf. `/undo` macht deine
-letzte Anfrage rückgängig. `/restore` setzt den gesamten Arbeitsbereich auf
-einen früheren Snapshot zurück; weil dabei spätere Änderungen überschrieben
-werden, braucht es `/trust on` oder Full Access. Siehe [Belege](docs/RECEIPTS.md).
+letzte Anfrage rückgängig; in 0.10.1 braucht es für Dateien `/trust on` und
+geht jeweils um einen Tool-Aufruf zurück. `/restore` setzt den gesamten
+Arbeitsbereich auf einen früheren Snapshot zurück; weil dabei spätere
+Änderungen überschrieben werden, braucht es `/trust on` oder Full Access. Siehe
+[Belege](docs/RECEIPTS.md).
 
 ### Längere Arbeit
 
@@ -147,8 +190,12 @@ die Hooks oder LSP-Server brauchen
 
 Verbinde [MCP-Server](docs/MCP.md), füge [Skills](docs/SKILLS.md) und
 [Plugins](docs/PLUGINS.md) hinzu und führe [Hooks](docs/HOOKS.md) bei Sitzungs-
-und Tool-Ereignissen aus. Das mitgelieferte Plugin Computer Use (experimentell,
-nur macOS) kann andere Apps beobachten und bedienen. Es bleibt ausgeschaltet,
+und Tool-Ereignissen aus. Der Code-Modus (experimentell, standardmäßig
+eingeschaltet) lässt das Modell ein einziges `execute_tools`-Programm schreiben,
+das mehrere MCP- und Plugin-Tools aufruft; jeder Aufruf unterliegt weiterhin
+deinen Freigaberegeln und behält seinen Beleg. Das mitgelieferte Plugin
+Computer Use (experimentell, nur macOS) kann andere Apps beobachten und
+bedienen. Es bleibt ausgeschaltet,
 bis du seine Zugriffsrechte geprüft und es aktiviert hast
 ([Anleitung](crates/tui/plugins/computer-use/README.md)).
 
@@ -160,15 +207,15 @@ bis du seine Zugriffsrechte geprüft und es aktiviert hast
 | `codewhale exec "…"` | Eine Aufgabe ohne Oberfläche. Ohne weitere Optionen antwortet es, ohne Tools zu verwenden; `--auto` erlaubt ihm, Dateien zu bearbeiten und Befehle auszuführen, und `--output-format stream-json` streamt Ereignisse als JSON |
 | `codewhale web` | Eine lokale Web-Oberfläche auf `127.0.0.1` ([Anleitung](docs/WEB.md)) |
 | `codewhale review --pr N` | Ein beratendes Review eines GitHub-Pull-Requests. Es veröffentlicht nichts, solange du nicht `--post` angibst; die [GitHub Action](docs/GITHUB_ACTION.md) führt dasselbe Review in der CI aus |
-| `codewhale app-server --http` | Die [Runtime API](docs/RUNTIME_API.md), eine lokale HTTP-API für Threads, Ereignisse und Freigaben |
+| `codewhale app-server --http` | Die [Runtime API](docs/RUNTIME_API.md), eine lokale HTTP-API für Threads, Ereignisse, Freigaben und die Dateiänderungen jedes Turns |
 | `codewhale serve --acp` | Das Agent Client Protocol über stdio, für Editoren wie Zed |
 
 Die Terminal-App, `exec`, `web` und die Runtime API teilen sich eine Engine
 ([Architektur](docs/ARCHITECTURE.md)). Eine von der Community gepflegte
 [VS-Code-Erweiterung](https://marketplace.visualstudio.com/items?itemName=HengQuWorld.brotherwhale-vscode)
 verbindet sich aus der Seitenleiste damit ([Quellcode](https://github.com/HengQuWorld/CodeWhale-VSCode)).
-Eine Desktop-App ist in Entwicklung; siehe die
-[Produktseite](https://codewhale.net/en/product).
+Eine native Desktop-App auf Basis der Runtime API ist in Entwicklung; einen
+öffentlichen Download gibt es noch nicht.
 
 ## Kosten und Konten
 
@@ -178,21 +225,25 @@ Schlüssel. Die Fußzeile und `/cost` zeigen, was eine Sitzung gekostet hat, wen
 der Preis bekannt ist; ein unbekannter Preis wird als unbekannt angezeigt, nie
 als kostenlos.
 
-Du brauchst kein Konto.
+Du brauchst kein Konto. Schlüssel, die du mit `/provider` hinzufügst, bleiben
+auf deinem Rechner.
 
 ## Sicherheit und Datenschutz
 
 In Ask und Auto-Review laufen Befehle in einer Betriebssystem-Sandbox, sofern
 das System eine hat: Seatbelt unter macOS und bubblewrap unter Linux, wenn es
 installiert ist. Windows hat noch keine Betriebssystem-Sandbox, und Full Access
-schaltet die Sandbox ab. `/preview-request` zeigt eine geschwärzte Vorschau der
-nächsten Anfrage, ohne sie zu senden.
+schaltet die Sandbox ab. In der Sandbox können Shell-Befehle keine Speicherorte
+für Zugangsdaten wie `~/.ssh`, `~/.aws` und `.env`-Dateien lesen; ab 0.10.2
+gilt dieselbe Regel auch für Terminalsitzungen und weitere Datei-Tools.
+`/preview-request` zeigt eine geschwärzte Vorschau der nächsten Anfrage, ohne
+sie zu senden.
 
 Telemetrie ist standardmäßig eingeschaltet. Sie sendet aggregierte Zählwerte
-(Version und Plattform, Sitzungsdauer und -ergebnis, Funktions- und
-Fehlerzähler) mit einer zufälligen Installations-ID, die alle 90 Tage wechselt,
-und niemals Unterhaltungen, Code, Prompts, Datei- oder Repository-Namen oder
-Zugangsdaten. `codewhale config set telemetry false` schaltet sie ab. Beim Start
+(Version und Plattform, Sitzungsdauer und -ergebnis, welche eingebauten
+Anbieter du verwendet hast, Funktions- und Fehlerzähler) mit einer zufälligen
+Installations-ID, die alle 90 Tage wechselt, und niemals Unterhaltungen, Code,
+Prompts, Modellnamen, Datei- oder Repository-Namen oder Zugangsdaten. `codewhale config set telemetry false` schaltet sie ab. Beim Start
 prüft Codewhale außerdem auf GitHub, ob es ein neues Release gibt; setze
 `CODEWHALE_NO_UPDATE_CHECK=1`, um das zu überspringen. Mehr dazu unter
 [Autorisierungsreihenfolge](docs/AUTHORIZATION_ORDER.md),

@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:2712306ab5f7 -->
+<!-- source: README.md sha256:eefdc9e645b6 -->
 <div align="center">
 
 <picture>
@@ -6,11 +6,11 @@
   <img src="brand/wordmark.svg" alt="Codewhale" width="320">
 </picture>
 
-**어떤 모델과도 함께 쓸 수 있는 터미널용 코딩 에이전트.**
+**어떤 모델과도 함께 쓸 수 있는 오픈 소스 터미널용 코딩 에이전트.**
 
 Codewhale에 작업을 맡기면 저장소를 읽고, 파일을 편집하고, 명령을 실행하면서
 작업이 끝나거나 사용자의 입력이 필요할 때까지 진행합니다. 40개가 넘는 내장
-제공업체(기본값은 DeepSeek)와 사용자의 컴퓨터에서 실행되는 모델을 쓸 수
+제공업체(기본값은 DeepSeek V4.1 Flash)와 사용자의 컴퓨터에서 실행되는 모델을 쓸 수
 있습니다. `/receipts`는 Codewhale이 변경한 파일, 실행한 명령, 수행한 웹 및
 MCP 호출을 보여 줍니다.
 
@@ -26,7 +26,7 @@ MCP 호출을 보여 줍니다.
 
 <img src="web/public/codewhale-tui-0102-demo.png" alt="Codewhale 터미널 세션" width="760">
 
-<sub>로컬 데모 세션에서 캡처한 화면입니다.</sub>
+<sub>스크립트로 동작하는 테스트 모델을 쓴 0.10.2 개발 빌드를 버려도 되는 작업 공간에서 전체 접근 권한으로 실행한 화면입니다. 편집, 테스트 세 개, 하위 에이전트 리뷰는 실제로 실행되었습니다.</sub>
 
 </div>
 
@@ -42,7 +42,9 @@ curl -fsSL https://codewhale.net/install.sh | sh
 `~/.local/bin`에 설치합니다. 이후 셸에서 `command not found`가 나오면 설치
 스크립트가 출력하는 PATH 설정 줄을 실행하세요
 ([자세히](docs/INSTALL.md#put-it-on-your-path)). 업그레이드는
-`codewhale update`로 합니다.
+`codewhale update`로 합니다. 이 명령들은 최신 릴리스를 설치합니다. 이 페이지는
+`main`을 따르므로, 버전이 표시된 기능은 그 릴리스에서 제공됩니다. 각 릴리스에
+추가된 내용은 [변경 내역](CHANGELOG.md)에서 볼 수 있습니다.
 
 <details>
 <summary><b>Windows, npm, Cargo 등 다른 설치 방법</b></summary>
@@ -50,7 +52,7 @@ curl -fsSL https://codewhale.net/install.sh | sh
 ```bash
 winget install HunterBown.CodeWhale  # Windows x64 (or Scoop, or the installer from GitHub Releases)
 npm install -g codewhale            # wraps the same release binaries
-cargo install codewhale-cli --locked  # build from crates.io
+cargo install codewhale-cli --locked  # crates.io; can trail GitHub Releases
 ```
 
 미리 빌드된 바이너리는 x64와 arm64의 Linux, macOS, Windows를 지원합니다. Nix,
@@ -69,7 +71,8 @@ Linux의 Homebrew, Android/Termux(프리뷰), 수동 다운로드는
 2. `/provider`를 실행하거나 `F3`을 눌러 제공업체를 고르고, API 키를 붙여 넣은
    뒤 모델을 선택합니다. 기본 제공업체는 DeepSeek입니다. 키가 없으면 대신 로컬
    런타임을 고르세요. 설정된 제공업체가 없고 Ollama가 이미 채팅 모델을 제공하고
-   있으면 Codewhale이 자동으로 그 모델을 사용합니다.
+   있으면 Codewhale이 자동으로 그 모델을 사용합니다. 0.10.2부터는 첫 메시지를
+   보낼 때 그 모델을 쓰도록 제안합니다.
 3. 작업을 입력합니다.
 
 ```text
@@ -78,8 +81,9 @@ Fix the failing tests and explain what changed.
 
 읽기 전용 명령은 바로 실행됩니다. 그 밖의 셸 명령은 Codewhale이 먼저 묻습니다.
 `y`는 한 번만 실행하고, `a`는 남은 대화 동안 같은 종류의 명령을 허용하며,
-`n`은 거부합니다. `/undo`는 마지막 요청과 그 요청의 파일 변경을 되돌립니다.
-명령과 단축키 목록은 `/help`에서 볼 수 있습니다.
+`n`은 거부합니다. `/undo`는 마지막 요청과 그 요청의 파일 변경을 되돌립니다
+(0.10.1에서는 먼저 `/trust on`을 실행하세요). 명령과 단축키 목록은 `/help`에서
+볼 수 있습니다.
 
 스크립트와 CI용으로는 인터페이스 없이 작업 하나를 실행하는 `codewhale exec`
 명령이 있습니다. `--auto`를 주면 묻지 않고 파일을 편집하고 셸 명령을
@@ -102,19 +106,51 @@ codewhale exec --auto "fix the failing tests and explain what changed"
 
 ## 할 수 있는 일
 
+### 0.10.2에서 제공 예정
+
+아래 기능은 `main`에 병합되었지만 아직 공개된 릴리스에는 포함되지 않았습니다.
+지금 써 보려면 [`main`을 빌드하세요](docs/INSTALL.md#test-and-contribute-to-current-source).
+
+- `/pet on`은 터미널을 에이전트가 하는 일을 보여 주는 움직이는 고래로 바꾸며,
+  그동안에도 메시지 입력란은 계속 쓸 수 있습니다. 980개의 입자가 현재 단계를
+  영어, 중국어 또는 일본어 글자로 그려 냅니다.
+- `/workbar terminal`은 에이전트가 실행 중인 셸을 실행되는 그대로 보여 줍니다.
+  그중 하나에 직접 입력하거나, `Ctrl+N`을 눌러 자신만의 셸을 열 수 있습니다
+  (macOS와 Linux).
+- `/undo`는 마지막 요청 전체를 그 요청이 변경한 모든 파일까지 포함해 한 번에
+  되돌리고, `/diff`는 Git이 없는 폴더에서도 동작합니다.
+- 계획이 끝났는데 남은 단계가 있으면, Codewhale은 실행 모드를 확인 권한으로
+  시작할지 자동 검토 권한으로 시작할지, 아니면 계획을 계속할지 묻습니다.
+- `/color`는 채팅마다 고유한 입력란 색을 지정하며, 이 색은 세션과 함께
+  저장됩니다.
+- `web_search`는 DeepSeek의 새 Search API를 사용할 수 있습니다. DeepSeek 키와
+  함께 `[search] provider = "deepseek"`를 설정하세요.
+- 전체 접근이 아닐 때는 자격 증명을 업로드하게 될 `curl`이나 `wget` 명령이
+  사용자의 승인 없이 실행되는 일이 없으며, 보이지 않는 유니코드를 숨긴 명령은
+  거부됩니다. `write`는 에이전트가 읽지 않은 파일이나 읽은 뒤에 변경된 파일을
+  더 이상 덮어쓰지 않습니다.
+
 ### 모델
 
 Anthropic, OpenAI, DeepSeek, Google, Mistral, Moonshot, OpenRouter, xAI를
 포함해 40개가 넘는 제공업체가 내장되어 있습니다. OpenAI 호환 엔드포인트라면
 어느 것이든 쓸 수 있고, Ollama, vLLM, SGLang을 통한 로컬 모델도 쓸 수
-있습니다. `/model`로 턴 사이에 모델을 바꿉니다. [제공업체](docs/PROVIDERS.md)를
+있습니다. 기본값은 DeepSeek의 `deepseek-flash`이며, DeepSeek는 2026-10-17에 이
+모델을 DeepSeek-V4.1-Flash-1017로 바꿨습니다. 0.10.1은 업데이트 없이 이 모델을
+실행합니다([자세히](docs/PROVIDERS.md#deepseek-v41-flash)).
+
+`/model`로 턴 사이에 모델을 바꾸고, `/model auto`는 턴마다 모델을 고릅니다
+(고르는 방식은 `/router`로 설정합니다). `/turn inspect`는 한 턴에 쓰인 모델,
+비용, 걸린 시간을 보여 줍니다. `codewhale auth chatgpt`를 쓰면 API 키 대신
+ChatGPT 요금제를 사용할 수 있습니다(실험적). [제공업체](docs/PROVIDERS.md)를
 참고하세요.
 
 ### 영수증과 되돌리기
 
 `/receipts`(종료한 뒤에는 `codewhale receipts --last`)는 변경된 파일, 실행된
 명령, 웹 및 MCP 호출, 시작된 에이전트, 승인 내역과 승인한 주체, 실패를 보여
-줍니다. `/undo`는 마지막 요청을 되돌립니다. `/restore`는 작업 공간 전체를 이전
+줍니다. `/undo`는 마지막 요청을 되돌립니다. 0.10.1에서는 파일을 되돌리려면
+`/trust on`이 필요하고, 도구 호출을 한 번에 하나씩 되돌립니다. `/restore`는 작업 공간 전체를 이전
 스냅샷으로 되돌리는데, 이후의 편집을 덮어쓰기 때문에 `/trust on` 또는 전체
 접근 권한이 필요합니다. [영수증](docs/RECEIPTS.md)을 참고하세요.
 
@@ -143,7 +179,10 @@ Codewhale은 따로 설정하지 않아도 `AGENTS.md`를 읽습니다. `CLAUDE.
 
 [MCP 서버](docs/MCP.md)를 연결하고, [스킬](docs/SKILLS.md)과
 [플러그인](docs/PLUGINS.md)을 추가하고, 세션 및 도구 이벤트에서
-[훅](docs/HOOKS.md)을 실행할 수 있습니다. 기본 포함된 Computer Use
+[훅](docs/HOOKS.md)을 실행할 수 있습니다. 코드 모드(실험적, 기본으로 켜짐)에서는
+모델이 여러 MCP 및 플러그인 도구를 호출하는 `execute_tools` 프로그램 하나를
+작성할 수 있으며, 각 호출은 여전히 승인 규칙을 따르고 영수증에 남습니다. 기본
+포함된 Computer Use
 플러그인(실험적, macOS 전용)은 다른 앱을 관찰하고 조작할 수 있습니다. 접근
 범위를 검토하고 활성화하기 전까지는 꺼져 있습니다
 ([안내서](crates/tui/plugins/computer-use/README.md)).
@@ -156,15 +195,15 @@ Codewhale은 따로 설정하지 않아도 `AGENTS.md`를 읽습니다. `CLAUDE.
 | `codewhale exec "…"` | 인터페이스 없이 작업 하나를 실행합니다. 옵션 없이 쓰면 도구를 사용하지 않고 답변만 하고, `--auto`는 파일 편집과 명령 실행을 허용하며, `--output-format stream-json`은 이벤트를 JSON으로 스트리밍합니다 |
 | `codewhale web` | `127.0.0.1`에서 동작하는 로컬 웹 UI([안내서](docs/WEB.md)) |
 | `codewhale review --pr N` | GitHub 풀 리퀘스트에 대한 참고용 리뷰. `--post`를 추가하지 않으면 아무것도 게시하지 않으며, [GitHub Action](docs/GITHUB_ACTION.md)이 CI에서 같은 리뷰를 실행합니다 |
-| `codewhale app-server --http` | 스레드, 이벤트, 승인을 다루는 로컬 HTTP API인 [Runtime API](docs/RUNTIME_API.md) |
+| `codewhale app-server --http` | 스레드, 이벤트, 승인, 각 턴의 파일 변경을 다루는 로컬 HTTP API인 [Runtime API](docs/RUNTIME_API.md) |
 | `codewhale serve --acp` | Zed 같은 에디터를 위한 stdio 기반 Agent Client Protocol |
 
 터미널 앱, `exec`, `web`, Runtime API는 하나의 엔진을 공유합니다
 ([아키텍처](docs/ARCHITECTURE.md)). 커뮤니티가 관리하는
 [VS Code 확장](https://marketplace.visualstudio.com/items?itemName=HengQuWorld.brotherwhale-vscode)은
 사이드바에서 이 엔진에 연결됩니다([소스](https://github.com/HengQuWorld/CodeWhale-VSCode)).
-데스크톱 앱은 개발 중입니다. [제품 페이지](https://codewhale.net/en/product)를
-참고하세요.
+Runtime API를 기반으로 한 네이티브 데스크톱 앱이 개발 중이며, 아직 공개
+다운로드는 없습니다.
 
 ## 비용과 계정
 
@@ -173,19 +212,22 @@ Codewhale은 무료이며 MIT 라이선스로 배포됩니다. 자신의 API 키
 있으면 하단 표시줄과 `/cost`에 세션 비용이 표시되며, 가격을 알 수 없으면 무료가
 아니라 알 수 없음으로 표시합니다.
 
-계정은 없어도 됩니다.
+계정은 없어도 됩니다. `/provider`로 추가한 키는 사용자의 컴퓨터에 보관됩니다.
 
 ## 안전과 개인정보
 
 확인과 자동 검토 권한에서는 시스템에 OS 샌드박스가 있으면 그 안에서 명령이
 실행됩니다. macOS에서는 Seatbelt를, Linux에서는 bubblewrap이 설치되어 있으면
 bubblewrap을 사용합니다. Windows에는 아직 OS 샌드박스가 없으며, 전체 접근은
-샌드박스를 끕니다. `/preview-request`는 다음 요청을 보내지 않고, 민감 정보를
+샌드박스를 끕니다. 샌드박스 안에서 셸 명령은 `~/.ssh`, `~/.aws`, `.env` 파일
+같은 자격 증명 저장소를 읽을 수 없으며, 0.10.2부터는 같은 규칙이 터미널 세션과
+더 많은 파일 도구에도 적용됩니다. `/preview-request`는 다음 요청을 보내지 않고, 민감 정보를
 가린 미리 보기를 보여 줍니다.
 
 텔레메트리는 기본으로 켜져 있습니다. 90일마다 바뀌는 무작위 설치 ID와 함께
-집계된 수치(버전과 플랫폼, 세션 길이와 결과, 기능 및 오류 횟수)를 보내며,
-대화, 코드, 프롬프트, 파일 또는 저장소 이름, 자격 증명은 절대 보내지 않습니다.
+집계된 수치(버전과 플랫폼, 세션 길이와 결과, 사용한 내장 제공업체, 기능 및
+오류 횟수)를 보내며, 대화, 코드, 프롬프트, 모델 이름, 파일 또는 저장소 이름,
+자격 증명은 절대 보내지 않습니다.
 `codewhale config set telemetry false`로 끌 수 있습니다. Codewhale은 시작할 때
 GitHub에서 새 릴리스도 확인합니다. 이 확인을 건너뛰려면
 `CODEWHALE_NO_UPDATE_CHECK=1`을 설정하세요. 자세한 내용은

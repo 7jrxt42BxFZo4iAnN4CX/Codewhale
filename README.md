@@ -5,11 +5,11 @@
   <img src="brand/wordmark.svg" alt="Codewhale" width="320">
 </picture>
 
-**A coding agent for your terminal that works with any model.**
+**An open-source coding agent for your terminal that works with any model.**
 
 Give Codewhale a task and it reads the repository, edits files, and runs
 commands until the task is done or it needs input from you. It works with more
-than 40 built-in providers, DeepSeek by default, and with models running on
+than 40 built-in providers, DeepSeek V4.1 Flash by default, and with models running on
 your own machine. `/receipts` lists the files it changed, the commands it ran,
 and the web and MCP calls it made.
 
@@ -25,7 +25,7 @@ and the web and MCP calls it made.
 
 <img src="web/public/codewhale-tui-0102-demo.png" alt="A Codewhale terminal session" width="760">
 
-<sub>Captured from a local demo session.</sub>
+<sub>A 0.10.2 development build with a scripted test model, in Full Access inside a throwaway workspace. The edit, three tests and a sub-agent review ran for real.</sub>
 
 </div>
 
@@ -40,7 +40,9 @@ curl -fsSL https://codewhale.net/install.sh | sh
 The installer puts checksum-verified `codewhale` and its short alias `codew`
 in `~/.local/bin`. If your shell then says `command not found`, run the PATH
 line the installer prints ([details](docs/INSTALL.md#put-it-on-your-path)).
-`codewhale update` upgrades it.
+`codewhale update` upgrades it. These commands install the latest release.
+This page follows `main`, so a feature marked with a version arrives in that
+release; the [changelog](CHANGELOG.md) lists what each release adds.
 
 <details>
 <summary><b>Windows, npm, Cargo, and other ways to install</b></summary>
@@ -48,7 +50,7 @@ line the installer prints ([details](docs/INSTALL.md#put-it-on-your-path)).
 ```bash
 winget install HunterBown.CodeWhale  # Windows x64 (or Scoop, or the installer from GitHub Releases)
 npm install -g codewhale            # wraps the same release binaries
-cargo install codewhale-cli --locked  # build from crates.io
+cargo install codewhale-cli --locked  # crates.io; can trail GitHub Releases
 ```
 
 Prebuilt binaries cover Linux, macOS, and Windows on x64 and arm64. Nix,
@@ -67,7 +69,8 @@ two copies end up on `PATH` and whichever comes first wins.
 2. Run `/provider` (or press `F3`), pick a provider, paste its API key, and
    choose a model. DeepSeek is the default provider. With no key, pick a local
    runtime instead. If no provider is configured and Ollama is already serving
-   a chat model, Codewhale uses it automatically.
+   a chat model, Codewhale uses it automatically; from 0.10.2 it offers it when
+   you send your first message.
 3. Type a task:
 
 ```text
@@ -76,8 +79,8 @@ Fix the failing tests and explain what changed.
 
 Read-only commands run straight away. For any other shell command Codewhale
 asks first: `y` runs it once, `a` allows commands like it for the rest of the
-conversation, `n` refuses. `/undo` reverts your last request and its file
-changes. `/help` lists commands and keys.
+conversation, `n` refuses. `/undo` takes back your last request and its file
+changes (in 0.10.1, run `/trust on` first). `/help` lists commands and keys.
 
 For scripts and CI, `codewhale exec` runs one task without the interface. With
 `--auto` it edits files and runs shell commands without asking, so give it a
@@ -100,20 +103,52 @@ See the [modes and permissions guide](docs/MODES.md) for the details.
 
 ## What it does
 
+### Coming in 0.10.2
+
+These are merged on `main` and not in a published release yet;
+[build `main`](docs/INSTALL.md#test-and-contribute-to-current-source) to try
+them now.
+
+- `/pet on` turns your terminal into an animated whale that shows what the
+  agent is doing, while the message box stays live. Its 980 particles spell
+  the current step in English, Chinese or Japanese.
+- `/workbar terminal` shows the shells the agent is running as they run. Type
+  into one, or press `Ctrl+N` for a shell of your own (macOS and Linux).
+- `/undo` takes back your whole last request in one step, including every file
+  it changed, and `/diff` works in folders without Git.
+- When a plan ends with open steps, Codewhale asks whether to start Work with
+  Ask or Auto-Review, or keep planning.
+- `/color` gives each chat its own composer color, saved with the session.
+- `web_search` can use DeepSeek's new Search API: set
+  `[search] provider = "deepseek"` with a DeepSeek key.
+- Outside Full Access, a `curl` or `wget` that would upload a credential never
+  runs without your approval, and a command that hides invisible Unicode is
+  refused. `write` no longer replaces a file the agent has not read, or one
+  that changed after it read it.
+
 ### Models
 
 More than 40 providers are built in, including Anthropic, OpenAI, DeepSeek,
 Google, Mistral, Moonshot, OpenRouter, and xAI. Any OpenAI-compatible endpoint
-works, and so do local models through Ollama, vLLM, or SGLang. `/model`
-switches models between turns. See [Providers](docs/PROVIDERS.md).
+works, and so do local models through Ollama, vLLM, or SGLang. The default is
+DeepSeek's `deepseek-flash`, which DeepSeek moved to DeepSeek-V4.1-Flash-1017
+on 2026-10-17; 0.10.1 runs it without an update
+([details](docs/PROVIDERS.md#deepseek-v41-flash)).
+
+`/model` switches models between turns, and `/model auto` picks one for each
+turn (`/router` sets up how). `/turn inspect` shows which model a turn used,
+what it cost and how long it took. `codewhale auth chatgpt` lets you use a
+ChatGPT plan instead of an API key (experimental). See
+[Providers](docs/PROVIDERS.md).
 
 ### Receipts and undo
 
 `/receipts`, or `codewhale receipts --last` after you quit, lists the files
 changed, commands run, web and MCP calls, agents started, approvals and who
-gave them, and failures. `/undo` reverts your last request. `/restore` rolls
-the whole workspace back to an earlier snapshot; because that overwrites later
-edits, it needs `/trust on` or Full Access. See [Receipts](docs/RECEIPTS.md).
+gave them, and failures. `/undo` takes back your last request; in 0.10.1 it
+needs `/trust on` for files and steps back one tool call at a time. `/restore`
+rolls the whole workspace back to an earlier snapshot; because that overwrites
+later edits, it needs `/trust on` or Full Access. See [Receipts](docs/RECEIPTS.md).
 
 ### Longer work
 
@@ -142,7 +177,10 @@ plugins that need hooks or LSP servers
 
 Connect [MCP servers](docs/MCP.md), add [skills](docs/SKILLS.md) and
 [plugins](docs/PLUGINS.md), and run [hooks](docs/HOOKS.md) on session and tool
-events. The bundled Computer Use plugin (experimental, macOS only) can observe
+events. Code mode (experimental, on by default) lets the model write one
+`execute_tools` program that calls several MCP and plugin tools; each call
+still meets your approval rules and keeps its receipt. The bundled Computer
+Use plugin (experimental, macOS only) can observe
 and operate other apps. It stays off until you review its access and enable it
 ([guide](crates/tui/plugins/computer-use/README.md)).
 
@@ -154,15 +192,15 @@ and operate other apps. It stays off until you review its access and enable it
 | `codewhale exec "…"` | One task without the interface. On its own it answers without using tools; `--auto` lets it edit files and run commands, and `--output-format stream-json` streams events as JSON |
 | `codewhale web` | A local web UI on `127.0.0.1` ([guide](docs/WEB.md)) |
 | `codewhale review --pr N` | An advisory review of a GitHub pull request. It posts nothing unless you add `--post`; the [GitHub Action](docs/GITHUB_ACTION.md) runs the same review in CI |
-| `codewhale app-server --http` | The [Runtime API](docs/RUNTIME_API.md), a local HTTP API for threads, events, and approvals |
+| `codewhale app-server --http` | The [Runtime API](docs/RUNTIME_API.md), a local HTTP API for threads, events, approvals, and each turn's file changes |
 | `codewhale serve --acp` | The Agent Client Protocol over stdio, for editors such as Zed |
 
 The terminal app, `exec`, `web`, and the Runtime API share one engine
 ([architecture](docs/ARCHITECTURE.md)). A community-maintained
 [VS Code extension](https://marketplace.visualstudio.com/items?itemName=HengQuWorld.brotherwhale-vscode)
 connects to it from the sidebar ([source](https://github.com/HengQuWorld/CodeWhale-VSCode)).
-A desktop app is in development; see the
-[product page](https://codewhale.net/en/product).
+A native desktop app built on the Runtime API is in development; it has no
+public download yet.
 
 ## Cost and accounts
 
@@ -171,20 +209,23 @@ directly; local models need no key. The footer and `/cost` show what a session
 has cost when the price is known, and an unknown price is shown as unknown,
 never as free.
 
-You don't need an account.
+You don't need an account. Keys you add with `/provider` stay on your machine.
 
 ## Safety and privacy
 
 In Ask and Auto-Review, commands run in an OS sandbox where the system has
 one: Seatbelt on macOS, and bubblewrap on Linux when it is installed.
-Windows has no OS sandbox yet, and Full Access turns the sandbox off.
-`/preview-request` shows a redacted preview of the next request without
-sending it.
+Windows has no OS sandbox yet, and Full Access turns the sandbox off. Inside
+the sandbox, shell commands cannot read credential stores such as `~/.ssh`,
+`~/.aws` and `.env` files; from 0.10.2 the same rule covers terminal sessions
+and more file tools. `/preview-request` shows a redacted preview of the next
+request without sending it.
 
 Telemetry is on by default. It sends aggregate counts (version and platform,
-session length and outcome, feature and error counts) with a random install ID
-that rotates every 90 days, and never conversations, code, prompts, file or
-repository names, or credentials. `codewhale config set telemetry false` turns
+session length and outcome, which built-in providers you used, feature and
+error counts) with a random install ID that rotates every 90 days, and never
+conversations, code, prompts, model names, file or repository names, or
+credentials. `codewhale config set telemetry false` turns
 it off. At startup Codewhale also
 checks GitHub for a new release; set `CODEWHALE_NO_UPDATE_CHECK=1` to skip
 that. More in [authorization order](docs/AUTHORIZATION_ORDER.md),

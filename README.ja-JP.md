@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:2712306ab5f7 -->
+<!-- source: README.md sha256:eefdc9e645b6 -->
 <div align="center">
 
 <picture>
@@ -6,10 +6,10 @@
   <img src="brand/wordmark.svg" alt="Codewhale" width="320">
 </picture>
 
-**どのモデルでも使える、ターミナル向けのコーディングエージェント。**
+**どのモデルでも使える、ターミナル向けのオープンソースのコーディングエージェント。**
 
 Codewhale にタスクを渡すと、タスクが完了するか、あなたの入力が必要になるまで、リポジトリを読み、ファイルを編集し、コマンドを実行します。
-組み込みの 40 を超えるプロバイダー（既定は DeepSeek）に加え、自分のマシンで動かすモデルでも使えます。
+組み込みの 40 を超えるプロバイダー（既定は DeepSeek V4.1 Flash）に加え、自分のマシンで動かすモデルでも使えます。
 `/receipts` は、変更したファイル、実行したコマンド、行った Web と MCP の呼び出しを一覧表示します。
 
 [![CI](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml/badge.svg)](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml)
@@ -24,7 +24,7 @@ Codewhale にタスクを渡すと、タスクが完了するか、あなたの�
 
 <img src="web/public/codewhale-tui-0102-demo.png" alt="Codewhale のターミナルセッション" width="760">
 
-<sub>ローカルのデモセッションから取得した画面です。</sub>
+<sub>スクリプト化したテストモデルを使う 0.10.2 の開発ビルドを、使い捨てのワークスペース内でフルアクセスにして実行した画面です。編集、3 つのテスト、サブエージェントによるレビューは実際に実行されています。</sub>
 
 </div>
 
@@ -39,6 +39,8 @@ curl -fsSL https://codewhale.net/install.sh | sh
 インストーラーは、チェックサム検証済みの `codewhale` と短縮エイリアス `codew` を `~/.local/bin` に配置します。
 その後シェルが `command not found` と表示する場合は、インストーラーが出力する PATH 用の行を実行してください（[詳細](docs/INSTALL.md#put-it-on-your-path)）。
 アップグレードは `codewhale update` で行えます。
+これらのコマンドは最新のリリースをインストールします。
+このページは `main` に合わせて更新されるため、バージョンが記された機能はそのリリースで提供されます。各リリースで追加される内容は[変更履歴](CHANGELOG.md)に記載しています。
 
 <details>
 <summary><b>Windows、npm、Cargo、その他のインストール方法</b></summary>
@@ -46,7 +48,7 @@ curl -fsSL https://codewhale.net/install.sh | sh
 ```bash
 winget install HunterBown.CodeWhale  # Windows x64 (or Scoop, or the installer from GitHub Releases)
 npm install -g codewhale            # wraps the same release binaries
-cargo install codewhale-cli --locked  # build from crates.io
+cargo install codewhale-cli --locked  # crates.io; can trail GitHub Releases
 ```
 
 ビルド済みバイナリは、x64 と arm64 の Linux、macOS、Windows に対応しています。
@@ -64,6 +66,7 @@ Nix、Linux 上の Homebrew、Android/Termux（プレビュー）、手動ダウ
    既定のプロバイダーは DeepSeek です。
    キーがない場合は、代わりにローカルランタイムを選びます。
    プロバイダーが未設定で、Ollama がすでにチャットモデルを提供している場合、Codewhale は自動的にそれを使います。
+   0.10.2 からは、最初のメッセージを送信したときにそれを使うよう提案します。
 3. タスクを入力します。
 
 ```text
@@ -73,7 +76,7 @@ Fix the failing tests and explain what changed.
 読み取り専用のコマンドはすぐに実行されます。
 それ以外のシェルコマンドは、Codewhale が先に確認します。
 `y` で 1 回だけ実行、`a` でこの会話の残りの間は同様のコマンドを許可、`n` で拒否します。
-`/undo` は直前のリクエストとそのファイル変更を元に戻します。
+`/undo` は直前のリクエストとそのファイル変更を元に戻します（0.10.1 では、先に `/trust on` を実行してください）。
 `/help` でコマンドとキーの一覧を表示します。
 
 スクリプトや CI では、`codewhale exec` がインターフェースなしで 1 つのタスクを実行します。
@@ -96,17 +99,41 @@ codewhale exec --auto "fix the failing tests and explain what changed"
 
 ## 主な機能
 
+### 0.10.2 で登場予定
+
+これらは `main` にマージ済みですが、まだ公開リリースには含まれていません。
+今すぐ試すには [`main` をビルド](docs/INSTALL.md#test-and-contribute-to-current-source)してください。
+
+- `/pet on` は、ターミナルをアニメーションのクジラに変え、エージェントが何をしているかを見せます。その間もメッセージ入力欄はそのまま使えます。
+  980 個の粒子が、現在のステップを英語、中国語、日本語のいずれかで描き出します。
+- `/workbar terminal` は、エージェントが実行中のシェルをリアルタイムで表示します。
+  そこに入力することも、`Ctrl+N` で自分用のシェルを開くこともできます（macOS と Linux）。
+- `/undo` は、直前のリクエスト全体を、変更したすべてのファイルを含めて 1 回で元に戻します。
+  また、`/diff` は Git のないフォルダーでも使えます。
+- 計画が未完了のステップを残して終わると、Codewhale は「確認」と「自動レビュー」のどちらで Work を始めるか、それとも計画を続けるかを尋ねます。
+- `/color` は、チャットごとに入力欄の色を設定し、セッションとともに保存します。
+- `web_search` で DeepSeek の新しい Search API を使えます。
+  DeepSeek のキーを用意して `[search] provider = "deepseek"` を設定してください。
+- フルアクセス以外では、認証情報をアップロードしてしまう `curl` や `wget` は承認なしには実行されず、不可視の Unicode 文字を隠したコマンドは拒否されます。
+  `write` は、エージェントがまだ読んでいないファイルや、読んだ後に変更されたファイルを置き換えなくなりました。
+
 ### モデル
 
 Anthropic、OpenAI、DeepSeek、Google、Mistral、Moonshot、OpenRouter、xAI など、40 を超えるプロバイダーを組み込んでいます。
 OpenAI 互換のエンドポイントであればどれでも使え、Ollama、vLLM、SGLang 経由のローカルモデルも使えます。
-`/model` でターンの合間にモデルを切り替えられます。
+既定は DeepSeek の `deepseek-flash` です。
+DeepSeek は 2026-10-17 にこれを DeepSeek-V4.1-Flash-1017 に切り替えましたが、0.10.1 はアップデートなしで動作します（[詳細](docs/PROVIDERS.md#deepseek-v41-flash)）。
+
+`/model` でターンの合間にモデルを切り替えられ、`/model auto` ではターンごとにモデルが選ばれます（選び方は `/router` で設定します）。
+`/turn inspect` は、あるターンで使われたモデル、費用、所要時間を表示します。
+`codewhale auth chatgpt` を使うと、API キーの代わりに ChatGPT のプランを利用できます（実験的）。
 [プロバイダー](docs/PROVIDERS.md)を参照してください。
 
 ### レシートと取り消し
 
 `/receipts`（終了後は `codewhale receipts --last`）は、変更されたファイル、実行されたコマンド、Web と MCP の呼び出し、起動されたエージェント、承認とその承認者、失敗を一覧表示します。
 `/undo` は直前のリクエストを元に戻します。
+0.10.1 では、ファイルを戻すには `/trust on` が必要で、戻せるのは 1 回につき 1 つのツール呼び出しずつです。
 `/restore` はワークスペース全体を以前のスナップショットまで巻き戻します。
 それ以降の編集を上書きするため、`/trust on` またはフルアクセスが必要です。
 [レシート](docs/RECEIPTS.md)を参照してください。
@@ -129,6 +156,8 @@ Codewhale は `AGENTS.md` を自動で読み込みます。
 ### 拡張
 
 [MCP サーバー](docs/MCP.md)を接続し、[スキル](docs/SKILLS.md)や[プラグイン](docs/PLUGINS.md)を追加し、セッションやツールのイベントで[フック](docs/HOOKS.md)を実行できます。
+コードモード（実験的、既定で有効）では、モデルが複数の MCP ツールやプラグインツールを呼び出す 1 つの `execute_tools` プログラムを書けます。
+個々の呼び出しは引き続き承認ルールに従い、それぞれのレシートも残ります。
 同梱の Computer Use プラグイン（実験的、macOS のみ）は、他のアプリを観察・操作できます。
 アクセス範囲を確認して有効にするまではオフのままです（[ガイド](crates/tui/plugins/computer-use/README.md)）。
 
@@ -140,13 +169,13 @@ Codewhale は `AGENTS.md` を自動で読み込みます。
 | `codewhale exec "…"` | インターフェースなしで 1 つのタスクを実行します。オプションなしではツールを使わずに回答し、`--auto` でファイルの編集とコマンドの実行を許可し、`--output-format stream-json` でイベントを JSON としてストリーミングします |
 | `codewhale web` | `127.0.0.1` で動作するローカル Web UI（[ガイド](docs/WEB.md)） |
 | `codewhale review --pr N` | GitHub のプルリクエストに対する参考としてのレビュー。`--post` を付けない限り何も投稿しません。[GitHub Action](docs/GITHUB_ACTION.md) は同じレビューを CI で実行します |
-| `codewhale app-server --http` | [Runtime API](docs/RUNTIME_API.md)。スレッド、イベント、承認のためのローカル HTTP API |
+| `codewhale app-server --http` | [Runtime API](docs/RUNTIME_API.md)。スレッド、イベント、承認、各ターンのファイル変更のためのローカル HTTP API |
 | `codewhale serve --acp` | stdio 経由の Agent Client Protocol。Zed などのエディター向け |
 
 ターミナルアプリ、`exec`、`web`、Runtime API は 1 つのエンジンを共有しています（[アーキテクチャ](docs/ARCHITECTURE.md)）。
 コミュニティが保守している [VS Code 拡張機能](https://marketplace.visualstudio.com/items?itemName=HengQuWorld.brotherwhale-vscode)は、サイドバーからこのエンジンに接続します（[ソース](https://github.com/HengQuWorld/CodeWhale-VSCode)）。
-デスクトップアプリは開発中です。
-[製品ページ](https://codewhale.net/en/product)を参照してください。
+Runtime API の上に構築したネイティブのデスクトップアプリを開発中です。
+まだ公開ダウンロードはありません。
 
 ## 料金とアカウント
 
@@ -157,16 +186,19 @@ Codewhale は無料で、MIT ライセンスです。
 価格が不明な場合は「不明」と表示され、無料として表示されることはありません。
 
 アカウントは必須ではありません。
+`/provider` で追加したキーは、あなたのマシン上にとどまります。
 
 ## 安全性とプライバシー
 
 「確認」と「自動レビュー」では、システムに OS のサンドボックスがあれば、コマンドはその中で実行されます。
 macOS では Seatbelt、Linux では bubblewrap がインストールされていればそれを使います。
 Windows にはまだ OS のサンドボックスがなく、フルアクセスではサンドボックスが無効になります。
+サンドボックス内では、シェルコマンドは `~/.ssh`、`~/.aws`、`.env` ファイルなどの認証情報の保存場所を読み取れません。
+0.10.2 からは、同じルールがターミナルセッションとより多くのファイルツールにも適用されます。
 `/preview-request` は、次のリクエストを送信せずに、機密情報を伏せたプレビューを表示します。
 
 テレメトリは既定で有効です。
-送信するのは集計値（バージョンとプラットフォーム、セッションの長さと結果、機能とエラーの回数）と、90 日ごとに切り替わるランダムなインストール ID で、会話、コード、プロンプト、ファイル名やリポジトリ名、認証情報は決して含みません。
+送信するのは集計値（バージョンとプラットフォーム、セッションの長さと結果、使用した組み込みプロバイダー、機能とエラーの回数）と、90 日ごとに切り替わるランダムなインストール ID で、会話、コード、プロンプト、モデル名、ファイル名やリポジトリ名、認証情報は決して含みません。
 `codewhale config set telemetry false` で無効にできます。
 また、Codewhale は起動時に GitHub で新しいリリースを確認します。
 これを省くには `CODEWHALE_NO_UPDATE_CHECK=1` を設定してください。

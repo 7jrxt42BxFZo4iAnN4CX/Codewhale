@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:2712306ab5f7 -->
+<!-- source: README.md sha256:eefdc9e645b6 -->
 <div align="center">
 
 <picture>
@@ -6,12 +6,12 @@
   <img src="brand/wordmark.svg" alt="Codewhale" width="320">
 </picture>
 
-**Agen pengodean untuk terminal Anda yang bekerja dengan model apa pun.**
+**Agen pengodean sumber terbuka untuk terminal Anda yang bekerja dengan model apa pun.**
 
 Berikan tugas kepada Codewhale, lalu ia membaca repositori, mengedit berkas, dan
 menjalankan perintah sampai tugas selesai atau ia memerlukan masukan dari Anda.
-Codewhale bekerja dengan lebih dari 40 penyedia bawaan, DeepSeek secara default,
-dan dengan model yang berjalan di mesin Anda sendiri. `/receipts` mencantumkan
+Codewhale bekerja dengan lebih dari 40 penyedia bawaan, DeepSeek V4.1 Flash
+secara default, dan dengan model yang berjalan di mesin Anda sendiri. `/receipts` mencantumkan
 berkas yang diubahnya, perintah yang dijalankannya, serta panggilan web dan MCP
 yang dilakukannya.
 
@@ -27,7 +27,7 @@ yang dilakukannya.
 
 <img src="web/public/codewhale-tui-0102-demo.png" alt="Sesi terminal Codewhale" width="760">
 
-<sub>Diambil dari sesi demo lokal.</sub>
+<sub>Build pengembangan 0.10.2 dengan model uji yang berjalan sesuai skrip, dalam Akses penuh di dalam workspace sekali pakai. Edit, tiga pengujian, dan tinjauan sub-agen benar-benar dijalankan.</sub>
 
 </div>
 
@@ -43,7 +43,10 @@ Installer menaruh `codewhale` dan alias pendeknya `codew`, yang checksum-nya
 sudah diverifikasi, di `~/.local/bin`. Jika setelah itu shell Anda menampilkan
 `command not found`, jalankan baris PATH yang dicetak installer
 ([detail](docs/INSTALL.md#put-it-on-your-path)). `codewhale update`
-memperbaruinya.
+memperbaruinya. Perintah-perintah ini memasang rilis terbaru. Halaman ini
+mengikuti `main`, jadi fitur yang ditandai dengan versi akan hadir di rilis
+tersebut; [changelog](CHANGELOG.md) mencantumkan apa yang ditambahkan setiap
+rilis.
 
 <details>
 <summary><b>Windows, npm, Cargo, dan cara instalasi lainnya</b></summary>
@@ -51,7 +54,7 @@ memperbaruinya.
 ```bash
 winget install HunterBown.CodeWhale  # Windows x64 (or Scoop, or the installer from GitHub Releases)
 npm install -g codewhale            # wraps the same release binaries
-cargo install codewhale-cli --locked  # build from crates.io
+cargo install codewhale-cli --locked  # crates.io; can trail GitHub Releases
 ```
 
 Biner siap pakai tersedia untuk Linux, macOS, dan Windows di x64 dan arm64. Nix,
@@ -70,7 +73,8 @@ salinan akan ada di `PATH` dan yang muncul lebih dulu yang dipakai.
 2. Jalankan `/provider` (atau tekan `F3`), pilih penyedia, tempel kunci API-nya,
    lalu pilih model. DeepSeek adalah penyedia default. Jika tidak punya kunci,
    pilih runtime lokal. Jika belum ada penyedia yang dikonfigurasi dan Ollama
-   sudah menyajikan model obrolan, Codewhale memakainya secara otomatis.
+   sudah menyajikan model obrolan, Codewhale memakainya secara otomatis; mulai
+   0.10.2, Codewhale menawarkannya saat Anda mengirim pesan pertama.
 3. Ketik tugas:
 
 ```text
@@ -80,7 +84,8 @@ Fix the failing tests and explain what changed.
 Perintah baca-saja langsung dijalankan. Untuk perintah shell lainnya, Codewhale
 bertanya lebih dulu: `y` menjalankannya sekali, `a` mengizinkan perintah serupa
 selama sisa percakapan, `n` menolaknya. `/undo` membatalkan permintaan terakhir
-Anda beserta perubahan berkasnya. `/help` menampilkan daftar perintah dan tombol.
+Anda beserta perubahan berkasnya (di 0.10.1, jalankan `/trust on` terlebih
+dahulu). `/help` menampilkan daftar perintah dan tombol.
 
 Untuk skrip dan CI, `codewhale exec` menjalankan satu tugas tanpa antarmuka.
 Dengan `--auto`, ia mengedit berkas dan menjalankan perintah shell tanpa
@@ -103,20 +108,57 @@ Lihat [panduan mode dan izin](docs/MODES.md) untuk detailnya.
 
 ## Apa yang bisa dilakukan
 
+### Hadir di 0.10.2
+
+Fitur-fitur ini sudah digabungkan ke `main` tetapi belum ada di rilis yang
+diterbitkan; [build `main`](docs/INSTALL.md#test-and-contribute-to-current-source)
+untuk mencobanya sekarang.
+
+- `/pet on` mengubah terminal Anda menjadi paus animasi yang menunjukkan apa
+  yang sedang dilakukan agen, sementara kotak pesan tetap aktif. 980 partikelnya
+  mengeja langkah saat ini dalam bahasa Inggris, Tionghoa, atau Jepang.
+- `/workbar terminal` menampilkan shell yang dijalankan agen selagi shell itu
+  berjalan. Ketik ke salah satunya, atau tekan `Ctrl+N` untuk membuka shell Anda
+  sendiri (macOS dan Linux).
+- `/undo` membatalkan seluruh permintaan terakhir Anda dalam satu langkah,
+  termasuk setiap berkas yang diubahnya, dan `/diff` berfungsi di folder tanpa
+  Git.
+- Saat sebuah rencana berakhir dengan langkah yang belum selesai, Codewhale
+  bertanya apakah akan memulai Work dengan Tanya atau Tinjauan otomatis, atau
+  melanjutkan perencanaan.
+- `/color` memberi setiap obrolan warna kotak penulisan sendiri, yang disimpan
+  bersama sesi.
+- `web_search` dapat memakai Search API baru dari DeepSeek: atur
+  `[search] provider = "deepseek"` dengan kunci DeepSeek.
+- Di luar Akses penuh, `curl` atau `wget` yang akan mengunggah kredensial tidak
+  pernah berjalan tanpa persetujuan Anda, dan perintah yang menyembunyikan
+  Unicode tak terlihat akan ditolak. `write` tidak lagi menimpa berkas yang belum
+  dibaca agen, atau berkas yang berubah setelah agen membacanya.
+
 ### Model
 
 Lebih dari 40 penyedia sudah tersedia bawaan, termasuk Anthropic, OpenAI,
 DeepSeek, Google, Mistral, Moonshot, OpenRouter, dan xAI. Endpoint apa pun yang
 kompatibel dengan OpenAI juga bisa dipakai, begitu pula model lokal melalui
-Ollama, vLLM, atau SGLang. `/model` mengganti model di antara giliran. Lihat
-[Penyedia](docs/PROVIDERS.md).
+Ollama, vLLM, atau SGLang. Defaultnya adalah `deepseek-flash` dari DeepSeek,
+yang dipindahkan DeepSeek ke DeepSeek-V4.1-Flash-1017 pada 2026-10-17; 0.10.1
+menjalankannya tanpa pembaruan
+([detail](docs/PROVIDERS.md#deepseek-v41-flash)).
+
+`/model` mengganti model di antara giliran, dan `/model auto` memilih model
+untuk setiap giliran (`/router` mengatur caranya). `/turn inspect` menampilkan
+model yang dipakai sebuah giliran, biayanya, dan berapa lama prosesnya.
+`codewhale auth chatgpt` memungkinkan Anda memakai paket ChatGPT sebagai ganti
+kunci API (eksperimental). Lihat [Penyedia](docs/PROVIDERS.md).
 
 ### Receipt dan pembatalan
 
 `/receipts`, atau `codewhale receipts --last` setelah Anda keluar, mencantumkan
 berkas yang diubah, perintah yang dijalankan, panggilan web dan MCP, agen yang
 dimulai, persetujuan beserta siapa yang memberikannya, dan kegagalan. `/undo`
-membatalkan permintaan terakhir Anda. `/restore` mengembalikan seluruh workspace
+membatalkan permintaan terakhir Anda; di 0.10.1, perintah ini memerlukan
+`/trust on` untuk berkas dan mundur satu panggilan alat setiap kali. `/restore`
+mengembalikan seluruh workspace
 ke snapshot sebelumnya; karena itu menimpa edit yang lebih baru, perintah ini
 memerlukan `/trust on` atau Akses penuh. Lihat [Receipt](docs/RECEIPTS.md).
 
@@ -146,7 +188,10 @@ hook atau server LSP ([detail](docs/CLAUDE_PLUGIN_COMPAT.md)).
 
 Hubungkan [server MCP](docs/MCP.md), tambahkan [skill](docs/SKILLS.md) dan
 [plugin](docs/PLUGINS.md), dan jalankan [hook](docs/HOOKS.md) pada event sesi
-dan alat. Plugin Computer Use bawaan (eksperimental, hanya macOS) dapat
+dan alat. Mode kode (eksperimental, aktif secara default) memungkinkan model
+menulis satu program `execute_tools` yang memanggil beberapa alat MCP dan
+plugin; setiap panggilan tetap tunduk pada aturan persetujuan Anda dan tetap
+memiliki receipt-nya. Plugin Computer Use bawaan (eksperimental, hanya macOS) dapat
 mengamati dan mengoperasikan aplikasi lain. Plugin ini tetap nonaktif sampai
 Anda meninjau aksesnya dan mengaktifkannya
 ([panduan](crates/tui/plugins/computer-use/README.md)).
@@ -159,7 +204,7 @@ Anda meninjau aksesnya dan mengaktifkannya
 | `codewhale exec "…"` | Satu tugas tanpa antarmuka. Tanpa flag tambahan, ia menjawab tanpa memakai alat; `--auto` mengizinkannya mengedit berkas dan menjalankan perintah, dan `--output-format stream-json` men-streaming event sebagai JSON |
 | `codewhale web` | UI web lokal di `127.0.0.1` ([panduan](docs/WEB.md)) |
 | `codewhale review --pr N` | Tinjauan yang bersifat saran untuk pull request GitHub. Ia tidak memposting apa pun kecuali Anda menambahkan `--post`; [GitHub Action](docs/GITHUB_ACTION.md) menjalankan tinjauan yang sama di CI |
-| `codewhale app-server --http` | [Runtime API](docs/RUNTIME_API.md), API HTTP lokal untuk thread, event, dan persetujuan |
+| `codewhale app-server --http` | [Runtime API](docs/RUNTIME_API.md), API HTTP lokal untuk thread, event, persetujuan, dan perubahan berkas setiap giliran |
 | `codewhale serve --acp` | Agent Client Protocol melalui stdio, untuk editor seperti Zed |
 
 Aplikasi terminal, `exec`, `web`, dan Runtime API memakai satu engine yang sama
@@ -167,8 +212,8 @@ Aplikasi terminal, `exec`, `web`, dan Runtime API memakai satu engine yang sama
 [Ekstensi VS Code](https://marketplace.visualstudio.com/items?itemName=HengQuWorld.brotherwhale-vscode)
 yang dipelihara komunitas terhubung ke engine itu dari sidebar
 ([sumber](https://github.com/HengQuWorld/CodeWhale-VSCode)).
-Aplikasi desktop sedang dikembangkan; lihat
-[halaman produk](https://codewhale.net/en/product).
+Aplikasi desktop native yang dibangun di atas Runtime API sedang dikembangkan;
+belum ada unduhan publik.
 
 ## Biaya dan akun
 
@@ -177,20 +222,24 @@ langsung ke penyedia; model lokal tidak memerlukan kunci. Footer dan `/cost`
 menampilkan biaya sesi jika harganya diketahui, dan harga yang tidak diketahui
 ditampilkan sebagai tidak diketahui, tidak pernah sebagai gratis.
 
-Anda tidak memerlukan akun.
+Anda tidak memerlukan akun. Kunci yang Anda tambahkan dengan `/provider` tetap
+tersimpan di mesin Anda.
 
 ## Keamanan dan privasi
 
 Dalam Tanya dan Tinjauan otomatis, perintah berjalan di sandbox OS jika sistem
 menyediakannya: Seatbelt di macOS, dan bubblewrap di Linux jika terpasang.
-Windows belum memiliki sandbox OS, dan Akses penuh menonaktifkan sandbox.
-`/preview-request` menampilkan pratinjau permintaan berikutnya yang sudah
+Windows belum memiliki sandbox OS, dan Akses penuh menonaktifkan sandbox. Di
+dalam sandbox, perintah shell tidak dapat membaca penyimpanan kredensial seperti
+`~/.ssh`, `~/.aws`, dan berkas `.env`; mulai 0.10.2, aturan yang sama berlaku
+untuk sesi terminal dan lebih banyak alat berkas. `/preview-request` menampilkan pratinjau permintaan berikutnya yang sudah
 disamarkan tanpa mengirimnya.
 
 Telemetri aktif secara default. Telemetri mengirim hitungan agregat (versi dan
-platform, durasi dan hasil sesi, hitungan fitur dan error) bersama ID instalasi
-acak yang diganti setiap 90 hari, dan tidak pernah mengirim percakapan, kode,
-prompt, nama berkas atau repositori, maupun kredensial.
+platform, durasi dan hasil sesi, penyedia bawaan yang Anda pakai, hitungan fitur
+dan error) bersama ID instalasi acak yang diganti setiap 90 hari, dan tidak
+pernah mengirim percakapan, kode, prompt, nama model, nama berkas atau
+repositori, maupun kredensial.
 `codewhale config set telemetry false` menonaktifkannya. Saat dijalankan,
 Codewhale juga memeriksa GitHub untuk rilis baru; atur
 `CODEWHALE_NO_UPDATE_CHECK=1` untuk melewatinya. Selengkapnya di
