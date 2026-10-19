@@ -1319,12 +1319,8 @@ pub(crate) fn catalog_offering_for_route(
     base_url: &str,
     model: &str,
 ) -> Option<CatalogOffering> {
-    // Only the matched row is cloned and the cache lock is released here, so a
-    // relay publishing hundreds of models no longer pays one full deep clone
-    // of its whole catalog per model row. Completion from the lower layers
-    // happens outside the borrow: keeping it inside put the whole lower-row
-    // lookup on top of this call's already-deep stack, which overflowed a test
-    // thread's default stack.
+    // Only the matched row is cloned, and the cache lock is released here
+    // instead of spanning the lower-layer completion below.
     let lookup = crate::provider_catalog_live::with_cached_entry_for_route(
         provider,
         identity,

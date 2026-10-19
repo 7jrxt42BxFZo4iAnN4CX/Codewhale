@@ -227,8 +227,6 @@ impl ModelInventory {
         let active_identity = config.active_provider_identity()?;
         let active_provider = active_identity.provider;
         let mut candidates = Vec::new();
-        // Enumerating identities resolves every configured route, so a caller
-        // that only needs the router facts skips it too.
         let identities = if include_candidates {
             config.provider_identities()
         } else {

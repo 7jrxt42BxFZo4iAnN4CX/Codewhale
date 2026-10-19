@@ -755,22 +755,15 @@ pub(crate) fn resolve_for_model(
     model: &str,
     checks: &ProviderReadinessSnapshot,
 ) -> ResolvedProviderReadiness {
-    resolve_with_identity(
-        &route_identity_for_model(config, identity, model),
-        credential_state_for_provider(config, identity),
-        route_is_valid_for_model(config, identity, Some(model)),
-        checks,
-    )
+    RouteReadinessScope::for_route(config, identity).resolve(config, model, checks)
 }
 
 /// Route-scoped readiness facts that do not change per model.
 ///
 /// [`resolve_for_model`] re-resolves the credential source and the auth class
-/// for every model it is asked about, and the model picker asks once per row.
-/// A relay publishing a few hundred models therefore walked the credential
-/// resolver — including the secret store — a few hundred times to produce the
-/// same answer. Hoist those facts once per route and keep the per-model work
-/// to the parts that actually name a model.
+/// for every model it is asked about. A caller that asks once per model on one
+/// route walks the credential resolver, secret store included, once per model
+/// for an answer that cannot change between them.
 #[derive(Debug, Clone)]
 pub(crate) struct RouteReadinessScope {
     identity: ProviderIdentity,
