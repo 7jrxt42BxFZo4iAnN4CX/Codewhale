@@ -188,8 +188,11 @@ impl ModalView for FeedbackPickerView {
             let description_width = usize::from(content.width).saturating_sub(
                 UnicodeWidthStr::width(lead.as_str()) + UnicodeWidthStr::width(option.label) + 4,
             );
-            let description =
-                crate::tui::ui_text::semantic_truncate(option.description, description_width);
+            let description = codewhale_ratatui::text::truncate_words(
+                option.description,
+                description_width,
+                crate::tui::color_compat::ascii_safe_enabled(),
+            );
 
             lines.push(Line::from(vec![
                 Span::styled(lead, row_style),
