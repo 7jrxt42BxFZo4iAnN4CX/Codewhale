@@ -2928,6 +2928,7 @@ impl RuntimeThreadStore {
     /// Persist a goal record for a thread. The goal is stored as a JSON file
     /// in the `goals/` subdirectory; it is independent of the TUI state store
     /// and requires only that the runtime thread exists.
+    #[cfg(test)]
     pub fn save_goal(&self, goal: &codewhale_protocol::ThreadGoal) -> Result<()> {
         let _guard = self.goal_mutation.lock();
         self.save_goal_under_lock(goal)
@@ -2994,6 +2995,16 @@ impl RuntimeThreadStore {
         update: impl FnOnce(&mut codewhale_protocol::ThreadGoal),
     ) -> Result<Option<codewhale_protocol::ThreadGoal>> {
         let _guard = self.goal_mutation.lock();
+        self.update_goal_if_revision_under_lock(thread_id, goal_id, expected_status, update)
+    }
+
+    fn update_goal_if_revision_under_lock(
+        &self,
+        thread_id: &str,
+        goal_id: &str,
+        expected_status: Option<codewhale_protocol::ThreadGoalStatus>,
+        update: impl FnOnce(&mut codewhale_protocol::ThreadGoal),
+    ) -> Result<Option<codewhale_protocol::ThreadGoal>> {
         let Some(mut goal) = self.load_goal(thread_id)? else {
             return Ok(None);
         };
@@ -3056,8 +3067,7 @@ impl RuntimeThreadStore {
     }
 
     /// Remove the goal for a thread, returning `true` if one existed.
-    pub fn delete_goal(&self, thread_id: &str) -> Result<bool> {
-        let _guard = self.goal_mutation.lock();
+    fn delete_goal_under_lock(&self, thread_id: &str) -> Result<bool> {
         let path = self.goal_path(thread_id)?;
         if !path.exists() {
             return Ok(false);
@@ -9272,32 +9282,70 @@ impl RuntimeThreadManager {
         self.event_tx.subscribe()
     }
 
-    /// Emit a durable `thread_goal_updated` event for the given thread.
-    ///
-    /// Called by the Runtime API goal handlers so SSE subscribers receive
-    /// goal lifecycle changes just like engine-driven updates.
+    /// Emit a durable `thread_goal_updated` event while its revision is current.
     pub async fn emit_goal_updated_event(
         &self,
         thread_id: &str,
         goal: codewhale_protocol::ThreadGoal,
-    ) -> Result<RuntimeEventRecord> {
-        let payload = serde_json::json!({
-            "kind": "thread_goal_updated",
-            "goal": serde_json::to_value(&goal)
-                .unwrap_or(serde_json::Value::Null),
-        });
-        self.emit_event(thread_id, None, None, "thread_goal_updated", payload)
-            .await
+    ) -> Result<Option<RuntimeEventRecord>> {
+        let thread_id = thread_id.to_string();
+        self.with_goal_publication(move |manager| {
+            let Some(mut current) = manager.store.load_goal(&thread_id)? else {
+                return Ok(None);
+            };
+            current.tokens_used = current.tokens_used.max(goal.tokens_used);
+            current.time_used_seconds = current.time_used_seconds.max(goal.time_used_seconds);
+            current.continuation_count = current.continuation_count.max(goal.continuation_count);
+            if current != goal {
+                return Ok(None);
+            }
+            manager
+                .emit_goal_event_under_lock(&thread_id, Some(&goal))
+                .map(Some)
+        })
+        .await
     }
 
-    /// Emit a durable `thread_goal_cleared` event for the given thread.
-    pub async fn emit_goal_cleared_event(&self, thread_id: &str) -> Result<RuntimeEventRecord> {
-        let payload = serde_json::json!({
-            "kind": "thread_goal_cleared",
-            "thread_id": thread_id,
-        });
-        self.emit_event(thread_id, None, None, "thread_goal_cleared", payload)
-            .await
+    async fn with_goal_publication<T: Send + 'static>(
+        &self,
+        operation: impl FnOnce(&Self) -> Result<T> + Send + 'static,
+    ) -> Result<T> {
+        let emit_order = self.event_emit.clone().lock_owned().await;
+        let manager = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let _emit_order = emit_order;
+            let _goal_mutation = manager.store.goal_mutation.lock();
+            operation(&manager)
+        })
+        .await
+        .context("goal publication task panicked")?
+    }
+
+    fn emit_goal_event_under_lock(
+        &self,
+        thread_id: &str,
+        goal: Option<&codewhale_protocol::ThreadGoal>,
+    ) -> Result<RuntimeEventRecord> {
+        let (event, payload) = match goal {
+            Some(goal) => (
+                "thread_goal_updated",
+                json!({ "kind": "thread_goal_updated", "goal": goal }),
+            ),
+            None => (
+                "thread_goal_cleared",
+                json!({ "kind": "thread_goal_cleared", "thread_id": thread_id }),
+            ),
+        };
+        let record = self.store.append_event_transaction(
+            thread_id.to_string(),
+            None,
+            None,
+            event.to_string(),
+            payload,
+            EVENT_TRANSACTION_LOCK_TIMEOUT,
+        )?;
+        let _ = self.event_tx.send(record.clone());
+        Ok(record)
     }
 
     /// Return the persistent goal for a thread, or `Ok(None)` if none exists.
@@ -9363,21 +9411,27 @@ impl RuntimeThreadManager {
             .unwrap_or(false)
     }
 
-    /// Persist (create or replace) the goal for a thread.
+    /// Persist (create or replace) and publish the goal for a thread.
     pub async fn save_goal(&self, goal: codewhale_protocol::ThreadGoal) -> Result<()> {
-        let store = self.store.clone();
-        tokio::task::spawn_blocking(move || store.save_goal(&goal))
-            .await
-            .context("goal save task panicked")?
+        self.with_goal_publication(move |manager| {
+            manager.store.save_goal_under_lock(&goal)?;
+            manager.emit_goal_event_under_lock(&goal.thread_id, Some(&goal))?;
+            Ok(())
+        })
+        .await
     }
 
-    /// Remove the goal for a thread. Returns `true` if a goal existed.
+    /// Remove and publish the goal for a thread. Returns `true` if a goal existed.
     pub async fn remove_goal(&self, thread_id: &str) -> Result<bool> {
         let thread_id = thread_id.to_string();
-        let store = self.store.clone();
-        tokio::task::spawn_blocking(move || store.delete_goal(&thread_id))
-            .await
-            .context("goal delete task panicked")?
+        self.with_goal_publication(move |manager| {
+            let deleted = manager.store.delete_goal_under_lock(&thread_id)?;
+            if deleted {
+                manager.emit_goal_event_under_lock(&thread_id, None)?;
+            }
+            Ok(deleted)
+        })
+        .await
     }
 
     /// Transition the goal status through a revision-checked mutation. A
@@ -9395,9 +9449,8 @@ impl RuntimeThreadManager {
     ) -> Result<Option<codewhale_protocol::ThreadGoal>> {
         let thread_id = thread_id.to_string();
         let expected_goal_id = expected_goal_id.to_string();
-        let store = self.store.clone();
-        tokio::task::spawn_blocking(move || {
-            store.update_goal_if_revision(
+        self.with_goal_publication(move |manager| {
+            let updated = manager.store.update_goal_if_revision_under_lock(
                 &thread_id,
                 &expected_goal_id,
                 Some(expected_status),
@@ -9405,10 +9458,13 @@ impl RuntimeThreadManager {
                     goal.status = status;
                     goal.updated_at = chrono::Utc::now().timestamp();
                 },
-            )
+            )?;
+            if let Some(goal) = updated.as_ref() {
+                manager.emit_goal_event_under_lock(&thread_id, Some(goal))?;
+            }
+            Ok(updated)
         })
         .await
-        .context("goal status transition task panicked")?
     }
 
     /// Activate a persisted `Active` goal: make sure the engine carries the

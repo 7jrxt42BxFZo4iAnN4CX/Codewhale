@@ -9150,11 +9150,6 @@ async fn upsert_thread_goal(
     } else {
         StatusCode::OK
     };
-    // Emit a replayable goal-updated event so SSE subscribers can react.
-    let _ = state
-        .runtime_threads
-        .emit_goal_updated_event(&id, goal.clone())
-        .await;
     // Inject the goal into a cached engine (if any) and dispatch the kickoff
     // turn while the thread is idle. Errors are advisory: the goal record is
     // already durable and a subsequent turn still carries it.
@@ -9183,7 +9178,6 @@ async fn delete_thread_goal(
     if !deleted {
         return Err(ApiError::not_found(format!("thread '{id}' has no goal")));
     }
-    let _ = state.runtime_threads.emit_goal_cleared_event(&id).await;
     state
         .runtime_threads
         .sync_engine_goal_status(&id)
@@ -9232,10 +9226,6 @@ async fn complete_thread_goal(
             message: format!("goal for thread '{id}' changed concurrently; retry"),
             code: None,
         })?;
-    let _ = state
-        .runtime_threads
-        .emit_goal_updated_event(&id, updated.clone())
-        .await;
     state
         .runtime_threads
         .sync_engine_goal_status(&id)
@@ -9285,10 +9275,6 @@ async fn block_thread_goal(
             message: format!("goal for thread '{id}' changed concurrently; retry"),
             code: None,
         })?;
-    let _ = state
-        .runtime_threads
-        .emit_goal_updated_event(&id, updated.clone())
-        .await;
     state
         .runtime_threads
         .sync_engine_goal_status(&id)

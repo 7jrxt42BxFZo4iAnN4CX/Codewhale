@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Runtime API fixes:
+  - Goal events on a thread's event stream now follow the order the goal
+    changed in. A set and a clear racing each other could leave the stream
+    reporting an active goal after it was deleted.
   - `PUT /v1/sessions` for a thread with a queued or running turn now
     answers 409. Before, it waited for that turn to finish while blocking
     new turns, steering and compaction on every thread.
