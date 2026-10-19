@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `/fork <id>` now shows the forked conversation. Before, the screen kept
   the previous conversation while the model already had the fork's history.
+- With `/translate` on, each translated thinking block lands in its own
+  cell. Before, two translations finishing out of order could swap them.
 - Pasting text that contains an escape sequence written out, such as
   `print("\x1b[?25l")`, keeps it as pasted. Before, part of it was removed
   from the message box as if it were a stray mouse report.

@@ -284,7 +284,7 @@ enum TranslationEvent {
     Thinking {
         origin_session_fingerprint: Option<String>,
         origin_turn_fingerprint: Option<String>,
-        placeholder: String,
+        translation_id: u64,
         translated: anyhow::Result<String>,
         usage: Option<codewhale_models::Usage>,
     },

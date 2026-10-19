@@ -1115,6 +1115,7 @@ impl App {
             streaming_source_receipt: None,
             suppress_stream_events_until_turn_complete: false,
             streaming_thinking_active_entry: None,
+            pending_thinking_translation_cells: HashMap::new(),
             thinking_revision_last_bump_at: None,
             streaming_state: StreamingState::new(),
             streaming_output_token_estimate: 0,

@@ -2364,6 +2364,7 @@ pub struct App {
     /// thinking into the active cell so it groups visually with tool calls
     /// until the next assistant prose chunk flushes the group into history.
     pub streaming_thinking_active_entry: Option<usize>,
+    pub(crate) pending_thinking_translation_cells: HashMap<u64, usize>,
     /// Instant of the last throttled active-cell revision bump for the
     /// in-flight thinking stream (#1620). Reasoning chunks arrive faster than
     /// the eye can read, and each bump invalidates the active cell's wrap
@@ -4845,6 +4846,14 @@ impl App {
             }
             None => false,
         });
+        self.pending_thinking_translation_cells
+            .retain(|_, idx| match remap(*idx) {
+                Some(new) => {
+                    *idx = new;
+                    true
+                }
+                None => false,
+            });
         self.tool_details_by_cell = std::mem::take(&mut self.tool_details_by_cell)
             .into_iter()
             .filter_map(|(idx, detail)| remap(idx).map(|idx| (idx, detail)))
@@ -5131,6 +5140,7 @@ impl App {
     /// sites currently doing `app.history.push(...)` followed by
     /// `app.mark_history_updated()` can collapse to one helper.
     pub fn push_history_cell(&mut self, cell: HistoryCell) {
+        self.rebase_active_cell_bindings(1);
         let rev = self.fresh_history_revision();
         self.history.push(cell);
         self.history_revisions.push(rev);
@@ -5145,6 +5155,7 @@ impl App {
         I: IntoIterator<Item = HistoryCell>,
     {
         for cell in cells {
+            self.rebase_active_cell_bindings(1);
             let rev = self.fresh_history_revision();
             self.history.push(cell);
             self.history_revisions.push(rev);
@@ -5353,6 +5364,8 @@ impl App {
 
     pub(crate) fn prune_transcript_index_state(&mut self, len: usize) {
         self.transcript_identity_epoch = self.transcript_identity_epoch.wrapping_add(1);
+        self.pending_thinking_translation_cells
+            .retain(|_, idx| *idx < len);
         self.collapsed_cells.retain(|idx| *idx < len);
         self.cell_folds.retain(|idx, _| *idx < len);
         self.expanded_tool_runs.retain(|idx| *idx < len);
@@ -5791,7 +5804,11 @@ impl App {
             }
             owner.identity_epoch = self.transcript_identity_epoch;
         }
-        for index in self.tool_cells.values_mut() {
+        for index in self
+            .tool_cells
+            .values_mut()
+            .chain(self.pending_thinking_translation_cells.values_mut())
+        {
             if *index >= boundary {
                 *index = index.saturating_add(added);
             }

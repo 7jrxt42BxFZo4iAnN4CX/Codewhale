@@ -2244,12 +2244,15 @@ pub(crate) async fn run_event_loop(
                 TranslationEvent::Thinking {
                     origin_session_fingerprint,
                     origin_turn_fingerprint,
-                    placeholder,
+                    translation_id,
                     translated,
                     usage,
                 } => {
                     pending_translations = pending_translations.saturating_sub(1);
                     pending_thinking_translations = pending_thinking_translations.saturating_sub(1);
+                    let cell_index = app
+                        .pending_thinking_translation_cells
+                        .remove(&translation_id);
                     if translation_session_is_current(app, origin_session_fingerprint.as_deref())
                         && let Some(usage) = usage.as_ref()
                     {
@@ -2285,7 +2288,9 @@ pub(crate) async fn run_event_loop(
                                 .to_string()
                         }
                     };
-                    streaming_thinking::replace_pending_translation(app, &placeholder, text);
+                    if let Some(cell_index) = cell_index {
+                        streaming_thinking::replace_pending_translation(app, cell_index, text);
+                    }
                     if pending_translations == 0
                         && !matches!(app.runtime_turn_status.as_deref(), Some("in_progress"))
                     {
@@ -2725,6 +2730,9 @@ pub(crate) async fn run_event_loop(
                     EngineEvent::ThinkingComplete { .. } => {
                         stream_display_clock.flush_now(Instant::now());
                         if app.translation_enabled {
+                            let cell_index = app
+                                .streaming_thinking_active_entry
+                                .map(|entry_idx| app.history.len() + entry_idx);
                             let original_thinking = app.reasoning_buffer.clone();
                             let _ = app.streaming_state.finalize_block_text(0);
                             let duration = app
@@ -2737,6 +2745,7 @@ pub(crate) async fn run_event_loop(
                             if !original_thinking.is_empty()
                                 && crate::tui::translation::needs_translation(&original_thinking)
                                 && let Some(translation_client) = active_translation_client.as_ref()
+                                && let Some(cell_index) = cell_index
                             {
                                 app.status_message = Some(
                                     codewhale_localization::thinking_translation_in_progress(
@@ -2761,13 +2770,11 @@ pub(crate) async fn run_event_loop(
                                     "thinking",
                                     translation_sequence,
                                 );
+                                let translation_id = translation_sequence;
+                                app.pending_thinking_translation_cells
+                                    .insert(translation_id, cell_index);
                                 let (origin_session_fingerprint, origin_turn_fingerprint) =
                                     translation_origin(app);
-                                let placeholder =
-                                    codewhale_localization::thinking_translation_placeholder(
-                                        app.ui_locale,
-                                    )
-                                    .to_string();
                                 let target_language =
                                     app.ui_locale.translation_target_name().to_string();
                                 tokio::spawn(async move {
@@ -2783,19 +2790,15 @@ pub(crate) async fn run_event_loop(
                                     let _ = tx.send(TranslationEvent::Thinking {
                                         origin_session_fingerprint,
                                         origin_turn_fingerprint,
-                                        placeholder,
+                                        translation_id,
                                         translated: settled.translated,
                                         usage: settled.usage,
                                     });
                                 });
-                            } else {
-                                let placeholder =
-                                    codewhale_localization::thinking_translation_placeholder(
-                                        app.ui_locale,
-                                    );
+                            } else if let Some(cell_index) = cell_index {
                                 streaming_thinking::replace_pending_translation(
                                     app,
-                                    placeholder,
+                                    cell_index,
                                     original_thinking,
                                 );
                             }
