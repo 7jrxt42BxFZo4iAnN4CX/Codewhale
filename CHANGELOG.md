@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   answering `y` could delete the session you scrolled to instead of the one
   you chose. The prompt now ignores the mouse, and `y` deletes only the
   session `d` was pressed on.
+- Typing a stop word (`stop`, `wait`, `pause` by default) while a turn is
+  running cancels it at once. Before, Enter queued the word behind the turn
+  it was meant to stop.
 - Runtime API fixes:
   - `POST /v1/threads/{id}/undo` accepts `{"turn_id": "turn_…"}` to
     remove that user turn and everything after it. A client that edits a

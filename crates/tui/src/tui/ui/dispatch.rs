@@ -1555,6 +1555,9 @@ pub(crate) async fn dispatch_composer_message(
         return Ok(());
     }
     let disposition = match action {
+        _ if is_stop_word(&message.display, &config.stop_words()).is_some() => {
+            SubmitDisposition::Immediate
+        }
         ComposerSubmitAction::Submit(disposition) => disposition,
         ComposerSubmitAction::SendQueuedNow | ComposerSubmitAction::Noop => {
             // The caller extracted a non-empty input, so these can only arise
