@@ -1256,7 +1256,7 @@
       "id": "deepinfra",
       "label": "DeepInfra",
       "base_url": "https://api.deepinfra.com/v1/openai",
-      "default_model": "deepseek-ai/DeepSeek-V4-Pro-0813",
+      "default_model": "deepseek-ai/DeepSeek-V4-Pro",
       "env_vars": [
         "DEEPINFRA_API_KEY",
         "DEEPINFRA_TOKEN"
@@ -2679,7 +2679,7 @@
   },
   "compatibility_constants": {
     "CODEWHALE_API_BASE_ENV": "CODEWHALE_API_BASE",
-    "DEFAULT_DEEPINFRA_FLASH_MODEL": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+    "DEFAULT_DEEPINFRA_FLASH_MODEL": "deepseek-ai/DeepSeek-V4-Flash",
     "DEFAULT_DEEPSEEKCN_BASE_URL": "https://api.deepseek.com/beta",
     "DEFAULT_HUGGINGFACE_FLASH_MODEL": "deepseek-ai/DeepSeek-V4-Flash",
     "DEFAULT_KIMI_CODE_BASE_URL": "https://api.kimi.com/coding/v1",

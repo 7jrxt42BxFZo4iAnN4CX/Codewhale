@@ -795,7 +795,7 @@ base_url = "https://api.deepseek.com/beta"
 [providers.deepinfra]
 # api_key = "YOUR_DEEPINFRA_TOKEN"
 # base_url = "https://api.deepinfra.com/v1/openai"
-# model = "deepseek-ai/DeepSeek-V4-Pro-0813"     # or deepseek-ai/DeepSeek-V4.1-Flash-1017
+# model = "deepseek-ai/DeepSeek-V4-Pro"     # or deepseek-ai/DeepSeek-V4-Flash
 
 # ─────────────────────────────────────────────────────────────────────────────────
 # Sakana AI Fugu Provider (https://api.sakana.ai)

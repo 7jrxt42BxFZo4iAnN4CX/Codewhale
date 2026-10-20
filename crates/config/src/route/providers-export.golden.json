@@ -185,7 +185,7 @@
       "label": "DeepInfra",
       "endpoint": "https://api.deepinfra.com/v1/openai",
       "wire": "chat-completions",
-      "defaultModel": "deepseek-ai/DeepSeek-V4-Pro-0813",
+      "defaultModel": "deepseek-ai/DeepSeek-V4-Pro",
       "envVars": [
         "DEEPINFRA_API_KEY",
         "DEEPINFRA_TOKEN"
