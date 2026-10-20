@@ -399,7 +399,7 @@ impl HistoryCell {
                 width,
             ),
             HistoryCell::System { content } => render_message(
-                crate::tui::glyphs::NEUTRAL,
+                "Note",
                 system_label_style(),
                 system_body_style(),
                 content,
@@ -624,7 +624,7 @@ impl HistoryCell {
                 rendered
             }
             HistoryCell::System { content } => render_message_with_copy_metadata_for_palette(
-                crate::tui::glyphs::NEUTRAL,
+                "Note",
                 system_label_style(),
                 system_body_style(),
                 content,
@@ -1130,18 +1130,7 @@ impl ExecCell {
             low_motion || held_status.is_some(),
         ));
 
-        if let Some(description) = self.description_text() {
-            let label = codewhale_localization::tr(
-                locale,
-                codewhale_localization::MessageId::ToolDescriptionNote,
-            );
-            lines.extend(render_card_detail_line(
-                Some(label.as_ref()),
-                &truncate_text(&description, TOOL_HEADER_SUMMARY_LIMIT),
-                Style::default().fg(palette::TEXT_MUTED).italic(),
-                width,
-            ));
-        }
+        lines.extend(self.description_lines(width, locale));
 
         // A foreground shell wait stays a compact card — command, optional note,
         // spinner and running badge. Live output and artifact paths belong in the
@@ -1293,14 +1282,7 @@ impl ExecCell {
             low_motion || held_status.is_some(),
         ));
 
-        if let Some(description) = self.description_text() {
-            lines.extend(render_card_detail_line(
-                None,
-                &truncate_text(&description, TOOL_HEADER_SUMMARY_LIMIT),
-                Style::default().fg(palette::TEXT_MUTED).italic(),
-                width,
-            ));
-        }
+        lines.extend(self.description_lines(width, locale));
 
         if self.is_foreground_shell_wait() {
             return wrap_card_rail(lines, self.status);
@@ -1378,11 +1360,25 @@ impl ExecCell {
         }
     }
 
-    fn description_text(&self) -> Option<String> {
-        let description = self.description.as_deref()?;
+    fn description_lines(&self, width: u16, locale: Locale) -> Vec<Line<'static>> {
+        let Some(description) = self.description.as_deref() else {
+            return Vec::new();
+        };
         let mut plain = String::new();
         crate::tui::osc8::strip_ansi_into(description, &mut plain);
-        normalize_header_summary(&plain)
+        let Some(description) = normalize_header_summary(&plain) else {
+            return Vec::new();
+        };
+        let label = codewhale_localization::tr(
+            locale,
+            codewhale_localization::MessageId::ToolDescriptionNote,
+        );
+        render_card_detail_line(
+            Some(label.as_ref()),
+            &truncate_text(&description, TOOL_HEADER_SUMMARY_LIMIT),
+            Style::default().fg(palette::TEXT_MUTED).italic(),
+            width,
+        )
     }
 
     fn finished_duration(&self) -> Option<String> {

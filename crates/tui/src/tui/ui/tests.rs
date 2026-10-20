@@ -4434,10 +4434,7 @@ fn selection_to_text_copies_rendered_transcript_block() {
     });
 
     let selected = selection_to_text(&app).expect("selection text");
-    assert!(
-        selected.contains("copy system") && !selected.contains("Note"),
-        "{selected:?}"
-    );
+    assert!(selected.contains("Note copy system"), "{selected:?}");
     assert!(selected.contains("copy user"), "{selected:?}");
     // Calm keeps settled reasoning behind its disclosure. Copying the
     // collapsed transcript must not reveal a body the reader cannot see.
@@ -9658,7 +9655,7 @@ XML unless the user explicitly asks to debug sub-agent internals.\n\n\
         .flat_map(|line| line.spans.iter())
         .map(|span| span.content.as_ref())
         .collect::<String>();
-    assert!(rendered.starts_with(crate::tui::glyphs::NEUTRAL));
+    assert!(rendered.contains("Note"));
     assert!(rendered.contains("Status: completed"));
     assert!(
         !rendered.contains('▎'),
