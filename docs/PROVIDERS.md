@@ -660,7 +660,7 @@ SGLang's default port 30000 matches Codewhale's `SGLANG_BASE_URL`.
 provider = "ollama"       # or "vllm" / "sglang"
 
 [providers.ollama]
-model = "qwen3:8b"        # default is deepseek-v4-flash
+model = "qwen3:8b"        # default: a tag the local daemon lists
 # base_url defaults to http://localhost:11434/v1
 ```
 

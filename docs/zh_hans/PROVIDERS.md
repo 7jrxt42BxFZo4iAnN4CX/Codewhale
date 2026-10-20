@@ -395,7 +395,7 @@ SGLang 的默认端口 30000 与 Codewhale 的 `SGLANG_BASE_URL` 匹配。
 provider = "ollama"       # 或 "vllm" / "sglang"
 
 [providers.ollama]
-model = "qwen3:8b"        # 默认是 deepseek-v4-flash
+model = "qwen3:8b"        # 默认：本地守护进程列出的标签
 # base_url 默认为 http://localhost:11434/v1
 ```
 
