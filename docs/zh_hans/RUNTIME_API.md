@@ -617,10 +617,15 @@ owner 关闭或无法产生终态的存储故障会明确报错，不会重新�
 `max_turn_requests`；Core 失败仍是错误。单次提示词最多50个模型步骤（更小的配置
 上限仍有效），并复用 Core 的有界最终报告响应；此 profile 不派发自主目标续跑。
 
-ACP 当前声明一个独占的规范 Runtime owner。其他进程已持有该存储时，启动拒绝；
-会话绑定另一 Runtime 存储时也拒绝。经过身份校验的跨进程 owner 附着尚未完成验证，
-ACP 不把活跃会话复制到随机存储。它也不向编辑器提供全部 `/v1/*` 引导、任务或
-控制方法；完整运行时 API 请使用 `codewhale app-server --http`。
+没有进程持有 Runtime 存储时，ACP 声明自己独占的规范 Runtime owner。已有非 ACP
+的 Runtime 宿主持有该存储时（桌面应用、`codewhale app-server --http` 或
+`codewhale serve --http`），ACP 通过其本地控制套接字以经过身份校验的访客身份
+附着到该 owner，并用 owner 的存储服务编辑器。该 owner 退出时，ACP 进程以说明
+该退出的错误结束；待决操作的结果可能不确定，且不会重放。存储已由另一个 ACP
+服务端持有时，第二个 `codewhale serve --acp` 在启动时拒绝，第一个继续服务。
+会话绑定另一 Runtime 存储时也拒绝；ACP 不把活跃会话复制到随机存储。它也不向
+编辑器提供全部 `/v1/*` 引导、任务或控制方法；完整运行时 API 请使用
+`codewhale app-server --http`。
 
 
 ## 能力端点：`codewhale doctor --json`

@@ -747,12 +747,18 @@ or typed `max_turn_requests`; Core failure remains an error. Prompts use at most
 50 model steps (a lower configured limit still wins) and Core's bounded final
 report response; this profile does not dispatch autonomous goal continuations.
 
-ACP presently claims its own exclusive canonical Runtime owner. If another
-process holds that store, startup refuses. A saved conversation bound to another
-Runtime store also refuses; authenticated cross-process owner attachment remains
-unqualified and ACP does not copy a live conversation into a random store. This
-does not expose every `/v1/*` steering, job or control method to an ACP editor.
-Use `codewhale app-server --http` for that full runtime API.
+When no process owns the Runtime store, ACP claims its own exclusive canonical
+Runtime owner. When a non-ACP Runtime host already owns it (the desktop app,
+`codewhale app-server --http` or `codewhale serve --http`), ACP attaches to that
+owner as an authenticated guest over its local control socket and serves the
+editor from the owner's store. If that owner exits, the ACP process ends with
+an error naming the exit; pending operation outcomes may be uncertain and are
+not replayed. A second `codewhale serve --acp` in a store another ACP server
+already owns refuses at startup and leaves the first serving. A saved
+conversation bound to another Runtime store also refuses; ACP does not copy a
+live conversation into a random store. This does not expose every `/v1/*`
+steering, job or control method to an ACP editor. Use
+`codewhale app-server --http` for that full runtime API.
 
 
 ## Capability endpoint: `codewhale doctor --json`

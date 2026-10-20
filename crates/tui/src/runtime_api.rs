@@ -1863,13 +1863,38 @@ pub async fn run_http_server(
     #[cfg(any(unix, windows))]
     if let Some(control) = published {
         anyhow::ensure!(
-            !acp_selected,
-            "{}",
-            crate::runtime_threads::RUNTIME_PROCESS_OWNER_LOCK_HELD
+            !(acp_selected && control.routing().is_some_and(|routing| routing.acp_only)),
+            "Another `codewhale serve --acp` already owns this runtime, and a second ACP server cannot attach to it. Close the other editor's agent session and try again, or set CODEWHALE_RUNTIME_DIR to a different directory."
         );
         validate_selected_owner(&control, selected_store.clone()).await?;
         let observed_owner = control.receipt().clone();
         let client = match options.control_frontend.as_ref() {
+            Some(codewhale_app_server::RuntimeControlFrontend::Acp { model }) => {
+                drop(control);
+                let client =
+                    codewhale_app_server::daemon_client::connect_selected_acp_if_published(
+                        options.config_path.clone(),
+                        control_socket.clone(),
+                        codewhale_app_server::RuntimeFrontendScope {
+                            workers: options.workers,
+                            workspace: workspace.clone(),
+                            config_profile: options.config_profile.clone(),
+                            config_source: config
+                                .loaded_config_path
+                                .clone()
+                                .or_else(|| options.config_path.clone()),
+                        },
+                        model.clone(),
+                        observed_owner.clone(),
+                    )
+                    .await?
+                    .context("authenticated owner disappeared before ACP attachment")?;
+                anyhow::ensure!(
+                    client.receipt() == &observed_owner,
+                    "selected owner changed before ACP attachment"
+                );
+                client
+            }
             Some(
                 codewhale_app_server::RuntimeControlFrontend::Stdio
                 | codewhale_app_server::RuntimeControlFrontend::Socket { .. },
@@ -2360,17 +2385,32 @@ async fn run_attached_frontend(
     let routing = client
         .routing()
         .context("authenticated owner has no selected frontend facts")?;
+    let acp_selected = matches!(
+        options.control_frontend.as_ref(),
+        Some(codewhale_app_server::RuntimeControlFrontend::Acp { .. })
+    );
     anyhow::ensure!(
-        !routing.acp_only,
+        (!acp_selected || routing.acp) && (acp_selected || !routing.acp_only),
         "selected owner cannot admit this frontend within its captured base profile"
     );
     if matches!(
         options.control_frontend.as_ref(),
-        Some(codewhale_app_server::RuntimeControlFrontend::Stdio)
+        Some(
+            codewhale_app_server::RuntimeControlFrontend::Stdio
+                | codewhale_app_server::RuntimeControlFrontend::Acp { .. }
+        )
     ) {
-        return client
+        let forwarded = client
             .forward(tokio::io::stdin(), tokio::io::stdout())
             .await;
+        if acp_selected && let Err(error) = forwarded.as_ref() {
+            eprintln!("error: {error}");
+            for cause in error.chain().skip(1) {
+                eprintln!("  caused by: {cause}");
+            }
+            std::process::exit(1);
+        }
+        return forwarded;
     }
     if matches!(
         options.control_frontend.as_ref(),
