@@ -193,6 +193,10 @@ enum Commands {
     /// Run an interactive or non-interactive task.
     Run(RunArgs),
     /// Run Codewhale diagnostics.
+    #[command(
+        override_usage = "codewhale doctor [OPTIONS]",
+        after_help = codewhale_tui::doctor_options_help()
+    )]
     Doctor(TuiPassthroughArgs),
     /// Summarize local session failure signals without raw content.
     #[command(

@@ -1696,6 +1696,15 @@ pub fn mcp_subcommand_help() -> String {
     help
 }
 
+#[must_use]
+pub fn doctor_options_help() -> String {
+    DoctorArgs::augment_args(clap::Command::new("doctor"))
+        .disable_help_flag(true)
+        .help_template("Doctor options:\n{options}")
+        .render_help()
+        .to_string()
+}
+
 #[derive(Subcommand, Debug, Clone)]
 pub(crate) enum IntegrationsCommand {
     /// Official DeepSeek Harness (`dsh`) connected through Codewhale
