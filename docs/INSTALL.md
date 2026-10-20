@@ -780,8 +780,10 @@ codewhale exec --json "…"                               # summary JSON (provid
 codewhale exec --auto --output-format stream-json "…"   # one JSON event per line
 ```
 
-`--auto` auto-approves shell commands, so use it only in a repo or sandbox you
-trust.
+`--auto` enables Full Access by default: tools run without approval, shell
+commands have no Codewhale sandbox, and trust mode permits file tools to write
+outside the workspace. Add `--sandbox workspace-write` to keep the shell
+sandbox and file-tool workspace restrictions, with trust mode off.
 
 Plain `exec` offers the model no tools. Only `--auto`, `--yolo`,
 `--allowed-tools` or resuming a session opens a tool surface; limits such as
@@ -801,9 +803,12 @@ codewhale exec --continue "…"     # headless follow-up to the latest session
 codewhale exec --resume <id> "…"
 ```
 
-In v0.10.0, only **TUI sessions** and **`--output-format stream-json`** exec
-runs are saved. A plain `codewhale exec`/`exec --auto` run is *not* saved, so a
-following `exec --continue` fails with `No saved sessions found for workspace`.
+TUI sessions, resumed exec sessions, and exec runs that offer tools (including
+`exec --auto`) are saved in every output format. `--output-format stream-json`
+also saves answer-only runs. Use `codewhale receipts --last` for a saved run's
+receipt. Other answer-only text and `--json` runs are saved only if conversation
+compaction starts; without that, they create no session for `exec --continue`
+or a receipt.
 
 ---
 
@@ -932,8 +937,10 @@ You installed with npm, Cargo or Homebrew. Update with that tool instead.
 Run `sudo apt-get install -y libdbus-1-dev pkg-config`.
 
 **`error: No saved sessions found for workspace …` (from `exec --continue`).**
-The previous run was plain-text `exec`, which isn't saved. Use the TUI, or
-`--output-format stream-json`.
+No session has been saved in this workspace. Fresh answer-only text and `--json`
+exec runs are saved only if conversation compaction starts; use
+`--output-format stream-json` to always save them.
+TUI sessions and exec runs that offer tools are saved in every output format.
 
 **zsh completion suggests the wrong things after the first word.**
 Known v0.10.0 bug. bash and fish are fine.

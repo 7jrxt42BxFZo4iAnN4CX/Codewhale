@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:eefdc9e645b6 -->
+<!-- source: README.md sha256:30c9b9765b04 -->
 <div align="center">
 
 <picture>
@@ -74,11 +74,13 @@ Fix the failing tests and explain what changed.
 `a` 允許本次對話後續類似的指令，`n` 拒絕。`/undo` 會還原你上一個請求及其
 檔案變更（在 0.10.1 中，請先執行 `/trust on`）。`/help` 會列出指令與按鍵。
 
-在腳本與 CI 中，`codewhale exec` 會在沒有介面的情況下執行一項任務。加上 `--auto` 後，
-它會在不詢問的情況下編輯檔案並執行 shell 指令，因此請讓它在容器或用完即丟的工作副本中執行：
+在腳本與 CI 中，`codewhale exec` 會在沒有介面的情況下執行一項任務。預設情況下，`--auto`
+使用「完整存取」權限：工具不經詢問就執行，shell 指令不受 Codewhale 沙箱限制，信任模式
+允許檔案工具寫入工作區以外的位置。加上 `--sandbox workspace-write` 即可保留 shell 沙箱
+與檔案工具的工作區限制，並關閉信任模式：
 
 ```bash
-codewhale exec --auto "fix the failing tests and explain what changed"
+codewhale exec --auto --sandbox workspace-write "fix the failing tests and explain what changed"
 ```
 
 ## 模式與權限
@@ -134,6 +136,11 @@ OpenRouter 與 xAI。任何相容 OpenAI 的端點都能使用，透過 Ollama�
 在 0.10.1 中，還原檔案需要 `/trust on`，而且每次只退回一個工具呼叫。`/restore` 會把整個工作區回復到先前的快照；由於這會覆寫之後的編輯，因此需要 `/trust on`
 或「完整存取」。請參閱[回條](docs/RECEIPTS.md)。
 
+可使用工具的 exec 執行紀錄無論採用哪種輸出格式都會儲存，因此在 `exec --auto` 之後，
+包括使用 `--json` 時，`codewhale receipts --last` 都能正常運作。只回答且使用文字輸出或
+`--json` 的執行紀錄，只有在繼續先前的對話或開始壓縮對話時才會儲存；使用
+`--output-format stream-json` 即可一律儲存這些紀錄，供回條或 `exec --continue` 使用。
+
 ### 長時間工作
 
 `/goal` 會設定一個跨回合延續的目標。Codewhale 可以把工作分給[子代理](docs/SUBAGENTS.md)、
@@ -166,7 +173,7 @@ Codewhale 發現這類檔案卻沒有載入時，會發出警告。
 | 指令 | 作用 |
 | --- | --- |
 | `codewhale` | 互動式終端機應用程式 |
-| `codewhale exec "…"` | 在沒有介面的情況下執行一項任務。單獨使用時，它只回答、不使用工具；`--auto` 讓它編輯檔案並執行指令，`--output-format stream-json` 以 JSON 串流輸出事件 |
+| `codewhale exec "…"` | 在沒有介面的情況下執行一項任務。單獨使用時，它只回答、不使用工具；`--auto` 預設以「完整存取」權限啟用工具，`--sandbox workspace-write` 對工具加以限制，`--output-format stream-json` 以 JSON 串流輸出事件 |
 | `codewhale web` | 在 `127.0.0.1` 上的本機 Web UI（[指南](docs/WEB.md)） |
 | `codewhale review --pr N` | 對 GitHub PR（Pull Request）進行僅供參考的審查。除非你加上 `--post`，否則不會張貼任何內容；[GitHub Action](docs/GITHUB_ACTION.md) 會在 CI 中執行相同的審查 |
 | `codewhale app-server --http` | [Runtime API](docs/RUNTIME_API.md)，用於執行緒、事件、核准與每個回合檔案變更的本機 HTTP API |

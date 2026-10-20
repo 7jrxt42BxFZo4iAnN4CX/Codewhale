@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:eefdc9e645b6 -->
+<!-- source: README.md sha256:30c9b9765b04 -->
 <div align="center">
 
 <picture>
@@ -88,11 +88,14 @@ Anda beserta perubahan berkasnya (di 0.10.1, jalankan `/trust on` terlebih
 dahulu). `/help` menampilkan daftar perintah dan tombol.
 
 Untuk skrip dan CI, `codewhale exec` menjalankan satu tugas tanpa antarmuka.
-Dengan `--auto`, ia mengedit berkas dan menjalankan perintah shell tanpa
-bertanya, jadi jalankan di dalam container atau checkout sekali pakai:
+Secara default, `--auto` memakai Akses penuh: alat berjalan tanpa bertanya,
+perintah shell tidak dibatasi sandbox Codewhale, dan mode kepercayaan
+mengizinkan alat berkas menulis di luar workspace. Tambahkan
+`--sandbox workspace-write` untuk mempertahankan sandbox shell dan batasan
+workspace bagi alat berkas, dengan mode kepercayaan dinonaktifkan:
 
 ```bash
-codewhale exec --auto "fix the failing tests and explain what changed"
+codewhale exec --auto --sandbox workspace-write "fix the failing tests and explain what changed"
 ```
 
 ## Mode dan izin
@@ -162,6 +165,13 @@ mengembalikan seluruh workspace
 ke snapshot sebelumnya; karena itu menimpa edit yang lebih baru, perintah ini
 memerlukan `/trust on` atau Akses penuh. Lihat [Receipt](docs/RECEIPTS.md).
 
+Eksekusi exec yang menyediakan alat disimpan dalam setiap format output, jadi
+`codewhale receipts --last` bisa dipakai setelah `exec --auto`, termasuk dengan
+`--json`. Eksekusi yang hanya menjawab dengan teks atau `--json` hanya disimpan
+saat melanjutkan percakapan atau ketika pemadatan percakapan dimulai; gunakan
+`--output-format stream-json` agar selalu tersimpan untuk receipt atau
+`exec --continue`.
+
 ### Pekerjaan yang lebih panjang
 
 `/goal` menetapkan sasaran yang berlanjut lintas giliran. Codewhale dapat
@@ -201,7 +211,7 @@ Anda meninjau aksesnya dan mengaktifkannya
 | Perintah | Fungsinya |
 | --- | --- |
 | `codewhale` | Aplikasi terminal interaktif |
-| `codewhale exec "…"` | Satu tugas tanpa antarmuka. Tanpa flag tambahan, ia menjawab tanpa memakai alat; `--auto` mengizinkannya mengedit berkas dan menjalankan perintah, dan `--output-format stream-json` men-streaming event sebagai JSON |
+| `codewhale exec "…"` | Satu tugas tanpa antarmuka. Tanpa flag tambahan, ia menjawab tanpa memakai alat; `--auto` mengaktifkan alat dengan Akses penuh secara default, `--sandbox workspace-write` membatasinya, dan `--output-format stream-json` men-streaming event sebagai JSON |
 | `codewhale web` | UI web lokal di `127.0.0.1` ([panduan](docs/WEB.md)) |
 | `codewhale review --pr N` | Tinjauan yang bersifat saran untuk pull request GitHub. Ia tidak memposting apa pun kecuali Anda menambahkan `--post`; [GitHub Action](docs/GITHUB_ACTION.md) menjalankan tinjauan yang sama di CI |
 | `codewhale app-server --http` | [Runtime API](docs/RUNTIME_API.md), API HTTP lokal untuk thread, event, persetujuan, dan perubahan berkas setiap giliran |

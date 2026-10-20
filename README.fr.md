@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:eefdc9e645b6 -->
+<!-- source: README.md sha256:30c9b9765b04 -->
 <div align="center">
 
 <picture>
@@ -91,11 +91,15 @@ annule votre dernière demande et ses modifications de fichiers (dans la 0.10.1,
 lancez d’abord `/trust on`). `/help` liste les commandes et les touches.
 
 Pour les scripts et la CI, `codewhale exec` exécute une tâche sans l’interface.
-Avec `--auto`, il modifie des fichiers et exécute des commandes shell sans
-demander ; lancez-le donc dans un conteneur ou une copie de travail jetable :
+Par défaut, `--auto` utilise Full Access : les outils s’exécutent sans demander,
+les commandes shell n’ont pas de bac à sable Codewhale et le mode de confiance
+permet aux outils de fichiers d’écrire en dehors de l’espace de travail.
+Ajoutez `--sandbox workspace-write` pour conserver le bac à sable du shell et
+les restrictions des outils de fichiers à l’espace de travail, avec le mode de
+confiance désactivé :
 
 ```bash
-codewhale exec --auto "fix the failing tests and explain what changed"
+codewhale exec --auto --sandbox workspace-write "fix the failing tests and explain what changed"
 ```
 
 ## Modes et permissions
@@ -166,6 +170,14 @@ ramène tout l’espace de travail à un instantané antérieur ; comme cela éc
 les modifications ultérieures, il faut `/trust on` ou Full Access. Voir
 [Reçus](docs/RECEIPTS.md).
 
+Les exécutions d’exec qui proposent des outils sont enregistrées dans tous les
+formats de sortie ; `codewhale receipts --last` fonctionne donc après
+`exec --auto`, y compris avec `--json`. Les exécutions qui se limitent à une
+réponse en texte ou avec `--json` ne sont enregistrées que lors d’une reprise
+ou lorsque la compaction de la conversation commence ; utilisez
+`--output-format stream-json` pour toujours les enregistrer pour les reçus ou
+pour `exec --continue`.
+
 ### Travail de longue durée
 
 `/goal` fixe un objectif qui se maintient d’un tour à l’autre. Codewhale peut
@@ -206,7 +218,7 @@ ne l’avez pas activé ([guide](crates/tui/plugins/computer-use/README.md)).
 | Commande | Ce qu’elle fait |
 | --- | --- |
 | `codewhale` | L’application interactive dans le terminal |
-| `codewhale exec "…"` | Une tâche sans l’interface. Sans option, il répond sans utiliser d’outils ; `--auto` lui permet de modifier des fichiers et d’exécuter des commandes, et `--output-format stream-json` diffuse les événements en JSON |
+| `codewhale exec "…"` | Une tâche sans l’interface. Sans option, il répond sans utiliser d’outils ; `--auto` active les outils avec Full Access par défaut, `--sandbox workspace-write` les restreint, et `--output-format stream-json` diffuse les événements en JSON |
 | `codewhale web` | Une interface web locale sur `127.0.0.1` ([guide](docs/WEB.md)) |
 | `codewhale review --pr N` | Une revue consultative d’une pull request GitHub. Elle ne publie rien sauf si vous ajoutez `--post` ; la [GitHub Action](docs/GITHUB_ACTION.md) exécute la même revue en CI |
 | `codewhale app-server --http` | La [Runtime API](docs/RUNTIME_API.md), une API HTTP locale pour les fils, les événements, les approbations et les modifications de fichiers de chaque tour |

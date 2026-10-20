@@ -725,6 +725,7 @@ impl CancelReason {
 #[derive(Clone)]
 pub struct EngineHandle {
     goal_state: SharedGoalState,
+    pub(crate) sandbox_enforcement: crate::sandbox::policy::SandboxEnforcement,
     /// Send operations to the engine
     pub tx_op: mpsc::Sender<Op>,
     /// Receive events from the engine
@@ -2522,6 +2523,7 @@ impl Engine {
         };
         let handle = EngineHandle {
             goal_state: engine.config.goal_state.clone(),
+            sandbox_enforcement,
             tx_op,
             rx_event: Arc::new(RwLock::new(rx_event)),
             cancel_token: shared_cancel_token,
@@ -9827,6 +9829,7 @@ pub(crate) fn mock_engine_handle() -> MockEngineHandle {
     let compaction_cancellation = Arc::new(StdMutex::new(CompactionCancellationState::default()));
     let handle = EngineHandle {
         goal_state: new_shared_goal_state(),
+        sandbox_enforcement: crate::sandbox::policy::SandboxEnforcement::Unavailable,
         tx_op,
         rx_event: Arc::new(RwLock::new(rx_event)),
         cancel_token: shared_cancel_token,

@@ -82,12 +82,14 @@ asks first: `y` runs it once, `a` allows commands like it for the rest of the
 conversation, `n` refuses. `/undo` takes back your last request and its file
 changes (in 0.10.1, run `/trust on` first). `/help` lists commands and keys.
 
-For scripts and CI, `codewhale exec` runs one task without the interface. With
-`--auto` it edits files and runs shell commands without asking, so give it a
-container or a throwaway checkout:
+For scripts and CI, `codewhale exec` runs one task without the interface. By
+default, `--auto` uses Full Access: tools run without asking, shell commands
+have no Codewhale sandbox, and trust mode lets file tools write outside the
+workspace. Add `--sandbox workspace-write` to keep the shell sandbox and
+file-tool workspace restrictions, with trust mode off:
 
 ```bash
-codewhale exec --auto "fix the failing tests and explain what changed"
+codewhale exec --auto --sandbox workspace-write "fix the failing tests and explain what changed"
 ```
 
 ## Modes and permissions
@@ -150,6 +152,12 @@ needs `/trust on` for files and steps back one tool call at a time. `/restore`
 rolls the whole workspace back to an earlier snapshot; because that overwrites
 later edits, it needs `/trust on` or Full Access. See [Receipts](docs/RECEIPTS.md).
 
+Exec runs that offer tools are saved in every output format, so
+`codewhale receipts --last` works after `exec --auto`, including `--json`.
+Answer-only text and `--json` runs are saved only when resuming or when
+conversation compaction starts; use `--output-format stream-json` to always
+save them for receipts or `exec --continue`.
+
 ### Longer work
 
 `/goal` sets an objective that carries across turns. Codewhale can split work
@@ -189,7 +197,7 @@ and operate other apps. It stays off until you review its access and enable it
 | Command | What it does |
 | --- | --- |
 | `codewhale` | The interactive terminal app |
-| `codewhale exec "…"` | One task without the interface. On its own it answers without using tools; `--auto` lets it edit files and run commands, and `--output-format stream-json` streams events as JSON |
+| `codewhale exec "…"` | One task without the interface. On its own it answers without using tools; `--auto` enables tools with Full Access by default, `--sandbox workspace-write` restricts them, and `--output-format stream-json` streams events as JSON |
 | `codewhale web` | A local web UI on `127.0.0.1` ([guide](docs/WEB.md)) |
 | `codewhale review --pr N` | An advisory review of a GitHub pull request. It posts nothing unless you add `--post`; the [GitHub Action](docs/GITHUB_ACTION.md) runs the same review in CI |
 | `codewhale app-server --http` | The [Runtime API](docs/RUNTIME_API.md), a local HTTP API for threads, events, approvals, and each turn's file changes |

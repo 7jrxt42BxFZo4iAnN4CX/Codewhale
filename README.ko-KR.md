@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:eefdc9e645b6 -->
+<!-- source: README.md sha256:30c9b9765b04 -->
 <div align="center">
 
 <picture>
@@ -86,11 +86,14 @@ Fix the failing tests and explain what changed.
 볼 수 있습니다.
 
 스크립트와 CI용으로는 인터페이스 없이 작업 하나를 실행하는 `codewhale exec`
-명령이 있습니다. `--auto`를 주면 묻지 않고 파일을 편집하고 셸 명령을
-실행하므로, 컨테이너나 버려도 되는 체크아웃에서 실행하세요.
+명령이 있습니다. 기본적으로 `--auto`는 전체 접근 권한을 사용합니다. 도구는
+묻지 않고 실행되고, 셸 명령에는 Codewhale 샌드박스가 적용되지 않으며, 신뢰
+모드에서는 파일 도구가 작업 공간 밖에도 쓸 수 있습니다.
+`--sandbox workspace-write`를 추가하면 신뢰 모드를 끄고 셸 샌드박스와 파일
+도구의 작업 공간 제한을 유지할 수 있습니다.
 
 ```bash
-codewhale exec --auto "fix the failing tests and explain what changed"
+codewhale exec --auto --sandbox workspace-write "fix the failing tests and explain what changed"
 ```
 
 ## 모드와 권한
@@ -154,6 +157,12 @@ ChatGPT 요금제를 사용할 수 있습니다(실험적). [제공업체](docs/
 스냅샷으로 되돌리는데, 이후의 편집을 덮어쓰기 때문에 `/trust on` 또는 전체
 접근 권한이 필요합니다. [영수증](docs/RECEIPTS.md)을 참고하세요.
 
+도구를 사용할 수 있는 exec 실행은 모든 출력 형식에서 저장되므로, `--json`을
+포함한 `exec --auto` 실행 후에도 `codewhale receipts --last`를 쓸 수 있습니다.
+답변만 하는 텍스트 및 `--json` 실행은 재개하거나 대화 압축이 시작될 때만
+저장됩니다. 영수증이나 `exec --continue`를 위해 항상 저장하려면
+`--output-format stream-json`을 사용하세요.
+
 ### 긴 작업
 
 `/goal`은 여러 턴에 걸쳐 유지되는 목표를 정합니다. Codewhale은 작업을
@@ -192,7 +201,7 @@ Codewhale은 따로 설정하지 않아도 `AGENTS.md`를 읽습니다. `CLAUDE.
 | 명령 | 하는 일 |
 | --- | --- |
 | `codewhale` | 대화형 터미널 앱 |
-| `codewhale exec "…"` | 인터페이스 없이 작업 하나를 실행합니다. 옵션 없이 쓰면 도구를 사용하지 않고 답변만 하고, `--auto`는 파일 편집과 명령 실행을 허용하며, `--output-format stream-json`은 이벤트를 JSON으로 스트리밍합니다 |
+| `codewhale exec "…"` | 인터페이스 없이 작업 하나를 실행합니다. 옵션 없이 쓰면 도구를 사용하지 않고 답변만 하고, `--auto`는 기본적으로 전체 접근 권한으로 도구를 활성화하고, `--sandbox workspace-write`는 도구를 제한하며, `--output-format stream-json`은 이벤트를 JSON으로 스트리밍합니다 |
 | `codewhale web` | `127.0.0.1`에서 동작하는 로컬 웹 UI([안내서](docs/WEB.md)) |
 | `codewhale review --pr N` | GitHub 풀 리퀘스트에 대한 참고용 리뷰. `--post`를 추가하지 않으면 아무것도 게시하지 않으며, [GitHub Action](docs/GITHUB_ACTION.md)이 CI에서 같은 리뷰를 실행합니다 |
 | `codewhale app-server --http` | 스레드, 이벤트, 승인, 각 턴의 파일 변경을 다루는 로컬 HTTP API인 [Runtime API](docs/RUNTIME_API.md) |

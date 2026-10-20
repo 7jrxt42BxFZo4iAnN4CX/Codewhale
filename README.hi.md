@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:eefdc9e645b6 -->
+<!-- source: README.md sha256:30c9b9765b04 -->
 <div align="center">
 
 <picture>
@@ -83,12 +83,14 @@ Codewhale पहले पूछता है: `y` उसे एक बार �
 फ़ाइल बदलाव वापस करता है (0.10.1 में पहले `/trust on` चलाएँ)। `/help` कमांड और
 कीबोर्ड कुंजियों की सूची देता है।
 
-स्क्रिप्ट और CI के लिए `codewhale exec` बिना इंटरफ़ेस के एक काम चलाता है। `--auto` के
-साथ यह बिना पूछे फ़ाइलें संपादित करता है और शेल कमांड चलाता है, इसलिए इसे कोई कंटेनर
-या अस्थायी checkout दें:
+स्क्रिप्ट और CI के लिए `codewhale exec` बिना इंटरफ़ेस के एक काम चलाता है। डिफ़ॉल्ट
+रूप से `--auto` Full Access का इस्तेमाल करता है: टूल बिना पूछे चलते हैं, शेल कमांड
+पर Codewhale का सैंडबॉक्स लागू नहीं होता, और ट्रस्ट मोड फ़ाइल टूल को वर्कस्पेस के
+बाहर लिखने देता है। शेल सैंडबॉक्स और फ़ाइल टूल की वर्कस्पेस सीमाएँ बनाए रखने और
+ट्रस्ट मोड बंद रखने के लिए `--sandbox workspace-write` जोड़ें:
 
 ```bash
-codewhale exec --auto "fix the failing tests and explain what changed"
+codewhale exec --auto --sandbox workspace-write "fix the failing tests and explain what changed"
 ```
 
 ## मोड और अनुमतियाँ
@@ -152,6 +154,12 @@ Mistral, Moonshot, OpenRouter और xAI शामिल हैं। कोई 
 ओवरराइट हो जाते हैं, इसके लिए `/trust on` या Full Access चाहिए।
 [रसीदें](docs/RECEIPTS.md) देखें।
 
+जिन exec रन में टूल उपलब्ध होते हैं, वे हर आउटपुट फ़ॉर्मैट में सहेजे जाते हैं, इसलिए
+`codewhale receipts --last`, `exec --auto` के बाद काम करता है, `--json` के साथ भी।
+केवल जवाब देने वाले टेक्स्ट और `--json` रन तभी सहेजे जाते हैं जब उन्हें फिर से शुरू
+किया जाता है या बातचीत का कॉम्पैक्शन शुरू होता है; रसीदों या `exec --continue`
+के लिए उन्हें हमेशा सहेजने के लिए `--output-format stream-json` इस्तेमाल करें।
+
 ### लंबे काम
 
 `/goal` एक ऐसा उद्देश्य तय करता है जो कई टर्न तक बना रहता है। Codewhale काम को
@@ -188,7 +196,7 @@ Code mode (प्रायोगिक, डिफ़ॉल्ट रूप स�
 | कमांड | क्या करता है |
 | --- | --- |
 | `codewhale` | इंटरैक्टिव टर्मिनल ऐप |
-| `codewhale exec "…"` | बिना इंटरफ़ेस के एक काम। अकेले चलाने पर यह टूल का इस्तेमाल किए बिना जवाब देता है; `--auto` इसे फ़ाइलें संपादित करने और कमांड चलाने देता है, और `--output-format stream-json` इवेंट को JSON के रूप में स्ट्रीम करता है |
+| `codewhale exec "…"` | बिना इंटरफ़ेस के एक काम। अकेले चलाने पर यह टूल का इस्तेमाल किए बिना जवाब देता है; `--auto` डिफ़ॉल्ट रूप से Full Access के साथ टूल चालू करता है, `--sandbox workspace-write` उन्हें सीमित करता है, और `--output-format stream-json` इवेंट को JSON के रूप में स्ट्रीम करता है |
 | `codewhale web` | `127.0.0.1` पर एक लोकल वेब UI ([गाइड](docs/WEB.md)) |
 | `codewhale review --pr N` | किसी GitHub pull request की सलाह के तौर पर समीक्षा। जब तक आप `--post` न जोड़ें, यह कुछ पोस्ट नहीं करता; [GitHub Action](docs/GITHUB_ACTION.md) यही समीक्षा CI में चलाता है |
 | `codewhale app-server --http` | [Runtime API](docs/RUNTIME_API.md), थ्रेड, इवेंट, अनुमोदन और हर टर्न के फ़ाइल बदलावों के लिए एक लोकल HTTP API |

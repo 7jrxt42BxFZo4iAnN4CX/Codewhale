@@ -606,7 +606,7 @@ codewhale exec --auto --output-format stream-json "…"   # one JSON event per l
 
 （注释含义：单次回答，无工具；启用工具并自动批准；汇总 JSON（提供商、模型、用量、输出）；每行一个 JSON 事件。）
 
-`--auto` 会自动批准 shell 命令，所以只在你信任的仓库或沙箱里使用。
+`--auto` 默认启用 Full Access（完全访问）：工具无需批准即可运行，shell 命令没有 Codewhale 沙箱，信任模式允许文件工具写入工作区以外的路径。加上 `--sandbox workspace-write` 可保留 shell 沙箱和文件工具的工作区限制，并关闭信任模式。
 
 普通的 `exec` 不给模型提供任何工具。只有 `--auto`、`--yolo`、`--allowed-tools` 或恢复某个会话才会打开工具面；`--max-turns`、`--disallowed-tools`、`--sandbox` 和输出格式这类限制项从不会增加工具（仅对工具有效的参数会打印警告）。如果提供商在输出上限处截断了回复，会要求模型继续，最终打印出的答案是完整的回复。普通运行最多进行 8 个模型步骤，除非用 `--max-turns` 另设上限；在该上限处仍被截断的回复会使这次运行失败。
 
@@ -622,7 +622,7 @@ codewhale exec --resume <id> "…"
 
 （注释含义：会话 ID 或其唯一前缀；继续此目录中最近的会话；列出已保存的会话；对最近会话进行无头跟进。）
 
-在 v0.10.0 中，只有 **TUI 会话**和 **`--output-format stream-json`** 的 exec 运行会被保存。普通的 `codewhale exec`/`exec --auto` 运行*不会*被保存，所以紧接着的 `exec --continue` 会失败，报 `No saved sessions found for workspace`。
+TUI 会话、恢复的 exec 会话，以及向模型提供工具的 exec 运行（包括 `exec --auto`）都会保存，无论使用哪种输出格式。`--output-format stream-json` 还会保存仅作答的运行。使用 `codewhale receipts --last` 可查看已保存运行的回执。其他仅作答的纯文本和 `--json` 运行只有在开始压缩对话时才会保存；否则不会为 `exec --continue` 或回执创建会话。
 
 ---
 
@@ -727,7 +727,7 @@ Codewhale 没有在 `$HOME` 和它被使用过的仓库之外写入任何东西�
 运行 `sudo apt-get install -y libdbus-1-dev pkg-config`。
 
 **`error: No saved sessions found for workspace …`（来自 `exec --continue`）。**
-上一次运行是纯文本的 `exec`，它不会被保存。请使用 TUI，或者 `--output-format stream-json`。
+此工作区尚无已保存的会话。新建的仅作答纯文本和 `--json` exec 运行只有在开始压缩对话时才会保存；使用 `--output-format stream-json` 可确保保存。TUI 会话和向模型提供工具的 exec 运行会在所有输出格式下保存。
 
 **zsh 补全在第一个词之后给出错误的建议。**
 v0.10.0 的已知 bug。bash 和 fish 没问题。

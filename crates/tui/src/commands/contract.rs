@@ -386,6 +386,7 @@ impl CommandSessionLifecycleContext for SessionLifecycleAdapter<'_> {
                     .clone()
                     .unwrap_or_else(|| "(none)".to_string());
                 app.clear_history();
+                app.session_turn_outcomes = session.turn_outcomes.clone();
                 app.session_artifacts = session.artifacts.clone();
                 app.session_context_references = session.context_references.clone();
                 app.extend_history(

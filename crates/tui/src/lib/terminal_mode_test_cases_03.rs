@@ -698,7 +698,7 @@
                 duration_ms: 2500,
                 retry_count: None,
                 approval_posture: "ask".to_string(),
-                sandbox_posture: "configured_default".to_string(),
+                sandbox_posture: "workspace-write".to_string(),
                 binary_sha256: Some("sha256:binary".to_string()),
                 config_sha256: None,
                 prompt_sha256: "sha256:prompt".to_string(),

@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:eefdc9e645b6 -->
+<!-- source: README.md sha256:30c9b9765b04 -->
 <div align="center">
 
 <picture>
@@ -75,11 +75,13 @@ Fix the failing tests and explain what changed.
 `a` 在本次对话接下来的时间里允许类似的命令，`n` 拒绝。`/undo` 会撤销你的上一个请求及其
 文件改动（在 0.10.1 中，需先运行 `/trust on`）。`/help` 列出命令和按键。
 
-在脚本和 CI 中，`codewhale exec` 不启动界面，只运行一个任务。加上 `--auto` 后，
-它会不经询问就编辑文件和运行 shell 命令，所以请在容器或一次性的检出副本中运行它：
+在脚本和 CI 中，`codewhale exec` 不启动界面，只运行一个任务。默认情况下，`--auto` 使用
+“完全访问”权限：工具不经询问就运行，shell 命令不受 Codewhale 沙箱限制，信任模式允许
+文件工具写入工作区之外的位置。加上 `--sandbox workspace-write` 可保留 shell 沙箱和
+文件工具的工作区限制，并关闭信任模式：
 
 ```bash
-codewhale exec --auto "fix the failing tests and explain what changed"
+codewhale exec --auto --sandbox workspace-write "fix the failing tests and explain what changed"
 ```
 
 ## 模式与权限
@@ -135,6 +137,11 @@ Web 和 MCP 调用、启动过的智能体、审批及审批人，以及失败�
 在 0.10.1 中，撤销文件改动需要 `/trust on`，而且每次只回退一个工具调用。`/restore` 把整个工作区回滚到更早的快照；由于这会覆盖之后的编辑，它需要 `/trust on`
 或“完全访问”权限。参见[回执](docs/RECEIPTS.md)。
 
+可使用工具的 exec 运行无论采用哪种输出格式都会保存，因此在 `exec --auto` 之后，
+包括使用 `--json` 时，`codewhale receipts --last` 都能正常工作。仅作答且使用文本输出或
+`--json` 的运行，只有在恢复对话或开始压缩对话时才会保存；使用
+`--output-format stream-json` 可始终保存这些运行，供回执或 `exec --continue` 使用。
+
 ### 更长的任务
 
 `/goal` 设定一个跨回合持续有效的目标。Codewhale 可以把工作拆分给
@@ -167,7 +174,7 @@ Codewhale 会自动读取 `AGENTS.md`。为其他工具编写的指令文件，�
 | 命令 | 作用 |
 | --- | --- |
 | `codewhale` | 交互式终端应用 |
-| `codewhale exec "…"` | 不启动界面，运行一个任务。单独使用时，它只作答而不使用工具；`--auto` 允许它编辑文件和运行命令，`--output-format stream-json` 以 JSON 形式流式输出事件 |
+| `codewhale exec "…"` | 不启动界面，运行一个任务。单独使用时，它只作答而不使用工具；`--auto` 默认以“完全访问”权限启用工具，`--sandbox workspace-write` 对工具施加限制，`--output-format stream-json` 以 JSON 形式流式输出事件 |
 | `codewhale web` | 监听 `127.0.0.1` 的本地 Web 界面（[指南](docs/WEB.md)） |
 | `codewhale review --pr N` | 对 GitHub PR 进行仅供参考的审查。除非你加上 `--post`，否则它不会发布任何内容；[GitHub Action](docs/GITHUB_ACTION.md) 会在 CI 中运行同样的审查 |
 | `codewhale app-server --http` | [Runtime API](docs/RUNTIME_API.md)，用于对话线程、事件、审批以及每个回合文件改动的本地 HTTP API |

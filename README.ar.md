@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:eefdc9e645b6 -->
+<!-- source: README.md sha256:30c9b9765b04 -->
 <div align="center">
 
 <picture>
@@ -80,12 +80,14 @@ Fix the failing tests and explain what changed.
 يرفضه. ويُلغي `/undo` آخر طلب لك وتغييرات الملفات الناتجة عنه (في 0.10.1، شغّل
 `/trust on` أولًا). ويسرد `/help` الأوامر واختصارات لوحة المفاتيح.
 
-في السكربتات وCI، يشغّل `codewhale exec` مهمة واحدة دون الواجهة. ومع `--auto`
-يعدّل الملفات ويشغّل أوامر الصدفة دون أن يسأل، لذا شغّله داخل حاوية أو في نسخة
-checkout يمكن التخلص منها:
+في السكربتات وCI، يشغّل `codewhale exec` مهمة واحدة دون الواجهة. افتراضيًا،
+يستخدم `--auto` وضع Full Access: تعمل الأدوات دون سؤال، وتعمل أوامر الصدفة دون
+صندوق حماية Codewhale، ويتيح وضع الثقة لأدوات الملفات الكتابة خارج مساحة العمل.
+أضف `--sandbox workspace-write` للإبقاء على صندوق حماية الصدفة وقيود مساحة العمل
+على أدوات الملفات، مع تعطيل وضع الثقة:
 
 ```bash
-codewhale exec --auto "fix the failing tests and explain what changed"
+codewhale exec --auto --sandbox workspace-write "fix the failing tests and explain what changed"
 ```
 
 ## الأوضاع والأذونات
@@ -146,6 +148,12 @@ OpenAI، وكذلك النماذج المحلية عبر Ollama أو vLLM أو S
 كلها إلى لقطة سابقة؛ ولأن ذلك يكتب فوق التعديلات اللاحقة، فإنه يتطلب `/trust on`
 أو Full Access. راجع [الإيصالات](docs/RECEIPTS.md).
 
+تُحفظ عمليات تشغيل exec التي تتيح أدوات بكل صيغ الإخراج، لذا يعمل
+`codewhale receipts --last` بعد `exec --auto`، بما في ذلك مع `--json`.
+أما عمليات التشغيل التي تقتصر على الإجابة بإخراج نصي أو `--json` فلا تُحفظ إلا
+عند الاستئناف أو عند بدء ضغط المحادثة؛ استخدم `--output-format stream-json`
+لحفظها دائمًا من أجل الإيصالات أو `exec --continue`.
+
 ### الأعمال الأطول
 
 يحدد `/goal` هدفًا يستمر عبر دورات المحادثة. ويستطيع Codewhale توزيع العمل على
@@ -182,7 +190,7 @@ OpenAI، وكذلك النماذج المحلية عبر Ollama أو vLLM أو S
 | الأمر | ما يفعله |
 | --- | --- |
 | `codewhale` | تطبيق الطرفية التفاعلي |
-| `codewhale exec "…"` | مهمة واحدة دون الواجهة. دون خيارات إضافية يجيب دون استخدام الأدوات؛ ويسمح له `--auto` بتعديل الملفات وتشغيل الأوامر، ويبث `--output-format stream-json` الأحداث بصيغة JSON |
+| `codewhale exec "…"` | مهمة واحدة دون الواجهة. دون خيارات إضافية يجيب دون استخدام الأدوات؛ ويفعّل `--auto` الأدوات مع Full Access افتراضيًا، ويقيّدها `--sandbox workspace-write`، ويبث `--output-format stream-json` الأحداث بصيغة JSON |
 | `codewhale web` | واجهة ويب محلية على `127.0.0.1` ([الدليل](docs/WEB.md)) |
 | `codewhale review --pr N` | مراجعة استشارية لطلب pull request على GitHub. لا ينشر شيئًا ما لم تضف `--post`؛ ويُجري [GitHub Action](docs/GITHUB_ACTION.md) المراجعة نفسها في CI |
 | `codewhale app-server --http` | واجهة [Runtime API](docs/RUNTIME_API.md)، وهي واجهة HTTP محلية للخيوط والأحداث والموافقات وتغييرات الملفات في كل دورة |

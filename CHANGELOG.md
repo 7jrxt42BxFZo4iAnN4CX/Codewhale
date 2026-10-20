@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-19
+
+Codewhale v0.10.2 adds an animated pet view (`/pet on`), a live Terminal work
+dock and per-chat composer colors (`/color`). It closes three session
+data-loss paths, a sandbox escape through the Runtime daemon socket and a
+`codewhale web` session leak; holds a `curl` or `wget` that uploads a
+credential; refuses shell commands containing invisible Unicode; keeps the
+Linux sandbox working when a hidden credential directory is a symlink; and
+uses much less CPU while the TUI waits on you. `/undo` takes back a whole
+request, including long and multiline prompts. `exec --auto` explains its
+Full Access default, honors an explicitly stricter sandbox, and saves
+tool-enabled runs and their failure receipts. Local runtimes appear during
+onboarding, `/diff` works outside a Git repository, DeepSeek's Responses route
+no longer rejects replayed tool history, and contributor fixes improve token
+accounting, relay model lists, localized replies and Windows launcher
+guidance.
+
+### Latest fixes
+
+- `/undo` takes back the latest request and its file changes without requiring
+  trust mode, while refusing ambiguous snapshot matches. Trailing whitespace
+  in a prompt label no longer prevents a match, and an empty first line in
+  another request no longer blocks the whole conversation.
+- `exec --auto` help and documentation now state its default Full Access:
+  automatic tool approvals, no Codewhale shell sandbox, and trust mode on.
+  Selecting any sandbox other than `danger-full-access`, by flag or config,
+  keeps trust mode off. This includes `external-sandbox`, which relies on
+  host-managed isolation and no longer grants file tools trust-mode access.
+  Stream metadata reports whether the requested sandbox is actually enforced.
+- Exec flags go before the prompt. A known long flag or `--flag=value` after
+  the prompt now produces an error instead of silently becoming prompt text;
+  use `--` for literal flag text or a prompt starting with `-`.
+- Exec runs that offer tools save sessions in every output format. Exec and
+  interactive sessions each keep their own retention allowance, so CI runs
+  cannot archive interactive conversations. Live and saved receipts include
+  retained terminal failures, and conversation rewinds discard outcomes from
+  removed turns so they cannot be attributed to later requests.
+- Onboarding lists Ollama, LM Studio, and vLLM even before a local runtime is
+  detected, so they can be selected and configured. The `L` filter is available
+  during onboarding after local-runtime detection.
 - `/fork <id>` now shows the forked conversation. Before, the screen kept
   the previous conversation while the model already had the fork's history.
 - With `/translate` on, each translated thinking block lands in its own
@@ -95,22 +135,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Without auth, a website could point its own domain at 127.0.0.1 (DNS
   rebinding) and drive the Runtime API from your browser; such requests now
   get `421 Misdirected Request`. Servers with auth are unchanged.
-
-## [0.10.2] - 2026-10-18
-
-Codewhale v0.10.2 adds an animated pet view (`/pet on`), a live Terminal work
-dock and per-chat composer colors (`/color`). It closes three session
-data-loss paths, a sandbox escape through the Runtime daemon socket and a
-`codewhale web` session leak; holds a `curl` or `wget` that uploads a
-credential; refuses shell commands containing invisible Unicode; keeps the
-Linux sandbox working when a hidden credential directory is a symlink; and
-uses much less CPU while the TUI waits on you. `/undo` takes back a whole
-request, `/diff` works outside a Git repository, DeepSeek's Responses route no
-longer rejects replayed tool history, and contributor fixes improve token
-accounting, relay model lists, localized replies and Windows launcher
-guidance.
-
-### Latest fixes
 
 - Sandboxed commands can no longer reach Codewhale's Runtime daemon socket.
   On Linux with bubblewrap, and on macOS with sandbox network access on, a
@@ -549,11 +573,15 @@ guidance.
 - DeepSeek on the Responses route (the `deepseek-flash` default) no longer
   fails with `400 reasoning_text must be passed back` when a session replays a
   tool call that has no stored DeepSeek reasoning: a turn that was interrupted,
-  ran with thinking off, or came from another provider. Codewhale now sends the
-  same `(reasoning omitted)` placeholder the Chat route already uses, before
-  that turn's tool calls. A live probe on 2026-10-17 returned 400 without it and
-  200 with it. On Chat, DeepSeek enforces this only for tool-call turns, which
-  were already covered (Refs CW-7450).
+  ran with thinking off, came from another provider, or where the model wrote
+  text before its tool calls without visible reasoning. Codewhale now sends each
+  assistant turn's reasoning first, ahead of its text and tool calls, using the
+  same `(reasoning omitted)` placeholder the Chat route already uses when there
+  is none. Live probes on 2026-10-19 returned 400 for text → reasoning → tool
+  call and for no reasoning, and 200 for reasoning → text → tool call. The same
+  multi-step task that failed in 2 of 4 runs on the first 0.10.2 candidate
+  passed 6 of 6 with the fix. On Chat, DeepSeek enforces this only for
+  tool-call turns, which were already covered (Refs CW-7450).
 - At reasoning effort `max`, the first-party DeepSeek route now asks for up to
   131,072 output tokens, DeepSeek's documented default at that effort, instead
   of 65,536. Every other provider and effort keeps 65,536, and explicit

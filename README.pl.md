@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:eefdc9e645b6 -->
+<!-- source: README.md sha256:30c9b9765b04 -->
 <div align="center">
 
 <picture>
@@ -87,12 +87,15 @@ zezwala na podobne polecenia do końca rozmowy, `n` odmawia. `/undo` cofa Twoje
 ostatnie zlecenie i zmiany, które wprowadziło w plikach (w 0.10.1 najpierw
 uruchom `/trust on`). `/help` wyświetla polecenia i skróty klawiszowe.
 
-W skryptach i CI `codewhale exec` wykonuje jedno zadanie bez interfejsu. Z
-`--auto` edytuje pliki i uruchamia polecenia powłoki bez pytania, więc
-uruchamiaj go w kontenerze albo w jednorazowej kopii roboczej:
+W skryptach i CI `codewhale exec` wykonuje jedno zadanie bez interfejsu.
+Domyślnie `--auto` używa Full Access: narzędzia działają bez pytania, polecenia
+powłoki działają bez piaskownicy Codewhale, a tryb zaufania pozwala narzędziom
+plikowym zapisywać pliki poza obszarem roboczym. Dodaj
+`--sandbox workspace-write`, aby zachować piaskownicę powłoki i ograniczyć
+narzędzia plikowe do obszaru roboczego, z wyłączonym trybem zaufania:
 
 ```bash
-codewhale exec --auto "fix the failing tests and explain what changed"
+codewhale exec --auto --sandbox workspace-write "fix the failing tests and explain what changed"
 ```
 
 ## Tryby i uprawnienia
@@ -163,6 +166,13 @@ przywraca cały obszar roboczy do wcześniejszej migawki; ponieważ nadpisuje to
 późniejsze zmiany, wymaga `/trust on` lub Full Access. Zobacz
 [Pokwitowania](docs/RECEIPTS.md).
 
+Uruchomienia exec z dostępnymi narzędziami są zapisywane w każdym formacie
+wyjściowym, więc `codewhale receipts --last` działa po `exec --auto`, także
+z `--json`. Uruchomienia bez narzędzi z wyjściem tekstowym lub `--json` są
+zapisywane tylko przy wznawianiu lub gdy zaczyna się kompakcja rozmowy; użyj
+`--output-format stream-json`, aby zawsze je zapisywać na potrzeby pokwitowań
+lub `exec --continue`.
+
 ### Dłuższa praca
 
 `/goal` ustawia cel, który obowiązuje przez kolejne tury. Codewhale może
@@ -203,7 +213,7 @@ Pozostaje wyłączona, dopóki nie sprawdzisz jej dostępu i jej nie włączysz
 | Polecenie | Co robi |
 | --- | --- |
 | `codewhale` | Interaktywna aplikacja terminalowa |
-| `codewhale exec "…"` | Jedno zadanie bez interfejsu. Bez dodatkowych flag odpowiada bez użycia narzędzi; `--auto` pozwala mu edytować pliki i uruchamiać polecenia, a `--output-format stream-json` strumieniuje zdarzenia jako JSON |
+| `codewhale exec "…"` | Jedno zadanie bez interfejsu. Bez dodatkowych flag odpowiada bez użycia narzędzi; `--auto` domyślnie włącza narzędzia z Full Access, `--sandbox workspace-write` je ogranicza, a `--output-format stream-json` strumieniuje zdarzenia jako JSON |
 | `codewhale web` | Lokalny interfejs przeglądarkowy pod `127.0.0.1` ([przewodnik](docs/WEB.md)) |
 | `codewhale review --pr N` | Doradczy przegląd pull requesta na GitHubie. Niczego nie publikuje, chyba że dodasz `--post`; [GitHub Action](docs/GITHUB_ACTION.md) uruchamia ten sam przegląd w CI |
 | `codewhale app-server --http` | [Runtime API](docs/RUNTIME_API.md), lokalne HTTP API dla wątków, zdarzeń, zatwierdzeń i zmian w plikach z każdej tury |
