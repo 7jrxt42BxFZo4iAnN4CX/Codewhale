@@ -708,7 +708,9 @@ model discovery/selection, and the advertised mode/model config options.
 `session/new` creates a durable bare UUID and empty checkpoint without calling a
 provider. `session/load` replays the saved conversation as `session/update`
 notifications before it responds: user and agent text, then each tool call with
-its final status. Reasoning and images are not replayed. At most 64 idle transport bindings are retained; eviction keeps the
+its final status. Replayed tool results are masked as on the live stream: a
+`request_user_input` answer becomes `User input submitted` and configured
+credentials are redacted. Reasoning and images are not replayed. At most 64 idle transport bindings are retained; eviction keeps the
 durable conversation. Resume deduplicates against the existing thread binding.
 Full histories, tool pairs, signatures, media and partial-effect receipts are
 saved under the same checkpoint guard and session write lease used by HTTP.
@@ -993,6 +995,8 @@ a TLS or verified transport boundary.
 - `POST /v1/sessions/{id}/resume-thread` returns the open thread that already
   holds the whole saved session (`200`), or seeds a new thread from it (`201`)
   when none does, including when the session grew after that thread opened it.
+  Without a `mode` in the body, a new thread takes the saved mode; a saved mode
+  that is not a Runtime mode, such as `exec`, resumes as `agent`.
 - `GET /v1/sessions/{id}/artifacts` and `GET /v1/sessions/{id}/artifacts/{artifact_id}?offset=&limit=`
   (see workspace files and session artifacts above; runtime-turn spills are
   read through `GET /v1/threads/{id}/turns/{turn_id}/artifacts/{artifact_id}`)

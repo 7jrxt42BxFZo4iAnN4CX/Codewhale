@@ -17456,10 +17456,7 @@ impl RuntimeThreadManager {
         let receipt_secrets = tokio::task::spawn_blocking(move || {
             #[cfg(test)]
             let _membership = crate::test_support::join_env_scope(ticket);
-            let active_key = receipt_config
-                .active_route_api_key_read_only()
-                .unwrap_or_default();
-            crate::client::configured_model_bound_secret_values(&receipt_config, &active_key)
+            crate::client::active_model_bound_secret_values(&receipt_config)
         })
         .await
         .context("Runtime receipt redaction setup failed")?;
@@ -18026,6 +18023,8 @@ impl RuntimeThreadManager {
                                 } else {
                                     TurnItemLifecycleStatus::Failed
                                 };
+                                let detail =
+                                    tool_receipt_detail(&name, &output.content, &receipt_secrets);
                                 if name == REQUEST_USER_INPUT_TOOL_NAME {
                                     // The engine must return the structured
                                     // answers to the model, but Runtime
@@ -18033,8 +18032,8 @@ impl RuntimeThreadManager {
                                     // clients. Persist only a machine-readable
                                     // redaction marker, never answer labels or
                                     // free-text values.
-                                    item.summary = REDACTED_USER_INPUT_RECEIPT.to_string();
-                                    item.detail = Some(REDACTED_USER_INPUT_RECEIPT.to_string());
+                                    item.summary = detail.clone();
+                                    item.detail = Some(detail);
                                     item.metadata = Some(json!({
                                         "tool_call_id": id,
                                         "tool_name": REQUEST_USER_INPUT_TOOL_NAME,
@@ -18044,15 +18043,9 @@ impl RuntimeThreadManager {
                                     // Durable receipt: credentials a tool
                                     // printed are masked before they reach
                                     // the item store or the event log (B1).
-                                    let content = crate::client::redact_model_bound_text(
-                                        &output.content,
-                                        &receipt_secrets,
-                                    );
-                                    item.summary = summarize_text(
-                                        &format!("{name}: {content}"),
-                                        SUMMARY_LIMIT,
-                                    );
-                                    item.detail = Some(content);
+                                    item.summary =
+                                        summarize_text(&format!("{name}: {detail}"), SUMMARY_LIMIT);
+                                    item.detail = Some(detail);
                                     // `detail` is now the tool output, so the
                                     // call identity persisted at start must be
                                     // carried through metadata. Mark the
@@ -20279,6 +20272,14 @@ fn tool_kind_for_name(name: &str) -> TurnItemKind {
         return TurnItemKind::FileChange;
     }
     TurnItemKind::ToolCall
+}
+
+pub(crate) fn tool_receipt_detail(name: &str, content: &str, secrets: &[String]) -> String {
+    if name == REQUEST_USER_INPUT_TOOL_NAME {
+        REDACTED_USER_INPUT_RECEIPT.to_string()
+    } else {
+        crate::client::redact_model_bound_text(content, secrets)
+    }
 }
 
 pub fn summarize_text(text: &str, limit: usize) -> String {

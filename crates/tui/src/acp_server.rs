@@ -484,21 +484,7 @@ impl AcpServer {
             &id,
             crate::runtime_api::sessions::ResumeSessionRequest {
                 model: None,
-                mode: Some(
-                    if acp_mode(&self.config) == AppMode::Plan {
-                        "plan"
-                    } else {
-                        saved
-                            .metadata
-                            .mode
-                            .as_deref()
-                            .filter(|mode| {
-                                crate::runtime_policy::parse_runtime_mode(mode).is_some()
-                            })
-                            .unwrap_or("agent")
-                    }
-                    .to_string(),
-                ),
+                mode: (acp_mode(&self.config) == AppMode::Plan).then(|| "plan".to_string()),
             },
             (self.config_path.as_deref(), self.config_profile.as_deref()),
             Some(self.shell_allowed()),
@@ -538,6 +524,11 @@ impl AcpServer {
         use codewhale_models::ContentBlock;
         let saved = crate::session_manager::SessionManager::new(self.sessions_dir.clone())?
             .load_session(session_id)?;
+        let config = self.config.clone();
+        let secrets = tokio::task::spawn_blocking(move || {
+            crate::client::active_model_bound_secret_values(&config)
+        })
+        .await?;
         let mut calls = HashMap::new();
         for message in &saved.messages {
             for cell in history_cells_from_message(message) {
@@ -575,12 +566,15 @@ impl AcpServer {
                             } else {
                                 "completed"
                             };
+                            let detail = crate::runtime_threads::tool_receipt_detail(
+                                &call.name, content, &secrets,
+                            );
                             write_tool_call_update(
                                 writer,
                                 session_id,
                                 &call,
                                 status,
-                                Some(content),
+                                Some(&detail),
                             )
                             .await?;
                         }

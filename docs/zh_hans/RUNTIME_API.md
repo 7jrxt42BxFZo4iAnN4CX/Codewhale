@@ -588,7 +588,9 @@ Core 回合、事件时间线、审批等待器和完整 Engine 会话快照。
 （含持久 ID 前缀）、`session/prompt`、`session/cancel`、模型发现/选择，
 以及声明的模式/模型配置选项。新会话先持久化裸 UUID 和空检查点，不调用提供商。
 `session/load` 在响应前以 `session/update` 通知重放已保存的对话：用户与智能体
-文本，以及每个工具调用及其最终状态。推理内容和图片不会重放。
+文本，以及每个工具调用及其最终状态。重放的工具结果与实时流一样脱敏：
+`request_user_input` 的回答显示为 `User input submitted`，已配置的凭据被遮蔽。
+推理内容和图片不会重放。
 连接最多保留64个空闲绑定；淘汰绑定不删除持久会话。恢复复用已有线程绑定。
 完整历史、工具调用/结果配对、签名、媒体和部分执行回执通过 HTTP 同用的检查点
 守卫与会话写入租约保存。ACP 展示文本可以缩短，持久历史仍是完整 Core 快照。
@@ -851,7 +853,8 @@ bootstrap URL。该能力会创建一个 30 分钟的进程内
 - `DELETE /v1/sessions/{id}`
 - `POST /v1/sessions/{id}/resume-thread` 返回已经持有整个已保存会话的打开线程
   （`200`）；没有这样的线程时，从该会话播种一个新线程（`201`），包括会话在那个
-  线程打开它之后又有增长的情况。
+  线程打开它之后又有增长的情况。请求体未给出 `mode` 时，新线程沿用
+  已保存的模式；不是 Runtime 模式的已保存模式（例如 `exec`）以 `agent` 恢复。
 - `GET /v1/sessions/{id}/artifacts` 与 `GET /v1/sessions/{id}/artifacts/{artifact_id}?offset=&limit=`
   （参见上文的工作区文件与会话工件；运行时回合的溢出通过
   `GET /v1/threads/{id}/turns/{turn_id}/artifacts/{artifact_id}` 读取）
