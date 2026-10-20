@@ -996,7 +996,10 @@ a TLS or verified transport boundary.
   holds the whole saved session (`200`), or seeds a new thread from it (`201`)
   when none does, including when the session grew after that thread opened it.
   Without a `mode` in the body, a new thread takes the saved mode; a saved mode
-  that is not a Runtime mode, such as `exec`, resumes as `agent`.
+  that is not a Runtime mode, such as `exec`, resumes as `agent`. The new
+  thread's tool results are stored masked as live receipts are: a
+  `request_user_input` answer becomes `User input submitted` and configured
+  credentials are redacted. `GET /v1/sessions/{id}` still returns them unmasked.
 - `GET /v1/sessions/{id}/artifacts` and `GET /v1/sessions/{id}/artifacts/{artifact_id}?offset=&limit=`
   (see workspace files and session artifacts above; runtime-turn spills are
   read through `GET /v1/threads/{id}/turns/{turn_id}/artifacts/{artifact_id}`)

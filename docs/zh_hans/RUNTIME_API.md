@@ -855,6 +855,8 @@ bootstrap URL。该能力会创建一个 30 分钟的进程内
   （`200`）；没有这样的线程时，从该会话播种一个新线程（`201`），包括会话在那个
   线程打开它之后又有增长的情况。请求体未给出 `mode` 时，新线程沿用
   已保存的模式；不是 Runtime 模式的已保存模式（例如 `exec`）以 `agent` 恢复。
+  新线程保存的工具结果与实时回执一样脱敏：`request_user_input` 的回答记为
+  `User input submitted`，已配置的凭据被遮蔽。`GET /v1/sessions/{id}` 仍返回未脱敏的内容。
 - `GET /v1/sessions/{id}/artifacts` 与 `GET /v1/sessions/{id}/artifacts/{artifact_id}?offset=&limit=`
   （参见上文的工作区文件与会话工件；运行时回合的溢出通过
   `GET /v1/threads/{id}/turns/{turn_id}/artifacts/{artifact_id}` 读取）

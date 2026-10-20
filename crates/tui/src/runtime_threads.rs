@@ -13616,6 +13616,17 @@ impl RuntimeThreadManager {
         history_operation: Option<&RuntimeHistoryOperation>,
         checkpoint_messages: &[Message],
     ) -> Result<()> {
+        let config = self.read_config().clone();
+        let secrets = receipt_secret_values(config).await?;
+        let mut tool_names = HashMap::new();
+        for block in checkpoint_messages[..checkpoint_messages.len().saturating_sub(messages.len())]
+            .iter()
+            .flat_map(|message| &message.content)
+        {
+            if let ContentBlock::ToolUse { name, .. } = block {
+                tool_names.insert(block.tool_call_key(), name.as_str());
+            }
+        }
         // Session seeding writes turns/items and then advances the existing
         // thread pointer as one synchronous record transaction.
         let thread_mutation = self.store.thread_mutation.lock();
@@ -13685,12 +13696,28 @@ impl RuntimeThreadManager {
                                 is_error,
                                 content_blocks,
                             } => {
+                                let name = tool_names
+                                    .get(&block.tool_call_key())
+                                    .copied()
+                                    .unwrap_or_default();
                                 tool_results.push(SeedItem::ToolResult {
                                     tool_use_id: tool_use_id.clone(),
                                     execution_id: execution_id.clone(),
-                                    content: content.clone(),
+                                    content: tool_receipt_detail(name, content, &secrets),
                                     is_error: is_error.unwrap_or(false),
-                                    content_blocks: content_blocks.clone(),
+                                    content_blocks: content_blocks
+                                        .as_ref()
+                                        .filter(|_| name != REQUEST_USER_INPUT_TOOL_NAME)
+                                        .map(|blocks| {
+                                            blocks
+                                                .iter()
+                                                .map(|value| {
+                                                    crate::client::redact_json_model_bound_text(
+                                                        value, &secrets,
+                                                    )
+                                                })
+                                                .collect()
+                                        }),
                                 });
                             }
                             // Other block types in user messages are rare;
@@ -13754,6 +13781,7 @@ impl RuntimeThreadManager {
                                 caller,
                                 thought_signature,
                             } => {
+                                tool_names.insert(block.tool_call_key(), name.as_str());
                                 turn.items.push(SeedItem::ToolUse {
                                     id: id.clone(),
                                     execution_id: execution_id.clone(),
@@ -17451,15 +17479,7 @@ impl RuntimeThreadManager {
                 .scope_to_provider_identity(&state.route_identity)
                 .map_err(anyhow::Error::msg)?;
         }
-        #[cfg(test)]
-        let ticket = crate::test_support::env_scope_ticket();
-        let receipt_secrets = tokio::task::spawn_blocking(move || {
-            #[cfg(test)]
-            let _membership = crate::test_support::join_env_scope(ticket);
-            crate::client::active_model_bound_secret_values(&receipt_config)
-        })
-        .await
-        .context("Runtime receipt redaction setup failed")?;
+        let receipt_secrets = receipt_secret_values(receipt_config).await?;
         let mut latest_goal_snapshot: Option<crate::tools::goal::GoalSnapshot> = None;
         // Tool definitions of the finished turn's request surface, from the
         // final TurnComplete receipt. Goal settlement uses it to mirror the
@@ -20280,6 +20300,18 @@ pub(crate) fn tool_receipt_detail(name: &str, content: &str, secrets: &[String])
     } else {
         crate::client::redact_model_bound_text(content, secrets)
     }
+}
+
+pub(crate) async fn receipt_secret_values(config: Config) -> Result<Vec<String>> {
+    #[cfg(test)]
+    let ticket = crate::test_support::env_scope_ticket();
+    tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        let _membership = crate::test_support::join_env_scope(ticket);
+        crate::client::active_model_bound_secret_values(&config)
+    })
+    .await
+    .context("Runtime receipt redaction setup failed")
 }
 
 pub fn summarize_text(text: &str, limit: usize) -> String {

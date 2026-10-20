@@ -524,11 +524,7 @@ impl AcpServer {
         use codewhale_models::ContentBlock;
         let saved = crate::session_manager::SessionManager::new(self.sessions_dir.clone())?
             .load_session(session_id)?;
-        let config = self.config.clone();
-        let secrets = tokio::task::spawn_blocking(move || {
-            crate::client::active_model_bound_secret_values(&config)
-        })
-        .await?;
+        let secrets = crate::runtime_threads::receipt_secret_values(self.config.clone()).await?;
         let mut calls = HashMap::new();
         for message in &saved.messages {
             for cell in history_cells_from_message(message) {
