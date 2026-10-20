@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Updated certificate validation, MCP, and web dependencies to address
+  dependency security advisories.
 - Shell cards in the default view drop their `output:` and `time:` labels.
   Output rows follow without a label, and a command that ran for a second or
   more shows its duration after its status. Hidden output reads
