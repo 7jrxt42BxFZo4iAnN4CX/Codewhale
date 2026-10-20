@@ -8,11 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Shell cards in the default view drop their `output:` and `time:` labels.
-  Output rows follow the model's `note:` line without a label, and a command
-  that ran for a second or more shows its duration after its status. Hidden
-  output reads `… (+27 lines) · Alt+V:output`, translated, instead of
-  `27 lines omitted`. A thought shorter than a second reads `Thought`. A
-  notice that mentions "cycle" is no longer drawn as a bold divider.
+  Output rows follow without a label, and a command that ran for a second or
+  more shows its duration after its status. Hidden output reads
+  `… (+27 lines) · Alt+V:output`, translated, instead of `27 lines omitted`.
+  A thought shorter than a second reads `Thought`. A notice that mentions
+  "cycle" is no longer drawn as a bold divider.
+- A shell card in the default view leads with the model's description, as
+  written, and shows the command on its own `$` row underneath, in every state
+  and at every width. A card without a description leads with its `$`
+  command. A finished, successful command shows only `✓` (ASCII `Y`), without
+  `done`; running, waiting for approval, queued, failed and "loaded, not run"
+  keep their word, and a narrow terminal shortens the headline before the
+  status. A failed card shows its whole command, up to six rows. The `▶ run`
+  marker, the `note:` label and the `╭ │ ╰` rail shared by neighbouring tool
+  cards are gone in this view; card rows are indented under their headline
+  instead. `docs/ACCESSIBILITY.md` now says that every status carries a glyph
+  and every state except this one also carries a word. With
+  `show_tool_details = true` and `calm_mode = false` the labeled card is
+  unchanged.
 
 ## [0.10.2] - 2026-10-19
 
