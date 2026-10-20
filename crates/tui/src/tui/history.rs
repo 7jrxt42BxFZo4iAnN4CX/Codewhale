@@ -288,6 +288,11 @@ impl TranscriptRenderOptions {
             None => width.max(1),
         }
     }
+
+    #[must_use]
+    pub(crate) fn calm_cards(self) -> bool {
+        !self.show_tool_details || self.calm_mode
+    }
 }
 
 impl HistoryCell {
@@ -393,19 +398,13 @@ impl HistoryCell {
                 content,
                 width,
             ),
-            HistoryCell::System { content } => {
-                if is_cycle_boundary(content) {
-                    render_cycle_boundary(content, width)
-                } else {
-                    render_message(
-                        "Note",
-                        system_label_style(),
-                        system_body_style(),
-                        content,
-                        width,
-                    )
-                }
-            }
+            HistoryCell::System { content } => render_message(
+                crate::tui::glyphs::NEUTRAL,
+                system_label_style(),
+                system_body_style(),
+                content,
+                width,
+            ),
             HistoryCell::Error { message, severity } => {
                 render_error_message(message, *severity, width, true)
             }
@@ -499,13 +498,21 @@ impl HistoryCell {
                 options.low_motion,
                 RenderMode::Live,
                 options.inline_diff_mode,
+                options.locale,
             ),
             HistoryCell::Tool(cell)
-                if (!options.show_tool_details || options.calm_mode) && !cell.is_failed() =>
+                if options.calm_cards()
+                    && (!cell.is_failed() || matches!(cell, ToolCell::Exec(_))) =>
             {
-                let mut lines =
-                    cell.lines_with_motion_and_locale(width, options.low_motion, options.locale);
-                if lines.len() > TOOL_SUMMARY_CARD_LINES {
+                let mut lines = match cell {
+                    ToolCell::Exec(exec) => {
+                        exec.render_calm(width, options.low_motion, options.locale)
+                    }
+                    _ => {
+                        cell.lines_with_motion_and_locale(width, options.low_motion, options.locale)
+                    }
+                };
+                if !cell.is_failed() && lines.len() > TOOL_SUMMARY_CARD_LINES {
                     lines.truncate(TOOL_SUMMARY_CARD_LINES.saturating_sub(1));
                     lines.push(details_affordance_line(
                         &crate::tui::key_shortcuts::tool_details_shortcut_action_hint("details"),
@@ -616,16 +623,14 @@ impl HistoryCell {
                 }
                 rendered
             }
-            HistoryCell::System { content } if !is_cycle_boundary(content) => {
-                render_message_with_copy_metadata_for_palette(
-                    "Note",
-                    system_label_style(),
-                    system_body_style(),
-                    content,
-                    width,
-                    options.palette_mode,
-                )
-            }
+            HistoryCell::System { content } => render_message_with_copy_metadata_for_palette(
+                crate::tui::glyphs::NEUTRAL,
+                system_label_style(),
+                system_body_style(),
+                content,
+                width,
+                options.palette_mode,
+            ),
             HistoryCell::Tool(_) => self
                 .lines_with_options_folded(width, options, None)
                 .0
@@ -1017,9 +1022,10 @@ impl ToolCell {
                 low_motion,
                 mode,
                 crate::settings::InlineDiffMode::Full,
+                locale,
             ),
-            ToolCell::Review(cell) => cell.render(width, low_motion, mode),
-            ToolCell::Mcp(cell) => cell.render(width, low_motion, mode),
+            ToolCell::Review(cell) => cell.render(width, low_motion, mode, locale),
+            ToolCell::Mcp(cell) => cell.render(width, low_motion, mode, locale),
             ToolCell::ViewImage(cell) => cell.lines_with_motion(width, low_motion),
             ToolCell::WebSearch(cell) => cell.lines_with_motion(width, low_motion),
             ToolCell::Generic(cell) => {
@@ -1107,15 +1113,7 @@ impl ExecCell {
             .interaction
             .as_deref()
             .or(Some(command_summary.as_str()));
-        let held_status = match (self.waiting, self.status) {
-            (Some(ExecWait::Approval), ToolStatus::Running) => {
-                Some("waiting for approval".to_string())
-            }
-            (Some(ExecWait::Queue), ToolStatus::Running) => Some("queued".to_string()),
-            _ => self
-                .stale_elapsed_since_output_ms
-                .map(stale_shell_status_label),
-        };
+        let held_status = self.held_status();
         let receipt = tool_receipt_label(
             crate::tui::widgets::tool_card::ToolFamily::Run,
             self.status,
@@ -1132,21 +1130,17 @@ impl ExecCell {
             low_motion || held_status.is_some(),
         ));
 
-        if let Some(description) = self.description.as_deref() {
-            let mut plain = String::new();
-            crate::tui::osc8::strip_ansi_into(description, &mut plain);
-            if let Some(description) = normalize_header_summary(&plain) {
-                let label = codewhale_localization::tr(
-                    locale,
-                    codewhale_localization::MessageId::ToolDescriptionNote,
-                );
-                lines.extend(render_card_detail_line(
-                    Some(label.as_ref()),
-                    &truncate_text(&description, TOOL_HEADER_SUMMARY_LIMIT),
-                    Style::default().fg(palette::TEXT_MUTED).italic(),
-                    width,
-                ));
-            }
+        if let Some(description) = self.description_text() {
+            let label = codewhale_localization::tr(
+                locale,
+                codewhale_localization::MessageId::ToolDescriptionNote,
+            );
+            lines.extend(render_card_detail_line(
+                Some(label.as_ref()),
+                &truncate_text(&description, TOOL_HEADER_SUMMARY_LIMIT),
+                Style::default().fg(palette::TEXT_MUTED).italic(),
+                width,
+            ));
         }
 
         // A foreground shell wait stays a compact card — command, optional note,
@@ -1178,6 +1172,8 @@ impl ExecCell {
                     width,
                     TOOL_SUCCESS_OUTPUT_PREVIEW_LINES,
                     mode,
+                    locale,
+                    true,
                 ));
             }
             if let Some(duration_ms) = self.duration_ms
@@ -1232,6 +1228,8 @@ impl ExecCell {
                     width,
                     TOOL_OUTPUT_LINE_LIMIT,
                     mode,
+                    locale,
+                    true,
                 ));
             } else if self.status != ToolStatus::Running && mode == RenderMode::Transcript {
                 // #3031: Suppress "(no output)" in compact/Live mode;
@@ -1258,6 +1256,142 @@ impl ExecCell {
         }
 
         wrap_card_rail(lines, self.status)
+    }
+
+    pub(super) fn render_calm(
+        &self,
+        width: u16,
+        low_motion: bool,
+        locale: Locale,
+    ) -> Vec<Line<'static>> {
+        let mut lines = Vec::new();
+        let command_summary = command_header_summary(&self.command);
+        let header_summary = self
+            .interaction
+            .as_deref()
+            .or(Some(command_summary.as_str()));
+        let held_status = self.held_status();
+        let mut status_text = held_status.clone().unwrap_or_else(|| {
+            tool_receipt_label(
+                crate::tui::widgets::tool_card::ToolFamily::Run,
+                self.status,
+                self.output.as_deref(),
+                locale,
+            )
+            .into_owned()
+        });
+        if let Some(duration) = self.finished_duration() {
+            status_text.push_str(" \u{00B7} ");
+            status_text.push_str(&duration);
+        }
+        lines.push(render_tool_header_with_summary(
+            "Shell",
+            header_summary,
+            &status_text,
+            self.status,
+            self.started_at,
+            low_motion || held_status.is_some(),
+        ));
+
+        if let Some(description) = self.description_text() {
+            lines.extend(render_card_detail_line(
+                None,
+                &truncate_text(&description, TOOL_HEADER_SUMMARY_LIMIT),
+                Style::default().fg(palette::TEXT_MUTED).italic(),
+                width,
+            ));
+        }
+
+        if self.is_foreground_shell_wait() {
+            return wrap_card_rail(lines, self.status);
+        }
+        if self
+            .output
+            .as_deref()
+            .is_some_and(is_truncated_output_preview)
+        {
+            lines.push(render_spillover_annotation(width));
+            return wrap_card_rail(lines, self.status);
+        }
+        let output = self
+            .interaction
+            .is_none()
+            .then(|| self.output.as_ref().or(self.live_output.as_ref()))
+            .flatten();
+        if self.status == ToolStatus::Success {
+            if let Some(output) = output {
+                lines.extend(render_exec_output_mode(
+                    output,
+                    width,
+                    TOOL_SUCCESS_OUTPUT_PREVIEW_LINES,
+                    RenderMode::Live,
+                    locale,
+                    false,
+                ));
+            }
+            return wrap_card_rail(lines, self.status);
+        }
+
+        if let Some(owner) = self
+            .owner_agent_name
+            .as_deref()
+            .or(self.owner_agent_id.as_deref())
+        {
+            lines.extend(render_compact_kv(
+                "owner",
+                owner,
+                Style::default().fg(palette::TEXT_MUTED),
+                width,
+            ));
+        }
+        if let Some(interaction) = self.interaction.as_ref() {
+            lines.extend(wrap_plain_line(
+                &format!("  {interaction}"),
+                Style::default().fg(palette::TEXT_MUTED),
+                width,
+            ));
+        } else {
+            lines.extend(render_command_mode(&self.command, width, RenderMode::Live));
+        }
+        if let Some(output) = output {
+            lines.extend(render_exec_output_mode(
+                output,
+                width,
+                TOOL_OUTPUT_LINE_LIMIT,
+                RenderMode::Live,
+                locale,
+                false,
+            ));
+        }
+        wrap_card_rail(lines, self.status)
+    }
+
+    fn held_status(&self) -> Option<String> {
+        match (self.waiting, self.status) {
+            (Some(ExecWait::Approval), ToolStatus::Running) => {
+                Some("waiting for approval".to_string())
+            }
+            (Some(ExecWait::Queue), ToolStatus::Running) => Some("queued".to_string()),
+            _ => self
+                .stale_elapsed_since_output_ms
+                .map(stale_shell_status_label),
+        }
+    }
+
+    fn description_text(&self) -> Option<String> {
+        let description = self.description.as_deref()?;
+        let mut plain = String::new();
+        crate::tui::osc8::strip_ansi_into(description, &mut plain);
+        normalize_header_summary(&plain)
+    }
+
+    fn finished_duration(&self) -> Option<String> {
+        if self.status == ToolStatus::Running {
+            return None;
+        }
+        self.duration_ms
+            .filter(|duration_ms| *duration_ms >= 1000)
+            .map(codewhale_command_contract::elapsed::format_elapsed_ms)
     }
 }
 
@@ -1456,6 +1590,7 @@ impl ExploringCell {
                         width,
                         TOOL_FAILURE_PREVIEW_LINES,
                         mode,
+                        locale,
                     ));
                 }
             }
@@ -1496,6 +1631,7 @@ impl PatchSummaryCell {
         low_motion: bool,
         mode: RenderMode,
         inline_diff_mode: crate::settings::InlineDiffMode,
+        locale: Locale,
     ) -> Vec<Line<'static>> {
         let mut lines = Vec::new();
         let header_summary = self
@@ -1533,6 +1669,7 @@ impl PatchSummaryCell {
                 width,
                 TOOL_COMMAND_LINE_LIMIT,
                 mode,
+                locale,
             ));
         }
         if let Some(error) = self.error.as_ref() {
@@ -1541,6 +1678,7 @@ impl PatchSummaryCell {
                 width,
                 TOOL_COMMAND_LINE_LIMIT,
                 mode,
+                locale,
             ));
         }
         lines
@@ -1562,6 +1700,7 @@ impl ReviewCell {
         width: u16,
         low_motion: bool,
         mode: RenderMode,
+        locale: Locale,
     ) -> Vec<Line<'static>> {
         let mut lines = Vec::new();
         lines.push(render_tool_header(
@@ -1591,6 +1730,7 @@ impl ReviewCell {
                 width,
                 TOOL_COMMAND_LINE_LIMIT,
                 mode,
+                locale,
             ));
             return lines;
         }
@@ -1698,6 +1838,7 @@ impl McpToolCell {
         width: u16,
         low_motion: bool,
         mode: RenderMode,
+        locale: Locale,
     ) -> Vec<Line<'static>> {
         let mut lines = Vec::new();
         lines.push(render_tool_header_with_summary(
@@ -1732,6 +1873,7 @@ impl McpToolCell {
                     TOOL_COMMAND_LINE_LIMIT
                 },
                 mode,
+                locale,
             ));
         }
         lines
@@ -2080,7 +2222,7 @@ impl GenericToolCell {
                 } else {
                     TOOL_OUTPUT_LINE_LIMIT
                 };
-                lines.extend(render_tool_output_mode(output, width, limit, mode));
+                lines.extend(render_tool_output_mode(output, width, limit, mode, locale));
             }
 
             if matches!(mode, RenderMode::Live) && self.spillover_path.is_some() {
@@ -2188,6 +2330,7 @@ impl GenericToolCell {
                     width,
                     TOOL_OUTPUT_LINE_LIMIT,
                     mode,
+                    locale,
                 ));
             }
             return Some(wrap_card_rail(lines, self.status));
@@ -2636,42 +2779,6 @@ fn format_review_location(path: Option<&String>, line: Option<u32>) -> String {
         (None, Some(line)) => format!("line {line}"),
         (None, None) => String::new(),
     }
-}
-
-/// Detect whether a system message is a cycle-boundary announcement
-/// (e.g. `─── cycle 0 → 1  (briefing: 2500 tokens) ───`).
-fn is_cycle_boundary(content: &str) -> bool {
-    content.contains("cycle")
-}
-
-/// Render a cycle-boundary system message with distinct visual styling (#395):
-/// full-width line with primary accent text and bold weight, plus a thin
-/// horizontal rule above for visual separation.
-fn render_cycle_boundary(content: &str, width: u16) -> Vec<Line<'static>> {
-    let style = Style::default()
-        .fg(palette::WHALE_ACTION)
-        .add_modifier(Modifier::BOLD);
-    let rule_style = Style::default().fg(palette::TEXT_DIM);
-    let content_width = usize::from(width.saturating_sub(2).max(1));
-    let mut lines = Vec::new();
-    // Thin horizontal rule above for visual separation
-    if width >= 4 {
-        let rule = "\u{2500}".repeat(content_width);
-        lines.push(Line::from(Span::styled(format!("  {rule}"), rule_style)));
-    }
-    // Cycle boundary text — just the content, full-width
-    let rendered =
-        crate::tui::markdown_render::render_markdown(content, content_width as u16, style);
-    for line in rendered {
-        let mut spans = vec![Span::raw("  ")];
-        spans.extend(line.spans);
-        lines.push(Line::from(spans));
-    }
-    if lines.len() == 1 && width >= 4 {
-        // Only the rule was added (unlikely), but add at least a spacer
-        lines.push(Line::from(""));
-    }
-    lines
 }
 
 fn status_symbol(

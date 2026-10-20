@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Shell cards in the default view drop their `note:`, `output:` and `time:`
+  labels. The model's description sits on its own muted line, output rows
+  follow without a label, and a command that ran for a second or more shows
+  its duration after its status. Hidden output reads
+  `… (+27 lines) · Alt+V:output`, translated, instead of `27 lines omitted`.
+  A thought shorter than a second reads `Thought`. Notices such as
+  `Permissions changed to Full Access` start with `·` instead of `Note`, and
+  a notice that mentions "cycle" is no longer drawn as a bold divider.
+
 ## [0.10.2] - 2026-10-19
 
 Codewhale v0.10.2 adds an animated pet view (`/pet on`), a live Terminal work
