@@ -93,7 +93,7 @@ const EVENT_TRANSACTION_LOCK_TIMEOUT: Duration = Duration::from_secs(5);
 const EVENT_TRANSACTION_LOCK_POLL: Duration = Duration::from_millis(5);
 const EVENT_TRANSACTION_LOCK_FILE: &str = "events.lock";
 const RUNTIME_PROCESS_OWNER_LOCK_FILE: &str = "runtime-process.owner.lock";
-const RUNTIME_PROCESS_OWNER_LOCK_HELD: &str = "This runtime is already active in another process. Close the other Codewhale session and try again, or set CODEWHALE_RUNTIME_DIR to a different directory.";
+pub(crate) const RUNTIME_PROCESS_OWNER_LOCK_HELD: &str = "This runtime is already active in another process. Close the other Codewhale session and try again, or set CODEWHALE_RUNTIME_DIR to a different directory.";
 const AGENT_MAIL_OWNER_FILE: &str = "owner.json";
 /// Every directory `RuntimeThreadStore::open` creates to hold work. Emptiness
 /// across all of them is what lets a switch adopt an existing store (#6207);
