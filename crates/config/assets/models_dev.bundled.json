@@ -8577,7 +8577,6 @@
       {
         "id": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
         "aliases": [
-          "deepseek-v4.1-flash-1017",
           "di-deepseek-v4.1-flash-1017"
         ],
         "supports_tools": true,
@@ -8597,7 +8596,6 @@
       {
         "id": "deepseek-ai/DeepSeek-V4-Flash-0731",
         "aliases": [
-          "deepseek-v4-flash-0731",
           "di-deepseek-v4-flash-0731"
         ],
         "supports_tools": true,
