@@ -1434,12 +1434,12 @@ struct ReviewArgs {
     pr: Option<u32>,
     /// Repository in `owner/name` form for --pr. Defaults to the current
     /// workspace's `gh` config (i.e. the repo gh thinks you're in).
-    #[arg(long, requires = "pr")]
+    #[arg(long, requires = "pr", conflicts_with_all = ["staged", "base", "path"])]
     repo: Option<String>,
     /// Post the review to the pull request (one COMMENT review with inline
     /// line comments plus a summary). Requires --pr; without it the review
     /// is only printed locally.
-    #[arg(long, requires = "pr")]
+    #[arg(long, requires = "pr", conflicts_with_all = ["staged", "base", "path"])]
     post: bool,
     /// Base ref to diff against (e.g. origin/main). The reviewer also gets the
     /// base..HEAD commit messages as the author's stated intent.
