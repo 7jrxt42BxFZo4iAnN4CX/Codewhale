@@ -4,13 +4,7 @@ name: Sync to CNB
 # so users behind GitHub-blocking networks can fetch the source and tagged
 # releases from the Tencent-hosted mirror.
 #
-# Triggers:
-#   * push to main              → mirrors that commit to CNB main
-#   * successful Release job   → mirrors the published tag to CNB
-#   * release work branches     → mirrors release-candidate refs for CNB preflight
-#   * fix/rebrand branches      → mirrors first-party heavy Linux CI refs
-#   * Tencent release branches  → mirrors Feishu/Lighthouse setup branches
-#   * workflow_dispatch         → manual fallback if any of the above fails
+# Invoked manually at final validation, or by an authorized release workflow.
 #
 # Why the rewrite (v0.8.31):
 #   The previous implementation used the opaque tencentcom/git-sync Docker
@@ -24,14 +18,6 @@ name: Sync to CNB
 #   half of recent runs failed for those two reasons combined.
 
 on:
-  push:
-    branches:
-      - main
-      - 'work/v*'
-      - 'fix/*'
-      - 'rebrand/*'
-      - 'work/v*-feishu-*'
-      - 'work/v*-lighthouse*'
   workflow_dispatch: {}
   workflow_call:
     inputs:
