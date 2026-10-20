@@ -706,7 +706,9 @@ The editor surface supports `initialize`, `session/new`, `session/list`,
 `session/load` (including durable ID prefixes), `session/prompt`, `session/cancel`,
 model discovery/selection, and the advertised mode/model config options.
 `session/new` creates a durable bare UUID and empty checkpoint without calling a
-provider. At most 64 idle transport bindings are retained; eviction keeps the
+provider. `session/load` replays the saved conversation as `session/update`
+notifications before it responds: user and agent text, then each tool call with
+its final status. Reasoning and images are not replayed. At most 64 idle transport bindings are retained; eviction keeps the
 durable conversation. Resume deduplicates against the existing thread binding.
 Full histories, tool pairs, signatures, media and partial-effect receipts are
 saved under the same checkpoint guard and session write lease used by HTTP.

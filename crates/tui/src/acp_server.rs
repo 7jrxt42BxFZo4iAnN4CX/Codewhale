@@ -254,8 +254,18 @@ impl AcpServer {
             }
             match self.handle_request(method, params).await {
                 Ok(AcpDispatch::Response(result)) => {
-                    if let Some(id) = response_id {
-                        write_jsonrpc_result(writer, id, result).await?;
+                    let replayed = match result.get("sessionId").and_then(Value::as_str) {
+                        Some(session) if method == "session/load" => {
+                            self.replay_history(writer, session).await
+                        }
+                        _ => Ok(()),
+                    };
+                    match (replayed, response_id) {
+                        (Ok(()), Some(id)) => write_jsonrpc_result(writer, id, result).await?,
+                        (Ok(()), None) => {}
+                        (Err(error), id) => {
+                            write_jsonrpc_error(writer, id, -32603, error.to_string()).await?
+                        }
                     }
                 }
                 Ok(AcpDispatch::Shutdown) => {
@@ -478,7 +488,14 @@ impl AcpServer {
                     if acp_mode(&self.config) == AppMode::Plan {
                         "plan"
                     } else {
-                        saved.metadata.mode.as_deref().unwrap_or("agent")
+                        saved
+                            .metadata
+                            .mode
+                            .as_deref()
+                            .filter(|mode| {
+                                crate::runtime_policy::parse_runtime_mode(mode).is_some()
+                            })
+                            .unwrap_or("agent")
                     }
                     .to_string(),
                 ),
@@ -511,6 +528,68 @@ impl AcpServer {
             .latest_seq;
         self.remember(id.clone(), resumed.thread_id, cursor);
         self.session_configuration(&id).await
+    }
+    async fn replay_history<W: AsyncWrite + Unpin>(
+        &self,
+        writer: &mut W,
+        session_id: &str,
+    ) -> Result<()> {
+        use crate::tui::history::{HistoryCell, history_cells_from_message};
+        use codewhale_models::ContentBlock;
+        let saved = crate::session_manager::SessionManager::new(self.sessions_dir.clone())?
+            .load_session(session_id)?;
+        let mut calls = HashMap::new();
+        for message in &saved.messages {
+            for cell in history_cells_from_message(message) {
+                let (kind, text) = match cell {
+                    HistoryCell::User { content } => ("user_message_chunk", content),
+                    HistoryCell::Assistant { content, .. } => ("agent_message_chunk", content),
+                    _ => continue,
+                };
+                write_json_line(
+                    writer,
+                    json!({"jsonrpc":"2.0","method":"session/update","params":{"sessionId":session_id,"update":{"sessionUpdate":kind,"content":{"type":"text","text":text}}}}),
+                )
+                .await?;
+            }
+            for block in &message.content {
+                let Some(key) = block.tool_call_key().map(|key| key.as_str().to_string()) else {
+                    continue;
+                };
+                match block {
+                    ContentBlock::ToolUse { name, input, .. } => {
+                        let call = PendingToolCall {
+                            execution_id: key.clone(),
+                            name: name.clone(),
+                            input: input.clone(),
+                        };
+                        write_tool_call_start(writer, session_id, &call).await?;
+                        calls.insert(key, call);
+                    }
+                    ContentBlock::ToolResult {
+                        content, is_error, ..
+                    } => {
+                        if let Some(call) = calls.remove(&key) {
+                            let status = if is_error.unwrap_or(false) {
+                                "failed"
+                            } else {
+                                "completed"
+                            };
+                            write_tool_call_update(
+                                writer,
+                                session_id,
+                                &call,
+                                status,
+                                Some(content),
+                            )
+                            .await?;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
     }
     fn permission_value(&self) -> &'static str {
         match acp_approval_mode(&self.config) {
