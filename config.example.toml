@@ -61,9 +61,9 @@ provider = "deepseek" # deepseek | deepseek-cn | deepseek-anthropic | nvidia-nim
 #   gpt-4.1                         — default generic OpenAI-compatible model ID
 #   deepseek-ai/deepseek-v4-flash   — default AtlasCloud model ID
 #   deepseek-reasoner               — default Wanjie Ark model ID
-#   mimo-v2.5-pro                   — default Xiaomi MiMo model ID
+#   mimo-v2.6-pro                   — default Xiaomi MiMo model ID
 #   mimo-v2.5-pro-ultraspeed        — Xiaomi MiMo V2.5 Pro UltraSpeed chat model ID
-#   mimo-v2.5                       — Xiaomi MiMo V2.5 Omni model ID
+#   mimo-v2.6-flash                 — Xiaomi MiMo V2.6 Flash model ID
 #   mimo-v2.5-tts                   — Xiaomi MiMo speech/TTS model ID
 #   mimo-v2.5-tts-voicedesign       — Xiaomi MiMo voice-design TTS model ID
 #   mimo-v2.5-tts-voiceclone        — Xiaomi MiMo voice-clone TTS model ID
@@ -669,8 +669,8 @@ base_url = "https://api.deepseek.com/beta"
 # base_url = "https://token-plan-sgp.xiaomimimo.com/v1"  # Token Plan / tp- keys
 # # base_url = "https://token-plan-ams.xiaomimimo.com/v1"  # Token Plan Europe / Amsterdam
 # # base_url = "https://api.xiaomimimo.com/v1"           # Pay-as-you-go / sk- keys
-# model = "mimo-v2.5-pro"              # chat/reasoning
-# Chat model IDs: mimo-v2.5-pro, mimo-v2.5-pro-ultraspeed, mimo-v2.5
+# model = "mimo-v2.6-pro"              # chat/reasoning
+# Chat model IDs: mimo-v2.6-pro, mimo-v2.6-flash, mimo-v2.5-pro-ultraspeed
 # Token Plan subscriptions use separate tp-* API keys plus api-key auth.
 # mode = "token-plan-sgp"              # default Token Plan endpoint
 # mode = "token-plan-cn"               # China cluster
@@ -1314,7 +1314,7 @@ code_mode = true # execute_tools composes MCP/plugin/native calls; false defers 
 # base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"  # Optional
 #
 # Xiaomi MiMo image understanding can be configured through the same tool:
-# model = "mimo-v2.5"
+# model = "mimo-v2.6-flash"
 # api_key = "YOUR_XIAOMI_KEY"
 # base_url = "https://token-plan-sgp.xiaomimimo.com/v1"  # Token Plan / tp- keys
 

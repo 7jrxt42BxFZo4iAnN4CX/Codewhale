@@ -350,6 +350,7 @@ guidance.
   Several ids are retired. Xiaomi MiMo now defaults to `mimo-v2.6-pro`, and
   configs naming `mimo-v2.5-pro` or `mimo-v2.5` send `mimo-v2.6-pro` and
   `mimo-v2.6-flash`, because Xiaomi rejects the old names from 2026-10-21.
+  A `[vision_model]` that names either old id gets the same mapping.
   `gemini-3.7-flash` and `gemini-3.5-flash`, which Google already serves as
   `gemini-3.8-flash` and `gemini-3.6-flash`, are now selector aliases of those
   models. `qwen3.8-max-preview` is gone from the Model Studio rosters. MiniMax
