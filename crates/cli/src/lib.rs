@@ -370,9 +370,9 @@ New integrations should prefer `codewhale app-server`.")]
         after_help = "The browser receives a one-time loopback bootstrap capability, never the Runtime token.\nThe capability is exchanged for a bounded, process-local HttpOnly, SameSite=Strict web session and then invalidated."
     )]
     Web(WebArgs),
-    /// Sign in to your Codewhale account to manage provider API keys in one place.
+    /// Sign in to an existing Codewhale account; new accounts are not open.
     #[command(
-        after_help = "Create an account at https://app.codewhale.net/register or sign in through the browser.\nSave a provider key with `codewhale account keys set deepseek`, then choose Codewhale in /provider to use it across your signed-in devices.\nSigning in does not upload existing local keys. Local use does not require an account."
+        after_help = "New Codewhale accounts are not open, and local use does not require one.\nKeep provider keys on this machine with /provider or `codewhale auth set --provider <provider>`.\nSigning in does not upload existing local keys."
     )]
     Login(LoginArgs),
     /// Remove saved authentication state (every provider key, OAuth login,
@@ -380,10 +380,10 @@ New integrations should prefer `codewhale app-server`.")]
     Logout(LogoutArgs),
     /// Manage authentication credentials and provider mode.
     Auth(AuthArgs),
-    /// Manage your Codewhale account and centrally stored provider keys.
+    /// Manage an existing Codewhale account; new accounts are not open.
     #[command(visible_alias = "cloud")]
     Account(cloud::CloudArgs),
-    /// Offload a coding agent to the Codewhale cloud through your account.
+    /// Run a task on a Codewhale cloud computer (not available: cloud computers and accounts are paused for new users).
     Dispatch(dispatch::DispatchArgs),
     /// Run MCP server mode over stdio.
     McpServer,
@@ -9858,8 +9858,8 @@ verbosity = "concise"
             "login help must describe account sign-in: {help}"
         );
         assert!(
-            help.contains("manage provider API keys"),
-            "login help must explain the account's immediate benefit: {help}"
+            help.contains("New Codewhale accounts are not open"),
+            "login help must not offer accounts that cannot be created: {help}"
         );
         assert!(
             help.contains("Signing in does not upload existing local keys"),
