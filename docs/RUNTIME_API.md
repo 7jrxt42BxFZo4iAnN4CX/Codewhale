@@ -721,6 +721,8 @@ whole compatibility alias family. Final dispatch rechecks the profile, so a
 fabricated alias, hook rewrite or omitted catalog entry cannot bypass it. Plan
 remains read-only under Full Access. Full Access and the ordinary approval
 posture are server-owned read-only options; the editor cannot widen them.
+`approval_policy = "never"` is not an ACP posture, so the server refuses to
+start with it instead of serving it as Ask.
 
 Tool updates begin `pending`. `in_progress` means Core reached final dispatch;
 `completed`/`failed` and typed image blocks come from the actual Core result.

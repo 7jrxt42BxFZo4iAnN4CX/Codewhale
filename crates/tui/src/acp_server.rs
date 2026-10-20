@@ -31,6 +31,7 @@ pub async fn run_acp_server(
     config_path: Option<PathBuf>,
     config_profile: Option<String>,
 ) -> Result<()> {
+    ensure_acp_approval_posture(&config)?;
     crate::runtime_api::run_http_server(
         config,
         default_cwd,
@@ -64,6 +65,7 @@ pub(crate) fn capture_frontend(
     config_path: Option<PathBuf>,
     config_profile: Option<String>,
 ) -> Result<Arc<CapturedAcpFrontend>> {
+    ensure_acp_approval_posture(&config)?;
     Ok(Arc::new(CapturedAcpFrontend {
         config,
         model,
@@ -747,6 +749,14 @@ fn acp_approval_mode(config: &Config) -> ApprovalMode {
             .and_then(ApprovalMode::from_config_value)
             .unwrap_or_default()
     }
+}
+
+fn ensure_acp_approval_posture(config: &Config) -> Result<()> {
+    anyhow::ensure!(
+        acp_approval_mode(config) != ApprovalMode::Never,
+        "approval_policy \"never\" is not supported by `codewhale serve --acp`: ACP sessions run under Ask, Auto-Review or Full Access. Set approval_policy = \"on-request\" for this server, or start it with --yolo for Full Access."
+    );
+    Ok(())
 }
 
 /// ACP `kind` hint for a tool call, used by the client to pick an icon/label.

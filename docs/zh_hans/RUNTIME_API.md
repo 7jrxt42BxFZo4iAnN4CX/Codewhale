@@ -597,7 +597,8 @@ shell 工具。Shell 同时要求编辑器声明 terminal 支持、操作者允�
 后台 shell、解释器、子智能体或 RLM 生命周期。内置工具覆盖会移除整个兼容别名族。
 最终派发再次校验 profile；伪造别名、hook 改写或目录中缺失的工具不能绕过限制。
 Full Access 下 Plan 仍只读。Full Access 与普通审批姿态是服务端拥有的只读选项，
-编辑器不能放宽。Core 的类型化规则、严格 hooks、仓库约束、Headless Auto-Review
+编辑器不能放宽。`approval_policy = "never"` 不是 ACP 审批姿态，服务端会拒绝
+以该配置启动，而不是把它当作 Ask 提供。Core 的类型化规则、严格 hooks、仓库约束、Headless Auto-Review
 与硬性下限仍生效；工作区写入不享受免审批例外，需要 guardian 的裁决会明确拒绝。
 
 工具首先显示 `pending`；只有 Core 到达最终派发才显示 `in_progress`。
