@@ -357,7 +357,13 @@ pub fn render(frame: &mut Frame, area: Rect, app: &mut App) {
         };
         let prefix_width = UnicodeWidthStr::width(prefix.as_str());
         let row_width = usize::from(content_area.width);
-        let label_budget = row_width.saturating_sub(prefix_width).max(1);
+        let detail_room = if row.id.0.starts_with("graph:") {
+            UnicodeWidthStr::width(detail_candidate.as_str())
+                .min(row_width.saturating_sub(prefix_width) / 2)
+        } else {
+            0
+        };
+        let label_budget = row_width.saturating_sub(prefix_width + detail_room).max(1);
         let label = truncate_line_to_width(&row.label, label_budget);
         let detail_budget =
             row_width.saturating_sub(prefix_width + UnicodeWidthStr::width(label.as_str()));
