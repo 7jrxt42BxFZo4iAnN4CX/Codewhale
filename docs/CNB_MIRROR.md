@@ -53,12 +53,10 @@ GitHub Actions workflow:
   recovery. A tag push alone does not mirror a release tag. Manual tag recovery
   also verifies the complete public GitHub asset inventory and immutable source.
 - **Auth:** HTTPS basic auth as user `cnb` with the `CNB_GIT_TOKEN`
-  repository secret as the password. When the secret is absent (a fork, or
-  this repository before it was configured — Actions secrets never inherit
-  across a fork), the `credentials` gate job reports `configured=false`, the
-  `sync` job is **skipped** rather than failed, and the run emits a notice
-  naming the missing secret: the mirror is optional egress, so an
-  unconfigured repository must not report a red check no contributor can fix.
+  repository secret as the password. Forks never inherit the secret, so the
+  `sync` job runs only when the repository owner is `codewhale-hq`; on a fork
+  it is skipped instead of failing. In this repository a missing or misspelled
+  secret still fails the push step.
 - **Scope:** only the ref that triggered the run is pushed. Tag pushes
   push exactly that tag. Branch pushes mirror `main`, first-party
   `fix/*`/`rebrand/*` branches, or explicitly matched release branches. Other
@@ -161,12 +159,6 @@ Do not omit `--ref` when repairing a tag: a default-branch dispatch syncs
 release assets exist before directing users to CNB.
 
 ## Rotating `CNB_GIT_TOKEN`
-
-If a run is *skipped* rather than failing, with the notice
-`CNB_GIT_TOKEN is not set for this repository`, the secret is absent (or
-misspelled) instead of expired — configure it as below; there is no red check
-to clear. An expired or invalid secret still fails the push step with an auth
-error, which is the signal this section is about.
 
 If the workflow starts failing with auth errors and the token has
 expired:

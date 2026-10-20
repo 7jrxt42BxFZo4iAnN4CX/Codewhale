@@ -48,10 +48,9 @@ sha256sum -c codewhale-artifacts-sha256.txt --ignore-missing
   `workflow_dispatch`。仅推送标签不会触发发布标签镜像。手动恢复标签也必须
   验证 GitHub 已公开的完整资产清单及不可变的源码提交。
 - **认证：** HTTPS basic auth，用户名为 `cnb`，密码是仓库 secret
-  `CNB_GIT_TOKEN`。secret 缺失时（fork，或本仓库尚未配置——Actions secret
-  永远不会跨 fork 继承），`credentials` 门禁作业报告 `configured=false`，
-  `sync` 作业被**跳过**而非失败，运行会发出指名缺失 secret 的 notice：镜像是
-  可选的出站同步，未配置的仓库不应报告任何贡献者都无法修复的红检查。
+  `CNB_GIT_TOKEN`。fork 永远不会继承这个 secret，所以 `sync` 作业只在仓库所有者为
+  `codewhale-hq` 时运行；在 fork 上会被跳过而不是失败。本仓库中 secret 缺失或拼写
+  错误时，push 步骤仍会失败。
 - **范围：** 只推送触发本次运行的那个 ref。标签推送就推送该标签。分支推送镜像
   `main`、第一方 `fix/*`/`rebrand/*` 分支，或显式匹配的发布分支。其他功能分支
   和 dependabot ref 有意*不*镜像。
@@ -146,11 +145,6 @@ gh workflow run sync-cnb.yml --repo codewhale-hq/CodeWhale --ref vX.Y.Z
 再引导用户去 CNB。
 
 ## 轮换 `CNB_GIT_TOKEN`
-
-如果一次运行是被*跳过*而非失败，并带有 notice
-`CNB_GIT_TOKEN is not set for this repository`，说明 secret 缺失（或拼写错误）
-而非过期——按下文配置即可；没有需要清除的红检查。过期或无效的 secret 仍会让
-push 步骤以认证错误失败，那才是本节针对的信号。
 
 如果工作流开始报认证错误，而 token 已经过期：
 
