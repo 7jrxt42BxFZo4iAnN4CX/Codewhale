@@ -375,9 +375,13 @@ fn resolve_relative_http_href(base_url: &reqwest::Url, href: &str) -> Option<Str
 /// (an `<article>` inside an `<article>` ends at the inner close tag), and no
 /// JavaScript runs, so a client-rendered shell still yields nothing.
 fn main_html_candidates(html: &str) -> Vec<(u8, String)> {
+    let html = html
+        .rfind('<')
+        .filter(|&start| !html[start..].contains('>'))
+        .map_or(html, |start| &html[..start]);
     let [article, main, body] = FALLBACK_RE.get_or_init(|| {
         ["article", "main", "body"].map(|tag| {
-            Regex::new(&format!(r"(?is)<{tag}(?:\s[^>]*)?>(.*?)</{tag}\s*>"))
+            Regex::new(&format!(r"(?is)<{tag}(?:\s[^>]*)?>(.*?)(?:</{tag}\s*>|\z)"))
                 .expect("fallback element regex")
         })
     });
@@ -406,9 +410,9 @@ fn fallback_main_html(html: &str) -> Option<String> {
 fn strip_page_chrome(html: &str, strip_header: bool) -> String {
     let page_chrome = PAGE_CHROME_RE.get_or_init(|| {
         Regex::new(concat!(
-            r"(?is)(?:<script(?:\s[^>]*)?>.*?</script\s*>",
-            r"|<style(?:\s[^>]*)?>.*?</style\s*>",
-            r"|<noscript(?:\s[^>]*)?>.*?</noscript\s*>",
+            r"(?is)(?:<script(?:\s[^>]*)?>.*?(?:</script\s*>|\z)",
+            r"|<style(?:\s[^>]*)?>.*?(?:</style\s*>|\z)",
+            r"|<noscript(?:\s[^>]*)?>.*?(?:</noscript\s*>|\z)",
             r"|<nav(?:\s[^>]*)?>.*?</nav\s*>",
             r"|<footer(?:\s[^>]*)?>.*?</footer\s*>",
             r"|<aside(?:\s[^>]*)?>.*?</aside\s*>",

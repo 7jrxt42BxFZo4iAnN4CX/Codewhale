@@ -298,6 +298,12 @@ where
                     attempts,
                 });
             }
+            Err(error)
+                if error.content() && is_js_shell_error(&error.error) && payload.truncated =>
+            {
+                attempts.push(record);
+                return Err(truncated_before_content(&final_url, &options));
+            }
             // A 2xx whose body held no readable content is the one failure a
             // second request can fix: the first response may have been a
             // cached client-side shell.
@@ -320,6 +326,18 @@ where
         }
     }
     unreachable!("the revalidate pass either returns a document or an error");
+}
+
+fn truncated_before_content(url: &str, options: &FetchOptions) -> ToolError {
+    let limit = options.max_bytes;
+    let recovery = if limit < HARD_MAX_BYTES {
+        format!("Retry with a larger `max_bytes` (up to {HARD_MAX_BYTES}).")
+    } else {
+        format!("The page is larger than the {HARD_MAX_BYTES}-byte fetch limit.")
+    };
+    ToolError::execution_failed(format!(
+        "The response from {url} was cut off at {limit} bytes before any readable content arrived, so nothing could be extracted. {recovery}"
+    ))
 }
 
 /// The terminal JS-shell error, carrying the failure receipt and the recovery
