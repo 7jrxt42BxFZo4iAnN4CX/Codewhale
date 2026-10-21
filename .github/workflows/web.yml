@@ -67,8 +67,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: lint
-    # Deploy is MANUAL ONLY: a human dispatches this workflow on main. Pushes
-    # and pull requests still run `lint` above, but they never reach Cloudflare.
+    # Deploy is MANUAL ONLY: an authorized dispatch on main runs `lint`
+    # before deploying. Pushes and pull requests do not start this workflow.
     # This mirrors scripts/check-cloudflare-deploy-env.mjs, which fails closed
     # unless GITHUB_EVENT_NAME is workflow_dispatch, GITHUB_REF is
     # refs/heads/main, and GITHUB_SHA is an exact 40-hex revision — a push
