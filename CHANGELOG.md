@@ -26,6 +26,153 @@ guidance.
 
 ### Latest fixes
 
+- Skill and plugin downloads and skills registry sync now check the first
+  request and every redirect. They refuse `localhost`, loopback, private,
+  link-local and cloud-metadata IP addresses and hosts the network policy
+  denies, refuse a redirect from HTTPS to HTTP, and stop after five
+  redirects. Without a proxy, Codewhale resolves each host itself, refuses
+  private answers and connects only to the address it checked. With
+  `HTTPS_PROXY` or `HTTP_PROXY` set (lowercase works too), these downloads
+  go through the proxy unless `NO_PROXY` matches the host; Codewhale then
+  leaves host-name checks to the proxy and checks only IP addresses written
+  in the URL. `ALL_PROXY` is not used. If your `[network]` default is deny,
+  allow `codeload.github.com` as well as `github.com` for GitHub skill and
+  plugin installs.
+
+- `NO_PROXY` now accepts space-separated entries and `*` for MCP servers you
+  configure and for skill and plugin downloads, an empty `HTTPS_PROXY` no
+  longer hides `HTTP_PROXY`, and a `socks5://` or `socks4://` proxy is asked
+  to resolve host names itself instead of Codewhale resolving them locally.
+
+- Local state no longer follows links planted inside a workspace or session
+  directory. The continual-harness lock file must not be a link, workspace
+  notes are appended without following links below the workspace, session
+  snapshots refuse a linked or multiply linked session file, and saving a
+  project Fleet profile checks existing project identities without
+  following a linked profile directory or file. New lane records and lane
+  logs are readable only by their owner.
+
+- The command splitter behind the destructive-command checks treats a
+  backslash-escaped quote outside quotes as an ordinary character, as the
+  shell does.
+
+- Outside Full Access, background and headless runs now stop for review
+  before a disk- or filesystem-destroying command placed inside a subshell
+  or a command substitution, including one inside a `sh -c` script.
+
+- Read-only agents and Fleet workers can now reach the network. In Full
+  Access, `bash` with `read_only: true` allows outbound connections, so
+  `curl`, `git ls-remote` and HTTPS clients work, while all local file writes
+  stay blocked. `read_only` does not stop requests that change things on
+  remote services. Ask and Auto-Review keep the mode offline, as do a
+  `[network]` policy that defaults to deny and a role without the network
+  grant. On macOS it reaches internet hosts over IPv4 and a local proxy set
+  in `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY`, but not IPv6 or any other
+  port on the Mac's own addresses. On Linux it shares the host network
+  namespace, including loopback and abstract unix sockets, like a networked
+  workspace-write shell. A networked run is marked `sandbox_network: true`
+  in its tool result, and `codewhale run sandbox run --policy read-only
+  --network` now honors `--network`. Refs #7040.
+
+- Plugin suggestions no longer treat Codewhale's own vocabulary as a reason
+  to offer a plugin. A message about MCP servers stuck at connecting, or one
+  that mentions agents, code, data, models, sessions or tools, no longer
+  offers an unrelated vendor plugin; distinctive names, phrases and domains
+  still match. The first-party marketplace check rejects the same words as
+  manifest keywords. Refs #7036.
+
+- When a route declares its own output limit in `[[custom_models]]`, on a
+  named custom (`openai-compatible`) route or a built-in provider such as
+  OpenRouter pointed at your own endpoint, `CODEWHALE_MAX_OUTPUT_TOKENS` can
+  now raise a request up to that limit instead of stopping at the bundled
+  limit for a model with the same name. Automatic requests keep their usual
+  size. Without a declared limit the bundled limit still applies, and on a
+  named custom route run receipts label it unverified rather than
+  documented. Refs #6396.
+
+- When a route publishes its own reasoning levels, Codewhale no longer
+  refuses a level the route lists. It sends the level you chose, or the
+  nearest level the route publishes, on Chat Completions routes and on
+  named custom endpoints that use the Responses or Anthropic Messages
+  wire, including `/cache warmup`. When a level still cannot be sent, the
+  error names it and lists the levels the route publishes. Refs #6396.
+
+- An oversized saved session is measured before anything is written. If
+  archiving its off-branch history, and if needed pruning finished
+  non-durable operations beyond the newest 256, would still leave it over
+  the 8 MiB full-history limit, the session file and its archive are left
+  untouched and the refusal gives the projected size and the steps it
+  counted, instead of rewriting the file and then reporting that nothing
+  changed. Refs #6955. Thanks @7jrxt42BxFZo4iAnN4CX.
+
+- A window that cannot save its queued messages because it holds no queue
+  lease for the current session now logs both session ids, and failed
+  session, checkpoint and queue writes log the raw OS error code. Refs
+  #6978. Thanks @SergiuSSoluS.
+
+- When the Linux sandbox cannot be set up (a bubblewrap mount error), the
+  shell result says the command did not run, quotes the bubblewrap error and
+  gives the ways forward, instead of the generic escalation hint. Nothing
+  runs outside the sandbox, and each sandboxed call still fails while the
+  cause remains. Refs #7007. Thanks @rafacouto.
+
+- Auto-Review stops a turn after three guardian denials in a row, or ten of
+  the turn's last fifty reviews, and the status line says why; the remaining
+  calls in that batch are refused without another review. Timeouts and
+  failed reviews do not count. Refs #6478.
+
+- Runtime API: `POST /v1/threads/{id}/read` records the newest item a client
+  has shown, and `GET /v1/threads/summary` now reports `last_read_item_id`
+  and `unread` for each conversation. Marking a conversation read does not
+  change `updated_at` or list order, and a marker never moves backwards.
+  Refs #6164.
+
+- On Linux, a Runtime owner record from before the last reboot no longer
+  blocks recovery when its process id has been reused.
+
+- The HarmonyOS guide now says the Linux ARM64 release runs inside the
+  HarmonyOS PC Linux subsystem, an openEuler virtual machine, and lists
+  Huawei's documented limits for it. It no longer describes a
+  "glibc-compatible userspace", and native HarmonyOS stays on the source
+  build. Refs #1072.
+
+- On native HarmonyOS, npm still installs the Linux build as a best effort.
+  If it cannot start, Codewhale prints directions to use the Linux subsystem
+  or build from source. The install script also warns that the build is
+  untested there; npm 7 and later show that warning only with
+  `--foreground-scripts`. Refs #1072.
+
+- Fetching a page that builds its content with JavaScript no longer ends in
+  a "no readable page content" error when the page has a title or
+  description. `Web` fetch and `web.run` return those, marked `partial`,
+  with a note that says why and what to try next. When a Playwright,
+  Puppeteer, Chrome DevTools or Computer Use browser tool is connected, the
+  note names it so the agent can render the page there. Refs #7038.
+
+- Web search through a model provider's own search tool now checks each
+  cited link before returning it, so Codewhale contacts the cited sites
+  directly. The check uses the same protections and `[network]` policy as
+  `Web` fetch, runs at most four checks at a time for five seconds each, and
+  never requests a link that repeats your search query. Links that do not
+  load are dropped and listed in the search receipt. The provider's written
+  answer moves to a separate `unverified_synthesis` field, and the result
+  says how many of the requested sources passed. When none pass, or when
+  you ask for recent results only, the search falls back to your configured
+  search provider. A cited site your `[network]` policy denies is dropped;
+  one the policy would ask you about stays in the results, marked as not
+  checked, until you allow its host. Refs #7039.
+
+- Searching for tools no longer unloads tools the agent is using. When the
+  deferred toolbox is full, `tool_search` makes room from tools that were
+  never called, then the least recently called, and keeps any tool called in
+  the current or previous turn. Matches that do not fit, and tools it
+  removes, come back with the exact `tool_search` input that loads them
+  again. Refs #6969.
+
+- Rendered markdown keeps nested list indentation, a to-do row keeps its
+  status word when its title is long, and the approval footer's separators
+  sit between its hints. Thanks @Lstarsky0 (#7030, #7033, #7034).
+
 - Fleet tasks can choose an execution environment by declared data,
   capabilities, capacity, persistence and cost, with a preview explaining
   each decision (experimental). Configured Tailscale workers use a pinned
@@ -430,7 +577,7 @@ guidance.
   model never saw, or a change you or another agent made after the model's
   last read. Creating a new file is unchanged, and a file Codewhale wrote
   itself counts as read. The refusal names the recovery: read the file, then
-  write again (CW-7450).
+  write again.
 - `codewhale exec` warns again when the sandbox posture asks for confinement
   but no OS sandbox can enforce it, for example on a Linux host or container
   where bubblewrap cannot start. With no external sandbox backend configured,
@@ -563,14 +710,14 @@ guidance.
   `locale` as the default. The desktop sends the interface language it
   shows, so a desktop opened from the Finder or the Dock on a Chinese
   system, which has no `LANG`, no longer lists its Settings rows in English
-  under Chinese headings (Refs CW-7406).
+  under Chinese headings.
 - `codewhale --continue` reopens a session whose terminal was closed or
   killed mid-turn. It used to print "Recovered interrupted session" and then
   exit with "session … is open in an interactive Codewhale session": the
   recovery had registered the session as this process's own live session,
   and the resume step that follows refused it. Recovery now holds the
   session's lease only while it promotes the checkpoint, as `--resume <id>`
-  does (Refs CW-7446).
+  does.
 - Queued messages restored from an earlier launch or another session are no
   longer sent automatically. They wait in the queue until `/queue send <n>`
   sends one or `/queue clear` discards them. The restore notice says so and
@@ -615,7 +762,7 @@ guidance.
   413) refusal on an ordinary turn still has no recovery; and the context
   budget estimate still counts every stored image, including those the
   window sends as notes, so a small context window can still trip context
-  recovery (Refs CW-7235).
+  recovery.
 - Switching provider is now refused while a turn is running, as model,
   thinking and permission changes already were. The refusal covers
   `/provider <id>`, the provider picker, a custom provider, setup and login
@@ -643,8 +790,7 @@ guidance.
   subdivision flags and one variation selector after CJK or emoji text are
   unaffected; a joiner or mark inside Persian, Arabic-script, Indic or Hebrew
   words is refused too.
-  The executed command is never rewritten, and Full Access is unchanged
-  (Refs CW-7236).
+  The executed command is never rewritten, and Full Access is unchanged.
 - A `curl` or `wget` whose request body uploads a credential is now held by
   the built-in safety gate. This covers `-d`/`--data*`/`--json`/`-F`/
   `--url-query`/`-T`/`--upload-file`/`-H @file`/`--post-file`/`--post-data`
@@ -664,7 +810,7 @@ guidance.
   tools (scp, rsync, nc, httpie, `aws s3 cp`), secrets inside an ordinary
   file, here-documents, `$(printenv NAME)` inside a value and a credential
   name split across a brace or quotes (`.net{rc,}`, `.n""etrc`) are not
-  detected. Full Access is unchanged (Refs CW-7236).
+  detected. Full Access is unchanged.
 - Switching provider, model route, profile or workspace, or changing plugins,
   while a `/compact` is running or queued no longer leaves the session stuck.
   The pass on the replaced engine is stopped and the transcript says "Making
@@ -692,15 +838,15 @@ guidance.
   call and for no reasoning, and 200 for reasoning → text → tool call. The same
   multi-step task that failed in 2 of 4 runs on the first 0.10.2 candidate
   passed 6 of 6 with the fix. On Chat, DeepSeek enforces this only for
-  tool-call turns, which were already covered (Refs CW-7450).
+  tool-call turns, which were already covered.
 - At reasoning effort `max`, the first-party DeepSeek route now asks for up to
   131,072 output tokens, DeepSeek's documented default at that effort, instead
   of 65,536. Every other provider and effort keeps 65,536, and explicit
-  overrides and route limits still apply (Refs CW-7450).
+  overrides and route limits still apply.
 - `codewhale exec --output-format stream-json` adds the provider's
   `finish_reason` to each `turn_usage` record, so a tool-call stop can be told
   apart from an output-limit stop or a provider abort. The field is omitted
-  when the provider reports none (Refs CW-7450).
+  when the provider reports none.
 - The `/statusline` picker's item hints are localized in all 15 UI languages
   instead of always showing English.
 - A custom OpenAI-compatible relay's model list is now discovered. Four
@@ -723,13 +869,13 @@ guidance.
   configured stdio MCP servers running, as `/new` already did: the replacement
   engine adopts each live process when its workspace, MCP backend and server
   config are unchanged. A workspace switch still restarts every server, and
-  servers added at runtime still close (CW-7430).
+  servers added at runtime still close.
 - Provider lists no longer show two "MiniMax" rows or four "Alibaba Cloud
   Model Studio" rows. The variant endpoints are labelled "MiniMax (Anthropic
   API)", "Alibaba Cloud Model Studio (Token Plan, Anthropic API)", "Alibaba
   Cloud Model Studio (Coding Plan)" and "Alibaba Cloud Model Studio (Coding
   Plan, Anthropic API)"; the default MiniMax and Model Studio rows keep their
-  names (CW-7408).
+  names.
 - Compaction no longer fails with "Chat API response missing choices" on
   gateways that wrap a non-streaming Chat Completions response as
   `{"data": {"choices": ...}, "success": true}`, such as Sub2API in front of
@@ -741,7 +887,7 @@ guidance.
   `subagents` service. Its activation fails with "extension may not provide
   core service `subagents`", as it already did for `agents`, `approval` and
   the other core names. Codewhale's own sub-agents and the tools they can use
-  are unchanged (CW-7054).
+  are unchanged.
 
 - OpenHarmony builds on Windows select Ninja, with an SDK-bundled fallback and
   a clear error when it is unavailable. The CLI keeps its download and Work
@@ -803,11 +949,15 @@ guidance.
   runs for the quoted seconds unless `--seconds` is given, and asks for consent
   only when both stdin and stdout are terminals. It refuses a message that was
   not read as new Work, and prints the Message ID.
-- MCP servers you configure now connect when a session starts; set
-  `lazy = true` on a server to connect it on demand instead. Servers that come
-  from plugins stay on demand. Finishing an OAuth login reconnects just that
-  server, and `/mcp reload` redials every server that is not `lazy` and reports
-  how many are not connected out of the configured total.
+- MCP servers now connect when a session starts, including servers from
+  enabled plugins; set `lazy = true` on a server you configure to connect it
+  on demand instead. Finishing an OAuth login reconnects just that server, and
+  `/mcp reload` redials every server that is not `lazy` and reports how many
+  are not connected out of the configured total.
+- The MCP status no longer stays at "connecting" after the servers have
+  finished. The final status was lost when it arrived while a reply was
+  running, when the interface was busy, or when the last server was removed;
+  the newest status is now kept until the interface can show it. Refs #7035.
 - `/new` keeps configured stdio MCP servers running: the next conversation
   adopts each live process when its workspace, MCP backend and server config
   are unchanged, and dials only what is missing. HTTP/SSE servers reconnect
@@ -815,7 +965,7 @@ guidance.
   runtime and plugin-contributed servers are closed with the conversation.
   `/resume <id>`, `/load` and a provider or workspace switch still restart
   every server, and the MCP panel and `/mcp` now show the new engine's status
-  instead of staying stale (CW-7430).
+  instead of staying stale.
 - Resuming a session whose offline queue still holds unsent messages now shows
   a warning naming how many will send after your next message and how to drop
   them with `/queue clear`; it previously hid behind the resume notice. A
@@ -824,11 +974,10 @@ guidance.
   messages still send automatically after your next message.
 - The mobile page retires an approval card's Allow and Deny buttons when that
   approval is decided from another client, cancelled or timed out, and shows
-  which happened (CW-6880).
+  which happened.
 - Settings name compaction "Compact at" with a plain-language hint, explain
   Input history as the number of sent messages kept for recall, and label the
-  Anthropic-compatible DeepSeek endpoint "DeepSeek (Anthropic API)"
-  (CW-7406, CW-7408).
+  Anthropic-compatible DeepSeek endpoint "DeepSeek (Anthropic API)".
 - Running shell commands open an inspector with their output and status. It
   follows new output until you scroll back, and drops Stop once the command
   ends. `Alt+V` opens the card you clicked, even after newer cards arrive or a
@@ -923,7 +1072,7 @@ guidance.
   a `thread.permissions_changed` event.
 
 - The bundled first-party catalog pins marketplace revision
-  `e3e61273f2ae31ec205e3c7f21b34dd73954d6b2` with 19 catalog entries,
+  `2e3a6fba453c9b34d5b1444ab5bd6edc7b119189` with 19 catalog entries,
   including the bundled Skills pack. Installed bundles carry the reviewed
   Computer Use and bridge fixes and the MIT license.
 - `codewhale app-server` no longer serves `GET /jobs`, which was always empty;
@@ -941,7 +1090,7 @@ guidance.
 - Sub-agents retain permitted code-mode tool composition. Nested calls keep
   the child's approvals, write scope, tool timeout and work deadline; approval
   waits do not consume that tool timeout. Refused nested calls still do not
-  count toward Fleet's denial-loop guard. Refs #6841 (CW-7033).
+  count toward Fleet's denial-loop guard. Refs #6841.
 - `/connect [<provider>]` signs in to a model provider that a plugin adds,
   inside the TUI, and `/disconnect <provider>` removes that sign-in.
   `/login` and `/logout` are for your Codewhale account only. Plugins that
@@ -1121,7 +1270,7 @@ guidance.
 
 - Runtime child completions retain their original parent turn after the parent
   becomes idle or starts a newer turn; terminal receipts remain durable and
-  deduplicated (CW-7414).
+  deduplicated.
 - Windows Native extension hosts resolve `DeriveCapabilitySidsFromName`
   at runtime and return an unsupported error during LPAC setup when the
   export is unavailable (#6953). Windows 10 1607 startup and Native-host
@@ -1359,6 +1508,16 @@ guidance.
 
 ### Maintenance
 
+- Main is mirrored to CNB on every push again, and to GitCode once its token
+  is configured.
+- Contributor pull requests get fast checks again: formatting, lint, the
+  Linux test suite, a Windows build, the npm wrapper smoke and the existing
+  issue-link and credit checks. They can merge as themselves without an
+  administrator override. Pushes to `main` start no GitHub build or test
+  workflow. The manual CI dispatch on a release commit now also runs
+  `cargo-deny`, the cargo and npm audits and the OpenHarmony check.
+  CONTRIBUTING.md explains each check and what maintainers do with a pull
+  request.
 - CI and test harness only, no change to the shipped binaries. The
   persistence backlog budget takes five samples and judges enqueue time on the
   fastest one. Linux CI jobs install apt packages through
@@ -1375,10 +1534,16 @@ guidance.
 - **[@SparkofSpike](https://github.com/SparkofSpike)** — live network-policy updates and goal milestone hand-back ([#6928](https://github.com/codewhale-hq/Codewhale/pull/6928), [#6930](https://github.com/codewhale-hq/Codewhale/pull/6930)), Windows ampersand classification ([#6929](https://github.com/codewhale-hq/Codewhale/pull/6929)), and a relocated Codewhale home including sub-agent state ([#6947](https://github.com/codewhale-hq/Codewhale/issues/6947), [#6949](https://github.com/codewhale-hq/Codewhale/pull/6949)). Also removed repeated catalog construction and credential-readiness work from the model picker ([#7026](https://github.com/codewhale-hq/Codewhale/pull/7026)).
 - **[@dajiaohuang](https://github.com/dajiaohuang)** — cache-write token accounting ([#6913](https://github.com/codewhale-hq/Codewhale/pull/6913)).
 - **[@gaord](https://github.com/gaord)** — embedder telemetry surface support ([#6916](https://github.com/codewhale-hq/Codewhale/pull/6916)) and the DeepSeek saved-key marker diagnosis and fix ([#6972](https://github.com/codewhale-hq/Codewhale/issues/6972), [#6974](https://github.com/codewhale-hq/Codewhale/pull/6974)).
-- **[@Lstarsky0](https://github.com/Lstarsky0)** — localized profile replies ([#6919](https://github.com/codewhale-hq/Codewhale/pull/6919)), workflow gates that block their own role ([#6952](https://github.com/codewhale-hq/Codewhale/pull/6952)), proxy-independent MCP loopback checks ([#6971](https://github.com/codewhale-hq/Codewhale/pull/6971), [#6975](https://github.com/codewhale-hq/Codewhale/pull/6975)), durable steering/child-approval acceptance checks ([#6967](https://github.com/codewhale-hq/Codewhale/pull/6967), [#6966](https://github.com/codewhale-hq/Codewhale/pull/6966)), and an app-server hook log that no longer lands in the project directory ([#6921](https://github.com/codewhale-hq/Codewhale/pull/6921)). Also made feedback truncation readable in ASCII-safe mode, added a statusline scroll rail, and removed duplicate clipped descriptions from split-view hotbar setup ([#7027](https://github.com/codewhale-hq/Codewhale/pull/7027), [#7028](https://github.com/codewhale-hq/Codewhale/pull/7028), [#7029](https://github.com/codewhale-hq/Codewhale/pull/7029)).
+- **[@Lstarsky0](https://github.com/Lstarsky0)** — localized profile replies ([#6919](https://github.com/codewhale-hq/Codewhale/pull/6919)), workflow gates that block their own role ([#6952](https://github.com/codewhale-hq/Codewhale/pull/6952)), proxy-independent MCP loopback checks ([#6971](https://github.com/codewhale-hq/Codewhale/pull/6971), [#6975](https://github.com/codewhale-hq/Codewhale/pull/6975)), durable steering/child-approval acceptance checks ([#6967](https://github.com/codewhale-hq/Codewhale/pull/6967), [#6966](https://github.com/codewhale-hq/Codewhale/pull/6966)), and an app-server hook log that no longer lands in the project directory ([#6921](https://github.com/codewhale-hq/Codewhale/pull/6921)). Also made feedback truncation readable in ASCII-safe mode, added a statusline scroll rail, and removed duplicate clipped descriptions from split-view hotbar setup ([#7027](https://github.com/codewhale-hq/Codewhale/pull/7027), [#7028](https://github.com/codewhale-hq/Codewhale/pull/7028), [#7029](https://github.com/codewhale-hq/Codewhale/pull/7029)). Kept nested list indentation in rendered markdown, kept a to-do row's status word when its title is long, and put the approval footer's separators between its hints ([#7030](https://github.com/codewhale-hq/Codewhale/pull/7030), [#7033](https://github.com/codewhale-hq/Codewhale/pull/7033), [#7034](https://github.com/codewhale-hq/Codewhale/pull/7034)).
 - **[@jayanthvee](https://github.com/jayanthvee)** — Windows npm launcher guidance ([#6906](https://github.com/codewhale-hq/Codewhale/pull/6906)).
 - **[@asto18089](https://github.com/asto18089)** — callback-window reference fix for longer browser sign-in waits ([#6865](https://github.com/codewhale-hq/Codewhale/issues/6865)). Also restricted the CNB mirror to the project owner so forks skip it while missing upstream credentials still fail explicitly ([#7016](https://github.com/codewhale-hq/Codewhale/pull/7016), with initial absent-secret handling co-authored by [@zhuowp](https://github.com/zhuowp)).
 - **[@BX166](https://github.com/BX166)** — reported three provider failure modes measured on AICraft's own traffic: a cold model that reads as a dead connection, a listed model that fails on every call, and a response cut at the output ceiling that reports `stop` ([#6889](https://github.com/codewhale-hq/Codewhale/issues/6889)).
+- **[@harryvizcaino-oss](https://github.com/harryvizcaino-oss)** — reported the invalid Full Access configuration guidance shown to the Paseo ACP client ([#6992](https://github.com/codewhale-hq/Codewhale/issues/6992)).
+- **[@rafacouto](https://github.com/rafacouto)** — reported Linux sandbox mount failures for symlinked credential directories and supplied a standalone bubblewrap reproduction ([#7007](https://github.com/codewhale-hq/Codewhale/issues/7007)).
+- **[@luestr](https://github.com/luestr)** — reported refusals when starting a new session ([#6981](https://github.com/codewhale-hq/Codewhale/issues/6981)).
+- **[@SergiuSSoluS](https://github.com/SergiuSSoluS)** — reported queued turns being delivered again after a session was restored ([#6978](https://github.com/codewhale-hq/Codewhale/issues/6978)).
+- **[@Statter](https://github.com/Statter)** — reported rate-limit retry behavior that informed the bounded current-quota 429 retry fix ([#6923](https://github.com/codewhale-hq/Codewhale/issues/6923)).
+- **[@7jrxt42BxFZo4iAnN4CX](https://github.com/7jrxt42BxFZo4iAnN4CX)** — reported oversized-session refusals that informed compaction error preservation and size-limit attribution ([#6955](https://github.com/codewhale-hq/Codewhale/issues/6955)).
 
 ## [0.10.1] - 2026-10-07
 
