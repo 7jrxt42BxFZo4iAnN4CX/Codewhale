@@ -3449,12 +3449,16 @@ impl SessionManager {
         id: &str,
         limit: Option<usize>,
     ) -> io::Result<SavedSession> {
+        use std::io::Read;
         let path = self.validated_session_path(id)?;
         let content = match limit {
-            None => fs::read_to_string(&path)?,
+            None => {
+                let mut content = String::new();
+                open_private_read_file(&path)?.read_to_string(&mut content)?;
+                content
+            }
             Some(limit) => {
-                use std::io::Read;
-                let mut file = fs::File::open(&path)?;
+                let mut file = open_private_read_file(&path)?;
                 if file.metadata()?.len() > limit as u64 {
                     let before = file.metadata()?.len();
                     self.compact_oversized_session(id).map_err(|error| {
@@ -3465,7 +3469,7 @@ impl SessionManager {
                             ),
                         )
                     })?;
-                    file = fs::File::open(&path)?;
+                    file = open_private_read_file(&path)?;
                     let after = file.metadata()?.len();
                     if after > limit as u64 {
                         return Err(io::Error::new(

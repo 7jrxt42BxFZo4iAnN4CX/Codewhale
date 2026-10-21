@@ -7552,22 +7552,36 @@ impl ToolSpec for NoteTool {
         let note_content = required_str(&input, "content")?;
         ensure_notes_target_is_safe(&context.notes_path, &context.workspace).await?;
 
-        // Ensure parent directory exists. Tool handlers run on the Tokio
-        // runtime, so filesystem calls use tokio::fs (blocking-call
-        // convention, #6149).
-        if let Some(parent) = context.notes_path.parent() {
-            tokio::fs::create_dir_all(parent).await.map_err(|e| {
-                ToolError::execution_failed(format!("Failed to create notes directory: {e}"))
-            })?;
-        }
-
-        // Append to notes file
-        let mut file = tokio::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&context.notes_path)
+        let mut file = if context.notes_path.starts_with(&context.workspace) {
+            let workspace = context.workspace.clone();
+            let notes_path = context.notes_path.clone();
+            let file = tokio::task::spawn_blocking(move || {
+                crate::fs_confined::open_append(&workspace, &notes_path)
+            })
             .await
+            .map_err(|e| ToolError::execution_failed(format!("Failed to open notes file: {e}")))?
             .map_err(|e| ToolError::execution_failed(format!("Failed to open notes file: {e}")))?;
+            tokio::fs::File::from_std(file)
+        } else {
+            // Ensure parent directory exists. Tool handlers run on the Tokio
+            // runtime, so filesystem calls use tokio::fs (blocking-call
+            // convention, #6149).
+            if let Some(parent) = context.notes_path.parent() {
+                tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                    ToolError::execution_failed(format!("Failed to create notes directory: {e}"))
+                })?;
+            }
+
+            // Append to notes file
+            tokio::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&context.notes_path)
+                .await
+                .map_err(|e| {
+                    ToolError::execution_failed(format!("Failed to open notes file: {e}"))
+                })?
+        };
 
         use tokio::io::AsyncWriteExt;
         file.write_all(format!("\n---\n{note_content}\n").as_bytes())

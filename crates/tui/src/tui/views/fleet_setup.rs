@@ -1059,8 +1059,12 @@ impl FleetSetupView {
             return Err("The destination changed on disk. Reopen Fleet before saving.".into());
         }
         let dir = target.parent().ok_or("Invalid profile destination")?;
-        let identities = crate::fleet::profile::load_agent_profile_identities_from_dir(dir)
-            .map_err(|err| err.to_string())?;
+        let identities = if self.profile_scope == FleetProfileScope::Project {
+            crate::fleet::profile::load_workspace_agent_profile_identities(&app.workspace)
+        } else {
+            crate::fleet::profile::load_agent_profile_identities_from_dir(dir)
+        }
+        .map_err(|err| err.to_string())?;
         if identities.iter().any(|profile| {
             profile.id.eq_ignore_ascii_case(&assignment.id) && profile.source != *target
         }) {
