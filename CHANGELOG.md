@@ -26,6 +26,11 @@ guidance.
 
 ### Latest fixes
 
+- Linux and OpenHarmony credential storage can traverse directories that allow
+  access without directory listing. The private credential directory still
+  requires current-user ownership and protected permissions; symlinks remain
+  refused. Filesystem-root errors now include the OS cause.
+
 - Each file read and search keeps its own details when activity is grouped.
   Expanding the group and opening a selected item shows that call’s input and
   output instead of an arbitrary sibling’s.
