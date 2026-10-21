@@ -1692,13 +1692,6 @@ impl ExploringCell {
         }
         lines
     }
-
-    /// Insert a new entry and return its index.
-    #[must_use]
-    pub fn insert_entry(&mut self, entry: ExploringEntry) -> usize {
-        self.entries.push(entry);
-        self.entries.len().saturating_sub(1)
-    }
 }
 
 /// Single entry for exploring tool output.

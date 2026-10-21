@@ -26,6 +26,9 @@ guidance.
 
 ### Latest fixes
 
+- Each file read and search keeps its own details when activity is grouped.
+  Expanding the group and opening a selected item shows that call’s input and
+  output instead of an arbitrary sibling’s.
 - Local Skills setup creates its example in the project folder Codewhale
   discovers, and its setup and doctor output explain the workspace trust
   requirement. Skills help now points to the searchable Skills view and
