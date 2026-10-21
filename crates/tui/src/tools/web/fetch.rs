@@ -36,6 +36,8 @@ pub(crate) struct FetchOptions {
     pub(crate) max_bytes: usize,
     pub(crate) accept: &'static str,
     pub(crate) user_agent: &'static str,
+    method: reqwest::Method,
+    range: Option<&'static str>,
 }
 
 impl FetchOptions {
@@ -45,6 +47,8 @@ impl FetchOptions {
             max_bytes: max_bytes.clamp(1, HARD_MAX_BYTES),
             accept,
             user_agent: USER_AGENT,
+            method: reqwest::Method::GET,
+            range: None,
         }
     }
 
@@ -604,6 +608,64 @@ async fn fetch_inner(
     )))
 }
 
+pub(crate) async fn reachable_status(
+    url: &str,
+    timeout: Duration,
+    context: &ToolContext,
+    tool_label: &str,
+) -> Result<u16, ToolError> {
+    let target = reqwest::Url::parse(url)
+        .map_err(|err| ToolError::invalid_input(format!("invalid URL: {err}")))?;
+    let timeout = timeout.min(HARD_MAX_TIMEOUT);
+    let deadline = Instant::now() + timeout;
+    let head = FetchOptions {
+        method: reqwest::Method::HEAD,
+        ..FetchOptions::new(timeout, 1, "*/*")
+    };
+    let ranged = FetchOptions {
+        range: Some("bytes=0-0"),
+        ..FetchOptions::new(timeout, 1, "*/*").with_browser_user_agent()
+    };
+    let probe = async {
+        let mut outcome = Err(ToolError::execution_failed("link check did not run"));
+        for (attempt, options) in [head, ranged].iter().enumerate() {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let budget = if attempt == 0 {
+                remaining / 2
+            } else {
+                remaining
+            };
+            if budget.is_zero() {
+                break;
+            }
+            outcome = match fetch_attempt(
+                target.clone(),
+                options,
+                context,
+                tool_label,
+                budget,
+                None,
+                CacheMode::Default,
+            )
+            .await
+            {
+                Ok(payload) if (200..300).contains(&payload.status) => return Ok(payload.status),
+                Ok(payload) => Ok(payload.status),
+                Err(AttemptError::Fatal(error)) => return Err(error),
+                Err(AttemptError::Transient(message)) => Err(ToolError::execution_failed(message)),
+            };
+        }
+        outcome
+    };
+    tokio::time::timeout(timeout, probe)
+        .await
+        .unwrap_or_else(|_| {
+            Err(ToolError::Timeout {
+                seconds: timeout.as_secs().max(1),
+            })
+        })
+}
+
 #[derive(Debug)]
 enum AttemptError {
     Fatal(ToolError),
@@ -657,9 +719,12 @@ async fn fetch_attempt(
             )))
         })?;
         let mut request = client
-            .get(current_url.clone())
+            .request(options.method.clone(), current_url.clone())
             .header("Accept", options.accept)
             .header("Accept-Language", "en-US,en;q=0.5");
+        if let Some(range) = options.range {
+            request = request.header(reqwest::header::RANGE, range);
+        }
         if cache_mode.is_revalidate() {
             // `no-cache` (revalidate), not `no-store`: the shared caches still
             // get to serve a validated copy, which is what recovers a page

@@ -1788,7 +1788,9 @@ code_mode = true # execute_tools composes MCP/plugin/native calls; false defers 
 - `native = true`：即使固定了 provider，原生搜索也优先；
 - `native = false`：从不使用原生搜索。
 
-原生搜索的回答完整返回；过大的工具输出会溢出到会话 artifact，模型可以分页取回。
+原生搜索的引用在返回前会做链接检查。每个被引用的 URL 都经过与 `Web` fetch 相同的受保护抓取（SSRF、DNS 与重定向检查，以及 `[network]` 策略）：先发 `HEAD`，`HEAD` 被拒绝时再发一个只取一个字节的范围 `GET`，同时最多四个，每个五秒。请求使用该地址在 `results` 中呈现的形式，不含 userinfo、片段和类似凭据的查询参数；查询字符串里重复了搜索词的地址不会被请求，其引用会被移除。只有返回 2xx 状态的来源才会留在 `results` 中；回执把每个被移除的引用记为 `citation_unverified` 并写明原因。如果没有任何引用通过检查，或者查询要求 `recency`（没有原生搜索工具能强制时间窗口），搜索会回落到已配置的 provider。`[network]` 策略拒绝的主机，其引用会被移除；策略需要你确认的主机不会被请求，其引用保留在 `results` 中，回执记为 `citation_unchecked`，直到你允许该主机。
+
+provider 的文字回答完整放在单独的 `unverified_synthesis` 字段中：它是 provider 模型自己的总结，其中的论断和链接都未经检查。过大的工具输出会溢出到会话 artifact，模型可以分页取回。
 
 **时效与区域。** `recency` 和 `locale` 会在后端 API 支持时转发，搜索回执会报告每一项是否生效：
 
@@ -1799,6 +1801,7 @@ code_mode = true # execute_tools composes MCP/plugin/native calls; false defers 
 | SearXNG | `time_range` | `language`，原样发送 |
 | Serply | 不发送（文档未说明） | `hl` 语言，`gl` 国家 |
 | DeepSeek | 不发送 | 不发送（`localization` 需要 IP 地址） |
+| Provider 原生 | 拒绝；搜索回落到已配置的 provider | 不发送 |
 
 时效会向上取整到后端最接近的窗口（天、周、月、年），所以 `recency = 10` 会搜索最近一个月。其他后端忽略这两项，并在回执中说明。
 

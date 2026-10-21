@@ -3301,7 +3301,24 @@ route. `[search] native` decides the order:
 - `native = true`: native search leads even when a provider is pinned;
 - `native = false`: native search is never used.
 
-The native answer is returned whole; oversized tool output spills to a session
+Native citations are link-checked before they are returned. Each cited URL is
+requested through the same guarded fetch as `Web` fetch (SSRF, DNS and redirect
+checks, `[network]` policy): a `HEAD`, then a one-byte ranged `GET` when `HEAD`
+is refused, at most four at a time and five seconds each. The request uses the
+address as it will appear in `results`, without userinfo, fragment or
+credential-like query parameters; an address whose query string repeats the
+search query is not requested and is removed. Only sources that
+answer with a 2xx status stay in `results`; the receipt lists each removed one
+as `citation_unverified` with its reason. When no citation passes, or when the
+query asks for `recency` (no native search tool can enforce a time window), the
+search falls through to the configured provider. A citation whose host the
+`[network]` policy denies is removed. A citation whose host the policy would
+ask you about is not fetched: it stays in `results` and the receipt records it
+as `citation_unchecked` until you allow the host.
+
+The provider's prose answer is returned whole in a separate
+`unverified_synthesis` field: it is the provider model's summary, and neither
+its claims nor its links are checked. Oversized tool output spills to a session
 artifact the model can page back.
 
 **Recency and locale.** `recency` and `locale` are forwarded where the
@@ -3315,6 +3332,7 @@ ignored:
 | SearXNG | `time_range` | `language`, as given |
 | Serply | not sent (undocumented) | `hl` language, `gl` country |
 | DeepSeek | not sent | not sent (`localization` takes an IP address) |
+| Provider-native | declined; the search falls through to the configured provider | not sent |
 
 Recency is rounded up to the backend's nearest window (day, week, month,
 year), so `recency = 10` searches the last month. Other backends ignore both
