@@ -1094,6 +1094,13 @@ struct ThreadSummary {
     /// thread snapshot. Clients use this typed fact for attention grouping;
     /// lifecycle prose and turn-status strings are not an authority signal.
     pending_attention_count: usize,
+    last_read_item_id: Option<String>,
+    unread: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MarkThreadReadRequest {
+    item_id: String,
 }
 
 /// `GET /v1/skills` row. Routing metadata (`invocation`, `aliases`,
@@ -2836,6 +2843,7 @@ pub fn build_router(state: RuntimeApiState) -> Router {
             "/v1/threads/{id}/agent-mail/{message_id}/read",
             post(mark_agent_mail_read),
         )
+        .route("/v1/threads/{id}/read", post(mark_thread_read))
         .route(
             "/v1/threads/{id}/agent-mail/{message_id}/cancel",
             post(cancel_agent_mail),
@@ -3537,6 +3545,14 @@ async fn list_threads_summary(
         let facts = facts.get(&thread.id);
         let latest_status = facts.and_then(|facts| facts.latest_turn_status.clone());
         let pending_attention_count = facts.map_or(0, |facts| facts.pending_attention_count);
+        let newest_item_id = facts.and_then(|facts| facts.newest_item_id.as_deref());
+        let unread = thread.last_read.as_ref().map(|marker| {
+            !marker.last_in_turn || marker.watermark_item_id.as_deref() != newest_item_id
+        });
+        let last_read_item_id = thread
+            .last_read
+            .as_ref()
+            .map(|marker| marker.item_id.clone());
         let latest_input_summary =
             facts.and_then(|facts| facts.latest_turn_input_summary.as_deref());
 
@@ -3582,6 +3598,8 @@ async fn list_threads_summary(
             latest_turn_id: thread.latest_turn_id,
             latest_turn_status: latest_status,
             pending_attention_count,
+            last_read_item_id,
+            unread,
         });
     }
 
@@ -8921,6 +8939,19 @@ async fn mark_agent_mail_read(
         .await
         .map_err(map_agent_mail_err)?;
     Ok(Json(envelope))
+}
+
+async fn mark_thread_read(
+    State(state): State<RuntimeApiState>,
+    Path(id): Path<String>,
+    Json(req): Json<MarkThreadReadRequest>,
+) -> Result<Json<ThreadRecord>, ApiError> {
+    let thread = state
+        .runtime_threads
+        .mark_thread_read(&id, &req.item_id)
+        .await
+        .map_err(map_thread_err)?;
+    Ok(Json(thread))
 }
 
 /// Withdraw a queued envelope before delivery (#6176). Idempotent: a

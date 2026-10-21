@@ -2449,6 +2449,7 @@ fn sample_thread(thread_id: &str) -> ThreadRecord {
         title: None,
         session_id: None,
         saved_session_checkpoint: None,
+        last_read: None,
     }
 }
 
@@ -18580,6 +18581,7 @@ fn opening_manager_recovers_stale_queued_and_in_progress_work() -> Result<()> {
         title: None,
         session_id: None,
         saved_session_checkpoint: None,
+        last_read: None,
     };
     manager.store.save_thread(&thread)?;
 
