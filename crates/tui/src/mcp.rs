@@ -2994,7 +2994,7 @@ impl McpConnection {
 /// matcher as reqwest. A NO_PROXY match returns None: direct requests must keep
 /// their public DNS validation and pins. Model and reviewed-plugin requests
 /// return before even reading proxy credentials.
-fn configured_mcp_proxy<F>(
+pub(crate) fn configured_mcp_proxy<F>(
     url: &reqwest::Url,
     disallow_ambient_proxy: bool,
     mut read_environment: F,
@@ -3005,12 +3005,13 @@ where
     if disallow_ambient_proxy {
         return Ok(None);
     }
-    let proxy_url = read_environment("HTTPS_PROXY")
-        .or_else(|_| read_environment("https_proxy"))
-        .or_else(|_| read_environment("HTTP_PROXY"))
-        .or_else(|_| read_environment("http_proxy"))
-        .ok()
-        .filter(|value| !value.trim().is_empty());
+    let proxy_url = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"]
+        .into_iter()
+        .find_map(|key| {
+            read_environment(key)
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        });
     let Some(proxy_url) = proxy_url else {
         return Ok(None);
     };
@@ -3026,7 +3027,11 @@ where
     };
     let no_proxy = read_environment("NO_PROXY")
         .or_else(|_| read_environment("no_proxy"))
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .replace(char::is_whitespace, ",");
+    if no_proxy.split(',').any(|entry| entry == "*") {
+        return Ok(None);
+    }
     let matcher = hyper_util::client::proxy::matcher::Matcher::builder()
         .all(normalized.as_str())
         .no(no_proxy)
@@ -3037,7 +3042,13 @@ where
     };
     // Build the actual proxy from the matched route itself so the decision
     // that grants delegated DNS authority cannot diverge from the transport.
-    let mut proxy = reqwest::Proxy::all(route.uri().to_string())?;
+    let route_uri = route.uri().to_string();
+    let route_uri = match route.uri().scheme_str() {
+        Some("socks5") => route_uri.replacen("socks5://", "socks5h://", 1),
+        Some("socks4") => route_uri.replacen("socks4://", "socks4a://", 1),
+        _ => route_uri,
+    };
+    let mut proxy = reqwest::Proxy::all(route_uri)?;
     if let Some(auth) = route.basic_auth() {
         proxy = proxy.custom_http_auth(auth.clone());
     }
