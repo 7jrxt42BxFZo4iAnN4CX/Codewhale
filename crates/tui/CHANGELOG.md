@@ -26,6 +26,17 @@ guidance.
 
 ### Latest fixes
 
+- Fleet tasks can choose an execution environment by declared data,
+  capabilities, capacity, persistence and cost, with a preview explaining
+  each decision (experimental). Configured Tailscale workers use a pinned
+  node identity; placement and transport receipts preserve the selected
+  environment and attempt. Declared resources do not reserve capacity.
+
+- A runnable WhaleNet example uses real DeepSeek tasks, Python and a
+  TypeScript MCP server to create a bounded analysis capability and reuse
+  it in a fresh task after the first worker exits. The example records
+  usage, process lifecycles, content hashes and a one-hour capability lease.
+
 - ACP session history uses shared message recognition without depending on
   terminal rendering. Malformed archived-context text stays visible instead
   of panicking during history restoration.

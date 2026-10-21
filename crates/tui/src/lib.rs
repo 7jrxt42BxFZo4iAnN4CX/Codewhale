@@ -757,9 +757,14 @@ struct FleetRunArgs {
     /// JSON or TOML task spec to enqueue
     #[arg(value_name = "TASK_SPEC")]
     task_spec: PathBuf,
-    /// Maximum local workers to lease concurrently
+    /// Maximum workers to lease concurrently
     #[arg(long, default_value_t = 4)]
     max_workers: usize,
+    #[arg(
+        long = "require-placement",
+        help = "Require environment placement support; older Engines refuse this flag"
+    )]
+    _require_placement: bool,
     /// Seconds without heartbeat before a running task is counted stale
     #[arg(long, default_value_t = 300)]
     stale_after_seconds: u64,

@@ -361,6 +361,20 @@
       "registryLine": 305
     },
     {
+      "id": "environment-placement",
+      "name": "Environment-aware Fleet placement",
+      "summary": "Places Fleet tasks by environment requirements and connects explicitly configured workers through Tailscale.",
+      "status": "experimental",
+      "surfaces": {
+        "tui": "preview",
+        "api": "preview"
+      },
+      "since": null,
+      "flag": null,
+      "docs": "docs/ENVIRONMENTS.md#environment-aware-fleet-placement-preview",
+      "registryLine": 314
+    },
+    {
       "id": "workflows",
       "name": "Workflows",
       "summary": "Checked-in .workflow.js scripts coordinate agents step by step.",

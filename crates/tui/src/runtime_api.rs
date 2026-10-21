@@ -2748,6 +2748,11 @@ pub fn build_router(state: RuntimeApiState) -> Router {
             get(targets::list_targets).post(targets::create_target),
         )
         .route("/v1/targets/switch", post(targets::switch_target))
+        .route("/v1/tailnet", get(targets::tailnet_inventory))
+        .route(
+            "/v1/fleet/placement",
+            post(targets::placement_preview).layer(DefaultBodyLimit::max(256 * 1024)),
+        )
         .route("/v1/remote", get(targets::remote_status))
         .route("/v1/remote/connect", post(targets::remote_connect))
         .route(
