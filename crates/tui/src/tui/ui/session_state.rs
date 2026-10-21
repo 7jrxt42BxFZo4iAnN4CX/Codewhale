@@ -1227,8 +1227,12 @@ pub(crate) fn restore_loaded_session_provider(
         let requested = app
             .reasoning_effort_preference
             .unwrap_or(app.reasoning_effort);
-        app.reasoning_effort =
-            requested.normalize_for_route(provider, &config.active_route_base_url(), &app.model);
+        app.reasoning_effort = requested.normalize_for_route_identity(
+            provider,
+            identity.key.as_str(),
+            &config.active_route_base_url(),
+            &app.model,
+        );
     }
     app.set_active_context_window_override(config, &identity);
     app.active_route_limits = app.context_window_override_limits();

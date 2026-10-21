@@ -2983,6 +2983,7 @@ impl CodewhaleClient {
             self.catalog_facts_for_model(&request.model)
         }
         .filter(|facts| facts.wire_model_id == request.model);
+        let mut published_wire_effort = None;
         if let Some(facts) = facts.as_deref() {
             if facts.temperature == Some(false) {
                 request.temperature = None;
@@ -3048,17 +3049,51 @@ impl CodewhaleClient {
                     } else {
                         request.reasoning_effort.clone()
                     };
+                    let values = option.get("values").and_then(Value::as_array);
+                    let published = |effort: &str| {
+                        values.is_some_and(|values| {
+                            values.iter().any(|value| value.as_str() == Some(effort))
+                        })
+                    };
+                    if matches!(self.wire_format, WireFormat::ChatCompletions)
+                        && let Some(wire) = wire_effort.as_deref()
+                        && let Some(requested) = request.reasoning_effort.as_deref()
+                        && !published(wire)
+                        && published(requested)
+                    {
+                        published_wire_effort = Some(requested.to_string());
+                        continue;
+                    }
                     if let Some(effort) = wire_effort.as_deref()
-                        && let Some(values) = option.get("values").and_then(Value::as_array)
-                        && !values.iter().any(|value| value.as_str() == Some(effort))
+                        && let Some(values) = values
+                        && !published(effort)
                         && !(matches!(effort, "off" | "disabled" | "false")
                             && (values.iter().any(|value| value.as_str() == Some("none"))
                                 || facts.reasoning_options.iter().any(|option| {
                                     option.get("type").and_then(Value::as_str) == Some("toggle")
                                 })))
                     {
+                        let mut offered = Vec::new();
+                        for label in values
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .filter_map(
+                                crate::reasoning_preference::ReasoningEffort::from_catalog_token,
+                            )
+                            .map(crate::reasoning_preference::ReasoningEffort::as_setting)
+                        {
+                            if !offered.contains(&label) {
+                                offered.push(label);
+                            }
+                        }
                         anyhow::bail!(
-                            "The selected provider offering does not support the configured reasoning effort; inspect model details and choose a published value"
+                            "The selected provider offering does not support the resolved reasoning effort `{}`; it publishes: {}. Choose a published value or turn reasoning off",
+                            request.reasoning_effort.as_deref().unwrap_or(effort),
+                            if offered.is_empty() {
+                                "no recognized effort values".to_string()
+                            } else {
+                                offered.join(", ")
+                            }
                         );
                     }
                 }
@@ -3089,6 +3124,13 @@ impl CodewhaleClient {
                     stream,
                     request_route_limits,
                 )?;
+                if let Some(effort) = published_wire_effort.as_deref() {
+                    if wire.body.get("reasoning_effort").is_some() {
+                        wire.body["reasoning_effort"] = json!(effort);
+                    } else if let Some(slot) = wire.body.pointer_mut("/reasoning/effort") {
+                        *slot = json!(effort);
+                    }
+                }
                 if let Some(model) = &declared_wire_model {
                     wire.model.clone_from(model);
                     wire.body["model"] = json!(model);

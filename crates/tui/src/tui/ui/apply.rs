@@ -1036,7 +1036,12 @@ pub(crate) async fn apply_model_picker_choice(
     let effective_effort = if model_is_auto {
         effort
     } else {
-        effort.normalize_for_route(app.api_provider, &route_base_url, &resolved_model)
+        effort.normalize_for_route_identity(
+            app.api_provider,
+            current_identity.key.as_str(),
+            &route_base_url,
+            &resolved_model,
+        )
     };
     let effort_changed = effort != previous_effort;
 
@@ -4505,8 +4510,12 @@ pub(crate) fn apply_loaded_session_with_goal(
         let requested = app
             .reasoning_effort_preference
             .unwrap_or(app.reasoning_effort);
-        app.reasoning_effort =
-            requested.normalize_for_route(app.api_provider, &app.active_route_base_url, &app.model);
+        app.reasoning_effort = requested.normalize_for_route_identity(
+            app.api_provider,
+            app.provider_identity_for_persistence(),
+            &app.active_route_base_url,
+            &app.model,
+        );
     }
     app.provider_models.insert(
         app.provider_identity_for_persistence().to_string(),

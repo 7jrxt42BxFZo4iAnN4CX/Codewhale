@@ -15272,8 +15272,9 @@ impl RuntimeThreadManager {
                 );
             let reasoning_effort = selected_reasoning.map(|effort| {
                 effort
-                    .normalize_for_route(
+                    .normalize_for_route_identity(
                         route.identity.provider,
+                        route.identity.key.as_str(),
                         &route.candidate.endpoint().base_url,
                         &route.model,
                     )
@@ -15306,8 +15307,9 @@ impl RuntimeThreadManager {
             });
             let reasoning_effort = selected_reasoning.map(|effort| {
                 effort
-                    .normalize_for_route(
+                    .normalize_for_route_identity(
                         route.identity.provider,
+                        route.identity.key.as_str(),
                         &route.candidate.endpoint().base_url,
                         &route.model,
                     )

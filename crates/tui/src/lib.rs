@@ -13699,11 +13699,13 @@ fn cli_reasoning_effort_value(
 ) -> Option<String> {
     let identity = config.active_provider_identity().ok()?;
     effort
-        .api_value_for_route(
+        .normalize_for_route_identity(
             identity.provider,
+            identity.key.as_str(),
             &config.base_url_for_route(&identity),
             model,
         )
+        .api_value_for_provider(identity.provider)
         .map(str::to_string)
 }
 

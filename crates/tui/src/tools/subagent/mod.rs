@@ -18008,8 +18008,9 @@ fn subagent_reasoning_effort_for_request(
     role_reasoning_default: Option<&str>,
 ) -> Option<String> {
     let normalize = |effort: ReasoningEffort| {
-        effort.normalize_for_route(
+        effort.normalize_for_route_identity(
             runtime.client.api_provider(),
+            runtime.client.admitted_provider_identity().key.as_str(),
             runtime.client.base_url(),
             model,
         )
@@ -18049,8 +18050,9 @@ fn subagent_reasoning_effort_for_request(
 
 fn fallback_subagent_reasoning_effort(runtime: &SubAgentRuntime, model: &str) -> Option<String> {
     let normalize = |effort: ReasoningEffort| {
-        effort.normalize_for_route(
+        effort.normalize_for_route_identity(
             runtime.client.api_provider(),
+            runtime.client.admitted_provider_identity().key.as_str(),
             runtime.client.base_url(),
             model,
         )

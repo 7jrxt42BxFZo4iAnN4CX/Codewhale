@@ -7453,7 +7453,12 @@ pub(crate) async fn run_cache_warmup(app: &App, config: &Config) -> Result<Cache
         .map_err(anyhow::Error::msg)?;
     let base_url = route.client.base_url().to_string();
     let reasoning_effort = app
-        .reasoning_effort_api_value_for_replay(route.identity.provider, &base_url, &route.model)
+        .reasoning_effort_api_value_for_replay(
+            route.identity.provider,
+            route.identity.key.as_str(),
+            &base_url,
+            &route.model,
+        )
         .map(str::to_string);
     let request = MessageRequest {
         model: route.model.clone(),
