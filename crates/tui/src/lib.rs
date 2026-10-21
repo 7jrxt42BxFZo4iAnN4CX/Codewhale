@@ -1231,7 +1231,7 @@ struct SetupArgs {
     /// Initialize MCP config, skills, tools, and plugins
     #[arg(long, default_value_t = false)]
     all: bool,
-    /// Create a local workspace skills directory (./skills)
+    /// Create a local workspace skills directory (./.codewhale/skills)
     #[arg(long, default_value_t = false)]
     local: bool,
     /// Overwrite existing template files
@@ -4345,7 +4345,7 @@ fn run_setup(
 
     if run_skills {
         let skills_dir = if args.local {
-            workspace.join("skills")
+            workspace.join(".codewhale").join("skills")
         } else {
             config.skills_dir()
         };
@@ -4366,7 +4366,7 @@ fn run_setup(
         }
         if args.local {
             println!(
-                "    Local skills dir enabled for this workspace: {}",
+                "    Project skills dir (loads after workspace trust): {}",
                 crate::utils::display_path(&skills_dir)
             );
         } else {
@@ -5595,18 +5595,8 @@ async fn run_doctor(
     // to the merged catalogue.
     let opencode_skills_dir = workspace.join(".opencode").join("skills");
     let claude_skills_dir = workspace.join(".claude").join("skills");
-    let selected_skills_dir = if agents_skills_dir.exists() {
-        agents_skills_dir.clone()
-    } else if local_skills_dir.exists() {
-        local_skills_dir.clone()
-    } else if config.skills_dir.is_none()
-        && let Some(global_agents) = agents_global_skills_dir.as_ref()
-        && global_agents.exists()
-    {
-        global_agents.clone()
-    } else {
-        global_skills_dir.clone()
-    };
+    let selected_skills_dir =
+        crate::tui::app::resolve_skills_dir(workspace, &global_skills_dir, config);
 
     let describe_dir = |dir: &Path| -> usize {
         std::fs::read_dir(dir)
@@ -5711,14 +5701,15 @@ async fn run_doctor(
             unrecognized_system_skills.join(", ")
         );
     }
-    if !agents_skills_dir.exists()
+    if !workspace.join(".codewhale").join("skills").is_dir()
+        && !agents_skills_dir.exists()
         && !local_skills_dir.exists()
         && !agents_global_skills_dir
             .as_ref()
             .is_some_and(|dir| dir.exists())
         && !global_skills_dir.exists()
     {
-        println!("    Run `codewhale setup --skills` (or add --local for ./skills).");
+        println!("    Run `codewhale setup --skills` (or add --local for ./.codewhale/skills).");
     }
 
     // Tools directory
@@ -8151,18 +8142,8 @@ fn run_doctor_json(
     // global agentskills.io content is contributing to the merged catalogue.
     let opencode_skills_dir = workspace.join(".opencode").join("skills");
     let claude_skills_dir = workspace.join(".claude").join("skills");
-    let selected_skills_dir = if agents_skills_dir.exists() {
-        agents_skills_dir.clone()
-    } else if local_skills_dir.exists() {
-        local_skills_dir.clone()
-    } else if config.skills_dir.is_none()
-        && let Some(global_agents) = agents_global_skills_dir.as_ref()
-        && global_agents.exists()
-    {
-        global_agents.clone()
-    } else {
-        global_skills_dir.clone()
-    };
+    let selected_skills_dir =
+        crate::tui::app::resolve_skills_dir(workspace, &global_skills_dir, config);
     let agents_global_summary = agents_global_skills_dir
         .as_ref()
         .map(|path| {

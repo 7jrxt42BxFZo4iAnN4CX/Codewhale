@@ -1622,15 +1622,14 @@ fn push_orphan_tool_completion(
 fn tool_status_from_result(result: &Result<ToolResult, ToolError>) -> ToolStatus {
     match result.as_ref() {
         Ok(tool_result) if is_deferred_schema_hydration(tool_result) => ToolStatus::Hydrated,
-        Ok(tool_result) => match tool_result.metadata.as_ref() {
-            Some(meta)
-                if meta
-                    .get("status")
-                    .and_then(|v| v.as_str())
-                    .is_some_and(|s| s == "Running") =>
-            {
-                ToolStatus::Running
-            }
+        Ok(tool_result) => match tool_result
+            .metadata
+            .as_ref()
+            .and_then(|meta| meta.get("status"))
+            .and_then(serde_json::Value::as_str)
+        {
+            Some("Running") => ToolStatus::Running,
+            Some("Killed") => ToolStatus::Stopped,
             _ => {
                 if tool_result.success {
                     ToolStatus::Success

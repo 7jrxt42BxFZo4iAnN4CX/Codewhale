@@ -26,6 +26,14 @@ guidance.
 
 ### Latest fixes
 
+- Local Skills setup creates its example in the project folder Codewhale
+  discovers, and its setup and doctor output explain the workspace trust
+  requirement. Skills help now points to the searchable Skills view and
+  distinguishes it from management.
+
+- Stopped shell jobs read as stopped instead of failed. Their detail view stays
+  available after completion, a missing terminal exit code reads as unavailable,
+  and delegated jobs identify their named agent. Refs #6931.
 - `model list` respects the selected route's catalog instead of adding unrelated
   bundled models. `app/models` reads the captured Runtime's current catalog,
   including named custom routes, regional routes, limits and capability facts.

@@ -1043,6 +1043,7 @@ pub enum ToolStatus {
     Running,
     Success,
     Hydrated,
+    Stopped,
     /// Terminal result with usable output that still needs attention.
     Warning,
     Failed,
@@ -1514,6 +1515,8 @@ impl ExploringCell {
             ToolStatus::Failed
         } else if any(ToolStatus::Warning) {
             ToolStatus::Warning
+        } else if any(ToolStatus::Stopped) {
+            ToolStatus::Stopped
         } else if any(ToolStatus::Hydrated) {
             ToolStatus::Hydrated
         } else {
@@ -1585,15 +1588,15 @@ impl ExploringCell {
         // Dot-grid status strip — one glyph per entry, showing parallel
         // fanout at a glance: ●=done ◐=running ✕=failed.
         if self.entries.len() > 1 {
-            let (done, running, failed) =
-                self.entries
-                    .iter()
-                    .fold((0usize, 0usize, 0usize), |(d, r, f), e| match e.status {
-                        ToolStatus::Success | ToolStatus::Hydrated => (d + 1, r, f),
-                        ToolStatus::Warning => (d, r, f + 1),
-                        ToolStatus::Running => (d, r + 1, f),
-                        ToolStatus::Failed => (d, r, f + 1),
-                    });
+            let (done, running, failed, stopped) = self.entries.iter().fold(
+                (0usize, 0usize, 0usize, 0usize),
+                |(d, r, f, s), e| match e.status {
+                    ToolStatus::Success | ToolStatus::Hydrated => (d + 1, r, f, s),
+                    ToolStatus::Warning | ToolStatus::Failed => (d, r, f + 1, s),
+                    ToolStatus::Running => (d, r + 1, f, s),
+                    ToolStatus::Stopped => (d, r, f, s + 1),
+                },
+            );
             // Each dot carries its own entry's state. Painting the strip one
             // flat colour made a failed parallel read indistinguishable from a
             // finished one, which is exactly the narration the cell is
@@ -1603,6 +1606,7 @@ impl ExploringCell {
                 let glyph = match e.status {
                     ToolStatus::Success | ToolStatus::Hydrated => "\u{25CF}",
                     ToolStatus::Warning => "!",
+                    ToolStatus::Stopped => crate::tui::glyphs::NEUTRAL,
                     ToolStatus::Running => "\u{25D0}",
                     ToolStatus::Failed => "\u{2715}",
                 };
@@ -1620,6 +1624,10 @@ impl ExploringCell {
                 (
                     failed,
                     codewhale_localization::MessageId::WorkflowCountFailed,
+                ),
+                (
+                    stopped,
+                    codewhale_localization::MessageId::WorkflowCountCancelled,
                 ),
             ]
             .into_iter()
@@ -1649,6 +1657,7 @@ impl ExploringCell {
                     ToolStatus::Running => "live",
                     ToolStatus::Success => "done",
                     ToolStatus::Hydrated => "loaded",
+                    ToolStatus::Stopped => "stopped",
                     ToolStatus::Warning => "issue",
                     ToolStatus::Failed => "failed",
                 };
@@ -2907,7 +2916,7 @@ fn status_symbol(
             crate::tui::spinner::braille_spinner_frame(started_at, low_motion).to_string()
         }
         ToolStatus::Success => TOOL_DONE_SYMBOL.to_string(),
-        ToolStatus::Hydrated => crate::tui::glyphs::NEUTRAL.to_string(),
+        ToolStatus::Hydrated | ToolStatus::Stopped => crate::tui::glyphs::NEUTRAL.to_string(),
         ToolStatus::Warning => "!".to_string(),
         ToolStatus::Failed => TOOL_FAILED_SYMBOL.to_string(),
     }
@@ -3336,7 +3345,7 @@ fn tool_detail_label_style() -> Style {
 fn tool_rail_color(status: ToolStatus) -> Color {
     match status {
         ToolStatus::Running => palette::WHALE_ACTION,
-        ToolStatus::Success => palette::TEXT_MUTED,
+        ToolStatus::Success | ToolStatus::Stopped => palette::TEXT_MUTED,
         ToolStatus::Hydrated => palette::TEXT_DIM,
         ToolStatus::Warning => palette::WHALE_HUMAN,
         ToolStatus::Failed => palette::WHALE_ERROR,
@@ -3356,6 +3365,7 @@ pub(crate) fn tool_status_label(status: ToolStatus) -> &'static str {
         ToolStatus::Running => "running",
         ToolStatus::Success => "done",
         ToolStatus::Hydrated => "loaded, not run",
+        ToolStatus::Stopped => "stopped",
         ToolStatus::Warning => "issue",
         ToolStatus::Failed => "failed",
     }
