@@ -7996,8 +7996,7 @@ impl Engine {
     fn mcp_connecting_names(pool: &McpPool, errors: &HashMap<String, String>) -> Vec<String> {
         // The pool tracks spawned-but-unresolved connects (#6033). Inferring
         // "connecting" from enabled-minus-connected mislabels every on-demand
-        // server — `lazy = true` or plugin-contributed, never started — as
-        // mid-handshake.
+        // server — `lazy = true`, never started — as mid-handshake.
         pool.connecting_servers()
             .into_iter()
             .filter(|name| !errors.contains_key(name))
@@ -8785,11 +8784,12 @@ impl Engine {
             return pool.lock().await.to_api_tools();
         }
 
-        // Boot is lazy (#6033): unselected servers stay unconnected on
-        // purpose, so there is no per-turn sweep here. A `required` server
-        // that never got an attempt still owes the session an honest error
-        // row — `push_required_server_errors` only fills gaps a real
-        // diagnosis did not already cover.
+        // The boot pass starts every server not marked `lazy = true`; an
+        // unselected lazy server stays unconnected on purpose (#6033), so
+        // there is no per-turn sweep here. A `required` server that never
+        // got an attempt still owes the session an honest error row —
+        // `push_required_server_errors` only fills gaps a real diagnosis did
+        // not already cover.
         let mut gaps = Vec::new();
         {
             let pool = pool.lock().await;
@@ -8931,8 +8931,8 @@ impl Engine {
     /// Name the configured MCP servers this turn may load, in session history
     /// before a model request (KV-cache effect: append-only user history).
     ///
-    /// Session boot is lazy and MCP tools are deferred, so a server the user
-    /// added is otherwise invisible to the model until the user names it. The
+    /// MCP tools are deferred, so a server the user added is otherwise
+    /// invisible to the model until the user names it. The
     /// list is exactly what an MCP-focused `tool_search` may connect under
     /// this turn's ceiling ([`Self::discover_mcp_for_tool_search`]): enabled,
     /// allowed servers, and none when `tool_search` is not in `catalog`.

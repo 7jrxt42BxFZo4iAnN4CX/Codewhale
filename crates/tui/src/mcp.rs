@@ -3219,8 +3219,8 @@ pub struct McpPool {
     /// `/mcp` retries, and supervisor redials all mark names here and clear
     /// them on resolution, so status surfaces never have to infer
     /// "connecting" from "enabled but not connected yet" (#6033): an
-    /// unconnected on-demand server (`lazy = true` or plugin-contributed) is
-    /// one nobody has asked for, not one mid-handshake.
+    /// unconnected on-demand server (`lazy = true`) is one nobody has asked
+    /// for, not one mid-handshake.
     connecting: HashSet<String>,
     retired: bool,
 }
@@ -4528,18 +4528,16 @@ impl McpPool {
     }
 
     /// Enabled, allowed configured servers the boot pass starts at session
-    /// start: every user-configured one except those marked `lazy = true`.
-    /// Plugin-contributed servers and lazy ones connect on demand unless
-    /// `required` or covered by the session's explicit tool selections.
+    /// start: every one, user-configured or plugin-contributed, except those
+    /// marked `lazy = true`, which connect on demand unless `required` or
+    /// covered by the session's explicit tool selections.
     pub(crate) fn eager_boot_server_names(&self, requested: &[String]) -> HashSet<String> {
         self.config
             .servers
             .iter()
             .filter(|(name, server)| server.is_enabled() && self.server_allowed(name))
             .filter(|(name, server)| {
-                server.required
-                    || (!server.lazy && server.reviewed_plugin.is_none())
-                    || tool_selection_covers_server(requested, name)
+                server.required || !server.lazy || tool_selection_covers_server(requested, name)
             })
             .map(|(name, _)| name.clone())
             .collect()
@@ -6287,11 +6285,11 @@ impl McpServerSnapshot {
         }
     }
 
-    /// Whether this session ever attempted the server. Boot is lazy (#6033):
-    /// a configured server nobody asked for has no connection, no recorded
-    /// failure, and no observed capabilities — it was never started, so its
-    /// recovery is `connect`, not `reconnect`, and an OAuth-capable one is
-    /// not yet known to need a login.
+    /// Whether this session ever attempted the server. A `lazy = true` server
+    /// nobody asked for (#6033) has no connection, no recorded failure, and
+    /// no observed capabilities — it was never started, so its recovery is
+    /// `connect`, not `reconnect`, and an OAuth-capable one is not yet known
+    /// to need a login.
     #[must_use]
     pub fn started(&self) -> bool {
         self.connected
