@@ -26,6 +26,11 @@ guidance.
 
 ### Latest fixes
 
+- `model list` respects the selected route's catalog instead of adding unrelated
+  bundled models. `app/models` reads the captured Runtime's current catalog,
+  including named custom routes, regional routes, limits and capability facts.
+  Model listing remains available during a running task and reports an
+  unavailable owner instead of returning a stale static list. Refs #6396.
 - The model picker distinguishes stale catalogs and stale, unverified or
   unavailable pricing instead of calling them live or priced. Unknown
   reasoning support stays unknown, and unusable rates do not drive price sorting.
@@ -733,10 +738,11 @@ guidance.
   remain in place. Windows Terminal IME preedit is still controlled by the
   terminal; native IME retesting remains open (#2323).
 
-- `codewhale model list`, the model picker, sub-agent model validation and
-  Runtime facts read the same endpoint-scoped catalog facts. `model resolve`
-  and `model set`, the app-server model registry and route admission still
-  read the static registry; moving them is tracked in #6396. Cost estimates
+- `codewhale model list`, `model resolve`, the model picker, sub-agent model
+  validation and Runtime facts read endpoint-scoped catalog facts. `model set`
+  saves the exact route selection, and `app/models` projects the captured
+  Runtime's catalog. Compatibility aliases and advisory route checks retain
+  their existing registry. Cost estimates
   preserve complete price tiers, calculate exact decimal amounts per request,
   and freeze rates at dispatch.
   Missing rates or required usage breakdowns stay unpriced; public prices do

@@ -5792,13 +5792,9 @@ fn run_model_command(
     match command {
         ModelCommand::List { provider } => {
             let filter = model_command_provider_hint(provider, top_level_provider);
-            codewhale_tui::maybe_load_persisted_cache();
-            let providers: &[ProviderKind] = match &filter {
-                Some(provider) => std::slice::from_ref(provider),
-                None => ProviderKind::all(),
-            };
-            for provider in providers {
-                for model in codewhale_tui::all_catalog_models_for_provider(*provider) {
+            for (provider, models) in codewhale_tui::route_preferences::list_models(store, filter)?
+            {
+                for model in models {
                     println!("{model} ({})", provider.as_str());
                 }
             }
