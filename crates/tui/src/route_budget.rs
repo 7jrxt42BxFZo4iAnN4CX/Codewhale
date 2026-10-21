@@ -248,8 +248,10 @@ pub(crate) enum OutputCeilingSource {
     Uncatalogued(u32),
     /// The route publishes no ceiling we can stand behind, but a defensible
     /// floor is still applied: an Anthropic-family model the catalogue does
-    /// not describe (64K Messages floor) and the Codex OAuth route (4K
-    /// policy). Clamping trades late provider failure for early truncation;
+    /// not describe (64K Messages floor), the Codex OAuth route (4K
+    /// policy), and a model-only catalogue row reached through a custom
+    /// endpoint, whose shared wire spelling does not establish the catalogued
+    /// model. Clamping trades late provider failure for early truncation;
     /// lying about why is not part of that trade, so receipts and pickers
     /// must render this as an assumption, never as "documented" (#5440).
     Unverified(u32),
@@ -322,7 +324,13 @@ pub(crate) fn output_ceiling_source(provider: ProviderKind, model: &str) -> Outp
                 OutputCeilingSource::Uncatalogued(UNCATALOGUED_COMPAT_MAX_OUTPUT_TOKENS)
             }
         },
-        OutputCeilingSource::Documented,
+        |tokens| {
+            if provider == ProviderKind::Custom {
+                OutputCeilingSource::Unverified(tokens)
+            } else {
+                OutputCeilingSource::Documented(tokens)
+            }
+        },
     )
 }
 
@@ -385,8 +393,15 @@ fn effective_max_output_tokens_for_route_with_cap(
     // fact — absence keeps a labeled automatic allowance
     // (see `output_ceiling_source`). A concrete route/offering maximum is the
     // missing evidence for that exact route and may replace only the generic
-    // uncatalogued guess; known compatibility caps stay authoritative and are
-    // still intersected with any route maximum.
+    // uncatalogued guess or a custom endpoint's model-only assumption. An
+    // explicit request may also rise past a compatibility cap to a maximum
+    // the operator declared for this exact model and endpoint. Otherwise known
+    // compatibility caps stay authoritative and are still intersected with
+    // any route maximum.
+    let custom_endpoint_assumption = provider == ProviderKind::Custom
+        && matches!(compatibility_source, OutputCeilingSource::Unverified(_));
+    let declared_route_override = explicit_max_output_tokens_override().is_some()
+        && route_limits.is_some_and(|limits| limits.output_declared);
     let cap = match (compatibility_source, route_cap) {
         // A concrete route/offering maximum is evidence about this exact
         // route. It therefore outranks the generic fallback that exists only
@@ -394,6 +409,9 @@ fn effective_max_output_tokens_for_route_with_cap(
         // route fact the conservative guess still applies, and the route fact
         // can never raise the caller's requested cap.
         (OutputCeilingSource::Uncatalogued(_), Some(route_cap)) => requested_cap.min(route_cap),
+        (_, Some(route_cap)) if custom_endpoint_assumption || declared_route_override => {
+            requested_cap.min(route_cap)
+        }
         (OutputCeilingSource::Uncatalogued(_), None)
             if explicit_max_output_tokens_override().is_some() =>
         {
@@ -669,7 +687,8 @@ mod tests {
     /// #5460: absence is not permission, but a positive output maximum on the
     /// resolved route is permission for that exact route. The concrete fact
     /// replaces only the catalogue-absence guess; it never raises the caller's
-    /// requested cap or a documented model ceiling.
+    /// requested cap, and an undeclared fact never raises a documented model
+    /// ceiling.
     #[test]
     fn concrete_route_output_limit_outranks_uncatalogued_guess() {
         let _lock = crate::test_support::lock_test_env();
@@ -1306,6 +1325,7 @@ mod tests {
             context_tokens: Some(1_000_000),
             input_tokens: Some(128_000),
             output_tokens: Some(64_000),
+            output_declared: false,
         };
 
         let budget = route_context_budget(

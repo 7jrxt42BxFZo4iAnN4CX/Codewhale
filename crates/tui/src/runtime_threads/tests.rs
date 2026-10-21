@@ -2677,6 +2677,7 @@ fn runtime_compaction_uses_provider_route_context() {
         context_tokens: Some(272_000),
         input_tokens: None,
         output_tokens: None,
+        output_declared: false,
     };
     let config = runtime_compaction_config(
         &Config::default(),
