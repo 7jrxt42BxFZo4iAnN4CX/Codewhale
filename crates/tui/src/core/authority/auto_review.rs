@@ -1859,7 +1859,8 @@ fn shell_params_are_publish_like(params: &Value) -> bool {
 /// non-read-only command as destructive (#3883).
 fn shell_params_are_destructive_like(params: &Value, workspace: Option<&std::path::Path>) -> bool {
     use codewhale_execpolicy::command_safety::{
-        SafetyLevel, analyze_command, command_invocations, is_literal_rm_invocation,
+        SafetyLevel, analyze_command, command_invocations, destroyer_floor_invocations,
+        is_literal_rm_invocation,
     };
     let Some(command) = shell_command_param(params) else {
         return false;
@@ -1875,6 +1876,9 @@ fn shell_params_are_destructive_like(params: &Value, workspace: Option<&std::pat
             let workspace = workspace.filter(|_| is_literal_rm_invocation(command));
             argvs.iter().any(|argv| argv_is_destroyer(argv, workspace))
         })
+        || (!is_literal_rm_invocation(command)
+            && destroyer_floor_invocations(command)
+                .is_none_or(|argvs| argvs.iter().any(|argv| argv_is_destroyer(argv, None))))
 }
 
 /// The background/headless floor, which Full Access skips, must hold

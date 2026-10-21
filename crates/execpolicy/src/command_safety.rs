@@ -2137,7 +2137,15 @@ fn nested_shell_script(words: &[String], index: usize) -> Option<String> {
 /// callers use it to *hold* catastrophic commands, never to allow anything.
 /// `None` when words nest deeper than `MAX_WRAPPER_DEPTH`: fail closed.
 pub fn command_invocations(command: &str) -> Option<Vec<Vec<String>>> {
-    fn collect(command: &str, depth: usize, out: &mut Vec<Vec<String>>) -> bool {
+    walk_invocations(command, false)
+}
+
+pub fn destroyer_floor_invocations(command: &str) -> Option<Vec<Vec<String>>> {
+    walk_invocations(command, true)
+}
+
+fn walk_invocations(command: &str, quote_blind: bool) -> Option<Vec<Vec<String>>> {
+    fn collect(command: &str, depth: usize, quote_blind: bool, out: &mut Vec<Vec<String>>) -> bool {
         if depth > MAX_WRAPPER_DEPTH {
             return false;
         }
@@ -2155,16 +2163,31 @@ pub fn command_invocations(command: &str) -> Option<Vec<Vec<String>>> {
                 // closed once a `&` made the word reproduce itself.
                 if word.contains(|ch: char| ch.is_whitespace() || matches!(ch, ';' | '&' | '|'))
                     && let Some(script) = nested_shell_script(&words, index)
-                    && !collect(&script, depth + 1, out)
+                    && !collect(&script, depth + 1, quote_blind, out)
                 {
                     return false;
+                }
+            }
+        }
+        if quote_blind
+            && (command.contains("$'")
+                || command.contains("${")
+                || command.contains("<<")
+                || command.contains(['(', '`', '#']))
+        {
+            for segment in command.split(['\n', ';', '&', '|', '(', ')', '`']) {
+                let words = shell_words(segment);
+                for (index, word) in words.iter().enumerate() {
+                    let mut argv = words[index..].to_vec();
+                    argv[0] = command_word(word);
+                    out.push(argv);
                 }
             }
         }
         true
     }
     let mut out = Vec::new();
-    collect(command, 0, &mut out).then_some(out)
+    collect(command, 0, quote_blind, &mut out).then_some(out)
 }
 
 /// How many wrappers (`sudo env nice sh -c ...`) the classifier will peel
