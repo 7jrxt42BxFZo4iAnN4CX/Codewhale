@@ -1028,8 +1028,8 @@ pub(crate) fn is_internal_runtime_handoff(message: &Message) -> bool {
     }
     let [
         ContentBlock::Text {
+            text: first_text,
             cache_control: first_cache,
-            ..
         },
         ..,
         ContentBlock::Text {
@@ -1043,7 +1043,10 @@ pub(crate) fn is_internal_runtime_handoff(message: &Message) -> bool {
     if first_cache.is_some() || meta_cache.is_some() {
         return false;
     }
-    is_subagent_handoff_turn_meta(turn_meta) || is_handoff_turn_meta(turn_meta, "shell_completion")
+    is_subagent_handoff_turn_meta(turn_meta)
+        || is_handoff_turn_meta(turn_meta, "shell_completion")
+        || (first_text.starts_with("<codewhale:runtime_event")
+            && is_handoff_turn_meta(turn_meta, "runtime"))
 }
 
 fn raw_runtime_handoff_text(message: &Message) -> Option<&str> {
