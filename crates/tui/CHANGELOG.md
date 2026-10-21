@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Automatic goal turns no longer start with an obsolete objective when the
+  goal is paused, completed, cleared or replaced while the turn is preparing.
 - Updated certificate validation, MCP, and web dependencies to address
   dependency security advisories.
 - Shell cards in the default view drop their `output:` and `time:` labels.
