@@ -5014,6 +5014,17 @@ fn codewhale_catalog_offerings_from_body(
         protocol: Option<String>,
         #[serde(default)]
         default: bool,
+        #[serde(default)]
+        limits: Option<RowLimits>,
+    }
+    #[derive(serde::Deserialize)]
+    struct RowLimits {
+        #[serde(default, rename = "maxInputTokens")]
+        max_input_tokens: Option<u64>,
+        #[serde(default, rename = "maxOutputTokens")]
+        max_output_tokens: Option<u64>,
+        #[serde(default, rename = "maxContextTokens")]
+        max_context_tokens: Option<u64>,
     }
 
     let listing: Listing =
@@ -5040,6 +5051,16 @@ fn codewhale_catalog_offerings_from_body(
             Some("responses") => "responses",
             _ => codewhale_config::route::codewhale_endpoint_key_for_model(&id),
         };
+        let limit = row
+            .codewhale
+            .as_ref()
+            .and_then(|meta| meta.limits.as_ref())
+            .map(|limits| codewhale_config::models_dev::ModelsDevLimit {
+                context: limits.max_context_tokens.filter(|tokens| *tokens > 0),
+                input: limits.max_input_tokens.filter(|tokens| *tokens > 0),
+                output: limits.max_output_tokens.filter(|tokens| *tokens > 0),
+            })
+            .filter(|limit| *limit != codewhale_config::models_dev::ModelsDevLimit::default());
         offerings.push(CatalogOffering {
             cost_source: None,
             modalities_source: None,
@@ -5049,7 +5070,7 @@ fn codewhale_catalog_offerings_from_body(
             endpoint_key: endpoint_key.to_string(),
             default_for_provider: row.codewhale.is_some_and(|meta| meta.default),
             family: None,
-            limit: None,
+            limit,
             cost: None,
             modalities: None,
             attachment: None,
