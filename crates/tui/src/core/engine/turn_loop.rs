@@ -2760,9 +2760,13 @@ impl Engine {
                 continue;
             }
 
-            let batch_tool_context = self
-                .live_tool_context(tool_registry)
-                .map(|context| context.with_origin_turn_id(origin_turn_id));
+            let browser_tool = crate::tools::web::fetch::rendering_browser_tool(
+                tool_catalog.iter().map(|tool| tool.name.as_str()),
+            );
+            let batch_tool_context = self.live_tool_context(tool_registry).map(|mut context| {
+                context.browser_tool = browser_tool;
+                context.with_origin_turn_id(origin_turn_id)
+            });
 
             if parallel_allowed {
                 let parallel_plan_receipts: Vec<_> = plans
