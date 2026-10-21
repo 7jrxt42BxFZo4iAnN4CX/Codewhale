@@ -4,7 +4,9 @@ name: Sync to CNB
 # so users behind GitHub-blocking networks can fetch the source and tagged
 # releases from the Tencent-hosted mirror.
 #
-# Invoked manually at final validation, or by an authorized release workflow.
+# Main pushes mirror to CNB unless the repository variable CNB_MIRROR is
+# "disabled"; release tags arrive through release.yml; manual dispatch is the
+# fallback.
 #
 # Why the rewrite (v0.8.31):
 #   The previous implementation used the opaque tencentcom/git-sync Docker
@@ -18,6 +20,8 @@ name: Sync to CNB
 #   half of recent runs failed for those two reasons combined.
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch: {}
   workflow_call:
     inputs:
@@ -48,7 +52,7 @@ permissions:
 
 jobs:
   sync:
-    if: github.repository_owner == 'codewhale-hq'
+    if: github.repository_owner == 'codewhale-hq' && (github.event_name != 'push' || vars.CNB_MIRROR != 'disabled')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
