@@ -26,6 +26,11 @@ guidance.
 
 ### Latest fixes
 
+- The model picker distinguishes stale catalogs and stale, unverified or
+  unavailable pricing instead of calling them live or priced. Unknown
+  reasoning support stays unknown, and unusable rates do not drive price sorting.
+- Automatic Rust formatting no longer inherits Engine or provider credentials.
+  The formatter keeps its normal toolchain and project configuration.
 - If an exec session cannot be saved, text, JSON and streaming JSON now
   report the failure and exit unsuccessfully. The answer remains in the output,
   and the lifecycle receipt also records failure. This is not a retryable

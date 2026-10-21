@@ -402,6 +402,7 @@ enum PickerPricing {
     /// The route explicitly does not expose authoritative token pricing.
     Unavailable,
     Known(String),
+    Status(&'static str),
     #[default]
     Unknown,
 }
@@ -3141,13 +3142,18 @@ fn model_row_meta_chips(row: &ModelPickerRow) -> Vec<String> {
     // harness, so it sits before the limits/modality chips — the chip budget
     // sheds from the tail, and a squeezed row must never lose the stance.
     chips.push(
-        if row.metadata.reasoning {
+        if row.metadata.reasoning_unknown {
+            "reasoning unknown"
+        } else if row.metadata.reasoning {
             "reasoning"
         } else {
             "no reasoning"
         }
         .to_string(),
     );
+    if let PickerPricing::Status(status) = row.metadata.pricing {
+        chips.push(format!("price {status}"));
+    }
     // #5239/#5441: an unverified window still drives budgets, but the chip
     // must not lend it a verified reading. Honesty rides as its own chip
     // *after* the stance so a squeezed row sheds the marker before it ever
@@ -3468,7 +3474,10 @@ fn input_price_per_million(row: &ModelPickerRow) -> Option<f64> {
             .as_ref()
             .and_then(|price| price.parse().ok());
     }
-    if matches!(row.metadata.pricing, PickerPricing::Unavailable) {
+    if matches!(
+        row.metadata.pricing,
+        PickerPricing::Unavailable | PickerPricing::Status(_)
+    ) {
         return None;
     }
     offering_for_row(row)
@@ -3535,7 +3544,10 @@ fn effective_picker_metadata_with_codex(
         (identity.provider == kind).then_some(identity)
     });
     if provider.is_some() && captured.is_none() {
-        return EffectivePickerMetadata::default();
+        return EffectivePickerMetadata {
+            reasoning_unknown: true,
+            ..EffectivePickerMetadata::default()
+        };
     }
     let offering = captured.as_ref().and_then(|identity| {
         let base_url = config.base_url_for_route(identity);
@@ -3569,7 +3581,9 @@ fn effective_picker_metadata_with_codex(
                 PickerPricing::Unknown
             },
             display_name: None,
-            reasoning_unknown: false,
+            reasoning_unknown: registry
+                .as_ref()
+                .is_none_or(|meta| meta.reasoning.is_none()),
             declared_input_price: None,
             source: None,
         };
@@ -3626,6 +3640,7 @@ fn effective_picker_metadata_with_codex(
     {
         return EffectivePickerMetadata {
             context_window: context_override,
+            reasoning_unknown: true,
             ..EffectivePickerMetadata::default()
         };
     }
@@ -3708,8 +3723,14 @@ fn effective_picker_metadata_with_codex(
         let label = card.price_label();
         (label != "unknown").then_some(label)
     });
+    let pricing_status = card
+        .as_ref()
+        .and_then(|card| card.pricing.as_ref())
+        .map(|pricing| pricing.status_label_at(codewhale_config::catalog::now_unix()));
     let pricing = if provider == ProviderKind::OpenaiCodex {
         PickerPricing::Unavailable
+    } else if let Some(status @ ("stale" | "unverified" | "unavailable")) = pricing_status {
+        PickerPricing::Status(status)
     } else if let Some(label) = card_price {
         PickerPricing::Known(label)
     } else if crate::pricing::has_pricing_for_provider(provider, id) {
@@ -3841,7 +3862,9 @@ fn render_picker_model_hint(
         None => {}
     }
 
-    if metadata.reasoning {
+    if metadata.reasoning_unknown {
+        parts.push("reasoning unknown".to_string());
+    } else if metadata.reasoning {
         parts.push("reasoning".to_string());
     }
 
@@ -3854,6 +3877,7 @@ fn render_picker_model_hint(
     match &metadata.pricing {
         PickerPricing::Unavailable => {}
         PickerPricing::Known(label) => parts.push(label.clone()),
+        PickerPricing::Status(status) => parts.push(format!("price {status}")),
         PickerPricing::Unknown => parts.push("price unknown".to_string()),
     }
     let provider_live_source = matches!(metadata.source.as_ref(), Some(CatalogSource::Live { .. }));
@@ -3861,7 +3885,22 @@ fn render_picker_model_hint(
         Some(CatalogSource::Live { .. }) => {
             parts.push(provider_catalog_source_label(provider_catalog_receipt))
         }
-        Some(CatalogSource::ModelsDevLive { .. }) => parts.push("live".to_string()),
+        Some(CatalogSource::ModelsDevLive { fetched_at }) => {
+            let now = codewhale_config::catalog::now_unix();
+            let age_secs = now.saturating_sub(*fetched_at);
+            if models_dev_live::status().freshness == ModelsDevFreshness::Failed {
+                parts.push("refresh failed; cached catalog".to_string());
+            } else {
+                let status = if *fetched_at > now {
+                    CatalogStatus::Unknown
+                } else if age_secs >= models_dev_live::DEFAULT_MODELS_DEV_TTL_SECS {
+                    CatalogStatus::Stale { age_secs }
+                } else {
+                    CatalogStatus::Fresh
+                };
+                parts.push(provider_catalog_source_label(Some(&(status, true))));
+            }
+        }
         Some(CatalogSource::Bundled | CatalogSource::CodewhaleBundled { .. }) => {
             parts.push("bundled".to_string())
         }
