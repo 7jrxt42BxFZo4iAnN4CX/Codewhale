@@ -694,6 +694,21 @@ pub(crate) fn persist_offline_queue_state(app: &App) {
         .as_ref()
         .filter(|lease| app.current_session_id.as_deref() == Some(lease.session_id()))
     else {
+        let lease_owner = app
+            .offline_queue_lease
+            .as_ref()
+            .map(|lease| lease.session_id());
+        if lease_owner.is_some() || !app.queued_messages.is_empty() || app.queued_draft.is_some() {
+            tracing::warn!(
+                target: "persistence",
+                what = "offline-queue",
+                session_id = app.current_session_id.as_deref().unwrap_or("none"),
+                lease_owner = lease_owner.unwrap_or("none"),
+                queued = app.queued_messages.len(),
+                draft = app.queued_draft.is_some(),
+                "offline queue not persisted: this window holds no queue lease for the current session",
+            );
+        }
         return;
     };
     if app.queued_messages.is_empty() && app.queued_draft.is_none() {
