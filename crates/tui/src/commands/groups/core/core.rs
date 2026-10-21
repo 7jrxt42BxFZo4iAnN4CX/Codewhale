@@ -545,7 +545,7 @@ fn expand_workspace_path(locale: Locale, path: &str) -> Result<PathBuf, String> 
     Ok(PathBuf::from(path))
 }
 
-fn public_site_locale_segment(locale: Locale) -> &'static str {
+pub(crate) fn public_site_locale_segment(locale: Locale) -> &'static str {
     match locale {
         Locale::ZhHans | Locale::ZhHant => "zh",
         Locale::Ja => "ja",

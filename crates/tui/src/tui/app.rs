@@ -710,6 +710,7 @@ pub struct LaunchState {
     /// Claude Code config was detected on this host (probed once at
     /// construction); drives the launch card's migration notice line.
     pub claude_code_detected: bool,
+    pub whats_new: Option<crate::whats_new::WhatsNewNotice>,
 }
 
 /// The launch card's dissolve motion budget. One bounded motion; reduced
@@ -804,6 +805,7 @@ impl LaunchState {
             dissolve_started_ms: None,
             mark_reveal_started_at: None,
             claude_code_detected,
+            whats_new: None,
         }
     }
 

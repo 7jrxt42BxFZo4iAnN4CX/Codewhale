@@ -158,6 +158,7 @@ mod turn_route_plan;
 mod utils;
 mod vision;
 mod voice;
+pub mod whats_new;
 mod work_graph;
 mod worker_profile;
 mod working_set;

@@ -964,6 +964,42 @@ official GitHub API endpoint. If a configured `update_uri` cannot be fetched or
 parsed and a release mirror env var is set, the TUI falls back to that mirror
 instead of failing startup.
 
+#### What's new after an update
+
+The first time Codewhale starts after its version goes up, it says so once and
+links that version's release notes on codewhale.net:
+
+```text
+Updated to 0.10.2. Got 12 features, 31 fixes and 8 other changes.
+Release notes: https://codewhale.net/en/changelog/0.10.2
+```
+
+The counts come from the changelog compiled into the binary. Entries under
+Added or New count as features; Fixed, Security and Latest fixes count as
+fixes; Contributors, Thanks, Community and Known limits or issues are not
+counted; every other section counts as other changes. The link uses your UI
+language where the site has it (`zh` for Chinese) and English otherwise.
+
+The TUI shows the notice on the startup card and moves it into the transcript
+when the card leaves (at once when the session opens from `--resume`,
+`--continue` or a prompt), adding `/change <version>` for reading the notes in
+place. The `doctor`, `models`,
+`sessions`, `receipts`, `setup`, `init`, `install`, `features`,
+`integrations`, `mcp`, `config`, `model`, `metrics`, `providers`, `account`,
+`login`, `logout` and `update` commands print it to stderr instead, when
+stdout and stderr are both terminals and no JSON output is requested. `exec`,
+servers, JSON output and non-terminal runs never show it; the next start that
+can show it does.
+
+Nothing is shown on a fresh install or after a downgrade. The version that
+last started is recorded in `~/.codewhale/last-launch.json`. The notice reads
+only local files, so it is independent of `check_for_updates`. To turn it off:
+
+```toml
+[update]
+show_whats_new = false
+```
+
 ## Workshop output budgets
 
 By default an oversized tool result uses bounded spillover: a result

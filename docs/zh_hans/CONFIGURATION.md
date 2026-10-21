@@ -480,6 +480,26 @@ update_uri = "https://internal.mirror.example/codewhale/releases/latest"
 
 未设置 `update_uri` 时，启动检查在回退到官方 GitHub API 端点之前，会遵循 `CODEWHALE_RELEASE_BASE_URL` 这样的 release 镜像环境变量。如果配置的 `update_uri` 无法获取或解析，且设置了 release 镜像环境变量，TUI 会回退到该镜像，而不是让启动失败。
 
+#### 更新后的新内容提示
+
+Codewhale 版本升级后第一次启动时，会提示一次，并链接到 codewhale.net 上该版本的发布说明：
+
+```text
+已更新到 0.10.2。包含 12 项新功能、31 项修复和 8 项其他改动。
+发布说明：https://codewhale.net/zh/changelog/0.10.2
+```
+
+数量来自编译进二进制的更新日志。Added 或 New 下的条目计为新功能；Fixed、Security 和 Latest fixes 计为修复；Contributors、Thanks、Community 以及 Known limits/issues 不计入；其余各节计为其他改动。链接使用你的界面语言(中文为 `zh`)，网站没有该语言时使用英文。
+
+TUI 在启动卡片上显示该提示，卡片离开时把它移入对话记录(从 `--resume`、`--continue` 或提示词打开会话时立即移入)，并附上 `/change <version>` 以便在应用内阅读。`doctor`、`models`、`sessions`、`receipts`、`setup`、`init`、`install`、`features`、`integrations`、`mcp`、`config`、`model`、`metrics`、`providers`、`account`、`login`、`logout` 和 `update` 命令在 stdout 和 stderr 都是终端且未请求 JSON 输出时，把它打印到 stderr。`exec`、服务器、JSON 输出和非终端运行从不显示；之后第一次能显示它的启动会显示。
+
+全新安装或降级后不会显示任何内容。最近一次启动的版本记录在 `~/.codewhale/last-launch.json`。该提示只读取本地文件，所以与 `check_for_updates` 无关。要关闭它：
+
+```toml
+[update]
+show_whats_new = false
+```
+
 ## Workshop 输出预算
 
 默认情况下，过大的工具结果采用有界溢出：低于字节阈值的结果保持内联，更大的结果给出首尾预览和一个模型可以回读的会话产物。不存在合成子智能体，也没有逐调用的 `raw = true` 逃逸。
