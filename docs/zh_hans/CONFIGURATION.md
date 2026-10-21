@@ -1798,6 +1798,7 @@ code_mode = true # execute_tools composes MCP/plugin/native calls; false defers 
 | Tavily | `time_range` | 不发送（Tavily 使用国家全名） |
 | SearXNG | `time_range` | `language`，原样发送 |
 | Serply | 不发送（文档未说明） | `hl` 语言，`gl` 国家 |
+| DeepSeek | 不发送 | 不发送（`localization` 需要 IP 地址） |
 
 时效会向上取整到后端最接近的窗口（天、周、月、年），所以 `recency = 10` 会搜索最近一个月。其他后端忽略这两项，并在回执中说明。
 
@@ -1830,11 +1831,13 @@ Codewhale 按 `score` 从高到低排序返回行，再对排序结果应用 `ma
 
 **Serply**([serply.io](https://serply.io))返回 Google 自然搜索结果，包含标题、URL 和摘要片段。把 `[search] api_key` 设为你的 Serply key，或用 `SERPLY_API_KEY` 环境变量。这只是搜索工具后端；它不添加 Serply 模型 provider。
 
+**DeepSeek**([docs](https://api-docs.deepseek.com/guides/search))使用 `POST https://api.deepseek.com/v1/tools/search`。设置 `provider = "deepseek"`（也接受 `deep-seek` 和 `deepseek-search`），并依次从 `[search] api_key` 或 `DEEPSEEK_API_KEY` 环境变量读取 key。此搜索后端不复用已保存的 DeepSeek 模型 provider key。查询截断为 128 个 Unicode 字符。后端把数量限制在 1–50；共享搜索工具目前每次最多请求 10 条结果。`site:`、`lang:`、`after:`、`before:` 等查询运算符原样传递；`recency` 和 `locale` 两项被忽略。结果包含标题、URL 和摘要片段；摘要片段为空时回退到 summary。
+
 **Tavily**([tavily.com](https://tavily.com))在存在 Tavily key 且没有固定 provider 时自动选中：设置了 `TAVILY_API_KEY`，或 `[search] api_key` / `CODEWHALE_SEARCH_API_KEY` 属于 `tvly-` 家族。doctor 会把这种情况报告为 `source: tavily key`。自动检测只在运行时生效——Codewhale 不会为它写入 `[search] provider`，也不会把 `TAVILY_API_KEY` 合并进 `[search] api_key`。显式的 `[search] provider` 或 `CODEWHALE_SEARCH_PROVIDER` 始终优先，所以即使环境里有 Tavily key，`provider = "firecrawl"` 仍然是 Firecrawl。固定为 `tavily` 时接受任何非空的 `[search] api_key`，由该 key 或 `TAVILY_API_KEY` 提供配置；两者都为空时直接失败关闭。
 
 ```toml
 [search]
-provider = "firecrawl" # 也 duckduckgo | bing | tavily | bocha | metaso | searxng | baidu | volcengine | sofya | serply
+provider = "firecrawl" # 也 duckduckgo | bing | tavily | bocha | metaso | searxng | baidu | volcengine | sofya | serply | deepseek
 # base_url = "https://search.example/" # provider = "duckduckgo" 时可选;"searxng" 时必填
 # api_key = "YOUR_KEY" # firecrawl 可选;其他 API 提供商必填
 # native = false # provider 原生搜索:不设置 = 仅在未配置 provider 时使用
