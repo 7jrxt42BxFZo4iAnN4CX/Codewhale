@@ -1530,6 +1530,7 @@ impl Engine {
         // Search activations belong to the conversation, not just the user
         // turn. Revalidate names against this turn's already-filtered catalog
         // before exposing them; stale mode/MCP/allow-list entries disappear.
+        self.session.tool_activation_cache.begin_turn();
         let evicted = self.session.tool_activation_cache.revalidate(&tool_catalog);
         super::tool_catalog::remove_evicted_cache_activations(
             &tool_catalog,
@@ -2558,10 +2559,16 @@ impl Engine {
                 guard_result,
             });
         }
-        let activation = self
-            .session
-            .tool_activation_cache
-            .activate(tool_catalog, &deferred_tools_hydrated_in_order);
+        let cache = &mut self.session.tool_activation_cache;
+        if source == ToolCallSource::Model {
+            for plan in &plans {
+                cache.record_use(&plan.name);
+            }
+        }
+        let activation = cache.activate(tool_catalog, &deferred_tools_hydrated_in_order);
+        for name in &activation.admitted {
+            cache.record_use(name);
+        }
         super::tool_catalog::remove_evicted_cache_activations(
             tool_catalog,
             active_tool_names,
@@ -4255,15 +4262,6 @@ impl Engine {
                             &mut self.session.tool_activation_cache,
                             &output,
                         );
-                    if output.success {
-                        tool_surface_changed |=
-                            super::tool_catalog::touch_cached_tool_after_execution(
-                                tool_catalog,
-                                active_tool_names,
-                                &mut self.session.tool_activation_cache,
-                                &outcome.name,
-                            );
-                    }
                     // A runtime MCP connection change — a completed login OR
                     // a live 401 that dropped one — rewrites the callable
                     // tool surface. Replace the pool's whole slice before
@@ -8766,7 +8764,7 @@ impl Engine {
                 content_blocks: answer.content_blocks.clone(),
             });
         // Finish through the same result owner as run_tool_batch_phase so
-        // successful cache uses and result dependencies are observed once.
+        // result dependencies are observed once.
         self.process_tool_results(
             outcomes,
             gate.turn,
