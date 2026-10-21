@@ -1087,11 +1087,12 @@ async fn unchanged_compaction_config_is_acknowledged_silently() {
 #[tokio::test]
 async fn change_mode_op_updates_current_mode_and_emits_status() {
     let tmp = tempdir().expect("tempdir");
-    let config = EngineConfig {
+    let mut config = EngineConfig {
         workspace: tmp.path().to_path_buf(),
         model: "deepseek-v4-pro".to_string(),
         ..Default::default()
     };
+    config.features.disable(Feature::Mcp);
     let (engine, handle) = Engine::new(config, &Config::default());
 
     let run = tokio::spawn(engine.run());
