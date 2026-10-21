@@ -1493,6 +1493,50 @@ pub(crate) fn is_runtime_owned_user_message(message: &Message) -> bool {
         || has_non_authoritative_turn_provenance(message)
 }
 
+/// Whether this text block is a runtime-owned `<turn_meta>` envelope that
+/// must stay out of the visible transcript.
+///
+/// Current sessions persist the envelope as the trailing block of a
+/// multi-block user message; sessions saved before the tail move
+/// (pre-v0.8.54) carry it as the *leading* block instead, so a complete
+/// envelope is hidden at any index. A single-block user message is never
+/// hidden: its text is user-authored by construction, and a literal
+/// `<turn_meta>` example the user typed must stay visible.
+pub(crate) fn is_turn_metadata_block(msg: &Message, block_index: usize, text: &str) -> bool {
+    if msg.role != "user" || msg.content.len() < 2 || !is_complete_turn_meta_envelope(text) {
+        return false;
+    }
+    if block_index > 0 {
+        return true;
+    }
+    // Leading envelope: hide it only when the trailing block is ordinary
+    // text (the legacy `[turn_meta, prompt]` persisted shape). If the tail
+    // block is itself an envelope, this message is the current shape and the
+    // leading block is user-authored literal text that must stay visible.
+    matches!(
+        msg.content.last(),
+        Some(ContentBlock::Text { text: tail, .. }) if !is_complete_turn_meta_envelope(tail)
+    )
+}
+
+fn is_complete_turn_meta_envelope(text: &str) -> bool {
+    let trimmed = text.trim();
+    trimmed
+        .strip_prefix("<turn_meta>")
+        .and_then(|body| body.strip_suffix("</turn_meta>"))
+        .is_some()
+}
+
+pub(crate) fn archived_context_parts(text: &str) -> Option<(&str, &str)> {
+    let text = text.trim();
+    if !text.starts_with("<archived_context") || !text.ends_with("</archived_context>") {
+        return None;
+    }
+    let tag_end = text.find('>')?;
+    let close_tag = text.rfind("</archived_context>")?;
+    Some((&text[..tag_end], text.get(tag_end + 1..close_tag)?.trim()))
+}
+
 /// Return engine-owned metadata in either the current trailing shape or the
 /// historical leading shape. Requiring a separate prompt block prevents a
 /// user who submits `<turn_meta>…</turn_meta>` as ordinary text from minting

@@ -8,6 +8,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use unicode_width::UnicodeWidthStr;
 
+use crate::runtime_handoff::is_turn_metadata_block;
 use crate::tools::plan::PlanSnapshot;
 use crate::tools::review::ReviewOutput;
 use crate::tui::app::TranscriptSpacing;
@@ -861,40 +862,6 @@ pub fn history_cells_from_message(msg: &Message) -> Vec<HistoryCell> {
     }
 
     cells
-}
-
-/// Whether this text block is a runtime-owned `<turn_meta>` envelope that
-/// must stay out of the visible transcript.
-///
-/// Current sessions persist the envelope as the trailing block of a
-/// multi-block user message; sessions saved before the tail move
-/// (pre-v0.8.54) carry it as the *leading* block instead, so a complete
-/// envelope is hidden at any index. A single-block user message is never
-/// hidden: its text is user-authored by construction, and a literal
-/// `<turn_meta>` example the user typed must stay visible.
-fn is_turn_metadata_block(msg: &Message, block_index: usize, text: &str) -> bool {
-    if msg.role != "user" || msg.content.len() < 2 || !is_complete_turn_meta_envelope(text) {
-        return false;
-    }
-    if block_index > 0 {
-        return true;
-    }
-    // Leading envelope: hide it only when the trailing block is ordinary
-    // text (the legacy `[turn_meta, prompt]` persisted shape). If the tail
-    // block is itself an envelope, this message is the current shape and the
-    // leading block is user-authored literal text that must stay visible.
-    matches!(
-        msg.content.last(),
-        Some(ContentBlock::Text { text: tail, .. }) if !is_complete_turn_meta_envelope(tail)
-    )
-}
-
-fn is_complete_turn_meta_envelope(text: &str) -> bool {
-    let trimmed = text.trim();
-    trimmed
-        .strip_prefix("<turn_meta>")
-        .and_then(|body| body.strip_suffix("</turn_meta>"))
-        .is_some()
 }
 
 // === Tool Cells ===

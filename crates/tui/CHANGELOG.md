@@ -26,6 +26,10 @@ guidance.
 
 ### Latest fixes
 
+- ACP session history uses shared message recognition without depending on
+  terminal rendering. Malformed archived-context text stays visible instead
+  of panicking during history restoration.
+
 - Linux and OpenHarmony credential storage can traverse directories that allow
   access without directory listing. The private credential directory still
   requires current-user ownership and protected permissions; symlinks remain

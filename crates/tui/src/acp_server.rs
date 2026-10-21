@@ -520,24 +520,68 @@ impl AcpServer {
         writer: &mut W,
         session_id: &str,
     ) -> Result<()> {
-        use crate::tui::history::{HistoryCell, history_cells_from_message};
         use codewhale_models::ContentBlock;
         let saved = crate::session_manager::SessionManager::new(self.sessions_dir.clone())?
             .load_session(session_id)?;
         let secrets = crate::runtime_threads::receipt_secret_values(self.config.clone()).await?;
         let mut calls = HashMap::new();
         for message in &saved.messages {
-            for cell in history_cells_from_message(message) {
-                let (kind, text) = match cell {
-                    HistoryCell::User { content } => ("user_message_chunk", content),
-                    HistoryCell::Assistant { content, .. } => ("agent_message_chunk", content),
-                    _ => continue,
-                };
-                write_json_line(
-                    writer,
-                    json!({"jsonrpc":"2.0","method":"session/update","params":{"sessionId":session_id,"update":{"sessionUpdate":kind,"content":{"type":"text","text":text}}}}),
-                )
-                .await?;
+            let kind = match message.role.as_str() {
+                "user" => Some("user_message_chunk"),
+                "assistant" => Some("agent_message_chunk"),
+                _ => None,
+            };
+            if let Some(kind) = kind
+                && !crate::runtime_handoff::is_internal_runtime_handoff(message)
+                && crate::runtime_handoff::restored_subagent_checkpoint_display(message).is_none()
+            {
+                let mut chunks = Vec::<String>::new();
+                let mut coalesce = false;
+                for (index, block) in message.content.iter().enumerate() {
+                    match block {
+                        ContentBlock::Text { text, .. } => {
+                            if crate::runtime_handoff::is_turn_metadata_block(message, index, text)
+                            {
+                                continue;
+                            }
+                            if text.starts_with("[tool_history_repair]")
+                                || (message.role == "assistant"
+                                    && crate::runtime_handoff::archived_context_parts(text)
+                                        .is_some())
+                            {
+                                coalesce = false;
+                                continue;
+                            }
+                            if coalesce {
+                                if let Some(chunk) = chunks.last_mut() {
+                                    if !chunk.is_empty() {
+                                        chunk.push('\n');
+                                    }
+                                    chunk.push_str(text);
+                                }
+                            } else {
+                                chunks.push(text.clone());
+                            }
+                            coalesce = true;
+                        }
+                        ContentBlock::Thinking { thinking, .. }
+                            if thinking != "(reasoning omitted)" =>
+                        {
+                            coalesce = false;
+                        }
+                        ContentBlock::ToolUse { name, .. } if name == "update_plan" => {
+                            coalesce = false;
+                        }
+                        _ => {}
+                    }
+                }
+                for text in chunks {
+                    write_json_line(
+                        writer,
+                        json!({"jsonrpc":"2.0","method":"session/update","params":{"sessionId":session_id,"update":{"sessionUpdate":kind,"content":{"type":"text","text":text}}}}),
+                    )
+                    .await?;
+                }
             }
             for block in &message.content {
                 let Some(key) = block.tool_call_key().map(|key| key.as_str().to_string()) else {
@@ -1864,11 +1908,117 @@ mod tests {
         let bh = serde_json::to_string(&rig.history(&b).await)?;
         assert!(ah.contains("A prompt") && ah.contains("A answer") && !ah.contains("B prompt"));
         assert!(bh.contains("B prompt") && bh.contains("B answer") && !bh.contains("A prompt"));
+        for (session, prompt, answer) in
+            [(&a, "A prompt", "A answer"), (&b, "B prompt", "B answer")]
+        {
+            let mut output = Vec::new();
+            rig.server.replay_history(&mut output, session).await?;
+            let updates = parse_lines(output);
+            let text: Vec<_> = updates
+                .iter()
+                .map(|update| {
+                    (
+                        update["params"]["update"]["sessionUpdate"]
+                            .as_str()
+                            .unwrap(),
+                        update["params"]["update"]["content"]["text"]
+                            .as_str()
+                            .unwrap(),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                text,
+                vec![
+                    ("user_message_chunk", prompt),
+                    ("agent_message_chunk", answer)
+                ]
+            );
+        }
         let listed = rig
             .server
             .list_sessions(json!({"cwd":rig.workspace}))
             .unwrap();
         assert_eq!(listed["sessions"].as_array().unwrap().len(), 2);
+        let store = crate::session_manager::SessionManager::new(rig.server.sessions_dir.clone())?;
+        let mut saved = store.load_session(&a)?;
+        saved.messages = serde_json::from_value(json!([
+            {"role":"user","content":[
+                {"type":"text","text":""},
+                {"type":"text","text":"alpha"},
+                {"type":"text","text":"<turn_meta>hidden middle</turn_meta>"},
+                {"type":"text","text":"beta"},
+                {"type":"thinking","thinking":"(reasoning omitted)"},
+                {"type":"text","text":"gamma"},
+                {"type":"thinking","thinking":"private reasoning"},
+                {"type":"text","text":"delta"},
+                {"type":"tool_use","id":"saved-plan","name":"update_plan","input":{}},
+                {"type":"text","text":"epsilon"},
+                {"type":"text","text":"[tool_history_repair] hidden repair"},
+                {"type":"text","text":"zeta"},
+                {"type":"text","text":"<turn_meta>hidden tail</turn_meta>"}
+            ]},
+            {"role":"assistant","content":[
+                {"type":"text","text":"before archive"},
+                {"type":"text","text":"<archived_context level=\"1\">summary</archived_context>"},
+                {"type":"text","text":"after archive"},
+                {"type":"text","text":"<archived_context</archived_context>"},
+                {"type":"tool_use","id":"saved-read","name":"read","input":{}},
+                {"type":"text","text":"tail"}
+            ]},
+            {"role":"user","content":[
+                {"type":"text","text":"<turn_meta>literal example</turn_meta>"}
+            ]},
+            {"role":"assistant_interrupted","content":[
+                {"type":"text","text":"interrupted answer"}
+            ]}
+        ]))?;
+        saved
+            .messages
+            .push(crate::runtime_handoff::operate_contract_runtime_message());
+        saved
+            .messages
+            .extend(crate::runtime_handoff::project_owned_messages_for_restore(
+                vec![crate::runtime_handoff::subagent_completion_runtime_message(
+                    "{}",
+                )],
+            ));
+        store.save_session(&saved)?;
+        let mut output = Vec::new();
+        rig.server.replay_history(&mut output, &a).await?;
+        let updates = parse_lines(output);
+        let text: Vec<_> = updates
+            .iter()
+            .filter_map(|update| {
+                let kind = update["params"]["update"]["sessionUpdate"].as_str()?;
+                matches!(kind, "user_message_chunk" | "agent_message_chunk").then(|| {
+                    (
+                        kind,
+                        update["params"]["update"]["content"]["text"]
+                            .as_str()
+                            .unwrap(),
+                    )
+                })
+            })
+            .collect();
+        assert_eq!(
+            text,
+            vec![
+                ("user_message_chunk", "alpha\nbeta\ngamma"),
+                ("user_message_chunk", "delta"),
+                ("user_message_chunk", "epsilon"),
+                ("user_message_chunk", "zeta"),
+                ("agent_message_chunk", "before archive"),
+                (
+                    "agent_message_chunk",
+                    "after archive\n<archived_context</archived_context>\ntail"
+                ),
+                (
+                    "user_message_chunk",
+                    "<turn_meta>literal example</turn_meta>"
+                ),
+            ]
+        );
         rig.close().await;
         Ok(())
     }
