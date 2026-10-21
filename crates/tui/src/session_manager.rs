@@ -55,6 +55,12 @@ const JOURNAL_PRUNE_DEAD_THRESHOLD: usize = 4_096;
 /// Recent off-branch entries kept in the document after archiving, so `/tree`
 /// and `/branch` stay cheap for recent history.
 const JOURNAL_RETAINED_DEAD_ENTRIES: usize = 1_024;
+#[derive(Clone, Copy)]
+enum JournalPrune {
+    Keep,
+    Excess,
+    AllOffBranch,
+}
 const SESSION_GOALS_DIR: &str = ".goals";
 const CURRENT_SESSION_GOAL_SCHEMA_VERSION: u32 = 2;
 const MAX_SESSION_GOAL_OBJECTIVE_CHARS: usize = 8_192;
@@ -2612,7 +2618,7 @@ impl SessionManager {
 
     /// Save a session to disk, consuming it.
     pub(crate) fn save_session_owned(&self, session: SavedSession) -> std::io::Result<PathBuf> {
-        self.save_session_inner(session, None)
+        self.save_session_inner(session, JournalPrune::Keep)
     }
 
     /// The autosave path (#6842): like [`Self::save_session_owned`], but when
@@ -2622,27 +2628,81 @@ impl SessionManager {
     /// archive cannot be written nothing is pruned. Runs on the persistence
     /// actor (`tui/persistence_actor.rs` `flush_inner`), never the UI loop.
     pub(crate) fn save_session_bounded(&self, session: SavedSession) -> std::io::Result<PathBuf> {
-        self.save_session_inner(
-            session,
-            Some((JOURNAL_PRUNE_DEAD_THRESHOLD, JOURNAL_RETAINED_DEAD_ENTRIES)),
-        )
+        self.save_session_inner(session, JournalPrune::Excess)
     }
 
     /// Bring a saved document that exceeds the full-history transport bound
     /// back under it by archiving every off-branch journal entry (kept in the
     /// journal archive sidecar, the same durable step the autosave prune
-    /// uses). The active branch is never touched, so the conversation is
-    /// unchanged. Known limit: a document whose active branch alone exceeds
-    /// the bound stays refused.
-    fn compact_oversized_session(&self, id: &str) -> io::Result<()> {
-        let session = self.load_session_snapshot_with_limit(id, None)?;
-        self.save_session_inner(session, Some((0, 0))).map(|_| ())
+    /// uses). Only when that is not enough, ended non-durable unpinned Work
+    /// Graph operations beyond the newest `ENDED_OPERATION_CAP` are dropped,
+    /// the bound a live session applies at its next operation. The active
+    /// branch and durable or pinned operations are never touched. The
+    /// compacted document is measured before anything is written: when it
+    /// would still exceed `limit`, nothing is archived or rewritten, and its
+    /// projected size is returned with whether that projection pruned ended
+    /// operations.
+    fn compact_oversized_session(&self, id: &str, limit: u64) -> io::Result<Option<(u64, bool)>> {
+        let project = |session: &SavedSession| -> io::Result<u64> {
+            let mut projected = session.clone();
+            if let Some(journal) = projected.journal.as_mut() {
+                let off_branch: std::collections::HashSet<String> =
+                    journal.prune_plan(0, 0).into_iter().collect();
+                journal
+                    .remove_entries(&off_branch)
+                    .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+                projected.leaf_id = journal.leaf_id.clone();
+            }
+            self.hydrate_recovered_runtime_binding(&mut projected)?;
+            self.hydrate_approval_receipts(&mut projected)?;
+            Ok(serialize_saved_session(projected)?.len() as u64)
+        };
+        let mut session = self.load_session_snapshot_with_limit(id, None)?;
+        let mut projected = project(&session)?;
+        let mut pruned_operations = false;
+        let session_id = session.metadata.id.clone();
+        if projected > limit
+            && let Some(graph) = session
+                .work_state
+                .as_mut()
+                .and_then(|state| state.graph.as_mut())
+            && crate::work_graph::evictable_operations(graph).len()
+                > crate::work_graph::ENDED_OPERATION_CAP
+        {
+            match crate::work_graph::apply(
+                graph,
+                crate::work_graph::WorkGraphChange::PruneEndedOperations {
+                    keep: crate::work_graph::ENDED_OPERATION_CAP,
+                },
+                crate::work_graph::ChangeCtx {
+                    session_id: session_id.clone(),
+                    now: Utc::now().timestamp_millis(),
+                    idempotency_key: None,
+                },
+            ) {
+                Ok((next, _)) => {
+                    *graph = next;
+                    pruned_operations = true;
+                    projected = project(&session)?;
+                }
+                Err(report) => tracing::warn!(
+                    %session_id,
+                    %report,
+                    "ended-operation prune refused; keeping the full Work Graph"
+                ),
+            }
+        }
+        if projected > limit {
+            return Ok(Some((projected, pruned_operations)));
+        }
+        self.save_session_inner(session, JournalPrune::AllOffBranch)?;
+        Ok(None)
     }
 
     fn save_session_inner(
         &self,
         session: SavedSession,
-        prune: Option<(usize, usize)>,
+        prune: JournalPrune,
     ) -> std::io::Result<PathBuf> {
         let session_id = session.metadata.id.clone();
         let exec_mode = session.metadata.mode.as_deref() == Some("exec");
@@ -2661,10 +2721,24 @@ impl SessionManager {
 
             let mut durable_session = session;
             let archived = match prune {
-                Some((threshold, budget)) => {
-                    self.archive_dead_journal_entries(&mut durable_session, threshold, budget)
+                JournalPrune::Keep => Vec::new(),
+                JournalPrune::Excess => self
+                    .archive_dead_journal_entries(
+                        &mut durable_session,
+                        JOURNAL_PRUNE_DEAD_THRESHOLD,
+                        JOURNAL_RETAINED_DEAD_ENTRIES,
+                    )
+                    .unwrap_or_else(|error| {
+                        tracing::warn!(
+                            %session_id,
+                            %error,
+                            "journal archive step failed; keeping the full journal"
+                        );
+                        Vec::new()
+                    }),
+                JournalPrune::AllOffBranch => {
+                    self.archive_dead_journal_entries(&mut durable_session, 0, 0)?
                 }
-                None => Vec::new(),
             };
             self.hydrate_recovered_runtime_binding(&mut durable_session)?;
             self.hydrate_approval_receipts(&mut durable_session)?;
@@ -2839,14 +2913,14 @@ impl SessionManager {
         session: &mut SavedSession,
         dead_threshold: usize,
         dead_budget: usize,
-    ) -> Vec<String> {
+    ) -> io::Result<Vec<String>> {
         let session_id = session.metadata.id.clone();
         let Some(journal) = session.journal.as_mut() else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let plan = journal.prune_plan(dead_threshold, dead_budget);
         if plan.is_empty() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let ids: std::collections::HashSet<String> = plan.into_iter().collect();
         // Ids a previous save archived but the live journal still carries
@@ -2862,24 +2936,12 @@ impl SessionManager {
             .iter()
             .filter(|entry| ids.contains(&entry.id) && !already.contains(&entry.id))
             .collect();
-        if let Err(error) = self.append_journal_archive(&session_id, &fresh) {
-            tracing::warn!(
-                %session_id,
-                %error,
-                "journal archive write failed; keeping the full journal"
-            );
-            return Vec::new();
-        }
-        match journal.remove_entries(&ids) {
-            Ok(_) => {
-                session.leaf_id = journal.leaf_id.clone();
-                ids.into_iter().collect()
-            }
-            Err(error) => {
-                tracing::warn!(%session_id, %error, "journal prune refused; keeping the full journal");
-                Vec::new()
-            }
-        }
+        self.append_journal_archive(&session_id, &fresh)?;
+        journal
+            .remove_entries(&ids)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        session.leaf_id = journal.leaf_id.clone();
+        Ok(ids.into_iter().collect())
     }
 
     /// Append `entries` to the session's journal archive, one JSON object per
@@ -3461,24 +3523,44 @@ impl SessionManager {
                 let mut file = open_private_read_file(&path)?;
                 if file.metadata()?.len() > limit as u64 {
                     let before = file.metadata()?.len();
-                    self.compact_oversized_session(id).map_err(|error| {
-                        io::Error::new(
-                            error.kind(),
+                    let mib = |bytes: u64| bytes as f64 / 1_048_576.0;
+                    let projected = self
+                        .compact_oversized_session(id, limit as u64)
+                        .map_err(|error| {
+                            io::Error::new(
+                                error.kind(),
+                                format!(
+                                    "session exceeds its full-history transport limit and compaction failed: {error}; source retained"
+                                ),
+                            )
+                        })?;
+                    if let Some((projected, pruned_operations)) = projected {
+                        let compaction = if pruned_operations {
+                            "archiving its off-branch history and pruning ended operations"
+                        } else {
+                            "archiving its off-branch history"
+                        };
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
                             format!(
-                                "session exceeds its full-history transport limit and compaction failed: {error}; source retained"
+                                "session is {:.1} MiB and the full-history transport limit is {:.1} MiB; {compaction} would leave it at {:.1} MiB, so nothing was changed",
+                                mib(before),
+                                mib(limit as u64),
+                                mib(projected),
                             ),
-                        )
-                    })?;
+                        ));
+                    }
                     file = open_private_read_file(&path)?;
                     let after = file.metadata()?.len();
                     if after > limit as u64 {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidData,
                             format!(
-                                "session is {:.1} MiB and the full-history transport limit is {:.1} MiB; off-branch compaction left it at {:.1} MiB; source retained",
-                                before as f64 / 1_048_576.0,
-                                limit as f64 / 1_048_576.0,
-                                after as f64 / 1_048_576.0,
+                                "session was {:.1} MiB; compaction rewrote it to {:.1} MiB, still over the {:.1} MiB full-history transport limit; its off-branch journal entries are in {}",
+                                mib(before),
+                                mib(after),
+                                mib(limit as u64),
+                                journal_archive_path(&self.sessions_dir, id)?.display(),
                             ),
                         ));
                     }
