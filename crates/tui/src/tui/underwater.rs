@@ -959,10 +959,10 @@ fn filesystem_scope_notice(app: &App) -> Option<Cow<'static, str>> {
                 | crate::sandbox::SandboxPolicy::ExternalSandbox { .. }
         );
     match policy {
-        crate::sandbox::SandboxPolicy::ReadOnly if unenforced => {
+        crate::sandbox::SandboxPolicy::ReadOnly { .. } if unenforced => {
             Some(Cow::Borrowed("files: read-only (unenforced)"))
         }
-        crate::sandbox::SandboxPolicy::ReadOnly => {
+        crate::sandbox::SandboxPolicy::ReadOnly { .. } => {
             (app.mode != AppMode::Plan).then_some(Cow::Borrowed("files: read-only"))
         }
         // `DangerFullAccess` only ever arises from the Bypass posture

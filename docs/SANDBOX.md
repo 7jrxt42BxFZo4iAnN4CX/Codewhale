@@ -37,7 +37,12 @@ The profile can provide:
 - broad filesystem reads;
 - writes limited by the selected policy, including the workspace and specific
   runtime/cache paths needed by supported tools;
-- network access only when the policy enables it.
+- network access only when the policy enables it. A `read-only` policy with
+  network (the agent `read_only: true` shell mode) gets outbound IPv4 and the
+  system DNS resolver only. IPv6 and the host's own addresses, loopback
+  included, are denied, except the port of a local proxy named in
+  `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY`, and other local sockets stay
+  denied.
 
 If the probe fails or `sandbox-exec` is unavailable, Codewhale reports no OS
 sandbox and launches the command without a Seatbelt wrapper. It does not set a
@@ -93,8 +98,11 @@ paths, and `/` are not promoted to writable mounts.
 For `read-only`, there are no writable binds, so the working directory remains
 inside the read-only root view. `--unshare-all` isolates the network namespace
 by default. Codewhale adds `--share-net` only when the policy's
-`network_access` is true. `danger-full-access` and `external-sandbox` bypass the
-local wrapper entirely.
+`network_access` is true. The agent `read_only: true` shell mode turns it on
+only in Full Access (see [Subagents](SUBAGENTS.md)); it then shares the host
+network namespace, including loopback and abstract unix sockets, like a
+networked `workspace-write` shell. Bubblewrap does not filter either.
+`danger-full-access` and `external-sandbox` bypass the local wrapper entirely.
 
 If the user opts out, or `/usr/bin/bwrap` is missing, non-executable, or
 cannot actually confine a child, Codewhale reports `none` and launches the

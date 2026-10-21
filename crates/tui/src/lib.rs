@@ -12663,7 +12663,9 @@ fn parse_sandbox_policy(
 
     match policy {
         "danger-full-access" => Ok(SandboxPolicy::DangerFullAccess),
-        "read-only" => Ok(SandboxPolicy::ReadOnly),
+        "read-only" => Ok(SandboxPolicy::ReadOnly {
+            network_access: network,
+        }),
         "external-sandbox" => Ok(SandboxPolicy::ExternalSandbox {
             network_access: network,
         }),

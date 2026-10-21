@@ -1064,11 +1064,14 @@ mod tests {
     #[test]
     fn test_command_spec_builder() {
         let spec = CommandSpec::shell("test", PathBuf::from("."), Duration::from_secs(10))
-            .with_policy(SandboxPolicy::ReadOnly)
+            .with_policy(SandboxPolicy::read_only())
             .with_env_var("FOO", "bar")
             .with_justification("Testing");
 
-        assert!(matches!(spec.sandbox_policy, SandboxPolicy::ReadOnly));
+        assert!(matches!(
+            spec.sandbox_policy,
+            SandboxPolicy::ReadOnly { .. }
+        ));
         assert_eq!(spec.env.get("FOO"), Some(&"bar".to_string()));
         assert_eq!(spec.justification, Some("Testing".to_string()));
     }
@@ -1397,7 +1400,7 @@ mod tests {
             ..SandboxManager::default()
         };
         let spec = CommandSpec::shell("true", PathBuf::from("/tmp"), Duration::from_secs(5))
-            .with_policy(SandboxPolicy::ReadOnly);
+            .with_policy(SandboxPolicy::read_only());
         let env = manager.prepare(&spec);
 
         assert_eq!(env.sandbox_type, SandboxType::LinuxBubblewrap);
@@ -1468,7 +1471,7 @@ mod tests {
         let manager = SandboxManager::new();
         let policies = [
             SandboxPolicy::DangerFullAccess,
-            SandboxPolicy::ReadOnly,
+            SandboxPolicy::read_only(),
             SandboxPolicy::workspace_with_network(),
             SandboxPolicy::default(),
         ];

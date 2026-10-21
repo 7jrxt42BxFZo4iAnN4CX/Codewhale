@@ -1200,7 +1200,7 @@ fn mode_invariant_matrix_covers_context_catalog_subagents_and_prompt_metadata() 
             .as_ref()
             .expect("mode context should always carry an elevated sandbox policy");
         match (case.sandbox, sandbox) {
-            (ExpectedSandbox::ReadOnly, SandboxPolicy::ReadOnly) => {}
+            (ExpectedSandbox::ReadOnly, SandboxPolicy::ReadOnly { .. }) => {}
             (
                 ExpectedSandbox::WorkspaceWrite,
                 SandboxPolicy::WorkspaceWrite {

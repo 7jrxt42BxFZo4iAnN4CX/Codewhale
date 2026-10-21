@@ -411,17 +411,28 @@ fn web_tool_available(context: &ToolContext) -> bool {
     context.features.enabled(Feature::WebSearch) && network_authorized(context)
 }
 
-/// Whether this role could shell out to `curl` as a last resort. Read-only and
-/// shell-less roles cannot: the read-only grammar rejects a network fetch.
+/// Whether this role could shell out to `curl` as a last resort: a full shell
+/// directly, a read-only shell only through a networked `read_only: true` run.
 fn shell_fallback_available(context: &ToolContext) -> bool {
-    context.shell_policy == ShellPolicy::Full && network_authorized(context)
+    match context.shell_policy {
+        ShellPolicy::Full => network_authorized(context),
+        ShellPolicy::ReadOnly => {
+            crate::tools::shell::readonly_enforced_lane_available(context)
+                && crate::tools::shell::readonly_lane_network_access(context)
+        }
+        ShellPolicy::None => false,
+    }
 }
 
-fn network_authorized(context: &ToolContext) -> bool {
+pub(crate) fn network_authorized(context: &ToolContext) -> bool {
     context
         .tool_authority
         .as_deref()
         .is_none_or(|authority| authority.network_access != Some(false))
+        && context
+            .child_host
+            .as_deref()
+            .is_none_or(|child| !child.network_is_denied())
 }
 
 /// The raw-HTML fetch a JS-shell recovery suggests, as a `Web` tool input.
@@ -451,12 +462,17 @@ fn js_shell_recovery(url: &str, context: &ToolContext) -> String {
         );
     }
     if shell_fallback_available(context) {
+        let lane = if context.shell_policy == ShellPolicy::ReadOnly {
+            " run with `read_only: true`"
+        } else {
+            ""
+        };
         format!(
-            "{same_result}{browser} Inspect the raw HTML with a shell fetch (`curl -sSL`) for embedded data, or use a rendering tool."
+            "{same_result}{browser} Inspect the raw HTML with a shell fetch (`curl -sSL`){lane} for embedded data, or use a rendering tool."
         )
     } else if browser.is_empty() {
         format!(
-            "{same_result} This role is read-only and cannot fall back to a shell fetch, so report this URL as unreadable rather than substituting another source."
+            "{same_result} This role cannot fall back to a shell fetch, so report this URL as unreadable rather than substituting another source."
         )
     } else {
         format!(

@@ -11264,7 +11264,7 @@ fn apply_requirements(config: &mut Config) -> Result<()> {
                     Path::new("."),
                     SandboxNetworkAccess::from_config(config.sandbox_network_access),
                 ) {
-                    SandboxPolicy::ReadOnly => "read-only",
+                    SandboxPolicy::ReadOnly { .. } => "read-only",
                     SandboxPolicy::WorkspaceWrite { .. } => "workspace-write",
                     SandboxPolicy::DangerFullAccess => "danger-full-access",
                     SandboxPolicy::ExternalSandbox { .. } => "external-sandbox",

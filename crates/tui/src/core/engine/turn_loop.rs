@@ -599,11 +599,11 @@ pub(super) fn requested_sandbox_escalation(
         .to_string();
 
     let policy = match (effective, requested) {
-        (crate::sandbox::SandboxPolicy::ReadOnly, "workspace-write") => {
+        (crate::sandbox::SandboxPolicy::ReadOnly { .. }, "workspace-write") => {
             crate::sandbox::SandboxPolicy::default()
         }
         (
-            crate::sandbox::SandboxPolicy::ReadOnly
+            crate::sandbox::SandboxPolicy::ReadOnly { .. }
             | crate::sandbox::SandboxPolicy::WorkspaceWrite { .. },
             "danger-full-access",
         ) => crate::sandbox::SandboxPolicy::DangerFullAccess,
@@ -1824,7 +1824,7 @@ impl Engine {
         );
         let batch_sandbox_read_only = matches!(
             &batch_sandbox_policy,
-            crate::sandbox::SandboxPolicy::ReadOnly
+            crate::sandbox::SandboxPolicy::ReadOnly { .. }
         );
         for (index, tool) in tool_uses.iter_mut().enumerate() {
             let tool_id = tool.execution_id.clone();

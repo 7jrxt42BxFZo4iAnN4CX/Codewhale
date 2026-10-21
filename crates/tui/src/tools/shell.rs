@@ -2335,7 +2335,7 @@ impl ShellManager {
         };
         let spec = spec.with_policy(policy).with_env(extra_env);
         let exec_env = self.sandbox_manager.prepare(&spec);
-        if matches!(spec.sandbox_policy, ExecutionSandboxPolicy::ReadOnly)
+        if matches!(spec.sandbox_policy, ExecutionSandboxPolicy::ReadOnly { .. })
             && readonly_workspace.is_none()
         {
             // Arbitrary code with a read-only policy needs kernel enforcement;
@@ -2404,7 +2404,7 @@ impl ShellManager {
             .with_policy(policy)
             .with_env(extra_env);
         let exec_env = self.sandbox_manager.prepare(&spec);
-        if matches!(spec.sandbox_policy, ExecutionSandboxPolicy::ReadOnly) {
+        if matches!(spec.sandbox_policy, ExecutionSandboxPolicy::ReadOnly { .. }) {
             require_native_readonly_execution(&exec_env)?;
         }
 
@@ -4231,7 +4231,7 @@ fn enforce_readonly_network_reads(command: &str, context: &ToolContext) -> Resul
     Ok(())
 }
 
-/// This is a request for mandatory filesystem/network isolation, not a claim
+/// This is a request for mandatory filesystem isolation, not a claim
 /// about what the command does. The executor refuses it without a native
 /// enforcing sandbox and checks the prepared environment again before spawn.
 fn enforced_readonly_input(input: &serde_json::Value) -> bool {
@@ -4299,7 +4299,7 @@ pub(crate) fn sandboxed_runner_command(
             timeout,
             context.elevated_sandbox_policy.clone(),
         );
-    if matches!(exec_env.policy, ExecutionSandboxPolicy::ReadOnly) {
+    if matches!(exec_env.policy, ExecutionSandboxPolicy::ReadOnly { .. }) {
         require_native_readonly_execution(&exec_env)
             .map_err(|error| ToolError::permission_denied(error.to_string()))?;
     }
@@ -4318,7 +4318,7 @@ pub(crate) fn sandboxed_runner_command(
 }
 
 fn require_native_readonly_execution(exec_env: &ExecEnv) -> Result<()> {
-    if matches!(exec_env.policy, ExecutionSandboxPolicy::ReadOnly)
+    if matches!(exec_env.policy, ExecutionSandboxPolicy::ReadOnly { .. })
         && is_native_readonly_sandbox(exec_env.sandbox_type)
     {
         Ok(())
@@ -4414,6 +4414,19 @@ pub(crate) fn readonly_enforced_lane_available(context: &ToolContext) -> bool {
                 .configured_sandbox_type()
                 .is_some_and(is_native_readonly_sandbox)
         })
+}
+
+pub(crate) fn readonly_lane_network_access(context: &ToolContext) -> bool {
+    (context.auto_approve || context.approval_mode == codewhale_execpolicy::ApprovalMode::Bypass)
+        && context
+            .elevated_sandbox_policy
+            .as_ref()
+            .is_some_and(ExecutionSandboxPolicy::has_network_access)
+        && context
+            .network_policy
+            .as_ref()
+            .is_none_or(|decider| !decider.denies_by_default())
+        && crate::tools::web::fetch::network_authorized(context)
 }
 
 /// `exec_shell_input_agent_readonly_verdict` is also the gate-side predicate for the
@@ -5372,6 +5385,7 @@ fn finish_contract_bash_result(
     timeout_ms: Option<u64>,
     context: &ToolContext,
     execution_receipt: Option<serde_json::Value>,
+    readonly_network: bool,
 ) -> Result<ToolResult, ToolError> {
     let sandbox_denied_hint = shell_sandbox_denied_hint(context, &result);
     let mut output = result.stdout.clone();
@@ -5391,6 +5405,9 @@ fn finish_contract_bash_result(
     });
     if let Some(receipt) = execution_receipt {
         metadata["execution_receipt"] = receipt;
+    }
+    if readonly_network {
+        metadata["sandbox_network"] = json!(true);
     }
     if result.status == ShellStatus::Running {
         let task_id = result.task_id.as_deref().unwrap_or("unknown");
@@ -5453,7 +5470,7 @@ impl ToolSpec for LowercaseBashTool {
                 "command": { "type": "string", "description": guidance::runtime_command_guidance() },
                 "description": { "type": "string", "description": "Optional few-word summary shown to the user beside the command." },
                 "timeout": { "type": "number", "description": "Optional seconds to wait in the foreground (default 30 seconds). A command still running then is not killed: it moves to the background by itself and you get its output so far, how long ago it last printed, its build phase, and a task_id. Call task_shell_wait directly with that task_id to read more or wait for it; do not sleep-poll with bash." },
-                "read_only": { "type": "boolean", "description": "Set true to run analysis code (including Python/SQLite) with mandatory native filesystem read-only isolation and no network. Available during peer writes. Refused when native enforcement is unavailable; no background, stdin, external backend, or sandbox escalation." },
+                "read_only": { "type": "boolean", "description": "Set true to run analysis code (including Python/SQLite) or a network fetch (curl) with mandatory native filesystem read-only isolation. Outbound network is on only in Full Access when the session sandbox, the network policy and your network grant allow it. Available during peer writes. Refused when native enforcement is unavailable; no background, stdin, external backend, or sandbox escalation." },
                 "sandbox_permissions": {
                     "type": "string",
                     "enum": ["workspace-write", "danger-full-access"],
@@ -5611,7 +5628,7 @@ pub(crate) fn readonly_bash_input_schema() -> serde_json::Value {
         "properties": {
             "action": { "type": "string", "enum": ["run"] },
             "command": { "type": "string", "description": "A classifier-approved read command, or analysis code with read_only=true" },
-            "read_only": { "type": "boolean", "description": "Require native filesystem read-only and no-network enforcement for analysis code; unavailable sandboxes fail closed." },
+            "read_only": { "type": "boolean", "description": "Require native filesystem read-only enforcement for analysis code or a network fetch (curl); outbound network is on only in Full Access when the session sandbox, the network policy and your network grant allow it. Unavailable sandboxes fail closed." },
             "cwd": { "type": "string", "description": "Workspace-relative working directory" },
             "timeout_ms": { "type": "integer", "description": "Foreground wait in milliseconds (1000-600000). A command still running then moves to the background; it is not killed." }
         },
@@ -5670,7 +5687,7 @@ impl ToolSpec for BashTool {
 
     fn description(&self) -> &'static str {
         if self.read_only {
-            "Inspect with classifier-bounded commands run directly as argv, never through a shell. For analysis code, read_only=true instead requires a native filesystem read-only and no-network sandbox. Only foreground action=run with command, cwd, timeout_ms, and read_only is accepted."
+            "Inspect with classifier-bounded commands run directly as argv, never through a shell. For analysis code or a network fetch (curl), read_only=true instead requires a native filesystem read-only sandbox, with outbound network only in Full Access when the session sandbox, the network policy and your network grant allow it. Only foreground action=run with command, cwd, timeout_ms, and read_only is accepted."
         } else {
             guidance::description()
         }
@@ -5692,7 +5709,7 @@ impl ToolSpec for BashTool {
                     "type": "string",
                     "description": guidance::runtime_command_guidance()
                 },
-                "read_only": { "type": "boolean", "description": "Set true to require native filesystem read-only and no-network execution. Only foreground run with command, cwd and timeout_ms; unavailable enforcement fails closed." },
+                "read_only": { "type": "boolean", "description": "Set true to require native filesystem read-only execution, with outbound network only in Full Access when the session sandbox, the network policy and your network grant allow it. Only foreground run with command, cwd and timeout_ms; unavailable enforcement fails closed." },
                 "timeout_ms": {
                     "type": "integer",
                     "description": "How long to wait, in milliseconds. action=run: how long the turn waits in the foreground (default 30000, max 600000); a command still running then is NOT killed — it moves to the background by itself and you get its output so far, how long ago it last printed, its build phase, and task_id. action=wait 30000, action=interact 1000. For action=wait, `timeout_secs` (seconds) and `timeout` (milliseconds) are accepted aliases."
@@ -6087,8 +6104,11 @@ impl ToolSpec for BashTool {
 
         // This explicit mode only narrows the caller's posture. No approval or
         // inherited full-access override can disable the required sandbox.
+        let readonly_network = enforced_readonly && readonly_lane_network_access(context);
         let policy_override = if enforced_readonly {
-            Some(ExecutionSandboxPolicy::ReadOnly)
+            Some(ExecutionSandboxPolicy::ReadOnly {
+                network_access: readonly_network,
+            })
         } else {
             context.elevated_sandbox_policy.clone()
         };
@@ -6507,6 +6527,7 @@ impl ToolSpec for BashTool {
                         timeout_ms,
                         context,
                         execution_receipt,
+                        readonly_network,
                     );
                 }
                 let task_id_str = result.task_id.clone().unwrap_or_default();
@@ -6680,6 +6701,9 @@ impl ToolSpec for BashTool {
                 if let Some(hint) = network_restricted_hint {
                     metadata["sandbox_network_restricted"] = json!(true);
                     metadata["sandbox_network_denied_hint"] = json!(hint);
+                }
+                if readonly_network {
+                    metadata["sandbox_network"] = json!(true);
                 }
                 if let Some(hint) = sandbox_denied_hint {
                     metadata["sandbox_denied_hint"] = json!(hint);
