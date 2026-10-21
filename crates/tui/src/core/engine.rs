@@ -5361,7 +5361,7 @@ impl Engine {
             }
             SendMessageOutcome::Finished {
                 status: TurnOutcomeStatus::Interrupted,
-                ..
+                error: None,
             } => {
                 // Goals are durable session objectives. An interrupted model
                 // turn (Esc, steer, compaction, cancel) must cancel only the
@@ -5380,6 +5380,10 @@ impl Engine {
                 let _ = self.send_event(Event::status(message.to_string())).await;
             }
             SendMessageOutcome::Finished {
+                status: TurnOutcomeStatus::Interrupted,
+                error: Some(_),
+            }
+            | SendMessageOutcome::Finished {
                 status: TurnOutcomeStatus::Completed,
                 ..
             } => {}

@@ -1423,6 +1423,14 @@ impl Engine {
         ) {
             turn.add_routed_usage_dropped_records(1);
         }
+        match &review.outcome {
+            super::reviewer::ReviewerOutcome::Allow { .. } => {
+                turn.auto_review_denials.record(false)
+            }
+            super::reviewer::ReviewerOutcome::Deny { .. } => turn.auto_review_denials.record(true),
+            super::reviewer::ReviewerOutcome::Unavailable { .. }
+            | super::reviewer::ReviewerOutcome::Cancelled => {}
+        }
         let decision = review.outcome.audit_decision();
         let risk = review.outcome.audit_risk();
         // The transcript receipt names the verdict a person never saw a
@@ -1878,6 +1886,14 @@ impl Engine {
                 && let Some(guard) = fleet_denial_guard
             {
                 blocked_error = guard.admission_error(&tool_name, &tool_input);
+            }
+
+            if blocked_error.is_none()
+                && let Some(stop) = turn.auto_review_denials.stop()
+            {
+                blocked_error = Some(ToolError::permission_denied(format!(
+                    "{stop} This call was not run."
+                )));
             }
 
             // C02-10: the response granted after the step budget ran out is
