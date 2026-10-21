@@ -356,14 +356,14 @@ pub fn validate_task_spec_document(doc: &FleetTaskSpecDocument) -> Result<()> {
     for worker in &doc.workers {
         validate_fleet_identity("worker id", &worker.id)?;
         super::placement::validate_worker(worker)?;
-        if let Some(environment) = &worker.environment {
-            if let Some(previous_host) = environment_hosts.insert(&environment.id, &worker.host) {
-                ensure!(
-                    previous_host == &worker.host,
-                    "Environment {} names more than one execution host",
-                    environment.id
-                );
-            }
+        if let Some(environment) = &worker.environment
+            && let Some(previous_host) = environment_hosts.insert(&environment.id, &worker.host)
+        {
+            ensure!(
+                previous_host == &worker.host,
+                "Environment {} names more than one execution host",
+                environment.id
+            );
         }
         if !worker_ids.insert(worker.id.clone()) {
             bail!("duplicate fleet worker id {}", worker.id);
