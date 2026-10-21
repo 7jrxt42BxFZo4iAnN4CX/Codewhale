@@ -383,6 +383,13 @@ pub fn is_sandbox_available() -> bool {
     get_platform_sandbox().is_some()
 }
 
+pub fn bwrap_setup_failure(stderr: &str) -> Option<&str> {
+    stderr
+        .lines()
+        .map(str::trim_start)
+        .find(|line| line.starts_with("bwrap:"))
+}
+
 /// Manager for sandbox operations.
 ///
 /// User-configured bwrap bind-mount extensions (#5410).
@@ -875,11 +882,7 @@ impl SandboxManager {
 
             #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
             SandboxType::LinuxBubblewrap => {
-                if let Some(error) = stderr
-                    .lines()
-                    .map(str::trim_start)
-                    .find(|line| line.starts_with("bwrap:"))
-                {
+                if let Some(error) = bwrap_setup_failure(stderr) {
                     format!("Bubblewrap could not create the sandbox: {}", error)
                 } else if stderr.contains("Read-only file system") {
                     "Bubblewrap blocked access outside the writable workspace view.".to_string()

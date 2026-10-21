@@ -4103,6 +4103,9 @@ fn shell_network_restricted_hint<'a>(
     command: &str,
     result: &ShellResult,
 ) -> Option<&'a str> {
+    if result.sandbox_denied && crate::sandbox::bwrap_setup_failure(&result.stderr).is_some() {
+        return None;
+    }
     let hint = context.shell_network_denied_hint.as_deref()?;
     let policy_blocks_network = context
         .elevated_sandbox_policy
@@ -4125,6 +4128,11 @@ fn shell_network_restricted_hint<'a>(
 fn shell_sandbox_denied_hint(context: &ToolContext, result: &ShellResult) -> Option<String> {
     if !result.sandbox_denied {
         return None;
+    }
+    if let Some(error) = crate::sandbox::bwrap_setup_failure(&result.stderr) {
+        return Some(format!(
+            "The Linux sandbox (bubblewrap) could not be set up, so this command did not run and nothing ran outside the sandbox: {error}. Every sandboxed command fails the same way until the cause it names is fixed or removed, or `prefer_bwrap = false` is set to run without the OS sandbox. [sandbox: Ask-only escalation — to run only this command without the sandbox, retry it once with sandbox_permissions \"danger-full-access\" + justification; the approval prompt asks the user]"
+        ));
     }
     let policy = context.elevated_sandbox_policy.as_ref()?;
     Some(format!(
