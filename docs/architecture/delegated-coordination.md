@@ -114,10 +114,11 @@ whole-document atomic replace. One per-workspace advisory flock
 (`subagents.v1.lock`) decides who may *write* the file, in one of two modes:
 
 - **Shared, warn on failure.** Interactive and `exec` sessions, `codewhale
-  fleet`, and `codewhale resume`/`fork` mounts take the flock shared, so several
+  fleet`, `codewhale resume`/`fork` mounts and the TUI's background task runtime
+  (`/task`, `task_create`, automations) take the flock shared, so several
   sessions in one folder hold it at once. Failing to get it only logs a warning.
-- **Exclusive, fatal on failure.** `codewhale serve` and other Runtime worker
-  authorities take it exclusively and refuse to start without it. Beside such an
+- **Exclusive, fatal on failure.** `codewhale serve` and the other standalone
+  Runtime hosts take it exclusively and refuse to start without it. Beside such an
   owner, shared holders cannot append.
 
 Every shared holder may append, and each append replaces the whole file, so the

@@ -3306,6 +3306,7 @@ async fn real_turn_client_preflight_failure_writes_no_in_progress_record() -> Re
             ..crate::config::ProviderConfig::default()
         },
     );
+    let workspace = tempfile::tempdir()?;
     let manager = RuntimeThreadManager::open(
         Config {
             provider: Some("preflight-failure".to_string()),
@@ -3315,7 +3316,7 @@ async fn real_turn_client_preflight_failure_writes_no_in_progress_record() -> Re
             }),
             ..Config::default()
         },
-        PathBuf::from("."),
+        workspace.path().to_path_buf(),
         test_manager_config(test_runtime_dir()),
     )?;
     let thread = manager
@@ -11190,6 +11191,11 @@ async fn compact_thread_receipt_keeps_exact_named_custom_identity() -> Result<()
 
 #[tokio::test]
 async fn compact_thread_with_real_engine_reaches_terminal_status() -> Result<()> {
+    // A real engine takes the workspace coordination lock exclusively, and
+    // nextest runs tests in parallel processes with this crate as their working
+    // directory. A `"."` workspace would therefore be the crate directory
+    // itself, and two exclusive holders of it cannot both start.
+    let workspace = tempfile::tempdir()?;
     let manager = RuntimeThreadManager::open(
         Config {
             // This test intentionally crosses the real-engine boundary. Give
@@ -11201,7 +11207,7 @@ async fn compact_thread_with_real_engine_reaches_terminal_status() -> Result<()>
             Some("runtime-thread-test-key".to_string()),
             Some("http://127.0.0.1:1/v1".to_string()),
         ),
-        PathBuf::from("."),
+        workspace.path().to_path_buf(),
         test_manager_config(test_runtime_dir()),
     )?;
     let thread = manager

@@ -10088,13 +10088,7 @@ async fn prepare_mounted_session(
         .map(|runtime| {
             (
                 Arc::new(runtime),
-                crate::tools::subagent::new_shared_subagent_manager_with_timeout(
-                    worker_workspace,
-                    MAX_SUBAGENTS,
-                    MAX_SUBAGENTS,
-                    Duration::from_secs(crate::config::DEFAULT_SUBAGENT_HEARTBEAT_TIMEOUT_SECS),
-                    MAX_SUBAGENTS,
-                ),
+                crate::tools::subagent::new_shared_worker_authority(worker_workspace),
             )
         })
     })

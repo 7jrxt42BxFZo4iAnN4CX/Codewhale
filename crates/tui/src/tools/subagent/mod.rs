@@ -11206,6 +11206,17 @@ pub fn new_shared_subagent_manager(workspace: PathBuf, max_agents: usize) -> Sha
     )
 }
 
+#[must_use]
+pub(crate) fn new_shared_worker_authority(workspace: PathBuf) -> SharedSubAgentManager {
+    new_shared_subagent_manager_with_timeout(
+        workspace,
+        MAX_SUBAGENTS,
+        MAX_SUBAGENTS,
+        Duration::from_secs(crate::config::DEFAULT_SUBAGENT_HEARTBEAT_TIMEOUT_SECS),
+        MAX_SUBAGENTS,
+    )
+}
+
 /// Create a shared sub-agent manager with configurable concurrency and stale
 /// running-agent heartbeat timeout.
 #[must_use]
