@@ -11319,6 +11319,12 @@ fn inline_issue_comments(
                 plan.note_unanchorable(hunks, &path);
                 return None;
             }
+            // #18: a pre-existing defect is not a comment on this change. It is
+            // reported in the review body, under its own heading, so the author
+            // is not handed an inline accusation for code they did not write.
+            if issue.authorship.as_deref() == Some("preexisting") {
+                return None;
+            }
             Some(serde_json::json!({
                 "path": path,
                 "line": line,

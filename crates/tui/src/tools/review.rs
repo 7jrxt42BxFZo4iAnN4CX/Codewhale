@@ -124,6 +124,21 @@ pub struct ReviewIssue {
     /// which dependents were checked against it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contract: Option<ReviewContract>,
+    /// Whether this change introduced the defect or merely exposed it.
+    ///
+    /// `introduced` or `preexisting`. Set **mechanically** from the diff by the
+    /// review core, never taken from the model: a reviewer that can label its
+    /// own accusation as someone else's problem is not a reviewer worth
+    /// trusting. A `preexisting` claim is a real bug on code this change did
+    /// not touch, reported without attributing it to the author.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authorship: Option<String>,
+    /// False when the claim cannot land on a line of this diff. Such a claim is
+    /// still reported — in the review body rather than inline — because losing
+    /// a proven finding to a line-number disagreement is worse than reporting
+    /// it in the wrong place.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inline_anchorable: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -193,6 +208,11 @@ pub struct ReviewOutput {
     /// What was not reviewed, and why. An honest gap, not a blank cheque.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub not_reviewed: Vec<String>,
+    /// What the reviewer examined and found sound, with the reason. A negative
+    /// result, not a claim: it never counts toward merge risk and never becomes
+    /// an inline comment. This is what lets a reader stop checking something.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ruled_out: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -271,6 +291,13 @@ impl ReviewOutput {
                 evidence.tier = normalize_evidence_tier(&evidence.tier);
                 evidence.detail = evidence.detail.trim().to_string();
             }
+            issue.authorship = issue.authorship.take().map(|value| {
+                match value.trim().to_ascii_lowercase().as_str() {
+                    "preexisting" | "pre-existing" | "pre_existing" | "existing" => "preexisting",
+                    _ => "introduced",
+                }
+                .to_string()
+            });
             if let Some(contract) = issue.contract.as_mut() {
                 contract.became = contract.became.trim().to_string();
                 contract.dependents_checked = contract
@@ -298,6 +325,12 @@ impl ReviewOutput {
             .collect();
         self.not_reviewed = self
             .not_reviewed
+            .iter()
+            .map(|entry| entry.trim().to_string())
+            .filter(|entry| !entry.is_empty())
+            .collect();
+        self.ruled_out = self
+            .ruled_out
             .iter()
             .map(|entry| entry.trim().to_string())
             .filter(|entry| !entry.is_empty())

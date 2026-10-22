@@ -41,6 +41,7 @@ the following schema:\n\
     }\n\
   ],\n\
   \"verified\": [\"what you established: a dependent you read, a command you ran and its result\"],\n\
+  \"ruled_out\": [\"what you examined and found sound, and the reason\"],\n\
   \"not_reviewed\": [\"what you did not look at, and why\"],\n\
   \"overall_assessment\": \"final assessment\"\n\
 }\n\
@@ -60,7 +61,12 @@ Summary shape:\n\
 - merge_risk is the answer to \"is this safe to merge\". The reason is one sentence, and it names the finding that drives the level.\n\
 - verified lists what you actually established, so the reader can skip checking it. Do not list what you merely read.\n\
 - not_reviewed lists real gaps: files the diff did not show, behaviour that needs a run you could not make, a contract with no visible dependent.\n\
+- ruled_out is the negative result: what you checked and found sound, in one line each, and why. Read the migration and confirmed it is backward-compatible; checked both callers and both pass the new argument. It is not a finding and must never carry a claim. Do not list things you merely did not look at; those belong in not_reviewed. At most five.\n\
 - Do not restate the diff and do not walk through it file by file.\n\
+\n\
+Authorship:\n\
+- A defect on a line this change did not add is pre-existing. Report it if it matters, in the same list, and the review will label it as pre-existing rather than blaming the author. Say plainly in the description that the change did not introduce it.\n\
+- A pre-existing defect does not make this change unsafe to merge, so it must not be the reason you raise merge_risk. Raise merge_risk only for what this change did.\n\
 \n\
 Tools:\n\
 - You may call the read-only tools to check a claim before you make it: read a file at the reviewed revision, search the repository, and inspect git log, show, blame or diff. A finding you can prove outranks one you can only suspect.\n\
@@ -121,6 +127,8 @@ pub struct ReviewAnchorReport {
     pub suspected: usize,
     /// Claims an independent pass tried and failed to refute.
     pub refuted: usize,
+    /// Claims about code this change did not write.
+    pub preexisting: usize,
 }
 
 /// A claim that was only suspected is not something to interrupt a reviewer
@@ -193,6 +201,37 @@ impl ForgeMarkdown {
     }
 }
 
+/// The severity tally, as one HTML comment holding a JSON object.
+///
+/// A repository that wants to gate a merge on "no blockers" should not have to
+/// scrape prose, and should not have to grant Codewhale `checks: write` to say
+/// so. Closed enums and integers only: no paths, no prose, no repository
+/// content, so the line cannot leak anything the review did not already say.
+#[must_use]
+pub fn review_severity_tally(review: &ReviewOutput) -> String {
+    let mut blocker = 0u32;
+    let mut concern = 0u32;
+    let mut nit = 0u32;
+    let mut introduced = 0u32;
+    let mut preexisting = 0u32;
+    for issue in &review.issues {
+        match issue.severity.as_str() {
+            "blocker" => blocker += 1,
+            "concern" => concern += 1,
+            "nit" => nit += 1,
+            _ => {}
+        }
+        if issue.authorship.as_deref() == Some("preexisting") {
+            preexisting += 1;
+        } else {
+            introduced += 1;
+        }
+    }
+    format!(
+        "<!-- codewhale-review: {{\"blocker\":{blocker},\"concern\":{concern},\"nit\":{nit},\"introduced\":{introduced},\"preexisting\":{preexisting}}} -->"
+    )
+}
+
 /// The one review summary, rendered identically for every forge. Merge risk
 /// first, then the gaps, then findings with their evidence, then what was
 /// verified, then at most three judgement calls. No restating the diff.
@@ -223,9 +262,13 @@ pub fn render_review_summary(review: &ReviewOutput, forge: ForgeMarkdown) -> Str
         }
         body.push('\n');
     }
-    if !review.issues.is_empty() {
+    let (introduced, preexisting): (Vec<&ReviewIssue>, Vec<&ReviewIssue>) = review
+        .issues
+        .iter()
+        .partition(|issue| issue.authorship.as_deref() != Some("preexisting"));
+    if !introduced.is_empty() {
         body.push_str("### Findings\n\n");
-        for issue in &review.issues {
+        for issue in &introduced {
             let location = match (&issue.path, issue.line) {
                 (Some(path), Some(line)) => format!(" (`{}:{line}`)", path.trim()),
                 (Some(path), None) => format!(" (`{}`)", path.trim()),
@@ -271,6 +314,37 @@ pub fn render_review_summary(review: &ReviewOutput, forge: ForgeMarkdown) -> Str
         }
         body.push('\n');
     }
+    if !preexisting.is_empty() {
+        // Reported, never blamed: these are real defects on code this change
+        // did not write. They stay out of the inline comments and out of the
+        // merge-risk level, because neither is a statement about the author.
+        body.push_str("### Pre-existing, not introduced here\n\n");
+        for issue in &preexisting {
+            let location = match (&issue.path, issue.line) {
+                (Some(path), Some(line)) => format!(" (`{}:{line}`)", path.trim()),
+                (Some(path), None) => format!(" (`{}`)", path.trim()),
+                _ => String::new(),
+            };
+            body.push_str(&format!(
+                "- **{}**{location} {}\n",
+                issue.severity.to_uppercase(),
+                issue.title.trim()
+            ));
+            if !issue.description.is_empty() {
+                body.push_str(&format!("  {}\n", issue.description.trim()));
+            }
+            if let Some(evidence) = issue.evidence.as_ref()
+                && !evidence.detail.is_empty()
+            {
+                body.push_str(&format!(
+                    "  _{}_: {}\n",
+                    evidence.tier,
+                    evidence.detail.trim()
+                ));
+            }
+        }
+        body.push('\n');
+    }
     if !review.suggestions.is_empty() {
         body.push_str("### Suggestions\n\n");
         for suggestion in &review.suggestions {
@@ -306,17 +380,30 @@ pub fn render_review_summary(review: &ReviewOutput, forge: ForgeMarkdown) -> Str
         }
         body.push('\n');
     }
+    if !review.ruled_out.is_empty() {
+        body.push_str("### Checked, nothing wrong\n\n");
+        for entry in review.ruled_out.iter().take(MAX_RULED_OUT) {
+            body.push_str(&format!("- {}\n", entry.trim()));
+        }
+        body.push('\n');
+    }
     if !review.overall_assessment.is_empty() {
         body.push_str("### Assessment\n\n");
         body.push_str(review.overall_assessment.trim());
         body.push_str("\n\n");
     }
+    body.push_str(&review_severity_tally(review));
+    body.push('\n');
     body
 }
 
 /// Rendering for the summary's judgement-call list: at most three, each with
 /// what it rests on. A reader who sees four stops reading all of them.
 pub const MAX_WORTH_A_LOOK: usize = 3;
+
+/// What the reviewer checked and found sound. Capped like the judgement-call
+/// list, for the same reason: a long list of reassurances is not read.
+pub const MAX_RULED_OUT: usize = 5;
 
 #[must_use]
 pub fn worth_a_look(suspected: &[ReviewIssue]) -> Vec<String> {
@@ -801,6 +888,8 @@ pub async fn run_review_core(
             output.summary.push_str(&entry);
         }
     }
+    // A negative-result list that grows without bound is its own kind of noise.
+    output.ruled_out.truncate(MAX_RULED_OUT);
     let changed_lines = request
         .diff
         .lines()
@@ -951,6 +1040,55 @@ async fn refute_claims(
     (!refutations.is_empty()).then_some(refutations)
 }
 
+/// The lines this change actually added, as `path:line` on the post-image.
+///
+/// This is the mechanical answer to "did the pull request introduce this?" and
+/// it is deliberately not the model's answer: `DiffHunks` covers every line
+/// inside a hunk, including unchanged context, so a defect on a context line is
+/// real and pre-existing. Only an added line is one this change wrote.
+#[must_use]
+pub fn introduced_lines(diff: &str) -> std::collections::BTreeSet<String> {
+    let mut introduced = std::collections::BTreeSet::new();
+    let mut path = String::new();
+    let mut new_line = 0u32;
+    for raw in diff.lines() {
+        if let Some(rest) = raw.strip_prefix("+++ ") {
+            let next = rest.trim();
+            path = next.strip_prefix("b/").unwrap_or(next).to_string();
+            if next == "/dev/null" {
+                path.clear();
+            }
+            continue;
+        }
+        if let Some(header) = raw.strip_prefix("@@ ") {
+            if let Some(plus) = header.split_whitespace().find(|part| part.starts_with('+')) {
+                let numbers = plus.trim_start_matches('+');
+                new_line = numbers
+                    .split(',')
+                    .next()
+                    .and_then(|value| value.parse().ok())
+                    .unwrap_or(0);
+            }
+            continue;
+        }
+        if path.is_empty() {
+            continue;
+        }
+        if raw.starts_with("+") && !raw.starts_with("+++") {
+            introduced.insert(format!("{path}:{new_line}"));
+            new_line += 1;
+            continue;
+        }
+        if raw.starts_with('-') && !raw.starts_with("---") {
+            continue;
+        }
+        if raw.starts_with(' ') {
+            new_line += 1;
+        }
+    }
+    introduced
+}
+
 pub(crate) fn apply_claim_limits(
     output: &mut ReviewOutput,
     diff: &str,
@@ -968,17 +1106,36 @@ pub(crate) fn apply_claim_limits(
             review_severity_rank(&right.severity).cmp(&review_severity_rank(&left.severity))
         });
     }
-    for issue in std::mem::take(&mut output.issues) {
+    let introduced = introduced_lines(diff);
+    for mut issue in std::mem::take(&mut output.issues) {
         report.claims += 1;
         let anchorable = issue
             .path
             .as_deref()
             .zip(issue.line)
             .is_some_and(|(path, line)| hunks.contains_line(path, line));
+        // Mechanical, and it overrides anything the model said: a reviewer
+        // may not relabel its own accusation as pre-existing.
+        issue.authorship = Some(
+            match issue.path.as_deref().zip(issue.line) {
+                Some((path, line)) if introduced.contains(&format!("{path}:{line}")) => {
+                    "introduced"
+                }
+                Some(_) if anchorable => "preexisting",
+                // No usable anchor: we cannot prove the change wrote it, and
+                // claiming it did would be an accusation we cannot support.
+                _ => "preexisting",
+            }
+            .to_string(),
+        );
+        issue.inline_anchorable = Some(anchorable);
         if anchorable {
             report.anchored += 1;
         } else {
             report.unanchored += 1;
+        }
+        if issue.authorship.as_deref() == Some("preexisting") {
+            report.preexisting += 1;
         }
         let key = (
             issue.path.clone().unwrap_or_default(),
@@ -1004,6 +1161,28 @@ pub(crate) fn apply_claim_limits(
         kept.push(issue);
     }
     output.issues = kept;
+    // A review whose only claims are pre-existing says nothing about whether
+    // *this change* is safe to merge, so those claims cannot hold the merge
+    // risk up on their own. Enforced here, at the one place claims are
+    // adjudicated, so every caller inherits the rule rather than each one
+    // remembering it. Structural risk from the triage is reported separately
+    // and is untouched by this.
+    if !output.issues.is_empty()
+        && output
+            .issues
+            .iter()
+            .all(|issue| issue.authorship.as_deref() == Some("preexisting"))
+        && let Some(risk) = output.merge_risk.as_mut()
+        && risk.level != "low"
+    {
+        risk.level = "low".to_string();
+        let note = "no finding is on a line this change wrote; the issues below are pre-existing";
+        risk.reason = if risk.reason.is_empty() {
+            note.to_string()
+        } else {
+            format!("{note}. {}", risk.reason.trim())
+        };
+    }
     report
 }
 
@@ -1308,6 +1487,7 @@ mod tests {
                             .to_string(),
                     }),
                     contract: None,
+                    ..Default::default()
                 },
                 super::super::review::ReviewIssue {
                     severity: "concern".to_string(),
@@ -1327,10 +1507,12 @@ mod tests {
                             "src/other.js:41".to_string(),
                         ],
                     }),
+                    ..Default::default()
                 },
             ],
             suggestions: Vec::new(),
             overall_assessment: "Fix the token before merge.".to_string(),
+            ..Default::default()
         }
     }
 
@@ -1388,6 +1570,163 @@ mod tests {
             head(&gitcode),
             "everything except the suggestion block is identical across forges"
         );
+    }
+
+    #[test]
+    fn authorship_is_decided_from_the_diff_and_never_from_the_model() {
+        // Line 2 is added by this change; line 1 is unchanged context inside the
+        // same hunk. A defect on line 1 is real and pre-existing.
+        let introduced = introduced_lines(DIFF);
+        assert!(introduced.contains("src/login.js:2"), "{introduced:?}");
+        assert!(!introduced.contains("src/login.js:1"));
+        assert!(!introduced.contains("src/login.js:3"));
+
+        let mut output = ReviewOutput {
+            issues: vec![
+                super::super::review::ReviewIssue {
+                    severity: "blocker".to_string(),
+                    title: "The new line leaks the token".to_string(),
+                    description: "…".to_string(),
+                    path: Some("src/login.js".to_string()),
+                    line: Some(2),
+                    // The model claims it is someone else's bug; the diff wins.
+                    authorship: Some("preexisting".to_string()),
+                    ..Default::default()
+                },
+                super::super::review::ReviewIssue {
+                    severity: "concern".to_string(),
+                    title: "The old context line ignores the environment".to_string(),
+                    description: "…".to_string(),
+                    path: Some("src/login.js".to_string()),
+                    line: Some(1),
+                    authorship: Some("introduced".to_string()),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let report = apply_claim_limits(&mut output, DIFF, 40, 3);
+        assert_eq!(output.issues[0].authorship.as_deref(), Some("introduced"));
+        assert_eq!(output.issues[1].authorship.as_deref(), Some("preexisting"));
+        assert_eq!(report.preexisting, 1);
+        assert_eq!(
+            output.issues[0].inline_anchorable,
+            Some(true),
+            "both lines are inside a hunk, so both are anchorable"
+        );
+    }
+
+    #[test]
+    fn a_claim_that_cannot_be_anchored_is_reported_rather_than_lost() {
+        let mut output = ReviewOutput {
+            issues: vec![super::super::review::ReviewIssue {
+                severity: "blocker".to_string(),
+                title: "A proven defect outside the diff".to_string(),
+                description: "…".to_string(),
+                path: Some("src/other.js".to_string()),
+                line: Some(9),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let report = apply_claim_limits(&mut output, DIFF, 40, 3);
+        assert_eq!(report.unanchored, 1);
+        assert_eq!(output.issues.len(), 1, "the claim is kept, not discarded");
+        assert_eq!(output.issues[0].inline_anchorable, Some(false));
+        assert_eq!(
+            output.issues[0].authorship.as_deref(),
+            Some("preexisting"),
+            "without an anchor we cannot say this change wrote it"
+        );
+    }
+
+    #[test]
+    fn pre_existing_findings_alone_cannot_hold_the_merge_risk_up() {
+        let mut output = ReviewOutput {
+            merge_risk: Some(super::super::review::ReviewMergeRisk {
+                level: "high".to_string(),
+                reason: "an old credential is exposed".to_string(),
+            }),
+            issues: vec![super::super::review::ReviewIssue {
+                severity: "blocker".to_string(),
+                title: "A credential predates this change".to_string(),
+                description: "…".to_string(),
+                path: Some("src/login.js".to_string()),
+                line: Some(1),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        apply_claim_limits(&mut output, DIFF, 40, 3);
+        let risk = output.merge_risk.clone().expect("risk");
+        assert_eq!(risk.level, "low");
+        assert!(risk.reason.contains("pre-existing"), "{}", risk.reason);
+        assert!(
+            risk.reason.contains("an old credential is exposed"),
+            "the model's reason is kept"
+        );
+
+        // With one finding this change wrote, the model's level stands.
+        let mut with_introduced = ReviewOutput {
+            merge_risk: Some(super::super::review::ReviewMergeRisk {
+                level: "high".to_string(),
+                reason: "leaks a token".to_string(),
+            }),
+            issues: vec![super::super::review::ReviewIssue {
+                severity: "blocker".to_string(),
+                title: "The new line leaks the token".to_string(),
+                description: "…".to_string(),
+                path: Some("src/login.js".to_string()),
+                line: Some(2),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        apply_claim_limits(&mut with_introduced, DIFF, 40, 3);
+        assert_eq!(with_introduced.merge_risk.expect("risk").level, "high");
+    }
+
+    #[test]
+    fn the_summary_separates_pre_existing_claims_and_ends_with_a_parseable_tally() {
+        let mut review = shaped_review();
+        review.issues.push(super::super::review::ReviewIssue {
+            severity: "concern".to_string(),
+            title: "An old caller ignores the environment".to_string(),
+            description: "Pre-dates this change.".to_string(),
+            path: Some("src/main.js".to_string()),
+            line: Some(4),
+            authorship: Some("preexisting".to_string()),
+            ..Default::default()
+        });
+        review.ruled_out = vec!["Read the migration; it is backward-compatible.".to_string()];
+        let body = render_review_summary(&review, ForgeMarkdown::github());
+
+        let findings = body.find("### Findings").expect("findings");
+        let preexisting = body
+            .find("### Pre-existing, not introduced here")
+            .expect("pre-existing section");
+        let ruled_out = body
+            .find("### Checked, nothing wrong")
+            .expect("ruled out section");
+        assert!(findings < preexisting, "introduced findings come first");
+        assert!(preexisting < ruled_out);
+        assert!(body.contains("An old caller ignores the environment"));
+        assert!(body.contains("Pre-dates this change."));
+        assert!(body.contains("Read the migration; it is backward-compatible."));
+
+        let tally = body.lines().last().expect("body ends with the tally");
+        assert!(tally.starts_with("<!-- codewhale-review: {"), "{tally}");
+        assert!(tally.ends_with("} -->"), "{tally}");
+        let json = tally
+            .trim_start_matches("<!-- codewhale-review: ")
+            .trim_end_matches(" -->");
+        let parsed: serde_json::Value = serde_json::from_str(json).expect("tally is valid JSON");
+        assert_eq!(parsed["blocker"], 1);
+        assert_eq!(parsed["concern"], 2);
+        assert_eq!(parsed["introduced"], 2);
+        assert_eq!(parsed["preexisting"], 1);
+        // Integers and closed enums only: nothing from the repository.
+        assert!(!json.contains("src/"));
     }
 
     #[test]
