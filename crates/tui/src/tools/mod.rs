@@ -55,6 +55,7 @@ pub mod request_plugin_install;
 mod resource_admission;
 pub mod revert_turn;
 pub mod review;
+pub mod review_core;
 pub(crate) mod review_host;
 pub mod review_hunks;
 pub(crate) mod review_pr;

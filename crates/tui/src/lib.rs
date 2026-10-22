@@ -182,7 +182,7 @@ use crate::session_manager::{SessionManager, truncate_id};
 use crate::tui::app::ScreenMode;
 use crate::tui::history::{summarize_tool_args, summarize_tool_output};
 use codewhale_models::Role;
-use codewhale_models::{ContentBlock, Message, MessageRequest, SystemPrompt};
+use codewhale_models::{ContentBlock, Message, SystemPrompt};
 
 #[cfg(windows)]
 fn configure_windows_console_utf8() {
@@ -10375,7 +10375,6 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
         crate::tools::spec::ToolContext::new(&review_workspace).with_features(config.features());
     // #6510: one review prompt authority. Plain diffs and PRs both ask for
     // the structured review contract; a plain diff renders it locally.
-    let system = SystemPrompt::Text(crate::tools::review::review_system_prompt().to_string());
     let prompts = if let (Some((number, view)), Some(plan)) = (&pr_view, &pr_plan) {
         crate::tools::review_host::pr_prompts(*number, view, plan, &review_context).await?
     } else {
@@ -10442,6 +10441,15 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
     );
     let mut output = String::new();
     let mut review_stop_reason = None;
+    let review_tool_workspace = match &pr_view {
+        Some((_, view)) => crate::tools::review_core::repository_tool_workspace(
+            &review_workspace,
+            Some(view.head_sha.as_str()),
+        ),
+        None => crate::tools::review_core::repository_tool_workspace(&review_workspace, None),
+    };
+    let mut review_anchors = crate::tools::review_core::ReviewAnchorReport::default();
+    let mut review_tools_used: Vec<String> = Vec::new();
     for (index, user_prompt) in prompts.into_iter().enumerate() {
         let reasoning_effort = route.reasoning_effort.and_then(|effort| {
             review_reasoning_effort_value_for_prompt(
@@ -10451,46 +10459,39 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
                 review_reserve_percent,
             )
         });
-        let request = MessageRequest {
-            model: model.clone(),
-            messages: vec![Message {
-                role: Role::User,
-                content: vec![ContentBlock::Text {
-                    text: user_prompt,
-                    cache_control: None,
-                }],
-            }],
-            max_tokens: client.effective_max_output_tokens(&request_route.model),
-            system: Some(system.clone()),
-            tools: None,
-            tool_choice: None,
-            metadata: None,
-            thinking: None,
-            reasoning_effort,
-            stream: Some(false),
-            temperature: None,
-            top_p: None,
-        };
-        let response = match client.create_message(request).await {
-            Ok(response) => response,
-            Err(error) => {
-                return report_failure(
-                    &usage,
-                    index,
-                    publication,
-                    format!(
-                        "{}; no partial review was accepted or posted",
-                        crate::tools::review::request_failure_message(
-                            index + 1,
-                            planned_passes,
-                            &error
-                        )
-                    ),
-                );
+        let mut request = crate::tools::review_core::ReviewCoreRequest::new(&diff, user_prompt);
+        request.workspace = review_tool_workspace.clone();
+        request.max_output_tokens = Some(client.effective_max_output_tokens(&request_route.model));
+        request.reasoning_effort = reasoning_effort;
+        let result =
+            match crate::tools::review_core::run_review_core(&client, &model, request).await {
+                Ok(result) => result,
+                Err(error) => {
+                    return report_failure(
+                        &usage,
+                        index,
+                        publication,
+                        format!(
+                            "{}; no partial review was accepted or posted",
+                            crate::tools::review::request_failure_message(
+                                index + 1,
+                                planned_passes,
+                                &error
+                            )
+                        ),
+                    );
+                }
+            };
+        crate::tools::review::add_review_usage(&mut usage, &result.usage);
+        review_stop_reason = result.stop_reason.clone();
+        for tool in &result.tools_used {
+            if !review_tools_used.iter().any(|seen| seen == tool) {
+                review_tools_used.push(tool.clone());
             }
-        };
-        crate::tools::review::add_review_usage(&mut usage, &response.usage);
-        review_stop_reason = response.stop_reason.clone();
+        }
+        review_anchors.claims += result.anchors.claims;
+        review_anchors.anchored += result.anchors.anchored;
+        review_anchors.unanchored += result.anchors.unanchored;
         if codewhale_models::is_incomplete_stop_reason(review_stop_reason.as_deref()) {
             // #6285: budget exhaustion is an infrastructure outcome, not a
             // review verdict. The PR was never judged, so the message must not
@@ -10521,12 +10522,7 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
                 ),
             );
         }
-        let mut pass_output = String::new();
-        for block in response.content {
-            if let ContentBlock::Text { text, .. } = block {
-                pass_output.push_str(&text);
-            }
-        }
+        let pass_output = result.raw;
         if let (Some(plan), Some(accumulator)) = (&pr_plan, accumulator.as_mut()) {
             if let Err(error) = accumulator.accept(&plan.passes[index], pass_output) {
                 return report_failure(&usage, index, publication, error.to_string());
@@ -10649,6 +10645,9 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
                 "head_sha": view.head_sha,
             })),
             "review": structured,
+            "review_anchors": review_anchors,
+            "review_tools_used": review_tools_used,
+            "review_repository_reads": review_tool_workspace.is_some(),
             "stop_reason": review_stop_reason,
             "usage": usage,
             "review_passes": pr_plan.as_ref().map(|plan| plan.passes.len()),
