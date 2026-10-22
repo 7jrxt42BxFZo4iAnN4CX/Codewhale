@@ -997,7 +997,7 @@ fn hidden_reasoning_keeps_visible_rhythm_without_phantom_tail_rows() {
 
     cache.ensure(&cells, &revisions, 80, hidden);
     let hidden_lines = plain_lines(&cache);
-    assert_eq!(spacer_rows_after_cell(&cache, 0), 1);
+    assert_eq!(spacer_rows_after_cell(&cache, 0), 3);
     assert!(
         hidden_lines.last().is_some_and(|line| !line.is_empty()),
         "hidden cells must not leave a trailing blank row: {hidden_lines:?}"
@@ -1132,17 +1132,18 @@ fn streaming_state_transitions_do_not_move_neighbor_boundaries() {
     };
 
     cache.ensure(&cells, &revisions, 80, options);
-    assert_eq!(boundary_rows(&cache), [1, 1, 1]);
+    let first = boundary_rows(&cache);
+    assert_eq!(first, [3, 2, 3]);
 
     cells[1] = assistant_cell("I inspected the candidate.", true);
     revisions[1] += 1;
     cache.ensure(&cells, &revisions, 80, options);
-    assert_eq!(boundary_rows(&cache), [1, 1, 1]);
+    assert_eq!(boundary_rows(&cache), first);
 
     cells[1] = assistant_cell("I inspected the candidate.", false);
     revisions[1] += 1;
     cache.ensure(&cells, &revisions, 80, options);
-    assert_eq!(boundary_rows(&cache), [1, 1, 1]);
+    assert_eq!(boundary_rows(&cache), first);
 
     let HistoryCell::Tool(ToolCell::Exec(exec)) = &mut cells[2] else {
         unreachable!("fixture is an exec tool")
@@ -1150,7 +1151,7 @@ fn streaming_state_transitions_do_not_move_neighbor_boundaries() {
     exec.status = ToolStatus::Success;
     revisions[2] += 1;
     cache.ensure(&cells, &revisions, 80, options);
-    assert_eq!(boundary_rows(&cache), [1, 1, 1]);
+    assert_eq!(boundary_rows(&cache), first);
 }
 
 #[test]

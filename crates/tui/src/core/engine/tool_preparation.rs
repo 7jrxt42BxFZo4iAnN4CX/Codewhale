@@ -665,8 +665,9 @@ mod tests {
             context.auto_approve = context_auto;
             context.approval_mode = mode;
             let registry = ToolRegistry::new(context);
-            let prepared = prepare_tool_call(consent, allow_safari.clone(), Some(&registry), session_auto)
-                .expect("Full Access reaches the consent card");
+            let prepared =
+                prepare_tool_call(consent, allow_safari.clone(), Some(&registry), session_auto)
+                    .expect("Full Access reaches the consent card");
             assert_eq!(prepared.call.approval, ApprovalRequirement::Required);
             assert!(!prepared.auto_approve, "{mode:?}");
             assert!(super::super::turn_loop::registered_tool_approval_required(
