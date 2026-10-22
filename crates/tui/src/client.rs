@@ -903,6 +903,30 @@ fn request_query_secret_values(url: &reqwest::Url) -> Vec<String> {
     values
 }
 
+/// Redirects are followed only within one host, over the same or a stronger
+/// scheme.
+///
+/// Provider keys ride in headers this stack may send under names reqwest does
+/// not strip on a cross-host hop (`x-api-key`, operator `http_headers`), so a
+/// compromised or open-redirecting endpoint could otherwise collect a key by
+/// answering `302`. A same-host hop to plaintext would expose the same key to
+/// anything on the path, so a downgrade stops too. Upgrades and same-scheme
+/// hops still work for the endpoints that use them.
+fn same_host_redirects() -> reqwest::redirect::Policy {
+    reqwest::redirect::Policy::custom(|attempt| {
+        let from = attempt.previous().last();
+        let next = attempt.url();
+        let same_host = from.is_some_and(|previous| previous.host_str() == next.host_str());
+        let downgrade =
+            from.is_some_and(|previous| previous.scheme() == "https" && next.scheme() == "http");
+        if same_host && !downgrade && attempt.previous().len() < 10 {
+            attempt.follow()
+        } else {
+            attempt.stop()
+        }
+    })
+}
+
 pub(crate) fn redact_model_bound_text(text: &str, exact_secret_values: &[String]) -> String {
     let mut redacted = text.to_string();
     for secret in exact_secret_values {
@@ -1872,7 +1896,7 @@ impl CodewhaleClient {
         let http_client = if plugin_provider.is_some() || api_key_source == "Claude sign-in" {
             http_client.redirect(reqwest::redirect::Policy::none())
         } else {
-            http_client
+            http_client.redirect(same_host_redirects())
         }
         .build()?;
         let models_http_client = Self::http_client_builder_with_auth_mode(
@@ -2179,16 +2203,12 @@ impl CodewhaleClient {
         redact_model_bound_text(text, &self.model_bound_secret_values)
     }
 
-    /// Redact tool output as it enters the transcript. Same masking as the
-    /// request boundary, including the confirmed `[redaction] model_bound`
-    /// opt-out: a user who chose to let the model see file bytes verbatim
-    /// keeps that, and everyone else never stores a live credential.
+    /// Redact tool output as it enters the transcript. Unlike the request
+    /// boundary, this path always redacts: the `[redaction] model_bound`
+    /// opt-out exists so the model can quote file bytes back for exact edits,
+    /// never to write a live credential to disk.
     pub(crate) fn redact_tool_output_for_transcript(&self, text: &str) -> String {
-        if self.model_bound_masking {
-            redact_model_bound_text(text, &self.model_bound_secret_values)
-        } else {
-            text.to_string()
-        }
+        redact_model_bound_text(text, &self.model_bound_secret_values)
     }
 
     /// Alternate models share this client's frozen endpoint and declarations.
