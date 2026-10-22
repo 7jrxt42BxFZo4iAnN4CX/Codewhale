@@ -744,9 +744,12 @@ pub(super) fn extract_compaction_summary_prompt(
 ///
 /// The reserved-output term is the route-effective request cap: exactly what
 /// the API can receive after explicit overrides, compatibility/route ceilings,
-/// and the route window are intersected. A second hidden reasoning reserve
-/// would make preflight disagree with the wire request and can cause premature
-/// compaction on otherwise valid large-window inputs.
+/// and the route window are intersected. On a route that shares one window
+/// between input and output it is a quarter of the window instead (at most
+/// 64K, never more than the request cap), and each request's wire cap is sized
+/// from what its input leaves. A second hidden
+/// reasoning reserve would make preflight disagree with the wire request and
+/// can cause premature compaction on otherwise valid large-window inputs.
 #[cfg(test)]
 pub(super) fn context_input_budget_for_provider(
     provider: ProviderKind,

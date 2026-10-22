@@ -106,6 +106,23 @@ guidance.
   counted, instead of rewriting the file and then reporting that nothing
   changed. Refs #6955. Thanks @7jrxt42BxFZo4iAnN4CX.
 
+- When a route states an output limit larger than half its context window,
+  as a server that shares one window between input and output does,
+  Codewhale compacts the conversation to keep a quarter of the window (at
+  most 64K tokens, and never more than the route's request cap) free for the
+  reply, instead of reserving the whole request cap, which on a small window
+  left about a thousand tokens for the conversation. A request is still
+  admitted while at least 128 tokens of output fit, so Codewhale's own
+  instructions and tools can fill more of a small window when there is
+  nothing to compact. Every request on such a route asks for no more output
+  than the window has left after its input, up to the route's usual request
+  cap, so a long prompt gets a shorter reply allowance instead of
+  overflowing the window. When too little is left, nothing is sent: a turn
+  compacts or stops with the usual context message, a compaction summary
+  leaves out its oldest history until at least half the reserved allowance
+  fits, and any other request fails with a context-length error. Other
+  routes are unchanged.
+
 - A window that cannot save its queued messages because it holds no queue
   lease for the current session now logs both session ids, and failed
   session, checkpoint and queue writes log the raw OS error code. Refs

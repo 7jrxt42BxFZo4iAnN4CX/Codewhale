@@ -486,13 +486,74 @@ pub(crate) fn route_output_reservation(
     model: &str,
     route_limits: Option<RouteLimits>,
 ) -> u32 {
-    // Use exactly the value that can reach the wire on every window size.
-    // The previous split reserved 65K for a possible 325K wire request below
-    // 500K, then jumped to an unrequested 262K reservation at 500K. Both
-    // directions made preflight disagree with the actual request. Reasoning
-    // effort is a request control, not separately metered non-wire output, so
-    // it does not justify a second hidden context reservation.
-    effective_max_output_tokens_for_route(provider, model, route_limits)
+    // Use exactly the value that can reach the wire on every window size,
+    // except on a route whose published output limit is more than half its
+    // window: there the limit is the shared window itself, so a quarter of the
+    // window (at most 64K) is reserved and each request's wire cap is sized
+    // from what its input leaves (`request_output_cap_for_input`). The previous split
+    // reserved 65K for a possible 325K wire request below 500K, then jumped to
+    // an unrequested 262K reservation at 500K. Both directions made preflight
+    // disagree with the actual request. Reasoning effort is a request control,
+    // not separately metered non-wire output, so it does not justify a second
+    // hidden context reservation.
+    let ceiling = effective_max_output_tokens_for_route(provider, model, route_limits);
+    if shares_context_window(provider, model, route_limits) {
+        ceiling.min(
+            (route_context_window_tokens(provider, model, route_limits) / 4)
+                .clamp(1, UNCATALOGUED_COMPAT_MAX_OUTPUT_TOKENS),
+        )
+    } else {
+        ceiling
+    }
+}
+
+fn shares_context_window(
+    provider: ProviderKind,
+    model: &str,
+    route_limits: Option<RouteLimits>,
+) -> bool {
+    route_limits
+        .and_then(|limits| limits.context_tokens)
+        .is_some_and(|tokens| (1..=u64::from(u32::MAX)).contains(&tokens))
+        && explicit_max_output_tokens_override().is_none()
+        && route_output_limit_tokens(route_limits)
+            .is_some_and(|cap| cap > route_context_window_tokens(provider, model, route_limits) / 2)
+}
+
+#[must_use]
+pub(crate) fn route_admission_input_ceiling(
+    provider: ProviderKind,
+    model: &str,
+    route_limits: Option<RouteLimits>,
+) -> Option<u64> {
+    shares_context_window(provider, model, route_limits).then(|| {
+        ContextBudget::new_with_input_limit(
+            u64::from(route_context_window_tokens(provider, model, route_limits)),
+            0,
+            crate::tools::subagent::budget_handback::MIN_HAND_BACK_OUTPUT,
+            route_input_limit_tokens(route_limits).map(u64::from),
+        )
+        .input_budget_ceiling
+    })
+}
+
+#[must_use]
+pub(crate) fn request_output_cap_for_input(
+    provider: ProviderKind,
+    model: &str,
+    route_limits: Option<RouteLimits>,
+    ceiling: u32,
+    estimated_input_tokens: u64,
+) -> Option<u32> {
+    if !shares_context_window(provider, model, route_limits) {
+        return Some(ceiling);
+    }
+    let remaining = u64::from(route_context_window_tokens(provider, model, route_limits))
+        .saturating_sub(estimated_input_tokens)
+        .saturating_sub(crate::context_budget::CONTEXT_HEADROOM_TOKENS);
+    u32::try_from(remaining.min(u64::from(ceiling)))
+        .ok()
+        .filter(|cap| *cap > 0)
 }
 
 #[must_use]

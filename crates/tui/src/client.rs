@@ -2977,6 +2977,16 @@ impl CodewhaleClient {
         let (request, request_route_limits) =
             self.bind_request_to_protocol(self.prepare_model_bound_request(request))?;
         let mut request = clamp_output_cap(request, request_route_limits);
+        request.max_tokens = self.bounded_output_tokens(
+            &self.wire_model_for_route(&request.model),
+            request_route_limits,
+            request.max_tokens,
+            crate::compaction::estimate_request_input_tokens(
+                &request.messages,
+                request.system.as_ref(),
+                request.tools.as_deref(),
+            ),
+        )?;
         let facts = if request.model == self.default_model {
             self.route_facts.clone()
         } else {
@@ -3268,14 +3278,43 @@ impl CodewhaleClient {
     /// Output cap for a request dispatched by this exact client route.
     #[must_use]
     pub fn effective_max_output_tokens(&self, requested_model: &str) -> u32 {
-        let route_limits = if requested_model.trim() == self.default_model {
+        self.effective_max_output_tokens_with_limits(
+            requested_model,
+            self.route_limits_for_model(requested_model),
+            None,
+        )
+    }
+
+    fn route_limits_for_model(&self, requested_model: &str) -> Option<RouteLimits> {
+        if requested_model.trim() == self.default_model {
             self.route_limits
         } else {
             self.resolve_model_route(requested_model)
                 .ok()
                 .and_then(|candidate| crate::route_budget::known_route_limits(candidate.limits()))
-        };
-        self.effective_max_output_tokens_with_limits(requested_model, route_limits, None)
+        }
+    }
+
+    fn bounded_output_tokens(
+        &self,
+        model: &str,
+        route_limits: Option<RouteLimits>,
+        max_tokens: u32,
+        input_tokens: usize,
+    ) -> Result<u32> {
+        crate::route_budget::request_output_cap_for_input(
+            self.api_provider,
+            model,
+            route_limits,
+            max_tokens,
+            u64::try_from(input_tokens).unwrap_or(u64::MAX),
+        )
+        .ok_or_else(|| {
+            crate::llm_client::LlmError::ContextLengthError(format!(
+                "about {input_tokens} input tokens leave no output room in this route's context window"
+            ))
+            .into()
+        })
     }
 
     #[must_use]
@@ -3489,6 +3528,17 @@ impl CodewhaleClient {
         let _permit = self.acquire_provider_request_permit().await;
         let model = self.wire_model_for_route(model);
         let max_tokens = self.effective_max_output_tokens(&model);
+        let probe = translation_message_request(text, model.clone(), target_language, max_tokens);
+        let max_tokens = self.bounded_output_tokens(
+            &model,
+            self.route_limits_for_model(&model),
+            max_tokens,
+            crate::compaction::estimate_request_input_tokens(
+                &probe.messages,
+                probe.system.as_ref(),
+                None,
+            ),
+        )?;
         if self.wire_format != WireFormat::ChatCompletions {
             // Non-Chat dialects reuse the prepared-request seam so translation
             // cannot drift from production shaping. Translation is still an
@@ -6350,7 +6400,13 @@ impl CodewhaleClient {
         }
         let url = api_url_with_suffix(&self.base_url, "beta/completions", None);
         let model = self.wire_model_for_route(model);
-        let max_tokens = max_tokens.min(self.effective_max_output_tokens(&model));
+        let max_tokens = self.bounded_output_tokens(
+            &model,
+            self.route_limits_for_model(&model),
+            max_tokens.min(self.effective_max_output_tokens(&model)),
+            crate::compaction::estimate_text_tokens_conservative(prompt)
+                .saturating_add(crate::compaction::estimate_text_tokens_conservative(suffix)),
+        )?;
         let body = json!({
             "model": model,
             "prompt": prompt,
