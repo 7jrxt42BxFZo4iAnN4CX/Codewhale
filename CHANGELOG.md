@@ -27,6 +27,9 @@ guidance.
 
 ### Latest fixes
 
+- The community website uses Next.js 16.4.1, which includes the upstream
+  security fixes for cache deserialization, image optimization and Server Actions.
+
 - Haiku 4.5 metadata preserves its image input and extended-thinking support,
   keeping review output reserves consistent with its provider capabilities.
 
