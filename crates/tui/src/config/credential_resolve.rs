@@ -10,29 +10,34 @@
 //!
 //! # Precedence rule
 //!
-//! **A stored credential owns the provider: ambient/env is consulted only when
-//! nothing is stored. No silent env fallback after a failed refresh.**
+//! **An endpoint-bound exact session key on an authenticated eligible route
+//! outranks durable and ambient sources. Required account ownership forbids
+//! every fallback.**
 //!
 //! CodeWhale's order below is that rule instantiated over the stores it
 //! actually has. Reading top to bottom:
 //!
-//! 1. `auth_mode = "none"` — the route sends no credential at all.
-//! 2. An explicit `--api-key` on the active, non-OAuth provider.
-//! 3. `[providers.<name>] api_key_env` — a credential the route *names*.
-//! 4. An ambient provider environment variable (official endpoints only).
-//! 5. Provider-owned login state: an explicitly consented supported external
+//! 1. Required Codewhale account model ownership, with no fallback.
+//! 2. A process-only session key for the exact provider identity and endpoint,
+//!    subject to the durable secret store's route eligibility rules.
+//! 3. `auth_mode = "none"` — the route sends no credential at all.
+//! 4. An explicit `--api-key` on the active, non-OAuth provider.
+//! 5. `[providers.<name>] api_key_env` — a credential the route *names*.
+//! 6. An ambient provider environment variable (official endpoints only).
+//! 7. Provider-owned login state: an explicitly consented supported external
 //!    CLI credential file (Codex or DeepSeek Harness) or CodeWhale's own xAI
 //!    OAuth storage.
-//! 6. A keyless self-hosted / loopback route.
-//! 7. `[providers.<name>] api_key` in the config file.
-//! 8. CodeWhale's durable secret store.
-//! 9. The root `api_key` compatibility slot.
-//! 10. The user-global `~/.codewhale/config.toml`.
+//! 8. A keyless self-hosted / loopback route.
+//! 9. `[providers.<name>] api_key` in the config file.
+//! 10. CodeWhale's durable secret store.
+//! 11. The root `api_key` compatibility slot.
+//! 12. The user-global `~/.codewhale/config.toml`.
+//! 13. Codewhale account model access when no owner is required.
 //!
 //! Two departures from pi are deliberate and load-bearing here:
 //!
-//! * Ambient env outranks the secret store for a *named* binding (step 3) and
-//!   for official-endpoint provider variables (step 4). That is CodeWhale's
+//! * Ambient env outranks the secret store for a *named* binding (step 5) and
+//!   for official-endpoint provider variables (step 6). That is CodeWhale's
 //!   existing, documented behavior and users depend on it; changing it is not
 //!   in this lane's scope. It is stated here so it is at least *visible*.
 //! * External CLI credential files are only ever consulted through
@@ -90,6 +95,22 @@ pub(crate) fn resolve_credential_source_with(
             error,
             "repair the exact provider kind/id pair",
         )]);
+    }
+    if config.required_account_model_owner.is_some() {
+        return if config.account_model_api_key(identity).is_some() {
+            CredentialResolution::found(CredentialSource::AccountSession)
+        } else {
+            CredentialResolution::missing(vec![CredentialProbe::with_fix(
+                "required Codewhale account model access",
+                "reconnect model access for the signed-in Codewhale account",
+            )])
+        };
+    }
+    if config.session_provider_api_key(identity).is_some() {
+        return CredentialResolution::found(CredentialSource::SessionKey);
+    }
+    if let Some(source) = config.session_policy_without_key(identity) {
+        return CredentialResolution::found(source);
     }
     let provider = identity.provider;
     let mut probed: Vec<CredentialProbe> = Vec::new();

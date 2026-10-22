@@ -2051,6 +2051,7 @@ pub fn run_cli() -> std::process::ExitCode {
     install_rustls_crypto_provider();
 
     let outcome = run();
+    codewhale_tui::discard_runtime_listener_handoff();
     // A config write may have moved legacy top-level `base_url` / `api_key`
     // into their provider tables (#6394); say so once, off stdout.
     for notice in codewhale_config::legacy_root::take_notices() {
@@ -2266,10 +2267,17 @@ fn argv_secret_warning(cli: &Cli, command: Option<&Commands>) -> Option<&'static
 }
 
 fn run() -> Result<()> {
+    let inherited_listener = codewhale_tui::prepare_runtime_listener_handoff()?;
     let argv: Vec<_> = std::env::args_os().collect();
     let matches = Cli::command().get_matches_from(&argv);
     let project_bundle_scope = config_command_targets_project(&matches);
     let mut cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
+    anyhow::ensure!(
+        !inherited_listener
+            || matches!(cli.command.as_ref(), Some(Commands::Serve(_)))
+            || matches!(cli.command.as_ref(), Some(Commands::AppServer(args)) if args.http),
+        "An inherited Runtime listener requires serve --http or app-server --http"
+    );
     preserve_exec_separator(&mut cli, &argv);
     capture_exec_startup_options(&mut cli)?;
 

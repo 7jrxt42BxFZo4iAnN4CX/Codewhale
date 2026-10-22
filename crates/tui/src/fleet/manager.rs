@@ -535,6 +535,17 @@ impl FleetManager {
         })
     }
 
+    pub(crate) fn ensure_external_worker_credentials(&self) -> Result<()> {
+        anyhow::ensure!(
+            !self
+                .route_config
+                .as_ref()
+                .is_some_and(|config| config.session_provider_keys_only),
+            "External Fleet workers are unavailable under session-only provider key policy; use in-process subagents"
+        );
+        Ok(())
+    }
+
     /// Activate one durable queued run without leasing work.
     ///
     /// Managed clients use this transition before spawning the executor
@@ -542,6 +553,7 @@ impl FleetManager {
     /// Terminal runs are never reactivated through this method; the existing
     /// explicit worker restart control remains separate.
     pub fn activate_run(&self, run_id: &FleetRunId) -> Result<FleetRunReport> {
+        self.ensure_external_worker_credentials()?;
         let state = self.ledger.rebuild_state()?;
         let run =
             state
@@ -1192,6 +1204,7 @@ impl FleetManager {
     }
 
     pub fn restart_worker(&self, worker_id: &str) -> Result<FleetRestartReport> {
+        self.ensure_external_worker_credentials()?;
         let state = self.ledger.rebuild_state()?;
         let Some(task) = active_task_for_worker(&state, worker_id)
             .or_else(|| latest_task_for_worker(&state, worker_id))
@@ -1586,6 +1599,7 @@ impl FleetManager {
         codewhale_binary: &str,
         model: Option<&str>,
     ) -> Result<usize> {
+        self.ensure_external_worker_credentials()?;
         let state = self.ledger.rebuild_state()?;
         let run = state
             .runs

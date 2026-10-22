@@ -484,6 +484,16 @@ docs = "docs/RUNTIME_API.md"
 owner = "crates/tui/src/runtime_api.rs"
 
 [[feature]]
+id = "runtime-provider-keys"
+name = "Runtime provider keys"
+summary = "Runtime API provider keys support durable storage or process-only memory, with a session-only policy that disables stored credential fallback."
+status = "stable"
+surfaces = { api = "stable" }
+since = "0.10.2"
+docs = "docs/RUNTIME_API.md#put-v1providersidkey--write-only-credential"
+owner = "crates/tui/src/runtime_api/secrets.rs"
+
+[[feature]]
 id = "headless-exec"
 name = "Headless exec"
 summary = "codewhale exec runs one headless turn from a script and streams JSON."

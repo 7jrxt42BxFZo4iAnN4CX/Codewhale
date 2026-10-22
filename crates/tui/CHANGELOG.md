@@ -27,6 +27,20 @@ guidance.
 
 ### Latest fixes
 
+- Clearing or replacing an OrcaRouter key cancels pending browser sign-in,
+  including a code exchange already underway. A late callback can no longer
+  restore the cleared key, and disconnecting the client does not interrupt
+  credential cleanup.
+
+- Cloud Runtime provider keys can stay in process memory. Session-only mode
+  disables saved-key, environment and OAuth fallback, keeps keys bound to their
+  exact endpoint, and advertises support for memory-only set and clear.
+  Clearing affects subsequent turns; already running turns retain their key.
+  In-process subagents remain available; external Fleet execution is refused
+  in this mode because its processes do not share the session-key overlay.
+  Supervised HTTP servers can adopt a validated inherited loopback listener,
+  preserving supervisor ownership across Engine restarts.
+
 - Opening a folder in the desktop Runtime no longer fails because a terminal
   session is already using it, including when attaching a second folder.
   Delegated workers still respect the folder's writer lock, including after

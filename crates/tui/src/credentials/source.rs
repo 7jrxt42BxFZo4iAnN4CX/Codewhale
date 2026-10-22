@@ -44,20 +44,33 @@ pub(crate) enum CredentialSource {
     /// `auth_mode = "none"`: the route intentionally sends no credential.
     AuthModeNone,
     /// A keyless self-hosted or loopback route.
-    KeylessRoute { base_url: String },
+    KeylessRoute {
+        base_url: String,
+    },
     /// `--api-key` on the command line (or the dispatcher's source-marked
     /// forward of it).
     CliOverride,
     /// `[providers.<table>] api_key`.
-    ProviderConfigApiKey { table: String },
+    ProviderConfigApiKey {
+        table: String,
+    },
     /// `[providers.<table>] api_key_env = "<var>"`, resolved from `<var>`.
-    ProviderConfigEnv { var: String },
+    ProviderConfigEnv {
+        var: String,
+    },
     /// An ambient provider environment variable.
-    AmbientEnv { var: String },
+    AmbientEnv {
+        var: String,
+    },
     /// CodeWhale's own durable secret store.
-    SecretStore { slot: String },
+    SecretStore {
+        slot: String,
+    },
     /// A read-only, explicitly consented credential file owned by another CLI.
-    ExternalGrant { cli: String, path: String },
+    ExternalGrant {
+        cli: String,
+        path: String,
+    },
     /// A subscription OAuth sign-in: Codewhale-owned storage, or (xAI) a
     /// consented Grok CLI import. `account` is the display label (email,
     /// plan) of the account it signs in as, taken from the same read that
@@ -71,8 +84,11 @@ pub(crate) enum CredentialSource {
     UserGlobalConfig,
     /// An expiring, process-only Codewhale account auth transform.
     AccountSession,
+    SessionKey,
     /// Nothing had a credential. `probed` is in precedence order.
-    Missing { probed: Vec<CredentialProbe> },
+    Missing {
+        probed: Vec<CredentialProbe>,
+    },
 }
 
 impl CredentialSource {
@@ -99,6 +115,7 @@ impl CredentialSource {
             }
             Self::OAuth { flow, .. } => Cow::Owned(format!("{flow} OAuth")),
             Self::AccountSession => Cow::Borrowed("Codewhale account"),
+            Self::SessionKey => Cow::Borrowed("session key"),
             Self::UserGlobalConfig => Cow::Borrowed("~/.codewhale/config.toml api_key"),
             Self::Missing { .. } => Cow::Borrowed("not found"),
         }

@@ -2,7 +2,7 @@
   "format": "codewhale.features.v1",
   "source": {
     "path": "docs/features.toml",
-    "sha256": "fc3dbf4a8e94c12617f737fcdcaf4a2dfd336458b4aa067d8a4cce6d589d71d3"
+    "sha256": "273ccfcc510ba13b039186cd4092a6f893be0632f4010eeb3a40397a6c8e19ea"
   },
   "features": [
     {
@@ -619,6 +619,19 @@
       "registryLine": 478
     },
     {
+      "id": "runtime-provider-keys",
+      "name": "Runtime provider keys",
+      "summary": "Runtime API provider keys support durable storage or process-only memory, with a session-only policy that disables stored credential fallback.",
+      "status": "stable",
+      "surfaces": {
+        "api": "stable"
+      },
+      "since": "0.10.2",
+      "flag": null,
+      "docs": "docs/RUNTIME_API.md#put-v1providersidkey--write-only-credential",
+      "registryLine": 487
+    },
+    {
       "id": "headless-exec",
       "name": "Headless exec",
       "summary": "codewhale exec runs one headless turn from a script and streams JSON.",
@@ -629,7 +642,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/RUNTIME_API.md",
-      "registryLine": 487
+      "registryLine": 497
     },
     {
       "id": "github-review",
@@ -642,7 +655,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/GITHUB_APP.md",
-      "registryLine": 496
+      "registryLine": 506
     },
     {
       "id": "web-client",
@@ -655,7 +668,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/WEB.md",
-      "registryLine": 507
+      "registryLine": 517
     },
     {
       "id": "keybindings",
@@ -668,7 +681,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/KEYBINDINGS.md",
-      "registryLine": 516
+      "registryLine": 526
     },
     {
       "id": "settings",
@@ -682,7 +695,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/CONFIGURATION.md",
-      "registryLine": 525
+      "registryLine": 535
     },
     {
       "id": "whats-new-notice",
@@ -695,7 +708,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": "docs/CONFIGURATION.md#whats-new-after-an-update",
-      "registryLine": 534
+      "registryLine": 544
     },
     {
       "id": "themes",
@@ -708,7 +721,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/schemas/user-theme.schema.json",
-      "registryLine": 544
+      "registryLine": 554
     },
     {
       "id": "chat-color",
@@ -721,7 +734,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": "docs/GUIDE.md",
-      "registryLine": 553
+      "registryLine": 563
     },
     {
       "id": "localization",
@@ -734,7 +747,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/LOCALIZATION.md",
-      "registryLine": 563
+      "registryLine": 573
     },
     {
       "id": "voice",
@@ -748,7 +761,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 572
+      "registryLine": 582
     },
     {
       "id": "pet",
@@ -762,7 +775,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/PET_MODE.md",
-      "registryLine": 580
+      "registryLine": 590
     },
     {
       "id": "overview",
@@ -775,7 +788,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/PROVIDERS.md",
-      "registryLine": 589
+      "registryLine": 599
     },
     {
       "id": "account-login",
@@ -788,7 +801,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 598
+      "registryLine": 608
     },
     {
       "id": "account-computer-files",
@@ -801,7 +814,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": null,
-      "registryLine": 606
+      "registryLine": 616
     },
     {
       "id": "context-anchors",
@@ -814,7 +827,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 615
+      "registryLine": 625
     },
     {
       "id": "window-pin",
@@ -827,7 +840,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 623
+      "registryLine": 633
     },
     {
       "id": "structured-copy",
@@ -840,7 +853,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 631
+      "registryLine": 641
     },
     {
       "id": "live-thinking",
@@ -853,7 +866,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 639
+      "registryLine": 649
     },
     {
       "id": "workbar",
@@ -866,7 +879,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 647
+      "registryLine": 657
     },
     {
       "id": "terminal-dock",
@@ -879,7 +892,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": null,
-      "registryLine": 655
+      "registryLine": 665
     },
     {
       "id": "telemetry",
@@ -892,7 +905,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/TELEMETRY.md",
-      "registryLine": 666
+      "registryLine": 676
     },
     {
       "id": "docker",
@@ -905,7 +918,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/DOCKER.md",
-      "registryLine": 675
+      "registryLine": 685
     },
     {
       "id": "termux",
@@ -918,7 +931,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/TERMUX.md",
-      "registryLine": 684
+      "registryLine": 694
     },
     {
       "id": "chatgpt-plan-sign-in",
@@ -933,7 +946,7 @@
       "since": "0.10.1",
       "flag": null,
       "docs": "docs/PROVIDERS.md#sign-in-with-chatgpt",
-      "registryLine": 693
+      "registryLine": 703
     },
     {
       "id": "claude-plan-sign-in",
@@ -948,7 +961,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": "docs/PROVIDERS.md#sign-in-with-claude",
-      "registryLine": 703
+      "registryLine": 713
     },
     {
       "id": "plugin-oauth-providers",
@@ -963,7 +976,7 @@
       "since": "0.10.1",
       "flag": null,
       "docs": "docs/PLUGIN_PROVIDERS.md",
-      "registryLine": 713
+      "registryLine": 723
     },
     {
       "id": "orcarouter-sign-in",
@@ -978,7 +991,7 @@
       "since": "0.10.1",
       "flag": null,
       "docs": "docs/PROVIDERS.md",
-      "registryLine": 723
+      "registryLine": 733
     },
     {
       "id": "merch-interest",
@@ -993,7 +1006,7 @@
       "since": "unreleased",
       "flag": null,
       "docs": "web/lib/merch/README.md",
-      "registryLine": 734
+      "registryLine": 744
     },
     {
       "id": "profile-constitution",
@@ -1007,7 +1020,7 @@
       "since": "0.10.1",
       "flag": null,
       "docs": "docs/RUNTIME_API.md#profile-constitution",
-      "registryLine": 744
+      "registryLine": 754
     },
     {
       "id": "plugin-shell-install",
@@ -1020,7 +1033,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": "docs/PLUGINS.md",
-      "registryLine": 754
+      "registryLine": 764
     }
   ]
 }

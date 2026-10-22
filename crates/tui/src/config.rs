@@ -95,6 +95,12 @@ pub struct ProviderIdentity {
     pub(crate) legacy_root_custom_generation: Option<crate::route_receipt::CredentialGeneration>,
 }
 
+impl std::hash::Hash for ProviderIdentity {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.key, state);
+    }
+}
+
 pub(crate) fn is_legacy_antigravity_identity(value: &str) -> bool {
     codewhale_config::ProviderKind::parse_config_identity(value)
         == Some(codewhale_config::ProviderKind::Antigravity)
@@ -2214,6 +2220,12 @@ pub struct Config {
     #[serde(skip)]
     pub(crate) account_model_access:
         std::sync::Arc<parking_lot::RwLock<Option<AccountModelAccess>>>,
+    #[serde(skip)]
+    pub(crate) session_provider_keys_only: bool,
+    #[serde(skip)]
+    pub(crate) session_provider_keys: std::sync::Arc<
+        parking_lot::RwLock<HashMap<ProviderIdentity, (String, crate::credentials::Credential)>>,
+    >,
     #[serde(skip)]
     pub(crate) required_account_model_owner: Option<String>,
     /// Persisted exact-route declarations, separate from provider credentials.
@@ -6389,6 +6401,67 @@ impl Config {
         Ok(())
     }
 
+    pub(crate) fn session_provider_api_key(&self, identity: &ProviderIdentity) -> Option<String> {
+        self.verify_provider_identity(identity).ok()?;
+        if self.should_skip_secret_store_for_provider(identity) {
+            return None;
+        }
+        let endpoint = self.base_url_for_route(identity);
+        self.session_provider_keys
+            .read()
+            .get(identity)
+            .filter(|(bound_endpoint, _)| bound_endpoint == &endpoint)
+            .map(|(_, credential)| credential.expose_secret().to_string())
+    }
+
+    pub(crate) fn preserve_runtime_credentials(&mut self, current: &Self) {
+        self.account_model_access = current.account_model_access.clone();
+        self.session_provider_keys = current.session_provider_keys.clone();
+        self.session_provider_keys_only = current.session_provider_keys_only;
+    }
+
+    pub(crate) fn retain_compatible_session_keys(&self) {
+        self.session_provider_keys
+            .write()
+            .retain(|identity, (endpoint, _)| {
+                self.verify_provider_identity(identity).is_ok()
+                    && !self.should_skip_secret_store_for_provider(identity)
+                    && self.base_url_for_route(identity) == *endpoint
+            });
+    }
+
+    pub(crate) fn session_policy_without_key(
+        &self,
+        identity: &ProviderIdentity,
+    ) -> Option<crate::credentials::CredentialSource> {
+        use crate::credentials::{CredentialProbe, CredentialSource};
+        if !self.session_provider_keys_only {
+            return None;
+        }
+        let mode = self.auth_mode_for_provider(identity);
+        if auth_mode_disables_api_key(mode.as_deref()) {
+            return Some(CredentialSource::AuthModeNone);
+        }
+        let endpoint = self.base_url_for_route(identity);
+        if identity.provider != ProviderKind::Codewhale
+            && !auth_mode_requires_api_key(mode.as_deref())
+            && !provider_uses_oauth_credentials(self, identity)
+            && !self
+                .provider_config_for(identity)
+                .is_some_and(|entry| entry.oauth.is_some())
+            && (provider_route_is_keyless_self_hosted(identity.provider, &endpoint)
+                || base_url_uses_local_host(&endpoint))
+        {
+            return Some(CredentialSource::KeylessRoute { base_url: endpoint });
+        }
+        Some(CredentialSource::Missing {
+            probed: vec![CredentialProbe::with_fix(
+                "session-only provider key",
+                "connect a session key to this Engine; stored credentials are disabled",
+            )],
+        })
+    }
+
     pub(crate) fn account_model_api_key(&self, identity: &ProviderIdentity) -> Option<String> {
         let provider = identity.provider;
         // Exact endpoint binding, including path. A custom Codewhale route
@@ -6446,6 +6519,16 @@ impl Config {
                 &codewhale_secrets::normalize_api_key(value),
             )
         };
+        if let Some(key) = scoped.session_provider_api_key(identity) {
+            return Some(generation(&key));
+        }
+        if let Some(source) = scoped.session_policy_without_key(identity) {
+            return match source {
+                crate::credentials::CredentialSource::AuthModeNone
+                | crate::credentials::CredentialSource::KeylessRoute { .. } => Some(generation("")),
+                _ => None,
+            };
+        }
         if auth_mode_disables_api_key(mode.as_deref()) {
             return Some(generation(""));
         }
@@ -6499,7 +6582,7 @@ impl Config {
 
     /// Read the API key.
     ///
-    /// Precedence: **route-specific explicitly consented OAuth token → source-marked explicit CLI key →
+    /// Precedence: **required account owner → session key → route-specific explicitly consented OAuth token → source-marked explicit CLI key →
     /// provider/root config → configured custom-provider environment →
     /// secret store → ambient provider environment**.
     ///
@@ -6545,6 +6628,12 @@ impl Config {
     /// Grok CLI import), holding that sign-in's credentials.
     fn xai_oauth_route_credentials(&self) -> Option<Result<crate::oauth::OwnedOAuthCredentials>> {
         let identity = self.active_provider_identity().ok()?;
+        if self.required_account_model_owner.is_some()
+            || self.session_provider_keys_only
+            || self.session_provider_api_key(&identity).is_some()
+        {
+            return None;
+        }
         let provider = identity.provider;
 
         let selected = provider == ProviderKind::Xai
@@ -6591,6 +6680,12 @@ impl Config {
             .map_err(anyhow::Error::msg)?;
 
         let mut diagnostic = self.clone();
+        if self.session_provider_keys_only
+            || (self.required_account_model_owner.is_none()
+                && self.session_provider_api_key(&identity).is_some())
+        {
+            return Ok(diagnostic);
+        }
         if identity.provider == ProviderKind::Anthropic
             && self.auth_mode_for_provider(&identity).as_deref() == Some("oauth")
         {
@@ -6623,6 +6718,25 @@ impl Config {
             return self.account_model_api_key(&identity)
                 .map(|key| (key, "Codewhale account".to_string()))
                 .context("The selected account model access is unavailable; no credential fallback is allowed");
+        }
+        if let Some(key) = self.session_provider_api_key(&identity) {
+            return Ok((
+                key,
+                crate::credentials::CredentialSource::SessionKey
+                    .label()
+                    .into_owned(),
+            ));
+        }
+        if let Some(source) = self.session_policy_without_key(&identity) {
+            return match &source {
+                crate::credentials::CredentialSource::AuthModeNone
+                | crate::credentials::CredentialSource::KeylessRoute { .. } => {
+                    Ok((String::new(), source.label().into_owned()))
+                }
+                _ => anyhow::bail!(
+                    "This Engine requires a session provider key; stored credentials are disabled"
+                ),
+            };
         }
         let provider = identity.provider;
         let keyless = || (String::new(), "none (keyless route)".to_string());
@@ -10644,6 +10758,8 @@ fn merge_config(base: Config, override_cfg: Config) -> Config {
         legacy_root: base.legacy_root,
         legacy_root_custom_generation: base.legacy_root_custom_generation,
         account_model_access: base.account_model_access,
+        session_provider_keys: base.session_provider_keys,
+        session_provider_keys_only: base.session_provider_keys_only,
         required_account_model_owner: base.required_account_model_owner,
         account_profile: override_cfg.account_profile.or(base.account_profile),
         plugin_oauth_read_only: base.plugin_oauth_read_only || override_cfg.plugin_oauth_read_only,
@@ -11741,12 +11857,18 @@ pub fn active_provider_has_env_api_key(config: &Config) -> bool {
 }
 
 /// Where the active provider's environment key comes from, in the resolver's
-/// env precedence (`credential_resolve` steps 2-4): `--api-key`, the route's
+/// env precedence (`credential_resolve` steps 4-6): `--api-key`, the route's
 /// `api_key_env` variable, or the provider's own ambient variable. Returns the
 /// place's name only; any value read to test presence is dropped here.
 #[must_use]
 pub(crate) fn active_provider_env_api_key_source(config: &Config) -> Option<String> {
     let identity = config.active_provider_identity().ok()?;
+    if config.required_account_model_owner.is_some()
+        || config.session_provider_keys_only
+        || config.session_provider_api_key(&identity).is_some()
+    {
+        return None;
+    }
     let provider = identity.provider;
     if provider == ProviderKind::OpenaiCodex && !config.provider_uses_custom_endpoint(&identity) {
         return None;
@@ -11867,6 +11989,10 @@ impl Config {
     /// Resolve Codewhale's verified ChatGPT grant. Credential refresh remains
     /// serialized by the owned-store lifecycle transaction.
     pub(crate) fn codex_credentials(&self) -> Result<crate::oauth::OwnedOAuthCredentials> {
+        anyhow::ensure!(
+            !self.session_provider_keys_only,
+            "Stored ChatGPT sign-in is unavailable under session-only provider key policy"
+        );
         let identity = self
             .active_provider_identity()
             .map_err(anyhow::Error::msg)?;

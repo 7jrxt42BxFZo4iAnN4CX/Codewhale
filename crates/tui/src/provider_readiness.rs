@@ -73,6 +73,18 @@ pub(crate) fn auth_class_for_provider(
     if config.verify_provider_identity(identity).is_err() {
         return ProviderAuthClass::Legacy;
     }
+    if config.required_account_model_owner.is_some()
+        || config.session_provider_api_key(identity).is_some()
+    {
+        return ProviderAuthClass::ApiKey;
+    }
+    if config.session_provider_keys_only {
+        return match credential_state_for_provider(config, identity) {
+            CredentialState::NoAuth => ProviderAuthClass::NoAuth,
+            CredentialState::Local => ProviderAuthClass::Local,
+            _ => ProviderAuthClass::ApiKey,
+        };
+    }
     let auth_mode = config.auth_mode_for_provider(identity);
     if provider == ProviderKind::Anthropic && auth_mode.as_deref() == Some("oauth") {
         return ProviderAuthClass::OAuth;
@@ -126,6 +138,23 @@ pub(crate) fn credential_state_for_provider(
     }
     if config.verify_provider_identity(identity).is_err() {
         return CredentialState::MissingKey;
+    }
+    if config.required_account_model_owner.is_some() {
+        return if config.account_model_api_key(identity).is_some() {
+            CredentialState::Saved
+        } else {
+            CredentialState::MissingKey
+        };
+    }
+    if config.session_provider_api_key(identity).is_some() {
+        return CredentialState::Saved;
+    }
+    if let Some(source) = config.session_policy_without_key(identity) {
+        return match source {
+            crate::credentials::CredentialSource::AuthModeNone => CredentialState::NoAuth,
+            crate::credentials::CredentialSource::KeylessRoute { .. } => CredentialState::Local,
+            _ => CredentialState::MissingKey,
+        };
     }
     let auth_mode = config.auth_mode_for_provider(identity);
     if provider == ProviderKind::Anthropic && auth_mode.as_deref() == Some("oauth") {

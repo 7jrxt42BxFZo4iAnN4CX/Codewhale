@@ -290,6 +290,7 @@ pub struct CodewhaleClient {
     plugin_provider: Option<Box<crate::config::ProviderConfig>>,
     /// Read-only diagnostic probes must never migrate or refresh the grant.
     plugin_oauth_read_only: bool,
+    session_provider_keys_only: bool,
     claude_oauth_config: Option<Box<Config>>,
     /// Exact configured credential values removed from model-bound tool
     /// results. Structural redaction handles config/JSON assignments, while
@@ -657,6 +658,7 @@ impl Clone for CodewhaleClient {
             subscription_limit_guidance: self.subscription_limit_guidance.clone(),
             plugin_provider: self.plugin_provider.clone(),
             plugin_oauth_read_only: self.plugin_oauth_read_only,
+            session_provider_keys_only: self.session_provider_keys_only,
             claude_oauth_config: self.claude_oauth_config.clone(),
             model_bound_secret_values: Arc::clone(&self.model_bound_secret_values),
             catalog_error_secret_values: Arc::clone(&self.catalog_error_secret_values),
@@ -764,6 +766,9 @@ pub(crate) fn configured_model_bound_secret_values(
 ) -> Vec<String> {
     let mut values = Vec::new();
     push_model_bound_secret(&mut values, Some(active_api_key));
+    for (_, credential) in config.session_provider_keys.read().values() {
+        push_model_bound_secret(&mut values, Some(credential.expose_secret()));
+    }
     push_model_bound_secret(&mut values, config.sandbox_api_key.as_deref());
     push_model_bound_secret(
         &mut values,
@@ -1692,6 +1697,10 @@ impl CodewhaleClient {
             .map(Box::new);
         if let Some(entry) = &plugin_provider {
             anyhow::ensure!(
+                !config.session_provider_keys_only,
+                "Stored plugin authorization is unavailable under session-only provider key policy"
+            );
+            anyhow::ensure!(
                 entry.oauth.is_some()
                     && config.auth_mode_for_provider(&admitted_identity).as_deref()
                         == Some("oauth"),
@@ -1960,6 +1969,7 @@ impl CodewhaleClient {
             subscription_limit_guidance,
             plugin_provider,
             plugin_oauth_read_only: config.plugin_oauth_read_only,
+            session_provider_keys_only: config.session_provider_keys_only,
             model_bound_secret_values,
             catalog_error_secret_values,
             model_bound_masking,
@@ -2001,6 +2011,11 @@ impl CodewhaleClient {
         &self,
         request: reqwest::RequestBuilder,
     ) -> Result<reqwest::RequestBuilder> {
+        anyhow::ensure!(
+            !self.session_provider_keys_only
+                || (self.claude_oauth_config.is_none() && self.plugin_provider.is_none()),
+            "Stored OAuth authorization is unavailable under session-only provider key policy"
+        );
         if let Some(config) = self.claude_oauth_config.clone() {
             let destination = request
                 .try_clone()
@@ -2416,6 +2431,17 @@ impl CodewhaleClient {
         config: &Config,
         surface: AuthHeaderSurface,
     ) -> Result<reqwest::ClientBuilder> {
+        let filtered_headers;
+        let extra_headers = if config.session_provider_keys_only {
+            filtered_headers = extra_headers
+                .iter()
+                .filter(|(name, _)| !is_upstream_auth_header(name))
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect();
+            &filtered_headers
+        } else {
+            extra_headers
+        };
         let headers = build_default_headers(
             api_key,
             extra_headers,

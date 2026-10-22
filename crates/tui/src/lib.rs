@@ -1898,10 +1898,20 @@ fn resolve_startup_sandbox_mode_for_hardening() -> Option<String> {
         .map(str::to_string)
 }
 
+pub fn prepare_runtime_listener_handoff() -> Result<bool> {
+    runtime_api::listener::requested()
+}
+
+pub fn discard_runtime_listener_handoff() {
+    runtime_api::listener::discard();
+}
+
 /// Run a delegated Engine command in the canonical CLI process. Startup facts
 /// are typed; `args` contains only command arguments, without a binary name.
 pub fn run(options: RuntimeOptions, args: Vec<String>) -> std::process::ExitCode {
-    match run_with_args(options, args) {
+    let outcome = run_with_args(options, args);
+    discard_runtime_listener_handoff();
+    match outcome {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("error: {err}");
@@ -1917,6 +1927,7 @@ pub fn run(options: RuntimeOptions, args: Vec<String>) -> std::process::ExitCode
 /// args instead of reading `std::env::args()`. Startup facts are captured by
 /// the canonical CLI and applied before config/discovery or worker startup.
 fn run_with_args(options: RuntimeOptions, args: Vec<String>) -> Result<()> {
+    let inherited_listener = prepare_runtime_listener_handoff()?;
     let args: Vec<String> = std::iter::once("codewhale".to_string())
         .chain(args)
         .collect();
@@ -2045,6 +2056,14 @@ fn run_with_args(options: RuntimeOptions, args: Vec<String>) -> Result<()> {
             e.exit();
         }
     };
+    anyhow::ensure!(
+        !inherited_listener
+            || matches!(
+                cli.command.as_ref(),
+                Some(Commands::Serve(args)) if args.http && !args.mcp && !args.acp
+            ),
+        "An inherited Runtime listener requires serve --http or app-server --http"
+    );
     // #5098: project-scope fleet agent profiles (`.codewhale/agents/*.toml`)
     // join the dispatch roster under the same trust decision as the rest of
     // project-level config — `--no-project-config` opts the layer out for

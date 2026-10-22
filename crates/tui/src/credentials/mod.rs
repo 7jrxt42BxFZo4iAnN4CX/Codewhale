@@ -74,7 +74,7 @@ pub(crate) use store::{CredentialInfo, CredentialStore};
 /// adopting this type never moves a token between stores.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) enum Credential {
-    /// A bearer API key held in CodeWhale's own durable store.
+    /// A bearer API key held in Codewhale's durable store or process memory.
     ApiKey { key: String },
     /// An OAuth access token plus its expiry, if the flow reported one.
     ///

@@ -873,6 +873,23 @@ codewhale serve --mobile [...] [--insecure]
 
 Defaults: host `127.0.0.1`, port `7878`, 2 workers (clamped 1–8).
 
+A Unix supervisor may pass a listening TCP socket as descriptor 3 and set
+`CODEWHALE_RUNTIME_LISTEN_FD=3` for `serve --http` or `app-server --http`.
+The Engine captures ownership before config discovery or child execution,
+sets close-on-exec, and validates TCP/listening state, disabled port sharing,
+and the exact numeric loopback host and nonzero port requested on the CLI.
+Insecure unauthenticated mode is refused. Malformed, closed, non-listening,
+wrong-address or already-consumed descriptors fail startup; only an absent
+marker permits an ordinary bind. An inherited listener cannot attach to a live
+Runtime owner, while the existing authenticated dead-owner recovery remains.
+
+The supervisor must retain its socket across normal Engine restarts and pass
+only the intended descriptor to the Engine. The Engine drops its descriptor on
+exit and never shuts down the supervisor's shared socket. Permanent shutdown
+must stop both the service and any socket-activation unit; stopping just the
+service can allow incoming traffic to reactivate it. This descriptor contract
+does not itself validate a supervisor's systemd PID or descriptor-count metadata.
+
 The server binds to `localhost` by default. Configuration is via CLI flags —
 there is no `[app_server]` config section.
 
@@ -2425,11 +2442,12 @@ Runtime's provider or model defaults.
 { "key": "sk-…" }
 
 // response
-{ "provider": "openai-codex", "stored": true, "backend": "keychain",
+{ "provider": "openai", "stored": true, "backend": "keychain",
   "credentialState": "configured", "configPath": "/…/config.toml" }
 ```
 
-Stores a provider API key through the same transactional write as
+The optional `scope` field accepts `"durable"` (the default) or `"session"`.
+Durable scope stores a provider API key through the same transactional write as
 `codewhale auth set --provider <id> --api-key-stdin`: the secret store under
 the provider write lock, plus the `[providers.<id>] auth_mode` metadata
 marker persisted to the config document and mirrored into the live runtime
@@ -2438,14 +2456,71 @@ names which secret backend holds the key and `configPath` which config
 document carries the marker (the user-global file when the ambient config
 is workspace-scoped).
 
+For a key held only in the running Engine's memory, send:
+
+```json
+// request
+{ "key": "sk-…", "scope": "session" }
+
+// response
+{ "provider": "openai", "stored": false, "scope": "session",
+  "backend": "memory", "credentialState": "configured" }
+```
+
+A session key matches only the exact provider identity; it never falls back to
+a sibling sharing a durable slot, such as `deepseek` and `deepseek-anthropic`.
+It is bound to the full resolved endpoint it was set for. An accepted config
+reload removes incompatible bindings; rejected reloads leave the live overlay
+unchanged. Lookups through older config snapshots cannot remove newer keys. It never applies to `auth_mode = "none"` or remote
+custom endpoints, and session writes to those routes are refused. Within those
+limits it overrides other credential sources, except a route bound to a
+required Codewhale account owner retains that requirement without fallback.
+It is never serialized or written to the secret store or config document, and
+does not change the live provider settings. It survives config reloads within
+the Engine process while the endpoint remains the same, but does not persist
+across an Engine restart. Running turns retain the key they started with;
+clearing the overlay takes effect from the next turn. The response omits
+`configPath` because no config document is saved.
+Request bodies reject unknown fields, so an older Engine that does not support
+`scope` rejects a session request instead of silently storing its key.
+
+Set `CODEWHALE_RUNTIME_KEY_SCOPE=session` before HTTP startup to require
+session-only provider keys. A durable request, including one that omits
+`scope`, returns `409`. The policy is fixed for the process and preserved
+through reloads. An unset or empty variable preserves normal behavior; any
+other value refuses server startup. Strict mode does not use stored, environment,
+subscription OAuth or configured alternate-auth headers as a fallback. Explicit
+keyless routes remain keyless. Required Codewhale account ownership remains a
+separate restriction and cannot be overridden with a session key.
+
+`GET /v1/runtime/info` advertises `capabilities.session_provider_keys: true`
+only in this strict mode, where both set and clear are memory-only. Browser
+sign-in is unavailable in this mode. Ordinary subagents share the in-process
+credential context, but external Fleet workers resolve their own credentials
+and have no session-key handoff. Strict mode therefore refuses Fleet creation,
+activation, restart and launch, including restored leases, and advertises its
+Fleet create/start/local-target capabilities as false. It never forwards a
+provider key through a worker command line, environment or config file.
+Other configuration and MCP routes may still write their non-key settings to
+disk; this is a provider credential policy, not a read-only filesystem.
+
+Memory-only custody is not a vault: anyone with root access on the machine can
+read a running Engine's memory. The key is not zeroized or locked against swap,
+and this route does not protect it from a snapshot that captures process
+memory. Existing process hardening disables core dumps on Linux when its
+hardening calls succeed; failures log a warning, and that hardening is a no-op
+on other platforms.
+
 The key is never returned — there is no read route for credential material,
 and neither the key nor its length appears in the response, errors, or
 logs; the response carries only the readiness projection
 (`credentialState`). An unknown provider id, the `deepseek-cn` legacy
-alias, an empty key, a key over 4 KiB, or one containing control characters
-is `400`. `credentialState: "local"` after a successful write is honest
-output for a keyless local route: the key is stored, but the route
-classifies as not needing one.
+alias, a key that is empty after normalization, or a normalized key over 4 KiB
+is `400`. Both scopes remove whitespace, control and invisible characters with
+the shared key normalizer before validation; `openai-codex` refuses API-key writes.
+`credentialState: "local"` after a successful durable write is honest output for
+a keyless local route: the key is
+accepted, but the route classifies as not needing one.
 
 ### `DELETE /v1/providers/{id}/key` — clear a Codewhale-owned credential
 
@@ -2454,12 +2529,30 @@ classifies as not needing one.
 { "provider": "openai", "cleared": true, "credentialState": "missing" }
 ```
 
-Clears the credential through the same shared owner as
+Removes any session key for the exact provider identity before attempting a
+durable clear, even when the durable operation subsequently fails. Unless
+`CODEWHALE_RUNTIME_KEY_SCOPE=session`, it also clears the durable credential
+through the same shared owner as
 `codewhale auth clear`: the config document is snapshotted and restored if
 its save fails, the secret store is only touched once that save has landed,
 and the cleared markers are mirrored into the live runtime config so
 `GET /v1/providers` reports `missing` on the next read rather than after a
 restart.
+
+Under `CODEWHALE_RUNTIME_KEY_SCOPE=session`, DELETE removes only the memory
+overlay and does not touch the durable secret store or config document:
+
+```json
+// response under session-only policy
+{ "provider": "openai", "cleared": true, "scope": "session", "backend": "memory" }
+```
+
+This response omits `credentialState` and does not probe or clear a durable
+store. After removal, subsequent turns cannot fall back to stored or environment
+keys. A running parent turn and children using its already-materialized client
+retain their credential until they finish; clearing memory is not provider-side
+revocation. This mode validates canonical provider identity but does not apply
+durable ownership checks to removing the Engine's own session key.
 
 Clearing an already-clear route returns `cleared: true` — a client retrying
 a revoke must not be told something went wrong. If the config entry is
@@ -2469,23 +2562,30 @@ would be a lie about a security action.
 
 ### Credential ownership: `credentialSource` and `credentialWritable`
 
-Both credential verbs refuse a route whose credential Codewhale does not
-own, and `GET /v1/providers` carries the same classification so a client can
-disable its control *before* submitting instead of failing late:
+Durable PUT and the durable portion of DELETE refuse a route whose credential
+Codewhale does not own, independently of any session key. `GET /v1/providers`
+classifies that underlying durable owner so a client can disable its durable
+credential control *before* submitting instead of failing late:
 
 | `credentialSource` | `credentialWritable` | Meaning |
 | --- | --- | --- |
-| `secret_store` | `true` | Codewhale's own durable backend. The only writable source. |
-| `config` | `false` | A literal key in a config file, which still wins at request time. |
+| `secret_store` | `true` | A Codewhale-owned durable credential slot. |
+| `account_session` | `false` | Codewhale account model access owns the credential; disconnect through account sign-out. |
+| `config` | `false` | A literal key in a config file, which wins at request time when no session key is present. |
 | `external_auth` | `false` | An active external consent (OAuth) owns the credential. |
 | `none` | `false` | The route sends no credential, or has no credential slot. |
 
 When `credentialWritable` is `false`, `credentialWritableReason` carries
-user-facing copy naming the owner, and both `PUT` and `DELETE` answer `409`
-with that same reason. The classification is structural: it reads declared
-auth mode, consent state and the *kind* of any configured `api_key` value,
-and never resolves a secret, an environment value, or an auth command. It is
-a class and never a value, a path, or an environment variable name.
+user-facing copy naming the owner. Durable PUT and the durable portion of
+DELETE answer `409` with that same reason. DELETE still removes the memory
+overlay regardless of the durable credential owner. An existing session key
+can be updated with session scope without changing that owner, subject to the
+endpoint and auth-mode restrictions above. The ownership classification is
+based on declared auth mode, consent state and the *kind* of any configured
+`api_key` value. When account model access is bound, it also resolves the
+credential source with the session overlay excluded to determine whether the
+account owns the route. The result is a class and never a value, a path, or an
+environment variable name.
 
 ### `POST /v1/providers/orcarouter/connect` — browser sign-in without a terminal
 
@@ -2507,7 +2607,9 @@ mirrors the credential markers into the live config the way
 `POST /v1/providers/{id}/switch` for that.
 
 The callback listens on the Engine's own computer, so a client offers this
-route only for an Engine on the same computer as the browser. A new `POST`
+route only for an Engine on the same computer as the browser and outside
+session-only key policy. Strict mode refuses before binding a callback or
+starting authorization. A new `POST`
 cancels the previous attempt, and only the current attempt can be read.
 Refusals: `400` for an id other than `orcarouter`, `409` when the route's
 credential is not writable (the same reason `credentialWritableReason`
@@ -2524,19 +2626,21 @@ otherwise and on Engines without the route.
 `status` is `waiting`, `connected`, `declined` (the user refused in the
 browser), `expired` (no callback in time), `cancelled` or `failed`. `failed`
 carries a `reason`: `authorization_error` (the browser came back with another
-error), `callback_failed`, `not_writable` (the route's credential stopped being
-writable before the exchange; no key was created), `exchange_failed`,
+error), `callback_failed`, `not_writable` (the route's endpoint or credential authority changed before
+local activation), `exchange_failed`,
 `scope_refused` or `key_not_saved`. After `scope_refused` or `key_not_saved`,
 OrcaRouter created a key that Codewhale did not keep; the user should revoke
 it under Authorized Apps in OrcaRouter. `exchange_failed` can follow a key
 OrcaRouter created before the response was lost.
 
-`DELETE` cancels an attempt that is still waiting for the browser. Once the
-exchange has started a key may already exist, so the attempt runs on and
-reports `connected`, or `failed` with `key_not_saved`; `DELETE` then answers
-with the current status. An unknown or superseded `attemptId` is `404`. Only
-the `POST` response carries the consent URL; no status, error or log line
-carries it, the key, the code or the verifier.
+`DELETE` cancels a pending attempt, including an exchange in progress, and
+prevents its later local activation. It does not revoke a key already created
+by OrcaRouter; revoke that key under Authorized Apps. If local activation
+completed first, cancellation returns the terminal status instead. Clearing
+or replacing the provider key also cancels its pending connect attempt. These
+mutations retain their serialization if the HTTP client disconnects. An unknown
+or superseded `attemptId` is `404`. Only the `POST` response carries the consent
+URL; no status, error or log line carries it, the key, the code or the verifier.
 
 ### `POST /v1/providers/{id}/switch`
 

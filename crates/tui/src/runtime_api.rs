@@ -105,6 +105,7 @@ mod context;
 mod diagnostics;
 mod git;
 mod jobs;
+pub(crate) mod listener;
 mod lsp;
 mod mcp_import;
 mod memory_lens;
@@ -1338,6 +1339,7 @@ fn default_runtime_capabilities() -> RuntimeCapabilities {
         client_token_intents: true,
         account_session: true,
         account_model_owner: true,
+        session_provider_keys: false,
         threads: true,
         thread_shell_consent: true,
         turns: true,
@@ -1821,11 +1823,14 @@ pub const RUNTIME_LISTENING_PREFIX: &str = "Runtime API listening on http://";
 
 /// Start the runtime API server.
 pub async fn run_http_server(
-    config: Config,
+    mut config: Config,
     workspace: PathBuf,
     plugin_discovery: Arc<crate::plugins::PluginDiscoveryContext>,
     options: RuntimeApiOptions,
 ) -> Result<()> {
+    let inherited_listener = listener::take(&options.host, options.port, options.insecure_no_auth)?;
+    config.session_provider_keys_only =
+        secrets::session_keys_required().map_err(|error| anyhow!(error.message))?;
     validate_runtime_listener_security(&options)?;
     let acp_selected = matches!(
         options.control_frontend.as_ref(),
@@ -1870,6 +1875,10 @@ pub async fn run_http_server(
     let existing_binding: Option<crate::runtime_threads::RuntimeStoreBinding> = None;
     #[cfg(any(unix, windows))]
     if let Some(control) = published {
+        anyhow::ensure!(
+            inherited_listener.is_none(),
+            "An inherited Runtime listener cannot attach to an already running owner"
+        );
         anyhow::ensure!(
             !(acp_selected && control.routing().is_some_and(|routing| routing.acp_only)),
             "Another `codewhale serve --acp` already owns this runtime, and a second ACP server cannot attach to it. Close the other editor's agent session and try again, or set CODEWHALE_RUNTIME_DIR to a different directory."
@@ -1963,9 +1972,12 @@ pub async fn run_http_server(
     // No publication permits guessing an owner or bypassing its lease. The
     // real manager open below is still the exclusive bootstrap authority.
     let addr = runtime_bind_address(&options.host, options.port)?;
-    let listener = TcpListener::bind(addr)
-        .await
-        .with_context(|| format!("Failed to bind {addr}"))?;
+    let listener = match inherited_listener {
+        Some(listener) => listener,
+        None => TcpListener::bind(addr)
+            .await
+            .with_context(|| format!("Failed to bind {addr}"))?,
+    };
     let bound_addr = listener
         .local_addr()
         .context("Failed to read Runtime API listener address")?;
@@ -3923,6 +3935,11 @@ async fn create_fleet_run(
     State(state): State<RuntimeApiState>,
     Json(request): Json<CreateFleetRunRequest>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
+    if state.config.read().session_provider_keys_only {
+        return Err(ApiError::conflict(
+            "External Fleet workers are unavailable under session-only provider key policy; use in-process subagents",
+        ));
+    }
     if request.target != FleetRuntimeTarget::ThisComputer {
         return Err(ApiError::not_implemented(format!(
             "Fleet target {:?} is not available in this local Runtime; choose this_computer",
@@ -6116,6 +6133,12 @@ async fn runtime_info(
         &api_base,
         || runtime_account_info(state.config_profile.as_deref(), &api_base),
     );
+    let session_only = state.config.read().session_provider_keys_only;
+    let mut capabilities = default_runtime_capabilities();
+    capabilities.session_provider_keys = session_only;
+    capabilities.fleet_run_create = !session_only;
+    capabilities.fleet_run_start = !session_only;
+    capabilities.fleet_local_target = !session_only;
     Json(RuntimeInfoResponse {
         service: "codewhale-runtime-api",
         runtime_api_version: RUNTIME_API_VERSION,
@@ -6125,7 +6148,7 @@ async fn runtime_info(
         port: state.bind_port,
         auth_required: state.auth_required,
         transports: vec!["http", "sse"],
-        capabilities: default_runtime_capabilities(),
+        capabilities,
         account,
         experimental: RuntimeExperimentalCapabilities::default(),
         version,
@@ -10638,9 +10661,9 @@ struct ProviderEntry {
     /// "your key is owned elsewhere and this control cannot change it".
     #[serde(rename = "credentialSource")]
     credential_source: secrets::ProviderCredentialSource,
-    /// Whether `PUT`/`DELETE /v1/providers/{id}/key` will act on this route.
-    /// False means the write would be refused, so the control should be
-    /// disabled rather than allowed to fail late.
+    /// Whether durable `PUT`/`DELETE /v1/providers/{id}/key` can act on this route.
+    /// False means durable credential writes are refused; session-key removal
+    /// remains available independently of this owner.
     #[serde(rename = "credentialWritable")]
     credential_writable: bool,
     /// Why a write is refused, as user-facing copy. Present only when
@@ -11345,7 +11368,9 @@ fn provider_entry_for_api(
         credential_source: writeability.source,
         credential_writable: writeability.writable,
         credential_writable_reason: writeability.reason,
-        browser_connect: identity.provider == ProviderKind::Orcarouter && writeability.writable,
+        browser_connect: identity.provider == ProviderKind::Orcarouter
+            && writeability.writable
+            && !config.session_provider_keys_only,
     }
 }
 
@@ -11675,8 +11700,7 @@ async fn switch_provider(
             let applied =
                 match Config::load(state.config_path.clone(), state.config_profile.as_deref()) {
                     Ok(mut reloaded) => {
-                        reloaded.account_model_access =
-                            state.config.read().account_model_access.clone();
+                        reloaded.preserve_runtime_credentials(&state.config.read());
                         match runtime.block_on(state.runtime_threads.reload_config(reloaded.clone())) {
                             Ok(_) => Ok(reloaded),
                             Err(err) => Err(ApiError::bad_request(format!(
@@ -11934,6 +11958,8 @@ async fn set_config(
     Json(req): Json<SetConfigRequest>,
 ) -> Result<Json<SetConfigResponse>, ApiError> {
     use crate::config_persistence;
+
+    let _credential_change = state.provider_switches.lock().await;
 
     let key = req.key.to_lowercase();
     let mut value = req.value;
@@ -12724,22 +12750,25 @@ fn normalize_runtime_config_model(
 async fn reload_config(
     State(state): State<RuntimeApiState>,
 ) -> Result<Json<ReloadConfigResponse>, ApiError> {
-    let mut reloaded = Config::load(state.config_path.clone(), state.config_profile.as_deref())
-        .map_err(|e| ApiError::internal(format!("Failed to reload config: {e}")))?;
-    reloaded.account_model_access = state.config.read().account_model_access.clone();
-    state
-        .runtime_threads
-        .reload_config(reloaded.clone())
-        .await
-        .map_err(|err| ApiError::bad_request(format!("Config reload rejected: {err}")))?;
-    {
-        let mut config = state.config.write();
-        *config = reloaded;
-    }
-    Ok(Json(ReloadConfigResponse {
-        message: "Config reloaded from disk; new turns will resolve the updated provider routes"
-            .to_string(),
-    }))
+    tokio::spawn(async move {
+        let _credential_change = state.provider_switches.lock().await;
+        let mut reloaded = Config::load(state.config_path.clone(), state.config_profile.as_deref())
+            .map_err(|e| ApiError::internal(format!("Failed to reload config: {e}")))?;
+        reloaded.preserve_runtime_credentials(&state.config.read());
+        state
+            .runtime_threads
+            .reload_config(reloaded.clone())
+            .await
+            .map_err(|err| ApiError::bad_request(format!("Config reload rejected: {err}")))?;
+        *state.config.write() = reloaded;
+        Ok(Json(ReloadConfigResponse {
+            message:
+                "Config reloaded from disk; new turns will resolve the updated provider routes"
+                    .to_string(),
+        }))
+    })
+    .await
+    .map_err(|_| ApiError::internal("config reload task failed"))?
 }
 
 // ── Memory inspection and lifecycle endpoints ──

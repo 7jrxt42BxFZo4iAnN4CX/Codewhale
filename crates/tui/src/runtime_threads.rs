@@ -7886,6 +7886,7 @@ impl RuntimeThreadManager {
     ) -> Result<crate::tools::large_output_router::WorkshopConfig> {
         new_config.runtime_thread_inference_unrelated = !new_config.runtime_chat_isolated;
         let _config_admission = self.config_admission.write().await;
+        new_config.preserve_runtime_credentials(&self.read_config());
         let _engine_load = self.engine_load.lock().await;
         let entries: Vec<(
             String,
@@ -7948,6 +7949,7 @@ impl RuntimeThreadManager {
         // engine from the accepted config before its process-wide read/tool
         // byte limits are active. Rejected reloads leave the prior limits in
         // place.
+        new_config.retain_compatible_session_keys();
         let workshop_activation = crate::tools::large_output_router::WorkshopConfig::install_active(
             new_config.workshop.as_ref(),
         );
