@@ -3216,7 +3216,10 @@ mod tests {
         let validation = validate_review_receipt_for_diff(diff, &receipt, None);
 
         assert!(!validation.passed);
-        assert_eq!(validation.unresolved_risk.as_ref().unwrap().level, "blocker");
+        assert_eq!(
+            validation.unresolved_risk.as_ref().unwrap().level,
+            "blocker"
+        );
         assert!(validation.reason.contains("unresolved review issue"));
     }
 

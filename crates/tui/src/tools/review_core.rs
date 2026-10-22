@@ -479,14 +479,13 @@ pub fn normalize_review_severity(value: &str) -> String {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
     use crate::llm_client::StreamEventBox;
     use async_trait::async_trait;
     use codewhale_models::MessageResponse;
+    use serde_json::json;
     use std::sync::Mutex;
 
     struct ScriptedClient {
