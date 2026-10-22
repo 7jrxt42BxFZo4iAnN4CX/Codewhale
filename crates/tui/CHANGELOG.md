@@ -106,6 +106,10 @@ guidance.
   counted, instead of rewriting the file and then reporting that nothing
   changed. Refs #6955. Thanks @7jrxt42BxFZo4iAnN4CX.
 
+- A `codewhale resume` or `codewhale fork` that is refused before it
+  reserves anything no longer tells you to recover it with an operation key.
+  Refs #6954.
+
 - The input, output and context limits your Codewhale account states for a
   model now apply to its requests. The desktop app and interactive sessions
   take them from the account's model listing, and `codewhale exec`,

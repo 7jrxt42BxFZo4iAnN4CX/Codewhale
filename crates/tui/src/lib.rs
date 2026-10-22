@@ -10178,8 +10178,19 @@ async fn prepare_mounted_session(
                 },
             ).await
         }
-    }).await.context("canonical history deadline expired; outcome uncertain")
+    }).await;
+    let expired = outcome.is_err();
+    let outcome = outcome
+        .context("canonical history deadline expired; outcome uncertain")
         .and_then(|result| result);
+    let unreserved = cli.operation_key.is_none() && !expired && outcome.is_err() && {
+        let lookup = Arc::clone(&runtime);
+        let key = operation_key.clone();
+        matches!(
+            history_owner_work(move || lookup.lookup_history_operation_by_key(&key)).await,
+            Ok(None)
+        )
+    };
     let shutdown = tokio::time::timeout(Duration::from_secs(30), runtime.shutdown_and_wait())
         .await
         .context("canonical owner shutdown deadline expired; mounted handoff refused")
@@ -10187,6 +10198,9 @@ async fn prepare_mounted_session(
     drop(runtime);
     let receipt = match (outcome, shutdown) {
         (Ok(receipt), Ok(())) => receipt,
+        (Err(error), Ok(())) if unreserved => return Err(error).with_context(|| {
+            format!("canonical history operation {operation_key} was refused before anything was reserved; no outcome is retained under this key")
+        }),
         (Err(error), Ok(())) | (Ok(_), Err(error)) => return Err(error).with_context(|| {
             format!("canonical history operation {operation_key}; retained outcome must be recovered using this exact key")
         }),
