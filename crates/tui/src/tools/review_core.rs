@@ -8,6 +8,7 @@ use serde_json::Value;
 use codewhale_models::{ContentBlock, Message, MessageRequest, SystemPrompt, Tool, Usage};
 
 use super::review::{ReviewIssue, ReviewOutput};
+use super::review_triage::{ReviewStop, SpendRates};
 use super::review_hunks::DiffHunks;
 use super::spec::{ToolContext, ToolSpec};
 use crate::core::model_client::ModelClient;
@@ -111,6 +112,8 @@ pub struct ReviewCoreResult {
     pub tools_used: Vec<String>,
     pub coverage: ReviewCoverage,
     pub outcome: ReviewCoreOutcome,
+    pub stop: Option<ReviewStop>,
+    pub spend_usd: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -129,6 +132,8 @@ pub struct ReviewCoreRequest<'a> {
     pub reasoning_effort: Option<String>,
     pub max_claims: usize,
     pub max_nits: usize,
+    pub spend_rates: Option<SpendRates>,
+    pub money_cap_usd: Option<f64>,
 }
 
 impl<'a> ReviewCoreRequest<'a> {
@@ -143,6 +148,8 @@ impl<'a> ReviewCoreRequest<'a> {
             reasoning_effort: None,
             max_claims: 40,
             max_nits: 3,
+            spend_rates: None,
+            money_cap_usd: None,
         }
     }
 }
@@ -193,10 +200,7 @@ pub async fn run_review_core(
         Some(_) => review_tool_set(),
         None => Vec::new(),
     };
-    let context = request
-        .workspace
-        .as_ref()
-        .map(|workspace| ToolContext::new(workspace));
+    let context = request.workspace.as_ref().map(ToolContext::new);
     let tool_definitions = protocol_tools(&tools);
     let mut messages = vec![Message {
         role: codewhale_models::Role::User,
@@ -212,11 +216,21 @@ pub async fn run_review_core(
     let mut final_text = String::new();
     let mut stop_reason = None;
     let mut outcome = ReviewCoreOutcome::StepBudgetExhausted;
+    let mut stop: Option<ReviewStop> = None;
+    let mut spend_usd: Option<f64> = None;
     let max_tokens = request
         .max_output_tokens
         .unwrap_or_else(|| client.effective_max_output_tokens(model));
 
     while steps < request.budget.max_steps {
+        if let (Some(cap), Some(rates)) = (request.money_cap_usd, request.spend_rates) {
+            let spent = rates.cost_usd(&usage);
+            spend_usd = Some(spent);
+            if steps > 0 && spent >= cap {
+                stop = Some(ReviewStop::MoneyCap);
+                break;
+            }
+        }
         steps += 1;
         let response = client
             .create_message(MessageRequest {
@@ -321,6 +335,15 @@ pub async fn run_review_core(
         });
     }
 
+    if let (Some(cap), Some(rates)) = (request.money_cap_usd, request.spend_rates) {
+        spend_usd = Some(rates.cost_usd(&usage));
+        if spend_usd.is_some_and(|spent| spent >= cap) && stop.is_none() {
+            stop = Some(ReviewStop::MoneyCap);
+        }
+    }
+    if stop.is_none() && steps >= request.budget.max_steps && outcome == ReviewCoreOutcome::StepBudgetExhausted {
+        stop = Some(ReviewStop::StepBudget);
+    }
     let mut output = if final_text.trim().is_empty() {
         ReviewOutput {
             summary: String::new(),
@@ -358,6 +381,8 @@ pub async fn run_review_core(
         tool_calls,
         tools_used: used,
         outcome,
+        stop,
+        spend_usd,
     })
 }
 

@@ -58,6 +58,7 @@ pub mod review;
 pub mod review_core;
 pub(crate) mod review_host;
 pub mod review_hunks;
+pub mod review_triage;
 pub(crate) mod review_pr;
 pub mod rlm;
 pub mod run_tool;

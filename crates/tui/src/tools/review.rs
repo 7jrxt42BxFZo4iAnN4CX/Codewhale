@@ -1444,6 +1444,8 @@ impl ToolSpec for ReviewTool {
             }
             _ => super::review_core::repository_tool_workspace(&context.workspace, None),
         };
+        let triage = super::review_triage::triage_review(&review_diff);
+        let budget = super::review_triage::budget_for(&triage);
         let mut usage = Usage::default();
         let mut accumulator = plan.as_ref().map(PrReviewAccumulator::new);
         let mut single_output = None;
@@ -1453,10 +1455,17 @@ impl ToolSpec for ReviewTool {
         let mut tool_calls = 0;
         let mut changed_lines = 0;
         let mut outcome = super::review_core::ReviewCoreOutcome::Completed;
+        let mut stop = None;
+        let mut spend_usd = None;
         for (index, prompt) in prompts.into_iter().enumerate() {
             let mut request = super::review_core::ReviewCoreRequest::new(&review_diff, prompt);
             request.workspace = tool_workspace.clone();
-            request.max_output_tokens = Some(client.effective_max_output_tokens(&route.model));
+            request.budget = budget.tool_budget();
+            request.max_output_tokens = Some(
+                client
+                    .effective_max_output_tokens(&route.model)
+                    .min(budget.max_output_tokens),
+            );
             let result =
                 match super::review_core::run_review_core(&client, &self.model, request).await {
                     Ok(result) => result,
@@ -1488,6 +1497,8 @@ impl ToolSpec for ReviewTool {
             tool_calls += result.tool_calls;
             changed_lines += result.coverage.changed_lines;
             outcome = result.outcome;
+            stop = result.stop.clone().or(stop);
+            spend_usd = result.spend_usd.or(spend_usd);
             if codewhale_models::is_incomplete_stop_reason(result.stop_reason.as_deref()) {
                 return Ok(review_error_with_usage(
                     &route,
@@ -1531,6 +1542,15 @@ impl ToolSpec for ReviewTool {
         } else {
             single_output.expect("one non-PR review response")
         };
+        let mut output = output;
+        if let Some(note) = stop.as_ref().map(|stop| {
+            super::review_triage::partial_review_note(stop, &triage, &budget)
+        }) {
+            if !output.summary.is_empty() {
+                output.summary.push_str("\n\n");
+            }
+            output.summary.push_str(&note);
+        }
         let mut metadata = review_usage_metadata(&route, &usage);
         metadata["review_anchors"] = json!(anchors);
         metadata["review_tools_used"] = json!(tools_used);
@@ -1538,6 +1558,10 @@ impl ToolSpec for ReviewTool {
         metadata["review_steps"] = json!(steps);
         metadata["review_tool_calls"] = json!(tool_calls);
         metadata["review_changed_lines"] = json!(changed_lines);
+        metadata["review_triage"] = json!(triage);
+        metadata["review_budget"] = json!(budget);
+        metadata["review_stop"] = json!(stop.as_ref().map(super::review_triage::ReviewStop::as_str));
+        metadata["review_spend_usd"] = json!(spend_usd);
         metadata["review_outcome"] = json!(match outcome {
             super::review_core::ReviewCoreOutcome::Completed => "completed",
             super::review_core::ReviewCoreOutcome::NoFinalAnswer => "no_final_answer",

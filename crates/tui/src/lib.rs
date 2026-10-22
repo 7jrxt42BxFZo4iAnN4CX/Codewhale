@@ -1472,6 +1472,17 @@ struct ReviewArgs {
     /// additional model requests; the default preserves single-pass behavior.
     #[arg(long, default_value_t = 1)]
     max_passes: usize,
+    /// Per-review money cap in USD. It is only enforceable together with
+    /// `--input-usd-per-mtok` and `--output-usd-per-mtok`; without both, the
+    /// receipt reports the cap as unsupported instead of implying it applied.
+    #[arg(long)]
+    money_cap_usd: Option<f64>,
+    /// Input price per million tokens for this exact route, in USD
+    #[arg(long, requires_all = ["money_cap_usd"])]
+    input_usd_per_mtok: Option<f64>,
+    /// Output price per million tokens for this exact route, in USD
+    #[arg(long, requires_all = ["money_cap_usd"])]
+    output_usd_per_mtok: Option<f64>,
     /// Write a durable pre-push review receipt after a successful review
     #[arg(long, default_value_t = false)]
     write_receipt: bool,
@@ -10450,6 +10461,20 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
     };
     let mut review_anchors = crate::tools::review_core::ReviewAnchorReport::default();
     let mut review_tools_used: Vec<String> = Vec::new();
+    let review_triage = crate::tools::review_triage::triage_review(&diff);
+    let review_rates = match (args.input_usd_per_mtok, args.output_usd_per_mtok) {
+        (Some(input), Some(output)) => Some(crate::tools::review_triage::SpendRates {
+            input_usd_per_million: input,
+            output_usd_per_million: output,
+        }),
+        _ => None,
+    };
+    let review_budget = crate::tools::review_triage::budget_for(&review_triage).with_money_cap(
+        args.money_cap_usd,
+        review_rates.map(|rates| (rates.input_usd_per_million, rates.output_usd_per_million)),
+    );
+    let mut review_stop: Option<crate::tools::review_triage::ReviewStop> = None;
+    let mut review_spend_usd = None;
     for (index, user_prompt) in prompts.into_iter().enumerate() {
         let reasoning_effort = route.reasoning_effort.and_then(|effort| {
             review_reasoning_effort_value_for_prompt(
@@ -10461,8 +10486,15 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
         });
         let mut request = crate::tools::review_core::ReviewCoreRequest::new(&diff, user_prompt);
         request.workspace = review_tool_workspace.clone();
-        request.max_output_tokens = Some(client.effective_max_output_tokens(&request_route.model));
+        request.budget = review_budget.tool_budget();
+        request.max_output_tokens = Some(
+            client
+                .effective_max_output_tokens(&request_route.model)
+                .min(review_budget.max_output_tokens),
+        );
         request.reasoning_effort = reasoning_effort;
+        request.spend_rates = review_rates;
+        request.money_cap_usd = review_budget.money_cap_usd.filter(|_| review_budget.money_limit_supported);
         let result =
             match crate::tools::review_core::run_review_core(&client, &model, request).await {
                 Ok(result) => result,
@@ -10492,6 +10524,8 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
         review_anchors.claims += result.anchors.claims;
         review_anchors.anchored += result.anchors.anchored;
         review_anchors.unanchored += result.anchors.unanchored;
+        review_stop = result.stop.clone().or(review_stop);
+        review_spend_usd = result.spend_usd.or(review_spend_usd);
         if codewhale_models::is_incomplete_stop_reason(review_stop_reason.as_deref()) {
             // #6285: budget exhaustion is an infrastructure outcome, not a
             // review verdict. The PR was never judged, so the message must not
@@ -10531,7 +10565,10 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
             output = pass_output;
         }
     }
-    let (structured, coverage) = if let Some(accumulator) = accumulator {
+    let partial_note = review_stop.as_ref().map(|stop| {
+        crate::tools::review_triage::partial_review_note(stop, &review_triage, &review_budget)
+    });
+    let (mut structured, coverage) = if let Some(accumulator) = accumulator {
         let (review, content, coverage) = match accumulator.finish(&diff) {
             Ok(complete) => complete,
             Err(error) => {
@@ -10548,6 +10585,16 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
             None,
         )
     };
+    if let (Some(note), Some(review)) = (&partial_note, structured.as_mut()) {
+        if !review.summary.is_empty() {
+            review.summary.push_str("\n\n");
+        }
+        review.summary.push_str(note);
+        if !output.is_empty() {
+            output.push_str("\n\n");
+        }
+        output.push_str(note);
+    }
     // Presentation is prepared before publication. Any peer failure retains the
     // completed provider usage and cannot cause a partial post or Rust fallback.
     let rendered_report = if args.post || !args.json {
@@ -10648,6 +10695,10 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
             "review_anchors": review_anchors,
             "review_tools_used": review_tools_used,
             "review_repository_reads": review_tool_workspace.is_some(),
+            "review_triage": review_triage,
+            "review_budget": review_budget,
+            "review_stop": review_stop.as_ref().map(crate::tools::review_triage::ReviewStop::as_str),
+            "review_spend_usd": review_spend_usd,
             "stop_reason": review_stop_reason,
             "usage": usage,
             "review_passes": pr_plan.as_ref().map(|plan| plan.passes.len()),
