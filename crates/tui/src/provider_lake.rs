@@ -1892,9 +1892,7 @@ pub(crate) async fn refresh_account_catalog_before_first_request(config: &Config
     );
     if !matches!(status, CatalogStatus::Fresh) {
         let reason = match &status {
-            CatalogStatus::Failed { reason } => {
-                crate::tui::model_picker::catalog_refresh_error_label(*reason)
-            }
+            CatalogStatus::Failed { reason } => reason.label(),
             _ => receipt.map_or("refresh_failed", |receipt| {
                 receipt.error.unwrap_or(receipt.outcome)
             }),
