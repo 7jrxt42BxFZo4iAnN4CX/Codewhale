@@ -10176,7 +10176,7 @@ async fn prepare_mounted_session(
             }
         } else {
             let source = CanonicalHistorySource::SavedSession {
-                session: serde_json::to_value(&saved)?,
+                session: serde_json::to_value(saved.transport_form())?,
                 expected_document_digest: source_digest,
             };
             let options = CanonicalHistoryOptions {

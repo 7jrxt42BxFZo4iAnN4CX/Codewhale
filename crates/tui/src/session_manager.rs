@@ -1203,6 +1203,18 @@ impl SavedSession {
         }
     }
 
+    pub(crate) fn transport_form(&self) -> Self {
+        let mut carried = self.clone();
+        if self
+            .journal
+            .as_ref()
+            .is_some_and(|journal| journal.to_messages() == self.messages)
+        {
+            carried.compact_for_persistence_queue();
+        }
+        carried
+    }
+
     /// Bring `messages` and the journal into the shape the on-disk schema
     /// expects, in place.
     ///
@@ -2631,19 +2643,30 @@ impl SessionManager {
         self.save_session_inner(session, JournalPrune::Excess)
     }
 
-    /// Bring a saved document that exceeds the full-history transport bound
-    /// back under it by archiving every off-branch journal entry (kept in the
-    /// journal archive sidecar, the same durable step the autosave prune
-    /// uses). Only when that is not enough, ended non-durable unpinned Work
-    /// Graph operations beyond the newest `ENDED_OPERATION_CAP` are dropped,
-    /// the bound a live session applies at its next operation. The active
-    /// branch and durable or pinned operations are never touched. The
-    /// compacted document is measured before anything is written: when it
-    /// would still exceed `limit`, nothing is archived or rewritten, and its
-    /// projected size is returned with whether that projection pruned ended
-    /// operations.
+    /// Make a saved document whose file exceeds the full-history transport
+    /// bound readable under it. The bound counts what a canonical handoff
+    /// carries: compact JSON without the journal-derived `messages` copy
+    /// ([`SavedSession::transport_form`]). Every off-branch journal entry is
+    /// projected into the journal archive sidecar (the same durable step the
+    /// autosave prune uses) and, only when the whole projected document is
+    /// still over `limit`, ended non-durable unpinned Work Graph operations
+    /// beyond the newest `ENDED_OPERATION_CAP` are dropped too. Then, in
+    /// order: when the whole projected document fits, it is written; when the
+    /// carried form already fits as loaded, nothing is written; when the
+    /// projected carried form fits, the projection is written; otherwise
+    /// nothing is archived or rewritten and the projected carried size is
+    /// returned with whether that projection pruned ended operations. The
+    /// active branch and durable or pinned operations are never touched.
+    /// Known limits: a file left over `limit` is parsed whole on every bounded
+    /// read, and readers that bound the whole document (Runtime API history,
+    /// native fork, import merge) can see that write and still refuse.
     fn compact_oversized_session(&self, id: &str, limit: u64) -> io::Result<Option<(u64, bool)>> {
-        let project = |session: &SavedSession| -> io::Result<u64> {
+        let size = |session: &SavedSession| -> io::Result<u64> {
+            serde_json::to_vec(session)
+                .map(|bytes| bytes.len() as u64)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+        };
+        let project = |session: &SavedSession| -> io::Result<(u64, u64)> {
             let mut projected = session.clone();
             if let Some(journal) = projected.journal.as_mut() {
                 let off_branch: std::collections::HashSet<String> =
@@ -2655,13 +2678,18 @@ impl SessionManager {
             }
             self.hydrate_recovered_runtime_binding(&mut projected)?;
             self.hydrate_approval_receipts(&mut projected)?;
-            Ok(serialize_saved_session(projected)?.len() as u64)
+            if let Some(journal) = projected.journal.as_ref() {
+                validate_saved_journal(journal)?;
+            }
+            projected.make_storage_compatible();
+            Ok((size(&projected)?, size(&projected.transport_form())?))
         };
         let mut session = self.load_session_snapshot_with_limit(id, None)?;
-        let mut projected = project(&session)?;
+        let loaded = size(&session.transport_form())?;
+        let (mut whole, mut carried) = project(&session)?;
         let mut pruned_operations = false;
         let session_id = session.metadata.id.clone();
-        if projected > limit
+        if whole > limit
             && let Some(graph) = session
                 .work_state
                 .as_mut()
@@ -2683,7 +2711,7 @@ impl SessionManager {
                 Ok((next, _)) => {
                     *graph = next;
                     pruned_operations = true;
-                    projected = project(&session)?;
+                    (whole, carried) = project(&session)?;
                 }
                 Err(report) => tracing::warn!(
                     %session_id,
@@ -2692,8 +2720,11 @@ impl SessionManager {
                 ),
             }
         }
-        if projected > limit {
-            return Ok(Some((projected, pruned_operations)));
+        if whole > limit && loaded <= limit {
+            return Ok(None);
+        }
+        if whole > limit && carried > limit {
+            return Ok(Some((carried, pruned_operations)));
         }
         self.save_session_inner(session, JournalPrune::AllOffBranch)?;
         Ok(None)
@@ -3497,7 +3528,9 @@ impl SessionManager {
     }
 
     /// The same protected session parser with an explicit transport byte ceiling.
-    /// The file read itself is capped before allocating or parsing its document.
+    /// A file within the ceiling is read capped before allocating or parsing its
+    /// document; a larger one is parsed whole and accepted only when its
+    /// carried form ([`SavedSession::transport_form`]) is within the ceiling.
     pub(crate) fn load_session_snapshot_bounded(
         &self,
         id: &str,
@@ -3513,6 +3546,7 @@ impl SessionManager {
     ) -> io::Result<SavedSession> {
         use std::io::Read;
         let path = self.validated_session_path(id)?;
+        let mut oversized = false;
         let content = match limit {
             None => {
                 let mut content = String::new();
@@ -3543,7 +3577,7 @@ impl SessionManager {
                         return Err(io::Error::new(
                             io::ErrorKind::InvalidData,
                             format!(
-                                "session is {:.1} MiB and the full-history transport limit is {:.1} MiB; {compaction} would leave it at {:.1} MiB, so nothing was changed",
+                                "session is {:.1} MiB and the full-history transport limit is {:.1} MiB; {compaction} would still hand over {:.1} MiB, counting the conversation once, so nothing was changed",
                                 mib(before),
                                 mib(limit as u64),
                                 mib(projected),
@@ -3551,24 +3585,16 @@ impl SessionManager {
                         ));
                     }
                     file = open_private_read_file(&path)?;
-                    let after = file.metadata()?.len();
-                    if after > limit as u64 {
-                        return Err(io::Error::new(
-                            io::ErrorKind::InvalidData,
-                            format!(
-                                "session was {:.1} MiB; compaction rewrote it to {:.1} MiB, still over the {:.1} MiB full-history transport limit; its off-branch journal entries are in {}",
-                                mib(before),
-                                mib(after),
-                                mib(limit as u64),
-                                journal_archive_path(&self.sessions_dir, id)?.display(),
-                            ),
-                        ));
-                    }
+                    oversized = file.metadata()?.len() > limit as u64;
                 }
                 let mut bytes = Vec::new();
-                file.take((limit as u64).saturating_add(1))
-                    .read_to_end(&mut bytes)?;
-                if bytes.len() > limit {
+                if oversized {
+                    file.read_to_end(&mut bytes)?;
+                } else {
+                    file.take((limit as u64).saturating_add(1))
+                        .read_to_end(&mut bytes)?;
+                }
+                if !oversized && bytes.len() > limit {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
                         "session grew beyond full-history transport bound; source retained",
@@ -3610,6 +3636,17 @@ impl SessionManager {
         session.ensure_journal();
         self.hydrate_approval_receipts(&mut session)?;
         self.apply_late_usage_to_metadata(&mut session.metadata);
+        if let Some(limit) = limit.filter(|_| oversized)
+            && serde_json::to_vec(&session.transport_form())
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
+                .len()
+                > limit
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "session grew beyond full-history transport bound; source retained",
+            ));
+        }
 
         Ok(session)
     }

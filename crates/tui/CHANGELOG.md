@@ -98,13 +98,16 @@ guidance.
   wire, including `/cache warmup`. When a level still cannot be sent, the
   error names it and lists the levels the route publishes. Refs #6396.
 
-- An oversized saved session is measured before anything is written. If
-  archiving its off-branch history, and if needed pruning finished
-  non-durable operations beyond the newest 256, would still leave it over
-  the 8 MiB full-history limit, the session file and its archive are left
-  untouched and the refusal gives the projected size and the steps it
-  counted, instead of rewriting the file and then reporting that nothing
-  changed. Refs #6955. Thanks @7jrxt42BxFZo4iAnN4CX.
+- `codewhale resume` and `codewhale fork` now size a saved session the way
+  it is handed over: compact JSON, with the conversation counted once
+  instead of also as its derived message copy. A session that is over 8 MiB
+  on disk only because of that copy, indentation, abandoned branches or
+  finished shell operations opens again. A session whose current
+  conversation and Work state alone exceed 8 MiB is still refused before
+  anything is written: its file and archive are left unchanged and the
+  refusal gives the size it would hand over. Reading the history through the
+  Runtime API or the desktop app still applies the 8 MiB limit to the whole
+  document. Refs #6955. Thanks @7jrxt42BxFZo4iAnN4CX.
 
 - Saved sessions and crash checkpoints are now written as compact JSON
   instead of indented JSON. Files are smaller (16–27% on the two measured
@@ -1326,8 +1329,8 @@ guidance.
   holds a raw sub-agent handoff (#6954).
 - A saved session over 8 MiB can be resumed and forked again. Journal entries
   off the current branch are archived instead of refusing the session (#6955).
-  A session whose current branch alone is over 8 MiB is still refused, and the
-  refusal now gives its size.
+  A session whose current conversation and Work state, counted once, are still
+  over 8 MiB is refused, and the refusal gives the size it would hand over.
 - Snapshot restore and `/undo` work with older git, such as the 2.43 that
   Ubuntu 24.04 ships. They failed there with "only one reference expected".
 - Cancelling your own background shell job no longer reports it as finished
