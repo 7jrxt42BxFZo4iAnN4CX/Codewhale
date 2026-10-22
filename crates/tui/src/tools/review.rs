@@ -94,18 +94,12 @@ pub(crate) fn bounded_review_reasoning_effort(
 pub const MAX_COMMITTABLE_SUGGESTION_LINES: u32 = 25;
 const REVIEW_CLIENT_UNAVAILABLE: &str = "Review tool requires an active Codewhale model client";
 
-pub(crate) const MAX_REVIEW_COMMIT_MESSAGE_CHARS: usize = 16_000;
-
-pub(crate) fn commit_intent_preamble(commits: &str) -> String {
-    if commits.trim().is_empty() {
-        return String::new();
-    }
-    format!(
-        "The author's commit messages for this range follow. They state what the change is meant to do; check them against the diff rather than trusting them.\n\n{commits}\n\nEnd of commit messages.\n\n"
-    )
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// What kind of claim this is. `defect` is a wrong behaviour in the changed
+/// code; `intent` is a mismatch between what the change says it does and what
+/// it does; `contract` is a dependent outside the diff that the change broke.
+/// The distinction exists because the three need different evidence and a
+/// reader triages them differently.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReviewIssue {
     #[serde(default)]
     pub severity: String,
@@ -117,9 +111,44 @@ pub struct ReviewIssue {
     pub path: Option<String>,
     #[serde(default)]
     pub line: Option<u32>,
+    /// `defect`, `intent` or `contract`. Absent on older receipts and model
+    /// output written before this field existed, and read as `defect`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// How the reviewer established the claim. `reproduced` requires a
+    /// command; `traced` requires `path:line`; `suspected` is never posted
+    /// inline and is moved to the summary's "worth a human look" list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<ReviewEvidence>,
+    /// For a `contract` claim: what the change made newly true or false, and
+    /// which dependents were checked against it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract: Option<ReviewContract>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReviewEvidence {
+    /// `reproduced`, `traced` or `suspected`.
+    #[serde(default)]
+    pub tier: String,
+    /// The command and its output for `reproduced`, or the input and the
+    /// `path:line` chain for `traced`. Free text, rendered verbatim.
+    #[serde(default)]
+    pub detail: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReviewContract {
+    /// What became newly true or newly false at the changed line.
+    #[serde(default)]
+    pub became: String,
+    /// Dependents of that contract the reviewer checked, as `path:line` or a
+    /// path with a symbol. An empty list is honest: it means none were found.
+    #[serde(default)]
+    pub dependents_checked: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReviewSuggestion {
     #[serde(default)]
     pub path: Option<String>,
@@ -143,7 +172,7 @@ pub struct ReviewSuggestion {
     pub replacement: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReviewOutput {
     #[serde(default)]
     pub summary: String,
@@ -153,6 +182,26 @@ pub struct ReviewOutput {
     pub suggestions: Vec<ReviewSuggestion>,
     #[serde(default)]
     pub overall_assessment: String,
+    /// `low`, `medium` or `high`, with the reason, so the person merging gets
+    /// the answer they actually want before reading a single finding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge_risk: Option<ReviewMergeRisk>,
+    /// What the reviewer established rather than suspected: dependents read,
+    /// commands run and their results.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub verified: Vec<String>,
+    /// What was not reviewed, and why. An honest gap, not a blank cheque.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub not_reviewed: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ReviewMergeRisk {
+    /// `low`, `medium` or `high`.
+    #[serde(default)]
+    pub level: String,
+    #[serde(default)]
+    pub reason: String,
 }
 
 impl ReviewOutput {
@@ -201,9 +250,7 @@ impl ReviewOutput {
         };
         Self {
             summary,
-            issues: Vec::new(),
-            suggestions: Vec::new(),
-            overall_assessment: String::new(),
+            ..Self::default()
         }
     }
 
@@ -215,7 +262,46 @@ impl ReviewOutput {
             issue.title = issue.title.trim().to_string();
             issue.description = issue.description.trim().to_string();
             issue.path = normalize_optional(issue.path.take());
+            issue.kind = issue
+                .kind
+                .take()
+                .map(|kind| normalize_claim_kind(&kind))
+                .filter(|kind| !kind.is_empty());
+            if let Some(evidence) = issue.evidence.as_mut() {
+                evidence.tier = normalize_evidence_tier(&evidence.tier);
+                evidence.detail = evidence.detail.trim().to_string();
+            }
+            if let Some(contract) = issue.contract.as_mut() {
+                contract.became = contract.became.trim().to_string();
+                contract.dependents_checked = contract
+                    .dependents_checked
+                    .iter()
+                    .map(|entry| entry.trim().to_string())
+                    .filter(|entry| !entry.is_empty())
+                    .collect();
+            }
         }
+        if let Some(risk) = self.merge_risk.as_mut() {
+            risk.level = match risk.level.trim().to_ascii_lowercase().as_str() {
+                "high" | "blocking" | "blocker" => "high",
+                "medium" | "moderate" | "concern" => "medium",
+                _ => "low",
+            }
+            .to_string();
+            risk.reason = risk.reason.trim().to_string();
+        }
+        self.verified = self
+            .verified
+            .iter()
+            .map(|entry| entry.trim().to_string())
+            .filter(|entry| !entry.is_empty())
+            .collect();
+        self.not_reviewed = self
+            .not_reviewed
+            .iter()
+            .map(|entry| entry.trim().to_string())
+            .filter(|entry| !entry.is_empty())
+            .collect();
         for suggestion in &mut self.suggestions {
             suggestion.suggestion = suggestion.suggestion.trim().to_string();
             suggestion.path = normalize_optional(suggestion.path.take());
@@ -752,6 +838,9 @@ impl PrReviewAccumulator {
             summary,
             issues,
             suggestions,
+            merge_risk: None,
+            verified: Vec::new(),
+            not_reviewed: Vec::new(),
             overall_assessment: if assessments.is_empty() {
                 if self.manifest.skipped_files.is_empty() {
                     format!("All {total} review passes completed with structured output.")
@@ -763,6 +852,7 @@ impl PrReviewAccumulator {
             } else {
                 assessments.join("\n")
             },
+            ..Default::default()
         };
         output.note_binary_coverage(complete_diff);
         let completed_passes = self
@@ -1952,6 +2042,29 @@ fn normalize_optional(value: Option<String>) -> Option<String> {
         .filter(|v| !v.is_empty())
 }
 
+fn normalize_claim_kind(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "intent" | "intent_mismatch" | "unannounced" => "intent",
+        "contract" | "dependent" | "impact" => "contract",
+        "defect" | "bug" | "" => "defect",
+        other if other.starts_with("intent") => "intent",
+        other if other.starts_with("contract") || other.starts_with("depend") => "contract",
+        _ => "defect",
+    }
+    .to_string()
+}
+
+fn normalize_evidence_tier(value: &str) -> String {
+    let lower = value.trim().to_ascii_lowercase();
+    if lower.starts_with("repro") || lower.starts_with("verif") {
+        "reproduced".to_string()
+    } else if lower.starts_with("trace") || lower.starts_with("proven") {
+        "traced".to_string()
+    } else {
+        "suspected".to_string()
+    }
+}
+
 fn normalize_severity(value: &str) -> String {
     super::review_core::normalize_review_severity(value)
 }
@@ -2975,6 +3088,7 @@ mod tests {
                 description: "Add coverage".to_string(),
                 path: Some("src/lib.rs".to_string()),
                 line: Some(12),
+                ..Default::default()
             }],
             suggestions: vec![ReviewSuggestion {
                 path: Some("src/lib.rs".to_string()),
@@ -2985,6 +3099,7 @@ mod tests {
                 replacement: None,
             }],
             overall_assessment: "Needs a test".to_string(),
+            ..Default::default()
         };
 
         let receipt = build_review_receipt(
@@ -3077,6 +3192,7 @@ mod tests {
                 },
             ],
             overall_assessment: "Fix the unwrap".to_string(),
+            ..Default::default()
         };
 
         let receipt = build_review_receipt(
@@ -3225,9 +3341,11 @@ mod tests {
                 description: "Needs work".to_string(),
                 path: Some("a".to_string()),
                 line: Some(1),
+                ..Default::default()
             }],
             suggestions: Vec::new(),
             overall_assessment: String::new(),
+            ..Default::default()
         };
         let receipt = build_review_receipt(
             "working-tree",

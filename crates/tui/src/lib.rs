@@ -10386,6 +10386,23 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
         crate::tools::spec::ToolContext::new(&review_workspace).with_features(config.features());
     // #6510: one review prompt authority. Plain diffs and PRs both ask for
     // the structured review contract; a plain diff renders it locally.
+    //
+    // #5: the author's intent is carried as structured data inside the review
+    // core's untrusted document, so the prompt bodies below must not also
+    // embed it as prose. What the author claims is evidence to check, and it
+    // belongs in the field that says so.
+    let intent = crate::tools::review_core::ReviewIntent {
+        title: pr_view
+            .as_ref()
+            .map(|(_, view)| view.title.clone())
+            .unwrap_or_default(),
+        description: pr_view
+            .as_ref()
+            .map(|(_, view)| view.body.clone())
+            .unwrap_or_default(),
+        commits: commits.clone(),
+        linked_issue: String::new(),
+    };
     let prompts = if let (Some((number, view)), Some(plan)) = (&pr_view, &pr_plan) {
         crate::tools::review_host::pr_prompts(*number, view, plan, &review_context).await?
     } else {
@@ -10393,12 +10410,9 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
             .features
             .enabled(crate::features::Feature::ReviewHost)
         {
-            crate::tools::review_host::cli_prompt(&diff, &commits, &review_context).await?
+            crate::tools::review_host::cli_prompt(&diff, "", &review_context).await?
         } else {
-            format!(
-                "{}Review the following diff and provide feedback:\n\n{diff}\n\nEnd of diff.",
-                crate::tools::review::commit_intent_preamble(&commits)
-            )
+            format!("Review the following diff and provide feedback:\n\n{diff}\n\nEnd of diff.")
         }]
     };
     let model = resolve_review_model(config, args.model.as_deref());
@@ -10497,6 +10511,11 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
         request.money_cap_usd = review_budget
             .money_cap_usd
             .filter(|_| review_budget.money_limit_supported);
+        request.intent = Some(intent.clone());
+        request.refute = matches!(
+            review_triage.risk,
+            crate::tools::review_triage::ReviewRisk::High
+        );
         let result =
             match crate::tools::review_core::run_review_core(&client, &model, request).await {
                 Ok(result) => result,
@@ -11463,87 +11482,17 @@ fn render_review_markdown(
     review: &crate::tools::review::ReviewOutput,
     posted: Option<(u32, &GhPullRequest)>,
 ) -> String {
-    let mut body = String::new();
-    body.push_str("## Codewhale review\n\n");
-    if !review.summary.is_empty() {
-        body.push_str(review.summary.trim());
-        body.push_str("\n\n");
-    }
-    if !review.issues.is_empty() {
-        body.push_str("### Findings\n\n");
-        for issue in &review.issues {
-            let location = match (&issue.path, issue.line) {
-                (Some(path), Some(line)) => format!("`{}:{line}`", path.trim()),
-                (Some(path), None) => format!("`{}`", path.trim()),
-                _ => String::new(),
-            };
-            if location.is_empty() {
-                body.push_str(&format!(
-                    "- **[{}] {}**\n",
-                    issue.severity.to_uppercase(),
-                    issue.title
-                ));
-            } else {
-                body.push_str(&format!(
-                    "- **[{}] {}** ({location})\n",
-                    issue.severity.to_uppercase(),
-                    issue.title
-                ));
-            }
-            if !issue.description.is_empty() {
-                body.push_str(&format!("  {}\n", issue.description));
-            }
-        }
-        body.push('\n');
-    }
-    if !review.suggestions.is_empty() {
-        body.push_str("### Suggestions\n\n");
-        for suggestion in &review.suggestions {
-            let location = match (&suggestion.path, suggestion.line) {
-                (Some(path), Some(line)) => format!("`{}:{line}`", path.trim()),
-                (Some(path), None) => format!("`{}`", path.trim()),
-                _ => String::new(),
-            };
-            if location.is_empty() {
-                body.push_str(&format!("- {}\n", suggestion.suggestion));
-            } else {
-                body.push_str(&format!("- {location} — {}\n", suggestion.suggestion));
-            }
-            // The replacement is the computed fix itself; rendering only the
-            // prose used to compute and validate it, then throw it away.
-            // Show it as a fenced block indented into the list item. In the
-            // local report the fence is live — the user asked for the fix and
-            // this block is the artifact to apply. In a *posted* PR body it
-            // degrades to a plain code block: GitHub must only ever be handed
-            // a one-click suggestion block this pipeline validated against
-            // the diff hunks (the inline suggestion comments), never one the
-            // summary duplicated from a suggestion that failed anchoring or
-            // the span gates.
-            if let Some(replacement) = suggestion
-                .replacement
-                .as_deref()
-                .filter(|replacement| !replacement.trim().is_empty())
-            {
-                let fence = suggestion_fence(replacement);
-                let info = if posted.is_some() {
-                    "text"
-                } else {
-                    "suggestion"
-                };
-                body.push_str(&format!("\n  {fence}{info}\n"));
-                for line in replacement.split('\n') {
-                    body.push_str(&format!("  {line}\n"));
-                }
-                body.push_str(&format!("  {fence}\n"));
-            }
-        }
-        body.push('\n');
-    }
-    if !review.overall_assessment.is_empty() {
-        body.push_str("### Assessment\n\n");
-        body.push_str(review.overall_assessment.trim());
-        body.push_str("\n\n");
-    }
+    // One renderer for every forge (#9): the core's summary, with the
+    // committable-suggestion capability decided here. A posted body never
+    // carries a live `suggestion` fence from the summary — only the inline
+    // comments the suggestion pipeline validated against the diff hunks do —
+    // so a posted render degrades to a fenced diff.
+    let forge = if posted.is_some() {
+        crate::tools::review_core::ForgeMarkdown::without_committable_suggestions()
+    } else {
+        crate::tools::review_core::ForgeMarkdown::github()
+    };
+    let mut body = crate::tools::review_core::render_review_summary(review, forge);
     if let Some((number, view)) = posted {
         body.push_str(&review_advisory_footer(number, view));
     }
@@ -11679,6 +11628,20 @@ fn post_pr_review(
 /// Both the CLI review and interactive composer receive the complete diff.
 /// Collection and review-budget checks must fail before any partial review.
 fn format_pr_prompt(number: u32, view: &GhPullRequest, diff: &str) -> String {
+    format_pr_prompt_with_intent(number, view, diff, true)
+}
+
+/// `include_intent = false` is for the review core, which carries the title,
+/// description and commit messages as a named field of one untrusted JSON
+/// document. Embedding the same prose here as well would give the model two
+/// copies of the author's claims, one of them outside the field that says what
+/// it is, so the core path asks for the diff and the revision facts only.
+fn format_pr_prompt_with_intent(
+    number: u32,
+    view: &GhPullRequest,
+    diff: &str,
+    include_intent: bool,
+) -> String {
     let diff_section = crate::tools::review_pr::model_diff(diff);
     let body = if view.body.trim().is_empty() {
         "(no description)".to_string()
@@ -11696,6 +11659,11 @@ fn format_pr_prompt(number: u32, view: &GhPullRequest, diff: &str) -> String {
         (true, false) => view.head.clone(),
         _ => "(unknown)".to_string(),
     };
+    let intent_section = if include_intent {
+        format!("\n## Description\n\n{body}\n")
+    } else {
+        String::new()
+    };
     format!(
         "Review PR #{number} — {title}\n\
          \n\
@@ -11703,11 +11671,7 @@ fn format_pr_prompt(number: u32, view: &GhPullRequest, diff: &str) -> String {
          Branches: {branches}\n\
          Revision: {head_sha} (base {base_sha}); {changed_files} file patches.\n\
          Binary changes are represented by metadata; their contents are not semantically inspected. Exact binary object IDs remain in the review evidence.\n\
-         \n\
-         ## Description\n\
-         \n\
-         {body}\n\
-         \n\
+         {intent_section}\n\
          ## Diff\n\
          \n\
          ```diff\n\
@@ -11799,7 +11763,7 @@ fn collect_base_commit_messages(
     }
     let log = String::from_utf8_lossy(&output.stdout);
     let log = log.trim();
-    let limit = crate::tools::review::MAX_REVIEW_COMMIT_MESSAGE_CHARS;
+    let limit = crate::tools::review_core::MAX_INTENT_CHARS;
     if log.chars().count() <= limit {
         return Ok(log.to_string());
     }
