@@ -54,6 +54,10 @@ struct RecoveryRef<'a> {
     artifact_id: Option<&'a str>,
 }
 
+pub(super) fn offers_retrieval(metadata: Option<&Value>) -> bool {
+    recovery_ref(metadata).is_some_and(|recovery| recovery.artifact_id.is_some())
+}
+
 fn recovery_ref(metadata: Option<&Value>) -> Option<RecoveryRef<'_>> {
     let obj = metadata?.as_object()?;
     let text = |key: &str| {

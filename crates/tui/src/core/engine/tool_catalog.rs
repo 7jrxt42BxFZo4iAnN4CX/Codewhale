@@ -461,7 +461,8 @@ pub(crate) fn activate_result_dependencies(
         .as_ref()
         .and_then(|metadata| metadata.get("evidence_available"))
         .and_then(Value::as_bool)
-        == Some(true);
+        == Some(true)
+        || super::context::offers_retrieval(result.metadata.as_ref());
     if !needs_retrieval {
         return false;
     }
@@ -626,7 +627,7 @@ pub(super) fn tool_allowed(allowed_tools: Option<&[String]>, tool_name: &str) ->
     let Some(allowed_tools) = allowed_tools else {
         return true;
     };
-    tool_matches_any_rule(allowed_tools, tool_name)
+    tool_name == TOOL_RESULT_RETRIEVAL_NAME || tool_matches_any_rule(allowed_tools, tool_name)
 }
 
 pub(crate) fn tool_denied(disallowed_tools: Option<&[String]>, tool_name: &str) -> bool {
