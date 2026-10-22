@@ -765,34 +765,21 @@ fn semantic_boundary_matrix_has_four_deliberate_rhythm_levels() {
         1
     );
     assert_eq!(
-        spacer_rows_for_boundary(Turn, TranscriptSpacing::Comfortable),
-        1
-    );
-    assert_eq!(
         spacer_rows_for_boundary(Turn, TranscriptSpacing::Spacious),
-        2
+        3
     );
     assert_eq!(
         spacer_rows_for_boundary(Activity, TranscriptSpacing::Compact),
         0
     );
     assert_eq!(
-        spacer_rows_for_boundary(Activity, TranscriptSpacing::Comfortable),
-        1
-    );
-    assert_eq!(
         spacer_rows_for_boundary(Activity, TranscriptSpacing::Spacious),
-        1
+        2
     );
     assert_eq!(
         spacer_rows_for_boundary(GroupedTool, TranscriptSpacing::Compact),
         0,
         "compact density buys its density by spending no separator rows"
-    );
-    assert_eq!(
-        spacer_rows_for_boundary(GroupedTool, TranscriptSpacing::Comfortable),
-        0,
-        "the shared rail carries grouping without a row per tool call"
     );
     assert_eq!(
         spacer_rows_for_boundary(GroupedTool, TranscriptSpacing::Spacious),
@@ -801,29 +788,18 @@ fn semantic_boundary_matrix_has_four_deliberate_rhythm_levels() {
     );
 }
 
-/// Separation is one row or none. Nothing in the matrix may produce a
-/// double blank, because a scrolling terminal cannot afford it.
+/// Compact never spends a double blank, because a scrolling terminal cannot
+/// afford it. Spacious buys its air at turn and activity seams by design.
 #[test]
-fn no_boundary_ever_spends_more_than_one_row_below_spacious_turns() {
+fn compact_never_spends_more_than_one_row_at_any_boundary() {
     use TranscriptBoundary::{Activity, GroupedTool, Joined, Turn};
 
     for boundary in [Joined, GroupedTool, Activity, Turn] {
-        for spacing in [
-            TranscriptSpacing::Compact,
-            TranscriptSpacing::Comfortable,
-            TranscriptSpacing::Spacious,
-        ] {
-            let rows = spacer_rows_for_boundary(boundary, spacing);
-            let allowed = if boundary == Turn && spacing == TranscriptSpacing::Spacious {
-                2
-            } else {
-                BLOCK_SEPARATOR_ROWS
-            };
-            assert!(
-                rows <= allowed,
-                "{boundary:?} at {spacing:?} spent {rows} rows (max {allowed})"
-            );
-        }
+        let rows = spacer_rows_for_boundary(boundary, TranscriptSpacing::Compact);
+        assert!(
+            rows <= BLOCK_SEPARATOR_ROWS,
+            "{boundary:?} at compact spent {rows} rows"
+        );
     }
 }
 
@@ -908,26 +884,26 @@ fn durable_work_starts_a_new_activity_rail_without_wasting_compact_rows() {
         "durable Work should open its own rail: {durable_work:?}"
     );
 
-    let mut comfortable = TranscriptViewCache::new();
-    comfortable.ensure(
+    let mut spacious = TranscriptViewCache::new();
+    spacious.ensure(
         &cells,
         &revisions,
         80,
         TranscriptRenderOptions {
-            spacing: TranscriptSpacing::Comfortable,
+            spacing: TranscriptSpacing::Spacious,
             low_motion: true,
             ..TranscriptRenderOptions::default()
         },
     );
     assert_eq!(
-        spacer_rows_after_cell(&comfortable, 0),
+        spacer_rows_after_cell(&spacious, 0),
         0,
         "two commands inside one activity rail must remain compact"
     );
     assert_eq!(
-        spacer_rows_after_cell(&comfortable, 1),
-        1,
-        "durable Work needs a semantic activity row outside compact density"
+        spacer_rows_after_cell(&spacious, 1),
+        2,
+        "durable Work needs a semantic activity break outside compact density"
     );
 }
 
@@ -1092,30 +1068,38 @@ fn transcript_rhythm_is_width_and_reduced_motion_invariant() {
     ];
     let revisions = vec![1u64; cells.len()];
     // user | reasoning | answer | tool | work | answer | user.
-    // Every seam is one row: the reasoning→answer seam (index 1) used to be
-    // the one place the transcript ran two blocks together.
-    let expected = [1, 1, 1, 1, 1, 1, 0];
+    // Turn seams breathe widest; activity seams are the interior of one turn.
+    let expected_compact = [1, 0, 0, 0, 0, 1, 0];
+    let expected_spacious = [3, 2, 2, 2, 2, 3, 0];
 
     for width in [40, 80, 100, 140] {
         for low_motion in [false, true] {
-            let options = TranscriptRenderOptions {
-                low_motion,
-                spacing: TranscriptSpacing::Comfortable,
-                ..TranscriptRenderOptions::default()
-            };
-            let mut cache = TranscriptViewCache::new();
-            cache.ensure(&cells, &revisions, width, options);
+            for (spacing, expected) in [
+                (TranscriptSpacing::Compact, expected_compact),
+                (TranscriptSpacing::Spacious, expected_spacious),
+            ] {
+                let options = TranscriptRenderOptions {
+                    low_motion,
+                    spacing,
+                    ..TranscriptRenderOptions::default()
+                };
+                let mut cache = TranscriptViewCache::new();
+                cache.ensure(&cells, &revisions, width, options);
 
-            let actual =
-                std::array::from_fn::<_, 7, _>(|index| spacer_rows_after_cell(&cache, index));
-            assert_eq!(actual, expected, "width={width} low_motion={low_motion}");
-            assert!(
-                cache
-                    .lines()
-                    .iter()
-                    .all(|line| line.width() <= usize::from(width)),
-                "render exceeded width={width} low_motion={low_motion}"
-            );
+                let actual =
+                    std::array::from_fn::<_, 7, _>(|index| spacer_rows_after_cell(&cache, index));
+                assert_eq!(
+                    actual, expected,
+                    "width={width} low_motion={low_motion} spacing={spacing:?}"
+                );
+                assert!(
+                    cache
+                        .lines()
+                        .iter()
+                        .all(|line| line.width() <= usize::from(width)),
+                    "render exceeded width={width} low_motion={low_motion}"
+                );
+            }
         }
     }
 }
@@ -2636,11 +2620,8 @@ impl TranscriptModel {
                 "width"
             }
             11 => {
-                self.options.spacing = [
-                    TranscriptSpacing::Compact,
-                    TranscriptSpacing::Comfortable,
-                    TranscriptSpacing::Spacious,
-                ][rng.below(3)];
+                self.options.spacing =
+                    [TranscriptSpacing::Compact, TranscriptSpacing::Spacious][rng.below(2)];
                 self.options.show_thinking = rng.below(4) != 0;
                 "options"
             }
