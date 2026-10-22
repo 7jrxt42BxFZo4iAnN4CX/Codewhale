@@ -328,9 +328,11 @@ pub(crate) fn open_diff_pager(app: &mut App, title: String, diff: &str) {
     // `PagerView::from_text` applies to every other pager body.
     let mut sanitized = String::with_capacity(diff.len());
     crate::tui::osc8::strip_ansi_into(diff, &mut sanitized);
-    let lines = crate::tui::diff_render::render_diff(&sanitized, width.saturating_sub(2));
-    app.view_stack
-        .push(PagerView::new(title, lines).with_copy_text(sanitized));
+    app.view_stack.push(PagerView::from_diff(
+        title,
+        sanitized,
+        width.saturating_sub(2),
+    ));
 }
 
 pub(crate) fn open_context_inspector(app: &mut App) {

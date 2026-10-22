@@ -72,6 +72,7 @@ enum PagerSource {
     Text(String),
     /// Pre-styled lines, wrapped with their styles intact.
     Lines(Vec<Line<'static>>),
+    Diff(String),
 }
 
 /// The display rows of one page and the column width they were wrapped to.
@@ -175,6 +176,13 @@ impl PagerPage {
         *self.rows.borrow_mut() = match &self.source {
             PagerSource::Text(source) => PagerRows::wrap_text(source, width),
             PagerSource::Lines(lines) => PagerRows::wrap_lines(lines, width),
+            PagerSource::Diff(diff) => PagerRows::wrap_lines(
+                &crate::tui::diff_render::render_diff(
+                    diff,
+                    u16::try_from(width).unwrap_or(u16::MAX),
+                ),
+                width,
+            ),
         };
         true
     }
@@ -196,7 +204,7 @@ impl PagerPage {
     /// display wrapping.
     fn source_text(&self) -> String {
         match &self.source {
-            PagerSource::Text(source) => source.clone(),
+            PagerSource::Text(source) | PagerSource::Diff(source) => source.clone(),
             PagerSource::Lines(lines) => lines
                 .iter()
                 .map(line_to_string)
@@ -357,6 +365,11 @@ impl PagerView {
 
     pub fn from_text(title: impl Into<String>, text: &str, width: u16) -> Self {
         Self::from_pages(vec![PagerPage::from_text(title, text, width)], 0)
+    }
+
+    pub(crate) fn from_diff(title: impl Into<String>, diff: String, width: u16) -> Self {
+        let page = PagerPage::new(title, PagerSource::Diff(diff), usize::from(width));
+        Self::from_pages(vec![page], 0)
     }
 
     /// Reuse the inspector confirmation control for token-bound commands.
