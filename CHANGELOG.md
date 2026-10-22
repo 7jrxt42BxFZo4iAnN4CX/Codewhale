@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.10.2] - 2026-10-19
+## [0.10.2] - 2026-10-22
 
 Codewhale v0.10.2 adds an animated pet view (`/pet on`), a live Terminal work
 dock, per-chat composer colors (`/color`) and a one-time note on the first
@@ -26,6 +26,39 @@ accounting, relay model lists, localized replies and Windows launcher
 guidance.
 
 ### Latest fixes
+
+- Credentials in tool-call arguments are now redacted before a session is
+  saved. A command the model wrote with a key in it (`curl -H
+  'Authorization: Bearer …'`, `API_KEY=… ./run`, a `.env` write) was stored
+  verbatim in the saved session and journal and replayed on resume; only tool
+  output was redacted. `codewhale sessions scrub-secrets` now also cleans tool
+  arguments in sessions already on disk. `[redaction] model_bound = false`
+  still lets the model see exact file bytes for edits, but no longer turns off
+  redaction of what is written to disk.
+
+- Provider requests follow redirects only on the same host. A cross-host
+  redirect or a downgrade from HTTPS to HTTP now stops the request, so an open
+  redirect on a configured `base_url` can no longer collect an `x-api-key`
+  header. The network guard also refuses IPv6 forms that reach private
+  addresses: NAT64 (`64:ff9b::/96`, checked as its embedded IPv4 address),
+  6to4, Teredo, site-local and IPv4-compatible addresses. An MCP server can no
+  longer grow the resource-template cache without bound, and a prefix allow
+  rule no longer matches a command that adds shell metacharacters after the
+  allowed prefix.
+
+- A session in Russian or another language written in a non-Latin script no
+  longer crashes the TUI with `start byte index N is not a char boundary`
+  when auto-review checks a shell command (#7048). Thanks @8sero.
+
+- Computer Use can be authorized in Full Access. Asking for an app grant was
+  refused before it ran, so the most permissive mode was the one mode where
+  Computer Use could never work. Ask and Full Access now show the approval
+  card; Auto-Review and Never still refuse, because nobody is there to answer
+  it. A grant still always needs your answer and is never approved
+  automatically.
+
+- A plugin state file larger than 1 MiB no longer makes every plugin fail to
+  load. The limit is now 16 MiB, and the read stays bounded.
 
 - Skill and plugin downloads and skills registry sync now check the first
   request and every redirect. They refuse `localhost`, loopback, private,
@@ -1197,6 +1230,26 @@ guidance.
 
 ### Added
 
+- `codewhale review`, the `review` agent tool and `/review` now share one
+  reviewer. It can read the repository with read-only tools (read, list,
+  grep, file search and `git status/diff/log/show/blame`) when the checkout is
+  clean and, for a pull request, `HEAD` is the PR head; otherwise it reviews
+  the diff alone and says so. Findings use one severity scale, `blocker`,
+  `concern` and `nit`; the old `error`/`warning`/`info` words map onto it.
+  Review effort follows the change's risk: sensitive paths (auth, billing,
+  migrations, secrets, sandbox, schema and similar) or large changes get more
+  steps and tool calls, small low-risk changes get one pass over the diff.
+  `--money-cap-usd`, with `--input-usd-per-mtok` and `--output-usd-per-mtok`,
+  stops a review at a spending cap; without both prices the receipt says the
+  cap could not be applied. A review that stops early names the limit and says
+  that files it did not reach were not reviewed. Each finding says whether it
+  was reproduced, traced or only suspected; suspected ones move to a short
+  "worth a human look" list, and on high-risk changes a second pass tries to
+  refute each finding and can only remove findings, never add them. A defect in
+  code the change did not add is labelled pre-existing, kept out of inline
+  comments and listed separately, and on its own does not raise the merge
+  risk. The summary lists what the reviewer checked and found sound under
+  "Checked, nothing wrong".
 - Standard Compute is available as a bundled compatible provider, with the
   `standardcompute` router default and authenticated model discovery. Its
   billing basis remains Unknown (#6985).
@@ -1313,6 +1366,12 @@ guidance.
 
 ### Changed
 
+- `transcript_spacing` has two settings, `compact` and `spacious`, and
+  `spacious` is the new default. `comfortable` drew the same conversation as
+  `compact` everywhere except between activity rows, so the settings list
+  offered a choice that did nothing. `spacious` leaves two blank rows between
+  activity rows and three between turns. A saved `comfortable` (or `default`,
+  `normal`) now reads as `spacious`; set `compact` to keep the denser layout.
 - Goal mode has no step limit when `[goal].max_steps` is omitted or `0`.
   Positive values still limit the goal, with values above `100000` clamped to
   `100000` ([#6512](https://github.com/codewhale-hq/Codewhale/issues/6512)).
@@ -1672,6 +1731,7 @@ guidance.
 - **[@leoca](https://github.com/leoca)** — fixed the command splitter behind the destructive-command checks so a backslash-escaped quote outside quotes is an ordinary character, as the shell treats it (commit 82a14ee2d1).
 - **[@luestr](https://github.com/luestr)** — reported refusals when starting a new session ([#6981](https://github.com/codewhale-hq/Codewhale/issues/6981)) and the `/undo` notice that reported files reverted when only the conversation had been rewound ([#6970](https://github.com/codewhale-hq/Codewhale/issues/6970)).
 - **[@zhuowp](https://github.com/zhuowp)** — found that the Windows shell's Python UTF-8 default was discarded whenever hook variables were applied, and fixed the merge so it survives while explicit overrides still win ([#7041](https://github.com/codewhale-hq/Codewhale/pull/7041)).
+- **[@8sero](https://github.com/8sero)** — reported the TUI crash in non-Latin-script sessions, with the panic signature that located the byte-index slice ([#7048](https://github.com/codewhale-hq/Codewhale/issues/7048)).
 - **[@SergiuSSoluS](https://github.com/SergiuSSoluS)** — reported queued turns being delivered again after a session was restored ([#6978](https://github.com/codewhale-hq/Codewhale/issues/6978)).
 - **[@Statter](https://github.com/Statter)** — reported rate-limit retry behavior that informed the bounded current-quota 429 retry fix ([#6923](https://github.com/codewhale-hq/Codewhale/issues/6923)).
 - **[@7jrxt42BxFZo4iAnN4CX](https://github.com/7jrxt42BxFZo4iAnN4CX)** — reported oversized-session refusals that informed compaction error preservation and size-limit attribution ([#6955](https://github.com/codewhale-hq/Codewhale/issues/6955)).
