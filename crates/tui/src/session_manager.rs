@@ -1524,7 +1524,7 @@ fn serialize_saved_session(mut session: SavedSession) -> io::Result<String> {
         validate_saved_journal(journal)?;
     }
     session.make_storage_compatible();
-    serde_json::to_string_pretty(&session)
+    serde_json::to_string(&session)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
 }
 

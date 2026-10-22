@@ -106,6 +106,12 @@ guidance.
   counted, instead of rewriting the file and then reporting that nothing
   changed. Refs #6955. Thanks @7jrxt42BxFZo4iAnN4CX.
 
+- Saved sessions and crash checkpoints are now written as compact JSON
+  instead of indented JSON. Files are smaller (16–27% on the two measured
+  sessions from the report), and a session that was over the 8 MiB resume
+  limit only because of indentation resumes again. Refs #6955. Thanks
+  @7jrxt42BxFZo4iAnN4CX.
+
 - A `codewhale resume` or `codewhale fork` that is refused before it
   reserves anything no longer tells you to recover it with an operation key.
   Refs #6954.
