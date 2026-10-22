@@ -1331,6 +1331,10 @@ impl FleetManager {
             .map(|manifest| manifest.generation)
             .ok_or_else(|| anyhow!("Fleet worker {worker_id} has no persisted launch manifest"))?;
 
+        coordination
+            .ensure_registered_worker_coordination_locks(worker_id)
+            .map_err(anyhow::Error::msg)?;
+
         match registered_generation {
             generation if generation == current_generation => {
                 validate_registered_launch_spec(&record.spec, &expected_current)?;
@@ -1612,19 +1616,23 @@ impl FleetManager {
                 .cloned()
                 .unwrap_or_else(|| default_local_worker(worker_id));
             let coordination_record = if let Some(manager) = self.sub_agent_manager.as_ref() {
-                let Ok(guard) = manager.try_read() else {
+                let Ok(mut guard) = manager.try_write() else {
                     continue;
                 };
-                Some(
+                let record = guard
+                    .fleet_worker_records_for_workspace(&self.workspace)
+                    .map_err(anyhow::Error::msg)?
+                    .into_iter()
+                    .find(|record| {
+                        record.spec.worker_id == worker_id
+                            && record.spec.run_id == task.entry.run_id.0
+                    });
+                if record.is_some() {
                     guard
-                        .fleet_worker_records_for_workspace(&self.workspace)
-                        .map_err(anyhow::Error::msg)?
-                        .into_iter()
-                        .find(|record| {
-                            record.spec.worker_id == worker_id
-                                && record.spec.run_id == task.entry.run_id.0
-                        }),
-                )
+                        .ensure_registered_worker_coordination_locks(worker_id)
+                        .map_err(anyhow::Error::msg)?;
+                }
+                Some(record)
             } else {
                 None
             };

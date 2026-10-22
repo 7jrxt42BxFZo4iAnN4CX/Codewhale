@@ -27,6 +27,13 @@ guidance.
 
 ### Latest fixes
 
+- Opening a folder in the desktop Runtime no longer fails because a terminal
+  session is already using it, including when attaching a second folder.
+  Delegated workers still respect the folder's writer lock, including after
+  a restart. If the Runtime starts without its own coordination lock, stop and
+  restart its process after the other session exits to regain delegated writes.
+  It cannot overwrite newer coordination records with the snapshot it opened earlier.
+
 - Credentials in tool-call arguments are now redacted before a session is
   saved. A command the model wrote with a key in it (`curl -H
   'Authorization: Bearer …'`, `API_KEY=… ./run`, a `.env` write) was stored

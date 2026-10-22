@@ -3972,6 +3972,7 @@ pub struct SubAgentManager {
     coordination_process_lock: std::sync::Mutex<Option<Arc<CoordinationProcessLock>>>,
     coordination_process_lock_required: bool,
     coordination_exclusive: bool,
+    coordination_snapshot_read_only: bool,
     workspace_writer_locks: HashMap<PathBuf, Arc<CoordinationProcessLock>>,
     /// Configured default per-child model-turn budget (`[subagents]
     /// default_max_steps`, #5324). `None` keeps the unbounded Fleet default;
@@ -4485,6 +4486,7 @@ impl SubAgentManager {
             coordination_process_lock: std::sync::Mutex::new(None),
             coordination_process_lock_required: false,
             coordination_exclusive: false,
+            coordination_snapshot_read_only: false,
             workspace_writer_locks: HashMap::new(),
             max_steps: None,
             wall_time: None,
@@ -4551,14 +4553,20 @@ impl SubAgentManager {
         #[cfg(any(unix, windows))]
         {
             if self.coordination_exclusive
+                && !self.coordination_snapshot_read_only
                 && normalize_subagent_workspace(&lexical)
                     != normalize_subagent_workspace(&self.state_root)
                 && !self.workspace_writer_locks.contains_key(&canonical_root)
             {
-                let lock = CoordinationProcessLock::acquire(&lexical, true)
-                    .map_err(|error| error.to_string())?;
-                self.workspace_writer_locks
-                    .insert(canonical_root.clone(), Arc::new(lock));
+                match CoordinationProcessLock::acquire(&lexical, true) {
+                    Ok(lock) => {
+                        self.workspace_writer_locks
+                            .insert(canonical_root.clone(), Arc::new(lock));
+                    }
+                    Err(error) => {
+                        tracing::warn!(target: "subagent", %error, "admitted coordination workspace without its writer lock; shared-workspace writers there stay refused until it is free");
+                    }
+                }
             }
             let receipt = CoordinationClaimScope {
                 canonical_root,
@@ -4577,6 +4585,61 @@ impl SubAgentManager {
             );
             Ok(())
         }
+    }
+
+    fn ensure_origin_writer_lock(&mut self, origin: &WorkerOrigin) -> Result<(), String> {
+        let (Some(selected), Some(scope)) = (&origin.selected_workspace, &origin.scope) else {
+            return Ok(());
+        };
+        if !self.coordination_exclusive
+            || normalize_subagent_workspace(selected)
+                == normalize_subagent_workspace(&self.state_root)
+            || self
+                .workspace_writer_locks
+                .contains_key(&scope.canonical_root)
+        {
+            return Ok(());
+        }
+        let lock =
+            CoordinationProcessLock::acquire(selected, true).map_err(|error| error.to_string())?;
+        self.workspace_writer_locks
+            .insert(scope.canonical_root.clone(), Arc::new(lock));
+        Ok(())
+    }
+
+    fn ensure_worker_coordination_locks(
+        &mut self,
+        spec: &AgentWorkerSpec,
+        origin: &WorkerOrigin,
+    ) -> Result<(), String> {
+        let claim = worker_coordination_claim(spec)?;
+        if claim.as_ref().is_some_and(|(_, isolated)| *isolated) {
+            return Ok(());
+        }
+        self.ensure_coordination_process_lock()?;
+        if claim.is_some() {
+            self.ensure_origin_writer_lock(origin)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn ensure_registered_worker_coordination_locks(
+        &mut self,
+        worker_id: &str,
+    ) -> Result<(), String> {
+        let spec = self
+            .worker_records
+            .get(worker_id)
+            .ok_or_else(|| format!("Fleet worker {worker_id} has no registered launch spec"))?
+            .spec
+            .clone();
+        let origin = self
+            .worker_origins
+            .get(worker_id)
+            .cloned()
+            .ok_or_else(|| "worker origin is missing from the owner journal".to_string())?;
+        self.validate_worker_origin(&origin)?;
+        self.ensure_worker_coordination_locks(&spec, &origin)
     }
 
     fn admitted_coordination_root(&self, workspace: &Path) -> Option<&AdmittedCoordinationRoot> {
@@ -5657,11 +5720,17 @@ impl SubAgentManager {
         self
     }
 
-    /// A failed acquisition is never terminal: the previous owner may have
-    /// exited since the last attempt, and the flock is held on an open fd —
-    /// deleting the lock file does not release it, so the only correct
-    /// recovery is to re-attempt acquisition on each use (#5036).
+    /// Terminal sessions retry failed acquisition when the previous owner
+    /// exits. A Runtime loaded without its writer lock must restart rather
+    /// than publish its stale snapshot. The flock is held on an open fd —
+    /// deleting the lock file does not release it (#5036).
     fn ensure_coordination_process_lock(&self) -> Result<(), String> {
+        if self.coordination_snapshot_read_only {
+            return Err(
+                "Runtime coordination was opened without its writer lock; stop and restart this Runtime process after the other session exits"
+                    .into(),
+            );
+        }
         if !self.coordination_process_lock_required {
             return Ok(());
         }
@@ -5696,8 +5765,8 @@ impl SubAgentManager {
     }
 
     /// Probe lock ownership for UI/inspect surfaces. Retries acquire when the
-    /// slot is empty so a session that started without the lock can recover
-    /// after the previous owner exits (#2.6 / #5036).
+    /// slot is empty so a terminal session can recover after the previous
+    /// owner exits (#2.6 / #5036); read-only Runtime snapshots require restart.
     pub fn coordination_process_lock_status(&self) -> Result<(), String> {
         self.ensure_coordination_process_lock()
     }
@@ -6319,9 +6388,7 @@ impl SubAgentManager {
         // Isolated-worktree builders mutate their own checkout, not the
         // shared workspace, so they must not contend for the per-workspace
         // coordination process lock (#5036).
-        if !isolated_worktree {
-            self.ensure_coordination_process_lock()?;
-        }
+        self.ensure_worker_coordination_locks(spec, origin)?;
         let claim = self.namespace_write_claim(&origin_workspace, isolated_worktree, claim)?;
         let scope = if isolated_worktree {
             None
@@ -6390,9 +6457,7 @@ impl SubAgentManager {
         let isolated_worktree = claim
             .as_ref()
             .is_some_and(|(_, isolated_worktree)| *isolated_worktree);
-        if !isolated_worktree {
-            self.ensure_coordination_process_lock()?;
-        }
+        self.ensure_worker_coordination_locks(&spec, &origin)?;
         let previous_worker_records = self.worker_records.clone();
         let previous_coordination = self.coordination.clone();
         let persisted_claim = claim
@@ -8957,6 +9022,8 @@ impl SubAgentManager {
             if !options.isolated_worktree {
                 self.ensure_coordination_process_lock()
                     .map_err(anyhow::Error::msg)?;
+                self.ensure_origin_writer_lock(&origin)
+                    .map_err(anyhow::Error::msg)?;
             }
             if self.coordination_process_lock_required && self.state_path.is_none() {
                 return Err(anyhow!(
@@ -11269,9 +11336,10 @@ pub(crate) fn new_shared_runtime_subagent_manager(
         .with_state_path(state_path);
     manager.coordination_exclusive = true;
     manager = manager.require_coordination_process_lock();
-    manager
-        .ensure_coordination_process_lock()
-        .map_err(anyhow::Error::msg)?;
+    if let Err(error) = manager.ensure_coordination_process_lock() {
+        manager.coordination_snapshot_read_only = true;
+        tracing::warn!(target: "subagent", %error, "Runtime coordination is read-only; stop and restart this Runtime process after the other session exits to load current state and regain delegated writes");
+    }
     manager.load_state()?;
     let manager = Arc::new(RwLock::new(manager));
     managers.insert(key, (workers, Arc::downgrade(&manager)));
