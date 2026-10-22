@@ -4059,7 +4059,7 @@ mod tests {
     #[test]
     fn work_mutation_rows_keep_labels_privacy_and_all_inline_modes() {
         let (label, detail, full) = mutation_activity_body(InlineDiffMode::Full);
-        assert_eq!(label, "Wrote 1 files");
+        assert_eq!(label, "Wrote 1 file");
         assert_eq!(detail, "Updated <external file> · +1 -1");
         assert!(full.contains("-old"), "{full}");
         assert!(full.contains("+new"), "{full}");
@@ -4260,7 +4260,7 @@ mod tests {
             .iter()
             .find(|row| row.id.0 == "activity:aggregate")
             .expect("aggregate activity");
-        assert!(activity_row.label.contains("Read 1 files"));
+        assert!(activity_row.label.contains("Read 1 file ·"));
         assert!(activity_row.label.contains("Searched 2 patterns"));
         assert!(!activity_row.label.contains("super_secret_pattern_xyz"));
         assert!(!activity_row.detail.contains("super_secret_pattern_xyz"));

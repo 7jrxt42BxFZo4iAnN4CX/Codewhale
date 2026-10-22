@@ -3555,16 +3555,28 @@ impl FileActivitySummary {
     pub fn compact_display(&self) -> Vec<String> {
         let mut parts = Vec::new();
         if self.files_read > 0 {
-            parts.push(format!("Read {} files", self.files_read));
+            parts.push(format!(
+                "Read {}",
+                tool_run::counted(self.files_read as usize, "file", "files")
+            ));
         }
         if self.dirs_listed > 0 {
-            parts.push(format!("Listed {} directories", self.dirs_listed));
+            parts.push(format!(
+                "Listed {}",
+                tool_run::counted(self.dirs_listed as usize, "directory", "directories")
+            ));
         }
         if self.patterns_searched > 0 {
-            parts.push(format!("Searched {} patterns", self.patterns_searched));
+            parts.push(format!(
+                "Searched {}",
+                tool_run::counted(self.patterns_searched as usize, "pattern", "patterns")
+            ));
         }
         if self.files_written > 0 {
-            parts.push(format!("Wrote {} files", self.files_written));
+            parts.push(format!(
+                "Wrote {}",
+                tool_run::counted(self.files_written as usize, "file", "files")
+            ));
         }
         parts
     }

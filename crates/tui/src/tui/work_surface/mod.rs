@@ -985,9 +985,9 @@ mod tests {
             .find(|row| row.id.0 == "activity:aggregate")
             .expect("aggregated activity row");
         assert!(
-            activity.label.contains("Read 1 files")
-                && activity.label.contains("Searched 1 patterns")
-                && activity.label.contains("Wrote 1 files"),
+            activity.label.contains("Read 1 file ·")
+                && activity.label.contains("Searched 1 pattern ·")
+                && activity.label.ends_with("Wrote 1 file"),
             "aggregated label: {}",
             activity.label
         );
