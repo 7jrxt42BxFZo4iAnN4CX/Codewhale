@@ -72,7 +72,14 @@ const MEDIUM_RISK_PATH: &[(&str, &str)] = &[
     ("contract", "a published contract"),
 ];
 
-const TEST_PATH: &[&str] = &["/test/", "/tests/", "_test.", ".test.", "/spec/", "/__tests__/"];
+const TEST_PATH: &[&str] = &[
+    "/test/",
+    "/tests/",
+    "_test.",
+    ".test.",
+    "/spec/",
+    "/__tests__/",
+];
 
 fn path_is_test(path: &str) -> bool {
     let lower = path.to_ascii_lowercase();
@@ -92,7 +99,10 @@ pub fn triage_review(diff: &str) -> ReviewTriage {
         let header = line
             .strip_prefix("+++ ")
             .map(|rest| rest.trim().trim_start_matches("b/"))
-            .or_else(|| line.strip_prefix("--- ").map(|rest| rest.trim().trim_start_matches("a/")));
+            .or_else(|| {
+                line.strip_prefix("--- ")
+                    .map(|rest| rest.trim().trim_start_matches("a/"))
+            });
         if let Some(path) = header {
             if path != "/dev/null" && !paths.iter().any(|seen| seen == path) {
                 paths.push(path.to_string());
@@ -115,7 +125,10 @@ pub fn triage_review(diff: &str) -> ReviewTriage {
     let mut high = false;
     let mut medium = false;
     for (marker, reason) in HIGH_RISK_PATH {
-        if paths.iter().any(|path| path.to_ascii_lowercase().contains(marker)) {
+        if paths
+            .iter()
+            .any(|path| path.to_ascii_lowercase().contains(marker))
+        {
             high = true;
             if !reasons.iter().any(|seen| seen == reason) {
                 reasons.push((*reason).to_string());
@@ -123,7 +136,10 @@ pub fn triage_review(diff: &str) -> ReviewTriage {
         }
     }
     for (marker, reason) in MEDIUM_RISK_PATH {
-        if paths.iter().any(|path| path.to_ascii_lowercase().contains(marker)) {
+        if paths
+            .iter()
+            .any(|path| path.to_ascii_lowercase().contains(marker))
+        {
             medium = true;
             if !reasons.iter().any(|seen| seen == reason) {
                 reasons.push((*reason).to_string());
@@ -255,14 +271,26 @@ impl ReviewStop {
 }
 
 #[must_use]
-pub fn partial_review_note(stop: &ReviewStop, triage: &ReviewTriage, budget: &ReviewBudget) -> String {
+pub fn partial_review_note(
+    stop: &ReviewStop,
+    triage: &ReviewTriage,
+    budget: &ReviewBudget,
+) -> String {
     let what = match stop {
         ReviewStop::MoneyCap => format!(
             "the per-review money cap of ${:.4} was reached",
             budget.money_cap_usd.unwrap_or(0.0)
         ),
-        ReviewStop::StepBudget => format!("the {} model step(s) for a {} risk change were used", budget.max_steps, triage.risk.as_str()),
-        ReviewStop::ToolBudget => format!("the {} tool call(s) for a {} risk change were used", budget.max_tool_calls, triage.risk.as_str()),
+        ReviewStop::StepBudget => format!(
+            "the {} model step(s) for a {} risk change were used",
+            budget.max_steps,
+            triage.risk.as_str()
+        ),
+        ReviewStop::ToolBudget => format!(
+            "the {} tool call(s) for a {} risk change were used",
+            budget.max_tool_calls,
+            triage.risk.as_str()
+        ),
         ReviewStop::OutputLimit => "the model exhausted its output allowance".to_string(),
         ReviewStop::ModelFailure => "the model call failed".to_string(),
     };
@@ -287,7 +315,9 @@ mod tests {
 
     #[test]
     fn a_docs_change_is_low_risk_and_buys_no_tools() {
-        let triage = triage_review("diff --git a/docs/README.md b/docs/README.md\n--- a/docs/README.md\n+++ b/docs/README.md\n@@ -1 +1 @@\n-old\n+new\n");
+        let triage = triage_review(
+            "diff --git a/docs/README.md b/docs/README.md\n--- a/docs/README.md\n+++ b/docs/README.md\n@@ -1 +1 @@\n-old\n+new\n",
+        );
         assert_eq!(triage.risk, ReviewRisk::Low);
         let budget = budget_for(&triage);
         assert_eq!(budget.max_tool_calls, 0);
@@ -299,8 +329,18 @@ mod tests {
     fn a_billing_migration_is_high_risk_and_buys_repository_tools() {
         let triage = triage_review(&diff_for(&["services/billing/stripe-migration.sql"]));
         assert_eq!(triage.risk, ReviewRisk::High);
-        assert!(triage.reasons.iter().any(|reason| reason.contains("billing")));
-        assert!(triage.reasons.iter().any(|reason| reason.contains("migration")));
+        assert!(
+            triage
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("billing"))
+        );
+        assert!(
+            triage
+                .reasons
+                .iter()
+                .any(|reason| reason.contains("migration"))
+        );
         let budget = budget_for(&triage);
         assert!(budget.max_tool_calls >= 12);
         assert!(budget.max_steps >= 6);
@@ -308,14 +348,24 @@ mod tests {
 
     #[test]
     fn size_and_sensitive_paths_raise_the_tier_independently() {
-        let wide = diff_for(&(0..25).map(|index| format!("src/part{index}.rs")).collect::<Vec<_>>().iter().map(String::as_str).collect::<Vec<_>>());
+        let wide = diff_for(
+            &(0..25)
+                .map(|index| format!("src/part{index}.rs"))
+                .collect::<Vec<_>>()
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+        );
         assert_eq!(triage_review(&wide).risk, ReviewRisk::High);
         let tall: String = format!(
             "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1,1 +1,401 @@\n context\n{}",
             "+line\n".repeat(400)
         );
         assert_eq!(triage_review(&tall).risk, ReviewRisk::High);
-        assert_eq!(triage_review(&diff_for(&["src/tools/shell.rs"])).risk, ReviewRisk::Low);
+        assert_eq!(
+            triage_review(&diff_for(&["src/tools/shell.rs"])).risk,
+            ReviewRisk::Low
+        );
     }
 
     #[test]
