@@ -73,7 +73,7 @@ guidance.
   namespace, including loopback and abstract unix sockets, like a networked
   workspace-write shell. A networked run is marked `sandbox_network: true`
   in its tool result, and `codewhale run sandbox run --policy read-only
-  --network` now honors `--network`. Refs #7040.
+  --network` now honors `--network`. Refs #7040, #5904.
 
 - Plugin suggestions no longer treat Codewhale's own vocabulary as a reason
   to offer a plugin. A message about MCP servers stuck at connecting, or one
