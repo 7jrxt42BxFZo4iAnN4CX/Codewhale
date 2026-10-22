@@ -10055,9 +10055,10 @@ async fn prepare_mounted_session(
     let manager_config = RuntimeThreadManagerConfig::for_session(task_config.data_dir, &source_id);
     let owner_config = prepared.config.clone();
     let owner_workspace = saved.metadata.workspace.clone();
+    let worker_workspace = owner_workspace.clone();
     let prior_binding = saved.metadata.runtime_store.clone();
     let recovery = cli.operation_key.is_some();
-    let runtime = history_owner_work(move || {
+    let (runtime, workers) = history_owner_work(move || {
         // Recheck the captured binding immediately before the actual factory.
         if let Some(binding) = prior_binding.as_ref() {
             binding.validate_existing_store()?;
@@ -10084,13 +10085,31 @@ async fn prepare_mounted_session(
                 None,
             ),
         }
-        .map(Arc::new)
+        .map(|runtime| {
+            (
+                Arc::new(runtime),
+                crate::tools::subagent::new_shared_subagent_manager_with_timeout(
+                    worker_workspace,
+                    MAX_SUBAGENTS,
+                    MAX_SUBAGENTS,
+                    Duration::from_secs(crate::config::DEFAULT_SUBAGENT_HEARTBEAT_TIMEOUT_SECS),
+                    MAX_SUBAGENTS,
+                ),
+            )
+        })
     })
     .await
     .with_context(|| cli.operation_key.as_ref().map_or_else(
         || "inactive canonical owner could not be acquired; no history mutation attempted".to_string(),
         |key| format!("retained operation {key}; existing owner could not be acquired; no mutation attempted"),
     ))?;
+    runtime
+        .attach_subagent_manager(workers)
+        .await
+        .with_context(|| cli.operation_key.as_ref().map_or_else(
+            || "inactive canonical owner could not admit its worker authority; no history mutation attempted".to_string(),
+            |key| format!("retained operation {key}; worker authority could not be admitted; no mutation attempted"),
+        ))?;
     let binding = runtime.session_store_binding();
     let operation_key = cli
         .operation_key
