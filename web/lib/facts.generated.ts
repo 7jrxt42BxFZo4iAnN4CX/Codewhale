@@ -38,7 +38,7 @@ export interface RepoFacts {
 }
 
 export const FACTS: RepoFacts = {
-  "generatedAt": "2026-10-22T21:01:24.116Z",
+  "generatedAt": "2026-10-22T23:40:37.238Z",
   "sourceRevision": null,
   "sourceCommittedAt": null,
   "version": "0.10.2",
@@ -847,7 +847,7 @@ export const FACTS: RepoFacts = {
       "provider": "Anthropic",
       "contextWindow": 200000,
       "maxOutput": 64000,
-      "reasoning": false,
+      "reasoning": true,
       "addedAt": "2026-06-14"
     },
     {

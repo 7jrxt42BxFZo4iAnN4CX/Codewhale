@@ -27,6 +27,9 @@ guidance.
 
 ### Latest fixes
 
+- Haiku 4.5 metadata preserves its image input and extended-thinking support,
+  keeping review output reserves consistent with its provider capabilities.
+
 - Clearing or replacing an OrcaRouter key cancels pending browser sign-in,
   including a code exchange already underway. A late callback can no longer
   restore the cleared key, and disconnecting the client does not interrupt
