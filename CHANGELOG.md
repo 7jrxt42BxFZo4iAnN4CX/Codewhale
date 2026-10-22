@@ -1338,6 +1338,14 @@ guidance.
   Review effort follows the change's risk: sensitive paths (auth, billing,
   migrations, secrets, sandbox, schema and similar) or large changes get more
   steps and tool calls, small low-risk changes get one pass over the diff.
+- Every review body now ends with a severity tally as one HTML comment,
+  `<!-- codewhale-review: {"blocker":0,"concern":0,"nit":0,"introduced":0,"preexisting":0} -->`,
+  so a repository can gate a merge on "no blockers" without scraping prose or
+  granting Codewhale `checks: write`. Findings also say whether the line they
+  point at was introduced by this change or was already there, decided from
+  the diff rather than from the model's own label. `codewhale review`,
+  `codewhale review --pr --post` and the extension-host path write the same
+  body.
   `--money-cap-usd`, with `--input-usd-per-mtok` and `--output-usd-per-mtok`,
   stops a review at a spending cap; without both prices the receipt says the
   cap could not be applied. A review that stops early names the limit and says
