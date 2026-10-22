@@ -19,7 +19,7 @@
 
 use codewhale_ratatui::{PostureBar, PostureFact};
 use ratatui::{buffer::Buffer, layout::Rect};
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::tui::{
     app::App,
@@ -140,9 +140,10 @@ fn notice_clauses<'a>(text: &'a str, marks: &[char]) -> Vec<&'a str> {
             continue;
         }
         // Full-width marks carry no trailing space, so they break on sight.
-        // ASCII marks only break before whitespace, which keeps `0.9.11`,
+        // Other marks only break before whitespace, which keeps `0.9.11`,
         // `docs/TELEMETRY.md`, and `https://…` in one piece.
-        let breaks = !ch.is_ascii() || chars.peek().is_none_or(|(_, next)| next.is_whitespace());
+        let breaks =
+            ch.width() == Some(2) || chars.peek().is_none_or(|(_, next)| next.is_whitespace());
         if !breaks {
             continue;
         }
@@ -181,7 +182,8 @@ fn join_while_fitting(clauses: &[&str], budget: usize) -> Option<String> {
         // A full-width stop already carries its own breathing room; putting
         // a Latin space after `。` is a typographic accent in the wrong
         // language.
-        let space = usize::from(!fitted.is_empty() && fitted.ends_with(|ch: char| ch.is_ascii()));
+        let space =
+            usize::from(!fitted.is_empty() && !fitted.ends_with(|ch: char| ch.width() == Some(2)));
         let candidate = fitted.width() + space + clause.width();
         if candidate > budget {
             break;
