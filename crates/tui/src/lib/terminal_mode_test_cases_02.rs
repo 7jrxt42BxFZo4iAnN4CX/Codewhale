@@ -946,7 +946,7 @@
             "{posted}"
         );
         assert!(!posted.contains("```suggestion"), "{posted}");
-        assert!(posted.contains("```text"), "{posted}");
+        assert!(posted.contains("```diff"), "{posted}");
     }
 
     /// #6510: a plain-diff review now asks for the one structured review
