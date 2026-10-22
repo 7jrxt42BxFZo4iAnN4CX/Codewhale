@@ -341,8 +341,9 @@ fn scrub_value(value: &mut Value, secrets: &[String]) -> usize {
     match value {
         Value::Object(map) => {
             let mut changed = 0;
-            let block_type = map.get("type").and_then(Value::as_str);
-            if block_type == Some("tool_result") {
+            // Owned, so the two `get_mut` calls below can borrow the map.
+            let block_type = map.get("type").and_then(Value::as_str).map(str::to_string);
+            if block_type.as_deref() == Some("tool_result") {
                 if let Some(Value::String(content)) = map.get_mut("content") {
                     changed += usize::from(scrub_text(content, secrets));
                 }
@@ -356,7 +357,7 @@ fn scrub_value(value: &mut Value, secrets: &[String]) -> usize {
                     }
                 }
             }
-            if matches!(block_type, Some("tool_use" | "server_tool_use"))
+            if matches!(block_type.as_deref(), Some("tool_use" | "server_tool_use"))
                 && let Some(input) = map.get_mut("input")
             {
                 let redacted = crate::client::redact_json_model_bound_text(input, secrets);
