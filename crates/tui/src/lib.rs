@@ -1177,8 +1177,9 @@ fn resolve_exec_resume_route(
             .map_err(anyhow::Error::msg)
             .with_context(|| {
                 format!(
-                    "saved session provider '{}' is unavailable; Codewhale will not fall back",
-                    saved_provider_identity
+                    "saved session provider '{}' is unavailable; Codewhale will not fall back. {}",
+                    saved_provider_identity,
+                    session_export::export_recovery_hint(&saved.metadata.id)
                 )
             })?;
         config

@@ -160,6 +160,10 @@ sandbox_mode = "workspace-write" # read-only | workspace-write | danger-full-acc
 
 - 只有当对应的包装器被选中且可用时，`read-only` 和 `workspace-write` 才由
   Seatbelt 或 bubblewrap 强制执行。
+- 配置值只能收窄权限模式选定的沙箱：Full Access（`yolo`）不套包装器，Ask 和
+  Auto-Review 使用 `workspace-write`，Plan 使用 `read-only`。因此配置的
+  `danger-full-access` 或 `external-sandbox` 只在 Full Access 下生效，绝不会放宽
+  Ask 或 Auto-Review。
 - `danger-full-access` 有意绕过本地操作系统包装器。在 Linux 上，它还会在启动时
   跳过 `PR_SET_NO_NEW_PRIVS` 进程加固标志，让 `sudo`/setuid 工作流继续可用
   （#5723）；见上面的进程加固一节。

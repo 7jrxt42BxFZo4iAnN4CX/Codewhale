@@ -2254,6 +2254,10 @@ reasoning contract, and all four membership ids omit generic sampling fields.
   timeout_seconds = 300
   ```
 - `sandbox_mode` (string, optional): `read-only`, `workspace-write`, `danger-full-access`, `external-sandbox`.
+  The value can only narrow the sandbox the permission mode picks (Full
+  Access: no wrapper; Ask and Auto-Review: `workspace-write`; Plan:
+  `read-only`), so `danger-full-access` and `external-sandbox` take effect
+  only in Full Access (`yolo`).
   Platform support is not identical. macOS uses Seatbelt when its runtime
   probe succeeds. Linux uses bubblewrap by default whenever `/usr/bin/bwrap`
   is installed and a probe proves it can confine a child; `prefer_bwrap =
@@ -2653,7 +2657,15 @@ reasoning contract, and all four membership ids omit generic sampling fields.
   - `[retry].respect_retry_after` (bool, default `true`): wait for a server
     `Retry-After` header instead of the computed backoff
 
-  `[retry]` schedules HTTP-request retries inside the client. The stream-level
+  `[retry]` schedules HTTP-request retries inside the client. When a
+  streaming request opens, its retries, backoff and any honored `Retry-After`
+  wait share one `stream.open_timeout_secs` window per protocol attempt, so
+  that window bounds how many of `max_retries` the open can reach. On the
+  default HTTP/2 client an expired window counts as a header stall and the open
+  is tried once more over HTTP/1.1 with a fresh window and retry schedule; with
+  HTTP/1.1 pinned there is one window. A `Retry-After` longer than the
+  remaining window ends the open as a response-header timeout; raise
+  `stream.open_timeout_secs` to wait it out. The stream-level
   budgets that sit above it — how often a turn re-issues a request whose
   stream failed to open or died — are the `[stream]` keys below; legacy `tui.stream_max_*` keys remain fallbacks.
 - `[notifications]`: notification delivery, attention, categories and audio share one

@@ -259,6 +259,7 @@ fn contract_bash_nonzero_is_an_error_with_status_after_output() {
         &ToolContext::new("."),
         None,
         false,
+        None,
     )
     .expect_err("nonzero must be a failed tool call");
     assert!(
@@ -2750,7 +2751,7 @@ fn contract_bash_denial_surfaces_the_escalation_shape() {
     let mut result = failed_network_shell_result("", "Operation not permitted");
     result.sandbox_denied = true;
 
-    let error = finish_contract_bash_result(result, None, &ctx, None, false)
+    let error = finish_contract_bash_result(result, None, &ctx, None, false, None)
         .expect_err("sandbox denial is a failed call");
 
     assert!(

@@ -4098,6 +4098,19 @@ fn looks_like_network_blocked_failure(result: &ShellResult) -> bool {
     .any(|pattern| output.contains(pattern))
 }
 
+const READONLY_OFFLINE_NETWORK_HINT: &str = "This read_only run has no network and cannot write files. Read-only commands reach the network only in Full Access, with a session sandbox that allows network, a [network] policy that does not deny by default, and this agent's network grant. Use a web tool if this session has one; otherwise report the source as unreachable.";
+
+fn readonly_offline_network_hint(command: &str, result: &ShellResult) -> Option<&'static str> {
+    if result.sandbox_denied && crate::sandbox::bwrap_setup_failure(&result.stderr).is_some() {
+        return None;
+    }
+    let rest = split_leading_cd(command).map(|(_, rest)| rest);
+    let command = rest.as_deref().unwrap_or(command);
+    (command_likely_needs_network(command)
+        && (result.sandbox_denied || looks_like_network_blocked_failure(result)))
+    .then_some(READONLY_OFFLINE_NETWORK_HINT)
+}
+
 fn shell_network_restricted_hint<'a>(
     context: &'a ToolContext,
     command: &str,
@@ -5386,10 +5399,22 @@ fn finish_contract_bash_result(
     context: &ToolContext,
     execution_receipt: Option<serde_json::Value>,
     readonly_network: bool,
+    network_restricted_hint: Option<&str>,
 ) -> Result<ToolResult, ToolError> {
-    let sandbox_denied_hint = shell_sandbox_denied_hint(context, &result);
+    let sandbox_denied_hint = if network_restricted_hint.is_none() {
+        shell_sandbox_denied_hint(context, &result)
+    } else {
+        None
+    };
     let mut output = result.stdout.clone();
     output.push_str(&result.stderr);
+    if let Some(hint) = network_restricted_hint {
+        output = if output.is_empty() {
+            hint.to_string()
+        } else {
+            format!("{hint}\n\n{output}")
+        };
+    }
     if let Some(hint) = sandbox_denied_hint {
         output = if output.is_empty() {
             hint
@@ -5408,6 +5433,10 @@ fn finish_contract_bash_result(
     }
     if readonly_network {
         metadata["sandbox_network"] = json!(true);
+    }
+    if let Some(hint) = network_restricted_hint {
+        metadata["sandbox_network_restricted"] = json!(true);
+        metadata["sandbox_network_denied_hint"] = json!(hint);
     }
     if result.status == ShellStatus::Running {
         let task_id = result.task_id.as_deref().unwrap_or("unknown");
@@ -6521,13 +6550,19 @@ impl ToolSpec for BashTool {
                         },
                     )
                 });
+                let readonly_offline_hint = (enforced_readonly && !readonly_network)
+                    .then(|| readonly_offline_network_hint(command, &result))
+                    .flatten();
                 if self.optional_timeout {
+                    let network_restricted_hint = readonly_offline_hint
+                        .or_else(|| shell_network_restricted_hint(context, command, &result));
                     return finish_contract_bash_result(
                         result,
                         timeout_ms,
                         context,
                         execution_receipt,
                         readonly_network,
+                        network_restricted_hint,
                     );
                 }
                 let task_id_str = result.task_id.clone().unwrap_or_default();
@@ -6538,8 +6573,9 @@ impl ToolSpec for BashTool {
                 } else {
                     stdout_summary.clone()
                 };
-                let network_restricted_hint =
-                    shell_network_restricted_hint(context, command, &result).map(str::to_string);
+                let network_restricted_hint = readonly_offline_hint
+                    .or_else(|| shell_network_restricted_hint(context, command, &result))
+                    .map(str::to_string);
                 let sandbox_denied_hint = if network_restricted_hint.is_none() {
                     shell_sandbox_denied_hint(context, &result)
                 } else {

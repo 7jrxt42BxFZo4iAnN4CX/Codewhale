@@ -1237,7 +1237,7 @@ DeepSeek V4 前缀缓存让 token 标签变得重要。这些数量保持分离�
   timeout_seconds = 300
   ```
 
-- `sandbox_mode`（字符串，可选）：`read-only`、`workspace-write`、`danger-full-access`、`external-sandbox`。各平台的支持并不相同。macOS 在其运行时探测成功时使用 Seatbelt。Linux 默认在 `/usr/bin/bwrap` 已安装且探测证明它能限制子进程时使用 bubblewrap；`prefer_bwrap = false` 退出并报告没有 OS 命令沙箱。Windows 目前不宣称有 OS 沙箱；其规划中的辅助程序契约只从进程树隔离开始，在只读文件系统隔离、workspace-write 强制、网络阻断、注册表隔离或 AppContainer 隔离真正实现之前，不得被描述成这些能力。
+- `sandbox_mode`（字符串，可选）：`read-only`、`workspace-write`、`danger-full-access`、`external-sandbox`。配置值只能收窄权限模式选定的沙箱（Full Access 不套包装器；Ask 和 Auto-Review 使用 `workspace-write`；Plan 使用 `read-only`），因此 `danger-full-access` 和 `external-sandbox` 只在 Full Access（`yolo`）下生效。各平台的支持并不相同。macOS 在其运行时探测成功时使用 Seatbelt。Linux 默认在 `/usr/bin/bwrap` 已安装且探测证明它能限制子进程时使用 bubblewrap；`prefer_bwrap = false` 退出并报告没有 OS 命令沙箱。Windows 目前不宣称有 OS 沙箱；其规划中的辅助程序契约只从进程树隔离开始，在只读文件系统隔离、workspace-write 强制、网络阻断、注册表隔离或 AppContainer 隔离真正实现之前，不得被描述成这些能力。
 - 模式准入、hooks、已注册工具的要求、类型化规则、Auto-Review、仓库保护规则、人工审批和执行沙箱之间的跨层关系，定义在[授权顺序](../AUTHORIZATION_ORDER.md)中。
 - **读取拒绝列表。** 每一种沙箱档位——包括 `read-only`——都授予对整个文件系统的读取权限；这些档位的区别在于它们可以*写入*什么，以及能否访问网络。读取拒绝列表会收窄这一点：
   - `sandbox_read_denylist_defaults`（bool，默认 `true`）：应用内置的凭据存储集合——`~/.ssh`、`~/.gnupg`、云凭据目录（`~/.aws`、`~/.config/gcloud`、`~/.azure`、`~/.kube` 等）、`~/.netrc`、`~/.npmrc`、`~/.git-credentials`、macOS 钥匙串、浏览器配置文件、Codewhale 自己的机密存储，以及 `.env` 文件（但不包括 `.env.example` 之类）。普通源码、`Cargo.toml`、`~/.gitconfig`、`~/.cargo` 和 `~/.npm` 保持可读，因此构建和测试仍能工作。设为 `false` 可恢复 0.9.12 之前的整盘读取行为。
@@ -1366,7 +1366,7 @@ DeepSeek V4 前缀缓存让 token 标签变得重要。这些数量保持分离�
   - `[retry].jitter_factor`（float，默认 `0.1`，即 ±10%；钳制到 `0.0..=1.0`）
   - `[retry].respect_retry_after`（bool，默认 `true`）：按服务器的 `Retry-After` 响应头等待，而不是使用计算出的退避延迟
 
-  `[retry]` 安排客户端内部的 HTTP 请求重试。位于其上一层的流级预算——一个回合对流未能打开或中途断掉的请求重新发起多少次——是下面的 `tui.stream_max_*` 键。
+  `[retry]` 安排客户端内部的 HTTP 请求重试。流式请求打开时，其重试、退避以及遵循的 `Retry-After` 等待，在每次协议尝试中共享一个 `stream.open_timeout_secs` 时间窗，所以这个时间窗决定了打开过程能用到多少次 `max_retries`。在默认的 HTTP/2 客户端上，时间窗到期会被视为响应头停滞，然后改用 HTTP/1.1 以新的时间窗和重试计划再试一次；固定使用 HTTP/1.1 时只有一个时间窗。`Retry-After` 若长于剩余时间窗，打开会以响应头超时结束；调大 `stream.open_timeout_secs` 可以等过它。位于其上一层的流级预算——一个回合对流未能打开或中途断掉的请求重新发起多少次——是下面的 `tui.stream_max_*` 键。
 
 - `[notifications]`：通知的投递、注意力、类别和声音共用同一套策略。`quiet = true`、`method = "off"`、`condition = "never"` 以及被禁用的类别，会同时抑制横幅和 Codewhale 所选的声音。
 - `notifications.method`：`auto`（默认）、`osc9`、`kitty`、`ghostty`、`bel`、`off`。

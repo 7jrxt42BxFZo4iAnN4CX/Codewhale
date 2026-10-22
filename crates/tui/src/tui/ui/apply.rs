@@ -3547,9 +3547,8 @@ pub(crate) fn apply_backtrack(app: &mut App, depth: usize) {
         app.view_stack.pop();
     }
     // Backtrack rewinds the conversation only. State the file fact first,
-    // and name the command that puts the files back.
-    app.status_message =
-        Some("Files not changed. /undo puts them back. Conversation rewound.".to_string());
+    // and name the command that rolls the files back.
+    app.status_message = Some("Files not changed. Use /restore. Conversation rewound.".to_string());
     app.scroll_to_bottom();
     app.mark_history_updated();
     app.needs_redraw = true;
@@ -4366,10 +4365,17 @@ pub(crate) fn apply_loaded_session_with_goal(
         goal.validate()
             .map_err(|error| format!("saved session goal is invalid: {error}"))?;
     }
-    let provider_identity = config.resolve_persisted_provider_identity(
-        Some(&session.metadata.model_provider),
-        session.metadata.model_provider_id.as_deref(),
-    )?;
+    let provider_identity = config
+        .resolve_persisted_provider_identity(
+            Some(&session.metadata.model_provider),
+            session.metadata.model_provider_id.as_deref(),
+        )
+        .map_err(|reason| {
+            format!(
+                "{reason}. {}",
+                crate::session_export::export_recovery_hint(&session.metadata.id)
+            )
+        })?;
     let restored_route = resolve_runtime_route_for_identity(
         config,
         &provider_identity,

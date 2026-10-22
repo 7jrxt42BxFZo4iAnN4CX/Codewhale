@@ -2194,7 +2194,11 @@ impl ModalView for FleetSetupView {
             )
             .borders(Borders::ALL)
             .border_style(Style::default().fg(palette::BORDER_COLOR))
-            .style(Style::default().bg(palette::WHALE_BG))
+            .style(
+                Style::default()
+                    .fg(palette::TEXT_PRIMARY)
+                    .bg(palette::WHALE_BG),
+            )
             .padding(Padding::uniform(1));
 
         let inner = block.inner(popup_area);

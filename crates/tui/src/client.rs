@@ -4507,25 +4507,6 @@ impl CodewhaleClient {
         })
         .await
     }
-
-    /// JSON POST through the streaming-open retry path: no total deadline,
-    /// because the response body outlives the open (see
-    /// [`Self::send_stream_open_with_retry`]).
-    pub(super) async fn open_stream_json_with_retry(
-        &self,
-        url: &str,
-        body: &serde_json::Value,
-    ) -> Result<reqwest::Response> {
-        let request_body =
-            serde_json::to_vec(body).context("Failed to serialize JSON request body")?;
-        self.send_stream_open_with_retry(|| {
-            self.http_client
-                .post(url)
-                .header(CONTENT_TYPE, "application/json")
-                .body(request_body.clone())
-        })
-        .await
-    }
 }
 
 /// Record that a request was routed to `provider` and came back with `status`.

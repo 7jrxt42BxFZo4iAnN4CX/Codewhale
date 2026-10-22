@@ -368,7 +368,8 @@ Codewhale has three related but intentionally separate recovery paths:
   explore a different answer path without overwriting the original session.
 - Esc-Esc backtrack rewinds the live transcript to a previous user prompt and
   restores that prompt into the composer for editing. It does not change
-  files; `/undo` afterwards puts back the files that request changed.
+  files; `/restore` rolls the folder back to a chosen restore point and needs
+  `/trust on` or Full Access.
 - `/restore` and the `revert_turn` tool restore workspace files from side-git
   snapshots. `/restore list [N]` lists more snapshot options before choosing a
   rollback point. They do not rewrite conversation history.

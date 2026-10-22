@@ -176,6 +176,11 @@ sandbox_mode = "workspace-write" # read-only | workspace-write | danger-full-acc
 
 - `read-only` and `workspace-write` are enforced by Seatbelt or bubblewrap only
   when that wrapper is selected and available.
+- The configured value can only narrow the sandbox the permission mode
+  picks: Full Access (`yolo`) runs without the wrapper, Ask and Auto-Review
+  use `workspace-write`, and Plan uses `read-only`. A configured
+  `danger-full-access` or `external-sandbox` therefore takes effect only in
+  Full Access; it never loosens Ask or Auto-Review.
 - `danger-full-access` deliberately bypasses the local OS wrapper. On Linux it
   also skips the `PR_SET_NO_NEW_PRIVS` process-hardening flag at startup so
   `sudo`/setuid workflows keep running (#5723); see the process-hardening
