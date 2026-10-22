@@ -6,7 +6,7 @@
 凡 Codewhale 已发布、正在构建、已排期或明确搁置的区域设置（locale），都以本文档为准。
 
 > **范围说明（2026-07-12）：** 本矩阵覆盖三个层面——TUI 语言包
-> （`crates/localization/locales/`）、已翻译的 README（仓库根目录），以及网站（`web/`）。
+> （`crates/localization/locales/`）、已翻译的 README（`docs/i18n/`），以及网站（`web/`）。
 > 三者发布节奏不同，所以同一个区域设置可能在某个层面已**发布**、在另一个层面还是
 > **已排期**；下面每个层面各有一张表，每张表只讲自己层面的事实。网站注册表是
 > `web/lib/i18n/config.ts`（`ALL_LOCALES`）：区域设置切换器和路由生成都从它派生。
@@ -122,24 +122,24 @@ partial 区域设置在网站上还差的范围（下一波）：首页之外的
 | 区域设置 | 文件 | 状态 | 对等检查 |
 |--------|------|--------|-------------|
 | 英语 | `README.md` | **shipped** | 权威源文件 |
-| 简体中文 | `README.zh-CN.md` | **shipped** | `scripts/check-readme-translations.py`（同步戳 + 代码围栏 + URL + 章节） |
-| 日语 | `README.ja-JP.md` | **shipped** | 同上 |
-| 越南语 | `README.vi.md` | **shipped** | 同上 |
-| 韩语 | `README.ko-KR.md` | **shipped** | 同上 |
-| 拉美西班牙语 | `README.es-419.md` | **shipped** | 同上 |
-| 巴西葡萄牙语 | `README.pt-BR.md` | **shipped** | 同上 |
-| 俄语 | `README.ru.md` | **shipped** | 同上（#3092）。等待母语者审核。 |
-| 乌克兰语 | `README.uk.md` | **shipped** | 同上（#4791）。等待母语者审核。 |
-| 印尼语 | `README.id.md` | **shipped** | 同上（#4789）。等待母语者审核。 |
-| 法语 | `README.fr.md` | **shipped** | 同上。等待母语者审核。 |
-| 德语 | `README.de.md` | **shipped** | 同上。等待母语者审核。 |
-| 繁体中文 | `README.zh-TW.md` | **shipped** | 同上。等待母语者审核。 |
-| 印地语 | `README.hi.md` | **shipped** | 同上。等待母语者审核。 |
-| 土耳其语 | `README.tr.md` | **shipped** | 同上。等待母语者审核。 |
-| 意大利语 | `README.it.md` | **shipped** | 同上。等待母语者审核。 |
-| 波兰语 | `README.pl.md` | **shipped** | 同上。等待母语者审核。 |
-| 阿拉伯语 | `README.ar.md` | **shipped** | 同上。等待母语者审核。只用 Markdown；不加 HTML `dir` 属性。 |
-| 加泰罗尼亚语 | `README.ca.md` | **shipped** | 同上。等待母语者审核。 |
+| 简体中文 | `docs/i18n/README.zh-CN.md` | **shipped** | `scripts/check-readme-translations.py`（同步戳 + 代码围栏 + URL + 章节） |
+| 日语 | `docs/i18n/README.ja-JP.md` | **shipped** | 同上 |
+| 越南语 | `docs/i18n/README.vi.md` | **shipped** | 同上 |
+| 韩语 | `docs/i18n/README.ko-KR.md` | **shipped** | 同上 |
+| 拉美西班牙语 | `docs/i18n/README.es-419.md` | **shipped** | 同上 |
+| 巴西葡萄牙语 | `docs/i18n/README.pt-BR.md` | **shipped** | 同上 |
+| 俄语 | `docs/i18n/README.ru.md` | **shipped** | 同上（#3092）。等待母语者审核。 |
+| 乌克兰语 | `docs/i18n/README.uk.md` | **shipped** | 同上（#4791）。等待母语者审核。 |
+| 印尼语 | `docs/i18n/README.id.md` | **shipped** | 同上（#4789）。等待母语者审核。 |
+| 法语 | `docs/i18n/README.fr.md` | **shipped** | 同上。等待母语者审核。 |
+| 德语 | `docs/i18n/README.de.md` | **shipped** | 同上。等待母语者审核。 |
+| 繁体中文 | `docs/i18n/README.zh-TW.md` | **shipped** | 同上。等待母语者审核。 |
+| 印地语 | `docs/i18n/README.hi.md` | **shipped** | 同上。等待母语者审核。 |
+| 土耳其语 | `docs/i18n/README.tr.md` | **shipped** | 同上。等待母语者审核。 |
+| 意大利语 | `docs/i18n/README.it.md` | **shipped** | 同上。等待母语者审核。 |
+| 波兰语 | `docs/i18n/README.pl.md` | **shipped** | 同上。等待母语者审核。 |
+| 阿拉伯语 | `docs/i18n/README.ar.md` | **shipped** | 同上。等待母语者审核。只用 Markdown；不加 HTML `dir` 属性。 |
+| 加泰罗尼亚语 | `docs/i18n/README.ca.md` | **shipped** | 同上。等待母语者审核。 |
 
 ## 漂移检查
 
@@ -196,7 +196,7 @@ partial 区域设置在网站上还差的范围（下一波）：首页之外的
 
 ### 2. README
 
-1. 把 `README.md` 翻成 `README.<tag>.md`，保留结构、命令，以及 #3087 确立的史实。
+1. 把 `README.md` 翻成 `docs/i18n/README.<tag>.md`，保留结构、命令，以及 #3087 确立的史实。
 2. 在 `README.md` 的语言行和其他已翻译的 README 里与它互链。
 3. 按 `scripts/check-readme-translations.py` 的规定重新盖同步戳，然后运行
    `python3 scripts/check-readme-translations.py` 和

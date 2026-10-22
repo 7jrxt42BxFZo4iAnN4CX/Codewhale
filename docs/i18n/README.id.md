@@ -1,9 +1,9 @@
-<!-- source: README.md sha256:182e239fcdf7 -->
+<!-- source: README.md sha256:7e0946fcaecd -->
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="brand/wordmark-inverted.svg">
-  <img src="brand/wordmark.svg" alt="Codewhale" width="320">
+  <source media="(prefers-color-scheme: dark)" srcset="../../brand/wordmark-inverted.svg">
+  <img src="../../brand/wordmark.svg" alt="Codewhale" width="320">
 </picture>
 
 **Agen pengodean sumber terbuka untuk terminal Anda yang bekerja dengan model apa pun.**
@@ -18,14 +18,14 @@ yang dilakukannya.
 [![CI](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml/badge.svg)](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/codewhale-cli?label=crates.io)](https://crates.io/crates/codewhale-cli)
 [![npm](https://img.shields.io/npm/v/codewhale?label=npm)](https://www.npmjs.com/package/codewhale)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/37gfS3ksug)
 
-[Situs web](https://codewhale.net) · [Dokumentasi](docs/README.md) · [Changelog](CHANGELOG.md) · [Berkontribusi](CONTRIBUTING.md)
+[Situs web](https://codewhale.net) · [Dokumentasi](../README.md) · [Changelog](../../CHANGELOG.md) · [Berkontribusi](../../CONTRIBUTING.md)
 
-[English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
+[English](../../README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-0102-demo.png" alt="Sesi terminal Codewhale" width="760">
+<img src="../../web/public/codewhale-tui-0102-demo.png" alt="Sesi terminal Codewhale" width="760">
 
 <sub>Build pengembangan 0.10.2 dengan model uji yang berjalan sesuai skrip, dalam Akses penuh di dalam workspace sekali pakai. Edit, tiga pengujian, dan tinjauan sub-agen benar-benar dijalankan.</sub>
 
@@ -42,10 +42,10 @@ curl -fsSL https://codewhale.net/install.sh | sh
 Installer menaruh `codewhale` dan alias pendeknya `codew`, yang checksum-nya
 sudah diverifikasi, di `~/.local/bin`. Jika setelah itu shell Anda menampilkan
 `command not found`, jalankan baris PATH yang dicetak installer
-([detail](docs/INSTALL.md#put-it-on-your-path)). `codewhale update`
+([detail](../INSTALL.md#put-it-on-your-path)). `codewhale update`
 memperbaruinya. Perintah-perintah ini memasang rilis terbaru. Halaman ini
 mengikuti `main`, jadi fitur yang ditandai dengan versi akan hadir di rilis
-tersebut; [changelog](CHANGELOG.md) mencantumkan apa yang ditambahkan setiap
+tersebut; [changelog](../../CHANGELOG.md) mencantumkan apa yang ditambahkan setiap
 rilis.
 
 <details>
@@ -59,8 +59,8 @@ cargo install codewhale-cli --locked  # crates.io; can trail GitHub Releases
 
 Biner siap pakai tersedia untuk Linux, macOS, dan Windows di x64 dan arm64. Nix,
 Homebrew di Linux, Android/Termux (pratinjau), dan unduhan manual dibahas di
-[panduan instalasi](docs/INSTALL.md), sedangkan container di
-[Docker](docs/DOCKER.md). Gunakan satu cara instalasi per mesin; jika tidak, dua
+[panduan instalasi](../INSTALL.md), sedangkan container di
+[Docker](../DOCKER.md). Gunakan satu cara instalasi per mesin; jika tidak, dua
 salinan akan ada di `PATH` dan yang muncul lebih dulu yang dipakai.
 
 </details>
@@ -107,7 +107,7 @@ Instalasi baru dimulai dalam mode Work dengan izin Tanya.
 | Mode | `Tab` (saat input kosong) atau `/mode` | **Plan** membaca dan mencari tetapi tidak mengubah apa pun. **Work** mengedit berkas dan menjalankan perintah. **Operate** memiliki akses yang sama dengan Work, memperlakukan permintaan Anda sebagai tujuan, dan terus berjalan sampai tujuan itu terverifikasi atau ia memerlukan masukan dari Anda. |
 | Izin | `Shift+Tab` | **Tanya** (Ask) menerapkan edit berkas di repositori Anda tanpa bertanya dan bertanya sebelum perintah shell yang bukan baca-saja. **Tinjauan otomatis** (Auto-Review) membiarkan aturan dan model peninjau menyetujui panggilan rutin dan menolak panggilan berisiko tinggi; beralihlah ke Tanya untuk menyetujuinya sendiri. **Akses penuh** (Full Access) tidak pernah bertanya dan menonaktifkan sandbox Codewhale; aturan repositori dan kebijakan terkelola tetap berlaku. |
 
-Lihat [panduan mode dan izin](docs/MODES.md) untuk detailnya.
+Lihat [panduan mode dan izin](../MODES.md) untuk detailnya.
 
 ## Apa yang bisa dilakukan
 
@@ -142,13 +142,13 @@ kompatibel dengan OpenAI juga bisa dipakai, begitu pula model lokal melalui
 Ollama, vLLM, atau SGLang. Defaultnya adalah `deepseek-flash` dari DeepSeek,
 yang dipindahkan DeepSeek ke DeepSeek-V4.1-Flash-1017 pada 2026-10-17; 0.10.1
 menjalankannya tanpa pembaruan
-([detail](docs/PROVIDERS.md#deepseek-v41-flash)).
+([detail](../PROVIDERS.md#deepseek-v41-flash)).
 
 `/model` mengganti model di antara giliran, dan `/model auto` memilih model
 untuk setiap giliran (`/router` mengatur caranya). `/turn inspect` menampilkan
 model yang dipakai sebuah giliran, biayanya, dan berapa lama prosesnya.
 `codewhale auth chatgpt` memungkinkan Anda memakai paket ChatGPT sebagai ganti
-kunci API (eksperimental). Lihat [Penyedia](docs/PROVIDERS.md).
+kunci API (eksperimental). Lihat [Penyedia](../PROVIDERS.md).
 
 ### Receipt dan pembatalan
 
@@ -159,7 +159,7 @@ membatalkan permintaan terakhir Anda; di 0.10.1, perintah ini memerlukan
 `/trust on` untuk berkas dan mundur satu panggilan alat setiap kali. `/restore`
 mengembalikan seluruh workspace
 ke snapshot sebelumnya; karena itu menimpa edit yang lebih baru, perintah ini
-memerlukan `/trust on` atau Akses penuh. Lihat [Receipt](docs/RECEIPTS.md).
+memerlukan `/trust on` atau Akses penuh. Lihat [Receipt](../RECEIPTS.md).
 
 Eksekusi exec yang menyediakan alat disimpan dalam setiap format output, jadi
 `codewhale receipts --last` bisa dipakai setelah `exec --auto`, termasuk dengan
@@ -171,9 +171,9 @@ saat melanjutkan percakapan atau ketika pemadatan percakapan dimulai; gunakan
 ### Pekerjaan yang lebih panjang
 
 `/goal` menetapkan sasaran yang berlanjut lintas giliran. Codewhale dapat
-membagi pekerjaan ke beberapa [sub-agen](docs/SUBAGENTS.md), menjalankan
-[armada](docs/FLEET.md) agen, atau mengikuti
-[workflow](docs/WORKFLOW_AUTHORING.md) yang disimpan di repositori.
+membagi pekerjaan ke beberapa [sub-agen](../SUBAGENTS.md), menjalankan
+[armada](../FLEET.md) agen, atau mengikuti
+[workflow](../WORKFLOW_AUTHORING.md) yang disimpan di repositori.
 
 ### Beralih dari agen lain
 
@@ -182,25 +182,25 @@ untuk alat lain, seperti `CLAUDE.md`, `.cursorrules`, atau
 `.github/copilot-instructions.md`, hanya dimuat jika Anda mengaktifkannya dengan
 `project_instruction_imports = ["claude"]` (atau `"cursor"`, `"cline"`,
 `"windsurf"`, `"copilot"`, `"all"`) di config Anda; lihat
-[config.example.toml](config.example.toml). Codewhale memberi peringatan jika
+[config.example.toml](../../config.example.toml). Codewhale memberi peringatan jika
 menemukan berkas seperti itu yang tidak dimuatnya.
 
 `/import-claude` menyiapkan impor pengaturan Claude Code dan server MCP Anda
 untuk Anda tinjau. `/plugin install` menerima plugin Claude Code yang berisi
 skill, perintah, profil agen, dan server MCP, dan menolak plugin yang memerlukan
-hook atau server LSP ([detail](docs/CLAUDE_PLUGIN_COMPAT.md)).
+hook atau server LSP ([detail](../CLAUDE_PLUGIN_COMPAT.md)).
 
 ### Ekstensi
 
-Hubungkan [server MCP](docs/MCP.md), tambahkan [skill](docs/SKILLS.md) dan
-[plugin](docs/PLUGINS.md), dan jalankan [hook](docs/HOOKS.md) pada event sesi
+Hubungkan [server MCP](../MCP.md), tambahkan [skill](../SKILLS.md) dan
+[plugin](../PLUGINS.md), dan jalankan [hook](../HOOKS.md) pada event sesi
 dan alat. Mode kode (eksperimental, aktif secara default) memungkinkan model
 menulis satu program `execute_tools` yang memanggil beberapa alat MCP dan
 plugin; setiap panggilan tetap tunduk pada aturan persetujuan Anda dan tetap
 memiliki receipt-nya. Plugin Computer Use bawaan (eksperimental, hanya macOS) dapat
 mengamati dan mengoperasikan aplikasi lain. Plugin ini tetap nonaktif sampai
 Anda meninjau aksesnya dan mengaktifkannya
-([panduan](crates/tui/plugins/computer-use/README.md)).
+([panduan](../../crates/tui/plugins/computer-use/README.md)).
 
 ## Cara menjalankannya
 
@@ -208,13 +208,13 @@ Anda meninjau aksesnya dan mengaktifkannya
 | --- | --- |
 | `codewhale` | Aplikasi terminal interaktif |
 | `codewhale exec "…"` | Satu tugas tanpa antarmuka. Tanpa flag tambahan, ia menjawab tanpa memakai alat; `--auto` mengaktifkan alat dengan Akses penuh secara default, `--sandbox workspace-write` membatasinya, dan `--output-format stream-json` men-streaming event sebagai JSON |
-| `codewhale web` | UI web lokal di `127.0.0.1` ([panduan](docs/WEB.md)) |
-| `codewhale review --pr N` | Tinjauan yang bersifat saran untuk pull request GitHub. Ia tidak memposting apa pun kecuali Anda menambahkan `--post`; [GitHub Action](docs/GITHUB_ACTION.md) menjalankan tinjauan yang sama di CI |
-| `codewhale app-server --http` | [Runtime API](docs/RUNTIME_API.md), API HTTP lokal untuk thread, event, persetujuan, dan perubahan berkas setiap giliran |
+| `codewhale web` | UI web lokal di `127.0.0.1` ([panduan](../WEB.md)) |
+| `codewhale review --pr N` | Tinjauan yang bersifat saran untuk pull request GitHub. Ia tidak memposting apa pun kecuali Anda menambahkan `--post`; [GitHub Action](../GITHUB_ACTION.md) menjalankan tinjauan yang sama di CI |
+| `codewhale app-server --http` | [Runtime API](../RUNTIME_API.md), API HTTP lokal untuk thread, event, persetujuan, dan perubahan berkas setiap giliran |
 | `codewhale serve --acp` | Agent Client Protocol melalui stdio, untuk editor seperti Zed |
 
 Aplikasi terminal, `exec`, `web`, dan Runtime API memakai satu engine yang sama
-([arsitektur](docs/ARCHITECTURE.md)).
+([arsitektur](../ARCHITECTURE.md)).
 [Ekstensi VS Code](https://marketplace.visualstudio.com/items?itemName=HengQuWorld.brotherwhale-vscode)
 yang dipelihara komunitas terhubung ke engine itu dari sidebar
 ([sumber](https://github.com/HengQuWorld/CodeWhale-VSCode)).
@@ -249,26 +249,26 @@ repositori, maupun kredensial.
 `codewhale config set telemetry false` menonaktifkannya. Saat dijalankan,
 Codewhale juga memeriksa GitHub untuk rilis baru; atur
 `CODEWHALE_NO_UPDATE_CHECK=1` untuk melewatinya. Selengkapnya di
-[urutan otorisasi](docs/AUTHORIZATION_ORDER.md), [sandbox](docs/SANDBOX.md),
-dan [telemetri](docs/TELEMETRY.md).
+[urutan otorisasi](../AUTHORIZATION_ORDER.md), [sandbox](../SANDBOX.md),
+dan [telemetri](../TELEMETRY.md).
 
 ## Dokumentasi
 
 | Mulai dari sini | Referensi |
 | --- | --- |
-| [Instalasi](docs/INSTALL.md) | [Konfigurasi](docs/CONFIGURATION.md) |
-| [Penyedia dan model lokal](docs/PROVIDERS.md) | [Arsitektur](docs/ARCHITECTURE.md) |
-| [Mode dan izin](docs/MODES.md) | [Runtime API](docs/RUNTIME_API.md) |
-| [Pintasan keyboard](docs/KEYBINDINGS.md) | [Penulisan plugin](docs/PLUGIN_AUTHORING.md) |
-| [Tinjauan PR GitHub](docs/GITHUB_ACTION.md) | [Seluruh dokumentasi](docs/README.md) |
+| [Instalasi](../INSTALL.md) | [Konfigurasi](../CONFIGURATION.md) |
+| [Penyedia dan model lokal](../PROVIDERS.md) | [Arsitektur](../ARCHITECTURE.md) |
+| [Mode dan izin](../MODES.md) | [Runtime API](../RUNTIME_API.md) |
+| [Pintasan keyboard](../KEYBINDINGS.md) | [Penulisan plugin](../PLUGIN_AUTHORING.md) |
+| [Tinjauan PR GitHub](../GITHUB_ACTION.md) | [Seluruh dokumentasi](../README.md) |
 
 ## Komunitas
 
 Jika ada penyedia yang belum tersedia atau alur kerja yang terasa canggung,
 [buka issue](https://github.com/codewhale-hq/CodeWhale/issues/new/choose) atau
-[kirim pull request](CONTRIBUTING.md). Kontributor tetap mendapat kredit atas
+[kirim pull request](../../CONTRIBUTING.md). Kontributor tetap mendapat kredit atas
 pekerjaan yang digabungkan, dan
-[struktur repositori](CONTRIBUTING.md#project-structure) menunjukkan letak
+[struktur repositori](../../CONTRIBUTING.md#project-structure) menunjukkan letak
 setiap bagian.
 
 Ikuti obrolan di [Discord](https://discord.gg/37gfS3ksug), atau tambahkan
@@ -280,9 +280,9 @@ Whale Brothers.
 Codewhale berawal dari `deepseek-tui` dan masih membaca konfigurasi serta sesi
 proyek itu. Codewhale dipelihara secara mandiri dan tidak berafiliasi dengan
 DeepSeek atau penyedia model lain mana pun. Terima kasih kepada
-[semua yang telah berkontribusi](docs/CONTRIBUTORS.md).
+[semua yang telah berkontribusi](../CONTRIBUTORS.md).
 
-[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
+[![Codewhale contributors](../assets/contributors.png)](../CONTRIBUTORS.md#everyone)
 
-[MIT](LICENSE). Kode yang diadaptasi dari proyek sumber terbuka lain dicantumkan
-di [pemberitahuan pihak ketiga](docs/THIRD_PARTY_NOTICES.md).
+[MIT](../../LICENSE). Kode yang diadaptasi dari proyek sumber terbuka lain dicantumkan
+di [pemberitahuan pihak ketiga](../THIRD_PARTY_NOTICES.md).

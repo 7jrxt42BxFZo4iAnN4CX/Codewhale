@@ -1,9 +1,9 @@
-<!-- source: README.md sha256:182e239fcdf7 -->
+<!-- source: README.md sha256:7e0946fcaecd -->
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="brand/wordmark-inverted.svg">
-  <img src="brand/wordmark.svg" alt="Codewhale" width="320">
+  <source media="(prefers-color-scheme: dark)" srcset="../../brand/wordmark-inverted.svg">
+  <img src="../../brand/wordmark.svg" alt="Codewhale" width="320">
 </picture>
 
 **Агент для програмування з відкритим кодом у вашому терміналі, що працює з будь-якою моделлю.**
@@ -18,14 +18,14 @@ DeepSeek V4.1 Flash), а також із моделями, запущеними 
 [![CI](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml/badge.svg)](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/codewhale-cli?label=crates.io)](https://crates.io/crates/codewhale-cli)
 [![npm](https://img.shields.io/npm/v/codewhale?label=npm)](https://www.npmjs.com/package/codewhale)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/37gfS3ksug)
 
-[Вебсайт](https://codewhale.net) · [Документація](docs/README.md) · [Журнал змін](CHANGELOG.md) · [Участь у проєкті](CONTRIBUTING.md)
+[Вебсайт](https://codewhale.net) · [Документація](../README.md) · [Журнал змін](../../CHANGELOG.md) · [Участь у проєкті](../../CONTRIBUTING.md)
 
-[English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
+[English](../../README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-0102-demo.png" alt="Сесія Codewhale в терміналі" width="760">
+<img src="../../web/public/codewhale-tui-0102-demo.png" alt="Сесія Codewhale в терміналі" width="760">
 
 <sub>Збірка 0.10.2 для розробки з тестовою моделлю, що діє за сценарієм, з дозволом «Повний доступ» в одноразовому робочому просторі. Зміна, три тести й перевірка субагентом відбулися насправді.</sub>
 
@@ -42,11 +42,11 @@ curl -fsSL https://codewhale.net/install.sh | sh
 Інсталятор встановлює в `~/.local/bin` перевірені за контрольними сумами
 `codewhale` і його короткий псевдонім `codew`. Якщо після цього оболонка
 виводить `command not found`, виконайте рядок для PATH, який друкує інсталятор
-([докладніше](docs/INSTALL.md#put-it-on-your-path)). Оновлення виконує
+([докладніше](../INSTALL.md#put-it-on-your-path)). Оновлення виконує
 `codewhale update`. Ці команди встановлюють останній реліз. Ця сторінка
 відповідає гілці `main`, тож функція з позначкою версії з’явиться у
 відповідному релізі; що додає кожен реліз, дивіться в
-[журналі змін](CHANGELOG.md).
+[журналі змін](../../CHANGELOG.md).
 
 <details>
 <summary><b>Windows, npm, Cargo та інші способи встановлення</b></summary>
@@ -59,8 +59,8 @@ cargo install codewhale-cli --locked  # crates.io; can trail GitHub Releases
 
 Готові бінарні файли є для Linux, macOS і Windows на x64 та arm64. Nix,
 Homebrew у Linux, Android/Termux (попередня версія) і ручне завантаження
-описано в [посібнику зі встановлення](docs/INSTALL.md), а контейнери — у
-[Docker](docs/DOCKER.md). Використовуйте на одній машині лише один спосіб
+описано в [посібнику зі встановлення](../INSTALL.md), а контейнери — у
+[Docker](../DOCKER.md). Використовуйте на одній машині лише один спосіб
 встановлення, інакше в `PATH` опиняться дві копії й спрацює та, що стоїть
 першою.
 
@@ -110,7 +110,7 @@ codewhale exec --auto --sandbox workspace-write "fix the failing tests and expla
 | Режим | `Tab` (коли поле введення порожнє) або `/mode` | **Plan** читає й шукає, але нічого не змінює. **Work** редагує файли й виконує команди. **Operate** має той самий доступ, що й Work, сприймає ваш запит як ціль і продовжує роботу, доки досягнення цілі не буде перевірено або йому не знадобиться щось від вас. |
 | Дозвіл | `Shift+Tab` | **Запитувати** (Ask) застосовує зміни у файлах вашого репозиторію без запиту й питає перед командами оболонки, які не є лише для читання. **Автоперевірка** (Auto-Review) дає правилам і моделі-рецензенту схвалювати рутинні виклики й відхиляє виклики з високим ризиком; щоб схвалювати їх самостійно, перейдіть на «Запитувати». **Повний доступ** (Full Access) ніколи не питає й вимикає пісочницю Codewhale; правила репозиторію та керована політика й далі діють. |
 
-Докладніше — у [посібнику з режимів і дозволів](docs/MODES.md).
+Докладніше — у [посібнику з режимів і дозволів](../MODES.md).
 
 ## Що він уміє
 
@@ -143,13 +143,13 @@ Google, Mistral, Moonshot, OpenRouter і xAI. Працює будь-яка OpenA
 кінцева точка, а також локальні моделі через Ollama, vLLM або SGLang. За
 замовчуванням використовується `deepseek-flash` від DeepSeek, який DeepSeek
 2026-10-17 переключив на DeepSeek-V4.1-Flash-1017; 0.10.1 працює з ним без
-оновлення ([докладніше](docs/PROVIDERS.md#deepseek-v41-flash)).
+оновлення ([докладніше](../PROVIDERS.md#deepseek-v41-flash)).
 
 `/model` перемикає модель між ходами, а `/model auto` вибирає модель для
 кожного ходу (як саме, налаштовує `/router`). `/turn inspect` показує, яку
 модель використав хід, скільки він коштував і скільки тривав.
 `codewhale auth chatgpt` дає змогу користуватися підпискою ChatGPT замість
-ключа API (експериментально). Див. [Провайдери](docs/PROVIDERS.md).
+ключа API (експериментально). Див. [Провайдери](../PROVIDERS.md).
 
 ### Квитанції та скасування
 
@@ -159,7 +159,7 @@ Google, Mistral, Moonshot, OpenRouter і xAI. Працює будь-яка OpenA
 запит; у 0.10.1 для файлів йому потрібен `/trust on`, і він повертає по одному
 виклику інструмента за раз. `/restore` повертає весь робочий простір до раніше
 збереженого знімка; оскільки це перезаписує пізніші зміни, потрібен
-`/trust on` або «Повний доступ». Див. [Квитанції](docs/RECEIPTS.md).
+`/trust on` або «Повний доступ». Див. [Квитанції](../RECEIPTS.md).
 
 Запуски exec, у яких доступні інструменти, зберігаються за будь-якого формату
 виводу, тому `codewhale receipts --last` працює після `exec --auto`, зокрема
@@ -171,9 +171,9 @@ Google, Mistral, Moonshot, OpenRouter і xAI. Працює будь-яка OpenA
 ### Довші завдання
 
 `/goal` задає ціль, яка зберігається між ходами. Codewhale може розподіляти
-роботу між [субагентами](docs/SUBAGENTS.md), запускати
-[групу агентів](docs/FLEET.md) або виконувати
-[робочий процес](docs/WORKFLOW_AUTHORING.md), збережений у репозиторії.
+роботу між [субагентами](../SUBAGENTS.md), запускати
+[групу агентів](../FLEET.md) або виконувати
+[робочий процес](../WORKFLOW_AUTHORING.md), збережений у репозиторії.
 
 ### Перехід з іншого агента
 
@@ -182,19 +182,19 @@ Codewhale сам читає `AGENTS.md`. Файли інструкцій, нап
 `.github/copilot-instructions.md`, завантажуються лише тоді, коли ви явно
 ввімкнете це через `project_instruction_imports = ["claude"]` (або `"cursor"`,
 `"cline"`, `"windsurf"`, `"copilot"`, `"all"`) у своїй конфігурації; див.
-[config.example.toml](config.example.toml). Codewhale попереджає, коли
+[config.example.toml](../../config.example.toml). Codewhale попереджає, коли
 знаходить такий файл, але не завантажує його.
 
 `/import-claude` готує імпорт ваших налаштувань Claude Code і MCP-серверів, щоб
 ви його переглянули. `/plugin install` приймає плагіни Claude Code, що містять
 навички, команди, профілі агентів і MCP-сервери, і відхиляє плагіни, яким
 потрібні гуки або LSP-сервери
-([докладніше](docs/CLAUDE_PLUGIN_COMPAT.md)).
+([докладніше](../CLAUDE_PLUGIN_COMPAT.md)).
 
 ### Розширення
 
-Підключайте [MCP-сервери](docs/MCP.md), додавайте [навички](docs/SKILLS.md) і
-[плагіни](docs/PLUGINS.md) та запускайте [гуки](docs/HOOKS.md) на події сесії
+Підключайте [MCP-сервери](../MCP.md), додавайте [навички](../SKILLS.md) і
+[плагіни](../PLUGINS.md) та запускайте [гуки](../HOOKS.md) на події сесії
 та інструментів. Code mode (експериментальний, увімкнений за замовчуванням)
 дає моделі змогу написати одну програму `execute_tools`, яка викликає кілька
 інструментів MCP і плагінів; кожен виклик і далі проходить через ваші правила
@@ -202,7 +202,7 @@ Codewhale сам читає `AGENTS.md`. Файли інструкцій, нап
 комплекту (експериментальний, лише для macOS), може спостерігати за іншими
 застосунками й керувати ними. Він залишається вимкненим, доки ви не перевірите
 його доступ і не ввімкнете його
-([посібник](crates/tui/plugins/computer-use/README.md)).
+([посібник](../../crates/tui/plugins/computer-use/README.md)).
 
 ## Способи запуску
 
@@ -210,13 +210,13 @@ Codewhale сам читає `AGENTS.md`. Файли інструкцій, нап
 | --- | --- |
 | `codewhale` | Інтерактивний термінальний застосунок |
 | `codewhale exec "…"` | Одне завдання без інтерфейсу. Без додаткових прапорців він відповідає, не використовуючи інструментів; `--auto` за замовчуванням вмикає інструменти з «Повним доступом», `--sandbox workspace-write` обмежує їх, а `--output-format stream-json` передає події потоком у форматі JSON |
-| `codewhale web` | Локальний вебінтерфейс на `127.0.0.1` ([посібник](docs/WEB.md)) |
-| `codewhale review --pr N` | Рекомендаційний огляд pull request у GitHub. Нічого не публікує, якщо не додати `--post`; [GitHub Action](docs/GITHUB_ACTION.md) виконує такий самий огляд у CI |
-| `codewhale app-server --http` | [Runtime API](docs/RUNTIME_API.md) — локальний HTTP API для тредів, подій, підтверджень і змін у файлах кожного ходу |
+| `codewhale web` | Локальний вебінтерфейс на `127.0.0.1` ([посібник](../WEB.md)) |
+| `codewhale review --pr N` | Рекомендаційний огляд pull request у GitHub. Нічого не публікує, якщо не додати `--post`; [GitHub Action](../GITHUB_ACTION.md) виконує такий самий огляд у CI |
+| `codewhale app-server --http` | [Runtime API](../RUNTIME_API.md) — локальний HTTP API для тредів, подій, підтверджень і змін у файлах кожного ходу |
 | `codewhale serve --acp` | Agent Client Protocol через stdio для редакторів, як-от Zed |
 
 Термінальний застосунок, `exec`, `web` і Runtime API використовують один рушій
-([архітектура](docs/ARCHITECTURE.md)). Підтримуване спільнотою
+([архітектура](../ARCHITECTURE.md)). Підтримуване спільнотою
 [розширення для VS Code](https://marketplace.visualstudio.com/items?itemName=HengQuWorld.brotherwhale-vscode)
 підключається до нього з бічної панелі ([вихідний код](https://github.com/HengQuWorld/CodeWhale-VSCode)).
 Нативний настільний застосунок на основі Runtime API в розробці; публічного
@@ -251,25 +251,25 @@ Codewhale безкоштовний і поширюється за ліцензі
 або облікові дані. `codewhale config set telemetry false` її вимикає. Під час
 запуску Codewhale також перевіряє на GitHub, чи вийшов новий реліз; щоб
 пропустити цю перевірку, задайте `CODEWHALE_NO_UPDATE_CHECK=1`.
-Докладніше: [порядок авторизації](docs/AUTHORIZATION_ORDER.md),
-[пісочниця](docs/SANDBOX.md) і [телеметрія](docs/TELEMETRY.md).
+Докладніше: [порядок авторизації](../AUTHORIZATION_ORDER.md),
+[пісочниця](../SANDBOX.md) і [телеметрія](../TELEMETRY.md).
 
 ## Документація
 
 | З чого почати | Довідка |
 | --- | --- |
-| [Встановлення](docs/INSTALL.md) | [Конфігурація](docs/CONFIGURATION.md) |
-| [Провайдери та локальні моделі](docs/PROVIDERS.md) | [Архітектура](docs/ARCHITECTURE.md) |
-| [Режими й дозволи](docs/MODES.md) | [Runtime API](docs/RUNTIME_API.md) |
-| [Комбінації клавіш](docs/KEYBINDINGS.md) | [Створення плагінів](docs/PLUGIN_AUTHORING.md) |
-| [Огляд PR у GitHub](docs/GITHUB_ACTION.md) | [Уся документація](docs/README.md) |
+| [Встановлення](../INSTALL.md) | [Конфігурація](../CONFIGURATION.md) |
+| [Провайдери та локальні моделі](../PROVIDERS.md) | [Архітектура](../ARCHITECTURE.md) |
+| [Режими й дозволи](../MODES.md) | [Runtime API](../RUNTIME_API.md) |
+| [Комбінації клавіш](../KEYBINDINGS.md) | [Створення плагінів](../PLUGIN_AUTHORING.md) |
+| [Огляд PR у GitHub](../GITHUB_ACTION.md) | [Уся документація](../README.md) |
 
 ## Спільнота
 
 Якщо бракує провайдера або якийсь сценарій роботи незручний,
 [відкрийте issue](https://github.com/codewhale-hq/CodeWhale/issues/new/choose) або
-[надішліть pull request](CONTRIBUTING.md). Автори зберігають визнання за
-прийняту роботу, а [структура репозиторію](CONTRIBUTING.md#project-structure)
+[надішліть pull request](../../CONTRIBUTING.md). Автори зберігають визнання за
+прийняту роботу, а [структура репозиторію](../../CONTRIBUTING.md#project-structure)
 показує, де що лежить.
 
 Спілкуйтеся в [Discord](https://discord.gg/37gfS3ksug) або додайте супровідника
@@ -281,9 +281,9 @@ Whale Brothers.
 Codewhale починався як `deepseek-tui` і досі читає конфігурацію та сесії того
 проєкту. Він розвивається незалежно й не пов’язаний ні з DeepSeek, ні з жодним
 іншим провайдером моделей. Дякуємо
-[усім, хто долучився до проєкту](docs/CONTRIBUTORS.md).
+[усім, хто долучився до проєкту](../CONTRIBUTORS.md).
 
-[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
+[![Codewhale contributors](../assets/contributors.png)](../CONTRIBUTORS.md#everyone)
 
-[MIT](LICENSE). Код, адаптований з інших проєктів із відкритим кодом,
-перелічено в [повідомленнях про сторонні компоненти](docs/THIRD_PARTY_NOTICES.md).
+[MIT](../../LICENSE). Код, адаптований з інших проєктів із відкритим кодом,
+перелічено в [повідомленнях про сторонні компоненти](../THIRD_PARTY_NOTICES.md).

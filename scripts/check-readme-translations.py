@@ -23,28 +23,28 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "README.md"
 TRANSLATIONS = [
-    "README.zh-CN.md",
-    "README.ja-JP.md",
-    "README.vi.md",
-    "README.id.md",
-    "README.ko-KR.md",
-    "README.es-419.md",
-    "README.pt-BR.md",
-    "README.ru.md",
-    "README.uk.md",
-    "README.fr.md",
-    "README.de.md",
-    "README.zh-TW.md",
-    "README.hi.md",
-    "README.tr.md",
-    "README.it.md",
-    "README.pl.md",
-    "README.ar.md",
-    "README.ca.md",
+    "docs/i18n/README.zh-CN.md",
+    "docs/i18n/README.ja-JP.md",
+    "docs/i18n/README.vi.md",
+    "docs/i18n/README.id.md",
+    "docs/i18n/README.ko-KR.md",
+    "docs/i18n/README.es-419.md",
+    "docs/i18n/README.pt-BR.md",
+    "docs/i18n/README.ru.md",
+    "docs/i18n/README.uk.md",
+    "docs/i18n/README.fr.md",
+    "docs/i18n/README.de.md",
+    "docs/i18n/README.zh-TW.md",
+    "docs/i18n/README.hi.md",
+    "docs/i18n/README.tr.md",
+    "docs/i18n/README.it.md",
+    "docs/i18n/README.pl.md",
+    "docs/i18n/README.ar.md",
+    "docs/i18n/README.ca.md",
 ]
 STAMP_RE = re.compile(r"<!--\s*source:\s*README\.md\s+sha256:([0-9a-f]{12})\s*-->")
 FENCE_RE = re.compile(r"```[a-z]*\n(.*?)```", re.DOTALL)
-URL_RE = re.compile(r"\((https?://[^)\s]+|docs/[^)\s]+|[A-Za-z0-9_./-]+\.md[^)\s]*)\)")
+URL_RE = re.compile(r"\((?:\.\./)*(https?://[^)\s]+|docs/[^)\s]+|[A-Za-z0-9_./-]+\.md[^)\s]*)\)")
 # The language-switcher line legitimately differs per translation (each file
 # links the *other* languages), so its links are exempt from the URL check.
 LANGUAGE_LINKS = {
@@ -79,7 +79,18 @@ def fences(text: str) -> list[str]:
 
 
 def urls(text: str) -> set[str]:
-    return {u for u in URL_RE.findall(text) if u not in LANGUAGE_LINKS}
+    """Links that must agree with README.md, independent of where a translation sits.
+
+    A translated README lives one directory deeper, so its relative links carry
+    a `../` the English source does not; and the language switcher legitimately
+    differs per file. Everything else is compared verbatim.
+    """
+    out = set()
+    for url in URL_RE.findall(text):
+        if url in LANGUAGE_LINKS or url.rsplit("/", 1)[-1] in LANGUAGE_LINKS:
+            continue
+        out.add(url.removeprefix("../"))
+    return out
 
 
 def sections(text: str) -> int:

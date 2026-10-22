@@ -1,9 +1,9 @@
-<!-- source: README.md sha256:182e239fcdf7 -->
+<!-- source: README.md sha256:7e0946fcaecd -->
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="brand/wordmark-inverted.svg">
-  <img src="brand/wordmark.svg" alt="Codewhale" width="320">
+  <source media="(prefers-color-scheme: dark)" srcset="../../brand/wordmark-inverted.svg">
+  <img src="../../brand/wordmark.svg" alt="Codewhale" width="320">
 </picture>
 
 **어떤 모델과도 함께 쓸 수 있는 오픈 소스 터미널용 코딩 에이전트.**
@@ -17,14 +17,14 @@ MCP 호출을 보여 줍니다.
 [![CI](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml/badge.svg)](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/codewhale-cli?label=crates.io)](https://crates.io/crates/codewhale-cli)
 [![npm](https://img.shields.io/npm/v/codewhale?label=npm)](https://www.npmjs.com/package/codewhale)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/37gfS3ksug)
 
-[웹사이트](https://codewhale.net) · [문서](docs/README.md) · [변경 내역](CHANGELOG.md) · [기여하기](CONTRIBUTING.md)
+[웹사이트](https://codewhale.net) · [문서](../README.md) · [변경 내역](../../CHANGELOG.md) · [기여하기](../../CONTRIBUTING.md)
 
-[English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
+[English](../../README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-0102-demo.png" alt="Codewhale 터미널 세션" width="760">
+<img src="../../web/public/codewhale-tui-0102-demo.png" alt="Codewhale 터미널 세션" width="760">
 
 <sub>스크립트로 동작하는 테스트 모델을 쓴 0.10.2 개발 빌드를 버려도 되는 작업 공간에서 전체 접근 권한으로 실행한 화면입니다. 편집, 테스트 세 개, 하위 에이전트 리뷰는 실제로 실행되었습니다.</sub>
 
@@ -41,10 +41,10 @@ curl -fsSL https://codewhale.net/install.sh | sh
 설치 스크립트는 체크섬을 검증한 `codewhale`과 짧은 별칭 `codew`를
 `~/.local/bin`에 설치합니다. 이후 셸에서 `command not found`가 나오면 설치
 스크립트가 출력하는 PATH 설정 줄을 실행하세요
-([자세히](docs/INSTALL.md#put-it-on-your-path)). 업그레이드는
+([자세히](../INSTALL.md#put-it-on-your-path)). 업그레이드는
 `codewhale update`로 합니다. 이 명령들은 최신 릴리스를 설치합니다. 이 페이지는
 `main`을 따르므로, 버전이 표시된 기능은 그 릴리스에서 제공됩니다. 각 릴리스에
-추가된 내용은 [변경 내역](CHANGELOG.md)에서 볼 수 있습니다.
+추가된 내용은 [변경 내역](../../CHANGELOG.md)에서 볼 수 있습니다.
 
 <details>
 <summary><b>Windows, npm, Cargo 등 다른 설치 방법</b></summary>
@@ -57,7 +57,7 @@ cargo install codewhale-cli --locked  # crates.io; can trail GitHub Releases
 
 미리 빌드된 바이너리는 x64와 arm64의 Linux, macOS, Windows를 지원합니다. Nix,
 Linux의 Homebrew, Android/Termux(프리뷰), 수동 다운로드는
-[설치 안내서](docs/INSTALL.md)에서, 컨테이너는 [Docker](docs/DOCKER.md)에서
+[설치 안내서](../INSTALL.md)에서, 컨테이너는 [Docker](../DOCKER.md)에서
 다룹니다. 한 컴퓨터에는 설치 방법을 하나만 쓰세요. 그렇지 않으면 `PATH`에
 사본이 두 개 생기고, 먼저 오는 쪽이 실행됩니다.
 
@@ -105,7 +105,7 @@ codewhale exec --auto --sandbox workspace-write "fix the failing tests and expla
 | 모드 | `Tab`(입력란이 비어 있을 때) 또는 `/mode` | **계획**(Plan)은 읽고 검색하지만 아무것도 바꾸지 않습니다. **실행**(Work)은 파일을 편집하고 명령을 실행합니다. **운영**(Operate)은 실행과 같은 접근 권한을 가지며, 요청을 목표로 다루고 목표가 검증되거나 사용자의 입력이 필요할 때까지 계속 진행합니다. |
 | 권한 | `Shift+Tab` | **확인**(Ask)은 저장소 안의 파일 편집은 묻지 않고 적용하고, 읽기 전용이 아닌 셸 명령은 실행 전에 묻습니다. **자동 검토**(Auto-Review)는 규칙과 리뷰어 모델이 일상적인 호출을 승인하게 하고 위험도가 높은 호출은 거부합니다. 그런 호출을 직접 승인하려면 확인으로 전환하세요. **전체 접근**(Full Access)은 전혀 묻지 않으며 Codewhale의 샌드박스를 끕니다. 저장소 규칙과 관리 정책은 계속 적용됩니다. |
 
-자세한 내용은 [모드와 권한 안내서](docs/MODES.md)를 참고하세요.
+자세한 내용은 [모드와 권한 안내서](../MODES.md)를 참고하세요.
 
 ## 할 수 있는 일
 
@@ -137,12 +137,12 @@ Anthropic, OpenAI, DeepSeek, Google, Mistral, Moonshot, OpenRouter, xAI를
 어느 것이든 쓸 수 있고, Ollama, vLLM, SGLang을 통한 로컬 모델도 쓸 수
 있습니다. 기본값은 DeepSeek의 `deepseek-flash`이며, DeepSeek는 2026-10-17에 이
 모델을 DeepSeek-V4.1-Flash-1017로 바꿨습니다. 0.10.1은 업데이트 없이 이 모델을
-실행합니다([자세히](docs/PROVIDERS.md#deepseek-v41-flash)).
+실행합니다([자세히](../PROVIDERS.md#deepseek-v41-flash)).
 
 `/model`로 턴 사이에 모델을 바꾸고, `/model auto`는 턴마다 모델을 고릅니다
 (고르는 방식은 `/router`로 설정합니다). `/turn inspect`는 한 턴에 쓰인 모델,
 비용, 걸린 시간을 보여 줍니다. `codewhale auth chatgpt`를 쓰면 API 키 대신
-ChatGPT 요금제를 사용할 수 있습니다(실험적). [제공업체](docs/PROVIDERS.md)를
+ChatGPT 요금제를 사용할 수 있습니다(실험적). [제공업체](../PROVIDERS.md)를
 참고하세요.
 
 ### 영수증과 되돌리기
@@ -152,7 +152,7 @@ ChatGPT 요금제를 사용할 수 있습니다(실험적). [제공업체](docs/
 줍니다. `/undo`는 마지막 요청을 되돌립니다. 0.10.1에서는 파일을 되돌리려면
 `/trust on`이 필요하고, 도구 호출을 한 번에 하나씩 되돌립니다. `/restore`는 작업 공간 전체를 이전
 스냅샷으로 되돌리는데, 이후의 편집을 덮어쓰기 때문에 `/trust on` 또는 전체
-접근 권한이 필요합니다. [영수증](docs/RECEIPTS.md)을 참고하세요.
+접근 권한이 필요합니다. [영수증](../RECEIPTS.md)을 참고하세요.
 
 도구를 사용할 수 있는 exec 실행은 모든 출력 형식에서 저장되므로, `--json`을
 포함한 `exec --auto` 실행 후에도 `codewhale receipts --last`를 쓸 수 있습니다.
@@ -163,9 +163,9 @@ ChatGPT 요금제를 사용할 수 있습니다(실험적). [제공업체](docs/
 ### 긴 작업
 
 `/goal`은 여러 턴에 걸쳐 유지되는 목표를 정합니다. Codewhale은 작업을
-[하위 에이전트](docs/SUBAGENTS.md)에 나눠 맡기거나, 여러 에이전트로 구성된
-[Fleet](docs/FLEET.md)를 실행하거나, 저장소에 커밋된
-[워크플로](docs/WORKFLOW_AUTHORING.md)를 따를 수 있습니다.
+[하위 에이전트](../SUBAGENTS.md)에 나눠 맡기거나, 여러 에이전트로 구성된
+[Fleet](../FLEET.md)를 실행하거나, 저장소에 커밋된
+[워크플로](../WORKFLOW_AUTHORING.md)를 따를 수 있습니다.
 
 ### 다른 에이전트에서 옮겨 오는 경우
 
@@ -173,25 +173,25 @@ Codewhale은 따로 설정하지 않아도 `AGENTS.md`를 읽습니다. `CLAUDE.
 `.cursorrules`, `.github/copilot-instructions.md`처럼 다른 도구용으로 작성된
 지침 파일은 설정에서 `project_instruction_imports = ["claude"]`(또는
 `"cursor"`, `"cline"`, `"windsurf"`, `"copilot"`, `"all"`)로 직접 켠 경우에만
-불러옵니다. [config.example.toml](config.example.toml)을 참고하세요. 불러오지
+불러옵니다. [config.example.toml](../../config.example.toml)을 참고하세요. 불러오지
 않은 지침 파일을 발견하면 Codewhale이 경고를 표시합니다.
 
 `/import-claude`는 사용자가 검토할 수 있도록 Claude Code 설정과 MCP 서버
 가져오기를 준비합니다. `/plugin install`은 스킬, 명령, 에이전트 프로필, MCP
 서버를 담은 Claude Code 플러그인을 받아들이고, 훅이나 LSP 서버가 필요한
-플러그인은 거부합니다([자세히](docs/CLAUDE_PLUGIN_COMPAT.md)).
+플러그인은 거부합니다([자세히](../CLAUDE_PLUGIN_COMPAT.md)).
 
 ### 확장
 
-[MCP 서버](docs/MCP.md)를 연결하고, [스킬](docs/SKILLS.md)과
-[플러그인](docs/PLUGINS.md)을 추가하고, 세션 및 도구 이벤트에서
-[훅](docs/HOOKS.md)을 실행할 수 있습니다. 코드 모드(실험적, 기본으로 켜짐)에서는
+[MCP 서버](../MCP.md)를 연결하고, [스킬](../SKILLS.md)과
+[플러그인](../PLUGINS.md)을 추가하고, 세션 및 도구 이벤트에서
+[훅](../HOOKS.md)을 실행할 수 있습니다. 코드 모드(실험적, 기본으로 켜짐)에서는
 모델이 여러 MCP 및 플러그인 도구를 호출하는 `execute_tools` 프로그램 하나를
 작성할 수 있으며, 각 호출은 여전히 승인 규칙을 따르고 영수증에 남습니다. 기본
 포함된 Computer Use
 플러그인(실험적, macOS 전용)은 다른 앱을 관찰하고 조작할 수 있습니다. 접근
 범위를 검토하고 활성화하기 전까지는 꺼져 있습니다
-([안내서](crates/tui/plugins/computer-use/README.md)).
+([안내서](../../crates/tui/plugins/computer-use/README.md)).
 
 ## 실행 방법
 
@@ -199,13 +199,13 @@ Codewhale은 따로 설정하지 않아도 `AGENTS.md`를 읽습니다. `CLAUDE.
 | --- | --- |
 | `codewhale` | 대화형 터미널 앱 |
 | `codewhale exec "…"` | 인터페이스 없이 작업 하나를 실행합니다. 옵션 없이 쓰면 도구를 사용하지 않고 답변만 하고, `--auto`는 기본적으로 전체 접근 권한으로 도구를 활성화하고, `--sandbox workspace-write`는 도구를 제한하며, `--output-format stream-json`은 이벤트를 JSON으로 스트리밍합니다 |
-| `codewhale web` | `127.0.0.1`에서 동작하는 로컬 웹 UI([안내서](docs/WEB.md)) |
-| `codewhale review --pr N` | GitHub 풀 리퀘스트에 대한 참고용 리뷰. `--post`를 추가하지 않으면 아무것도 게시하지 않으며, [GitHub Action](docs/GITHUB_ACTION.md)이 CI에서 같은 리뷰를 실행합니다 |
-| `codewhale app-server --http` | 스레드, 이벤트, 승인, 각 턴의 파일 변경을 다루는 로컬 HTTP API인 [Runtime API](docs/RUNTIME_API.md) |
+| `codewhale web` | `127.0.0.1`에서 동작하는 로컬 웹 UI([안내서](../WEB.md)) |
+| `codewhale review --pr N` | GitHub 풀 리퀘스트에 대한 참고용 리뷰. `--post`를 추가하지 않으면 아무것도 게시하지 않으며, [GitHub Action](../GITHUB_ACTION.md)이 CI에서 같은 리뷰를 실행합니다 |
+| `codewhale app-server --http` | 스레드, 이벤트, 승인, 각 턴의 파일 변경을 다루는 로컬 HTTP API인 [Runtime API](../RUNTIME_API.md) |
 | `codewhale serve --acp` | Zed 같은 에디터를 위한 stdio 기반 Agent Client Protocol |
 
 터미널 앱, `exec`, `web`, Runtime API는 하나의 엔진을 공유합니다
-([아키텍처](docs/ARCHITECTURE.md)). 커뮤니티가 관리하는
+([아키텍처](../ARCHITECTURE.md)). 커뮤니티가 관리하는
 [VS Code 확장](https://marketplace.visualstudio.com/items?itemName=HengQuWorld.brotherwhale-vscode)은
 사이드바에서 이 엔진에 연결됩니다([소스](https://github.com/HengQuWorld/CodeWhale-VSCode)).
 Runtime API를 기반으로 한 네이티브 데스크톱 앱이 개발 중이며, 아직 공개
@@ -237,26 +237,26 @@ bubblewrap을 사용합니다. Windows에는 아직 OS 샌드박스가 없으며
 `codewhale config set telemetry false`로 끌 수 있습니다. Codewhale은 시작할 때
 GitHub에서 새 릴리스도 확인합니다. 이 확인을 건너뛰려면
 `CODEWHALE_NO_UPDATE_CHECK=1`을 설정하세요. 자세한 내용은
-[권한 확인 순서](docs/AUTHORIZATION_ORDER.md), [샌드박스](docs/SANDBOX.md),
-[텔레메트리](docs/TELEMETRY.md)를 참고하세요.
+[권한 확인 순서](../AUTHORIZATION_ORDER.md), [샌드박스](../SANDBOX.md),
+[텔레메트리](../TELEMETRY.md)를 참고하세요.
 
 ## 문서
 
 | 시작하기 | 참고 자료 |
 | --- | --- |
-| [설치](docs/INSTALL.md) | [설정](docs/CONFIGURATION.md) |
-| [제공업체와 로컬 모델](docs/PROVIDERS.md) | [아키텍처](docs/ARCHITECTURE.md) |
-| [모드와 권한](docs/MODES.md) | [Runtime API](docs/RUNTIME_API.md) |
-| [단축키](docs/KEYBINDINGS.md) | [플러그인 작성](docs/PLUGIN_AUTHORING.md) |
-| [GitHub PR 리뷰](docs/GITHUB_ACTION.md) | [전체 문서](docs/README.md) |
+| [설치](../INSTALL.md) | [설정](../CONFIGURATION.md) |
+| [제공업체와 로컬 모델](../PROVIDERS.md) | [아키텍처](../ARCHITECTURE.md) |
+| [모드와 권한](../MODES.md) | [Runtime API](../RUNTIME_API.md) |
+| [단축키](../KEYBINDINGS.md) | [플러그인 작성](../PLUGIN_AUTHORING.md) |
+| [GitHub PR 리뷰](../GITHUB_ACTION.md) | [전체 문서](../README.md) |
 
 ## 커뮤니티
 
 빠진 제공업체가 있거나 불편한 작업 흐름이 있으면
 [이슈를 열거나](https://github.com/codewhale-hq/CodeWhale/issues/new/choose)
-[풀 리퀘스트를 보내 주세요](CONTRIBUTING.md). 반영된 작업의 기여 이력은
+[풀 리퀘스트를 보내 주세요](../../CONTRIBUTING.md). 반영된 작업의 기여 이력은
 기여자에게 남으며, 무엇이 어디에 있는지는
-[저장소 구조](CONTRIBUTING.md#project-structure)에서 볼 수 있습니다.
+[저장소 구조](../../CONTRIBUTING.md#project-structure)에서 볼 수 있습니다.
 
 [Discord](https://discord.gg/37gfS3ksug)에서 이야기하거나, WeChat에서 메인테이너
 Hunter(`hunterbown`)를 추가하고 Whale Brothers 그룹 가입을 요청하세요.
@@ -265,9 +265,9 @@ Hunter(`hunterbown`)를 추가하고 Whale Brothers 그룹 가입을 요청하�
 
 Codewhale은 `deepseek-tui`에서 시작했으며 지금도 그 프로젝트의 설정과 세션을
 읽습니다. 독립적으로 유지되며 DeepSeek를 비롯한 어떤 모델 제공업체와도 제휴
-관계가 없습니다. [기여해 주신 모든 분](docs/CONTRIBUTORS.md)께 감사드립니다.
+관계가 없습니다. [기여해 주신 모든 분](../CONTRIBUTORS.md)께 감사드립니다.
 
-[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
+[![Codewhale contributors](../assets/contributors.png)](../CONTRIBUTORS.md#everyone)
 
-[MIT](LICENSE). 다른 오픈 소스 프로젝트에서 가져와 수정한 코드는
-[서드파티 고지](docs/THIRD_PARTY_NOTICES.md)에 정리되어 있습니다.
+[MIT](../../LICENSE). 다른 오픈 소스 프로젝트에서 가져와 수정한 코드는
+[서드파티 고지](../THIRD_PARTY_NOTICES.md)에 정리되어 있습니다.

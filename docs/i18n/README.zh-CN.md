@@ -1,9 +1,9 @@
-<!-- source: README.md sha256:182e239fcdf7 -->
+<!-- source: README.md sha256:7e0946fcaecd -->
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="brand/wordmark-inverted.svg">
-  <img src="brand/wordmark.svg" alt="Codewhale" width="320">
+  <source media="(prefers-color-scheme: dark)" srcset="../../brand/wordmark-inverted.svg">
+  <img src="../../brand/wordmark.svg" alt="Codewhale" width="320">
 </picture>
 
 **在终端中运行、可搭配任意模型的开源编程智能体。**
@@ -15,14 +15,14 @@
 [![CI](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml/badge.svg)](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/codewhale-cli?label=crates.io)](https://crates.io/crates/codewhale-cli)
 [![npm](https://img.shields.io/npm/v/codewhale?label=npm)](https://www.npmjs.com/package/codewhale)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/37gfS3ksug)
 
-[官网](https://codewhale.net) · [文档](docs/README.md) · [更新日志](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md)
+[官网](https://codewhale.net) · [文档](../README.md) · [更新日志](../../CHANGELOG.md) · [参与贡献](../../CONTRIBUTING.md)
 
-[English](README.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
+[English](../../README.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-0102-demo.png" alt="一次 Codewhale 终端会话" width="760">
+<img src="../../web/public/codewhale-tui-0102-demo.png" alt="一次 Codewhale 终端会话" width="760">
 
 <sub>一个使用脚本化测试模型的 0.10.2 开发版本，在一次性工作区中以“完全访问”权限运行。其中的编辑、三个测试和一次子智能体审查都是真实运行的。</sub>
 
@@ -38,8 +38,8 @@ curl -fsSL https://codewhale.net/install.sh | sh
 
 安装器会把经过校验和验证的 `codewhale` 及其简短别名 `codew` 放到 `~/.local/bin`。
 如果之后 shell 提示 `command not found`，请运行安装器打印出的那行 PATH 命令
-（[详情](docs/INSTALL.md#put-it-on-your-path)）。使用 `codewhale update` 升级。这些命令安装的是最新发布版本。
-本页跟随 `main` 更新，因此标注了版本号的功能会在该版本中推出；[更新日志](CHANGELOG.md)列出了每个版本新增的内容。
+（[详情](../INSTALL.md#put-it-on-your-path)）。使用 `codewhale update` 升级。这些命令安装的是最新发布版本。
+本页跟随 `main` 更新，因此标注了版本号的功能会在该版本中推出；[更新日志](../../CHANGELOG.md)列出了每个版本新增的内容。
 
 <details>
 <summary><b>Windows、npm、Cargo 及其他安装方式</b></summary>
@@ -51,8 +51,8 @@ cargo install codewhale-cli --locked  # crates.io; can trail GitHub Releases
 ```
 
 预编译二进制文件覆盖 Linux、macOS 和 Windows 的 x64 与 arm64 架构。Nix、Linux 上的
-Homebrew、Android/Termux（预览版）以及手动下载见[安装指南](docs/INSTALL.md)，容器见
-[Docker](docs/DOCKER.md)。每台机器只使用一种安装方式；否则 `PATH` 上会出现两份副本，
+Homebrew、Android/Termux（预览版）以及手动下载见[安装指南](../INSTALL.md)，容器见
+[Docker](../DOCKER.md)。每台机器只使用一种安装方式；否则 `PATH` 上会出现两份副本，
 排在前面的那一份生效。
 
 </details>
@@ -93,7 +93,7 @@ codewhale exec --auto --sandbox workspace-write "fix the failing tests and expla
 | 模式 | `Tab`（输入框为空时）或 `/mode` | **Plan** 只读取和搜索，不做任何改动。**Work** 编辑文件并运行命令。**Operate** 拥有与 Work 相同的访问权限，把你的请求当作一个目标，并持续推进，直到目标得到验证或需要你提供输入为止。 |
 | 权限 | `Shift+Tab` | **询问**（Ask）在你的仓库中直接应用文件编辑而不询问，并在运行非只读的 shell 命令之前先询问。**自动审核**（Auto-Review）让规则和一个审查模型批准常规调用，并拒绝高风险调用；如需亲自批准这些调用，请切换到“询问”。**完全访问**（Full Access）从不询问，并关闭 Codewhale 的沙箱；仓库规则和受管策略仍然适用。 |
 
-详情见[模式与权限指南](docs/MODES.md)。
+详情见[模式与权限指南](../MODES.md)。
 
 ## 功能
 
@@ -120,19 +120,19 @@ codewhale exec --auto --sandbox workspace-write "fix the failing tests and expla
 OpenRouter 和 xAI。任何兼容 OpenAI 的端点都可以使用，通过 Ollama、vLLM 或 SGLang
 运行的本地模型也可以。默认模型是 DeepSeek 的 `deepseek-flash`，DeepSeek 已于 2026-10-17
 将其切换为 DeepSeek-V4.1-Flash-1017；0.10.1 无需更新即可运行它
-（[详情](docs/PROVIDERS.md#deepseek-v41-flash)）。
+（[详情](../PROVIDERS.md#deepseek-v41-flash)）。
 
 `/model` 可在回合之间切换模型，`/model auto` 会为每个回合挑选一个模型（用 `/router`
 设置挑选方式）。`/turn inspect` 显示某个回合使用了哪个模型、花费多少以及耗时多久。
 `codewhale auth chatgpt` 让你可以用 ChatGPT 套餐代替 API 密钥（实验性）。
-参见[提供商](docs/PROVIDERS.md)。
+参见[提供商](../PROVIDERS.md)。
 
 ### 回执与撤销
 
 `/receipts`（退出后可用 `codewhale receipts --last`）会列出修改过的文件、运行过的命令、
 Web 和 MCP 调用、启动过的智能体、审批及审批人，以及失败记录。`/undo` 撤销你的上一个请求；
 在 0.10.1 中，撤销文件改动需要 `/trust on`，而且每次只回退一个工具调用。`/restore` 把整个工作区回滚到更早的快照；由于这会覆盖之后的编辑，它需要 `/trust on`
-或“完全访问”权限。参见[回执](docs/RECEIPTS.md)。
+或“完全访问”权限。参见[回执](../RECEIPTS.md)。
 
 可使用工具的 exec 运行无论采用哪种输出格式都会保存，因此在 `exec --auto` 之后，
 包括使用 `--json` 时，`codewhale receipts --last` 都能正常工作。仅作答且使用文本输出或
@@ -142,29 +142,29 @@ Web 和 MCP 调用、启动过的智能体、审批及审批人，以及失败�
 ### 更长的任务
 
 `/goal` 设定一个跨回合持续有效的目标。Codewhale 可以把工作拆分给
-[子智能体](docs/SUBAGENTS.md)，运行由多个智能体组成的 [Fleet](docs/FLEET.md)，
-或者按照提交到仓库中的[工作流](docs/WORKFLOW_AUTHORING.md)执行。
+[子智能体](../SUBAGENTS.md)，运行由多个智能体组成的 [Fleet](../FLEET.md)，
+或者按照提交到仓库中的[工作流](../WORKFLOW_AUTHORING.md)执行。
 
 ### 从其他智能体迁移
 
 Codewhale 会自动读取 `AGENTS.md`。为其他工具编写的指令文件，例如 `CLAUDE.md`、
 `.cursorrules` 或 `.github/copilot-instructions.md`，只有在你于配置中设置
 `project_instruction_imports = ["claude"]`（或 `"cursor"`、`"cline"`、`"windsurf"`、
-`"copilot"`、`"all"`）主动启用后才会加载；参见 [config.example.toml](config.example.toml)。
+`"copilot"`、`"all"`）主动启用后才会加载；参见 [config.example.toml](../../config.example.toml)。
 如果 Codewhale 发现了未加载的此类文件，会给出警告。
 
 `/import-claude` 会准备一份导入你的 Claude Code 设置和 MCP 服务器的方案，供你审阅。
 `/plugin install` 接受包含技能、命令、智能体配置文件和 MCP 服务器的 Claude Code 插件，
-但会拒绝需要钩子或 LSP 服务器的插件（[详情](docs/CLAUDE_PLUGIN_COMPAT.md)）。
+但会拒绝需要钩子或 LSP 服务器的插件（[详情](../CLAUDE_PLUGIN_COMPAT.md)）。
 
 ### 扩展
 
-连接 [MCP 服务器](docs/MCP.md)，添加[技能](docs/SKILLS.md)和[插件](docs/PLUGINS.md)，
-并在会话和工具事件上运行[钩子](docs/HOOKS.md)。代码模式（Code mode，实验性，默认开启）
+连接 [MCP 服务器](../MCP.md)，添加[技能](../SKILLS.md)和[插件](../PLUGINS.md)，
+并在会话和工具事件上运行[钩子](../HOOKS.md)。代码模式（Code mode，实验性，默认开启）
 让模型编写一个 `execute_tools` 程序来调用多个 MCP 和插件工具；每次调用仍要遵守你的审批规则，
 并保留各自的回执。内置的 Computer Use 插件（实验性，
 仅限 macOS）可以观察和操作其他应用。在你审阅其访问权限并启用之前，它保持关闭
-（[指南](crates/tui/plugins/computer-use/README.md)）。
+（[指南](../../crates/tui/plugins/computer-use/README.md)）。
 
 ## 运行方式
 
@@ -172,12 +172,12 @@ Codewhale 会自动读取 `AGENTS.md`。为其他工具编写的指令文件，�
 | --- | --- |
 | `codewhale` | 交互式终端应用 |
 | `codewhale exec "…"` | 不启动界面，运行一个任务。单独使用时，它只作答而不使用工具；`--auto` 默认以“完全访问”权限启用工具，`--sandbox workspace-write` 对工具施加限制，`--output-format stream-json` 以 JSON 形式流式输出事件 |
-| `codewhale web` | 监听 `127.0.0.1` 的本地 Web 界面（[指南](docs/WEB.md)） |
-| `codewhale review --pr N` | 对 GitHub PR 进行仅供参考的审查。除非你加上 `--post`，否则它不会发布任何内容；[GitHub Action](docs/GITHUB_ACTION.md) 会在 CI 中运行同样的审查 |
-| `codewhale app-server --http` | [Runtime API](docs/RUNTIME_API.md)，用于对话线程、事件、审批以及每个回合文件改动的本地 HTTP API |
+| `codewhale web` | 监听 `127.0.0.1` 的本地 Web 界面（[指南](../WEB.md)） |
+| `codewhale review --pr N` | 对 GitHub PR 进行仅供参考的审查。除非你加上 `--post`，否则它不会发布任何内容；[GitHub Action](../GITHUB_ACTION.md) 会在 CI 中运行同样的审查 |
+| `codewhale app-server --http` | [Runtime API](../RUNTIME_API.md)，用于对话线程、事件、审批以及每个回合文件改动的本地 HTTP API |
 | `codewhale serve --acp` | 通过 stdio 提供 Agent Client Protocol，供 Zed 等编辑器使用 |
 
-终端应用、`exec`、`web` 和 Runtime API 共用同一个引擎（[架构](docs/ARCHITECTURE.md)）。
+终端应用、`exec`、`web` 和 Runtime API 共用同一个引擎（[架构](../ARCHITECTURE.md)）。
 社区维护的
 [VS Code 扩展](https://marketplace.visualstudio.com/items?itemName=HengQuWorld.brotherwhale-vscode)
 可以从侧边栏连接到它（[源码](https://github.com/HengQuWorld/CodeWhale-VSCode)）。
@@ -203,25 +203,25 @@ macOS 上是 Seatbelt，Linux 上是 bubblewrap（需已安装）。Windows 目�
 功能和错误计数），并附带一个每 90 天轮换一次的随机安装 ID；它从不包含对话、代码、提示词、
 模型名称、文件名或仓库名，也从不包含凭据。运行 `codewhale config set telemetry false` 即可关闭。启动时，Codewhale 还会
 检查 GitHub 上是否有新版本；设置 `CODEWHALE_NO_UPDATE_CHECK=1` 可跳过这一检查。
-更多信息见[授权顺序](docs/AUTHORIZATION_ORDER.md)、[沙箱](docs/SANDBOX.md)和
-[遥测](docs/TELEMETRY.md)。
+更多信息见[授权顺序](../AUTHORIZATION_ORDER.md)、[沙箱](../SANDBOX.md)和
+[遥测](../TELEMETRY.md)。
 
 ## 文档
 
 | 从这里开始 | 参考 |
 | --- | --- |
-| [安装](docs/INSTALL.md) | [配置](docs/CONFIGURATION.md) |
-| [提供商与本地模型](docs/PROVIDERS.md) | [架构](docs/ARCHITECTURE.md) |
-| [模式与权限](docs/MODES.md) | [Runtime API](docs/RUNTIME_API.md) |
-| [快捷键](docs/KEYBINDINGS.md) | [插件开发](docs/PLUGIN_AUTHORING.md) |
-| [GitHub PR 审查](docs/GITHUB_ACTION.md) | [全部文档](docs/README.md) |
+| [安装](../INSTALL.md) | [配置](../CONFIGURATION.md) |
+| [提供商与本地模型](../PROVIDERS.md) | [架构](../ARCHITECTURE.md) |
+| [模式与权限](../MODES.md) | [Runtime API](../RUNTIME_API.md) |
+| [快捷键](../KEYBINDINGS.md) | [插件开发](../PLUGIN_AUTHORING.md) |
+| [GitHub PR 审查](../GITHUB_ACTION.md) | [全部文档](../README.md) |
 
 ## 社区
 
 如果缺少某个提供商，或某个工作流用起来不顺手，
 请[提交 issue](https://github.com/codewhale-hq/CodeWhale/issues/new/choose)或
-[提交 PR](CONTRIBUTING.md)。被合并的工作会保留贡献者的署名；
-[仓库结构](CONTRIBUTING.md#project-structure)说明了各部分代码所在的位置。
+[提交 PR](../../CONTRIBUTING.md)。被合并的工作会保留贡献者的署名；
+[仓库结构](../../CONTRIBUTING.md#project-structure)说明了各部分代码所在的位置。
 
 欢迎在 [Discord](https://discord.gg/37gfS3ksug) 上交流，或在微信上添加维护者 Hunter
 （`hunterbown`），申请加入 Whale Brothers 群。
@@ -229,8 +229,8 @@ macOS 上是 Seatbelt，Linux 上是 bubblewrap（需已安装）。Windows 目�
 ## 历史与许可证
 
 Codewhale 最初名为 `deepseek-tui`，至今仍会读取该项目的配置和会话。它是独立维护的项目，
-与 DeepSeek 或任何其他模型提供商均无隶属关系。感谢[每一位贡献者](docs/CONTRIBUTORS.md)。
+与 DeepSeek 或任何其他模型提供商均无隶属关系。感谢[每一位贡献者](../CONTRIBUTORS.md)。
 
-[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
+[![Codewhale contributors](../assets/contributors.png)](../CONTRIBUTORS.md#everyone)
 
-[MIT](LICENSE)。改编自其他开源项目的代码列在[第三方声明](docs/THIRD_PARTY_NOTICES.md)中。
+[MIT](../../LICENSE)。改编自其他开源项目的代码列在[第三方声明](../THIRD_PARTY_NOTICES.md)中。

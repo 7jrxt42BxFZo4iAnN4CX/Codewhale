@@ -6,7 +6,7 @@ Canonical tracking document for every locale Codewhale ships, is actively
 building, is planning, or has explicitly deferred.
 
 > **Scope note (2026-07-12):** this matrix covers three surfaces — the TUI
-> locale packs (`crates/localization/locales/`), the translated READMEs (repo root),
+> locale packs (`crates/localization/locales/`), the translated READMEs (`docs/i18n/`),
 > and the website (`web/`). The three ship on different cadences, so a
 > locale can be **shipped** on one surface and **planned** on another; the
 > per-surface tables below are the per-surface truth. The website registry
@@ -138,24 +138,24 @@ what the `(partial)` badge is honest about.
 | Locale | File | Status | Parity check |
 |--------|------|--------|-------------|
 | English | `README.md` | **shipped** | Canonical source |
-| Simplified Chinese | `README.zh-CN.md` | **shipped** | `scripts/check-readme-translations.py` (stamp + fences + URLs + sections) |
-| Japanese | `README.ja-JP.md` | **shipped** | Same |
-| Vietnamese | `README.vi.md` | **shipped** | Same |
-| Korean | `README.ko-KR.md` | **shipped** | Same |
-| Latin American Spanish | `README.es-419.md` | **shipped** | Same |
-| Brazilian Portuguese | `README.pt-BR.md` | **shipped** | Same |
-| Russian | `README.ru.md` | **shipped** | Same (#3092). Awaiting native-speaker review. |
-| Ukrainian | `README.uk.md` | **shipped** | Same (#4791). Awaiting native-speaker review. |
-| Indonesian | `README.id.md` | **shipped** | Same (#4789). Awaiting native-speaker review. |
-| French | `README.fr.md` | **shipped** | Same. Awaiting native-speaker review. |
-| German | `README.de.md` | **shipped** | Same. Awaiting native-speaker review. |
-| Traditional Chinese | `README.zh-TW.md` | **shipped** | Same. Awaiting native-speaker review. |
-| Hindi | `README.hi.md` | **shipped** | Same. Awaiting native-speaker review. |
-| Turkish | `README.tr.md` | **shipped** | Same. Awaiting native-speaker review. |
-| Italian | `README.it.md` | **shipped** | Same. Awaiting native-speaker review. |
-| Polish | `README.pl.md` | **shipped** | Same. Awaiting native-speaker review. |
-| Arabic | `README.ar.md` | **shipped** | Same. Awaiting native-speaker review. Markdown only; no HTML `dir` attributes. |
-| Catalan | `README.ca.md` | **shipped** | Same. Awaiting native-speaker review. |
+| Simplified Chinese | `docs/i18n/README.zh-CN.md` | **shipped** | `scripts/check-readme-translations.py` (stamp + fences + URLs + sections) |
+| Japanese | `docs/i18n/README.ja-JP.md` | **shipped** | Same |
+| Vietnamese | `docs/i18n/README.vi.md` | **shipped** | Same |
+| Korean | `docs/i18n/README.ko-KR.md` | **shipped** | Same |
+| Latin American Spanish | `docs/i18n/README.es-419.md` | **shipped** | Same |
+| Brazilian Portuguese | `docs/i18n/README.pt-BR.md` | **shipped** | Same |
+| Russian | `docs/i18n/README.ru.md` | **shipped** | Same (#3092). Awaiting native-speaker review. |
+| Ukrainian | `docs/i18n/README.uk.md` | **shipped** | Same (#4791). Awaiting native-speaker review. |
+| Indonesian | `docs/i18n/README.id.md` | **shipped** | Same (#4789). Awaiting native-speaker review. |
+| French | `docs/i18n/README.fr.md` | **shipped** | Same. Awaiting native-speaker review. |
+| German | `docs/i18n/README.de.md` | **shipped** | Same. Awaiting native-speaker review. |
+| Traditional Chinese | `docs/i18n/README.zh-TW.md` | **shipped** | Same. Awaiting native-speaker review. |
+| Hindi | `docs/i18n/README.hi.md` | **shipped** | Same. Awaiting native-speaker review. |
+| Turkish | `docs/i18n/README.tr.md` | **shipped** | Same. Awaiting native-speaker review. |
+| Italian | `docs/i18n/README.it.md` | **shipped** | Same. Awaiting native-speaker review. |
+| Polish | `docs/i18n/README.pl.md` | **shipped** | Same. Awaiting native-speaker review. |
+| Arabic | `docs/i18n/README.ar.md` | **shipped** | Same. Awaiting native-speaker review. Markdown only; no HTML `dir` attributes. |
+| Catalan | `docs/i18n/README.ca.md` | **shipped** | Same. Awaiting native-speaker review. |
 
 ## Drift checks
 
@@ -217,7 +217,7 @@ carry an explicit `planned`/`partial`/`deferred` row in this matrix.
 
 ### 2. README
 
-1. Translate `README.md` into `README.<tag>.md`, preserving structure,
+1. Translate `README.md` into `docs/i18n/README.<tag>.md`, preserving structure,
    commands, and the #3087 factual history.
 2. Cross-link it from the language line in `README.md` and from the other
    translated READMEs.

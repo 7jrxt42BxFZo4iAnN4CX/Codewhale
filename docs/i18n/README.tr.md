@@ -1,9 +1,9 @@
-<!-- source: README.md sha256:182e239fcdf7 -->
+<!-- source: README.md sha256:7e0946fcaecd -->
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="brand/wordmark-inverted.svg">
-  <img src="brand/wordmark.svg" alt="Codewhale" width="320">
+  <source media="(prefers-color-scheme: dark)" srcset="../../brand/wordmark-inverted.svg">
+  <img src="../../brand/wordmark.svg" alt="Codewhale" width="320">
 </picture>
 
 **Terminaliniz için her modelle çalışan, açık kaynaklı bir kodlama ajanı.**
@@ -18,14 +18,14 @@ okur, dosyaları düzenler ve komutları çalıştırır. 40'tan fazla yerleşik
 [![CI](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml/badge.svg)](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/codewhale-cli?label=crates.io)](https://crates.io/crates/codewhale-cli)
 [![npm](https://img.shields.io/npm/v/codewhale?label=npm)](https://www.npmjs.com/package/codewhale)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/37gfS3ksug)
 
-[Web sitesi](https://codewhale.net) · [Belgeler](docs/README.md) · [Değişiklik günlüğü](CHANGELOG.md) · [Katkıda bulunma](CONTRIBUTING.md)
+[Web sitesi](https://codewhale.net) · [Belgeler](../README.md) · [Değişiklik günlüğü](../../CHANGELOG.md) · [Katkıda bulunma](../../CONTRIBUTING.md)
 
-[English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
+[English](../../README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-0102-demo.png" alt="Bir Codewhale terminal oturumu" width="760">
+<img src="../../web/public/codewhale-tui-0102-demo.png" alt="Bir Codewhale terminal oturumu" width="760">
 
 <sub>Betikli bir test modeliyle, atılabilir bir çalışma alanında Full Access ile çalışan bir 0.10.2 geliştirme derlemesi. Düzenleme, üç test ve bir alt ajan incelemesi gerçekten çalıştı.</sub>
 
@@ -42,10 +42,10 @@ curl -fsSL https://codewhale.net/install.sh | sh
 Kurulum betiği, sağlama toplamı doğrulanmış `codewhale` ikili dosyasını ve kısa
 takma adı olan `codew` komutunu `~/.local/bin` dizinine koyar. Ardından kabuğunuz
 `command not found` derse, betiğin yazdırdığı PATH satırını çalıştırın
-([ayrıntılar](docs/INSTALL.md#put-it-on-your-path)). `codewhale update` kurulumu
+([ayrıntılar](../INSTALL.md#put-it-on-your-path)). `codewhale update` kurulumu
 yükseltir. Bu komutlar en son sürümü kurar. Bu sayfa `main` dalını izler; bu yüzden
 bir sürüm numarasıyla işaretlenen özellik o sürümle gelir. Her sürümün neler
-eklediğini [değişiklik günlüğü](CHANGELOG.md) listeler.
+eklediğini [değişiklik günlüğü](../../CHANGELOG.md) listeler.
 
 <details>
 <summary><b>Windows, npm, Cargo ve diğer kurulum yolları</b></summary>
@@ -58,7 +58,7 @@ cargo install codewhale-cli --locked  # crates.io; can trail GitHub Releases
 
 Hazır derlenmiş ikili dosyalar x64 ve arm64 üzerinde Linux, macOS ve Windows'u
 kapsar. Nix, Linux'ta Homebrew, Android/Termux (önizleme) ve elle indirme
-[kurulum kılavuzunda](docs/INSTALL.md), konteynerler ise [Docker](docs/DOCKER.md)
+[kurulum kılavuzunda](../INSTALL.md), konteynerler ise [Docker](../DOCKER.md)
 sayfasında anlatılır. Her makinede tek bir kurulum yöntemi kullanın; aksi halde
 `PATH` üzerinde iki kopya olur ve hangisi önce gelirse o çalışır.
 
@@ -107,7 +107,7 @@ Yeni bir kurulum Work modunda ve Ask izniyle başlar.
 | Mod | `Tab` (giriş alanı boşken) veya `/mode` | **Plan** okur ve arar ama hiçbir şeyi değiştirmez. **Work** dosyaları düzenler ve komutları çalıştırır. **Operate** Work ile aynı erişime sahiptir, isteğinizi bir hedef olarak ele alır ve hedef doğrulanana ya da sizden girdi gerekene kadar devam eder. |
 | İzin | `Shift+Tab` | **Ask** deponuzdaki dosya düzenlemelerini sormadan uygular, salt okunur olmayan kabuk komutlarından önce sorar. **Auto-Review** rutin çağrıların kurallar ve bir inceleyici model tarafından onaylanmasına izin verir, yüksek riskli olanları reddeder; bunları kendiniz onaylamak için Ask iznine geçin. **Full Access** hiç sormaz ve Codewhale'in korumalı alanını kapatır; depo kuralları ve yönetilen politika yine de geçerlidir. |
 
-Ayrıntılar için [modlar ve izinler kılavuzuna](docs/MODES.md) bakın.
+Ayrıntılar için [modlar ve izinler kılavuzuna](../MODES.md) bakın.
 
 ## Ne yapar
 
@@ -138,13 +138,13 @@ Anthropic, OpenAI, DeepSeek, Google, Mistral, Moonshot, OpenRouter ve xAI dahil
 Ollama, vLLM veya SGLang üzerinden yerel modeller de çalışır. Varsayılan model,
 DeepSeek'in `deepseek-flash` modelidir; DeepSeek bu modeli 2026-10-17'de
 DeepSeek-V4.1-Flash-1017'ye taşıdı. 0.10.1 onu güncelleme gerektirmeden çalıştırır
-([ayrıntılar](docs/PROVIDERS.md#deepseek-v41-flash)).
+([ayrıntılar](../PROVIDERS.md#deepseek-v41-flash)).
 
 `/model` turlar arasında model değiştirir; `/model auto` ise her tur için bir model
 seçer (seçimin nasıl yapılacağını `/router` ayarlar). `/turn inspect`, bir turun
 hangi modeli kullandığını, ne kadara mal olduğunu ve ne kadar sürdüğünü gösterir.
 `codewhale auth chatgpt`, API anahtarı yerine bir ChatGPT planı kullanmanızı sağlar
-(deneysel). Bkz. [Sağlayıcılar](docs/PROVIDERS.md).
+(deneysel). Bkz. [Sağlayıcılar](../PROVIDERS.md).
 
 ### Makbuzlar ve geri alma
 
@@ -154,7 +154,7 @@ onayları ve bunları kimin verdiğini ve hataları listeler. `/undo` son isteğ
 geri alır; 0.10.1'de dosyalar için `/trust on` gerektirir ve her seferinde bir araç
 çağrısı geri gider. `/restore` tüm çalışma alanını daha önceki bir anlık görüntüye geri
 döndürür; bu, sonraki düzenlemelerin üzerine yazdığı için `/trust on` veya Full
-Access gerektirir. Bkz. [Makbuzlar](docs/RECEIPTS.md).
+Access gerektirir. Bkz. [Makbuzlar](../RECEIPTS.md).
 
 Araçların kullanılabilir olduğu exec çalıştırmaları her çıktı biçiminde
 kaydedilir; böylece `codewhale receipts --last`, `--json` dahil olmak üzere
@@ -166,8 +166,8 @@ kaydedilir; makbuzlar veya `exec --continue` için bunları her zaman kaydetmek
 ### Daha uzun işler
 
 `/goal`, turlar boyunca geçerli kalan bir hedef belirler. Codewhale işi
-[alt ajanlara](docs/SUBAGENTS.md) bölebilir, bir [ajan filosu](docs/FLEET.md)
-çalıştırabilir veya depoya eklenmiş bir [iş akışını](docs/WORKFLOW_AUTHORING.md)
+[alt ajanlara](../SUBAGENTS.md) bölebilir, bir [ajan filosu](../FLEET.md)
+çalıştırabilir veya depoya eklenmiş bir [iş akışını](../WORKFLOW_AUTHORING.md)
 izleyebilir.
 
 ### Başka bir ajandan geçiş
@@ -176,26 +176,26 @@ Codewhale `AGENTS.md` dosyasını kendiliğinden okur. `CLAUDE.md`, `.cursorrule
 veya `.github/copilot-instructions.md` gibi başka araçlar için yazılmış talimat
 dosyaları, yalnızca yapılandırmanızda `project_instruction_imports = ["claude"]`
 (veya `"cursor"`, `"cline"`, `"windsurf"`, `"copilot"`, `"all"`) ile bunu açıkça
-seçtiğinizde yüklenir; bkz. [config.example.toml](config.example.toml). Codewhale,
+seçtiğinizde yüklenir; bkz. [config.example.toml](../../config.example.toml). Codewhale,
 yüklemediği böyle bir dosya bulduğunda uyarır.
 
 `/import-claude`, Claude Code ayarlarınızın ve MCP sunucularınızın içe aktarımını
 gözden geçirmeniz için hazırlar. `/plugin install`, beceriler, komutlar, ajan
 profilleri ve MCP sunucuları içeren Claude Code eklentilerini kabul eder; kanca
 veya LSP sunucusu gerektiren eklentileri reddeder
-([ayrıntılar](docs/CLAUDE_PLUGIN_COMPAT.md)).
+([ayrıntılar](../CLAUDE_PLUGIN_COMPAT.md)).
 
 ### Uzantılar
 
-[MCP sunucuları](docs/MCP.md) bağlayın, [beceriler](docs/SKILLS.md) ve
-[eklentiler](docs/PLUGINS.md) ekleyin, oturum ve araç olaylarında
-[kancalar](docs/HOOKS.md) çalıştırın. Code mode (deneysel, varsayılan olarak açık),
+[MCP sunucuları](../MCP.md) bağlayın, [beceriler](../SKILLS.md) ve
+[eklentiler](../PLUGINS.md) ekleyin, oturum ve araç olaylarında
+[kancalar](../HOOKS.md) çalıştırın. Code mode (deneysel, varsayılan olarak açık),
 modelin birkaç MCP ve eklenti aracını çağıran tek bir `execute_tools` programı
 yazmasını sağlar; her çağrı yine onay kurallarınızdan geçer ve makbuzunu korur.
 Birlikte gelen Computer Use eklentisi
 (deneysel, yalnızca macOS) diğer uygulamaları gözlemleyip kullanabilir. Siz
 erişimini gözden geçirip etkinleştirene kadar kapalı kalır
-([kılavuz](crates/tui/plugins/computer-use/README.md)).
+([kılavuz](../../crates/tui/plugins/computer-use/README.md)).
 
 ## Çalıştırma yolları
 
@@ -203,13 +203,13 @@ erişimini gözden geçirip etkinleştirene kadar kapalı kalır
 | --- | --- |
 | `codewhale` | Etkileşimli terminal uygulaması |
 | `codewhale exec "…"` | Arayüz olmadan tek bir görev. Tek başına araç kullanmadan yanıt verir; `--auto` varsayılan olarak araçları Full Access ile etkinleştirir, `--sandbox workspace-write` bunları kısıtlar, `--output-format stream-json` olayları JSON olarak akış halinde verir |
-| `codewhale web` | `127.0.0.1` üzerinde yerel bir web arayüzü ([kılavuz](docs/WEB.md)) |
-| `codewhale review --pr N` | Bir GitHub pull request'inin tavsiye niteliğinde incelemesi. `--post` eklemediğiniz sürece hiçbir şey yayınlamaz; [GitHub Action](docs/GITHUB_ACTION.md) aynı incelemeyi CI'da çalıştırır |
-| `codewhale app-server --http` | [Runtime API](docs/RUNTIME_API.md); iş parçacıkları, olaylar, onaylar ve her turun dosya değişiklikleri için yerel bir HTTP API |
+| `codewhale web` | `127.0.0.1` üzerinde yerel bir web arayüzü ([kılavuz](../WEB.md)) |
+| `codewhale review --pr N` | Bir GitHub pull request'inin tavsiye niteliğinde incelemesi. `--post` eklemediğiniz sürece hiçbir şey yayınlamaz; [GitHub Action](../GITHUB_ACTION.md) aynı incelemeyi CI'da çalıştırır |
+| `codewhale app-server --http` | [Runtime API](../RUNTIME_API.md); iş parçacıkları, olaylar, onaylar ve her turun dosya değişiklikleri için yerel bir HTTP API |
 | `codewhale serve --acp` | Zed gibi editörler için stdio üzerinden Agent Client Protocol |
 
 Terminal uygulaması, `exec`, `web` ve Runtime API tek bir motoru paylaşır
-([mimari](docs/ARCHITECTURE.md)). Topluluk tarafından sürdürülen bir
+([mimari](../ARCHITECTURE.md)). Topluluk tarafından sürdürülen bir
 [VS Code eklentisi](https://marketplace.visualstudio.com/items?itemName=HengQuWorld.brotherwhale-vscode)
 kenar çubuğundan bu motora bağlanır ([kaynak](https://github.com/HengQuWorld/CodeWhale-VSCode)).
 Runtime API üzerine kurulu, platforma özgü bir masaüstü uygulaması geliştiriliyor;
@@ -242,26 +242,26 @@ bilgileri asla gönderilmez.
 `codewhale config set telemetry false` telemetriyi kapatır. Codewhale başlangıçta
 ayrıca yeni bir sürüm için GitHub'ı kontrol eder; bunu atlamak için
 `CODEWHALE_NO_UPDATE_CHECK=1` ayarlayın. Daha fazlası için
-[yetkilendirme sırası](docs/AUTHORIZATION_ORDER.md),
-[korumalı alan](docs/SANDBOX.md) ve [telemetri](docs/TELEMETRY.md) belgelerine
+[yetkilendirme sırası](../AUTHORIZATION_ORDER.md),
+[korumalı alan](../SANDBOX.md) ve [telemetri](../TELEMETRY.md) belgelerine
 bakın.
 
 ## Belgeler
 
 | Buradan başlayın | Başvuru |
 | --- | --- |
-| [Kurulum](docs/INSTALL.md) | [Yapılandırma](docs/CONFIGURATION.md) |
-| [Sağlayıcılar ve yerel modeller](docs/PROVIDERS.md) | [Mimari](docs/ARCHITECTURE.md) |
-| [Modlar ve izinler](docs/MODES.md) | [Runtime API](docs/RUNTIME_API.md) |
-| [Tuş atamaları](docs/KEYBINDINGS.md) | [Eklenti geliştirme](docs/PLUGIN_AUTHORING.md) |
-| [GitHub PR incelemesi](docs/GITHUB_ACTION.md) | [Tüm belgeler](docs/README.md) |
+| [Kurulum](../INSTALL.md) | [Yapılandırma](../CONFIGURATION.md) |
+| [Sağlayıcılar ve yerel modeller](../PROVIDERS.md) | [Mimari](../ARCHITECTURE.md) |
+| [Modlar ve izinler](../MODES.md) | [Runtime API](../RUNTIME_API.md) |
+| [Tuş atamaları](../KEYBINDINGS.md) | [Eklenti geliştirme](../PLUGIN_AUTHORING.md) |
+| [GitHub PR incelemesi](../GITHUB_ACTION.md) | [Tüm belgeler](../README.md) |
 
 ## Topluluk
 
 Bir sağlayıcı eksikse veya bir iş akışı zahmetliyse
 [bir issue açın](https://github.com/codewhale-hq/CodeWhale/issues/new/choose) ya da
-[pull request gönderin](CONTRIBUTING.md). Katkıda bulunanlar, kabul edilen işin
-hakkını korur; [depo yapısı](CONTRIBUTING.md#project-structure) neyin nerede
+[pull request gönderin](../../CONTRIBUTING.md). Katkıda bulunanlar, kabul edilen işin
+hakkını korur; [depo yapısı](../../CONTRIBUTING.md#project-structure) neyin nerede
 olduğunu gösterir.
 
 [Discord](https://discord.gg/37gfS3ksug) üzerinde sohbet edin veya projenin
@@ -273,9 +273,9 @@ istediğinizi söyleyin.
 Codewhale, `deepseek-tui` olarak başladı ve hâlâ o projenin yapılandırmasını ve
 oturumlarını okur. Bağımsız olarak sürdürülür ve DeepSeek ya da başka herhangi bir
 model sağlayıcısıyla bağlantılı değildir.
-[Katkıda bulunan herkese](docs/CONTRIBUTORS.md) teşekkürler.
+[Katkıda bulunan herkese](../CONTRIBUTORS.md) teşekkürler.
 
-[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
+[![Codewhale contributors](../assets/contributors.png)](../CONTRIBUTORS.md#everyone)
 
-[MIT](LICENSE). Diğer açık kaynak projelerden uyarlanan kod
-[üçüncü taraf bildirimlerinde](docs/THIRD_PARTY_NOTICES.md) listelenir.
+[MIT](../../LICENSE). Diğer açık kaynak projelerden uyarlanan kod
+[üçüncü taraf bildirimlerinde](../THIRD_PARTY_NOTICES.md) listelenir.

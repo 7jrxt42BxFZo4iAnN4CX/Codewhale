@@ -1,9 +1,9 @@
-<!-- source: README.md sha256:182e239fcdf7 -->
+<!-- source: README.md sha256:7e0946fcaecd -->
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="brand/wordmark-inverted.svg">
-  <img src="brand/wordmark.svg" alt="Codewhale" width="320">
+  <source media="(prefers-color-scheme: dark)" srcset="../../brand/wordmark-inverted.svg">
+  <img src="../../brand/wordmark.svg" alt="Codewhale" width="320">
 </picture>
 
 **وكيل برمجة مفتوح المصدر لطرفيتك يعمل مع أي نموذج.**
@@ -16,14 +16,14 @@
 [![CI](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml/badge.svg)](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/codewhale-cli?label=crates.io)](https://crates.io/crates/codewhale-cli)
 [![npm](https://img.shields.io/npm/v/codewhale?label=npm)](https://www.npmjs.com/package/codewhale)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/37gfS3ksug)
 
-[الموقع](https://codewhale.net) · [التوثيق](docs/README.md) · [سجل التغييرات](CHANGELOG.md) · [المساهمة](CONTRIBUTING.md)
+[الموقع](https://codewhale.net) · [التوثيق](../README.md) · [سجل التغييرات](../../CHANGELOG.md) · [المساهمة](../../CONTRIBUTING.md)
 
-[English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [Català](README.ca.md)
+[English](../../README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-0102-demo.png" alt="جلسة Codewhale في الطرفية" width="760">
+<img src="../../web/public/codewhale-tui-0102-demo.png" alt="جلسة Codewhale في الطرفية" width="760">
 
 <sub>نسخة تطوير من 0.10.2 مع نموذج اختبار ذي ردود مُعدّة مسبقًا، بإذن Full Access داخل مساحة عمل مؤقتة. أما التعديل والاختبارات الثلاثة ومراجعة الوكيل الفرعي فقد جرت فعلًا.</sub>
 
@@ -39,10 +39,10 @@ curl -fsSL https://codewhale.net/install.sh | sh
 
 يضع المثبّت `codewhale` واسمه البديل المختصر `codew` في `~/.local/bin` بعد التحقق
 منهما بمجموع الاختبار (checksum). إذا أظهرت الصدفة بعد ذلك `command not found`،
-فشغّل سطر PATH الذي يطبعه المثبّت ([التفاصيل](docs/INSTALL.md#put-it-on-your-path)).
+فشغّل سطر PATH الذي يطبعه المثبّت ([التفاصيل](../INSTALL.md#put-it-on-your-path)).
 ويرقّيه الأمر `codewhale update`. تثبّت هذه الأوامر أحدث إصدار. أما هذه الصفحة
 فتتبع `main`، لذا فالميزة المعلَّمة برقم إصدار تصل في ذلك الإصدار؛ ويسرد
-[سجل التغييرات](CHANGELOG.md) ما يضيفه كل إصدار.
+[سجل التغييرات](../../CHANGELOG.md) ما يضيفه كل إصدار.
 
 <details>
 <summary><b>Windows وnpm وCargo وطرق تثبيت أخرى</b></summary>
@@ -55,7 +55,7 @@ cargo install codewhale-cli --locked  # crates.io; can trail GitHub Releases
 
 تتوفر ملفات ثنائية جاهزة لأنظمة Linux وmacOS وWindows على x64 وarm64. وتجد Nix
 وHomebrew على Linux وAndroid/Termux (معاينة) والتنزيل اليدوي في
-[دليل التثبيت](docs/INSTALL.md)، والحاويات في [Docker](docs/DOCKER.md). التزم بطريقة
+[دليل التثبيت](../INSTALL.md)، والحاويات في [Docker](../DOCKER.md). التزم بطريقة
 تثبيت واحدة لكل جهاز؛ وإلا ستوجد نسختان على `PATH` وتُستخدم النسخة التي تأتي أولًا.
 
 </details>
@@ -99,7 +99,7 @@ codewhale exec --auto --sandbox workspace-write "fix the failing tests and expla
 | الوضع (Mode) | `Tab` (عندما يكون حقل الإدخال فارغًا) أو `/mode` | في **Plan** يقرأ ويبحث لكنه لا يغيّر شيئًا. وفي **Work** يعدّل الملفات ويشغّل الأوامر. أما **Operate** فله صلاحيات Work نفسها، ويعامل طلبك على أنه هدف، ويواصل العمل حتى يُتحقَّق من الهدف أو يحتاج إلى مُدخل منك. |
 | الإذن (Permission) | `Shift+Tab` | مع **Ask** تُطبَّق تعديلات الملفات في مستودعك دون سؤال، ويسأل قبل أوامر الصدفة التي ليست للقراءة فقط. ومع **Auto-Review** تعتمد القواعد ونموذج مراجِع الاستدعاءات الروتينية، ويرفض هذا الإذن الاستدعاءات عالية الخطورة؛ انتقل إلى Ask لتوافق عليها بنفسك. أما **Full Access** فلا يسأل أبدًا ويوقف صندوق حماية Codewhale؛ وتظل قواعد المستودع والسياسة المُدارة سارية. |
 
-راجع [دليل الأوضاع والأذونات](docs/MODES.md) للتفاصيل.
+راجع [دليل الأوضاع والأذونات](../MODES.md) للتفاصيل.
 
 ## ما الذي يفعله
 
@@ -128,12 +128,12 @@ codewhale exec --auto --sandbox workspace-write "fix the failing tests and expla
 OpenAI، وكذلك النماذج المحلية عبر Ollama أو vLLM أو SGLang. والنموذج الافتراضي
 هو `deepseek-flash` من DeepSeek، الذي نقلته DeepSeek إلى DeepSeek-V4.1-Flash-1017
 في 2026-10-17؛ ويشغّله 0.10.1 دون تحديث
-([التفاصيل](docs/PROVIDERS.md#deepseek-v41-flash)).
+([التفاصيل](../PROVIDERS.md#deepseek-v41-flash)).
 
 ويبدّل `/model` النموذج بين دورات المحادثة، ويختار `/model auto` نموذجًا لكل دورة
 (ويضبط `/router` طريقة الاختيار). ويعرض `/turn inspect` النموذج الذي استخدمته
 الدورة وتكلفتها والمدة التي استغرقتها. ويتيح لك `codewhale auth chatgpt` استخدام
-اشتراك ChatGPT بدلًا من مفتاح API (تجريبي). راجع [المزوّدين](docs/PROVIDERS.md).
+اشتراك ChatGPT بدلًا من مفتاح API (تجريبي). راجع [المزوّدين](../PROVIDERS.md).
 
 ### الإيصالات والتراجع
 
@@ -142,7 +142,7 @@ OpenAI، وكذلك النماذج المحلية عبر Ollama أو vLLM أو S
 ومن منحها، وحالات الفشل. ويُلغي `/undo` آخر طلب لك؛ وفي 0.10.1 يتطلب `/trust on`
 للملفات، ويتراجع عن استدعاء أداة واحد في كل مرة. ويعيد `/restore` مساحة العمل
 كلها إلى لقطة سابقة؛ ولأن ذلك يكتب فوق التعديلات اللاحقة، فإنه يتطلب `/trust on`
-أو Full Access. راجع [الإيصالات](docs/RECEIPTS.md).
+أو Full Access. راجع [الإيصالات](../RECEIPTS.md).
 
 تُحفظ عمليات تشغيل exec التي تتيح أدوات بكل صيغ الإخراج، لذا يعمل
 `codewhale receipts --last` بعد `exec --auto`، بما في ذلك مع `--json`.
@@ -153,8 +153,8 @@ OpenAI، وكذلك النماذج المحلية عبر Ollama أو vLLM أو S
 ### الأعمال الأطول
 
 يحدد `/goal` هدفًا يستمر عبر دورات المحادثة. ويستطيع Codewhale توزيع العمل على
-[وكلاء فرعيين](docs/SUBAGENTS.md)، أو تشغيل [فريق وكلاء](docs/FLEET.md)، أو اتباع
-[سير عمل](docs/WORKFLOW_AUTHORING.md) مضمَّن في المستودع.
+[وكلاء فرعيين](../SUBAGENTS.md)، أو تشغيل [فريق وكلاء](../FLEET.md)، أو اتباع
+[سير عمل](../WORKFLOW_AUTHORING.md) مضمَّن في المستودع.
 
 ### إن كنت قادمًا من وكيل آخر
 
@@ -162,24 +162,24 @@ OpenAI، وكذلك النماذج المحلية عبر Ollama أو vLLM أو S
 أخرى، مثل `CLAUDE.md` أو `.cursorrules` أو `.github/copilot-instructions.md`، فلا
 تُحمَّل إلا عندما تختار ذلك بإضافة `project_instruction_imports = ["claude"]` (أو
 `"cursor"` أو `"cline"` أو `"windsurf"` أو `"copilot"` أو `"all"`) إلى ملف
-إعداداتك؛ راجع [config.example.toml](config.example.toml). ويُصدر Codewhale تحذيرًا
+إعداداتك؛ راجع [config.example.toml](../../config.example.toml). ويُصدر Codewhale تحذيرًا
 عندما يعثر على ملف منها لم يحمّله.
 
 يجهّز `/import-claude` استيرادًا لإعدادات Claude Code وخوادم MCP الخاصة بك لتراجعه.
 ويقبل `/plugin install` إضافات Claude Code التي تحتوي على مهارات وأوامر وملفات تعريف
 وكلاء وخوادم MCP، ويرفض الإضافات التي تحتاج إلى خطافات أو خوادم LSP
-([التفاصيل](docs/CLAUDE_PLUGIN_COMPAT.md)).
+([التفاصيل](../CLAUDE_PLUGIN_COMPAT.md)).
 
 ### الامتدادات
 
-اربط [خوادم MCP](docs/MCP.md)، وأضف [المهارات](docs/SKILLS.md) و[الإضافات](docs/PLUGINS.md)،
-وشغّل [الخطافات](docs/HOOKS.md) عند أحداث الجلسة والأدوات. ويتيح وضع الشيفرة
+اربط [خوادم MCP](../MCP.md)، وأضف [المهارات](../SKILLS.md) و[الإضافات](../PLUGINS.md)،
+وشغّل [الخطافات](../HOOKS.md) عند أحداث الجلسة والأدوات. ويتيح وضع الشيفرة
 (Code mode، تجريبي ومفعّل افتراضيًا) للنموذج كتابة برنامج `execute_tools` واحد
 يستدعي عدة أدوات من MCP والإضافات؛ ويظل كل استدعاء خاضعًا لقواعد الموافقة لديك
 ويحتفظ بإيصاله. وتستطيع إضافة Computer Use
 المضمَّنة (تجريبية، لنظام macOS فقط) مراقبة التطبيقات الأخرى والتحكم فيها. وتبقى
 معطّلة إلى أن تراجع صلاحيات وصولها وتفعّلها
-([الدليل](crates/tui/plugins/computer-use/README.md)).
+([الدليل](../../crates/tui/plugins/computer-use/README.md)).
 
 ## طرق التشغيل
 
@@ -187,13 +187,13 @@ OpenAI، وكذلك النماذج المحلية عبر Ollama أو vLLM أو S
 | --- | --- |
 | `codewhale` | تطبيق الطرفية التفاعلي |
 | `codewhale exec "…"` | مهمة واحدة دون الواجهة. دون خيارات إضافية يجيب دون استخدام الأدوات؛ ويفعّل `--auto` الأدوات مع Full Access افتراضيًا، ويقيّدها `--sandbox workspace-write`، ويبث `--output-format stream-json` الأحداث بصيغة JSON |
-| `codewhale web` | واجهة ويب محلية على `127.0.0.1` ([الدليل](docs/WEB.md)) |
-| `codewhale review --pr N` | مراجعة استشارية لطلب pull request على GitHub. لا ينشر شيئًا ما لم تضف `--post`؛ ويُجري [GitHub Action](docs/GITHUB_ACTION.md) المراجعة نفسها في CI |
-| `codewhale app-server --http` | واجهة [Runtime API](docs/RUNTIME_API.md)، وهي واجهة HTTP محلية للخيوط والأحداث والموافقات وتغييرات الملفات في كل دورة |
+| `codewhale web` | واجهة ويب محلية على `127.0.0.1` ([الدليل](../WEB.md)) |
+| `codewhale review --pr N` | مراجعة استشارية لطلب pull request على GitHub. لا ينشر شيئًا ما لم تضف `--post`؛ ويُجري [GitHub Action](../GITHUB_ACTION.md) المراجعة نفسها في CI |
+| `codewhale app-server --http` | واجهة [Runtime API](../RUNTIME_API.md)، وهي واجهة HTTP محلية للخيوط والأحداث والموافقات وتغييرات الملفات في كل دورة |
 | `codewhale serve --acp` | بروتوكول Agent Client Protocol عبر stdio، لمحررات مثل Zed |
 
 يتشارك تطبيق الطرفية و`exec` و`web` وRuntime API محركًا واحدًا
-([البنية](docs/ARCHITECTURE.md)). ويتصل به من الشريط الجانبي
+([البنية](../ARCHITECTURE.md)). ويتصل به من الشريط الجانبي
 [امتداد VS Code](https://marketplace.visualstudio.com/items?itemName=HengQuWorld.brotherwhale-vscode)
 الذي يصونه المجتمع ([المصدر](https://github.com/HengQuWorld/CodeWhale-VSCode)).
 ويجري تطوير تطبيق أصلي لسطح المكتب مبني على Runtime API؛ ولا يتوفر له تنزيل عام
@@ -225,25 +225,25 @@ Windows صندوق حماية لنظام التشغيل بعد، ويوقف Full
 أو بيانات الاعتماد. ويوقفه الأمر `codewhale config set telemetry false`. وعند بدء
 التشغيل يتحقق Codewhale أيضًا من GitHub بحثًا عن إصدار جديد؛ اضبط
 `CODEWHALE_NO_UPDATE_CHECK=1` لتخطي ذلك. المزيد في
-[ترتيب التفويض](docs/AUTHORIZATION_ORDER.md) و[صندوق الحماية](docs/SANDBOX.md)
-و[القياس عن بُعد](docs/TELEMETRY.md).
+[ترتيب التفويض](../AUTHORIZATION_ORDER.md) و[صندوق الحماية](../SANDBOX.md)
+و[القياس عن بُعد](../TELEMETRY.md).
 
 ## التوثيق
 
 | ابدأ من هنا | المرجع |
 | --- | --- |
-| [التثبيت](docs/INSTALL.md) | [الإعدادات](docs/CONFIGURATION.md) |
-| [المزوّدون والنماذج المحلية](docs/PROVIDERS.md) | [البنية](docs/ARCHITECTURE.md) |
-| [الأوضاع والأذونات](docs/MODES.md) | [Runtime API](docs/RUNTIME_API.md) |
-| [اختصارات لوحة المفاتيح](docs/KEYBINDINGS.md) | [تأليف الإضافات](docs/PLUGIN_AUTHORING.md) |
-| [مراجعة PR على GitHub](docs/GITHUB_ACTION.md) | [كل التوثيق](docs/README.md) |
+| [التثبيت](../INSTALL.md) | [الإعدادات](../CONFIGURATION.md) |
+| [المزوّدون والنماذج المحلية](../PROVIDERS.md) | [البنية](../ARCHITECTURE.md) |
+| [الأوضاع والأذونات](../MODES.md) | [Runtime API](../RUNTIME_API.md) |
+| [اختصارات لوحة المفاتيح](../KEYBINDINGS.md) | [تأليف الإضافات](../PLUGIN_AUTHORING.md) |
+| [مراجعة PR على GitHub](../GITHUB_ACTION.md) | [كل التوثيق](../README.md) |
 
 ## المجتمع
 
 إذا كان هناك مزوّد مفقود أو سير عمل غير مريح،
 [فافتح issue](https://github.com/codewhale-hq/CodeWhale/issues/new/choose) أو
-[أرسل pull request](CONTRIBUTING.md). يحتفظ المساهمون بالفضل في العمل الذي يُدمج،
-وتوضّح [بنية المستودع](CONTRIBUTING.md#project-structure) مكان كل شيء.
+[أرسل pull request](../../CONTRIBUTING.md). يحتفظ المساهمون بالفضل في العمل الذي يُدمج،
+وتوضّح [بنية المستودع](../../CONTRIBUTING.md#project-structure) مكان كل شيء.
 
 تواصل معنا على [Discord](https://discord.gg/37gfS3ksug)، أو أضف القائم على صيانة
 المشروع، Hunter، على WeChat (`hunterbown`) واطلب الانضمام إلى مجموعة Whale Brothers.
@@ -252,9 +252,9 @@ Windows صندوق حماية لنظام التشغيل بعد، ويوقف Full
 
 بدأ Codewhale باسم `deepseek-tui` ولا يزال يقرأ إعدادات ذلك المشروع وجلساته. ويُصان
 باستقلال، وليس تابعًا لـ DeepSeek ولا لأي مزوّد نماذج آخر. شكرًا
-لـ[كل من ساهم](docs/CONTRIBUTORS.md).
+لـ[كل من ساهم](../CONTRIBUTORS.md).
 
-[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
+[![Codewhale contributors](../assets/contributors.png)](../CONTRIBUTORS.md#everyone)
 
-الترخيص: [MIT](LICENSE). والشيفرة المقتبسة من مشاريع مفتوحة المصدر أخرى مُدرجة في
-[إشعارات الأطراف الثالثة](docs/THIRD_PARTY_NOTICES.md).
+الترخيص: [MIT](../../LICENSE). والشيفرة المقتبسة من مشاريع مفتوحة المصدر أخرى مُدرجة في
+[إشعارات الأطراف الثالثة](../THIRD_PARTY_NOTICES.md).

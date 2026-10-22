@@ -1,9 +1,9 @@
-<!-- source: README.md sha256:182e239fcdf7 -->
+<!-- source: README.md sha256:7e0946fcaecd -->
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="brand/wordmark-inverted.svg">
-  <img src="brand/wordmark.svg" alt="Codewhale" width="320">
+  <source media="(prefers-color-scheme: dark)" srcset="../../brand/wordmark-inverted.svg">
+  <img src="../../brand/wordmark.svg" alt="Codewhale" width="320">
 </picture>
 
 **Un agent de code open source pour votre terminal qui fonctionne avec n’importe quel modèle.**
@@ -18,14 +18,14 @@ qu’il a exécutées et les appels web et MCP qu’il a effectués.
 [![CI](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml/badge.svg)](https://github.com/codewhale-hq/CodeWhale/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/codewhale-cli?label=crates.io)](https://crates.io/crates/codewhale-cli)
 [![npm](https://img.shields.io/npm/v/codewhale?label=npm)](https://www.npmjs.com/package/codewhale)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](../../LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/37gfS3ksug)
 
-[Site web](https://codewhale.net) · [Documentation](docs/README.md) · [Journal des modifications](CHANGELOG.md) · [Contribuer](CONTRIBUTING.md)
+[Site web](https://codewhale.net) · [Documentation](../README.md) · [Journal des modifications](../../CHANGELOG.md) · [Contribuer](../../CONTRIBUTING.md)
 
-[English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
+[English](../../README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja-JP.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [한국어](README.ko-KR.md) · [Español](README.es-419.md) · [Português](README.pt-BR.md) · [Русский](README.ru.md) · [Українська](README.uk.md) · [Deutsch](README.de.md) · [繁體中文](README.zh-TW.md) · [हिन्दी](README.hi.md) · [Türkçe](README.tr.md) · [Italiano](README.it.md) · [Polski](README.pl.md) · [العربية](README.ar.md) · [Català](README.ca.md)
 
-<img src="web/public/codewhale-tui-0102-demo.png" alt="Une session de terminal Codewhale" width="760">
+<img src="../../web/public/codewhale-tui-0102-demo.png" alt="Une session de terminal Codewhale" width="760">
 
 <sub>Une version de développement de la 0.10.2 avec un modèle de test scripté, en Full Access dans un espace de travail jetable. La modification, trois tests et une revue par un sous-agent ont réellement été exécutés.</sub>
 
@@ -42,10 +42,10 @@ curl -fsSL https://codewhale.net/install.sh | sh
 L’installeur place `codewhale` et son alias court `codew` dans `~/.local/bin`,
 après vérification de leur somme de contrôle. Si votre shell répond ensuite
 `command not found`, exécutez la ligne PATH qu’affiche l’installeur
-([détails](docs/INSTALL.md#put-it-on-your-path)). `codewhale update` le met à
+([détails](../INSTALL.md#put-it-on-your-path)). `codewhale update` le met à
 jour. Ces commandes installent la dernière version publiée. Cette page suit
 `main` : une fonctionnalité marquée d’un numéro de version arrive avec cette
-version, et le [journal des modifications](CHANGELOG.md) liste ce qu’apporte
+version, et le [journal des modifications](../../CHANGELOG.md) liste ce qu’apporte
 chaque version.
 
 <details>
@@ -60,8 +60,8 @@ cargo install codewhale-cli --locked  # crates.io; can trail GitHub Releases
 Des binaires précompilés sont fournis pour Linux, macOS et Windows, en x64 et
 arm64. Nix, Homebrew sous Linux, Android/Termux (préversion) et les
 téléchargements manuels sont décrits dans le
-[guide d’installation](docs/INSTALL.md), et les conteneurs dans
-[Docker](docs/DOCKER.md). Tenez-vous-en à une seule méthode d’installation par
+[guide d’installation](../INSTALL.md), et les conteneurs dans
+[Docker](../DOCKER.md). Tenez-vous-en à une seule méthode d’installation par
 machine ; sinon, deux copies se retrouvent dans le `PATH` et c’est la première
 trouvée qui l’emporte.
 
@@ -111,7 +111,7 @@ Une nouvelle installation démarre en mode Work avec la permission Ask.
 | Mode | `Tab` (quand la saisie est vide) ou `/mode` | **Plan** lit et effectue des recherches, mais ne modifie rien. **Work** modifie des fichiers et exécute des commandes. **Operate** a les mêmes accès que Work, traite votre demande comme un objectif et continue jusqu’à ce que l’objectif soit vérifié ou qu’il ait besoin d’une réponse de votre part. |
 | Permission | `Shift+Tab` | **Ask** applique sans demander les modifications de fichiers dans votre dépôt et demande avant les commandes shell qui ne sont pas en lecture seule. **Auto-Review** laisse des règles et un modèle de revue approuver les appels courants et refuse ceux à haut risque ; passez en Ask pour les approuver vous-même. **Full Access** ne demande jamais et désactive le bac à sable de Codewhale ; les règles du dépôt et la politique gérée s’appliquent toujours. |
 
-Le [guide des modes et des permissions](docs/MODES.md) donne les détails.
+Le [guide des modes et des permissions](../MODES.md) donne les détails.
 
 ## Ce qu’il fait
 
@@ -146,13 +146,13 @@ Google, Mistral, Moonshot, OpenRouter et xAI. Tout point d’accès compatible
 OpenAI fonctionne, tout comme les modèles locaux via Ollama, vLLM ou SGLang.
 Le modèle par défaut est `deepseek-flash` de DeepSeek, que DeepSeek a fait
 passer à DeepSeek-V4.1-Flash-1017 le 2026-10-17 ; la 0.10.1 l’exécute sans
-mise à jour ([détails](docs/PROVIDERS.md#deepseek-v41-flash)).
+mise à jour ([détails](../PROVIDERS.md#deepseek-v41-flash)).
 
 `/model` change de modèle entre deux tours, et `/model auto` en choisit un pour
 chaque tour (`/router` permet de régler comment). `/turn inspect` montre quel
 modèle un tour a utilisé, ce qu’il a coûté et combien de temps il a pris.
 `codewhale auth chatgpt` vous permet d’utiliser un abonnement ChatGPT au lieu
-d’une clé API (expérimental). Voir [Fournisseurs](docs/PROVIDERS.md).
+d’une clé API (expérimental). Voir [Fournisseurs](../PROVIDERS.md).
 
 ### Reçus et annulation
 
@@ -163,7 +163,7 @@ annule votre dernière demande ; dans la 0.10.1, il nécessite `/trust on` pour
 les fichiers et revient en arrière d’un appel d’outil à la fois. `/restore`
 ramène tout l’espace de travail à un instantané antérieur ; comme cela écrase
 les modifications ultérieures, il faut `/trust on` ou Full Access. Voir
-[Reçus](docs/RECEIPTS.md).
+[Reçus](../RECEIPTS.md).
 
 Les exécutions d’exec qui proposent des outils sont enregistrées dans tous les
 formats de sortie ; `codewhale receipts --last` fonctionne donc après
@@ -176,9 +176,9 @@ pour `exec --continue`.
 ### Travail de longue durée
 
 `/goal` fixe un objectif qui se maintient d’un tour à l’autre. Codewhale peut
-répartir le travail entre des [sous-agents](docs/SUBAGENTS.md), faire tourner
-une [flotte](docs/FLEET.md) d’agents ou suivre un
-[workflow](docs/WORKFLOW_AUTHORING.md) versionné dans le dépôt.
+répartir le travail entre des [sous-agents](../SUBAGENTS.md), faire tourner
+une [flotte](../FLEET.md) d’agents ou suivre un
+[workflow](../WORKFLOW_AUTHORING.md) versionné dans le dépôt.
 
 ### Venir d’un autre agent
 
@@ -187,26 +187,26 @@ d’autres outils, comme `CLAUDE.md`, `.cursorrules` ou
 `.github/copilot-instructions.md`, ne sont chargés que si vous l’activez
 explicitement avec `project_instruction_imports = ["claude"]` (ou `"cursor"`,
 `"cline"`, `"windsurf"`, `"copilot"`, `"all"`) dans votre configuration ; voir
-[config.example.toml](config.example.toml). Codewhale vous avertit lorsqu’il en
+[config.example.toml](../../config.example.toml). Codewhale vous avertit lorsqu’il en
 trouve un qu’il n’a pas chargé.
 
 `/import-claude` prépare une importation de vos paramètres Claude Code et de vos
 serveurs MCP, pour que vous la vérifiiez. `/plugin install` accepte les plugins
 Claude Code contenant des skills, des commandes, des profils d’agent et des
 serveurs MCP, et refuse ceux qui ont besoin de hooks ou de serveurs LSP
-([détails](docs/CLAUDE_PLUGIN_COMPAT.md)).
+([détails](../CLAUDE_PLUGIN_COMPAT.md)).
 
 ### Extensions
 
-Connectez des [serveurs MCP](docs/MCP.md), ajoutez des [skills](docs/SKILLS.md)
-et des [plugins](docs/PLUGINS.md), et exécutez des [hooks](docs/HOOKS.md) sur
+Connectez des [serveurs MCP](../MCP.md), ajoutez des [skills](../SKILLS.md)
+et des [plugins](../PLUGINS.md), et exécutez des [hooks](../HOOKS.md) sur
 les événements de session et d’outil. Le mode code (expérimental, activé par
 défaut) permet au modèle d’écrire un seul programme `execute_tools` qui appelle
 plusieurs outils MCP et de plugins ; chaque appel reste soumis à vos règles
 d’approbation et conserve son reçu. Le plugin Computer Use fourni
 (expérimental, macOS uniquement) peut observer et utiliser d’autres
 applications. Il reste désactivé tant que vous n’avez pas examiné ses accès et
-ne l’avez pas activé ([guide](crates/tui/plugins/computer-use/README.md)).
+ne l’avez pas activé ([guide](../../crates/tui/plugins/computer-use/README.md)).
 
 ## Façons de l’exécuter
 
@@ -214,13 +214,13 @@ ne l’avez pas activé ([guide](crates/tui/plugins/computer-use/README.md)).
 | --- | --- |
 | `codewhale` | L’application interactive dans le terminal |
 | `codewhale exec "…"` | Une tâche sans l’interface. Sans option, il répond sans utiliser d’outils ; `--auto` active les outils avec Full Access par défaut, `--sandbox workspace-write` les restreint, et `--output-format stream-json` diffuse les événements en JSON |
-| `codewhale web` | Une interface web locale sur `127.0.0.1` ([guide](docs/WEB.md)) |
-| `codewhale review --pr N` | Une revue consultative d’une pull request GitHub. Elle ne publie rien sauf si vous ajoutez `--post` ; la [GitHub Action](docs/GITHUB_ACTION.md) exécute la même revue en CI |
-| `codewhale app-server --http` | La [Runtime API](docs/RUNTIME_API.md), une API HTTP locale pour les fils, les événements, les approbations et les modifications de fichiers de chaque tour |
+| `codewhale web` | Une interface web locale sur `127.0.0.1` ([guide](../WEB.md)) |
+| `codewhale review --pr N` | Une revue consultative d’une pull request GitHub. Elle ne publie rien sauf si vous ajoutez `--post` ; la [GitHub Action](../GITHUB_ACTION.md) exécute la même revue en CI |
+| `codewhale app-server --http` | La [Runtime API](../RUNTIME_API.md), une API HTTP locale pour les fils, les événements, les approbations et les modifications de fichiers de chaque tour |
 | `codewhale serve --acp` | L’Agent Client Protocol sur stdio, pour des éditeurs comme Zed |
 
 L’application de terminal, `exec`, `web` et la Runtime API partagent un seul
-moteur ([architecture](docs/ARCHITECTURE.md)). Une
+moteur ([architecture](../ARCHITECTURE.md)). Une
 [extension VS Code](https://marketplace.visualstudio.com/items?itemName=HengQuWorld.brotherwhale-vscode)
 maintenue par la communauté s’y connecte depuis la barre latérale
 ([source](https://github.com/HengQuWorld/CodeWhale-VSCode)). Une application de
@@ -258,26 +258,26 @@ de dépôts, ni d’informations d’identification.
 `codewhale config set telemetry false` la désactive. Au démarrage, Codewhale
 vérifie aussi sur GitHub si une nouvelle version est disponible ; définissez
 `CODEWHALE_NO_UPDATE_CHECK=1` pour l’éviter. Pour en savoir plus :
-[ordre d’autorisation](docs/AUTHORIZATION_ORDER.md),
-[bac à sable](docs/SANDBOX.md) et [télémétrie](docs/TELEMETRY.md).
+[ordre d’autorisation](../AUTHORIZATION_ORDER.md),
+[bac à sable](../SANDBOX.md) et [télémétrie](../TELEMETRY.md).
 
 ## Documentation
 
 | Pour commencer | Référence |
 | --- | --- |
-| [Installation](docs/INSTALL.md) | [Configuration](docs/CONFIGURATION.md) |
-| [Fournisseurs et modèles locaux](docs/PROVIDERS.md) | [Architecture](docs/ARCHITECTURE.md) |
-| [Modes et permissions](docs/MODES.md) | [Runtime API](docs/RUNTIME_API.md) |
-| [Raccourcis clavier](docs/KEYBINDINGS.md) | [Création de plugins](docs/PLUGIN_AUTHORING.md) |
-| [Revue de PR GitHub](docs/GITHUB_ACTION.md) | [Toute la documentation](docs/README.md) |
+| [Installation](../INSTALL.md) | [Configuration](../CONFIGURATION.md) |
+| [Fournisseurs et modèles locaux](../PROVIDERS.md) | [Architecture](../ARCHITECTURE.md) |
+| [Modes et permissions](../MODES.md) | [Runtime API](../RUNTIME_API.md) |
+| [Raccourcis clavier](../KEYBINDINGS.md) | [Création de plugins](../PLUGIN_AUTHORING.md) |
+| [Revue de PR GitHub](../GITHUB_ACTION.md) | [Toute la documentation](../README.md) |
 
 ## Communauté
 
 S’il manque un fournisseur ou si un workflow est peu pratique,
 [ouvrez une issue](https://github.com/codewhale-hq/CodeWhale/issues/new/choose) ou
-[envoyez une pull request](CONTRIBUTING.md). Les personnes qui contribuent
+[envoyez une pull request](../../CONTRIBUTING.md). Les personnes qui contribuent
 restent créditées pour le travail intégré, et
-l’[organisation du dépôt](CONTRIBUTING.md#project-structure) montre où se trouve
+l’[organisation du dépôt](../../CONTRIBUTING.md#project-structure) montre où se trouve
 chaque chose.
 
 Discutez sur [Discord](https://discord.gg/37gfS3ksug), ou ajoutez le mainteneur,
@@ -289,9 +289,9 @@ Brothers.
 Codewhale a commencé sous le nom de `deepseek-tui` et lit toujours la
 configuration et les sessions de ce projet. Il est maintenu de manière
 indépendante et n’est affilié ni à DeepSeek ni à aucun autre fournisseur de
-modèles. Merci à [toutes les personnes qui ont contribué](docs/CONTRIBUTORS.md).
+modèles. Merci à [toutes les personnes qui ont contribué](../CONTRIBUTORS.md).
 
-[![Codewhale contributors](docs/assets/contributors.png)](docs/CONTRIBUTORS.md#everyone)
+[![Codewhale contributors](../assets/contributors.png)](../CONTRIBUTORS.md#everyone)
 
-[MIT](LICENSE). Le code adapté d’autres projets open source est répertorié dans
-les [mentions tierces](docs/THIRD_PARTY_NOTICES.md).
+[MIT](../../LICENSE). Le code adapté d’autres projets open source est répertorié dans
+les [mentions tierces](../THIRD_PARTY_NOTICES.md).
