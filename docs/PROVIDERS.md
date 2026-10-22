@@ -177,8 +177,12 @@ that invocation.
 Plain `models` lists the active provider's saved catalog without provider requests.
 For ChatGPT, it validates the selected registration locally before reading
 that account's saved roster. Successful refreshes are saved under Codewhale's
-catalog directory and used by the model/provider pickers. Cache files are
-scoped to provider identity and endpoint; a failed refresh preserves prior
+catalog directory and used by the model/provider pickers, except account
+listings (the Codewhale account, Baseten and plugin account catalogs), which
+stay in the memory of the process that read them; `exec`, `review` and the
+workflow tool therefore read the account listing once before their first
+request, and continue with built-in limits if it cannot be read. Cache files
+are scoped to provider identity and endpoint; a failed refresh preserves prior
 rows. Text output reports source, last successful fetch time (Unix seconds),
 and freshness. `--update --json` adds per-source receipts and aggregate counts;
 partial failures return a nonzero exit code after writing those receipts.

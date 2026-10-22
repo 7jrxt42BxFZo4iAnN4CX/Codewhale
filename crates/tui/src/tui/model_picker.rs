@@ -3952,7 +3952,7 @@ fn provider_catalog_source_label(receipt: Option<&(CatalogStatus, bool)>) -> Str
     }
 }
 
-fn catalog_refresh_error_label(error: CatalogRefreshError) -> &'static str {
+pub(crate) fn catalog_refresh_error_label(error: CatalogRefreshError) -> &'static str {
     match error {
         CatalogRefreshError::Unauthorized => "unauthorized",
         CatalogRefreshError::Forbidden => "forbidden",

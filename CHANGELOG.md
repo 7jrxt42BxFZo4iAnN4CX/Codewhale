@@ -106,6 +106,13 @@ guidance.
   counted, instead of rewriting the file and then reporting that nothing
   changed. Refs #6955. Thanks @7jrxt42BxFZo4iAnN4CX.
 
+- The input, output and context limits your Codewhale account states for a
+  model now apply to its requests. The desktop app and interactive sessions
+  take them from the account's model listing, and `codewhale exec`,
+  `codewhale review` and the workflow tool read that listing once before
+  their first request; if it cannot be read, the run continues with built-in
+  limits and says so on stderr.
+
 - When a route states an output limit larger than half its context window,
   as a server that shares one window between input and output does,
   Codewhale compacts the conversation to keep a quarter of the window (at

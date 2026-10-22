@@ -10370,6 +10370,7 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
         .expect("review has at least one prompt");
     let route = resolve_cli_exec_route(config, &model, route_input, force_configured_route).await?;
     let execution_config = config_for_cli_route(config, &route)?;
+    crate::provider_lake::refresh_account_catalog_before_first_request(&execution_config).await;
     let route_provider = execution_config
         .active_provider_identity()
         .map_err(anyhow::Error::msg)?
@@ -14317,6 +14318,7 @@ async fn run_workflow_tool_command_inner(
     )
     .await?;
     let execution_config = config_for_cli_route(&config, &route)?;
+    crate::provider_lake::refresh_account_catalog_before_first_request(&execution_config).await;
     let route_identity = execution_config
         .active_provider_identity()
         .map_err(anyhow::Error::msg)
