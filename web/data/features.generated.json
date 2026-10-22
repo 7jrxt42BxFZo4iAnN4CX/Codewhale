@@ -2,7 +2,7 @@
   "format": "codewhale.features.v1",
   "source": {
     "path": "docs/features.toml",
-    "sha256": "aee1fa98a1be384dec5067b6f3916b44412d847ec3188fb0acdb219dfa12807b"
+    "sha256": "a2ce61cb28a23232c391f90beb08e686bc7153a051f7f6318293dc738357fbdc"
   },
   "features": [
     {
@@ -692,7 +692,7 @@
       "surfaces": {
         "tui": "stable"
       },
-      "since": "unreleased",
+      "since": "0.10.2",
       "flag": null,
       "docs": "docs/CONFIGURATION.md#whats-new-after-an-update",
       "registryLine": 534
