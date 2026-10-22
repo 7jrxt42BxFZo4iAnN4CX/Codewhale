@@ -867,12 +867,14 @@ pub async fn run_review_core(
             _ => anchors.suspected += 1,
         }
     }
-    if request.refute && !output.issues.is_empty() && context.is_some() && stop.is_none() {
-        if let Some(refutations) =
+    if request.refute
+        && !output.issues.is_empty()
+        && context.is_some()
+        && stop.is_none()
+        && let Some(refutations) =
             refute_claims(client, model, &request, &output, &tools, &steps).await
-        {
-            anchors.refuted = apply_refutations(&mut output, &refutations);
-        }
+    {
+        anchors.refuted = apply_refutations(&mut output, &refutations);
     }
     let suspected = separate_suspected(&mut output);
     if !suspected.is_empty() {
