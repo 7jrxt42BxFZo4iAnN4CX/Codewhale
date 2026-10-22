@@ -5612,9 +5612,7 @@ impl SubAgentManager {
     ///
     /// The same single predicate as claim admission (#5562): an agent restored
     /// `Running` from a prior session (crash leftover) and an owner whose agent
-    /// record is not loaded are both non-live — the per-workspace coordination
-    /// process lock means no other process is writing concurrently, so there is
-    /// no live peer to fail closed against.
+    /// record is not loaded are both non-live.
     ///
     /// Worktree-isolated peers are excluded too: they write into their own
     /// checkout and can never contend for these paths.
