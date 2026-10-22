@@ -7,24 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- The first start after an update says what changed, once: the version you
-  moved to, how many features, fixes and other changes its notes list, and a
-  link to that version's release notes on codewhale.net, in the UI language.
-  The TUI shows it on the startup card, so the recent-sessions card no longer
-  disappears on the first launch after an update; it moves into the
-  transcript when the card leaves. Report and setup commands such as
-  `codewhale doctor` print it to stderr in a terminal. `exec`, JSON output and non-terminal runs never show
-  it, a fresh install or a downgrade shows nothing, and
-  `[update] show_whats_new = false` turns it off. codewhale.net has a page for
-  every version at `/en/changelog/<version>` and `/zh/changelog/<version>`
-  with all of its entries.
-
 ## [0.10.2] - 2026-10-19
 
 Codewhale v0.10.2 adds an animated pet view (`/pet on`), a live Terminal work
-dock and per-chat composer colors (`/color`). It closes three session
+dock, per-chat composer colors (`/color`) and a one-time note on the first
+start after an update that says what changed. It closes three session
 data-loss paths and a `codewhale web` session leak; adds the default Runtime
 daemon socket locations to the sandbox deny-list; holds a `curl` or `wget` that uploads a
 credential; refuses shell commands containing invisible Unicode; keeps the
@@ -1199,6 +1186,18 @@ guidance.
   mismatch. Create and those four accept an `Idempotency-Key`; a retry replays
   the first success instead of creating or running twice. `DELETE` honors
   neither. Clients check `capabilities.automation_mutation_preconditions`.
+
+- The first start after an update says what changed, once: the version you
+  moved to, how many features, fixes and other changes its notes list, and a
+  link to that version's release notes on codewhale.net, in the UI language.
+  The TUI shows it on the startup card, so the recent-sessions card no longer
+  disappears on the first launch after an update; it moves into the
+  transcript when the card leaves. Report and setup commands such as
+  `codewhale doctor` print it to stderr in a terminal. `exec`, JSON output
+  and non-terminal runs never show it, a fresh install or a downgrade shows
+  nothing, and `[update] show_whats_new = false` turns it off.
+  codewhale.net has a page for every version at `/en/changelog/<version>`
+  and `/zh/changelog/<version>` with all of its entries.
 
 ### Changed
 

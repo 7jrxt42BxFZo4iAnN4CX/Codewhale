@@ -536,7 +536,7 @@ name = "What's new after an update"
 summary = "Says once, on the first start after an update, what changed and links that version's release notes."
 status = "stable"
 surfaces = { tui = "stable" }
-since = "unreleased"
+since = "0.10.2"
 docs = "docs/CONFIGURATION.md#whats-new-after-an-update"
 owner = "crates/tui/src/whats_new.rs"
 
