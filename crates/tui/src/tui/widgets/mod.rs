@@ -3980,12 +3980,12 @@ mod tests {
             );
             assert_eq!(
                 spacer_rows_after_transcript_cell(&app, 0),
-                1,
+                3,
                 "the top-level user turn needs a breathing row at width={width}"
             );
             assert_eq!(
                 spacer_rows_after_transcript_cell(&app, 1),
-                1,
+                2,
                 "answer to tool-group transition needs a breathing row at width={width}"
             );
             assert_eq!(
@@ -3995,7 +3995,7 @@ mod tests {
             );
             assert_eq!(
                 spacer_rows_after_transcript_cell(&app, 3),
-                1,
+                2,
                 "the completed tool group needs a breathing row at width={width}"
             );
             assert!(
