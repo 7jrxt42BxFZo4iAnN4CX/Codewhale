@@ -50,7 +50,9 @@ pub(crate) const WORK_GRAPH_IMPORT_ARCHIVE_DIR: &str = ".work-graph-import-archi
 pub(crate) const JOURNAL_ARCHIVE_DIR: &str = ".journal-archive";
 /// Off-branch entries a session document may carry before an autosave
 /// archives the excess. Together with [`JOURNAL_RETAINED_DEAD_ENTRIES`] this
-/// keeps a compacted journal far below `MAX_CANONICAL_HISTORY_ENTRIES`.
+/// keeps a compacted journal far below `MAX_CANONICAL_HISTORY_ENTRIES`. A
+/// document whose file is already over `MAX_CANONICAL_HISTORY_BYTES` archives
+/// every off-branch entry instead.
 const JOURNAL_PRUNE_DEAD_THRESHOLD: usize = 4_096;
 /// Recent off-branch entries kept in the document after archiving, so `/tree`
 /// and `/branch` stay cheap for recent history.
@@ -2635,10 +2637,12 @@ impl SessionManager {
 
     /// The autosave path (#6842): like [`Self::save_session_owned`], but when
     /// the journal carries more than `JOURNAL_PRUNE_DEAD_THRESHOLD`
-    /// off-branch entries, first append the excess to the session's journal
-    /// archive (fsynced), then write the document without them. If the
-    /// archive cannot be written nothing is pruned. Runs on the persistence
-    /// actor (`tui/persistence_actor.rs` `flush_inner`), never the UI loop.
+    /// off-branch entries, or the file being replaced is over
+    /// `MAX_CANONICAL_HISTORY_BYTES` and carries any, first append the excess
+    /// (all of them in the second case) to the session's journal archive
+    /// (fsynced), then write the document without them. If the archive cannot
+    /// be written nothing is pruned. Runs on the persistence actor
+    /// (`tui/persistence_actor.rs` `flush_inner`), never the UI loop.
     pub(crate) fn save_session_bounded(&self, session: SavedSession) -> std::io::Result<PathBuf> {
         self.save_session_inner(session, JournalPrune::Excess)
     }
@@ -2753,20 +2757,24 @@ impl SessionManager {
             let mut durable_session = session;
             let archived = match prune {
                 JournalPrune::Keep => Vec::new(),
-                JournalPrune::Excess => self
-                    .archive_dead_journal_entries(
-                        &mut durable_session,
-                        JOURNAL_PRUNE_DEAD_THRESHOLD,
-                        JOURNAL_RETAINED_DEAD_ENTRIES,
-                    )
-                    .unwrap_or_else(|error| {
-                        tracing::warn!(
-                            %session_id,
-                            %error,
-                            "journal archive step failed; keeping the full journal"
-                        );
-                        Vec::new()
-                    }),
+                JournalPrune::Excess => {
+                    let (threshold, retained) = if fs::symlink_metadata(&path).is_ok_and(|meta| {
+                        meta.len() > codewhale_protocol::MAX_CANONICAL_HISTORY_BYTES as u64
+                    }) {
+                        (0, 0)
+                    } else {
+                        (JOURNAL_PRUNE_DEAD_THRESHOLD, JOURNAL_RETAINED_DEAD_ENTRIES)
+                    };
+                    self.archive_dead_journal_entries(&mut durable_session, threshold, retained)
+                        .unwrap_or_else(|error| {
+                            tracing::warn!(
+                                %session_id,
+                                %error,
+                                "journal archive step failed; keeping the full journal"
+                            );
+                            Vec::new()
+                        })
+                }
                 JournalPrune::AllOffBranch => {
                     self.archive_dead_journal_entries(&mut durable_session, 0, 0)?
                 }

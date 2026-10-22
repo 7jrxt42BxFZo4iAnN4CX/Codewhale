@@ -143,6 +143,11 @@ guidance.
   fits, and any other request fails with a context-length error. Other
   routes are unchanged.
 
+- Once a session file passes 8 MiB, autosave moves all of its abandoned
+  branch history to the session's journal archive, instead of keeping up to
+  4,096 off-branch entries in the document. `/branch` can still restore
+  archived entries. Refs #6842. Thanks @7jrxt42BxFZo4iAnN4CX.
+
 - A window that cannot save its queued messages because it holds no queue
   lease for the current session now logs both session ids, and failed
   session, checkpoint and queue writes log the raw OS error code. Refs
