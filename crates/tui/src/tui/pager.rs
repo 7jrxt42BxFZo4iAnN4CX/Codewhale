@@ -176,13 +176,18 @@ impl PagerPage {
         *self.rows.borrow_mut() = match &self.source {
             PagerSource::Text(source) => PagerRows::wrap_text(source, width),
             PagerSource::Lines(lines) => PagerRows::wrap_lines(lines, width),
-            PagerSource::Diff(diff) => PagerRows::wrap_lines(
-                &crate::tui::diff_render::render_diff(
+            PagerSource::Diff(diff) => {
+                let rendered = crate::tui::diff_render::render_diff_bounded(
                     diff,
                     u16::try_from(width).unwrap_or(u16::MAX),
-                ),
-                width,
-            ),
+                    usize::MAX,
+                );
+                let mut rows = PagerRows::wrap_lines(&rendered.lines, width);
+                for origin in &mut rows.origin {
+                    *origin = rendered.origins[*origin];
+                }
+                rows
+            }
         };
         true
     }
