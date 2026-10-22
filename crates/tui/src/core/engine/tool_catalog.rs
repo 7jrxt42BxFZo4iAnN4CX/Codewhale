@@ -549,7 +549,12 @@ impl ToolSurfacePolicy {
         // explicit command gate.
         catalog.retain(|tool| {
             !tool_denied(disallowed_tools.as_deref(), &tool.name)
-                && tool_allowed(allowed_tools.as_deref(), &tool.name)
+                && (tool_allowed(allowed_tools.as_deref(), &tool.name)
+                    || retrieval_available_beside_an_allowlist(
+                        allowed_tools.as_deref(),
+                        disallowed_tools.as_deref(),
+                        &tool.name,
+                    ))
         });
         for tool in &mut catalog {
             if let Some(actions) = tool
@@ -597,6 +602,11 @@ impl ToolSurfacePolicy {
 
     pub(super) fn passes_allow_list(&self, name: &str) -> bool {
         tool_allowed(self.allowed_tools.as_deref(), name)
+            || retrieval_available_beside_an_allowlist(
+                self.allowed_tools.as_deref(),
+                self.disallowed_tools.as_deref(),
+                name,
+            )
     }
 
     /// A configured-server handshake may only serve this captured turn's
@@ -627,7 +637,26 @@ pub(super) fn tool_allowed(allowed_tools: Option<&[String]>, tool_name: &str) ->
     let Some(allowed_tools) = allowed_tools else {
         return true;
     };
-    tool_name == TOOL_RESULT_RETRIEVAL_NAME || tool_matches_any_rule(allowed_tools, tool_name)
+    tool_matches_any_rule(allowed_tools, tool_name)
+}
+
+/// Retrieval stays off the initial `tools` field but must survive an allow-list
+/// narrowing, or a result that names a saved copy advertises a route the turn
+/// cannot call.
+///
+/// This is deliberately not a branch inside [`tool_allowed`]: that answer is
+/// "does this name match the allow-list", and an empty allow-list means no
+/// tools, which `exec` relies on. Keeping the tool in the catalog lets
+/// [`activate_result_dependencies`] admit it later, only after a result really
+/// publishes retrievable evidence, and an explicit deny still removes it.
+fn retrieval_available_beside_an_allowlist(
+    allowed_tools: Option<&[String]>,
+    disallowed_tools: Option<&[String]>,
+    tool_name: &str,
+) -> bool {
+    tool_name == TOOL_RESULT_RETRIEVAL_NAME
+        && disallowed_tools.is_none_or(|rules| !tool_denied(Some(rules), tool_name))
+        && allowed_tools.is_some_and(|rules| !rules.is_empty())
 }
 
 pub(crate) fn tool_denied(disallowed_tools: Option<&[String]>, tool_name: &str) -> bool {
