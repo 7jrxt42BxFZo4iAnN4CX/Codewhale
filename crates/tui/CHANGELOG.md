@@ -148,6 +148,13 @@ guidance.
   4,096 off-branch entries in the document. `/branch` can still restore
   archived entries. Refs #6842. Thanks @7jrxt42BxFZo4iAnN4CX.
 
+- When a tool result is longer than the share of the context window one
+  result may take, the model sees its head and tail and is told to read the
+  rest with `retrieve_tool_result`. That tool is now offered whenever a
+  result names a saved copy, and `codewhale exec --allowed-tools` no longer
+  filters it out. A model on a small window, where most tool output is cut,
+  is no longer told to recover output through a tool it does not have.
+
 - A window that cannot save its queued messages because it holds no queue
   lease for the current session now logs both session ids, and failed
   session, checkpoint and queue writes log the raw OS error code. Refs
@@ -1125,6 +1132,69 @@ guidance.
   beside the state database in the Codewhale home. Thanks @Lstarsky0 (#6921,
   Refs #6513).
 
+- A Chat Completions stream that a provider refuses with a transient error is
+  now retried and classified on both the HTTP/2 and the HTTP/1.1 path. The
+  HTTP/1.1 fallback used to return the raw provider response, so the caller's
+  retry policy never saw it and a 429 or 5xx ended the turn on the first
+  attempt; it is now a typed error, as the Responses and Anthropic adapters
+  already produce, and a failed open reports the provider's
+  `reasoning_content` diagnostic. Three limits remain: the retry budget is
+  still bounded by `[stream] open_timeout_secs`, so with the default 45-second
+  window and default backoff only about five of a larger `[retry]
+  max_retries` fit inside one open window; with `force_http1` the fallback now
+  retries too, so an ambiguous failure can be replayed where the server may
+  already have the request; a plan-usage 429
+  is still classified as a transient rate limit; and the "Retry stopped" line
+  still names a per-kind counter rather than the budget that ended the turn.
+  Refs #7045.
+
+- Body text on a screen that paints its own background now uses the theme's
+  primary text colour, and on a terminal that does not report a background
+  colour it uses the terminal's own foreground instead of an assumed ivory
+  tone. The System and Blue Stage themes showed ivory text on a light
+  terminal because Codewhale could not measure the ground it was drawing on;
+  modals, the nested underwater surfaces, fleet setup, the automations view,
+  the live transcript and the worktree manager now carry body ink explicitly.
+  A theme that never sets an ink colour for one of its own surfaces can still
+  be hard to read. Refs #7043.
+
+- A saved session that cannot be resumed because the provider it recorded is
+  gone now says how to keep its history: the refusal names
+  `codewhale sessions export <session id>` with that session's real id. The
+  hint now appears at three resume sites - the TUI resume, the executor
+  resume and the Runtime API - instead of only one. A Runtime resume refused
+  because the persisted provider route needs an exact custom provider is now
+  reported as a bad request rather than an internal error. Other persist
+  refusals keep their current status; `codewhale resume` and `fork` on the
+  mount path still refuse without the hint. Refs #6996.
+
+- A read-only role whose shell command is refused now reads that the run has
+  no network, that a read-only command reaches the network only in Full
+  Access with an allowing session sandbox, a `[network]` policy that does not
+  deny by default and a network grant, and that it should use a web tool or
+  report the source unreachable. That replaces a child reporting "bash denied
+  for non-admitted programs". The same hint covers a command that starts with
+  `cd ... &&` and the contract bash path as well as the legacy one. A network
+  attempt made from Python or `gh` still gets no hint. Refs #7040.
+
+- A `codewhale resume` or `codewhale fork` that is refused no longer leaves a
+  half-bound session behind that blocks the next attempt. A saved session
+  whose beginning changed after an earlier resume, through a compaction
+  checkpoint, contract pruning or a restored sub-agent handoff, now resumes
+  instead of failing with "saved holder checkpoint differs from the saved
+  history" or "saved holder has a successor outside the selected document".
+  Refs #6954. Thanks @7jrxt42BxFZo4iAnN4CX.
+
+- On Windows, Python run through the shell tool no longer garbles Chinese and
+  other non-ASCII output. Windows shells were meant to start with
+  `PYTHONIOENCODING=utf-8`, but adding hook variables replaced the whole
+  environment and dropped that default on every run, so piped Python output
+  used the system code page while Codewhale read UTF-8. The default now
+  survives. A `shell_env` hook can still set its own value (on Windows,
+  variable names match regardless of case), and the default replaces a
+  different `PYTHONIOENCODING` inherited from your environment. Refs #4202.
+  Thanks @zhuowp (#7041).
+
 ### Added
 
 - Standard Compute is available as a bundled compatible provider, with the
@@ -1272,9 +1342,13 @@ guidance.
   start".
 - `/trust on` and `/trust off` leave a line in the transcript saying what
   changed; with `--save` the line also says what was saved for the folder.
-- After Esc Esc the footer reads "Files not changed. /undo puts them back.
-  Conversation rewound." in place of "Rewound to previous user message — edit
-  and Enter to resend".
+- After Esc Esc the footer reads "Files not changed. Use /restore.
+  Conversation rewound.", replacing "Rewound to previous user message — edit
+  and Enter to resend" and the "`/undo` puts them back" promise it used to
+  carry. `/restore` rolls the whole folder back to a point you pick and needs
+  `/trust on` or Full Access; `/undo` still takes back the last request's
+  files where it can prove which snapshots belong to this conversation.
+  Refs #6970. Thanks @luestr.
 - `/relay` writes the session relay to `.codewhale/handoff.md`, the path a
   new session reads first, instead of `.deepseek/handoff.md`. A relay left at
   the legacy path is still read when the primary file is absent, and the
@@ -1332,10 +1406,6 @@ guidance.
   acceptance remain unverified.
 - `codewhale resume` no longer refuses a session whose saved history still
   holds a raw sub-agent handoff (#6954).
-- A saved session over 8 MiB can be resumed and forked again. Journal entries
-  off the current branch are archived instead of refusing the session (#6955).
-  A session whose current conversation and Work state, counted once, are still
-  over 8 MiB is refused, and the refusal gives the size it would hand over.
 - Snapshot restore and `/undo` work with older git, such as the 2.43 that
   Ubuntu 24.04 ships. They failed there with "only one reference expected".
 - Cancelling your own background shell job no longer reports it as finished
@@ -1573,6 +1643,10 @@ guidance.
   `cargo-deny`, the cargo and npm audits and the OpenHarmony check.
   CONTRIBUTING.md explains each check and what maintainers do with a pull
   request.
+- SANDBOX.md and CONFIGURATION.md, in English and Chinese, now state that
+  `sandbox_mode` can only narrow the sandbox the permission mode already
+  allows, so `danger-full-access` and `external-sandbox` take effect only in
+  Full Access (`yolo`). Documentation only; no behavior change. Refs #6992.
 - CI and test harness only, no change to the shipped binaries. The
   persistence backlog budget takes five samples and judges enqueue time on the
   fastest one. Linux CI jobs install apt packages through
@@ -1595,7 +1669,8 @@ guidance.
 - **[@BX166](https://github.com/BX166)** — reported three provider failure modes measured on AICraft's own traffic: a cold model that reads as a dead connection, a listed model that fails on every call, and a response cut at the output ceiling that reports `stop` ([#6889](https://github.com/codewhale-hq/Codewhale/issues/6889)).
 - **[@harryvizcaino-oss](https://github.com/harryvizcaino-oss)** — reported the invalid Full Access configuration guidance shown to the Paseo ACP client ([#6992](https://github.com/codewhale-hq/Codewhale/issues/6992)).
 - **[@rafacouto](https://github.com/rafacouto)** — reported Linux sandbox mount failures for symlinked credential directories and supplied a standalone bubblewrap reproduction ([#7007](https://github.com/codewhale-hq/Codewhale/issues/7007)).
-- **[@luestr](https://github.com/luestr)** — reported refusals when starting a new session ([#6981](https://github.com/codewhale-hq/Codewhale/issues/6981)).
+- **[@luestr](https://github.com/luestr)** — reported refusals when starting a new session ([#6981](https://github.com/codewhale-hq/Codewhale/issues/6981)) and the `/undo` notice that reported files reverted when only the conversation had been rewound ([#6970](https://github.com/codewhale-hq/Codewhale/issues/6970)).
+- **[@zhuowp](https://github.com/zhuowp)** — found that the Windows shell's Python UTF-8 default was discarded whenever hook variables were applied, and fixed the merge so it survives while explicit overrides still win ([#7041](https://github.com/codewhale-hq/Codewhale/pull/7041)).
 - **[@SergiuSSoluS](https://github.com/SergiuSSoluS)** — reported queued turns being delivered again after a session was restored ([#6978](https://github.com/codewhale-hq/Codewhale/issues/6978)).
 - **[@Statter](https://github.com/Statter)** — reported rate-limit retry behavior that informed the bounded current-quota 429 retry fix ([#6923](https://github.com/codewhale-hq/Codewhale/issues/6923)).
 - **[@7jrxt42BxFZo4iAnN4CX](https://github.com/7jrxt42BxFZo4iAnN4CX)** — reported oversized-session refusals that informed compaction error preservation and size-limit attribution ([#6955](https://github.com/codewhale-hq/Codewhale/issues/6955)).
