@@ -8,8 +8,8 @@ use serde_json::Value;
 use codewhale_models::{ContentBlock, Message, MessageRequest, SystemPrompt, Tool, Usage};
 
 use super::review::{ReviewIssue, ReviewOutput};
-use super::review_triage::{ReviewStop, SpendRates};
 use super::review_hunks::DiffHunks;
+use super::review_triage::{ReviewStop, SpendRates};
 use super::spec::{ToolContext, ToolSpec};
 use crate::core::model_client::ModelClient;
 
@@ -341,7 +341,10 @@ pub async fn run_review_core(
             stop = Some(ReviewStop::MoneyCap);
         }
     }
-    if stop.is_none() && steps >= request.budget.max_steps && outcome == ReviewCoreOutcome::StepBudgetExhausted {
+    if stop.is_none()
+        && steps >= request.budget.max_steps
+        && outcome == ReviewCoreOutcome::StepBudgetExhausted
+    {
         stop = Some(ReviewStop::StepBudget);
     }
     let mut output = if final_text.trim().is_empty() {

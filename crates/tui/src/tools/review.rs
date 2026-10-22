@@ -1543,9 +1543,10 @@ impl ToolSpec for ReviewTool {
             single_output.expect("one non-PR review response")
         };
         let mut output = output;
-        if let Some(note) = stop.as_ref().map(|stop| {
-            super::review_triage::partial_review_note(stop, &triage, &budget)
-        }) {
+        if let Some(note) = stop
+            .as_ref()
+            .map(|stop| super::review_triage::partial_review_note(stop, &triage, &budget))
+        {
             if !output.summary.is_empty() {
                 output.summary.push_str("\n\n");
             }
@@ -1560,7 +1561,8 @@ impl ToolSpec for ReviewTool {
         metadata["review_changed_lines"] = json!(changed_lines);
         metadata["review_triage"] = json!(triage);
         metadata["review_budget"] = json!(budget);
-        metadata["review_stop"] = json!(stop.as_ref().map(super::review_triage::ReviewStop::as_str));
+        metadata["review_stop"] =
+            json!(stop.as_ref().map(super::review_triage::ReviewStop::as_str));
         metadata["review_spend_usd"] = json!(spend_usd);
         metadata["review_outcome"] = json!(match outcome {
             super::review_core::ReviewCoreOutcome::Completed => "completed",

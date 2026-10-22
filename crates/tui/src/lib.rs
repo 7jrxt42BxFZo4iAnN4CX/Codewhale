@@ -10494,7 +10494,9 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
         );
         request.reasoning_effort = reasoning_effort;
         request.spend_rates = review_rates;
-        request.money_cap_usd = review_budget.money_cap_usd.filter(|_| review_budget.money_limit_supported);
+        request.money_cap_usd = review_budget
+            .money_cap_usd
+            .filter(|_| review_budget.money_limit_supported);
         let result =
             match crate::tools::review_core::run_review_core(&client, &model, request).await {
                 Ok(result) => result,
