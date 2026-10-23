@@ -2233,8 +2233,6 @@ impl CodewhaleClient {
     /// Alternate models share this client's frozen endpoint and declarations.
     /// Resolution still owns protocol admission, including closed rosters.
     pub(crate) fn resolve_model_route(&self, model: &str) -> Result<ReadyRouteCandidate> {
-        static RESOLVER: OnceLock<RouteResolver> = OnceLock::new();
-        let resolver = RESOLVER.get_or_init(RouteResolver::new);
         // Pin the transport's own wire: a custom-table client constructed
         // from a wire-true candidate keeps speaking that wire even when this
         // internal re-resolution runs config-free (an engine-internal model
@@ -2247,18 +2245,39 @@ impl CodewhaleClient {
             limit_overrides: Vec::new(),
             wire_override: (self.api_provider == ProviderKind::Custom).then_some(self.wire_format),
         };
-        if self.configured_models.is_empty() || self.api_provider == ProviderKind::OpenaiCodex {
-            resolver.resolve(&request)
-        } else {
-            resolver
-                .clone()
-                .with_configured_models(
-                    &self.configured_models,
-                    self.admitted_identity.key.as_str(),
-                    self.api_provider,
-                    &self.base_url,
-                )
+        if self.api_provider == ProviderKind::OpenaiCodex {
+            static CODEX_RESOLVER: OnceLock<RouteResolver> = OnceLock::new();
+            return CODEX_RESOLVER
+                .get_or_init(RouteResolver::new)
                 .resolve(&request)
+                .map_err(anyhow::Error::msg);
+        }
+        // A mid-session model switch must resolve against the same catalog
+        // facts its route was minted from. The bundled resolver alone cannot
+        // see a model published after this build, so a picker row the live
+        // catalog knows would fail here instead of switching.
+        let identity = self.admitted_identity.key.as_str();
+        let mut catalog = crate::provider_lake::runtime_catalog_resolver_for_identity(
+            self.api_provider,
+            Some(identity),
+            &self.base_url,
+            crate::provider_catalog_live::status_for_route(
+                self.api_provider,
+                identity,
+                &self.base_url,
+            ),
+        );
+        catalog.resolver = catalog.resolver.with_configured_models(
+            &self.configured_models,
+            identity,
+            self.api_provider,
+            &self.base_url,
+        );
+        let resolver = &catalog.resolver;
+        if catalog.endpoint_catalog_authoritative {
+            resolver.resolve_with_endpoint_catalog_authority(&request)
+        } else {
+            resolver.resolve(&request)
         }
         .map_err(anyhow::Error::msg)
     }
