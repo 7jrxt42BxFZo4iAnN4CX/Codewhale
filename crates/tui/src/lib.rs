@@ -13675,6 +13675,7 @@ async fn run_interactive_prepared(
     // not currently on are probed too; otherwise a relay's roster stays empty
     // until the user switches to it.
     crate::client::CodewhaleClient::spawn_configured_provider_catalog_refresh(config);
+    crate::codex_model_cache::spawn_refresh_if_stale(config);
 
     // Boot janitors — snapshot prune (7-day default), spillover prune
     // (#422), and managed-session cleanup (v0.8.44) — are best-effort disk
