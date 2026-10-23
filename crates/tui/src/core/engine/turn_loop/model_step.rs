@@ -12,6 +12,7 @@ impl Engine {
         prepared: PreparedModelStep,
     ) -> PhaseResult<AcceptedModelStep> {
         let PreparedModelStep {
+            prefix_check,
             request: stream_request,
             zero_tool_turn,
             fleet_report_response,
@@ -62,11 +63,24 @@ impl Engine {
         });
         let retry_observation = self.request_retry_observation();
         let transport_retries = retry_observation.retries.clone();
+        let mut request_receipt = Some(PendingProviderRequestReceipt {
+            turn_id: turn.id.clone(),
+            request_index: turn
+                .stop_diagnostics
+                .model_requests_started
+                .saturating_add(1),
+            prefix_check,
+            reused_preparation: false,
+            wire: retry_observation.wire_observations.clone(),
+            transport_retries: transport_retries.clone(),
+            started_at: request_dispatched_at,
+        });
         let stream_result = tokio::select! {
             biased;
             () = request_cancel.cancelled() => {
                 turn.stop_diagnostics.transport_retries = turn.stop_diagnostics.transport_retries
                     .saturating_add(transport_retries.load(std::sync::atomic::Ordering::Relaxed));
+                self.settle_provider_request_receipt(&mut request_receipt, None, "cancelled_before_stream").await;
                 let _ = self.send_event(Event::status("Request cancelled")).await;
                 return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
             }
@@ -117,6 +131,8 @@ impl Engine {
                 s
             }
             Err(e) => {
+                self.settle_provider_request_receipt(&mut request_receipt, None, "open_failed")
+                    .await;
                 if let Some(dispatch) = rlm_dispatch.as_mut() {
                     dispatch.settle_open_error(&e).await;
                 }
@@ -350,6 +366,7 @@ impl Engine {
                 request_dispatched_at,
                 progress.stream_retry_budget.spent(),
                 &mut turn.stop_diagnostics,
+                request_receipt,
             )
             .await;
         self.turn_heartbeat.enter(

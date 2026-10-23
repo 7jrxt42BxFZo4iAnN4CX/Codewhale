@@ -455,7 +455,8 @@ pub(crate) fn activate_result_dependencies(
     active: &mut HashSet<String>,
     cache: &mut ToolActivationCache,
     result: &ToolResult,
-) -> bool {
+    measure: &mut crate::core::session::ToolActivationMeasurer<'_>,
+) -> Result<bool, ToolError> {
     let needs_retrieval = result
         .metadata
         .as_ref()
@@ -464,12 +465,13 @@ pub(crate) fn activate_result_dependencies(
         == Some(true)
         || super::context::offers_retrieval(result.metadata.as_ref());
     if !needs_retrieval {
-        return false;
+        return Ok(false);
     }
-    let delta = cache.activate(catalog, &[TOOL_RESULT_RETRIEVAL_NAME.to_string()]);
+    let delta =
+        cache.activate_measured(catalog, &[TOOL_RESULT_RETRIEVAL_NAME.to_string()], measure)?;
     remove_evicted_cache_activations(catalog, active, delta.evicted.iter().cloned());
     active.extend(delta.admitted.iter().cloned());
-    !delta.admitted.is_empty() || !delta.evicted.is_empty()
+    Ok(!delta.admitted.is_empty() || !delta.evicted.is_empty())
 }
 
 fn active_tool_list_from_catalog(catalog: &[Tool], active: &HashSet<String>) -> Vec<Tool> {
@@ -820,6 +822,75 @@ pub(crate) fn active_tools_for_request(
         crate::tools::schema_sanitize::prepare_tools_for_strict_mode(&mut tools);
     }
     Some(tools)
+}
+
+pub(crate) fn measure_deferred_tools(
+    client: &dyn crate::core::model_client::ModelClient,
+    model: &str,
+    reasoning_effort: Option<&str>,
+    strict_tool_mode: bool,
+    catalog: &[Tool],
+    names: &[String],
+) -> Result<crate::core::session::ToolActivationMeasurement, ToolError> {
+    let eager = catalog
+        .iter()
+        .filter(|tool| !tool.defer_loading.unwrap_or(false) || is_tool_search_tool(&tool.name))
+        .map(|tool| tool.name.clone())
+        .collect::<HashSet<_>>();
+    let prepare = |active: &HashSet<String>| {
+        let tools = active_tools_for_request(catalog, active, strict_tool_mode);
+        let tool_choice = tools.as_ref().map(|_| {
+            if strict_tool_mode {
+                json!("required")
+            } else {
+                json!({"type": "auto"})
+            }
+        });
+        codewhale_core::request::prepare_primary_turn_request(
+            codewhale_core::request::PrimaryTurnRequest {
+                model: model.to_string(),
+                messages: Vec::new(),
+                max_tokens: client.effective_max_output_tokens(model),
+                system: None,
+                tools,
+                tool_choice,
+                reasoning_effort: reasoning_effort.map(str::to_string),
+            },
+        )
+    };
+    let baseline = client
+        .measure_outbound_tools(prepare(&eager))
+        .map_err(|_| {
+            ToolError::not_available(
+                "Unable to measure the provider tool surface; toolbox admission was not changed",
+            )
+        })?;
+    let mut active = eager;
+    active.extend(names.iter().cloned());
+    let measured = client
+        .measure_outbound_tools(prepare(&active))
+        .map_err(|_| {
+            ToolError::not_available(
+                "Unable to measure the provider tool surface; toolbox admission was not changed",
+            )
+        })?;
+    Ok(crate::core::session::ToolActivationMeasurement {
+        schema_bytes: baseline
+            .as_ref()
+            .zip(measured.as_ref())
+            .map(|(base, all)| all.tool_schema_bytes.saturating_sub(base.tool_schema_bytes)),
+        unavailable: measured.map_or_else(Vec::new, |wire| {
+            names
+                .iter()
+                .filter(|name| {
+                    wire.omitted_tool_names
+                        .iter()
+                        .any(|omitted| crate::client::from_api_tool_name(omitted) == **name)
+                })
+                .cloned()
+                .collect()
+        }),
+    })
 }
 
 /// Reusable scratch for one `tool_search` catalog scan.
@@ -1502,12 +1573,33 @@ pub(super) fn execute_tool_search(
     catalog: &[Tool],
     active_tools: &mut HashSet<String>,
 ) -> Result<ToolResult, ToolError> {
-    execute_tool_search_inner(tool_name, input, catalog, active_tools, None)
+    execute_tool_search_inner(tool_name, input, catalog, active_tools, None, &mut |_| {
+        Ok(Default::default())
+    })
 }
 
 /// Execute tool search while retaining activated schemas in the bounded
 /// conversation cache. Kept separate from the test-only pure search helper so existing
 /// pure catalog tests and compatibility callers do not need an engine session.
+pub(crate) fn execute_tool_search_measured(
+    tool_name: &str,
+    input: &serde_json::Value,
+    catalog: &[Tool],
+    active_tools: &mut HashSet<String>,
+    cache: &mut crate::core::session::ToolActivationCache,
+    measure: &mut crate::core::session::ToolActivationMeasurer<'_>,
+) -> Result<ToolResult, ToolError> {
+    execute_tool_search_inner(
+        tool_name,
+        input,
+        catalog,
+        active_tools,
+        Some(cache),
+        measure,
+    )
+}
+
+#[cfg(test)]
 pub(crate) fn execute_tool_search_with_cache(
     tool_name: &str,
     input: &serde_json::Value,
@@ -1515,7 +1607,14 @@ pub(crate) fn execute_tool_search_with_cache(
     active_tools: &mut HashSet<String>,
     cache: &mut crate::core::session::ToolActivationCache,
 ) -> Result<ToolResult, ToolError> {
-    execute_tool_search_inner(tool_name, input, catalog, active_tools, Some(cache))
+    execute_tool_search_measured(
+        tool_name,
+        input,
+        catalog,
+        active_tools,
+        cache,
+        &mut |names| ToolActivationCache::test_measure(catalog, names),
+    )
 }
 
 fn execute_tool_search_inner(
@@ -1524,6 +1623,7 @@ fn execute_tool_search_inner(
     catalog: &[Tool],
     active_tools: &mut HashSet<String>,
     cache: Option<&mut crate::core::session::ToolActivationCache>,
+    measure: &mut crate::core::session::ToolActivationMeasurer<'_>,
 ) -> Result<ToolResult, ToolError> {
     let query = required_str(input, "query")?;
     let match_kind = match tool_name {
@@ -1558,8 +1658,17 @@ fn execute_tool_search_inner(
     let mut cache_rejected = Vec::new();
     let mut cache_held = Vec::new();
     let mut evicted = Vec::new();
+    let mut toolbox = None;
     if let Some(cache) = cache {
-        let delta = cache.activate(catalog, &discovered);
+        let delta = cache.activate_measured(catalog, &discovered, measure)?;
+        toolbox = Some(json!({
+            "active_deferred_tools": cache.names().collect::<Vec<_>>(),
+            "added_wire_schema_bytes": delta.schema_bytes,
+            "soft_name_target": crate::core::session::TOOL_ACTIVATION_CACHE_MAX_NAMES,
+            "soft_wire_byte_target": crate::core::session::TOOL_ACTIVATION_CACHE_MAX_SCHEMA_BYTES,
+            "exceeds_soft_target": delta.exceeds_soft_target,
+            "authority": "Current deferred toolbox; admitted tools supersede earlier eviction or unavailable notices for the same name. Permission checks still apply to every call.",
+        }));
         remove_evicted_cache_activations(catalog, active_tools, delta.evicted.iter().cloned());
         evicted = delta
             .evicted
@@ -1592,14 +1701,14 @@ fn execute_tool_search_inner(
         json!({
             "type": "unavailable_tool_reference",
             "tool_name": name,
-            "reason": "The tool schema exceeds the bounded conversation toolbox (8 cached tools, 16KiB of added serialized schemas). Narrow the search or use a smaller matching tool."
+            "reason": "The provider cannot offer this tool schema, or its added wire schema exceeds 16KiB. It was not loaded. Use a smaller matching tool or a compatible route."
         })
     }));
     unavailable_references.extend(cache_held.iter().map(|name| {
         json!({
             "type": "unavailable_tool_reference",
             "tool_name": name,
-            "reason": "Not loaded: tools used in this or the previous turn fill this conversation's bounded toolbox (8 cached tools, 16KiB of added serialized schemas). Call tool_search with tool_search_input to load it on its own.",
+            "reason": "Not loaded in this batch: recently used tools fill the soft toolbox target (8 deferred tools, 16KiB of added wire schemas). Call tool_search with tool_search_input to load this match on its own; recently used tools can exceed these soft targets.",
             "tool_search_input": readmission_search_input(name),
         })
     }));
@@ -1613,6 +1722,10 @@ fn execute_tool_search_inner(
         "tool_references": discovered,
         "unavailable_tool_references": unavailable_references,
     });
+    if let Some(toolbox) = toolbox {
+        payload["toolbox"] = toolbox.clone();
+        metadata["toolbox"] = toolbox;
+    }
     if !evicted.is_empty() {
         payload["evicted_tool_references"] = evicted
             .iter()
@@ -1620,7 +1733,7 @@ fn execute_tool_search_inner(
                 json!({
                     "type": "evicted_tool_reference",
                     "tool_name": name,
-                    "reason": "Evicted from this conversation's bounded toolbox (8 cached tools, 16KiB of added serialized schemas) because it was not used in this or the previous turn, so it is not callable now. Call tool_search with tool_search_input to load it again.",
+                    "reason": "Removed from the current deferred toolbox while making room under its soft targets (8 deferred tools, 16KiB of added wire schemas). Call tool_search with tool_search_input to load it again; a later admission supersedes this notice.",
                     "tool_search_input": readmission_search_input(name),
                 })
             })

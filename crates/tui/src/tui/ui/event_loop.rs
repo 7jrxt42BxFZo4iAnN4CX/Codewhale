@@ -4500,6 +4500,7 @@ pub(crate) async fn run_event_loop(
                             );
                         }
                     }
+                    EngineEvent::ProviderRequestReceipt { .. } => {}
                     EngineEvent::TurnUsage {
                         max_output_tokens: _,
                         usage,

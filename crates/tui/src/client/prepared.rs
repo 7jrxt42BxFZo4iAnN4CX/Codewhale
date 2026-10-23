@@ -358,6 +358,16 @@ impl PreparedOutboundRequest {
         WireBodyView::extract(self.dialect, &self.body)
     }
 
+    pub(crate) fn tool_wire_measurement(&self) -> crate::llm_client::ToolWireMeasurement {
+        let view = self.wire_view();
+        crate::llm_client::ToolWireMeasurement {
+            tool_schema_bytes: view.tool_schema_bytes,
+            tool_schema_sha256: view.tool_schema_sha256,
+            tool_count: view.tool_count,
+            omitted_tool_names: self.omitted_tool_names.clone(),
+        }
+    }
+
     /// Attach the caller's named route identity (a `[providers.<name>]` key,
     /// or any other route id the resolved turn plan owns).
     #[must_use]

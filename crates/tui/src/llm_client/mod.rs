@@ -40,6 +40,14 @@ pub mod mock;
 pub type StreamEventBox =
     Pin<Box<dyn futures_util::Stream<Item = Result<StreamEvent>> + Send + 'static>>;
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ToolWireMeasurement {
+    pub tool_schema_bytes: usize,
+    pub tool_schema_sha256: String,
+    pub tool_count: usize,
+    pub omitted_tool_names: Vec<String>,
+}
+
 /// Unified interface for LLM providers.
 ///
 /// This trait abstracts over different LLM APIs (DeepSeek, `OpenAI`, etc.)
@@ -57,6 +65,13 @@ pub trait LlmClient: Send + Sync {
 
     /// Returns the model identifier being used
     fn model(&self) -> &str;
+
+    fn measure_outbound_tools(
+        &self,
+        _request: MessageRequest,
+    ) -> Result<Option<ToolWireMeasurement>> {
+        Ok(None)
+    }
 
     /// Creates a non-streaming message completion
     fn create_message(
@@ -1344,10 +1359,89 @@ pub type RetryCallback = Box<dyn Fn(&LlmError, u32, Duration) + Send + Sync>;
 pub(crate) type RetryStatusEmitter =
     std::sync::Arc<dyn Fn(String) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct OutboundWireObservation {
+    pub provider_id: String,
+    pub route_id: Option<String>,
+    pub endpoint_fingerprint: String,
+    pub wire_model: String,
+    pub wire_dialect: String,
+    pub tools: ToolWireMeasurement,
+}
+
+#[derive(Debug, Default, serde::Serialize)]
+pub struct OutboundWireObservationBatch {
+    pub observations: Vec<OutboundWireObservation>,
+    pub dropped: u64,
+}
+
+#[derive(Debug, Default)]
+struct OutboundWireObservationBuffer {
+    batch: OutboundWireObservationBatch,
+    retained_bytes: usize,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct OutboundWireObservations {
+    buffer: std::sync::Arc<std::sync::Mutex<OutboundWireObservationBuffer>>,
+}
+
+impl OutboundWireObservations {
+    pub(crate) fn drain(&self) -> OutboundWireObservationBatch {
+        let mut buffer = self
+            .buffer
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        buffer.retained_bytes = 0;
+        std::mem::take(&mut buffer.batch)
+    }
+
+    fn record(&self, observation: OutboundWireObservation) {
+        let retained_bytes = [
+            observation.provider_id.capacity(),
+            observation.route_id.as_ref().map_or(0, String::capacity),
+            observation.endpoint_fingerprint.capacity(),
+            observation.wire_model.capacity(),
+            observation.wire_dialect.capacity(),
+            observation.tools.tool_schema_sha256.capacity(),
+            observation
+                .tools
+                .omitted_tool_names
+                .capacity()
+                .saturating_mul(std::mem::size_of::<String>()),
+        ]
+        .into_iter()
+        .chain(
+            observation
+                .tools
+                .omitted_tool_names
+                .iter()
+                .map(String::capacity),
+        )
+        .fold(
+            std::mem::size_of::<OutboundWireObservation>(),
+            usize::saturating_add,
+        );
+        let mut buffer = self
+            .buffer
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if buffer.batch.observations.len() >= 32
+            || retained_bytes > (256 * 1024_usize).saturating_sub(buffer.retained_bytes)
+        {
+            buffer.batch.dropped = buffer.batch.dropped.saturating_add(1);
+            return;
+        }
+        buffer.retained_bytes += retained_bytes;
+        buffer.batch.observations.push(observation);
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct RequestRetryObservation {
     pub(crate) retries: std::sync::Arc<std::sync::atomic::AtomicU32>,
     pub(crate) emit: RetryStatusEmitter,
+    pub(crate) wire_observations: OutboundWireObservations,
 }
 
 tokio::task_local! {
@@ -1359,6 +1453,20 @@ pub(crate) async fn observe_request_retries<F: Future>(
     future: F,
 ) -> F::Output {
     REQUEST_RETRY_OBSERVATION.scope(observation, future).await
+}
+
+pub(crate) fn observe_outbound_wire(observation: impl FnOnce() -> OutboundWireObservation) {
+    let observations = REQUEST_RETRY_OBSERVATION
+        .try_with(|observation| {
+            observation
+                .as_ref()
+                .map(|observation| observation.wire_observations.clone())
+        })
+        .ok()
+        .flatten();
+    if let Some(observations) = observations {
+        observations.record(observation());
+    }
 }
 
 async fn observe_transport_status(message: String) {

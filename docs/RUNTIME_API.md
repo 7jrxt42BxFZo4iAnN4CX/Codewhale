@@ -2851,7 +2851,10 @@ Common event names: `thread.started`, `thread.forked`, `turn.started`,
 `approval.timeout`, `user_input.required`, `user_input.answered`,
 `user_input.canceled`, `tool_call.requested`, `tool_call.resolved`,
 `tool_call.timeout`, `tool_call.canceled`, `sandbox.denied`,
-`turn.workspace_snapshot`, `runtime.store_failure`.
+`turn.workspace_snapshot`, `turn.provider_request`, `runtime.store_failure`.
+
+`turn.provider_request` carries diagnostic request observations, not additional
+billing usage. See [per-request cache receipts](CACHE.md#per-request-receipts).
 
 `runtime.store_failure` is the runtime reporting a fault in the operator's own
 on-disk state: a thread, turn, or item record under the session's runtime

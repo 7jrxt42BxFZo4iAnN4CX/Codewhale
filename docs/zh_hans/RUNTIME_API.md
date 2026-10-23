@@ -2388,7 +2388,10 @@ Fleet 流（`/v1/fleet/runs/{run_id}/events`）保留自己的结束帧，
 `approval.timeout`、`user_input.required`、`user_input.answered`、
 `user_input.canceled`、`tool_call.requested`、`tool_call.resolved`、
 `tool_call.timeout`、`tool_call.canceled`、`sandbox.denied`、
-`turn.workspace_snapshot`、`runtime.store_failure`。
+`turn.workspace_snapshot`、`turn.provider_request`、`runtime.store_failure`。
+
+`turn.provider_request` 携带请求诊断观察，不增加计费用量；详见
+[每次请求的缓存回执](CACHE.md#每次请求的回执)。
 
 `runtime.store_failure` 是运行时报告操作者自己磁盘状态的故障：会话运行时
 存储下的一个线程、回合或条目记录无法被读取、解析或写入。负载携带 `operation`

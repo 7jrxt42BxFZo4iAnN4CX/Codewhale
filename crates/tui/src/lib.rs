@@ -14149,6 +14149,8 @@ enum ExecStreamEvent {
         process_group_id: u32,
         ownership: String,
     },
+    #[serde(rename = "provider_request_receipt")]
+    ProviderRequestReceipt { receipt: serde_json::Value },
     /// Per-model-call usage receipt. Field names mirror the terminal
     /// `metadata` receipt (`prompt_cache_hit_tokens` is the provider's
     /// cache-read count, `prompt_cache_write_tokens` the cache-creation

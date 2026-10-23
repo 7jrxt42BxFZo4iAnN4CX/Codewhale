@@ -27,6 +27,12 @@ guidance.
 
 ### Latest fixes
 
+- Deferred-tool admission measures schemas after the provider's wire conversion.
+  Search results show the active toolbox, soft-limit overflow and readmission
+  state. Per-request receipts join those wire measurements with the current
+  prefix change and reported usage, including separate transparent retries.
+  Missing cache usage remains unknown; these receipts do not add charges.
+
 - The community website uses Next.js 16.4.1, which includes the upstream
   security fixes for cache deserialization, image optimization and Server Actions.
 

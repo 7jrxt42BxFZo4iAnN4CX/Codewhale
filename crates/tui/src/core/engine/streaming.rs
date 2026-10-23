@@ -81,6 +81,7 @@ impl super::Engine {
         let cancel = self.cancel_token.clone();
         let quiet = self.api_config.notifications_config().quiet;
         crate::llm_client::RequestRetryObservation {
+            wire_observations: Default::default(),
             retries: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
             emit: std::sync::Arc::new(move |message| {
                 let tx = tx.clone();

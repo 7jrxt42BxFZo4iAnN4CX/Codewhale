@@ -349,12 +349,22 @@ impl Engine {
         // Sends an event on EVERY check so the TUI can maintain
         // its own counter for the stable-checks tally.
         let declared_change = self.session.pending_prefix_change_reason.take();
+        let mut prefix_check = json!({"outcome": "unavailable"});
         if let Some(pm) = self.session.prefix_stability.as_mut() {
             let system_text = codewhale_core::prefix_cache::system_prompt_text(
                 self.session.system_prompt.as_ref(),
             );
             let tools_ref: Option<&[codewhale_models::Tool]> = active_tools.as_deref();
             let outcome = pm.check(&system_text, tools_ref, declared_change.as_deref());
+            prefix_check = match &outcome {
+                codewhale_core::prefix_cache::PrefixCheck::Stable => json!({"outcome": "stable"}),
+                codewhale_core::prefix_cache::PrefixCheck::Repinned { reason, change } => {
+                    json!({"outcome": "repinned", "reason": reason, "system_changed": change.system_changed, "tools_changed": change.tools_changed})
+                }
+                codewhale_core::prefix_cache::PrefixCheck::Drift { change } => {
+                    json!({"outcome": "drift", "component": change.label(), "system_changed": change.system_changed, "tools_changed": change.tools_changed})
+                }
+            };
             // C5: request N's prefix may only diverge from N-1 across a
             // DECLARED change. An undeclared drift means the pinned header
             // moved without stamping a context update — the failure that
@@ -438,6 +448,21 @@ impl Engine {
                 }
             };
             let _ = self.send_event(event).await;
+        }
+
+        if prefix_check.get("tools_changed").and_then(Value::as_bool) == Some(true)
+            || (self.session.prefix_stability.is_none() && declared_change.is_some())
+        {
+            let snapshot = json!({
+                "type": "current_deferred_toolbox",
+                "active_deferred_tools": active_tools.iter().flatten().filter(|tool| tool.defer_loading.unwrap_or(false)).map(|tool| tool.name.as_str()).collect::<Vec<_>>(),
+                "authority": "This current deferred toolbox supersedes earlier activation, eviction and unavailable notices. Tools loaded eagerly remain available. Every execution still requires current permission.",
+            });
+            self.add_session_message(self.runtime_text_message_with_turn_metadata(
+                snapshot.to_string(),
+                UserInputProvenance::Runtime,
+            ))
+            .await;
         }
 
         // Three-zone prefix contract (#2264): freeze baseline on first
@@ -718,6 +743,7 @@ impl Engine {
         }
 
         PhaseResult::Ready(PreparedModelStep {
+            prefix_check,
             request: stream_request,
             zero_tool_turn,
             fleet_report_response,
@@ -899,6 +925,7 @@ impl Engine {
             .send_event(Event::ToolRequestSnapshot { snapshot })
             .await;
         PhaseResult::Ready(PreparedModelStep {
+            prefix_check: json!({"outcome": "unavailable", "surface": "rlm"}),
             request,
             zero_tool_turn: true,
             fleet_report_response: false,

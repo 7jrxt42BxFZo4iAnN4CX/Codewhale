@@ -363,6 +363,10 @@ pub enum Event {
         base_url: Option<String>,
     },
 
+    ProviderRequestReceipt {
+        receipt: serde_json::Value,
+    },
+
     /// A single model call (turn-step) within the turn completed and the
     /// provider reported usage for it. Unlike `TurnComplete`, which fires
     /// once per turn with the cumulative usage, this fires once per model

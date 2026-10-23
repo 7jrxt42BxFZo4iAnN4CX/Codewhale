@@ -371,6 +371,7 @@ fn retry_receipt_observation() -> (
     let captured = receipts.clone();
     (
         RequestRetryObservation {
+            wire_observations: Default::default(),
             retries: std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0)),
             emit: std::sync::Arc::new(move |message| {
                 let captured = captured.clone();

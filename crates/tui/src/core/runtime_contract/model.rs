@@ -3,8 +3,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::llm_client::LlmClient;
-use crate::llm_client::StreamEventBox;
+use crate::llm_client::{LlmClient, StreamEventBox, ToolWireMeasurement};
 use codewhale_models::{MessageRequest, MessageResponse};
 
 /// Object-safe model boundary for Engine dependency injection.
@@ -17,6 +16,12 @@ use codewhale_models::{MessageRequest, MessageResponse};
 pub trait ModelClient: Send + Sync {
     fn provider_name(&self) -> &str;
     fn model(&self) -> &str;
+    fn measure_outbound_tools(
+        &self,
+        _request: MessageRequest,
+    ) -> Result<Option<ToolWireMeasurement>> {
+        Ok(None)
+    }
     /// Concrete route base for billing classification, when this client can
     /// prove one. Provider-neutral injected clients leave it unknown.
     fn billing_base_url(&self) -> Option<&str> {
@@ -74,6 +79,13 @@ where
 
     fn model(&self) -> &str {
         LlmClient::model(self)
+    }
+
+    fn measure_outbound_tools(
+        &self,
+        request: MessageRequest,
+    ) -> Result<Option<ToolWireMeasurement>> {
+        LlmClient::measure_outbound_tools(self, request)
     }
 
     fn billing_base_url(&self) -> Option<&str> {

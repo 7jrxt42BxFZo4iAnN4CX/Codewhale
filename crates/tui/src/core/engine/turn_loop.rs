@@ -63,9 +63,20 @@ enum PhaseResult<T> {
 }
 
 struct PreparedModelStep {
+    prefix_check: serde_json::Value,
     request: codewhale_models::MessageRequest,
     zero_tool_turn: bool,
     fleet_report_response: bool,
+}
+
+struct PendingProviderRequestReceipt {
+    turn_id: String,
+    request_index: u32,
+    prefix_check: serde_json::Value,
+    reused_preparation: bool,
+    wire: crate::llm_client::OutboundWireObservations,
+    transport_retries: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    started_at: Instant,
 }
 
 struct AcceptedModelStep {
@@ -1531,7 +1542,22 @@ impl Engine {
         // turn. Revalidate names against this turn's already-filtered catalog
         // before exposing them; stale mode/MCP/allow-list entries disappear.
         self.session.tool_activation_cache.begin_turn();
-        let evicted = self.session.tool_activation_cache.revalidate(&tool_catalog);
+        let evicted = match self.session.tool_activation_cache.revalidate_measured(
+            &tool_catalog,
+            &mut |names| {
+                super::tool_catalog::measure_deferred_tools(
+                    client.as_ref(),
+                    &self.session.model,
+                    self.session.reasoning_effort.as_deref(),
+                    tool_policy.strict_tool_mode,
+                    &tool_catalog,
+                    names,
+                )
+            },
+        ) {
+            Ok(evicted) => evicted,
+            Err(error) => return (TurnOutcomeStatus::Failed, Some(error.to_string())),
+        };
         super::tool_catalog::remove_evicted_cache_activations(
             &tool_catalog,
             &mut active_tool_names,
@@ -2571,7 +2597,49 @@ impl Engine {
                 cache.record_use(&plan.name);
             }
         }
-        let activation = cache.activate(tool_catalog, &deferred_tools_hydrated_in_order);
+        let activation = cache.activate_measured(
+            tool_catalog,
+            &deferred_tools_hydrated_in_order,
+            &mut |names| {
+                super::tool_catalog::measure_deferred_tools(
+                    client,
+                    &self.session.model,
+                    self.session.reasoning_effort.as_deref(),
+                    tool_policy.strict_tool_mode,
+                    tool_catalog,
+                    names,
+                )
+            },
+        );
+        let activation = match activation {
+            Ok(activation) => activation,
+            Err(error) => {
+                for plan in &mut plans {
+                    if deferred_tools_hydrated_in_order.contains(&plan.name)
+                        && plan.guard_result.is_some()
+                        && plan.blocked_error.is_none()
+                    {
+                        tool_call_budget.refund();
+                        plan.guard_result = None;
+                        plan.blocked_error = Some(error.clone());
+                    }
+                }
+                Default::default()
+            }
+        };
+        for plan in &mut plans {
+            if deferred_tools_hydrated_in_order.contains(&plan.name)
+                && !activation.admitted.contains(&plan.name)
+                && plan.guard_result.is_some()
+                && plan.blocked_error.is_none()
+            {
+                tool_call_budget.refund();
+                plan.guard_result = None;
+                plan.blocked_error = Some(ToolError::not_available(
+                    "The deferred schema was not loaded for this provider or toolbox batch. Search for this tool alone or use a compatible smaller tool.",
+                ));
+            }
+        }
         for name in &activation.admitted {
             cache.record_use(name);
         }
@@ -3101,12 +3169,22 @@ impl Engine {
                             )
                             .await;
                         let result = discovery.and_then(|()| {
-                            super::tool_catalog::execute_tool_search_with_cache(
+                            super::tool_catalog::execute_tool_search_measured(
                                 &tool_name,
                                 &tool_input,
                                 tool_catalog,
                                 active_tool_names,
                                 &mut self.session.tool_activation_cache,
+                                &mut |names| {
+                                    super::tool_catalog::measure_deferred_tools(
+                                        nested_gate_env.client,
+                                        &self.session.model,
+                                        self.session.reasoning_effort.as_deref(),
+                                        nested_gate_env.tool_policy.strict_tool_mode,
+                                        tool_catalog,
+                                        names,
+                                    )
+                                },
                             )
                         });
                         activity
@@ -4194,6 +4272,8 @@ impl Engine {
     /// side effects; it never plans or executes another tool call.
     async fn process_tool_results(
         &mut self,
+        client: &dyn crate::core::model_client::ModelClient,
+        strict_tool_mode: bool,
         outcomes: Vec<Option<ToolExecOutcome>>,
         turn: &mut TurnContext,
         tool_catalog: &mut Vec<codewhale_models::Tool>,
@@ -4232,7 +4312,7 @@ impl Engine {
                 goal_tool_ran = true;
             }
             match result {
-                Ok(output) => {
+                Ok(mut output) => {
                     let routed_usage = if let Some(metadata) = output.metadata.as_ref()
                         && let Some(batch) =
                             crate::cost_status::child_usage_records_from_metadata(metadata)
@@ -4267,7 +4347,11 @@ impl Engine {
                             active_tool_names,
                             &mut self.session.tool_activation_cache,
                             &output,
-                        );
+                            &mut |names| super::tool_catalog::measure_deferred_tools(client, &self.session.model, self.session.reasoning_effort.as_deref(), strict_tool_mode, tool_catalog, names),
+                        ).unwrap_or_else(|error| {
+                            output.content.push_str(&format!("\nDeferred retrieval schema unavailable: {error}. The evidence is retained; tool_search can rediscover the recovery tool."));
+                            false
+                        });
                     // A runtime MCP connection change — a completed login OR
                     // a live 401 that dropped one — rewrites the callable
                     // tool surface. Replace the pool's whole slice before
@@ -4440,6 +4524,34 @@ impl Engine {
         })
     }
 
+    async fn settle_provider_request_receipt(
+        &self,
+        pending: &mut Option<PendingProviderRequestReceipt>,
+        usage: Option<&Usage>,
+        outcome: &str,
+    ) {
+        let Some(pending) = pending.take() else {
+            return;
+        };
+        let wire = pending.wire.drain();
+        let _ = self.send_event(Event::ProviderRequestReceipt {
+            receipt: json!({
+                "turn_id": pending.turn_id,
+                "request_index": pending.request_index,
+                "prefix_check": pending.prefix_check,
+                "reused_preparation": pending.reused_preparation,
+                "wire_observations": wire.observations,
+                "wire_observations_dropped": wire.dropped,
+                "usage": usage,
+                "usage_reported": usage.is_some(),
+                "outcome": outcome,
+                "transport_retries": pending.transport_retries.load(std::sync::atomic::Ordering::Relaxed),
+                "elapsed_ms": u64::try_from(pending.started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+                "cache_attribution": "Local prefix changes and wire schema measurements are context for reported usage, not proof that eviction caused a miss or that unreported retries were free.",
+            }),
+        }).await;
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn process_stream(
         &mut self,
@@ -4449,6 +4561,7 @@ impl Engine {
         mut request_dispatched_at: Instant,
         drop_resumes_spent: u32,
         diagnostics: &mut crate::tool_inspection::TurnStopDiagnostics,
+        mut request_receipt: Option<PendingProviderRequestReceipt>,
     ) -> StreamOutcome {
         // The stream value is itself `Pin<Box<dyn Stream + Send>>`, which
         // is `Unpin`, so we can rebind it on a transparent retry without
@@ -4485,6 +4598,10 @@ impl Engine {
         // events are only emitted for reported usage — a silent provider
         // must not surface as fabricated zeros.
         let mut usage_reported = false;
+        let mut attempt_usage_reported = false;
+        let receipt_identity = request_receipt
+            .as_ref()
+            .map(|receipt| (receipt.turn_id.clone(), receipt.prefix_check.clone()));
         let mut stop_reason: Option<String> = None;
         let mut current_block_kind: Option<ContentBlockKind> = None;
         // Map block_index → tool_uses position. Required because the
@@ -4752,14 +4869,35 @@ impl Engine {
                             retry_limits.max_transparent_retries
                         )).await;
                         drop(stream);
+                        self.settle_provider_request_receipt(
+                            &mut request_receipt,
+                            attempt_usage_reported.then_some(&usage),
+                            "transparent_stream_retry",
+                        )
+                        .await;
                         request_dispatched_at = Instant::now();
                         let retry_observation = self.request_retry_observation();
                         let transport_retries = retry_observation.retries.clone();
+                        request_receipt =
+                            receipt_identity.as_ref().map(|(turn_id, prefix_check)| {
+                                PendingProviderRequestReceipt {
+                                    turn_id: turn_id.clone(),
+                                    request_index: diagnostics
+                                        .model_requests_started
+                                        .saturating_add(1),
+                                    prefix_check: prefix_check.clone(),
+                                    reused_preparation: true,
+                                    wire: retry_observation.wire_observations.clone(),
+                                    transport_retries: transport_retries.clone(),
+                                    started_at: request_dispatched_at,
+                                }
+                            });
                         let retry_stream_result = tokio::select! {
                             biased;
                             () = self.cancel_token.cancelled() => {
                                 diagnostics.transport_retries = diagnostics.transport_retries
                                     .saturating_add(transport_retries.load(std::sync::atomic::Ordering::Relaxed));
+                                self.settle_provider_request_receipt(&mut request_receipt, None, "cancelled_before_stream").await;
                                 break;
                             },
                             result = crate::llm_client::observe_request_retries(Some(retry_observation), async {
@@ -4784,6 +4922,7 @@ impl Engine {
                                 } else {
                                     usage = Usage::default();
                                 }
+                                attempt_usage_reported = false;
                                 stream = fresh;
                                 stream_start = Instant::now();
                                 // Roll back the error counter — this one
@@ -4792,6 +4931,12 @@ impl Engine {
                                 continue;
                             }
                             Err(retry_err) => {
+                                self.settle_provider_request_receipt(
+                                    &mut request_receipt,
+                                    None,
+                                    "open_failed",
+                                )
+                                .await;
                                 let retry_msg = self.decorate_auth_error_message(format!(
                                     "Stream retry failed: {retry_err}"
                                 ));
@@ -4933,7 +5078,9 @@ impl Engine {
                     // The chat-completions adapter emits a synthetic
                     // MessageStart with a zeroed usage; only a usage that
                     // carries data counts as provider-reported.
-                    usage_reported |= usage_has_reported_data(&message.usage);
+                    let reported = usage_has_reported_data(&message.usage);
+                    usage_reported |= reported;
+                    attempt_usage_reported |= reported;
                     merge_stream_usage(&mut usage, message.usage);
                 }
                 StreamEvent::ContentBlockStart {
@@ -5214,7 +5361,9 @@ impl Engine {
                         stop_reason = Some(reason);
                     }
                     if let Some(u) = delta_usage {
-                        usage_reported |= usage_has_reported_data(&u);
+                        let reported = usage_has_reported_data(&u);
+                        usage_reported |= reported;
+                        attempt_usage_reported |= reported;
                         merge_stream_usage(&mut usage, u);
                     }
                 }
@@ -5327,6 +5476,21 @@ impl Engine {
             };
             let _ = self.send_retry_status(message).await;
         }
+        let receipt_outcome = if self.cancel_token.is_cancelled() {
+            "cancelled"
+        } else if stream_error.is_some() || stream_errors > 0 || pending_resume.is_some() {
+            "incomplete"
+        } else if pending_message_complete {
+            "completed"
+        } else {
+            "completion_unknown"
+        };
+        self.settle_provider_request_receipt(
+            &mut request_receipt,
+            attempt_usage_reported.then_some(&usage),
+            receipt_outcome,
+        )
+        .await;
         let usage = if usage_has_reported_data(&settled_usage) {
             if usage_has_reported_data(&usage) {
                 crate::core::turn::add_usage_to(&mut settled_usage, &usage);
@@ -6663,6 +6827,7 @@ mod tests {
                     Instant::now(),
                     0,
                     &mut diagnostics,
+                    None,
                 ),
             )
             .await
@@ -6782,6 +6947,7 @@ mod tests {
                 Instant::now(),
                 0,
                 &mut diagnostics,
+                None,
             ));
             assert!(
                 tokio::time::timeout(Duration::from_millis(25), &mut process)
@@ -6866,6 +7032,7 @@ mod tests {
             Instant::now(),
             0,
             &mut diagnostics,
+            None,
         ));
         assert!(
             tokio::time::timeout(Duration::from_millis(25), &mut process)
@@ -6944,6 +7111,7 @@ mod tests {
                         Instant::now(),
                         0,
                         &mut diagnostics,
+                        None,
                     ),
                 )
                 .await
@@ -8772,6 +8940,8 @@ impl Engine {
         // Finish through the same result owner as run_tool_batch_phase so
         // result dependencies are observed once.
         self.process_tool_results(
+            gate.client,
+            gate.tool_policy.strict_tool_mode,
             outcomes,
             gate.turn,
             &mut catalog,

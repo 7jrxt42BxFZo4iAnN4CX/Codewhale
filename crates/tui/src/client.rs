@@ -36,8 +36,9 @@ use crate::config::{
     wire_model_for_provider_route,
 };
 use crate::llm_client::{
-    LlmClient, LlmError, RetryConfig as LlmRetryConfig, extract_retry_after,
-    retry_delay_from_error_body, sanitize_http_error_body, with_retry,
+    LlmClient, LlmError, OutboundWireObservation, RetryConfig as LlmRetryConfig,
+    ToolWireMeasurement, extract_retry_after, observe_outbound_wire, retry_delay_from_error_body,
+    sanitize_http_error_body, with_retry,
 };
 #[cfg(test)]
 #[path = "client/catalog_tests.rs"]
@@ -4656,6 +4657,14 @@ impl LlmClient for CodewhaleClient {
         &self.default_model
     }
 
+    fn measure_outbound_tools(
+        &self,
+        request: MessageRequest,
+    ) -> Result<Option<ToolWireMeasurement>> {
+        self.prepare_outbound_request(request, true)
+            .map(|prepared| Some(prepared.tool_wire_measurement()))
+    }
+
     fn billing_base_url(&self) -> Option<&str> {
         Some(&self.base_url)
     }
@@ -4729,6 +4738,14 @@ impl LlmClient for CodewhaleClient {
         let inference = self.acquire_remote_control_inference_permit().await;
         let permit = self.acquire_provider_request_permit().await;
         let prepared = self.prepare_outbound_request(request, true)?;
+        observe_outbound_wire(|| OutboundWireObservation {
+            provider_id: prepared.endpoint.provider_id.clone(),
+            route_id: self.admitted_identity.persisted_id().map(str::to_owned),
+            endpoint_fingerprint: prepared.endpoint_fingerprint(),
+            wire_model: prepared.wire_model.clone(),
+            wire_dialect: prepared.dialect.as_str().to_owned(),
+            tools: prepared.tool_wire_measurement(),
+        });
         let projection_warning = (!prepared.omitted_tool_names.is_empty()).then(|| {
             let omitted_tool_count = prepared.omitted_tool_names.len();
             (

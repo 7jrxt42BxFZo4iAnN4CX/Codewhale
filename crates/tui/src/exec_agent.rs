@@ -1197,6 +1197,11 @@ pub(crate) async fn run_exec_agent(
                     eprintln!("error: {}", envelope.message);
                 }
             }
+            Event::ProviderRequestReceipt { receipt } => {
+                if output_format == ExecOutputFormat::StreamJson {
+                    emit_exec_stream_event(&ExecStreamEvent::ProviderRequestReceipt { receipt })?;
+                }
+            }
             Event::TurnUsage {
                 usage,
                 duration_ms,

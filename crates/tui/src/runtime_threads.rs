@@ -19182,6 +19182,16 @@ impl RuntimeThreadManager {
                     )
                     .await?;
                 }
+                EngineEvent::ProviderRequestReceipt { receipt } => {
+                    self.emit_event(
+                        &thread_id,
+                        Some(&turn_id),
+                        None,
+                        "turn.provider_request",
+                        receipt,
+                    )
+                    .await?;
+                }
                 EngineEvent::TurnUsage {
                     max_output_tokens,
                     usage,

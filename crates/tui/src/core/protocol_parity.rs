@@ -635,6 +635,11 @@ pub fn event_to_protocol(event: &Event, ids: &ProtocolIds) -> wire::EventMsg {
                 .map(|tools| tools.iter().map(to_value).collect()),
             base_url: base_url.clone(),
         },
+        Event::ProviderRequestReceipt { receipt } => wire::EventMsg::ProviderRequestReceipt {
+            thread_id,
+            session_id,
+            receipt: receipt.clone(),
+        },
         Event::TurnUsage {
             max_output_tokens,
             usage,
