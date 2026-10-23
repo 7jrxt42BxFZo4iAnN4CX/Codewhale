@@ -869,6 +869,14 @@ fn load_from_disk_unlocked_with_limit(path: &Path, max_bytes: u64) -> Option<Pro
                 "dropped unusable rows from a cached provider catalog"
             );
         }
+        if rows_before > 0 && entry.offerings.is_empty() {
+            tracing::debug!(
+                target: "provider_catalog",
+                scope = %entry.provider,
+                "dropping provider catalog scope whose every row was unusable"
+            );
+            return false;
+        }
         true
     });
     if cache.entries.len() != scopes_before {
