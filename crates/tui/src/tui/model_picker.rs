@@ -747,7 +747,7 @@ impl ModelPickerView {
                 .enumerate()
                 .filter_map(|(index, row)| {
                     let visible = if query.is_empty() {
-                        model_row_visible_in_view(row, self.view)
+                        model_row_visible_in_view(row, self.effective_view())
                     } else {
                         model_row_matches_query(row, query, self.initial_provider)
                     };
@@ -1470,6 +1470,18 @@ impl ModelPickerView {
         self.set_sort(next);
     }
 
+    fn effective_view(&self) -> ModelListView {
+        if self.view == ModelListView::Configured
+            && self
+                .sort
+                .is_some_and(|sort| sort.column == ModelSortColumn::Provider)
+        {
+            ModelListView::Catalog
+        } else {
+            self.view
+        }
+    }
+
     fn cycle_provider_filter(&mut self) {
         let choices = self.provider_filter_choices();
         let next = match self.provider_filter.as_deref() {
@@ -1486,7 +1498,7 @@ impl ModelPickerView {
         let mut keys: Vec<String> = self
             .model_rows
             .iter()
-            .filter(|row| model_row_visible_in_view(row, self.view))
+            .filter(|row| model_row_visible_in_view(row, self.effective_view()))
             .filter_map(row_provider_filter_key)
             .collect();
         keys.sort();
@@ -4363,7 +4375,8 @@ impl ModelPickerView {
         self.column_hitboxes.borrow_mut().clear();
         self.pane_hitboxes.borrow_mut().clear();
         *self.catalog_action_hitbox.borrow_mut() = None;
-        let view_action: std::borrow::Cow<'static, str> = match self.view {
+        let view = self.effective_view();
+        let view_action: std::borrow::Cow<'static, str> = match view {
             // The default view is a short list; say how much sits behind it.
             ModelListView::Configured => format!(
                 "{} ({})",
@@ -4381,8 +4394,7 @@ impl ModelPickerView {
             .as_ref()
             .map(|(role, _)| format!("Model · {role}"))
             .unwrap_or_else(|| {
-                tr(self.locale, MessageId::RouteSurfaceTitle)
-                    .replace("{view}", self.view.title_label())
+                tr(self.locale, MessageId::RouteSurfaceTitle).replace("{view}", view.title_label())
             });
         let title = match self.provider_filter.as_deref() {
             Some(key) => format!("{title} · {}", provider_filter_label(key)),
@@ -4568,7 +4580,7 @@ impl ModelPickerView {
         let projection = self.projection.borrow();
         let model_rows = &projection.as_ref().unwrap().rows;
         let model_title = if self.query.trim().is_empty() {
-            format!("Model · {}", self.view.title_label())
+            format!("Model · {}", self.effective_view().title_label())
         } else {
             format!("Model: {}", self.query.trim())
         };
