@@ -338,7 +338,7 @@
       "id": "orcarouter",
       "label": "OrcaRouter",
       "base_url": "https://api.orcarouter.ai/v1",
-      "default_model": "deepseek/deepseek-v4-pro",
+      "default_model": "deepseek/deepseek-v4.1-flash-1017",
       "env_vars": [
         "ORCAROUTER_API_KEY"
       ],

@@ -660,7 +660,7 @@ base_url = "https://api.deepseek.com/beta"
 [providers.orcarouter]
 # api_key = "YOUR_ORCAROUTER_API_KEY"
 # base_url = "https://api.orcarouter.ai/v1"
-# model = "deepseek/deepseek-v4-pro"
+# model = "deepseek/deepseek-v4.1-flash-1017"   # built-in default for this provider
 # Namespaced wire models pass through verbatim (deepseek/deepseek-v4-pro,
 # deepseek/deepseek-v4-flash); OrcaRouter's own auto-routing model is
 # selectable as "orcarouter/auto".
