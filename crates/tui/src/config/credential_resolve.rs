@@ -110,7 +110,7 @@ pub(crate) fn resolve_credential_source_with(
         return CredentialResolution::found(CredentialSource::SessionKey);
     }
     if let Some(source) = config.session_policy_without_key(identity) {
-        return CredentialResolution::found(source);
+        return CredentialResolution { source };
     }
     let provider = identity.provider;
     let mut probed: Vec<CredentialProbe> = Vec::new();
