@@ -113,6 +113,39 @@ pub(crate) fn model_roster() -> CodexModelRoster {
 
 #[must_use]
 pub(crate) fn model_roster_for(config: &Config) -> CodexModelRoster {
+    let mut roster = cached_roster_for(config);
+    enrich_reasoning_from_catalog(&mut roster);
+    roster
+}
+
+fn enrich_reasoning_from_catalog(roster: &mut CodexModelRoster) {
+    for model in &mut roster.models {
+        if model.reasoning.is_some() && !model.efforts.is_empty() {
+            continue;
+        }
+        let Some(offering) =
+            crate::provider_lake::catalog_offering_for_model(ProviderKind::Openai, &model.id)
+        else {
+            continue;
+        };
+        if model.reasoning.is_none() {
+            model.reasoning = offering.reasoning;
+        }
+        if model.efforts.is_empty()
+            && let Some(efforts) =
+                crate::reasoning_preference::ReasoningEffort::catalog_effort_values_for_offering(
+                    &offering,
+                )
+        {
+            model.efforts = efforts
+                .into_iter()
+                .map(|effort| effort.as_setting().to_string())
+                .collect();
+        }
+    }
+}
+
+fn cached_roster_for(config: &Config) -> CodexModelRoster {
     let Some(path) = snapshot_path(config) else {
         return model_roster();
     };
