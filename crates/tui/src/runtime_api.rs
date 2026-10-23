@@ -88,7 +88,7 @@ use crate::task_manager::{
 };
 use crate::tools::subagent::{
     AgentWorkerRecord, AgentWorkerStatus, SharedSubAgentManager, SubAgentStatus,
-    new_shared_runtime_subagent_manager,
+    new_exclusive_runtime_subagent_manager,
 };
 #[cfg(test)]
 pub(super) use codewhale_models::{ContentBlock, Message};
@@ -1386,7 +1386,7 @@ fn runtime_api_sub_agent_manager(
     workspace: &FsPath,
     workers: usize,
 ) -> Result<SharedSubAgentManager> {
-    new_shared_runtime_subagent_manager(workspace.to_path_buf(), workers)
+    new_exclusive_runtime_subagent_manager(workspace.to_path_buf(), workers)
 }
 
 #[derive(Debug, Serialize)]

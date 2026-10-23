@@ -1195,11 +1195,32 @@ fn coordination_hot_paths_count_only_active_authoritative_owners() {
 }
 
 #[test]
+fn runtime_mount_coordination_lock_is_shared_with_parallel_sessions() {
+    let tmp = tempdir().expect("tempdir");
+    let runtime_authority = new_shared_runtime_subagent_manager(tmp.path().to_path_buf(), 8)
+        .expect("admit TUI runtime writer");
+    let session =
+        SubAgentManager::new(tmp.path().to_path_buf(), 8).require_coordination_process_lock();
+    session
+        .ensure_coordination_process_lock()
+        .expect("a second session appends beside the runtime");
+    assert!(!session.coordination_snapshot_read_only);
+    session
+        .persist_state_synchronously()
+        .expect("session append");
+    let runtime = runtime_authority.try_write().expect("runtime lock");
+    assert!(!runtime.coordination_snapshot_read_only);
+    runtime
+        .persist_state_synchronously()
+        .expect("runtime append");
+}
+
+#[test]
 fn headless_worker_registration_enforces_live_claims_and_projects_context() {
     let tmp = tempdir().expect("tempdir");
-    let authority_a = new_shared_runtime_subagent_manager(tmp.path().to_path_buf(), 8)
+    let authority_a = new_exclusive_runtime_subagent_manager(tmp.path().to_path_buf(), 8)
         .expect("admit Runtime writer");
-    let authority_b = new_shared_runtime_subagent_manager(tmp.path().join("."), 8)
+    let authority_b = new_exclusive_runtime_subagent_manager(tmp.path().join("."), 8)
         .expect("reuse canonical Runtime writer");
     assert!(Arc::ptr_eq(&authority_a, &authority_b));
     let mut manager = authority_a.try_write().expect("first authority lock");

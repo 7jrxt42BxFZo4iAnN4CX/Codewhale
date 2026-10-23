@@ -11231,6 +11231,21 @@ pub(crate) fn new_shared_runtime_subagent_manager(
     workspace: PathBuf,
     workers: usize,
 ) -> Result<SharedSubAgentManager> {
+    new_runtime_subagent_manager(workspace, workers, false)
+}
+
+pub(crate) fn new_exclusive_runtime_subagent_manager(
+    workspace: PathBuf,
+    workers: usize,
+) -> Result<SharedSubAgentManager> {
+    new_runtime_subagent_manager(workspace, workers, true)
+}
+
+fn new_runtime_subagent_manager(
+    workspace: PathBuf,
+    workers: usize,
+    exclusive: bool,
+) -> Result<SharedSubAgentManager> {
     type RuntimeManagerRegistry =
         parking_lot::Mutex<HashMap<PathBuf, (usize, std::sync::Weak<RwLock<SubAgentManager>>)>>;
     static MANAGERS: std::sync::OnceLock<RuntimeManagerRegistry> = std::sync::OnceLock::new();
@@ -11254,7 +11269,7 @@ pub(crate) fn new_shared_runtime_subagent_manager(
         .with_admission_limit(workers)
         .with_launch_concurrency(workers)
         .with_state_path(state_path);
-    manager.coordination_exclusive = true;
+    manager.coordination_exclusive = exclusive;
     manager = manager.require_coordination_process_lock();
     if let Err(error) = manager.ensure_coordination_process_lock() {
         manager.coordination_snapshot_read_only = true;
@@ -19768,7 +19783,7 @@ mod owner_scoped_coordination_tests {
         let selected = root.join("selected");
         fs::create_dir_all(original.join("src")).unwrap();
         fs::create_dir_all(selected.join("src")).unwrap();
-        let authority = new_shared_runtime_subagent_manager(original.clone(), 2).unwrap();
+        let authority = new_exclusive_runtime_subagent_manager(original.clone(), 2).unwrap();
         let mut manager = authority.try_write().unwrap();
         admit(&mut manager, &original);
         admit(&mut manager, &selected);
