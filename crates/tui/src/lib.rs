@@ -17483,6 +17483,10 @@ mod mounted_history_tests {
             crate::runtime_handoff::subagent_completion_runtime_message(
                 r#"{"agent_id":"owned-handoff","status":"completed","summary":"saved child summary"}"#,
             ),
+            crate::runtime_handoff::subagent_failure_runtime_message(
+                r#"{"agent_id":"owned-handoff","status":"failed","summary":"saved child failure"}"#,
+            ),
+            crate::runtime_handoff::waiting_for_subagents_runtime_message(2),
         ];
         let mut saved = create_saved_session(&messages, "mounted-handoff", &workspace, 7, None);
         saved
@@ -17502,6 +17506,23 @@ mod mounted_history_tests {
             saved.messages,
             "the fixture must carry history the restore projection rewrites"
         );
+        let projected =
+            crate::runtime_handoff::project_owned_messages_for_restore(saved.messages.clone());
+        assert_eq!(
+            projected.len(),
+            saved.messages.len(),
+            "projection keeps message count and order stable for context references"
+        );
+        assert_eq!(
+            projected[0], saved.messages[0],
+            "a plain user turn is restored verbatim"
+        );
+        for (index, message) in saved.messages.iter().enumerate().skip(1) {
+            assert_ne!(
+                projected[index], *message,
+                "handoff envelope {index} must be projected for restore"
+            );
+        }
         let cli = cli(&workspace);
         let (_, id) = prepare_mounted_session(
             &cli,
