@@ -84,7 +84,7 @@ fn apply_openai_reasoning_effort(
     else {
         return;
     };
-    body["reasoning_effort"] = json!(effort);
+    body["reasoning_effort"] = json!(clamp_openai_reasoning_effort(provider, model, effort));
 }
 
 /// xAI's first-party `reasoning_effort` ladder, driven by the bundled
@@ -998,6 +998,57 @@ fn openai_compatible_reasoning_effort(
         "max" | "highest" | "ultra" | "ultracode" => Some("xhigh"),
         _ => None,
     }
+}
+
+const OPENAI_EFFORT_LADDER: [&str; 7] =
+    ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+fn clamp_openai_reasoning_effort(
+    provider: ProviderKind,
+    model: &str,
+    effort: &'static str,
+) -> &'static str {
+    let Some(row) =
+        crate::provider_lake::bundled_catalog_offering_for_model(provider, model.trim())
+    else {
+        return effort;
+    };
+    let Some(declared) = row
+        .reasoning_options
+        .iter()
+        .find(|option| option["type"] == "effort")
+        .and_then(|option| option["values"].as_array())
+    else {
+        return effort;
+    };
+    let declared: Vec<&str> = declared.iter().filter_map(Value::as_str).collect();
+    if declared.contains(&effort) {
+        return effort;
+    }
+    let Some(requested) = OPENAI_EFFORT_LADDER
+        .iter()
+        .position(|value| *value == effort)
+    else {
+        return effort;
+    };
+    let mut best: Option<(usize, &'static str)> = None;
+    for (rank, value) in OPENAI_EFFORT_LADDER.iter().enumerate() {
+        if !declared.contains(value) {
+            continue;
+        }
+        let distance = rank.abs_diff(requested);
+        let better = match best {
+            None => true,
+            Some((best_rank, _)) => {
+                let best_distance = best_rank.abs_diff(requested);
+                distance < best_distance || (distance == best_distance && rank > best_rank)
+            }
+        };
+        if better {
+            best = Some((rank, value));
+        }
+    }
+    best.map_or(effort, |(_, value)| value)
 }
 
 fn mirror_minimax_reasoning_details_for_messages(messages: &mut [Value]) {
