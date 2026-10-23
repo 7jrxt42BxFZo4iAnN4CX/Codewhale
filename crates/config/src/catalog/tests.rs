@@ -876,8 +876,9 @@ fn bundled_seed_canonical_entries_use_upstream_keys_and_yield_to_provider_rows()
     for model in ["mimo-v2.6-pro", "mimo-v2.6-flash"] {
         let row = find(&rows, "xiaomi-mimo", model);
         assert_eq!(
-            row.canonical_model, None,
-            "{model} comes from the provider row"
+            row.canonical_model.as_deref(),
+            Some(format!("xiaomi/{model}").as_str()),
+            "{model} keeps the canonical join upstream now states on the provider row"
         );
         // The text-only hold is gone (#6396): upstream lists image input,
         // and a wrong claim costs one rejected, retried request.

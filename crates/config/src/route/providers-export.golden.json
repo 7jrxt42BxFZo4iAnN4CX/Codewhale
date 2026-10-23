@@ -217,16 +217,16 @@
       "models": [
         {
           "id": "deepseek-flash",
-          "canonical": "deepseek/deepseek-v4.1-flash",
+          "canonical": "deepseek/deepseek-v4.1-flash-1017",
           "default": true
         },
         {
           "id": "deepseek-v4-flash",
-          "canonical": "deepseek/deepseek-v4.1-flash"
+          "canonical": "deepseek/deepseek-v4.1-flash-1017"
         },
         {
           "id": "deepseek-v4-flash-vision-exp",
-          "canonical": "deepseek/deepseek-v4.1-flash"
+          "canonical": "deepseek/deepseek-v4.1-flash-1017"
         },
         {
           "id": "deepseek-v4-pro",
@@ -705,7 +705,8 @@
       ],
       "models": [
         {
-          "id": "kimi-k2.6"
+          "id": "kimi-k2.6",
+          "canonical": "moonshotai/kimi-k2.6"
         },
         {
           "id": "kimi-k2.7-code",
@@ -1136,10 +1137,12 @@
       ],
       "models": [
         {
-          "id": "step-3.5-flash"
+          "id": "step-3.5-flash",
+          "canonical": "stepfun/step-3.5-flash"
         },
         {
-          "id": "step-3.5-flash-2603"
+          "id": "step-3.5-flash-2603",
+          "canonical": "stepfun/step-3.5-flash-2603"
         },
         {
           "id": "step-3.7-flash",
@@ -1320,10 +1323,12 @@
       ],
       "models": [
         {
-          "id": "mimo-v2.6-flash"
+          "id": "mimo-v2.6-flash",
+          "canonical": "xiaomi/mimo-v2.6-flash"
         },
         {
           "id": "mimo-v2.6-pro",
+          "canonical": "xiaomi/mimo-v2.6-pro",
           "default": true
         }
       ],
@@ -1350,7 +1355,8 @@
       ],
       "models": [
         {
-          "id": "GLM-5-Turbo"
+          "id": "GLM-5-Turbo",
+          "canonical": "zhipuai/glm-5-turbo"
         },
         {
           "id": "GLM-5.2",
