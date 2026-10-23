@@ -396,8 +396,17 @@ struct EffectivePickerMetadata {
     reasoning_unknown: bool,
     vision: SupportState,
     pricing: PickerPricing,
+    price_basis: Option<PriceBasis>,
+    wire_model_id: Option<String>,
+    canonical_model: Option<String>,
     source: Option<CatalogSource>,
     model_type: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PriceBasis {
+    short: &'static str,
+    detail: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -3178,7 +3187,10 @@ fn model_row_meta_chips(row: &ModelPickerRow) -> Vec<String> {
                 .map(|value| format!("{} out", format_context_window(u64::from(value))))
                 .unwrap_or_else(|| "output unknown".into()),
             match &row.metadata.pricing {
-                PickerPricing::Known(price) => format!("estimate {price}"),
+                PickerPricing::Known(price) => match row.metadata.price_basis.as_ref() {
+                    Some(basis) => format!("estimate {price} ({})", basis.short),
+                    None => format!("estimate {price}"),
+                },
                 _ => "price unknown".into(),
             },
             if row.metadata.reasoning_unknown {
@@ -3222,6 +3234,11 @@ fn model_row_meta_chips(row: &ModelPickerRow) -> Vec<String> {
     );
     if let PickerPricing::Status(status) = row.metadata.pricing {
         chips.push(format!("price {status}"));
+    } else if let (PickerPricing::Known(_), Some(basis)) =
+        (&row.metadata.pricing, row.metadata.price_basis.as_ref())
+        && basis.short != "live"
+    {
+        chips.push(format!("price {}", basis.short));
     }
     // #5239/#5441: an unverified window still drives budgets, but the chip
     // must not lend it a verified reading. Honesty rides as its own chip
@@ -3674,6 +3691,9 @@ fn effective_picker_metadata_with_codex(
                 .as_ref()
                 .is_none_or(|meta| meta.reasoning.is_none()),
             declared_input_price: None,
+            price_basis: None,
+            wire_model_id: None,
+            canonical_model: None,
             source: None,
             model_type: None,
         };
@@ -3691,6 +3711,7 @@ fn effective_picker_metadata_with_codex(
     if let Some(declared) =
         crate::provider_lake::configured_model_for_route(config, provider, identity, &base_url, id)
     {
+        let (wire_model_id, canonical_model) = picker_offering_identity(offering.as_ref(), id);
         return EffectivePickerMetadata {
             display_name: declared.display_name.clone(),
             declared_input_price: declared
@@ -3720,6 +3741,9 @@ fn effective_picker_metadata_with_codex(
                 .map_or(PickerPricing::Unknown, |card| {
                     PickerPricing::Known(card.price_label())
                 }),
+            price_basis: picker_price_basis(card.as_ref().and_then(|card| card.pricing.as_ref())),
+            wire_model_id,
+            canonical_model,
             source: Some(CatalogSource::ConfigOverride),
             ..EffectivePickerMetadata::default()
         };
@@ -3828,6 +3852,14 @@ fn effective_picker_metadata_with_codex(
     } else {
         PickerPricing::Unknown
     };
+    let price_basis = picker_price_basis(card.as_ref().and_then(|card| card.pricing.as_ref()))
+        .or_else(|| {
+            matches!(pricing, PickerPricing::Known(_)).then(|| PriceBasis {
+                short: "cached",
+                detail: "bundled estimate, no fetch clock".to_string(),
+            })
+        });
+    let (wire_model_id, canonical_model) = picker_offering_identity(offering.as_ref(), id);
 
     // Honesty rungs (#5239, #5440, #5441). A window that reached the picker
     // only through the legacy provider fallback — no offering, no catalog
@@ -3870,11 +3902,76 @@ fn effective_picker_metadata_with_codex(
                 })
         },
         declared_input_price: None,
+        price_basis,
+        wire_model_id,
+        canonical_model,
         source: card.map(|card| card.source),
         model_type: offering
             .as_ref()
             .and_then(|offering| offering.model_type.clone()),
     }
+}
+
+fn picker_price_basis(pricing: Option<&OfferingPricing>) -> Option<PriceBasis> {
+    let pricing = pricing?;
+    let now = codewhale_config::catalog::now_unix();
+    let (short, noun) = match pricing.status_label_at(now) {
+        "live_estimate" => ("live", "live estimate"),
+        "bundled_estimate" => ("cached", "cached estimate"),
+        "documented_estimate" => ("documented", "documented estimate"),
+        "operator_estimate" => ("operator", "operator estimate"),
+        "verified_cloud_estimate" => ("cloud", "verified cloud estimate"),
+        "stale" => ("stale", "stale estimate"),
+        "unverified" => ("unverified", "unverified estimate"),
+        _ => return None,
+    };
+    let clock = match pricing.expires_at {
+        Some(expires_at) if expires_at > now => {
+            format!("expires in {}", format_price_span(expires_at - now))
+        }
+        _ => match pricing.fetched_at.or(pricing.effective_at) {
+            Some(fetched_at) => format!(
+                "fetched {} ago",
+                format_price_span(now.saturating_sub(fetched_at))
+            ),
+            None => "no fetch clock".to_string(),
+        },
+    };
+    Some(PriceBasis {
+        short,
+        detail: format!("{noun}, {clock}"),
+    })
+}
+
+fn format_price_span(secs: u64) -> String {
+    let minutes = secs / 60;
+    if minutes == 0 {
+        "under a minute".to_string()
+    } else if minutes < 60 {
+        format!("{minutes}m")
+    } else if minutes < 24 * 60 {
+        format!("{}h", minutes / 60)
+    } else {
+        format!("{}d", minutes / (24 * 60))
+    }
+}
+
+fn picker_offering_identity(
+    offering: Option<&codewhale_config::catalog::CatalogOffering>,
+    id: &str,
+) -> (Option<String>, Option<String>) {
+    let Some(offering) = offering else {
+        return (None, None);
+    };
+    let differs = |value: &str| !value.eq_ignore_ascii_case(id);
+    (
+        differs(&offering.wire_model_id).then(|| offering.wire_model_id.clone()),
+        offering
+            .canonical_model
+            .as_deref()
+            .filter(|canonical| differs(canonical))
+            .map(str::to_string),
+    )
 }
 
 fn render_picker_model_hint(
@@ -3969,9 +4066,23 @@ fn render_picker_model_hint(
 
     match &metadata.pricing {
         PickerPricing::Unavailable => {}
-        PickerPricing::Known(label) => parts.push(label.clone()),
-        PickerPricing::Status(status) => parts.push(format!("price {status}")),
+        PickerPricing::Known(label) => match metadata.price_basis.as_ref() {
+            Some(basis) => parts.push(format!("{label} · {}", basis.detail)),
+            None => parts.push(label.clone()),
+        },
+        PickerPricing::Status(status) => parts.push(
+            metadata
+                .price_basis
+                .as_ref()
+                .map_or_else(|| format!("price {status}"), |basis| basis.detail.clone()),
+        ),
         PickerPricing::Unknown => parts.push("price unknown".to_string()),
+    }
+    if let Some(wire) = metadata.wire_model_id.as_deref() {
+        parts.push(format!("wire {wire}"));
+    }
+    if let Some(canonical) = metadata.canonical_model.as_deref() {
+        parts.push(format!("canonical {canonical}"));
     }
     let provider_live_source = matches!(metadata.source.as_ref(), Some(CatalogSource::Live { .. }));
     match metadata.source.as_ref() {
@@ -4783,6 +4894,14 @@ fn route_picker_efforts(
         && let Some(catalog_efforts) = catalog_picker_efforts(&offering)
     {
         return catalog_efforts;
+    }
+    // A route that states the model has no reasoning gets no tier rows (#6396).
+    // An unstated fact keeps the provider ladder: a tier is a wire dialect, and
+    // unknown support is not the same claim as no support.
+    if ReasoningEffort::offering_for_reasoning(provider, base_url, wire_model)
+        .is_some_and(|offering| offering.reasoning == Some(false))
+    {
+        return vec![ReasoningEffort::Auto];
     }
     if matches!(provider, crate::config::ProviderKind::Deepseek) {
         return DEEPSEEK_PICKER_EFFORTS.to_vec();
