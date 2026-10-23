@@ -17462,6 +17462,63 @@ mod mounted_history_tests {
     }
 
     #[tokio::test]
+    async fn mounted_resume_accepts_saved_raw_subagent_handoff_envelopes() -> Result<()> {
+        let _env = lock_test_env();
+        let _runtime_override = EnvVarGuard::remove("CODEWHALE_RUNTIME_DIR");
+        let _legacy_runtime_override = EnvVarGuard::remove("DEEPSEEK_RUNTIME_DIR");
+        let temp = tempfile::tempdir()?;
+        let root = temp.path().canonicalize()?;
+        let _home = EnvVarGuard::set("CODEWHALE_HOME", root.join("home"));
+        let workspace = root.join("workspace");
+        std::fs::create_dir(&workspace)?;
+        let manager = SessionManager::default_location()?;
+        let messages = vec![
+            Message {
+                role: Role::User,
+                content: vec![ContentBlock::Text {
+                    text: "spawn a scout".into(),
+                    cache_control: None,
+                }],
+            },
+            crate::runtime_handoff::subagent_completion_runtime_message(
+                r#"{"agent_id":"owned-handoff","status":"completed","summary":"saved child summary"}"#,
+            ),
+        ];
+        let mut saved = create_saved_session(&messages, "mounted-handoff", &workspace, 7, None);
+        saved
+            .metadata
+            .set_model_provider_route("custom", Some("CaseRoute"));
+        manager.save_session(&saved)?;
+        let saved = manager.load_session_snapshot_bounded(
+            &saved.metadata.id,
+            codewhale_protocol::MAX_CANONICAL_HISTORY_BYTES,
+        )?;
+        assert_eq!(
+            saved.messages, messages,
+            "the saved projection keeps the raw handoff envelope verbatim"
+        );
+        assert_ne!(
+            crate::runtime_handoff::project_owned_messages_for_restore(saved.messages.clone()),
+            saved.messages,
+            "the fixture must carry history the restore projection rewrites"
+        );
+        let cli = cli(&workspace);
+        let (_, id) = prepare_mounted_session(
+            &cli,
+            prepare_interactive_config(&cli, &config(), true)?,
+            saved.metadata.id.clone(),
+            MountedHistoryIntent::Resume,
+            plugins(&workspace),
+        )
+        .await?;
+        assert_eq!(
+            id, saved.metadata.id,
+            "resume must acknowledge projected history instead of refusing it"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn mounted_forks_keep_every_branch_and_source_bytes_with_distinct_durable_ids()
     -> Result<()> {
         let _env = lock_test_env();
