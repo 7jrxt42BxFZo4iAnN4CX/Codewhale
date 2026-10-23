@@ -64,22 +64,22 @@ fn capture() -> Result<Option<Mutex<Option<StdTcpListener>>>> {
 #[cfg(all(unix, target_vendor = "apple"))]
 fn is_listening() -> Result<bool> {
     const TCP_STATE_LISTEN: u8 = 1;
-    let mut info: libc::tcp_connection_info = unsafe { std::mem::zeroed() };
-    let mut length = std::mem::size_of_val(&info) as libc::socklen_t;
+    let mut state: u8 = 0;
+    let mut length = std::mem::size_of_val(&state) as libc::socklen_t;
     let status = unsafe {
         libc::getsockopt(
             3,
             libc::IPPROTO_TCP,
             libc::TCP_CONNECTION_INFO,
-            std::ptr::from_mut(&mut info).cast(),
+            std::ptr::from_mut(&mut state).cast(),
             &mut length,
         )
     };
     ensure!(
-        status == 0 && length as usize == std::mem::size_of_val(&info),
+        status == 0 && length as usize == std::mem::size_of_val(&state),
         "Failed to validate inherited Runtime listener TCP state"
     );
-    Ok(info.tcpi_state == TCP_STATE_LISTEN)
+    Ok(state == TCP_STATE_LISTEN)
 }
 
 #[cfg(all(unix, not(target_vendor = "apple")))]
