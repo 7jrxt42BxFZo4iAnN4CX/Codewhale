@@ -1432,7 +1432,7 @@ async fn run_computer_use_live_card_case(
         "posture={posture:?}, decider={decider:?}"
     );
     let result = completed.expect("consent call has a paired completion");
-    if posture != ApprovalMode::Suggest {
+    if matches!(posture, ApprovalMode::Auto | ApprovalMode::Never) {
         assert!(
             result.is_err(),
             "autonomous posture must block before plugin execution: {result:?}"
@@ -1474,13 +1474,15 @@ async fn computer_use_human_card_allows_the_exact_live_call() {
         return;
     }
     let _env = lock_test_env();
-    run_computer_use_live_card_case(
-        ApprovalMode::Suggest,
-        crate::approval_log::ApprovalDecider::User,
-        true,
-        true,
-    )
-    .await;
+    for posture in [ApprovalMode::Suggest, ApprovalMode::Bypass] {
+        run_computer_use_live_card_case(
+            posture,
+            crate::approval_log::ApprovalDecider::User,
+            true,
+            true,
+        )
+        .await;
+    }
 }
 
 #[tokio::test]
@@ -1491,11 +1493,13 @@ async fn computer_use_session_rule_and_posture_cannot_mint_a_human_decision() {
         return;
     }
     let _env = lock_test_env();
-    for decider in [
-        crate::approval_log::ApprovalDecider::SessionRule,
-        crate::approval_log::ApprovalDecider::Posture,
-    ] {
-        run_computer_use_live_card_case(ApprovalMode::Suggest, decider, true, false).await;
+    for posture in [ApprovalMode::Suggest, ApprovalMode::Bypass] {
+        for decider in [
+            crate::approval_log::ApprovalDecider::SessionRule,
+            crate::approval_log::ApprovalDecider::Posture,
+        ] {
+            run_computer_use_live_card_case(posture, decider, true, false).await;
+        }
     }
 }
 
@@ -1507,11 +1511,7 @@ async fn computer_use_autonomous_postures_block_before_the_plugin() {
         return;
     }
     let _env = lock_test_env();
-    for posture in [
-        ApprovalMode::Bypass,
-        ApprovalMode::Auto,
-        ApprovalMode::Never,
-    ] {
+    for posture in [ApprovalMode::Auto, ApprovalMode::Never] {
         run_computer_use_live_card_case(
             posture,
             crate::approval_log::ApprovalDecider::User,

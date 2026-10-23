@@ -223,25 +223,42 @@ pub enum Event {
     /// its notice. The disabled state also remains visible in `/status` (#5930).
     /// `reason` is the single localized line rendered from the gate, so every
     /// surface states the workspace, the limit, and the recovery exactly once.
-    SnapshotsDisabled { workspace: String, reason: String },
+    SnapshotsDisabled {
+        workspace: String,
+        reason: String,
+    },
     // === Streaming Events ===
     /// A new message block has started
-    MessageStarted { index: usize },
+    MessageStarted {
+        index: usize,
+    },
 
     /// Incremental text content delta
-    MessageDelta { index: usize, content: String },
+    MessageDelta {
+        index: usize,
+        content: String,
+    },
 
     /// Message block completed
-    MessageComplete { index: usize },
+    MessageComplete {
+        index: usize,
+    },
 
     /// Thinking block started
-    ThinkingStarted { index: usize },
+    ThinkingStarted {
+        index: usize,
+    },
 
     /// Incremental thinking content delta
-    ThinkingDelta { index: usize, content: String },
+    ThinkingDelta {
+        index: usize,
+        content: String,
+    },
 
     /// Thinking block completed
-    ThinkingComplete { index: usize },
+    ThinkingComplete {
+        index: usize,
+    },
 
     // === Tool Events ===
     /// Tool call initiated
@@ -260,7 +277,9 @@ pub enum Event {
     ToolCallHeartbeat,
 
     /// Optional actual dispatch observation for a narrowed protocol host.
-    ToolExecutionStarted { id: String },
+    ToolExecutionStarted {
+        id: String,
+    },
     /// Canonical rich result after existing output/media preservation.
     ToolResultContent {
         id: String,
@@ -330,7 +349,10 @@ pub enum Event {
     /// Immutable billing route captured at CodeWhale's pre-permit application
     /// dispatch boundary, after request preparation. This is admission-time
     /// evidence, not proof of network delivery or provider invoice-time rates.
-    RouteDispatched { turn_id: String, route: TurnRoute },
+    RouteDispatched {
+        turn_id: String,
+        route: TurnRoute,
+    },
 
     /// The turn is complete (no more tool calls)
     TurnComplete {
@@ -408,17 +430,23 @@ pub enum Event {
 
     /// Runtime goal state changed inside the engine, usually from model-visible
     /// `create_goal` or `update_goal` tool calls.
-    GoalUpdated { snapshot: GoalSnapshot },
+    GoalUpdated {
+        snapshot: GoalSnapshot,
+    },
 
     /// The interactive engine is in the configured quiet period before one
     /// already-authorized goal continuation. This is lifecycle state, not a
     /// status string: Esc/Ctrl+C can cancel it without pretending a provider
     /// turn is still in flight.
-    GoalContinuationWaiting { delay_seconds: u64 },
+    GoalContinuationWaiting {
+        delay_seconds: u64,
+    },
 
     /// The between-turn quiet period ended. `interrupted` distinguishes a
     /// user/external cancel from normal expiry or a goal status control.
-    GoalContinuationWaitEnded { interrupted: bool },
+    GoalContinuationWaitEnded {
+        interrupted: bool,
+    },
 
     /// Context compaction started.
     CompactionStarted {
@@ -479,7 +507,9 @@ pub enum Event {
     },
 
     /// Context purge failed.
-    PurgeFailed { message: String },
+    PurgeFailed {
+        message: String,
+    },
 
     /// Context compaction failed.
     CompactionFailed {
@@ -598,7 +628,9 @@ pub enum Event {
     },
 
     /// Status message for UI display
-    Status { message: String },
+    Status {
+        message: String,
+    },
 
     /// Session-owned MCP + plugin boot progress.
     ///
@@ -624,7 +656,9 @@ pub enum Event {
     /// prompt; it never carries runtime/system additions. There is no error
     /// variant: a manifest that cannot describe something says so in a typed
     /// unavailable section instead.
-    RequestManifestReady { rendered: String },
+    RequestManifestReady {
+        rendered: String,
+    },
 
     /// Pause terminal input events (for interactive subprocesses).
     PauseEvents {
@@ -660,7 +694,9 @@ pub enum Event {
 
     /// The engine no longer waits for this approval. Every decision surface
     /// must retire the request by identity without sending a user decision.
-    ApprovalWithdrawn { id: String },
+    ApprovalWithdrawn {
+        id: String,
+    },
 
     /// Request user input for a tool call
     UserInputRequired {

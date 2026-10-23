@@ -27,6 +27,16 @@ guidance.
 
 ### Latest fixes
 
+- ChatGPT sign-in opens your regular browser and returns to Codewhale with
+  credentials and a model list for the account you selected. The unsupported
+  `originator` parameter that caused `invalid_authorize_request` is removed
+  (#6925). PKCE, account binding and granted-scope validation remain in place.
+  A real browser sign-in, account model list and model response were verified
+  for this release candidate.
+
+- Renaming a session in `/sessions` shows its title prompt once, preserving
+  the validation and saved-title messages (#7054). Thanks @Lstarsky0.
+
 - Deferred-tool admission measures schemas after the provider's wire conversion.
   Search results show the active toolbox, soft-limit overflow and readmission
   state. Per-request receipts join those wire measurements with the current
@@ -1787,10 +1797,6 @@ guidance.
 - Tool headers keep their clipped part visible at narrow widths, `/jobs`
   prints plain exit codes and a three-line tail, and a collapsed tool output
   shows a single hidden row instead of a "1 line omitted" marker.
-- ChatGPT sign-in omits the unsupported `originator` query parameter that
-  caused an initial `invalid_authorize_request` rejection. PKCE, account
-  binding and granted-scope validation remain in the same login flow
-  (Refs #6925).
 - The shared pet pauses its world and periodic checkpoint writes after its
   viewers, producer and audio leases expire. Authenticated clients wake it
   through the existing request queue; its active clock waits for the next
