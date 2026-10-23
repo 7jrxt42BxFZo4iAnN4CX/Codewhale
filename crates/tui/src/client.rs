@@ -5386,10 +5386,9 @@ fn catalog_delta_from_models_body(
     };
 
     if offerings.iter().any(|row| {
-        !crate::provider_lake::valid_catalog_model_id(&row.wire_model_id)
-            || model_bound_secret_values
-                .iter()
-                .any(|secret| !secret.is_empty() && row.wire_model_id.contains(secret))
+        model_bound_secret_values
+            .iter()
+            .any(|secret| !secret.is_empty() && row.wire_model_id.contains(secret))
     }) {
         return Err(CatalogRefreshError::InvalidResponse);
     }
@@ -5602,10 +5601,7 @@ fn orcarouter_to_catalog_offering(
             Some(cost) if codewhale_config::pricing::catalog_cost_is_valid(&cost) => {
                 offering.cost = Some(cost);
             }
-            _ => {
-                offering.cost = None;
-                offering.cost_source = Some(offering.source.clone());
-            }
+            _ => offering.cost = None,
         }
     }
     Ok(offering)
@@ -5874,10 +5870,7 @@ fn baseten_to_catalog_offering(
     let structured_output = item.supports_structured_output.or(Some(true));
 
     Ok(CatalogOffering {
-        cost_source: (item.pricing.is_some() && cost.is_none()).then(|| CatalogSource::Live {
-            base_url_fingerprint: base_url_fingerprint.to_string(),
-            fetched_at,
-        }),
+        cost_source: None,
         modalities_source: None,
         provider: provider.to_string(),
         wire_model_id: item.id.clone(),
@@ -6034,10 +6027,7 @@ fn openrouter_to_catalog_offering(
     });
 
     Ok(CatalogOffering {
-        cost_source: (item.pricing.is_some() && cost.is_none()).then(|| CatalogSource::Live {
-            base_url_fingerprint: base_url_fingerprint.to_string(),
-            fetched_at,
-        }),
+        cost_source: None,
         modalities_source: None,
         provider: provider.to_string(),
         wire_model_id: item.id.clone(),

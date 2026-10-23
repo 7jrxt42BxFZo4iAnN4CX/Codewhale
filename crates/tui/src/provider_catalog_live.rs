@@ -836,26 +836,40 @@ fn load_from_disk_unlocked_with_limit(path: &Path, max_bytes: u64) -> Option<Pro
         let Some((kind, identity)) = entry.provider.split_once(':') else {
             return false;
         };
-        let valid = ProviderKind::parse_config_identity(kind)
+        let scope_valid = ProviderKind::parse_config_identity(kind)
             .is_some_and(|parsed| parsed.as_str() == kind)
             && !identity.is_empty()
-            && key == &ProviderCatalogCache::cache_key(&entry.provider, &entry.base_url_fingerprint)
-            && entry.offerings.iter().all(|row| {
-                row.provider == identity
-                    && crate::provider_lake::valid_catalog_model_id(&row.wire_model_id)
-                    && provider_cost_source_allowed(row)
-                    && matches!(&row.source, codewhale_config::catalog::CatalogSource::Live {
-                        base_url_fingerprint, fetched_at
-                    } if base_url_fingerprint == &entry.base_url_fingerprint && *fetched_at == entry.fetched_at)
-            });
-        if !valid {
+            && key
+                == &ProviderCatalogCache::cache_key(&entry.provider, &entry.base_url_fingerprint);
+        if !scope_valid {
             tracing::debug!(
                 target: "provider_catalog",
                 scope = %entry.provider,
                 "dropping invalid provider catalog scope"
             );
+            return false;
         }
-        valid
+        let entry_fingerprint = entry.base_url_fingerprint.clone();
+        let entry_fetched_at = entry.fetched_at;
+        let rows_before = entry.offerings.len();
+        entry.offerings.retain(|row| {
+            row.provider == identity
+                && crate::provider_lake::valid_catalog_model_id(&row.wire_model_id)
+                && provider_cost_source_allowed(row)
+                && matches!(&row.source, codewhale_config::catalog::CatalogSource::Live {
+                    base_url_fingerprint, fetched_at
+                } if base_url_fingerprint == &entry_fingerprint && *fetched_at == entry_fetched_at)
+        });
+        if entry.offerings.len() != rows_before {
+            tracing::warn!(
+                target: "provider_catalog",
+                scope = %entry.provider,
+                rejected = rows_before - entry.offerings.len(),
+                kept = entry.offerings.len(),
+                "dropped unusable rows from a cached provider catalog"
+            );
+        }
+        true
     });
     if cache.entries.len() != scopes_before {
         tracing::debug!(
@@ -1942,11 +1956,22 @@ fn record_success_for_identity(
 ) -> CatalogStatus {
     let provider = canonical_provider_scope(&delta.provider);
     delta.provider = storage_provider(kind, &provider);
-    if delta.offerings.iter().any(|row| {
-        row.provider != provider
-            || !crate::provider_lake::valid_catalog_model_id(&row.wire_model_id)
-            || !provider_cost_source_allowed(row)
-    }) {
+    let submitted = delta.offerings.len();
+    delta.offerings.retain(|row| {
+        row.provider == provider
+            && crate::provider_lake::valid_catalog_model_id(&row.wire_model_id)
+            && provider_cost_source_allowed(row)
+    });
+    if delta.offerings.len() < submitted {
+        tracing::warn!(
+            target: "provider_catalog",
+            scope = %provider,
+            rejected = submitted - delta.offerings.len(),
+            kept = delta.offerings.len(),
+            "dropping unusable rows from a provider catalog refresh"
+        );
+    }
+    if submitted > 0 && delta.offerings.is_empty() {
         return record_failure_for_identity(
             kind,
             &provider,

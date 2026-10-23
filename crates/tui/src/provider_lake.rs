@@ -1910,10 +1910,13 @@ pub(crate) async fn update_provider_catalog(
                     return receipt;
                 }
                 Some(CatalogStatus::Fresh) => receipt.outcome = "updated",
+                Some(CatalogStatus::Failed { reason }) => {
+                    receipt.outcome = "failed";
+                    receipt.error = Some(reason.label());
+                }
                 Some(_) => {
                     receipt.outcome = "failed";
                     receipt.error = Some("cache_write_failed");
-                    return receipt;
                 }
             }
         }
@@ -1925,12 +1928,17 @@ pub(crate) async fn update_provider_catalog(
                 reason,
             );
             receipt.outcome = "failed";
+            receipt.error = Some(reason.label());
         }
     }
     drop(access);
     let outcome = receipt.outcome;
+    let failure = receipt.error;
     receipt = cached_receipt(&route_config, identity);
     receipt.outcome = outcome;
+    if outcome == "failed" {
+        receipt.error = failure.or(receipt.error);
+    }
     receipt
 }
 
