@@ -5932,6 +5932,12 @@ fn run_model_command(
                             "capabilities: {}",
                             serde_json::to_string(&route.capabilities())?
                         );
+                        if !route.applied_limit_overrides().is_empty() {
+                            println!(
+                                "limit_overrides: {}",
+                                serde_json::to_string(route.applied_limit_overrides())?
+                            );
+                        }
                     }
                     Err(error) => println!("route_error: {error}"),
                 }
@@ -5997,6 +6003,12 @@ fn run_model_command(
                 "capabilities: {}",
                 serde_json::to_string(&candidate.capabilities())?
             );
+            if !candidate.applied_limit_overrides().is_empty() {
+                println!(
+                    "limit_overrides: {}",
+                    serde_json::to_string(candidate.applied_limit_overrides())?
+                );
+            }
             println!(
                 "provider_source: {}",
                 if subcommand_provider.is_some() {
