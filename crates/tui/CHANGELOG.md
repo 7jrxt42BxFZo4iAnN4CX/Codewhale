@@ -28,6 +28,11 @@ and independent workflow steps can continue after another child fails.
 
 ### Latest fixes
 
+- Runtime clients can retry thread creation with the same operation key after
+  a lost response or restart and recover the original conversation. A changed
+  effective request is refused instead of replacing or duplicating its thread.
+  The Runtime advertises this capability explicitly.
+
 - A sandboxed shell can read a tool's own auth config again. The credential
   deny-list still refuses those files to Codewhale's file tools, but it no
   longer refuses them to the programs that own them, so `gh`, `glab`, `aws`,

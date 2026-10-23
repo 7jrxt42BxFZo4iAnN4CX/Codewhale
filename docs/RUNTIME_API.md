@@ -378,6 +378,19 @@ response because an older tolerant reader may ignore an unknown request field.
 `capabilities.turn_operation_lookup: true` separately advertises the read-only
 operation lookup below; clients must require it before relying on GET-based
 recovery of a lost turn response.
+
+`capabilities.thread_create_idempotency: true` separately advertises
+`POST /v1/threads` with `operation_key` (or `operationKey`). Keys use the same
+validation as turn operation keys and are scoped to the Runtime store owner.
+Exact retries return the original thread, including after response loss or
+restart; a different effective request with the same key returns HTTP 409.
+The fingerprint includes the resolved model/provider, workspace, reasoning,
+permission and shell policy, tool allowlist, archival state, prompt/task fields,
+dynamic tools and environments. Creation defaults are resolved before comparison.
+Operation records retain only fingerprints and reserved identity, never the raw
+key. Missing committed thread data is an error, never permission to create a
+replacement. Clients must require this capability before relying on creation
+replay, because an older reader may silently ignore an unknown request field.
 The response also includes a token-free account receipt:
 
 ```json

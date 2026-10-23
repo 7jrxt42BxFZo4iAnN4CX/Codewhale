@@ -2349,6 +2349,7 @@ pub(crate) struct RuntimeEventReplay {
 type RuntimeEventReader = BufReader<std::io::Take<File>>;
 
 enum RuntimeEventMatch {
+    ThreadStarted,
     TurnCompleted {
         turn_id: String,
     },
@@ -2708,6 +2709,16 @@ impl RuntimeThreadStore {
         )
     }
 
+    fn thread_create_operation_path(&self, fingerprint: &str) -> Result<PathBuf> {
+        validate_sha256_fingerprint(fingerprint, "thread creation operation fingerprint")?;
+        Self::record_path(
+            &self.turn_operations_dir,
+            &format!("thread_create_{fingerprint}"),
+            "json",
+            "thread creation operation",
+        )
+    }
+
     fn load_history_operation(&self, fingerprint: &str) -> Result<Option<RuntimeHistoryOperation>> {
         let path = self.history_operation_path(fingerprint)?;
         let raw = match read_store_file(&path) {
@@ -2803,6 +2814,20 @@ impl RuntimeThreadStore {
             }
             let raw = read_store_file(&path)
                 .with_context(|| format!("Failed to read {}", path.display()))?;
+            if path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("thread_create_"))
+            {
+                let binding: RuntimeThreadCreateBinding = serde_json::from_str(&raw)?;
+                binding.validate()?;
+                anyhow::ensure!(
+                    path == self
+                        .thread_create_operation_path(&binding.operation_key_fingerprint)?,
+                    "thread creation operation path mismatch"
+                );
+                continue;
+            }
             if path
                 .file_stem()
                 .and_then(|name| name.to_str())
@@ -4502,6 +4527,15 @@ impl RuntimeThreadStore {
         let path = self.events_path(thread_id)?;
         while let Some(event) = read_complete_event(&mut reader, &path)? {
             let matches = match expected {
+                RuntimeEventMatch::ThreadStarted => {
+                    event.event == "thread.started"
+                        && event
+                            .payload
+                            .get("thread")
+                            .and_then(|thread| thread.get("id"))
+                            .and_then(Value::as_str)
+                            == Some(thread_id)
+                }
                 RuntimeEventMatch::TurnCompleted { turn_id } => {
                     event.event == "turn.completed"
                         && event.turn_id.as_deref() == Some(turn_id.as_str())
@@ -5061,6 +5095,8 @@ pub enum ThreadListFilter {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CreateThreadRequest {
+    #[serde(default, alias = "operationKey")]
+    pub operation_key: Option<String>,
     pub model: Option<String>,
     /// Generic provider kind or, for legacy clients, an exact provider id.
     #[serde(default)]
@@ -5243,6 +5279,39 @@ struct RuntimeTurnOperationBinding {
     request_fingerprint: String,
     created_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RuntimeThreadCreateBinding {
+    schema_version: u32,
+    operation_key_fingerprint: String,
+    request_fingerprint: String,
+    thread_id: String,
+    created_at: DateTime<Utc>,
+    committed: bool,
+}
+
+impl RuntimeThreadCreateBinding {
+    fn validate(&self) -> Result<()> {
+        anyhow::ensure!(
+            self.schema_version == 1,
+            "unsupported thread creation operation schema"
+        );
+        validated_record_id(&self.thread_id, "thread creation operation id")?;
+        validate_sha256_fingerprint(
+            &self.operation_key_fingerprint,
+            "thread creation operation fingerprint",
+        )?;
+        validate_sha256_fingerprint(
+            &self.request_fingerprint,
+            "thread creation request fingerprint",
+        )
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("operation_key already binds a different thread creation request")]
+pub(crate) struct RuntimeThreadCreateConflict;
 
 impl RuntimeTurnOperationBinding {
     fn validate(&self) -> Result<()> {
@@ -10925,6 +10994,112 @@ impl RuntimeThreadManager {
             saved_session_checkpoint: None,
             last_read: None,
         };
+        if let Some(operation_key) = req.operation_key {
+            let key_fingerprint = runtime_turn_operation_key_fingerprint(
+                &self.store.owner_id,
+                ":thread-create:",
+                &operation_key,
+            )?;
+            let request_fingerprint = crate::hashing::sha256_hex(serde_json::to_vec(&json!({
+                "version": 1,
+                "model": thread.model,
+                "model_provider": thread.model_provider,
+                "model_provider_id": thread.model_provider_id,
+                "reasoning_effort": thread.reasoning_effort,
+                "allowed_tools": thread.allowed_tools,
+                "workspace": thread.workspace,
+                "mode": thread.mode,
+                "permission_posture": thread.permission_posture,
+                "allow_shell": thread.allow_shell,
+                "trust_mode": thread.trust_mode,
+                "auto_approve": thread.auto_approve,
+                "archived": thread.archived,
+                "system_prompt": thread.system_prompt,
+                "task_id": thread.task_id,
+                "dynamic_tools": req.dynamic_tools,
+                "environments": req.environments,
+            }))?);
+            let _emit_order = self.event_emit.lock().await;
+            let store = self.store.clone();
+            let (thread, event) = tokio::task::spawn_blocking(move || {
+                store.with_turn_operation_claim(Some(&key_fingerprint), || {
+                    let path = store.thread_create_operation_path(&key_fingerprint)?;
+                    let mut binding = match read_store_file(&path) {
+                        Ok(raw) => {
+                            let binding: RuntimeThreadCreateBinding = serde_json::from_str(&raw)?;
+                            binding.validate()?;
+                            anyhow::ensure!(
+                                binding.operation_key_fingerprint == key_fingerprint,
+                                "thread creation operation does not match its binding"
+                            );
+                            if binding.request_fingerprint != request_fingerprint {
+                                return Err(RuntimeThreadCreateConflict.into());
+                            }
+                            binding
+                        }
+                        Err(error)
+                            if error.downcast_ref::<std::io::Error>().is_some_and(|error| {
+                                error.kind() == std::io::ErrorKind::NotFound
+                            }) =>
+                        {
+                            let binding = RuntimeThreadCreateBinding {
+                                schema_version: 1,
+                                operation_key_fingerprint: key_fingerprint.clone(),
+                                request_fingerprint,
+                                thread_id: thread.id.clone(),
+                                created_at: thread.created_at,
+                                committed: false,
+                            };
+                            binding.validate()?;
+                            write_json_atomic(&path, &binding)?;
+                            binding
+                        }
+                        Err(error) => return Err(error),
+                    };
+                    if binding.committed {
+                        return Ok((store.load_thread(&binding.thread_id)?, None));
+                    }
+                    let started = store
+                        .contains_event(&binding.thread_id, &RuntimeEventMatch::ThreadStarted)?;
+                    let thread_path = store.thread_path(&binding.thread_id)?;
+                    let thread = if thread_path.try_exists()? {
+                        store.load_thread(&binding.thread_id)?
+                    } else {
+                        anyhow::ensure!(
+                            !started && store.list_turns_for_thread(&binding.thread_id)?.is_empty(),
+                            "reserved thread data is missing; recovery required"
+                        );
+                        let mut thread = thread;
+                        thread.id.clone_from(&binding.thread_id);
+                        thread.created_at = binding.created_at;
+                        thread.updated_at = binding.created_at;
+                        store.save_thread(&thread)?;
+                        thread
+                    };
+                    let event = if started {
+                        None
+                    } else {
+                        Some(store.append_event_transaction(
+                            thread.id.clone(),
+                            None,
+                            None,
+                            "thread.started".into(),
+                            json!({ "thread": thread }),
+                            EVENT_TRANSACTION_LOCK_TIMEOUT,
+                        )?)
+                    };
+                    binding.committed = true;
+                    write_json_atomic(&path, &binding)?;
+                    Ok((thread, event))
+                })
+            })
+            .await
+            .context("Runtime thread creation worker failed")??;
+            if let Some(event) = event {
+                let _ = self.event_tx.send(event);
+            }
+            return Ok(thread);
+        }
         self.store.save_thread(&thread)?;
         if let Err(error) = self
             .emit_event(

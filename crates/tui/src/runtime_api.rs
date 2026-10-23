@@ -1341,6 +1341,7 @@ fn default_runtime_capabilities() -> RuntimeCapabilities {
         account_model_owner: true,
         session_provider_keys: false,
         threads: true,
+        thread_create_idempotency: true,
         thread_shell_consent: true,
         turns: true,
         turn_operation_idempotency: true,
@@ -3371,7 +3372,13 @@ async fn create_thread(
             state.config_profile.as_deref(),
         )
         .await
-        .map_err(|e| ApiError::bad_request(e.to_string()))?;
+        .map_err(|e| {
+            if e.is::<crate::runtime_threads::RuntimeThreadCreateConflict>() {
+                ApiError::conflict(e.to_string())
+            } else {
+                ApiError::bad_request(e.to_string())
+            }
+        })?;
     Ok((StatusCode::CREATED, Json(thread)))
 }
 
