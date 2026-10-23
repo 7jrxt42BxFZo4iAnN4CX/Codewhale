@@ -121,7 +121,7 @@ impl CodewhaleClient {
         }
 
         if let Some(tool_choice) = request.tool_choice.as_ref() {
-            body["tool_choice"] = anthropic_tool_choice(tool_choice);
+            body["tool_choice"] = anthropic_tool_choice(tool_choice, &model);
         }
 
         // Thinking + effort shaping. MiniMax supports adaptive/disabled but
@@ -728,8 +728,27 @@ fn anthropic_model_rejects_sampling(model: &str) -> bool {
 }
 
 /// Convert the engine's `tool_choice` value (OpenAI-style string or object)
-/// to the Anthropic object form.
-fn anthropic_tool_choice(tool_choice: &Value) -> Value {
+/// to the Anthropic object form. The Messages API tool-use reference lists
+/// Opus 5.5, Sonnet 5.5, Fable 5.1 and Mythos 5.1 as answering `any`/`tool`
+/// with a 400 error, so those models fall back to the server default `auto`
+/// (`none` still works and is passed through unchanged).
+fn anthropic_tool_choice(tool_choice: &Value, model: &str) -> Value {
+    let lower = model.to_ascii_lowercase();
+    let rejects_forced = lower.contains("opus-5-5")
+        || lower.contains("sonnet-5-5")
+        || lower.contains("fable")
+        || lower.contains("mythos");
+    let forced = match tool_choice.as_str() {
+        Some("any" | "required") => true,
+        Some(name) => !matches!(name, "auto" | "none"),
+        None => matches!(
+            tool_choice.get("type").and_then(Value::as_str),
+            Some("any" | "required" | "tool" | "function")
+        ),
+    };
+    if forced && rejects_forced {
+        return json!({ "type": "auto" });
+    }
     match tool_choice.as_str() {
         Some("auto") => json!({ "type": "auto" }),
         Some("none") => json!({ "type": "none" }),
@@ -1477,9 +1496,12 @@ mod tests {
         assert!(body.get("thinking").is_none(), "off omits thinking: {body}");
         assert!(body.get("output_config").is_none());
 
-        // Haiku is not thinking-capable: no thinking, no effort.
+        // A model the reviewed catalog does not carry is not thinking-capable:
+        // no thinking, no effort. `claude-3-5-haiku-latest` (and Haiku 4.5,
+        // which the reviewed catalog now marks `reasoning: true`) are not
+        // interchangeable here.
         let body = client.build_anthropic_body(
-            &request_with("claude-haiku-4-5", Some("high"), None, None),
+            &request_with("claude-3-5-haiku-latest", Some("high"), None, None),
             true,
         );
         assert!(body.get("thinking").is_none(), "{body}");

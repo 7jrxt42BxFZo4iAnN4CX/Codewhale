@@ -8,7 +8,7 @@
       "label": "Anthropic",
       "endpoint": "https://api.anthropic.com",
       "wire": "anthropic-messages",
-      "defaultModel": "claude-sonnet-4-6",
+      "defaultModel": "claude-sonnet-5-5",
       "envVars": [
         "ANTHROPIC_API_KEY"
       ],
@@ -50,15 +50,15 @@
           "canonical": "anthropic/claude-opus-5-5"
         },
         {
-          "id": "claude-sonnet-4-6",
-          "default": true
+          "id": "claude-sonnet-4-6"
         },
         {
           "id": "claude-sonnet-5"
         },
         {
           "id": "claude-sonnet-5-5",
-          "canonical": "anthropic/claude-sonnet-5-5"
+          "canonical": "anthropic/claude-sonnet-5-5",
+          "default": true
         }
       ],
       "transport": "anthropic-messages"

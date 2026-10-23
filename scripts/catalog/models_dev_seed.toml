@@ -224,7 +224,7 @@ name = "Anthropic"
 api = "https://api.anthropic.com"
 npm = "@ai-sdk/anthropic"
 env = ["ANTHROPIC_API_KEY"]
-default = "claude-sonnet-4-6"
+default = "claude-sonnet-5-5"
 models = [
   "claude-sonnet-4-6",
   "claude-opus-4-8",

@@ -376,6 +376,95 @@ SEED_RENDER_COMMAND = "python3 scripts/catalog_models_dev.py seed render"
 # Seeded providers whose default legitimately differs from the descriptor
 # (id -> reason). Every other seeded default must match it exactly.
 SEED_DEFAULT_EXCEPTIONS: dict[str, str] = {}
+# Descriptors whose shipped default legitimately trails a newer stable upstream
+# release (descriptor id -> reason). `defaults audit` fails on any other
+# vendor default that is behind, so a stale default cannot ship silently.
+DEFAULT_AUDIT_REASONS: dict[str, str] = {
+    "openai": (
+        "OpenAI does not support normal tool calling for the GPT-6 family "
+        "(`gpt-6-sol`, `gpt-6.1-sol`, `gpt-6-luna`, `gpt-6-astra`) over Chat "
+        "Completions, which is this route's wire; the Responses-wire "
+        "`openai-codex` route defaults to `gpt-6.1-sol`."
+    ),
+    "sakana": (
+        "`sakana-namazu` is a separate, smaller line (262,144 context / 65,536 "
+        "output, $0.95/$4) rather than a successor to `fugu` (1,000,000 / "
+        "1,000,000, no published cost); `fugu` stays the general default."
+    ),
+    "meta": (
+        "Meta recommends `muse-spark-1.3` for new work and it stays selectable, "
+        "but `muse-spark-1.2` keeps its verified wire ID, tool support, 1M "
+        "context, 32K output and `none`-through-`xhigh` effort ladder "
+        "(docs/PROVIDERS.md)."
+    ),
+    "xai": (
+        "`grok-4.7` matches `grok-4.6` on window, modalities, tools, structured "
+        "output, reasoning ladder and price, but xAI documents no web-search "
+        "support for it yet and `grok-4.6` ships server-side web search "
+        "(docs/PROVIDERS.md)."
+    ),
+    "google": (
+        "`gemini-4-argon` is cheaper ($2/$10 against $2/$12) but publishes a "
+        "32,768-token output cap against `gemini-3.1-pro-preview`'s 65,536 and "
+        "omits the `xhigh`/`max` effort steps; the default moves once a live key "
+        "can verify the request shape."
+    ),
+}
+# Descriptors whose roster is the model author's own, so a newer release in it
+# means the default is behind. Every other descriptor is a marketplace or a
+# local runtime where the default is a curated choice, not a newest-wins fact.
+VENDOR_PROVIDERS: frozenset[str] = frozenset(
+    {
+        "anthropic",
+        "arcee",
+        "deepseek",
+        "deepseek-anthropic",
+        "google",
+        "longcat",
+        "meta",
+        "minimax",
+        "minimax-anthropic",
+        "mistral",
+        "moonshot",
+        "openai",
+        "openai-codex",
+        "qianfan",
+        "sakana",
+        "stepfun",
+        "xai",
+        "xiaomi-mimo",
+        "zai",
+    }
+)
+# Tokens that mark a row as a smaller/faster or non-stable release: newer than
+# the default, but not a replacement for it.
+VARIANT_TOKENS: frozenset[str] = frozenset(
+    {
+        "audio",
+        "beta",
+        "coder",
+        "distill",
+        "distilled",
+        "embed",
+        "embedding",
+        "experimental",
+        "fast",
+        "haiku",
+        "image",
+        "lite",
+        "max",
+        "micro",
+        "mini",
+        "nano",
+        "preview",
+        "reranker",
+        "small",
+        "tiny",
+        "tts",
+        "turbo",
+        "vision",
+    }
+)
 
 # Exactly the fields crates/config/src/models_dev.rs reads, in render order.
 PROVIDER_MODEL_FIELDS = (
@@ -914,20 +1003,148 @@ def read_json_file(path: Path) -> Any:
     return load_json_bytes(path.read_bytes(), str(path))
 
 
+def load_upstream_payload(
+    spec: dict[str, Any], snapshot: str | None = None
+) -> tuple[bytes, str, dict[str, Any]]:
+    """The pinned upstream document: snapshot, local file, then the spec URL."""
+    if snapshot:
+        raw = Path(snapshot).read_bytes()
+        source = f"file:{snapshot}"
+    else:
+        path_override = os.environ.get("CODEWHALE_MODELS_DEV_PATH", "").strip()
+        if path_override:
+            raw = Path(path_override).read_bytes()
+            source = f"file:{path_override}"
+        else:
+            url = os.environ.get("CODEWHALE_MODELS_DEV_URL", "").strip() or spec["source"]["url"]
+            raw = fetch_url(url)
+            source = f"url:{url}"
+    return raw, source, ensure_models_dev_shape(load_json_bytes(raw, source), source)
+
+
+def descriptor_entries(path: Path) -> list[dict[str, Any]]:
+    """Every shipped provider descriptor, in file order."""
+    document = read_json_file(path)
+    providers = document.get("providers")
+    if not isinstance(providers, list):
+        die(f"{path}: `providers` must be a list of provider descriptors")
+    return [entry for entry in providers if isinstance(entry, dict)]
+
+
+def variant_release(row: dict[str, Any]) -> bool:
+    """True for a smaller/faster or non-stable row that never replaces a default."""
+    text = f"{row.get('id') or ''} {row.get('name') or ''}".lower()
+    tokens = [token for token in re.split(r"[^a-z0-9]+", text) if token]
+    return any(token in VARIANT_TOKENS or token.startswith("flash") for token in tokens)
+
+
+def model_namespace(model_id: str) -> str:
+    """`author/model` rows are third-party on a reseller roster."""
+    return model_id.split("/", 1)[0].lower() if "/" in model_id else ""
+
+
+def newer_stable_rows(
+    roster: dict[str, Any], default_row: dict[str, Any]
+) -> list[tuple[str, dict[str, Any]]]:
+    """Roster rows released after the default that a default should track."""
+    released = default_row.get("release_date")
+    if not isinstance(released, str) or not released:
+        return []
+    namespace = model_namespace(str(default_row.get("id") or ""))
+    newer: list[tuple[str, dict[str, Any]]] = []
+    for model_id, row in roster.items():
+        if not isinstance(row, dict) or row is default_row:
+            continue
+        if row.get("status") in ("deprecated", "retired"):
+            continue
+        if row.get("type") not in (None, "language"):
+            continue
+        if model_namespace(model_id) != namespace:
+            continue
+        if model_id.lower().endswith("-latest"):
+            continue
+        if variant_release(row):
+            continue
+        date = row.get("release_date")
+        if isinstance(date, str) and date > released:
+            newer.append((model_id, row))
+    return sorted(newer, key=lambda item: str(item[1].get("release_date") or ""))
+
+
+def cmd_defaults_audit(args: argparse.Namespace) -> None:
+    spec = load_seed_spec(Path(args.spec))
+    raw, source, upstream = load_upstream_payload(spec, args.snapshot)
+    rosters = upstream.get("providers") or {}
+    print(f"upstream: {public_source_label(source)} sha256 {hashlib.sha256(raw).hexdigest()}")
+    print(
+        "rule: a vendor roster whose default has a newer stable release is a failure "
+        "unless DEFAULT_AUDIT_REASONS records why; marketplaces, local runtimes and "
+        "absent defaults are advisory"
+    )
+    stale: list[str] = []
+    reasoned: list[str] = []
+    advisory: list[str] = []
+    marketplace: list[str] = []
+    unchecked: list[str] = []
+    current = 0
+    for entry in descriptor_entries(Path(args.descriptors)):
+        pid = entry.get("id")
+        default_model = entry.get("default_model")
+        if not isinstance(pid, str) or not isinstance(default_model, str):
+            continue
+        if entry.get("retired"):
+            continue
+        upstream_pid = entry.get("catalog_source_id") or entry.get("catalog_id") or pid
+        roster = (rosters.get(upstream_pid) or {}).get("models")
+        if not isinstance(roster, dict):
+            unchecked.append(f"{pid}: {upstream_pid} not in upstream catalog")
+            continue
+        found = find_row(roster, default_model)
+        if found is None:
+            advisory.append(f"{pid}: {default_model} not in {upstream_pid} roster")
+            continue
+        newer = newer_stable_rows(roster, found[1])
+        if not newer:
+            current += 1
+            continue
+        names = [model_id for model_id, _ in newer]
+        shown = ", ".join(names[:3]) + (f" (+{len(names) - 3} more)" if len(names) > 3 else "")
+        line = f"{pid}: {default_model} -> {shown}"
+        reason = DEFAULT_AUDIT_REASONS.get(pid)
+        if pid not in VENDOR_PROVIDERS:
+            marketplace.append(f"{pid}: {default_model} (curated pick; {len(names)} newer rows)")
+        elif reason is None:
+            stale.append(line)
+        else:
+            reasoned.append(f"{line} [{reason}]")
+    for label, lines in (
+        ("STALE", stale),
+        ("reasoned", reasoned),
+        ("advisory", advisory),
+        ("curated", marketplace),
+        ("unchecked", unchecked),
+    ):
+        for line in lines:
+            print(f"{label:9} {line}")
+    print(
+        f"{current} defaults are the newest stable row in their own roster; "
+        f"{len(stale)} stale, {len(reasoned)} reasoned, {len(advisory)} advisory, "
+        f"{len(marketplace)} curated, {len(unchecked)} unchecked"
+    )
+    if stale:
+        die(
+            "stale provider defaults:\n  "
+            + "\n  ".join(stale)
+            + "\n  align each default (descriptor + seed) or record a DEFAULT_AUDIT_REASONS reason"
+        )
+
+
 def cmd_seed_lock(args: argparse.Namespace) -> None:
     spec = load_seed_spec(Path(args.spec))
     drift = seed_descriptor_default_errors(spec, Path(args.descriptors))
     if drift:
         die("descriptor/seed default drift:\n  " + "\n  ".join(drift))
-    path_override = os.environ.get("CODEWHALE_MODELS_DEV_PATH", "").strip()
-    if path_override:
-        raw = Path(path_override).read_bytes()
-        source = f"file:{path_override}"
-    else:
-        url = os.environ.get("CODEWHALE_MODELS_DEV_URL", "").strip() or spec["source"]["url"]
-        raw = fetch_url(url)
-        source = f"url:{url}"
-    upstream = ensure_models_dev_shape(load_json_bytes(raw, source), source)
+    raw, source, upstream = load_upstream_payload(spec)
     fetched_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     new_lock, errors = build_seed_lock(spec, upstream, raw, fetched_at)
     lock_path = Path(args.lock)
@@ -1077,6 +1294,23 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--descriptors", default=str(DESCRIPTORS_ASSET))
     lock.set_defaults(func=cmd_seed_lock)
     render.set_defaults(func=cmd_seed_render)
+
+    defaults = sub.add_parser(
+        "defaults", help="Audit shipped provider defaults against a live catalog"
+    )
+    defaults_sub = defaults.add_subparsers(dest="defaults_cmd", required=True)
+    audit = defaults_sub.add_parser(
+        "audit",
+        help="Fail when a vendor default trails a newer stable release it should track",
+    )
+    audit.add_argument(
+        "--snapshot",
+        default=None,
+        help="Read catalog JSON from this file instead of the network",
+    )
+    audit.add_argument("--spec", default=str(SEED_SPEC))
+    audit.add_argument("--descriptors", default=str(DESCRIPTORS_ASSET))
+    audit.set_defaults(func=cmd_defaults_audit)
     return p
 
 

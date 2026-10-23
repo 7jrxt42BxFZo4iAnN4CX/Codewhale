@@ -28,6 +28,14 @@ and independent workflow steps can continue after another child fails.
 
 ### Latest fixes
 
+- `python3 scripts/catalog_models_dev.py defaults audit` is the release step
+  that staleness needs: it re-reads a models.dev payload and reports every
+  provider whose shipped default a newer stable row in its own namespace has
+  overtaken, failing the run on an unrecorded one and taking an explained hold
+  from `DEFAULT_AUDIT_REASONS` otherwise. And the `anthropic` default moves to
+  `claude-sonnet-5-5`: a forced `tool_choice` is now softened to `auto` for
+  Opus 5.5 and Sonnet 5.5, which reject it, instead of being sent and refused.
+
 - The model picker can be read one provider at a time. `Sort: Provider` now
   prints a provider header for each block instead of one flat run of names,
   and `⇧T` narrows the list to one provider at a time and clears on the next
@@ -896,8 +904,7 @@ and independent workflow steps can continue after another child fails.
 - The model catalog now carries current models from Anthropic, Google and
   Meta. Anthropic: `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`
   and `claude-fable-5-1`; the Auto router's cheap tier and the Scout companion
-  stay on `claude-haiku-4-5`. The default stays `claude-sonnet-4-6`, because
-  Codewhale does not yet apply the 5.5 models' request rules, and no default
+  stay on `claude-haiku-4-5`. The `anthropic` default moves to `claude-sonnet-5-5`, and no default
   uses `claude-sonnet-4-5`, which retires on 2026-11-30. OpenAI's GPT-6
   family (`gpt-6-sol`, `gpt-6.1-sol`, `gpt-6-luna` and `gpt-6-astra`) is left
   out of the direct route because OpenAI does not support normal tool calling

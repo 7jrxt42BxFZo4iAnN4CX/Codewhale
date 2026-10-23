@@ -174,10 +174,15 @@ and a stale *default* breaks the request. Two mechanisms now carry the duty:
   lock the spec no longer references. Nothing offline can know a model
   shipped, so this report is the review step, not a gate.
 
-Honest limit: the hermetic guard catches descriptor↔seed disagreement, and
-neither it nor CI can catch "upstream shipped a newer model that we still
-default to an older one." That gap is closed only by reading the
-default-freshness block before a release.
+- **Release-time default audit.** `defaults audit` re-reads a models.dev
+  payload (the fetched snapshot, or `--snapshot PATH`) and lists each provider
+  whose default a newer stable row of its own namespace has overtaken. An
+  unrecorded one fails the run; a deliberate hold is recorded with its reason
+  in `DEFAULT_AUDIT_REASONS`, and a curated or marketplace route is advisory.
+
+Honest limit: the hermetic guard catches descriptor↔seed disagreement. Neither
+it nor CI can tell that a vendor shipped a model, so the report above is the
+release step, not a gate.
 
 ---
 
