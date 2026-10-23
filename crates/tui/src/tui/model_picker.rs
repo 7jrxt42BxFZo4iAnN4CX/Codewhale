@@ -1504,6 +1504,7 @@ impl ModelPickerView {
             .collect();
         keys.sort();
         keys.dedup();
+        keys.sort_by_cached_key(|key| (provider_filter_label(key).to_lowercase(), key.clone()));
         keys
     }
 
@@ -4470,7 +4471,14 @@ impl ModelPickerView {
             footer_hints.push(ActionHint::new("⇧A", view_action));
             footer_hints.push(ActionHint::new(
                 "⇧T",
-                tr(self.locale, MessageId::RouteProviderLabel),
+                match self.provider_filter.as_deref() {
+                    Some(filter) => format!(
+                        "{}: {}",
+                        tr(self.locale, MessageId::RouteProviderLabel),
+                        provider_filter_label(filter)
+                    ),
+                    None => tr(self.locale, MessageId::RouteProviderLabel).into_owned(),
+                },
             ));
         }
         if inner.height >= 16 {

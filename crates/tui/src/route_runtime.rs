@@ -562,6 +562,32 @@ pub(crate) fn resolve_declared_model_candidate(
     )
 }
 
+fn live_route_resolver(
+    provider: ProviderKind,
+    identity: Option<&str>,
+    base_url: &str,
+) -> (RouteResolver, bool, bool) {
+    let identity = identity
+        .map(str::trim)
+        .filter(|identity| !identity.is_empty());
+    let unkeyed_custom = provider == ProviderKind::Custom && identity.is_none();
+    if matches!(provider, ProviderKind::OpenaiCodex) || unkeyed_custom {
+        return (RouteResolver::new(), false, false);
+    }
+    let identity = identity.unwrap_or_else(|| provider.as_str());
+    let catalog = crate::provider_lake::runtime_catalog_resolver_for_identity(
+        provider,
+        Some(identity),
+        base_url,
+        crate::provider_catalog_live::status_for_route(provider, identity, base_url),
+    );
+    (
+        catalog.resolver,
+        catalog.endpoint_catalog_authoritative,
+        true,
+    )
+}
+
 /// The picker-facing variant: a browsing row of a custom table passes the
 /// row's own `wire` dialect so the receipt's protocol label matches the wire
 /// a turn would mint.
@@ -575,8 +601,9 @@ pub(crate) fn resolve_declared_model_candidate_with_wire_override(
     models: &[codewhale_config::catalog::configured::ConfiguredModel],
     wire_override: Option<codewhale_config::provider::WireFormat>,
 ) -> Result<RouteCandidateResolution, String> {
-    let resolver =
-        RouteResolver::new().with_configured_models(models, identity, provider, base_url);
+    let (resolver, endpoint_catalog_authoritative, resolver_reads_models_dev) =
+        live_route_resolver(provider, Some(identity), base_url);
+    let resolver = resolver.with_configured_models(models, identity, provider, base_url);
     resolve_route_candidate_with_catalog_resolver(
         provider,
         Some(model),
@@ -587,8 +614,8 @@ pub(crate) fn resolve_declared_model_candidate_with_wire_override(
         None,
         None,
         &resolver,
-        false,
-        false,
+        endpoint_catalog_authoritative,
+        resolver_reads_models_dev,
         wire_override,
     )
 }
@@ -626,6 +653,11 @@ pub(crate) fn resolve_route_candidate_with_context_metadata_and_wire_override(
     provider_reported_context: Option<ProviderReportedKimiCodeContext>,
     wire_override: Option<codewhale_config::provider::WireFormat>,
 ) -> Result<RouteCandidateResolution, String> {
+    let resolver_base_url = base_url_override
+        .clone()
+        .unwrap_or_else(|| provider.provider().default_base_url().to_string());
+    let (resolver, endpoint_catalog_authoritative, resolver_reads_models_dev) =
+        live_route_resolver(provider, None, &resolver_base_url);
     resolve_route_candidate_with_catalog_resolver(
         provider,
         model_selector,
@@ -635,9 +667,9 @@ pub(crate) fn resolve_route_candidate_with_context_metadata_and_wire_override(
         model_context_windows,
         provider_reported_context,
         None,
-        &RouteResolver::new(),
-        false,
-        false,
+        &resolver,
+        endpoint_catalog_authoritative,
+        resolver_reads_models_dev,
         wire_override,
     )
 }
