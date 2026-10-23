@@ -424,7 +424,7 @@ owner = "crates/tui/src/plugins"
 [[feature]]
 id = "computer-use"
 name = "Computer Use"
-summary = "Reviewed app control with one app approval for background and explicit foreground selection, fresh targets, observation diffs and bounded action batches."
+summary = "Reviewed app control: one approval covers background and foreground use, fresh targets, bounded batches."
 status = "experimental"
 surfaces = { tui = "preview", api = "preview" }
 docs = "docs/PLUGIN_BUNDLES.md"
@@ -477,7 +477,7 @@ owner = "crates/tui/src/lsp"
 [[feature]]
 id = "runtime-api"
 name = "Runtime API"
-summary = "Local API: replay-safe thread creation, events, approvals, project trust, workspace leases, Unix store sockets and scoped device tokens."
+summary = "Local API: replay-safe thread creation, events, approvals, project trust, workspace leases, Unix sockets, device tokens."
 status = "stable"
 surfaces = { api = "stable" }
 docs = "docs/RUNTIME_API.md"
@@ -486,7 +486,7 @@ owner = "crates/tui/src/runtime_api.rs"
 [[feature]]
 id = "runtime-provider-keys"
 name = "Runtime provider keys"
-summary = "Runtime API provider keys support durable storage or process-only memory, with a session-only policy that disables stored credential fallback."
+summary = "Runtime API provider keys: durable or process-only memory, with a session-only policy that disables stored fallback."
 status = "stable"
 surfaces = { api = "stable" }
 since = "0.10.2"
