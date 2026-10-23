@@ -5596,12 +5596,13 @@ impl Engine {
         if clear || status != GoalStatus::Active {
             self.cancel_scheduled_goal_continuation(true).await;
         }
-        let was_active = self
+        let (was_active, had_objective) = self
             .config
             .goal_state
             .lock()
-            .map(|state| state.is_active())
-            .unwrap_or(false);
+            .map(|state| (state.is_active(), state.objective().is_some()))
+            .unwrap_or((false, false));
+        let had_goal = had_objective || self.config.goal_objective.is_some();
         let snapshot = match self.config.goal_state.lock() {
             Ok(mut state) => {
                 if clear {
@@ -5661,9 +5662,11 @@ impl Engine {
                 GoalStatus::Blocked => "blocked",
             }
         };
-        let _ = self
-            .send_event(Event::status(format!("Goal {label}.")))
-            .await;
+        if !clear || had_goal {
+            let _ = self
+                .send_event(Event::status(format!("Goal {label}.")))
+                .await;
+        }
 
         // Resuming an objective-bearing goal restarts the runtime's own
         // steering loop — the kickoff is a continuation turn, never a raw
