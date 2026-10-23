@@ -7,6 +7,7 @@ use codewhale_models::{DEFAULT_COMPACTION_TOKEN_THRESHOLD, context_window_for_mo
 
 /// Safe ordinary API request cap across provider routes.
 const API_MAX_OUTPUT_TOKENS: u32 = 65_536;
+pub(crate) const MIN_REQUEST_OUTPUT_TOKENS: u64 = 128;
 
 /// Automatic request cap on a first-party DeepSeek route at max reasoning
 /// effort, where DeepSeek documents 128K instead of the 64K thinking-mode
@@ -530,7 +531,7 @@ pub(crate) fn route_admission_input_ceiling(
         ContextBudget::new_with_input_limit(
             u64::from(route_context_window_tokens(provider, model, route_limits)),
             0,
-            crate::tools::subagent::budget_handback::MIN_HAND_BACK_OUTPUT,
+            MIN_REQUEST_OUTPUT_TOKENS,
             route_input_limit_tokens(route_limits).map(u64::from),
         )
         .input_budget_ceiling

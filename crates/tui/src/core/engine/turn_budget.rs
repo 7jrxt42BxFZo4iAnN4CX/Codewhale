@@ -23,11 +23,6 @@ use std::time::{Duration, Instant};
 /// No model-step limit unless the caller configures one. This is the
 /// compatibility representation, not a ceiling checked at `u32::MAX`.
 pub const DEFAULT_MAX_MODEL_STEPS: u32 = u32::MAX;
-/// Smallest accepted model-step ceiling. One step still lets the model
-/// answer once.
-pub const MIN_MAX_MODEL_STEPS: u32 = 1;
-/// Largest explicitly configured model-step ceiling.
-pub const MAX_MAX_MODEL_STEPS: u32 = 100_000;
 
 /// No per-turn wall-clock limit unless the caller configures one.
 ///
@@ -39,11 +34,6 @@ pub const MAX_MAX_MODEL_STEPS: u32 = 100_000;
 /// a human approval decision is excluded (see
 /// [`TurnWallClock::begin_human_wait`]).
 pub const DEFAULT_TURN_WALL_CLOCK: Duration = Duration::MAX;
-/// Smallest accepted per-turn wall-clock budget. Below this a single slow
-/// reasoning request would trip the budget before it could finish.
-pub const MIN_TURN_WALL_CLOCK_SECS: u64 = 30;
-/// Largest accepted per-turn wall-clock budget (24 hours).
-pub const MAX_TURN_WALL_CLOCK_SECS: u64 = 86_400;
 
 /// Default per-step cap on accumulated streamed content, in bytes.
 /// Preserves the pre-R1 hard-coded value; R1 only makes it overridable.
@@ -130,30 +120,25 @@ pub fn resolve_stream_retry_limits(
 
 /// Resolve a configured model-step ceiling.
 ///
-/// `None` and `0` select the uncapped default. Explicit positive values
-/// clamp into `MIN_MAX_MODEL_STEPS..=MAX_MAX_MODEL_STEPS`. Resolve raw input
-/// once: passing an already resolved default back as an explicit value
-/// would incorrectly install the maximum configurable ceiling.
+/// `None` and `0` select the uncapped default. Positive values are preserved;
+/// `u32::MAX` remains the compatibility representation for no limit.
 #[must_use]
 pub fn resolve_max_model_steps(raw: Option<u32>) -> u32 {
     match raw {
         None | Some(0) => DEFAULT_MAX_MODEL_STEPS,
-        Some(value) => value.clamp(MIN_MAX_MODEL_STEPS, MAX_MAX_MODEL_STEPS),
+        Some(value) => value,
     }
 }
 
 /// Resolve a configured per-turn wall-clock budget.
 ///
 /// `None` and `0` select the uncapped default ([`DEFAULT_TURN_WALL_CLOCK`]).
-/// Explicit positive values, in seconds, clamp into
-/// `MIN_TURN_WALL_CLOCK_SECS..=MAX_TURN_WALL_CLOCK_SECS`.
+/// Explicit positive values, in seconds, are preserved.
 #[must_use]
 pub fn resolve_turn_wall_clock(raw: Option<u64>) -> Duration {
     match raw {
         None | Some(0) => DEFAULT_TURN_WALL_CLOCK,
-        Some(value) => {
-            Duration::from_secs(value.clamp(MIN_TURN_WALL_CLOCK_SECS, MAX_TURN_WALL_CLOCK_SECS))
-        }
+        Some(value) => Duration::from_secs(value),
     }
 }
 
@@ -279,16 +264,16 @@ mod tests {
         assert_eq!(resolve_max_model_steps(None), DEFAULT_MAX_MODEL_STEPS);
         assert_eq!(resolve_max_model_steps(Some(0)), DEFAULT_MAX_MODEL_STEPS);
         assert_eq!(DEFAULT_MAX_MODEL_STEPS, u32::MAX);
-        const { assert!(MAX_MAX_MODEL_STEPS < u32::MAX) };
+        assert_eq!(resolve_max_model_steps(Some(u32::MAX)), u32::MAX);
     }
 
     #[test]
-    fn model_step_ceiling_is_overridable_and_clamped() {
+    fn model_step_ceiling_preserves_the_owner_limit() {
         assert_eq!(resolve_max_model_steps(Some(7)), 7);
         assert_eq!(resolve_max_model_steps(Some(1)), 1);
         assert_eq!(
-            resolve_max_model_steps(Some(u32::MAX)),
-            MAX_MAX_MODEL_STEPS,
+            resolve_max_model_steps(Some(200_000)),
+            200_000,
             "explicit positive overrides retain the configured ceiling"
         );
     }
@@ -298,7 +283,7 @@ mod tests {
         assert_eq!(resolve_turn_wall_clock(None), DEFAULT_TURN_WALL_CLOCK);
         assert_eq!(resolve_turn_wall_clock(Some(0)), DEFAULT_TURN_WALL_CLOCK);
         let mut clock = TurnWallClock::start(resolve_turn_wall_clock(None));
-        clock.rewind_for_test(Duration::from_secs(10 * MAX_TURN_WALL_CLOCK_SECS));
+        clock.rewind_for_test(Duration::from_secs(10 * 24 * 60 * 60));
         assert!(!clock.exhausted(), "the default never stops a turn");
     }
 
@@ -315,15 +300,12 @@ mod tests {
     }
 
     #[test]
-    fn turn_wall_clock_is_overridable_and_clamped() {
+    fn turn_wall_clock_preserves_the_owner_limit() {
         assert_eq!(resolve_turn_wall_clock(Some(120)), Duration::from_secs(120));
-        assert_eq!(
-            resolve_turn_wall_clock(Some(1)),
-            Duration::from_secs(MIN_TURN_WALL_CLOCK_SECS)
-        );
+        assert_eq!(resolve_turn_wall_clock(Some(1)), Duration::from_secs(1));
         assert_eq!(
             resolve_turn_wall_clock(Some(u64::MAX)),
-            Duration::from_secs(MAX_TURN_WALL_CLOCK_SECS)
+            Duration::from_secs(u64::MAX)
         );
     }
 

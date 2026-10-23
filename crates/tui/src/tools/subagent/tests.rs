@@ -3454,10 +3454,10 @@ fn explore_prompt_orients_before_searching() {
 }
 
 #[test]
-fn explore_prompt_is_quick_bounded_and_read_only() {
+fn explore_prompt_requires_evidence_and_read_only_scope() {
     let prompt = FleetRole::Scout.system_prompt();
-    assert!(prompt.contains("Default to `EFFORT: quick`"));
-    assert!(prompt.contains("stop at decisive evidence, not at a number"));
+    assert!(prompt.contains("Gather enough evidence to answer the assigned question reliably"));
+    assert!(prompt.contains("there is no per-agent call cap to save"));
     assert!(prompt.contains("strictly read-only"));
     assert!(prompt.contains("ALREADY_KNOWN"));
     assert!(prompt.contains("STOP_CONDITION"));
@@ -3476,7 +3476,7 @@ fn explore_prompt_is_quick_bounded_and_read_only() {
 #[test]
 fn implementer_prompt_is_not_forced_into_explorer_cap() {
     let prompt = FleetRole::Builder.system_prompt();
-    assert!(prompt.contains("not limited to a scout-style 3-5 tool-call cap"));
+    assert!(!prompt.contains("3-5 tool-call cap"));
     assert!(prompt.contains("Checkpoint before expanding scope"));
     assert!(!prompt.contains("Default to `EFFORT: quick`"));
 }
@@ -4535,7 +4535,7 @@ fn test_parse_spawn_request_rejects_out_of_range_max_depth() {
     let input = json!({
         "name": "review.parser",
         "prompt": "inspect parser",
-        "max_depth": ceiling + 1
+        "max_depth": u64::from(ceiling) + 1
     });
     let err = parse_spawn_request(&input).expect_err("max_depth should be capped at schema range");
     assert!(
@@ -5429,7 +5429,7 @@ fn test_child_max_spawn_depth_request_cannot_widen_inherited_budget() {
     // Root chose an absolute max_spawn_depth of 2; a nested child at
     // spawn_depth 2 requesting the global ceiling must stay bounded by 2,
     // not jump to the ceiling. Before the fix this returned
-    // MAX_SPAWN_DEPTH_CEILING (8), letting the descendant keep spawning past
+    // MAX_SPAWN_DEPTH_CEILING, letting the descendant keep spawning past
     // the root's chosen boundary.
     assert_eq!(
         child_max_spawn_depth_for_spawn(2, 2, Some(codewhale_config::MAX_SPAWN_DEPTH_CEILING)),
@@ -6077,8 +6077,6 @@ fn subagent_tool_schemas_advertise_real_type_and_role_vocabulary() {
         "expected_artifact",
         "fork_context",
         "limit",
-        "max_output_tokens",
-        "max_steps",
         "message",
         "model",
         "model_strength",
@@ -6090,7 +6088,6 @@ fn subagent_tool_schemas_advertise_real_type_and_role_vocabulary() {
         "thinking",
         "type",
         "until",
-        "wall_time_secs",
         "worktree",
         "write_authority",
         "write_roots",
@@ -6103,6 +6100,9 @@ fn subagent_tool_schemas_advertise_real_type_and_role_vocabulary() {
     );
     for unadvertised in [
         "max_depth",
+        "max_steps",
+        "wall_time_secs",
+        "max_output_tokens",
         "workspace_policy",
         "worktree_base",
         "worktree_branch",
@@ -10048,7 +10048,7 @@ async fn api_timeout_preserves_checkpoint_and_returns_needs_input_without_parkin
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 3,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -10223,7 +10223,7 @@ async fn subagent_retries_api_timeout_before_succeeding() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 3,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -10423,7 +10423,7 @@ async fn subagent_retries_transient_provider_header_timeout_before_succeeding() 
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 3,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -10498,7 +10498,7 @@ async fn subagent_rate_limit_exhaustion_interrupts_with_checkpoint() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 3,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -13059,9 +13059,9 @@ fn child_launch_error_names_provider_model_and_route_source() {
 }
 
 #[test]
-fn subagent_runtime_default_max_depth_is_three() {
+fn subagent_runtime_default_depth_does_not_restrict_delegation() {
     // Sanity-check the constant — bumping it without a test means stale docs.
-    assert_eq!(DEFAULT_MAX_SPAWN_DEPTH, 3);
+    assert_eq!(DEFAULT_MAX_SPAWN_DEPTH, u32::MAX);
 }
 
 #[test]
@@ -13135,6 +13135,7 @@ async fn rate_limit_pause_blocks_subagent_spawn() {
         Arc::clone(&manager),
         runtime,
         false,
+        None,
         None,
     )
     .await
@@ -15619,6 +15620,7 @@ pub(crate) fn stub_runtime() -> SubAgentRuntime {
         parent_agent_id: None,
         parent_completion_tx: None,
         fork_context: None,
+        workflow_response_schema: None,
         parent_mode: AppMode::Agent,
         auto_review_policy: std::sync::Arc::new(
             crate::core::authority::auto_review::AutoReviewPolicy::default(),
@@ -16842,7 +16844,7 @@ async fn run_subagent_task_claims_before_delivery_and_then_finalizes() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 1,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -16931,7 +16933,7 @@ async fn cancellation_wins_task_race_but_still_fans_in_exactly_once() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 1,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -17145,7 +17147,7 @@ async fn fatal_provider_failure_mid_run_parks_a_continuable_checkpoint() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 4,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -17250,7 +17252,7 @@ async fn fatal_provider_failure_mid_run_parks_a_continuable_checkpoint() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 2,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: resume_input_rx,
         launch_gate: None,
@@ -17423,7 +17425,7 @@ async fn repeated_typed_denials_stop_worker_as_failed_not_budget() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 20,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -17521,7 +17523,7 @@ async fn non_retryable_provider_failure_fans_in_to_every_terminal_sink() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 1,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -18226,22 +18228,19 @@ fn format_step_counter_keeps_concrete_budgets() {
 }
 
 #[test]
-fn child_step_override_wins_and_clamps_to_hard_ceiling() {
+fn child_step_limits_preserve_the_owners_allowance() {
     assert_eq!(resolve_max_steps(FleetRole::Scout, None, None), 0);
     assert_eq!(resolve_max_steps(FleetRole::Scout, Some(0), Some(90)), 90);
     assert_eq!(resolve_max_steps(FleetRole::Builder, Some(7), None), 7);
     assert_eq!(
         resolve_max_steps(FleetRole::Worker, Some(u32::MAX), None),
-        MAX_SUBAGENT_STEPS
+        u32::MAX
     );
-    // #5324: `[subagents] default_max_steps` is the configured fallback when
-    // the call carries no explicit budget; an explicit value still wins and
-    // the hard ceiling still clamps the configured default.
     assert_eq!(resolve_max_steps(FleetRole::Scout, None, Some(90)), 90);
     assert_eq!(resolve_max_steps(FleetRole::Builder, Some(7), Some(90)), 7);
     assert_eq!(
         resolve_max_steps(FleetRole::Worker, None, Some(u32::MAX)),
-        MAX_SUBAGENT_STEPS
+        u32::MAX
     );
 }
 
@@ -18331,7 +18330,7 @@ async fn launch_gate_queues_extra_direct_children() {
             fork_context: false,
             started_at: Instant::now(),
             max_steps: 1,
-            wall_time: DEFAULT_CHILD_WALL_TIME,
+            wall_time: None,
             wall_ceiling_ms: None,
             input_rx,
             launch_gate: gate,
@@ -18491,7 +18490,7 @@ async fn queued_turn_owned_child_parks_without_a_false_start_transition() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 1,
-        wall_time: Duration::from_secs(5),
+        wall_time: Some(Duration::from_secs(5)),
         wall_ceiling_ms: None,
         input_rx,
         launch_gate: Some(Arc::clone(&gate)),
@@ -18640,7 +18639,7 @@ async fn launch_gate_wait_that_never_ends_fails_as_never_started() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 1,
-        wall_time: WALL_TIME,
+        wall_time: Some(WALL_TIME),
         wall_ceiling_ms: None,
         input_rx,
         launch_gate: Some(Arc::clone(&gate)),
@@ -18928,7 +18927,7 @@ pub(super) async fn run_incomplete_response_worker(
         fork_context: false,
         started_at: Instant::now(),
         max_steps,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -19148,7 +19147,7 @@ async fn spawn_budget_capped_worker_with_pause(
         fork_context: false,
         started_at: Instant::now(),
         max_steps,
-        wall_time,
+        wall_time: Some(wall_time),
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -19354,7 +19353,7 @@ async fn worker_compacts_past_its_context_window_and_keeps_working() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 20,
-        wall_time: Duration::from_secs(300),
+        wall_time: Some(Duration::from_secs(300)),
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -19448,7 +19447,7 @@ async fn worker_is_not_stranded_by_transient_global_rate_limit_window() {
         60,
         40,
         4,
-        DEFAULT_CHILD_WALL_TIME,
+        Duration::from_secs(30),
         Some(Duration::from_secs(30)),
     )
     .await;
@@ -22578,17 +22577,23 @@ async fn runtime_surface_hardening_resume_from_requires_descendant_control() {
     };
     runtime.parent_agent_id = Some(caller);
     let input = json!({"prompt": "Continue the completed work", "resume_from": source});
-    let err =
-        spawn_subagent_from_input(input.clone(), manager.clone(), runtime.clone(), false, None)
-            .await
-            .expect_err("a sibling is not a continuation source");
+    let err = spawn_subagent_from_input(
+        input.clone(),
+        manager.clone(),
+        runtime.clone(),
+        false,
+        None,
+        None,
+    )
+    .await
+    .expect_err("a sibling is not a continuation source");
     assert!(
         err.to_string().contains("only its own descendants"),
         "{err}"
     );
 
     runtime.parent_agent_id = None;
-    let err = spawn_subagent_from_input(input, manager.clone(), runtime, false, None)
+    let err = spawn_subagent_from_input(input, manager.clone(), runtime, false, None, None)
         .await
         .expect_err("root still observes the workspace boundary");
     assert!(err.to_string().contains("different workspace"), "{err}");
@@ -24078,6 +24083,7 @@ async fn refuse_worktree_spawn_and_expect_cleanup(repo: &tempfile::TempDir, bran
         Arc::clone(&manager),
         runtime,
         false,
+        None,
         None,
     )
     .await
@@ -26854,7 +26860,7 @@ mod readonly_shell_6015 {
             fork_context: false,
             started_at: Instant::now(),
             max_steps: 20,
-            wall_time: DEFAULT_CHILD_WALL_TIME,
+            wall_time: None,
             wall_ceiling_ms: None,
             input_rx,
             launch_gate: None,
@@ -27293,7 +27299,7 @@ async fn late_launch_permit_still_gets_the_full_work_budget() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 1,
-        wall_time: WALL_TIME,
+        wall_time: Some(WALL_TIME),
         wall_ceiling_ms: None,
         input_rx,
         launch_gate: Some(Arc::clone(&gate)),

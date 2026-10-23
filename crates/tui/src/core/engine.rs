@@ -3640,494 +3640,502 @@ impl Engine {
     }
 
     #[allow(clippy::too_many_lines)]
-    async fn run_owned(mut self) -> Option<Result<crate::tools::subagent::SubAgentResult>> {
-        let mut child_result = None;
-        // RuntimeThreadManager owns durable turn claims and installs a thread
-        // id in runtime services. Only the interactive TUI may autonomously
-        // create a new turn while the engine is otherwise idle; a hosted
-        // engine must wait for its host to claim and explicitly dispatch the
-        // next turn so events cannot be attached to the wrong durable record.
-        let host_managed_turns = self.host_managed_turns();
-        // #6184: supervise the turn heartbeat from outside the turn future,
-        // so a wedged await still produces a log line, a stall record and a
-        // status event. The watchdog exits once the event channel closes.
-        let stall_watchdog = turn_heartbeat::spawn_turn_stall_watchdog(
-            Arc::clone(&self.turn_heartbeat),
-            self.tx_event.clone(),
-        );
-        let _stall_watchdog_guard = turn_heartbeat::AbortOnDrop(stall_watchdog);
-        if let Err(error) = self
-            .start_mcp_session_boot(McpConnectRefresh::IfChanged)
-            .await
-        {
-            tracing::debug!(
-                "MCP session boot failed: {}",
-                crate::mcp::format_mcp_error_for_display(&error)
+    fn run_owned(
+        mut self,
+    ) -> futures_util::future::BoxFuture<
+        'static,
+        Option<Result<crate::tools::subagent::SubAgentResult>>,
+    > {
+        Box::pin(async move {
+            let mut child_result = None;
+            // RuntimeThreadManager owns durable turn claims and installs a thread
+            // id in runtime services. Only the interactive TUI may autonomously
+            // create a new turn while the engine is otherwise idle; a hosted
+            // engine must wait for its host to claim and explicitly dispatch the
+            // next turn so events cannot be attached to the wrong durable record.
+            let host_managed_turns = self.host_managed_turns();
+            // #6184: supervise the turn heartbeat from outside the turn future,
+            // so a wedged await still produces a log line, a stall record and a
+            // status event. The watchdog exits once the event channel closes.
+            let stall_watchdog = turn_heartbeat::spawn_turn_stall_watchdog(
+                Arc::clone(&self.turn_heartbeat),
+                self.tx_event.clone(),
             );
-        }
-        self.mcp_pool_slot
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .handoff = None;
-
-        loop {
-            let Some(input) = self.next_run_input(host_managed_turns).await else {
-                break;
-            };
-
-            // Runtime posture updates publish through shared typed state
-            // before attempting their best-effort wake-up. If the mailbox was
-            // already full, its next queued operation is the wake-up: apply
-            // the latest authority before doing any work under an obsolete
-            // policy.
-            if matches!(&input, EngineRunInput::Operation(_)) {
-                self.apply_pending_runtime_authority().await;
+            let _stall_watchdog_guard = turn_heartbeat::AbortOnDrop(stall_watchdog);
+            if let Err(error) = self
+                .start_mcp_session_boot(McpConnectRefresh::IfChanged)
+                .await
+            {
+                tracing::debug!(
+                    "MCP session boot failed: {}",
+                    crate::mcp::format_mcp_error_for_display(&error)
+                );
             }
+            self.mcp_pool_slot
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .handoff = None;
 
-            match input {
-                EngineRunInput::SubAgentCompletion(completion) => {
-                    self.handle_idle_subagent_completion(completion).await;
+            loop {
+                let Some(input) = self.next_run_input(host_managed_turns).await else {
+                    break;
+                };
+
+                // Runtime posture updates publish through shared typed state
+                // before attempting their best-effort wake-up. If the mailbox was
+                // already full, its next queued operation is the wake-up: apply
+                // the latest authority before doing any work under an obsolete
+                // policy.
+                if matches!(&input, EngineRunInput::Operation(_)) {
+                    self.apply_pending_runtime_authority().await;
                 }
-                EngineRunInput::McpBootUpdate(update) => {
-                    self.apply_mcp_boot_update(update).await;
-                }
-                EngineRunInput::McpSupervisorUpdate(update) => {
-                    self.apply_mcp_supervisor_update(update).await;
-                }
-                EngineRunInput::ShellCompletionWake => {
-                    self.handle_idle_shell_completion_wake().await;
-                }
-                EngineRunInput::Operation(op) => match *op {
-                    Op::SendMessage(spec) => {
-                        self.admitted_turn_control = {
-                            let mut controls = self
-                                .turn_controls
-                                .lock()
-                                .unwrap_or_else(std::sync::PoisonError::into_inner);
-                            let control = controls.pending.pop_front();
-                            controls.active = control.clone();
-                            control
-                        };
-                        // Keep the send-message state machine out of this
-                        // event-loop future's stack frame.
-                        if self.child_host.is_some() {
-                            match Box::pin(self.handle_child_send_message(spec)).await {
-                                Ok(None) => {}
-                                Ok(Some(result)) => {
-                                    child_result = Some(Ok(result));
-                                    break;
-                                }
-                                Err(error) => {
-                                    child_result = Some(Err(error));
-                                    break;
-                                }
-                            }
-                        } else {
-                            Box::pin(self.handle_send_message(spec)).await;
-                        }
+
+                match input {
+                    EngineRunInput::SubAgentCompletion(completion) => {
+                        self.handle_idle_subagent_completion(completion).await;
                     }
-                    Op::ContinueGoal {
-                        dynamic_tools,
-                        engine_schedule_id,
-                    } => {
-                        // Cancellation can race the delay expiry after the
-                        // coalesced token entered the mailbox. Re-check the
-                        // same turn token before consuming the schedule so an
-                        // interrupt at the boundary never starts a provider
-                        // request and is not erased by the next turn's reset.
-                        if engine_schedule_id.is_some() && self.cancel_token.is_cancelled() {
-                            self.cancel_scheduled_goal_continuation(true).await;
-                            continue;
-                        }
-                        let Some(dynamic_tools) = self
-                            .take_scheduled_goal_continuation(engine_schedule_id, dynamic_tools)
-                        else {
-                            continue;
-                        };
-                        // Host-injected tokens carry their own quiet period:
-                        // host-managed sessions never run the engine-owned
-                        // scheduler, so this arm is their only continuation
-                        // dispatch site and must honor
-                        // [goal] continuation_delay_seconds itself before
-                        // dispatching. The wait is biased-cancellable (Esc,
-                        // steer, or host cancel always wins over a racing
-                        // expiry), and the live goal is re-read below only
-                        // after it, so a pause/clear/complete/blocked landing
-                        // during the quiet period cancels the pass and
-                        // failures never continue. Engine-owned tokens (Some)
-                        // already waited out ready_at in the scheduler and
-                        // keep those semantics untouched.
-                        if engine_schedule_id.is_none()
-                            && crate::goal_loop::await_continuation_wait(
-                                crate::goal_loop::continuation_wait(
-                                    self.config.goal_continuation_delay_seconds,
-                                ),
-                                &self.cancel_token,
-                            )
-                            .await
-                                == crate::goal_loop::ContinuationWaitOutcome::Cancelled
-                        {
-                            continue;
-                        }
-                        // Status controls queued while the previous turn was
-                        // running are processed before this operation, and a
-                        // host-injected quiet period has now elapsed. Re-read
-                        // the live goal so pause/clear/complete/blocked can
-                        // cancel a stale continuation without starting a turn.
-                        let (content, goal_snapshot) = match self.goal_continuation_if_active() {
-                            GoalContinuationAction::Inactive => continue,
-                            GoalContinuationAction::Dispatch { content, snapshot } => {
-                                (content, *snapshot)
+                    EngineRunInput::McpBootUpdate(update) => {
+                        self.apply_mcp_boot_update(update).await;
+                    }
+                    EngineRunInput::McpSupervisorUpdate(update) => {
+                        self.apply_mcp_supervisor_update(update).await;
+                    }
+                    EngineRunInput::ShellCompletionWake => {
+                        self.handle_idle_shell_completion_wake().await;
+                    }
+                    EngineRunInput::Operation(op) => match *op {
+                        Op::SendMessage(spec) => {
+                            self.admitted_turn_control = {
+                                let mut controls = self
+                                    .turn_controls
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                                let control = controls.pending.pop_front();
+                                controls.active = control.clone();
+                                control
+                            };
+                            // Keep the send-message state machine out of this
+                            // event-loop future's stack frame.
+                            if self.child_host.is_some() {
+                                match Box::pin(self.handle_child_send_message(spec)).await {
+                                    Ok(None) => {}
+                                    Ok(Some(result)) => {
+                                        child_result = Some(Ok(result));
+                                        break;
+                                    }
+                                    Err(error) => {
+                                        child_result = Some(Err(error));
+                                        break;
+                                    }
+                                }
+                            } else {
+                                Box::pin(self.handle_send_message(spec)).await;
                             }
-                            GoalContinuationAction::Stopped { message, reason } => {
-                                self.pause_goal_continuation(reason, message).await;
+                        }
+                        Op::ContinueGoal {
+                            dynamic_tools,
+                            engine_schedule_id,
+                        } => {
+                            // Cancellation can race the delay expiry after the
+                            // coalesced token entered the mailbox. Re-check the
+                            // same turn token before consuming the schedule so an
+                            // interrupt at the boundary never starts a provider
+                            // request and is not erased by the next turn's reset.
+                            if engine_schedule_id.is_some() && self.cancel_token.is_cancelled() {
+                                self.cancel_scheduled_goal_continuation(true).await;
                                 continue;
                             }
-                        };
-                        // Budget and inactive-state decisions are route
-                        // independent. Resolve the live route only for a real
-                        // dispatch so an exhausted goal still reaches its
-                        // truthful terminal state when provider config drifted.
-                        let route = match self.current_runtime_route() {
-                            Ok(route) => route,
-                            Err(err) => {
-                                let message = format!(
-                                    "Goal continuation blocked because its provider route is no longer valid: {err}. Fix the route, then resume the goal."
-                                );
-                                let _ = self.send_event(Event::error(ErrorEnvelope::fatal_auth(format!(
+                            let Some(dynamic_tools) = self.take_scheduled_goal_continuation(
+                                engine_schedule_id,
+                                dynamic_tools,
+                            ) else {
+                                continue;
+                            };
+                            // Host-injected tokens carry their own quiet period:
+                            // host-managed sessions never run the engine-owned
+                            // scheduler, so this arm is their only continuation
+                            // dispatch site and must honor
+                            // [goal] continuation_delay_seconds itself before
+                            // dispatching. The wait is biased-cancellable (Esc,
+                            // steer, or host cancel always wins over a racing
+                            // expiry), and the live goal is re-read below only
+                            // after it, so a pause/clear/complete/blocked landing
+                            // during the quiet period cancels the pass and
+                            // failures never continue. Engine-owned tokens (Some)
+                            // already waited out ready_at in the scheduler and
+                            // keep those semantics untouched.
+                            if engine_schedule_id.is_none()
+                                && crate::goal_loop::await_continuation_wait(
+                                    crate::goal_loop::continuation_wait(
+                                        self.config.goal_continuation_delay_seconds,
+                                    ),
+                                    &self.cancel_token,
+                                )
+                                .await
+                                    == crate::goal_loop::ContinuationWaitOutcome::Cancelled
+                            {
+                                continue;
+                            }
+                            // Status controls queued while the previous turn was
+                            // running are processed before this operation, and a
+                            // host-injected quiet period has now elapsed. Re-read
+                            // the live goal so pause/clear/complete/blocked can
+                            // cancel a stale continuation without starting a turn.
+                            let (content, goal_snapshot) = match self.goal_continuation_if_active()
+                            {
+                                GoalContinuationAction::Inactive => continue,
+                                GoalContinuationAction::Dispatch { content, snapshot } => {
+                                    (content, *snapshot)
+                                }
+                                GoalContinuationAction::Stopped { message, reason } => {
+                                    self.pause_goal_continuation(reason, message).await;
+                                    continue;
+                                }
+                            };
+                            // Budget and inactive-state decisions are route
+                            // independent. Resolve the live route only for a real
+                            // dispatch so an exhausted goal still reaches its
+                            // truthful terminal state when provider config drifted.
+                            let route = match self.current_runtime_route() {
+                                Ok(route) => route,
+                                Err(err) => {
+                                    let message = format!(
+                                        "Goal continuation blocked because its provider route is no longer valid: {err}. Fix the route, then resume the goal."
+                                    );
+                                    let _ = self.send_event(Event::error(ErrorEnvelope::fatal_auth(format!(
                                         "Goal continuation stopped because its provider route is no longer valid: {err}"
                                     ))))
                                     .await;
-                                self.block_goal_continuation(message).await;
-                                continue;
-                            }
-                        };
+                                    self.block_goal_continuation(message).await;
+                                    continue;
+                                }
+                            };
 
-                        let _ = self
-                            .handle_send_message(TurnSpec {
-                                profile_constitution: None,
-                                content,
-                                mode: self.current_mode,
-                                route: Box::new(route),
-                                compaction: Box::new(self.config.compaction.clone()),
-                                initial_routed_usage: Box::new(
-                                    crate::cost_status::RuntimeUsageBatch::default(),
-                                ),
-                                goal_objective: goal_snapshot.objective,
-                                goal_token_budget: goal_snapshot.token_budget,
-                                goal_status: GoalStatus::Active,
-                                reasoning_effort: self.session.reasoning_effort.clone(),
-                                reasoning_effort_auto: self.session.reasoning_effort_auto,
-                                auto_model: self.session.auto_model,
-                                allow_shell: self.session.allow_shell,
-                                trust_mode: self.session.trust_mode,
-                                auto_approve: self.session.auto_approve,
-                                approval_mode: self.session.approval_mode,
-                                translation_enabled: self.config.translation_enabled,
-                                allowed_tools: self.config.allowed_tools.clone(),
-                                dynamic_tools,
-                                hook_executor: self.config.hook_executor.clone(),
-                                verbosity: self.config.verbosity.clone(),
-                                provenance: UserInputProvenance::Runtime,
-                                images: Vec::new(),
-                                max_output_tokens: None,
-                                // Engine-scheduled goal continuation: no host
-                                // submission to correlate with.
-                                submission_id: None,
-                            })
-                            .await;
-                    }
-                    Op::RunShellCommand {
-                        command,
-                        mode,
-                        allow_shell,
-                        trust_mode,
-                        auto_approve,
-                        approval_mode,
-                    } => {
-                        self.handle_run_shell_command(
+                            let _ = self
+                                .handle_send_message(TurnSpec {
+                                    profile_constitution: None,
+                                    content,
+                                    mode: self.current_mode,
+                                    route: Box::new(route),
+                                    compaction: Box::new(self.config.compaction.clone()),
+                                    initial_routed_usage: Box::new(
+                                        crate::cost_status::RuntimeUsageBatch::default(),
+                                    ),
+                                    goal_objective: goal_snapshot.objective,
+                                    goal_token_budget: goal_snapshot.token_budget,
+                                    goal_status: GoalStatus::Active,
+                                    reasoning_effort: self.session.reasoning_effort.clone(),
+                                    reasoning_effort_auto: self.session.reasoning_effort_auto,
+                                    auto_model: self.session.auto_model,
+                                    allow_shell: self.session.allow_shell,
+                                    trust_mode: self.session.trust_mode,
+                                    auto_approve: self.session.auto_approve,
+                                    approval_mode: self.session.approval_mode,
+                                    translation_enabled: self.config.translation_enabled,
+                                    allowed_tools: self.config.allowed_tools.clone(),
+                                    dynamic_tools,
+                                    hook_executor: self.config.hook_executor.clone(),
+                                    verbosity: self.config.verbosity.clone(),
+                                    provenance: UserInputProvenance::Runtime,
+                                    images: Vec::new(),
+                                    max_output_tokens: None,
+                                    // Engine-scheduled goal continuation: no host
+                                    // submission to correlate with.
+                                    submission_id: None,
+                                })
+                                .await;
+                        }
+                        Op::RunShellCommand {
                             command,
                             mode,
                             allow_shell,
                             trust_mode,
                             auto_approve,
                             approval_mode,
-                        )
-                        .await;
-                    }
-                    Op::SetGoalStatus {
-                        status,
-                        clear,
-                        goal_id,
-                    } => {
-                        self.handle_set_goal_status(status, clear, goal_id).await;
-                    }
-                    Op::SetGoalObjective {
-                        objective,
-                        token_budget,
-                        goal_id,
-                    } => {
-                        self.handle_set_goal_objective(objective, token_budget, goal_id)
-                            .await;
-                    }
-                    Op::PreviewOutboundRequest {
-                        inputs,
-                        json,
-                        base_prompt_only,
-                    } => {
-                        // Pure inspection: no turn is started, no message is
-                        // added, no engine state is written, and no provider
-                        // request is sent. Facts that are not exactly knowable
-                        // come back as typed unavailable sections rather than
-                        // as an error or a guess.
-                        let rendered = if base_prompt_only {
-                            crate::request_manifest::exact_base_prompt_only()
-                        } else {
-                            let manifest = self.build_request_manifest(*inputs).await;
-                            if json {
-                                manifest.to_json()
-                            } else {
-                                manifest.render()
-                            }
-                        };
-                        let _ = self
-                            .send_event(Event::RequestManifestReady { rendered })
-                            .await;
-                    }
-                    Op::ListSubAgents => {
-                        // #3803: the sidebar refresh is a read-only snapshot.
-                        // Render from a read lock; only take the write lock to
-                        // run cleanup on a bounded cadence, so a UI refresh storm
-                        // during a sub-agent fanout no longer contends for the
-                        // write lock (against completions/persistence) on every
-                        // request. Cleanup still auto-cancels stale agents.
-                        let active_session_id = self.session.id.clone();
-                        self.touch_workers_with_running_shells().await;
-                        let due = {
-                            let manager = self.subagent_manager.read().await;
-                            manager.cleanup_due(
-                                crate::tools::subagent::SUBAGENT_LIST_CLEANUP_MIN_INTERVAL,
+                        } => {
+                            self.handle_run_shell_command(
+                                command,
+                                mode,
+                                allow_shell,
+                                trust_mode,
+                                auto_approve,
+                                approval_mode,
                             )
-                        };
-                        let event = if due {
-                            let mut manager = self.subagent_manager.write().await;
-                            manager.cleanup_for_session(
-                                &active_session_id,
-                                Duration::from_secs(60 * 60),
-                            );
-                            agent_list_event(&manager, &active_session_id)
-                        } else {
-                            let manager = self.subagent_manager.read().await;
-                            agent_list_event(&manager, &active_session_id)
-                        };
-                        // #3802: use non-blocking send — this is a refresh event
-                        // that can safely be dropped when the channel is full.
-                        // The next drain cycle will re-request the list.
-                        if let Err(_e) = self.tx_event.try_send(event) {
-                            tracing::debug!(
-                                "Event channel full; dropping ListSubAgents refresh (will retry next drain)"
-                            );
+                            .await;
                         }
-                    }
-                    Op::GetSubAgentSettlement { tx } => {
-                        let snapshot = self.subagent_settlement_snapshot().await;
-                        if let Some(tx) = tx
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .take()
-                        {
-                            let _ = tx.send(snapshot);
+                        Op::SetGoalStatus {
+                            status,
+                            clear,
+                            goal_id,
+                        } => {
+                            self.handle_set_goal_status(status, clear, goal_id).await;
                         }
-                    }
-                    Op::CancelSubAgent { agent_id } => {
-                        let active_session_id = self.session.id.clone();
-                        let cancelled = self
-                            .subagent_manager
-                            .write()
-                            .await
-                            .cancel_agent_for_session(&active_session_id, &agent_id);
-                        let result = match cancelled {
-                            Ok(snapshot) => {
-                                let snapshot = crate::tools::subagent::settle_requested_child(
-                                    &self.subagent_manager,
-                                    snapshot,
-                                )
+                        Op::SetGoalObjective {
+                            objective,
+                            token_budget,
+                            goal_id,
+                        } => {
+                            self.handle_set_goal_objective(objective, token_budget, goal_id)
                                 .await;
-                                // F4: cancelling keeps the work — inventory and
-                                // checkpoint what the child left, off the lock.
-                                crate::tools::subagent::preserve_cancelled_work(
-                                    &self.subagent_manager,
-                                    snapshot,
-                                )
+                        }
+                        Op::PreviewOutboundRequest {
+                            inputs,
+                            json,
+                            base_prompt_only,
+                        } => {
+                            // Pure inspection: no turn is started, no message is
+                            // added, no engine state is written, and no provider
+                            // request is sent. Facts that are not exactly knowable
+                            // come back as typed unavailable sections rather than
+                            // as an error or a guess.
+                            let rendered = if base_prompt_only {
+                                crate::request_manifest::exact_base_prompt_only()
+                            } else {
+                                let manifest = self.build_request_manifest(*inputs).await;
+                                if json {
+                                    manifest.to_json()
+                                } else {
+                                    manifest.render()
+                                }
+                            };
+                            let _ = self
+                                .send_event(Event::RequestManifestReady { rendered })
                                 .await;
+                        }
+                        Op::ListSubAgents => {
+                            // #3803: the sidebar refresh is a read-only snapshot.
+                            // Render from a read lock; only take the write lock to
+                            // run cleanup on a bounded cadence, so a UI refresh storm
+                            // during a sub-agent fanout no longer contends for the
+                            // write lock (against completions/persistence) on every
+                            // request. Cleanup still auto-cancels stale agents.
+                            let active_session_id = self.session.id.clone();
+                            self.touch_workers_with_running_shells().await;
+                            let due = {
                                 let manager = self.subagent_manager.read().await;
-                                Ok(agent_list_event(&manager, &active_session_id))
+                                manager.cleanup_due(
+                                    crate::tools::subagent::SUBAGENT_LIST_CLEANUP_MIN_INTERVAL,
+                                )
+                            };
+                            let event = if due {
+                                let mut manager = self.subagent_manager.write().await;
+                                manager.cleanup_for_session(
+                                    &active_session_id,
+                                    Duration::from_secs(60 * 60),
+                                );
+                                agent_list_event(&manager, &active_session_id)
+                            } else {
+                                let manager = self.subagent_manager.read().await;
+                                agent_list_event(&manager, &active_session_id)
+                            };
+                            // #3802: use non-blocking send — this is a refresh event
+                            // that can safely be dropped when the channel is full.
+                            // The next drain cycle will re-request the list.
+                            if let Err(_e) = self.tx_event.try_send(event) {
+                                tracing::debug!(
+                                    "Event channel full; dropping ListSubAgents refresh (will retry next drain)"
+                                );
                             }
-                            Err(err) => Err(err),
-                        };
-                        match result {
-                            Ok(event) => {
-                                if let Err(_e) = self.tx_event.try_send(event) {
-                                    tracing::debug!(
-                                        "Event channel full; dropping CancelSubAgent refresh"
-                                    );
+                        }
+                        Op::GetSubAgentSettlement { tx } => {
+                            let snapshot = self.subagent_settlement_snapshot().await;
+                            if let Some(tx) = tx
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .take()
+                            {
+                                let _ = tx.send(snapshot);
+                            }
+                        }
+                        Op::CancelSubAgent { agent_id } => {
+                            let active_session_id = self.session.id.clone();
+                            let cancelled = self
+                                .subagent_manager
+                                .write()
+                                .await
+                                .cancel_agent_for_session(&active_session_id, &agent_id);
+                            let result = match cancelled {
+                                Ok(snapshot) => {
+                                    let snapshot = crate::tools::subagent::settle_requested_child(
+                                        &self.subagent_manager,
+                                        snapshot,
+                                    )
+                                    .await;
+                                    // F4: cancelling keeps the work — inventory and
+                                    // checkpoint what the child left, off the lock.
+                                    crate::tools::subagent::preserve_cancelled_work(
+                                        &self.subagent_manager,
+                                        snapshot,
+                                    )
+                                    .await;
+                                    let manager = self.subagent_manager.read().await;
+                                    Ok(agent_list_event(&manager, &active_session_id))
+                                }
+                                Err(err) => Err(err),
+                            };
+                            match result {
+                                Ok(event) => {
+                                    if let Err(_e) = self.tx_event.try_send(event) {
+                                        tracing::debug!(
+                                            "Event channel full; dropping CancelSubAgent refresh"
+                                        );
+                                    }
+                                }
+                                Err(err) => {
+                                    let _ = self.tx_event.try_send(Event::error(
+                                        ErrorEnvelope::transient(format!(
+                                            "Failed to cancel sub-agent {agent_id}: {err}"
+                                        )),
+                                    ));
                                 }
                             }
-                            Err(err) => {
-                                let _ =
-                                    self.tx_event
-                                        .try_send(Event::error(ErrorEnvelope::transient(format!(
-                                            "Failed to cancel sub-agent {agent_id}: {err}"
-                                        ))));
+                        }
+                        Op::FollowUpSubAgent { agent_id, text } => {
+                            let active_session_id = self.session.id.clone();
+                            let runtime = self.off_turn_subagent_runtime();
+                            let manager_handle = Arc::clone(&self.subagent_manager);
+                            let (outcome, refresh) = {
+                                let mut manager = self.subagent_manager.write().await;
+                                let outcome = manager
+                                    .continue_child_from_user_for_session(
+                                        &active_session_id,
+                                        manager_handle,
+                                        runtime,
+                                        &agent_id,
+                                        &text,
+                                    )
+                                    .map_err(|err| err.to_string());
+                                (outcome, agent_list_event(&manager, &active_session_id))
+                            };
+                            let _ = self
+                                .send_event(Event::SubAgentFollowUp {
+                                    owner_session_id: active_session_id,
+                                    agent_id,
+                                    outcome,
+                                })
+                                .await;
+                            if let Err(_e) = self.tx_event.try_send(refresh) {
+                                tracing::debug!(
+                                    "Event channel full; dropping FollowUpSubAgent refresh"
+                                );
                             }
                         }
-                    }
-                    Op::FollowUpSubAgent { agent_id, text } => {
-                        let active_session_id = self.session.id.clone();
-                        let runtime = self.off_turn_subagent_runtime();
-                        let manager_handle = Arc::clone(&self.subagent_manager);
-                        let (outcome, refresh) = {
-                            let mut manager = self.subagent_manager.write().await;
-                            let outcome = manager
-                                .continue_child_from_user_for_session(
-                                    &active_session_id,
-                                    manager_handle,
-                                    runtime,
-                                    &agent_id,
-                                    &text,
-                                )
-                                .map_err(|err| err.to_string());
-                            (outcome, agent_list_event(&manager, &active_session_id))
-                        };
-                        let _ = self
-                            .send_event(Event::SubAgentFollowUp {
-                                owner_session_id: active_session_id,
-                                agent_id,
-                                outcome,
-                            })
-                            .await;
-                        if let Err(_e) = self.tx_event.try_send(refresh) {
-                            tracing::debug!(
-                                "Event channel full; dropping FollowUpSubAgent refresh"
-                            );
+                        Op::ChangeMode { .. } => {
+                            // The mailbox payload may predate a newer posture that
+                            // was published while the channel was full. Apply the
+                            // single live snapshot so a stale queued ChangeMode
+                            // can never roll authority backward.
+                            let authority = self.runtime_authority_snapshot();
+                            self.apply_runtime_authority(authority).await;
                         }
-                    }
-                    Op::ChangeMode { .. } => {
-                        // The mailbox payload may predate a newer posture that
-                        // was published while the channel was full. Apply the
-                        // single live snapshot so a stale queued ChangeMode
-                        // can never roll authority backward.
-                        let authority = self.runtime_authority_snapshot();
-                        self.apply_runtime_authority(authority).await;
-                    }
-                    Op::SetModel {
-                        model,
-                        mode: _,
-                        route_limits,
-                    } => {
-                        let identity = self.api_provider_identity.clone();
-                        // SetModel carries no route: the endpoint stays the
-                        // one the current client is built on.
-                        let endpoint = self.active_route_endpoint.clone();
-                        self.forget_input_bill_if_route_changes(
-                            identity
-                                .as_ref()
-                                .map_or("unavailable", |identity| identity.key.as_str()),
-                            identity
-                                .as_ref()
-                                .and_then(|identity| identity.persisted_id()),
-                            endpoint.as_ref(),
-                            &model,
+                        Op::SetModel {
+                            model,
+                            mode: _,
                             route_limits,
-                        );
-                        self.session.auto_model = model.trim().eq_ignore_ascii_case("auto");
-                        self.session.model = model;
-                        self.config.model.clone_from(&self.session.model);
-                        self.active_route_limits = route_limits;
-                        // This lightweight operation carries no executable
-                        // route candidate, so old provider/model capability
-                        // facts must not bleed into the new model.
-                        self.active_route_capabilities =
-                            codewhale_config::route::RouteCapabilities::default();
-                        self.refresh_system_prompt_with_reason("model");
-                        self.emit_session_updated().await;
-                        let _ = self
-                            .send_event(Event::status(format!(
-                                "Model set to: {}",
-                                self.session.model
-                            )))
-                            .await;
-                    }
-                    Op::SetCompaction { config } => {
-                        // Hosts resend the compaction config on every route,
-                        // model or session sync, and those syncs move the
-                        // model, window and thresholds without the user
-                        // touching the switch. Only the switch is news: an
-                        // acknowledgement for anything else used to overwrite
-                        // a real error in the footer (U1) and the "Resumed:"
-                        // receipt a session restore had just shown.
-                        let enabled = config.enabled;
-                        let switched = self.config.compaction.enabled != enabled;
-                        self.config.compaction = config;
-                        if switched {
+                        } => {
+                            let identity = self.api_provider_identity.clone();
+                            // SetModel carries no route: the endpoint stays the
+                            // one the current client is built on.
+                            let endpoint = self.active_route_endpoint.clone();
+                            self.forget_input_bill_if_route_changes(
+                                identity
+                                    .as_ref()
+                                    .map_or("unavailable", |identity| identity.key.as_str()),
+                                identity
+                                    .as_ref()
+                                    .and_then(|identity| identity.persisted_id()),
+                                endpoint.as_ref(),
+                                &model,
+                                route_limits,
+                            );
+                            self.session.auto_model = model.trim().eq_ignore_ascii_case("auto");
+                            self.session.model = model;
+                            self.config.model.clone_from(&self.session.model);
+                            self.active_route_limits = route_limits;
+                            // This lightweight operation carries no executable
+                            // route candidate, so old provider/model capability
+                            // facts must not bleed into the new model.
+                            self.active_route_capabilities =
+                                codewhale_config::route::RouteCapabilities::default();
+                            self.refresh_system_prompt_with_reason("model");
+                            self.emit_session_updated().await;
                             let _ = self
                                 .send_event(Event::status(format!(
-                                    "Make room automatically: {}",
-                                    if enabled { "on" } else { "off" }
+                                    "Model set to: {}",
+                                    self.session.model
                                 )))
                                 .await;
                         }
-                    }
-                    Op::SetStreamChunkTimeout { timeout_secs } => {
-                        self.config.stream_chunk_timeout = Duration::from_secs(timeout_secs);
-                        let _ = self
-                            .send_event(Event::status(format!(
-                                "Stream chunk timeout set to {timeout_secs}s"
-                            )))
-                            .await;
-                    }
-                    Op::SetSubagentRuntimeConfig {
-                        enabled,
-                        max_subagents,
-                        launch_concurrency,
-                        max_spawn_depth,
-                        api_timeout_secs,
-                        heartbeat_timeout_secs,
-                    } => {
-                        self.config.subagents_enabled = enabled;
-                        self.config.max_subagents =
-                            max_subagents.clamp(1, crate::config::MAX_SUBAGENTS);
-                        self.config.launch_concurrency =
-                            launch_concurrency.clamp(1, self.config.max_subagents);
-                        self.config.max_spawn_depth =
-                            max_spawn_depth.min(codewhale_config::MAX_SPAWN_DEPTH_CEILING);
-                        self.config.subagent_api_timeout = Duration::from_secs(api_timeout_secs);
-                        self.config.subagent_heartbeat_timeout =
-                            Duration::from_secs(heartbeat_timeout_secs);
-                        let launch_gate_applied =
-                            if let Some(limits) = self.subagent_execution_limits.as_mut() {
-                                limits.update(
-                                    self.config.max_subagents,
-                                    self.config.max_admitted_subagents,
-                                    self.config.subagent_heartbeat_timeout,
-                                    self.config.launch_concurrency,
-                                );
-                                true
+                        Op::SetCompaction { config } => {
+                            // Hosts resend the compaction config on every route,
+                            // model or session sync, and those syncs move the
+                            // model, window and thresholds without the user
+                            // touching the switch. Only the switch is news: an
+                            // acknowledgement for anything else used to overwrite
+                            // a real error in the footer (U1) and the "Resumed:"
+                            // receipt a session restore had just shown.
+                            let enabled = config.enabled;
+                            let switched = self.config.compaction.enabled != enabled;
+                            self.config.compaction = config;
+                            if switched {
+                                let _ = self
+                                    .send_event(Event::status(format!(
+                                        "Make room automatically: {}",
+                                        if enabled { "on" } else { "off" }
+                                    )))
+                                    .await;
+                            }
+                        }
+                        Op::SetStreamChunkTimeout { timeout_secs } => {
+                            self.config.stream_chunk_timeout = Duration::from_secs(timeout_secs);
+                            let _ = self
+                                .send_event(Event::status(format!(
+                                    "Stream chunk timeout set to {timeout_secs}s"
+                                )))
+                                .await;
+                        }
+                        Op::SetSubagentRuntimeConfig {
+                            enabled,
+                            max_subagents,
+                            launch_concurrency,
+                            max_spawn_depth,
+                            api_timeout_secs,
+                            heartbeat_timeout_secs,
+                        } => {
+                            self.config.subagents_enabled = enabled;
+                            self.config.max_subagents =
+                                max_subagents.clamp(1, crate::config::MAX_SUBAGENTS);
+                            self.config.launch_concurrency =
+                                launch_concurrency.clamp(1, self.config.max_subagents);
+                            self.config.max_spawn_depth = max_spawn_depth;
+                            self.config.subagent_api_timeout =
+                                Duration::from_secs(api_timeout_secs);
+                            self.config.subagent_heartbeat_timeout =
+                                Duration::from_secs(heartbeat_timeout_secs);
+                            let launch_gate_applied =
+                                if let Some(limits) = self.subagent_execution_limits.as_mut() {
+                                    limits.update(
+                                        self.config.max_subagents,
+                                        self.config.max_admitted_subagents,
+                                        self.config.subagent_heartbeat_timeout,
+                                        self.config.launch_concurrency,
+                                    );
+                                    true
+                                } else {
+                                    let mut manager = self.subagent_manager.write().await;
+                                    manager.update_runtime_limits(
+                                        self.config.max_subagents,
+                                        self.config.max_admitted_subagents,
+                                        self.config.subagent_heartbeat_timeout,
+                                        self.config.launch_concurrency,
+                                    )
+                                };
+                            let launch_note = if launch_gate_applied {
+                                ""
                             } else {
-                                let mut manager = self.subagent_manager.write().await;
-                                manager.update_runtime_limits(
-                                    self.config.max_subagents,
-                                    self.config.max_admitted_subagents,
-                                    self.config.subagent_heartbeat_timeout,
-                                    self.config.launch_concurrency,
-                                )
+                                "; launch_concurrency takes full effect after active sub-agents finish or the session restarts"
                             };
-                        let launch_note = if launch_gate_applied {
-                            ""
-                        } else {
-                            "; launch_concurrency takes full effect after active sub-agents finish or the session restarts"
-                        };
-                        let _ = self.send_event(Event::status(format!(
+                            let _ = self.send_event(Event::status(format!(
                                 "Sub-agent runtime updated: enabled={enabled}, max_subagents={}, launch_concurrency={}, max_depth={}{}",
                                 self.config.max_subagents,
                                 self.config.launch_concurrency,
@@ -4135,258 +4143,259 @@ impl Engine {
                                 launch_note
                             )))
                             .await;
-                    }
-                    Op::SetFleetRoster { roster } => {
-                        self.config.fleet_roster = roster;
-                        let _ = self
-                            .send_event(Event::status(
-                                "Fleet roster refreshed for subsequent turns".to_string(),
-                            ))
-                            .await;
-                    }
-                    Op::SyncSession {
-                        session_id,
-                        messages,
-                        system_prompt,
-                        system_prompt_override,
-                        model,
-                        workspace,
-                        mode,
-                    } => {
-                        let plugin_workspace_changed =
-                            self.plugin_registry.workspace() != workspace.as_path();
-                        let previous_session_id = self.session.id.clone();
-                        let next_session_id = if let Some(session_id) = session_id {
-                            session_id
-                        } else if messages.is_empty() && system_prompt.is_none() {
-                            uuid::Uuid::new_v4().to_string()
-                        } else {
-                            previous_session_id.clone()
-                        };
-                        let closed_session_id = self.install_synced_session_id(next_session_id);
-                        // SyncSession installs a conversation's identity; an id
-                        // change IS a conversation boundary in this runtime —
-                        // callers must pass their own conversation id for
-                        // same-conversation re-syncs. A boundary in the same
-                        // process does not rebuild the sub-agent manager, so the
-                        // previous conversation's live children and write claims
-                        // must be finalized here or they keep gating writers in
-                        // the new conversation (#5372). Same-session reloads
-                        // keep their id and are deliberately left untouched.
-                        if let Some(closed_session_id) = closed_session_id {
-                            let finalized = self
-                                .subagent_manager
-                                .write()
-                                .await
-                                .finalize_session_close_for_session(&closed_session_id);
-                            crate::tools::subagent::settle_requested_children_for_session(
-                                &self.subagent_manager,
-                                &closed_session_id,
-                                None,
-                            )
-                            .await;
-                            if finalized > 0 {
-                                tracing::info!(
-                                    target: "subagent",
-                                    finalized,
-                                    "finalized sub-agent fleet for closed session"
-                                );
-                            }
                         }
-                        self.restore_session_history(
+                        Op::SetFleetRoster { roster } => {
+                            self.config.fleet_roster = roster;
+                            let _ = self
+                                .send_event(Event::status(
+                                    "Fleet roster refreshed for subsequent turns".to_string(),
+                                ))
+                                .await;
+                        }
+                        Op::SyncSession {
+                            session_id,
                             messages,
                             system_prompt,
                             system_prompt_override,
-                        );
-                        self.session.auto_model = model.trim().eq_ignore_ascii_case("auto");
-                        self.session.model = model;
-                        self.session.workspace = workspace.clone();
-                        self.current_mode = mode;
-                        self.config.model.clone_from(&self.session.model);
-                        self.config.workspace = workspace.clone();
-                        if plugin_workspace_changed {
-                            self.plugin_registry =
-                                self.plugin_registry.rediscover_for_workspace(&workspace);
-                            self.config.plugin_registry = Some(Arc::clone(&self.plugin_registry));
-                            // A pool may contain plugin servers and authority
-                            // receipts from the previous workspace snapshot.
-                            self.drop_mcp_pool();
-                            if let Some(attachment) = &self.extension_host {
-                                attachment.set_plugins(Arc::clone(&self.plugin_registry));
-                                self.plugin_registry = attachment.plugin_view();
-                                attachment.sync_in_background();
+                            model,
+                            workspace,
+                            mode,
+                        } => {
+                            let plugin_workspace_changed =
+                                self.plugin_registry.workspace() != workspace.as_path();
+                            let previous_session_id = self.session.id.clone();
+                            let next_session_id = if let Some(session_id) = session_id {
+                                session_id
+                            } else if messages.is_empty() && system_prompt.is_none() {
+                                uuid::Uuid::new_v4().to_string()
+                            } else {
+                                previous_session_id.clone()
+                            };
+                            let closed_session_id = self.install_synced_session_id(next_session_id);
+                            // SyncSession installs a conversation's identity; an id
+                            // change IS a conversation boundary in this runtime —
+                            // callers must pass their own conversation id for
+                            // same-conversation re-syncs. A boundary in the same
+                            // process does not rebuild the sub-agent manager, so the
+                            // previous conversation's live children and write claims
+                            // must be finalized here or they keep gating writers in
+                            // the new conversation (#5372). Same-session reloads
+                            // keep their id and are deliberately left untouched.
+                            if let Some(closed_session_id) = closed_session_id {
+                                let finalized = self
+                                    .subagent_manager
+                                    .write()
+                                    .await
+                                    .finalize_session_close_for_session(&closed_session_id);
+                                crate::tools::subagent::settle_requested_children_for_session(
+                                    &self.subagent_manager,
+                                    &closed_session_id,
+                                    None,
+                                )
+                                .await;
+                                if finalized > 0 {
+                                    tracing::info!(
+                                        target: "subagent",
+                                        finalized,
+                                        "finalized sub-agent fleet for closed session"
+                                    );
+                                }
                             }
-                        }
-                        let ctx =
-                            crate::project_context::load_project_context_with_parents(&workspace);
-                        self.session.project_context = if ctx.has_instructions() {
-                            Some(ctx)
-                        } else {
-                            None
-                        };
-                        self.session.rebuild_working_set();
-                        self.reconcile_restored_work_bindings().await;
-                        if self.mcp_pool.is_none()
-                            && let Err(error) = self
-                                .start_mcp_session_boot(McpConnectRefresh::IfChanged)
-                                .await
-                        {
-                            tracing::debug!(
-                                "MCP session boot failed: {}",
-                                crate::mcp::format_mcp_error_for_display(&error)
+                            self.restore_session_history(
+                                messages,
+                                system_prompt,
+                                system_prompt_override,
                             );
+                            self.session.auto_model = model.trim().eq_ignore_ascii_case("auto");
+                            self.session.model = model;
+                            self.session.workspace = workspace.clone();
+                            self.current_mode = mode;
+                            self.config.model.clone_from(&self.session.model);
+                            self.config.workspace = workspace.clone();
+                            if plugin_workspace_changed {
+                                self.plugin_registry =
+                                    self.plugin_registry.rediscover_for_workspace(&workspace);
+                                self.config.plugin_registry =
+                                    Some(Arc::clone(&self.plugin_registry));
+                                // A pool may contain plugin servers and authority
+                                // receipts from the previous workspace snapshot.
+                                self.drop_mcp_pool();
+                                if let Some(attachment) = &self.extension_host {
+                                    attachment.set_plugins(Arc::clone(&self.plugin_registry));
+                                    self.plugin_registry = attachment.plugin_view();
+                                    attachment.sync_in_background();
+                                }
+                            }
+                            let ctx = crate::project_context::load_project_context_with_parents(
+                                &workspace,
+                            );
+                            self.session.project_context = if ctx.has_instructions() {
+                                Some(ctx)
+                            } else {
+                                None
+                            };
+                            self.session.rebuild_working_set();
+                            self.reconcile_restored_work_bindings().await;
+                            if self.mcp_pool.is_none()
+                                && let Err(error) = self
+                                    .start_mcp_session_boot(McpConnectRefresh::IfChanged)
+                                    .await
+                            {
+                                tracing::debug!(
+                                    "MCP session boot failed: {}",
+                                    crate::mcp::format_mcp_error_for_display(&error)
+                                );
+                            }
+                            self.mcp_pool_slot
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .handoff = None;
+                            // SessionUpdated acknowledges the sync. A generic status
+                            // would immediately cover the host's confirmed resume receipt.
+                            self.emit_session_updated().await;
                         }
-                        self.mcp_pool_slot
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .handoff = None;
-                        // SessionUpdated acknowledges the sync. A generic status
-                        // would immediately cover the host's confirmed resume receipt.
-                        self.emit_session_updated().await;
-                    }
-                    Op::RewindConversation {
-                        expected,
-                        messages,
-                        tx,
-                    } => {
-                        // Compare at the Engine mailbox boundary, not only in
-                        // the UI: queued work may have changed the conversation
-                        // since preflight. Refuse before touching any state.
-                        if self.session_snapshot() != *expected
-                            || messages.len() >= expected.messages.len()
-                            || !expected.messages.starts_with(&messages)
-                        {
-                            let _ = tx.send(None);
-                            continue;
-                        }
-                        self.restore_session_history(
+                        Op::RewindConversation {
+                            expected,
                             messages,
-                            self.session.system_prompt.clone(),
-                            self.session.system_prompt_override,
-                        );
-                        self.session.rebuild_working_set();
-                        self.reconcile_restored_work_bindings().await;
-                        let _ = tx.send(Some(self.session_snapshot()));
-                        self.emit_session_updated().await;
-                    }
-                    Op::CompactContext {
-                        id,
-                        route,
-                        compaction,
-                    } => {
-                        self.handle_manual_compaction_op(id, *route, *compaction)
-                            .await;
-                    }
-                    Op::CancelCompaction { id } => {
-                        // Cancellation is published out-of-band by the handle
-                        // so a provider await cannot block it. Draining the
-                        // typed op only clears a late, already-settled marker.
-                        self.finish_compaction(&id);
-                    }
-                    Op::GetSessionSnapshot { tx } => {
-                        let snapshot = self.session_snapshot();
-                        if let Some(tx) = tx.lock().ok().and_then(|mut g| g.take()) {
-                            let _ = tx.send(snapshot);
-                        }
-                    }
-                    Op::GetContextBudget { tx } => {
-                        let input_tokens = self.estimated_input_tokens() as u64;
-                        let budget = route_context_budget_for_route(
-                            self.api_provider,
-                            &self.session.model,
-                            self.active_route_limits,
-                            usize::try_from(input_tokens).unwrap_or(usize::MAX),
-                        );
-                        let snapshot = budget.map(|budget| SessionContextBudget {
-                            window_tokens: budget.window_tokens,
-                            input_tokens,
-                            billed_input_tokens: self
-                                .session
-                                .latest_parent_input_tokens
-                                .map(u64::from),
-                            output_cap_tokens: budget.output_cap_tokens,
-                            input_budget_ceiling: budget.input_budget_ceiling,
-                            available_input_tokens: budget.available_input_tokens,
-                            compaction_trigger_tokens: budget.compaction_trigger_tokens,
-                            usage_percent: budget.usage_percent(),
-                            pressure: budget.pressure.label(),
-                            model: self.session.model.clone(),
-                            provider: self.api_provider_identity.as_ref().map_or_else(
-                                || "unavailable".to_string(),
-                                |identity| identity.persisted_kind().to_string(),
-                            ),
-                            model_provider_id: self
-                                .api_provider_identity
-                                .as_ref()
-                                .and_then(|identity| identity.persisted_id().map(str::to_string)),
-                        });
-                        if let Some(tx) = tx.lock().ok().and_then(|mut g| g.take()) {
-                            let _ = tx.send(snapshot);
-                        }
-                    }
-                    Op::GetProviderRuntimeStatus { tx } => {
-                        let status = if let Some(client) = self.codewhale_client.as_ref() {
-                            ProviderRuntimeStatus {
-                                provider: client.api_provider(),
-                                request_concurrency_limit: client
-                                    .provider_request_concurrency_limit(),
-                                active_provider_requests: client.active_provider_requests(),
+                            tx,
+                        } => {
+                            // Compare at the Engine mailbox boundary, not only in
+                            // the UI: queued work may have changed the conversation
+                            // since preflight. Refuse before touching any state.
+                            if self.session_snapshot() != *expected
+                                || messages.len() >= expected.messages.len()
+                                || !expected.messages.starts_with(&messages)
+                            {
+                                let _ = tx.send(None);
+                                continue;
                             }
-                        } else {
-                            let provider = self.api_provider;
-                            ProviderRuntimeStatus {
-                                provider,
-                                request_concurrency_limit: self
-                                    .api_provider_identity
-                                    .as_ref()
-                                    .and_then(|identity| {
-                                        self.api_config.provider_max_concurrency(identity)
-                                    }),
-                                active_provider_requests: 0,
+                            self.restore_session_history(
+                                messages,
+                                self.session.system_prompt.clone(),
+                                self.session.system_prompt_override,
+                            );
+                            self.session.rebuild_working_set();
+                            self.reconcile_restored_work_bindings().await;
+                            let _ = tx.send(Some(self.session_snapshot()));
+                            self.emit_session_updated().await;
+                        }
+                        Op::CompactContext {
+                            id,
+                            route,
+                            compaction,
+                        } => {
+                            self.handle_manual_compaction_op(id, *route, *compaction)
+                                .await;
+                        }
+                        Op::CancelCompaction { id } => {
+                            // Cancellation is published out-of-band by the handle
+                            // so a provider await cannot block it. Draining the
+                            // typed op only clears a late, already-settled marker.
+                            self.finish_compaction(&id);
+                        }
+                        Op::GetSessionSnapshot { tx } => {
+                            let snapshot = self.session_snapshot();
+                            if let Some(tx) = tx.lock().ok().and_then(|mut g| g.take()) {
+                                let _ = tx.send(snapshot);
                             }
-                        };
-                        if let Some(tx) = tx.lock().ok().and_then(|mut g| g.take()) {
-                            let _ = tx.send(status);
                         }
-                    }
-                    Op::BootstrapMcp { tx } => {
-                        let result = self.bootstrap_mcp_pool().await.map_err(|error| {
-                            codewhale_config::persistence::redact_secrets(&format!("{error:#}"))
-                        });
-                        if let Some(tx) = tx.lock().ok().and_then(|mut guard| guard.take()) {
-                            let _ = tx.send(result);
+                        Op::GetContextBudget { tx } => {
+                            let input_tokens = self.estimated_input_tokens() as u64;
+                            let budget = route_context_budget_for_route(
+                                self.api_provider,
+                                &self.session.model,
+                                self.active_route_limits,
+                                usize::try_from(input_tokens).unwrap_or(usize::MAX),
+                            );
+                            let snapshot = budget.map(|budget| SessionContextBudget {
+                                window_tokens: budget.window_tokens,
+                                input_tokens,
+                                billed_input_tokens: self
+                                    .session
+                                    .latest_parent_input_tokens
+                                    .map(u64::from),
+                                output_cap_tokens: budget.output_cap_tokens,
+                                input_budget_ceiling: budget.input_budget_ceiling,
+                                available_input_tokens: budget.available_input_tokens,
+                                compaction_trigger_tokens: budget.compaction_trigger_tokens,
+                                usage_percent: budget.usage_percent(),
+                                pressure: budget.pressure.label(),
+                                model: self.session.model.clone(),
+                                provider: self.api_provider_identity.as_ref().map_or_else(
+                                    || "unavailable".to_string(),
+                                    |identity| identity.persisted_kind().to_string(),
+                                ),
+                                model_provider_id: self.api_provider_identity.as_ref().and_then(
+                                    |identity| identity.persisted_id().map(str::to_string),
+                                ),
+                            });
+                            if let Some(tx) = tx.lock().ok().and_then(|mut g| g.take()) {
+                                let _ = tx.send(snapshot);
+                            }
                         }
-                    }
-                    Op::RetryMcpServer { name, tx } => {
-                        let result = self.retry_mcp_server(&name).await.map_err(|error| {
-                            codewhale_config::persistence::redact_secrets(&format!("{error:#}"))
-                        });
-                        if let Some(tx) = tx.lock().ok().and_then(|mut guard| guard.take()) {
-                            let _ = tx.send(result);
+                        Op::GetProviderRuntimeStatus { tx } => {
+                            let status = if let Some(client) = self.codewhale_client.as_ref() {
+                                ProviderRuntimeStatus {
+                                    provider: client.api_provider(),
+                                    request_concurrency_limit: client
+                                        .provider_request_concurrency_limit(),
+                                    active_provider_requests: client.active_provider_requests(),
+                                }
+                            } else {
+                                let provider = self.api_provider;
+                                ProviderRuntimeStatus {
+                                    provider,
+                                    request_concurrency_limit: self
+                                        .api_provider_identity
+                                        .as_ref()
+                                        .and_then(|identity| {
+                                            self.api_config.provider_max_concurrency(identity)
+                                        }),
+                                    active_provider_requests: 0,
+                                }
+                            };
+                            if let Some(tx) = tx.lock().ok().and_then(|mut g| g.take()) {
+                                let _ = tx.send(status);
+                            }
                         }
-                    }
-                    Op::ReloadMcp { config_path, tx } => {
-                        let result = self.reload_mcp_pool(config_path).await.map_err(|error| {
-                            codewhale_config::persistence::redact_secrets(&format!("{error:#}"))
-                        });
-                        if let Some(tx) = tx.lock().ok().and_then(|mut guard| guard.take()) {
-                            let _ = tx.send(result);
+                        Op::BootstrapMcp { tx } => {
+                            let result = self.bootstrap_mcp_pool().await.map_err(|error| {
+                                codewhale_config::persistence::redact_secrets(&format!("{error:#}"))
+                            });
+                            if let Some(tx) = tx.lock().ok().and_then(|mut guard| guard.take()) {
+                                let _ = tx.send(result);
+                            }
                         }
-                    }
-                    Op::PurgeContext => {
-                        if let Some(pm) = self.session.prefix_stability.as_mut() {
-                            pm.note_history_reset("clear");
+                        Op::RetryMcpServer { name, tx } => {
+                            let result = self.retry_mcp_server(&name).await.map_err(|error| {
+                                codewhale_config::persistence::redact_secrets(&format!("{error:#}"))
+                            });
+                            if let Some(tx) = tx.lock().ok().and_then(|mut guard| guard.take()) {
+                                let _ = tx.send(result);
+                            }
                         }
-                        self.handle_purge().await;
-                    }
-                    Op::EditLastTurn {
-                        new_message,
-                        submission_id,
-                    } => {
-                        let route = match self.current_runtime_route() {
-                            Ok(route) => route,
-                            Err(err) => {
-                                self.reject_edit_last_turn(
+                        Op::ReloadMcp { config_path, tx } => {
+                            let result = self.reload_mcp_pool(config_path).await.map_err(|error| {
+                                codewhale_config::persistence::redact_secrets(&format!("{error:#}"))
+                            });
+                            if let Some(tx) = tx.lock().ok().and_then(|mut guard| guard.take()) {
+                                let _ = tx.send(result);
+                            }
+                        }
+                        Op::PurgeContext => {
+                            if let Some(pm) = self.session.prefix_stability.as_mut() {
+                                pm.note_history_reset("clear");
+                            }
+                            self.handle_purge().await;
+                        }
+                        Op::EditLastTurn {
+                            new_message,
+                            submission_id,
+                        } => {
+                            let route = match self.current_runtime_route() {
+                                Ok(route) => route,
+                                Err(err) => {
+                                    self.reject_edit_last_turn(
                                     submission_id.clone(),
                                     ErrorEnvelope::new(
                                         ErrorCategory::Authentication,
@@ -4399,22 +4408,22 @@ impl Engine {
                                     ),
                                 )
                                 .await;
-                                continue;
-                            }
-                        };
-                        // #383: /edit — remove the last user+assistant exchange
-                        // from the session, then re-send with the new content.
-                        // Tool results and runtime-owned internal envelopes are
-                        // also persisted with role "user", so locate the cut
-                        // point by genuine user prompt — a bare role scan would
-                        // land mid-turn on a tool_result and keep the old
-                        // prompt plus its tool round-trips in history.
-                        let idx = match crate::runtime_handoff::edit_last_turn_target(
-                            &self.session.messages,
-                        ) {
-                            crate::runtime_handoff::EditLastTurnTarget::Editable(idx) => idx,
-                            crate::runtime_handoff::EditLastTurnTarget::Unsupported => {
-                                self.reject_edit_last_turn(
+                                    continue;
+                                }
+                            };
+                            // #383: /edit — remove the last user+assistant exchange
+                            // from the session, then re-send with the new content.
+                            // Tool results and runtime-owned internal envelopes are
+                            // also persisted with role "user", so locate the cut
+                            // point by genuine user prompt — a bare role scan would
+                            // land mid-turn on a tool_result and keep the old
+                            // prompt plus its tool round-trips in history.
+                            let idx = match crate::runtime_handoff::edit_last_turn_target(
+                                &self.session.messages,
+                            ) {
+                                crate::runtime_handoff::EditLastTurnTarget::Editable(idx) => idx,
+                                crate::runtime_handoff::EditLastTurnTarget::Unsupported => {
+                                    self.reject_edit_last_turn(
                                     submission_id.clone(),
                                     ErrorEnvelope::new(
                                         ErrorCategory::InvalidInput,
@@ -4425,10 +4434,10 @@ impl Engine {
                                     ),
                                 )
                                 .await;
-                                continue;
-                            }
-                            crate::runtime_handoff::EditLastTurnTarget::Missing => {
-                                self.reject_edit_last_turn(
+                                    continue;
+                                }
+                                crate::runtime_handoff::EditLastTurnTarget::Missing => {
+                                    self.reject_edit_last_turn(
                                     submission_id.clone(),
                                     ErrorEnvelope::new(
                                         ErrorCategory::State,
@@ -4439,130 +4448,132 @@ impl Engine {
                                     ),
                                 )
                                 .await;
-                                continue;
-                            }
-                        };
-                        // C02-02: stage the cut. The removed exchange is kept
-                        // until the replacement turn actually starts; a send
-                        // that never starts puts it back (below).
-                        let removed_exchange = self
-                            .session
-                            .messages
-                            .get(idx..)
-                            .map(<[_]>::to_vec)
-                            .unwrap_or_default();
-                        self.session.messages.truncate_to(idx);
-                        self.session.bump_messages_revision();
-                        // Now dispatch the new message as a normal send,
-                        // reusing the engine's stored mode/model config.
-                        let mode = self.current_mode;
-                        let outcome = self
-                            .handle_send_message(TurnSpec {
-                                profile_constitution: None,
-                                content: new_message.clone(),
-                                mode,
-                                route: Box::new(route),
-                                compaction: Box::new(self.config.compaction.clone()),
-                                initial_routed_usage: Box::new(
-                                    crate::cost_status::RuntimeUsageBatch::default(),
-                                ),
-                                goal_objective: self.config.goal_objective.clone(),
-                                goal_token_budget: self.config.goal_token_budget,
-                                goal_status: self.config.goal_status,
-                                reasoning_effort: self.session.reasoning_effort.clone(),
-                                reasoning_effort_auto: self.session.reasoning_effort_auto,
-                                auto_model: self.session.auto_model,
-                                allow_shell: self.session.allow_shell,
-                                trust_mode: self.session.trust_mode,
-                                auto_approve: self.session.auto_approve,
-                                approval_mode: self.session.approval_mode,
-                                translation_enabled: self.config.translation_enabled,
-                                allowed_tools: self.config.allowed_tools.clone(),
-                                dynamic_tools: Vec::new(),
-                                hook_executor: self.config.hook_executor.clone(),
-                                verbosity: self.config.verbosity.clone(),
-                                provenance: UserInputProvenance::ExternalUser,
-                                images: Vec::new(),
-                                max_output_tokens: None,
-                                submission_id,
-                            })
-                            .await;
-                        if matches!(outcome, SendMessageOutcome::NotStarted { .. }) {
-                            // Anything the failed send appended after the cut
-                            // (a drained shell-completion notice) stays, after
-                            // the restored exchange.
-                            let appended = self
+                                    continue;
+                                }
+                            };
+                            // C02-02: stage the cut. The removed exchange is kept
+                            // until the replacement turn actually starts; a send
+                            // that never starts puts it back (below).
+                            let removed_exchange = self
                                 .session
                                 .messages
                                 .get(idx..)
                                 .map(<[_]>::to_vec)
                                 .unwrap_or_default();
                             self.session.messages.truncate_to(idx);
-                            self.session.messages.push_batch(removed_exchange);
-                            self.session.messages.push_batch(appended);
                             self.session.bump_messages_revision();
-                            self.emit_session_updated().await;
+                            // Now dispatch the new message as a normal send,
+                            // reusing the engine's stored mode/model config.
+                            let mode = self.current_mode;
+                            let outcome = self
+                                .handle_send_message(TurnSpec {
+                                    profile_constitution: None,
+                                    content: new_message.clone(),
+                                    mode,
+                                    route: Box::new(route),
+                                    compaction: Box::new(self.config.compaction.clone()),
+                                    initial_routed_usage: Box::new(
+                                        crate::cost_status::RuntimeUsageBatch::default(),
+                                    ),
+                                    goal_objective: self.config.goal_objective.clone(),
+                                    goal_token_budget: self.config.goal_token_budget,
+                                    goal_status: self.config.goal_status,
+                                    reasoning_effort: self.session.reasoning_effort.clone(),
+                                    reasoning_effort_auto: self.session.reasoning_effort_auto,
+                                    auto_model: self.session.auto_model,
+                                    allow_shell: self.session.allow_shell,
+                                    trust_mode: self.session.trust_mode,
+                                    auto_approve: self.session.auto_approve,
+                                    approval_mode: self.session.approval_mode,
+                                    translation_enabled: self.config.translation_enabled,
+                                    allowed_tools: self.config.allowed_tools.clone(),
+                                    dynamic_tools: Vec::new(),
+                                    hook_executor: self.config.hook_executor.clone(),
+                                    verbosity: self.config.verbosity.clone(),
+                                    provenance: UserInputProvenance::ExternalUser,
+                                    images: Vec::new(),
+                                    max_output_tokens: None,
+                                    submission_id,
+                                })
+                                .await;
+                            if matches!(outcome, SendMessageOutcome::NotStarted { .. }) {
+                                // Anything the failed send appended after the cut
+                                // (a drained shell-completion notice) stays, after
+                                // the restored exchange.
+                                let appended = self
+                                    .session
+                                    .messages
+                                    .get(idx..)
+                                    .map(<[_]>::to_vec)
+                                    .unwrap_or_default();
+                                self.session.messages.truncate_to(idx);
+                                self.session.messages.push_batch(removed_exchange);
+                                self.session.messages.push_batch(appended);
+                                self.session.bump_messages_revision();
+                                self.emit_session_updated().await;
+                            }
                         }
-                    }
-                    Op::SetAdvisorEnabled { enabled } => {
-                        self.config.advisor_config.enabled = enabled;
-                        let state = if enabled { "enabled" } else { "disabled" };
-                        let _ = self.send_event(Event::status(format!(
+                        Op::SetAdvisorEnabled { enabled } => {
+                            self.config.advisor_config.enabled = enabled;
+                            let state = if enabled { "enabled" } else { "disabled" };
+                            let _ = self.send_event(Event::status(format!(
                                 "Advisor watcher {state}. Notes will appear after turns with tool calls."
                             )))
                             .await;
-                        tracing::info!(target: "advisor", "advisor watcher {state}");
-                    }
-                    Op::SetSearchProvider { provider } => {
-                        self.config.search_provider = provider;
-                        // A provider picked in-session is a pin; only an
-                        // explicit `[search] native = true` still leads.
-                        self.config.search_native.get_or_insert(false);
-                    }
-                    Op::Shutdown => {
-                        break;
-                    }
-                },
-            }
-        }
-
-        // #freeze: flush any sub-agent checkpoint that the hot-path debounce
-        // coalesced away, so a graceful shutdown keeps the latest progress.
-        {
-            let mut manager = self.subagent_manager.write().await;
-            let children = manager.list_for_session(&self.session.id);
-            for child in children {
-                let owned = self.child_host.as_ref().is_none_or(|owner| {
-                    child.parent_run_id.as_deref() == Some(owner.authority.owner_agent_id.as_str())
-                });
-                if owned && child.status == SubAgentStatus::Running {
-                    let _ = manager.cancel_agent_for_session(&self.session.id, &child.agent_id);
+                            tracing::info!(target: "advisor", "advisor watcher {state}");
+                        }
+                        Op::SetSearchProvider { provider } => {
+                            self.config.search_provider = provider;
+                            // A provider picked in-session is a pin; only an
+                            // explicit `[search] native = true` still leads.
+                            self.config.search_native.get_or_insert(false);
+                        }
+                        Op::Shutdown => {
+                            break;
+                        }
+                    },
                 }
             }
-            manager.flush_pending_persist();
-        }
-        crate::tools::subagent::settle_requested_children_for_session(
-            &self.subagent_manager,
-            &self.session.id,
-            self.child_host
-                .as_ref()
-                .map(|child| child.authority.owner_agent_id.as_str()),
-        )
-        .await;
-        self.subagent_manager.write().await.flush_pending_persist();
 
-        // #420: graceful MCP shutdown — send SIGTERM and give stdio servers
-        // a brief window to exit before drop fires SIGKILL via kill_on_drop.
-        // Best-effort: pool may not exist (no MCP configured) and the lock
-        // can fail under contention; either way the kill_on_drop fallback
-        // still reaps the children.
-        if self.child_host.is_none()
-            && let Some(pool) = self.mcp_pool.as_ref()
-        {
-            let mut guard = pool.lock().await;
-            guard.shutdown_all().await;
-        }
-        child_result
+            // #freeze: flush any sub-agent checkpoint that the hot-path debounce
+            // coalesced away, so a graceful shutdown keeps the latest progress.
+            {
+                let mut manager = self.subagent_manager.write().await;
+                let children = manager.list_for_session(&self.session.id);
+                for child in children {
+                    let owned = self.child_host.as_ref().is_none_or(|owner| {
+                        child.parent_run_id.as_deref()
+                            == Some(owner.authority.owner_agent_id.as_str())
+                    });
+                    if owned && child.status == SubAgentStatus::Running {
+                        let _ = manager.cancel_agent_for_session(&self.session.id, &child.agent_id);
+                    }
+                }
+                manager.flush_pending_persist();
+            }
+            crate::tools::subagent::settle_requested_children_for_session(
+                &self.subagent_manager,
+                &self.session.id,
+                self.child_host
+                    .as_ref()
+                    .map(|child| child.authority.owner_agent_id.as_str()),
+            )
+            .await;
+            self.subagent_manager.write().await.flush_pending_persist();
+
+            // #420: graceful MCP shutdown — send SIGTERM and give stdio servers
+            // a brief window to exit before drop fires SIGKILL via kill_on_drop.
+            // Best-effort: pool may not exist (no MCP configured) and the lock
+            // can fail under contention; either way the kill_on_drop fallback
+            // still reaps the children.
+            if self.child_host.is_none()
+                && let Some(pool) = self.mcp_pool.as_ref()
+            {
+                let mut guard = pool.lock().await;
+                guard.shutdown_all().await;
+            }
+            child_result
+        })
     }
 
     fn host_managed_turns(&self) -> bool {
@@ -5585,10 +5596,6 @@ impl Engine {
         if clear || status != GoalStatus::Active {
             self.cancel_scheduled_goal_continuation(true).await;
         }
-        // A continuation is scheduled only on a real transition INTO Active
-        // from a non-active state (paused/blocked resume). Re-asserting
-        // Active on an already-active goal must not stack a second
-        // autonomous turn on top of the loop that is already running.
         let was_active = self
             .config
             .goal_state
@@ -5608,7 +5615,9 @@ impl Engine {
                     let objective = state.objective().map(str::to_string);
                     let budget = state.token_budget();
                     if status == GoalStatus::Active {
-                        state.resume(goal_id);
+                        if !was_active {
+                            state.resume(goal_id);
+                        }
                     } else {
                         state.sync_from_host_status(objective.as_deref(), budget, status);
                     }
@@ -5659,8 +5668,14 @@ impl Engine {
         // Resuming an objective-bearing goal restarts the runtime's own
         // steering loop — the kickoff is a continuation turn, never a raw
         // user message echoing the objective (codex `/goal resume` parity).
-        let resumed_into_active = !clear && status == GoalStatus::Active && !was_active;
-        if resumed_into_active && snapshot_has_objective {
+        let resume_requested = !clear && status == GoalStatus::Active;
+        if resume_requested
+            && snapshot_has_objective
+            && (!was_active
+                || (!self.host_managed_turns()
+                    && !self.cancel_token.is_cancelled()
+                    && !self.has_scheduled_goal_continuation()))
+        {
             self.schedule_goal_continuation(Vec::new()).await;
         }
     }
@@ -8878,24 +8893,24 @@ impl Engine {
     /// across modes).
     ///
     /// Derived from the session log, like the workspace-trust note: a session
-    /// with no notice gets one only in Plan, and once a notice exists a new
-    /// one is appended whenever the mode differs from the latest, so leaving
-    /// Plan is announced too and history never ends on a stale mode. A
-    /// compaction that dropped the notice re-records it on the next Plan turn.
+    /// with no notice gets one in Plan or Operate, and once a notice exists a
+    /// new one is appended whenever the mode differs from the latest. Restored
+    /// Operate contracts also require a current notice after leaving Operate.
     /// Child and RLM hosts get none: their mode is fixed by their parent.
     fn record_mode_notice(&mut self, mode: AppMode) {
         if self.child_host.is_some() || self.rlm_host.is_some() {
             return;
         }
-        let previous = self
-            .session
-            .messages
-            .iter()
-            .rev()
-            .find(|message| crate::runtime_handoff::mode_notice_display(message).is_some());
+        let previous = self.session.messages.iter().rev().find(|message| {
+            crate::runtime_handoff::mode_notice_display(message).is_some()
+                || crate::runtime_handoff::is_operate_contract_message(message)
+        });
         let message = crate::runtime_handoff::mode_runtime_message(mode);
         let record = match previous {
-            None => mode == AppMode::Plan,
+            None => matches!(mode, AppMode::Plan | AppMode::Operate),
+            Some(previous) if crate::runtime_handoff::is_operate_contract_message(previous) => {
+                mode != AppMode::Operate
+            }
             Some(previous) => previous != &message,
         };
         if record {

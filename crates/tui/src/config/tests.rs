@@ -3879,7 +3879,7 @@ fn subagents_enabled_reports_disable_precedence() {
 }
 
 #[test]
-fn subagent_max_spawn_depth_defaults_allows_zero_and_clamps() {
+fn subagent_max_spawn_depth_defaults_allows_zero_and_preserves_owner_choice() {
     assert_eq!(
         Config::default().subagent_max_spawn_depth(),
         codewhale_config::DEFAULT_SPAWN_DEPTH
@@ -3896,15 +3896,12 @@ fn subagent_max_spawn_depth_defaults_allows_zero_and_clamps() {
 
     let high = Config {
         subagents: Some(SubagentsConfig {
-            max_depth: Some(codewhale_config::MAX_SPAWN_DEPTH_CEILING + 10),
+            max_depth: Some(99),
             ..SubagentsConfig::default()
         }),
         ..Config::default()
     };
-    assert_eq!(
-        high.subagent_max_spawn_depth(),
-        codewhale_config::MAX_SPAWN_DEPTH_CEILING
-    );
+    assert_eq!(high.subagent_max_spawn_depth(), 99);
 }
 
 #[test]

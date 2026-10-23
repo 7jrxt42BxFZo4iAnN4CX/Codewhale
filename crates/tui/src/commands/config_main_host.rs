@@ -4629,11 +4629,11 @@ mod tests {
         let result = config_command(&mut app, Some("subagents max_depth 99 --save"));
         let msg = result.message.unwrap();
         let saved = fs::read_to_string(&config_path).unwrap();
-        let ceiling = codewhale_config::MAX_SPAWN_DEPTH_CEILING;
+        let ceiling = 99;
 
         assert!(!result.is_error);
         assert!(msg.contains(&format!("subagents.max_depth = {ceiling}")));
-        assert!(msg.contains(&format!("clamped from 99 to {ceiling}")));
+        assert!(!msg.contains("clamped"));
         assert!(saved.contains(&format!("max_depth = {ceiling}")));
         match result.action {
             Some(AppAction::UpdateSubagentRuntimeConfig {

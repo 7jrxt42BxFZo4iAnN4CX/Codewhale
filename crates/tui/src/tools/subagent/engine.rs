@@ -313,7 +313,7 @@ impl ChildAuthority {
     where
         F: std::future::Future<Output = std::result::Result<T, ToolError>>,
     {
-        let (deadline, _) = budget_handback::wall_deadlines(&self.runtime);
+        let deadline = budget_handback::wall_deadline(&self.runtime);
         match run_tool_with_person_aware_timeout(
             self.runtime.tool_timeout,
             deadline,
@@ -986,9 +986,7 @@ pub(crate) struct ChildJob {
     pub(crate) assignment: SubAgentAssignment,
     pub(crate) started_at: Instant,
     pub(crate) max_steps: u32,
-    pub(crate) work_max_steps: u32,
-    pub(crate) work_deadline: Option<Instant>,
-    pub(crate) hard_deadline: Option<Instant>,
+    pub(crate) deadline: Option<Instant>,
     pub(crate) fork_context: bool,
     parking: Option<Arc<std::sync::atomic::AtomicBool>>,
     artifact: tokio::sync::Mutex<Option<SubAgentTranscriptArtifactWriter>>,
@@ -997,7 +995,6 @@ pub(crate) struct ChildJob {
     logical_steps: std::sync::atomic::AtomicU32,
     response_received: std::sync::atomic::AtomicBool,
     selected_model: std::sync::Mutex<String>,
-    pacing_sent: std::sync::atomic::AtomicBool,
     stop_reason: std::sync::Mutex<Option<String>>,
 }
 impl ChildJob {
@@ -1009,12 +1006,7 @@ impl ChildJob {
         fork_context: bool,
         parking: Option<Arc<std::sync::atomic::AtomicBool>>,
     ) -> Result<Arc<Self>> {
-        let work_max_steps = if max_steps >= 2 {
-            max_steps - 1
-        } else {
-            max_steps
-        };
-        let (work_deadline, hard_deadline) = budget_handback::wall_deadlines(&authority.runtime);
+        let deadline = budget_handback::wall_deadline(&authority.runtime);
         let artifact = SubAgentTranscriptArtifactWriter::for_runtime(
             &authority.runtime,
             &authority.owner_agent_id,
@@ -1026,9 +1018,7 @@ impl ChildJob {
             assignment,
             started_at,
             max_steps,
-            work_max_steps,
-            work_deadline,
-            hard_deadline,
+            deadline,
             fork_context,
             parking,
             artifact: tokio::sync::Mutex::new(Some(artifact)),
@@ -1038,7 +1028,6 @@ impl ChildJob {
             logical_steps: std::sync::atomic::AtomicU32::new(0),
             response_received: std::sync::atomic::AtomicBool::new(false),
             selected_model: std::sync::Mutex::new(selected_model),
-            pacing_sent: std::sync::atomic::AtomicBool::new(false),
             stop_reason: std::sync::Mutex::new(None),
         }))
     }
@@ -1073,21 +1062,6 @@ impl ChildJob {
             .selected_model
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = model.to_owned();
-    }
-    pub(crate) fn pacing_notice(&self) -> Option<String> {
-        if self.pacing_sent.load(std::sync::atomic::Ordering::Relaxed) {
-            return None;
-        }
-        let notice = child_budget_pacing_notice(
-            self.started_at,
-            self.work_deadline,
-            self.steps(),
-            self.work_max_steps,
-        )?;
-        (!self
-            .pacing_sent
-            .swap(true, std::sync::atomic::Ordering::Relaxed))
-        .then_some(notice)
     }
     pub(crate) async fn project(&self, messages: &[Message], steps: u32) -> Result<()> {
         let mut artifact = self.artifact.lock().await;
@@ -1306,7 +1280,7 @@ impl ChildJob {
             } else {
                 None
             };
-            let mut handback_note = "The bounded Core hand-back preserves the recorded work; the assignment is not complete.".to_string();
+            let mut handback_note = "The host preserves the recorded work without another model request; the assignment is not complete.".to_string();
             if let Some(artifact) = artifact {
                 handback_note.push_str(&format!(
                     " Recorded work is saved as this child's deliverable: {}.",
@@ -1516,16 +1490,19 @@ pub(super) async fn run_child_agent(
         owner_agent_name,
         allowed_tools.clone(),
     );
-    let system =
+    let mut system =
         build_subagent_system_prompt_with_skills(&agent_type, &assignment, &runtime.context);
-    let work_max_steps = if max_steps >= 2 {
-        max_steps - 1
-    } else {
-        max_steps
-    };
+    if let Some(schema) = runtime.workflow_response_schema.as_ref() {
+        system = system
+            .replace(SUBAGENT_OUTPUT_FORMAT, "")
+            .replace(WRITE_CHILD_VERIFY_CONTRACT, "");
+        system.push_str(&format!(
+            "\n\nFor this read-only Workflow task, return exactly one JSON value matching the following response schema. This replaces the default report sections and Markdown format. Include the requested findings and evidence in that JSON value, with no surrounding fences or prose.\n{schema}"
+        ));
+    }
     let prompt = format!(
         "{prompt}\n\n{}",
-        child_runtime_budget_context(&runtime, max_steps, work_max_steps)
+        child_runtime_budget_context(&runtime, max_steps)
     );
     let fork = if fork_context {
         match runtime.fork_context.as_ref() {
@@ -1599,7 +1576,7 @@ pub(super) async fn run_child_agent(
     let config = crate::core::engine::EngineConfig {
         workspace: runtime.context.workspace.clone(),
         model: runtime.model.clone(),
-        max_steps: crate::core::engine::turn_budget::resolve_max_model_steps(Some(work_max_steps)),
+        max_steps: crate::core::engine::turn_budget::resolve_max_model_steps(Some(max_steps)),
         compaction: runtime.compaction.clone(),
         subagent_api_timeout: runtime.step_api_timeout,
         auto_review_policy: runtime.auto_review_policy.as_ref().clone(),
@@ -1802,7 +1779,7 @@ pub(crate) async fn drive_child_actor(
                             &agent_id,
                             event,
                             &handle.captured_turn_cancel(),
-                            job.hard_deadline.map(Into::into),
+                            job.deadline.map(Into::into),
                         ).await;
                     }
                     Event::ToolCallStarted { id, name, .. } => {
@@ -1859,7 +1836,7 @@ pub(crate) async fn drive_child_actor(
                 &agent_id,
                 event,
                 &handle.captured_turn_cancel(),
-                job.hard_deadline.map(Into::into),
+                job.deadline.map(Into::into),
             )
             .await;
         }
@@ -1891,7 +1868,7 @@ pub(crate) async fn drive_child_actor(
             };
             if runtime.cancel_token.is_cancelled() {
                 let _ = tx.try_send(event);
-            } else if let Some(deadline) = job.hard_deadline {
+            } else if let Some(deadline) = job.deadline {
                 let _ = tokio::time::timeout_at(deadline.into(), tx.send(event)).await;
             } else {
                 let _ = tx.send(event).await;

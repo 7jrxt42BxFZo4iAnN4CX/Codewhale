@@ -25,8 +25,8 @@
         assert_eq!(capped.stop_diagnostics.effective_max_steps, Some(7));
         assert_eq!(
             exec_max_steps(Some(u32::MAX)),
-            crate::core::engine::turn_budget::MAX_MAX_MODEL_STEPS,
-            "even the largest override stays finite"
+            crate::core::engine::turn_budget::DEFAULT_MAX_MODEL_STEPS,
+            "the compatibility sentinel remains unbounded"
         );
     }
 

@@ -416,13 +416,14 @@ fn desired_goal_state(
             let goal = base
                 .as_mut()
                 .ok_or_else(|| "No goal is available for this control.".to_string())?;
+            let was_active = goal.status == crate::session_manager::SessionGoalStatus::Active;
             goal.status = match status {
                 GoalStatus::Active => crate::session_manager::SessionGoalStatus::Active,
                 GoalStatus::Paused => crate::session_manager::SessionGoalStatus::Paused,
                 GoalStatus::Complete => crate::session_manager::SessionGoalStatus::Complete,
                 GoalStatus::Blocked => crate::session_manager::SessionGoalStatus::Blocked,
             };
-            if *status == GoalStatus::Active {
+            if *status == GoalStatus::Active && !was_active {
                 goal.goal_id = Some(uuid::Uuid::new_v4().to_string());
                 goal.last_gap_fingerprint = None;
                 goal.repeated_gap_count = 0;

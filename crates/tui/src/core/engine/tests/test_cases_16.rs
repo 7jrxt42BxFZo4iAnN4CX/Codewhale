@@ -1664,7 +1664,7 @@ fn stream_retry_scenario() {
 }
 
 #[test]
-fn mode_notice_is_recorded_on_entering_plan_and_on_leaving_it() {
+fn mode_notice_is_recorded_on_entering_plan_or_operate_and_on_leaving_it() {
     let _lock = lock_test_env();
     let tmp = tempdir().expect("tempdir");
     let config = EngineConfig {
@@ -1697,4 +1697,25 @@ fn mode_notice_is_recorded_on_entering_plan_and_on_leaving_it() {
     let recorded = notices(&engine);
     assert_eq!(recorded.len(), 2, "{recorded:?}");
     assert!(recorded[1].starts_with("Mode: Work."), "{recorded:?}");
+
+    engine.session.messages.clear();
+    engine.record_mode_notice(AppMode::Operate);
+    engine.record_mode_notice(AppMode::Operate);
+    assert_eq!(notices(&engine).len(), 1);
+    engine
+        .session
+        .add_message(crate::runtime_handoff::operate_contract_runtime_message());
+    engine.record_mode_notice(AppMode::Operate);
+    assert_eq!(notices(&engine).len(), 1);
+    engine.record_mode_notice(AppMode::Agent);
+    let recorded = notices(&engine);
+    assert_eq!(recorded.len(), 2);
+    assert!(recorded[1].starts_with("Mode: Work."));
+
+    engine.session.messages.clear();
+    engine
+        .session
+        .add_message(crate::runtime_handoff::legacy_operate_contract_runtime_message());
+    engine.record_mode_notice(AppMode::Agent);
+    assert!(notices(&engine)[0].starts_with("Mode: Work."));
 }

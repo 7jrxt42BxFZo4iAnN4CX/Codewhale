@@ -1478,8 +1478,7 @@ pub fn apply_exec_hardening(
     spec.max_spawn_depth = spec
         .max_spawn_depth
         .min(spec.runtime_profile.max_spawn_depth)
-        .min(exec.max_spawn_depth)
-        .min(codewhale_config::MAX_SPAWN_DEPTH_CEILING);
+        .min(exec.max_spawn_depth);
     spec.runtime_profile.max_spawn_depth = spec.max_spawn_depth;
     spec.runtime_profile.spawn_depth = spec.spawn_depth;
 
@@ -4591,17 +4590,10 @@ mod tests {
         )
         .expect("worker spec with empty profiles");
 
-        // Root fleet worker runs at depth 0; its budget equals the shared
-        // sub-agent default (3) so fleet and sub-agents are one substrate and
-        // at least 3 nested delegation levels are afforded.
         assert_eq!(spec.spawn_depth, 0);
         assert_eq!(spec.max_spawn_depth, codewhale_config::DEFAULT_SPAWN_DEPTH);
-        assert_eq!(spec.max_spawn_depth, 3);
+        assert_eq!(spec.max_spawn_depth, u32::MAX);
 
-        // End-to-end reachability: walk the SAME gate the SubAgentRuntime
-        // enforces (`would_exceed_depth` = `spawn_depth + 1 > max_spawn_depth`).
-        // A depth-0 root must reach 3 nested levels, then stop. This fails if
-        // anyone lowers the shared default below 3 (Hunter: afford >= 3).
         let hardened = apply_exec_hardening(spec, &codewhale_config::FleetExecConfig::default());
         let would_exceed = |spawn_depth: u32| spawn_depth + 1 > hardened.max_spawn_depth;
         assert!(
@@ -4611,8 +4603,8 @@ mod tests {
         assert!(!would_exceed(1), "depth-1 child must spawn to depth 2");
         assert!(!would_exceed(2), "depth-2 child must spawn to depth 3");
         assert!(
-            would_exceed(3),
-            "depth 3 is the afforded ceiling; depth 4 is blocked"
+            !would_exceed(8),
+            "default delegation continues beyond eight levels"
         );
     }
 

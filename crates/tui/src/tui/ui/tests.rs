@@ -15742,12 +15742,10 @@ fn stall_engine_report_shows_phase_and_held_queue() {
     assert!(stall_toasts[0].text.contains("1 queued message is held"));
 }
 
-/// Fault injection: a sub-agent still marked Running long past every child's
-/// wall budget (its AgentComplete was lost) no longer vetoes recovery; the
-/// recovery leaves a log line, a `crashes/` record naming the suspect, and a
-/// UI status.
+/// Prior-session Running rows do not veto recovery. Current children remain
+/// live regardless of elapsed time.
 #[test]
-fn stall_parked_subagent_past_bound_is_suspect_not_a_veto() {
+fn stall_prior_session_subagent_is_suspect_but_long_running_child_is_live() {
     use crate::core::engine::turn_heartbeat::{TurnPhase, set_test_stall_record_dir};
     let dir = tempfile::tempdir().expect("tempdir");
     set_test_stall_record_dir(Some(dir.path().to_path_buf()));
@@ -15766,19 +15764,16 @@ fn stall_parked_subagent_past_bound_is_suspect_not_a_veto() {
         "agent_ghost",
         crate::tools::subagent::SubAgentStatus::Running,
     );
-    ghost.started_at = now.checked_sub(SUBAGENT_SUSPECT_AFTER + Duration::from_secs(1));
-    assert!(
-        ghost.started_at.is_some(),
-        "monotonic clock has run long enough"
-    );
+    ghost.from_prior_session = true;
+    ghost.started_at = Some(now);
     app.subagent_cache = vec![ghost];
     let idle = stall_heartbeat(TurnPhase::Idle, None, None);
 
     assert_eq!(
-        suspect_running_agents(&app, now),
+        suspect_running_agents(&app),
         vec!["agent_ghost".to_string()]
     );
-    assert_eq!(live_running_agent_count(&app, now), 0);
+    assert_eq!(live_running_agent_count(&app), 0);
     let engine = crate::core::engine::mock_engine_handle();
     assert!(!engine.handle.is_cancelled());
     assert!(reconcile_turn_liveness_supervised(
@@ -15807,7 +15802,7 @@ fn stall_parked_subagent_past_bound_is_suspect_not_a_veto() {
     assert!(records[0].contains("agent_ghost"), "{}", records[0]);
     assert!(records[0].contains("Turn: turn-with-ghost"));
 
-    // A fresh Running child still holds the turn open.
+    // A long-running current child still holds the turn open.
     let mut app = create_test_app();
     app.is_loading = true;
     app.runtime_turn_status = Some("in_progress".to_string());
@@ -15817,8 +15812,10 @@ fn stall_parked_subagent_past_bound_is_suspect_not_a_veto() {
         "agent_fresh",
         crate::tools::subagent::SubAgentStatus::Running,
     );
-    fresh.started_at = Some(now);
+    fresh.started_at = now.checked_sub(Duration::from_secs(2 * 60 * 60));
+    assert!(fresh.started_at.is_some());
     app.subagent_cache = vec![fresh];
+    assert_eq!(live_running_agent_count(&app), 1);
     let engine = crate::core::engine::mock_engine_handle();
     assert!(!reconcile_turn_liveness_supervised(
         &mut app,

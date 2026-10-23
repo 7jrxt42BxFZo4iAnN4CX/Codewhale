@@ -238,10 +238,20 @@ async fn native_non_shortlisted_model_is_rejected_without_a_provider_call() {
     let source = native_script(json!({
         "prompt": "read-only route check", "type": "reviewer", "model": "openrouter/outside-fixture",
     }));
-    let error = run_script(&source, fixture.driver(WorkflowFleetBinding::None))
+    let driver = fixture.driver(WorkflowFleetBinding::None);
+    let result = run_script(&source, driver.clone())
         .await
-        .expect_err("closed shortlist");
-    assert!(error.contains("outside the selected Fleet"), "{error}");
+        .expect("rejected children settle without aborting independent work");
+    assert_eq!(result, json!({"plan-child-1": null}));
+    let runs = driver.state.runs.lock().expect("run ledger");
+    let record = runs.get(&driver.run_id).expect("run receipt");
+    assert_eq!(record.dispatch_failure_count, 1);
+    assert!(
+        record.dispatch_failures[0]
+            .message
+            .contains("outside the selected Fleet")
+    );
+    assert_eq!(driver.dead_fanout_count(), 1);
     assert_eq!(fixture.parent_calls.load(Ordering::SeqCst), 0);
     assert_eq!(fixture.target_calls.load(Ordering::SeqCst), 0);
 }

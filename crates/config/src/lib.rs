@@ -1778,31 +1778,15 @@ pub struct FleetConfigToml {
     pub exec: FleetExecConfig,
 }
 
-/// Canonical recursion-depth policy for the headless worker runtime.
-///
-/// Single source of truth shared by BOTH standalone sub-agents and fleet
-/// workers so the two cannot drift into "two moving targets":
-/// - [`DEFAULT_SPAWN_DEPTH`] is the default recursion budget (the sub-agent
-///   runtime's `DEFAULT_MAX_SPAWN_DEPTH` is defined as this value).
-/// - [`MAX_SPAWN_DEPTH_CEILING`] is the opt-in safety cap; every configured
-///   value (fleet `max_spawn_depth`, the `agent` tool's `max_depth`) clamps to it.
-///
-/// A worker runs at `spawn_depth = 0` and may spawn while
-/// `spawn_depth + 1 <= max_spawn_depth`, so a depth of N affords N nested
-/// delegation levels below the root worker. The default of 3 affords at least
-/// three recursion levels out of the box; the root worker still runs at
-/// depth 0 even when the budget is 0.
-pub const DEFAULT_SPAWN_DEPTH: u32 = 3;
+/// Runtime delegation has no default product depth limit. Explicit owner
+/// values still restrict child authority; zero disables delegation.
+pub const DEFAULT_SPAWN_DEPTH: u32 = u32::MAX;
 pub const DEFAULT_STREAM_CHUNK_TIMEOUT_SECS: u64 = 900;
 pub const MIN_STREAM_CHUNK_TIMEOUT_SECS: u64 = 1;
 pub const MAX_STREAM_CHUNK_TIMEOUT_SECS: u64 = 3600;
 
-/// Hard ceiling on recursion depth for any worker/sub-agent. The default stays
-/// conservative at [`DEFAULT_SPAWN_DEPTH`], while explicit config can opt into
-/// deeper trees for direct-API providers that can tolerate the fanout.
-/// Raising this single constant lifts the limit everywhere (the fleet clamp
-/// and `agent` validation both read it).
-pub const MAX_SPAWN_DEPTH_CEILING: u32 = 8;
+/// Largest representable absolute depth; admission rejects arithmetic overflow.
+pub const MAX_SPAWN_DEPTH_CEILING: u32 = u32::MAX;
 
 /// Headless worker execution constraints (#3027).
 ///
@@ -1822,10 +1806,8 @@ pub struct FleetExecConfig {
     #[serde(default = "default_fleet_max_turns")]
     pub max_turns: u32,
     /// Recursive child-agent budget for headless fleet workers.
-    /// Defaults to [`DEFAULT_SPAWN_DEPTH`] (3) so a fleet worker has the SAME
-    /// recursion budget as a standalone sub-agent — fleet and sub-agents are one
-    /// substrate, not two. Set 0 to block child `agent` calls (the root worker
-    /// still runs); the value is clamped to [`MAX_SPAWN_DEPTH_CEILING`].
+    /// Defaults to [`DEFAULT_SPAWN_DEPTH`], with no product depth cap.
+    /// Set zero to block child delegation while preserving the root worker.
     #[serde(default = "default_fleet_max_spawn_depth")]
     pub max_spawn_depth: u32,
     /// Extra system prompt text appended to every headless worker.
@@ -2220,7 +2202,7 @@ pub struct WorkflowConfigToml {
     /// elevate shell/network, or otherwise leave the read-only envelope.
     #[serde(default = "default_workflow_require_approval_for_writes")]
     pub require_approval_for_writes: bool,
-    /// Hard ceiling on total children in one Workflow run (product: 1000).
+    /// Operator-selected total child limit. Zero leaves total work uncapped.
     #[serde(default = "default_workflow_max_children")]
     pub max_children: u32,
     /// Maximum concurrently live agents inside one Workflow run (product: 16).
@@ -2228,13 +2210,11 @@ pub struct WorkflowConfigToml {
     pub max_concurrent: u32,
     /// Maximum structural nesting depth accepted for Workflow IR.
     ///
-    /// This is independent of Runtime child delegation, whose default is 3
-    /// and whose opt-in hard ceiling is 8.
+    /// Zero leaves structural depth uncapped. Runtime delegation is separate.
     #[serde(default = "default_workflow_max_depth")]
     pub max_depth: u32,
-    /// Default shared token budget for a Workflow run and its children.
-    /// `0` applies no shared cap — the run is advisory-only like the parent
-    /// turn loop — while any positive value is enforced across the run.
+    /// Legacy declared token hint retained in Workflow receipts. The current
+    /// runtime does not meter or enforce this value. Zero omits the hint.
     #[serde(default = "default_workflow_default_token_budget")]
     pub default_token_budget: u64,
 }
@@ -2252,7 +2232,7 @@ fn default_workflow_require_approval_for_writes() -> bool {
 }
 
 fn default_workflow_max_children() -> u32 {
-    1000
+    0
 }
 
 fn default_workflow_max_concurrent() -> u32 {
@@ -2260,14 +2240,10 @@ fn default_workflow_max_concurrent() -> u32 {
 }
 
 fn default_workflow_max_depth() -> u32 {
-    5
+    0
 }
 
 fn default_workflow_default_token_budget() -> u64 {
-    // Off by default: a cap the caller never asked for must not throttle a
-    // run — a 120k default silently killed real fan-outs mid-task (#6189).
-    // Spend discipline stays available as an explicit opt-in (tool
-    // `token_budget`, spec `budget.max_tokens`, or a configured value here).
     0
 }
 

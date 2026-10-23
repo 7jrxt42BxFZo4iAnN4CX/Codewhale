@@ -1329,7 +1329,7 @@ pub(crate) fn flush_background_finished(app: &mut App, config: &Config, parent_i
         return;
     }
     let mode = config.notifications_config().subagent_completion;
-    let finite_work_live = session_state::live_running_agent_count(app, Instant::now()) > 0
+    let finite_work_live = session_state::live_running_agent_count(app) > 0
         || frame::workflow_tool_is_running(app)
         || app.task_panel.iter().any(|entry| {
             // A stale entry (a recovered task whose ownership is unverified)

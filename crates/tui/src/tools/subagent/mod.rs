@@ -274,12 +274,6 @@ fn read_bounded_resident_context(
     })
 }
 
-/// Positive child model-turn budgets are clamped to this hard ceiling. Zero is
-/// the unbounded sentinel used by the default agent loop.
-const MAX_SUBAGENT_STEPS: u32 = 2_000;
-/// Default wall-clock budget for one child run, including model and tool work.
-pub(crate) const DEFAULT_CHILD_WALL_TIME: Duration = Duration::from_secs(30 * 60);
-const MAX_CHILD_WALL_TIME: Duration = Duration::from_secs(24 * 60 * 60);
 /// Default wall-clock budget for a single sub-agent tool execution. The active
 /// value travels on `SubAgentRuntime::tool_timeout` so a long-but-legitimate
 /// tool (a large build, a slow shell command, a deep search) is not killed
@@ -308,7 +302,6 @@ fn resolve_max_steps(role: FleetRole, explicit: Option<u32>, configured: Option<
         WorkerRuntimeProfile::default_max_steps(role),
         narrow_model_steps(configured.unwrap_or(0), explicit.unwrap_or(0)),
     )
-    .min(MAX_SUBAGENT_STEPS)
 }
 
 /// A queued child whose launch slot never opened did no work: it is a
@@ -335,11 +328,7 @@ fn child_wall_time_exhausted_reason(limit: Duration) -> String {
 /// at spawn — so the transcript artifact records exactly what the model was
 /// told, and a continuation re-resolves its own values rather than inheriting
 /// a stale copy.
-fn child_runtime_budget_context(
-    runtime: &SubAgentRuntime,
-    max_steps: u32,
-    work_max_steps: u32,
-) -> String {
+fn child_runtime_budget_context(runtime: &SubAgentRuntime, max_steps: u32) -> String {
     let wall = match runtime.worker_profile.wall_deadline_ms {
         Some(deadline_ms) => {
             let remaining = codewhale_command_contract::elapsed::format_elapsed_ms(
@@ -357,10 +346,6 @@ fn child_runtime_budget_context(
     };
     let steps = if max_steps == 0 {
         "no per-run step cap".to_string()
-    } else if work_max_steps < max_steps {
-        format!(
-            "{work_max_steps} model turns of task work (limit {max_steps}; the last turn stays reserved for a bounded hand-back report)"
-        )
     } else {
         format!("{max_steps} model turns")
     };
@@ -371,9 +356,12 @@ fn child_runtime_budget_context(
     } else {
         "There is no token budget. Automatic context compaction is disabled for this session, so the model's own context window is the only context limit."
     };
-    format!(
-        "Runtime budget (host-enforced; you cannot raise it):\n- wall clock: {wall}.\n- model steps: {steps}.\n{context} When a limit is reached, task work stops where it stands and only a small reserved hand-back turn remains to report it. Commit or checkpoint work-in-progress early rather than holding it, and keep a current partial report ready."
-    )
+    let stopping = if runtime.worker_profile.wall_deadline_ms.is_some() || max_steps > 0 {
+        "The configured owner limits are enforced by the host. Preserve completed work and report remaining work if a limit is reached."
+    } else {
+        "Continue until the task is complete, needs user input, or is explicitly stopped. Do not invent a deadline or turn budget."
+    };
+    format!("Runtime limits:\n- wall clock: {wall}.\n- model steps: {steps}.\n{context} {stopping}")
 }
 
 /// The parent session's compaction policy, re-resolved for the route this
@@ -427,46 +415,6 @@ fn child_compaction_config(
     }
 }
 
-/// One-shot mid-run notice fired when any enforced budget is roughly
-/// three-quarters consumed (#6194). Returns `None` while every bound still
-/// has headroom or when no bound applies. This is visibility only: it changes
-/// no limit and never interrupts a step.
-fn child_budget_pacing_notice(
-    started_at: Instant,
-    deadline: Option<Instant>,
-    steps: u32,
-    work_max_steps: u32,
-) -> Option<String> {
-    let mut consumed = Vec::new();
-    if let Some(deadline) = deadline {
-        let total = deadline.saturating_duration_since(started_at);
-        if total > Duration::ZERO && started_at.elapsed() >= total / 4 * 3 {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            consumed.push(format!(
-                "wall clock: ~{} remains of ~{}",
-                codewhale_command_contract::elapsed::format_elapsed_ms(
-                    u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX)
-                ),
-                codewhale_command_contract::elapsed::format_elapsed_ms(
-                    u64::try_from(total.as_millis()).unwrap_or(u64::MAX)
-                ),
-            ));
-        }
-    }
-    if work_max_steps > 0 && u64::from(steps) * 4 >= u64::from(work_max_steps) * 3 {
-        consumed.push(format!("model steps: {steps} of {work_max_steps} used"));
-    }
-    if consumed.is_empty() {
-        return None;
-    }
-    Some(format!(
-        "<codewhale:runtime_event kind=\"budget_pacing\" visibility=\"internal\">\n\
-This is an internal runtime event, not user input. Roughly three quarters of a run budget is used:\n- {}\n\
-Wrap up now: commit or checkpoint work-in-progress and prepare your final report instead of starting new multi-step work.\n\
-</codewhale:runtime_event>",
-        consumed.join("\n- ")
-    ))
-}
 // Non-streaming sub-agents need enough response budget to carry large tool-call
 // arguments, especially write_file content. The API bills generated tokens, not
 // the requested ceiling.
@@ -1674,7 +1622,7 @@ fn worker_profile_from_spec(spec: &AgentWorkerSpec) -> WorkerRuntimeProfile {
     profile.model = ModelRoute::Fixed(spec.model.clone());
     profile.max_spawn_depth = spec.max_spawn_depth;
     profile.spawn_depth = spec.spawn_depth;
-    profile.max_steps = spec.max_steps.min(MAX_SUBAGENT_STEPS);
+    profile.max_steps = spec.max_steps;
     profile.background = true;
     profile
 }
@@ -1804,9 +1752,9 @@ pub(crate) struct SubAgentSpawnOptions {
     /// Per-tool-result output token cap for this child (#6282). `None` uses
     /// the runtime default (10k).
     pub max_output_tokens: Option<std::num::NonZeroU32>,
-    /// Optional per-child model-turn override, clamped to the runtime ceiling.
+    /// Optional owner-supplied per-child model-turn limit.
     pub max_steps: Option<u32>,
-    /// Optional per-child wall-clock override, clamped to the runtime ceiling.
+    /// Optional owner-supplied per-child wall-clock limit.
     pub wall_time: Option<Duration>,
     pub write_claim: Option<WriteScopeClaim>,
     pub isolated_worktree: bool,
@@ -2339,28 +2287,12 @@ impl PersistedSubAgentState {
     }
 }
 
-/// Default cap on sub-agent recursion depth. Override via
-/// `[subagents] max_depth = N` in config.
-///
-/// Sourced from [`codewhale_config::DEFAULT_SPAWN_DEPTH`] so standalone
-/// sub-agents and fleet workers share ONE recursion axis (no "two moving
-/// targets"). Configured/requested depths clamp to
-/// [`codewhale_config::MAX_SPAWN_DEPTH_CEILING`].
+/// Default delegation depth representation. Explicit operator settings narrow it.
 pub const DEFAULT_MAX_SPAWN_DEPTH: u32 = codewhale_config::DEFAULT_SPAWN_DEPTH;
 
-/// Resolve a child runtime's `max_spawn_depth` from its (already-incremented)
-/// `spawn_depth` and the model-supplied per-call `max_depth`, clamped to the
-/// absolute [`codewhale_config::MAX_SPAWN_DEPTH_CEILING`].
-///
-/// Without the absolute clamp, `max_spawn_depth = spawn_depth + max_depth`
-/// makes the recursion gate (`spawn_depth + 1 > max_spawn_depth`) reduce to
-/// `1 > max_depth` at every level — always false when the model re-supplies
-/// `max_depth >= 1` per spawn — so ring depth would grow to the global
-/// admission cap instead of the intended 8-ring ceiling.
+/// Convert an explicit remaining-depth allowance without arithmetic overflow.
 fn clamp_child_max_spawn_depth(child_spawn_depth: u32, requested_max_depth: u32) -> u32 {
-    child_spawn_depth
-        .saturating_add(requested_max_depth)
-        .min(codewhale_config::MAX_SPAWN_DEPTH_CEILING)
+    child_spawn_depth.saturating_add(requested_max_depth)
 }
 
 /// Terminal-state notification emitted to the immediate parent's completion
@@ -3043,6 +2975,7 @@ pub struct SubAgentRuntime {
     pub parent_completion_tx: Option<mpsc::Sender<SubAgentCompletion>>,
     /// Snapshot of the request prefix visible to an opt-in forked child.
     pub fork_context: Option<SubAgentForkContext>,
+    pub(crate) workflow_response_schema: Option<Value>,
     /// The parent's MCP pool if available.
     pub mcp_pool: Option<std::sync::Arc<tokio::sync::Mutex<crate::mcp::McpPool>>>,
     /// Per-step DeepSeek API timeout for the child's `create_message` call.
@@ -3159,6 +3092,7 @@ impl SubAgentRuntime {
             accounting_origin,
             parent_completion_tx: None,
             fork_context: None,
+            workflow_response_schema: None,
             mcp_pool: None,
             step_api_timeout: DEFAULT_STEP_API_TIMEOUT,
             api_timeout_retry_base_backoff: SUBAGENT_API_TIMEOUT_INITIAL_BACKOFF,
@@ -3364,7 +3298,7 @@ impl SubAgentRuntime {
     /// Used by config wiring (`[subagents] max_depth = N`) and tests.
     #[must_use]
     pub fn with_max_spawn_depth(mut self, max: u32) -> Self {
-        self.max_spawn_depth = max.min(codewhale_config::MAX_SPAWN_DEPTH_CEILING);
+        self.max_spawn_depth = max;
         self.worker_profile.max_spawn_depth = self.max_spawn_depth;
         self
     }
@@ -3494,6 +3428,7 @@ impl SubAgentRuntime {
             accounting_origin: self.accounting_origin.clone(),
             parent_completion_tx: self.parent_completion_tx.clone(),
             fork_context: self.fork_context.clone(),
+            workflow_response_schema: None,
             mcp_pool: self.mcp_pool.clone(),
             step_api_timeout: self.step_api_timeout,
             api_timeout_retry_base_backoff: self.api_timeout_retry_base_backoff,
@@ -3952,10 +3887,6 @@ impl AdmittedCoordinationRoot {
 pub struct SubAgentManager {
     agents: HashMap<String, SubAgent>,
     worker_records: HashMap<String, AgentWorkerRecord>,
-    /// In-flight report allowances, not billed usage. Weak leases disappear
-    /// on cancellation/abort without awaiting the manager lock or persisting
-    /// a refundable reservation across process recovery.
-    handback_reservations: HashMap<String, std::sync::Weak<u64>>,
     worker_event_seq: u64,
     persist_sequence: std::sync::atomic::AtomicU64,
     coordination: CoordinationLedger,
@@ -3979,10 +3910,8 @@ pub struct SubAgentManager {
     /// an explicit spawn `max_steps` still wins. Zero means unbounded.
     max_steps: Option<u32>,
     /// Configured default per-child wall-clock budget (`[subagents]
-    /// default_wall_time_secs`, #5324). `None` keeps
-    /// `DEFAULT_CHILD_WALL_TIME`, which an explicit spawn `wall_time_secs`
-    /// may raise up to `MAX_CHILD_WALL_TIME`; a configured value is also a
-    /// ceiling on explicit requests.
+    /// default_wall_time_secs`, #5324). `None` leaves the run unbounded;
+    /// a configured value is a ceiling on inherited work.
     wall_time: Option<Duration>,
     max_agents: usize,
     max_admitted_agents: usize,
@@ -4473,7 +4402,6 @@ impl SubAgentManager {
         Self {
             agents: HashMap::new(),
             worker_records: HashMap::new(),
-            handback_reservations: HashMap::new(),
             worker_event_seq: 0,
             persist_sequence: std::sync::atomic::AtomicU64::new(0),
             coordination: CoordinationLedger::default(),
@@ -4995,8 +4923,7 @@ impl SubAgentManager {
     }
 
     /// Set the configured default per-child wall-clock budget applied when a
-    /// spawn carries no explicit `wall_time_secs` (#5324). `None` keeps
-    /// `DEFAULT_CHILD_WALL_TIME`.
+    /// spawn has no owner-supplied deadline. `None` leaves the run unbounded.
     #[must_use]
     pub fn with_default_wall_time(mut self, wall_time: Option<Duration>) -> Self {
         self.wall_time = wall_time;
@@ -8824,29 +8751,24 @@ impl SubAgentManager {
                 runtime.max_spawn_depth
             ));
         }
-        // The built-in 30-minute clock is a default, not a ceiling: an explicit
-        // `wall_time_secs` may raise it up to MAX_CHILD_WALL_TIME. An operator
-        // `[subagents] default_wall_time_secs` stays a ceiling, and inherited
-        // profiles and deadlines still only narrow.
         let default_wall_time = runtime
             .execution_limits
             .as_ref()
             .map_or(self.wall_time, |limits| limits.default_wall_time);
-        let wall_time = options
-            .wall_time
-            .unwrap_or_else(|| default_wall_time.unwrap_or(DEFAULT_CHILD_WALL_TIME))
-            .min(default_wall_time.unwrap_or(MAX_CHILD_WALL_TIME))
-            .min(
+        let wall_time = narrow_optional_limit(
+            options.wall_time,
+            narrow_optional_limit(
+                default_wall_time,
                 runtime
                     .worker_profile
                     .wall_time_secs
-                    .map(Duration::from_secs)
-                    .unwrap_or(MAX_CHILD_WALL_TIME),
-            )
-            .min(MAX_CHILD_WALL_TIME);
+                    .map(Duration::from_secs),
+            ),
+        );
         let now_ms = epoch_millis_now();
-        let requested_deadline =
-            now_ms.saturating_add(u64::try_from(wall_time.as_millis()).unwrap_or(u64::MAX));
+        let requested_deadline = wall_time.map(|limit| {
+            now_ms.saturating_add(u64::try_from(limit.as_millis()).unwrap_or(u64::MAX))
+        });
         let source_deadline = options
             .resume_from_agent_id
             .as_deref()
@@ -8856,15 +8778,13 @@ impl SubAgentManager {
         // bounds a work clock restarted at launch (see `run_subagent_task_inner`).
         let wall_ceiling_ms =
             narrow_optional_limit(runtime.worker_profile.wall_deadline_ms, source_deadline);
-        let deadline_ms = wall_ceiling_ms.map_or(requested_deadline, |deadline| {
-            deadline.min(requested_deadline)
-        });
-        if deadline_ms <= now_ms {
+        let deadline_ms = narrow_optional_limit(wall_ceiling_ms, requested_deadline);
+        if deadline_ms.is_some_and(|deadline| deadline <= now_ms) {
             return Err(anyhow!(
                 "child wall-time budget exhausted; continuation cannot reset its deadline"
             ));
         }
-        let wall_time = Duration::from_millis(deadline_ms - now_ms);
+        let wall_time = deadline_ms.map(|deadline| Duration::from_millis(deadline - now_ms));
         let continuation_from = if options.checkpoint_continuation {
             let source = options
                 .resume_from_agent_id
@@ -9150,12 +9070,12 @@ impl SubAgentManager {
         runtime_profile.max_spawn_depth = runtime.max_spawn_depth;
         runtime_profile.spawn_depth = runtime.spawn_depth;
         runtime_profile.max_steps = max_steps;
-        runtime_profile.wall_time_secs = Some(
-            wall_time
+        runtime_profile.wall_time_secs = wall_time.map(|limit| {
+            limit
                 .as_secs()
-                .saturating_add(u64::from(wall_time.subsec_nanos() > 0)),
-        );
-        runtime_profile.wall_deadline_ms = Some(deadline_ms);
+                .saturating_add(u64::from(limit.subsec_nanos() > 0))
+        });
+        runtime_profile.wall_deadline_ms = deadline_ms;
         runtime.worker_profile = runtime_profile.clone();
         let worker_spec = AgentWorkerSpec {
             worker_id: agent_id.clone(),
@@ -11607,7 +11527,7 @@ static AGENT_TOOL_DESCRIPTION: std::sync::LazyLock<String> = std::sync::LazyLock
         "type selects the Fleet role: general (full tool access for multi-step tasks), explore (fast read-only exploration), planner (grounded strategy, read-only probes), reviewer (reads and grades code), implement (lands focused code changes), test (runs tests and reports evidence), advisor (read-only design counsel), or custom (allowed_tools on the parent's posture). ",
         "profile selects a saved member or built-in role. Saved profile and manual role pins are exact; model/strength choose unpinned routes; thinking overrides the tier. ",
         "Use action=roster for resolved roles, models, reasoning, context and cost evidence; it makes no provider request. ",
-        "max_steps and wall_time_secs only narrow inherited limits; the worker reserves one tools-disabled partial-report turn and falls back to recorded work when reporting is unavailable. There is no token budget: runs are never stopped by token accounting. ",
+        "Workers have no default turn or wall-clock budget. Only configured operator, role and inherited limits apply; legacy per-call max_steps, wall_time_secs and max_output_tokens are ignored. There is no token budget. ",
         "Prefer type=implement for write work and type=test (or the Run tool with action=\"verifiers\") after writes settle — dispatch is not completion. ",
         "action=claim widens your own enforced write scope: pass write_roots (and optionally exact_files, coordination_contracts) before mutating anything a fail-closed write refusal named. It records a durable claim receipt and fails on contention with a peer claim; it never touches another agent's scope. ",
         "Action contract: start requires prompt; message/followup require targets and a message; followup accepts one id, agent_ids or all_parked=true and returns continuation mappings. peek/interrupt/cancel require a target; claim requires scope entries; status is compact and paginated unless an addressed detail is requested. ",
@@ -11628,7 +11548,7 @@ impl ToolSpec for AgentTool {
     }
 
     /// One schema advertises the runtime's routing, scope, lifecycle and
-    /// narrowing-budget contract. Legacy aliases remain accepted for replay.
+    /// inherited-limit contract. Legacy aliases remain accepted for replay.
     fn input_schema(&self) -> Value {
         // Generic provider sanitization prunes required fields unless the
         // same schema node declares them. Presence tests inside `not` need
@@ -11748,18 +11668,6 @@ impl ToolSpec for AgentTool {
                     "type": "array",
                     "items": { "type": "string" },
                     "description": "Repo-relative directory trees a write-capable agent may mutate. On action=start: the scope this child claims, defaulting to the parent workspace ('.') when omitted. On action=claim: the trees to add to your own enforced scope, which you must do before mutating anything outside it. Paths outside the parent workspace are refused."
-                },
-                "max_output_tokens": {
-                    "type": "integer", "minimum": 1,
-                    "description": "Per-tool-result output token cap for this child (#6282). Overrides the 10k default; narrower values conserve context but may truncate tool results with [truncated: true] markers. Values above u32::MAX are rejected."
-                },
-                "max_steps": {
-                    "type": "integer", "minimum": 1, "maximum": MAX_SUBAGENT_STEPS,
-                    "description": "Maximum model turns for this run, only narrowing role/operator/parent limits. Continuation retains its remaining allowance."
-                },
-                "wall_time_secs": {
-                    "type": "integer", "minimum": 1, "maximum": MAX_CHILD_WALL_TIME.as_secs(),
-                    "description": "Whole-run wall time (queue, model, tools); default 1800, may exceed that but never inherited or operator limits. Continuation keeps the clock."
                 },
                 "deliverables": {
                     "type": "array", "maxItems": 16,
@@ -12097,11 +12005,26 @@ impl ToolSpec for AgentTool {
             .get("verbose")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        let ignored_limits: Vec<&str> = [
+            "max_steps",
+            "maxSteps",
+            "wall_time_secs",
+            "wallTimeSecs",
+            "max_output_tokens",
+            "maxOutputTokens",
+            "max_depth",
+            "maxDepth",
+            "max_spawn_depth",
+        ]
+        .into_iter()
+        .filter(|key| input.get(key).is_some())
+        .collect();
         let (snapshot, _spawn_metadata) = spawn_subagent_from_input(
             input,
             self.manager.clone(),
             self.runtime.clone(),
             false,
+            None,
             None,
         )
         .await?;
@@ -12115,6 +12038,12 @@ impl ToolSpec for AgentTool {
         let mut value = serde_json::to_value(&projection)
             .map_err(|e| ToolError::execution_failed(e.to_string()))?;
         compact_spawn_receipt(&mut value, verbose);
+        if !ignored_limits.is_empty() {
+            value["ignored_limit_fields"] = json!(ignored_limits);
+            value["limits_note"] = json!(
+                "Per-call limits are retired. This worker uses operator, role and inherited limits; see effective_limits."
+            );
+        }
         let mut tool_result =
             ToolResult::json(&value).map_err(|e| ToolError::execution_failed(e.to_string()))?;
         let metadata = json!({
@@ -12662,6 +12591,7 @@ async fn spawn_subagent_from_input(
     mut runtime: SubAgentRuntime,
     verified_posture_denials: bool,
     workflow_identity: Option<&WorkflowTaskSpawnIdentity>,
+    response_schema: Option<Value>,
 ) -> Result<(SubAgentResult, WorkflowTaskSpawnMetadata), ToolError> {
     let exact_fleet_binding =
         workflow_identity.and_then(|identity| identity.exact_fleet_binding.as_ref());
@@ -12670,6 +12600,12 @@ async fn spawn_subagent_from_input(
         refresh_spawn_route_sources(&mut runtime);
     }
     let mut spawn_request = parse_spawn_request(&input)?;
+    spawn_request.max_steps = None;
+    spawn_request.wall_time = None;
+    spawn_request.max_output_tokens = None;
+    if exact_fleet_binding.is_none() {
+        spawn_request.max_depth = None;
+    }
     if !verified_posture_denials {
         // Keep caller restrictions in the inherited context before adding
         // structural role sentinels to the worker profile. A read-only role
@@ -12870,6 +12806,7 @@ async fn spawn_subagent_from_input(
     );
     apply_spawn_write_authority(&mut child_runtime, &spawn_request);
     let write_capable = spawn_request_is_write_capable(&spawn_request);
+    child_runtime.workflow_response_schema = response_schema.filter(|_| !write_capable);
     let write_claim = write_capable.then(|| WriteScopeClaim {
         owner: String::new(),
         roots: spawn_request.write_roots.clone(),
@@ -13377,6 +13314,7 @@ pub(crate) async fn spawn_workflow_task(
         runtime,
         identity.fleet_authority_fingerprint.is_some(),
         Some(&identity),
+        request.response_schema,
     )
     .await?;
     let workflow_task_label = identity.workflow_task_label;
@@ -13701,8 +13639,8 @@ struct SubAgentTask {
     max_steps: u32,
     /// Wall-clock budget for the child's work. A child that waits for a
     /// launch slot gets it in full from the moment it launches, bounded by
-    /// `wall_ceiling_ms`; the queue wait itself is bounded by the same length.
-    wall_time: Duration,
+    /// `wall_ceiling_ms`. `None` leaves the queue and work without a deadline.
+    wall_time: Option<Duration>,
     /// Inherited absolute deadline (epoch ms) from the parent, saved-run or
     /// source record, which a restarted work clock never passes.
     wall_ceiling_ms: Option<u64>,
@@ -14062,36 +14000,38 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
         }
     }
 
-    let mut deadline = (task.started_at + task.wall_time).min(
-        task.runtime.worker_profile.wall_deadline_ms.map_or(
-            task.started_at + task.wall_time,
-            |deadline| {
-                Instant::now() + Duration::from_millis(deadline.saturating_sub(epoch_millis_now()))
-            },
-        ),
+    let mut deadline = narrow_optional_limit(
+        task.wall_time
+            .and_then(|limit| task.started_at.checked_add(limit)),
+        task.runtime
+            .worker_profile
+            .wall_deadline_ms
+            .and_then(|deadline| {
+                Instant::now().checked_add(Duration::from_millis(
+                    deadline.saturating_sub(epoch_millis_now()),
+                ))
+            }),
     );
     // One effective deadline, visible to both layers. The inner stages read
-    // `worker_profile.wall_deadline_ms` (work deadline, reserved hand-back),
+    // `worker_profile.wall_deadline_ms`,
     // while an authored task wall time used to narrow the budget only through
     // the outer backstop below. The backstop must not race the deadline
     // (#6277), so fold the task wall time into the profile before the run:
     // enforcement, the model-visible budget block, and the receipt then all
     // describe the same limit.
-    let effective_deadline_ms = epoch_millis_now().saturating_add(
-        u64::try_from(
-            deadline
-                .saturating_duration_since(Instant::now())
-                .as_millis(),
+    let effective_deadline_ms = deadline.map(|deadline| {
+        epoch_millis_now().saturating_add(
+            u64::try_from(
+                deadline
+                    .saturating_duration_since(Instant::now())
+                    .as_millis(),
+            )
+            .unwrap_or(u64::MAX),
         )
-        .unwrap_or(u64::MAX),
-    );
-    task.runtime.worker_profile.wall_deadline_ms = Some(
-        task.runtime
-            .worker_profile
-            .wall_deadline_ms
-            .map_or(effective_deadline_ms, |existing| {
-                existing.min(effective_deadline_ms)
-            }),
+    });
+    task.runtime.worker_profile.wall_deadline_ms = narrow_optional_limit(
+        task.runtime.worker_profile.wall_deadline_ms,
+        effective_deadline_ms,
     );
 
     // Interactive launch gate (#3095): direct children acquire a permit
@@ -14118,12 +14058,12 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
         match Arc::clone(gate).try_acquire() {
             Some(permit) => _launch_permits.push(permit),
             None => {
-                match tokio::time::timeout_at(
-                    deadline.into(),
-                    acquire_queued_launch_permit(&task, Arc::clone(gate), deadline),
-                )
-                .await
-                {
+                let acquire = acquire_queued_launch_permit(&task, Arc::clone(gate), deadline);
+                let permit = match deadline {
+                    Some(deadline) => tokio::time::timeout_at(deadline.into(), acquire).await,
+                    None => Ok(acquire.await),
+                };
+                match permit {
                     Ok(permit) => {
                         if let Some(permit) = permit {
                             launched_from_queue = true;
@@ -14140,25 +14080,26 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
             }
         }
     }
-    let queue_limit = deadline.saturating_duration_since(task.started_at);
+    let queue_limit = deadline.map(|deadline| deadline.saturating_duration_since(task.started_at));
     let mut work_started_at = task.started_at;
     if launched_from_queue {
         let now = Instant::now();
         let now_ms = epoch_millis_now();
-        let restarted_ms =
-            now_ms.saturating_add(u64::try_from(task.wall_time.as_millis()).unwrap_or(u64::MAX));
-        let deadline_ms = task
-            .wall_ceiling_ms
-            .map_or(restarted_ms, |ceiling| ceiling.min(restarted_ms));
-        deadline = now + Duration::from_millis(deadline_ms.saturating_sub(now_ms));
-        task.runtime.worker_profile.wall_deadline_ms = Some(deadline_ms);
+        let restarted_ms = task.wall_time.map(|limit| {
+            now_ms.saturating_add(u64::try_from(limit.as_millis()).unwrap_or(u64::MAX))
+        });
+        let deadline_ms = narrow_optional_limit(task.wall_ceiling_ms, restarted_ms);
+        deadline = deadline_ms.and_then(|deadline| {
+            now.checked_add(Duration::from_millis(deadline.saturating_sub(now_ms)))
+        });
+        task.runtime.worker_profile.wall_deadline_ms = deadline_ms;
         work_started_at = now;
         // Continuation reads the saved deadline, so save the restarted one;
         // otherwise a child that launched late would be refused as out of
         // budget while most of its work budget was left.
         let mut manager = task.manager_handle.write().await;
         if let Some(record) = manager.worker_records.get_mut(&task.agent_id) {
-            record.spec.runtime_profile.wall_deadline_ms = Some(deadline_ms);
+            record.spec.runtime_profile.wall_deadline_ms = deadline_ms;
             record.updated_at_ms = now_ms;
             manager.persist_state_debounced();
         }
@@ -14168,20 +14109,22 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
         ._foreground_child_registration
         .as_ref()
         .map(ForegroundChildRegistration::parking_signal);
-    // Every inner stage bounds itself by `deadline` (step requests by the
-    // work deadline, and the reserved hand-back turn by the hard deadline),
+    // Every inner stage bounds itself by the owner-selected `deadline`,
     // so the inner run can always produce its own receipt: the specific stop
-    // cause, the hand-back outcome, and preserved usage. This outer backstop
+    // cause and preserved usage. This outer backstop
     // exists only for an inner stage that overruns anyway; racing it at the
     // same instant as the inner deadline replaced real receipts with the
     // generic error below (#6277). The grace keeps the anti-hang guarantee
     // while letting the inner receipt win.
-    let backstop = deadline + Duration::from_secs(30);
-    let effective_limit = deadline.saturating_duration_since(work_started_at);
+    let backstop = deadline.and_then(|deadline| deadline.checked_add(Duration::from_secs(30)));
+    let effective_limit =
+        deadline.map(|deadline| deadline.saturating_duration_since(work_started_at));
     let mut backstop_budget = false;
     let result = if launch_wait_timed_out {
         task.runtime.cancel_token.cancel();
-        Err(anyhow!(never_started_reason(queue_limit)))
+        Err(anyhow!(never_started_reason(
+            queue_limit.expect("timed queue has a deadline")
+        )))
     } else {
         let child = engine::run_child_agent(
             &task.runtime,
@@ -14202,12 +14145,17 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
             () = async {
                 tokio::select! {
                     () = task.runtime.cancel_token.cancelled() => {},
-                    () = tokio::time::sleep_until(backstop.into()) => {},
+                    () = async {
+                        match backstop {
+                            Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
+                            None => std::future::pending::<()>().await,
+                        }
+                    } => {},
                 }
             } => {
                 // Signal first, then keep polling the exact future that owns
                 // Core's approval receipt and actor join; never reopen work.
-                backstop_budget = Instant::now() >= backstop
+                backstop_budget = backstop.is_some_and(|deadline| Instant::now() >= deadline)
                     && !task.runtime.cancel_token.is_cancelled();
                 task.runtime.cancel_token.cancel();
                 // Core's driver owns a five-second cooperative join. One extra
@@ -14217,7 +14165,11 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
                 tokio::time::timeout(CHILD_STOP_SETTLE_GRACE + Duration::from_secs(1), &mut child)
                     .await.unwrap_or_else(|_| Err(anyhow!(engine::UnsettledChildCancellation(format!(
                         "{}; child cancellation did not settle",
-                        child_wall_time_exhausted_reason(effective_limit)
+                        if backstop_budget {
+                            child_wall_time_exhausted_reason(effective_limit.expect("budget backstop has a deadline"))
+                        } else {
+                            "child stop requested".to_string()
+                        }
                     )))))
             }
         }
@@ -14321,7 +14273,9 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
     let terminal = match result {
         Ok(result) if backstop_budget => budget_partial_result(
             result,
-            &child_wall_time_exhausted_reason(effective_limit),
+            &child_wall_time_exhausted_reason(
+                effective_limit.expect("budget backstop has a deadline"),
+            ),
             preservation_note.as_deref(),
         ),
         Ok(mut result) => {
@@ -14380,10 +14334,9 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
 }
 
 /// Queued-row reason (addendum F5): why the child waits — a free slot, or the
-/// rate-limit governor's pause/throttle — and when it gives up waiting (as
-/// an end time). The work budget starts at launch (#6015); the queue wait is
-/// bounded separately so saturation cannot keep a child waiting forever.
-fn queued_launch_reason(task: &SubAgentTask, deadline: Instant) -> String {
+/// rate-limit governor's pause/throttle — and any owner-supplied deadline.
+/// The work budget starts at launch (#6015) when a budget is configured.
+fn queued_launch_reason(task: &SubAgentTask, deadline: Option<Instant>) -> String {
     let now = Instant::now();
     let governor_line = task
         .runtime
@@ -14403,13 +14356,16 @@ fn queued_launch_reason(task: &SubAgentTask, deadline: Instant) -> String {
         Some(line) => format!("{SUBAGENT_QUEUED_LAUNCH_REASON} — {line}"),
         None => SUBAGENT_QUEUED_LAUNCH_REASON.to_string(),
     };
-    format!(
-        "{base} {}",
-        queued_budget_note(
-            deadline.saturating_duration_since(now),
-            chrono::Local::now()
-        )
-    )
+    match deadline {
+        Some(deadline) => format!(
+            "{base} {}",
+            queued_budget_note(
+                deadline.saturating_duration_since(now),
+                chrono::Local::now()
+            )
+        ),
+        None => base,
+    }
 }
 
 /// The wall-budget half of a queued reason. The row is republished only when
@@ -14434,7 +14390,7 @@ fn queued_reason_cause(reason: &str) -> &str {
 async fn acquire_queued_launch_permit(
     task: &SubAgentTask,
     gate: Arc<governor::DynamicGate>,
-    deadline: Instant,
+    deadline: Option<Instant>,
 ) -> Option<governor::DynamicGatePermit> {
     // When the governor has paused launches over sustained provider 429s,
     // surface the reason in the queued status instead of the generic
@@ -15816,18 +15772,12 @@ fn parse_spawn_request(input: &Value) -> Result<SpawnRequest, ToolError> {
         u32::MAX as u64,
     )?
     .map(|n| n as u32);
-    let max_steps = parse_optional_bounded_limit(
-        input,
-        &["max_steps", "maxSteps"],
-        u64::from(MAX_SUBAGENT_STEPS),
-    )?
-    .map(|steps| u32::try_from(steps).expect("validated model-turn range"));
-    let wall_time = parse_optional_bounded_limit(
-        input,
-        &["wall_time_secs", "wallTimeSecs"],
-        MAX_CHILD_WALL_TIME.as_secs(),
-    )?
-    .map(Duration::from_secs);
+    let max_steps =
+        parse_optional_bounded_limit(input, &["max_steps", "maxSteps"], u64::from(u32::MAX))?
+            .map(|steps| u32::try_from(steps).expect("validated model-turn range"));
+    let wall_time =
+        parse_optional_bounded_limit(input, &["wall_time_secs", "wallTimeSecs"], u64::MAX / 1_000)?
+            .map(Duration::from_secs);
 
     // #4042: optional caller-supplied tool deny-list (unioned with the parent's
     // inherited deny-list) and the legacy inheritance flag (cannot relax policy).
@@ -19183,13 +19133,13 @@ const GENERAL_AGENT_INTRO: &str = concat!(
     "You are a trusted Fleet worker. Your job is to complete the one task you were given, end-to-end, and report back concisely.\n",
     "Stay inside the assigned scope; put adjacent work under RISKS/BLOCKERS.\n",
     "For genuinely multi-step work, track progress with `todo_write`; skip it for short, focused tasks.\n",
-    "**Stop quickly on failure**: if the same tool call fails 2 times in a row, stop retrying and return what you have so far with a one-line note explaining what's missing. Do not loop on impossible queries (e.g. external API unreachable, rate-limited, or returning empty).\n",
+    "After a failed tool call, inspect the cause and adapt. Retry a transient failure when appropriate, use another supported approach, or report a concrete blocker when progress requires unavailable input or authority. Continue independent work.\n",
     "For builder or repair-style work, keep going within the assigned scope; checkpoint before broadening the task or after repeated failures instead of forcing a tiny tool-call cap.\n\n"
 );
 
 const EXPLORE_AGENT_INTRO: &str = concat!(
     "You are a trusted Fleet scout (role: `scout`). Your job is to map the relevant code quickly and stay strictly read-only.\n",
-    "Default to `EFFORT: quick`: stop at decisive evidence, not at a number — there is no per-agent call cap to save.\n",
+    "Gather enough evidence to answer the assigned question reliably; there is no per-agent call cap to save.\n",
     "Orient first: confirm the workspace/project root, read relevant AGENTS.md/README guidance when the tree is unfamiliar, then search only the likely scope.\n",
     "Use `read` for bounded file reads and `bash` only for the allowed read-only inspection subset: navigation/rg, safe Git reads (for example `git log -n 5`), and read-only GitHub views such as `gh issue view`. Builds, tests, writes, and shell control actions are unavailable.\n",
     "Use your private `todo_write` list as editable working notes when useful; it is agent-owned state, not permission to write project files. Those tool calls remain in the complete transcript artifact returned to the parent.\n",
@@ -19226,7 +19176,7 @@ const IMPLEMENTER_AGENT_INTRO: &str = concat!(
     "You are a trusted Fleet builder (role: `builder`). Your job is to land the assigned change with minimal surrounding edits.\n",
     "Use `edit` for precise unique replacements, `write` for whole-file changes, and discover `apply_patch` for unified multi-file patches when needed.\n",
     "Run relevant verification after edit batches; write needed tests with the implementation.\n",
-    "You are not limited to a scout-style 3-5 tool-call cap. Checkpoint before expanding scope or after repeated failures, then continue only inside the assigned brief.\n",
+    "Checkpoint before expanding scope or after repeated failures, then continue only inside the assigned brief.\n",
     "CHANGES is load-bearing: list every modified file with a one-line why.\n",
     "Before finishing, end with a VERDICT block: PASS or FAIL, the exact commands you ran (or why verification was impossible), and brief evidence. A diff alone is not completion.\n\n"
 );

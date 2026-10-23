@@ -1098,13 +1098,12 @@ pub struct TuiConfig {
     /// omitted. `0` maps to the default; values clamp to `1..=3600`.
     pub stream_chunk_timeout_secs: Option<u64>,
     /// Optional ceiling on model steps in a single turn. Omitted or `0`
-    /// leaves model steps uncapped; explicit positive values clamp to
-    /// `1..=100_000`. Wall-clock and stream budgets remain independent.
+    /// leaves model steps uncapped. Explicit positive values are preserved;
+    /// `u32::MAX` also represents no limit. Stream limits remain independent.
     pub max_model_steps: Option<u32>,
-    /// R1: cumulative wall-clock budget for a single turn, in seconds.
-    /// Omitted or `0` resolve to the finite default (3600); explicit values
-    /// clamp to `30..=86_400`. Time blocked on a human approval decision is
-    /// excluded from the measurement.
+    /// Cumulative wall-clock budget for a single turn, in seconds.
+    /// Omitted or `0` means no limit; positive values are preserved. Time
+    /// blocked on a human approval decision is excluded from the measurement.
     pub turn_wall_clock_secs: Option<u64>,
     /// R1: per-step cap on accumulated streamed content, in megabytes.
     /// Omitted or `0` resolve to the default (10 MB); explicit values clamp
@@ -1397,7 +1396,7 @@ pub struct GoalConfig {
 
     /// Optional per-engine-turn step ceiling while a goal is active (#6512).
     /// Like ordinary turns, `None` or `0` leaves model steps uncapped;
-    /// positive values clamp to `1..=100,000`. This bounds each turn, never
+    /// positive values are preserved. This bounds each turn, never
     /// the number of continuation passes; explicit per-invocation ceilings
     /// (`exec --max-turns`, child-worker caps) still win.
     #[serde(default)]
@@ -1760,10 +1759,9 @@ pub struct SubagentsConfig {
     /// spawn. `0` blocks the model-facing `agent` tool at this runtime depth;
     /// use `[subagents] enabled = false` for the clearer durable off switch.
     /// `1` allows one level, `2` two, and so on. When unset, defaults to
-    /// [`codewhale_config::DEFAULT_SPAWN_DEPTH`]; any value is clamped to
-    /// [`codewhale_config::MAX_SPAWN_DEPTH_CEILING`]. Fleet workers are
-    /// governed separately by `[fleet.exec] max_spawn_depth`; both share the
-    /// same default and ceiling so the limit cannot drift.
+    /// [`codewhale_config::DEFAULT_SPAWN_DEPTH`], with no product depth cap.
+    /// Fleet workers are governed separately by `[fleet.exec] max_spawn_depth`;
+    /// both use the same default.
     #[serde(default)]
     pub max_depth: Option<u32>,
     /// Number of direct (depth-1) sub-agents that may execute concurrently
@@ -1795,16 +1793,12 @@ pub struct SubagentsConfig {
     /// cancelled before their request timeout can fire (#2614).
     #[serde(default)]
     pub heartbeat_timeout_secs: Option<u64>,
-    /// Default per-child model-turn budget applied when an `agent` start
-    /// carries no explicit `max_steps` (#5324). Unset or zero remains
-    /// unbounded for every Fleet role; positive values are clamped to the
-    /// runtime ceiling (2000) at resolution.
+    /// Operator-selected per-child model-turn budget. Unset or zero leaves
+    /// every Fleet role unbounded unless an inherited limit applies.
     #[serde(default)]
     pub default_max_steps: Option<u32>,
-    /// Default per-child wall-clock budget in seconds applied when an
-    /// `agent` start carries no explicit `wall_time_secs` (#5324). When
-    /// unset, children get 1800s; values are clamped to 1..=86400 at
-    /// resolution.
+    /// Operator-selected per-child wall-clock budget in seconds. Unset or
+    /// zero leaves the run unbounded unless an inherited deadline applies.
     #[serde(default)]
     pub default_wall_time_secs: Option<u64>,
     /// Per-provider overrides for sub-agent fanout and budget knobs. Keys are
@@ -7537,16 +7531,14 @@ impl Config {
     /// How many levels of nested sub-agents the interactive `agent` tool may
     /// spawn. Reads `[subagents] max_depth`; when unset it defaults to
     /// [`codewhale_config::DEFAULT_SPAWN_DEPTH`]. `0` is a valid value that
-    /// blocks the `agent` tool at this runtime depth. Any value is clamped to
-    /// [`codewhale_config::MAX_SPAWN_DEPTH_CEILING`] so the operator's choice
-    /// can never exceed the hard recursion ceiling.
+    /// blocks the `agent` tool at this runtime depth. Positive owner choices
+    /// are preserved without another product ceiling.
     #[must_use]
     pub fn subagent_max_spawn_depth(&self) -> u32 {
         self.subagents
             .as_ref()
             .and_then(|cfg| cfg.max_depth)
             .unwrap_or(codewhale_config::DEFAULT_SPAWN_DEPTH)
-            .min(codewhale_config::MAX_SPAWN_DEPTH_CEILING)
     }
 
     /// Return the provider-specific maximum sub-agent recursion depth.
@@ -7555,7 +7547,6 @@ impl Config {
         self.subagent_provider_config(identity)
             .and_then(|cfg| cfg.max_depth)
             .unwrap_or_else(|| self.subagent_max_spawn_depth())
-            .min(codewhale_config::MAX_SPAWN_DEPTH_CEILING)
     }
 
     /// Number of direct (depth-1) sub-agents that may execute concurrently
@@ -7618,9 +7609,8 @@ impl Config {
     }
 
     /// Default per-child model-turn budget from `[subagents]
-    /// default_max_steps`, applied when an `agent` start carries no explicit
-    /// `max_steps` (#5324). `None` or `0` mean unbounded; a positive value is
-    /// clamped to the runtime ceiling when applied.
+    /// default_max_steps`. `None` or `0` mean unbounded; positive values
+    /// remain an owner limit that descendants cannot widen.
     #[must_use]
     pub fn subagent_default_max_steps(&self) -> Option<u32> {
         self.subagents
@@ -7630,9 +7620,8 @@ impl Config {
     }
 
     /// Default per-child wall-clock budget in seconds from `[subagents]
-    /// default_wall_time_secs`, applied when an `agent` start carries no
-    /// explicit `wall_time_secs` (#5324). `None` or `0` keep the 1800s
-    /// default; the resolved value is clamped to 1..=86400 when applied.
+    /// default_wall_time_secs`. `None` or `0` mean unbounded; positive
+    /// values remain an owner limit that descendants cannot widen.
     #[must_use]
     pub fn subagent_default_wall_time_secs(&self) -> Option<u64> {
         self.subagents

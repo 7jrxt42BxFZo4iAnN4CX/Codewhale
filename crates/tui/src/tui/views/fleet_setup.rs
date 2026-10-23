@@ -303,8 +303,7 @@ impl FleetSetupSnapshot {
             .fleet
             .as_ref()
             .map(|fleet| fleet.exec.max_spawn_depth)
-            .unwrap_or_else(|| codewhale_config::FleetExecConfig::default().max_spawn_depth)
-            .min(codewhale_config::MAX_SPAWN_DEPTH_CEILING);
+            .unwrap_or_else(|| codewhale_config::FleetExecConfig::default().max_spawn_depth);
         let roster =
             crate::fleet::roster::FleetRoster::load(&config.fleet_config(), &app.workspace);
         let roster_members = roster

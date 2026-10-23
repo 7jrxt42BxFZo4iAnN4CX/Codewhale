@@ -33,22 +33,6 @@ impl Engine {
             stream_errors,
             prepared_output_tokens,
         } = response;
-        if self.child_report() {
-            // Reporting has one logical model step and never authorizes tool,
-            // code-fence, steer, child completion or goal continuation.
-            return if tool_uses.is_empty()
-                && output_limit_truncated.is_none()
-                && !current_text_visible.trim().is_empty()
-                && has_sendable_assistant_content
-            {
-                PhaseResult::Break
-            } else {
-                PhaseResult::Return((
-                    TurnOutcomeStatus::Failed,
-                    Some("bounded Core report did not finish as text".into()),
-                ))
-            };
-        }
         // A truncated response with no tool call cannot continue through
         // tool execution: surface the truncation as a bounded observation
         // and resume the loop so the model can act on it instead of the

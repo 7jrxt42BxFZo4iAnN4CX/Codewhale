@@ -458,7 +458,7 @@ async fn actor_fixture_from_authority(
         EngineConfig {
             workspace: workspace.into(),
             model: DEFAULT_TEXT_MODEL.into(),
-            max_steps: job.work_max_steps,
+            max_steps: job.max_steps,
             ..Default::default()
         },
         &api,
@@ -480,7 +480,7 @@ async fn actor_fixture_from_authority(
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn child_work_and_one_bounded_report_share_actual_engine_session_and_dispatch() {
+async fn child_work_can_finish_on_the_final_owner_selected_turn() {
     use crate::llm_client::mock::canned;
     let dir = tempdir().unwrap();
     let _home = crate::test_support::SealedHome::at(dir.path());
@@ -506,11 +506,11 @@ async fn child_work_and_one_bounded_report_share_actual_engine_session_and_dispa
         tokio::join!(Box::pin(engine.run_child()), collect)
     })
     .await
-    .expect("same actor must settle work and reporting");
+    .expect("same actor must settle the full work allowance");
     let result = result.unwrap();
     assert_eq!(
         result.status,
-        crate::tools::subagent::SubAgentStatus::BudgetExhausted
+        crate::tools::subagent::SubAgentStatus::Completed
     );
     assert_eq!(mock.call_count(), 2);
     let requests = mock.captured_requests();
@@ -522,12 +522,17 @@ async fn child_work_and_one_bounded_report_share_actual_engine_session_and_dispa
             .iter()
             .any(|tool| tool.name == "read")
     );
-    assert!(requests[1].tools.is_none());
-    assert!(requests[1].tool_choice.is_none());
-    assert!(requests[1].max_tokens <= 1024);
+    assert!(
+        requests[1]
+            .tools
+            .as_ref()
+            .unwrap()
+            .iter()
+            .any(|tool| tool.name == "read")
+    );
     assert_eq!(job.steps(), 2);
     assert!(requests[1].messages.iter().flat_map(|m| &m.content).any(
-        |b| matches!(b, ContentBlock::Text { text, .. } if text.contains("exact evidence bytes"))
+        |b| matches!(b, ContentBlock::ToolResult { content, .. } if content.contains("exact evidence bytes"))
     ));
     assert_eq!(
         events
@@ -1106,7 +1111,7 @@ async fn actual_child_tool_output_cap_reaches_core_fanout_with_full_artifact() {
         Arc::new(authority),
         vec![
             canned::tool_call_turn("read-capped", "read", r#"{"path":"evidence.txt"}"#),
-            canned::simple_text_turn("Bounded report."),
+            canned::simple_text_turn("Read the evidence."),
         ],
         2,
     )

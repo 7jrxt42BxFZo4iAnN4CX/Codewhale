@@ -53,14 +53,9 @@ impl Engine {
         let mut rlm_dispatch = None;
         let request_cancel = self.cancel_token.clone();
         let mut child_dispatch = None;
-        let child_reporting = self.child_report();
-        let child_logical_step = child_job.as_ref().map(|job| {
-            if child_reporting {
-                job.steps().saturating_add(1)
-            } else {
-                turn.steps_used().saturating_add(1)
-            }
-        });
+        let child_logical_step = child_job
+            .as_ref()
+            .map(|_| turn.steps_used().saturating_add(1));
         let retry_observation = self.request_retry_observation();
         let transport_retries = retry_observation.retries.clone();
         let mut request_receipt = Some(PendingProviderRequestReceipt {
@@ -143,12 +138,6 @@ impl Engine {
                         dispatch.settle_open_error(&e).await;
                     }
                     drop(child_dispatch.take());
-                }
-                if self.child_report() {
-                    return PhaseResult::Return((
-                        TurnOutcomeStatus::Failed,
-                        Some("bounded Core report request failed".into()),
-                    ));
                 }
                 // Replacement is permitted only if Core can still retract
                 // this exact unsent user message. A runtime note or rewrite
@@ -499,7 +488,7 @@ impl Engine {
             // but cannot replace the last admitted answer or execute FINAL/REPL.
             state.last_response = current_text_visible.clone();
         }
-        if response_stream_failed && self.child_host.is_some() && !self.child_report() {
+        if response_stream_failed && self.child_host.is_some() {
             let error = if progress
                 .turn_error
                 .as_deref()
@@ -624,26 +613,6 @@ impl Engine {
         // appends a synthetic user message to the persisted
         // conversation — the retried request is the persisted
         // conversation re-issued, nothing else.
-        if self.child_report() {
-            let refusal = if !tool_uses.is_empty() {
-                Some("provider returned a tool call; no call executed")
-            } else if output_limit_truncated.is_some() {
-                Some("report did not finish: provider output limit")
-            } else if response_stream_failed {
-                Some("provider call failed; no complete report accepted")
-            } else if current_text_visible.trim().is_empty() {
-                Some("report did not finish: empty response")
-            } else {
-                None
-            };
-            if let Some(refusal) = refusal {
-                self.post_held_frame_error(&frame_error).await;
-                return PhaseResult::Return((
-                    TurnOutcomeStatus::Failed,
-                    Some(format!("bounded Core report refused: {refusal}")),
-                ));
-            }
-        }
         // A flushed redacted block or non-blank thinking is received content,
         // the same rule `current_thinking` follows.
         let stream_died_with_nothing = stream_errors > 0
@@ -1149,9 +1118,6 @@ impl Engine {
     ) -> Option<PhaseResult<AcceptedModelStep>> {
         use crate::tools::subagent::engine::ChildRequestRecovery;
         let job = self.child_job()?;
-        if self.child_report() {
-            return None;
-        }
         let decision = progress
             .child_request_retries
             .decide(&job.authority.runtime, error)?;

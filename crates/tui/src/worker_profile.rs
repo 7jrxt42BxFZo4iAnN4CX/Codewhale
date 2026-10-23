@@ -515,10 +515,7 @@ impl WorkerRuntimeProfile {
         };
         // Depth stays absolute; only the current position increments. Every
         // authority projection compares the position against this same ceiling.
-        let max_spawn_depth = requested
-            .max_spawn_depth
-            .min(self.max_spawn_depth)
-            .min(codewhale_config::MAX_SPAWN_DEPTH_CEILING);
+        let max_spawn_depth = requested.max_spawn_depth.min(self.max_spawn_depth);
         WorkerRuntimeProfile {
             role: requested.role.clone(),
             permissions,

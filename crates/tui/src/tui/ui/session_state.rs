@@ -159,30 +159,20 @@ pub(crate) fn restore_matching_offline_queue_state(
     true
 }
 
-/// A Running sub-agent older than every child's wall budget cannot still be
-/// doing bounded work: its terminal event was lost or its task is wedged
-/// (#6184 H2). The default child wall budget plus generous grace.
-pub(crate) const SUBAGENT_SUSPECT_AFTER: Duration =
-    crate::tools::subagent::DEFAULT_CHILD_WALL_TIME.saturating_add(Duration::from_secs(5 * 60));
-
-/// Running sub-agents that are past their bound: shown as suspect, and never a
-/// veto on turn recovery. A prior-session row still marked Running cannot be
-/// live in this process at all.
-pub(crate) fn suspect_running_agents(app: &App, now: Instant) -> Vec<String> {
+/// Prior-session Running rows have no live actor in this process. Elapsed
+/// time alone does not establish that a current child is stalled.
+pub(crate) fn suspect_running_agents(app: &App) -> Vec<String> {
     app.subagent_cache
         .iter()
         .filter(|agent| matches!(agent.status, SubAgentStatus::Running))
-        .filter(|agent| match agent.started_at {
-            Some(started) => now.saturating_duration_since(started) > SUBAGENT_SUSPECT_AFTER,
-            None => agent.from_prior_session,
-        })
+        .filter(|agent| agent.from_prior_session)
         .map(|agent| agent.agent_id.clone())
         .collect()
 }
 
 /// Running sub-agents that still legitimately hold the turn open.
-pub(crate) fn live_running_agent_count(app: &App, now: Instant) -> usize {
-    let suspects = suspect_running_agents(app, now);
+pub(crate) fn live_running_agent_count(app: &App) -> usize {
+    let suspects = suspect_running_agents(app);
     let mut ids: std::collections::HashSet<&str> =
         app.agent_progress.keys().map(String::as_str).collect();
     for agent in app
@@ -207,10 +197,10 @@ fn held_queue_note(app: &App) -> String {
 
 /// Log, record under `crashes/`, and name a stall the UI watchdog saw.
 fn record_ui_stall(app: &App, phase: &str, since_progress: Duration, bound: Duration) {
-    let suspects = suspect_running_agents(app, Instant::now());
+    let suspects = suspect_running_agents(app);
     let detail = (!suspects.is_empty()).then(|| {
         format!(
-            "sub-agent(s) past their bound, treated as suspect: {}",
+            "sub-agent(s) retained from a prior session, with no live actor: {}",
             suspects.join(", ")
         )
     });
@@ -257,7 +247,7 @@ pub(crate) fn reconcile_turn_liveness_supervised(
         let text = format!("{}{}", stall.status_line(), held_queue_note(app));
         app.push_status_toast(text, StatusToastLevel::Error, None);
     }
-    let has_live_agents = live_running_agent_count(app, now) > 0;
+    let has_live_agents = live_running_agent_count(app) > 0;
     let recovered = reconcile_turn_liveness_with(app, now, has_live_agents, Some(heartbeat));
     if recovered && turn_in_progress && app.runtime_turn_status.is_none() {
         engine.cancel_with_reason(crate::core::engine::CancelReason::Stalled);

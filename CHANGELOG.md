@@ -23,9 +23,44 @@ tool-enabled runs and their failure receipts. Local runtimes appear during
 onboarding, `/diff` works outside a Git repository, DeepSeek's Responses route
 no longer rejects replayed tool history, and contributor fixes improve token
 accounting, relay model lists, localized replies and Windows launcher
-guidance.
+guidance. Delegated work continues without model-invented turn or time caps,
+and independent workflow steps can continue after another child fails.
 
 ### Latest fixes
+
+- Development test builds use a boxed future at the shared Engine event-loop
+  boundary, keeping its large concrete async type out of callers. One local
+  warm-build comparison fell from 29m 31s to 2m 24s with the same compiler,
+  profile and features; this is not a cold-build or cross-platform guarantee.
+
+- Delegated workers no longer inherit model-selected turn, time or output
+  caps, and the default 30-minute child deadline is removed. Launch receipts
+  identify ignored legacy limits and show
+  the limits that actually apply. The 75% child "wrap up" and 80% parent
+  "stop exploring" prompts are removed, as is the instruction to give up after
+  two failed tool calls. Explicit owner limits are no longer silently shortened
+  to 100,000 turns or 24 hours. The stopship example also drops forced response
+  counts and its two-call discovery limit. Children can use the final allowed
+  turn for useful work; the host preserves partial results without reserving
+  time or issuing an extra model request for a forced summary. Default child
+  and workflow nesting caps are removed; explicit owner bounds still apply.
+  Existing installations receive the updated delegation guidance while keeping
+  customized or deleted skills intact (#7044).
+
+- Workflows can continue independent steps after a child fails, with dependent
+  steps recorded as skipped. The cumulative 1,000-child cutoff is removed;
+  owners can still configure a total child limit. Recursive work no longer
+  stops at 25 rounds, three replies without code or printed output, or an
+  invented enclosing or subquery deadline. Code-mode scripts can make more
+  than 50 admitted tool calls. Cancellation,
+  permissions and inherited owner deadlines still apply. Long-running live
+  children are no longer treated as abandoned merely because 35 minutes passed.
+
+- Read-only workflow children receive their response schema in the first
+  request; write-capable children keep the verification report contract.
+  Unmetered workflow usage is shown as unknown instead of zero. Mode history
+  follows changes between Plan and Operate, and `/goal resume` can restart an
+  idle active goal without replacing its identity or clearing stall evidence.
 
 - ChatGPT sign-in opens your regular browser and returns to Codewhale with
   credentials and a model list for the account you selected. The unsupported
@@ -1662,6 +1697,8 @@ guidance.
   every call asks.
 
 ### Fixed
+
+- Delegated work uses the full explicit turn and time limit. Default child nesting and Workflow plan depth caps are removed; explicit owner restrictions remain. The host no longer reserves the last turn or part of the deadline for a forced report, or makes an extra reporting request after the limit; recorded work and files remain available in the partial-result receipt.
 
 - Runtime child completions retain their original parent turn after the parent
   becomes idle or starts a newer turn; terminal receipts remain durable and

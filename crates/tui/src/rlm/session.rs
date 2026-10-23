@@ -93,7 +93,6 @@ pub enum OutputFeedback {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RlmSessionConfig {
     pub output_feedback: OutputFeedback,
-    pub sub_query_timeout_secs: u64,
     pub sub_rlm_max_depth: u32,
     pub share_session: bool,
 }
@@ -102,7 +101,6 @@ impl Default for RlmSessionConfig {
     fn default() -> Self {
         Self {
             output_feedback: OutputFeedback::Full,
-            sub_query_timeout_secs: 120,
             sub_rlm_max_depth: 1,
             share_session: false,
         }
