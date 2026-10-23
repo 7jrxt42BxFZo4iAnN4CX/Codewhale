@@ -224,8 +224,12 @@ impl PastedImage {
 /// Clipboard payloads supported by the TUI.
 #[cfg_attr(
     all(
-        any(target_env = "ohos", target_os = "android", target_os = "netbsd"),
-        not(test)
+        not(test),
+        not(any(
+            target_os = "macos",
+            target_os = "windows",
+            all(target_os = "linux", not(target_env = "ohos"))
+        ))
     ),
     allow(dead_code)
 )]
