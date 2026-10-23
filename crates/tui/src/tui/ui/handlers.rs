@@ -1144,7 +1144,7 @@ pub(crate) async fn handle_mcp_ui_action(
                 Some(snapshot) => {
                     app.mcp_configured_count = snapshot.servers.len();
                     app.mcp_snapshot = Some(snapshot);
-                    app.mcp_initializing = false;
+                    app.set_mcp_boot_initializing(false);
                     app.mcp_connecting.clear();
                     app.hotbar_actions
                         .replace_mcp_tools(app.mcp_snapshot.as_ref());
@@ -1193,7 +1193,7 @@ pub(crate) async fn handle_mcp_ui_action(
                 // the reload-started line.
                 app.mcp_reload_required = false;
                 app.mcp_reload_in_flight = true;
-                app.mcp_initializing = true;
+                app.set_mcp_boot_initializing(true);
                 if is_reload {
                     add_mcp_message(
                         app,
@@ -1257,7 +1257,7 @@ pub(crate) async fn handle_mcp_ui_action(
                 app.mcp_snapshot_generation_invalidated = true;
             }
             app.mcp_snapshot = Some(snapshot.clone());
-            app.mcp_initializing = false;
+            app.set_mcp_boot_initializing(false);
             app.mcp_connecting.clear();
             // #2068: keep the hotbar's MCP-tool actions in sync with the tools
             // that are actually loaded; the hotbar never connects on its own.

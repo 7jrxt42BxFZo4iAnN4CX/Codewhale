@@ -740,6 +740,10 @@ impl App {
             .as_ref()
             .and_then(|tui| tui.composer_arrows_scroll)
             .is_some();
+        // The initial `connecting` list is a prediction about the pass the
+        // engine is about to run, so it carries the boot stamp (#7035).
+        let mcp_boot_initializing =
+            !mcp_connecting.is_empty() && config.features().enabled(crate::features::Feature::Mcp);
         let mut app = Self {
             mode: initial_mode,
             hotbar_actions,
@@ -1079,8 +1083,8 @@ impl App {
             },
             coordination_detail: None,
             mcp_snapshot: None,
-            mcp_initializing: !mcp_connecting.is_empty()
-                && config.features().enabled(crate::features::Feature::Mcp),
+            mcp_initializing: mcp_boot_initializing,
+            mcp_boot_predicted_at: mcp_boot_initializing.then(std::time::Instant::now),
             mcp_snapshot_generation: 0,
             mcp_snapshot_generation_invalidated: false,
             mcp_connecting,

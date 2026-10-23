@@ -28,6 +28,12 @@ and independent workflow steps can continue after another child fails.
 
 ### Latest fixes
 
+- A boot that never reports back no longer claims to be connecting forever. The
+  launch card's prediction for configured MCP servers now carries the moment it
+  was made and retires after five minutes without a receipt, so a pass that dies
+  before posting its finished event settles on the last known snapshot instead
+  of leaving rows that never resolve (`#7035`).
+
 - `python3 scripts/catalog_models_dev.py defaults audit` is the release step
   that staleness needs: it re-reads a models.dev payload and reports every
   provider whose shipped default a newer stable row in its own namespace has

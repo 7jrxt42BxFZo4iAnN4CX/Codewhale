@@ -1245,7 +1245,7 @@ pub(crate) fn mcp_remedy_command(app: &App) -> Option<String> {
     use crate::tui::session_boot::{McpServerBootState, PluginBootSummary, SessionBootSurface};
     let boot = SessionBootSurface::from_parts(
         app.mcp_snapshot.as_ref(),
-        app.mcp_initializing,
+        app.mcp_boot_initializing(),
         &app.mcp_connecting,
         app.mcp_configured_count,
         PluginBootSummary::default(),
@@ -1298,7 +1298,7 @@ fn mcp_launch_lines(app: &App, text_width: usize) -> McpLaunchBlock {
     // discard it would be waste.
     let boot = SessionBootSurface::from_parts(
         app.mcp_snapshot.as_ref(),
-        app.mcp_initializing,
+        app.mcp_boot_initializing(),
         &app.mcp_connecting,
         app.mcp_configured_count,
         PluginBootSummary::default(),
@@ -2162,7 +2162,7 @@ mod launch_card_tests {
             reload_required: false,
             servers,
         });
-        app.mcp_initializing = false;
+        app.set_mcp_boot_initializing(false);
         app.mcp_connecting = Vec::new();
         app
     }
@@ -2381,7 +2381,7 @@ mod launch_card_tests {
     #[test]
     fn a_boot_in_flight_says_connecting_rather_than_connected() {
         let mut app = app_with_recent(&["one"], 1);
-        app.mcp_initializing = true;
+        app.set_mcp_boot_initializing(true);
         app.mcp_configured_count = 23;
         app.mcp_connecting = Vec::new();
         let lines = painted(&app, 120, 30);

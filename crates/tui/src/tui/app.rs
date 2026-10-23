@@ -2283,6 +2283,11 @@ pub struct App {
     /// True while the engine-owned MCP boot connection pass is in flight.
     /// Configured rows render as connecting until its snapshot lands.
     pub mcp_initializing: bool,
+    /// When that prediction was made. `None` while no prediction is live; a
+    /// prediction older than
+    /// [`MCP_BOOT_PREDICTION_HORIZON`](crate::tui::session_boot::MCP_BOOT_PREDICTION_HORIZON)
+    /// is retired because the missing receipt is the answer (#7035).
+    pub mcp_boot_predicted_at: Option<Instant>,
     /// Latest engine-owned MCP event generation applied to the UI.
     pub mcp_snapshot_generation: u64,
     /// The direct snapshot from a successful `/mcp` action supersedes any
@@ -2804,6 +2809,65 @@ fn default_composer_arrows_scroll_for_platform(use_mouse_capture: bool, _is_wind
 }
 
 impl App {
+    /// Start or end an MCP boot prediction, stamping when it starts.
+    ///
+    /// Every writer of [`App::mcp_initializing`] goes through here so a
+    /// prediction always carries its own age; a bare flag could outlive the
+    /// pass it describes (#7035).
+    pub fn set_mcp_boot_initializing(&mut self, initializing: bool) {
+        self.mcp_initializing = initializing;
+        // Progress events re-assert the prediction on every batch; only a
+        // genuine stop→start restarts its clock, or a talkative pass that
+        // never finishes would keep the guess alive forever.
+        self.mcp_boot_predicted_at = match (initializing, self.mcp_boot_predicted_at) {
+            (true, Some(stamp)) => Some(stamp),
+            (true, None) => Some(Instant::now()),
+            (false, _) => None,
+        };
+    }
+
+    /// True while the boot prediction is still worth painting.
+    #[must_use]
+    pub fn mcp_boot_initializing(&self) -> bool {
+        self.mcp_boot_initializing_at(Instant::now())
+    }
+
+    #[must_use]
+    pub(crate) fn mcp_boot_initializing_at(&self, now: Instant) -> bool {
+        self.mcp_initializing
+            && self.mcp_boot_predicted_at.is_some_and(|predicted_at| {
+                now.saturating_duration_since(predicted_at)
+                    < crate::tui::session_boot::MCP_BOOT_PREDICTION_HORIZON
+            })
+    }
+
+    /// Time until a live boot prediction reaches its horizon, so the event loop
+    /// wakes to retire it rather than waiting for unrelated input (#7035).
+    #[must_use]
+    pub fn mcp_boot_prediction_due_in(&self, now: Instant) -> Option<Duration> {
+        let predicted_at = self.mcp_boot_predicted_at?;
+        self.mcp_initializing.then(|| {
+            crate::tui::session_boot::MCP_BOOT_PREDICTION_HORIZON
+                .saturating_sub(now.saturating_duration_since(predicted_at))
+        })
+    }
+
+    /// Retire a prediction whose receipt never arrived, and repaint once so the
+    /// stale rows leave the screen instead of waiting for the next event.
+    pub fn settle_stale_mcp_boot_prediction(&mut self) {
+        self.settle_stale_mcp_boot_prediction_at(Instant::now());
+    }
+
+    pub(crate) fn settle_stale_mcp_boot_prediction_at(&mut self, now: Instant) {
+        if !self.mcp_initializing || self.mcp_boot_initializing_at(now) {
+            return;
+        }
+        self.mcp_initializing = false;
+        self.mcp_boot_predicted_at = None;
+        self.mcp_connecting.clear();
+        self.needs_redraw = true;
+    }
+
     pub(crate) fn should_adopt_live_local_ollama(&mut self) -> bool {
         crate::local_ollama::should_adopt_live_local_ollama(
             self.startup_route_configured,

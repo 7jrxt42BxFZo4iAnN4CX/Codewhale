@@ -5115,6 +5115,8 @@ pub(crate) async fn run_event_loop(
             )));
         }
 
+        app.settle_stale_mcp_boot_prediction();
+
         let draw_wait = if app.needs_redraw {
             frame_rate_limiter.time_until_next_draw(now)
         } else {
@@ -5155,6 +5157,9 @@ pub(crate) async fn run_event_loop(
         }
         if let Some(until_draw) = draw_wait {
             poll_timeout = poll_timeout.min(until_draw);
+        }
+        if let Some(until_settle) = app.mcp_boot_prediction_due_in(now) {
+            poll_timeout = poll_timeout.min(until_settle);
         }
         if let Some(until_stream_commit) = stream_display_clock.due_in(now) {
             poll_timeout = poll_timeout.min(until_stream_commit);
@@ -7436,7 +7441,7 @@ pub(crate) fn apply_mcp_session_boot_event(
     }
     app.mcp_snapshot = Some(snapshot);
     app.mcp_connecting = connecting;
-    app.mcp_initializing = !finished;
+    app.set_mcp_boot_initializing(!finished);
     app.needs_redraw = true;
 }
 
@@ -8017,6 +8022,50 @@ mod session_boot_event_tests {
         assert!(chip.contains("alpha"), "{chip}");
         assert!(chip.contains("beta"), "{chip}");
         assert!(!chip.to_ascii_lowercase().contains("slack"), "{chip}");
+    }
+
+    /// #7035: a boot prediction that outlives the pass must stop painting.
+    /// The pass can die without ever posting its finished event, and the old
+    /// flag had no age, so the surface said "connecting" indefinitely.
+    #[test]
+    fn a_boot_prediction_past_its_horizon_stops_claiming_to_connect() {
+        use crate::tui::session_boot::MCP_BOOT_PREDICTION_HORIZON;
+        use std::time::Duration;
+
+        let mut app = test_app();
+        app.mcp_connecting = vec!["alpha".into()];
+        apply_mcp_session_boot_event(
+            &mut app,
+            1,
+            snapshot(vec![server("alpha", false)]),
+            vec!["alpha".into()],
+            false,
+        );
+        let predicted_at = app.mcp_boot_predicted_at.expect("a stamp for the guess");
+
+        // A later progress event re-asserts the prediction without restarting
+        // its clock, or a talkative pass that never finishes would live on.
+        apply_mcp_session_boot_event(
+            &mut app,
+            2,
+            snapshot(vec![server("alpha", false)]),
+            vec!["alpha".into()],
+            false,
+        );
+        assert_eq!(app.mcp_boot_predicted_at, Some(predicted_at));
+
+        assert!(app.mcp_boot_initializing_at(predicted_at));
+        assert!(!app.mcp_boot_initializing_at(
+            predicted_at + MCP_BOOT_PREDICTION_HORIZON + Duration::from_secs(1)
+        ));
+
+        app.needs_redraw = false;
+        let past_horizon = predicted_at + MCP_BOOT_PREDICTION_HORIZON + Duration::from_secs(1);
+        app.settle_stale_mcp_boot_prediction_at(past_horizon);
+        assert!(!app.mcp_initializing);
+        assert_eq!(app.mcp_boot_predicted_at, None);
+        assert!(app.mcp_connecting.is_empty());
+        assert!(app.needs_redraw, "the stale rows must leave the screen");
     }
 
     #[test]
