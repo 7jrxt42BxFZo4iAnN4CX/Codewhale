@@ -25349,8 +25349,8 @@ fn turn_complete_flushes_active_cell_into_history() {
     assert_eq!(exec_cells.len(), 1);
     assert_eq!(
         exec_cells[0].status,
-        ToolStatus::Failed,
-        "interrupted shell entry marked Failed (closest available terminal status)"
+        ToolStatus::Stopped,
+        "interrupted shell entry marked Stopped"
     );
 }
 

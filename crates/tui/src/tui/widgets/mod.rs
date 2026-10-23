@@ -3857,7 +3857,7 @@ mod tests {
         let HistoryCell::Tool(ToolCell::Exec(exec)) = &app.history[0] else {
             panic!("expected settled exec history cell")
         };
-        assert_eq!(exec.status, ToolStatus::Failed);
+        assert_eq!(exec.status, ToolStatus::Stopped);
 
         let mut settled_buf = Buffer::empty(area);
         ChatWidget::new(&mut app, area).render(area, &mut settled_buf);
@@ -3866,7 +3866,7 @@ mod tests {
             !settled.contains("· running"),
             "flushed terminal state reused the active cache entry:\n{settled}"
         );
-        assert!(settled.contains("$ sleep 30 · failed"), "{settled}");
+        assert!(settled.contains("$ sleep 30 · stopped"), "{settled}");
     }
 
     fn render_approval_request(
@@ -4324,7 +4324,7 @@ mod tests {
             !settled.contains("· running"),
             "history cell reused the active slow-path cache entry:\n{settled}"
         );
-        assert!(settled.contains("$ sleep 30 · failed"), "{settled}");
+        assert!(settled.contains("$ sleep 30 · stopped"), "{settled}");
     }
 
     #[test]

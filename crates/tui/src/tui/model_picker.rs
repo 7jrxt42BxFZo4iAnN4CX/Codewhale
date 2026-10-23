@@ -4737,8 +4737,11 @@ fn route_picker_efforts(
         return KIMI_CODE_K3_PICKER_EFFORTS.to_vec();
     }
     if provider == ProviderKind::OpenaiCodex {
-        // The official account list publishes IDs and display labels, not
-        // effort tiers. Keep the existing wire-compatible route ladder.
+        // Per-account tier metadata is reachable only through
+        // `codex_model_cache::model_roster_for(config)`: the roster snapshot is
+        // keyed by the signed-in registration, so this signature-only helper
+        // cannot read it and keeps the conservative wire ladder. The roster
+        // does carry tiers when the account publishes them (#6396).
         return CODEX_PICKER_EFFORTS.to_vec();
     }
     if let Some(offering) = ReasoningEffort::offering_for_reasoning(provider, base_url, wire_model)
