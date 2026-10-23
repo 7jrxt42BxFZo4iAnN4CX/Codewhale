@@ -397,6 +397,7 @@ struct EffectivePickerMetadata {
     vision: SupportState,
     pricing: PickerPricing,
     source: Option<CatalogSource>,
+    model_type: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -3286,6 +3287,7 @@ fn fit_meta_chips(chips: &[String], width: usize) -> String {
 fn model_row_visible_in_view(row: &ModelPickerRow, view: ModelListView) -> bool {
     match view {
         ModelListView::Configured => model_row_visible_by_default(row),
+        ModelListView::Catalog if model_is_non_language(row) => false,
         ModelListView::Catalog => true,
         ModelListView::New
         | ModelListView::Coding
@@ -3293,9 +3295,18 @@ fn model_row_visible_in_view(row: &ModelPickerRow, view: ModelListView) -> bool 
         | ModelListView::LongContext => {
             // Discoverability views browse the full lake but hide the synthetic
             // `auto` row — it is not a catalog offering.
-            row.provider.is_some() || row.id != "auto"
+            (row.provider.is_some() || row.id != "auto") && !model_is_non_language(row)
         }
     }
+}
+
+fn model_is_non_language(row: &ModelPickerRow) -> bool {
+    matches!(
+        row.metadata.model_type.as_deref(),
+        Some(
+            "image" | "embedding" | "video" | "speech" | "transcription" | "reranking" | "realtime"
+        )
+    )
 }
 
 /// Whether a model row shows up without the user typing a search query:
@@ -3663,6 +3674,7 @@ fn effective_picker_metadata_with_codex(
                 .is_none_or(|meta| meta.reasoning.is_none()),
             declared_input_price: None,
             source: None,
+            model_type: None,
         };
     };
 
@@ -3858,6 +3870,9 @@ fn effective_picker_metadata_with_codex(
         },
         declared_input_price: None,
         source: card.map(|card| card.source),
+        model_type: offering
+            .as_ref()
+            .and_then(|offering| offering.model_type.clone()),
     }
 }
 
