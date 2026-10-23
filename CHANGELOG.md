@@ -28,6 +28,13 @@ and independent workflow steps can continue after another child fails.
 
 ### Latest fixes
 
+- A sandboxed shell can read a tool's own auth config again. The credential
+  deny-list still refuses those files to Codewhale's file tools, but it no
+  longer refuses them to the programs that own them, so `gh`, `glab`, `aws`,
+  `npm`, `cargo`, `docker`, `kubectl` and `git` can authenticate from a
+  `read-only` posture. Key material, keychains, other agents' credential
+  stores and Codewhale's own secret stores stay denied to subprocesses.
+
 - The website and README link the supplied Codewhale × OrcaRouter offer
   graphic to its redemption page, with readable link text and referral disclosure.
 

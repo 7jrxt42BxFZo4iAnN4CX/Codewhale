@@ -2272,7 +2272,15 @@ reasoning contract, and all four membership ids omit generic sampling fields.
 - **Read deny-list.** Every sandbox posture — `read-only` included — grants
   read access to the whole filesystem; the postures differ in what they may
   *write* and whether they may reach the network. The read deny-list narrows
-  that:
+  that, in two scopes. Codewhale's own file tools (`read`, `grep`,
+  `file_search`, `read_media`) refuse every listed path. A shell command
+  refuses only the *key material and other-principal* entries — SSH and GPG
+  keys, `/etc/shadow`, `/etc/sudoers`, system and login keychains, browser
+  profiles, other agents' credential stores, Codewhale's own secret stores,
+  runtime daemon sockets, and anything in `sandbox_denied_read_paths`. A
+  tool's own auth config is refused to the model but stays readable to the
+  tool: `gh` cannot start without `~/.config/gh/hosts.yml`, so denying it to
+  the process would disable the CLI without keeping its token out of reach.
   - `sandbox_read_denylist_defaults` (bool, default `true`): apply the built-in
     credential-store set — `~/.ssh`, `~/.gnupg`, cloud credential directories
     (`~/.aws`, `~/.config/gcloud`, `~/.azure`, `~/.kube`, …), `~/.netrc`,
@@ -2301,15 +2309,17 @@ reasoning contract, and all four membership ids omit generic sampling fields.
     every `.env` and `.env.<name>` on disk rather than one project's.
     (`.env.example` and friends are never denied, so they need no exemption.)
 
-  Enforced at two points: sandboxed shell commands (Seatbelt last-match-wins
-  `deny file-read*` rules; bubblewrap masks each path) and Codewhale's own
-  in-process tools, which the OS sandbox never wraps — `read_file` / `read` /
-  `read_media` for contents, `list_dir` / `file_search` for *enumeration*
-  (listing a denied directory, or searching one, is refused just as Seatbelt
-  blocks its readdir; a name search rooted above a denied tree skips entries
-  inside it). A refused read is always an explicit error, never an empty
-  result, and the error names the path as the caller spelled it rather than a
-  symlink target's real location.
+  Enforced at two points, with different reach. Codewhale's own in-process
+  tools, which the OS sandbox never wraps, refuse every rule — `read_file` /
+  `read` / `read_media` for contents, `list_dir` / `file_search` for
+  *enumeration* (listing a denied directory, or searching one, is refused just
+  as Seatbelt blocks its readdir; a name search rooted above a denied tree
+  skips entries inside it). Sandboxed shell commands (Seatbelt last-match-wins
+  `deny file-read*` rules; bubblewrap masks each path) refuse only the
+  key-material and other-principal rules, so an authenticated CLI can still
+  read its own config. A refused read is always an explicit error, never an
+  empty result, and the error names the path as the caller spelled it rather
+  than a symlink target's real location.
 
   **This is defense-in-depth, not a security boundary.** It does not stop a
   hardlink to a denied file, a secret already copied into the workspace, an

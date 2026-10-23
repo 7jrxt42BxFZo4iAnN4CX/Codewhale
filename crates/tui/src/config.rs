@@ -3742,7 +3742,9 @@ impl Config {
     /// `sandbox_read_denylist_defaults = false`) with
     /// `sandbox_denied_read_paths`, minus `sandbox_read_denylist_exempt`.
     /// Feeds both the in-process file-reading tools and the OS sandbox
-    /// wrappers, so a shell `cat` and a `read_file` call refuse the same paths.
+    /// wrappers. A `read_file` call refuses every rule; a shell `cat` refuses
+    /// only the rules scoped to the process, which excludes a tool's own auth
+    /// config.
     #[must_use]
     pub fn read_denylist(&self) -> crate::sandbox::read_guard::ReadDenylist {
         crate::sandbox::read_guard::ReadDenylist::build(

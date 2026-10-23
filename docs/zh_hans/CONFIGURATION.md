@@ -1239,14 +1239,14 @@ DeepSeek V4 前缀缓存让 token 标签变得重要。这些数量保持分离�
 
 - `sandbox_mode`（字符串，可选）：`read-only`、`workspace-write`、`danger-full-access`、`external-sandbox`。配置值只能收窄权限模式选定的沙箱（Full Access 不套包装器；Ask 和 Auto-Review 使用 `workspace-write`；Plan 使用 `read-only`），因此 `danger-full-access` 和 `external-sandbox` 只在 Full Access（`yolo`）下生效。各平台的支持并不相同。macOS 在其运行时探测成功时使用 Seatbelt。Linux 默认在 `/usr/bin/bwrap` 已安装且探测证明它能限制子进程时使用 bubblewrap；`prefer_bwrap = false` 退出并报告没有 OS 命令沙箱。Windows 目前不宣称有 OS 沙箱；其规划中的辅助程序契约只从进程树隔离开始，在只读文件系统隔离、workspace-write 强制、网络阻断、注册表隔离或 AppContainer 隔离真正实现之前，不得被描述成这些能力。
 - 模式准入、hooks、已注册工具的要求、类型化规则、Auto-Review、仓库保护规则、人工审批和执行沙箱之间的跨层关系，定义在[授权顺序](../AUTHORIZATION_ORDER.md)中。
-- **读取拒绝列表。** 每一种沙箱档位——包括 `read-only`——都授予对整个文件系统的读取权限；这些档位的区别在于它们可以*写入*什么，以及能否访问网络。读取拒绝列表会收窄这一点：
+- **读取拒绝列表。** 每一种沙箱档位——包括 `read-only`——都授予对整个文件系统的读取权限；这些档位的区别在于它们可以*写入*什么，以及能否访问网络。读取拒绝列表在两个范围内收窄这一点。Codewhale 自己的文件工具（`read`、`grep`、`file_search`、`read_media`）会拒绝列表中的每一条路径。shell 命令只拒绝其中的*密钥材料和其他主体的*条目——SSH 与 GPG 密钥、`/etc/shadow`、`/etc/sudoers`、系统与登录钥匙串、浏览器配置文件、其他 agent 的凭据存储、Codewhale 自己的机密存储、运行时守护进程套接字，以及 `sandbox_denied_read_paths` 中的任何路径。工具自身的认证配置对模型拒绝，但对工具本身保持可读：`gh` 没有 `~/.config/gh/hosts.yml` 就无法启动，因此对进程拒绝该文件只会让 CLI 无法运行，却并不会让它的 token 更难得手。
   - `sandbox_read_denylist_defaults`（bool，默认 `true`）：应用内置的凭据存储集合——`~/.ssh`、`~/.gnupg`、云凭据目录（`~/.aws`、`~/.config/gcloud`、`~/.azure`、`~/.kube` 等）、`~/.netrc`、`~/.npmrc`、`~/.git-credentials`、macOS 钥匙串、浏览器配置文件、Codewhale 自己的机密存储，以及 `.env` 文件（但不包括 `.env.example` 之类）。普通源码、`Cargo.toml`、`~/.gitconfig`、`~/.cargo` 和 `~/.npm` 保持可读，因此构建和测试仍能工作。设为 `false` 可恢复 0.9.12 之前的整盘读取行为。
   - `sandbox_denied_read_paths`（路径列表）：额外被拒绝的子路径。`~` 会展开。这些永远不能被豁免。
   - `sandbox_read_denylist_exempt`（路径列表）：当项目确实需要时，从*内置默认值*中减去一个路径。拒绝优先于允许：这永远不会重新打开 `sandbox_denied_read_paths` 中的任何内容。
 
     豁免的粒度是**整条规则**，而不是逐个文件。只有当内置规则自身的路径位于豁免路径之上或等于它时，豁免路径才会移除该规则，所以豁免 `~/.ssh/config` 什么也不会改变：`~/.ssh` 这条规则仍然拒绝它，因为 `~/.ssh` 并不位于 `~/.ssh/config` 之内。要重新打开这一个文件，你必须豁免 `~/.ssh` 本身——这也会重新打开它旁边的私钥。这是文档中明确记录的权衡：没有提供把内置规则收窄为“除某个文件之外的一切”的办法；请把你需要的内容复制出被拒绝的目录树。唯一一条按名称匹配的规则，即 `.env` 文件，是按*名称*而不是按路径豁免的：任何文件名恰好为 `.env` 的豁免条目——裸 `.env`、`~/.env`、`some/project/.env`——都会禁用整条 `.env` 文件名规则，也就是磁盘上的每一个 `.env` 和 `.env.<name>`，而不只是某一个项目的。（`.env.example` 之类从不被拒绝，因此无需豁免。）
 
-  在两个位置强制执行：沙箱内的 shell 命令（Seatbelt 采用最后匹配者胜出的 `deny file-read*` 规则；bubblewrap 屏蔽每个路径），以及 Codewhale 自己的进程内工具（OS 沙箱从不包裹它们）——用于读取内容的 `read_file` / `read` / `read_media`，以及用于*枚举*的 `list_dir` / `file_search`（列出被拒绝的目录或在其中搜索都会被拒绝，正如 Seatbelt 阻止其 readdir 一样；根在被拒绝目录树之上的名称搜索会跳过其中的条目）。被拒绝的读取始终是显式错误，绝不是空结果，并且错误里写出的是调用方所拼写的路径，而不是符号链接目标的真实位置。
+  在两个位置强制执行，但范围不同。Codewhale 自己的进程内工具（OS 沙箱从不包裹它们）会拒绝每一条规则——用于读取内容的 `read_file` / `read` / `read_media`，以及用于*枚举*的 `list_dir` / `file_search`（列出被拒绝的目录或在其中搜索都会被拒绝，正如 Seatbelt 阻止其 readdir 一样；根在被拒绝目录树之上的名称搜索会跳过其中的条目）。沙箱内的 shell 命令（Seatbelt 采用最后匹配者胜出的 `deny file-read*` 规则；bubblewrap 屏蔽每个路径）只拒绝其中的密钥材料和其他主体规则，因此已认证的 CLI 仍能读取自己的配置。被拒绝的读取始终是显式错误，绝不是空结果，并且错误里写出的是调用方所拼写的路径，而不是符号链接目标的真实位置。
 
   **这是纵深防御，不是安全边界。** 它无法阻止指向被拒绝文件的硬链接、已经复制进工作区的机密、间接读取（`ssh-agent`、`security find-generic-password`、`aws sts …`）、`danger-full-access` 下 shell 命令的读取、MCP 服务器或其他未被包裹的子进程的读取，也无法阻止对*已经被*读取的内容的外泄。真正起作用的仍应是最小权限的凭据和短期令牌。
 
