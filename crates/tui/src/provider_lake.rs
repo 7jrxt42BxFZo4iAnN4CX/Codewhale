@@ -1532,7 +1532,7 @@ pub(crate) fn valid_catalog_model_id(value: &str) -> bool {
         && value.len() <= 256
         && value.bytes().any(|byte| byte.is_ascii_alphanumeric())
         && value.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'/' | b'-')
+            byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'/' | b'-' | b'~')
         })
 }
 
