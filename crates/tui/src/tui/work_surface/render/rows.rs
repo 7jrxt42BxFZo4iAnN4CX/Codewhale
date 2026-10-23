@@ -125,13 +125,16 @@ pub(super) fn agent_identity(row: &WorkRow, cap: usize) -> std::borrow::Cow<'_, 
     let Some(facts) = row.agent.as_ref() else {
         return Cow::Borrowed("");
     };
+    if row.id.0.starts_with("shell:")
+        && !row.label.is_empty()
+        && UnicodeWidthStr::width(row.label.as_str()) > cap
+    {
+        return Cow::Owned(truncate_line_to_width(&row.label, cap));
+    }
     for candidate in [row.label.as_str(), facts.role_label.as_str()] {
         if !candidate.is_empty() && UnicodeWidthStr::width(candidate) <= cap {
             return Cow::Borrowed(candidate);
         }
-    }
-    if row.id.0.starts_with("shell:") && !row.label.is_empty() {
-        return Cow::Owned(truncate_line_to_width(&row.label, cap));
     }
     Cow::Borrowed("")
 }
