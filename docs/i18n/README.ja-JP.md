@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:7e0946fcaecd -->
+<!-- source: README.md sha256:a027945e67d4 -->
 <div align="center">
 
 <picture>
@@ -27,6 +27,14 @@ Codewhale にタスクを渡すと、タスクが完了するか、あなたの�
 <sub>スクリプト化したテストモデルを使う 0.10.2 の開発ビルドを、使い捨てのワークスペース内でフルアクセスにして実行した画面です。編集、3 つのテスト、サブエージェントによるレビューは実際に実行されています。</sub>
 
 </div>
+
+<p align="center">
+  <a href="https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67" rel="sponsored">
+    <img src="../../web/public/codewhale-x-orcarouter.webp" alt="Codewhale × OrcaRouter — DeepSeek v4.1 Flash の利用量が 30% 増加" width="760">
+  </a>
+</p>
+
+[Codewhale × OrcaRouter の特典を見る](https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67). Codewhale は OrcaRouter から紹介料を受け取ります。
 
 ## インストール
 
@@ -76,7 +84,7 @@ Fix the failing tests and explain what changed.
 読み取り専用のコマンドはすぐに実行されます。
 それ以外のシェルコマンドは、Codewhale が先に確認します。
 `y` で 1 回だけ実行、`a` でこの会話の残りの間は同様のコマンドを許可、`n` で拒否します。
-`/undo` は直前のリクエストとそのファイル変更を元に戻します（0.10.1 では、先に `/trust on` を実行してください）。
+`/undo` は直前のリクエストとそのファイル変更を元に戻します。
 `/help` でコマンドとキーの一覧を表示します。
 
 スクリプトや CI では、`codewhale exec` がインターフェースなしで 1 つのタスクを実行します。
@@ -130,8 +138,7 @@ DeepSeek は 2026-10-17 にこれを DeepSeek-V4.1-Flash-1017 に切り替えま
 ### レシートと取り消し
 
 `/receipts`（終了後は `codewhale receipts --last`）は、変更されたファイル、実行されたコマンド、Web と MCP の呼び出し、起動されたエージェント、承認とその承認者、失敗を一覧表示します。
-`/undo` は直前のリクエストを元に戻します。
-0.10.1 では、ファイルを戻すには `/trust on` が必要で、戻せるのは 1 回につき 1 つのツール呼び出しずつです。
+`/undo` は直前のリクエストと変更されたファイルを、信頼モードなしで一度に元に戻します。
 `/restore` はワークスペース全体を以前のスナップショットまで巻き戻します。
 それ以降の編集を上書きするため、`/trust on` またはフルアクセスが必要です。
 [レシート](../RECEIPTS.md)を参照してください。

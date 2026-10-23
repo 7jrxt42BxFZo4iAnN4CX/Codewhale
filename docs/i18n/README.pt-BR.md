@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:7e0946fcaecd -->
+<!-- source: README.md sha256:a027945e67d4 -->
 <div align="center">
 
 <picture>
@@ -29,6 +29,14 @@ os comandos que executou e as chamadas web e MCP que fez.
 <sub>Um build de desenvolvimento da 0.10.2 com um modelo de teste roteirizado, em Acesso total dentro de um workspace descartável. A edição, três testes e uma revisão de sub-agente rodaram de verdade.</sub>
 
 </div>
+
+<p align="center">
+  <a href="https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67" rel="sponsored">
+    <img src="../../web/public/codewhale-x-orcarouter.webp" alt="Codewhale × OrcaRouter — 30% a mais de uso do DeepSeek v4.1 Flash" width="760">
+  </a>
+</p>
+
+[Ver a oferta Codewhale × OrcaRouter](https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67). A Codewhale recebe uma comissão por indicação da OrcaRouter.
 
 ## Instalação
 
@@ -83,7 +91,7 @@ Fix the failing tests and explain what changed.
 Comandos somente leitura rodam na hora. Para qualquer outro comando de shell, o
 Codewhale pergunta antes: `y` executa uma vez, `a` permite comandos parecidos
 pelo resto da conversa, `n` recusa. `/undo` desfaz seu último pedido e as
-alterações de arquivos que ele fez (na 0.10.1, execute `/trust on` antes).
+alterações de arquivos que ele fez.
 `/help` lista os comandos e as teclas.
 
 Para scripts e CI, `codewhale exec` executa uma tarefa sem a interface. Por
@@ -150,9 +158,7 @@ um plano do ChatGPT em vez de uma chave de API (experimental). Veja
 
 `/receipts`, ou `codewhale receipts --last` depois que você sai, lista os
 arquivos alterados, os comandos executados, as chamadas web e MCP, os agentes
-iniciados, as aprovações e quem as deu, e as falhas. `/undo` desfaz seu último
-pedido; na 0.10.1, ele exige `/trust on` para arquivos e volta uma chamada de
-ferramenta por vez. `/restore` volta o workspace inteiro para um snapshot
+iniciados, as aprovações e quem as deu, e as falhas. `/undo` desfaz seu último pedido e os arquivos que ele alterou, em uma única etapa e sem o modo de confiança. `/restore` volta o workspace inteiro para um snapshot
 anterior; como isso sobrescreve edições posteriores, exige `/trust on` ou Acesso
 total. Veja [Recibos](../RECEIPTS.md).
 

@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:7e0946fcaecd -->
+<!-- source: README.md sha256:a027945e67d4 -->
 <div align="center">
 
 <picture>
@@ -29,6 +29,14 @@ canviat, les ordres que ha executat i les crides web i MCP que ha fet.
 <sub>Una compilació de desenvolupament de la 0.10.2 amb un model de prova amb guió, en Full Access dins d’un espai de treball d’un sol ús. L’edició, tres proves i una revisió d’un subagent es van executar de debò.</sub>
 
 </div>
+
+<p align="center">
+  <a href="https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67" rel="sponsored">
+    <img src="../../web/public/codewhale-x-orcarouter.webp" alt="Codewhale × OrcaRouter — un 30% més d’ús de DeepSeek v4.1 Flash" width="760">
+  </a>
+</p>
+
+[Consulta l’oferta de Codewhale × OrcaRouter](https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67). Codewhale rep una comissió per recomanació d’OrcaRouter.
 
 ## Instal·lació
 
@@ -84,8 +92,7 @@ Fix the failing tests and explain what changed.
 Les ordres de només lectura s’executen directament. Per a qualsevol altra ordre
 de shell, Codewhale pregunta primer: `y` l’executa una vegada, `a` permet ordres
 com aquesta durant la resta de la conversa, `n` la rebutja. `/undo` desfà la
-teva última petició i els canvis que va fer als fitxers (a la 0.10.1, executa
-primer `/trust on`). `/help` llista les ordres i les tecles.
+teva última petició i els canvis que va fer als fitxers. `/help` llista les ordres i les tecles.
 
 Per a scripts i CI, `codewhale exec` executa una sola tasca sense la interfície.
 Per defecte, `--auto` fa servir Full Access: les eines s’executen sense preguntar,
@@ -152,9 +159,7 @@ fer servir un pla de ChatGPT en lloc d’una clau API (experimental). Consulta
 
 `/receipts`, o `codewhale receipts --last` després de sortir, llista els fitxers
 canviats, les ordres executades, les crides web i MCP, els agents iniciats, les
-aprovacions i qui les va donar, i els errors. `/undo` desfà la teva última
-petició; a la 0.10.1 necessita `/trust on` per als fitxers i retrocedeix una
-crida d’eina cada vegada. `/restore` torna tot l’espai de treball a una
+aprovacions i qui les va donar, i els errors. `/undo` desfà la teva última petició i els fitxers que va canviar, d’un sol cop i sense el mode de confiança. `/restore` torna tot l’espai de treball a una
 instantània anterior; com que això sobreescriu les edicions posteriors,
 necessita `/trust on` o Full Access. Consulta [Rebuts](../RECEIPTS.md).
 

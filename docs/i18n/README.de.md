@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:7e0946fcaecd -->
+<!-- source: README.md sha256:a027945e67d4 -->
 <div align="center">
 
 <picture>
@@ -30,6 +30,14 @@ ausgeführt hat, und die Web- und MCP-Aufrufe, die es gemacht hat.
 <sub>Ein Entwicklungs-Build von 0.10.2 mit einem geskripteten Testmodell, in Full Access in einem Wegwerf-Arbeitsbereich. Die Änderung, drei Tests und ein Review durch einen Sub-Agenten liefen wirklich.</sub>
 
 </div>
+
+<p align="center">
+  <a href="https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67" rel="sponsored">
+    <img src="../../web/public/codewhale-x-orcarouter.webp" alt="Codewhale × OrcaRouter — 30 % mehr Nutzung von DeepSeek v4.1 Flash" width="760">
+  </a>
+</p>
+
+[Angebot von Codewhale × OrcaRouter ansehen](https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67). Codewhale erhält eine Empfehlungsprovision von OrcaRouter.
 
 ## Installation
 
@@ -86,7 +94,7 @@ Fix the failing tests and explain what changed.
 Befehle, die nur lesen, laufen sofort. Bei jedem anderen Shell-Befehl fragt
 Codewhale vorher: `y` führt ihn einmal aus, `a` erlaubt ähnliche Befehle für den
 Rest der Unterhaltung, `n` lehnt ab. `/undo` macht deine letzte Anfrage samt
-ihren Dateiänderungen rückgängig (in 0.10.1 führe vorher `/trust on` aus).
+ihren Dateiänderungen rückgängig.
 `/help` listet Befehle und Tasten auf.
 
 Für Skripte und CI führt `codewhale exec` eine Aufgabe ohne Oberfläche aus.
@@ -157,9 +165,7 @@ ChatGPT-Abo verwenden (experimentell). Siehe [Anbieter](../PROVIDERS.md).
 
 `/receipts`, oder nach dem Beenden `codewhale receipts --last`, listet geänderte
 Dateien, ausgeführte Befehle, Web- und MCP-Aufrufe, gestartete Agenten,
-Freigaben und wer sie erteilt hat sowie Fehlschläge auf. `/undo` macht deine
-letzte Anfrage rückgängig; in 0.10.1 braucht es für Dateien `/trust on` und
-geht jeweils um einen Tool-Aufruf zurück. `/restore` setzt den gesamten
+Freigaben und wer sie erteilt hat sowie Fehlschläge auf. `/undo` macht deine letzte Anfrage und ihre Dateiänderungen in einem Schritt rückgängig, ohne Vertrauensmodus. `/restore` setzt den gesamten
 Arbeitsbereich auf einen früheren Snapshot zurück; weil dabei spätere
 Änderungen überschrieben werden, braucht es `/trust on` oder Full Access. Siehe
 [Belege](../RECEIPTS.md).
