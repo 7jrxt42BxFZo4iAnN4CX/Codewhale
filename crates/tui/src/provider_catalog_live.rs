@@ -831,9 +831,13 @@ fn load_from_disk_unlocked_with_limit(path: &Path, max_bytes: u64) -> Option<Pro
     if cache.entries.len() > MAX_CACHE_SCOPES || cached_row_count(&cache) > MAX_CACHE_ROWS {
         return None;
     }
-    if !cache.entries.iter().all(|(key, entry)| {
-        let Some((kind, identity)) = entry.provider.split_once(':') else { return false; };
-        ProviderKind::parse(kind).is_some_and(|parsed| parsed.as_str() == kind)
+    let scopes_before = cache.entries.len();
+    cache.entries.retain(|key, entry| {
+        let Some((kind, identity)) = entry.provider.split_once(':') else {
+            return false;
+        };
+        let valid = ProviderKind::parse_config_identity(kind)
+            .is_some_and(|parsed| parsed.as_str() == kind)
             && !identity.is_empty()
             && key == &ProviderCatalogCache::cache_key(&entry.provider, &entry.base_url_fingerprint)
             && entry.offerings.iter().all(|row| {
@@ -843,8 +847,23 @@ fn load_from_disk_unlocked_with_limit(path: &Path, max_bytes: u64) -> Option<Pro
                     && matches!(&row.source, codewhale_config::catalog::CatalogSource::Live {
                         base_url_fingerprint, fetched_at
                     } if base_url_fingerprint == &entry.base_url_fingerprint && *fetched_at == entry.fetched_at)
-            })
-    }) { return None; }
+            });
+        if !valid {
+            tracing::debug!(
+                target: "provider_catalog",
+                scope = %entry.provider,
+                "dropping invalid provider catalog scope"
+            );
+        }
+        valid
+    });
+    if cache.entries.len() != scopes_before {
+        tracing::debug!(
+            target: "provider_catalog",
+            dropped = scopes_before - cache.entries.len(),
+            "provider catalog cache loaded with invalid scopes dropped"
+        );
+    }
     // Older builds could durably cache account-scoped rosters. Scrub
     // those entries on every load so upgrading cannot attach one workspace's
     // catalog to a different credential.
@@ -3195,7 +3214,8 @@ mod tests {
             forged.cache.entries.values_mut().next().unwrap().offerings[0].cost_source =
                 Some(source);
             fs::write(&path, serde_json::to_vec(&forged).unwrap()).unwrap();
-            assert!(load_from_disk_unlocked(&path).is_none());
+            let loaded = load_from_disk_unlocked(&path).expect("valid scopes still load");
+            assert!(loaded.entries.is_empty(), "forged scope must be dropped");
         }
     }
 
