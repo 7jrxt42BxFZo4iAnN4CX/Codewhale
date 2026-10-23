@@ -16,7 +16,7 @@ Related docs: [`PROVIDERS.md`](./PROVIDERS.md), RFC
 |---|---|
 | Do users need a special model just to refresh models? | **No.** |
 | Does Codewhale auto-update the public model catalog? | **Yes, at runtime**, from [Models.dev](https://models.dev/catalog.json), ~24 h TTL. |
-| Is the offline bundled seed auto-committed in CI? | **No, but it is generated.** A maintainer runs `seed lock` and `seed render` and lands the verified generated slice on main; CI fails a hand edit (`seed render --check`). |
+| Is the offline bundled seed auto-committed in CI? | **No, but it is generated.** A maintainer runs `seed lock` and `seed render` and lands the verified generated slice on main; CI fails a hand edit (`seed render --check`) and a pin nobody re-locked (`seed age --max-days 30`). |
 | Should an LLM rewrite catalog JSON? | **No.** Ingest is deterministic public JSON. An LLM can *review* a PR, not own the source of truth. |
 
 ---
@@ -180,9 +180,11 @@ and a stale *default* breaks the request. Two mechanisms now carry the duty:
   unrecorded one fails the run; a deliberate hold is recorded with its reason
   in `DEFAULT_AUDIT_REASONS`, and a curated or marketplace route is advisory.
 
-Honest limit: the hermetic guard catches descriptor↔seed disagreement. Neither
-it nor CI can tell that a vendor shipped a model, so the report above is the
-release step, not a gate.
+Honest limit: the hermetic guard catches descriptor↔seed disagreement, and
+`seed age` catches a pin nobody re-locked: it fails once `source.fetched_at`
+is older than the limit CI enforces (30 days). Neither can tell that a vendor
+shipped a model on the day it happened, so the report above is still the step
+that catches a brand-new release.
 
 ---
 
@@ -265,6 +267,11 @@ first live refresh.
 4. `python3 scripts/catalog_models_dev.py seed render` writes the seed.
 5. Check that default wire IDs still match `DEFAULT_*_MODEL`, run the
    catalog checks, and land the verified slice on main with its report in the commit.
+6. `python3 scripts/catalog_models_dev.py seed age --max-days 30` is what turns
+   the above from a habit into a cadence: it fails, locally and in CI, when
+   `source.fetched_at` in the lock is older than the limit. It is offline and
+   reads only the lock, so it cannot excuse a stale pin either way — the fix is
+   always another re-lock.
 
 Optional: use a cheap model to summarize “new / removed / default-risk” in
 the PR body — never as the author of the JSON.

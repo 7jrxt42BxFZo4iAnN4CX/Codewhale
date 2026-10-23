@@ -15,6 +15,7 @@ Usage examples:
   scripts/catalog_models_dev.py seed lock             # pin upstream rows
   scripts/catalog_models_dev.py seed render           # write the seed
   scripts/catalog_models_dev.py seed render --check   # CI: seed == render
+  scripts/catalog_models_dev.py seed age --max-days 30 # CI: the pin is not stale
 
   # Dry-run: fetch + validate, print counts (no write)
   scripts/catalog_models_dev.py refresh
@@ -1205,6 +1206,28 @@ def cmd_seed_render(args: argparse.Namespace) -> None:
     print(f"wrote {target}")
 
 
+def cmd_seed_age(args: argparse.Namespace) -> None:
+    lock = read_json_file(Path(args.lock))
+    fetched_at = (lock.get("source") or {}).get("fetched_at")
+    if not isinstance(fetched_at, str):
+        die(f"{args.lock} has no source.fetched_at; the seed was never pinned")
+    try:
+        pinned = datetime.strptime(fetched_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        die(f"{args.lock} source.fetched_at is not UTC ISO-8601: {fetched_at!r}")
+    age_days = max(0.0, (datetime.now(timezone.utc) - pinned).total_seconds() / 86400.0)
+    if age_days > args.max_days:
+        die(
+            f"the offline seed is {age_days:.1f} days old (limit {args.max_days}d), pinned {fetched_at}.\n"
+            "The bundled roster freezes at the last hand-run re-lock, so every install offline "
+            "or past the live TTL keeps an old model list. Re-lock and land it:\n"
+            "  python3 scripts/catalog_models_dev.py seed lock\n"
+            f"  {SEED_RENDER_COMMAND}\n"
+            "See docs/CATALOG_REFRESH.md."
+        )
+    print(f"ok: offline seed pinned {fetched_at} ({age_days:.1f} days old, limit {args.max_days}d)")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="Secret-free Models.dev / OpenRouter catalog automation (#4117)"
@@ -1287,7 +1310,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fail with a diff when the committed seed differs from the rendered one",
     )
     render.add_argument("--out", default=str(SEED_ASSET), help="Seed path to write or check")
-    for command in (lock, render):
+    age = seed_sub.add_parser(
+        "age",
+        help="Fail when the pinned seed is older than the allowed age (offline)",
+    )
+    age.add_argument(
+        "--max-days",
+        type=float,
+        default=30.0,
+        help="Maximum age of source.fetched_at in days (default: 30)",
+    )
+    age.set_defaults(func=cmd_seed_age)
+    for command in (lock, render, age):
         command.add_argument("--spec", default=str(SEED_SPEC))
         command.add_argument("--lock", default=str(SEED_LOCK))
         command.add_argument("--corrections", default=str(CORRECTIONS_ASSET))
