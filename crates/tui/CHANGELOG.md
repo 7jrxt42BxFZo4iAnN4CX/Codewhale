@@ -28,22 +28,101 @@ and independent workflow steps can continue after another child fails.
 
 ### Latest fixes
 
-- Computer Use reuses an approved app grant when that same app is explicitly
-  brought forward. It no longer asks for a second foreground approval. App
-  revocation, explicit denials, Pause/Stop and input-ownership checks remain.
+- A signed-in ChatGPT account refreshes its model list at launch. The plan roster
+  was only fetched at sign-in or on an explicit `models --update`, so an account
+  that never re-authenticated kept reporting models it no longer offers and never
+  heard about new ones; the launch sweep that refreshes the other catalog layers
+  now refreshes a missing, stale or invalid roster too, at the cost of one
+  freshness probe when it is current. A roster past its hour limit also lists its
+  last known models instead of none, and only a fresh fetch supplies the
+  preferred default.
 
-- An official provider's model list is current again. A persisted `/models`
-  fetch used to shadow the fresher catalog snapshot for every route, so
-  `openai` listed a two-generation-old roster while the snapshot already knew
-  the new IDs. A partition is now authoritative only while it is fresh, or on a
-  route that owns its own catalog (relays, private endpoints, custom base URLs),
-  where nothing else describes it. Stale IDs survive as an offline tail rather
-  than disappearing from the picker.
+- Two sessions can share one folder again. The embedded TUI runtime mounted its
+  delegated-coordination lock exclusively, so a second `codewhale` in a workspace
+  that already had one running was refused with `another Codewhale process owns
+  delegated coordination for <workspace>`; `codewhale resume <session B>` beside a
+  running session hit the same wall. The exclusive holder is now only
+  `codewhale serve`, which the architecture doc already reserved it for (`#7042`).
 
-- Runtime clients can retry thread creation with the same operation key after
-  a lost response or restart and recover the original conversation. A changed
-  effective request is refused instead of replacing or duplicating its thread.
-  The Runtime advertises this capability explicitly.
+- A reasoning effort the route cannot honor is no longer sent to it. OpenAI wire
+  requests resolve the session's effort through the row's declared ladder and
+  clamp to the nearest rung upward, because `gpt-5.5-pro` declares only
+  `["medium","high","xhigh"]` and was being handed `off` and `low`, while
+  `gpt-5.5` and `gpt-5.3-codex` start at `none` and `gpt-5.6*` add `max`. An effort
+  the row already declares is passed through untouched (`#6396`).
+
+- ChatGPT-plan routes report their reasoning controls. The plan roster carries
+  only ids and labels, so every `openai-codex` row advertised
+  `reasoning_effort: unsupported` with no levels at all. Rows are now joined
+  against the merged catalog for the fields the roster leaves blank, and
+  `gpt-6-astra` reports `["low","medium","high","xhigh","max"]`. Context windows
+  are deliberately not filled from that join: the plan snapshot's 272,000
+  describes a different wire than the 1,050,000 the catalog lists.
+
+- A boot that never reports back no longer claims to be connecting forever. The
+  launch card's prediction for configured MCP servers now carries the moment it
+  was made and retires after five minutes without a receipt, so a pass that dies
+  before posting its finished event settles on the last known snapshot instead
+  of leaving rows that never resolve (`#7035`).
+
+- `python3 scripts/catalog_models_dev.py defaults audit` is the release step
+  that staleness needs: it re-reads a models.dev payload and reports every
+  provider whose shipped default a newer stable row in its own namespace has
+  overtaken, failing the run on an unrecorded one and taking an explained hold
+  from `DEFAULT_AUDIT_REASONS` otherwise. And the `anthropic` default moves to
+  `claude-sonnet-5-5`: a forced `tool_choice` is now softened to `auto` for
+  Opus 5.5 and Sonnet 5.5, which reject it, instead of being sent and refused.
+
+- The model picker's browse views list models you can talk to. `Catalog`, `New`,
+  `Coding`, `Cheap` and `LongContext` now skip image, embedding, video, speech,
+  transcription, reranking and realtime rows — 445 of the 8,849 live catalog
+  entries — instead of threading them between the chat models you were scanning
+  for. `Configured` is untouched, so a route you already set up stays visible,
+  and a search still reaches everything: typing an image model's id finds it.
+
+- The model picker can be read one provider at a time. `Sort: Provider` now
+  prints a provider header for each block instead of one flat run of names,
+  and `⇧T` narrows the list to one provider at a time and clears on the next
+  cycle; the title names the active filter and the footer advertises `⇧T`
+  beside `⇧A`, so a shortened list is never unexplained. Choosing a provider sort
+  also browses the whole roster rather than the rows the current view admitted,
+  so one keystroke turns the Configured view into a full catalog grouped by
+  vendor — which is what "sort by provider to find models" needs to mean.
+
+- `openai-codex` defaults to `gpt-6.1-sol`. Its ChatGPT plan roster served
+  seven ids and no bare `gpt-5.6`, which the descriptor defaulted to: a fresh
+  roster redirected the choice, but a stale, expired or absent roster sent a
+  model the account does not serve and the request failed. `codewhale models`
+  also stops claiming "availability not verified" for a route that did use a
+  fresh snapshot, and now reports the real snapshot layer, fetch time and row
+  count. The offline seed check compares every descriptor default against the
+  seed default and refuses to write when they disagree, and
+  `seed lock --dry-run` reports providers whose default a newer upstream id
+  has overtaken, plus locked rows the spec no longer references.
+  `docs/CATALOG_REFRESH.md` states the limit plainly: nothing offline can
+  detect that a vendor shipped a model.
+
+- A persisted `/models` partition from an official endpoint no longer hides a
+  newer catalog snapshot. `openai` listed a two-generation-old roster while
+  the shipped snapshot already carried `gpt-6-astra`, `gpt-6-luna`, `gpt-6-sol`
+  and `gpt-6.1-sol`, and refreshed `anthropic` and `deepseek` ids were
+  suppressed the same way. A route that owns its live catalog (a relay, a
+  private endpoint, a custom base URL) stays authoritative however old the
+  fetch; an official endpoint's partition must be fresh to shadow the
+  snapshot, and an unfresh one still contributes its own ids as an offline
+  tail so a withdrawn model does not vanish by omission.
+
+- A new OrcaRouter session with no saved wire model defaults to
+  `deepseek/deepseek-v4.1-flash-1017`. Every OrcaRouter catalog row has
+  `default_for_provider` false, so the descriptor was the only thing deciding
+  the default and it named an older model.
+
+- `POST /v1/threads` is replay-safe. A retry under the same `operation_key`
+  returns the original thread — after a restart too — instead of minting a
+  second one and orphaning the conversation; a changed request under the same
+  key is refused with 409 rather than replacing or duplicating. The
+  capability is advertised as `thread_create_idempotency`, and clients must
+  require it.
 
 - A sandboxed shell can read a tool's own auth config again. The credential
   deny-list still refuses those files to Codewhale's file tools, but it no
@@ -438,7 +517,10 @@ and independent workflow steps can continue after another child fails.
   you ask for recent results only, the search falls back to your configured
   search provider. A cited site your `[network]` policy denies is dropped;
   one the policy would ask you about stays in the results, marked as not
-  checked, until you allow its host. Refs #7039.
+  checked, until you allow its host. A backend that returns fewer results than
+  asked is reported as a shortfall instead of an honored result cap, and a
+  cited page the provider left untitled is named by its path or host rather
+  than shown as a bare domain. Refs #7039.
 
 - Searching for tools no longer unloads tools the agent is using. When the
   deferred toolbox is full, `tool_search` makes room from tools that were
@@ -872,8 +954,7 @@ and independent workflow steps can continue after another child fails.
 - The model catalog now carries current models from Anthropic, Google and
   Meta. Anthropic: `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`
   and `claude-fable-5-1`; the Auto router's cheap tier and the Scout companion
-  stay on `claude-haiku-4-5`. The default stays `claude-sonnet-4-6`, because
-  Codewhale does not yet apply the 5.5 models' request rules, and no default
+  stay on `claude-haiku-4-5`. The `anthropic` default moves to `claude-sonnet-5-5`, and no default
   uses `claude-sonnet-4-5`, which retires on 2026-11-30. OpenAI's GPT-6
   family (`gpt-6-sol`, `gpt-6.1-sol`, `gpt-6-luna` and `gpt-6-astra`) is left
   out of the direct route because OpenAI does not support normal tool calling
@@ -1404,7 +1485,10 @@ and independent workflow steps can continue after another child fails.
   report the source unreachable. That replaces a child reporting "bash denied
   for non-admitted programs". The same hint covers a command that starts with
   `cd ... &&` and the contract bash path as well as the legacy one. A network
-  attempt made from Python or `gh` still gets no hint. Refs #7040.
+  attempt made from Python or `gh` still gets no hint. A read-only child's own
+  briefing states up front that its shell has no network and that `web` is its
+  only route to a page, so it reports a source it could not fetch with the
+  error it saw instead of blaming a blocked program. Refs #7040.
 
 - A `codewhale resume` or `codewhale fork` that is refused no longer leaves a
   half-bound session behind that blocks the next attempt. A saved session
