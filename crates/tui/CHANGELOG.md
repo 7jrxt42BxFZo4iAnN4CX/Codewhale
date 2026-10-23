@@ -28,6 +28,10 @@ and independent workflow steps can continue after another child fails.
 
 ### Latest fixes
 
+- Computer Use reuses an approved app grant when that same app is explicitly
+  brought forward. It no longer asks for a second foreground approval. App
+  revocation, explicit denials, Pause/Stop and input-ownership checks remain.
+
 - An official provider's model list is current again. A persisted `/models`
   fetch used to shadow the fresher catalog snapshot for every route, so
   `openai` listed a two-generation-old roster while the snapshot already knew
