@@ -154,7 +154,7 @@ mod tests {
         let badges = resolve_route_capability_badges(Some("deepseek"), "deepseek-v4-pro")
             .expect("bundled catalog knows deepseek-v4-pro");
         assert!(
-            badges.badges.contains(&"1M ctx".to_string()),
+            badges.badges.contains(&"1.05M ctx".to_string()),
             "missing context badge: {:?}",
             badges.badges
         );

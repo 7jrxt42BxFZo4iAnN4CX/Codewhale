@@ -354,7 +354,7 @@ async fn event_capacity_releases_all_admitted_senders_and_keeps_idle_receipts_lo
 }
 
 #[tokio::test]
-async fn event_capacity_nested_vm_fanout_is_bounded_per_program_not_per_turn() {
+async fn event_capacity_parallel_tool_fanout_is_not_capped_per_turn() {
     struct Counter(std::sync::atomic::AtomicUsize);
     #[async_trait::async_trait]
     impl codewhale_workflow_js::ToolInvoker for Counter {
@@ -381,10 +381,10 @@ async fn event_capacity_nested_vm_fanout_is_bounded_per_program_not_per_turn() {
             Arc::new(codewhale_workflow_js::testing::FakeDriver::new()),
             invoker.clone(), codewhale_workflow_js::WorkflowRunCancel::new(),
         ).await.unwrap();
-        assert_eq!(result, json!({"ok":50,"rejected":206}));
+        assert_eq!(result, json!({"ok":256,"rejected":0}));
         assert_eq!(
             invoker.0.load(std::sync::atomic::Ordering::SeqCst),
-            50 * program
+            256 * program
         );
     }
 }

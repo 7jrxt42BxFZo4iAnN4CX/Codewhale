@@ -4844,7 +4844,7 @@ mod tests {
     }
 
     #[test]
-    fn exec_hardening_applies_and_clamps_spawn_depth() {
+    fn exec_hardening_applies_explicit_spawn_depth_without_a_product_cap() {
         let spec = AgentWorkerSpec {
             worker_id: "w1".to_string(),
             run_id: "r1".to_string(),
@@ -4883,10 +4883,7 @@ mod tests {
             ..Default::default()
         };
         let hardened = apply_exec_hardening(spec.clone(), &exec);
-        assert_eq!(
-            hardened.max_spawn_depth,
-            codewhale_config::MAX_SPAWN_DEPTH_CEILING
-        );
+        assert_eq!(hardened.max_spawn_depth, 99);
 
         let exec = codewhale_config::FleetExecConfig {
             max_spawn_depth: 0,

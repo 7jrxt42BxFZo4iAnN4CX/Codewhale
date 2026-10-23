@@ -3274,7 +3274,7 @@ approval_required = true
             known.description
         );
         assert!(
-            known.description.contains("1M ctx"),
+            known.description.contains("1.05M ctx"),
             "{}",
             known.description
         );

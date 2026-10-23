@@ -358,7 +358,7 @@ async fn reasoning_only_clean_stop_is_retried_and_recovers() {
         )),
         "a recovered turn must not surface the incomplete-response error: {events:?}"
     );
-    assert_eq!(events.iter().filter(|event| matches!(event, Event::Status { message } if message.starts_with("Retry recovery: reasoning-only used 1/") && message.ends_with("turn completed"))).count(), 1);
+    assert_eq!(events.iter().filter(|event| matches!(event, Event::Status { message } if message.starts_with("Retry recovery: per-kind counter reasoning-only used 1/") && message.ends_with("turn completed"))).count(), 1);
 }
 
 /// An output-length stop is a real budget hit, not a transient — it must NOT

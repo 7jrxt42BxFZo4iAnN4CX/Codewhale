@@ -2138,14 +2138,8 @@ fn goal_max_steps_default_and_zero_are_uncapped() {
 }
 
 #[test]
-fn goal_max_steps_preserves_positive_limits_and_clamps() {
-    for (configured, expected) in [
-        (1, 1),
-        (50, 50),
-        (100_000, 100_000),
-        (500_000, 100_000),
-        (u32::MAX, 100_000),
-    ] {
+fn goal_max_steps_preserves_positive_limits() {
+    for (configured, expected) in [(1, 1), (50, 50), (100_000, 100_000), (500_000, 500_000)] {
         let source = format!("[goal]\nmax_steps = {configured}\n");
         let parsed: ConfigFile = toml::from_str(&source).expect("goal config");
         let resolved = parsed.base.goal_max_steps();

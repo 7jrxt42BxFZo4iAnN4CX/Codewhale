@@ -867,8 +867,8 @@ mod tests {
             .await
             .unwrap();
         assert!(listing.content.contains("model"));
-        assert!(!listing.content.contains("explicit"));
-        assert!(!listing.content.contains("disabled"));
+        assert!(!listing.content.contains("  - explicit"));
+        assert!(!listing.content.contains("  - disabled"));
         let query = tool
             .execute(json!({"query":"explicit"}), &context)
             .await

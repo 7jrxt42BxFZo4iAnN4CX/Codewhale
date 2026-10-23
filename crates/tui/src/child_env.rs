@@ -55,12 +55,17 @@ where
     // and other RUSTC_WRAPPER compilers need sockets or files those sandboxes
     // deny, so nested `cargo` fails with "Operation not permitted" before any
     // crate compiles (seen on macOS CI seatbelt). Drop the wrapper so rustc
-    // still runs under the sandbox; unsandboxed children keep it.
+    // still runs under the sandbox; unsandboxed children keep it. A
+    // CARGO_BUILD_BUILD_DIR outside the sandbox's writable roots fails the
+    // same way when nested cargo creates that directory.
     if env
         .iter()
         .any(|(key, _)| normalize_key(key) == "CODEWHALE_SANDBOX")
     {
-        env.retain(|(key, _)| normalize_key(key) != "RUSTC_WRAPPER");
+        env.retain(|(key, _)| {
+            let key = normalize_key(key);
+            key != "RUSTC_WRAPPER" && key != "CARGO_BUILD_BUILD_DIR"
+        });
     }
     env
 }
