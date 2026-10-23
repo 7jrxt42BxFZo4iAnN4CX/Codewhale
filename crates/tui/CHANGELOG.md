@@ -28,13 +28,18 @@ and independent workflow steps can continue after another child fails.
 
 ### Latest fixes
 
+- `tokio` moves to 1.53.3, which retires `RUSTSEC-2026-0386`. The advisory
+  covers `tokio::io::unix::AsyncFd`'s safe constructors accepting a file
+  descriptor they do not own; the lock now sits in a range the advisory lists as
+  patched, and Codewhale never calls `AsyncFd` at all.
+
 - A signed-in ChatGPT account refreshes its model list at launch. The plan roster
   was only fetched at sign-in or on an explicit `models --update`, so an account
   that never re-authenticated kept reporting models it no longer offers and never
   heard about new ones; the launch sweep that refreshes the other catalog layers
   now refreshes a missing, stale or invalid roster too, at the cost of one
-  freshness probe when it is current. A roster past its hour limit also lists its
-  last known models instead of none, and only a fresh fetch supplies the
+  freshness probe when it is current. A roster past its 24-hour limit also lists
+  its last known models instead of none, and only a fresh fetch supplies the
   preferred default.
 
 - Two sessions can share one folder again. The embedded TUI runtime mounted its
@@ -111,6 +116,17 @@ and independent workflow steps can continue after another child fails.
   fetch; an official endpoint's partition must be fresh to shadow the
   snapshot, and an unfresh one still contributes its own ids as an offline
   tail so a withdrawn model does not vanish by omission.
+
+- One catalog row without a price no longer costs you every model in its
+  provider. `models --update` reported `failed / cache_write_failed` with
+  `model_count 0` for OrcaRouter while the endpoint answered 468 rows, because
+  a row whose price was dropped still carried a live cost stamp and one such
+  row rejected the whole refresh as `invalid_response`; the same all-or-nothing
+  rule also discarded an entire cached scope on the next read. Rows are now
+  judged one at a time, a refresh fails only when rows arrived and none
+  survived, and a cached scope that loses every row to validation is still
+  dropped rather than loaded. A failed refresh names its typed reason instead
+  of `cache_write_failed` and still reports the rows you have left.
 
 - A new OrcaRouter session with no saved wire model defaults to
   `deepseek/deepseek-v4.1-flash-1017`. Every OrcaRouter catalog row has
@@ -1281,8 +1297,13 @@ and independent workflow steps can continue after another child fails.
 - `codewhale model list`, `model resolve`, the model picker, sub-agent model
   validation and Runtime facts read endpoint-scoped catalog facts. `model set`
   saves the exact route selection, and `app/models` projects the captured
-  Runtime's catalog. Compatibility aliases and advisory route checks retain
-  their existing registry. Cost estimates
+  Runtime's catalog. Compatibility aliases, advisory route checks, the agent
+  `ModelInfo` capability flags and HTTP app-server route admission still read
+  the bundled curated overlay; admission uses it only to reject a model the
+  catalogue knows for a *different* provider. `model resolve` now prints
+  `limit_overrides` whenever the resolver applied a sourced override, so a
+  context or output limit names its origin instead of looking catalog-native.
+  Cost estimates
   preserve complete price tiers, calculate exact decimal amounts per request,
   and freeze rates at dispatch.
   Missing rates or required usage breakdowns stay unpriced; public prices do
