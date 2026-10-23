@@ -371,7 +371,11 @@ SEED_SPEC = Path("scripts/catalog/models_dev_seed.toml")
 SEED_LOCK = Path("scripts/catalog/models_dev_seed.lock.json")
 SEED_ASSET = Path("crates/config/assets/models_dev.bundled.json")
 CORRECTIONS_ASSET = Path("crates/config/assets/catalog_corrections.json")
+DESCRIPTORS_ASSET = Path("crates/config/assets/provider_descriptors.json")
 SEED_RENDER_COMMAND = "python3 scripts/catalog_models_dev.py seed render"
+# Seeded providers whose default legitimately differs from the descriptor
+# (id -> reason). Every other seeded default must match it exactly.
+SEED_DEFAULT_EXCEPTIONS: dict[str, str] = {}
 
 # Exactly the fields crates/config/src/models_dev.rs reads, in render order.
 PROVIDER_MODEL_FIELDS = (
@@ -569,6 +573,42 @@ def normalize_seed_spec(spec: dict[str, Any], source: str) -> dict[str, Any]:
     }
 
 
+def descriptor_defaults(path: Path) -> dict[str, str]:
+    """Default model per provider id, read from the shipped descriptor list."""
+    document = read_json_file(path)
+    providers = document.get("providers")
+    if not isinstance(providers, list):
+        die(f"{path}: `providers` must be a list of provider descriptors")
+    defaults: dict[str, str] = {}
+    for entry in providers:
+        if not isinstance(entry, dict) or not isinstance(entry.get("default_model"), str):
+            continue
+        for key in ("id", "catalog_id"):
+            name = entry.get(key)
+            if isinstance(name, str) and name:
+                defaults.setdefault(name, entry["default_model"])
+    return defaults
+
+
+def seed_descriptor_default_errors(spec: dict[str, Any], path: Path) -> list[str]:
+    """Seeded defaults that disagree with the descriptor the product ships."""
+    defaults = descriptor_defaults(path)
+    errors: list[str] = []
+    for provider in spec["providers"]:
+        pid = provider["id"]
+        if pid in SEED_DEFAULT_EXCEPTIONS:
+            continue
+        declared = defaults.get(pid)
+        if declared is None:
+            errors.append(f"{pid}: seeded provider has no default_model in {path}")
+        elif declared != provider["default"]:
+            errors.append(
+                f"{pid}: {path} defaults to {declared!r} but the seed default is "
+                f"{provider['default']!r}; align them or record a SEED_DEFAULT_EXCEPTIONS reason"
+            )
+    return errors
+
+
 def upstream_ref(provider: dict[str, Any], model: dict[str, Any]) -> tuple[str, str]:
     """The (upstream provider, upstream model id) a spec row projects."""
     return (
@@ -645,6 +685,7 @@ def seed_lock_report(
     """Human review lines for the PR body: what a re-lock changes."""
     lines: list[str] = []
     old_rows = flatten((old_lock or {}).get("providers", {}))
+    old_rows_by_provider = (old_lock or {}).get("providers", {})
     old_rows.update(flatten({"models": (old_lock or {}).get("models", {})}))
     new_rows = flatten(new_lock.get("providers", {}))
     new_rows.update(flatten({"models": new_lock.get("models", {})}))
@@ -668,6 +709,53 @@ def seed_lock_report(
         for model in provider["models"]:
             up_provider, _ = upstream_ref(provider, model)
             referenced[up_provider].update(new_lock["providers"].get(up_provider, {}))
+    freshness: list[str] = []
+    for provider in spec["providers"]:
+        default = next(m for m in provider["models"] if m["id"] == provider["default"])
+        up_provider, up_id = upstream_ref(provider, default)
+        rows = new_lock["providers"].get(up_provider, {})
+        found = find_row(rows, up_id)
+        released = (found[1] if found else {}).get("release_date")
+        newer = sorted(
+            (
+                (row["release_date"], model_id)
+                for model_id, row in rows.items()
+                if model_id != up_id
+                and isinstance(row.get("release_date"), str)
+                and isinstance(released, str)
+                and row["release_date"] > released
+            ),
+            reverse=True,
+        )[:5]
+        detail = f"released {public_value(released)}" if released else "no release_date"
+        if newer:
+            shown = ", ".join(f"{public_value(mid)} ({public_value(date)})" for date, mid in newer)
+            freshness.append(f"  {provider['id']}: default {public_value(provider['default'])} {detail}; newer upstream: {shown}")
+        else:
+            freshness.append(f"  {provider['id']}: default {public_value(provider['default'])} {detail}")
+    lines.append("default freshness (information only; decide whether a newer model should be the default):")
+    lines.extend(freshness)
+
+    carried: dict[str, set[str]] = {up_provider: set() for up_provider in old_rows_by_provider}
+    for provider in spec["providers"]:
+        for model in provider["models"]:
+            up_provider, up_id = upstream_ref(provider, model)
+            if model.get("curated"):
+                continue
+            found = find_row(new_lock["providers"].get(up_provider, {}), up_id)
+            if found is not None:
+                carried.setdefault(up_provider, set()).add(found[0])
+    rot = [
+        f"  {up_provider}.{model_id}"
+        for up_provider, rows in sorted(old_rows_by_provider.items())
+        for model_id in sorted(set(rows) - carried.get(up_provider, set()))
+    ]
+    lines.append(
+        "lock rows the spec no longer references (removed by this re-lock, not upstream deletions): "
+        f"{len(rot)}"
+    )
+    lines.extend(rot)
+
     new_upstream: list[str] = []
     for up_provider, carried in sorted(referenced.items()):
         rows = ((upstream.get("providers") or {}).get(up_provider) or {}).get("models") or {}
@@ -828,6 +916,9 @@ def read_json_file(path: Path) -> Any:
 
 def cmd_seed_lock(args: argparse.Namespace) -> None:
     spec = load_seed_spec(Path(args.spec))
+    drift = seed_descriptor_default_errors(spec, Path(args.descriptors))
+    if drift:
+        die("descriptor/seed default drift:\n  " + "\n  ".join(drift))
     path_override = os.environ.get("CODEWHALE_MODELS_DEV_PATH", "").strip()
     if path_override:
         raw = Path(path_override).read_bytes()
@@ -857,6 +948,9 @@ def cmd_seed_lock(args: argparse.Namespace) -> None:
 
 def cmd_seed_render(args: argparse.Namespace) -> None:
     spec = load_seed_spec(Path(args.spec))
+    drift = seed_descriptor_default_errors(spec, Path(args.descriptors))
+    if drift:
+        die("descriptor/seed default drift:\n  " + "\n  ".join(drift))
     lock = read_json_file(Path(args.lock))
     corrections = read_json_file(Path(args.corrections))
     providers = {provider["id"] for provider in spec["providers"]}
@@ -980,6 +1074,7 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--spec", default=str(SEED_SPEC))
         command.add_argument("--lock", default=str(SEED_LOCK))
         command.add_argument("--corrections", default=str(CORRECTIONS_ASSET))
+        command.add_argument("--descriptors", default=str(DESCRIPTORS_ASSET))
     lock.set_defaults(func=cmd_seed_lock)
     render.set_defaults(func=cmd_seed_render)
     return p

@@ -28,6 +28,47 @@ and independent workflow steps can continue after another child fails.
 
 ### Latest fixes
 
+- The model picker can be read one provider at a time. `Sort: Provider` now
+  prints a provider header for each block instead of one flat run of names,
+  and `⇧T` narrows the list to one provider at a time and clears on the next
+  cycle; the title names the active filter and the footer advertises `⇧T`
+  beside `⇧A`, so a shortened list is never unexplained.
+
+- `openai-codex` defaults to `gpt-6.1-sol`. Its ChatGPT plan roster served
+  seven ids and no bare `gpt-5.6`, which the descriptor defaulted to: a fresh
+  roster redirected the choice, but a stale, expired or absent roster sent a
+  model the account does not serve and the request failed. `codewhale models`
+  also stops claiming "availability not verified" for a route that did use a
+  fresh snapshot, and now reports the real snapshot layer, fetch time and row
+  count. The offline seed check compares every descriptor default against the
+  seed default and refuses to write when they disagree, and
+  `seed lock --dry-run` reports providers whose default a newer upstream id
+  has overtaken, plus locked rows the spec no longer references.
+  `docs/CATALOG_REFRESH.md` states the limit plainly: nothing offline can
+  detect that a vendor shipped a model.
+
+- A persisted `/models` partition from an official endpoint no longer hides a
+  newer catalog snapshot. `openai` listed a two-generation-old roster while
+  the shipped snapshot already carried `gpt-6-astra`, `gpt-6-luna`, `gpt-6-sol`
+  and `gpt-6.1-sol`, and refreshed `anthropic` and `deepseek` ids were
+  suppressed the same way. A route that owns its live catalog (a relay, a
+  private endpoint, a custom base URL) stays authoritative however old the
+  fetch; an official endpoint's partition must be fresh to shadow the
+  snapshot, and an unfresh one still contributes its own ids as an offline
+  tail so a withdrawn model does not vanish by omission.
+
+- A new OrcaRouter session with no saved wire model defaults to
+  `deepseek/deepseek-v4.1-flash-1017`. Every OrcaRouter catalog row has
+  `default_for_provider` false, so the descriptor was the only thing deciding
+  the default and it named an older model.
+
+- `POST /v1/threads` is replay-safe. A retry under the same `operation_key`
+  returns the original thread — after a restart too — instead of minting a
+  second one and orphaning the conversation; a changed request under the same
+  key is refused with 409 rather than replacing or duplicating. The
+  capability is advertised as `thread_create_idempotency`, and clients must
+  require it.
+
 - A sandboxed shell can read a tool's own auth config again. The credential
   deny-list still refuses those files to Codewhale's file tools, but it no
   longer refuses them to the programs that own them, so `gh`, `glab`, `aws`,

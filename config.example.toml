@@ -967,7 +967,7 @@ base_url = "https://api.deepseek.com/beta"
 #   OPENAI_CODEX_ACCOUNT_ID / CODEX_ACCOUNT_ID, OPENAI_CODEX_AUTH_FILE, CODEX_HOME
 [providers.openai_codex]
 # base_url = "https://chatgpt.com/backend-api"
-# model = "gpt-5.6"
+# model = "gpt-6.1-sol"
 # The CLI writes this table after informed consent; do not copy it between
 # providers or machines. Absence means disabled.
 # [providers.openai_codex.external_credentials]

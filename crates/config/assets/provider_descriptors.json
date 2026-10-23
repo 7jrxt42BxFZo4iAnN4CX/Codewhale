@@ -950,7 +950,7 @@
       "id": "openai-codex",
       "label": "OpenAI Codex (ChatGPT)",
       "base_url": "https://api.openai.com/v1",
-      "default_model": "gpt-5.6",
+      "default_model": "gpt-6.1-sol",
       "env_vars": [
         "OPENAI_CODEX_ACCESS_TOKEN",
         "CODEX_ACCESS_TOKEN"

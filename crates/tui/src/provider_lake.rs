@@ -1646,7 +1646,11 @@ fn cached_receipt(config: &Config, identity: &ProviderIdentity) -> CatalogUpdate
     }
 }
 
-fn roster_receipt(config: &Config, identity: &ProviderIdentity) -> CatalogUpdateReceipt {
+fn roster_receipt(
+    config: &Config,
+    identity: &ProviderIdentity,
+    model_count: usize,
+) -> CatalogUpdateReceipt {
     let base_url = config.base_url_for_route(identity);
     let live = crate::provider_catalog_live::cached_entry_for_route(
         identity.provider,
@@ -1666,15 +1670,36 @@ fn roster_receipt(config: &Config, identity: &ProviderIdentity) -> CatalogUpdate
     if live {
         return cached_receipt(config, identity);
     }
+    let snapshot = crate::models_dev_live::status();
+    let bundled_fetched_at = codewhale_config::catalog::reviewed::bundled_source_fetched_at();
+    let (status, fetched_at) = match snapshot.freshness {
+        crate::models_dev_live::ModelsDevFreshness::Live => (
+            CatalogStatus::Fresh,
+            snapshot.fetched_at.or(bundled_fetched_at),
+        ),
+        crate::models_dev_live::ModelsDevFreshness::Bundled => {
+            (CatalogStatus::Fresh, bundled_fetched_at)
+        }
+        crate::models_dev_live::ModelsDevFreshness::Stale
+        | crate::models_dev_live::ModelsDevFreshness::Failed => {
+            let fetched_at = snapshot.fetched_at.or(bundled_fetched_at);
+            let now = codewhale_config::catalog::now_unix();
+            let status =
+                fetched_at.map_or(CatalogStatus::Unknown, |fetched_at| CatalogStatus::Stale {
+                    age_secs: now.saturating_sub(fetched_at),
+                });
+            (status, fetched_at)
+        }
+    };
     CatalogUpdateReceipt {
         provider: identity.key.to_string(),
         source: "catalog_snapshot",
         outcome: "cached",
-        status: CatalogStatus::Unknown,
-        fetched_at: None,
+        status,
+        fetched_at,
         observed_at: None,
         base_url_fingerprint: Some(base_url_fingerprint(&base_url)),
-        model_count: 0,
+        model_count,
         error: None,
     }
 }
@@ -2110,7 +2135,7 @@ pub(crate) async fn run_models(
         let receipt = if identity.provider == ProviderKind::OpenaiCodex {
             codex_receipt(&route_config, identity)
         } else {
-            roster_receipt(&route_config, identity)
+            roster_receipt(&route_config, identity, models.len())
         };
         println!(
             "source={}\tstatus={}\tfetched_at={}\tobserved_at={}",
