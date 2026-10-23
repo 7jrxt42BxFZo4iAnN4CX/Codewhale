@@ -2,7 +2,7 @@
   "format": "codewhale.features.v1",
   "source": {
     "path": "docs/features.toml",
-    "sha256": "273ccfcc510ba13b039186cd4092a6f893be0632f4010eeb3a40397a6c8e19ea"
+    "sha256": "6f0e8b5f6b3fca44f8206c81e763227b16fc6490b4d5097793a4426dee9a413d"
   },
   "features": [
     {
@@ -527,7 +527,7 @@
     {
       "id": "computer-use",
       "name": "Computer Use",
-      "summary": "Reviewed app control with consent, fresh element targets, observation diffs and bounded named action batches.",
+      "summary": "Reviewed app control with one app approval for background and explicit foreground selection, fresh targets, observation diffs and bounded action batches.",
       "status": "experimental",
       "surfaces": {
         "tui": "preview",
@@ -608,7 +608,7 @@
     {
       "id": "runtime-api",
       "name": "Runtime API",
-      "summary": "Local API: threads, events, approvals, project trust, workspace leases, Unix store sockets and scoped device tokens.",
+      "summary": "Local API: replay-safe thread creation, events, approvals, project trust, workspace leases, Unix store sockets and scoped device tokens.",
       "status": "stable",
       "surfaces": {
         "api": "stable"
