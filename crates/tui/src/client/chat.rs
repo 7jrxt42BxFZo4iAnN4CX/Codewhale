@@ -1339,24 +1339,18 @@ impl CodewhaleClient {
             serde_json::to_vec(body).context("Failed to serialize JSON request body")?;
         let open_req = self.stream_open_request();
         let idle_timeout = open_req.idle_timeout;
-        let response = super::stream_entry::open_sse_response(&open_req, |policy| {
-            let request_body = request_body.clone();
-            async move {
-                let client = super::stream_entry::client_for_policy(
+        let response = self
+            .send_stream_open_with_retry(|policy| {
+                super::stream_entry::client_for_policy(
                     &self.http_client,
                     self.http1_fallback_client(),
                     policy,
-                );
-                self.send_stream_open_with_retry(|| {
-                    client
-                        .post(url)
-                        .header(reqwest::header::CONTENT_TYPE, "application/json")
-                        .body(request_body.clone())
-                })
-                .await
-            }
-        })
-        .await?;
+                )
+                .post(url)
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(request_body.clone())
+            })
+            .await?;
         Ok((response, idle_timeout))
     }
 

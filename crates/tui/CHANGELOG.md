@@ -1336,21 +1336,19 @@ and independent workflow steps can continue after another child fails.
   beside the state database in the Codewhale home. Thanks @Lstarsky0 (#6921,
   Refs #6513).
 
-- A Chat Completions stream that a provider refuses with a transient error is
-  now retried and classified on both the HTTP/2 and the HTTP/1.1 path. The
-  HTTP/1.1 fallback used to return the raw provider response, so the caller's
-  retry policy never saw it and a 429 or 5xx ended the turn on the first
-  attempt; it is now a typed error, as the Responses and Anthropic adapters
-  already produce, and a failed open reports the provider's
-  `reasoning_content` diagnostic. Three limits remain: the retry budget is
-  still bounded by `[stream] open_timeout_secs`, so with the default 45-second
-  window and default backoff only about five of a larger `[retry]
-  max_retries` fit inside one open window; with `force_http1` the fallback now
-  retries too, so an ambiguous failure can be replayed where the server may
-  already have the request; a plan-usage 429
-  is still classified as a transient rate limit; and the "Retry stopped" line
-  still names a per-kind counter rather than the budget that ended the turn.
-  Refs #7045. Thanks @7jrxt42BxFZo4iAnN4CX.
+- Streaming requests honor the configured retry count even when provider
+  backoff or `Retry-After` exceeds the response-header timeout. Chat,
+  Responses and Anthropic apply that timeout to each physical request;
+  waiting between attempts does not consume it. HTTP/1.1 responses receive
+  the same error classification and retry handling. Explicit weekly,
+  five-hour and plan-reset usage exhaustion stops as a quota error, while
+  temporary request-rate limits remain retryable. Closing retry receipts
+  label each per-kind counter so it does not imply which failure ended the
+  turn. Failed Chat opens retain the provider's `reasoning_content`
+  diagnostic. Ambiguous transport failures can still replay a request the
+  provider accepted and incur a second completion charge; protocol fallback
+  remains limited to one HTTP/1.1 attempt per transport open. Refs #7045.
+  Thanks @7jrxt42BxFZo4iAnN4CX.
 
 - Body text on a screen that paints its own background now uses the theme's
   primary text colour, and on a terminal that does not report a background

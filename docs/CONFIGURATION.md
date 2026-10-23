@@ -2657,17 +2657,19 @@ reasoning contract, and all four membership ids omit generic sampling fields.
   - `[retry].respect_retry_after` (bool, default `true`): wait for a server
     `Retry-After` header instead of the computed backoff
 
-  `[retry]` schedules HTTP-request retries inside the client. When a
-  streaming request opens, its retries, backoff and any honored `Retry-After`
-  wait share one `stream.open_timeout_secs` window per protocol attempt, so
-  that window bounds how many of `max_retries` the open can reach. On the
-  default HTTP/2 client an expired window counts as a header stall and the open
-  is tried once more over HTTP/1.1 with a fresh window and retry schedule; with
-  HTTP/1.1 pinned there is one window. A `Retry-After` longer than the
-  remaining window ends the open as a response-header timeout; raise
-  `stream.open_timeout_secs` to wait it out. The stream-level
-  budgets that sit above it — how often a turn re-issues a request whose
-  stream failed to open or died — are the `[stream]` keys below; legacy `tui.stream_max_*` keys remain fallbacks.
+  `[retry]` schedules HTTP-request retries inside the client. Each physical
+  streaming request gets its own `stream.open_timeout_secs` response-header
+  wait. Provider backoff and honored `Retry-After` waits happen between
+  attempts, outside that timer, so the configured retry count remains
+  reachable. A classified transport failure or header stall on the default
+  client may switch once to HTTP/1.1 within that attempt; pinned HTTP/1.1
+  skips that protocol fallback. Both clients use the same HTTP status
+  classification and retry policy. Explicit plan-window exhaustion is a
+  terminal quota error. A transport failure after the provider accepted a
+  request remains ambiguous and a retry may bill another completion.
+  The stream-level budgets above this client — how often a turn re-issues a
+  request whose stream failed to open or died — are the `[stream]` keys
+  below; legacy `tui.stream_max_*` keys remain fallbacks.
 - `[notifications]`: notification delivery, attention, categories and audio share one
   policy. `quiet = true`, `method = "off"`, `condition = "never"` and disabled
   categories suppress both the banner and Codewhale's selected sound.

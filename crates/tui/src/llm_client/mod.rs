@@ -981,7 +981,17 @@ fn has_explicit_quota_phrase(body: &str, bounded_rate_limit_hint: bool) -> bool 
     .into_iter()
     .any(|phrase| lower.contains(phrase));
 
+    let plan_window_exhausted = lower.contains("usage limit")
+        && ["reached", "exceeded", "exhausted"]
+            .iter()
+            .any(|word| lower.contains(word))
+        && (["weekly", "5-hour", "five-hour", "5 hour", "five hour"]
+            .iter()
+            .any(|scope| lower.contains(scope))
+            || (lower.contains("plan") && lower.contains("limit resets")));
+
     credits_exhausted
+        || plan_window_exhausted
         || lower.contains("billing hard limit has been reached")
         || lower.contains("credit balance exhausted")
         || lower.contains("credit balance is exhausted")

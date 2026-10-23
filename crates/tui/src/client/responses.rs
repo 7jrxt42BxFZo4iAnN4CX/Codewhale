@@ -189,38 +189,24 @@ impl CodewhaleClient {
         // header on both HTTP clients, so it must not be duplicated here.
         // The public API does not use Codex backend identity or beta headers.
         //
-        // The open itself goes through the shared stream-entry transport
-        // policy: bounded header wait, policy-selected client, and at most
-        // one HTTP/1.1 fallback retry on a classified H2 header stall. The
-        // pre-existing provider retry loop (rate limit / transient upstream)
-        // stays inside each open attempt, before any stream body exists.
+        // Provider backoff stays outside each response-header wait. The
+        // returned SSE body carries no reqwest total timeout.
         let request_body =
             serde_json::to_vec(&body).context("Failed to serialize Responses API request body")?;
-        let open_req = self.stream_open_request();
-        let response = super::stream_entry::open_sse_response(&open_req, |policy| {
-            let url = url.clone();
-            let request_body = request_body.clone();
-            async move {
-                let client = super::stream_entry::client_for_policy(
+        let response = self
+            .send_stream_open_with_retry(|policy| {
+                super::stream_entry::client_for_policy(
                     &self.http_client,
                     self.http1_fallback_client(),
                     policy,
-                );
-                // Stream open: the same retry and rate-limit handling with no
-                // total deadline — a per-request total would ride on the
-                // returned SSE body and hard-cut the live stream.
-                self.send_stream_open_with_retry(|| {
-                    client
-                        .post(&url)
-                        .header("Content-Type", "application/json")
-                        .header("Accept", "text/event-stream")
-                        .body(request_body.clone())
-                })
-                .await
-                .context("Responses API request failed")
-            }
-        })
-        .await?;
+                )
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .header("Accept", "text/event-stream")
+                .body(request_body.clone())
+            })
+            .await
+            .context("Responses API request failed")?;
 
         let status = response.status();
         crate::client::record_provider_response(self.api_provider, status.as_u16());

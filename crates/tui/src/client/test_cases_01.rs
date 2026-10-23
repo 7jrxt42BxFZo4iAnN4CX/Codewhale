@@ -645,9 +645,12 @@
 
         let client = deepseek_request_boundary_client(&server.uri(), server.uri());
         let response = client
-            .send_stream_open_with_retry(|| {
-                client
-                    .http_client
+            .send_stream_open_with_retry(|policy| {
+                super::stream_entry::client_for_policy(
+                    &client.http_client,
+                    client.http1_fallback_client(),
+                    policy,
+                )
                     .post(format!("{}/chat/completions", server.uri()))
                     .header(reqwest::header::CONTENT_TYPE, "application/json")
                     .body("{}".to_string())

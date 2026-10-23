@@ -4290,10 +4290,7 @@ impl CodewhaleClient {
     where
         F: FnMut() -> reqwest::RequestBuilder,
     {
-        if self.isolated_request_state {
-            return self.send_with_isolated_retry(build, disclosure).await;
-        }
-        self.send_retry_loop(build, Some(non_streaming_request_envelope()), disclosure)
+        self.send_with_retry_total_error_body(non_streaming_request_envelope(), build, disclosure)
             .await
     }
 
@@ -4305,67 +4302,91 @@ impl CodewhaleClient {
     async fn send_with_retry_total_error_body<F>(
         &self,
         total: Duration,
-        build: F,
+        mut build: F,
         disclosure: &ErrorBodyDisclosure,
     ) -> Result<reqwest::Response>
     where
         F: FnMut() -> reqwest::RequestBuilder,
     {
-        if self.isolated_request_state {
-            return self.send_with_isolated_retry(build, disclosure).await;
-        }
-        self.send_retry_loop(build, Some(total), disclosure).await
+        self.send_retry_loop(
+            || {
+                let request = build();
+                let request = if self.isolated_request_state {
+                    request
+                } else {
+                    request.timeout(total)
+                };
+                async move {
+                    let request = self
+                        .authorize_plugin_request(request)
+                        .await
+                        .map_err(|error| LlmError::Other(error.to_string()))?;
+                    request
+                        .send()
+                        .await
+                        .map_err(|error| LlmError::from_reqwest(&error.without_url()))
+                }
+            },
+            Some(total),
+            disclosure,
+        )
+        .await
     }
 
-    /// The streaming-open twin of [`Self::send_with_retry`]: the same retry
-    /// and rate-limit handling with no total deadline anywhere. reqwest's
-    /// per-request timeout wraps the response *body*, so a total set on the
-    /// open would ride along inside the returned body and hard-cut a live
-    /// stream mid-generation. Stream opens stay bounded by the caller's
-    /// `stream_open_timeout` around the open and per-chunk idle checks on
-    /// the returned body instead.
+    /// The streaming-open twin of [`Self::send_with_retry`]: provider backoff
+    /// stays outside each physical response-header wait. No reqwest total
+    /// timeout may ride on the returned body and truncate a live stream.
     pub(super) async fn send_stream_open_with_retry<F>(&self, build: F) -> Result<reqwest::Response>
     where
-        F: FnMut() -> reqwest::RequestBuilder,
+        F: Fn(stream_entry::StreamHttpPolicy) -> reqwest::RequestBuilder,
     {
-        if self.isolated_request_state {
-            return self
-                .send_with_isolated_retry(build, &ErrorBodyDisclosure::Full)
-                .await;
-        }
-        self.send_retry_loop(build, None, &ErrorBodyDisclosure::Full)
-            .await
+        let open_req = self.stream_open_request();
+        self.send_retry_loop(
+            || async {
+                stream_entry::open_sse_response(&open_req, |policy| {
+                    let request = build(policy);
+                    async move {
+                        let request = self.authorize_plugin_request(request).await?;
+                        request.send().await.map_err(|error| {
+                            anyhow::Error::new(LlmError::from_reqwest(&error.without_url()))
+                        })
+                    }
+                })
+                .await
+                .map_err(|error| {
+                    error
+                        .downcast::<LlmError>()
+                        .unwrap_or_else(|error| LlmError::Other(error.to_string()))
+                })
+            },
+            None,
+            &ErrorBodyDisclosure::Full,
+        )
+        .await
     }
 
-    async fn send_retry_loop<F>(
+    async fn send_retry_loop<F, Fut>(
         &self,
-        mut build: F,
+        mut attempt: F,
         attempt_total: Option<Duration>,
         disclosure: &ErrorBodyDisclosure,
     ) -> Result<reqwest::Response>
     where
-        F: FnMut() -> reqwest::RequestBuilder,
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = std::result::Result<reqwest::Response, LlmError>>,
     {
+        if self.isolated_request_state {
+            return self.send_with_isolated_retry(attempt, disclosure).await;
+        }
         let retry_cfg: LlmRetryConfig = self.retry.clone().into();
         let pause_scope = self.rate_limit_scope();
         let callback_scope = pause_scope.clone();
-        // Two bounded layers around a non-streaming completion
-        // (`attempt_total` = `Some`): the per-attempt request total (connect
-        // through body end) and an envelope around the whole retry loop (all
-        // attempts + backoff + honored Retry-After). Streaming opens
-        // (`None`) set no deadline at all: any total here would be
-        // inherited by the returned body and truncate the stream, so those
-        // calls keep only the caller's own open budget.
+        // Non-streaming calls retain their whole-retry envelope. Streaming
+        // attempts own their header wait and never carry a total body timeout.
         let retry_future = with_retry(
             &retry_cfg,
             || {
-                // Per-attempt total: unlike the loop envelope below,
-                // reqwest's per-request timeout also covers the response
-                // body, so a slow-drip body cannot outlive the budget.
-                let request = match attempt_total {
-                    Some(total) => build().timeout(total),
-                    None => build(),
-                };
+                let response = attempt();
                 let pause_scope = pause_scope.as_str();
                 async move {
                     // Sleep in bounded slices rather than the full remaining
@@ -4378,14 +4399,7 @@ impl CodewhaleClient {
                         tokio::time::sleep(delay.min(RATE_LIMIT_PAUSE_RECHECK_INTERVAL)).await;
                     }
                     self.wait_for_rate_limit().await;
-                    let request = self
-                        .authorize_plugin_request(request)
-                        .await
-                        .map_err(|error| LlmError::Other(error.to_string()))?;
-                    let response = request
-                        .send()
-                        .await
-                        .map_err(|err| LlmError::from_reqwest(&err.without_url()))?;
+                    let response = response.await?;
                     let status = response.status();
                     if status.is_success() {
                         return Ok(response);
@@ -4484,13 +4498,14 @@ impl CodewhaleClient {
     /// The same bounded transport retry policy without process-global retry
     /// banners, provider-wide pause cells, or shared connection-health writes.
     /// Used only by the Auto classifier during read-only request inspection.
-    async fn send_with_isolated_retry<F>(
+    async fn send_with_isolated_retry<F, Fut>(
         &self,
-        mut build: F,
+        mut attempt: F,
         disclosure: &ErrorBodyDisclosure,
     ) -> Result<reqwest::Response>
     where
-        F: FnMut() -> reqwest::RequestBuilder,
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = std::result::Result<reqwest::Response, LlmError>>,
     {
         let retry_cfg: LlmRetryConfig = self.retry.clone().into();
         let request_result = crate::llm_client::observe_request_retries(
@@ -4498,17 +4513,10 @@ impl CodewhaleClient {
             with_retry(
                 &retry_cfg,
                 || {
-                    let request = build();
+                    let response = attempt();
                     async move {
                         self.wait_for_rate_limit().await;
-                        let request = self
-                            .authorize_plugin_request(request)
-                            .await
-                            .map_err(|error| LlmError::Other(error.to_string()))?;
-                        let response = request
-                            .send()
-                            .await
-                            .map_err(|err| LlmError::from_reqwest(&err.without_url()))?;
+                        let response = response.await?;
                         let status = response.status();
                         if status.is_success() {
                             return Ok(response);

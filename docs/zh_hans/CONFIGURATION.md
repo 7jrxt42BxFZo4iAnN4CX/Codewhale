@@ -1366,7 +1366,7 @@ DeepSeek V4 前缀缓存让 token 标签变得重要。这些数量保持分离�
   - `[retry].jitter_factor`（float，默认 `0.1`，即 ±10%；钳制到 `0.0..=1.0`）
   - `[retry].respect_retry_after`（bool，默认 `true`）：按服务器的 `Retry-After` 响应头等待，而不是使用计算出的退避延迟
 
-  `[retry]` 安排客户端内部的 HTTP 请求重试。流式请求打开时，其重试、退避以及遵循的 `Retry-After` 等待，在每次协议尝试中共享一个 `stream.open_timeout_secs` 时间窗，所以这个时间窗决定了打开过程能用到多少次 `max_retries`。在默认的 HTTP/2 客户端上，时间窗到期会被视为响应头停滞，然后改用 HTTP/1.1 以新的时间窗和重试计划再试一次；固定使用 HTTP/1.1 时只有一个时间窗。`Retry-After` 若长于剩余时间窗，打开会以响应头超时结束；调大 `stream.open_timeout_secs` 可以等过它。位于其上一层的流级预算——一个回合对流未能打开或中途断掉的请求重新发起多少次——是下面的 `tui.stream_max_*` 键。
+  `[retry]` 安排客户端内部的 HTTP 请求重试。每次实际发出的流式请求都有独立的 `stream.open_timeout_secs` 响应头等待时间；提供方退避和遵循的 `Retry-After` 等待发生在请求之间，不占用这个时间，因此可以执行配置的重试次数。默认客户端遇到已分类的传输错误或响应头停滞时，可在该次尝试中改用 HTTP/1.1 一次；固定使用 HTTP/1.1 时跳过协议回退。两种客户端采用相同的 HTTP 状态分类和重试策略。明确的套餐周期用量耗尽会作为配额错误终止。提供方已接受请求之后发生的传输故障仍有歧义，重试可能产生另一笔生成费用。位于客户端之上的流级预算——一个回合对未能打开或中途断掉的流重新发起多少次请求——由下面的 `[stream]` 键控制；旧的 `tui.stream_max_*` 键仍作为回退。
 
 - `[notifications]`：通知的投递、注意力、类别和声音共用同一套策略。`quiet = true`、`method = "off"`、`condition = "never"` 以及被禁用的类别，会同时抑制横幅和 Codewhale 所选的声音。
 - `notifications.method`：`auto`（默认）、`osc9`、`kitty`、`ghostty`、`bel`、`off`。

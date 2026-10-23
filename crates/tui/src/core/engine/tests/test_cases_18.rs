@@ -528,7 +528,7 @@ async fn reasoning_only_forever_is_bounded_then_fails() {
             max
         )));
     }
-    assert_eq!(events.iter().filter(|event| matches!(event, Event::Status { message } if message == &format!("Retry stopped: reasoning-only used {max}/{max} retries; turn failed"))).count(), 1);
+    assert_eq!(events.iter().filter(|event| matches!(event, Event::Status { message } if message == &format!("Retry stopped: per-kind counter reasoning-only used {max}/{max} retries; turn failed"))).count(), 1);
 }
 
 #[tokio::test]

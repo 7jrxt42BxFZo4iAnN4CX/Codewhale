@@ -121,7 +121,7 @@ impl super::Engine {
             if retries > 0 {
                 let _ = self
                     .send_retry_status(format!(
-                        "{prefix}: {kind} used {retries}/{limit} retries; {outcome}"
+                        "{prefix}: per-kind counter {kind} used {retries}/{limit} retries; {outcome}"
                     ))
                     .await;
             }

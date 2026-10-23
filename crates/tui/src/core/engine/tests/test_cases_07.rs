@@ -528,7 +528,7 @@ async fn empty_clean_stop_is_retried_once_and_the_turn_completes() {
     for (index, receipt) in retry_receipts.iter().enumerate() {
         assert!(receipt.starts_with(&format!("Retry attempt: empty-stop {}/2;", index + 1)));
     }
-    assert_eq!(events.iter().filter(|event| matches!(event, Event::Status { message } if message == "Retry recovery: empty-stop used 1/2 retries; turn completed")).count(), 1);
+    assert_eq!(events.iter().filter(|event| matches!(event, Event::Status { message } if message == "Retry recovery: per-kind counter empty-stop used 1/2 retries; turn completed")).count(), 1);
 }
 
 /// #6310: the second retry carries the request-scoped nudge, which never
@@ -577,7 +577,7 @@ async fn empty_clean_stop_second_retry_is_nudged_and_never_persisted() {
     for (index, receipt) in retry_receipts.iter().enumerate() {
         assert!(receipt.starts_with(&format!("Retry attempt: empty-stop {}/2;", index + 1)));
     }
-    assert_eq!(events.iter().filter(|event| matches!(event, Event::Status { message } if message == "Retry recovery: empty-stop used 2/2 retries; turn completed")).count(), 1);
+    assert_eq!(events.iter().filter(|event| matches!(event, Event::Status { message } if message == "Retry recovery: per-kind counter empty-stop used 2/2 retries; turn completed")).count(), 1);
 }
 
 /// #6310: an empty response on every attempt fails visibly once the budget
@@ -620,7 +620,7 @@ async fn empty_clean_stop_every_time_fails_after_the_retry_budget() {
     for (index, receipt) in retry_receipts.iter().enumerate() {
         assert!(receipt.starts_with(&format!("Retry attempt: empty-stop {}/2;", index + 1)));
     }
-    assert_eq!(events.iter().filter(|event| matches!(event, Event::Status { message } if message == "Retry stopped: empty-stop used 2/2 retries; turn failed")).count(), 1);
+    assert_eq!(events.iter().filter(|event| matches!(event, Event::Status { message } if message == "Retry stopped: per-kind counter empty-stop used 2/2 retries; turn failed")).count(), 1);
 }
 
 #[tokio::test]

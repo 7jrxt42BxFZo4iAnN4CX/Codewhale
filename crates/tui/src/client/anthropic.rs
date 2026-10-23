@@ -299,15 +299,10 @@ impl CodewhaleClient {
         .context("Anthropic Messages API request failed")
     }
 
-    /// Open the streaming Messages request through the shared stream-entry
-    /// transport policy: bounded header wait, dual-client selection, and at
-    /// most one HTTP/1.1 fallback retry on a classified H2 header stall.
-    /// Inside each open attempt the provider retry loop
-    /// (`send_stream_open_with_retry`) handles rate limits and transient
-    /// upstream failures before any stream body exists — with no total
-    /// deadline, which would ride on the returned body — as the Chat and
-    /// Responses adapters do. Wire-specific request construction (headers,
-    /// endpoint, body) stays here at the adapter edge.
+    /// Open Messages through the shared provider retry and stream-entry
+    /// policy. Each physical request has its own header wait and at most one
+    /// HTTP/1.1 fallback; provider backoff stays outside that wait. Request
+    /// construction remains at this wire-specific edge.
     async fn open_anthropic_stream_response(
         &self,
         url: &str,
@@ -316,28 +311,19 @@ impl CodewhaleClient {
         let url = self.messages_transport_url(url);
         let request_body =
             serde_json::to_vec(body).context("Failed to serialize Anthropic Messages request")?;
-        let open_req = self.stream_open_request();
-        super::stream_entry::open_sse_response(&open_req, |policy| {
-            let url = url.clone();
-            let request_body = request_body.clone();
-            async move {
-                let client = super::stream_entry::client_for_policy(
-                    &self.http_client,
-                    self.http1_fallback_client(),
-                    policy,
-                );
-                self.send_stream_open_with_retry(|| {
-                    client
-                        .post(&url)
-                        .header(reqwest::header::CONTENT_TYPE, "application/json")
-                        .header("Accept", "text/event-stream")
-                        .body(request_body.clone())
-                })
-                .await
-                .context("Anthropic Messages API request failed")
-            }
+        self.send_stream_open_with_retry(|policy| {
+            super::stream_entry::client_for_policy(
+                &self.http_client,
+                self.http1_fallback_client(),
+                policy,
+            )
+            .post(&url)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .header("Accept", "text/event-stream")
+            .body(request_body.clone())
         })
         .await
+        .context("Anthropic Messages API request failed")
     }
 
     /// Handle a streaming Messages API request.
@@ -2831,8 +2817,9 @@ mod tests {
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
+        for force_http1 in [false, true] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
             .and(path("/v1/messages"))
             .respond_with(
                 ResponseTemplate::new(429)
@@ -2845,41 +2832,47 @@ mod tests {
             .expect(1)
             .mount(&server)
             .await;
-        Mock::given(method("POST"))
-            .and(path("/v1/messages"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("Content-Type", "text/event-stream")
-                    .set_body_string("data: {\"type\":\"message_stop\"}\n\n"),
-            )
-            .expect(1)
-            .mount(&server)
-            .await;
+            Mock::given(method("POST"))
+                .and(path("/v1/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("Content-Type", "text/event-stream")
+                        .set_body_string("data: {\"type\":\"message_stop\"}\n\n"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
 
-        let mut client = deepseek_test_client(&server.uri());
-        client.retry.enabled = true;
-        client.retry.max_retries = 2;
-        client.retry.initial_delay = 0.0;
-        client.retry.max_delay = 0.0;
-        let started = std::time::Instant::now();
-        let stream = client
-            .handle_anthropic_stream(
-                &client
-                    .prepare_outbound_request(request_with("deepseek-v4", None, None, None), true)
-                    .expect("anthropic request prepares"),
-            )
-            .await;
-        assert!(
-            stream.is_ok(),
-            "a 429 before the stream body must be retried, not surfaced"
-        );
-        // The backoff is configured to zero, so only the provider's
-        // `Retry-After: 1` can account for the wait before the retry.
-        assert!(
-            started.elapsed() >= std::time::Duration::from_millis(900),
-            "the retry must wait out Retry-After, waited {:?}",
-            started.elapsed()
-        );
+            let mut client = deepseek_test_client(&server.uri());
+            client.force_http1 = force_http1;
+            client.stream_open_timeout = std::time::Duration::from_millis(250);
+            client.retry.enabled = true;
+            client.retry.max_retries = 2;
+            client.retry.initial_delay = 0.0;
+            client.retry.max_delay = 0.0;
+            let started = std::time::Instant::now();
+            let stream = client
+                .handle_anthropic_stream(
+                    &client
+                        .prepare_outbound_request(
+                            request_with("deepseek-v4", None, None, None),
+                            true,
+                        )
+                        .expect("anthropic request prepares"),
+                )
+                .await;
+            assert!(
+                stream.is_ok(),
+                "a 429 before the stream body must be retried, not surfaced"
+            );
+            // The backoff is configured to zero, so only the provider's
+            // `Retry-After: 1` can account for the wait before the retry.
+            assert!(
+                started.elapsed() >= std::time::Duration::from_millis(900),
+                "the retry must wait out Retry-After, waited {:?}",
+                started.elapsed()
+            );
+        }
     }
 
     /// A `system`-role history message — what a compaction summary, a branch
