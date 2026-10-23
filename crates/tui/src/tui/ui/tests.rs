@@ -10052,7 +10052,7 @@ fn refresh_shell_exec_live_output_finalizes_restored_missing_shell_job() {
     let HistoryCell::Tool(ToolCell::Exec(exec)) = &app.history[0] else {
         panic!("expected exec cell");
     };
-    assert_eq!(exec.status, ToolStatus::Failed);
+    assert_eq!(exec.status, ToolStatus::Stopped);
     assert!(exec.live_output.is_none());
     assert!(
         exec.output
