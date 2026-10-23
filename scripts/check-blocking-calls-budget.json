@@ -93,7 +93,7 @@
     "std_fs": 1
   },
   "crates/tui/src/codex_model_cache.rs": {
-    "std_fs": 2
+    "std_fs": 3
   },
   "crates/tui/src/commands/contract.rs": {
     "path_canonicalize": 5,
