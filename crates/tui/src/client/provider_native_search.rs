@@ -697,7 +697,7 @@ fn fallback_title(url: &str) -> String {
     };
     let slug = parsed
         .path_segments()
-        .and_then(|segments| segments.filter(|segment| !segment.is_empty()).next_back());
+        .and_then(|mut segments| segments.rfind(|segment| !segment.is_empty()));
     let Some(slug) = slug else {
         return format!("{host} (home page)");
     };

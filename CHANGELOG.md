@@ -117,6 +117,17 @@ and independent workflow steps can continue after another child fails.
   snapshot, and an unfresh one still contributes its own ids as an offline
   tail so a withdrawn model does not vanish by omission.
 
+- One catalog row without a price no longer costs you every model in its
+  provider. `models --update` reported `failed / cache_write_failed` with
+  `model_count 0` for OrcaRouter while the endpoint answered 468 rows, because
+  a row whose price was dropped still carried a live cost stamp and one such
+  row rejected the whole refresh as `invalid_response`; the same all-or-nothing
+  rule also discarded an entire cached scope on the next read. Rows are now
+  judged one at a time, a refresh fails only when rows arrived and none
+  survived, and a cached scope that loses every row to validation is still
+  dropped rather than loaded. A failed refresh names its typed reason instead
+  of `cache_write_failed` and still reports the rows you have left.
+
 - A new OrcaRouter session with no saved wire model defaults to
   `deepseek/deepseek-v4.1-flash-1017`. Every OrcaRouter catalog row has
   `default_for_provider` false, so the descriptor was the only thing deciding

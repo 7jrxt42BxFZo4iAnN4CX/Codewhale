@@ -347,7 +347,7 @@ pub async fn refresh(force_network: bool) -> Result<usize, ModelsDevRefreshError
                 body,
             },
         )
-        .inspect_err(|error| note_persistence_error(error))?;
+        .inspect_err(note_persistence_error)?;
     }
     Ok(count)
 }
@@ -432,7 +432,7 @@ async fn refresh_from_path(path: &Path) -> Result<usize, ModelsDevRefreshError> 
                 body,
             },
         )
-        .inspect_err(|error| note_persistence_error(error))?;
+        .inspect_err(note_persistence_error)?;
     }
     Ok(count)
 }
