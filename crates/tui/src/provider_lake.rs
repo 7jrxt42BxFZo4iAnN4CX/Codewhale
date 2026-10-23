@@ -1693,7 +1693,7 @@ fn roster_receipt(
     };
     CatalogUpdateReceipt {
         provider: identity.key.to_string(),
-        source: "catalog_snapshot",
+        source: snapshot.provenance.label(),
         outcome: "cached",
         status,
         fetched_at,
