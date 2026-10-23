@@ -2672,7 +2672,9 @@ impl Engine {
             })
             .await;
 
-        let tool_context = self.build_tool_context(mode, auto_approve);
+        let tool_context = self
+            .build_tool_context(mode, auto_approve)
+            .with_origin_tool_call_id(tool_id.as_str());
         let registry = ToolRegistryBuilder::new()
             .with_shell_tools()
             .build(tool_context);
