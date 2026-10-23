@@ -28,6 +28,37 @@ and independent workflow steps can continue after another child fails.
 
 ### Latest fixes
 
+- A signed-in ChatGPT account refreshes its model list at launch. The plan roster
+  was only fetched at sign-in or on an explicit `models --update`, so an account
+  that never re-authenticated kept reporting models it no longer offers and never
+  heard about new ones; the launch sweep that refreshes the other catalog layers
+  now refreshes a missing, stale or invalid roster too, at the cost of one
+  freshness probe when it is current. A roster past its hour limit also lists its
+  last known models instead of none, and only a fresh fetch supplies the
+  preferred default.
+
+- Two sessions can share one folder again. The embedded TUI runtime mounted its
+  delegated-coordination lock exclusively, so a second `codewhale` in a workspace
+  that already had one running was refused with `another Codewhale process owns
+  delegated coordination for <workspace>`; `codewhale resume <session B>` beside a
+  running session hit the same wall. The exclusive holder is now only
+  `codewhale serve`, which the architecture doc already reserved it for (`#7042`).
+
+- A reasoning effort the route cannot honor is no longer sent to it. OpenAI wire
+  requests resolve the session's effort through the row's declared ladder and
+  clamp to the nearest rung upward, because `gpt-5.5-pro` declares only
+  `["medium","high","xhigh"]` and was being handed `off` and `low`, while
+  `gpt-5.5` and `gpt-5.3-codex` start at `none` and `gpt-5.6*` add `max`. An effort
+  the row already declares is passed through untouched (`#6396`).
+
+- ChatGPT-plan routes report their reasoning controls. The plan roster carries
+  only ids and labels, so every `openai-codex` row advertised
+  `reasoning_effort: unsupported` with no levels at all. Rows are now joined
+  against the merged catalog for the fields the roster leaves blank, and
+  `gpt-6-astra` reports `["low","medium","high","xhigh","max"]`. Context windows
+  are deliberately not filled from that join: the plan snapshot's 272,000
+  describes a different wire than the 1,050,000 the catalog lists.
+
 - A boot that never reports back no longer claims to be connecting forever. The
   launch card's prediction for configured MCP servers now carries the moment it
   was made and retires after five minutes without a receipt, so a pass that dies
@@ -42,11 +73,21 @@ and independent workflow steps can continue after another child fails.
   `claude-sonnet-5-5`: a forced `tool_choice` is now softened to `auto` for
   Opus 5.5 and Sonnet 5.5, which reject it, instead of being sent and refused.
 
+- The model picker's browse views list models you can talk to. `Catalog`, `New`,
+  `Coding`, `Cheap` and `LongContext` now skip image, embedding, video, speech,
+  transcription, reranking and realtime rows — 445 of the 8,849 live catalog
+  entries — instead of threading them between the chat models you were scanning
+  for. `Configured` is untouched, so a route you already set up stays visible,
+  and a search still reaches everything: typing an image model's id finds it.
+
 - The model picker can be read one provider at a time. `Sort: Provider` now
   prints a provider header for each block instead of one flat run of names,
   and `⇧T` narrows the list to one provider at a time and clears on the next
   cycle; the title names the active filter and the footer advertises `⇧T`
-  beside `⇧A`, so a shortened list is never unexplained.
+  beside `⇧A`, so a shortened list is never unexplained. Choosing a provider sort
+  also browses the whole roster rather than the rows the current view admitted,
+  so one keystroke turns the Configured view into a full catalog grouped by
+  vendor — which is what "sort by provider to find models" needs to mean.
 
 - `openai-codex` defaults to `gpt-6.1-sol`. Its ChatGPT plan roster served
   seven ids and no bare `gpt-5.6`, which the descriptor defaulted to: a fresh
