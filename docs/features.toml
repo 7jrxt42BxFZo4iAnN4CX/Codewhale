@@ -769,3 +769,11 @@ surfaces = { tui = "preview" }
 since = "0.10.2"
 docs = "docs/PLUGINS.md"
 owner = "crates/tui/src/plugins/mutation.rs"
+
+[[feature]]
+id = "herdr-agent-state"
+name = "Herdr agent state"
+summary = "Reports idle, working or blocked to the Herdr multiplexer and reopens the session after a restart."
+status = "stable"
+surfaces = { tui = "stable" }
+owner = "crates/tui/src/tui/herdr.rs"
