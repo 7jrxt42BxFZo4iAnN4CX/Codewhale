@@ -476,7 +476,10 @@ and independent workflow steps can continue after another child fails.
   you ask for recent results only, the search falls back to your configured
   search provider. A cited site your `[network]` policy denies is dropped;
   one the policy would ask you about stays in the results, marked as not
-  checked, until you allow its host. Refs #7039.
+  checked, until you allow its host. A backend that returns fewer results than
+  asked is reported as a shortfall instead of an honored result cap, and a
+  cited page the provider left untitled is named by its path or host rather
+  than shown as a bare domain. Refs #7039.
 
 - Searching for tools no longer unloads tools the agent is using. When the
   deferred toolbox is full, `tool_search` makes room from tools that were
@@ -1441,7 +1444,10 @@ and independent workflow steps can continue after another child fails.
   report the source unreachable. That replaces a child reporting "bash denied
   for non-admitted programs". The same hint covers a command that starts with
   `cd ... &&` and the contract bash path as well as the legacy one. A network
-  attempt made from Python or `gh` still gets no hint. Refs #7040.
+  attempt made from Python or `gh` still gets no hint. A read-only child's own
+  briefing states up front that its shell has no network and that `web` is its
+  only route to a page, so it reports a source it could not fetch with the
+  error it saw instead of blaming a blocked program. Refs #7040.
 
 - A `codewhale resume` or `codewhale fork` that is refused no longer leaves a
   half-bound session behind that blocks the next attempt. A saved session

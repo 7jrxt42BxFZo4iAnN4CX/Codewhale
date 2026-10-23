@@ -689,13 +689,36 @@ fn citations_from_text(text: &str) -> Vec<ProviderNativeCitation> {
 }
 
 fn fallback_title(url: &str) -> String {
-    reqwest::Url::parse(url)
-        .ok()
-        .and_then(|parsed| {
-            let host = parsed.host_str()?;
-            Some(format!("{host}{}", parsed.path().trim_end_matches('/')))
+    let Ok(parsed) = reqwest::Url::parse(url) else {
+        return "Web source".to_string();
+    };
+    let Some(host) = parsed.host_str() else {
+        return "Web source".to_string();
+    };
+    let slug = parsed
+        .path_segments()
+        .and_then(|segments| segments.filter(|segment| !segment.is_empty()).next_back());
+    let Some(slug) = slug else {
+        return format!("{host} (home page)");
+    };
+    let words = slug
+        .rsplit_once('.')
+        .filter(|(_, extension)| matches!(*extension, "html" | "htm" | "php" | "asp" | "aspx"))
+        .map_or(slug, |(stem, _)| stem)
+        .split(['-', '_', '+'])
+        .filter(|word| !word.is_empty())
+        .map(|word| {
+            let mut chars = word.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first.to_uppercase().collect::<String>() + chars.as_str()
+            })
         })
-        .unwrap_or_else(|| "Web source".to_string())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if words.is_empty() {
+        return format!("{host} (home page)");
+    }
+    words.chars().take(120).collect()
 }
 
 /// Join the answer parts whole. No per-adapter cap: the provider already
@@ -713,6 +736,23 @@ mod tests {
     use crate::config::{Config, ProviderConfig, ProvidersConfig};
     use wiremock::matchers::{body_partial_json, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[test]
+    fn citation_without_a_provider_title_is_never_a_bare_domain() {
+        let home = citation_from_url("https://www.theverge.com/", None, None, None)
+            .expect("a root URL is a valid citation");
+        assert_ne!(home.title, "www.theverge.com");
+        assert_eq!(home.title, "www.theverge.com (home page)");
+
+        let article = citation_from_url(
+            "https://www.theverge.com/2026/10/21/apple-says-x.html",
+            None,
+            None,
+            None,
+        )
+        .expect("an article URL is a valid citation");
+        assert_eq!(article.title, "Apple Says X");
+    }
 
     fn request() -> ProviderNativeSearchRequest {
         ProviderNativeSearchRequest {

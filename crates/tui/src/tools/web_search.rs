@@ -2012,7 +2012,8 @@ async fn finalize_search_response_for_context(
         .filter(|reason| !initial.contains(reason))
         .cloned()
         .collect::<Vec<_>>();
-    raw.results.truncate(usize::from(query.max_results));
+    let requested_max = usize::from(query.max_results);
+    raw.results.truncate(requested_max);
     rerank(&mut raw.results);
     let synthesis = take_provider_native_synthesis(&mut raw);
     let (unverified, initial): (Vec<_>, Vec<_>) = initial.into_iter().partition(|reason| {
@@ -2047,11 +2048,6 @@ async fn finalize_search_response_for_context(
             .chain(&domain_extra)
             .all(|reason| proposal.degraded.contains(reason))
         || proposal.honored.domains != !query.domains.is_empty()
-        || proposal.honored.max_results
-            != matches!(
-                capabilities.max_results,
-                super::web::contract::CapabilityState::Supported
-            )
         || (proposal.honored.recency
             && (!query.recency.is_some()
                 || !matches!(
@@ -2070,6 +2066,13 @@ async fn finalize_search_response_for_context(
         )));
     }
     let count = raw.results.len();
+    // The host is not told the requested cap, so it can only speak to
+    // capability. Core owns the fulfillment half: a backend that returned
+    // fewer results than asked did not honor the knob, whatever it claimed.
+    let honored = HonoredQueryCapabilities {
+        max_results: proposal.honored.max_results && count >= requested_max,
+        ..proposal.honored
+    };
     let mut message = format!(
         "{}{}{}",
         proposal.prefix,
@@ -2096,7 +2099,7 @@ async fn finalize_search_response_for_context(
             backend_detail: raw.backend_detail,
             requested: query,
             capabilities,
-            honored: proposal.honored,
+            honored,
             degraded: proposal.degraded.into_iter().chain(unverified).collect(),
             latency_ms: u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX),
             cache_hit: false,
@@ -2155,6 +2158,8 @@ fn finalize_search_response(
 
     raw.results.truncate(usize::from(query.max_results));
     rerank(&mut raw.results);
+    honored.max_results =
+        honored.max_results && raw.results.len() >= usize::from(query.max_results);
     let synthesis = take_provider_native_synthesis(&mut raw);
     let latency_ms = u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
     let receipt = SearchReceipt {
@@ -3913,9 +3918,9 @@ mod tests {
         baidu_search_payload, bing_locale_was_ignored, bocha_error_message, ddg_locale_was_ignored,
         ddg_region_param, domain_matches, duckduckgo_search_url, extract_search_query,
         finalize_search_response, native_answer_time_budget, optional_search_max_results,
-        parse_baidu_results, parse_bocha_results, parse_metaso_results, parse_searxng_results,
-        parse_serply_results, parse_sofya_results, parse_tavily_results, parse_volcengine_results,
-        prune_fallback_locale_ignored, register_search_citations, rerank,
+        parse_baidu_results, parse_bocha_results, parse_deepseek_results, parse_metaso_results,
+        parse_searxng_results, parse_serply_results, parse_sofya_results, parse_tavily_results,
+        parse_volcengine_results, prune_fallback_locale_ignored, register_search_citations, rerank,
         run_scrape_search_with_endpoints, sanitize_error_body, scrape_accept_language,
         scrape_locale_params, scrape_market, search_probe_target, search_timeout_budgets,
         searxng_score, searxng_search_url, serply_search_url, truncate_error_body,
@@ -4403,6 +4408,63 @@ mod tests {
                 ("num".to_string(), "7".to_string()),
             ]
         );
+    }
+
+    #[test]
+    fn parse_deepseek_results_reads_title_url_snippet_and_summary_fallback() {
+        let body = json!({
+            "results": [
+                {
+                    "title": "Ratatui",
+                    "url": "https://ratatui.rs/",
+                    "snippet": "Cook up delicious terminal user interfaces in Rust.",
+                    "summary": "ignored when a snippet is present",
+                    "date": "2026-10-21"
+                },
+                {
+                    "title": "Summary only",
+                    "url": "https://example.com/summary",
+                    "snippet": "",
+                    "summary": "Falls back to the summary field."
+                },
+                {
+                    "title": "Missing url",
+                    "snippet": "dropped because there is no url"
+                },
+                {
+                    "url": "https://example.com/no-title",
+                    "snippet": "dropped because there is no title"
+                },
+                "not an object",
+                {
+                    "title": "Beyond the cap",
+                    "url": "https://example.com/beyond",
+                    "snippet": "beyond max_results"
+                }
+            ]
+        });
+
+        let results = parse_deepseek_results(&body, 2);
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].rank, 1);
+        assert_eq!(results[0].title, "Ratatui");
+        assert_eq!(results[0].url, "https://ratatui.rs/");
+        assert_eq!(
+            results[0].snippet.as_deref(),
+            Some("Cook up delicious terminal user interfaces in Rust.")
+        );
+        assert_eq!(results[0].published.as_deref(), Some("2026-10-21"));
+        assert_eq!(results[1].rank, 2);
+        assert_eq!(results[1].url, "https://example.com/summary");
+        assert_eq!(
+            results[1].snippet.as_deref(),
+            Some("Falls back to the summary field.")
+        );
+        assert_eq!(results[1].published, None);
+
+        assert!(parse_deepseek_results(&json!({}), 5).is_empty());
+        assert!(parse_deepseek_results(&json!({"results": []}), 5).is_empty());
     }
 
     #[test]
@@ -5668,6 +5730,43 @@ mod tests {
     }
 
     #[test]
+    fn finalize_reports_a_result_shortfall_instead_of_a_honored_capability() {
+        let query = SearchQuery::new("current release".to_string(), 8, None, Vec::new(), None);
+        let raw = BackendSearch {
+            backend: BackendId::ProviderNative,
+            source: "provider-native/deepseek/deepseek-flash".to_string(),
+            backend_detail: Some("api.deepseek.com".to_string()),
+            results: vec![SearchResult::new(
+                1,
+                "Only source".to_string(),
+                "https://example.com/only".to_string(),
+                None,
+                None,
+            )],
+            degraded: Vec::new(),
+            note: None,
+        };
+        let response = finalize_search_response(
+            query,
+            QueryCapabilities {
+                max_results: CapabilityState::Supported,
+                recency: CapabilityState::Unsupported,
+                domains: CapabilityState::Unsupported,
+                locale: CapabilityState::Unsupported,
+                published_date: CapabilityState::Unknown,
+            },
+            raw,
+            Instant::now(),
+        );
+
+        assert_eq!(response.results.len(), 1);
+        assert!(
+            !response.receipt.honored.max_results,
+            "one result for eight requested is a shortfall, not an honored cap"
+        );
+    }
+
+    #[test]
     fn provider_native_domain_filter_is_reported_as_provider_honored() {
         let query = SearchQuery::new(
             "current release".to_string(),
@@ -5680,13 +5779,29 @@ mod tests {
             backend: BackendId::ProviderNative,
             source: "provider-native/xai/grok-4.5".to_string(),
             backend_detail: Some("api.x.ai".to_string()),
-            results: vec![SearchResult::new(
-                1,
-                "Exact source".to_string(),
-                "https://docs.example.com/release".to_string(),
-                None,
-                None,
-            )],
+            results: vec![
+                SearchResult::new(
+                    1,
+                    "Exact source".to_string(),
+                    "https://docs.example.com/release".to_string(),
+                    None,
+                    None,
+                ),
+                SearchResult::new(
+                    2,
+                    "Second source".to_string(),
+                    "https://docs.example.com/release-notes".to_string(),
+                    None,
+                    None,
+                ),
+                SearchResult::new(
+                    3,
+                    "Third source".to_string(),
+                    "https://docs.example.com/changelog".to_string(),
+                    None,
+                    None,
+                ),
+            ],
             degraded: Vec::new(),
             note: Some("Grounded answer.".to_string()),
         };
