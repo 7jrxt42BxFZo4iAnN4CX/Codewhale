@@ -28,6 +28,14 @@ and independent workflow steps can continue after another child fails.
 
 ### Latest fixes
 
+- An official provider's model list is current again. A persisted `/models`
+  fetch used to shadow the fresher catalog snapshot for every route, so
+  `openai` listed a two-generation-old roster while the snapshot already knew
+  the new IDs. A partition is now authoritative only while it is fresh, or on a
+  route that owns its own catalog (relays, private endpoints, custom base URLs),
+  where nothing else describes it. Stale IDs survive as an offline tail rather
+  than disappearing from the picker.
+
 - Runtime clients can retry thread creation with the same operation key after
   a lost response or restart and recover the original conversation. A changed
   effective request is refused instead of replacing or duplicating its thread.

@@ -1539,8 +1539,9 @@ pub(crate) fn valid_catalog_model_id(value: &str) -> bool {
 /// Endpoint-scoped roster for CLI, pickers and inventory. A cached provider
 /// listing is authoritative for the IDs it lists **and for its own omissions**;
 /// the only ID appended after it is one the signed payload explicitly attests
-/// as unlisted. Failed/stale rows remain usable offline; configured models are
-/// retained by the caller.
+/// as unlisted. A stale listing for an official endpoint is not current
+/// evidence, so it cannot shadow the snapshot roster; its own IDs survive only
+/// as an offline tail. Configured models are retained by the caller.
 #[must_use]
 pub(crate) fn catalog_models_for_route(
     provider: ProviderKind,
@@ -1550,10 +1551,14 @@ pub(crate) fn catalog_models_for_route(
     if provider == ProviderKind::OpenaiCodex {
         return codex_model_cache::model_roster().model_ids();
     }
-    if let Ok(Some(entry)) =
-        crate::provider_catalog_live::cached_entry_for_route(provider, identity, base_url)
-        && entry.fetched_at > 0
-    {
+    let cached = crate::provider_catalog_live::cached_entry_for_route(provider, identity, base_url)
+        .ok()
+        .flatten()
+        .filter(|entry| entry.fetched_at > 0);
+    let cached_is_authoritative = cached.as_ref().is_some_and(|entry| {
+        crate::provider_catalog_live::cached_roster_is_authoritative(provider, base_url, entry)
+    });
+    if let Some(entry) = cached.as_ref().filter(|_| cached_is_authoritative) {
         let mut models = Vec::with_capacity(entry.offerings.len());
         for row in &entry.offerings {
             push_unique_model(&mut models, &row.wire_model_id);
@@ -1593,6 +1598,9 @@ pub(crate) fn catalog_models_for_route(
                 .into_iter()
                 .map(str::to_string),
         );
+    }
+    for row in cached.iter().flat_map(|entry| entry.offerings.iter()) {
+        push_unique_model(&mut models, &row.wire_model_id);
     }
     models
 }
@@ -1635,6 +1643,39 @@ fn cached_receipt(config: &Config, identity: &ProviderIdentity) -> CatalogUpdate
         base_url_fingerprint: Some(fingerprint),
         model_count: cached.map_or(0, |entry| entry.offerings.len()),
         error: entry.is_err().then_some("cache_read_failed"),
+    }
+}
+
+fn roster_receipt(config: &Config, identity: &ProviderIdentity) -> CatalogUpdateReceipt {
+    let base_url = config.base_url_for_route(identity);
+    let live = crate::provider_catalog_live::cached_entry_for_route(
+        identity.provider,
+        identity.key.as_str(),
+        &base_url,
+    )
+    .ok()
+    .flatten()
+    .is_some_and(|entry| {
+        entry.fetched_at > 0
+            && crate::provider_catalog_live::cached_roster_is_authoritative(
+                identity.provider,
+                &base_url,
+                &entry,
+            )
+    });
+    if live {
+        return cached_receipt(config, identity);
+    }
+    CatalogUpdateReceipt {
+        provider: identity.key.to_string(),
+        source: "catalog_snapshot",
+        outcome: "cached",
+        status: CatalogStatus::Unknown,
+        fetched_at: None,
+        observed_at: None,
+        base_url_fingerprint: Some(base_url_fingerprint(&base_url)),
+        model_count: 0,
+        error: None,
     }
 }
 
@@ -2069,7 +2110,7 @@ pub(crate) async fn run_models(
         let receipt = if identity.provider == ProviderKind::OpenaiCodex {
             codex_receipt(&route_config, identity)
         } else {
-            cached_receipt(&route_config, identity)
+            roster_receipt(&route_config, identity)
         };
         println!(
             "source={}\tstatus={}\tfetched_at={}\tobserved_at={}",

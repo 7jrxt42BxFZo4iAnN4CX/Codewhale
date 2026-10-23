@@ -669,6 +669,22 @@ pub(crate) fn provider_owns_live_catalog(provider: ProviderKind, base_url: &str)
         || codewhale_config::provider_preserves_custom_base_url_model(provider, base_url)
 }
 
+/// Whether a persisted `/models` partition is current evidence for its route.
+///
+/// A route that owns its own roster (a relay, a private endpoint) is
+/// authoritative even when the fetch is old: nothing else describes it. For an
+/// official endpoint the partition competes with the catalog snapshot, and an
+/// old or failed fetch is not evidence about what is served today, so it must
+/// not shadow a fresher roster.
+pub(crate) fn cached_roster_is_authoritative(
+    kind: ProviderKind,
+    base_url: &str,
+    entry: &codewhale_config::catalog::CachedProviderCatalog,
+) -> bool {
+    provider_owns_live_catalog(kind, base_url)
+        || entry.is_fresh(codewhale_config::catalog::now_unix())
+}
+
 /// Whether a catalog scope holds an account-scoped roster that must never be
 /// shared across credentials (#6289).
 ///
@@ -1260,7 +1276,8 @@ pub fn maybe_load_persisted_cache_for_config(config: &Config) -> usize {
     };
     let provider = identity.provider;
     let provider_identity = canonical_provider_scope(identity.key.as_str());
-    let fingerprint = base_url_fingerprint(&config.base_url_for_route(&identity));
+    let base_url = config.base_url_for_route(&identity);
+    let fingerprint = base_url_fingerprint(&base_url);
     if route_is_account_scoped(config, &identity) {
         forget_account_scoped_provider(provider, &provider_identity);
         return 0;
@@ -1285,7 +1302,18 @@ pub fn maybe_load_persisted_cache_for_config(config: &Config) -> usize {
     CACHE
         .read()
         .map(|guard| {
-            publish_exact_scope_for_identity(&guard, provider, &provider_identity, &fingerprint)
+            if provider_owns_live_catalog(provider, &base_url) {
+                publish_exact_scope_for_identity(&guard, provider, &provider_identity, &fingerprint)
+            } else {
+                // Models.dev owns this provider's roster, so a persisted /models
+                // partition can only shadow fresher snapshot rows (#6396).
+                crate::provider_lake::replace_provider_live_snapshot_for_identity(
+                    provider,
+                    &provider_identity,
+                    CatalogSnapshot::default(),
+                );
+                0
+            }
         })
         .unwrap_or(0)
 }
