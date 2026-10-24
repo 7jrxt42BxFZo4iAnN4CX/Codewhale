@@ -102,17 +102,17 @@
             crate::network_policy::Decision::Deny,
             "the permissive user config must not widen Consultant network authority"
         );
-        let mut features = crate::features::Features::default();
-        features.enable(crate::features::Feature::ShellTool);
-        features.enable(crate::features::Feature::WebSearch);
+        let mut features = codewhale_runtime::features::Features::default();
+        features.enable(codewhale_runtime::features::Feature::ShellTool);
+        features.enable(codewhale_runtime::features::Feature::WebSearch);
         apply_fleet_engine_feature_caps(
             &mut features,
             true,
             authority.network_access,
             authority.shell,
         );
-        assert!(!features.enabled(crate::features::Feature::WebSearch));
-        assert!(!features.enabled(crate::features::Feature::ShellTool));
+        assert!(!features.enabled(codewhale_runtime::features::Feature::WebSearch));
+        assert!(!features.enabled(codewhale_runtime::features::Feature::ShellTool));
 
         let worker_policy = exec_network_policy(&config, Some(true)).expect("configured policy");
         assert_eq!(

@@ -345,7 +345,7 @@ impl LspManager {
         };
 
         let freshness = DiagnosticFreshness {
-            source_revision: Some(crate::hashing::sha256_hex(text.as_bytes())),
+            source_revision: Some(codewhale_runtime::hashing::sha256_hex(text.as_bytes())),
             document_version: raw.document_version,
             diagnostic_version: raw.diagnostic_version,
             freshness: Some(raw.freshness()),
@@ -579,7 +579,7 @@ impl LspManager {
                     .read_workspace_text(file)
                     .await
                     .map_err(|err| format!("read {}: {err}", file.display()))?;
-                let source_revision = crate::hashing::sha256_hex(text.as_bytes());
+                let source_revision = codewhale_runtime::hashing::sha256_hex(text.as_bytes());
                 if expected_revision.is_some_and(|expected| expected != source_revision) {
                     return Err("stale_document".into());
                 }
@@ -648,7 +648,7 @@ impl LspManager {
                     .read_workspace_text(file)
                     .await
                     .map_err(|_| "stale_document")?;
-                if crate::hashing::sha256_hex(current.as_bytes()) != source_revision {
+                if codewhale_runtime::hashing::sha256_hex(current.as_bytes()) != source_revision {
                     return Err("stale_document".into());
                 }
                 Ok(serde_json::json!({
@@ -774,7 +774,7 @@ impl LspManager {
             locations.push(SemanticLocation {
                 path,
                 range,
-                target_revision: crate::hashing::sha256_hex(text.as_bytes()),
+                target_revision: codewhale_runtime::hashing::sha256_hex(text.as_bytes()),
                 target_freshness: "unverified",
                 name: value
                     .get("name")
@@ -1225,7 +1225,7 @@ pub(crate) mod tests {
                 }),
             )
             .await;
-        let revision = crate::hashing::sha256_hex(b"fn main() {}\n");
+        let revision = codewhale_runtime::hashing::sha256_hex(b"fn main() {}\n");
         assert_eq!(
             manager
                 .intelligence_at_revision(
@@ -1271,7 +1271,7 @@ pub(crate) mod tests {
         assert_eq!(result["locations"][0]["path"], "a b.rs");
         assert_eq!(
             result["locations"][0]["target_revision"],
-            crate::hashing::sha256_hex("🐋foo\n".as_bytes())
+            codewhale_runtime::hashing::sha256_hex("🐋foo\n".as_bytes())
         );
         assert_eq!(result["locations"][0]["target_freshness"], "unverified");
         assert_eq!(result["omitted"], 0);
@@ -1688,7 +1688,7 @@ pub(crate) mod tests {
         assert_eq!(result["items"], serde_json::json!([]));
         assert_eq!(
             result["source_revision"],
-            crate::hashing::sha256_hex(text.as_bytes())
+            codewhale_runtime::hashing::sha256_hex(text.as_bytes())
         );
         assert_eq!(result["freshness"], "unverified");
         assert!(result["diagnostic_version"].is_null());

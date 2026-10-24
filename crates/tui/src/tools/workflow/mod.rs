@@ -13886,9 +13886,9 @@ FINAL RECEIPT
     }
 
     pub(super) fn workflow_test_retry_guard() -> std::sync::MutexGuard<'static, ()> {
-        let guard = crate::retry_status::test_guard();
-        crate::retry_status::clear();
-        crate::retry_status::clear_rate_limit();
+        let guard = codewhale_runtime::retry_status::test_guard();
+        codewhale_runtime::retry_status::clear();
+        codewhale_runtime::retry_status::clear_rate_limit();
         guard
     }
 }

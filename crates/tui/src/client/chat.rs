@@ -23,12 +23,12 @@ use crate::config::{
 
 use crate::config::ProviderKind;
 use crate::llm_client::StreamEventBox;
-use crate::logging;
 use codewhale_models::{
     ContentBlock, ContentBlockStart, Delta, Message, MessageDelta, MessageRequest, MessageResponse,
     StreamEvent, SystemPrompt, Tool, ToolCaller, Usage, is_openai_gpt_56_api_model,
     model_is_openai_reasoning_family, model_supports_reasoning,
 };
+use codewhale_runtime::logging;
 
 use super::prepared::WireDialect;
 use super::role_placement::{RolePlacement, role_placement};
@@ -1330,14 +1330,15 @@ impl CodewhaleClient {
         let response_cache_key = if cacheable && self.plugin_provider.is_none() {
             let wire_body =
                 serde_json::to_vec(&body).context("Failed to serialize Chat API cache key")?;
-            let key = crate::llm_response_cache::ResponseCache::make_key(
+            let key = codewhale_runtime::llm_response_cache::ResponseCache::make_key(
                 self.api_provider.as_str(),
                 &self.base_url,
                 self.path_suffix.as_deref(),
                 &self.api_key,
                 &wire_body,
             );
-            if let Some(cached) = crate::llm_response_cache::response_cache().get(&key) {
+            if let Some(cached) = codewhale_runtime::llm_response_cache::response_cache().get(&key)
+            {
                 return Ok(cached);
             }
             Some(key)
@@ -1374,7 +1375,7 @@ impl CodewhaleClient {
             serde_json::from_str(&response_text).context("Failed to parse Chat API JSON")?;
         let parsed = parse_chat_message_for_route(&value, self.api_provider, &self.base_url)?;
         if let Some(key) = response_cache_key {
-            crate::llm_response_cache::response_cache().put(key, parsed.clone());
+            codewhale_runtime::llm_response_cache::response_cache().put(key, parsed.clone());
         }
         Ok(parsed)
     }
@@ -1559,7 +1560,7 @@ impl CodewhaleClient {
                             error_chain.push_str(&format!(" -> {source}"));
                             current = std::error::Error::source(source);
                         }
-                        crate::logging::warn(format!(
+                        codewhale_runtime::logging::warn(format!(
                             "Stream read error: {error_chain} \
                              (elapsed: {}ms, bytes_received: {}, ms_since_last_event: {}, headers: {})",
                             stream_start.elapsed().as_millis(),
@@ -2457,7 +2458,7 @@ fn prompt_layer(
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    crate::hashing::sha256_hex(bytes)
+    codewhale_runtime::hashing::sha256_hex(bytes)
 }
 
 #[derive(Clone)]

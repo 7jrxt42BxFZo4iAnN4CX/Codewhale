@@ -1410,7 +1410,7 @@ fn review_receipt_check_status_passes(status: &str) -> bool {
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    crate::hashing::sha256_hex(bytes)
+    codewhale_runtime::hashing::sha256_hex(bytes)
 }
 
 fn valid_sha256_fingerprint(value: &str) -> bool {
@@ -1544,7 +1544,7 @@ impl ToolSpec for ReviewTool {
             validate_review_source_size(&source, max_chars)?;
             vec![if context
                 .features
-                .enabled(crate::features::Feature::ReviewHost)
+                .enabled(codewhale_runtime::features::Feature::ReviewHost)
             {
                 super::review_host::source_prompt(review_source_snapshot(&source), context).await?
             } else {
@@ -2229,9 +2229,9 @@ mod tests {
         .unwrap();
         let tool = ReviewTool::new(Some(client), "kimi-k2.5".into());
         for host in [false, true] {
-            let mut features = crate::features::Features::with_defaults();
+            let mut features = codewhale_runtime::features::Features::with_defaults();
             if host {
-                features.enable(crate::features::Feature::ReviewHost);
+                features.enable(codewhale_runtime::features::Feature::ReviewHost);
             }
             let context = ToolContext::new(root.path()).with_features(features);
             let error = tokio::time::timeout(

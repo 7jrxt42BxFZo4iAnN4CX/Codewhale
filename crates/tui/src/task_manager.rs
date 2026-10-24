@@ -2050,7 +2050,7 @@ impl TaskManager {
         // thread. Running it here as well refuses an unknown mode or posture
         // at the boundary the request crossed, instead of after the task has
         // sat in the durable queue and a worker has claimed it.
-        crate::runtime_policy::RuntimePolicyProjection::from_request(
+        codewhale_runtime::runtime_policy::RuntimePolicyProjection::from_request(
             req.mode
                 .as_deref()
                 .filter(|mode| !mode.trim().is_empty())

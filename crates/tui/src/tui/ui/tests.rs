@@ -18657,14 +18657,14 @@ fn test_ctrl_c_cancels_streaming_sets_status() {
 
 #[test]
 fn local_cancel_marks_late_stream_events_for_suppression() {
-    let _retry_guard = crate::retry_status::test_guard();
+    let _retry_guard = codewhale_runtime::retry_status::test_guard();
     let mut app = create_test_app();
     app.is_loading = true;
     app.turn_started_at = Some(Instant::now());
     app.runtime_turn_id = Some("turn_cancel_me".to_string());
     app.runtime_turn_status = Some("in_progress".to_string());
     app.streaming_state.start_text(0);
-    crate::retry_status::start(2, Duration::from_secs(3), "network error");
+    codewhale_runtime::retry_status::start(2, Duration::from_secs(3), "network error");
 
     mark_active_turn_cancelled_locally(&mut app);
 
@@ -18673,8 +18673,8 @@ fn local_cancel_marks_late_stream_events_for_suppression() {
     assert!(app.runtime_turn_id.is_none());
     assert!(app.runtime_turn_status.is_none());
     assert!(matches!(
-        crate::retry_status::snapshot(),
-        crate::retry_status::RetryState::Idle
+        codewhale_runtime::retry_status::snapshot(),
+        codewhale_runtime::retry_status::RetryState::Idle
     ));
     assert!(app.suppress_stream_events_until_turn_complete);
     assert!(suppress_engine_event_after_local_cancel(
@@ -24106,7 +24106,7 @@ fn file_load_route_refresh_preserves_effective_permission_and_feature_overlays()
     effective_config.sandbox_mode = Some("read-only".to_string());
     effective_config.allow_shell = Some(false);
     effective_config.max_subagents = Some(1);
-    effective_config.features = Some(crate::features::FeaturesToml {
+    effective_config.features = Some(codewhale_runtime::features::FeaturesToml {
         entries: std::collections::BTreeMap::from([
             ("shell_tool".to_string(), false),
             ("subagents".to_string(), false),
@@ -24119,7 +24119,7 @@ fn file_load_route_refresh_preserves_effective_permission_and_feature_overlays()
     raw_disk_config.sandbox_mode = Some("danger-full-access".to_string());
     raw_disk_config.allow_shell = Some(true);
     raw_disk_config.max_subagents = Some(64);
-    raw_disk_config.features = Some(crate::features::FeaturesToml {
+    raw_disk_config.features = Some(codewhale_runtime::features::FeaturesToml {
         entries: std::collections::BTreeMap::from([
             ("shell_tool".to_string(), true),
             ("subagents".to_string(), true),

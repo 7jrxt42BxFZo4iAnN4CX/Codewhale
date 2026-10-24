@@ -194,7 +194,7 @@ pub(crate) fn bounded_identity_field(value: &str) -> String {
 }
 
 fn bounded_fleet_label(value: &str) -> String {
-    crate::safe_label::SafeLabel::phrase(value).to_string()
+    codewhale_runtime::safe_label::SafeLabel::phrase(value).to_string()
 }
 
 fn bounded_visible_text(value: &str, max_chars: usize) -> String {

@@ -127,7 +127,7 @@ impl CapturedOcr {
                 ))
             })?;
             let bytes = crate::tools::file::read_contract_source(&mut source, cancel.as_ref())?;
-            let captured_sha256 = crate::hashing::sha256_hex(&bytes);
+            let captured_sha256 = codewhale_runtime::hashing::sha256_hex(&bytes);
             // Reuse the fetched PDF staging contract. The temporary is private
             // and retained by the input through Native and Tesseract work.
             let mut staged = tempfile::NamedTempFile::new().map_err(|error| {
@@ -164,7 +164,9 @@ impl CapturedOcr {
     ) -> Self {
         Self {
             path: path.to_path_buf(),
-            captured_sha256: crate::hashing::sha256_hex(path.as_os_str().as_encoded_bytes()),
+            captured_sha256: codewhale_runtime::hashing::sha256_hex(
+                path.as_os_str().as_encoded_bytes(),
+            ),
             _staged: None, // private broker test port; production always stages bytes
             overrides: Some(TestOverrides { native, tesseract }),
         }
@@ -230,7 +232,7 @@ impl OcrNativeStep {
         if let Some(binary) = &self.fallback {
             value.extend_from_slice(binary.as_encoded_bytes());
         }
-        crate::hashing::sha256_hex(&value)
+        codewhale_runtime::hashing::sha256_hex(&value)
     }
     pub(crate) fn projection(&self) -> Value {
         let status = match &self.outcome {
@@ -387,7 +389,10 @@ pub(crate) async fn ocr_image_path(
         .turn_deadline
         .unwrap_or_else(|| tokio::time::Instant::now() + OCR_TIMEOUT);
     let input = CapturedOcr::capture(image_path, context, deadline).await?;
-    if context.features.enabled(crate::features::Feature::OcrHost) {
+    if context
+        .features
+        .enabled(codewhale_runtime::features::Feature::OcrHost)
+    {
         let mut captured_context = context.clone();
         captured_context.turn_deadline = Some(deadline);
         let (outcome, decision) = crate::extension_host::manager()

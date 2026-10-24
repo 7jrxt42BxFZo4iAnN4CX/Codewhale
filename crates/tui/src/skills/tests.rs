@@ -119,13 +119,14 @@ fn unicode_skill_identity_preserves_bodies_and_legacy_activation() {
     let path = tmp.path().join("skills_state.toml");
     let original = b"disabled = [\"skill\", \"pdf\"]\n";
     std::fs::write(&path, original).unwrap();
-    let filtered = registry
-        .clone()
-        .into_enabled_with_state(crate::skill_state::SkillStateStore::load_from(path.clone()));
+    let filtered = registry.clone().into_enabled_with_state(
+        codewhale_runtime::skill_state::SkillStateStore::load_from(path.clone()),
+    );
     assert_eq!(filtered.len(), 2);
     assert!(filtered.get("技能").is_none());
     assert_eq!(std::fs::read(&path).unwrap(), original);
-    let mut state = crate::skill_state::SkillStateStore::load_from(path.clone()).unwrap();
+    let mut state =
+        codewhale_runtime::skill_state::SkillStateStore::load_from(path.clone()).unwrap();
     state
         .set_enabled(&registry.get("技能").unwrap().name, true)
         .unwrap();
@@ -207,9 +208,9 @@ fn unicode_plugin_identity_keeps_exact_namespaces_and_reviewed_metadata() {
     assert!(registry.get("team_plugin:技能").is_none());
     let path = tmp.path().join("skills_state.toml");
     std::fs::write(&path, "disabled = [\"team.plugin:skill\"]\n").unwrap();
-    let filtered = registry
-        .clone()
-        .into_enabled_with_state(crate::skill_state::SkillStateStore::load_from(path));
+    let filtered = registry.clone().into_enabled_with_state(
+        codewhale_runtime::skill_state::SkillStateStore::load_from(path),
+    );
     assert!(filtered.get("team.plugin:技能").is_none());
     assert!(filtered.get("team-plugin:技能").is_some());
     registry
@@ -379,7 +380,7 @@ fn workspace_prompt_omits_disabled_skills_without_configured_directory() {
         crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", home.join(".codewhale"));
     crate::test_support::trust_workspace(&workspace);
 
-    let mut state = crate::skill_state::SkillStateStore::load_default().unwrap();
+    let mut state = codewhale_runtime::skill_state::SkillStateStore::load_default().unwrap();
     state.set_enabled("disabled-skill", false).unwrap();
     super::clear_skill_discovery_cache();
 

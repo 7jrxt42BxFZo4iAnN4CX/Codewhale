@@ -782,7 +782,7 @@ impl ExtensionHostManager {
         if operation.is_review()
             && !context
                 .features
-                .enabled(crate::features::Feature::ReviewHost)
+                .enabled(codewhale_runtime::features::Feature::ReviewHost)
         {
             return Err(ToolError::not_available(
                 "Review Host backend is not selected",
@@ -821,7 +821,7 @@ impl ExtensionHostManager {
     ) -> Result<ToolResult, ToolError> {
         if !context
             .features
-            .enabled(crate::features::Feature::GithubHost)
+            .enabled(codewhale_runtime::features::Feature::GithubHost)
         {
             return Err(ToolError::not_available(
                 "GitHub Host backend is not selected",
@@ -913,7 +913,10 @@ impl ExtensionHostManager {
         input: crate::tools::pdf::CapturedPdf,
         context: &ToolContext,
     ) -> Result<(crate::tools::pdf::PdfProcessOutcome, ToolResult), ToolError> {
-        if !context.features.enabled(crate::features::Feature::PdfHost) {
+        if !context
+            .features
+            .enabled(codewhale_runtime::features::Feature::PdfHost)
+        {
             return Err(ToolError::not_available("PDF Host backend is not selected"));
         }
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -956,7 +959,10 @@ impl ExtensionHostManager {
         input: crate::tools::image_ocr::CapturedOcr,
         context: &ToolContext,
     ) -> Result<(crate::tools::image_ocr::OcrOutcome, ToolResult), ToolError> {
-        if !context.features.enabled(crate::features::Feature::OcrHost) {
+        if !context
+            .features
+            .enabled(codewhale_runtime::features::Feature::OcrHost)
+        {
             return Err(ToolError::not_available("OCR Host backend is not selected"));
         }
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -1086,7 +1092,7 @@ impl ExtensionHostManager {
         let mut target = caller.target(&id);
         if let Some(github) = launch.github.as_ref() {
             target["operation"] = json!("github_capture");
-            target["snapshot_sha256"] = json!(crate::hashing::sha256_hex(
+            target["snapshot_sha256"] = json!(codewhale_runtime::hashing::sha256_hex(
                 &serde_json::to_vec(&github.request)
                     .map_err(|_| ToolError::invalid_input("GitHub operation is not JSON"))?
             ));
@@ -1101,7 +1107,7 @@ impl ExtensionHostManager {
         }
         if let Some((operation, input)) = launch.stock.as_ref() {
             target["operation"] = json!(operation.as_str());
-            target["snapshot_sha256"] = json!(crate::hashing::sha256_hex(
+            target["snapshot_sha256"] = json!(codewhale_runtime::hashing::sha256_hex(
                 &serde_json::to_vec(input)
                     .map_err(|_| ToolError::invalid_input("adapter snapshot is not JSON"))?
             ));
@@ -1482,8 +1488,8 @@ mod tests {
             root: Some(root.path().join("host")),
             ..Default::default()
         });
-        let mut features = crate::features::Features::with_defaults();
-        features.enable(crate::features::Feature::ReviewHost);
+        let mut features = codewhale_runtime::features::Features::with_defaults();
+        features.enable(codewhale_runtime::features::Feature::ReviewHost);
         let context = ToolContext::new(root.path()).with_features(features);
         let fixture: Value =
             serde_json::from_str(include_str!("../../tests/fixtures/review-host-parity.json"))
@@ -1606,7 +1612,7 @@ mod tests {
             ));
         context
             .features
-            .enable(crate::features::Feature::GithubHost);
+            .enable(codewhale_runtime::features::Feature::GithubHost);
         let error = manager
             .execute_github(
                 crate::tools::github::host::Request::Comment {
@@ -1662,8 +1668,8 @@ mod tests {
             }),
             None,
         );
-        let mut flags = crate::features::Features::with_defaults();
-        flags.enable(crate::features::Feature::OcrHost);
+        let mut flags = codewhale_runtime::features::Features::with_defaults();
+        flags.enable(codewhale_runtime::features::Feature::OcrHost);
         let cancel = CancellationToken::new();
         let context = ToolContext::new(root.path())
             .with_features(flags)

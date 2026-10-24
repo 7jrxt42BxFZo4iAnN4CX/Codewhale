@@ -180,7 +180,7 @@ impl CapturedPdf {
             bytes.extend_from_slice(&start.to_le_bytes());
             bytes.extend_from_slice(&end.to_le_bytes());
         }
-        crate::hashing::sha256_hex(&bytes)
+        codewhale_runtime::hashing::sha256_hex(&bytes)
     }
 }
 
@@ -280,10 +280,11 @@ async fn extract_captured(
     if request.cancel.is_some_and(CancellationToken::is_cancelled) {
         return Err(PdfTextError::Cancelled);
     }
-    if let Some(context) = request
-        .context
-        .filter(|context| context.features.enabled(crate::features::Feature::PdfHost))
-    {
+    if let Some(context) = request.context.filter(|context| {
+        context
+            .features
+            .enabled(codewhale_runtime::features::Feature::PdfHost)
+    }) {
         // Capture the existing Core deadline before entering the broker. An
         // expired job's final receipt check can beat its timeout response; the
         // generic RPC error must not erase the real Core terminal outcome.

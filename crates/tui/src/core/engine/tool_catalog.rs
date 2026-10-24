@@ -22,8 +22,8 @@ use codewhale_models::Tool;
 
 use crate::core::session::ToolActivationCache;
 use crate::dependencies::ExternalTool;
-use crate::features::{Feature, Features};
-use crate::regex_cache::compile_user_regex;
+use codewhale_runtime::features::{Feature, Features};
+use codewhale_runtime::regex_cache::compile_user_regex;
 
 pub(crate) const MULTI_TOOL_PARALLEL_NAME: &str = "multi_tool_use.parallel";
 pub(crate) const REQUEST_USER_INPUT_NAME: &str = "request_user_input";

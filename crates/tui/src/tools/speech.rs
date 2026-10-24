@@ -330,7 +330,7 @@ pub(crate) async fn prepare_speech_format(
 ) -> Result<String, ToolError> {
     if context
         .features
-        .enabled(crate::features::Feature::SpeechHost)
+        .enabled(codewhale_runtime::features::Feature::SpeechHost)
     {
         let metadata = speech_projection(
             crate::extension_host::StockOperation::SpeechFormat,
@@ -396,7 +396,7 @@ pub(crate) async fn prepare_speech_options(
         .is_some_and(|value| value.starts_with("data:audio/"));
     if context
         .features
-        .enabled(crate::features::Feature::SpeechHost)
+        .enabled(codewhale_runtime::features::Feature::SpeechHost)
     {
         let metadata = speech_projection(
             crate::extension_host::StockOperation::SpeechOptions,

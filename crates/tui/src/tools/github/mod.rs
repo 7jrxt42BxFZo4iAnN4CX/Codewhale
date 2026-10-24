@@ -202,7 +202,7 @@ impl ToolSpec for GithubTool {
         let action = self.resolve_action(&input)?;
         if context
             .features
-            .enabled(crate::features::Feature::GithubHost)
+            .enabled(codewhale_runtime::features::Feature::GithubHost)
         {
             let request = host::Request::capture(action, &input, context)?;
             return crate::extension_host::manager()

@@ -30,7 +30,6 @@ use crate::compaction::{CompactionConfig, PreparedCompactionEnvelope, compact_me
 use crate::config::{Config, DEFAULT_MAX_SUBAGENTS, DEFAULT_TEXT_MODEL, ProviderKind};
 use crate::core::model_client::SharedModelClient;
 use crate::error_taxonomy::{ErrorCategory, ErrorEnvelope, ErrorSeverity, StreamError};
-use crate::features::{Feature, Features};
 use crate::mcp::{McpConfig, McpPool, McpSupervisorUpdate};
 use crate::prompts;
 use crate::purge::{emit_purge_completed, emit_purge_failed, emit_purge_started, run_purge};
@@ -72,6 +71,7 @@ use codewhale_models::{
     SystemPrompt, Tool, Usage, is_incomplete_stop_reason, is_output_limit_stop_reason,
     stop_contradicts_output_ceiling, stop_reason_detail,
 };
+use codewhale_runtime::features::{Feature, Features};
 
 #[cfg(test)]
 use super::authority::agent_approval_mode_for_turn;
@@ -628,7 +628,7 @@ impl Default for EngineConfig {
             goal_objective: None,
             goal_token_budget: None,
             goal_status: GoalStatus::Active,
-            goal_max_continuations: crate::goal_loop::DEFAULT_MAX_GOAL_CONTINUATIONS,
+            goal_max_continuations: codewhale_runtime::goal_loop::DEFAULT_MAX_GOAL_CONTINUATIONS,
             goal_continuation_delay_seconds: 0,
             goal_enforce_token_budget: false,
             reasoning_only_max_reprompts: crate::config::DEFAULT_REASONING_ONLY_REPROMPTS,
@@ -1835,7 +1835,7 @@ impl Engine {
         let key = (self.image_route_provider_key(), model.to_string());
         let learned = self.learned_image_caps.entry(key).or_insert(cap);
         *learned = (*learned).min(cap);
-        crate::logging::warn(format!(
+        codewhale_runtime::logging::warn(format!(
             "request_images: model {model} refused {sent} image(s) in one request (stated limit {:?}); learned cap {}",
             rejection.limit, *learned
         ));
@@ -1858,7 +1858,7 @@ impl Engine {
             return;
         }
         let cap_source = "provider_rejection";
-        crate::logging::warn(format!(
+        codewhale_runtime::logging::warn(format!(
             "request_images: provider={provider} model={model} total={} elided={} cap={} cap_source={cap_source}",
             window.total, window.elided, window.cap
         ));
@@ -2224,7 +2224,9 @@ impl Engine {
         if host.is_none()
             && config.memory_enabled
             && let Some(store) =
-                crate::native_memory::NativeMemoryStore::from_global_path(&config.memory_path)
+                codewhale_runtime::native_memory::NativeMemoryStore::from_global_path(
+                    &config.memory_path,
+                )
         {
             match store.session_start(&config.workspace, &session.id) {
                 Ok(0) => {}
@@ -2237,7 +2239,7 @@ impl Engine {
                 }
             }
         }
-        let user_memory_block = crate::native_memory::native_prompt_block_traced(
+        let user_memory_block = codewhale_runtime::native_memory::native_prompt_block_traced(
             host.is_none() && config.memory_enabled,
             &config.memory_path,
             &config.workspace,
@@ -3767,14 +3769,14 @@ impl Engine {
                             // already waited out ready_at in the scheduler and
                             // keep those semantics untouched.
                             if engine_schedule_id.is_none()
-                                && crate::goal_loop::await_continuation_wait(
-                                    crate::goal_loop::continuation_wait(
+                                && codewhale_runtime::goal_loop::await_continuation_wait(
+                                    codewhale_runtime::goal_loop::continuation_wait(
                                         self.config.goal_continuation_delay_seconds,
                                     ),
                                     &self.cancel_token,
                                 )
                                 .await
-                                    == crate::goal_loop::ContinuationWaitOutcome::Cancelled
+                                    == codewhale_runtime::goal_loop::ContinuationWaitOutcome::Cancelled
                             {
                                 continue;
                             }
@@ -5252,15 +5254,15 @@ impl Engine {
         // The snapshot status is a string ("active", "paused", "complete",
         // "blocked"). Map it to the goal-loop decision core's status enum.
         let status = match snapshot.status.as_str() {
-            "active" => crate::goal_loop::GoalRunStatus::Active,
-            "complete" => crate::goal_loop::GoalRunStatus::Completed,
+            "active" => codewhale_runtime::goal_loop::GoalRunStatus::Active,
+            "complete" => codewhale_runtime::goal_loop::GoalRunStatus::Completed,
             // Paused / Blocked / unknown → no continuation.
             _ => return GoalContinuationAction::Inactive,
         };
 
-        let decision = crate::goal_loop::decide_continuation(
+        let decision = codewhale_runtime::goal_loop::decide_continuation(
             status,
-            crate::goal_loop::GoalProgress {
+            codewhale_runtime::goal_loop::GoalProgress {
                 tokens_used: snapshot.tokens_used,
                 time_used_seconds: snapshot.time_used_seconds,
                 continuations: snapshot.continuation_count,
@@ -5272,7 +5274,7 @@ impl Engine {
             // ContinuationLimit pause the loop. The goal's own budget must be
             // carried here: `unbounded()` has none, which left the enforced
             // stop unreachable on this cross-turn gate (T08-03).
-            crate::goal_loop::GoalBudget {
+            codewhale_runtime::goal_loop::GoalBudget {
                 token_budget: snapshot.token_budget.map(u64::from),
                 time_budget_seconds: None,
                 enforce_token_budget: self.config.goal_enforce_token_budget,
@@ -5281,7 +5283,7 @@ impl Engine {
         );
 
         match decision {
-            crate::goal_loop::ContinuationDecision::Continue => {
+            codewhale_runtime::goal_loop::ContinuationDecision::Continue => {
                 // A cross-turn dispatch is a real continuation pass just like
                 // the bounded intra-turn retry in `turn_loop`. Record it before
                 // rendering and carrying the snapshot so the durable prompt,
@@ -5296,25 +5298,25 @@ impl Engine {
                     snapshot: Box::new(snapshot),
                 }
             }
-            crate::goal_loop::ContinuationDecision::Stop(reason) => {
+            codewhale_runtime::goal_loop::ContinuationDecision::Stop(reason) => {
                 tracing::info!(?reason, "goal continuation stopped");
                 let (message, pause_reason) = match reason {
-                    crate::goal_loop::StopReason::ContinuationLimit => (
+                    codewhale_runtime::goal_loop::StopReason::ContinuationLimit => (
                         format!(
                             "Goal paused after {} automatic continuations without a terminal result (safety backstop; raise or disable via [goal] max_continuations); inspect progress, then resume if useful.",
                             self.config.goal_max_continuations,
                         ),
                         GoalPauseReason::Backoff,
                     ),
-                    crate::goal_loop::StopReason::BudgetLimit => (
+                    codewhale_runtime::goal_loop::StopReason::BudgetLimit => (
                         "Goal paused: the goal's token budget was reached and \
                          [goal] enforce_token_budget makes that a hard stop; \
                          raise the budget or resume to continue."
                             .to_string(),
                         GoalPauseReason::BudgetLimit,
                     ),
-                    crate::goal_loop::StopReason::Completed
-                    | crate::goal_loop::StopReason::Blocked => {
+                    codewhale_runtime::goal_loop::StopReason::Completed
+                    | codewhale_runtime::goal_loop::StopReason::Blocked => {
                         return GoalContinuationAction::Inactive;
                     }
                 };
@@ -6720,7 +6722,7 @@ impl Engine {
         // it, failure pinned it) is no longer relevant — reset to idle
         // so the footer doesn't display a stale failure row across
         // turns (#499).
-        crate::retry_status::clear();
+        codewhale_runtime::retry_status::clear();
 
         // Clone user prompt for post-turn snapshot label before `content`
         // is moved into `user_text_message_with_turn_metadata_for_route` below.
@@ -9185,7 +9187,7 @@ impl Engine {
         if self.api_config.runtime_chat_isolated {
             return Some(SystemPrompt::Text(ISOLATED_CHAT_SYSTEM_PROMPT.to_string()));
         }
-        let user_memory_block = crate::native_memory::native_prompt_block_traced(
+        let user_memory_block = codewhale_runtime::native_memory::native_prompt_block_traced(
             self.config.memory_enabled,
             &self.config.memory_path,
             &self.config.workspace,

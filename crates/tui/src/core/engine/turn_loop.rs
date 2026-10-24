@@ -14,7 +14,6 @@ use super::*;
 use crate::core::authority::{ToolPermission, resolve_tool_permission};
 use crate::core::ops::UserInputProvenance;
 use crate::llm_client::LlmError;
-use crate::prompt_zones::PinnedPrefix;
 use crate::runtime_handoff::{
     shell_completion_runtime_message, subagent_completion_runtime_message,
     subagent_failure_runtime_message, waiting_for_subagents_runtime_message,
@@ -26,6 +25,7 @@ use crate::tools::tool_call_budget::ToolCallBudget;
 use anyhow::anyhow;
 use codewhale_core::request::{PrimaryTurnRequest, prepare_primary_turn_request};
 use codewhale_models::Role;
+use codewhale_runtime::prompt_zones::PinnedPrefix;
 
 const MAX_APPROVAL_INTENT_SUMMARY_CHARS: usize = 2_000;
 const MAX_IMAGE_COUNT_RECOVERIES: u8 = 3;
@@ -1507,13 +1507,13 @@ impl Engine {
         // The sleep guard rides the same gate: a turn that outlives the host's
         // idle timer is lost work, and an interactive host is the only one
         // that owns a human's machine. Bound to this function, so it releases
-        // on every return path. See `crate::sleep_guard` for its limits.
+        // on every return path. See `codewhale_runtime::sleep_guard` for its limits.
         let _sleep_guard = self
             .config
             .terminal_chrome_enabled
-            .then(crate::sleep_guard::SleepGuard::hold);
+            .then(codewhale_runtime::sleep_guard::SleepGuard::hold);
         if self.config.terminal_chrome_enabled {
-            crate::host_terminal::host().begin_turn_chrome();
+            codewhale_runtime::host_terminal::host().begin_turn_chrome();
         }
 
         let client = self
@@ -1857,7 +1857,7 @@ impl Engine {
             let mut tool_name = tool.name.clone();
             let mut tool_input = tool.input.clone();
             let tool_caller = tool.caller.clone();
-            crate::logging::info(format!(
+            codewhale_runtime::logging::info(format!(
                 "Planning tool '{tool_name}' with input: {tool_input:?}"
             ));
 
@@ -2030,7 +2030,7 @@ impl Engine {
                     self.extension_host.as_ref().filter(|_| {
                         self.config
                             .features
-                            .enabled(crate::features::Feature::ExtensionHost)
+                            .enabled(codewhale_runtime::features::Feature::ExtensionHost)
                     }),
                     &tool_name,
                     &tool_id,
@@ -4686,7 +4686,7 @@ impl Engine {
                                 timeout_secs: chunk_timeout_secs,
                             }
                             .into_envelope();
-                            crate::logging::warn(&envelope.message);
+                            codewhale_runtime::logging::warn(&envelope.message);
                             // #6184: every silent provider wait leaves a
                             // `crashes/` stall record, not only a toast.
                             super::turn_heartbeat::report_stall(
@@ -4747,7 +4747,7 @@ impl Engine {
                     limit_secs: max_duration_secs,
                 }
                 .into_envelope();
-                crate::logging::warn(&envelope.message);
+                codewhale_runtime::logging::warn(&envelope.message);
                 stream_error.get_or_insert(envelope.message.clone());
                 let _ = self.send_stream_event(Event::error(envelope)).await;
                 break;
@@ -4830,7 +4830,7 @@ impl Engine {
                         retry_limits.max_resumes,
                         self.cancel_token.is_cancelled(),
                     ) {
-                        crate::logging::warn(format!(
+                        codewhale_runtime::logging::warn(format!(
                             "Stream error after suspected system sleep ({:?} monotonic vs {:?} wall since last chunk); scheduling request retry: {message}",
                             last_progress_mono.elapsed(),
                             wall_elapsed,
@@ -4858,7 +4858,7 @@ impl Engine {
                         self.cancel_token.is_cancelled(),
                     ) {
                         transparent_stream_retries = transparent_stream_retries.saturating_add(1);
-                        crate::logging::info(format!(
+                        codewhale_runtime::logging::info(format!(
                             "Transparent stream retry {transparent_stream_retries}/{} (no content received yet): {message}",
                             retry_limits.max_transparent_retries,
                         ));
@@ -4977,7 +4977,7 @@ impl Engine {
                         retry_limits.max_resumes,
                         self.cancel_token.is_cancelled(),
                     ) {
-                        crate::logging::warn(format!(
+                        codewhale_runtime::logging::warn(format!(
                             "Headless stream resume: network drop after partial content; scheduling request retry: {message}"
                         ));
                         // Keep the real error as the prospective turn
@@ -5007,7 +5007,7 @@ impl Engine {
                         retry_limits.max_resumes,
                         self.cancel_token.is_cancelled(),
                     ) {
-                        crate::logging::warn(format!(
+                        codewhale_runtime::logging::warn(format!(
                             "Interactive stream resume: network drop after partial content; scheduling typed resume: {message}"
                         ));
                         stream_error.get_or_insert(stream_read_error_user_message(
@@ -5039,7 +5039,7 @@ impl Engine {
                     limit_bytes: max_content_bytes,
                 }
                 .into_envelope();
-                crate::logging::warn(&envelope.message);
+                codewhale_runtime::logging::warn(&envelope.message);
                 stream_error.get_or_insert(envelope.message.clone());
                 let _ = self.send_stream_event(Event::error(envelope)).await;
                 break;
@@ -5159,7 +5159,7 @@ impl Engine {
                             // contract-violating block (missing `data`). It
                             // still parks so the failure surfaces at replay
                             // with a diagnosable shape.
-                            crate::logging::warn(
+                            codewhale_runtime::logging::warn(
                                 "Captured a redacted thinking block with an empty payload; it will replay verbatim and the API may reject the request",
                             );
                         }
@@ -5180,7 +5180,7 @@ impl Engine {
                         // and so a stale kind cannot emit a ThinkingComplete
                         // for a provider that skips stops.
                         current_block_kind = None;
-                        crate::logging::info(
+                        codewhale_runtime::logging::info(
                             "Captured redacted thinking block for verbatim replay",
                         );
                     }
@@ -5191,7 +5191,7 @@ impl Engine {
                         caller,
                         thought_signature,
                     } => {
-                        crate::logging::info(format!(
+                        codewhale_runtime::logging::info(format!(
                             "Tool '{name}' block start. Initial input: {input:?}"
                         ));
                         current_block_kind = Some(ContentBlockKind::ToolUse);
@@ -5212,7 +5212,7 @@ impl Engine {
                         });
                     }
                     ContentBlockStart::ServerToolUse { id, name, input } => {
-                        crate::logging::info(format!(
+                        codewhale_runtime::logging::info(format!(
                             "Server tool '{name}' block start. Initial input: {input:?}"
                         ));
                         current_block_kind = Some(ContentBlockKind::ToolUse);
@@ -5284,8 +5284,8 @@ impl Engine {
                             // whole accumulated buffer on every JSON delta
                             // (O(n²) per tool call) for a log that is
                             // usually disabled.
-                            if crate::logging::is_verbose() {
-                                crate::logging::info(format!(
+                            if codewhale_runtime::logging::is_verbose() {
+                                codewhale_runtime::logging::info(format!(
                                     "Tool '{}' input delta: {} (buffer now: {})",
                                     tool_state.name, partial_json, tool_state.input_buffer
                                 ));
@@ -5346,7 +5346,7 @@ impl Engine {
                     if let Some(tool_idx) = current_tool_indices.remove(&index)
                         && let Some(tool_state) = tool_uses.get_mut(tool_idx)
                     {
-                        crate::logging::info(format!(
+                        codewhale_runtime::logging::info(format!(
                             "Tool '{}' block stop. Buffer: '{}'",
                             tool_state.name, tool_state.input_buffer
                         ));
@@ -5388,7 +5388,9 @@ impl Engine {
                     // cause; the transcript states that instead (#6843).
                     let unreadable = crate::error_taxonomy::unreadable_error_notice(raw_message);
                     let message = unreadable.as_deref().unwrap_or(raw_message);
-                    crate::logging::warn(format!("Provider stream error event: {message}"));
+                    codewhale_runtime::logging::warn(format!(
+                        "Provider stream error event: {message}"
+                    ));
                     if self.rlm_host.is_none()
                         && let Some(rejection) =
                             crate::llm_client::image_count_rejection(&message.to_lowercase())
@@ -5561,7 +5563,7 @@ impl Engine {
     /// `structure_synthesized` is rejected.
     async fn finalize_streamed_tool_input(&self, tool_state: &mut ToolUseState) {
         if tool_state.input_buffer.trim().is_empty() {
-            crate::logging::warn(format!(
+            codewhale_runtime::logging::warn(format!(
                 "Tool '{}' input buffer is empty, using initial input: {:?}",
                 tool_state.name, tool_state.input
             ));
@@ -5571,13 +5573,13 @@ impl Engine {
             .filter(|parsed| !parsed.structure_synthesized);
         if let Some(parsed) = final_parse {
             tool_state.input = parsed.value;
-            crate::logging::info(format!(
+            codewhale_runtime::logging::info(format!(
                 "Tool '{}' final input: {:?}",
                 tool_state.name, tool_state.input
             ));
             return;
         }
-        crate::logging::warn(format!(
+        codewhale_runtime::logging::warn(format!(
             "Tool '{}' failed to parse final input buffer: '{}'",
             tool_state.name, tool_state.input_buffer
         ));
@@ -5626,21 +5628,21 @@ impl Engine {
             return None;
         }
         let snapshot = self.goal_snapshot_with_current_turn_usage(current_turn_usage)?;
-        let decision = crate::goal_loop::decide_continuation(
-            crate::goal_loop::GoalRunStatus::Active,
-            crate::goal_loop::GoalProgress {
+        let decision = codewhale_runtime::goal_loop::decide_continuation(
+            codewhale_runtime::goal_loop::GoalRunStatus::Active,
+            codewhale_runtime::goal_loop::GoalProgress {
                 tokens_used: snapshot.tokens_used,
                 time_used_seconds: snapshot.time_used_seconds,
                 continuations: snapshot.continuation_count,
             },
-            crate::goal_loop::GoalBudget {
+            codewhale_runtime::goal_loop::GoalBudget {
                 token_budget: snapshot.token_budget.map(u64::from),
                 time_budget_seconds: None,
                 enforce_token_budget: self.config.goal_enforce_token_budget,
                 max_continuations: self.config.goal_max_continuations,
             },
         );
-        if let crate::goal_loop::ContinuationDecision::Stop(reason) = decision {
+        if let codewhale_runtime::goal_loop::ContinuationDecision::Stop(reason) = decision {
             let message = format!("Goal continuation stopped: {reason:?}.");
             let _ = self.send_event(Event::status(message)).await;
             return None;
@@ -5677,7 +5679,9 @@ impl Engine {
         // timer, and a pause/clear or terminal update_goal observed after the
         // wait cancels the pending pass before anything is recorded or
         // dispatched.
-        let wait = crate::goal_loop::continuation_wait(self.config.goal_continuation_delay_seconds);
+        let wait = codewhale_runtime::goal_loop::continuation_wait(
+            self.config.goal_continuation_delay_seconds,
+        );
         let was_delayed = wait.is_some();
         if let Some(wait) = wait {
             let _ = self
@@ -5686,8 +5690,8 @@ impl Engine {
                 })
                 .await;
         }
-        if crate::goal_loop::await_continuation_wait(wait, &self.cancel_token).await
-            == crate::goal_loop::ContinuationWaitOutcome::Cancelled
+        if codewhale_runtime::goal_loop::await_continuation_wait(wait, &self.cancel_token).await
+            == codewhale_runtime::goal_loop::ContinuationWaitOutcome::Cancelled
         {
             let _ = self
                 .send_event(Event::GoalContinuationWaitEnded { interrupted: true })
@@ -6552,7 +6556,7 @@ fn resolve_tool_definition<'a>(
         && let Some(canonical) = registry.resolve(tool_name.as_str())
     {
         let exact_hidden_handler = registry.get(tool_name.as_str()).is_some();
-        crate::logging::info(format!(
+        codewhale_runtime::logging::info(format!(
             "Resolved hallucinated tool name '{tool_name}' -> '{canonical}'"
         ));
         let catalog_name = match canonical {

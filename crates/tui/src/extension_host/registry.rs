@@ -1136,7 +1136,7 @@ impl OwnerRegistry {
         if !valid_command_name(name) {
             return Err(format!(
                 "command name `{}` is invalid: {COMMAND_HINT}",
-                crate::safe_label::SafeLabel::identifier(name)
+                codewhale_runtime::safe_label::SafeLabel::identifier(name)
             ));
         }
         // Fail closed: with no catalog installed there is nothing to check the
@@ -1260,7 +1260,7 @@ impl OwnerRegistry {
         if !valid_tool_name(name) {
             return Err(format!(
                 "tool name `{}` must match ^[A-Za-z][A-Za-z0-9_-]{{0,63}}$; {NAME_HINT}",
-                crate::safe_label::SafeLabel::identifier(name)
+                codewhale_runtime::safe_label::SafeLabel::identifier(name)
             ));
         }
         let plain_key = name.to_ascii_lowercase();

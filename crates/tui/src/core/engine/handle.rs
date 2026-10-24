@@ -547,7 +547,7 @@ impl EngineHandle {
             Ok(token) => token.cancel(),
             Err(poisoned) => poisoned.into_inner().cancel(),
         }
-        crate::retry_status::clear();
+        codewhale_runtime::retry_status::clear();
     }
 
     /// Snapshot the exact existing target control for one captured transport

@@ -42,7 +42,7 @@ use std::collections::{HashMap, HashSet, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
 use std::sync::{OnceLock, RwLock};
 
-use crate::logging;
+use codewhale_runtime::logging;
 
 /// Per-entry ceiling for a skill's one-line description in the ambient index.
 /// Split between the summary and its `Use when:` trigger when a description
@@ -1013,13 +1013,15 @@ impl SkillRegistry {
     /// this never changes the plugin bundle's trust or MCP lifecycle.
     #[must_use]
     pub(crate) fn into_enabled(self) -> Self {
-        self.into_enabled_with_state(crate::skill_state::SkillStateStore::load_default())
+        self.into_enabled_with_state(
+            codewhale_runtime::skill_state::SkillStateStore::load_default(),
+        )
     }
 
     #[must_use]
     fn into_enabled_with_state(
         mut self,
-        state: anyhow::Result<crate::skill_state::SkillStateStore>,
+        state: anyhow::Result<codewhale_runtime::skill_state::SkillStateStore>,
     ) -> Self {
         match state {
             Ok(state) => self.skills.retain(|skill| {
@@ -1099,7 +1101,7 @@ fn normalize_skill_name_segment(name: &str) -> String {
     }
     // Preserve ASCII identities, but distinguish UTF-8 source names the old
     // slug folded together. No transliteration or Unicode normalization.
-    let digest = crate::hashing::sha256_hex(name.to_ascii_lowercase().as_bytes());
+    let digest = codewhale_runtime::hashing::sha256_hex(name.to_ascii_lowercase().as_bytes());
     let prefix = legacy[..legacy.len().min(31)].trim_end_matches('-');
     format!("{prefix}-{}", &digest[..32])
 }

@@ -452,7 +452,7 @@ pub fn derive_session_name(source_hint: Option<&str>) -> String {
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    crate::hashing::sha256_hex(bytes)
+    codewhale_runtime::hashing::sha256_hex(bytes)
 }
 
 #[cfg(test)]

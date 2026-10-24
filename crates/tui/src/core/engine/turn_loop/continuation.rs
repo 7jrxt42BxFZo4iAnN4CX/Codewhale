@@ -242,7 +242,7 @@ impl Engine {
                 } else {
                     "re-requesting the answer"
                 };
-                crate::logging::warn(format!(
+                codewhale_runtime::logging::warn(format!(
                     "Model returned only reasoning with no answer or tool call (attempt {attempt}/{max_reprompts}); {how}"
                 ));
                 let _ = self.send_retry_status(format!(
@@ -296,7 +296,7 @@ impl Engine {
                         "re-requesting the answer with a nudge"
                     }
                 };
-                crate::logging::warn(format!(
+                codewhale_runtime::logging::warn(format!(
                     "Model returned terminal stop reason `{reason}` with no answer or tool call (attempt {attempt}/{EMPTY_STOP_MAX_RETRIES}); {how}"
                 ));
                 let _ = self.send_retry_status(format!(
@@ -350,7 +350,7 @@ impl Engine {
                 } else {
                     "Model stream ended with no answer or tool call.".to_string()
                 };
-                crate::logging::warn(&message);
+                codewhale_runtime::logging::warn(&message);
                 progress.turn_error = Some(message.clone());
                 let _ = self
                     .send_event(Event::error(ErrorEnvelope::classify(message, true)))

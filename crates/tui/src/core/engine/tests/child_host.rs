@@ -1158,7 +1158,10 @@ async fn actual_child_tool_output_cap_reaches_core_fanout_with_full_artifact() {
     assert!(saved.len() > output.content.len());
     assert_eq!(
         metadata["content_digest"],
-        format!("sha256:{}", crate::hashing::sha256_hex(saved.as_bytes()))
+        format!(
+            "sha256:{}",
+            codewhale_runtime::hashing::sha256_hex(saved.as_bytes())
+        )
     );
     assert_eq!(metadata["truncated"], true);
 }

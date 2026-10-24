@@ -8115,7 +8115,7 @@ fn patch_undo_helper_allows_an_untrusted_undo_with_nothing_to_roll_back() -> Res
 fn sha256_of(path: &FsPath) -> String {
     format!(
         "sha256:{}",
-        crate::hashing::sha256_hex(fs::read(path).unwrap())
+        codewhale_runtime::hashing::sha256_hex(fs::read(path).unwrap())
     )
 }
 
@@ -19992,7 +19992,7 @@ fn runtime_image_named_catalog_cursor_binds_identity_endpoint_and_catalog() -> R
         })
         .collect::<Vec<_>>();
     let fingerprint = |id: &str, base: &str| {
-        crate::hashing::sha256_hex(serde_json::to_vec(&("custom", id, base)).unwrap())
+        codewhale_runtime::hashing::sha256_hex(serde_json::to_vec(&("custom", id, base)).unwrap())
     };
     let params = ListProviderModelsParams {
         model_provider_id: Some("vision-work".into()),
@@ -20860,7 +20860,7 @@ fn test_artifact_root(root: &Path) -> TestArtifactRoot {
 fn turn_file_artifact_id(path: &str) -> String {
     format!(
         "file_{}",
-        &crate::hashing::sha256_hex(path.as_bytes())[..32]
+        &codewhale_runtime::hashing::sha256_hex(path.as_bytes())[..32]
     )
 }
 
@@ -20891,7 +20891,7 @@ async fn turn_artifact_routes_list_and_read_by_reference() -> Result<()> {
     let workspace = tmp.path().join("workspace");
     fs::create_dir_all(&workspace)?;
     fs::write(workspace.join("README.md"), "fixture\n")?;
-    let rev = |bytes: &[u8]| crate::hashing::sha256_hex(bytes);
+    let rev = |bytes: &[u8]| codewhale_runtime::hashing::sha256_hex(bytes);
 
     // The turn: page.html written as v1 (then edited after the turn),
     // current.md written and untouched since.
@@ -21104,7 +21104,7 @@ async fn call_change_route_reads_one_calls_workspace_span() -> Result<()> {
     let workspace = tmp.path().join("workspace");
     fs::create_dir_all(&workspace)?;
     fs::write(workspace.join("kept.md"), "kept\n")?;
-    let rev = |bytes: &[u8]| crate::hashing::sha256_hex(bytes);
+    let rev = |bytes: &[u8]| codewhale_runtime::hashing::sha256_hex(bytes);
     // The model endpoint's own id for the call, verbatim: the shape a gateway
     // really hands back, `|` and all. A record-id charset check would refuse it
     // and answer "no such call" for a call the turn plainly recorded, so this

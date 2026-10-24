@@ -1096,7 +1096,7 @@ pub(crate) fn build_app_system_prompt_with_goal(
     goal_objective: Option<&str>,
 ) -> SystemPrompt {
     let instructions = configured_instruction_sources(config);
-    let user_memory_block = crate::native_memory::native_prompt_block(
+    let user_memory_block = codewhale_runtime::native_memory::native_prompt_block(
         config.memory_enabled(),
         &config.memory_path(),
         &app.workspace,

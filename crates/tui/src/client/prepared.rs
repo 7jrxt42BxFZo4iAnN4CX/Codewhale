@@ -350,7 +350,7 @@ impl PreparedOutboundRequest {
 
     /// SHA-256 over [`Self::canonical_body`]. Whole-body, not a prefix.
     pub(crate) fn body_sha256(&self) -> String {
-        crate::hashing::sha256_hex(self.canonical_body().as_bytes())
+        codewhale_runtime::hashing::sha256_hex(self.canonical_body().as_bytes())
     }
 
     /// Dialect-aware view of the finished body, for counting and estimation.
@@ -379,7 +379,7 @@ impl PreparedOutboundRequest {
     /// SHA-256 of the full endpoint URL. Lets two previews be compared for
     /// "same endpoint?" without either of them printing the path.
     pub(crate) fn endpoint_fingerprint(&self) -> String {
-        crate::hashing::sha256_hex(self.endpoint.url.as_bytes())
+        codewhale_runtime::hashing::sha256_hex(self.endpoint.url.as_bytes())
     }
 
     /// A bounded endpoint class that never publishes a remote authority.
@@ -387,7 +387,7 @@ impl PreparedOutboundRequest {
     /// non-loopback authority is represented by a short digest.
     pub(crate) fn safe_endpoint_host_class(&self) -> String {
         let Ok(url) = reqwest::Url::parse(&self.endpoint.url) else {
-            let digest = crate::hashing::sha256_hex(self.endpoint.url.as_bytes());
+            let digest = codewhale_runtime::hashing::sha256_hex(self.endpoint.url.as_bytes());
             return format!("unparseable sha256:{}", &digest[..12]);
         };
         let scheme = match url.scheme() {
@@ -407,7 +407,7 @@ impl PreparedOutboundRequest {
             || host.to_ascii_lowercase(),
             |port| format!("{}:{port}", host.to_ascii_lowercase()),
         );
-        let digest = crate::hashing::sha256_hex(authority.as_bytes());
+        let digest = codewhale_runtime::hashing::sha256_hex(authority.as_bytes());
         format!("{scheme} remote sha256:{}", &digest[..12])
     }
 
@@ -562,7 +562,8 @@ impl<'a> WireBodyView<'a> {
         if let Some(tools) = object.get("tools") {
             let canonical_tools = canonical_json(tools);
             view.tool_schema_bytes = canonical_tools.len();
-            view.tool_schema_sha256 = crate::hashing::sha256_hex(canonical_tools.as_bytes());
+            view.tool_schema_sha256 =
+                codewhale_runtime::hashing::sha256_hex(canonical_tools.as_bytes());
             view.tool_count = tools.as_array().map_or(0, |tools| {
                 tools
                     .iter()
@@ -612,7 +613,7 @@ impl<'a> WireBodyView<'a> {
 
         view.system_bytes = system_region.len();
         if !system_region.is_empty() {
-            view.system_sha256 = crate::hashing::sha256_hex(system_region.as_bytes());
+            view.system_sha256 = codewhale_runtime::hashing::sha256_hex(system_region.as_bytes());
         }
 
         // Framing is the algebraic remainder, never a separately serialized
@@ -1322,7 +1323,7 @@ mod dialect_seam_tests {
     }
 
     fn sha256(value: &str) -> String {
-        crate::hashing::sha256_hex(value.as_bytes())
+        codewhale_runtime::hashing::sha256_hex(value.as_bytes())
     }
 
     /// The exact pre-processing `prepare_outbound_request` applies before the

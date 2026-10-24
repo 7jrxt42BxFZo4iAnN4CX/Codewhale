@@ -7,7 +7,7 @@
 //! session that triggered compaction under-reported
 //! cost by however many tokens those background calls consumed.
 //!
-//! Mirrors the [`crate::retry_status`] pattern: background callers
+//! Mirrors the [`codewhale_runtime::retry_status`] pattern: background callers
 //! call [`crate::cost_status::report_effective_route`] after each
 //! `client.create_message`, the TUI
 //! render loop calls [`drain`] every frame, and any drained amount

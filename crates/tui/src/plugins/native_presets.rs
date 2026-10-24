@@ -74,7 +74,8 @@ pub(crate) fn metadata(
         .take(MAX_ENTRY + 1)
         .read_to_end(&mut bytes)
         .ok()?;
-    if bytes.len() > MAX_ENTRY as usize || crate::hashing::sha256_hex(&bytes) != preset.entry.sha256
+    if bytes.len() > MAX_ENTRY as usize
+        || codewhale_runtime::hashing::sha256_hex(&bytes) != preset.entry.sha256
     {
         return None;
     }

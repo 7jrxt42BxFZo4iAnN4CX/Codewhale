@@ -12,12 +12,12 @@ use serde_json::{Value, json};
 
 use crate::config::ProviderKind;
 use crate::llm_client::StreamEventBox;
-use crate::logging;
 use crate::tools::schema_sanitize;
 use codewhale_models::{
     ContentBlock, ContentBlockStart, Delta, MessageDelta, MessageRequest, MessageResponse,
     OpaqueReasoningState, StreamEvent, Tool, Usage,
 };
+use codewhale_runtime::logging;
 
 use super::chat::REASONING_REPLAY_PLACEHOLDER;
 use super::prepared::WireDialect;

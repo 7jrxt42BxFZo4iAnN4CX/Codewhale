@@ -270,7 +270,7 @@ impl FleetRoster {
             for (preset, authority) in crate::extension_host::native_presets_for_plugins(plugins) {
                 // An ordinary roster member backed by the existing live owner
                 // receipt. Selection is not authority: preparation checks it.
-                let identity = crate::hashing::sha256_hex(
+                let identity = codewhale_runtime::hashing::sha256_hex(
                     format!("{}:{}", preset.plugin_id, preset.entry.path).as_bytes(),
                 );
                 let metadata = crate::plugins::native_presets::metadata(plugins, &preset);

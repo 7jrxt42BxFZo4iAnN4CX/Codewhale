@@ -2,9 +2,9 @@
 use super::*;
 use crate::extension_host::tests::node_for_tests;
 use crate::extension_host::{ExtensionHostManager, ExtensionHostOptions, TestManagerGuard};
-use crate::features::{Feature, Features};
 use crate::plugins::activation::TestPolicyGuard;
 use crate::tools::spec::ToolContext;
+use codewhale_runtime::features::{Feature, Features};
 use std::sync::Arc;
 #[tokio::test(flavor = "current_thread")]
 async fn real_host_complete_html_region_selection_preserves_all_document_bytes() {

@@ -811,7 +811,7 @@ impl FleetHostAdapter for SshFleetHostAdapter {
                 "authentication_confirmed": false,
             }))
             .map_err(|error| FleetHostError::configuration(error.to_string()))?;
-            let hash = crate::hashing::sha256_hex(&bytes);
+            let hash = codewhale_runtime::hashing::sha256_hex(&bytes);
             transport_receipt = Some(
                 super::task_spec::write_fleet_artifact_ref(
                     &self.local.workspace,

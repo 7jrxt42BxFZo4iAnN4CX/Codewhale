@@ -20,7 +20,6 @@ use unicode_normalization::UnicodeNormalization;
 
 use codewhale_execpolicy::ApprovalMode;
 
-use crate::features::Features;
 use crate::lsp::LspManager;
 use crate::network_policy::NetworkPolicyDecider;
 use crate::rlm::session::SessionObjectSnapshot;
@@ -29,6 +28,7 @@ use crate::sandbox::backend::SandboxBackend;
 use crate::tools::handle::{SharedHandleStore, new_shared_handle_store};
 use crate::tools::shell::{SharedShellManager, new_shared_shell_manager};
 use crate::worker_profile::ShellPolicy;
+use codewhale_runtime::features::Features;
 #[allow(unused_imports)]
 pub use codewhale_tools::{
     ApprovalRequirement, PreparedToolCall, ResourceClaim, ToolCapability, ToolError,

@@ -291,7 +291,7 @@ pub(crate) fn apply_engine_error_to_app(
         // The setup screen covers the transcript, so it must say why it
         // opened. The log records the reason without the provider's message,
         // which the transcript already carries.
-        crate::logging::warn(format!(
+        codewhale_runtime::logging::warn(format!(
             "{} rejected the environment API key; opening provider setup",
             provider.as_str()
         ));
@@ -2796,7 +2796,8 @@ async fn apply_command_result_inner(
                     // the posture this session is in, not under whatever a
                     // legacy bit happens to mean today.
                     permission_posture: Some(
-                        crate::runtime_policy::approval_wire(app.approval_mode).to_string(),
+                        codewhale_runtime::runtime_policy::approval_wire(app.approval_mode)
+                            .to_string(),
                     ),
                     owner_session_id: Some(owner_session_id),
                 };

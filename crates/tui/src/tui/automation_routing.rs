@@ -276,7 +276,7 @@ fn deletion_token(
 ) -> Result<String, serde_json::Error> {
     let mut canonical_runs = runs.iter().collect::<Vec<_>>();
     canonical_runs.sort_by(|left, right| left.id.cmp(&right.id));
-    serde_json::to_vec(&(record, canonical_runs)).map(crate::hashing::sha256_hex)
+    serde_json::to_vec(&(record, canonical_runs)).map(codewhale_runtime::hashing::sha256_hex)
 }
 
 fn action_failed(

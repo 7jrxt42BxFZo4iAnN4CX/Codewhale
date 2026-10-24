@@ -3,9 +3,9 @@
 use super::*;
 use crate::extension_host::tests::node_for_tests;
 use crate::extension_host::{ExtensionHostManager, ExtensionHostOptions, TestManagerGuard};
-use crate::features::{Feature, Features};
 use crate::plugins::activation::TestPolicyGuard;
 use crate::tools::spec::{ToolContext, ToolResult, ToolSpec};
+use codewhale_runtime::features::{Feature, Features};
 use std::sync::Arc;
 
 fn context(root: &Path, host: bool) -> ToolContext {
@@ -45,7 +45,7 @@ fn pdf_host_is_independent_and_defaults_to_rust() {
     let mut flags = Features::with_defaults();
     assert!(!flags.enabled(Feature::PdfHost));
     assert_eq!(
-        crate::features::feature_from_key("pdf_host"),
+        codewhale_runtime::features::feature_from_key("pdf_host"),
         Some(Feature::PdfHost)
     );
     flags.enable(Feature::PdfHost);

@@ -267,10 +267,10 @@ fn render_prompt_sections_inner(
         if owner.0 > MAX_PROMPT_OWNER_BYTES || owner.1 > MAX_PROMPT_SECTIONS_PER_OWNER {
             return Err("extension prompt owner exceeds its byte or section limit".to_string());
         }
-        let name = crate::safe_label::SafeLabel::identifier(&section.plugin_name);
-        let plugin_id = crate::safe_label::SafeLabel::identifier(&section.plugin_id);
-        let id = crate::safe_label::SafeLabel::identifier(&section.id);
-        let hash = crate::safe_label::SafeLabel::identifier(&section.content_hash);
+        let name = codewhale_runtime::safe_label::SafeLabel::identifier(&section.plugin_name);
+        let plugin_id = codewhale_runtime::safe_label::SafeLabel::identifier(&section.plugin_id);
+        let id = codewhale_runtime::safe_label::SafeLabel::identifier(&section.id);
+        let hash = codewhale_runtime::safe_label::SafeLabel::identifier(&section.content_hash);
         writeln!(
             out,
             "\n### extension:{name}/{id}\nSource: {plugin_id}; generation: {}; content: {hash}\n\n{}",
@@ -278,8 +278,8 @@ fn render_prompt_sections_inner(
         )
         .expect("writing to a String cannot fail");
         if let Some(scope) = &section.scope {
-            let path = crate::safe_label::SafeLabel::identifier(&scope.path);
-            let sha = crate::safe_label::SafeLabel::identifier(&scope.sha256);
+            let path = codewhale_runtime::safe_label::SafeLabel::identifier(&scope.path);
+            let sha = codewhale_runtime::safe_label::SafeLabel::identifier(&scope.sha256);
             writeln!(out, "Entry: {path}; source: {sha}").expect("writing to a String cannot fail");
         }
         if out.len() > MAX_PROMPT_HOST_BYTES {
@@ -365,7 +365,7 @@ mod tests {
         assert!(rendered.contains("I use model-{{cwd}} in /work/界. lone {{"));
         assert!(rendered.contains(&format!(
             "Entry: {}",
-            crate::safe_label::SafeLabel::identifier("/reviewed/presets/a.mjs")
+            codewhale_runtime::safe_label::SafeLabel::identifier("/reviewed/presets/a.mjs")
         )));
         assert!(
             !rendered.contains("/reviewed/presets/a.mjs"),
@@ -434,13 +434,13 @@ mod tests {
             rendered
                 .find(&format!(
                     "Entry: {}",
-                    crate::safe_label::SafeLabel::identifier("/reviewed/a.mjs")
+                    codewhale_runtime::safe_label::SafeLabel::identifier("/reviewed/a.mjs")
                 ))
                 .unwrap()
                 < rendered
                     .find(&format!(
                         "Entry: {}",
-                        crate::safe_label::SafeLabel::identifier("/reviewed/b.mjs")
+                        codewhale_runtime::safe_label::SafeLabel::identifier("/reviewed/b.mjs")
                     ))
                     .unwrap()
         );

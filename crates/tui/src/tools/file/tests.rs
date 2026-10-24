@@ -580,7 +580,7 @@ async fn contract_edit_preserves_bom_and_crlf_without_prior_read() {
             "path": "doc.txt",
             "outcome": "updated",
             "size": on_disk.len(),
-            "sha256": crate::hashing::sha256_hex(&on_disk),
+            "sha256": codewhale_runtime::hashing::sha256_hex(&on_disk),
         }])
     );
 }
@@ -602,7 +602,7 @@ async fn contract_write_receipt_carries_written_size_and_sha256() {
             "path": "notes/out.md",
             "outcome": "created",
             "size": on_disk.len(),
-            "sha256": crate::hashing::sha256_hex(&on_disk),
+            "sha256": codewhale_runtime::hashing::sha256_hex(&on_disk),
         }])
     );
 }

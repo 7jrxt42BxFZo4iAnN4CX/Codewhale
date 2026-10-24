@@ -920,9 +920,9 @@ pub async fn run_tui(
         // the alt-screen is active. The stderr redirect above catches raw
         // writes; this prevents the known verbose source at the origin.
         #[cfg(windows)]
-        crate::logging::snapshot_verbose_state();
+        codewhale_runtime::logging::snapshot_verbose_state();
         #[cfg(windows)]
-        crate::logging::set_verbose(false);
+        codewhale_runtime::logging::set_verbose(false);
     }
     // Mouse capture, bracketed paste, focus events, and the Kitty
     // keyboard-protocol escape-disambiguation flag (#442). Single source
@@ -1005,7 +1005,7 @@ pub async fn run_tui(
         app.low_motion || !app.fancy_animations,
         app.ui_theme.accent_primary,
     );
-    crate::startup_trace::mark("app_constructed");
+    codewhale_runtime::startup_trace::mark("app_constructed");
     sync_config_provider_from_app(config, &app);
     if let Err(error) = crate::tui::setup::record_configured_route(&app).await {
         app.push_status_toast(
@@ -1201,9 +1201,9 @@ pub async fn run_tui(
         hook_executor: app.runtime_services.hook_executor.clone(),
         handle_store: app.runtime_services.handle_store.clone(),
         rlm_sessions: app.runtime_services.rlm_sessions.clone(),
-        media_originals_dir: crate::media_originals::default_store_dir(),
+        media_originals_dir: codewhale_runtime::media_originals::default_store_dir(),
     };
-    crate::startup_trace::mark("task_manager_ready");
+    codewhale_runtime::startup_trace::mark("task_manager_ready");
     refresh_active_task_panel(&mut app, &task_manager).await;
     refresh_automation_panel_blocking(&mut app).await;
 
@@ -1215,7 +1215,7 @@ pub async fn run_tui(
 
     // Restore before admitting initial input, including resumed conversations.
     let engine_handle = spawn_tui_engine_with_session(&mut app, config, None).await?;
-    crate::startup_trace::mark("engine_spawned");
+    codewhale_runtime::startup_trace::mark("engine_spawned");
     // The translation client is optional: it never crashes the TUI on
     // startup, even when the API key is missing, the base URL is malformed,
     // or the network is unavailable.
@@ -1292,13 +1292,13 @@ pub async fn run_tui(
     }
     submit_initial_input_if_ready(&mut app, config, &engine_handle).await?;
 
-    crate::startup_trace::log_summary();
+    codewhale_runtime::startup_trace::log_summary();
     // Pin the cold-start measurement at the same moment the summary is logged.
     // `log_summary` computes the same number into a local, emits it, clears its
     // buffer, and returns `()`, so this reads `PROCESS_START` directly rather
     // than through it. Only this path calls it, which is what keeps the
     // cold-start bucket absent on surfaces with no event loop.
-    crate::startup_trace::mark_cold_start();
+    codewhale_runtime::startup_trace::mark_cold_start();
     let result = run_event_loop(
         &mut terminal,
         &mut app,
@@ -1457,7 +1457,7 @@ pub async fn run_tui(
     if app.use_alt_screen() {
         leave_alt_screen(terminal.backend_mut())?;
         #[cfg(windows)]
-        crate::logging::restore_verbose_state();
+        codewhale_runtime::logging::restore_verbose_state();
     }
     if app.use_mouse_capture {
         execute!(terminal.backend_mut(), DisableMouseCapture)?;
@@ -3229,7 +3229,7 @@ pub(crate) async fn run_event_loop(
                         }
                         crate::tui::notifications::clear_taskbar_progress();
                         if status != crate::core::events::TurnOutcomeStatus::Completed {
-                            crate::retry_status::clear();
+                            codewhale_runtime::retry_status::clear();
                             crate::tui::notifications::stop_title_animation_quietly();
                         }
                         let turn_tokens = usage.input_tokens.saturating_add(usage.output_tokens);
@@ -8320,10 +8320,10 @@ mod launch_session_sync_tests {
     use crate::extension_host::{
         ExtensionHostManager, ExtensionHostOptions, TestManagerGuard, caller_view,
     };
-    use crate::features::Feature;
     use crate::plugins::PluginRegistry;
     use crate::plugins::activation::TestPolicyGuard;
     use codewhale_config::AppMode;
+    use codewhale_runtime::features::Feature;
     use std::sync::Arc;
 
     /// A submit on the startup screen begins a session and runs its input in

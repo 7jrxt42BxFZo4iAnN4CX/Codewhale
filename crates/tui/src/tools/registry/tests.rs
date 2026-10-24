@@ -2283,7 +2283,9 @@ fn runtime_surface_hardening_plugin_collisions_preserve_registered_tools() {
     )));
     let plugin_origin = format!(
         "plugin script tool.sh ({})",
-        crate::safe_label::SafeLabel::identifier(&tmp.path().join("tool.sh").to_string_lossy())
+        codewhale_runtime::safe_label::SafeLabel::identifier(
+            &tmp.path().join("tool.sh").to_string_lossy()
+        )
     );
     assert!(errors.contains(&format!("plugin_origin={plugin_origin:?}")));
     assert!(!errors.contains(tmp.path().to_string_lossy().as_ref()));

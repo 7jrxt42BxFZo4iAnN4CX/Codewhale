@@ -3,8 +3,8 @@ use super::*;
 use crate::config::Config;
 use crate::extension_host::tests::node_for_tests;
 use crate::extension_host::{ExtensionHostManager, ExtensionHostOptions, TestManagerGuard};
-use crate::features::{Feature, Features, FeaturesToml};
 use crate::plugins::activation::TestPolicyGuard;
+use codewhale_runtime::features::{Feature, Features, FeaturesToml};
 use std::sync::Arc;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -70,7 +70,7 @@ fn speech_host_is_independent_and_defaults_to_rust() {
     let flags = Features::with_defaults();
     assert!(!flags.enabled(Feature::SpeechHost));
     assert_eq!(
-        crate::features::feature_from_key("speech_host"),
+        codewhale_runtime::features::feature_from_key("speech_host"),
         Some(Feature::SpeechHost)
     );
     let mut flags = flags;

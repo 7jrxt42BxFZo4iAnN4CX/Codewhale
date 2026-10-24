@@ -621,8 +621,8 @@
             "a 3600s Retry-After must not run past the envelope; took {:?}",
             started.elapsed()
         );
-        crate::retry_status::clear();
-        crate::retry_status::clear_rate_limit();
+        codewhale_runtime::retry_status::clear();
+        codewhale_runtime::retry_status::clear_rate_limit();
     }
 
     /// The open answers past the injected non-streaming envelope. The
@@ -1210,10 +1210,10 @@
     #[allow(clippy::await_holding_lock)]
     #[tokio::test(flavor = "current_thread")]
     async fn cache_free_message_call_neither_reads_nor_writes_global_cache() {
-        let _retry_guard = crate::retry_status::test_guard();
-        crate::retry_status::clear();
-        crate::retry_status::clear_rate_limit();
-        crate::retry_status::start(7, Duration::from_secs(60), "foreground sentinel");
+        let _retry_guard = codewhale_runtime::retry_status::test_guard();
+        codewhale_runtime::retry_status::clear();
+        codewhale_runtime::retry_status::clear_rate_limit();
+        codewhale_runtime::retry_status::start(7, Duration::from_secs(60), "foreground sentinel");
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -1232,7 +1232,7 @@
             .await;
 
         let client = deepseek_request_boundary_client("https://api.deepseek.com/v1", server.uri());
-        crate::retry_status::note_rate_limit(&client.rate_limit_scope(), Duration::from_secs(60));
+        codewhale_runtime::retry_status::note_rate_limit(&client.rate_limit_scope(), Duration::from_secs(60));
         let request = MessageRequest {
             model: "deepseek-v4-pro".to_string(),
             messages: vec![Message {
@@ -1257,14 +1257,14 @@
             .prepare_outbound_request(request.clone(), false)
             .expect("request prepares");
         let wire_body = serde_json::to_vec(&prepared.body).expect("wire body serializes");
-        let cache_key = crate::llm_response_cache::ResponseCache::make_key(
+        let cache_key = codewhale_runtime::llm_response_cache::ResponseCache::make_key(
             client.api_provider.as_str(),
             &client.base_url,
             client.path_suffix.as_deref(),
             &client.api_key,
             &wire_body,
         );
-        crate::llm_response_cache::response_cache().put(
+        codewhale_runtime::llm_response_cache::response_cache().put(
             cache_key,
             MessageResponse {
                 id: "cached-sentinel-must-survive".to_string(),
@@ -1285,25 +1285,25 @@
             .expect("cache-free provider call succeeds");
         assert_eq!(response.id, "chatcmpl-cache-free-provider");
         assert_eq!(
-            crate::llm_response_cache::response_cache()
+            codewhale_runtime::llm_response_cache::response_cache()
                 .get(&cache_key)
                 .expect("sentinel remains")
                 .id,
             "cached-sentinel-must-survive"
         );
-        match crate::retry_status::snapshot() {
-            crate::retry_status::RetryState::Active(banner) => {
+        match codewhale_runtime::retry_status::snapshot() {
+            codewhale_runtime::retry_status::RetryState::Active(banner) => {
                 assert_eq!(banner.attempt, 7);
                 assert_eq!(banner.reason, "foreground sentinel");
             }
             state => panic!("isolated success mutated retry state: {state:?}"),
         }
         assert!(
-            crate::retry_status::rate_limit_remaining(&client.rate_limit_scope()).is_some(),
+            codewhale_runtime::retry_status::rate_limit_remaining(&client.rate_limit_scope()).is_some(),
             "isolated success must not clear the foreground provider pause"
         );
-        crate::retry_status::clear();
-        crate::retry_status::clear_rate_limit();
+        codewhale_runtime::retry_status::clear();
+        codewhale_runtime::retry_status::clear_rate_limit();
     }
 
     // This synchronous guard deliberately spans every await: the assertions
@@ -1311,10 +1311,10 @@
     #[allow(clippy::await_holding_lock)]
     #[tokio::test(flavor = "current_thread")]
     async fn cache_free_classifier_429_does_not_publish_global_retry_or_rate_limit_state() {
-        let _retry_guard = crate::retry_status::test_guard();
-        crate::retry_status::clear();
-        crate::retry_status::clear_rate_limit();
-        crate::retry_status::start(9, Duration::from_secs(60), "foreground sentinel 429");
+        let _retry_guard = codewhale_runtime::retry_status::test_guard();
+        codewhale_runtime::retry_status::clear();
+        codewhale_runtime::retry_status::clear_rate_limit();
+        codewhale_runtime::retry_status::start(9, Duration::from_secs(60), "foreground sentinel 429");
 
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -1330,7 +1330,7 @@
             deepseek_request_boundary_client("https://api.deepseek.com/v1", server.uri());
         client.retry.enabled = false;
         client.retry.max_retries = 0;
-        crate::retry_status::note_rate_limit(&client.rate_limit_scope(), Duration::from_secs(60));
+        codewhale_runtime::retry_status::note_rate_limit(&client.rate_limit_scope(), Duration::from_secs(60));
         let request = MessageRequest {
             model: "deepseek-v4-pro".to_string(),
             messages: vec![Message {
@@ -1362,21 +1362,21 @@
             ),
             "{error:#}"
         );
-        match crate::retry_status::snapshot() {
-            crate::retry_status::RetryState::Active(banner) => {
+        match codewhale_runtime::retry_status::snapshot() {
+            codewhale_runtime::retry_status::RetryState::Active(banner) => {
                 assert_eq!(banner.attempt, 9);
                 assert_eq!(banner.reason, "foreground sentinel 429");
             }
             state => panic!("isolated 429 mutated retry state: {state:?}"),
         }
-        let remaining = crate::retry_status::rate_limit_remaining(&client.rate_limit_scope())
+        let remaining = codewhale_runtime::retry_status::rate_limit_remaining(&client.rate_limit_scope())
             .expect("foreground provider pause remains");
         assert!(
             remaining < Duration::from_secs(70),
             "classifier Retry-After must not extend the global pause: {remaining:?}"
         );
-        crate::retry_status::clear();
-        crate::retry_status::clear_rate_limit();
+        codewhale_runtime::retry_status::clear();
+        codewhale_runtime::retry_status::clear_rate_limit();
     }
 
     async fn assert_deepseek_strict_request_route_boundary(streaming: bool) {

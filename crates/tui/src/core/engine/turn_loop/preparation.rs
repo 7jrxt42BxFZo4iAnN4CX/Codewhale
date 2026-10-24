@@ -271,7 +271,7 @@ impl Engine {
                     effective_reasoning_effort.as_deref(),
                 ),
                 reserved_response_headroom_tokens = budget.output_cap_tokens,
-                safety_headroom_tokens = crate::context_budget::CONTEXT_HEADROOM_TOKENS,
+                safety_headroom_tokens = codewhale_runtime::context_budget::CONTEXT_HEADROOM_TOKENS,
                 resolved_route_input_limit_tokens = ?route_input_limit,
                 estimated_input_tokens = estimated_input,
                 input_budget_ceiling_tokens = budget.input_budget_ceiling,
@@ -541,7 +541,7 @@ impl Engine {
             &self.session.model,
         );
         if stripped_images > 0 {
-            crate::logging::warn(format!(
+            codewhale_runtime::logging::warn(format!(
                 "{stripped_images} image block(s) replaced with text: model {} does not accept image input",
                 self.session.model
             ));

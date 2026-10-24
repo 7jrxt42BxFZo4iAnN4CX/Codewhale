@@ -29,7 +29,7 @@ impl TurnNarrowing {
     pub(crate) fn request_fingerprint(self, ordinary: String) -> String {
         match self {
             Self::Inherit => ordinary,
-            Self::Acp => crate::hashing::sha256_hex(format!(
+            Self::Acp => codewhale_runtime::hashing::sha256_hex(format!(
                 "runtime-turn-narrowing\u{1f}acp\u{1f}{ordinary}"
             )),
         }
@@ -378,7 +378,7 @@ mod tests {
     }
     #[test]
     fn narrowed_request_fingerprint_keeps_ordinary_historical_bytes_and_separates_acp() {
-        let historical = crate::hashing::sha256_hex("ordinary canonical payload");
+        let historical = codewhale_runtime::hashing::sha256_hex("ordinary canonical payload");
         assert_eq!(
             TurnNarrowing::Inherit.request_fingerprint(historical.clone()),
             historical

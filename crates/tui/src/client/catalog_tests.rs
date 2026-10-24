@@ -942,7 +942,10 @@ async fn later_page_failure_preserves_complete_same_scope_cache_and_observation_
 }
 
 fn assert_no_canaries(error: &anyhow::Error) {
-    let surfaced = format!("{error:#} {error:?} {:?}", crate::retry_status::snapshot());
+    let surfaced = format!(
+        "{error:#} {error:?} {:?}",
+        codewhale_runtime::retry_status::snapshot()
+    );
     for canary in [KEY, CURSOR, "cursor%2Fsecond", "custom-header-canary"] {
         assert!(
             !surfaced.contains(canary),
@@ -990,11 +993,11 @@ async fn catalog_errors_surface_the_provider_reason_without_client_secrets() {
     )
     .await;
     let client = anthropic_client(&echoing.uri());
-    crate::retry_status::clear();
+    codewhale_runtime::retry_status::clear();
     let error = client.list_models().await.unwrap_err();
     assert!(format!("{error:#}").contains(REASON), "{error:#}");
     assert_no_canaries(&error);
-    crate::retry_status::clear();
+    codewhale_runtime::retry_status::clear();
 }
 
 #[tokio::test]
@@ -1021,14 +1024,14 @@ async fn later_page_http_and_transport_errors_do_not_expose_cursor_or_key() {
         client.retry.max_retries = 1;
         client.retry.initial_delay = 0.001;
         client.retry.max_delay = 0.001;
-        crate::retry_status::clear();
+        codewhale_runtime::retry_status::clear();
         let error = client.list_models().await.unwrap_err();
         assert_no_canaries(&error);
         if !isolated {
-            assert!(crate::retry_status::snapshot().is_failed());
+            assert!(codewhale_runtime::retry_status::snapshot().is_failed());
         }
         assert_eq!(server.received_requests().await.unwrap().len(), 3);
-        crate::retry_status::clear();
+        codewhale_runtime::retry_status::clear();
 
         server.reset().await;
         mount_page(
@@ -1090,7 +1093,7 @@ async fn later_page_http_and_transport_errors_do_not_expose_cursor_or_key() {
     );
     server.abort();
     let _ = server.await;
-    crate::retry_status::clear();
+    codewhale_runtime::retry_status::clear();
 }
 
 #[tokio::test]

@@ -540,7 +540,7 @@ impl TasksTool {
             // and a task started from a session must not run under authority
             // that session was never granted.
             permission_posture: Some(
-                crate::runtime_policy::approval_wire(context.approval_mode).to_string(),
+                codewhale_runtime::runtime_policy::approval_wire(context.approval_mode).to_string(),
             ),
             owner_session_id: Some(context.state_namespace.clone()),
         };
@@ -1839,7 +1839,7 @@ mod tests {
         let turn = crate::task_manager::ExecutionTask::from(&created).turn_request();
         assert_eq!(turn.permission_posture.as_deref(), Some("auto_review"));
         assert_eq!(turn.auto_approve, None);
-        let policy = crate::runtime_policy::RuntimePolicyProjection::from_request(
+        let policy = codewhale_runtime::runtime_policy::RuntimePolicyProjection::from_request(
             turn.mode.as_deref().expect("mode"),
             turn.permission_posture.as_deref(),
             turn.auto_approve,

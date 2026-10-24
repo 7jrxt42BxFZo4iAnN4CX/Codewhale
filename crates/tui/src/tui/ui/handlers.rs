@@ -190,11 +190,15 @@ pub(crate) fn flush_stale_fleet_roster(
 pub(crate) fn handle_memory_quick_add(app: &mut App, input: &str, config: &Config) {
     let path = config.memory_path();
     let note = input.trim_start_matches('#').trim();
-    let result = crate::native_memory::NativeMemoryStore::from_global_path(&path)
+    let result = codewhale_runtime::native_memory::NativeMemoryStore::from_global_path(&path)
         .ok_or_else(|| format!("{} is not a native memory path", path.display()))
         .and_then(|store| {
             store
-                .remember(crate::native_memory::MemoryScope::Global, None, note)
+                .remember(
+                    codewhale_runtime::native_memory::MemoryScope::Global,
+                    None,
+                    note,
+                )
                 .map(|hit| hit.source)
                 .map_err(|err| err.to_string())
         });

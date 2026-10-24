@@ -2,8 +2,8 @@
 use super::*;
 use crate::extension_host::tests::node_for_tests;
 use crate::extension_host::{ExtensionHostManager, ExtensionHostOptions, TestManagerGuard};
-use crate::features::{Feature, Features};
 use crate::plugins::activation::TestPolicyGuard;
+use codewhale_runtime::features::{Feature, Features};
 use std::sync::Arc;
 
 fn host_context(root: &std::path::Path) -> ToolContext {
@@ -28,11 +28,11 @@ fn web_flags_are_separate_and_default_to_rust() {
     assert!(!flags.enabled(Feature::ExtensionHost));
     assert!(!flags.enabled(Feature::WebExtractHost));
     assert_eq!(
-        crate::features::feature_from_key("web_search_host"),
+        codewhale_runtime::features::feature_from_key("web_search_host"),
         Some(Feature::WebSearchHost)
     );
     assert_eq!(
-        crate::features::feature_from_key("web_extract_host"),
+        codewhale_runtime::features::feature_from_key("web_extract_host"),
         Some(Feature::WebExtractHost)
     );
 }

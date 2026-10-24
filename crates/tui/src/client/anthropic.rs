@@ -30,9 +30,9 @@ use serde_json::{Value, json};
 
 use crate::config::{ProviderKind, wire_model_for_provider_route};
 use crate::llm_client::StreamEventBox;
-use crate::logging;
 use crate::tools::schema_sanitize;
 use codewhale_models::{ContentBlock, MessageRequest, MessageResponse, StreamEvent, Usage};
+use codewhale_runtime::logging;
 
 use super::CodewhaleClient;
 use super::prepared::WireDialect;

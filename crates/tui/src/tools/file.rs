@@ -37,7 +37,7 @@ use unicode_normalization::UnicodeNormalization;
 /// truncation, or rendering, so the value `read` reports is the value `write`,
 /// `edit`, and `patch` verify.
 pub(crate) fn content_hash(bytes: &[u8]) -> String {
-    format!("sha256:{}", crate::hashing::sha256_hex(bytes))
+    format!("sha256:{}", codewhale_runtime::hashing::sha256_hex(bytes))
 }
 
 /// Hash a file's bytes without holding the whole file in memory.
@@ -62,7 +62,7 @@ fn hash_file_streaming(path: &Path) -> std::io::Result<String> {
     }
     Ok(format!(
         "sha256:{}",
-        crate::hashing::hex_bytes(hasher.finalize())
+        codewhale_runtime::hashing::hex_bytes(hasher.finalize())
     ))
 }
 
@@ -800,7 +800,7 @@ pub(crate) fn mutation_file_entry(path: &str, outcome: &str, written: Option<&[u
     let mut entry = json!({ "path": path, "outcome": outcome });
     if let Some(bytes) = written {
         entry["size"] = json!(bytes.len());
-        entry["sha256"] = json!(crate::hashing::sha256_hex(bytes));
+        entry["sha256"] = json!(codewhale_runtime::hashing::sha256_hex(bytes));
     }
     entry
 }

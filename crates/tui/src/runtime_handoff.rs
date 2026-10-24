@@ -6,10 +6,10 @@
 //! restart. This module owns both the exact live envelope and the narrow,
 //! idempotent restore projection so creation and recognition cannot drift.
 
-use crate::safe_label::SafeLabel;
 use crate::tools::subagent::{AgentWorkerStatus, SubAgentResult, SubAgentStatus};
 use codewhale_models::Role;
 use codewhale_models::{ContentBlock, Message};
+use codewhale_runtime::safe_label::SafeLabel;
 use serde::{Deserialize, Serialize};
 
 const COMPLETION_EVENT_PREFIX: &str = concat!(

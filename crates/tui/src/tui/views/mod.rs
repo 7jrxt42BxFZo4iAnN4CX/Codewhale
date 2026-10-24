@@ -12,7 +12,6 @@ use std::fmt;
 use unicode_width::UnicodeWidthStr;
 
 use crate::config::{ApprovalPolicyControl, Config, ProviderKind};
-use crate::features::{FEATURES, Stage};
 use crate::settings::Settings;
 use crate::tools::UserInputResponse;
 use crate::tools::subagent::{
@@ -29,6 +28,7 @@ use codewhale_localization::{
     Locale, MessageId, configured_locale_is_partial_pack, normalize_configured_locale, tr, tr_key,
 };
 use codewhale_palette as palette;
+use codewhale_runtime::features::{FEATURES, Stage};
 
 pub mod automations;
 pub mod extensions;

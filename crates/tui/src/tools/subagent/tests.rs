@@ -13134,18 +13134,18 @@ fn clamp_child_max_spawn_depth_enforces_absolute_ceiling() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn rate_limit_pause_blocks_subagent_spawn() {
-    let _guard = crate::retry_status::test_guard();
+    let _guard = codewhale_runtime::retry_status::test_guard();
     // Drop-clear the window even if an assertion below panics: this state is
     // process-global, and a leaked 30s pause strands every concurrently
     // running test whose worker issues a model request.
     let _clear = ClearRateLimitOnDrop;
-    crate::retry_status::clear();
-    crate::retry_status::clear_rate_limit();
+    codewhale_runtime::retry_status::clear();
+    codewhale_runtime::retry_status::clear_rate_limit();
 
     let tmp = tempdir().expect("tempdir");
     let mut runtime = stub_runtime();
     runtime.context = ToolContext::new(tmp.path().to_path_buf());
-    crate::retry_status::note_rate_limit(
+    codewhale_runtime::retry_status::note_rate_limit(
         &runtime.client.rate_limit_scope(),
         Duration::from_secs(30),
     );
@@ -19175,7 +19175,7 @@ async fn spawn_budget_capped_worker_with_pause(
         _foreground_child_registration: None,
     };
     if let Some(pause) = pause {
-        crate::retry_status::note_rate_limit(&runtime.client.rate_limit_scope(), pause);
+        codewhale_runtime::retry_status::note_rate_limit(&runtime.client.rate_limit_scope(), pause);
     }
     let task_handle = tokio::spawn(run_subagent_task(task));
     (manager, agent_id, calls, task_handle)
@@ -19445,7 +19445,7 @@ struct ClearRateLimitOnDrop;
 
 impl Drop for ClearRateLimitOnDrop {
     fn drop(&mut self) {
-        crate::retry_status::clear_rate_limit();
+        codewhale_runtime::retry_status::clear_rate_limit();
     }
 }
 
@@ -19459,7 +19459,7 @@ async fn worker_is_not_stranded_by_transient_global_rate_limit_window() {
     // re-checking, blowing the 5s timeouts in the budget tests above. The
     // pause must be re-polled so an already-cleared window releases
     // in-flight requests promptly.
-    let _guard = crate::retry_status::test_guard();
+    let _guard = codewhale_runtime::retry_status::test_guard();
     let _clear = ClearRateLimitOnDrop;
 
     let tmp = tempdir().expect("tempdir");
@@ -19477,7 +19477,7 @@ async fn worker_is_not_stranded_by_transient_global_rate_limit_window() {
     // after the worker's first request has already observed it.
     tokio::spawn(async {
         tokio::time::sleep(Duration::from_millis(250)).await;
-        crate::retry_status::clear_rate_limit();
+        codewhale_runtime::retry_status::clear_rate_limit();
     });
 
     tokio::time::timeout(Duration::from_secs(5), task_handle)

@@ -16,7 +16,7 @@ use crate::utils::{flush_and_sync, open_append};
 pub fn log_sensitive_event(event: &str, details: Value) {
     let result = default_audit_path().and_then(|path| append_event(&path, event, details));
     if let Err(err) = result {
-        crate::logging::warn(format!("audit log write failed: {err}"));
+        codewhale_runtime::logging::warn(format!("audit log write failed: {err}"));
     }
 }
 
@@ -26,7 +26,7 @@ pub fn log_sensitive_event(event: &str, details: Value) {
 /// than in whatever home the process environment names (#6534).
 pub fn log_sensitive_event_in(codewhale_home: &Path, event: &str, details: Value) {
     if let Err(err) = append_event(&codewhale_home.join("audit.log"), event, details) {
-        crate::logging::warn(format!("audit log write failed: {err}"));
+        codewhale_runtime::logging::warn(format!("audit log write failed: {err}"));
     }
 }
 

@@ -433,7 +433,7 @@ where
     // `llm_client::with_retry`). The policy guard above keeps this to exactly
     // one retry.
     let h1_req = open_req.clone().with_h1_only();
-    crate::logging::warn(format!(
+    codewhale_runtime::logging::warn(format!(
         "SSE stream {fallback_reason}; retrying once with HTTP/1.1"
     ));
     match tokio::time::timeout(h1_req.open_timeout, attempt(h1_req.policy)).await {

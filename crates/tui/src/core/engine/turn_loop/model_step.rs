@@ -260,7 +260,7 @@ impl Engine {
                         "Retry attempt: stream-open {attempt}/{}; connection failed before response headers",
                         progress.stream_retry_budget.limit()
                     )).await;
-                    crate::logging::warn(format!(
+                    codewhale_runtime::logging::warn(format!(
                         "Stream failed to open (attempt {attempt}/{}); retrying request: {message}",
                         progress.stream_retry_budget.limit()
                     ));
@@ -405,7 +405,7 @@ impl Engine {
             usage_reported.then_some(usage.output_tokens),
             stream_request.max_tokens,
         ) {
-            crate::logging::warn(format!(
+            codewhale_runtime::logging::warn(format!(
                 "Provider reported stop reason `stop`, but its usage shows the whole requested output allowance was used ({} tokens, reasoning tokens: {:?}); treating the response as cut at the output limit.",
                 usage.output_tokens, usage.reasoning_tokens
             ));
@@ -567,7 +567,7 @@ impl Engine {
                 // is committed (and, for a tool-call response, after the
                 // tool result is appended) so the transcript stays
                 // well-formed.
-                crate::logging::warn(format!(
+                codewhale_runtime::logging::warn(format!(
                     "Model output truncated: provider stop reason `{reason}`; accepting partial response and continuing the turn."
                 ));
                 output_limit_truncated = Some(reason.to_string());
@@ -589,7 +589,7 @@ impl Engine {
                         "Model response incomplete: provider stop reason `{reason}`; no complete response or tool call was accepted."
                     )
                 };
-                crate::logging::warn(&error);
+                codewhale_runtime::logging::warn(&error);
                 self.post_held_frame_error(&frame_error).await;
                 return PhaseResult::Return((TurnOutcomeStatus::Failed, Some(error)));
             }
@@ -659,7 +659,7 @@ impl Engine {
                 .await;
             match resume {
                 StreamResume::AfterSleep => {
-                    crate::logging::warn(format!(
+                    codewhale_runtime::logging::warn(format!(
                         "Resuming after system sleep (attempt {attempt}/{limit}); discarding partial output and retrying request"
                     ));
                     // Finalize any partially-rendered assistant cell so
@@ -671,7 +671,7 @@ impl Engine {
                     }
                 }
                 StreamResume::HeadlessNetworkDrop => {
-                    crate::logging::warn(format!(
+                    codewhale_runtime::logging::warn(format!(
                         "Resuming headless turn after mid-stream network drop (attempt {attempt}/{limit}); discarding partial output and retrying request"
                     ));
                 }
@@ -730,11 +730,11 @@ impl Engine {
                         // copy may claim a partial reply was preserved —
                         // that claim is what minted the fake `[runtime]`
                         // user turn in session 1589c05d.
-                        crate::logging::warn(format!(
+                        codewhale_runtime::logging::warn(format!(
                             "Resuming interactive turn after mid-stream network drop (attempt {attempt}/{limit}); only hidden reasoning streamed — no partial reply to preserve, retrying request"
                         ));
                     } else {
-                        crate::logging::warn(format!(
+                        codewhale_runtime::logging::warn(format!(
                             "Resuming interactive turn after mid-stream network drop (attempt {attempt}/{limit}); preserving partial reply and retrying request"
                         ));
                         // Finalize the partial text cell so the UI stops
@@ -760,7 +760,7 @@ impl Engine {
                     }
                 }
                 StreamResume::NoContentStreamDeath => {
-                    crate::logging::warn(format!(
+                    codewhale_runtime::logging::warn(format!(
                         "Stream died with no content (attempt {attempt}/{limit}); retrying request"
                     ));
                 }
@@ -784,7 +784,7 @@ impl Engine {
                     ))
                     .await;
             }
-            crate::logging::warn(format!(
+            codewhale_runtime::logging::warn(format!(
                 "Stream retry budget exhausted ({} attempts); failing turn",
                 progress.stream_retry_budget.spent()
             ));
@@ -1055,7 +1055,7 @@ impl Engine {
         // not announce the same omission a second time.
         progress.image_omission_notified = true;
         self.active_route_capabilities.image_input = CapabilityState::Unsupported;
-        crate::logging::warn(format!(
+        codewhale_runtime::logging::warn(format!(
             "model {} rejected image content; resending with images replaced by text",
             self.session.model
         ));

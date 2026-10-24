@@ -3,8 +3,8 @@
 use super::*;
 use crate::extension_host::tests::node_for_tests;
 use crate::extension_host::{ExtensionHostManager, ExtensionHostOptions, TestManagerGuard};
-use crate::features::{Feature, Features};
 use crate::plugins::activation::TestPolicyGuard;
+use codewhale_runtime::features::{Feature, Features};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
 
@@ -53,7 +53,7 @@ fn ocr_host_is_independent_and_defaults_to_rust() {
     let mut flags = Features::with_defaults();
     assert!(!flags.enabled(Feature::OcrHost));
     assert_eq!(
-        crate::features::feature_from_key("ocr_host"),
+        codewhale_runtime::features::feature_from_key("ocr_host"),
         Some(Feature::OcrHost)
     );
     flags.enable(Feature::OcrHost);
@@ -449,7 +449,7 @@ async fn ocr_capture_reuses_bounded_anchored_reader_and_content_digest() {
     assert_ne!(first.path, second.path);
     assert_eq!(
         first.digest(),
-        crate::hashing::sha256_hex(b"captured original image")
+        codewhale_runtime::hashing::sha256_hex(b"captured original image")
     );
     assert_eq!(first.digest(), second.digest());
     let staged = first.path.clone();

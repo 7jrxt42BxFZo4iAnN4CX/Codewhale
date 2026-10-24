@@ -254,7 +254,7 @@ fn workspace_listing(workspace: &Path) -> BTreeMap<String, String> {
                     .expect("inside workspace")
                     .to_string_lossy()
                     .replace('\\', "/");
-                let digest = crate::hashing::sha256_hex(&bytes);
+                let digest = codewhale_runtime::hashing::sha256_hex(&bytes);
                 out.insert(relative, digest[..16].to_string());
             }
         }

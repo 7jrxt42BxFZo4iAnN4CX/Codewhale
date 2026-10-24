@@ -20,7 +20,9 @@ use crate::runtime_threads::{
     ThreadListFilter,
 };
 use crate::session_manager::{SavedSession, SessionManager};
-use crate::session_tree::{SessionEntry, SessionEntryKind, SessionImportContainer, SessionJournal};
+use codewhale_runtime::session_tree::{
+    SessionEntry, SessionEntryKind, SessionImportContainer, SessionJournal,
+};
 
 pub(crate) async fn history_owner_work<T: Send + 'static>(
     work: impl FnOnce() -> Result<T> + Send + 'static,
@@ -233,10 +235,10 @@ async fn import_into_owner(
     // owner worker boundary before retaining or mutating canonical records.
     let (request, journal, request_digest, history_digest) = history_owner_work(move || {
         let journal = legacy_journal(&request.history)?;
-        let request_digest = crate::hashing::sha256_hex(
+        let request_digest = codewhale_runtime::hashing::sha256_hex(
             crate::client::canonical_json(&serde_json::to_value(&request)?).as_bytes(),
         );
-        let history_digest = crate::hashing::sha256_hex(
+        let history_digest = codewhale_runtime::hashing::sha256_hex(
             crate::client::canonical_json(&serde_json::to_value(&journal)?).as_bytes(),
         );
         Ok((request, journal, request_digest, history_digest))
@@ -709,7 +711,7 @@ fn stable_projection_entries(
     let mut ids = HashMap::new();
     for (index, entry) in journal.entries.iter_mut().enumerate().skip(retained_count) {
         let old = entry.id.clone();
-        let digest = crate::hashing::sha256_hex(
+        let digest = codewhale_runtime::hashing::sha256_hex(
             crate::client::canonical_json(&serde_json::to_value(&entry.kind)?).as_bytes(),
         );
         entry.id = format!(
@@ -741,7 +743,7 @@ const CANONICAL_REQUEST_ENVELOPE_BYTES: usize = 64 * 1024;
 pub(crate) fn saved_document_digest(session: &SavedSession) -> Result<String> {
     let mut size = HistorySizeBound(MAX_CANONICAL_HISTORY_BYTES);
     serde_json::to_writer(&mut size, &session.transport_form())?;
-    Ok(crate::hashing::sha256_hex(
+    Ok(codewhale_runtime::hashing::sha256_hex(
         crate::client::canonical_json(&serde_json::to_value(session)?).as_bytes(),
     ))
 }
@@ -802,7 +804,7 @@ pub(crate) async fn mutate_thread_history_in_runtime(
 }
 
 fn journal_digest(journal: &SessionJournal) -> Result<String> {
-    Ok(crate::hashing::sha256_hex(
+    Ok(codewhale_runtime::hashing::sha256_hex(
         crate::client::canonical_json(&serde_json::to_value(journal)?).as_bytes(),
     ))
 }
@@ -810,13 +812,13 @@ fn journal_digest(journal: &SessionJournal) -> Result<String> {
 pub(crate) fn session_goal_digest(
     goal: &Option<crate::session_manager::SessionGoalState>,
 ) -> Result<String> {
-    Ok(crate::hashing::sha256_hex(
+    Ok(codewhale_runtime::hashing::sha256_hex(
         crate::client::canonical_json(&serde_json::to_value(goal)?).as_bytes(),
     ))
 }
 
 fn history_source_digest(session: &SavedSession, goal_digest: &str) -> Result<String> {
-    Ok(crate::hashing::sha256_hex(
+    Ok(codewhale_runtime::hashing::sha256_hex(
         format!(
             "codewhale:full-history-source:v1\0{}\0{goal_digest}",
             saved_document_digest(session)?
@@ -1050,7 +1052,7 @@ async fn mutate_in_owner(
     config_profile: Option<String>,
     request: CanonicalThreadMutationRequest,
 ) -> Result<CanonicalThreadReceipt> {
-    let request_digest = crate::hashing::sha256_hex(
+    let request_digest = codewhale_runtime::hashing::sha256_hex(
         crate::client::canonical_json(&serde_json::to_value(&request)?).as_bytes(),
     );
     let lookup_runtime = Arc::clone(&runtime);
@@ -1908,7 +1910,7 @@ fn append_offered_history(
             .ok_or_else(|| anyhow!("offered journal append missing"))?;
         entry.id = format!(
             "offered:{}:{index}",
-            crate::hashing::sha256_hex(key.as_bytes())
+            codewhale_runtime::hashing::sha256_hex(key.as_bytes())
         );
         journal.leaf_id = Some(entry.id.clone());
     }

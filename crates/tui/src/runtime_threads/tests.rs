@@ -1654,7 +1654,7 @@ mod recovery {
             EngineConfig {
                 workspace,
                 model: thread.model.clone(),
-                features: crate::features::Features::default(),
+                features: codewhale_runtime::features::Features::default(),
                 subagents_enabled: false,
                 snapshots_enabled: false,
                 memory_enabled: false,
@@ -3761,7 +3761,9 @@ mod turn_operation_lookup {
                 &thread.id,
                 key,
             )?,
-            request_fingerprint: crate::hashing::sha256_hex("original request configuration"),
+            request_fingerprint: codewhale_runtime::hashing::sha256_hex(
+                "original request configuration",
+            ),
             created_at: turn.created_at,
         })
     }
@@ -3971,7 +3973,7 @@ mod turn_operation_lookup {
                 "binding_thread" => candidate_binding.thread_id = "thr_other".into(),
                 "binding_hash" => {
                     candidate_binding.operation_key_fingerprint =
-                        crate::hashing::sha256_hex("other operation")
+                        codewhale_runtime::hashing::sha256_hex("other operation")
                 }
                 "turn_id" => candidate_turn.id = "turn_other".into(),
                 "turn_thread" => candidate_turn.thread_id = "thr_other".into(),
@@ -4060,7 +4062,7 @@ async fn restart_removes_torn_operation_item_before_reserved_turn_retry() -> Res
         thread_id: thread.id.clone(),
         turn_id: turn_id.to_string(),
         operation_key_fingerprint: key_fingerprint.clone(),
-        request_fingerprint: crate::hashing::sha256_hex("torn-request"),
+        request_fingerprint: codewhale_runtime::hashing::sha256_hex("torn-request"),
         created_at: Utc::now(),
     })?;
     let mut orphan = sample_item(
@@ -5631,8 +5633,10 @@ fn turn_record_round_trips_frozen_provider_live_pricing_and_drops_hostile_quotes
         &hostile_quote.cache_write_per_million,
     ))
     .expect("revision payload");
-    hostile_quote.catalog_revision =
-        format!("sha256:{}", crate::hashing::sha256_hex(revision_payload));
+    hostile_quote.catalog_revision = format!(
+        "sha256:{}",
+        codewhale_runtime::hashing::sha256_hex(revision_payload)
+    );
 
     let mut hostile_quote_value = serde_json::to_value(
         restored_route
@@ -6879,13 +6883,13 @@ fn store_load_scenario() {
 fn store_restart_discards_only_operation_bindings_that_never_acquired_a_turn() -> Result<()> {
     let dir = test_runtime_dir();
     let store = RuntimeThreadStore::open(dir.clone())?;
-    let key_fingerprint = crate::hashing::sha256_hex("scoped-key");
+    let key_fingerprint = codewhale_runtime::hashing::sha256_hex("scoped-key");
     let binding = RuntimeTurnOperationBinding {
         schema_version: TURN_OPERATION_BINDING_SCHEMA_VERSION,
         thread_id: "thr_torn_binding".to_string(),
         turn_id: "turn_never_persisted".to_string(),
         operation_key_fingerprint: key_fingerprint.clone(),
-        request_fingerprint: crate::hashing::sha256_hex("request"),
+        request_fingerprint: codewhale_runtime::hashing::sha256_hex("request"),
         created_at: Utc::now(),
     };
     store.save_turn_operation_binding(&binding)?;
@@ -19560,7 +19564,7 @@ async fn agent_mail_release_acceptance_two_task_matrix() -> Result<()> {
         manifest.insert(
             name.to_string(),
             serde_json::json!({
-                "sha256": crate::hashing::sha256_hex(&bytes),
+                "sha256": codewhale_runtime::hashing::sha256_hex(&bytes),
                 "bytes": bytes.len(),
             }),
         );
@@ -22488,7 +22492,7 @@ fn a_lost_call_is_answered_only_where_its_own_outcome_is_known() {
     ] {
         assert_eq!(
             unanswered_call_result(&item(status, None), identity("call-1"), "bash", &none),
-            Some(crate::tool_history_repair::CRASH_REPAIR_CONTENT.to_string()),
+            Some(codewhale_runtime::tool_history_repair::CRASH_REPAIR_CONTENT.to_string()),
             "{status:?} is terminal: no result is coming"
         );
     }
@@ -22849,7 +22853,7 @@ async fn tool_completion_items_carry_typed_artifact_refs() -> Result<()> {
         harness.rx_op.recv().await,
         Some(Op::SendMessage(TurnSpec { .. }))
     ));
-    let digest = crate::hashing::sha256_hex(b"# out\n");
+    let digest = codewhale_runtime::hashing::sha256_hex(b"# out\n");
     harness
         .tx_event
         .send(EngineEvent::TurnStarted {
@@ -23153,7 +23157,7 @@ async fn run_workspace_turn(
                 crate::tools::spec::ToolResult::success("ok").with_metadata(json!({
                     "mutation": { "files": [{
                         "path": "notes.md", "outcome": "created", "size": 8,
-                        "sha256": crate::hashing::sha256_hex(b"# notes\n"),
+                        "sha256": codewhale_runtime::hashing::sha256_hex(b"# notes\n"),
                     }], "renames": [] }
                 })),
             ),
@@ -23254,7 +23258,7 @@ async fn turn_workspace_delta_settles_shell_writes_into_the_aggregate() -> Resul
     assert_eq!(shell.change, Some(turn_artifacts::FileChangeKind::Created));
     assert_eq!(
         shell.revision.as_deref(),
-        Some(crate::hashing::sha256_hex(b"shell output\n").as_str())
+        Some(codewhale_runtime::hashing::sha256_hex(b"shell output\n").as_str())
     );
     assert_eq!(shell.size, Some(13));
     // The thread owns the turn's pre-turn restore point, so file-revert

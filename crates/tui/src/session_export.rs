@@ -41,7 +41,7 @@ use tar::Builder;
 use crate::artifacts::{ARTIFACTS_DIR_NAME, is_valid_session_id};
 use crate::fleet::files::WorkspaceFile;
 use crate::session_manager::{SavedSession, SessionMetadata};
-use crate::session_tree::SessionImportContainer;
+use codewhale_runtime::session_tree::SessionImportContainer;
 
 /// Layout version of the exported archive. Bump when members change.
 pub const SESSION_ARCHIVE_FORMAT_VERSION: u32 = 1;
@@ -482,8 +482,8 @@ fn append_member<W: Write>(
 mod tests {
     use super::*;
     use crate::session_manager::create_saved_session;
-    use crate::session_tree::SessionJournal;
     use codewhale_models::{ContentBlock, Message, Role};
+    use codewhale_runtime::session_tree::SessionJournal;
     use std::io::Read;
 
     fn fixture_session() -> SavedSession {

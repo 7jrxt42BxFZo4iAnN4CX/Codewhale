@@ -433,7 +433,7 @@ fn tool_catalog_surface_metrics(catalog: &[Tool]) -> serde_json::Value {
         .map(|tool| tool.name.clone())
         .collect::<Vec<_>>();
     tool_names.sort();
-    let identity_sha256 = crate::hashing::sha256_hex(tool_names.join("\0").as_bytes());
+    let identity_sha256 = codewhale_runtime::hashing::sha256_hex(tool_names.join("\0").as_bytes());
     serde_json::json!({
         "tools": catalog.len(),
         "bytes": serialized.len(),
@@ -940,7 +940,7 @@ fn measure_representative_runtime_context()
             // Keep byte ceilings host-independent just like the structural
             // identity: temporary workspace/home paths vary across runners.
             "bytes": stage.normalized.len(),
-            "identity_sha256": crate::hashing::sha256_hex(stage.normalized.as_bytes()),
+            "identity_sha256": codewhale_runtime::hashing::sha256_hex(stage.normalized.as_bytes()),
         });
         if let Some(previous) = index.checked_sub(1).and_then(|i| stages.get(i)) {
             metrics["delta_bytes"] = serde_json::json!(

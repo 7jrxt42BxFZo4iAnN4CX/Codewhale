@@ -115,7 +115,7 @@ pub(crate) const AUTO_APPROVAL_UNSUPPORTED: &str = "`approval: auto` is no longe
 fn warn_auto_approval_ignored(tool_name: &str) {
     tracing::warn!(
         "Script tool '{}': {AUTO_APPROVAL_UNSUPPORTED}",
-        crate::safe_label::SafeLabel::identifier(tool_name)
+        codewhale_runtime::safe_label::SafeLabel::identifier(tool_name)
     );
 }
 
@@ -147,7 +147,7 @@ impl ToolSpec for ScriptPluginTool {
     }
 
     fn registration_origin(&self) -> std::borrow::Cow<'_, str> {
-        use crate::safe_label::SafeLabel;
+        use codewhale_runtime::safe_label::SafeLabel;
         let filename = self
             .script_path
             .file_name()
@@ -227,7 +227,7 @@ impl ToolSpec for CommandPluginTool {
     fn registration_origin(&self) -> std::borrow::Cow<'_, str> {
         format!(
             "config [tools.overrides.{}]",
-            crate::safe_label::SafeLabel::identifier(&self.name)
+            codewhale_runtime::safe_label::SafeLabel::identifier(&self.name)
         )
         .into()
     }

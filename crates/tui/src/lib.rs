@@ -135,17 +135,6 @@ mod test_support;
 // TLS bootstrap and platform client builders live in codewhale-release;
 // `crate::tls::*` keeps resolving for every caller.
 use codewhale_release::tls;
-// Runtime split path alias: modules that moved to `crates/runtime` keep
-// resolving as `crate::<module>` inside this crate. One block, no per-item
-// re-exports; the split deletes it by rewriting these paths to
-// `codewhale_runtime::` (docs/design/TUI_DECONSTRUCTION.md).
-use codewhale_runtime::{
-    context_budget, continual_harness, fast_hash, features, goal_loop, hashing, host_terminal,
-    lane_control, llm_response_cache, logging, media_originals, model_context, native_memory,
-    prompt_zones, regex_cache, resource_telemetry, retry_status, runtime_policy, safe_label,
-    session_tree, skill_state, sleep_guard, startup_trace, tool_history_repair,
-    workspace_discovery,
-};
 mod todo_snapshot;
 mod tool_inspection;
 mod tool_output_receipts;
@@ -170,7 +159,6 @@ use crate::config::{
     initialize_cloud_facts,
 };
 use crate::eval::{EvalHarness, EvalHarnessConfig, ScenarioStepKind};
-use crate::features::{Feature, render_feature_table};
 use crate::llm_client::LlmClient;
 use crate::mcp::{
     McpCommandAvailability, McpPool, McpServerConfig, McpServerOAuthConfig,
@@ -183,6 +171,8 @@ use crate::tui::app::ScreenMode;
 use crate::tui::history::{summarize_tool_args, summarize_tool_output};
 use codewhale_models::Role;
 use codewhale_models::{ContentBlock, Message, SystemPrompt};
+use codewhale_runtime::features::{Feature, render_feature_table};
+use codewhale_runtime::{logging, startup_trace};
 
 #[cfg(windows)]
 fn configure_windows_console_utf8() {
@@ -913,7 +903,7 @@ fn telemetry_session_end() -> codewhale_telemetry::Event {
                 .map_or(0, |start| start.elapsed().as_secs()),
         ),
         exit_class: codewhale_telemetry::exit_class(),
-        cold_start_bucket: crate::startup_trace::cold_start_ms()
+        cold_start_bucket: codewhale_runtime::startup_trace::cold_start_ms()
             .map(codewhale_telemetry::ColdStartBucket::from_millis),
         providers: counters.providers(),
         counters: counters.counters(),
@@ -5919,7 +5909,7 @@ async fn run_doctor(
         );
         let native_enabled = config
             .features()
-            .enabled(crate::features::Feature::ExtensionHost);
+            .enabled(codewhale_runtime::features::Feature::ExtensionHost);
         let mcp_enabled =
             crate::mcp::McpBackend::from_config(config) == crate::mcp::McpBackend::Host;
         let enabled = native_enabled || mcp_enabled;
@@ -9625,7 +9615,7 @@ fn load_structural_config_from_cli(cli: &Cli) -> Result<Config> {
 fn install_extension_host_boot_config(config: &Config) {
     let enabled = config
         .features()
-        .enabled(crate::features::Feature::ExtensionHost);
+        .enabled(codewhale_runtime::features::Feature::ExtensionHost);
     crate::plugins::activation::install_extension_host_policy(enabled);
     // Builtin MCP uses the configured runtime without enabling Native plugins.
     // Configuration is lazy: it does not start an unused host.
@@ -9703,7 +9693,7 @@ fn apply_selected_fleet_operator_for_launch(
     else {
         return Ok(false);
     };
-    let fleet_name = crate::safe_label::SafeLabel::phrase(&selected.name);
+    let fleet_name = codewhale_runtime::safe_label::SafeLabel::phrase(&selected.name);
     let (fleet, _) = crate::fleet::store::load_fleet_at(&selected.path).map_err(|_| {
         anyhow!(
             "selected Fleet '{}' ({}) is invalid or unreadable; inspect /fleet and repair or clear the selection.",
@@ -9722,8 +9712,8 @@ fn apply_selected_fleet_operator_for_launch(
             fleet_name
         );
     }
-    let safe_provider_id = crate::safe_label::SafeLabel::identifier(provider_id);
-    let safe_model_id = crate::safe_label::SafeLabel::catalog_model(model_id);
+    let safe_provider_id = codewhale_runtime::safe_label::SafeLabel::identifier(provider_id);
+    let safe_model_id = codewhale_runtime::safe_label::SafeLabel::catalog_model(model_id);
 
     let identity = config
         .resolve_provider_pin_identity(provider_id)
@@ -9732,7 +9722,7 @@ fn apply_selected_fleet_operator_for_launch(
                 "selected Fleet '{}' operator provider '{}' is unavailable: {}",
                 fleet_name,
                 safe_provider_id,
-                crate::safe_label::safe_error_text(&error)
+                codewhale_runtime::safe_label::safe_error_text(&error)
             )
         })?;
     let resolved =
@@ -9743,7 +9733,7 @@ fn apply_selected_fleet_operator_for_launch(
                     fleet_name,
                     safe_provider_id,
                     safe_model_id,
-                    crate::safe_label::safe_error_text(&error)
+                    codewhale_runtime::safe_label::safe_error_text(&error)
                 )
             })?;
     let mut selected_config = *resolved.config;
@@ -9759,7 +9749,7 @@ fn apply_selected_fleet_operator_for_launch(
             anyhow!(
                 "selected Fleet '{}' has invalid operator reasoning: {}",
                 fleet_name,
-                crate::safe_label::safe_error_text(&error.to_string())
+                codewhale_runtime::safe_label::safe_error_text(&error.to_string())
             )
         })?
     {
@@ -10427,7 +10417,7 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
     } else {
         vec![if review_context
             .features
-            .enabled(crate::features::Feature::ReviewHost)
+            .enabled(codewhale_runtime::features::Feature::ReviewHost)
         {
             crate::tools::review_host::cli_prompt(&diff, "", &review_context).await?
         } else {
@@ -11098,7 +11088,7 @@ async fn run_pr(
         .with_features(config.features());
     let prompt = if context
         .features
-        .enabled(crate::features::Feature::ReviewHost)
+        .enabled(codewhale_runtime::features::Feature::ReviewHost)
     {
         crate::tools::review_host::interactive(number, &view, &diff, &context).await?
     } else {
@@ -11532,7 +11522,7 @@ async fn render_review_report_for_context(
 ) -> Result<String> {
     if !context
         .features
-        .enabled(crate::features::Feature::ReviewHost)
+        .enabled(codewhale_runtime::features::Feature::ReviewHost)
     {
         return Ok(match posted {
             Some(posted) => review.map_or_else(
@@ -14321,7 +14311,10 @@ fn tool_artifact_receipt(metadata: Option<&serde_json::Value>) -> Option<serde_j
 
 fn current_binary_sha256() -> Option<String> {
     let bytes = std::fs::read(std::env::current_exe().ok()?).ok()?;
-    Some(format!("sha256:{}", crate::hashing::sha256_hex(&bytes)))
+    Some(format!(
+        "sha256:{}",
+        codewhale_runtime::hashing::sha256_hex(&bytes)
+    ))
 }
 
 async fn run_workflow_tool_command(
@@ -14398,7 +14391,7 @@ async fn run_workflow_tool_command_inner(
     let (route_provider, route_provider_id) = exec_stream_provider_route(&route_identity);
     let workflow_input_sha256 = format!(
         "sha256:{}",
-        crate::hashing::sha256_hex(&serde_json::to_vec(&input)?)
+        codewhale_runtime::hashing::sha256_hex(&serde_json::to_vec(&input)?)
     );
     let tool_id = format!("workflow_host_{}", &uuid::Uuid::new_v4().to_string()[..8]);
     let tool_started = Instant::now();
@@ -15148,20 +15141,20 @@ fn exec_network_policy(
 }
 
 fn apply_fleet_engine_feature_caps(
-    features: &mut crate::features::Features,
+    features: &mut codewhale_runtime::features::Features,
     fleet_authority_active: bool,
     outer_network_access: Option<bool>,
     shell_authority: crate::tools::spec::ToolShellAuthority,
 ) {
     if fleet_authority_active {
-        features.disable(crate::features::Feature::Subagents);
-        features.disable(crate::features::Feature::Mcp);
+        features.disable(codewhale_runtime::features::Feature::Subagents);
+        features.disable(codewhale_runtime::features::Feature::Mcp);
         if shell_authority != crate::tools::spec::ToolShellAuthority::ReadOnly {
-            features.disable(crate::features::Feature::ShellTool);
+            features.disable(codewhale_runtime::features::Feature::ShellTool);
         }
     }
     if outer_network_access == Some(false) {
-        features.disable(crate::features::Feature::WebSearch);
+        features.disable(codewhale_runtime::features::Feature::WebSearch);
     }
 }
 
@@ -17262,8 +17255,8 @@ mod mounted_history_tests {
         RuntimeThreadManager, RuntimeThreadManagerConfig, ThreadListFilter,
     };
     use crate::session_manager::{SavedSession, SessionGoalState, SessionWorkState};
-    use crate::session_tree::{SessionEntryKind, SessionJournal};
     use crate::test_support::{EnvVarGuard, lock_test_env};
+    use codewhale_runtime::session_tree::{SessionEntryKind, SessionJournal};
 
     fn config() -> Config {
         let mut config = Config {

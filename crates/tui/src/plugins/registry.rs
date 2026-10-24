@@ -171,7 +171,7 @@ impl PluginRegistry {
         if bytes.len() > 64 * 1024 * 1024 {
             return Err("Native preset entry exceeds the bundle limit".into());
         }
-        if crate::hashing::sha256_hex(&bytes) != selected.entry.sha256 {
+        if codewhale_runtime::hashing::sha256_hex(&bytes) != selected.entry.sha256 {
             return Err("Native preset bytes changed".into());
         }
         let mut view = self.clone();

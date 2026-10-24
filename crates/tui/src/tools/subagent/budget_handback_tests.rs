@@ -228,8 +228,8 @@ async fn fixture(mode: &'static str, first_tokens: u64, max_steps: u32) -> Fixtu
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn owner_step_limit_preserves_tool_only_work_without_an_extra_request() {
-    let _retry = crate::retry_status::test_guard();
-    crate::retry_status::clear_rate_limit();
+    let _retry = codewhale_runtime::retry_status::test_guard();
+    codewhale_runtime::retry_status::clear_rate_limit();
     let mut fixture = fixture("tool-only", 15, 2).await;
     let result = fixture.finish().await;
     assert_eq!(result.status, SubAgentStatus::BudgetExhausted);
@@ -280,8 +280,8 @@ async fn owner_step_limit_preserves_tool_only_work_without_an_extra_request() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn owner_step_limit_keeps_the_digest_as_the_deliverable() {
-    let _retry = crate::retry_status::test_guard();
-    crate::retry_status::clear_rate_limit();
+    let _retry = codewhale_runtime::retry_status::test_guard();
+    codewhale_runtime::retry_status::clear_rate_limit();
     let mut fixture = fixture("truncated", 15, 1).await;
     let result = fixture.finish().await;
     assert_eq!(fixture.requests.lock().unwrap().len(), 1);
@@ -299,7 +299,7 @@ async fn owner_step_limit_keeps_the_digest_as_the_deliverable() {
         &state_root,
         &Path::new(".codewhale/state/subagent-results").join(format!(
             "{}.md",
-            crate::hashing::sha256_hex(b"report-worker")
+            codewhale_runtime::hashing::sha256_hex(b"report-worker")
         )),
     )
     .unwrap();
@@ -312,8 +312,8 @@ async fn owner_step_limit_keeps_the_digest_as_the_deliverable() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn budget_handback_inflight_wall_timeout_persists_unreported_usage() {
-    let _retry = crate::retry_status::test_guard();
-    crate::retry_status::clear_rate_limit();
+    let _retry = codewhale_runtime::retry_status::test_guard();
+    codewhale_runtime::retry_status::clear_rate_limit();
     let mut fixture = fixture("work-timeout", 15, 4).await;
     let result = fixture.finish().await;
     assert_eq!(result.status, SubAgentStatus::BudgetExhausted);
@@ -384,8 +384,8 @@ fn budget_handback_coverage_marker_is_sticky_without_reclassifying_legacy_or_mea
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn child_work_cancellation_wins_once() {
-    let _retry = crate::retry_status::test_guard();
-    crate::retry_status::clear_rate_limit();
+    let _retry = codewhale_runtime::retry_status::test_guard();
+    codewhale_runtime::retry_status::clear_rate_limit();
     let mut fixture = fixture("hold", 15, 2).await;
     tokio::time::timeout(Duration::from_secs(2), fixture.report_started.notified())
         .await
@@ -409,8 +409,8 @@ async fn child_work_cancellation_wins_once() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn child_work_cancellation_after_response_preserves_actual_usage() {
-    let _retry = crate::retry_status::test_guard();
-    crate::retry_status::clear_rate_limit();
+    let _retry = codewhale_runtime::retry_status::test_guard();
+    codewhale_runtime::retry_status::clear_rate_limit();
     let mut fixture = fixture("hold", 15, 2).await;
     tokio::time::timeout(Duration::from_secs(2), fixture.report_started.notified())
         .await

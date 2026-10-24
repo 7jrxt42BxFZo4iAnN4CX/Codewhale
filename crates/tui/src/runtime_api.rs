@@ -82,7 +82,6 @@ pub(super) use crate::runtime_threads::{RuntimeTurnStatus, TurnItemKind, TurnIte
 use crate::session_manager::default_sessions_dir;
 #[cfg(test)]
 pub(super) use crate::session_manager::{SavedSession, SessionMetadata};
-use crate::skill_state::SkillStateStore;
 use crate::task_manager::{
     NewTaskRequest, SharedTaskManager, TaskManager, TaskManagerConfig, TaskRecord, TaskSummary,
 };
@@ -97,6 +96,7 @@ use codewhale_protocol::fleet::{
     FleetRuntimeTarget, FleetSecurityPolicy, FleetTaskSpec, FleetWorkerEventPayload,
     FleetWorkerSpec, FleetWorkerStatus, FleetWorkflowDescriptor, FleetWorkflowKind,
 };
+use codewhale_runtime::skill_state::SkillStateStore;
 
 mod auth;
 mod avatars;
@@ -1736,7 +1736,7 @@ pub(crate) fn open_runtime_threads_for_host(
     if let Some(skills_dir) = config.bundled_skills_install_dir()
         && let Err(error) = crate::skills::install_system_skills(&skills_dir)
     {
-        crate::logging::warn(format!("Failed to install system skills: {error}"));
+        codewhale_runtime::logging::warn(format!("Failed to install system skills: {error}"));
     }
     // Publish the same exact endpoint-scoped catalog as interactive startup
     // before the server admits turns. A cached model list alone does not make
@@ -11477,7 +11477,7 @@ async fn list_provider_models(
         .map_err(|error| {
             ApiError::internal(format!("Could not fingerprint provider route: {error}"))
         })?;
-        let route_fingerprint = Some(crate::hashing::sha256_hex(route));
+        let route_fingerprint = Some(codewhale_runtime::hashing::sha256_hex(route));
         let models = provider_models_for_api(&config, &identity)
             .into_iter()
             .map(|id| provider_model_entry_for_api(&config, &identity, id))
@@ -12588,7 +12588,7 @@ async fn get_settings_schema(
                 // Feature rows are diagnostics: the effective flag state plus
                 // whether config.toml names the leaf — no decorated phrasing,
                 // the client owns presentation of default-vs-configured.
-                let value = crate::features::FEATURES
+                let value = codewhale_runtime::features::FEATURES
                     .iter()
                     .find(|spec| spec.key == feature_key)
                     .map(|spec| config.features().enabled(spec.id).to_string());
@@ -12849,9 +12849,11 @@ struct ClearMemoryQuery {
 
 /// Build a `NativeMemoryStore` rooted at the same location the TUI uses.
 /// Mirrors `native_store()` in `commands/groups/memory/memory.rs`.
-fn native_store_for_state(state: &RuntimeApiState) -> crate::native_memory::NativeMemoryStore {
+fn native_store_for_state(
+    state: &RuntimeApiState,
+) -> codewhale_runtime::native_memory::NativeMemoryStore {
     let memory_path = state.config.read().memory_path();
-    crate::native_memory::NativeMemoryStore::from_memory_anchor(&memory_path)
+    codewhale_runtime::native_memory::NativeMemoryStore::from_memory_anchor(&memory_path)
 }
 
 /// Derive a scope label from a source path relative to the store root.
@@ -12879,7 +12881,7 @@ fn workspace_id_for_source(source: &FsPath, store_root: &FsPath) -> Option<Strin
 
 /// Convert a `MemoryHit` into a redacted, bounded `MemoryEntryRecord`.
 fn memory_hit_to_record(
-    hit: crate::native_memory::MemoryHit,
+    hit: codewhale_runtime::native_memory::MemoryHit,
     store_root: &FsPath,
 ) -> MemoryEntryRecord {
     let scope = scope_label_for_source(&hit.source, store_root);
@@ -12904,20 +12906,30 @@ fn memory_hit_to_record(
 fn resolve_memory_scope(
     scope_param: &Option<String>,
     workspace: &FsPath,
-) -> Result<(Option<crate::native_memory::MemoryScope>, Option<String>), ApiError> {
+) -> Result<
+    (
+        Option<codewhale_runtime::native_memory::MemoryScope>,
+        Option<String>,
+    ),
+    ApiError,
+> {
     match scope_param.as_deref().unwrap_or("all").trim() {
         "all" | "" => Ok((None, None)),
-        "global" => Ok((Some(crate::native_memory::MemoryScope::Global), None)),
+        "global" => Ok((
+            Some(codewhale_runtime::native_memory::MemoryScope::Global),
+            None,
+        )),
         "workspace" => {
-            let workspace_id = crate::native_memory::NativeMemoryStore::workspace_id(workspace)
-                .map_err(|e| ApiError::internal(format!("resolve workspace id: {e}")))?
-                .ok_or_else(|| {
-                    ApiError::bad_request(
-                        "workspace scope requires a git repository with a remote origin",
-                    )
-                })?;
+            let workspace_id =
+                codewhale_runtime::native_memory::NativeMemoryStore::workspace_id(workspace)
+                    .map_err(|e| ApiError::internal(format!("resolve workspace id: {e}")))?
+                    .ok_or_else(|| {
+                        ApiError::bad_request(
+                            "workspace scope requires a git repository with a remote origin",
+                        )
+                    })?;
             Ok((
-                Some(crate::native_memory::MemoryScope::Workspace),
+                Some(codewhale_runtime::native_memory::MemoryScope::Workspace),
                 Some(workspace_id),
             ))
         }
@@ -12958,11 +12970,12 @@ async fn list_memory(
         // "all" is global memory plus this repository's. With no identity
         // (no origin remote, or git unavailable) there is no workspace memory
         // to show, and the listing still serves global memory.
-        workspace_id = crate::native_memory::NativeMemoryStore::workspace_id(&state.workspace)
-            .unwrap_or_else(|error| {
-                tracing::warn!("memory list shows global memory only: {error}");
-                None
-            });
+        workspace_id =
+            codewhale_runtime::native_memory::NativeMemoryStore::workspace_id(&state.workspace)
+                .unwrap_or_else(|error| {
+                    tracing::warn!("memory list shows global memory only: {error}");
+                    None
+                });
     }
 
     let hits = if let Some(ref q) = query.q {
@@ -12975,12 +12988,14 @@ async fn list_memory(
                 store.search_in_workspace(workspace_id.as_deref(), &state.workspace, q, limit)
             }
             None => store.search(q, limit),
-            Some(crate::native_memory::MemoryScope::Global) => store.search(q, limit).map(|h| {
-                h.into_iter()
-                    .filter(|h| scope_label_for_source(&h.source, &root) == "global")
-                    .collect()
-            }),
-            Some(crate::native_memory::MemoryScope::Workspace) => store
+            Some(codewhale_runtime::native_memory::MemoryScope::Global) => {
+                store.search(q, limit).map(|h| {
+                    h.into_iter()
+                        .filter(|h| scope_label_for_source(&h.source, &root) == "global")
+                        .collect()
+                })
+            }
+            Some(codewhale_runtime::native_memory::MemoryScope::Workspace) => store
                 .search_for_workspace(&state.workspace, q, limit)
                 .map(|h| {
                     h.into_iter()
@@ -13034,22 +13049,23 @@ async fn create_memory_entry(
         req.scope.as_str()
     };
     let scope = match scope_str.trim() {
-        "global" => crate::native_memory::MemoryScope::Global,
-        "workspace" => crate::native_memory::MemoryScope::Workspace,
+        "global" => codewhale_runtime::native_memory::MemoryScope::Global,
+        "workspace" => codewhale_runtime::native_memory::MemoryScope::Workspace,
         other => {
             return Err(ApiError::bad_request(format!(
                 "Invalid scope '{other}': expected 'global' or 'workspace'"
             )));
         }
     };
-    let workspace_id = if scope == crate::native_memory::MemoryScope::Workspace {
-        let id = crate::native_memory::NativeMemoryStore::workspace_id(&state.workspace)
-            .map_err(|e| ApiError::internal(format!("resolve workspace id: {e}")))?
-            .ok_or_else(|| {
-                ApiError::bad_request(
-                    "workspace scope requires a git repository with a remote origin",
-                )
-            })?;
+    let workspace_id = if scope == codewhale_runtime::native_memory::MemoryScope::Workspace {
+        let id =
+            codewhale_runtime::native_memory::NativeMemoryStore::workspace_id(&state.workspace)
+                .map_err(|e| ApiError::internal(format!("resolve workspace id: {e}")))?
+                .ok_or_else(|| {
+                    ApiError::bad_request(
+                        "workspace scope requires a git repository with a remote origin",
+                    )
+                })?;
         Some(id)
     } else {
         None

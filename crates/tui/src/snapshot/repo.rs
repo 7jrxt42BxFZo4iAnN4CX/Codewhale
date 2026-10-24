@@ -1217,7 +1217,7 @@ impl SnapshotRepo {
         let verify = || {
             let actual = if self.validate_restore_file(rel)? {
                 let bytes = std::fs::read(self.work_tree.join(rel))?;
-                format!("sha256:{}", crate::hashing::sha256_hex(bytes))
+                format!("sha256:{}", codewhale_runtime::hashing::sha256_hex(bytes))
             } else {
                 "absent".to_string()
             };
@@ -3689,7 +3689,7 @@ mod tests {
     fn sha256_hash(path: &Path) -> String {
         format!(
             "sha256:{}",
-            crate::hashing::sha256_hex(std::fs::read(path).unwrap())
+            codewhale_runtime::hashing::sha256_hex(std::fs::read(path).unwrap())
         )
     }
 

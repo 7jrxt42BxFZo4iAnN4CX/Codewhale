@@ -403,7 +403,7 @@ fn catalog_build_does_not_append_registry_guidance_to_the_shell_tool() {
 
 #[test]
 fn requested_tool_mode_prefers_model_hint_then_flag_then_direct() {
-    use crate::features::{Feature, Features};
+    use codewhale_runtime::features::{Feature, Features};
 
     // #6562: code mode is the default; `[features] code_mode = false` is the
     // escape hatch back to Direct.

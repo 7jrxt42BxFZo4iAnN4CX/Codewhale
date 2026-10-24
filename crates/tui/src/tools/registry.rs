@@ -43,7 +43,7 @@ pub struct ToolRegistry {
 pub(crate) fn override_refusal_notice(tool_name: &str) -> String {
     format!(
         "Refused [tools.overrides.{name}]: a script or command override cannot replace the built-in tool '{name}', which stays active. Set type = \"disabled\" to turn it off, or key the override by a new tool name.",
-        name = crate::safe_label::SafeLabel::identifier(tool_name)
+        name = codewhale_runtime::safe_label::SafeLabel::identifier(tool_name)
     )
 }
 
@@ -65,7 +65,7 @@ impl ToolRegistry {
             tracing::warn!(
                 previous_origin = ?previous.registration_origin(),
                 replacement_origin = ?tool.registration_origin(),
-                "Overwriting existing tool: {}", crate::safe_label::SafeLabel::identifier(&name)
+                "Overwriting existing tool: {}", codewhale_runtime::safe_label::SafeLabel::identifier(&name)
             );
         }
         self.tools.insert(name, tool);
@@ -566,7 +566,7 @@ impl ToolRegistry {
                     previous_origin = ?previous.registration_origin(),
                     plugin_origin = ?tool.registration_origin(),
                     "Cannot load plugin tool '{}': name is already registered; script tools cannot replace a registered tool, so give the script its own name",
-                    crate::safe_label::SafeLabel::identifier(tool.name())
+                    codewhale_runtime::safe_label::SafeLabel::identifier(tool.name())
                 );
                 continue;
             }
@@ -983,7 +983,7 @@ impl ToolRegistryBuilder {
                     existing_origin = ?existing.registration_origin(),
                     refused_origin = ?tool.registration_origin(),
                     "Refusing runtime dynamic tool that collides with a registered tool: {}",
-                    crate::safe_label::SafeLabel::identifier(tool.name())
+                    codewhale_runtime::safe_label::SafeLabel::identifier(tool.name())
                 );
                 continue;
             }
@@ -1750,7 +1750,7 @@ impl ToolSpec for McpToolAdapter {
     }
 
     fn registration_origin(&self) -> std::borrow::Cow<'_, str> {
-        use crate::safe_label::SafeLabel;
+        use codewhale_runtime::safe_label::SafeLabel;
         match &self.server_name {
             Some(server) => format!(
                 "MCP server {}, tool {}",

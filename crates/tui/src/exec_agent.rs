@@ -333,7 +333,7 @@ pub(crate) async fn run_exec_agent(
     // and explicit `always` are truthful outside the interactive TUI. With no
     // focus-reporting channel, fail closed to focused; only explicit `always`
     // may authorize a headless desktop notification.
-    let terminal = crate::host_terminal::host();
+    let terminal = codewhale_runtime::host_terminal::host();
     terminal.set_terminal_focused(true);
     terminal.apply_notification_settings(&config.notifications_config());
 
@@ -404,7 +404,10 @@ pub(crate) async fn run_exec_agent(
     }
     .to_string();
     let exec_started = Instant::now();
-    let prompt_sha256 = format!("sha256:{}", crate::hashing::sha256_hex(prompt.as_bytes()));
+    let prompt_sha256 = format!(
+        "sha256:{}",
+        codewhale_runtime::hashing::sha256_hex(prompt.as_bytes())
+    );
     let binary_sha256 = current_binary_sha256();
     let approval_posture = if auto_approve { "auto_tools" } else { "ask" }.to_string();
     // The Full Access posture travels in the op's auto_approve/approval_mode
@@ -508,7 +511,7 @@ pub(crate) async fn run_exec_agent(
         outer_shell_authority,
     );
     if crate::core::allowlist_is_native_file_and_shell_only(allowed_tools.as_deref()) {
-        engine_features.disable(crate::features::Feature::Mcp);
+        engine_features.disable(codewhale_runtime::features::Feature::Mcp);
     }
     let engine_plugin_registry = if fleet_authority_active {
         std::sync::Arc::new(crate::plugins::PluginRegistry::empty(&workspace))
@@ -551,7 +554,7 @@ pub(crate) async fn run_exec_agent(
         shell_manager: Some(exec_shell_manager.clone()),
         persist_services_enabled,
         automations: exec_automations,
-        media_originals_dir: crate::media_originals::default_store_dir(),
+        media_originals_dir: codewhale_runtime::media_originals::default_store_dir(),
         hook_executor: exec_hook_executor.clone(),
         ..crate::tools::spec::RuntimeToolServices::default()
     };
@@ -1466,7 +1469,10 @@ pub(crate) async fn run_exec_agent(
                             prompt_sha256: prompt_sha256.clone(),
                             tool_catalog_sha256: tool_catalog.as_ref().and_then(|catalog| {
                                 serde_json::to_vec(catalog).ok().map(|bytes| {
-                                    format!("sha256:{}", crate::hashing::sha256_hex(&bytes))
+                                    format!(
+                                        "sha256:{}",
+                                        codewhale_runtime::hashing::sha256_hex(&bytes)
+                                    )
                                 })
                             }),
                             input_analysis: exec_stream_input_analysis(

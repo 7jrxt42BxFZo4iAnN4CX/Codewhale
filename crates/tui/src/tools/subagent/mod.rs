@@ -394,7 +394,7 @@ fn child_compaction_config(
             &route.model,
             route_limits,
             parent_window.map_or(
-                crate::context_budget::DEFAULT_COMPACTION_TRIGGER_PERCENT,
+                codewhale_runtime::context_budget::DEFAULT_COMPACTION_TRIGGER_PERCENT,
                 |parent_window| parent.token_threshold as f64 * 100.0 / f64::from(parent_window),
             ),
         ),
@@ -1327,7 +1327,7 @@ fn child_guardian_usage_source_id(agent_id: &str, tool_id: &str) -> String {
     }
     format!(
         "subagent-guardian:{}",
-        crate::hashing::hex_bytes(digest.finalize())
+        codewhale_runtime::hashing::hex_bytes(digest.finalize())
     )
 }
 
@@ -10594,7 +10594,7 @@ fn json_line(value: &Value) -> Result<Vec<u8>> {
 }
 
 fn subagent_transcript_artifact_relative_path(agent_id: &str) -> PathBuf {
-    let digest = crate::hashing::sha256_hex(agent_id.as_bytes());
+    let digest = codewhale_runtime::hashing::sha256_hex(agent_id.as_bytes());
     Path::new(".codewhale")
         .join("state")
         .join(SUBAGENT_TRANSCRIPT_ARTIFACT_DIR)
@@ -12696,9 +12696,9 @@ async fn spawn_subagent_from_input(
     // the child was just bound to, not the parent's: a 429 on the parent's
     // provider must not refuse a child headed to another provider or a local
     // runtime (and a child bound to a paused route is refused either way).
-    if let Some(remaining) =
-        crate::retry_status::rate_limit_remaining(&child_runtime.client.rate_limit_scope())
-    {
+    if let Some(remaining) = codewhale_runtime::retry_status::rate_limit_remaining(
+        &child_runtime.client.rate_limit_scope(),
+    ) {
         let seconds = remaining.as_secs() + u64::from(remaining.subsec_nanos() > 0);
         return Err(ToolError::execution_failed(format!(
             "Provider is rate-limiting; sub-agent spawning is paused for {seconds}s. \
@@ -14219,7 +14219,7 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
         ),
     };
     let failure_error = result.as_ref().err().map(|err| {
-        crate::logging::warn(format!(
+        codewhale_runtime::logging::warn(format!(
             "sub-agent {} model request failed: {err:#}",
             task.agent_id
         ));
@@ -16512,12 +16512,13 @@ fn enforce_fleet_member_route_requirements(
     .map_err(|error| {
         ToolError::execution_failed(format!(
             "Fleet member '{member_id}' requirements could not be checked against its exact child route: {}",
-            crate::safe_label::safe_error_text(&error.to_string())
+            codewhale_runtime::safe_label::safe_error_text(&error.to_string())
         ))
     })?;
     let provider_id = runtime.client.admitted_provider_identity().key.to_string();
-    let provider_id = crate::safe_label::SafeLabel::identifier(&provider_id);
-    let model_id = crate::safe_label::SafeLabel::catalog_model(candidate.wire_model_id().as_str());
+    let provider_id = codewhale_runtime::safe_label::SafeLabel::identifier(&provider_id);
+    let model_id =
+        codewhale_runtime::safe_label::SafeLabel::catalog_model(candidate.wire_model_id().as_str());
 
     for requirement in &member.requires {
         match crate::fleet::store::MemberCapability::parse(requirement) {
@@ -17150,7 +17151,7 @@ async fn bind_spawn_model_route(
             .chars()
             .take(480)
             .collect();
-            crate::logging::warn(format!("sub-agent route fallback: {note}"));
+            codewhale_runtime::logging::warn(format!("sub-agent route fallback: {note}"));
             parent_route.install(runtime);
             runtime.route_origin = Some(Arc::new(spawn_route_origin(
                 SpawnRouteSource::SessionFallback,

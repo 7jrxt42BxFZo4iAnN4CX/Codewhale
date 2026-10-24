@@ -725,7 +725,7 @@ fn goal_max_continuations_loads_from_goal_table() -> Result<()> {
     let config: Config = toml::from_str("")?;
     assert_eq!(
         config.goal_max_continuations(),
-        crate::goal_loop::DEFAULT_MAX_GOAL_CONTINUATIONS
+        codewhale_runtime::goal_loop::DEFAULT_MAX_GOAL_CONTINUATIONS
     );
     assert_eq!(config.goal_max_continuations(), 0);
     assert_eq!(config.goal_continuation_delay_seconds(), 0);
@@ -772,7 +772,7 @@ continuation_delay_seconds = 999999999
     )?;
     assert_eq!(
         config.goal_continuation_delay_seconds(),
-        crate::goal_loop::MAX_GOAL_CONTINUATION_DELAY_SECONDS
+        codewhale_runtime::goal_loop::MAX_GOAL_CONTINUATION_DELAY_SECONDS
     );
 
     Ok(())
@@ -1395,9 +1395,9 @@ web_search = true
         Some("https://token-plan-sgp.xiaomimimo.com/v1")
     );
     let features = config.features();
-    assert!(features.enabled(crate::features::Feature::ShellTool));
-    assert!(features.enabled(crate::features::Feature::Subagents));
-    assert!(features.enabled(crate::features::Feature::WebSearch));
+    assert!(features.enabled(codewhale_runtime::features::Feature::ShellTool));
+    assert!(features.enabled(codewhale_runtime::features::Feature::Subagents));
+    assert!(features.enabled(codewhale_runtime::features::Feature::WebSearch));
     Ok(())
 }
 
@@ -14809,7 +14809,7 @@ fn enabled_memory_always_resolves_to_native_store_path() {
         path.display()
     );
     assert!(
-        crate::native_memory::NativeMemoryStore::from_global_path(&path).is_some(),
+        codewhale_runtime::native_memory::NativeMemoryStore::from_global_path(&path).is_some(),
         "native store must accept the resolved memory path"
     );
 
@@ -14825,7 +14825,8 @@ fn enabled_memory_always_resolves_to_native_store_path() {
     };
     let custom_path = custom.memory_path();
     assert!(
-        crate::native_memory::NativeMemoryStore::from_global_path(&custom_path).is_some(),
+        codewhale_runtime::native_memory::NativeMemoryStore::from_global_path(&custom_path)
+            .is_some(),
         "custom memory paths are re-rooted into the native layout, got {}",
         custom_path.display()
     );
@@ -16920,7 +16921,10 @@ mod released_provider_serde {
                 &empty,
             ))
             .unwrap();
-            let revision = format!("sha256:{}", crate::hashing::sha256_hex(&old_payload));
+            let revision = format!(
+                "sha256:{}",
+                codewhale_runtime::hashing::sha256_hex(&old_payload)
+            );
             let old_quote = LegacyPricing {
                 provider: legacy,
                 provider_identity: id.into(),

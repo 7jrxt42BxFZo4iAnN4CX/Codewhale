@@ -3135,7 +3135,7 @@ mod tests {
         app.push_status_toast("error receipt", StatusToastLevel::Error, None);
         app.sticky_status = Some(StatusToast::context_pressure(
             "context warning",
-            crate::context_budget::PressureLevel::High,
+            codewhale_runtime::context_budget::PressureLevel::High,
         ));
 
         let result = crate::commands::execute("/config contextual_tips off", &mut app);

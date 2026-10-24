@@ -140,7 +140,7 @@ async fn fetched_pdf_missing_helper_is_a_failed_typed_outcome() {
 #[tokio::test(flavor = "current_thread")]
 async fn fetched_pdf_host_text_matches_default_and_raw_bypasses_host() {
     use crate::extension_host::{ExtensionHostManager, ExtensionHostOptions, TestManagerGuard};
-    use crate::features::{Feature, Features};
+    use codewhale_runtime::features::{Feature, Features};
     use std::os::unix::fs::PermissionsExt;
     use std::sync::Arc;
     let _home = crate::test_support::SealedHome::new();
@@ -237,8 +237,8 @@ async fn raw_and_non_success_catches_do_not_hide_a_selected_host_failure() {
         },
     ));
     let _manager = crate::extension_host::TestManagerGuard::install(manager);
-    let mut flags = crate::features::Features::with_defaults();
-    flags.enable(crate::features::Feature::WebExtractHost);
+    let mut flags = codewhale_runtime::features::Features::with_defaults();
+    flags.enable(codewhale_runtime::features::Feature::WebExtractHost);
     let context = ToolContext::new(root.path()).with_features(flags);
     for (format, success) in [(Format::Raw, true), (Format::Text, false)] {
         let error=extract_fetched_document(format,"https://example.com/private", "text/html",b"<body><main>Five meaningful words survive this valid complete document content.</main></body>",false,success,None,PdfTextCommand::system(Some(&context))).await.unwrap_err();

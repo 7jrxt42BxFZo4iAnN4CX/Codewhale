@@ -1351,7 +1351,7 @@ pub(crate) fn auto_route_usage_source_id(
     }
     format!(
         "auto-router:{}",
-        crate::hashing::hex_bytes(digest.finalize())
+        codewhale_runtime::hashing::hex_bytes(digest.finalize())
     )
 }
 

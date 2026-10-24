@@ -435,7 +435,7 @@ fn context_pressure_delta_matches_clone_and_push_reference() {
     // hypothetical user message, run the full conservative estimator.
     let reference = |engine: &Engine, text: &str| -> usize {
         let mut messages: Vec<Message> =
-            crate::prompt_zones::AppendLog::clone(&engine.session.messages).into();
+            codewhale_runtime::prompt_zones::AppendLog::clone(&engine.session.messages).into();
         if !text.trim().is_empty() {
             messages.push(Message {
                 role: Role::User,
@@ -1003,8 +1003,9 @@ async fn assert_preview_matches_first_wire_body(
     assert_eq!(requests.len(), 1, "the fixture must make one provider call");
     let first_wire_body: serde_json::Value =
         serde_json::from_slice(&requests[0].body).expect("first HTTP body is JSON");
-    let first_wire_hash =
-        crate::hashing::sha256_hex(crate::client::canonical_json(&first_wire_body).as_bytes());
+    let first_wire_hash = codewhale_runtime::hashing::sha256_hex(
+        crate::client::canonical_json(&first_wire_body).as_bytes(),
+    );
     assert_eq!(
         preview_hash, first_wire_hash,
         "preview hash must match the body captured at the HTTP boundary"
@@ -1602,7 +1603,7 @@ async fn assert_matrix_route(route: &MatrixRoute) {
     let canonical = crate::client::canonical_json(&body);
     assert_eq!(
         facts_body.body_sha256,
-        crate::hashing::sha256_hex(canonical.as_bytes()),
+        codewhale_runtime::hashing::sha256_hex(canonical.as_bytes()),
         "{name}: manifest body hash must equal the captured wire body hash"
     );
     assert_eq!(
@@ -1646,7 +1647,7 @@ async fn assert_matrix_route(route: &MatrixRoute) {
     assert_eq!(
         facts_body.tool_schema_wire_sha256,
         body.get("tools").map(|tools| {
-            crate::hashing::sha256_hex(crate::client::canonical_json(tools).as_bytes())
+            codewhale_runtime::hashing::sha256_hex(crate::client::canonical_json(tools).as_bytes())
         }),
         "{name}: the tool-schema digest must be over the schemas on the wire"
     );

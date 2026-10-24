@@ -1498,7 +1498,7 @@ async fn canonical_history_import_runs_real_engine_retains_all_branches_and_refu
     // journal retains System while the Runtime item projection omits it.
     let operation_path = binding.data_dir.join("turn-operations").join(format!(
         "history_{}.json",
-        crate::hashing::sha256_hex(
+        codewhale_runtime::hashing::sha256_hex(
             format!("codewhale:history-operation:v1\0{}", request.operation_key).as_bytes()
         )
     ));
@@ -2043,7 +2043,7 @@ async fn canonical_fork_keeps_all_branches_selects_exact_leaf_and_recovers_after
         .join("turn-operations")
         .join(format!(
             "history_{}.json",
-            crate::hashing::sha256_hex(
+            codewhale_runtime::hashing::sha256_hex(
                 format!("codewhale:history-operation:v1\0{}", request.operation_key).as_bytes()
             )
         ));
@@ -2253,7 +2253,7 @@ async fn canonical_resume_offered_suffix_settles_once_and_full_graph_witness_ref
     let published_journal = raw.journal.as_ref().context("published full journal")?;
     let offered_leaf = format!(
         "offered:{}:3",
-        crate::hashing::sha256_hex(request.operation_key.as_bytes())
+        codewhale_runtime::hashing::sha256_hex(request.operation_key.as_bytes())
     );
     assert_eq!(
         published_journal.leaf_id.as_deref(),
@@ -2285,7 +2285,7 @@ async fn canonical_resume_offered_suffix_settles_once_and_full_graph_witness_ref
         .join("turn-operations")
         .join(format!(
             "history_{}.json",
-            crate::hashing::sha256_hex(
+            codewhale_runtime::hashing::sha256_hex(
                 format!("codewhale:history-operation:v1\0{}", request.operation_key).as_bytes()
             )
         ));
@@ -2404,7 +2404,8 @@ async fn canonical_resume_offered_suffix_settles_once_and_full_graph_witness_ref
         .as_mut()
         .context("tampered full graph")?
         .entries[3];
-    let crate::session_tree::SessionEntryKind::Message { message } = &mut entry.kind else {
+    let codewhale_runtime::session_tree::SessionEntryKind::Message { message } = &mut entry.kind
+    else {
         anyhow::bail!("inactive fixture entry lost its message");
     };
     let codewhale_models::ContentBlock::Text { text, .. } = &mut message.content[0] else {

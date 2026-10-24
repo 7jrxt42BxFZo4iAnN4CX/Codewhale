@@ -31,7 +31,7 @@ fn selected(fixture: &FixturePlugins, tag: &str) -> Arc<PluginRegistry> {
                 content_hash: source.authority.content_hash,
                 entry: EntryRef {
                     path: source.path.to_string_lossy().into(),
-                    sha256: crate::hashing::sha256_hex(&bytes),
+                    sha256: codewhale_runtime::hashing::sha256_hex(&bytes),
                 },
             })
             .unwrap(),

@@ -175,7 +175,7 @@ mod tests {
         assert!(
             !config
                 .features()
-                .enabled(crate::features::Feature::WebSearch)
+                .enabled(codewhale_runtime::features::Feature::WebSearch)
         );
     }
 }

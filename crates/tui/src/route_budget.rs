@@ -1,9 +1,9 @@
 use codewhale_config::route::RouteLimits;
 
 use crate::config::{ProviderKind, provider_capability};
-use crate::context_budget::ContextBudget;
 use crate::reasoning_preference::ReasoningEffort;
 use codewhale_models::{DEFAULT_COMPACTION_TOKEN_THRESHOLD, context_window_for_model};
+use codewhale_runtime::context_budget::ContextBudget;
 
 /// Safe ordinary API request cap across provider routes.
 const API_MAX_OUTPUT_TOKENS: u32 = 65_536;
@@ -551,7 +551,7 @@ pub(crate) fn request_output_cap_for_input(
     }
     let remaining = u64::from(route_context_window_tokens(provider, model, route_limits))
         .saturating_sub(estimated_input_tokens)
-        .saturating_sub(crate::context_budget::CONTEXT_HEADROOM_TOKENS);
+        .saturating_sub(codewhale_runtime::context_budget::CONTEXT_HEADROOM_TOKENS);
     u32::try_from(remaining.min(u64::from(ceiling)))
         .ok()
         .filter(|cap| *cap > 0)

@@ -1419,7 +1419,7 @@ pub(crate) fn system_prompt_for_mode_with_context_skills_session_and_approval_fo
         workspace_parts.push(format!("{memory_block}\n\n{MEMORY_GUIDANCE}"));
     }
     if prompt_host == PromptHost::Interactive
-        && let Some(harness_block) = crate::continual_harness::prompt_block(workspace)
+        && let Some(harness_block) = codewhale_runtime::continual_harness::prompt_block(workspace)
     {
         workspace_parts.push(harness_block);
     }
@@ -1477,7 +1477,7 @@ pub(crate) fn system_prompt_for_mode_with_context_skills_session_and_approval_fo
         debug_assert!(world_state.validate_caps().is_ok());
     }
 
-    let mut blocks = crate::model_context::WorldStateSnapshot {
+    let mut blocks = codewhale_runtime::model_context::WorldStateSnapshot {
         constitution: full_prompt,
         world_state,
     }
@@ -1541,8 +1541,8 @@ pub fn world_state_from_session_facts(
     agent_topology_body: Option<&str>,
     skills_tools_body: Option<&str>,
     token_budget_body: Option<&str>,
-) -> crate::model_context::WorldState {
-    let mut state = crate::model_context::WorldState::new();
+) -> codewhale_runtime::model_context::WorldState {
+    let mut state = codewhale_runtime::model_context::WorldState::new();
     if let Some(body) = workspace_body.filter(|s| !s.trim().is_empty()) {
         state = state.with_workspace(body);
     }
@@ -2837,10 +2837,10 @@ mod tests {
     #[test]
     fn continual_harness_is_injected_as_untrusted_world_state() {
         let tmp = tempdir().expect("tempdir");
-        crate::continual_harness::refine(
+        codewhale_runtime::continual_harness::refine(
             tmp.path(),
-            crate::continual_harness::HarnessRefinement {
-                kind: crate::continual_harness::HarnessEntryKind::PromptNote,
+            codewhale_runtime::continual_harness::HarnessRefinement {
+                kind: codewhale_runtime::continual_harness::HarnessEntryKind::PromptNote,
                 title: "Verify release claims from direct evidence".to_string(),
                 content: "Retain exact current command output for each release gate.".to_string(),
                 evidence:
@@ -2879,10 +2879,10 @@ mod tests {
     #[test]
     fn headless_prompt_omits_continual_harness_guidance() {
         let tmp = tempdir().expect("tempdir");
-        crate::continual_harness::refine(
+        codewhale_runtime::continual_harness::refine(
             tmp.path(),
-            crate::continual_harness::HarnessRefinement {
-                kind: crate::continual_harness::HarnessEntryKind::PromptNote,
+            codewhale_runtime::continual_harness::HarnessRefinement {
+                kind: codewhale_runtime::continual_harness::HarnessEntryKind::PromptNote,
                 title: "Use a project-specific orchestration routine".to_string(),
                 content: "This guidance is available through the harness tool.".to_string(),
                 evidence: "Prior interactive session.".to_string(),
@@ -4035,8 +4035,8 @@ mod tests {
         );
 
         let flat = system_prompt_flat_text(&SystemPrompt::Blocks(blocks.clone()));
-        assert!(flat.contains(crate::model_context::FragmentId::Workspace.marker()));
-        assert!(flat.contains(crate::model_context::FragmentId::Route.marker()));
+        assert!(flat.contains(codewhale_runtime::model_context::FragmentId::Workspace.marker()));
+        assert!(flat.contains(codewhale_runtime::model_context::FragmentId::Route.marker()));
         assert!(flat.contains("## Environment"));
         assert!(
             flat.contains("verbosity: concise") && flat.contains("translation: off"),
@@ -4048,7 +4048,7 @@ mod tests {
         assert!(flat.contains("remember the cutover"));
         assert!(flat.contains("## Authority Recap"));
         assert!(
-            !flat.contains(crate::model_context::FragmentId::SkillsTools.marker()),
+            !flat.contains(codewhale_runtime::model_context::FragmentId::SkillsTools.marker()),
             "skills remain in constitution, not a volatile SkillsTools fragment"
         );
     }
@@ -4088,40 +4088,44 @@ mod tests {
             },
         );
 
-        let extract_world = |prompt: &SystemPrompt| -> crate::model_context::WorldState {
-            let SystemPrompt::Blocks(blocks) = prompt else {
-                panic!("expected Blocks");
-            };
-            let mut state = crate::model_context::WorldState::new();
-            for block in blocks.iter().skip(1) {
-                for id in crate::model_context::FragmentId::all() {
-                    let marker = id.marker();
-                    if let Some(rest) = block.text.strip_prefix(marker) {
-                        let body = rest.trim_start_matches('\n');
-                        state.upsert(crate::model_context::ModelContextFragment::new(
-                            *id,
-                            id.role(),
-                            body,
-                        ));
+        let extract_world =
+            |prompt: &SystemPrompt| -> codewhale_runtime::model_context::WorldState {
+                let SystemPrompt::Blocks(blocks) = prompt else {
+                    panic!("expected Blocks");
+                };
+                let mut state = codewhale_runtime::model_context::WorldState::new();
+                for block in blocks.iter().skip(1) {
+                    for id in codewhale_runtime::model_context::FragmentId::all() {
+                        let marker = id.marker();
+                        if let Some(rest) = block.text.strip_prefix(marker) {
+                            let body = rest.trim_start_matches('\n');
+                            state.upsert(
+                                codewhale_runtime::model_context::ModelContextFragment::new(
+                                    *id,
+                                    id.role(),
+                                    body,
+                                ),
+                            );
+                        }
                     }
                 }
-            }
-            state
-        };
+                state
+            };
 
         let previous = extract_world(&first);
         let next = extract_world(&second);
         let diff = next.render_diff(Some(&previous));
         assert!(
-            diff.retained
-                .iter()
-                .any(|marker| marker == crate::model_context::FragmentId::Route.marker()),
+            diff.retained.iter().any(
+                |marker| marker == codewhale_runtime::model_context::FragmentId::Route.marker()
+            ),
             "unchanged route fragment must be retained: {diff:?}"
         );
         assert!(
             diff.updated
                 .iter()
-                .any(|fragment| fragment.id == crate::model_context::FragmentId::Workspace),
+                .any(|fragment| fragment.id
+                    == codewhale_runtime::model_context::FragmentId::Workspace),
             "goal change must update workspace fragment: {diff:?}"
         );
     }

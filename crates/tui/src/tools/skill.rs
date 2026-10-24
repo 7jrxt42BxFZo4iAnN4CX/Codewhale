@@ -242,7 +242,7 @@ fn ensure_native_skill_file_present(skill: &Skill) -> Result<(), ToolError> {
         skill.name,
         skill.path.display()
     );
-    crate::logging::warn(&message);
+    codewhale_runtime::logging::warn(&message);
     Err(ToolError::execution_failed(message))
 }
 

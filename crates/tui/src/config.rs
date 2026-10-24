@@ -17,8 +17,8 @@ use std::os::unix::fs::PermissionsExt;
 
 use crate::audit::log_sensitive_event;
 use crate::credentials::CredentialStore;
-use crate::features::{Feature, Features, FeaturesToml, is_known_feature_key};
 use crate::hooks::HooksConfig;
+use codewhale_runtime::features::{Feature, Features, FeaturesToml, is_known_feature_key};
 
 // Sub-agent concurrency/timeout limit constants and their clamp resolvers live
 // in the `subagent_limits` leaf module. The constants are re-exported (keeping
@@ -1388,7 +1388,7 @@ pub struct GoalConfig {
     /// Goals are unlimited by default; token/time budgets are telemetry only.
     ///
     /// `None` uses the built-in default
-    /// ([`crate::goal_loop::DEFAULT_MAX_GOAL_CONTINUATIONS`], currently `0`);
+    /// ([`codewhale_runtime::goal_loop::DEFAULT_MAX_GOAL_CONTINUATIONS`], currently `0`);
     /// `0` disables the backstop entirely so only terminal status or user
     /// control ends the run.
     #[serde(default)]
@@ -7215,7 +7215,9 @@ impl Config {
             // inside it (`…/memory/global/memory/global/MEMORY.md`), silently
             // writing somewhere other than the file they named. Honour an
             // already-native path as itself.
-            if crate::native_memory::NativeMemoryStore::from_global_path(&legacy_path).is_some() {
+            if codewhale_runtime::native_memory::NativeMemoryStore::from_global_path(&legacy_path)
+                .is_some()
+            {
                 return legacy_path;
             }
             return legacy_path
@@ -7289,7 +7291,7 @@ impl Config {
         self.goal
             .as_ref()
             .and_then(|goal| goal.max_continuations)
-            .unwrap_or(crate::goal_loop::DEFAULT_MAX_GOAL_CONTINUATIONS)
+            .unwrap_or(codewhale_runtime::goal_loop::DEFAULT_MAX_GOAL_CONTINUATIONS)
     }
 
     /// Per-engine-turn model-step budget while a goal is active (#6512).
@@ -7326,7 +7328,7 @@ impl Config {
             .as_ref()
             .and_then(|goal| goal.continuation_delay_seconds)
             .unwrap_or(0)
-            .min(crate::goal_loop::MAX_GOAL_CONTINUATION_DELAY_SECONDS)
+            .min(codewhale_runtime::goal_loop::MAX_GOAL_CONTINUATION_DELAY_SECONDS)
     }
 
     /// Maximum number of automatic re-requests when the model returns only

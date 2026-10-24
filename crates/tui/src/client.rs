@@ -44,11 +44,11 @@ use crate::llm_client::{
 #[path = "client/catalog_tests.rs"]
 mod catalog_tests;
 
-use crate::logging;
 use codewhale_models::Role;
 use codewhale_models::{
     ContentBlock, Message, MessageRequest, MessageResponse, SystemPrompt, Usage,
 };
+use codewhale_runtime::logging;
 
 /// Every provider request that can feed the interactive TUI's attached CWC run
 /// takes a shared permit at this lowest common dispatch seam. Runtime Chat holds
@@ -1770,7 +1770,7 @@ impl CodewhaleClient {
             ))?;
             let reasoning_api = format!(
                 "openai-responses-siwc-v1:{}",
-                crate::hashing::sha256_hex(&identity),
+                codewhale_runtime::hashing::sha256_hex(&identity),
             );
             (
                 (credentials.access_token, "ChatGPT sign-in".to_string()),
@@ -2189,8 +2189,9 @@ impl CodewhaleClient {
     /// Anthropic Messages, and OpenAI Responses — streaming and non-streaming
     /// alike — receive the same sanitized payload.
     fn prepare_model_bound_request(&self, mut request: MessageRequest) -> MessageRequest {
-        let repair =
-            crate::tool_history_repair::repair_tool_call_pairs_for_provider(&mut request.messages);
+        let repair = codewhale_runtime::tool_history_repair::repair_tool_call_pairs_for_provider(
+            &mut request.messages,
+        );
         if !repair.is_empty() {
             tracing::warn!(
                 repaired_call_ids = ?repair.repaired_call_ids,
@@ -4414,7 +4415,9 @@ impl CodewhaleClient {
                     // shortened deadline) must release requests that are
                     // already waiting instead of stranding them for the whole
                     // original window.
-                    while let Some(delay) = crate::retry_status::rate_limit_remaining(pause_scope) {
+                    while let Some(delay) =
+                        codewhale_runtime::retry_status::rate_limit_remaining(pause_scope)
+                    {
                         tokio::time::sleep(delay.min(RATE_LIMIT_PAUSE_RECHECK_INTERVAL)).await;
                     }
                     self.wait_for_rate_limit().await;
@@ -4444,9 +4447,9 @@ impl CodewhaleClient {
                     delay.as_secs_f64(),
                 ));
                 if matches!(err, LlmError::RateLimited { .. }) {
-                    crate::retry_status::note_rate_limit(&callback_scope, delay);
+                    codewhale_runtime::retry_status::note_rate_limit(&callback_scope, delay);
                 }
-                crate::retry_status::start(attempt + 1, delay, human_reason);
+                codewhale_runtime::retry_status::start(attempt + 1, delay, human_reason);
             })),
         );
         let request_result = if let Some(total) = attempt_total {
@@ -4462,7 +4465,7 @@ impl CodewhaleClient {
                     logging::warn(format!(
                         "non-streaming request envelope exceeded ({loop_envelope:?}); retry loop aborted"
                     ));
-                    crate::retry_status::failed(last.to_string());
+                    codewhale_runtime::retry_status::failed(last.to_string());
                     self.mark_request_failure("non-streaming request envelope exceeded")
                         .await;
                     self.maybe_probe_recovery().await;
@@ -4475,13 +4478,13 @@ impl CodewhaleClient {
 
         match request_result {
             Ok(response) => {
-                crate::retry_status::succeeded();
+                codewhale_runtime::retry_status::succeeded();
                 self.mark_request_success().await;
                 Ok(response)
             }
             Err(err) => {
                 if let LlmError::RateLimited { retry_after, .. } = &err.last_error {
-                    crate::retry_status::note_rate_limit(
+                    codewhale_runtime::retry_status::note_rate_limit(
                         &pause_scope,
                         retry_after
                             .unwrap_or_else(|| retry_cfg.delay_for_attempt(retry_cfg.max_retries)),
@@ -4489,9 +4492,9 @@ impl CodewhaleClient {
                 }
                 let last = err.last_error.to_string();
                 if err.attempts > 1 {
-                    crate::retry_status::failed(last.clone());
+                    codewhale_runtime::retry_status::failed(last.clone());
                 } else {
-                    crate::retry_status::clear();
+                    codewhale_runtime::retry_status::clear();
                 }
                 self.mark_request_failure(&last).await;
                 self.maybe_probe_recovery().await;
@@ -4664,8 +4667,8 @@ impl CodewhaleClient {
     ) -> Result<MessageResponse> {
         let _inference = self.acquire_remote_control_inference_permit().await;
         let _permit = self.acquire_provider_request_permit().await;
-        let cacheable =
-            allow_response_cache && crate::llm_response_cache::request_is_cacheable(&request);
+        let cacheable = allow_response_cache
+            && codewhale_runtime::llm_response_cache::request_is_cacheable(&request);
         let prepared = self.prepare_outbound_request(request, false)?;
         match prepared.dialect {
             WireDialect::OpenAiResponses => self.handle_responses_message(&prepared).await,
@@ -6973,7 +6976,7 @@ mod openrouter_vendor_tests {
                 .prepare_outbound_request(request(), false)
                 .unwrap()
                 .body;
-            crate::llm_response_cache::ResponseCache::make_key(
+            codewhale_runtime::llm_response_cache::ResponseCache::make_key(
                 "openrouter",
                 &client.base_url,
                 None,

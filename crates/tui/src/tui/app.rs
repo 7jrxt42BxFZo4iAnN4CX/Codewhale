@@ -1608,7 +1608,7 @@ pub struct App {
     pub api_message_stamps: Vec<DateTime<Utc>>,
     /// Full saved history, including inactive branches. API messages remain
     /// the active projection; snapshots reconcile it without rebuilding IDs.
-    pub session_journal: crate::session_tree::SessionJournal,
+    pub session_journal: codewhale_runtime::session_tree::SessionJournal,
     /// User-visible assistant text that crossed typed completion boundaries.
     /// Receipts are aligned to transcript cells because provider context can
     /// be compacted or purged without changing what remains visible.
@@ -1678,7 +1678,8 @@ pub struct App {
     /// Prevents the same pressure condition from immediately re-arming after
     /// the operator explicitly dismisses its sticky warning. Reset when the
     /// pressure falls below the warning threshold or compaction starts.
-    pub context_pressure_warning_dismissed: Option<crate::context_budget::PressureLevel>,
+    pub context_pressure_warning_dismissed:
+        Option<codewhale_runtime::context_budget::PressureLevel>,
     /// Last on-disk plugin catalog stamp we already nudged `/plugin reload` for.
     pub plugin_reload_nudge_stamp: Option<crate::plugins::PluginCatalogStamp>,
     /// Last idle catalog fingerprint poll, so disk changes can surface between turns.
@@ -1808,7 +1809,7 @@ pub struct App {
     /// Off-event-loop worker for durable Lane control writes. `/lane interrupt`
     /// submits here instead of tearing down a Runtime on the composer thread
     /// (#4022).
-    pub lane_control: crate::lane_control::LaneControlQueue,
+    pub lane_control: codewhale_runtime::lane_control::LaneControlQueue,
     /// Immutable plugin catalogue scoped to this App's effective workspace.
     pub plugin_registry: std::sync::Arc<crate::plugins::PluginRegistry>,
     pub config_path: Option<PathBuf>,
@@ -5486,7 +5487,7 @@ impl App {
         session: &crate::session_manager::SavedSession,
     ) {
         let journal = session.journal.clone().unwrap_or_else(|| {
-            crate::session_tree::SessionJournal::from_messages(
+            codewhale_runtime::session_tree::SessionJournal::from_messages(
                 session.messages.clone(),
                 session.metadata.spawn_depth,
             )
@@ -5508,7 +5509,7 @@ impl App {
             Some(journal) => journal,
             // Legacy session without a journal: rebuild it from the saved
             // history, as the borrowing path does.
-            None => crate::session_tree::SessionJournal::from_messages(
+            None => codewhale_runtime::session_tree::SessionJournal::from_messages(
                 session.messages.clone(),
                 session.metadata.spawn_depth,
             ),
@@ -5522,7 +5523,7 @@ impl App {
     fn install_restored_api_messages(
         &mut self,
         messages: Vec<Message>,
-        journal: crate::session_tree::SessionJournal,
+        journal: codewhale_runtime::session_tree::SessionJournal,
         stamps: Vec<DateTime<Utc>>,
     ) {
         self.session_journal = journal;
@@ -5541,7 +5542,7 @@ impl App {
     }
 
     pub fn clear_api_messages(&mut self) {
-        self.session_journal = crate::session_tree::SessionJournal::new();
+        self.session_journal = codewhale_runtime::session_tree::SessionJournal::new();
         self.api_messages_mut().clear();
         self.api_message_stamps.clear();
         self.session_turn_outcomes.clear();

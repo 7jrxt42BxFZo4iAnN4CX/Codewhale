@@ -47,7 +47,6 @@ use crate::route_budget::{
     route_context_window_tokens,
 };
 use crate::route_runtime::{ResolvedRuntimeRoute, resolve_runtime_route_for_identity};
-use crate::runtime_policy::RuntimePolicyProjection;
 use crate::tools::plan::new_shared_plan_state;
 use crate::tools::shell::{SharedShellManager, new_shared_shell_manager};
 use crate::tools::subagent::{
@@ -71,6 +70,7 @@ use codewhale_protocol::runtime::{
     DynamicToolCallContent, DynamicToolCallParams, DynamicToolCallResult, DynamicToolSpec,
     TurnEnvironmentParams,
 };
+use codewhale_runtime::runtime_policy::RuntimePolicyProjection;
 
 const EVENT_CHANNEL_CAPACITY: usize = 1024;
 pub(crate) const RUNTIME_EVENT_REPLAY_BATCH_SIZE: usize = 256;
@@ -1338,7 +1338,7 @@ fn unanswered_call_result(
             Some(item.detail.clone().unwrap_or_else(|| item.summary.clone()))
         }
         TurnItemLifecycleStatus::Interrupted | TurnItemLifecycleStatus::Canceled => {
-            Some(crate::tool_history_repair::CRASH_REPAIR_CONTENT.to_string())
+            Some(codewhale_runtime::tool_history_repair::CRASH_REPAIR_CONTENT.to_string())
         }
         TurnItemLifecycleStatus::Queued
         | TurnItemLifecycleStatus::InProgress
@@ -5378,7 +5378,7 @@ fn runtime_turn_operation_key_fingerprint(
     operation_key: &str,
 ) -> Result<String> {
     validate_runtime_turn_operation_key(operation_key)?;
-    Ok(crate::hashing::sha256_hex(format!(
+    Ok(codewhale_runtime::hashing::sha256_hex(format!(
         "runtime-turn-operation\u{1f}{owner_id}\u{1f}{thread_id}\u{1f}{operation_key}"
     )))
 }
@@ -5426,9 +5426,9 @@ fn runtime_turn_request_fingerprint(
     if let Some(max_output_tokens) = max_output_tokens {
         payload["maxOutputTokens"] = json!(max_output_tokens);
     }
-    Ok(crate::hashing::sha256_hex(crate::client::canonical_json(
-        &payload,
-    )))
+    Ok(codewhale_runtime::hashing::sha256_hex(
+        crate::client::canonical_json(&payload),
+    ))
 }
 
 #[derive(Debug, Clone)]
@@ -6581,7 +6581,9 @@ impl RuntimeWorkerEventSink {
         } else {
             format!(
                 "item_{}",
-                crate::hashing::sha256_hex(format!("{turn_id}\0{agent_id}\0{event_name}"))
+                codewhale_runtime::hashing::sha256_hex(format!(
+                    "{turn_id}\0{agent_id}\0{event_name}"
+                ))
             )
         };
         match event {
@@ -7600,7 +7602,7 @@ impl RuntimeHistoryOperation {
         validate_runtime_turn_operation_key(&self.receipt.operation_key)?;
         anyhow::ensure!(
             self.key_fingerprint
-                == crate::hashing::sha256_hex(
+                == codewhale_runtime::hashing::sha256_hex(
                     format!(
                         "codewhale:history-operation:v1\0{}",
                         self.receipt.operation_key
@@ -11002,25 +11004,26 @@ impl RuntimeThreadManager {
                 ":thread-create:",
                 &operation_key,
             )?;
-            let request_fingerprint = crate::hashing::sha256_hex(serde_json::to_vec(&json!({
-                "version": 1,
-                "model": thread.model,
-                "model_provider": thread.model_provider,
-                "model_provider_id": thread.model_provider_id,
-                "reasoning_effort": thread.reasoning_effort,
-                "allowed_tools": thread.allowed_tools,
-                "workspace": thread.workspace,
-                "mode": thread.mode,
-                "permission_posture": thread.permission_posture,
-                "allow_shell": thread.allow_shell,
-                "trust_mode": thread.trust_mode,
-                "auto_approve": thread.auto_approve,
-                "archived": thread.archived,
-                "system_prompt": thread.system_prompt,
-                "task_id": thread.task_id,
-                "dynamic_tools": req.dynamic_tools,
-                "environments": req.environments,
-            }))?);
+            let request_fingerprint =
+                codewhale_runtime::hashing::sha256_hex(serde_json::to_vec(&json!({
+                    "version": 1,
+                    "model": thread.model,
+                    "model_provider": thread.model_provider,
+                    "model_provider_id": thread.model_provider_id,
+                    "reasoning_effort": thread.reasoning_effort,
+                    "allowed_tools": thread.allowed_tools,
+                    "workspace": thread.workspace,
+                    "mode": thread.mode,
+                    "permission_posture": thread.permission_posture,
+                    "allow_shell": thread.allow_shell,
+                    "trust_mode": thread.trust_mode,
+                    "auto_approve": thread.auto_approve,
+                    "archived": thread.archived,
+                    "system_prompt": thread.system_prompt,
+                    "task_id": thread.task_id,
+                    "dynamic_tools": req.dynamic_tools,
+                    "environments": req.environments,
+                }))?);
             let _emit_order = self.event_emit.lock().await;
             let store = self.store.clone();
             let (thread, event) = tokio::task::spawn_blocking(move || {
@@ -12224,8 +12227,9 @@ impl RuntimeThreadManager {
         validate_runtime_turn_operation_key(key)?;
         validate_sha256_fingerprint(request_digest, "history request digest")?;
         validate_sha256_fingerprint(history_digest, "history digest")?;
-        let fingerprint =
-            crate::hashing::sha256_hex(format!("codewhale:history-operation:v1\0{key}").as_bytes());
+        let fingerprint = codewhale_runtime::hashing::sha256_hex(
+            format!("codewhale:history-operation:v1\0{key}").as_bytes(),
+        );
         self.store
             .with_turn_operation_claim(Some(&fingerprint), || {
                 if let Some(operation) = self.store.load_history_operation(&fingerprint)? {
@@ -12303,8 +12307,9 @@ impl RuntimeThreadManager {
         key: &str,
     ) -> Result<Option<RuntimeHistoryOperation>> {
         validate_runtime_turn_operation_key(key)?;
-        let fingerprint =
-            crate::hashing::sha256_hex(format!("codewhale:history-operation:v1\0{key}").as_bytes());
+        let fingerprint = codewhale_runtime::hashing::sha256_hex(
+            format!("codewhale:history-operation:v1\0{key}").as_bytes(),
+        );
         let operation = self.store.load_history_operation(&fingerprint)?;
         if let Some(operation) = operation.as_ref() {
             let binding = self.session_store_binding();
@@ -12509,7 +12514,7 @@ impl RuntimeThreadManager {
             "invalid imported goal source"
         );
         source.validate_stall_state().map_err(anyhow::Error::msg)?;
-        let source_digest = crate::hashing::sha256_hex(
+        let source_digest = codewhale_runtime::hashing::sha256_hex(
             crate::client::canonical_json(&serde_json::to_value(&source)?).as_bytes(),
         );
         let mut target = source;
@@ -12521,7 +12526,7 @@ impl RuntimeThreadManager {
             target.pause_reason = None;
         }
         target.normalize_restored_stall_state();
-        let target_digest = crate::hashing::sha256_hex(
+        let target_digest = codewhale_runtime::hashing::sha256_hex(
             crate::client::canonical_json(&serde_json::to_value(&target)?).as_bytes(),
         );
         let fingerprint = operation.key_fingerprint.clone();
@@ -13024,7 +13029,7 @@ impl RuntimeThreadManager {
                 "native fork full graph exceeds entry bound; source retained"
             );
             crate::session_manager::SavedSession::import_foreign(
-                crate::session_tree::SessionImportContainer::new(
+                codewhale_runtime::session_tree::SessionImportContainer::new(
                     "native-fork-validation".into(),
                     journal,
                     None,
@@ -15425,21 +15430,21 @@ impl RuntimeThreadManager {
                 req.max_output_tokens,
             )?;
             let request_fingerprint = if let Some(workspace) = expected_workspace.as_ref() {
-                crate::hashing::sha256_hex(crate::client::canonical_json(&json!({
+                codewhale_runtime::hashing::sha256_hex(crate::client::canonical_json(&json!({
                     "domain": "codewhale:selected-workspace-turn:v1",
                     "historical_fingerprint": request_fingerprint,
                     "expected_workspace": workspace,
                 })).as_bytes())
             } else { request_fingerprint };
             let request_fingerprint = if let Some(snapshot) = &req.profile_constitution {
-                crate::hashing::sha256_hex(crate::client::canonical_json(&json!({
+                codewhale_runtime::hashing::sha256_hex(crate::client::canonical_json(&json!({
                     "domain": "codewhale:profile-constitution-turn:v1",
                     "historical_fingerprint": request_fingerprint,
                     "profile_constitution": snapshot,
                 })).as_bytes())
             } else { request_fingerprint };
             let request_fingerprint = if let Some(owner) = &req.account_model_owner {
-                crate::hashing::sha256_hex(crate::client::canonical_json(&json!({
+                codewhale_runtime::hashing::sha256_hex(crate::client::canonical_json(&json!({
                     "domain": "codewhale:account-model-owner-turn:v1",
                     "historical_fingerprint": request_fingerprint,
                     "account_model_owner": owner,
@@ -16511,7 +16516,7 @@ impl RuntimeThreadManager {
             };
             let mut features = cfg.features();
             if self.host_profile.is_acp() {
-                features.disable(crate::features::Feature::Mcp);
+                features.disable(codewhale_runtime::features::Feature::Mcp);
             }
             let engine_cfg = EngineConfig {
                 model: route_model.clone(),
@@ -16599,7 +16604,7 @@ impl RuntimeThreadManager {
                     hook_executor: Some(Arc::clone(&thread_hooks)),
                     handle_store: crate::tools::handle::new_shared_handle_store(),
                     rlm_sessions: crate::rlm::session::new_shared_rlm_session_store(),
-                    media_originals_dir: crate::media_originals::default_store_dir(),
+                    media_originals_dir: codewhale_runtime::media_originals::default_store_dir(),
                 },
                 subagent_model_overrides: if isolated_chat {
                     HashMap::new()
@@ -18181,7 +18186,7 @@ impl RuntimeThreadManager {
                         activity.observed_at = now;
                         let (name, mut payload) = match operation {
                             EngineEvent::OperationActivityStarted { span_id, activity_kind, action_id } => {
-                                let span_id = format!("operation:{}", crate::hashing::sha256_hex(span_id));
+                                let span_id = format!("operation:{}", codewhale_runtime::hashing::sha256_hex(span_id));
                                 let action_id = action_id.filter(|id| !id.is_empty() && id.len() <= 256 && !id.chars().any(char::is_control));
                                 if !activity.active.iter().any(|span| span.span_id == span_id) {
                                     if activity.active.len() < 256 {
@@ -18195,7 +18200,7 @@ impl RuntimeThreadManager {
                                 ("operation.activity_started", json!({"span_id":span_id,"activity_kind":activity_kind,"action_id":action_id,"observed_at":now}))
                             }
                             EngineEvent::OperationActivityCompleted { span_id, activity_kind, action_id, outcome } => {
-                                let span_id = format!("operation:{}", crate::hashing::sha256_hex(span_id));
+                                let span_id = format!("operation:{}", codewhale_runtime::hashing::sha256_hex(span_id));
                                 let action_id = action_id.filter(|id| !id.is_empty() && id.len() <= 256 && !id.chars().any(char::is_control));
                                 activity.active.retain(|span| span.span_id != span_id);
                                 activity.last_completed = Some(RuntimeOperationCompletion {
@@ -20579,7 +20584,7 @@ fn runtime_policy_with_overrides(
 /// Compatibility parser retained for focused Runtime tests.
 #[cfg(test)]
 fn parse_mode_opt(mode: &str) -> Option<AppMode> {
-    crate::runtime_policy::parse_runtime_mode(mode)
+    codewhale_runtime::runtime_policy::parse_runtime_mode(mode)
 }
 
 #[cfg(test)]

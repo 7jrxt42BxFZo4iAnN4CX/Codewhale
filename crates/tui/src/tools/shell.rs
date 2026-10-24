@@ -2454,7 +2454,7 @@ impl ShellManager {
 
         // Leave raw mode before spawn; the guard restores it only if raw mode
         // was active on entry (issue #1690).
-        let _raw_mode = crate::host_terminal::suspend_raw_mode();
+        let _raw_mode = codewhale_runtime::host_terminal::suspend_raw_mode();
 
         let mut child = cmd
             .spawn()
@@ -2598,7 +2598,7 @@ impl ShellManager {
 
         // Leave raw mode before spawn; the guard restores it only if raw mode
         // was active on entry (issue #1690).
-        let _raw_mode = crate::host_terminal::suspend_raw_mode();
+        let _raw_mode = codewhale_runtime::host_terminal::suspend_raw_mode();
 
         child_env::apply_to_command(&mut cmd, child_env::string_map_env(&exec_env.env));
 
@@ -3821,7 +3821,6 @@ pub fn new_shared_shell_manager(workspace: PathBuf) -> SharedShellManager {
 
 // === ToolSpec Implementations ===
 
-use crate::features::Feature;
 use crate::tools::cargo_failure_summary::summarize_cargo_failure;
 use crate::tools::spec::{
     ApprovalRequirement, ToolCapability, ToolContext, ToolError, ToolResult, ToolSpec,
@@ -3834,6 +3833,7 @@ use codewhale_execpolicy::command_safety::{
     normalize_windows_command_paths, readonly_network_reads, split_leading_cd,
 };
 use codewhale_execpolicy::toml_rules::{ExecPolicyConfig, RuleDecision};
+use codewhale_runtime::features::Feature;
 use serde_json::json;
 
 /// The TOML execpolicy file lives in the user config home; the rule engine

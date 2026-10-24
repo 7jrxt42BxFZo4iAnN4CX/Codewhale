@@ -766,7 +766,7 @@ fn route_context_scenario() {
         );
         assert_eq!(
             budget.pressure,
-            crate::context_budget::PressureLevel::Critical
+            codewhale_runtime::context_budget::PressureLevel::Critical
         );
         assert!(!budget.fits_additional(1));
     }
@@ -873,7 +873,7 @@ async fn preflight_guard_measures_honest_input_against_the_input_ceiling() {
     let target_ceiling = u64::try_from((honest + inflated) / 2).unwrap();
     engine.active_route_limits = Some(codewhale_config::route::RouteLimits {
         context_tokens: Some(
-            target_ceiling + output_cap + crate::context_budget::CONTEXT_HEADROOM_TOKENS,
+            target_ceiling + output_cap + codewhale_runtime::context_budget::CONTEXT_HEADROOM_TOKENS,
         ),
         input_tokens: None,
         output_tokens: Some(output_cap),

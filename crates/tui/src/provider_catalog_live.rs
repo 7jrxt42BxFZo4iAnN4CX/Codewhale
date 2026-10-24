@@ -321,7 +321,10 @@ impl ProviderLivePricingQuote {
             }
             None => payload,
         };
-        Some(format!("sha256:{}", crate::hashing::sha256_hex(payload)))
+        Some(format!(
+            "sha256:{}",
+            codewhale_runtime::hashing::sha256_hex(payload)
+        ))
     }
 
     fn from_pricing(

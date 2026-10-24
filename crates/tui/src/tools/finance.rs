@@ -305,7 +305,7 @@ impl ToolSpec for FinanceTool {
         let deadline = std::time::Instant::now() + timeout;
         let host = context
             .features
-            .enabled(crate::features::Feature::FinanceHost);
+            .enabled(codewhale_runtime::features::Feature::FinanceHost);
         let quote_result = if host {
             fetch_host_endpoint(
                 &self.client,

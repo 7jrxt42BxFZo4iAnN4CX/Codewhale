@@ -333,7 +333,7 @@ pub(crate) async fn doctor_search_probe(
     }
     if !config
         .features()
-        .enabled(crate::features::Feature::WebSearch)
+        .enabled(codewhale_runtime::features::Feature::WebSearch)
     {
         return DoctorSearchProbeReport::FeatureDisabled;
     }

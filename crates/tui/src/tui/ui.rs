@@ -13,12 +13,12 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 use crate::error_taxonomy::{ErrorCategory, ErrorEnvelope, ErrorSeverity};
-use crate::resource_telemetry::estimate_output_tokens_from_text;
 use anyhow::{Context, Result};
 use codewhale_config::AppMode;
 use codewhale_core::ContextReference;
 use codewhale_execpolicy::ApprovalMode;
 use codewhale_release::InstallMethod;
+use codewhale_runtime::resource_telemetry::estimate_output_tokens_from_text;
 // On Windows the push/pop helpers write the escapes directly; crossterm's
 // PushKeyboardEnhancementFlags / PopKeyboardEnhancementFlags commands are
 // never referenced, so the imports are gated to avoid -D warnings failures.
@@ -867,7 +867,7 @@ fn open_fleet_setup_target(app: &mut App, config: &Config, member_id: Option<&st
                 );
                 return;
             };
-            let fleet_name = crate::safe_label::SafeLabel::phrase(&name);
+            let fleet_name = codewhale_runtime::safe_label::SafeLabel::phrase(&name);
             let picker = if member_id.is_some() {
                 let (editor_id, target) = view.direct_assignment();
                 let (role, scope) = view.assignment_context();
@@ -1148,7 +1148,7 @@ fn mark_active_turn_cancelled_locally(app: &mut App) {
     app.runtime_turn_id = None;
     app.runtime_turn_status = None;
     app.suppress_stream_events_until_turn_complete = true;
-    crate::retry_status::clear();
+    codewhale_runtime::retry_status::clear();
     crate::tui::notifications::clear_taskbar_progress();
     crate::tui::notifications::stop_title_animation_quietly();
 }

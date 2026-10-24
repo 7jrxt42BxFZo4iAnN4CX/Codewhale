@@ -11,7 +11,6 @@ use crate::artifacts::ArtifactRecord;
 use crate::config::ProviderKind;
 use crate::model_routing::AutoRouteReceipt;
 use crate::project_context::find_git_root;
-use crate::session_tree::{SessionEntry, SessionImportContainer, SessionJournal};
 use crate::tools::goal::{GoalPauseReason, GoalSnapshot};
 use crate::tools::plan::PlanSnapshot;
 use crate::tools::todo::TodoListSnapshot;
@@ -22,6 +21,7 @@ use codewhale_core::ContextReference;
 #[cfg(test)]
 use codewhale_core::{ContextReferenceKind, ContextReferenceSource};
 use codewhale_models::{ContentBlock, Message, SystemPrompt};
+use codewhale_runtime::session_tree::{SessionEntry, SessionImportContainer, SessionJournal};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
@@ -1325,7 +1325,7 @@ impl SavedSession {
                     .filter(|entry| {
                         matches!(
                             entry.kind,
-                            crate::session_tree::SessionEntryKind::Message { .. }
+                            codewhale_runtime::session_tree::SessionEntryKind::Message { .. }
                         )
                     })
                     .map(|entry| entry.created_at)
@@ -1405,7 +1405,7 @@ impl SavedSession {
 /// a document instead of treating a truncated path as the complete conversation.
 fn validate_saved_journal(journal: &SessionJournal) -> io::Result<()> {
     let invalid = |message| io::Error::new(io::ErrorKind::InvalidData, message);
-    if journal.schema_version > crate::session_tree::CURRENT_JOURNAL_SCHEMA_VERSION {
+    if journal.schema_version > codewhale_runtime::session_tree::CURRENT_JOURNAL_SCHEMA_VERSION {
         return Err(invalid("saved journal schema is newer than supported"));
     }
     journal
@@ -1548,8 +1548,9 @@ fn serialize_saved_session(mut session: SavedSession) -> io::Result<String> {
 /// does, foreign `/load` files do not).
 pub(crate) fn repair_recovered_session(
     session: &mut SavedSession,
-) -> crate::tool_history_repair::ToolRepairReceipt {
-    let repair = crate::tool_history_repair::repair_tool_call_pairs(&mut session.messages);
+) -> codewhale_runtime::tool_history_repair::ToolRepairReceipt {
+    let repair =
+        codewhale_runtime::tool_history_repair::repair_tool_call_pairs(&mut session.messages);
     if !repair.is_empty() {
         if let Some(journal) = session.journal.as_mut() {
             journal.rebranch_active_messages(&session.messages);
