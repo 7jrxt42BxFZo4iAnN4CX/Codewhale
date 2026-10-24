@@ -1378,6 +1378,11 @@ pub async fn run_tui(
         tracing::warn!(target: "lifecycle_outbox", %error, "TUI lifecycle outbox did not drain before exit");
     }
 
+    // The pane is ours until the process leaves it: release it before the
+    // terminal is restored so Herdr clears the agent immediately instead of
+    // waiting for its idle-prompt safety net.
+    crate::tui::herdr::release().await;
+
     // Flush the persistence actor, collect the durability report (write
     // failures are surfaced, not discarded), then shut down gracefully.
     //
@@ -4815,6 +4820,10 @@ pub(crate) async fn run_event_loop(
         maybe_throttled_recovery_snapshot(app, Instant::now(), &mut last_recovery_snapshot_at);
         let history_has_live_motion = history_has_live_motion(&app.history);
         crate::tui::pet_watch::tick(app, Instant::now());
+        crate::tui::herdr::sync(
+            crate::tui::underwater::ShellPhase::from_app(app),
+            app.current_session_id.as_deref(),
+        );
         let active_cell_has_live_motion = active_cell_has_live_motion(app);
         let translation_placeholder_has_live_motion = app.translation_enabled
             && (pending_thinking_translations > 0 || app.streaming_thinking_active_entry.is_some());

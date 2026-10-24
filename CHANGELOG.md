@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Herdr support: inside a Herdr pane Codewhale reports `idle`, `working` or
+  `blocked` to the sidebar and `herdr agent list`, reopens the same session
+  after a Herdr server restart, and releases the pane on quit.
+
 ## [0.10.2] - 2026-10-22
 
 Codewhale v0.10.2 adds an animated pet view (`/pet on`), a live Terminal work
