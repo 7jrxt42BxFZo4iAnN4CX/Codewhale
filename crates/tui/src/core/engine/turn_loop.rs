@@ -6536,7 +6536,7 @@ pub(crate) async fn run_tool_call_before_hooks(
 
 #[cfg(test)]
 fn command_denies_tool(disallowed_tools: Option<&[String]>, tool_name: &str) -> bool {
-    tool_denied(disallowed_tools, tool_name)
+    codewhale_execpolicy::tool_rules::tool_denied(disallowed_tools, tool_name)
 }
 
 fn resolve_tool_definition<'a>(

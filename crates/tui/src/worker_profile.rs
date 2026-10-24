@@ -273,7 +273,7 @@ impl ChildGrant {
         // `exec_shell` (raw shell gone) is deliberately *not* folded: a
         // write-denied verifier installs it while keeping shell authority.
         let denied = |name: &str| {
-            crate::core::engine::tool_catalog::tool_denied(
+            codewhale_execpolicy::tool_rules::tool_denied(
                 Some(profile.denied_tools.as_slice()),
                 name,
             )

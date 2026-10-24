@@ -36,7 +36,6 @@ use crate::client::CodewhaleClient;
 use crate::config::{MAX_SUBAGENTS, SubagentModelOverride};
 #[cfg(test)]
 use crate::core::engine::ChildSurfaceProbe;
-use crate::core::engine::tool_catalog::tool_denied;
 #[cfg(test)]
 use crate::core::engine::tool_catalog::{
     TOOL_SEARCH_NAME, apply_native_tool_deferral, ensure_advanced_tooling,
@@ -85,6 +84,7 @@ use crate::worker_profile::{
 use codewhale_config::AppMode;
 #[cfg(test)]
 use codewhale_execpolicy::ApprovalMode;
+use codewhale_execpolicy::tool_rules::tool_denied;
 #[cfg(test)]
 use codewhale_models::MessageResponse;
 use codewhale_models::{ContentBlock, Message, SystemPrompt, Tool, Usage};

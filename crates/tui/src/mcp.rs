@@ -3495,7 +3495,7 @@ impl McpPool {
     }
 
     pub(crate) fn tool_allowed(&self, name: &str) -> bool {
-        !crate::core::engine::tool_catalog::tool_matches_any_rule(&self.disallowed_tools, name)
+        !codewhale_execpolicy::tool_rules::tool_matches_any_rule(&self.disallowed_tools, name)
     }
 
     fn require_server(&self, server: &str) -> Result<()> {
@@ -3516,7 +3516,7 @@ impl McpPool {
         input: &serde_json::Value,
     ) -> Result<()> {
         anyhow::ensure!(
-            !crate::core::engine::tool_catalog::tool_matches_any_rule(rules, name),
+            !codewhale_execpolicy::tool_rules::tool_matches_any_rule(rules, name),
             "Unknown MCP tool name: {name}"
         );
         if matches!(
@@ -4926,7 +4926,7 @@ impl McpPool {
                     .filter(|tool| conn.config().is_tool_enabled(&tool.name))
                     .map(|tool| Self::mcp_model_tool_name(server_name, &tool.name))
                     .filter(|name| {
-                        !crate::core::engine::tool_catalog::tool_matches_any_rule(&rules, name)
+                        !codewhale_execpolicy::tool_rules::tool_matches_any_rule(&rules, name)
                     })
                     .collect();
                 let (status, detail) = match &outcome {
@@ -5827,7 +5827,7 @@ impl McpPool {
                     .get("authenticate_tool")
                     .and_then(serde_json::Value::as_str)
                     .is_some_and(|tool| {
-                        crate::core::engine::tool_catalog::tool_matches_any_rule(rules, tool)
+                        codewhale_execpolicy::tool_rules::tool_matches_any_rule(rules, tool)
                     })
                 {
                     item.as_object_mut()
@@ -5858,7 +5858,7 @@ impl McpPool {
         {
             tools.retain(|name| {
                 name.as_str().is_some_and(|name| {
-                    !crate::core::engine::tool_catalog::tool_matches_any_rule(rules, name)
+                    !codewhale_execpolicy::tool_rules::tool_matches_any_rule(rules, name)
                 })
             });
         }

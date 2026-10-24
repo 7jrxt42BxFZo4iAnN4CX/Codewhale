@@ -10403,7 +10403,7 @@ use self::tool_catalog::{
 use self::tool_catalog::{
     TOOL_SEARCH_NAME, active_tools_for_step, build_model_tool_catalog, ensure_advanced_tooling,
     execute_tool_search, initial_active_tools, preflight_requested_deferred_tool,
-    should_default_defer_tool, tool_allowed, tool_catalog_consistency_issues, tool_denied,
+    should_default_defer_tool, tool_allowed, tool_catalog_consistency_issues,
 };
 pub(crate) use self::tool_execution::emit_tool_audit;
 use self::tool_preparation::{prepare_tool_call, reprepare_tool_call_after_hook};
