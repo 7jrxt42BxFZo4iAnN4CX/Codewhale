@@ -355,14 +355,9 @@ fn create_session(
 
     let (prepared, sandbox_confined) =
         prepare_pty_shell(&shell, &workspace, policy.clone(), shell_manager)?;
-    let command = prepared
-        .pty_command(&prepared.cwd)
-        .map_err(|e| format!("failed to prepare PTY shell: {e}"))?;
-    let child = pair
-        .slave
-        .spawn_command(command)
+    let child = prepared
+        .spawn_pty(pair.slave, &prepared.cwd)
         .map_err(|e| format!("failed to start shell {shell}: {e}"))?;
-    drop(pair.slave);
 
     let reader = pair
         .master

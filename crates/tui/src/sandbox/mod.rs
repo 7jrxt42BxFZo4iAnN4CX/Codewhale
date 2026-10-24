@@ -337,11 +337,23 @@ impl ExecEnv {
         }
     }
 
-    #[cfg(not(target_env = "ohos"))]
-    pub fn pty_command(
+    pub fn spawn_background(
         &self,
+        mut command: std::process::Command,
+    ) -> std::io::Result<std::process::Child> {
+        #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
+        if self.sandbox_type == SandboxType::LinuxBubblewrap {
+            return bwrap::spawn(move || command.spawn())?;
+        }
+        command.spawn()
+    }
+
+    #[cfg(not(target_env = "ohos"))]
+    pub fn spawn_pty(
+        &self,
+        slave: Box<dyn portable_pty::SlavePty + Send>,
         cwd: &std::path::Path,
-    ) -> anyhow::Result<portable_pty::CommandBuilder> {
+    ) -> anyhow::Result<Box<dyn portable_pty::Child + Send + Sync>> {
         let mut command = portable_pty::CommandBuilder::new(self.program());
         #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
         if self.sandbox_type == SandboxType::LinuxBubblewrap {
@@ -375,7 +387,12 @@ impl ExecEnv {
             &mut command,
             crate::child_env::string_map_env(&self.env),
         );
-        Ok(command)
+        let launch = move || slave.spawn_command(command);
+        #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
+        if self.sandbox_type == SandboxType::LinuxBubblewrap {
+            return bwrap::spawn(launch)?;
+        }
+        launch()
     }
 
     /// Check if this execution is sandboxed.

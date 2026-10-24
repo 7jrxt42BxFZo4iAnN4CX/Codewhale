@@ -2752,13 +2752,9 @@ impl ShellManager {
                     })
                     .context("Failed to open PTY")?;
 
-                let cmd = exec_env.pty_command(working_dir)?;
-
-                let mut child = pair
-                    .slave
-                    .spawn_command(cmd)
+                let mut child = exec_env
+                    .spawn_pty(pair.slave, working_dir)
                     .with_context(|| format!("Failed to spawn PTY command: {original_command}"))?;
-                drop(pair.slave);
 
                 let reader = match pair.master.try_clone_reader() {
                     Ok(reader) => reader,
@@ -2805,7 +2801,7 @@ impl ShellManager {
             child_env::apply_to_command(&mut cmd, child_env::string_map_env(&exec_env.env));
             remove_readonly_redirect_env(&mut cmd, &exec_env.env);
 
-            let child = cmd.spawn().with_context(|| {
+            let child = exec_env.spawn_background(cmd).with_context(|| {
                 format!("Failed to spawn persistent service: {original_command}")
             })?;
             (ShellChild::Process(child), None, None, None)
@@ -2831,8 +2827,8 @@ impl ShellManager {
             child_env::apply_to_command(&mut cmd, child_env::string_map_env(&exec_env.env));
             remove_readonly_redirect_env(&mut cmd, &exec_env.env);
 
-            let mut child = cmd
-                .spawn()
+            let mut child = exec_env
+                .spawn_background(cmd)
                 .with_context(|| format!("Failed to spawn background: {original_command}"))?;
             // Managed children die with the TUI (#6654); unlike the
             // persistent branch above, nobody can take ownership of them.

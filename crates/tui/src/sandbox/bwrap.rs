@@ -69,6 +69,36 @@ pub(crate) fn existing_directory_shim(path: &Path) -> Option<PathBuf> {
 #[cfg(target_os = "linux")]
 pub const BWRAP_PATH: &str = "/usr/bin/bwrap";
 
+pub(super) fn spawn<T: Send + 'static>(
+    launch: impl FnOnce() -> T + Send + 'static,
+) -> std::io::Result<T> {
+    use std::sync::{LazyLock, mpsc};
+    type Launch = Box<dyn FnOnce() + Send>;
+    static SPAWNER: LazyLock<std::io::Result<mpsc::Sender<Launch>>> = LazyLock::new(|| {
+        let (sender, receiver) = mpsc::channel::<Launch>();
+        std::thread::Builder::new()
+            .name("codewhale-sandbox-spawner".into())
+            .spawn(move || {
+                for launch in receiver {
+                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(launch));
+                }
+            })?;
+        Ok(sender)
+    });
+    let spawner = SPAWNER
+        .as_ref()
+        .map_err(|error| std::io::Error::new(error.kind(), error.to_string()))?;
+    let (sender, receiver) = mpsc::sync_channel(1);
+    spawner
+        .send(Box::new(move || {
+            let _ = sender.send(launch());
+        }))
+        .map_err(|_| std::io::Error::other("sandbox spawner stopped"))?;
+    receiver
+        .recv()
+        .map_err(|_| std::io::Error::other("sandbox spawn did not return"))
+}
+
 /// How long the availability probe may take. A working bwrap runs a wrapped
 /// `/bin/true` in well under a second, even on a loaded host.
 #[cfg(target_os = "linux")]
