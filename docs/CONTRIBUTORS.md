@@ -44,6 +44,7 @@ changelog or release notes, and this contributor record.
 
 **Contributions**
 
+- **[Dhruv Singal / dsingal0](https://github.com/dsingal0)** — added Herdr agent-state reporting, session resume commands and pane release ([#7064](https://github.com/codewhale-hq/Codewhale/pull/7064)).
 - **[shenjackyuanjie](https://github.com/shenjackyuanjie)** — diagnosed and fixed the Windows OpenHarmony CMake generator and CLI hashing-module build failures ([#6988](https://github.com/codewhale-hq/Codewhale/issues/6988), [#6989](https://github.com/codewhale-hq/Codewhale/pull/6989)).
 - **[printf033](https://github.com/printf033)** — confined-file I/O on Android/Termux: SELinux-denied `open("/", O_RDONLY|O_DIRECTORY)` anchor replaced with an `O_PATH` walk (Linux-cfg-gated) plus a re-materialized final parent, restoring journal, compaction and artifact writes in search-only SELinux domains ([#6983](https://github.com/codewhale-hq/Codewhale/pull/6983)), with the diagnosis and on-device reproducer in [#6980](https://github.com/codewhale-hq/Codewhale/issues/6980). Source change; compiled Android and device acceptance remain unqualified.
 - **[Paulo Aboim Pinto / aboimpinto](https://github.com/aboimpinto)** — moved config-command parsing and replies onto portable contracts while the host retains effects ([#6973](https://github.com/codewhale-hq/Codewhale/pull/6973)).

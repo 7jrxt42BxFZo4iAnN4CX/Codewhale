@@ -2,7 +2,7 @@
   "format": "codewhale.features.v1",
   "source": {
     "path": "docs/features.toml",
-    "sha256": "39bdc149fb23fc6385c4c8df7287620dfe9babeab667ddb3dd7beaa5e397860b"
+    "sha256": "4de7042a5390e82fa5e5ac55a7b33b932688f92ecafffe6071d41a371938638d"
   },
   "features": [
     {
@@ -1034,6 +1034,19 @@
       "flag": null,
       "docs": "docs/PLUGINS.md",
       "registryLine": 764
+    },
+    {
+      "id": "herdr-agent-state",
+      "name": "Herdr agent state",
+      "summary": "Reports idle, working or blocked to the Herdr multiplexer and reopens the session after a restart.",
+      "status": "stable",
+      "surfaces": {
+        "tui": "stable"
+      },
+      "since": "0.10.2",
+      "flag": null,
+      "docs": null,
+      "registryLine": 774
     }
   ]
 }

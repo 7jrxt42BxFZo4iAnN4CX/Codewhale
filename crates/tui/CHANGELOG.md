@@ -1533,6 +1533,10 @@ and independent workflow steps can continue after another child fails.
 
 ### Added
 
+- **Herdr pane integration** reports Codewhale's idle, working and blocked
+  state, releases the pane on quit, and supplies the current session's resume
+  command to Herdr 0.9.2 or newer. Thanks
+  [Dhruv Singal (@dsingal0)](https://github.com/dsingal0) (#7064).
 - The desktop app can connect an OrcaRouter account without a terminal. The
   Runtime API's `POST /v1/providers/orcarouter/connect` returns OrcaRouter's
   consent link, waits for the browser to come back and saves the key the same
@@ -2167,6 +2171,7 @@ and independent workflow steps can continue after another child fails.
 
 ### Contributors
 
+- **[Dhruv Singal / @dsingal0](https://github.com/dsingal0)** — added Herdr agent state, session resume commands and pane release ([#7064](https://github.com/codewhale-hq/Codewhale/pull/7064)).
 - **[@shenjackyuanjie](https://github.com/shenjackyuanjie)** — diagnosed and fixed the Windows OpenHarmony CMake generator and CLI hashing-module build failures ([#6988](https://github.com/codewhale-hq/Codewhale/issues/6988), [#6989](https://github.com/codewhale-hq/Codewhale/pull/6989)).
 - **[@printf033](https://github.com/printf033)** — replaced the SELinux-denied root-directory anchor of confined-file I/O with an `O_PATH` walk (Linux-cfg-gated) and a re-materialized final parent, restoring workflow journal, compaction checkpoint and artifact writes on Android/Termux ([#6983](https://github.com/codewhale-hq/Codewhale/pull/6983)); reported the Android confined-I/O failure with strace evidence and an on-device reproducer ([#6980](https://github.com/codewhale-hq/Codewhale/issues/6980)). Source change; compiled Android and device acceptance remain unqualified.
 - **[@aboimpinto](https://github.com/aboimpinto)** — moved config-command parsing and replies onto portable contracts while the host retains effects ([#6973](https://github.com/codewhale-hq/Codewhale/pull/6973)).
