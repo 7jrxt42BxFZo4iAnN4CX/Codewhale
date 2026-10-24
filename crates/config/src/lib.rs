@@ -4238,7 +4238,7 @@ fn normalize_model_for_provider(provider: ProviderKind, model: &str) -> String {
             | "deepseek-reasoner" | "deepseek-r1" | "deepseek-v3" | "deepseek-v3.2",
         ) => DEFAULT_OPENROUTER_FLASH_MODEL.to_string(),
         (ProviderKind::Orcarouter, "deepseek-v4-pro" | "deepseek-v4pro") => {
-            DEFAULT_ORCAROUTER_MODEL.to_string()
+            "deepseek/deepseek-v4-pro".to_string()
         }
         (
             ProviderKind::Orcarouter,

@@ -131,7 +131,9 @@ and independent workflow steps can continue after another child fails.
 - A new OrcaRouter session with no saved wire model defaults to
   `deepseek/deepseek-v4.1-flash-1017`. Every OrcaRouter catalog row has
   `default_for_provider` false, so the descriptor was the only thing deciding
-  the default and it named an older model.
+  the default and it named an older model. The `deepseek-v4-pro` and
+  `deepseek-v4pro` shorthands still select `deepseek/deepseek-v4-pro` on this
+  provider, so naming a pro model never silently lands on Flash.
 
 - `POST /v1/threads` is replay-safe. A retry under the same `operation_key`
   returns the original thread — after a restart too — instead of minting a
