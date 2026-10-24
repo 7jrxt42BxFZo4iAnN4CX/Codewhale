@@ -412,6 +412,109 @@ RS-13 (#6940, first sub-slice) landed; X2 completes RS-13; W0-S1 and W0-S2 repla
 RS-10 (#6937) and the test-support half of RS-11 (#6938); RS-14 (#6941) is
 replaced by this table pending the founder's decision.
 
+## Execution status and plan, 2026-10-24
+
+Re-measured on `main` at this date. The map above stands; this section records
+why execution stalled and orders the remaining work by what removes the most
+coupling per slice.
+
+### Where it stands
+
+| Measure | 2026-10-09 | 2026-10-24 |
+| --- | ---: | ---: |
+| `crates/tui/src` physical lines | 1,280,430 | 1,281,546 |
+| of which outside test files | ~949k | ~960k |
+| Largest strongly connected component | 98 modules, then 85 | 84 modules |
+| Wave-0 modules (claimable now) | 30 / ~17k prod lines | same set, ~17k prod lines |
+| `crates/commands` | 0 | 4.5k (tui keeps 76k under `src/commands`) |
+| `crates/runtime` | ~7k | ~11k (W0-S1 residents landed) |
+
+`crates/tui` did not shrink in fifteen days. Extractions so far (commands
+shapes, runtime residents, X2) cut graph edges but moved little mass, and
+feature work added back what they removed. The wave-0 set is under 2% of the
+production lines, so leaf extraction alone cannot move the number. The mass
+(`tools` 156k, `core` 52k, `fleet` 40k, `runtime_api` 32k, `client` 27k,
+`runtime_threads` 22k, `plugins` 22k, `extension_host` 21k, `mcp` 16k) sits
+inside the 84-module component, and only edge cuts release it.
+
+### What the report says to do first
+
+`partition_report.py` tags modules already moved to `codewhale-runtime` with
+`rt`. Several still show inbound references from the component: `hashing` (24
+inbound), `features` (10), `safe_label` (9), `logging` (8), `retry_status` (4).
+The largest blocker counts are consumers still reaching those through
+`crate::`, for example `core -> logging` 38, `tools -> hashing` 22,
+`tools -> features` 17, `runtime_api -> native_memory` 15. That is the
+"migrate the last consumer" rule failing in place: the module moved, its
+callers did not. Finishing those caller migrations is the cheapest cut in the
+whole plan and deletes the re-export shims that keep the component coupled.
+
+`config` has 67 inbound modules but its own blockers are only four wave-0
+modules (`features` 4, `dsh_credentials` 3, `goal_loop` 2, `native_memory`
+1). Once those edges are cut it can leave the UI crate, which is the
+prerequisite CW-6382 identified.
+
+### Phases
+
+Each phase ends with `partition_report.py` re-run and its numbers pasted into
+this section. One extraction at a time per crate; one native build slot.
+
+| Phase | Work | Exit gate |
+| --- | --- | --- |
+| P0 | `scripts/split/closure_report.py`: closure and reverse-closure lines per crate, sandbox manifest generator. Record warm-edit baselines (provider edit 30.3 s / 8.7 GB, renderer edit 46.6 s / 8.9 GB from CW-6382) | numbers in this file |
+| P1 | Migrate every remaining consumer of `rt` modules (`hashing`, `features`, `safe_label`, `logging`, `retry_status`, `native_memory`, `goal_loop`) to `codewhale_runtime`, delete the tui re-exports. Then move the unclaimed wave-0 leaves: `child_env`, `process_tree`, `session_tree`, `external_credentials`, `keybinding_table`, `runtime_log`, `skill_state`, `continual_harness`, `import_claude`, `remote_setup` into their tier owners | zero production references to the moved modules from `crates/tui`; SCC below 70 |
+| P2 | Contract tier, in the order of the slice table: X7 tool rules into `execpolicy`, X8 `agent-contract`, X4 `util-schema`, X3 tool contract, X5 `config-types`, X6 `runtime-wire` | `tools -> fleet`, `tools -> core`, `config -> core`, `client -> tools` edges at zero |
+| P3 | `config`, `settings`, `config_persistence` leave the UI crate into `crates/config` (CW-6382) | re-run report; SCC expected to fragment to under 30 |
+| P4 | `ext` contributor traits; delete `with_*_tools`, per-feature `config.rs` fields and command group lists slice by slice; pilot leaf `tools-web` with one sandboxed agent (step 3 above) | pilot receipt recorded; adjust map from it |
+| P5 | Feature leaves by ascending inbound count: `acp_server` (1), `operate`, `notify`, `receipts` (2), `repl` (3), `lsp`, `rlm` (4), `hooks` (9), `skills`, `extension_host` (13), `mcp` (14), `snapshot` (12), `plugins` (28) | each leaf builds and tests from its generated minimal workspace |
+| P6 | Providers: `client` (24 inbound) into `model-client` plus one crate per wire dialect; `llm_client`, `oauth`/`credentials`, `pricing`/`route_billing`/`cost_status` | provider edit rebuilds only its crate and the host |
+| P7 | Runtime tier: `core` engine, `fleet` and `tools/subagent` (19k-line `mod.rs`, CW-6722) as `agents`, `runtime_threads` and `session_manager` as `session-store`, `task_manager`, `runtime_api` as its own `runtime-api` crate. Do not fold `runtime_api` into `app-server`: that moves 32k prod and 31k test lines into a second mega crate | `crates/runtime` still has no `tui` or UI-library dependency |
+| P8 | TUI: split reducer from render (`tui/ui/event_loop.rs`, `tui/app`), then views behind `runtime-wire` only | TUI sandbox holds no runtime code |
+| P9 | `cli` becomes the only composition root; delete the `lib.rs` path alias, `module_graph.py` ratchet and every shim | Cargo enforces tiers; `crates/tui` under ~350k including tests |
+
+Targets, measured not asserted: no feature or provider leaf with a closure
+over 60k lines; warm provider edit under 10 s and 2 GB; `crates/tui` under
+350k lines.
+
+### Other oversized units
+
+- `crates/config` (54k, `lib.rs` 7.9k, tests 11k): split a logic-free
+  `config-types` first (X5), then keep loading and persistence in `config`;
+  take in the TUI config in P3 only after the split so the merge does not
+  create a larger crate.
+- `crates/cli` (39k, `lib.rs` 13.5k, `update.rs` 4.7k, `config_bundles.rs`
+  4.4k, `cloud*` 7k+): `lib.rs` is the composition root and absorbs `run` and
+  the wiring list in P9. `update`, `config_bundles` and `cloud` move to
+  feature crates in P5 so the root stays a list.
+- `crates/app-server` (14k, `lib.rs` 6.9k): split `lib.rs` by route family
+  before anything else lands in it.
+- `codewhale-app` root crate `codewhale-gpui` (290k, `src/workspace` 157k):
+  legacy source under §52. Do not split it. Freeze new features, extract only
+  what `crates/client` or `crates/desktop-host` actually imports
+  (`control_plane` 21k, `runtime`/`engine` adapters, `rfb`, `updater`), and
+  delete the rest through the qualification and retirement path with recovery
+  evidence kept. Deleting is not covered by this document.
+- `codewhale-platform` `services/control-plane/src/server.mjs` (30.6k lines)
+  has the same shape in JavaScript (CW-7112): extract route modules by family
+  and test behavior, not source regexes. `cwc-core` is vendored in both app
+  and platform at ~9.8k lines; keep one owner.
+
+### Tracker mapping
+
+CW-6129 is the umbrella. CW-6238 (mega files), CW-6382 (config blocker),
+CW-6722 (`subagent/mod.rs`), CW-6433 (`acp_server`), CW-7159 (RS-10) and
+CW-7161 (RS-12, partial) are children of it. RS-8 (CW-7157, d776dcb61f) and
+RS-9 (CW-7158, cc03c1d331) are in `main` and their issues are stale.
+
+`DECONSTRUCTION_ROADMAP.md` schedules this work one structural move per patch
+release and holds the open A/B decision on RS-14 (#6941, move the remaining
+component into one new crate). At the observed fifteen-day cadence its ten
+releases are about five months, and Option A relocates the 84-module component
+instead of cutting it, which Rules 1 and 6 above reject. This plan recommends
+Option B in its P1-P3 form (cut edges, then move `config`) and treats the A/B
+choice as still the founder's. If Option B is chosen, the roadmap's Track B
+items map to P1 (consumer migration), P2 (X1, X4, X7, X8, credentials) and P3.
+
 ## Known limitations
 
 - **Parallel agents on one machine still share one Cargo lock.** The
