@@ -159,7 +159,7 @@ async fn authenticated_owner_guest_runs_real_engine_and_reuses_held_store() -> R
             .send(
                 json!(id),
                 "prompt/request",
-                json!({"thread_id":conversation,"prompt":id,"model":"deepseek-v4-pro"}),
+                json!({"thread_id":conversation,"allowed_tools":[],"prompt":id,"model":"deepseek-v4-pro"}),
             )
             .await?;
         let result = reply(&mut guest, id).await?;
@@ -466,7 +466,7 @@ async fn real_normal_owner_distinct_listener_detach_keeps_turn_compat_acp_and_su
         .send(
             json!("compat"),
             "prompt/request",
-            json!({"thread_id":compat_id,"prompt":"same owner compatibility"}),
+            json!({"thread_id":compat_id,"allowed_tools":[],"prompt":"same owner compatibility"}),
         )
         .await?;
     let result = reply(&mut compat, "compat").await?;
