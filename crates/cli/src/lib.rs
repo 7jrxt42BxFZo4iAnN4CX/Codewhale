@@ -367,7 +367,7 @@ Forwarded serve options:
 
 `codewhale serve --http` and `codewhale serve --mobile` remain compatibility
 aliases for `codewhale app-server --http` and `codewhale app-server --mobile`.
-New integrations should prefer `codewhale app-server`.")]
+New integrations should prefer `codewhale app-server --http` for the full Engine API.")]
     Serve(TuiPassthroughArgs),
     /// Open the first-class local browser client over the canonical Runtime API.
     #[command(
@@ -399,17 +399,20 @@ New integrations should prefer `codewhale app-server`.")]
     Thread(ThreadArgs),
     /// Evaluate sandbox/approval policy decisions.
     Sandbox(SandboxArgs),
-    /// Run the canonical runtime API / control plane (HTTP/SSE, mobile, stdio).
+    /// Expose the full Engine API with --http, or smaller compatibility controls.
     #[command(after_help = "\
 Transports:
   codewhale app-server --http              Full HTTP/SSE runtime API (/v1/*) on 127.0.0.1:7878
   codewhale app-server --mobile            Runtime API + phone control page (127.0.0.1 only)
-  codewhale app-server --stdio             JSON-RPC control transport over stdio
+  codewhale app-server --stdio             Compatibility JSON-RPC controls and tool-free turns
   codewhale app-server                     Compatibility HTTP routes on the canonical owner at 127.0.0.1:8787
 
 `--http` and `--mobile` serve the same mature runtime API as `codewhale serve
 --http`/`--mobile`, which remain as compatibility aliases. The runtime API token
 is read from --auth-token, CODEWHALE_RUNTIME_TOKEN, or DEEPSEEK_RUNTIME_TOKEN.
+
+Compatibility turns require explicit allowed_tools: []; use --http for tools,
+approvals, clarification and the full event journal.
 
 See docs/RUNTIME_API.md.")]
     AppServer(AppServerArgs),
@@ -2001,8 +2004,8 @@ struct AppServerArgs {
     /// Equivalent to the legacy `codewhale serve --mobile`.
     #[arg(long, conflicts_with = "stdio")]
     mobile: bool,
-    /// Run the app-server JSON-RPC control transport over stdio.
-    /// Used by local SDKs and JSON-RPC integrations.
+    /// Run the smaller compatibility JSON-RPC control transport over stdio.
+    /// Tool-free turns require allowed_tools: []; use --http for interactive work.
     #[arg(long, default_value_t = false)]
     stdio: bool,
     /// Run as the desktop daemon: the same JSON-RPC control transport as
@@ -6366,6 +6369,9 @@ fn run_app_server_command(
             path: args.socket_path.clone(),
         })
     } else if !args.http && !args.mobile {
+        eprintln!(
+            "note: bare app-server selects the compatibility API on port 8787 by default; use codewhale app-server --http for the full /v1/* API, approvals and SSE events"
+        );
         Some(RuntimeControlFrontend::LegacyHttp)
     } else {
         None

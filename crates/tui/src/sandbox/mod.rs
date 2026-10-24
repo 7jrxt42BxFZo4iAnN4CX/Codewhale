@@ -337,6 +337,47 @@ impl ExecEnv {
         }
     }
 
+    #[cfg(not(target_env = "ohos"))]
+    pub fn pty_command(
+        &self,
+        cwd: &std::path::Path,
+    ) -> anyhow::Result<portable_pty::CommandBuilder> {
+        let mut command = portable_pty::CommandBuilder::new(self.program());
+        #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
+        if self.sandbox_type == SandboxType::LinuxBubblewrap {
+            anyhow::ensure!(
+                self.program() == bwrap::BWRAP_PATH,
+                "sandboxed PTY requires the configured bubblewrap wrapper"
+            );
+            let args = self.args();
+            let separator = args
+                .iter()
+                .position(|arg| arg == "--")
+                .filter(|index| index + 1 < args.len())
+                .ok_or_else(|| anyhow::anyhow!("sandboxed PTY command is missing its target"))?;
+            let setsid = ["/usr/bin/setsid", "/bin/setsid"]
+                .into_iter()
+                .find(|path| bwrap::is_executable(std::path::Path::new(path)))
+                .ok_or_else(|| {
+                    anyhow::anyhow!("sandboxed PTY requires util-linux setsid; install util-linux")
+                })?;
+            command.args(&args[..=separator]);
+            command.args([setsid, "--ctty", "--wait", "--"]);
+            command.args(&args[separator + 1..]);
+            command.set_controlling_tty(false);
+        } else {
+            command.args(self.args());
+        }
+        #[cfg(not(all(target_os = "linux", not(target_env = "ohos"))))]
+        command.args(self.args());
+        command.cwd(cwd);
+        crate::child_env::apply_to_pty_command(
+            &mut command,
+            crate::child_env::string_map_env(&self.env),
+        );
+        Ok(command)
+    }
+
     /// Check if this execution is sandboxed.
     pub fn is_sandboxed(&self) -> bool {
         !matches!(self.sandbox_type, SandboxType::None)

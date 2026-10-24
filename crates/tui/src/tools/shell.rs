@@ -43,7 +43,7 @@ use windows::Win32::System::JobObjects::{
 use windows::core::PCWSTR;
 
 #[cfg(not(target_env = "ohos"))]
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use portable_pty::{PtySize, native_pty_system};
 
 mod guidance;
 mod output;
@@ -2752,12 +2752,7 @@ impl ShellManager {
                     })
                     .context("Failed to open PTY")?;
 
-                let mut cmd = CommandBuilder::new(program);
-                for arg in args {
-                    cmd.arg(arg);
-                }
-                cmd.cwd(working_dir);
-                child_env::apply_to_pty_command(&mut cmd, child_env::string_map_env(&exec_env.env));
+                let cmd = exec_env.pty_command(working_dir)?;
 
                 let mut child = pair
                     .slave

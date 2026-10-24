@@ -277,7 +277,7 @@ owner = "crates/execpolicy/src/approval_mode.rs"
 [[feature]]
 id = "sandbox"
 name = "Command sandbox"
-summary = "Wraps commands in Seatbelt on macOS; bubblewrap on Linux is on by default once installed and verified."
+summary = "Seatbelt on macOS; verified bubblewrap on Linux by default. Sandboxed PTYs require util-linux setsid."
 status = "stable"
 surfaces = { tui = "stable" }
 docs = "docs/SANDBOX.md"
@@ -482,6 +482,16 @@ status = "stable"
 surfaces = { api = "stable" }
 docs = "docs/RUNTIME_API.md"
 owner = "crates/tui/src/runtime_api.rs"
+
+[[feature]]
+id = "compatibility-tool-free-turns"
+name = "Compatibility turn admission"
+summary = "Compatibility transports require explicit tool-free turns; interactive clients use the full HTTP/SSE API."
+status = "stable"
+surfaces = { api = "stable" }
+since = "0.10.2"
+docs = "docs/RUNTIME_API.md#compatibility-execution-limits"
+owner = "crates/app-server/src/lib.rs"
 
 [[feature]]
 id = "runtime-provider-keys"

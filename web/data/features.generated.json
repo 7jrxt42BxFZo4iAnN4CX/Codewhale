@@ -2,7 +2,7 @@
   "format": "codewhale.features.v1",
   "source": {
     "path": "docs/features.toml",
-    "sha256": "4de7042a5390e82fa5e5ac55a7b33b932688f92ecafffe6071d41a371938638d"
+    "sha256": "943a247aa65ed14d724ca81373832c6c741ed2bb04fea6bebab3df7167685ee8"
   },
   "features": [
     {
@@ -309,7 +309,7 @@
     {
       "id": "sandbox",
       "name": "Command sandbox",
-      "summary": "Wraps commands in Seatbelt on macOS; bubblewrap on Linux is on by default once installed and verified.",
+      "summary": "Seatbelt on macOS; verified bubblewrap on Linux by default. Sandboxed PTYs require util-linux setsid.",
       "status": "stable",
       "surfaces": {
         "tui": "stable"
@@ -619,6 +619,19 @@
       "registryLine": 478
     },
     {
+      "id": "compatibility-tool-free-turns",
+      "name": "Compatibility turn admission",
+      "summary": "Compatibility transports require explicit tool-free turns; interactive clients use the full HTTP/SSE API.",
+      "status": "stable",
+      "surfaces": {
+        "api": "stable"
+      },
+      "since": "0.10.2",
+      "flag": null,
+      "docs": "docs/RUNTIME_API.md#compatibility-execution-limits",
+      "registryLine": 487
+    },
+    {
       "id": "runtime-provider-keys",
       "name": "Runtime provider keys",
       "summary": "Runtime API provider keys: durable or process-only memory, with a session-only policy that disables stored fallback.",
@@ -629,7 +642,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": "docs/RUNTIME_API.md#put-v1providersidkey--write-only-credential",
-      "registryLine": 487
+      "registryLine": 497
     },
     {
       "id": "headless-exec",
@@ -642,7 +655,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/RUNTIME_API.md",
-      "registryLine": 497
+      "registryLine": 507
     },
     {
       "id": "github-review",
@@ -655,7 +668,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/GITHUB_APP.md",
-      "registryLine": 506
+      "registryLine": 516
     },
     {
       "id": "web-client",
@@ -668,7 +681,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/WEB.md",
-      "registryLine": 517
+      "registryLine": 527
     },
     {
       "id": "keybindings",
@@ -681,7 +694,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/KEYBINDINGS.md",
-      "registryLine": 526
+      "registryLine": 536
     },
     {
       "id": "settings",
@@ -695,7 +708,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/CONFIGURATION.md",
-      "registryLine": 535
+      "registryLine": 545
     },
     {
       "id": "whats-new-notice",
@@ -708,7 +721,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": "docs/CONFIGURATION.md#whats-new-after-an-update",
-      "registryLine": 544
+      "registryLine": 554
     },
     {
       "id": "themes",
@@ -721,7 +734,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/schemas/user-theme.schema.json",
-      "registryLine": 554
+      "registryLine": 564
     },
     {
       "id": "chat-color",
@@ -734,7 +747,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": "docs/GUIDE.md",
-      "registryLine": 563
+      "registryLine": 573
     },
     {
       "id": "localization",
@@ -747,7 +760,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/LOCALIZATION.md",
-      "registryLine": 573
+      "registryLine": 583
     },
     {
       "id": "voice",
@@ -761,7 +774,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 582
+      "registryLine": 592
     },
     {
       "id": "pet",
@@ -775,7 +788,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/PET_MODE.md",
-      "registryLine": 590
+      "registryLine": 600
     },
     {
       "id": "overview",
@@ -788,7 +801,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/PROVIDERS.md",
-      "registryLine": 599
+      "registryLine": 609
     },
     {
       "id": "account-login",
@@ -801,7 +814,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 608
+      "registryLine": 618
     },
     {
       "id": "account-computer-files",
@@ -814,7 +827,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": null,
-      "registryLine": 616
+      "registryLine": 626
     },
     {
       "id": "context-anchors",
@@ -827,7 +840,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 625
+      "registryLine": 635
     },
     {
       "id": "window-pin",
@@ -840,7 +853,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 633
+      "registryLine": 643
     },
     {
       "id": "structured-copy",
@@ -853,7 +866,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 641
+      "registryLine": 651
     },
     {
       "id": "live-thinking",
@@ -866,7 +879,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 649
+      "registryLine": 659
     },
     {
       "id": "workbar",
@@ -879,7 +892,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 657
+      "registryLine": 667
     },
     {
       "id": "terminal-dock",
@@ -892,7 +905,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": null,
-      "registryLine": 665
+      "registryLine": 675
     },
     {
       "id": "telemetry",
@@ -905,7 +918,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/TELEMETRY.md",
-      "registryLine": 676
+      "registryLine": 686
     },
     {
       "id": "docker",
@@ -918,7 +931,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/DOCKER.md",
-      "registryLine": 685
+      "registryLine": 695
     },
     {
       "id": "termux",
@@ -931,7 +944,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/TERMUX.md",
-      "registryLine": 694
+      "registryLine": 704
     },
     {
       "id": "chatgpt-plan-sign-in",
@@ -946,7 +959,7 @@
       "since": "0.10.1",
       "flag": null,
       "docs": "docs/PROVIDERS.md#sign-in-with-chatgpt",
-      "registryLine": 703
+      "registryLine": 713
     },
     {
       "id": "claude-plan-sign-in",
@@ -961,7 +974,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": "docs/PROVIDERS.md#sign-in-with-claude",
-      "registryLine": 713
+      "registryLine": 723
     },
     {
       "id": "plugin-oauth-providers",
@@ -976,7 +989,7 @@
       "since": "0.10.1",
       "flag": null,
       "docs": "docs/PLUGIN_PROVIDERS.md",
-      "registryLine": 723
+      "registryLine": 733
     },
     {
       "id": "orcarouter-sign-in",
@@ -991,7 +1004,7 @@
       "since": "0.10.1",
       "flag": null,
       "docs": "docs/PROVIDERS.md",
-      "registryLine": 733
+      "registryLine": 743
     },
     {
       "id": "merch-interest",
@@ -1006,7 +1019,7 @@
       "since": "unreleased",
       "flag": null,
       "docs": "web/lib/merch/README.md",
-      "registryLine": 744
+      "registryLine": 754
     },
     {
       "id": "profile-constitution",
@@ -1020,7 +1033,7 @@
       "since": "0.10.1",
       "flag": null,
       "docs": "docs/RUNTIME_API.md#profile-constitution",
-      "registryLine": 754
+      "registryLine": 764
     },
     {
       "id": "plugin-shell-install",
@@ -1033,7 +1046,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": "docs/PLUGINS.md",
-      "registryLine": 764
+      "registryLine": 774
     },
     {
       "id": "herdr-agent-state",
@@ -1046,7 +1059,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": null,
-      "registryLine": 774
+      "registryLine": 784
     }
   ]
 }

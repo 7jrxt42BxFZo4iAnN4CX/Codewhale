@@ -28,6 +28,19 @@ and independent workflow steps can continue after another child fails.
 
 ### Latest fixes
 
+- Linux sandboxed terminals deliver Ctrl-C to the foreground program without
+  killing the bubblewrap wrapper. A program that handles SIGINT can keep running
+  and accept more input. PTY jobs and persistent terminals retain their sandbox
+  and process-tree cleanup; this path requires util-linux `setsid`.
+
+- Full Engine integrations now point explicitly to `codewhale app-server --http`.
+  Compatibility HTTP, stdio and socket turns require `allowed_tools: []` and
+  reject interactive execution and goal starts before work begins, closing the approval and
+  clarification dead end. ACP new/load rejects unsupported supplied MCP servers
+  instead of silently ignoring them; ACP v1 MCP support remains partial. The
+  Runtime SDK guide states its Fleet/event coverage and provides authenticated
+  HTTP examples for the remaining client controls.
+
 - `tokio` moves to 1.53.3, which retires `RUSTSEC-2026-0386`. The advisory
   covers `tokio::io::unix::AsyncFd`'s safe constructors accepting a file
   descriptor they do not own; the lock now sits in a range the advisory lists as

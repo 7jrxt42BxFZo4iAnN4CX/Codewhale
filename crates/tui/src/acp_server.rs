@@ -362,6 +362,7 @@ impl AcpServer {
         self.sessions.insert(id, AcpSession { thread_id, cursor });
     }
     async fn new_session(&mut self, params: Value) -> std::result::Result<Value, AcpError> {
+        validate_mcp_servers(&params)?;
         let cwd = params
             .get("cwd")
             .and_then(Value::as_str)
@@ -459,6 +460,7 @@ impl AcpServer {
     }
 
     async fn load_session(&mut self, params: Value) -> std::result::Result<Value, AcpError> {
+        validate_mcp_servers(&params)?;
         let requested = params
             .get("sessionId")
             .and_then(Value::as_str)
@@ -1024,6 +1026,17 @@ impl AcpError {
             code: -32601,
             message: format!("method not found: {method}"),
         }
+    }
+}
+
+fn validate_mcp_servers(params: &Value) -> std::result::Result<(), AcpError> {
+    match params.get("mcpServers") {
+        None => Ok(()),
+        Some(Value::Array(servers)) if servers.is_empty() => Ok(()),
+        Some(Value::Array(_)) => Err(AcpError::invalid_params(
+            "Client-supplied MCP servers are unsupported by Codewhale's ACP adapter. Use an empty mcpServers list, or configure MCP through codewhale app-server --http and the Runtime API. ACP v1 stdio MCP support is incomplete.",
+        )),
+        Some(_) => Err(AcpError::invalid_params("mcpServers must be an array")),
     }
 }
 
@@ -1828,6 +1841,20 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn new_session_returns_durable_bare_uuid_without_provider_or_history() -> Result<()> {
         let mut rig = Rig::new(fixture_config(), vec![])?;
+        for servers in [
+            json!([{"name":"fixture","command":"must-not-execute","args":[],"env":[]}]),
+            json!({}),
+            Value::Null,
+        ] {
+            let error = rig
+                .server
+                .new_session(json!({"mcpServers":servers}))
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, -32602);
+            assert!(rig.server.sessions.is_empty());
+            assert!(rig.server.insertion_order.is_empty());
+        }
         let id = rig.new_session().await;
         uuid::Uuid::parse_str(&id)?;
         let store = crate::session_manager::SessionManager::new(rig.server.sessions_dir.clone())?;
@@ -1848,6 +1875,12 @@ mod tests {
             Some(id.as_str())
         );
         assert_eq!(rig.mock.call_count(), 0);
+        for requested in [id.as_str(), &id[..8]] {
+            let error = rig.server.load_session(json!({"sessionId":requested,"mcpServers":[{"name":"fixture","command":"must-not-execute","args":[],"env":[]}]})).await.unwrap_err();
+            assert_eq!(error.code, -32602);
+            assert_eq!(rig.server.sessions.len(), 1);
+            assert_eq!(rig.mock.call_count(), 0);
+        }
         let loaded = rig
             .server
             .load_session(json!({"sessionId":&id[..8]}))

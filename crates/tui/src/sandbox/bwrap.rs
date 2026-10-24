@@ -127,7 +127,7 @@ pub fn is_available() -> bool {
 }
 
 #[cfg(target_os = "linux")]
-fn is_executable(path: &std::path::Path) -> bool {
+pub(crate) fn is_executable(path: &std::path::Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
 
     std::fs::metadata(path)

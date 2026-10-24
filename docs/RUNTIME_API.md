@@ -2,7 +2,7 @@
 
 > 阅读简体中文版：[zh_hans/RUNTIME_API.md](zh_hans/RUNTIME_API.md)。
 
-`codewhale app-server` exposes the [Codewhale Engine](ARCHITECTURE.md) through
+`codewhale app-server --http` exposes the [Codewhale Engine](ARCHITECTURE.md) through
 its canonical local Runtime API and control plane.
 Local SDKs, mobile/remote-control clients, and editor integrations talk to it
 instead of screen-scraping terminal output. It serves the full HTTP/SSE runtime
@@ -13,7 +13,9 @@ such as Zed.
 
 `codewhale serve --http` / `serve --mobile` remain as **compatibility aliases**
 for `codewhale app-server --http` / `--mobile`; both launch the identical
-server. New integrations should target `app-server`.
+server. Desktop, web, SDK and custom integrations should target
+`app-server --http`. Bare `app-server`, `--stdio` and `--socket` select smaller
+compatibility interfaces, not the full Engine API.
 
 `codewhale exec` is the separate one-shot headless worker path (stream-json,
 fleet worker subprocess, CI primitive). It is not part of this API, but it
@@ -53,9 +55,9 @@ For the read-only record of what a thread or turn did, see
 | `codewhale web [--port 7878]` | HTTP/SSE on `127.0.0.1:7878` + embedded client | First-class loopback-only browser client; opens the default browser |
 | `codewhale app-server --http` | HTTP/SSE on `127.0.0.1:7878` | Full `/v1/*` runtime API (canonical) |
 | `codewhale app-server --mobile` | HTTP/SSE on loopback + `/mobile` | Runtime API + local mobile control page |
-| `codewhale app-server --stdio` | JSON-RPC 2.0 over stdio | Local SDK / control probe (no listener) |
+| `codewhale app-server --stdio` | JSON-RPC 2.0 over stdio | Compatibility controls and explicit tool-free turns; no full Engine event or approval/input channel. |
 | `codewhale app-server --socket [--socket-path P]` | JSON-RPC 2.0 over a `0600` Unix domain socket (macOS/Linux) or an owner-only named pipe (Windows) | Desktop daemon: multi-client, kernel peer identity checked, `daemon/attach` claim handshake. Windows native-app qualification remains open. |
-| `codewhale app-server` | HTTP on `127.0.0.1:8787` | Legacy in-process app-server (`/healthz`, `/thread`, `/app`, `/prompt`); background jobs are `GET /v1/jobs` on the Runtime API; `/prompt` and `/thread` messages execute real turns via the runtime bridge. There is no direct `/tool` route: tools run only inside Engine turns, under the Engine's tool catalog and approval posture. This legacy server does not surface approvals: its bridge forwards only text deltas and the turn's completion, and it has no decision route, so an approval-gated call waits unanswered. Drive approval-gated work through the Runtime API (`/v1/threads/*` events and `POST /v1/approvals/{approval_id}`) |
+| `codewhale app-server` | HTTP on `127.0.0.1:8787` | Compatibility `/healthz`, `/thread`, `/app`, `/prompt`. Turn requests require explicit `allowed_tools: []`; interactive execution fails before a turn starts. Use `app-server --http` for tools, approvals, clarification, goal execution, steering and the full event journal. |
 | `codewhale serve --http` / `--mobile` | same server as `app-server --http`/`--mobile` | Compatibility aliases |
 
 `app-server --http` and `--mobile` launch the same mature runtime API server
@@ -123,7 +125,7 @@ prompt/tool prefix.
 
 ### Workspace files and session artifacts
 
-Native clients (the GPUI desktop's Files and Preview modules) browse and edit
+Native clients browse and edit
 the server's configured workspace through three authenticated routes. They
 read and write the workspace directly; there is no second file store, cache
 or index, and no path override: the workspace root is the only root.
@@ -437,16 +439,10 @@ local integration clients can rely on it not changing silently.
 
 ### Daemon socket: `codewhale app-server --socket`
 
-The desktop shell (DESKTOP-APP-BRIEF §2) attaches to a long-lived daemon over
-a unix domain socket. The wire is the `--stdio` transport verbatim — the same
+The socket transport exposes compatibility controls on a long-lived daemon.
+The wire is the `--stdio` transport verbatim — the same
 newline-delimited JSON-RPC 2.0 methods, dispatched by the same code — with one
 handshake in front of it.
-
-> Note (2026-09-14): the Tauri desktop shell named above is retiring under the
-> 2026-09-14 product-client transition, and the DESKTOP-APP-BRIEF reference is
-> a dangling pointer (that brief does not exist in this repo). The GPUI client
-> in the private `codehwhale-gpui` repo is the successor daemon consumer over
-> this HTTP runtime API; the socket protocol described here is unchanged.
 
 **Endpoint.** `--socket-path` if given; else `$CODEWHALE_HOME/run/daemon.sock`
 when `CODEWHALE_HOME` is set (an explicit home is an isolation boundary); else
@@ -495,6 +491,36 @@ left running. The owner's `shutdown` stops the listener, closes every
 connection, and removes the socket file. Journal replay from a client's
 last-seen `seq` is not part of this transport yet.
 
+### Compatibility execution limits
+
+The compatibility HTTP, stdio and socket interfaces advertise
+`interactive_execution: false`, `goal_execution: false`, `tool_free_turns: true` and
+`full_api_entrypoint: "codewhale app-server --http"`. Clients must require
+`tool_free_turns: true` before relying on an empty allowlist: older compatibility
+servers may ignore the field. Every `thread/message`,
+`thread/request` message, `prompt/run`, `prompt/request` and HTTP `/prompt` or
+`/thread` message requires an explicit `allowed_tools: []`. Omitted, null or
+nonempty lists fail with `interactive_execution_unsupported` before creating a
+Runtime thread or starting a turn. Malformed lists fail parameter decoding.
+JSON-RPC reports `-32602` with `data.error: "interactive_execution_unsupported"`;
+HTTP reports 400 with `error.code: "invalid_request"`, `error.jsonrpc_code: -32602`
+and the same detail in `error.data`. Compatibility `thread/goal/set` and
+`ThreadRequest::GoalSet` also refuse before changing the goal: setting an active
+goal starts background Engine work. Reading and clearing existing goals remain
+available; starting goals uses the full Runtime HTTP API. The known method
+remains dispatchable so older clients get this actionable refusal. For example:
+
+```json
+{"jsonrpc":"2.0","id":3,"method":"thread/message","params":{"thread_id":"thr_...","input":"Summarize this conversation","allowed_tools":[]}}
+```
+
+The bridge sends the same empty allowlist to the canonical Runtime for each
+admitted turn, so a tool-enabled thread cannot widen it. It forwards assistant
+text and terminal status. Unexpected approval or clarification requests fail
+and interrupt the exact owned turn; they cannot wait silently. This deliberately
+narrows the old compatibility behavior. Tool-enabled clients must migrate to
+the authenticated `/v1/*` API and SSE rather than enabling Full Access.
+
 ### Interrupting a turn
 
 `thread/message` streams until the turn reaches a terminal state, which can
@@ -525,6 +551,7 @@ same bridge `thread/message` uses. There is no local fallback: nothing else
 in the app-server can produce model output, so a prompt either runs or fails.
 
 - `params.prompt` is required and must be non-empty (`-32602` otherwise).
+- `params.allowed_tools` must be `[]`; interactive turns use `app-server --http`.
 - `params.thread_id` is optional. With one, the prompt runs on that thread and
   its history. Without one, the runtime gets a fresh thread for that single
   turn; the mapping is dropped when the turn ends, so a one-shot prompt is not
@@ -651,16 +678,23 @@ When a headless turn calls `request_user_input`, the runtime emits a
 POST /v1/user-input/{thread_id}/{request_id}
 ```
 
-The app-server control transport cannot accept that reply.
+The compatibility control transport cannot accept that reply.
 `app/request` with `SubmitUserInput` returns `ok: false` and
-`error: "user_input_reply_unsupported"`. This is a property of the transport,
-not an omission: while a turn is streaming, the stdio loop executes only
-`thread/interrupt` and queues everything else, so an answer sent there would
-wait on the very turn that is waiting for it.
+`error: "user_input_reply_unsupported"`. Compatibility turns require an empty
+tool catalog and refuse interactive execution at admission, so this limitation
+cannot leave a supported turn waiting for an answer. The fixed catalog and
+response limitation are Codewhale implementation choices.
 
 ## SDK contract
 
-The app-server exists so an external SDK can answer — without scraping TUI
+The `@codewhale/runtime-sdk` package currently supplies Fleet helpers and
+read-only thread event streaming. It does not wrap thread creation, turn
+start/steer/interrupt, approval decisions, clarification answers or model
+discovery. Use authenticated raw HTTP for these operations; the package guide
+provides the [request recipe](../npm/runtime-sdk/README.md#full-engine-api).
+The hosted Responses SDK is a separate contract.
+
+The full `app-server --http` API exists so an external SDK can answer — without scraping TUI
 output — *what route ran, which provider/model/reasoning/permission profile was
 effective, what events happened, how many tokens were used, and how the run
 finished.* The durable Thread/Turn/Item data model already carries most of
@@ -678,7 +712,7 @@ this; the table maps each integration need to where a local client reads it.
 
 For one-shot/headless automation, prefer `codewhale exec` with explicit
 `--provider <id> --model <id>` so a failure identifies the exact provider/model
-pair. Use `app-server` when a local integration needs to start, resume, steer,
+pair. Use `app-server --http` when a local integration needs to start, resume, steer,
 or interrupt turns, list models/capabilities, follow the event stream, or read
 usage. Both paths share the same runtime, so route-effective model resolution
 and the event vocabulary match.
@@ -728,6 +762,16 @@ durable conversation. Resume deduplicates against the existing thread binding.
 Full histories, tool pairs, signatures, media and partial-effect receipts are
 saved under the same checkpoint guard and session write lease used by HTTP.
 ACP display text may be shortened; the saved history is the full Core snapshot.
+
+Codewhale 0.10.2 implements a partial ACP v1 adapter. Both `session/new`
+and `session/load` reject a nonempty client-supplied `mcpServers` list with
+`-32602` before creating, resuming or returning a cached session. The field may
+be omitted or `[]`; null and other non-array values are invalid. No supplied
+command is executed during this validation. [ACP v1 requires stdio MCP support](https://agentclientprotocol.com/protocol/v1/session-setup#mcp-servers);
+`mcpCapabilities.http: false` and `sse: false` only describe optional transports
+and do not establish full conformance. Use the full Runtime API and its existing
+MCP management for those integrations. The restricted tool catalog below is a
+Codewhale host profile, not an ACP protocol restriction.
 
 The trusted local ACP profile narrows Core to file/search/git/patch and admitted
 foreground shell tools. Shell requires both editor terminal support and operator
@@ -1947,9 +1991,9 @@ tokens but `0.0` cost. Added in v0.8.10 (#564).
 }
 ```
 
-### Native client routes (GPUI desktop)
+### Native client routes
 
-These families serve the GPUI desktop client over the same bearer-token
+These families serve native clients over the same bearer-token
 transport. They reuse the runtime's existing authorities — the engine's shell
 manager, the durable thread store, the workspace confinement layer, the
 config's credential plumbing — and add no second runtime, session store,
