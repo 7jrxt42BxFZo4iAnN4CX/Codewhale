@@ -161,7 +161,7 @@ async fn run_cargo(
     args: &[String],
     context: &ToolContext,
     timeout: Duration,
-) -> Result<crate::process_tree::ContainedOutput, ToolError> {
+) -> Result<codewhale_runtime::process_tree::ContainedOutput, ToolError> {
     let Some(cargo) = crate::dependencies::Cargo::resolve() else {
         return Err(ToolError::not_available(
             "cargo is not installed or not in PATH",
@@ -177,7 +177,10 @@ async fn run_cargo(
         workspace,
         timeout,
     )?;
-    let run = crate::process_tree::contained_output_until(&mut cmd, tokio::time::sleep(timeout));
+    let run = codewhale_runtime::process_tree::contained_output_until(
+        &mut cmd,
+        tokio::time::sleep(timeout),
+    );
     let cancelled = async {
         match context.cancel_token.as_ref() {
             Some(token) => token.cancelled().await,
@@ -533,9 +536,10 @@ mod tests {
             "{:?}",
             run.output
         );
-        let hung = crate::process_tree::read_pid_file(&pid_file, Duration::from_secs(5));
+        let hung =
+            codewhale_runtime::process_tree::read_pid_file(&pid_file, Duration::from_secs(5));
         assert!(
-            crate::process_tree::wait_for_pid_exit(hung, Duration::from_secs(5)),
+            codewhale_runtime::process_tree::wait_for_pid_exit(hung, Duration::from_secs(5)),
             "the timed-out run's process is still running"
         );
     }

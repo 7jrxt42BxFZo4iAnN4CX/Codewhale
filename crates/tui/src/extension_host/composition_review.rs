@@ -94,7 +94,7 @@ async fn run(launch: super::supervisor::HostLaunch, input: Vec<u8>) -> Result<Va
         .chain(&launch.runtime_env)
         .map(|(key, value)| (key.as_str(), value.as_str()));
     for (key, value) in
-        crate::child_env::sanitized_plugin_mcp_env_from(std::env::vars_os(), overrides)
+        codewhale_runtime::child_env::sanitized_plugin_mcp_env_from(std::env::vars_os(), overrides)
     {
         command.env(key, value);
     }
@@ -105,7 +105,7 @@ async fn run(launch: super::supervisor::HostLaunch, input: Vec<u8>) -> Result<Va
         .spawn()
         .map_err(|_| "composition reviewer could not start")?;
     let tree = Arc::new(
-        crate::process_tree::ProcessTree::attach_tokio(&child)
+        codewhale_runtime::process_tree::ProcessTree::attach_tokio(&child)
             .map_err(|_| "composition reviewer containment failed")?,
     );
     #[cfg(windows)]

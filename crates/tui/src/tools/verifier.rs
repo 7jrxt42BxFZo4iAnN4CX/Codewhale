@@ -1241,7 +1241,7 @@ async fn run_gate(gate: VerifierGate, session_id: &str) -> GateResult {
     cmd.process_group(0);
     // Gates run workspace code: start from the sanitized child environment
     // and layer only the gate's own declared variables on top.
-    crate::child_env::apply_to_tokio_command(
+    codewhale_runtime::child_env::apply_to_tokio_command(
         &mut cmd,
         gate.env
             .iter()

@@ -198,7 +198,10 @@ impl StdioLspTransport {
         // Language servers execute workspace code (rust-analyzer runs build
         // scripts and proc-macros, tsserver loads tsconfig plugins), so they
         // start from the sanitized child environment like `exec_shell`.
-        crate::child_env::apply_to_tokio_command(&mut cmd, std::iter::empty::<(&str, &str)>());
+        codewhale_runtime::child_env::apply_to_tokio_command(
+            &mut cmd,
+            std::iter::empty::<(&str, &str)>(),
+        );
         cmd.stdin(Stdio::piped());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());

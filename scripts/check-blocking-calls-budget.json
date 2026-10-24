@@ -163,7 +163,7 @@
   "crates/tui/src/extension_host/windows.rs": {
     "path_canonicalize": 1
   },
-  "crates/tui/src/external_credentials.rs": {
+  "crates/runtime/src/external_credentials.rs": {
     "std_fs": 1
   },
   "crates/tui/src/fleet/executor.rs": {

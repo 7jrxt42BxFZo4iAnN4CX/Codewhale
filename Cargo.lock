@@ -1193,6 +1193,7 @@ dependencies = [
  "fd-lock",
  "libc",
  "lru",
+ "portable-pty",
  "regex",
  "serde",
  "serde_json",

@@ -1818,7 +1818,10 @@ pub(super) async fn execute_code_execution_tool(
     cmd.env("PYTHONIOENCODING", "utf-8");
     let output = tokio::time::timeout(
         budget,
-        crate::process_tree::contained_output_with_input(&mut cmd, code.as_bytes().to_vec()),
+        codewhale_runtime::process_tree::contained_output_with_input(
+            &mut cmd,
+            code.as_bytes().to_vec(),
+        ),
     )
     .await
     .map_err(|_| ToolError::Timeout {

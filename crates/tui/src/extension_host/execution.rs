@@ -709,13 +709,16 @@ async fn run_job(shared: Arc<ManagerShared>, job: Arc<Job>) -> Result<Value, Str
         .as_mut()
         .ok_or("execution command is missing")?;
     // The selected Builtin never sees the environment, argv, input, cwd or decision.
-    crate::child_env::apply_to_tokio_command(command, std::iter::empty::<(&str, &str)>());
+    codewhale_runtime::child_env::apply_to_tokio_command(
+        command,
+        std::iter::empty::<(&str, &str)>(),
+    );
     job.check(&shared)?;
     let stop = async {
         let remaining = job.expires.saturating_duration_since(Instant::now());
         tokio::select! { _ = job.cancel.cancelled() => {}, _ = tokio::time::sleep(remaining) => {}, }
     };
-    let output = crate::process_tree::contained_output_with_input_bounded(
+    let output = codewhale_runtime::process_tree::contained_output_with_input_bounded(
         command,
         launch.input,
         MAX_STDOUT,

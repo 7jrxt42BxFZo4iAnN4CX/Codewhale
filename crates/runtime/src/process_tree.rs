@@ -38,7 +38,7 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
 use windows::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
 
 /// Owns the process tree rooted at one spawned child.
-pub(crate) struct ProcessTree {
+pub struct ProcessTree {
     #[cfg(unix)]
     pgid: libc::pid_t,
     #[cfg(windows)]
@@ -54,7 +54,7 @@ unsafe impl Sync for ProcessTree {}
 
 impl ProcessTree {
     /// Contain a `std::process::Child` (spawned with `process_group(0)` on Unix).
-    pub(crate) fn attach(child: &std::process::Child) -> std::io::Result<Self> {
+    pub fn attach(child: &std::process::Child) -> std::io::Result<Self> {
         #[cfg(windows)]
         {
             use std::os::windows::io::AsRawHandle;
@@ -68,7 +68,7 @@ impl ProcessTree {
 
     /// Contain a `tokio::process::Child` (spawned with `process_group(0)` on
     /// Unix). Fails if the child has already been reaped.
-    pub(crate) fn attach_tokio(child: &tokio::process::Child) -> std::io::Result<Self> {
+    pub fn attach_tokio(child: &tokio::process::Child) -> std::io::Result<Self> {
         let pid = child
             .id()
             .ok_or_else(|| std::io::Error::other("child already exited"))?;
@@ -121,7 +121,7 @@ impl ProcessTree {
 
     /// Kill every process in the tree. A tree that is already gone is not an
     /// error. On failure the caller should fall back to killing the child.
-    pub(crate) fn kill(&self) -> std::io::Result<()> {
+    pub fn kill(&self) -> std::io::Result<()> {
         #[cfg(unix)]
         {
             // SAFETY: kill(2) dereferences no pointers; a negative pid names
@@ -160,7 +160,7 @@ impl ProcessTree {
     /// Give up containment without killing anything: the tree outlives the
     /// guard. For a command that exited on its own and may have deliberately
     /// left something running.
-    pub(crate) fn release(self) {
+    pub fn release(self) {
         #[cfg(windows)]
         {
             // Closing the handle kills the job unless the limit is cleared
@@ -189,7 +189,7 @@ impl Drop for ProcessTree {
 /// Start a synchronous child inside the same process group / Job used by hooks.
 /// Windows starts suspended and resumes only after Job assignment. The caller
 /// still owns environment policy and bounded waits; this is lifetime containment.
-pub(crate) fn spawn_contained_std(
+pub fn spawn_contained_std(
     command: &mut std::process::Command,
 ) -> std::io::Result<(std::process::Child, ProcessTree)> {
     use wait_timeout::ChildExt;
@@ -273,7 +273,7 @@ fn resume_windows_process(child: &std::process::Child) -> std::io::Result<()> {
 /// cancelled tool call — kills the child and everything it started, where a
 /// bare `output()` left them running. Stdin is closed: callers run
 /// non-interactive work that must never wait on input.
-pub(crate) async fn contained_output(
+pub async fn contained_output(
     cmd: &mut tokio::process::Command,
 ) -> std::io::Result<std::process::Output> {
     contained_output_until(cmd, std::future::pending())
@@ -282,11 +282,11 @@ pub(crate) async fn contained_output(
 }
 
 /// What [`contained_output_until`] collected.
-pub(crate) struct ContainedOutput {
-    pub(crate) output: std::process::Output,
+pub struct ContainedOutput {
+    pub output: std::process::Output,
     /// `stop` fired before the command exited: the tree was killed, and
     /// `output` holds everything it wrote until then.
-    pub(crate) stopped: bool,
+    pub stopped: bool,
 }
 
 /// [`contained_output`], plus a `stop` future (a deadline, a cancel token).
@@ -300,7 +300,7 @@ pub(crate) struct ContainedOutput {
 /// [`kill_contained_trees_for_exit`], because a terminating signal ends
 /// Codewhale through `process::exit`, where no destructor runs, and a child in
 /// its own process group no longer receives the terminal's Ctrl+C itself.
-pub(crate) async fn contained_output_until(
+pub async fn contained_output_until(
     cmd: &mut tokio::process::Command,
     stop: impl std::future::Future<Output = ()>,
 ) -> std::io::Result<ContainedOutput> {
@@ -310,7 +310,7 @@ pub(crate) async fn contained_output_until(
 /// [`contained_output`] for a command that reads a request on stdin (a plugin
 /// tool's JSON input): `input` is written while the output pipes drain, then
 /// stdin is closed.
-pub(crate) async fn contained_output_with_input(
+pub async fn contained_output_with_input(
     cmd: &mut tokio::process::Command,
     input: Vec<u8>,
 ) -> std::io::Result<std::process::Output> {
@@ -335,7 +335,7 @@ async fn contained_run(
 
 /// Strict capture bounds for the admitted script runner. Overflow refuses the result;
 /// it never presents a truncated ToolResult as success. Same containment driver.
-pub(crate) async fn contained_output_with_input_bounded(
+pub async fn contained_output_with_input_bounded(
     cmd: &mut tokio::process::Command,
     input: Vec<u8>,
     stdout_limit: usize,
@@ -550,7 +550,7 @@ impl Drop for ContainedExitListing {
 /// Kill every in-flight contained tree. The process-wide signal path calls
 /// this immediately before `process::exit`, where Rust destructors cannot run.
 #[cfg(unix)]
-pub(crate) fn kill_contained_trees_for_exit() {
+pub fn kill_contained_trees_for_exit() {
     let groups = contained_exit_groups().drain().collect::<Vec<_>>();
     for process_group_id in groups {
         if let Ok(process_group_id) = libc::pid_t::try_from(process_group_id) {
@@ -647,8 +647,8 @@ pub(crate) fn windows_io_error(error: windows::core::Error) -> std::io::Error {
 /// Test support: wait for `pid` to stop existing. `true` once it is gone.
 /// A zombie counts as gone: it was killed and only awaits a reaper, which a
 /// container whose PID 1 does not reap orphans may never provide.
-#[cfg(all(test, unix))]
-pub(crate) fn wait_for_pid_exit(pid: libc::pid_t, within: std::time::Duration) -> bool {
+#[cfg(all(any(test, feature = "test-support"), unix))]
+pub fn wait_for_pid_exit(pid: libc::pid_t, within: std::time::Duration) -> bool {
     let deadline = std::time::Instant::now() + within;
     loop {
         // SAFETY: signal 0 only checks that the process exists.
@@ -666,7 +666,7 @@ pub(crate) fn wait_for_pid_exit(pid: libc::pid_t, within: std::time::Duration) -
 }
 
 /// Linux only (`/proc`); elsewhere launchd/init reaps orphans promptly.
-#[cfg(all(test, unix))]
+#[cfg(all(any(test, feature = "test-support"), unix))]
 fn is_zombie(pid: libc::pid_t) -> bool {
     std::fs::read_to_string(format!("/proc/{pid}/stat"))
         .ok()
@@ -678,8 +678,8 @@ fn is_zombie(pid: libc::pid_t) -> bool {
 }
 
 /// Test support: read the pid a fixture wrote to `path`, waiting for it.
-#[cfg(all(test, unix))]
-pub(crate) fn read_pid_file(path: &std::path::Path, within: std::time::Duration) -> libc::pid_t {
+#[cfg(all(any(test, feature = "test-support"), unix))]
+pub fn read_pid_file(path: &std::path::Path, within: std::time::Duration) -> libc::pid_t {
     let deadline = std::time::Instant::now() + within;
     loop {
         if let Some(pid) = parse_pid_file(path) {
@@ -694,7 +694,7 @@ pub(crate) fn read_pid_file(path: &std::path::Path, within: std::time::Duration)
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(all(any(test, feature = "test-support"), unix))]
 fn parse_pid_file(path: &std::path::Path) -> Option<libc::pid_t> {
     std::fs::read_to_string(path)
         .ok()
@@ -704,8 +704,8 @@ fn parse_pid_file(path: &std::path::Path) -> Option<libc::pid_t> {
 /// Test support: drive `run` until the fixture has written its pid to `path`,
 /// then drop `run`. No wall-clock guess about how long the fixture needs to
 /// start; `run` finishing first is a fixture bug.
-#[cfg(all(test, unix))]
-pub(crate) async fn drop_once_pid_written<F: std::future::Future>(
+#[cfg(all(any(test, feature = "test-support"), unix))]
+pub async fn drop_once_pid_written<F: std::future::Future>(
     run: F,
     path: &std::path::Path,
 ) -> libc::pid_t {

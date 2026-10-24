@@ -708,7 +708,7 @@ impl TasksTool {
         // Contained: when the timeout elapses the gate's whole process tree
         // is killed, instead of leaving it running behind a "timeout" result,
         // and what it wrote until then still reaches the log.
-        let output = crate::process_tree::contained_output_until(
+        let output = codewhale_runtime::process_tree::contained_output_until(
             &mut cmd,
             tokio::time::sleep(std::time::Duration::from_millis(timeout_ms)),
         )
@@ -1886,12 +1886,15 @@ mod tests {
             "{}",
             result.content
         );
-        let child = crate::process_tree::read_pid_file(
+        let child = codewhale_runtime::process_tree::read_pid_file(
             &workspace.path().join("gate-child.pid"),
             std::time::Duration::from_secs(5),
         );
         assert!(
-            crate::process_tree::wait_for_pid_exit(child, std::time::Duration::from_secs(5)),
+            codewhale_runtime::process_tree::wait_for_pid_exit(
+                child,
+                std::time::Duration::from_secs(5)
+            ),
             "the timed-out gate's process is still running"
         );
     }

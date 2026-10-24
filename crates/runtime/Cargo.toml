@@ -58,13 +58,16 @@ tokio-util = { version = "0.7.16", features = ["io"] }
 toml.workspace = true
 tracing.workspace = true
 uuid.workspace = true
+wait-timeout = "0.2"
 
 [dev-dependencies]
 codewhale-models = { path = "../models", version = "0.10.2", features = [
     "test-support",
 ] }
 tempfile.workspace = true
-wait-timeout = "0.2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(not(target_env = "ohos"))'.dependencies]
+portable-pty = "0.9"

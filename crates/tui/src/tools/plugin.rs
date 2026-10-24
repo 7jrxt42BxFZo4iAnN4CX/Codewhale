@@ -370,7 +370,7 @@ async fn run_plugin_child_raw(
     // down with it, not just the interpreter that `kill_on_drop` would reach.
     let output = tokio::time::timeout(
         PLUGIN_EXECUTION_TIMEOUT,
-        crate::process_tree::contained_output_with_input(cmd, input_bytes),
+        codewhale_runtime::process_tree::contained_output_with_input(cmd, input_bytes),
     )
     .await
     .map_err(|_| ToolError::Timeout {
@@ -828,9 +828,10 @@ echo hello
             .arg("sleep 300 & echo $! > grandchild.pid; wait")
             .current_dir(tmp.path());
         let run = run_plugin_child_raw(&mut cmd, "hanging plugin", serde_json::json!({}));
-        let grandchild = crate::process_tree::drop_once_pid_written(run, &pid_file).await;
+        let grandchild =
+            codewhale_runtime::process_tree::drop_once_pid_written(run, &pid_file).await;
         assert!(
-            crate::process_tree::wait_for_pid_exit(grandchild, Duration::from_secs(5)),
+            codewhale_runtime::process_tree::wait_for_pid_exit(grandchild, Duration::from_secs(5)),
             "a process started by the cancelled plugin is still running"
         );
     }

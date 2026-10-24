@@ -23,7 +23,6 @@ mod artifacts;
 mod audit;
 mod auto_reasoning;
 mod automation_manager;
-mod child_env;
 mod client;
 mod codex_model_cache;
 mod command_catalog;
@@ -45,11 +44,9 @@ pub mod delivery_files;
 mod dependencies;
 mod doctor;
 mod doctor_fix;
-mod dsh_credentials;
 mod error_taxonomy;
 mod eval;
 mod extension_host;
-mod external_credentials;
 mod fleet;
 mod fs_confined;
 mod git_status;
@@ -76,7 +73,6 @@ mod oauth;
 mod operate;
 mod plugins;
 mod pricing;
-mod process_tree;
 mod profile_constitution;
 mod project_context;
 mod project_context_cache;
@@ -171,6 +167,7 @@ use crate::tui::app::ScreenMode;
 use crate::tui::history::{summarize_tool_args, summarize_tool_output};
 use codewhale_models::Role;
 use codewhale_models::{ContentBlock, Message, SystemPrompt};
+use codewhale_runtime::child_env;
 use codewhale_runtime::features::{Feature, render_feature_table};
 use codewhale_runtime::{logging, startup_trace};
 
@@ -861,7 +858,7 @@ fn spawn_signal_cleanup_task() {
             #[cfg(unix)]
             crate::tools::shell::abort_pending_persistent_process_groups_for_exit();
             #[cfg(unix)]
-            crate::process_tree::kill_contained_trees_for_exit();
+            codewhale_runtime::process_tree::kill_contained_trees_for_exit();
             crate::tui::ui::emergency_restore_terminal();
             // Nothing async survives the `exit` below, so this is the last
             // chance to say how the session ended. `record_blocking` is one
@@ -12620,7 +12617,7 @@ fn run_sandbox_command(config: &Config, args: SandboxArgs) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to run command: {e}"))?;
     // The sandbox run is the tree's lifetime: dropping `tree` on return ends
     // anything the command left running, as `contained_output` does.
-    let tree = match crate::process_tree::ProcessTree::attach(&child) {
+    let tree = match codewhale_runtime::process_tree::ProcessTree::attach(&child) {
         Ok(tree) => tree,
         Err(error) => {
             let _ = child.kill();
@@ -16036,7 +16033,7 @@ mod doctor_setup_state_tests {
             provider: Some("openai-codex".to_string()),
             ..Config::default()
         };
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         let codex_report = doctor_setup_report_json(&codex_config, &workspace);
         assert_eq!(
             codex_report["provider_model"]["provider"]["id"],
@@ -16053,7 +16050,7 @@ mod doctor_setup_state_tests {
             "/setup provider or /provider setup <name>"
         );
         assert_eq!(
-            crate::external_credentials::side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::side_effect_trap_counts(),
             (0, 0),
             "doctor must not stat or read external credentials without consent"
         );
@@ -16078,7 +16075,7 @@ mod doctor_setup_state_tests {
         let changed_ambient_path = tmp.path().join("new-ambient-codex-auth.json");
         let _changed_codex_auth =
             crate::test_support::EnvVarGuard::set("OPENAI_CODEX_AUTH_FILE", &changed_ambient_path);
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         let codex_read_only_report = doctor_setup_report_json(&codex_read_only, &workspace);
         assert_eq!(
             codex_read_only_report["provider_model"]["auth"]["present_or_local"],
@@ -16119,7 +16116,7 @@ mod doctor_setup_state_tests {
         );
         assert!(!human.contains(&changed_ambient_path.display().to_string()));
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (0, 0, 0, 0, 0),
             "doctor consent status is structural and must not inspect the file"
         );
@@ -16141,14 +16138,14 @@ mod doctor_setup_state_tests {
             }),
             ..Config::default()
         };
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         let codex_managed_report = doctor_setup_report_json(&codex_managed, &workspace);
         assert_eq!(
             codex_managed_report["provider_model"]["auth"]["present_or_local"],
             false
         );
         assert_eq!(
-            crate::external_credentials::side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::side_effect_trap_counts(),
             (0, 0),
             "unsupported managed mode must fail before external I/O"
         );

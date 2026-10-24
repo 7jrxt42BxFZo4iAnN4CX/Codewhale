@@ -53,7 +53,7 @@ use windows_sys::Win32::System::WindowsProgramming::PROCESS_CREATION_CHILD_PROCE
 
 use crate::dependencies::{HostRuntime, HostRuntimeKind};
 use crate::fleet::files::WindowsDirectory;
-use crate::process_tree::ProcessTree;
+use codewhale_runtime::process_tree::ProcessTree;
 
 const PROBE_SOURCE: &str = include_str!("../../extension-host/src/windows-sandbox-probe.mjs");
 const PROBE_DEADLINE: Duration = Duration::from_secs(15);
@@ -707,7 +707,7 @@ impl NativeSandbox {
             "CODEWHALE_WINDOWS_PROBE_CHILD_ARGS".to_string(),
             serde_json::to_string(&args)?,
         );
-        let env = crate::child_env::sanitized_plugin_mcp_env_from(
+        let env = codewhale_runtime::child_env::sanitized_plugin_mcp_env_from(
             std::env::vars_os(),
             runtime_env
                 .iter()

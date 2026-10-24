@@ -104,7 +104,7 @@
 //!   are refused (`registry::core_special_case`), so an extension tool never
 //!   shares an approval key, summary or category with a built-in.
 //! * The host's process tree (Unix process group / Windows Job Object,
-//!   shared with hooks via `crate::process_tree`) is killed as a whole. On
+//!   shared with hooks via `codewhale_runtime::process_tree`) is killed as a whole. On
 //!   Windows the host is assigned to its job just after spawn, not created
 //!   suspended as hooks are. On Unix a plugin child that calls `setsid` leaves
 //!   the group and is not killed with it. When the core goes away, the host

@@ -12,7 +12,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 use wait_timeout::ChildExt;
 
-use crate::process_tree::ProcessTree;
+use codewhale_runtime::process_tree::ProcessTree;
 
 /// Core-only caller receipt. Not exported as an environment value or accepted from JS.
 #[derive(Debug, Clone)]
@@ -1104,7 +1104,7 @@ pub struct TurnEndPayloadInput<'a> {
     pub queued_message_count: usize,
 }
 
-/// Kill a hook's whole process tree (see [`crate::process_tree`]): hooks run
+/// Kill a hook's whole process tree (see [`codewhale_runtime::process_tree`]): hooks run
 /// through a shell, so killing only the immediate `sh`/`cmd.exe` child can
 /// leave the actual hook runtime alive. Falls back to `taskkill /T` on Windows
 /// and to the immediate child everywhere.
@@ -1172,7 +1172,7 @@ fn kill_and_reap_immediate_child(child: &mut Child, timeout: Duration) -> bool {
 /// user-visible "hook could not answer" receipt, and on Windows a raw spawn
 /// error echoes the whole command line back. The detail is logged instead.
 fn spawn_hook_child(command: &mut Command) -> std::io::Result<(Child, ProcessTree)> {
-    crate::process_tree::spawn_contained_std(command).map_err(|error| {
+    codewhale_runtime::process_tree::spawn_contained_std(command).map_err(|error| {
         tracing::warn!(target: "hooks", %error, "failed to start contained hook process");
         std::io::Error::new(error.kind(), "failed to contain hook process tree")
     })
@@ -2503,9 +2503,9 @@ impl HookExecutor {
             .stdin(Stdio::piped());
 
         if self.native_policy {
-            crate::child_env::apply_to_command(
+            codewhale_runtime::child_env::apply_to_command(
                 &mut command,
-                crate::child_env::string_map_env(env_vars),
+                codewhale_runtime::child_env::string_map_env(env_vars),
             );
             if hook
                 .native_shell

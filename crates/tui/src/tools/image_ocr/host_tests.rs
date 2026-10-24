@@ -351,8 +351,11 @@ async fn real_host_ocr_cancellation_bounds_parser_tree_and_never_replays() {
         .expect("OCR descendant never became ready");
         let pids = tokio::task::spawn_blocking(move || {
             (
-                crate::process_tree::read_pid_file(&parser_pid, Duration::from_secs(5)),
-                crate::process_tree::read_pid_file(&descendant_pid, Duration::from_secs(5)),
+                codewhale_runtime::process_tree::read_pid_file(&parser_pid, Duration::from_secs(5)),
+                codewhale_runtime::process_tree::read_pid_file(
+                    &descendant_pid,
+                    Duration::from_secs(5),
+                ),
             )
         })
         .await
@@ -371,8 +374,9 @@ async fn real_host_ocr_cancellation_bounds_parser_tree_and_never_replays() {
     // Observe that cleanup while allowing the current-thread runtime to run it.
     let stopped = tokio::task::spawn_blocking(move || {
         let descendant_stopped =
-            crate::process_tree::wait_for_pid_exit(descendant, Duration::from_secs(5));
-        let parser_stopped = crate::process_tree::wait_for_pid_exit(parser, Duration::from_secs(5));
+            codewhale_runtime::process_tree::wait_for_pid_exit(descendant, Duration::from_secs(5));
+        let parser_stopped =
+            codewhale_runtime::process_tree::wait_for_pid_exit(parser, Duration::from_secs(5));
         descendant_stopped && parser_stopped
     })
     .await

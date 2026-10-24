@@ -257,9 +257,9 @@ impl OcrNativeStep {
             let mut command=tokio::process::Command::new(binary);
             crate::utils::suppress_tokio_console_window(&mut command);
             command.arg(&self.input.path).arg("-");
-            crate::child_env::apply_to_tokio_command(&mut command,std::iter::empty::<(&str,&str)>());
+            codewhale_runtime::child_env::apply_to_tokio_command(&mut command,std::iter::empty::<(&str,&str)>());
             let stop=async { tokio::select! {biased;()=wait_cancel(cancel)=>{},()=tokio::time::sleep_until(deadline)=>{},} };
-            let run=crate::process_tree::contained_output_with_input_bounded(&mut command,Vec::new(),MAX_OCR_TEXT,MAX_OCR_DIAGNOSTIC,stop).await
+            let run=codewhale_runtime::process_tree::contained_output_with_input_bounded(&mut command,Vec::new(),MAX_OCR_TEXT,MAX_OCR_DIAGNOSTIC,stop).await
                 .map_err(|error|ToolError::execution_failed(format!("failed to launch tesseract: {error}")))?;
             if cancel.is_some_and(CancellationToken::is_cancelled) {return Err(ToolError::cancelled("Image OCR was cancelled"));}
             if run.stopped || tokio::time::Instant::now()>=deadline {return Err(ToolError::Timeout {seconds:OCR_TIMEOUT.as_secs()});}

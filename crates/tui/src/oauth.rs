@@ -112,7 +112,7 @@ fn token_is_expired(access_token: &str) -> bool {
 /// Returns `Ok(None)` if the file doesn't exist or has no usable tokens.
 /// Returns `Err` only on parse/IO errors that aren't "file not found".
 fn load_credentials(grant: &ExternalCredentialReadGrant) -> Result<Option<CodexCredentials>> {
-    let Some(contents) = crate::external_credentials::read_to_string(grant)? else {
+    let Some(contents) = codewhale_runtime::external_credentials::read_to_string(grant)? else {
         return Ok(None);
     };
     let auth: CodexAuthFile = serde_json::from_str(&contents).map_err(|_| {
@@ -1106,7 +1106,7 @@ fn discover_oauth_endpoints(params: &OAuthProviderParams, issuer: &str) -> Resul
     ))?;
     let client = oauth_http_client(&discovery_url, "OIDC discovery")?;
     #[cfg(test)]
-    crate::external_credentials::record_oauth_network();
+    codewhale_runtime::external_credentials::record_oauth_network();
     let response = client
         .get(discovery_url)
         .header(reqwest::header::ACCEPT, "application/json")
@@ -1204,7 +1204,7 @@ fn request_device_grant(
     let client = oauth_http_client(&device_authorization_endpoint, "device-code")?;
     let params = [("client_id", client_id), ("scope", scopes)];
     #[cfg(test)]
-    crate::external_credentials::record_oauth_network();
+    codewhale_runtime::external_credentials::record_oauth_network();
     let response = client
         .post(device_authorization_endpoint)
         .form(&params)
@@ -1250,7 +1250,7 @@ fn poll_device_grant(
         ("device_code", device_code),
     ];
     #[cfg(test)]
-    crate::external_credentials::record_oauth_network();
+    codewhale_runtime::external_credentials::record_oauth_network();
     let response = client
         .post(token_endpoint)
         .form(&params)
@@ -1580,7 +1580,7 @@ impl OAuthFormClient for ReqwestOAuthFormClient {
     fn post_form(&self, url: &str, form: &[(&str, &str)]) -> Result<(u16, String)> {
         let url = oauth_endpoint_url(url)?;
         #[cfg(test)]
-        crate::external_credentials::record_oauth_network();
+        codewhale_runtime::external_credentials::record_oauth_network();
         let client = oauth_http_client(&url, "form")?;
         let request = client.post(url.clone());
         let request = if url.as_str() == "https://console.anthropic.com/v1/oauth/token" {
@@ -1679,7 +1679,7 @@ pub(crate) fn refresh_access_token_via(
     refresh_token: &str,
 ) -> Result<OAuthTokenMaterial> {
     #[cfg(test)]
-    crate::external_credentials::record_oauth_refresh();
+    codewhale_runtime::external_credentials::record_oauth_refresh();
     let mut fields = vec![
         ("grant_type", "refresh_token"),
         ("client_id", client_id),
@@ -2985,7 +2985,8 @@ impl std::fmt::Debug for OAuthActivation {
 type AuthFile = BTreeMap<String, OwnedAuthEntry>;
 
 fn load_owned_auth_file(path: &Path) -> Result<Option<AuthFile>> {
-    let Some(raw) = crate::external_credentials::read_codewhale_owned_to_string(path)? else {
+    let Some(raw) = codewhale_runtime::external_credentials::read_codewhale_owned_to_string(path)?
+    else {
         return Ok(None);
     };
     parse_auth_file(&raw, path).map(Some)
@@ -3048,7 +3049,7 @@ fn write_auth_file_to_store(
             )
         })?;
     #[cfg(test)]
-    crate::external_credentials::record_owned_credential_write();
+    codewhale_runtime::external_credentials::record_owned_credential_write();
     Ok(())
 }
 
@@ -3056,7 +3057,7 @@ fn write_auth_file_to_store(
 fn load_external_auth_file(
     grant: &codewhale_config::ExternalCredentialReadGrant,
 ) -> Result<AuthFile> {
-    let Some(raw) = crate::external_credentials::read_to_string(grant)? else {
+    let Some(raw) = codewhale_runtime::external_credentials::read_to_string(grant)? else {
         bail!(
             "external credential file not found at {}",
             codewhale_config::quote_os_path(grant.path())
@@ -5215,21 +5216,21 @@ mod tests {
         let grant = grant(&auth_path);
 
         std::fs::write(&auth_path, "{}").expect("empty auth");
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         assert!(!stored_credentials_present(&grant));
         assert_eq!(
-            crate::external_credentials::side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::side_effect_trap_counts(),
             (1, 1)
         );
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (1, 1, 0, 0, 0)
         );
         std::fs::write(&auth_path, "{not-json").expect("malformed auth");
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         assert!(!stored_credentials_present(&grant));
         assert_eq!(
-            crate::external_credentials::side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::side_effect_trap_counts(),
             (1, 1)
         );
 
@@ -5243,10 +5244,10 @@ mod tests {
             .expect("valid auth json"),
         )
         .expect("valid auth");
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         assert!(stored_credentials_present(&grant));
         assert_eq!(
-            crate::external_credentials::side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::side_effect_trap_counts(),
             (1, 1)
         );
     }
@@ -5274,12 +5275,12 @@ mod tests {
         .expect("auth fixture");
         std::fs::write(&auth_path, &raw).expect("expired auth fixture");
 
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         let error = get_credentials(&grant(&auth_path))
             .expect_err("read-only external tokens must not refresh");
         assert!(error.to_string().contains("never refreshes or rewrites"));
         assert_eq!(
-            crate::external_credentials::side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::side_effect_trap_counts(),
             (1, 1)
         );
         assert_eq!(
@@ -6911,13 +6912,13 @@ mod tests {
             }),
             ..Default::default()
         };
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         let result = get_xai_credentials(&config);
         let creds = result.expect("load");
         assert_eq!(creds.access_token, "test-access-token");
         assert_eq!(creds.client_id, GROK_OIDC_CLIENT_ID);
         assert_eq!(
-            crate::external_credentials::side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::side_effect_trap_counts(),
             (1, 1)
         );
     }
@@ -6953,7 +6954,7 @@ mod tests {
             ..Default::default()
         };
 
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         assert!(!credentials_valid(OAuthProvider::Xai, &config));
         let error = match get_xai_credentials(&config) {
             Ok(_) => panic!("external access is disabled"),
@@ -6961,11 +6962,11 @@ mod tests {
         };
         assert!(error.to_string().contains("are disabled"));
         assert_eq!(
-            crate::external_credentials::side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::side_effect_trap_counts(),
             (0, 0)
         );
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (0, 0, 0, 0, 0),
             "disabled external authority must reach no credential or OAuth sink"
         );
@@ -7014,7 +7015,7 @@ mod tests {
             ..Default::default()
         };
 
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         let error = match tokio::task::block_in_place(|| get_xai_credentials(&config)) {
             Ok(_) => panic!("read-only external credentials must fail instead of refreshing"),
             Err(e) => e,
@@ -7025,11 +7026,11 @@ mod tests {
                 .contains("Read-only consent never refreshes")
         );
         assert_eq!(
-            crate::external_credentials::side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::side_effect_trap_counts(),
             (1, 1)
         );
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (1, 1, 0, 0, 0),
             "read-only external expiry must not reach write, refresh, or network sinks"
         );
@@ -7097,7 +7098,7 @@ mod tests {
             ..Default::default()
         };
 
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         assert!(
             !credentials_present(OAuthProvider::Xai, &config),
             "an expired external access token is not usable material"
@@ -7110,12 +7111,12 @@ mod tests {
             "expired external xAI OAuth must fall through to the missing-key path"
         );
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts().2,
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts().2,
             0,
             "a consented read never rewrites Codewhale-owned storage"
         );
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts().3,
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts().3,
             0,
             "a consented read never refreshes another CLI's token"
         );
@@ -7532,7 +7533,7 @@ consent_version = 1
             ..Default::default()
         };
 
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         let activation = activate_login(
             pending_login("activation-access", "activation-refresh"),
             Some(&config_path),
@@ -7580,7 +7581,7 @@ consent_version = 1
         );
         assert!(live_xai.external_credentials.is_none());
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (0, 0, 1, 0, 0),
             "activation must reach exactly the owned write sink"
         );

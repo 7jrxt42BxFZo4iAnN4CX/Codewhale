@@ -226,7 +226,7 @@ pub(crate) fn resolve_credential_source_with(
             "DeepSeek Harness",
             "codewhale auth external-consent --provider deepseek --mode read-only",
             |grant| {
-                crate::dsh_credentials::deepseek_api_key_from_grant(grant)
+                codewhale_runtime::dsh_credentials::deepseek_api_key_from_grant(grant)
                     .ok()
                     .flatten()
                     .is_some()
@@ -587,7 +587,7 @@ mod tests {
             ..Config::default()
         };
 
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         let resolution = resolve_credential_source(
             &config,
             &(config).test_identity_for_kind(ProviderKind::OpenaiCodex),
@@ -607,7 +607,7 @@ mod tests {
             "no stat means no existence claim: {checked}"
         );
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (0, 0, 0, 0, 0),
             "resolution must not touch external credential state"
         );
@@ -650,7 +650,7 @@ mod tests {
             ..Config::default()
         };
 
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         let resolution = resolve_credential_source(
             &config,
             &(config).test_identity_for_kind(ProviderKind::OpenaiCodex),
@@ -668,7 +668,7 @@ mod tests {
             resolution.checked_places()
         );
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (0, 0, 0, 0, 0),
             "external consent cannot authorize the public ChatGPT API"
         );
@@ -677,7 +677,7 @@ mod tests {
             &(config).test_identity_for_kind(ProviderKind::OpenaiCodex)
         ));
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (0, 0, 0, 0, 0),
             "has_api_key_for never reads another client credential"
         );

@@ -10159,7 +10159,7 @@ mod tests {
             ..Default::default()
         };
 
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         assert!(!has_api_key_for(
             &config,
             &(config).test_identity_for_kind(ProviderKind::OpenaiCodex)
@@ -10279,7 +10279,7 @@ mod tests {
             crate::route_billing::BillingPresentation::Metered
         );
         assert_eq!(
-            crate::external_credentials::side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::side_effect_trap_counts(),
             (0, 0),
             "picker, readiness, billing, and model inventory must not inspect inactive external files"
         );
@@ -10350,7 +10350,7 @@ mod tests {
             ..Default::default()
         };
 
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         let mut picker = ProviderPickerView::new(ProviderKind::Deepseek, &config);
         move_to_provider(&mut picker, ProviderKind::OpenaiCodex);
         let quoted = codewhale_config::quote_os_path(&codex_path);
@@ -10373,7 +10373,7 @@ mod tests {
         ));
         assert_eq!(picker.stage, Stage::ChatgptAuthChoice);
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (0, 0, 0, 0, 0),
             "ordinary selection must not touch external credential state"
         );
@@ -10403,7 +10403,7 @@ mod tests {
         );
         // …and even rendering the confirmation performed no external I/O.
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (0, 0, 0, 0, 0),
             "disclosure must not validate or read before affirmative confirmation"
         );
@@ -10459,7 +10459,7 @@ mod tests {
             ..Default::default()
         };
 
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         let mut picker = ProviderPickerView::new(ProviderKind::Deepseek, &config);
         move_to_provider(&mut picker, ProviderKind::OpenaiCodex);
 
@@ -10469,7 +10469,7 @@ mod tests {
         ));
         assert_eq!(picker.stage, Stage::ExternalConsentRevokeConfirm);
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (0, 0, 0, 0, 0),
             "revocation disclosure must not inspect the external file"
         );

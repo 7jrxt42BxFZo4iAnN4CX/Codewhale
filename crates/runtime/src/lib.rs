@@ -13,8 +13,11 @@
 
 pub use codewhale_command_contract::elapsed;
 
+pub mod child_env;
 pub mod context_budget;
 pub mod continual_harness;
+pub mod dsh_credentials;
+pub mod external_credentials;
 pub mod fast_hash;
 pub mod features;
 pub mod goal_loop;
@@ -26,6 +29,7 @@ pub mod logging;
 pub mod media_originals;
 pub mod model_context;
 pub mod native_memory;
+pub mod process_tree;
 pub mod prompt_zones;
 pub mod regex_cache;
 pub mod resource_telemetry;

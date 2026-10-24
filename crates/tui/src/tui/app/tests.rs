@@ -6520,16 +6520,16 @@ fn startup_and_fallback_skip_inactive_external_only_routes_without_io() {
     let mut options = test_options(false);
     options.skip_onboarding = true;
 
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     let mut app = App::new(options, &config);
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0),
         "startup readiness must not inspect inactive external credentials"
     );
     assert_eq!(app.advance_fallback("active route unavailable"), None);
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0),
         "fallback selection must skip external-only inactive routes without inspection"
     );

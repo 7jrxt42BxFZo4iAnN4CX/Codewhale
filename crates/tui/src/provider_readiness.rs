@@ -1619,7 +1619,7 @@ mod tests {
             ..Default::default()
         };
 
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         assert_eq!(
             credential_state_for_provider(
                 &config,
@@ -1636,7 +1636,7 @@ mod tests {
             CredentialState::MissingLogin
         );
         assert_eq!(
-            crate::external_credentials::side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::side_effect_trap_counts(),
             (0, 0),
             "readiness must not inspect external OAuth files without consent"
         );

@@ -8135,7 +8135,7 @@ consent_version = 1
         let _path = crate::test_support::EnvVarGuard::set("OPENAI_CODEX_AUTH_FILE", &ambient_path);
         let mut app = create_test_app();
         app.config_path = Some(config_path);
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         let view = ConfigView::new_for_app(&app);
         let row = view
             .rows
@@ -8163,7 +8163,7 @@ consent_version = 1
                 .contains("external-revoke --provider openai-codex")
         );
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (0, 0, 0, 0, 0)
         );
     }

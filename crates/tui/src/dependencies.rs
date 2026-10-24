@@ -99,7 +99,7 @@ const VERSION_PROBE_MAX_OUTPUT: u64 = 16 * 1024;
 fn version_probe_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     let mut cmd = Command::new(program);
     crate::utils::suppress_console_window(&mut cmd);
-    crate::child_env::apply_to_command(&mut cmd, std::iter::empty::<(&str, &str)>());
+    codewhale_runtime::child_env::apply_to_command(&mut cmd, std::iter::empty::<(&str, &str)>());
     // A presence probe needs no bootstrap code or import paths from the
     // parent. The general child allowlist retains these for normal SDK tools.
     for key in ["NODE_OPTIONS", "NODE_PATH", "PYTHONPATH", "RUSTC_WRAPPER"] {
@@ -135,7 +135,7 @@ pub(crate) fn probe_output_bounded(
         } else {
             Stdio::null()
         });
-    let (mut child, tree) = crate::process_tree::spawn_contained_std(command)?;
+    let (mut child, tree) = codewhale_runtime::process_tree::spawn_contained_std(command)?;
     let mut tree = Some(tree);
     let result = (|| {
         let reader = if capture {
@@ -1084,7 +1084,7 @@ fn command_for_spec(spec: &str) -> Command {
 /// so no constructor for them hands out the parent's credentials.
 fn scrubbed_command_for_spec(spec: &str) -> Command {
     let mut cmd = command_for_spec(spec);
-    crate::child_env::apply_to_command(&mut cmd, std::iter::empty::<(&str, &str)>());
+    codewhale_runtime::child_env::apply_to_command(&mut cmd, std::iter::empty::<(&str, &str)>());
     cmd
 }
 
@@ -1308,14 +1308,14 @@ impl ExternalTool for Git {
     /// variable is silently ignored.
     ///
     /// The child also starts from the sanitized environment (see
-    /// [`crate::child_env::apply_to_git_command`]): workspace config such as
+    /// [`codewhale_runtime::child_env::apply_to_git_command`]): workspace config such as
     /// `core.fsmonitor` or a clean filter makes even a read like `git status`
     /// run a program the workspace chose, so no git child gets the parent's
     /// credentials. The guards below are applied after the scrub.
     fn command() -> Option<Command> {
         let mut cmd = Command::new(Self::resolve()?);
         crate::utils::suppress_console_window(&mut cmd);
-        crate::child_env::apply_to_git_command(&mut cmd);
+        codewhale_runtime::child_env::apply_to_git_command(&mut cmd);
         cmd.env("GIT_OPTIONAL_LOCKS", "0");
         apply_git_noninteractive_env(&mut cmd);
         Some(cmd)
@@ -1452,7 +1452,7 @@ impl ExternalTool for Python {
     /// built on them) start the child from the sanitized environment instead
     /// of inheriting provider credentials and other parent secrets. Callers
     /// that need extra variables re-apply them through
-    /// [`crate::child_env::apply_to_tokio_command`] with explicit overrides.
+    /// [`codewhale_runtime::child_env::apply_to_tokio_command`] with explicit overrides.
     fn command() -> Option<Command> {
         Some(scrubbed_command_for_spec(&Self::resolve()?))
     }
@@ -1580,8 +1580,11 @@ mod tests {
             probe_output(&mut command, false, std::time::Duration::from_millis(150)).unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
         assert!(started.elapsed() < std::time::Duration::from_secs(2));
-        let pid = crate::process_tree::read_pid_file(&pid_file, std::time::Duration::from_secs(1));
-        assert!(crate::process_tree::wait_for_pid_exit(
+        let pid = codewhale_runtime::process_tree::read_pid_file(
+            &pid_file,
+            std::time::Duration::from_secs(1),
+        );
+        assert!(codewhale_runtime::process_tree::wait_for_pid_exit(
             pid,
             std::time::Duration::from_secs(2)
         ));
@@ -1599,8 +1602,11 @@ mod tests {
         let output = probe_output(&mut command, true, VERSION_PROBE_TIMEOUT).unwrap();
         assert!(output.status.success());
         assert_eq!(output.stdout, b"version");
-        let pid = crate::process_tree::read_pid_file(&pid_file, std::time::Duration::from_secs(1));
-        assert!(crate::process_tree::wait_for_pid_exit(
+        let pid = codewhale_runtime::process_tree::read_pid_file(
+            &pid_file,
+            std::time::Duration::from_secs(1),
+        );
+        assert!(codewhale_runtime::process_tree::wait_for_pid_exit(
             pid,
             std::time::Duration::from_secs(2)
         ));

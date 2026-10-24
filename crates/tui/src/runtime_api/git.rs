@@ -113,7 +113,7 @@ async fn git_read(workspace: &FsPath, args: &[&str]) -> Result<GitRun, ApiError>
     let mut command = tokio::process::Command::from(command);
     command.args(args);
     finish_git(
-        crate::process_tree::contained_output(&mut command),
+        codewhale_runtime::process_tree::contained_output(&mut command),
         GIT_READ_TIMEOUT,
     )
     .await
@@ -131,7 +131,7 @@ async fn git_write(workspace: &FsPath, args: Vec<String>) -> Result<GitRun, ApiE
     // Contained: hooks and filters run here, and a timeout or a dropped
     // request must end them too, not only the `git` process itself.
     finish_git(
-        crate::process_tree::contained_output(&mut command),
+        codewhale_runtime::process_tree::contained_output(&mut command),
         GIT_WRITE_TIMEOUT,
     )
     .await
@@ -2831,11 +2831,13 @@ mod tests {
             "alias.hang=!sleep 300 & echo $! > hang.pid; wait".to_string(),
             "hang".to_string(),
         ];
-        let grandchild =
-            crate::process_tree::drop_once_pid_written(git_write(tmp.path(), args), &pid_file)
-                .await;
+        let grandchild = codewhale_runtime::process_tree::drop_once_pid_written(
+            git_write(tmp.path(), args),
+            &pid_file,
+        )
+        .await;
         assert!(
-            crate::process_tree::wait_for_pid_exit(grandchild, Duration::from_secs(5)),
+            codewhale_runtime::process_tree::wait_for_pid_exit(grandchild, Duration::from_secs(5)),
             "a process git started outlived the dropped request"
         );
     }

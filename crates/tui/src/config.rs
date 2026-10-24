@@ -6964,7 +6964,8 @@ impl Config {
                 &identity,
                 codewhale_config::ExternalCredentialSource::DshCli,
                 &path,
-            ) && let Some(value) = crate::dsh_credentials::deepseek_api_key_from_grant(&grant)?
+            ) && let Some(value) =
+                codewhale_runtime::dsh_credentials::deepseek_api_key_from_grant(&grant)?
             {
                 return Ok((
                     value,
@@ -12475,7 +12476,7 @@ fn validate_external_credential_before_consent(
             crate::oauth::validate_grok_external_credentials(&grant)
         }
         codewhale_config::ExternalCredentialSource::DshCli => {
-            crate::dsh_credentials::deepseek_api_key_from_grant(&grant)?
+            codewhale_runtime::dsh_credentials::deepseek_api_key_from_grant(&grant)?
                 .map(|_| ())
                 .context("the DeepSeek Harness credentials file holds no DEEPSEEK_API_KEY")
         }

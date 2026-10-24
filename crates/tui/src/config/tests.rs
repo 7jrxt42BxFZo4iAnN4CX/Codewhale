@@ -6550,7 +6550,7 @@ consent_version = 1
         ),
     )?;
 
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     let config = Config::load(Some(config_path), None)?;
     assert!(
         config
@@ -6563,7 +6563,7 @@ consent_version = 1
         &(config).test_identity_for_kind(ProviderKind::OpenaiCodex)
     ));
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0),
         "managed config must not consent to user-owned external credentials"
     );
@@ -6617,7 +6617,7 @@ consent_version = 1
         ),
     )?;
     let _auth_path = EnvVarGuard::set("OPENAI_CODEX_AUTH_FILE", &external_path);
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     let config = Config::load(Some(config_path), None)?;
     let effective = config
         .provider_config_for(&config.test_identity_for_kind(ProviderKind::OpenaiCodex))
@@ -6632,7 +6632,7 @@ consent_version = 1
         &(config).test_identity_for_kind(ProviderKind::OpenaiCodex)
     ));
     assert_eq!(
-        crate::external_credentials::complete_side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
         (0, 0, 0, 0, 0),
         "managed deny must suppress lower consent before every side effect"
     );
@@ -11580,7 +11580,7 @@ fn codex_external_credentials_are_disabled_by_default_and_managed_fails_before_i
         provider: Some(ProviderKind::OpenaiCodex.as_str().to_string()),
         ..Default::default()
     };
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     assert!(!has_api_key_for(
         &disabled,
         &(disabled).test_identity_for_kind(ProviderKind::OpenaiCodex)
@@ -11591,7 +11591,7 @@ fn codex_external_credentials_are_disabled_by_default_and_managed_fails_before_i
     assert!(error.to_string().contains("Sign in with ChatGPT"));
     assert_eq!(disabled.codex_account_id(), None);
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0)
     );
 
@@ -11613,7 +11613,7 @@ fn codex_external_credentials_are_disabled_by_default_and_managed_fails_before_i
         }),
         ..Default::default()
     };
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     assert!(!has_api_key_for(
         &managed,
         &(managed).test_identity_for_kind(ProviderKind::OpenaiCodex)
@@ -11623,7 +11623,7 @@ fn codex_external_credentials_are_disabled_by_default_and_managed_fails_before_i
         .expect_err("managed access needs a preservation adapter");
     assert!(error.to_string().contains("Sign in with ChatGPT"));
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0)
     );
     assert_eq!(fs::read_to_string(&auth_path)?, raw);
@@ -11674,7 +11674,7 @@ fn codex_read_only_consent_reads_exact_file_without_mutation() -> Result<()> {
 
     let mut inactive = config.clone();
     inactive.provider = Some(ProviderKind::Deepseek.as_str().to_string());
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     assert!(inactive.external_credential_read_consent_configured(
         &inactive.test_identity_for_kind(ProviderKind::OpenaiCodex),
         codewhale_config::ExternalCredentialSource::CodexCli,
@@ -11688,7 +11688,7 @@ fn codex_read_only_consent_reads_exact_file_without_mutation() -> Result<()> {
         .expect_err("inactive providers cannot mint external read capabilities");
     assert!(dormant_error.to_string().contains("explicitly selected"));
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0)
     );
 
@@ -11703,10 +11703,10 @@ fn codex_read_only_consent_reads_exact_file_without_mutation() -> Result<()> {
         "the selected route remains pinned to the persisted consent path"
     );
 
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     assert!(config.active_route_api_key().is_err());
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0)
     );
     assert_eq!(fs::read_to_string(&auth_path)?, raw);
@@ -11714,11 +11714,11 @@ fn codex_read_only_consent_reads_exact_file_without_mutation() -> Result<()> {
 
     drop(_access);
     let _process_access = EnvVarGuard::set("OPENAI_CODEX_ACCESS_TOKEN", "process-token");
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     assert!(config.active_route_api_key().is_err());
     assert_eq!(config.codex_account_id(), None);
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0),
         "external tokens must never substitute for Codewhale-issued plan access"
     );
@@ -12232,14 +12232,14 @@ fn xai_oauth_selection_falls_back_to_explicit_api_key_without_external_io() -> R
         providers: Some(providers),
         ..Config::default()
     };
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     assert!(has_api_key_for(
         &api_key_config,
         &(api_key_config).test_identity_for_kind(ProviderKind::Xai)
     ));
     assert_eq!(api_key_config.active_route_api_key()?, "fake-xai-cfg-key");
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0)
     );
 
@@ -12281,14 +12281,14 @@ fn xai_invalid_owned_generation_blocks_external_and_uses_api_key_fallback() -> R
         ..Config::default()
     };
 
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     assert!(
         !crate::oauth::credentials_present(crate::oauth::OAuthProvider::Xai, &config),
         "an invalid owned generation pointer must not resolve external OAuth"
     );
     assert_eq!(config.active_route_api_key()?, "fake-xai-cfg-key");
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0),
         "an unusable owned generation must not access the external Grok CLI"
     );
@@ -14578,7 +14578,7 @@ fn picker_consent_persists_only_confirmed_exact_scope_and_revoke_is_one_step() {
         ..Config::default()
     };
 
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     {
         let captured_fixture_identity = (live).test_identity_for_kind(ProviderKind::OpenaiCodex);
         persist_external_credential_consent_for_at(
@@ -14603,13 +14603,13 @@ fn picker_consent_persists_only_confirmed_exact_scope_and_revoke_is_one_step() {
         .expect("live consent");
     assert_eq!(consent.path, external_path);
     assert_eq!(
-        crate::external_credentials::complete_side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
         (1, 1, 0, 0, 0),
         "grant persistence performs exactly the confirmed read (one secure open, one \
          bounded read) and never writes, refreshes, or reaches the network"
     );
 
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     {
         let captured_fixture_identity = (live).test_identity_for_kind(ProviderKind::OpenaiCodex);
         revoke_external_credential_consent_for_at(
@@ -14627,7 +14627,7 @@ fn picker_consent_persists_only_confirmed_exact_scope_and_revoke_is_one_step() {
             .is_none()
     );
     assert_eq!(
-        crate::external_credentials::complete_side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
         (0, 0, 0, 0, 0)
     );
 }

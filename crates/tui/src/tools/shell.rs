@@ -51,7 +51,6 @@ mod output;
 use super::shell_output::{
     kill_outcome_note, output_phase_hint, summarize_output, truncate_with_meta,
 };
-use crate::child_env;
 use crate::sandbox::{
     CommandSpec,
     ExecEnv,
@@ -68,6 +67,7 @@ use crate::work_graph::{
     SharedWorkRuntime,
 };
 use crate::worker_profile::ShellPolicy;
+use codewhale_runtime::child_env;
 use output::{
     BoundedOutputAccumulator, BoundedOutputSnapshot, RAW_STREAM_SETTLED_TAIL_BYTES,
     RawOutputBuffer, SharedRawOutput, new_shared_raw_output, tail_from_buffer, tail_text,
@@ -4314,9 +4314,9 @@ pub(crate) fn sandboxed_runner_command(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     // Workspace code never inherits parent credentials.
-    crate::child_env::apply_to_tokio_command(
+    codewhale_runtime::child_env::apply_to_tokio_command(
         &mut cmd,
-        crate::child_env::string_map_env(&exec_env.env),
+        codewhale_runtime::child_env::string_map_env(&exec_env.env),
     );
     Ok(cmd)
 }

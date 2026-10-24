@@ -184,17 +184,17 @@ fn expanded_mcp_stdio_env(config: &McpServerConfig) -> Result<HashMap<String, St
 /// stdio spawn path, without constructing or starting a process.
 fn mcp_stdio_child_env(config: &McpServerConfig) -> Result<Vec<(OsString, OsString)>> {
     let expanded_env = expanded_mcp_stdio_env(config)?;
-    let overrides = crate::child_env::string_map_env(&expanded_env);
+    let overrides = codewhale_runtime::child_env::string_map_env(&expanded_env);
     Ok(if let Some(source) = config.reviewed_plugin.as_ref() {
         // Plugin reviews name every extra environment source explicitly. Do
         // not silently widen that consent to the compatibility-oriented MCP
         // bootstrap namespace (for example NPM_CONFIG_*).
-        crate::child_env::sanitized_plugin_mcp_env_from(
+        codewhale_runtime::child_env::sanitized_plugin_mcp_env_from(
             source.host_environment.entries().iter().cloned(),
             overrides,
         )
     } else {
-        crate::child_env::sanitized_mcp_env(overrides)
+        codewhale_runtime::child_env::sanitized_mcp_env(overrides)
     })
 }
 

@@ -492,9 +492,9 @@ fn static_mcp_command_uses_expanded_sanitized_stdio_path() {
 
     let expanded_env = expand_env_placeholders_map(&server.env, "env").expect("expanded env");
     let mut old_spawn_command = tokio::process::Command::new("unused-test-command");
-    crate::child_env::apply_to_tokio_command_mcp(
+    codewhale_runtime::child_env::apply_to_tokio_command_mcp(
         &mut old_spawn_command,
-        crate::child_env::string_map_env(&expanded_env),
+        codewhale_runtime::child_env::string_map_env(&expanded_env),
     );
     let old_spawn_env = old_spawn_command
         .as_std()

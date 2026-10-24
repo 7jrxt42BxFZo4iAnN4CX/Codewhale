@@ -383,9 +383,9 @@ impl ExecEnv {
         #[cfg(not(all(target_os = "linux", not(target_env = "ohos"))))]
         command.args(self.args());
         command.cwd(cwd);
-        crate::child_env::apply_to_pty_command(
+        codewhale_runtime::child_env::apply_to_pty_command(
             &mut command,
-            crate::child_env::string_map_env(&self.env),
+            codewhale_runtime::child_env::string_map_env(&self.env),
         );
         let launch = move || slave.spawn_command(command);
         #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
