@@ -1572,8 +1572,8 @@ fn plan_handoff_seed_title(plan: &crate::tui::plan_handoff::PendingPlanHandoff) 
         .map(|line| {
             collapse(
                 &line
-                    .trim_start_matches(|ch: char| matches!(ch, '-' | '*' | '+' | '>'))
-                    .replace(|ch: char| matches!(ch, '*' | '`'), ""),
+                    .trim_start_matches(['-', '*', '+', '>'])
+                    .replace(['*', '`'], ""),
             )
         })
         .find(|line| !line.is_empty())
