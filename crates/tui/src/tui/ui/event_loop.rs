@@ -7747,7 +7747,13 @@ pub(crate) async fn run_plugin_oauth_from_tui(
             })
             .await??;
         } else {
-            crate::oauth::plugin_oauth_login(provider.clone(), base_url, oauth, authority).await?;
+            crate::plugins::providers::plugin_oauth_login(
+                provider.clone(),
+                base_url,
+                oauth,
+                authority,
+            )
+            .await?;
         }
         let ticket = crate::provider_catalog_live::begin_refresh_for_identity(
             identity.provider,

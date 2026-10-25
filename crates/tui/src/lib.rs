@@ -2668,7 +2668,7 @@ async fn run_async_main_dispatch(
                 TuiAuthCommand::OrcarouterRevoke => run_orcarouter_revoke(cli.config.as_deref()),
                 TuiAuthCommand::PluginLogin { provider } => {
                     let entry = plugin_auth_entry_from_cli(&cli, &provider).await?;
-                    crate::oauth::plugin_oauth_login(
+                    crate::plugins::providers::plugin_oauth_login(
                         provider,
                         entry.base_url.clone().unwrap(),
                         entry.oauth.clone().unwrap(),

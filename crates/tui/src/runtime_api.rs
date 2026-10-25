@@ -2149,7 +2149,9 @@ pub async fn run_http_server(
                 "Codewhale web bootstrap (single-use, expires in {} min): {bootstrap_url}",
                 web::BOOTSTRAP_TTL.as_secs() / 60
             );
-            if let Some(warning) = web_launcher_warning(crate::utils::open_url(&bootstrap_url)) {
+            if let Some(warning) =
+                web_launcher_warning(codewhale_runtime::browser::open_url(&bootstrap_url))
+            {
                 println!("{warning}");
             }
         }

@@ -159,6 +159,11 @@ Every crate below `services` is a leaf in the sense of rule 1 unless it is a
 contract. New crates live under grouped directories:
 `crates/{contracts,util,services,providers,runtime,features,tui,hosts,test}/`.
 Existing crates move into those directories in one rename-only change.
+The map is a dated destination sketch: the founder's 2026-10-25 S7=(c)
+decision below places the TUI configuration and OAuth cluster in the
+existing `codewhale-runtime`, superseding the `config` and `credentials`
+rows for P3. Every eventual crate targets about 10k production lines and
+stays below 50k.
 
 ### Contracts (`crates/contracts/`)
 
@@ -400,9 +405,10 @@ Running them in parallel:
   `Cargo.lock`, `crates/tui/Cargo.toml`, `scripts/release/crates.sh`,
   `scripts/dev-test.sh`. Serialize those edits through one integrator; new
   package names are a release-time human gate.
-- Each slice still needs one native build slot on a shared machine. Concurrency
-  comes from sandboxes with their own target directory, not from parallel
-  compiles in one checkout.
+- Each slice holds one of the machine's two native build slots through
+  `scripts/dev-cargo.sh` and `scripts/build-lock.py` (founder, 2026-10-25).
+  Freeze shared compiler inputs with their owners before a build; do not
+  create another checkout or target directory to bypass contention.
 - Each slice is verified by `cargo check` on both crates, the crate's own
   tests, `python3 scripts/split/module_graph.py --check` with the counts it
   should lower, and `python3 scripts/split/partition_report.py` before and after.
@@ -457,20 +463,21 @@ prerequisite CW-6382 identified.
 ### Phases
 
 Each phase ends with `partition_report.py` re-run and its numbers pasted into
-this section. One extraction at a time per crate; one native build slot.
+this section. One extraction at a time per crate; at most two native builds
+per machine, each holding a build-lock slot.
 
 | Phase | Work | Exit gate |
 | --- | --- | --- |
 | P0 | `scripts/split/closure_report.py`: closure and reverse-closure lines per crate, sandbox manifest generator. Record warm-edit baselines (provider edit 30.3 s / 8.7 GB, renderer edit 46.6 s / 8.9 GB from CW-6382) | numbers in this file |
 | P1 | Migrate every remaining consumer of `rt` modules (`hashing`, `features`, `safe_label`, `logging`, `retry_status`, `native_memory`, `goal_loop`) to `codewhale_runtime`, delete the tui re-exports. Then move the unclaimed wave-0 leaves: `child_env`, `process_tree`, `session_tree`, `external_credentials`, `keybinding_table`, `runtime_log`, `skill_state`, `continual_harness`, `import_claude`, `remote_setup` into their tier owners | zero production references to the moved modules from `crates/tui`; SCC below 70 |
 | P2 | Contract tier, in the order of the slice table: X7 tool rules into `execpolicy`, X8 `agent-contract`, X4 `util-schema`, X3 tool contract, X5 `config-types`, X6 `runtime-wire` | `tools -> fleet`, `tools -> core`, `config -> core`, `client -> tools` edges at zero |
-| P3 | `config`, `settings`, `config_persistence` leave the UI crate into `crates/config` (CW-6382) | re-run report; SCC expected to fragment to under 30 |
+| P3 | `config`, `settings`, `config_persistence`, `config_keys`, `credentials` and `oauth` leave the UI crate into `codewhale-runtime` (CW-6382; founder S7=(c), 2026-10-25). Plugin activation and catalog enrichment stay with their host owners | cut the remaining host edges, then re-run the SCC and crate-size reports |
 | P4 | `ext` contributor traits; delete `with_*_tools`, per-feature `config.rs` fields and command group lists slice by slice; pilot leaf `tools-web` with one sandboxed agent (step 3 above) | pilot receipt recorded; adjust map from it |
 | P5 | Feature leaves by ascending inbound count: `acp_server` (1), `operate`, `notify`, `receipts` (2), `repl` (3), `lsp`, `rlm` (4), `hooks` (9), `skills`, `extension_host` (13), `mcp` (14), `snapshot` (12), `plugins` (28) | each leaf builds and tests from its generated minimal workspace |
-| P6 | Providers: `client` (24 inbound) into `model-client` plus one crate per wire dialect; `llm_client`, `oauth`/`credentials`, `pricing`/`route_billing`/`cost_status` | provider edit rebuilds only its crate and the host |
+| P6 | Providers: `client` (24 inbound) into `model-client` plus one crate per wire dialect; `llm_client`, `pricing`/`route_billing`/`cost_status`. OAuth and credentials move with config in P3 | provider edit rebuilds only its crate and the host |
 | P7 | Runtime tier: `core` engine, `fleet` and `tools/subagent` (19k-line `mod.rs`, CW-6722) as `agents`, `runtime_threads` and `session_manager` as `session-store`, `task_manager`, `runtime_api` as its own `runtime-api` crate. Do not fold `runtime_api` into `app-server`: that moves 32k prod and 31k test lines into a second mega crate | `crates/runtime` still has no `tui` or UI-library dependency |
 | P8 | TUI: split reducer from render (`tui/ui/event_loop.rs`, `tui/app`), then views behind `runtime-wire` only | TUI sandbox holds no runtime code |
-| P9 | `cli` becomes the only composition root; delete the `lib.rs` path alias, `module_graph.py` ratchet and every shim | Cargo enforces tiers; `crates/tui` under ~350k including tests |
+| P9 | `cli` becomes the only composition root; delete the `lib.rs` path alias, `module_graph.py` ratchet and every shim | Cargo enforces tiers; each resulting crate stays below 50k production lines |
 
 Measured after P1, RS-10, X7 and X8 (`refactor/0.10.3-crate-split`, against
 `ff466b2ed0`): the largest component went from 84 to 83 modules, and the one
@@ -480,16 +487,18 @@ moved `rt` modules were already singleton components. The P1 gate (SCC below
 70) and the P2 gate (edges at zero) are not met; edge cuts in P2 and P3 remain
 the work that moves mass.
 
-Targets, measured not asserted: no feature or provider leaf with a closure
-over 60k lines; warm provider edit under 10 s and 2 GB; `crates/tui` under
-350k lines.
+Founder target (2026-10-25): about 10k production lines per crate, never
+over 50k. Record the line-count method. Independent targets remain feature
+and provider dependency closures under 60k lines, and warm provider edits
+under 10 s and 2 GB; these targets remain unverified.
 
 ### Other oversized units
 
-- `crates/config` (54k, `lib.rs` 7.9k, tests 11k): split a logic-free
-  `config-types` first (X5), then keep loading and persistence in `config`;
-  take in the TUI config in P3 only after the split so the merge does not
-  create a larger crate.
+- `crates/config` (54k, `lib.rs` 7.9k, tests 11k in this dated baseline):
+  split a logic-free `config-types` first (X5), then keep its loading and
+  persistence in `config`. P3 moves the TUI configuration and OAuth cluster
+  into `codewhale-runtime`; putting it in `codewhale-config` creates
+  dependency cycles.
 - `crates/cli` (39k, `lib.rs` 13.5k, `update.rs` 4.7k, `config_bundles.rs`
   4.4k, `cloud*` 7k+): `lib.rs` is the composition root and absorbs `run` and
   the wiring list in P9. `update`, `config_bundles` and `cloud` move to
@@ -525,10 +534,11 @@ items map to P1 (consumer migration), P2 (X1, X4, X7, X8, credentials) and P3.
 
 ## Known limitations
 
-- **Parallel agents on one machine still share one Cargo lock.** The
-  isolation gain locally is smaller rebuilds. Concurrency comes from
-  sandboxes, each with its own target directory. Do not create per-agent target
-  directories on a shared host; each one is a full build cache.
+- **Native builds share two machine build slots.** Cargo also locks each
+  target directory. The isolation gain locally is smaller rebuilds. Freeze
+  shared compiler inputs before compiling, and use the build-lock wrapper.
+  Do not create per-agent target directories on a shared host; each one is a
+  full build cache.
 - **The final binary still links everything.** Relinking `codewhale` after any
   change is a fixed cost no crate split removes.
 - **Contract edits still fan out.** The design makes them rare and visible,

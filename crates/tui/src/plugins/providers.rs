@@ -4,8 +4,10 @@
 //! inference and public OAuth PKCE clients are supported. Plugin changes require
 //! a restart to add/remove routes; receipt checks revoke existing routes immediately.
 use std::collections::{BTreeMap, BTreeSet};
+use std::net::{Ipv4Addr, TcpListener};
 use std::sync::{Arc, OnceLock};
 
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -169,6 +171,80 @@ pub fn apply_startup_providers(config: &mut Config) -> anyhow::Result<()> {
         apply_providers(config, registry)?;
     }
     Ok(())
+}
+
+/// Core-owned standard public-client PKCE login. Blocking sockets and secure
+/// storage stay on the dedicated worker; plugins never receive token material.
+pub(crate) async fn plugin_oauth_login(
+    provider: String,
+    base_url: String,
+    descriptor: crate::oauth::PluginOAuthConfig,
+    authority: codewhale_config::PluginAuthority,
+) -> Result<()> {
+    let policy = crate::plugins::activation::extension_host_policy_enabled();
+    tokio::task::spawn_blocking(move || {
+        let _scope = crate::plugins::activation::PolicyScope::propagate(policy);
+        crate::plugins::providers::verify_provider_binding(
+            &authority,
+            &provider,
+            &base_url,
+            &descriptor,
+            None,
+        )
+        .map_err(anyhow::Error::msg)?;
+        let slot = crate::oauth::plugin_oauth_slot(&provider, &base_url, &descriptor)?;
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+        listener.set_nonblocking(true)?;
+        let redirect_uri = format!(
+            "http://127.0.0.1:{}{}",
+            listener.local_addr()?.port(),
+            descriptor.callback_path
+        );
+        let pkce = crate::oauth::generate_pkce();
+        let state = crate::oauth::generate_state();
+        let authorize_url = descriptor.authorize_url(&redirect_uri, &state, &pkce)?;
+        eprintln!("{provider} sign-in (PKCE)\n  Open: {authorize_url}");
+        if std::env::var_os("CODEWHALE_PLUGIN_OAUTH_NO_BROWSER").is_none() {
+            let _ = webbrowser::open(&authorize_url);
+        }
+        let (code, _) = crate::oauth::wait_for_callback_validated(
+            &[listener],
+            &descriptor.callback_params(),
+            &state,
+            Some(&descriptor.issuer),
+        )?;
+        crate::plugins::providers::verify_provider_binding(
+            &authority,
+            &provider,
+            &base_url,
+            &descriptor,
+            None,
+        )
+        .map_err(anyhow::Error::msg)?;
+        let mut form = vec![
+            ("grant_type", "authorization_code"),
+            ("client_id", descriptor.client_id.as_str()),
+            ("redirect_uri", redirect_uri.as_str()),
+            ("code", code.as_str()),
+            ("code_verifier", pkce.verifier.as_str()),
+        ];
+        if let Some(resource) = &descriptor.resource {
+            form.push(("resource", resource));
+        }
+        let token = crate::oauth::plugin_token_response(&descriptor, &form, None)?;
+        crate::plugins::providers::verify_provider_binding(
+            &authority,
+            &provider,
+            &base_url,
+            &descriptor,
+            None,
+        )
+        .map_err(anyhow::Error::msg)?;
+        codewhale_secrets::Secrets::auto_detect().set(&slot, &serde_json::to_string(&token)?)?;
+        Ok(())
+    })
+    .await
+    .context("Plugin OAuth login worker failed")?
 }
 
 pub(crate) fn plugin_auth_entry(config: &Config, provider: &str) -> anyhow::Result<ProviderConfig> {

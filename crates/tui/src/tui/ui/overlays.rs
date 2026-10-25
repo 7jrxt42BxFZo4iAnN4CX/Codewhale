@@ -340,7 +340,7 @@ pub(crate) fn open_context_inspector(app: &mut App) {
 }
 
 pub(crate) fn open_external_url(url: &str) -> Result<()> {
-    crate::utils::open_url(url)
+    codewhale_runtime::browser::open_url(url)
 }
 
 /// Pull the latest snapshot of cells / revisions / render options into the

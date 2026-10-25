@@ -1311,7 +1311,7 @@ impl CommandSessionControlContext for SessionControlAdapter<'_> {
         };
         // Synchronous single attempt through the authoritative URL-opening
         // helper; never retried and never deferred to an external-URL action.
-        let launched = crate::utils::open_url(&url).is_ok();
+        let launched = codewhale_runtime::browser::open_url(&url).is_ok();
         map_browser_open_result(url, launched)
     }
 
