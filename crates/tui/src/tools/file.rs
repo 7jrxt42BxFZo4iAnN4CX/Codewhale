@@ -1727,6 +1727,8 @@ impl WriteFileTool {
             check_contract_file_size(normalized.len().saturating_add(extra))?;
             restore_contract_line_endings(&normalized, ending)
         };
+        let kept_ending = (prior_contents.contains('\n') && written != file_content)
+            .then(|| contract_line_ending(&prior_contents));
         guard_edit(
             &file_path,
             path_str,
@@ -1755,7 +1757,13 @@ impl WriteFileTool {
             &written,
             written.as_bytes(),
             outcome,
-            format!("Successfully wrote {utf16_units} bytes to {path_str}"),
+            match kept_ending {
+                Some(ending) => format!(
+                    "Successfully wrote {utf16_units} bytes to {path_str}; kept the existing file's {} line endings (write does not change a file's line-ending style)",
+                    if ending == "\r\n" { "CRLF" } else { "LF" }
+                ),
+                None => format!("Successfully wrote {utf16_units} bytes to {path_str}"),
+            },
         )
         .await)
     }

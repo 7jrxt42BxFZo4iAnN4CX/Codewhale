@@ -35,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   seconds without input or engine events, as it already did in an idle
   session, instead of starting about a dozen git processes every 2 seconds for
   as long as the job lives (#6728).
+- `write` over an existing file now says when it kept that file's CRLF or LF
+  line endings, so the agent no longer reports a line-ending conversion that
+  did not happen (#7070).
 - The To-do that a Plan-to-Work handoff seeds is now titled with the plan's
   first non-heading line outside code fences, without list or emphasis
   markdown, instead of the whole plan run together
