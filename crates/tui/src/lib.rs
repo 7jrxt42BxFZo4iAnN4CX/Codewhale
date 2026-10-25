@@ -10490,18 +10490,20 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
         }),
         _ => None,
     };
-    let review_budget = crate::tools::review_triage::budget_for(&review_triage).with_money_cap(
-        args.money_cap_usd,
-        review_rates.map(|rates| (rates.input_usd_per_million, rates.output_usd_per_million)),
-    );
     // Visible-text reserve for this exact route/model (#6285). A reasoning route
     // shares one `max_tokens` allowance between hidden reasoning and visible
     // text, so the review request has to keep room for the review itself.
+    let review_reserve_percent =
+        crate::route_budget::review_visible_text_reserve_percent(&request_route.model);
+    let review_budget = crate::tools::review_triage::budget_for(&review_triage)
+        .with_reasoning_floor(review_reserve_percent)
+        .with_money_cap(
+            args.money_cap_usd,
+            review_rates.map(|rates| (rates.input_usd_per_million, rates.output_usd_per_million)),
+        );
     let review_allowance = client
         .effective_max_output_tokens(&request_route.model)
         .min(review_budget.max_output_tokens);
-    let review_reserve_percent =
-        crate::route_budget::review_visible_text_reserve_percent(&request_route.model);
     let review_reserve_tokens = crate::route_budget::review_visible_text_reserve_tokens(
         &request_route.model,
         review_allowance,
@@ -10578,19 +10580,11 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
             // #6285: budget exhaustion is an infrastructure outcome, not a
             // review verdict. The PR was never judged, so the message must not
             // read as findings and must name what was and was not reviewed.
-            let reasoning_tokens = usage
+            let reasoning_tokens = result
+                .usage
                 .reasoning_tokens
                 .map_or_else(|| "unknown".to_string(), |tokens| tokens.to_string());
-            let visible_tokens = usage
-                .output_tokens
-                .saturating_sub(usage.reasoning_tokens.unwrap_or(0));
-            let outcome_clause = if visible_tokens > 0 {
-                format!(
-                    "was cut off before the review finished ({visible_tokens} visible tokens came back)"
-                )
-            } else {
-                "produced no review text".to_string()
-            };
+            let outcome_clause = crate::tools::review::exhausted_pass_clause(&result.usage);
             let reserve_clause = if review_reserve_percent == 0 {
                 "no reasoning reserve was needed for this model".to_string()
             } else {

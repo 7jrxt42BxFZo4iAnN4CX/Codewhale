@@ -181,6 +181,8 @@ pub fn triage_review(diff: &str) -> ReviewTriage {
     }
 }
 
+pub const REASONING_ROUTE_MIN_OUTPUT_TOKENS: u32 = 8_192;
+
 /// The budget a tier buys. Low risk still gets a real review of the diff, just
 /// without repository tools; high risk gets dependent tracing and room to
 /// reproduce.
@@ -209,6 +211,16 @@ impl ReviewBudget {
             max_tool_calls: self.max_tool_calls,
             max_tool_result_chars: 40_000,
         }
+    }
+
+    #[must_use]
+    pub fn with_reasoning_floor(mut self, reserve_percent: u32) -> Self {
+        if reserve_percent > 0 {
+            self.max_output_tokens = self
+                .max_output_tokens
+                .max(REASONING_ROUTE_MIN_OUTPUT_TOKENS);
+        }
+        self
     }
 
     /// Attach a per-review money cap. A cap without a price is not enforceable,

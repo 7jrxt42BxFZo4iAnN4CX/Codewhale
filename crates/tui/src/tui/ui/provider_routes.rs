@@ -184,18 +184,18 @@ fn balance_api_for(provider: ProviderKind) -> Option<BalanceApi> {
 
 /// Fetch remaining credit for the active prepaid provider.
 ///
-/// Returns `None` on any error (network, auth, parse) — callers treat that
+/// Returns the reason on any error (network, auth, parse) — callers treat that
 /// as "balance unknown" and keep the previous value.
 pub(crate) async fn fetch_provider_balance(
     provider: ProviderKind,
     api_key: &str,
     base_url: &str,
-) -> Option<crate::pricing::BalanceInfo> {
+) -> Result<crate::pricing::BalanceInfo, String> {
     let api_key = api_key.trim();
     if api_key.is_empty() {
-        return None;
+        return Err("no API key".to_string());
     }
-    match balance_api_for(provider)? {
+    match balance_api_for(provider).ok_or_else(|| "balance is not supported".to_string())? {
         BalanceApi::DeepSeekUserBalance => fetch_deepseek_user_balance(api_key, base_url).await,
         BalanceApi::OpenRouterCredits => fetch_openrouter_credits(api_key, base_url).await,
         BalanceApi::SiliconFlowUserInfo => {
@@ -207,7 +207,7 @@ pub(crate) async fn fetch_provider_balance(
 async fn fetch_deepseek_user_balance(
     api_key: &str,
     base_url: &str,
-) -> Option<crate::pricing::BalanceInfo> {
+) -> Result<crate::pricing::BalanceInfo, String> {
     let origin = base_url.trim_end_matches('/');
     let origin = origin
         .strip_suffix("/beta")
@@ -215,7 +215,10 @@ async fn fetch_deepseek_user_balance(
         .unwrap_or(origin);
     let url = format!("{origin}/user/balance");
     let body: crate::pricing::BalanceResponse = balance_get_json(api_key, &url).await?;
-    body.balance_infos.into_iter().next()
+    body.balance_infos
+        .into_iter()
+        .next()
+        .ok_or_else(|| "the response listed no balance".to_string())
 }
 
 #[derive(serde::Deserialize)]
@@ -236,11 +239,11 @@ fn openrouter_remaining_credits(total_credits: f64, total_usage: f64) -> f64 {
 async fn fetch_openrouter_credits(
     api_key: &str,
     base_url: &str,
-) -> Option<crate::pricing::BalanceInfo> {
+) -> Result<crate::pricing::BalanceInfo, String> {
     let url = format!("{}/credits", base_url.trim_end_matches('/'));
     let body: OpenRouterCreditsResponse = balance_get_json(api_key, &url).await?;
     let remaining = openrouter_remaining_credits(body.data.total_credits, body.data.total_usage);
-    Some(crate::pricing::BalanceInfo {
+    Ok(crate::pricing::BalanceInfo {
         currency: "USD".to_string(),
         total_balance: format!("{remaining:.2}"),
         topped_up_balance: format!("{:.2}", body.data.total_credits),
@@ -267,22 +270,25 @@ async fn fetch_siliconflow_user_info(
     api_key: &str,
     base_url: &str,
     provider: ProviderKind,
-) -> Option<crate::pricing::BalanceInfo> {
+) -> Result<crate::pricing::BalanceInfo, String> {
     let url = format!("{}/user/info", base_url.trim_end_matches('/'));
     let body: SiliconFlowUserInfo = balance_get_json(api_key, &url).await?;
-    let data = body.data?;
+    let data = body
+        .data
+        .ok_or_else(|| "the response carried no account data".to_string())?;
     let total = data
         .total_balance
         .as_deref()
         .or(data.balance.as_deref())
         .map(str::trim)
-        .filter(|value| !value.is_empty())?;
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "the response carried no balance".to_string())?;
     let currency = if provider == ProviderKind::SiliconflowCN {
         "CNY"
     } else {
         "USD"
     };
-    Some(crate::pricing::BalanceInfo {
+    Ok(crate::pricing::BalanceInfo {
         currency: currency.to_string(),
         total_balance: total.to_string(),
         topped_up_balance: data.charge_balance.unwrap_or_default(),
@@ -290,23 +296,38 @@ async fn fetch_siliconflow_user_info(
     })
 }
 
-async fn balance_get_json<T: serde::de::DeserializeOwned>(api_key: &str, url: &str) -> Option<T> {
+async fn balance_get_json<T: serde::de::DeserializeOwned>(
+    api_key: &str,
+    url: &str,
+) -> Result<T, String> {
     let client = &*BALANCE_CLIENT;
     let response = client
         .get(url)
         .header("Authorization", format!("Bearer {api_key}"))
         .send()
         .await
-        .ok()?;
-    if !response.status().is_success() {
+        .map_err(|error| {
+            if error.is_timeout() {
+                "request timed out".to_string()
+            } else if error.is_connect() {
+                "could not connect to the balance service".to_string()
+            } else {
+                "request failed".to_string()
+            }
+        })?;
+    let status = response.status();
+    if !status.is_success() {
         tracing::debug!(
             "balance API returned {}: {}",
-            response.status().as_u16(),
+            status.as_u16(),
             response.text().await.unwrap_or_default()
         );
-        return None;
+        return Err(format!("HTTP {status}"));
     }
-    response.json().await.ok()
+    response
+        .json()
+        .await
+        .map_err(|_| "the response was not readable".to_string())
 }
 
 pub(crate) fn should_fetch_provider_balance(app: &App) -> bool {
@@ -372,7 +393,7 @@ pub(crate) fn schedule_balance_fetch(app: &mut App, api_key: &str, base_url: &st
     let api_key = api_key.to_string();
     let base_url = base_url.to_string();
     tokio::spawn(async move {
-        if let Some(info) = fetch_provider_balance(provider, &api_key, &base_url).await
+        if let Ok(info) = fetch_provider_balance(provider, &api_key, &base_url).await
             && let Ok(mut guard) = cell.lock()
         {
             *guard = Some(info);

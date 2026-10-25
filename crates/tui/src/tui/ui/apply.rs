@@ -2105,7 +2105,7 @@ async fn apply_command_result_inner(
                     } else {
                         let base_url = config.active_route_base_url();
                         match fetch_provider_balance(provider, &api_key, &base_url).await {
-                            Some(info) => {
+                            Ok(info) => {
                                 if let Ok(mut guard) =
                                     balance_cell_for_route(app, provider, &api_key, &base_url)
                                         .lock()
@@ -2117,7 +2117,7 @@ async fn apply_command_result_inner(
                                     content: info.report(provider.provider().display_name()),
                                 });
                             }
-                            None => {
+                            Err(reason) => {
                                 let fallback = app
                                     .balance_cell
                                     .lock()
@@ -2126,7 +2126,7 @@ async fn apply_command_result_inner(
                                     .and_then(|info| {
                                         info.chip_label().map(|amount| {
                                             format!(
-                                                "Could not refresh {} balance; last known: {amount}",
+                                                "Could not refresh {} balance ({reason}); last known: {amount}",
                                                 provider.provider().display_name()
                                             )
                                         })
@@ -2134,7 +2134,7 @@ async fn apply_command_result_inner(
                                 app.add_message(HistoryCell::System {
                                     content: fallback.unwrap_or_else(|| {
                                         format!(
-                                            "Could not fetch {} account balance. Check the provider dashboard.",
+                                            "Could not fetch {} account balance ({reason}). Check the provider dashboard.",
                                             provider.provider().display_name()
                                         )
                                     }),
