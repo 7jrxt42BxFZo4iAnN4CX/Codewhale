@@ -208,7 +208,12 @@ async fn fetch_deepseek_user_balance(
     api_key: &str,
     base_url: &str,
 ) -> Option<crate::pricing::BalanceInfo> {
-    let url = format!("{}/user/balance", base_url.trim_end_matches('/'));
+    let origin = base_url.trim_end_matches('/');
+    let origin = origin
+        .strip_suffix("/beta")
+        .or_else(|| origin.strip_suffix("/v1"))
+        .unwrap_or(origin);
+    let url = format!("{origin}/user/balance");
     let body: crate::pricing::BalanceResponse = balance_get_json(api_key, &url).await?;
     body.balance_infos.into_iter().next()
 }
@@ -668,6 +673,7 @@ pub(crate) async fn switch_provider(
         config.default_text_model = None;
     }
 
+    crate::provider_lake::refresh_local_ollama_catalog(config, &identity).await;
     let resolved_route =
         match resolve_runtime_route_for_identity(config, &identity, model_override.as_deref()) {
             Ok(route) => route,

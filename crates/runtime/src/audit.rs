@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use serde_json::{Value, json};
 
-use crate::utils::{flush_and_sync, open_append};
+use crate::private_log::{flush_and_sync, open_append};
 
 /// Append an audit event to `$CODEWHALE_HOME/audit.log` (or the default
 /// `~/.codewhale/audit.log` when no explicit CodeWhale home is configured).
@@ -86,7 +86,7 @@ fn default_audit_path() -> anyhow::Result<PathBuf> {
     // developer's real ~/.codewhale/audit.log (#6534); it gets a per-process
     // scratch log instead. An *ambient* CODEWHALE_HOME is not a seal: it names
     // somebody's real profile just as `~/.codewhale` does.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     if !crate::test_support::home_is_sealed() {
         return Ok(std::env::temp_dir()
             .join(format!("codewhale-test-audit-{}", std::process::id()))

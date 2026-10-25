@@ -733,7 +733,7 @@ fn context_budget_scenario() {
             .expect("OpenAI Codex should use a conservative fallback without route metadata");
         let expected = usize::try_from(crate::config::OPENAI_CODEX_EFFECTIVE_CONTEXT_WINDOW_TOKENS)
             .expect("context window fits usize")
-            - crate::config::provider_capability(ProviderKind::OpenaiCodex, "gpt-5.5")
+            - crate::provider_lake::provider_capability(ProviderKind::OpenaiCodex, "gpt-5.5")
                 .max_output
                 .expect("Codex route publishes a deliberate conservative output cap")
                 as usize
@@ -759,14 +759,14 @@ fn route_context_scenario() {
         assert_eq!(
             budget.output_cap_tokens,
             u64::from(
-                crate::config::provider_capability(ProviderKind::OpenaiCodex, "gpt-5.5")
+                crate::provider_lake::provider_capability(ProviderKind::OpenaiCodex, "gpt-5.5")
                     .max_output
                     .expect("Codex route publishes a deliberate conservative output cap")
             )
         );
         assert_eq!(
             budget.pressure,
-            crate::context_budget::PressureLevel::Critical
+            codewhale_runtime::context_budget::PressureLevel::Critical
         );
         assert!(!budget.fits_additional(1));
     }
@@ -873,7 +873,7 @@ async fn preflight_guard_measures_honest_input_against_the_input_ceiling() {
     let target_ceiling = u64::try_from((honest + inflated) / 2).unwrap();
     engine.active_route_limits = Some(codewhale_config::route::RouteLimits {
         context_tokens: Some(
-            target_ceiling + output_cap + crate::context_budget::CONTEXT_HEADROOM_TOKENS,
+            target_ceiling + output_cap + codewhale_runtime::context_budget::CONTEXT_HEADROOM_TOKENS,
         ),
         input_tokens: None,
         output_tokens: Some(output_cap),

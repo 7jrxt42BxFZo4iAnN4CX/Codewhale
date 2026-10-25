@@ -12,7 +12,6 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{expand_path, normalize_model_name};
-use crate::reasoning_preference::ReasoningEffort;
 use codewhale_config::resolve::Layer;
 use codewhale_localization::normalize_configured_locale;
 use codewhale_palette::{normalize_hex_rgb_color, normalize_theme_setting};
@@ -403,7 +402,7 @@ pub struct Settings {
     /// always take precedence; when this is on, startup still refuses to
     /// resume an archived, unreadable, or foreign-workspace session and falls
     /// back to a fresh transcript with a receipt. See
-    /// [`crate::session_resume`] for the decision table.
+    /// `crate::session_resume` for the decision table.
     #[serde(default, skip_serializing_if = "is_false")]
     pub session_auto_resume: bool,
     /// Cost display currency: usd or cny.
@@ -1725,14 +1724,15 @@ impl Settings {
                 self.session_auto_resume = parse_bool(value)?;
             }
             "cost_currency" | "currency" => {
-                let Some(currency) = crate::pricing::CostCurrency::from_setting(value) else {
+                let Some(currency) = codewhale_config::pricing::CostCurrency::from_setting(value)
+                else {
                     anyhow::bail!(
                         "Failed to update setting: invalid cost currency '{value}'. Expected: usd, cny, rmb, yuan."
                     );
                 };
                 self.cost_currency = match currency {
-                    crate::pricing::CostCurrency::Usd => "usd",
-                    crate::pricing::CostCurrency::Cny => "cny",
+                    codewhale_config::pricing::CostCurrency::Usd => "usd",
+                    codewhale_config::pricing::CostCurrency::Cny => "cny",
                 }
                 .to_string();
             }
@@ -2132,25 +2132,6 @@ impl Settings {
             label: None,
         });
         true
-    }
-
-    #[allow(dead_code)] // label editing surface is exposed through settings serialization first
-    pub fn set_pinned_model_label(
-        &mut self,
-        provider: &str,
-        model: &str,
-        label: Option<String>,
-    ) -> bool {
-        self.pinned_models
-            .iter_mut()
-            .find(|pin| {
-                pin.provider.eq_ignore_ascii_case(provider) && pin.model.eq_ignore_ascii_case(model)
-            })
-            .map(|pin| {
-                pin.label = label.filter(|value| !value.trim().is_empty());
-                true
-            })
-            .unwrap_or(false)
     }
 
     pub fn move_pinned_model(&mut self, provider: &str, model: &str, delta: isize) -> bool {
@@ -2789,8 +2770,8 @@ fn normalize_reasoning_effort_setting(value: &str) -> Result<Option<String>> {
         return Ok(None);
     }
 
-    ReasoningEffort::parse_strict(trimmed)
-        .map(|effort| Some(effort.as_setting().to_string()))
+    codewhale_config::settings_schema::canonical_reasoning_effort(trimmed)
+        .map(|effort| Some(effort.to_string()))
         .map_err(|err| anyhow::anyhow!("Failed to update setting: {err}"))
 }
 
@@ -5943,7 +5924,7 @@ zai = ["GLM-5.2", "GLM-5.3"]
         assert_eq!(settings.pinned_models[0].provider, "zai");
         assert!(settings.move_pinned_model("openrouter", "glm-5.2", -1));
         assert_eq!(settings.pinned_models[0].provider, "openrouter");
-        assert!(settings.set_pinned_model_label("openrouter", "glm-5.2", Some("fast".to_string())));
+        settings.pinned_models[0].label = Some("fast".to_string());
         let encoded = toml::to_string(&settings).unwrap();
         let decoded: Settings = toml::from_str(&encoded).unwrap();
         assert_eq!(decoded.pinned_models, settings.pinned_models);

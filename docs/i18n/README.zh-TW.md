@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:7e0946fcaecd -->
+<!-- source: README.md sha256:a027945e67d4 -->
 <div align="center">
 
 <picture>
@@ -27,6 +27,14 @@
 <sub>使用腳本化測試模型的 0.10.2 開發版本，在用完即丟的工作區中以「完整存取」執行。其中的編輯、三項測試與一次子代理審查都是實際執行的。</sub>
 
 </div>
+
+<p align="center">
+  <a href="https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67" rel="sponsored">
+    <img src="../../web/public/codewhale-x-orcarouter.webp" alt="Codewhale × OrcaRouter：DeepSeek v4.1 Flash 用量增加 30%" width="760">
+  </a>
+</p>
+
+[查看 Codewhale × OrcaRouter 優惠](https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67). Codewhale 會從 OrcaRouter 獲得推薦佣金。
 
 ## 安裝
 
@@ -72,7 +80,7 @@ Fix the failing tests and explain what changed.
 
 唯讀指令會直接執行。其他任何 shell 指令，Codewhale 都會先詢問：`y` 執行這一次，
 `a` 允許本次對話後續類似的指令，`n` 拒絕。`/undo` 會還原你上一個請求及其
-檔案變更（在 0.10.1 中，請先執行 `/trust on`）。`/help` 會列出指令與按鍵。
+檔案變更。`/help` 會列出指令與按鍵。
 
 在腳本與 CI 中，`codewhale exec` 會在沒有介面的情況下執行一項任務。預設情況下，`--auto`
 使用「完整存取」權限：工具不經詢問就執行，shell 指令不受 Codewhale 沙箱限制，信任模式
@@ -129,8 +137,7 @@ OpenRouter 與 xAI。任何相容 OpenAI 的端點都能使用，透過 Ollama�
 ### 回條與復原
 
 `/receipts`（或在結束後執行 `codewhale receipts --last`）會列出變更的檔案、執行的指令、
-網路與 MCP 呼叫、啟動的代理、核准紀錄與核准人，以及失敗項目。`/undo` 會還原你上一個請求；
-在 0.10.1 中，還原檔案需要 `/trust on`，而且每次只退回一個工具呼叫。`/restore` 會把整個工作區回復到先前的快照；由於這會覆寫之後的編輯，因此需要 `/trust on`
+網路與 MCP 呼叫、啟動的代理、核准紀錄與核准人，以及失敗項目。`/undo` 一步還原你上一個請求及其變更的檔案，無需信任模式。`/restore` 會把整個工作區回復到先前的快照；由於這會覆寫之後的編輯，因此需要 `/trust on`
 或「完整存取」。請參閱[回條](../RECEIPTS.md)。
 
 可使用工具的 exec 執行紀錄無論採用哪種輸出格式都會儲存，因此在 `exec --auto` 之後，

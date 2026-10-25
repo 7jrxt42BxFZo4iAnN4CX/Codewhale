@@ -139,7 +139,7 @@ impl ChildAccountingProjection {
 
 #[derive(Clone)]
 pub(crate) struct ChildAuthority {
-    pub(crate) grant: crate::worker_profile::ChildGrant,
+    pub(crate) grant: codewhale_agent_contract::worker_profile::ChildGrant,
     pub(super) disallowed_tools: Vec<String>,
     pub(super) accept_edits: bool,
     pub(crate) agent_type: FleetRole,
@@ -176,7 +176,7 @@ impl ChildAuthority {
         let mut effective = runtime.worker_profile.clone();
         effective.shell = effective.shell.min_with(parent_shell);
         let scope = intersect_explicit_tool_scope(&effective.tools, explicit_allowed_tools);
-        let grant = crate::worker_profile::ChildGrant::resolve(
+        let grant = codewhale_agent_contract::worker_profile::ChildGrant::resolve(
             &agent_type,
             &effective,
             scope,
@@ -313,7 +313,7 @@ impl ChildAuthority {
     where
         F: std::future::Future<Output = std::result::Result<T, ToolError>>,
     {
-        let (deadline, _) = budget_handback::wall_deadlines(&self.runtime);
+        let deadline = budget_handback::wall_deadline(&self.runtime);
         match run_tool_with_person_aware_timeout(
             self.runtime.tool_timeout,
             deadline,
@@ -364,7 +364,7 @@ impl ChildAuthority {
             )));
         }
         let action = input.get("action").and_then(Value::as_str);
-        if self.grant.surface == crate::worker_profile::ToolSurface::Evidence
+        if self.grant.surface == codewhale_agent_contract::worker_profile::ToolSurface::Evidence
             && name == "Web"
             && !matches!(action, Some("search" | "fetch"))
         {
@@ -574,7 +574,7 @@ impl ChildAuthority {
             .is_some_and(|spec| match spec.approval_requirement_for(input) {
                 ApprovalRequirement::Auto => true,
                 ApprovalRequirement::Suggest => {
-                    self.grant.files == crate::worker_profile::FileGrant::Write
+                    self.grant.files == codewhale_agent_contract::worker_profile::FileGrant::Write
                         && (self.accept_edits
                             || Self::role_can_delegate_writes(&self.agent_type)
                             || self.workspace_write_carve_out_permits(registry, name, input))
@@ -599,7 +599,7 @@ impl ChildAuthority {
         // This is a bounded convenience for write-capable children, not an
         // authority escalation: every target must resolve inside the workspace
         // and still pass sensitive-path, repository-law, and claim checks.
-        if self.grant.files != crate::worker_profile::FileGrant::Write {
+        if self.grant.files != codewhale_agent_contract::worker_profile::FileGrant::Write {
             return false;
         }
         crate::core::authority::paths_within_workspace_write_carve_out(
@@ -637,7 +637,7 @@ impl ChildAuthority {
             ) {
                 ApprovalRequirement::Auto => true,
                 ApprovalRequirement::Suggest => {
-                    self.grant.files == crate::worker_profile::FileGrant::Write
+                    self.grant.files == codewhale_agent_contract::worker_profile::FileGrant::Write
                 }
                 ApprovalRequirement::Required => {
                     // An outbound read needs approval because its payload can
@@ -674,7 +674,7 @@ impl ChildAuthority {
                     // `Verify` holds process-start authority for the bounded
                     // verification surface; the envelope below still refuses
                     // its ExecutesCode/WritesFiles calls by capability.
-                    self.grant.shell >= crate::worker_profile::ShellGrant::Verify
+                    self.grant.shell >= codewhale_agent_contract::worker_profile::ShellGrant::Verify
                 }
             },
             None => true,
@@ -689,7 +689,8 @@ impl ChildAuthority {
     }
 
     pub(crate) fn allows_bounded_readonly_bash(&self, name: &str) -> bool {
-        name == "bash" && self.grant.shell == crate::worker_profile::ShellGrant::Inspect
+        name == "bash"
+            && self.grant.shell == codewhale_agent_contract::worker_profile::ShellGrant::Inspect
     }
 
     pub(crate) fn legacy_action_alias(family: &str, action: &str) -> Option<&'static str> {
@@ -759,7 +760,7 @@ impl ChildAuthority {
                 .is_some_and(|tool| crate::tools::registry::readonly_evidence_tool(tool.as_ref()));
         // The Evidence surface admits only the hardened evidence tools and
         // `agent` (delegation).
-        if self.grant.surface == crate::worker_profile::ToolSurface::Evidence
+        if self.grant.surface == codewhale_agent_contract::worker_profile::ToolSurface::Evidence
             && lower != "agent"
             && !evidence_tool
         {
@@ -776,7 +777,7 @@ impl ChildAuthority {
             )
             || lower.starts_with("terminal/");
         raw_shell
-            && self.grant.shell < crate::worker_profile::ShellGrant::Full
+            && self.grant.shell < codewhale_agent_contract::worker_profile::ShellGrant::Full
             && !self.allows_bounded_readonly_bash(name)
     }
 
@@ -785,11 +786,11 @@ impl ChildAuthority {
     }
 
     pub(crate) fn write_is_denied(&self) -> bool {
-        self.grant.files != crate::worker_profile::FileGrant::Write
+        self.grant.files != codewhale_agent_contract::worker_profile::FileGrant::Write
     }
 
     pub(crate) fn shell_is_denied(&self) -> bool {
-        self.grant.shell < crate::worker_profile::ShellGrant::Verify
+        self.grant.shell < codewhale_agent_contract::worker_profile::ShellGrant::Verify
     }
 
     pub(crate) fn execution_envelope(&self) -> crate::tools::execution_envelope::ExecutionEnvelope {
@@ -797,7 +798,7 @@ impl ChildAuthority {
         // dispatch derive it from the same fields, never from a deny-list
         // sentinel or a role re-mapping that could disagree with them.
         crate::tools::execution_envelope::ExecutionEnvelope {
-            write: self.grant.files == crate::worker_profile::FileGrant::Write,
+            write: self.grant.files == codewhale_agent_contract::worker_profile::FileGrant::Write,
             network: self.grant.network,
             shell: !self.shell_is_denied(),
         }
@@ -838,7 +839,7 @@ impl ChildAuthority {
         if !matches!(action, "claim" | "release") {
             return true;
         }
-        self.grant.files == crate::worker_profile::FileGrant::Write
+        self.grant.files == codewhale_agent_contract::worker_profile::FileGrant::Write
             && !self.is_tool_denied("agents/coordinate")
     }
 
@@ -846,7 +847,7 @@ impl ChildAuthority {
         // Visibility and dispatch consult the same capability guard. These
         // representative calls let a read-only bash schema survive catalog
         // shaping without treating an empty input as arbitrary shell authority.
-        if self.grant.shell != crate::worker_profile::ShellGrant::Inspect {
+        if self.grant.shell != codewhale_agent_contract::worker_profile::ShellGrant::Inspect {
             return None;
         }
         match name {
@@ -932,10 +933,11 @@ impl ChildAuthority {
                     return false;
                 };
                 let posture_allows = tool.name != "File"
-                    || self.grant.files == crate::worker_profile::FileGrant::Write
+                    || self.grant.files
+                        == codewhale_agent_contract::worker_profile::FileGrant::Write
                     || matches!(action, "read" | "list" | "search_name" | "search_content");
                 let evidence_action = self.grant.surface
-                    != crate::worker_profile::ToolSurface::Evidence
+                    != codewhale_agent_contract::worker_profile::ToolSurface::Evidence
                     || tool.name != "Web"
                     || matches!(action, "search" | "fetch");
                 let mut representative = self
@@ -986,9 +988,7 @@ pub(crate) struct ChildJob {
     pub(crate) assignment: SubAgentAssignment,
     pub(crate) started_at: Instant,
     pub(crate) max_steps: u32,
-    pub(crate) work_max_steps: u32,
-    pub(crate) work_deadline: Option<Instant>,
-    pub(crate) hard_deadline: Option<Instant>,
+    pub(crate) deadline: Option<Instant>,
     pub(crate) fork_context: bool,
     parking: Option<Arc<std::sync::atomic::AtomicBool>>,
     artifact: tokio::sync::Mutex<Option<SubAgentTranscriptArtifactWriter>>,
@@ -997,7 +997,6 @@ pub(crate) struct ChildJob {
     logical_steps: std::sync::atomic::AtomicU32,
     response_received: std::sync::atomic::AtomicBool,
     selected_model: std::sync::Mutex<String>,
-    pacing_sent: std::sync::atomic::AtomicBool,
     stop_reason: std::sync::Mutex<Option<String>>,
 }
 impl ChildJob {
@@ -1009,12 +1008,7 @@ impl ChildJob {
         fork_context: bool,
         parking: Option<Arc<std::sync::atomic::AtomicBool>>,
     ) -> Result<Arc<Self>> {
-        let work_max_steps = if max_steps >= 2 {
-            max_steps - 1
-        } else {
-            max_steps
-        };
-        let (work_deadline, hard_deadline) = budget_handback::wall_deadlines(&authority.runtime);
+        let deadline = budget_handback::wall_deadline(&authority.runtime);
         let artifact = SubAgentTranscriptArtifactWriter::for_runtime(
             &authority.runtime,
             &authority.owner_agent_id,
@@ -1026,9 +1020,7 @@ impl ChildJob {
             assignment,
             started_at,
             max_steps,
-            work_max_steps,
-            work_deadline,
-            hard_deadline,
+            deadline,
             fork_context,
             parking,
             artifact: tokio::sync::Mutex::new(Some(artifact)),
@@ -1038,7 +1030,6 @@ impl ChildJob {
             logical_steps: std::sync::atomic::AtomicU32::new(0),
             response_received: std::sync::atomic::AtomicBool::new(false),
             selected_model: std::sync::Mutex::new(selected_model),
-            pacing_sent: std::sync::atomic::AtomicBool::new(false),
             stop_reason: std::sync::Mutex::new(None),
         }))
     }
@@ -1073,21 +1064,6 @@ impl ChildJob {
             .selected_model
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = model.to_owned();
-    }
-    pub(crate) fn pacing_notice(&self) -> Option<String> {
-        if self.pacing_sent.load(std::sync::atomic::Ordering::Relaxed) {
-            return None;
-        }
-        let notice = child_budget_pacing_notice(
-            self.started_at,
-            self.work_deadline,
-            self.steps(),
-            self.work_max_steps,
-        )?;
-        (!self
-            .pacing_sent
-            .swap(true, std::sync::atomic::Ordering::Relaxed))
-        .then_some(notice)
     }
     pub(crate) async fn project(&self, messages: &[Message], steps: u32) -> Result<()> {
         let mut artifact = self.artifact.lock().await;
@@ -1306,7 +1282,7 @@ impl ChildJob {
             } else {
                 None
             };
-            let mut handback_note = "The bounded Core hand-back preserves the recorded work; the assignment is not complete.".to_string();
+            let mut handback_note = "The host preserves the recorded work without another model request; the assignment is not complete.".to_string();
             if let Some(artifact) = artifact {
                 handback_note.push_str(&format!(
                     " Recorded work is saved as this child's deliverable: {}.",
@@ -1516,16 +1492,19 @@ pub(super) async fn run_child_agent(
         owner_agent_name,
         allowed_tools.clone(),
     );
-    let system =
+    let mut system =
         build_subagent_system_prompt_with_skills(&agent_type, &assignment, &runtime.context);
-    let work_max_steps = if max_steps >= 2 {
-        max_steps - 1
-    } else {
-        max_steps
-    };
+    if let Some(schema) = runtime.workflow_response_schema.as_ref() {
+        system = system
+            .replace(SUBAGENT_OUTPUT_FORMAT, "")
+            .replace(WRITE_CHILD_VERIFY_CONTRACT, "");
+        system.push_str(&format!(
+            "\n\nFor this read-only Workflow task, return exactly one JSON value matching the following response schema. This replaces the default report sections and Markdown format. Include the requested findings and evidence in that JSON value, with no surrounding fences or prose.\n{schema}"
+        ));
+    }
     let prompt = format!(
         "{prompt}\n\n{}",
-        child_runtime_budget_context(&runtime, max_steps, work_max_steps)
+        child_runtime_budget_context(&runtime, max_steps)
     );
     let fork = if fork_context {
         match runtime.fork_context.as_ref() {
@@ -1599,7 +1578,7 @@ pub(super) async fn run_child_agent(
     let config = crate::core::engine::EngineConfig {
         workspace: runtime.context.workspace.clone(),
         model: runtime.model.clone(),
-        max_steps: crate::core::engine::turn_budget::resolve_max_model_steps(Some(work_max_steps)),
+        max_steps: codewhale_runtime::turn_budget::resolve_max_model_steps(Some(max_steps)),
         compaction: runtime.compaction.clone(),
         subagent_api_timeout: runtime.step_api_timeout,
         auto_review_policy: runtime.auto_review_policy.as_ref().clone(),
@@ -1802,7 +1781,7 @@ pub(crate) async fn drive_child_actor(
                             &agent_id,
                             event,
                             &handle.captured_turn_cancel(),
-                            job.hard_deadline.map(Into::into),
+                            job.deadline.map(Into::into),
                         ).await;
                     }
                     Event::ToolCallStarted { id, name, .. } => {
@@ -1859,7 +1838,7 @@ pub(crate) async fn drive_child_actor(
                 &agent_id,
                 event,
                 &handle.captured_turn_cancel(),
-                job.hard_deadline.map(Into::into),
+                job.deadline.map(Into::into),
             )
             .await;
         }
@@ -1891,7 +1870,7 @@ pub(crate) async fn drive_child_actor(
             };
             if runtime.cancel_token.is_cancelled() {
                 let _ = tx.try_send(event);
-            } else if let Some(deadline) = job.hard_deadline {
+            } else if let Some(deadline) = job.deadline {
                 let _ = tokio::time::timeout_at(deadline.into(), tx.send(event)).await;
             } else {
                 let _ = tx.send(event).await;

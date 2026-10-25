@@ -301,7 +301,7 @@ impl ExtensionsSnapshot {
     pub fn from_app(app: &App) -> Self {
         let mut snapshot = Self {
             mcp_generation: app.mcp_snapshot_generation,
-            mcp_initializing: app.mcp_initializing,
+            mcp_initializing: app.mcp_boot_initializing(),
             ..Self::default()
         };
         snapshot.tabs[ExtensionsTab::Hooks.index()] = hooks_model(app, app.ui_locale);

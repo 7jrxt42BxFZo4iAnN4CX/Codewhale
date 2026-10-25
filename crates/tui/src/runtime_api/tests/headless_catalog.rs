@@ -15,7 +15,7 @@ struct CatalogReset;
 impl Drop for CatalogReset {
     fn drop(&mut self) {
         cold_process();
-        crate::tools::large_output_router::WorkshopConfig::install_active(None);
+        crate::tools::large_output_router::install_active_workshop(None);
     }
 }
 

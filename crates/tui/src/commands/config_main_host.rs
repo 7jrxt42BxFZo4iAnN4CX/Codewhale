@@ -424,8 +424,8 @@ pub(crate) fn show_single_setting(app: &App, key: &str) -> ConfigReply {
         ),
         "cost_currency" | "currency" => Some(
             match app.cost_currency {
-                crate::pricing::CostCurrency::Usd => "usd",
-                crate::pricing::CostCurrency::Cny => "cny",
+                codewhale_config::pricing::CostCurrency::Usd => "usd",
+                codewhale_config::pricing::CostCurrency::Cny => "cny",
             }
             .to_string(),
         ),
@@ -1796,7 +1796,7 @@ pub fn set_config_value(app: &mut App, key: &str, value: &str, persist: bool) ->
                 // endpoint owns its model namespace, so an id declared for the
                 // saved DeepSeek route validates verbatim before the catalog
                 // normalization runs.
-                if crate::provider_lake::configured_model_for_route(
+                if crate::config::configured_model_for_route(
                     &saved,
                     ProviderKind::Deepseek,
                     identity.key.as_str(),
@@ -2509,8 +2509,9 @@ pub fn set_config_value(app: &mut App, key: &str, value: &str, persist: bool) ->
             app.needs_redraw = true;
         }
         "cost_currency" | "currency" => {
-            app.cost_currency = crate::pricing::CostCurrency::from_setting(&settings.cost_currency)
-                .unwrap_or(crate::pricing::CostCurrency::Usd);
+            app.cost_currency =
+                codewhale_config::pricing::CostCurrency::from_setting(&settings.cost_currency)
+                    .unwrap_or(codewhale_config::pricing::CostCurrency::Usd);
             app.needs_redraw = true;
         }
         key @ ("mini_window.keep_header"
@@ -3135,7 +3136,7 @@ mod tests {
         app.push_status_toast("error receipt", StatusToastLevel::Error, None);
         app.sticky_status = Some(StatusToast::context_pressure(
             "context warning",
-            crate::context_budget::PressureLevel::High,
+            codewhale_runtime::context_budget::PressureLevel::High,
         ));
 
         let result = crate::commands::execute("/config contextual_tips off", &mut app);
@@ -4328,7 +4329,10 @@ mod tests {
         let msg = result.message.unwrap();
 
         assert_eq!(msg, "cost_currency = cny (saved)");
-        assert_eq!(app.cost_currency, crate::pricing::CostCurrency::Cny);
+        assert_eq!(
+            app.cost_currency,
+            codewhale_config::pricing::CostCurrency::Cny
+        );
 
         let settings_path = Settings::path().unwrap();
         let saved = fs::read_to_string(settings_path).unwrap();
@@ -4629,11 +4633,11 @@ mod tests {
         let result = config_command(&mut app, Some("subagents max_depth 99 --save"));
         let msg = result.message.unwrap();
         let saved = fs::read_to_string(&config_path).unwrap();
-        let ceiling = codewhale_config::MAX_SPAWN_DEPTH_CEILING;
+        let ceiling = 99;
 
         assert!(!result.is_error);
         assert!(msg.contains(&format!("subagents.max_depth = {ceiling}")));
-        assert!(msg.contains(&format!("clamped from 99 to {ceiling}")));
+        assert!(!msg.contains("clamped"));
         assert!(saved.contains(&format!("max_depth = {ceiling}")));
         match result.action {
             Some(AppAction::UpdateSubagentRuntimeConfig {

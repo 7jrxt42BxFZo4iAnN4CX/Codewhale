@@ -25,7 +25,7 @@ use crate::config::{
 use crate::core::authority::{ModeSessionPrefs, base_policy_for_mode};
 use crate::core::events::TurnRoute;
 use crate::hooks::{HookContext, HookEvent, HookExecutor};
-use crate::pricing::{CostCurrency, CostEstimate};
+use crate::pricing::CostEstimate;
 use crate::reasoning_preference::{EffectiveReasoningEffort, ReasoningEffort};
 use crate::session_manager::{SessionContextReference, SessionMetadata, SessionWorkState};
 use crate::settings::{InlineDiffMode, Settings};
@@ -48,6 +48,7 @@ use crate::tui::shell_key_routing::Focus;
 use crate::tui::streaming::StreamingState;
 use crate::tui::transcript::TranscriptViewCache;
 use crate::tui::views::ViewStack;
+use codewhale_config::pricing::CostCurrency;
 use codewhale_localization::{Locale, MessageId, resolve_locale, tr};
 use codewhale_models::{ContentBlock, Message, SystemPrompt, Tool, Usage};
 use codewhale_palette::{self as palette, UiTheme};
@@ -1608,7 +1609,7 @@ pub struct App {
     pub api_message_stamps: Vec<DateTime<Utc>>,
     /// Full saved history, including inactive branches. API messages remain
     /// the active projection; snapshots reconcile it without rebuilding IDs.
-    pub session_journal: crate::session_tree::SessionJournal,
+    pub session_journal: codewhale_runtime::session_tree::SessionJournal,
     /// User-visible assistant text that crossed typed completion boundaries.
     /// Receipts are aligned to transcript cells because provider context can
     /// be compacted or purged without changing what remains visible.
@@ -1651,7 +1652,7 @@ pub struct App {
     /// each TurnStarted; background suggestion tasks capture the token and
     /// discard their result if the token no longer matches.
     pub prompt_suggestion_gen: std::sync::atomic::AtomicU64,
-    /// Degraded connectivity mode; new user inputs are queued for later retry.
+    /// Queue new submissions while browsing offline or recovering provider setup.
     pub offline_mode: bool,
     /// Whether an `EngineEvent::Error` has already been posted for the
     /// current turn. Suppresses the redundant "Turn failed:" status line
@@ -1678,7 +1679,8 @@ pub struct App {
     /// Prevents the same pressure condition from immediately re-arming after
     /// the operator explicitly dismisses its sticky warning. Reset when the
     /// pressure falls below the warning threshold or compaction starts.
-    pub context_pressure_warning_dismissed: Option<crate::context_budget::PressureLevel>,
+    pub context_pressure_warning_dismissed:
+        Option<codewhale_runtime::context_budget::PressureLevel>,
     /// Last on-disk plugin catalog stamp we already nudged `/plugin reload` for.
     pub plugin_reload_nudge_stamp: Option<crate::plugins::PluginCatalogStamp>,
     /// Last idle catalog fingerprint poll, so disk changes can surface between turns.
@@ -1808,7 +1810,7 @@ pub struct App {
     /// Off-event-loop worker for durable Lane control writes. `/lane interrupt`
     /// submits here instead of tearing down a Runtime on the composer thread
     /// (#4022).
-    pub lane_control: crate::lane_control::LaneControlQueue,
+    pub lane_control: codewhale_runtime::lane_control::LaneControlQueue,
     /// Immutable plugin catalogue scoped to this App's effective workspace.
     pub plugin_registry: std::sync::Arc<crate::plugins::PluginRegistry>,
     pub config_path: Option<PathBuf>,
@@ -2283,6 +2285,11 @@ pub struct App {
     /// True while the engine-owned MCP boot connection pass is in flight.
     /// Configured rows render as connecting until its snapshot lands.
     pub mcp_initializing: bool,
+    /// When that prediction was made. `None` while no prediction is live; a
+    /// prediction older than
+    /// [`MCP_BOOT_PREDICTION_HORIZON`](crate::tui::session_boot::MCP_BOOT_PREDICTION_HORIZON)
+    /// is retired because the missing receipt is the answer (#7035).
+    pub mcp_boot_predicted_at: Option<Instant>,
     /// Latest engine-owned MCP event generation applied to the UI.
     pub mcp_snapshot_generation: u64,
     /// The direct snapshot from a successful `/mcp` action supersedes any
@@ -2804,6 +2811,65 @@ fn default_composer_arrows_scroll_for_platform(use_mouse_capture: bool, _is_wind
 }
 
 impl App {
+    /// Start or end an MCP boot prediction, stamping when it starts.
+    ///
+    /// Every writer of [`App::mcp_initializing`] goes through here so a
+    /// prediction always carries its own age; a bare flag could outlive the
+    /// pass it describes (#7035).
+    pub fn set_mcp_boot_initializing(&mut self, initializing: bool) {
+        self.mcp_initializing = initializing;
+        // Progress events re-assert the prediction on every batch; only a
+        // genuine stop→start restarts its clock, or a talkative pass that
+        // never finishes would keep the guess alive forever.
+        self.mcp_boot_predicted_at = match (initializing, self.mcp_boot_predicted_at) {
+            (true, Some(stamp)) => Some(stamp),
+            (true, None) => Some(Instant::now()),
+            (false, _) => None,
+        };
+    }
+
+    /// True while the boot prediction is still worth painting.
+    #[must_use]
+    pub fn mcp_boot_initializing(&self) -> bool {
+        self.mcp_boot_initializing_at(Instant::now())
+    }
+
+    #[must_use]
+    pub(crate) fn mcp_boot_initializing_at(&self, now: Instant) -> bool {
+        self.mcp_initializing
+            && self.mcp_boot_predicted_at.is_some_and(|predicted_at| {
+                now.saturating_duration_since(predicted_at)
+                    < crate::tui::session_boot::MCP_BOOT_PREDICTION_HORIZON
+            })
+    }
+
+    /// Time until a live boot prediction reaches its horizon, so the event loop
+    /// wakes to retire it rather than waiting for unrelated input (#7035).
+    #[must_use]
+    pub fn mcp_boot_prediction_due_in(&self, now: Instant) -> Option<Duration> {
+        let predicted_at = self.mcp_boot_predicted_at?;
+        self.mcp_initializing.then(|| {
+            crate::tui::session_boot::MCP_BOOT_PREDICTION_HORIZON
+                .saturating_sub(now.saturating_duration_since(predicted_at))
+        })
+    }
+
+    /// Retire a prediction whose receipt never arrived, and repaint once so the
+    /// stale rows leave the screen instead of waiting for the next event.
+    pub fn settle_stale_mcp_boot_prediction(&mut self) {
+        self.settle_stale_mcp_boot_prediction_at(Instant::now());
+    }
+
+    pub(crate) fn settle_stale_mcp_boot_prediction_at(&mut self, now: Instant) {
+        if !self.mcp_initializing || self.mcp_boot_initializing_at(now) {
+            return;
+        }
+        self.mcp_initializing = false;
+        self.mcp_boot_predicted_at = None;
+        self.mcp_connecting.clear();
+        self.needs_redraw = true;
+    }
+
     pub(crate) fn should_adopt_live_local_ollama(&mut self) -> bool {
         crate::local_ollama::should_adopt_live_local_ollama(
             self.startup_route_configured,
@@ -5422,7 +5488,7 @@ impl App {
         session: &crate::session_manager::SavedSession,
     ) {
         let journal = session.journal.clone().unwrap_or_else(|| {
-            crate::session_tree::SessionJournal::from_messages(
+            codewhale_runtime::session_tree::SessionJournal::from_messages(
                 session.messages.clone(),
                 session.metadata.spawn_depth,
             )
@@ -5444,7 +5510,7 @@ impl App {
             Some(journal) => journal,
             // Legacy session without a journal: rebuild it from the saved
             // history, as the borrowing path does.
-            None => crate::session_tree::SessionJournal::from_messages(
+            None => codewhale_runtime::session_tree::SessionJournal::from_messages(
                 session.messages.clone(),
                 session.metadata.spawn_depth,
             ),
@@ -5458,7 +5524,7 @@ impl App {
     fn install_restored_api_messages(
         &mut self,
         messages: Vec<Message>,
-        journal: crate::session_tree::SessionJournal,
+        journal: codewhale_runtime::session_tree::SessionJournal,
         stamps: Vec<DateTime<Utc>>,
     ) {
         self.session_journal = journal;
@@ -5477,7 +5543,7 @@ impl App {
     }
 
     pub fn clear_api_messages(&mut self) {
-        self.session_journal = crate::session_tree::SessionJournal::new();
+        self.session_journal = codewhale_runtime::session_tree::SessionJournal::new();
         self.api_messages_mut().clear();
         self.api_message_stamps.clear();
         self.session_turn_outcomes.clear();

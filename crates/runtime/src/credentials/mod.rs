@@ -11,7 +11,7 @@
 //! | `packages/ai/src/auth/types.ts`           | [`Credential`], [`CredentialStore`], [`AuthContext`] |
 //! | `packages/ai/src/auth/credential-store.ts`| [`store::InMemoryCredentialStore`]             |
 //! | `packages/ai/src/auth/context.ts`         | [`context::ProcessAuthContext`]                |
-//! | `packages/ai/src/auth/resolve.ts`         | `crate::config::credential_resolve`            |
+//! | `packages/ai/src/auth/resolve.ts`         | `codewhale_tui::config::credential_resolve`    |
 //!
 //! This is a **design port into idiomatic Rust, not a line-for-line copy**.
 //! pi's module is async TypeScript over a `Provider` record with a single
@@ -55,16 +55,16 @@
 //! variant tag, so a credential cannot reach a log line through `{:?}` on a
 //! surrounding struct.
 
-pub(crate) mod context;
+pub mod context;
 pub(crate) mod source;
-pub(crate) mod store;
+pub mod store;
 
 #[cfg(test)]
 mod tests;
 
-pub(crate) use context::AuthContext;
-pub(crate) use source::{CredentialProbe, CredentialResolution, CredentialSource};
-pub(crate) use store::{CredentialInfo, CredentialStore};
+pub use context::AuthContext;
+pub use source::{CredentialProbe, CredentialResolution, CredentialSource};
+pub use store::{CredentialInfo, CredentialStore};
 
 /// One type-tagged credential per provider — pi's `Credential` union.
 ///
@@ -73,8 +73,8 @@ pub(crate) use store::{CredentialInfo, CredentialStore};
 /// unify; the OAuth variant carries only what a status surface needs, so
 /// adopting this type never moves a token between stores.
 #[derive(Clone, PartialEq, Eq)]
-pub(crate) enum Credential {
-    /// A bearer API key held in CodeWhale's own durable store.
+pub enum Credential {
+    /// A bearer API key held in Codewhale's durable store or process memory.
     ApiKey { key: String },
     /// An OAuth access token plus its expiry, if the flow reported one.
     ///
@@ -84,7 +84,6 @@ pub(crate) enum Credential {
     /// production path mints one yet. The variant is kept because it is half
     /// of the ported contract and the store's serialization guarantee exists
     /// precisely for it.
-    #[cfg_attr(not(test), expect(dead_code))]
     OAuth {
         access: String,
         expires_at_unix_secs: Option<i64>,
@@ -94,7 +93,7 @@ pub(crate) enum Credential {
 impl Credential {
     /// Only [`store::InMemoryCredentialStore::list`] needs this today; the
     /// secret-store adapter knows every slot it holds is an api key.
-    pub(crate) fn kind(&self) -> CredentialKind {
+    pub fn kind(&self) -> CredentialKind {
         match self {
             Self::ApiKey { .. } => CredentialKind::ApiKey,
             Self::OAuth { .. } => CredentialKind::OAuth,
@@ -103,7 +102,7 @@ impl Credential {
 
     /// Borrow the secret. Callers must not log or render the result; this is
     /// the single narrow accessor so `rg "expose_secret"` finds every use.
-    pub(crate) fn expose_secret(&self) -> &str {
+    pub fn expose_secret(&self) -> &str {
         match self {
             Self::ApiKey { key } => key,
             Self::OAuth { access, .. } => access,
@@ -130,7 +129,7 @@ impl std::fmt::Debug for Credential {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CredentialKind {
+pub enum CredentialKind {
     ApiKey,
     /// See the note on [`Credential::OAuth`]: no production store mints one
     /// yet.

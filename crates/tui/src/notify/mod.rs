@@ -6,7 +6,7 @@
 //! terminal UI owns the *terminal*: `tui::notifications` is the only code that
 //! hands a real terminal to [`delivery::notify_with_sinks`], writes the taskbar
 //! progress sequence or the window title. Runtime callers that need a delivery
-//! (the `notify` tool, headless exec) reach it through `crate::host_terminal`,
+//! (the `notify` tool, headless exec) reach it through `codewhale_runtime::host_terminal`,
 //! never by importing the TUI.
 //!
 //! Known limitation: [`delivery::notify_with_sinks`] builds the escape bytes

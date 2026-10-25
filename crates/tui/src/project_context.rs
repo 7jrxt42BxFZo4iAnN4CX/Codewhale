@@ -295,10 +295,9 @@ fn unimported_foreign_warnings(
         if imports.is_enabled(*format) {
             continue;
         }
-        let direct_context_present = format
-            .context_files()
-            .iter()
-            .any(|relative| load_context_file(workspace, &workspace.join(relative)).is_ok());
+        let direct_context_present = format.context_files().iter().any(|relative| {
+            load_context_file_truncating(workspace, &workspace.join(relative)).is_ok()
+        });
         let rules_present = format
             .rules_dirs()
             .iter()
@@ -389,24 +388,32 @@ pub(crate) const MAX_PROJECT_INSTRUCTION_BYTES: usize = 48 * 1024; // 48 KiB
 /// Prevents a project from silently injecting hundreds of rule files.
 const MAX_RULES_FILES: usize = 50;
 
-const CHAIN_TRUNCATION_MARKER: &str =
-    "[…broader-scope project instructions dropped at the aggregate budget…]\n\n";
 const RULES_TRUNCATION_MARKER: &str = "\n\n[…rules block truncated at the aggregate budget…]";
+
+fn chain_truncation_marker(dropped: usize, total: usize) -> String {
+    format!(
+        "[…broader-scope project instructions dropped at the aggregate budget: {dropped} of {total} bytes omitted…]\n\n"
+    )
+}
 
 /// Trim `text` to at most `max` bytes, keeping the tail and marking the cut.
 fn keep_tail_within(text: &str, max: usize) -> String {
     if text.len() <= max {
         return text.to_string();
     }
-    let keep = max.saturating_sub(CHAIN_TRUNCATION_MARKER.len());
+    let keep = max.saturating_sub(chain_truncation_marker(text.len(), text.len()).len());
     if keep == 0 {
-        return CHAIN_TRUNCATION_MARKER.to_string();
+        return chain_truncation_marker(text.len(), text.len());
     }
     let mut start = text.len() - keep;
     while start < text.len() && !text.is_char_boundary(start) {
         start += 1;
     }
-    format!("{CHAIN_TRUNCATION_MARKER}{}", &text[start..])
+    format!(
+        "{}{}",
+        chain_truncation_marker(start, text.len()),
+        &text[start..]
+    )
 }
 
 /// Trim `text` to at most `max` bytes, keeping the head and marking the cut.
@@ -477,8 +484,8 @@ pub(crate) fn enforce_project_instruction_budget(ctx: &mut ProjectContext) {
 /// This searches for known project context files and loads the first one found.
 /// Convenience wrapper that reads the process-wide opt-in set.
 ///
-/// Production goes through [`load_project_context_with_imports`] so the import
-/// set is explicit at the call site; this exists for tests that only care about
+/// Production goes through [`load_project_context_with_parents`] to assemble all
+/// applicable sources; this exists for tests that only care about
 /// default behaviour.
 #[cfg(test)]
 pub fn load_project_context(workspace: &Path) -> ProjectContext {
@@ -490,7 +497,17 @@ pub fn load_project_context(workspace: &Path) -> ProjectContext {
 /// The set is a parameter rather than a global read so a caller — and every
 /// test — states which foreign formats are in play instead of depending on
 /// process-wide state that parallel tests would race on.
+#[cfg(test)]
 pub(crate) fn load_project_context_with_imports(
+    workspace: &Path,
+    imports: &ForeignInstructionImports,
+) -> ProjectContext {
+    let mut ctx = load_workspace_project_context(workspace, imports);
+    enforce_project_instruction_budget(&mut ctx);
+    ctx
+}
+
+fn load_workspace_project_context(
     workspace: &Path,
     imports: &ForeignInstructionImports,
 ) -> ProjectContext {
@@ -549,14 +566,12 @@ pub(crate) fn load_project_context_with_imports(
     // Check for trust file
     ctx.is_trusted = check_trust_status(workspace);
 
-    enforce_project_instruction_budget(&mut ctx);
-
     ctx
 }
 
 /// Load the highest-priority instruction file from one directory.
 ///
-/// Returns the content, its path, and any warnings from failed candidates.
+/// Returns the content, its path, and any warnings from failed or truncated candidates.
 /// A directory with no candidate file yields `(None, None, warnings)`.
 fn load_dir_instructions(
     dir: &Path,
@@ -568,13 +583,14 @@ fn load_dir_instructions(
         let file_path = dir.join(filename);
 
         if context_candidate_exists(&file_path) {
-            match load_context_file(dir, &file_path) {
-                Ok(content) => {
+            match load_context_file_truncating(dir, &file_path) {
+                Ok((content, truncation_warning)) => {
                     tracing::info!(
                         "Loaded project context from {} ({} bytes)",
                         file_path.display(),
                         content.len()
                     );
+                    warnings.extend(truncation_warning);
                     return (Some(content), Some(file_path), warnings);
                 }
                 Err(error) => warnings.push(error.to_string()),
@@ -639,7 +655,7 @@ fn load_project_context_with_parents_and_home_imports(
     // path strips cleanly; without a git root the chain is a single
     // workspace segment that never emits a label at all.
     let git_root = find_git_root(&workspace_canonical);
-    let mut ctx = load_project_context_with_imports(&workspace_canonical, imports);
+    let mut ctx = load_workspace_project_context(&workspace_canonical, imports);
 
     // Assemble the repository-root → workspace instruction chain. The chain
     // directories come from Git traversal of the containing checkout, so a
@@ -743,9 +759,7 @@ fn load_project_context_with_parents_and_home_imports(
     ctx.constitution_block = constitution_block;
     ctx.constitution_source_path = constitution_source_path;
 
-    // The chain and the global layer were both rebuilt above, so re-apply the
-    // one ceiling here. Without this the merged global block was entirely
-    // unbudgeted: the old per-chain accounting closed before the merge.
+    // Apply the one ceiling after assembling the workspace, chain, and global layer.
     enforce_project_instruction_budget(&mut ctx);
 
     ctx
@@ -1016,7 +1030,8 @@ fn load_global_agents_context(workspace: &Path, home_dir: Option<&Path>) -> Opti
 
         if context_candidate_exists(&path) {
             match load_global_context_file(&path) {
-                Ok(content) => {
+                Ok((content, truncation_warning)) => {
+                    warnings.extend(truncation_warning);
                     let mut ctx = ProjectContext::empty(workspace.to_path_buf());
                     ctx.instructions = Some(content);
                     ctx.source_path = Some(path);
@@ -1058,6 +1073,49 @@ fn load_context_file(root: &Path, path: &Path) -> Result<String, ProjectContextE
             source,
         })?;
     read_context_file(file, path)
+}
+
+fn load_context_file_truncating(
+    root: &Path,
+    path: &Path,
+) -> Result<(String, Option<String>), ProjectContextError> {
+    let file =
+        crate::fs_confined::open_read(root, path).map_err(|source| ProjectContextError::Read {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    read_context_file_truncating(file, path)
+}
+
+fn read_context_file_truncating(
+    file: fs::File,
+    path: &Path,
+) -> Result<(String, Option<String>), ProjectContextError> {
+    let (raw, full_len) = crate::prompts::read_prompt_text_bounded(file, MAX_CONTEXT_SIZE)
+        .map_err(|source| ProjectContextError::Read {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    if raw.trim().is_empty() {
+        return Err(ProjectContextError::Empty {
+            path: path.to_path_buf(),
+        });
+    }
+    let total = full_len.max(raw.len());
+    let warning = (total > MAX_CONTEXT_SIZE).then(|| {
+        format!(
+            "Context file {} is too large ({total} bytes, max {MAX_CONTEXT_SIZE}); truncated to its first {MAX_CONTEXT_SIZE} bytes",
+            path.display()
+        )
+    });
+    let hint = format!(
+        "consider splitting {}",
+        project_instructions_source_label(Some(path))
+    );
+    Ok((
+        crate::prompts::cap_prompt_text(&raw, total, MAX_CONTEXT_SIZE, &hint),
+        warning,
+    ))
 }
 
 fn read_context_file(mut file: fs::File, path: &Path) -> Result<String, ProjectContextError> {
@@ -1179,13 +1237,13 @@ fn load_rules_from_dir(workspace: &Path, rules_dir_name: &str) -> Vec<(PathBuf, 
 }
 
 /// User-owned global instructions may intentionally resolve through links.
-fn load_global_context_file(path: &Path) -> Result<String, ProjectContextError> {
+fn load_global_context_file(path: &Path) -> Result<(String, Option<String>), ProjectContextError> {
     let file =
         crate::fs_confined::open_user_read(path).map_err(|source| ProjectContextError::Read {
             path: path.to_path_buf(),
             source,
         })?;
-    read_context_file(file, path)
+    read_context_file_truncating(file, path)
 }
 
 /// Check if this project is marked as trusted
@@ -1338,7 +1396,7 @@ fn push_candidate_entry(
     scope_dir: &Path,
     path: PathBuf,
     scope_loaded: &mut bool,
-    load: impl FnOnce(&Path) -> Result<String, ProjectContextError>,
+    load: impl FnOnce(&Path) -> Result<(String, Option<String>), ProjectContextError>,
 ) {
     let exists = context_candidate_exists(&path);
     let (status, warning) = if !exists {
@@ -1347,9 +1405,9 @@ fn push_candidate_entry(
         (InstructionSourceStatus::Shadowed, None)
     } else {
         match load(&path) {
-            Ok(_) => {
+            Ok((_, warning)) => {
                 *scope_loaded = true;
-                (InstructionSourceStatus::Loaded, None)
+                (InstructionSourceStatus::Loaded, warning)
             }
             Err(error) => (InstructionSourceStatus::Skipped, Some(error.to_string())),
         }
@@ -1412,7 +1470,7 @@ pub fn project_instruction_sources(
                 &dir,
                 dir.join(filename),
                 &mut scope_loaded,
-                |path| load_context_file(&dir, path),
+                |path| load_context_file_truncating(&dir, path),
             );
         }
     }
@@ -3492,7 +3550,7 @@ mod tests {
             "the nearest-scope file must survive the cut"
         );
         assert!(
-            instructions.contains(CHAIN_TRUNCATION_MARKER.trim()),
+            instructions.contains("instructions dropped at the aggregate budget: "),
             "an explicit marker must record that broader scopes were dropped"
         );
         assert!(

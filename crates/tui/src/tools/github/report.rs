@@ -788,7 +788,7 @@ mod tests {
         context.plugin_registry = Some(attachment.plugin_view());
         context
             .features
-            .enable(crate::features::Feature::GithubHost);
+            .enable(codewhale_runtime::features::Feature::GithubHost);
         let tool = GithubTool::new("github");
         let input = json!({"action":"report_draft","report":fields()});
         let first = tool.execute(input.clone(), &context).await.unwrap();
@@ -829,7 +829,7 @@ mod tests {
         let mut context = fixture.context("session-a");
         context
             .features
-            .enable(crate::features::Feature::GithubHost);
+            .enable(codewhale_runtime::features::Feature::GithubHost);
         let manager = std::sync::Arc::new(crate::extension_host::ExtensionHostManager::new(
             crate::extension_host::ExtensionHostOptions {
                 node_override: Some(fixture.tmp.path().join("absent-node")),

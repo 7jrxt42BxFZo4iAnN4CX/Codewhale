@@ -47,7 +47,7 @@ pub mod repo;
 
 #[allow(unused_imports)]
 pub use paths::{snapshot_dir_for, snapshot_git_dir};
-pub use prune::{DEFAULT_MAX_AGE, prune_older_than};
+pub use prune::prune_older_than;
 
 /// Snapshots kept per workspace side-repo, pruned after each new snapshot to
 /// cap disk usage (#1112): the newest this many, plus the newest this many
@@ -58,9 +58,9 @@ pub const DEFAULT_MAX_SNAPSHOTS: usize = 50;
 pub use delta::{DeltaChange, SnapshotDelta};
 #[allow(unused_imports)]
 pub use repo::{
-    DEFAULT_MAX_WORKSPACE_BYTES_FOR_SNAPSHOT, GATE_TOO_LARGE_MARKER, GATE_TOO_MANY_ENTRIES_MARKER,
-    GATE_UNSAFE_LOCATION_MARKER, PathRestoreAction, PathRestoreOutcome, SIZE_WALK_MAX_ENTRIES,
-    Snapshot, SnapshotId, SnapshotPathChange, SnapshotRepo, TakenSnapshot, WorkspaceGate,
+    GATE_TOO_LARGE_MARKER, GATE_TOO_MANY_ENTRIES_MARKER, GATE_UNSAFE_LOCATION_MARKER,
+    PathRestoreAction, PathRestoreOutcome, SIZE_WALK_MAX_ENTRIES, Snapshot, SnapshotId,
+    SnapshotPathChange, SnapshotRepo, TakenSnapshot, WorkspaceGate,
     estimate_workspace_size_bounded, is_git_metadata_name, workspace_relative_path,
 };
 

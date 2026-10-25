@@ -187,7 +187,7 @@ pub(crate) fn report_stall(report: &StallReport) -> Option<PathBuf> {
             .map_or_else(|| "-".to_string(), |p| p.display().to_string()),
     );
     tracing::warn!(target: "turn_stall", "{message}");
-    crate::logging::warn(&message);
+    codewhale_runtime::logging::warn(&message);
     path
 }
 

@@ -238,7 +238,7 @@ impl HostMcpDispatch {
         let (tx_event, rx_event) = mpsc::channel(64);
         let pool = McpPool::new(setup.config)
             .with_disallowed_tools(setup.disallowed_tools.clone())
-            .with_backend(crate::mcp::McpBackend::Host);
+            .with_backend(codewhale_config::McpBackend::Host);
         Box::new(Self {
             inner: McpPoolDispatch {
                 pool: Arc::new(AsyncMutex::new(pool)),

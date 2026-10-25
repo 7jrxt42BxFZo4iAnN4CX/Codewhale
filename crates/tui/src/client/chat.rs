@@ -23,12 +23,12 @@ use crate::config::{
 
 use crate::config::ProviderKind;
 use crate::llm_client::StreamEventBox;
-use crate::logging;
 use codewhale_models::{
     ContentBlock, ContentBlockStart, Delta, Message, MessageDelta, MessageRequest, MessageResponse,
     StreamEvent, SystemPrompt, Tool, ToolCaller, Usage, is_openai_gpt_56_api_model,
     model_is_openai_reasoning_family, model_supports_reasoning,
 };
+use codewhale_runtime::logging;
 
 use super::prepared::WireDialect;
 use super::role_placement::{RolePlacement, role_placement};
@@ -84,7 +84,7 @@ fn apply_openai_reasoning_effort(
     else {
         return;
     };
-    body["reasoning_effort"] = json!(effort);
+    body["reasoning_effort"] = json!(clamp_openai_reasoning_effort(provider, model, effort));
 }
 
 /// xAI's first-party `reasoning_effort` ladder, driven by the bundled
@@ -1000,6 +1000,57 @@ fn openai_compatible_reasoning_effort(
     }
 }
 
+const OPENAI_EFFORT_LADDER: [&str; 7] =
+    ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
+fn clamp_openai_reasoning_effort(
+    provider: ProviderKind,
+    model: &str,
+    effort: &'static str,
+) -> &'static str {
+    let Some(row) =
+        crate::provider_lake::bundled_catalog_offering_for_model(provider, model.trim())
+    else {
+        return effort;
+    };
+    let Some(declared) = row
+        .reasoning_options
+        .iter()
+        .find(|option| option["type"] == "effort")
+        .and_then(|option| option["values"].as_array())
+    else {
+        return effort;
+    };
+    let declared: Vec<&str> = declared.iter().filter_map(Value::as_str).collect();
+    if declared.contains(&effort) {
+        return effort;
+    }
+    let Some(requested) = OPENAI_EFFORT_LADDER
+        .iter()
+        .position(|value| *value == effort)
+    else {
+        return effort;
+    };
+    let mut best: Option<(usize, &'static str)> = None;
+    for (rank, value) in OPENAI_EFFORT_LADDER.iter().enumerate() {
+        if !declared.contains(value) {
+            continue;
+        }
+        let distance = rank.abs_diff(requested);
+        let better = match best {
+            None => true,
+            Some((best_rank, _)) => {
+                let best_distance = best_rank.abs_diff(requested);
+                distance < best_distance || (distance == best_distance && rank > best_rank)
+            }
+        };
+        if better {
+            best = Some((rank, value));
+        }
+    }
+    best.map_or(effort, |(_, value)| value)
+}
+
 fn mirror_minimax_reasoning_details_for_messages(messages: &mut [Value]) {
     for message in messages {
         if message.get("role").and_then(Value::as_str) != Some("assistant") {
@@ -1279,14 +1330,15 @@ impl CodewhaleClient {
         let response_cache_key = if cacheable && self.plugin_provider.is_none() {
             let wire_body =
                 serde_json::to_vec(&body).context("Failed to serialize Chat API cache key")?;
-            let key = crate::llm_response_cache::ResponseCache::make_key(
+            let key = codewhale_runtime::llm_response_cache::ResponseCache::make_key(
                 self.api_provider.as_str(),
                 &self.base_url,
                 self.path_suffix.as_deref(),
                 &self.api_key,
                 &wire_body,
             );
-            if let Some(cached) = crate::llm_response_cache::response_cache().get(&key) {
+            if let Some(cached) = codewhale_runtime::llm_response_cache::response_cache().get(&key)
+            {
                 return Ok(cached);
             }
             Some(key)
@@ -1323,7 +1375,7 @@ impl CodewhaleClient {
             serde_json::from_str(&response_text).context("Failed to parse Chat API JSON")?;
         let parsed = parse_chat_message_for_route(&value, self.api_provider, &self.base_url)?;
         if let Some(key) = response_cache_key {
-            crate::llm_response_cache::response_cache().put(key, parsed.clone());
+            codewhale_runtime::llm_response_cache::response_cache().put(key, parsed.clone());
         }
         Ok(parsed)
     }
@@ -1339,24 +1391,18 @@ impl CodewhaleClient {
             serde_json::to_vec(body).context("Failed to serialize JSON request body")?;
         let open_req = self.stream_open_request();
         let idle_timeout = open_req.idle_timeout;
-        let response = super::stream_entry::open_sse_response(&open_req, |policy| {
-            let request_body = request_body.clone();
-            async move {
-                let client = super::stream_entry::client_for_policy(
+        let response = self
+            .send_stream_open_with_retry(|policy| {
+                super::stream_entry::client_for_policy(
                     &self.http_client,
                     self.http1_fallback_client(),
                     policy,
-                );
-                self.send_stream_open_with_retry(|| {
-                    client
-                        .post(url)
-                        .header(reqwest::header::CONTENT_TYPE, "application/json")
-                        .body(request_body.clone())
-                })
-                .await
-            }
-        })
-        .await?;
+                )
+                .post(url)
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(request_body.clone())
+            })
+            .await?;
         Ok((response, idle_timeout))
     }
 
@@ -1514,7 +1560,7 @@ impl CodewhaleClient {
                             error_chain.push_str(&format!(" -> {source}"));
                             current = std::error::Error::source(source);
                         }
-                        crate::logging::warn(format!(
+                        codewhale_runtime::logging::warn(format!(
                             "Stream read error: {error_chain} \
                              (elapsed: {}ms, bytes_received: {}, ms_since_last_event: {}, headers: {})",
                             stream_start.elapsed().as_millis(),
@@ -2412,7 +2458,7 @@ fn prompt_layer(
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    crate::hashing::sha256_hex(bytes)
+    codewhale_runtime::hashing::sha256_hex(bytes)
 }
 
 #[derive(Clone)]

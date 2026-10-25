@@ -58,7 +58,7 @@ async fn lsp_manager(state: &RuntimeApiState) -> Result<Arc<LspManager>, ApiErro
         .read()
         .lsp
         .clone()
-        .map(|toml| toml.into_runtime())
+        .map(crate::lsp::LspConfig::from)
         .unwrap_or_default();
     Ok(state
         .workspace_scope

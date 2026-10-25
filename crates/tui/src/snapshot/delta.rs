@@ -284,7 +284,7 @@ impl SnapshotRepo {
             facts.push((
                 *index,
                 size,
-                hasher.map(|hasher| crate::hashing::hex_bytes(hasher.finalize())),
+                hasher.map(|hasher| codewhale_runtime::hashing::hex_bytes(hasher.finalize())),
             ));
         }
         writer
@@ -406,7 +406,7 @@ mod tests {
     }
 
     fn sha(bytes: &[u8]) -> Option<String> {
-        Some(crate::hashing::sha256_hex(bytes))
+        Some(codewhale_runtime::hashing::sha256_hex(bytes))
     }
 
     #[test]

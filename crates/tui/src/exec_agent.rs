@@ -15,7 +15,7 @@ use crate::core::ops::TurnSpec;
 /// Omission leaves model steps uncapped. Clap rejects `--max-turns 0`;
 /// explicit positive values retain the documented finite range.
 pub(crate) fn exec_max_steps(max_turns: Option<u32>) -> u32 {
-    crate::core::engine::turn_budget::resolve_max_model_steps(max_turns)
+    codewhale_runtime::turn_budget::resolve_max_model_steps(max_turns)
 }
 
 /// Model-step ceiling for a plain (zero-tool) `exec` run without
@@ -333,7 +333,7 @@ pub(crate) async fn run_exec_agent(
     // and explicit `always` are truthful outside the interactive TUI. With no
     // focus-reporting channel, fail closed to focused; only explicit `always`
     // may authorize a headless desktop notification.
-    let terminal = crate::host_terminal::host();
+    let terminal = codewhale_runtime::host_terminal::host();
     terminal.set_terminal_focused(true);
     terminal.apply_notification_settings(&config.notifications_config());
 
@@ -404,7 +404,10 @@ pub(crate) async fn run_exec_agent(
     }
     .to_string();
     let exec_started = Instant::now();
-    let prompt_sha256 = format!("sha256:{}", crate::hashing::sha256_hex(prompt.as_bytes()));
+    let prompt_sha256 = format!(
+        "sha256:{}",
+        codewhale_runtime::hashing::sha256_hex(prompt.as_bytes())
+    );
     let binary_sha256 = current_binary_sha256();
     let approval_posture = if auto_approve { "auto_tools" } else { "ask" }.to_string();
     // The Full Access posture travels in the op's auto_approve/approval_mode
@@ -497,7 +500,7 @@ pub(crate) async fn run_exec_agent(
             execution_config
                 .lsp
                 .clone()
-                .map(crate::config::LspConfigToml::into_runtime)
+                .map(crate::lsp::LspConfig::from)
         })
         .flatten();
     let mut engine_features = execution_config.features();
@@ -508,7 +511,7 @@ pub(crate) async fn run_exec_agent(
         outer_shell_authority,
     );
     if crate::core::allowlist_is_native_file_and_shell_only(allowed_tools.as_deref()) {
-        engine_features.disable(crate::features::Feature::Mcp);
+        engine_features.disable(codewhale_runtime::features::Feature::Mcp);
     }
     let engine_plugin_registry = if fleet_authority_active {
         std::sync::Arc::new(crate::plugins::PluginRegistry::empty(&workspace))
@@ -551,7 +554,7 @@ pub(crate) async fn run_exec_agent(
         shell_manager: Some(exec_shell_manager.clone()),
         persist_services_enabled,
         automations: exec_automations,
-        media_originals_dir: crate::media_originals::default_store_dir(),
+        media_originals_dir: codewhale_runtime::media_originals::default_store_dir(),
         hook_executor: exec_hook_executor.clone(),
         ..crate::tools::spec::RuntimeToolServices::default()
     };
@@ -607,7 +610,9 @@ pub(crate) async fn run_exec_agent(
         subagents_enabled: !fleet_authority_active
             && execution_config.subagents_enabled_for_provider(&effective_identity),
         features: engine_features,
-        auto_review_policy: execution_config.auto_review_policy(),
+        auto_review_policy: crate::core::authority::auto_review::AutoReviewPolicy::from_config(
+            &execution_config,
+        ),
         compaction: compaction.clone(),
         todos: new_shared_todo_list(),
         plan_state: new_shared_plan_state(),
@@ -654,7 +659,7 @@ pub(crate) async fn run_exec_agent(
             read_only_roots: execution_config.bwrap_ro_roots.clone(),
             device_roots: execution_config.bwrap_dev_roots.clone(),
         },
-        read_denylist: execution_config.read_denylist(),
+        read_denylist: crate::sandbox::read_guard::ReadDenylist::from_config(&execution_config),
         memory_enabled: execution_config.memory_enabled(),
         memory_path: execution_config.memory_path(),
         speech_output_dir: execution_config.speech_output_dir(),
@@ -680,9 +685,7 @@ pub(crate) async fn run_exec_agent(
             .tag()
             .to_string(),
         workshop: {
-            crate::tools::large_output_router::WorkshopConfig::install_active(
-                config.workshop.as_ref(),
-            );
+            crate::tools::large_output_router::install_active_workshop(config.workshop.as_ref());
             config.workshop.clone()
         },
         search_provider: execution_config.search_provider(),
@@ -700,7 +703,9 @@ pub(crate) async fn run_exec_agent(
         } else {
             execution_config.tools_always_load()
         },
-        user_input_limits: execution_config.user_input_limits(),
+        user_input_limits: crate::tools::user_input::UserInputLimits::from_config(
+            &execution_config,
+        ),
         user_input_timeout: execution_config.user_input_timeout(),
         goal_max_steps: None,
         tools: if fleet_authority_active {
@@ -1197,6 +1202,11 @@ pub(crate) async fn run_exec_agent(
                     eprintln!("error: {}", envelope.message);
                 }
             }
+            Event::ProviderRequestReceipt { receipt } => {
+                if output_format == ExecOutputFormat::StreamJson {
+                    emit_exec_stream_event(&ExecStreamEvent::ProviderRequestReceipt { receipt })?;
+                }
+            }
             Event::TurnUsage {
                 usage,
                 duration_ms,
@@ -1461,7 +1471,10 @@ pub(crate) async fn run_exec_agent(
                             prompt_sha256: prompt_sha256.clone(),
                             tool_catalog_sha256: tool_catalog.as_ref().and_then(|catalog| {
                                 serde_json::to_vec(catalog).ok().map(|bytes| {
-                                    format!("sha256:{}", crate::hashing::sha256_hex(&bytes))
+                                    format!(
+                                        "sha256:{}",
+                                        codewhale_runtime::hashing::sha256_hex(&bytes)
+                                    )
                                 })
                             }),
                             input_analysis: exec_stream_input_analysis(

@@ -507,7 +507,7 @@ pub(crate) fn subagent_role_label(
         .or_else(|| non_empty(agent_type.as_str()))
         .map_or_else(
             || "agent".to_string(),
-            |role| crate::fleet::role::public_role_label(&role),
+            |role| codewhale_agent_contract::role::public_role_label(&role),
         )
 }
 

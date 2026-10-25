@@ -16,7 +16,7 @@ use std::path::{Component, Path, PathBuf};
 use crate::sandbox::SandboxPolicy;
 use crate::tools::canonical_action::canonical_action_alias;
 use crate::tools::spec::{ApprovalRequirement, normalize_path};
-use crate::worker_profile::ShellPolicy;
+use codewhale_agent_contract::worker_profile::ShellPolicy;
 use codewhale_config::AppMode;
 use codewhale_execpolicy::ApprovalMode;
 use serde_json::Value;
@@ -359,7 +359,9 @@ pub(crate) fn sandbox_policy_for_turn(
 ) -> SandboxPolicy {
     let default = if mode == AppMode::Plan {
         SandboxPolicy::read_only()
-    } else if approval_mode == ApprovalMode::Bypass {
+    } else if approval_mode.agent_baseline_sandbox_mode()
+        == SandboxPolicy::DangerFullAccess.config_value()
+    {
         SandboxPolicy::DangerFullAccess
     } else {
         workspace_write_policy(workspace, network_access)

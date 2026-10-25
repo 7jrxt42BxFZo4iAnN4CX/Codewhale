@@ -1437,7 +1437,8 @@ mod tests {
         assert_eq!(authority.shell, ToolShellAuthority::None);
         assert_eq!(authority.verification, ToolVerificationAuthority::Bounded);
 
-        launch_spec.runtime_profile.shell = crate::worker_profile::ShellPolicy::None;
+        launch_spec.runtime_profile.shell =
+            codewhale_agent_contract::worker_profile::ShellPolicy::None;
         let shellless = authority_envelope_for_worker(&launch_spec, &task).unwrap();
         assert_eq!(
             shellless.verification,

@@ -11,9 +11,7 @@ use codewhale_config::ExternalCredentialReadGrant;
 const DEEPSEEK_API_KEY_REF: &str = "DEEPSEEK_API_KEY";
 
 /// Extract the DeepSeek API key from a granted dsh credentials document.
-pub(crate) fn deepseek_api_key_from_grant(
-    grant: &ExternalCredentialReadGrant,
-) -> Result<Option<String>> {
+pub fn deepseek_api_key_from_grant(grant: &ExternalCredentialReadGrant) -> Result<Option<String>> {
     if grant.source() != codewhale_config::ExternalCredentialSource::DshCli {
         bail!(
             "DeepSeek Harness import requires a dsh_cli grant, not {}",
@@ -29,7 +27,7 @@ pub(crate) fn deepseek_api_key_from_grant(
 /// Strict subset of dsh-credentials-local: a mapping of POSIX identifiers to
 /// non-empty strings. Nested values, empty strings, and duplicate keys fail
 /// closed. Only `DEEPSEEK_API_KEY` is returned.
-pub(crate) fn parse_dsh_deepseek_api_key(text: &str) -> Result<Option<String>> {
+pub fn parse_dsh_deepseek_api_key(text: &str) -> Result<Option<String>> {
     let mut found = None;
     let mut seen = std::collections::BTreeSet::new();
     for (index, raw) in text.lines().enumerate() {

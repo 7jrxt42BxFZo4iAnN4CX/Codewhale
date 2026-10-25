@@ -123,7 +123,7 @@ export default async function HomePage({ params }: { params: Promise<{ locale: s
             <span className="figure-frame">
               <Image
                 src={PARTNER_PROMO.image.src}
-                alt=""
+                alt={pickText(PARTNER_PROMO.image.alt, locale)}
                 width={PARTNER_PROMO.image.width}
                 height={PARTNER_PROMO.image.height}
                 unoptimized
@@ -132,6 +132,7 @@ export default async function HomePage({ params }: { params: Promise<{ locale: s
             <span className="home-promo-text">
               <span className="home-promo-title" id="home-promo-title">{PARTNER_PROMO.title}</span>
               <span className="home-promo-body">{pickText(PARTNER_PROMO.body, locale)}</span>
+              <span className="home-promo-body">{pickText(PARTNER_PROMO.disclosure, locale)}</span>
               <span className="section-link">
                 {pickText(PARTNER_PROMO.cta, locale)}
                 <Icon name="external" />

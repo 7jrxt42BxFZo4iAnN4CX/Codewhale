@@ -36,7 +36,6 @@ use crate::client::CodewhaleClient;
 use crate::config::{MAX_SUBAGENTS, SubagentModelOverride};
 #[cfg(test)]
 use crate::core::engine::ChildSurfaceProbe;
-use crate::core::engine::tool_catalog::tool_denied;
 #[cfg(test)]
 use crate::core::engine::tool_catalog::{
     TOOL_SEARCH_NAME, apply_native_tool_deferral, ensure_advanced_tooling,
@@ -46,13 +45,6 @@ use crate::core::events::{AgentProgressEventMeta, Event};
 #[cfg(test)]
 use crate::core::session::ToolActivationCache;
 use crate::dependencies::{ExternalTool, Git};
-/// Compatibility re-export: the closed role set lives in
-/// [`crate::fleet::role`], the lightweight role surface every spawn path
-/// consumes. Existing `tools::subagent::FleetRole` paths keep resolving.
-pub use crate::fleet::role::FleetRole;
-use crate::fleet::role::{
-    FLEET_ROLE_SCHEMA_VALUES, VALID_ROLE_ALIASES, migrate_legacy_role_token, public_role_label,
-};
 use crate::llm_client::LlmError;
 use crate::reasoning_preference::ReasoningEffort;
 use crate::request_tuning::RequestTuning;
@@ -78,13 +70,21 @@ use crate::work_graph::{
     EvidenceKind, EvidenceRef, OperationIntent, OperationOwnerSnapshot, OwnerState,
     SharedWorkRuntime,
 };
-use crate::worker_profile::{
+/// Compatibility re-export: the closed role set lives in
+/// [`codewhale_agent_contract::role`], the lightweight role surface every spawn path
+/// consumes. Existing `tools::subagent::FleetRole` paths keep resolving.
+pub use codewhale_agent_contract::role::FleetRole;
+use codewhale_agent_contract::role::{
+    FLEET_ROLE_SCHEMA_VALUES, VALID_ROLE_ALIASES, migrate_legacy_role_token, public_role_label,
+};
+use codewhale_agent_contract::worker_profile::{
     ChildLaunchManifest, ModelRoute, ShellPolicy, ToolScope, WorkerRuntimeProfile,
     narrow_model_steps, narrow_optional_limit,
 };
 use codewhale_config::AppMode;
 #[cfg(test)]
 use codewhale_execpolicy::ApprovalMode;
+use codewhale_execpolicy::tool_rules::tool_denied;
 #[cfg(test)]
 use codewhale_models::MessageResponse;
 use codewhale_models::{ContentBlock, Message, SystemPrompt, Tool, Usage};
@@ -274,12 +274,6 @@ fn read_bounded_resident_context(
     })
 }
 
-/// Positive child model-turn budgets are clamped to this hard ceiling. Zero is
-/// the unbounded sentinel used by the default agent loop.
-const MAX_SUBAGENT_STEPS: u32 = 2_000;
-/// Default wall-clock budget for one child run, including model and tool work.
-pub(crate) const DEFAULT_CHILD_WALL_TIME: Duration = Duration::from_secs(30 * 60);
-const MAX_CHILD_WALL_TIME: Duration = Duration::from_secs(24 * 60 * 60);
 /// Default wall-clock budget for a single sub-agent tool execution. The active
 /// value travels on `SubAgentRuntime::tool_timeout` so a long-but-legitimate
 /// tool (a large build, a slow shell command, a deep search) is not killed
@@ -308,7 +302,6 @@ fn resolve_max_steps(role: FleetRole, explicit: Option<u32>, configured: Option<
         WorkerRuntimeProfile::default_max_steps(role),
         narrow_model_steps(configured.unwrap_or(0), explicit.unwrap_or(0)),
     )
-    .min(MAX_SUBAGENT_STEPS)
 }
 
 /// A queued child whose launch slot never opened did no work: it is a
@@ -335,11 +328,7 @@ fn child_wall_time_exhausted_reason(limit: Duration) -> String {
 /// at spawn — so the transcript artifact records exactly what the model was
 /// told, and a continuation re-resolves its own values rather than inheriting
 /// a stale copy.
-fn child_runtime_budget_context(
-    runtime: &SubAgentRuntime,
-    max_steps: u32,
-    work_max_steps: u32,
-) -> String {
+fn child_runtime_budget_context(runtime: &SubAgentRuntime, max_steps: u32) -> String {
     let wall = match runtime.worker_profile.wall_deadline_ms {
         Some(deadline_ms) => {
             let remaining = codewhale_command_contract::elapsed::format_elapsed_ms(
@@ -357,10 +346,6 @@ fn child_runtime_budget_context(
     };
     let steps = if max_steps == 0 {
         "no per-run step cap".to_string()
-    } else if work_max_steps < max_steps {
-        format!(
-            "{work_max_steps} model turns of task work (limit {max_steps}; the last turn stays reserved for a bounded hand-back report)"
-        )
     } else {
         format!("{max_steps} model turns")
     };
@@ -371,9 +356,12 @@ fn child_runtime_budget_context(
     } else {
         "There is no token budget. Automatic context compaction is disabled for this session, so the model's own context window is the only context limit."
     };
-    format!(
-        "Runtime budget (host-enforced; you cannot raise it):\n- wall clock: {wall}.\n- model steps: {steps}.\n{context} When a limit is reached, task work stops where it stands and only a small reserved hand-back turn remains to report it. Commit or checkpoint work-in-progress early rather than holding it, and keep a current partial report ready."
-    )
+    let stopping = if runtime.worker_profile.wall_deadline_ms.is_some() || max_steps > 0 {
+        "The configured owner limits are enforced by the host. Preserve completed work and report remaining work if a limit is reached."
+    } else {
+        "Continue until the task is complete, needs user input, or is explicitly stopped. Do not invent a deadline or turn budget."
+    };
+    format!("Runtime limits:\n- wall clock: {wall}.\n- model steps: {steps}.\n{context} {stopping}")
 }
 
 /// The parent session's compaction policy, re-resolved for the route this
@@ -406,7 +394,7 @@ fn child_compaction_config(
             &route.model,
             route_limits,
             parent_window.map_or(
-                crate::context_budget::DEFAULT_COMPACTION_TRIGGER_PERCENT,
+                codewhale_runtime::context_budget::DEFAULT_COMPACTION_TRIGGER_PERCENT,
                 |parent_window| parent.token_threshold as f64 * 100.0 / f64::from(parent_window),
             ),
         ),
@@ -427,46 +415,6 @@ fn child_compaction_config(
     }
 }
 
-/// One-shot mid-run notice fired when any enforced budget is roughly
-/// three-quarters consumed (#6194). Returns `None` while every bound still
-/// has headroom or when no bound applies. This is visibility only: it changes
-/// no limit and never interrupts a step.
-fn child_budget_pacing_notice(
-    started_at: Instant,
-    deadline: Option<Instant>,
-    steps: u32,
-    work_max_steps: u32,
-) -> Option<String> {
-    let mut consumed = Vec::new();
-    if let Some(deadline) = deadline {
-        let total = deadline.saturating_duration_since(started_at);
-        if total > Duration::ZERO && started_at.elapsed() >= total / 4 * 3 {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            consumed.push(format!(
-                "wall clock: ~{} remains of ~{}",
-                codewhale_command_contract::elapsed::format_elapsed_ms(
-                    u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX)
-                ),
-                codewhale_command_contract::elapsed::format_elapsed_ms(
-                    u64::try_from(total.as_millis()).unwrap_or(u64::MAX)
-                ),
-            ));
-        }
-    }
-    if work_max_steps > 0 && u64::from(steps) * 4 >= u64::from(work_max_steps) * 3 {
-        consumed.push(format!("model steps: {steps} of {work_max_steps} used"));
-    }
-    if consumed.is_empty() {
-        return None;
-    }
-    Some(format!(
-        "<codewhale:runtime_event kind=\"budget_pacing\" visibility=\"internal\">\n\
-This is an internal runtime event, not user input. Roughly three quarters of a run budget is used:\n- {}\n\
-Wrap up now: commit or checkpoint work-in-progress and prepare your final report instead of starting new multi-step work.\n\
-</codewhale:runtime_event>",
-        consumed.join("\n- ")
-    ))
-}
 // Non-streaming sub-agents need enough response budget to carry large tool-call
 // arguments, especially write_file content. The API bills generated tokens, not
 // the requested ceiling.
@@ -632,47 +580,42 @@ impl SubAgentAssignment {
     }
 }
 
-/// Role presentation: system prompts and config key lookup. The role itself
-/// ([`FleetRole`], parsing, posture) lives in [`crate::fleet::role`]; this
-/// impl stays on the agent tool because it renders prompt text the tool owns.
-impl FleetRole {
-    /// Pre-Fleet model-override key (`explorer_model` / `ni_model` tables).
-    /// Not used for receipts or UI — only config key lookup.
-    #[must_use]
-    fn legacy_type_name(&self) -> &'static str {
-        match self {
-            Self::Worker => "general",
-            Self::Scout => "explore",
-            Self::Planner => "plan",
-            Self::Reviewer => "review",
-            Self::Builder => "implementer",
-            Self::Verifier => "verifier",
-            // Consultant is post-Fleet; it never had a pre-Fleet override table key.
-            Self::Consultant => "consultant",
-            Self::Custom => "custom",
-        }
+/// Pre-Fleet model-override key (`explorer_model` / `ni_model` tables).
+/// Not used for receipts or UI — only config key lookup.
+#[must_use]
+fn role_legacy_type_name(role: &FleetRole) -> &'static str {
+    match role {
+        FleetRole::Worker => "general",
+        FleetRole::Scout => "explore",
+        FleetRole::Planner => "plan",
+        FleetRole::Reviewer => "review",
+        FleetRole::Builder => "implementer",
+        FleetRole::Verifier => "verifier",
+        // Consultant is post-Fleet; it never had a pre-Fleet override table key.
+        FleetRole::Consultant => "consultant",
+        FleetRole::Custom => "custom",
     }
+}
 
-    /// Get the system prompt for this Fleet role.
-    #[must_use]
-    pub fn system_prompt(&self) -> String {
-        let role_intro = match self {
-            Self::Worker => GENERAL_AGENT_INTRO,
-            Self::Scout => EXPLORE_AGENT_INTRO,
-            Self::Planner => PLAN_AGENT_INTRO,
-            Self::Reviewer => REVIEW_AGENT_INTRO,
-            Self::Builder => IMPLEMENTER_AGENT_INTRO,
-            Self::Verifier => VERIFIER_AGENT_INTRO,
-            Self::Consultant => CONSULTANT_AGENT_INTRO,
-            Self::Custom => CUSTOM_AGENT_INTRO,
-        };
-        match self {
-            Self::Scout => format!(
-                "{role_intro}{}",
-                crate::prompts::text::SUBAGENT_SCOUT_OUTPUT_FORMAT
-            ),
-            _ => format!("{role_intro}{SUBAGENT_OUTPUT_FORMAT}"),
-        }
+/// Get the system prompt for this Fleet role.
+#[must_use]
+pub fn role_system_prompt(role: &FleetRole) -> String {
+    let role_intro = match role {
+        FleetRole::Worker => GENERAL_AGENT_INTRO,
+        FleetRole::Scout => EXPLORE_AGENT_INTRO,
+        FleetRole::Planner => PLAN_AGENT_INTRO,
+        FleetRole::Reviewer => REVIEW_AGENT_INTRO,
+        FleetRole::Builder => IMPLEMENTER_AGENT_INTRO,
+        FleetRole::Verifier => VERIFIER_AGENT_INTRO,
+        FleetRole::Consultant => CONSULTANT_AGENT_INTRO,
+        FleetRole::Custom => CUSTOM_AGENT_INTRO,
+    };
+    match role {
+        FleetRole::Scout => format!(
+            "{role_intro}{}",
+            crate::prompts::text::SUBAGENT_SCOUT_OUTPUT_FORMAT
+        ),
+        _ => format!("{role_intro}{SUBAGENT_OUTPUT_FORMAT}"),
     }
 }
 
@@ -1379,7 +1322,7 @@ fn child_guardian_usage_source_id(agent_id: &str, tool_id: &str) -> String {
     }
     format!(
         "subagent-guardian:{}",
-        crate::hashing::hex_bytes(digest.finalize())
+        codewhale_runtime::hashing::hex_bytes(digest.finalize())
     )
 }
 
@@ -1674,7 +1617,7 @@ fn worker_profile_from_spec(spec: &AgentWorkerSpec) -> WorkerRuntimeProfile {
     profile.model = ModelRoute::Fixed(spec.model.clone());
     profile.max_spawn_depth = spec.max_spawn_depth;
     profile.spawn_depth = spec.spawn_depth;
-    profile.max_steps = spec.max_steps.min(MAX_SUBAGENT_STEPS);
+    profile.max_steps = spec.max_steps;
     profile.background = true;
     profile
 }
@@ -1804,9 +1747,9 @@ pub(crate) struct SubAgentSpawnOptions {
     /// Per-tool-result output token cap for this child (#6282). `None` uses
     /// the runtime default (10k).
     pub max_output_tokens: Option<std::num::NonZeroU32>,
-    /// Optional per-child model-turn override, clamped to the runtime ceiling.
+    /// Optional owner-supplied per-child model-turn limit.
     pub max_steps: Option<u32>,
-    /// Optional per-child wall-clock override, clamped to the runtime ceiling.
+    /// Optional owner-supplied per-child wall-clock limit.
     pub wall_time: Option<Duration>,
     pub write_claim: Option<WriteScopeClaim>,
     pub isolated_worktree: bool,
@@ -2339,28 +2282,12 @@ impl PersistedSubAgentState {
     }
 }
 
-/// Default cap on sub-agent recursion depth. Override via
-/// `[subagents] max_depth = N` in config.
-///
-/// Sourced from [`codewhale_config::DEFAULT_SPAWN_DEPTH`] so standalone
-/// sub-agents and fleet workers share ONE recursion axis (no "two moving
-/// targets"). Configured/requested depths clamp to
-/// [`codewhale_config::MAX_SPAWN_DEPTH_CEILING`].
+/// Default delegation depth representation. Explicit operator settings narrow it.
 pub const DEFAULT_MAX_SPAWN_DEPTH: u32 = codewhale_config::DEFAULT_SPAWN_DEPTH;
 
-/// Resolve a child runtime's `max_spawn_depth` from its (already-incremented)
-/// `spawn_depth` and the model-supplied per-call `max_depth`, clamped to the
-/// absolute [`codewhale_config::MAX_SPAWN_DEPTH_CEILING`].
-///
-/// Without the absolute clamp, `max_spawn_depth = spawn_depth + max_depth`
-/// makes the recursion gate (`spawn_depth + 1 > max_spawn_depth`) reduce to
-/// `1 > max_depth` at every level — always false when the model re-supplies
-/// `max_depth >= 1` per spawn — so ring depth would grow to the global
-/// admission cap instead of the intended 8-ring ceiling.
+/// Convert an explicit remaining-depth allowance without arithmetic overflow.
 fn clamp_child_max_spawn_depth(child_spawn_depth: u32, requested_max_depth: u32) -> u32 {
-    child_spawn_depth
-        .saturating_add(requested_max_depth)
-        .min(codewhale_config::MAX_SPAWN_DEPTH_CEILING)
+    child_spawn_depth.saturating_add(requested_max_depth)
 }
 
 /// Terminal-state notification emitted to the immediate parent's completion
@@ -3043,6 +2970,7 @@ pub struct SubAgentRuntime {
     pub parent_completion_tx: Option<mpsc::Sender<SubAgentCompletion>>,
     /// Snapshot of the request prefix visible to an opt-in forked child.
     pub fork_context: Option<SubAgentForkContext>,
+    pub(crate) workflow_response_schema: Option<Value>,
     /// The parent's MCP pool if available.
     pub mcp_pool: Option<std::sync::Arc<tokio::sync::Mutex<crate::mcp::McpPool>>>,
     /// Per-step DeepSeek API timeout for the child's `create_message` call.
@@ -3159,6 +3087,7 @@ impl SubAgentRuntime {
             accounting_origin,
             parent_completion_tx: None,
             fork_context: None,
+            workflow_response_schema: None,
             mcp_pool: None,
             step_api_timeout: DEFAULT_STEP_API_TIMEOUT,
             api_timeout_retry_base_backoff: SUBAGENT_API_TIMEOUT_INITIAL_BACKOFF,
@@ -3364,7 +3293,7 @@ impl SubAgentRuntime {
     /// Used by config wiring (`[subagents] max_depth = N`) and tests.
     #[must_use]
     pub fn with_max_spawn_depth(mut self, max: u32) -> Self {
-        self.max_spawn_depth = max.min(codewhale_config::MAX_SPAWN_DEPTH_CEILING);
+        self.max_spawn_depth = max;
         self.worker_profile.max_spawn_depth = self.max_spawn_depth;
         self
     }
@@ -3494,6 +3423,7 @@ impl SubAgentRuntime {
             accounting_origin: self.accounting_origin.clone(),
             parent_completion_tx: self.parent_completion_tx.clone(),
             fork_context: self.fork_context.clone(),
+            workflow_response_schema: None,
             mcp_pool: self.mcp_pool.clone(),
             step_api_timeout: self.step_api_timeout,
             api_timeout_retry_base_backoff: self.api_timeout_retry_base_backoff,
@@ -3952,10 +3882,6 @@ impl AdmittedCoordinationRoot {
 pub struct SubAgentManager {
     agents: HashMap<String, SubAgent>,
     worker_records: HashMap<String, AgentWorkerRecord>,
-    /// In-flight report allowances, not billed usage. Weak leases disappear
-    /// on cancellation/abort without awaiting the manager lock or persisting
-    /// a refundable reservation across process recovery.
-    handback_reservations: HashMap<String, std::sync::Weak<u64>>,
     worker_event_seq: u64,
     persist_sequence: std::sync::atomic::AtomicU64,
     coordination: CoordinationLedger,
@@ -3972,16 +3898,15 @@ pub struct SubAgentManager {
     coordination_process_lock: std::sync::Mutex<Option<Arc<CoordinationProcessLock>>>,
     coordination_process_lock_required: bool,
     coordination_exclusive: bool,
+    coordination_snapshot_read_only: bool,
     workspace_writer_locks: HashMap<PathBuf, Arc<CoordinationProcessLock>>,
     /// Configured default per-child model-turn budget (`[subagents]
     /// default_max_steps`, #5324). `None` keeps the unbounded Fleet default;
     /// an explicit spawn `max_steps` still wins. Zero means unbounded.
     max_steps: Option<u32>,
     /// Configured default per-child wall-clock budget (`[subagents]
-    /// default_wall_time_secs`, #5324). `None` keeps
-    /// `DEFAULT_CHILD_WALL_TIME`, which an explicit spawn `wall_time_secs`
-    /// may raise up to `MAX_CHILD_WALL_TIME`; a configured value is also a
-    /// ceiling on explicit requests.
+    /// default_wall_time_secs`, #5324). `None` leaves the run unbounded;
+    /// a configured value is a ceiling on inherited work.
     wall_time: Option<Duration>,
     max_agents: usize,
     max_admitted_agents: usize,
@@ -4067,6 +3992,7 @@ pub struct SubAgentManager {
     /// agent id, so the task's failure text blames the route that failed.
     /// Taken when the task settles.
     rerouted_requests: HashMap<String, ReroutedRequest>,
+    member_starts: HashMap<String, (String, String)>,
 }
 
 /// One child request waiting on a person (approvals C2). The store is the
@@ -4472,7 +4398,6 @@ impl SubAgentManager {
         Self {
             agents: HashMap::new(),
             worker_records: HashMap::new(),
-            handback_reservations: HashMap::new(),
             worker_event_seq: 0,
             persist_sequence: std::sync::atomic::AtomicU64::new(0),
             coordination: CoordinationLedger::default(),
@@ -4485,6 +4410,7 @@ impl SubAgentManager {
             coordination_process_lock: std::sync::Mutex::new(None),
             coordination_process_lock_required: false,
             coordination_exclusive: false,
+            coordination_snapshot_read_only: false,
             workspace_writer_locks: HashMap::new(),
             max_steps: None,
             wall_time: None,
@@ -4513,6 +4439,7 @@ impl SubAgentManager {
             reported_pending: HashSet::new(),
             refused_routes: HashMap::new(),
             rerouted_requests: HashMap::new(),
+            member_starts: HashMap::new(),
         }
     }
 
@@ -4551,14 +4478,20 @@ impl SubAgentManager {
         #[cfg(any(unix, windows))]
         {
             if self.coordination_exclusive
+                && !self.coordination_snapshot_read_only
                 && normalize_subagent_workspace(&lexical)
                     != normalize_subagent_workspace(&self.state_root)
                 && !self.workspace_writer_locks.contains_key(&canonical_root)
             {
-                let lock = CoordinationProcessLock::acquire(&lexical, true)
-                    .map_err(|error| error.to_string())?;
-                self.workspace_writer_locks
-                    .insert(canonical_root.clone(), Arc::new(lock));
+                match CoordinationProcessLock::acquire(&lexical, true) {
+                    Ok(lock) => {
+                        self.workspace_writer_locks
+                            .insert(canonical_root.clone(), Arc::new(lock));
+                    }
+                    Err(error) => {
+                        tracing::warn!(target: "subagent", %error, "admitted coordination workspace without its writer lock; shared-workspace writers there stay refused until it is free");
+                    }
+                }
             }
             let receipt = CoordinationClaimScope {
                 canonical_root,
@@ -4577,6 +4510,61 @@ impl SubAgentManager {
             );
             Ok(())
         }
+    }
+
+    fn ensure_origin_writer_lock(&mut self, origin: &WorkerOrigin) -> Result<(), String> {
+        let (Some(selected), Some(scope)) = (&origin.selected_workspace, &origin.scope) else {
+            return Ok(());
+        };
+        if !self.coordination_exclusive
+            || normalize_subagent_workspace(selected)
+                == normalize_subagent_workspace(&self.state_root)
+            || self
+                .workspace_writer_locks
+                .contains_key(&scope.canonical_root)
+        {
+            return Ok(());
+        }
+        let lock =
+            CoordinationProcessLock::acquire(selected, true).map_err(|error| error.to_string())?;
+        self.workspace_writer_locks
+            .insert(scope.canonical_root.clone(), Arc::new(lock));
+        Ok(())
+    }
+
+    fn ensure_worker_coordination_locks(
+        &mut self,
+        spec: &AgentWorkerSpec,
+        origin: &WorkerOrigin,
+    ) -> Result<(), String> {
+        let claim = worker_coordination_claim(spec)?;
+        if claim.as_ref().is_some_and(|(_, isolated)| *isolated) {
+            return Ok(());
+        }
+        self.ensure_coordination_process_lock()?;
+        if claim.is_some() {
+            self.ensure_origin_writer_lock(origin)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn ensure_registered_worker_coordination_locks(
+        &mut self,
+        worker_id: &str,
+    ) -> Result<(), String> {
+        let spec = self
+            .worker_records
+            .get(worker_id)
+            .ok_or_else(|| format!("Fleet worker {worker_id} has no registered launch spec"))?
+            .spec
+            .clone();
+        let origin = self
+            .worker_origins
+            .get(worker_id)
+            .cloned()
+            .ok_or_else(|| "worker origin is missing from the owner journal".to_string())?;
+        self.validate_worker_origin(&origin)?;
+        self.ensure_worker_coordination_locks(&spec, &origin)
     }
 
     fn admitted_coordination_root(&self, workspace: &Path) -> Option<&AdmittedCoordinationRoot> {
@@ -4932,8 +4920,7 @@ impl SubAgentManager {
     }
 
     /// Set the configured default per-child wall-clock budget applied when a
-    /// spawn carries no explicit `wall_time_secs` (#5324). `None` keeps
-    /// `DEFAULT_CHILD_WALL_TIME`.
+    /// spawn has no owner-supplied deadline. `None` leaves the run unbounded.
     #[must_use]
     pub fn with_default_wall_time(mut self, wall_time: Option<Duration>) -> Self {
         self.wall_time = wall_time;
@@ -5657,11 +5644,17 @@ impl SubAgentManager {
         self
     }
 
-    /// A failed acquisition is never terminal: the previous owner may have
-    /// exited since the last attempt, and the flock is held on an open fd —
-    /// deleting the lock file does not release it, so the only correct
-    /// recovery is to re-attempt acquisition on each use (#5036).
+    /// Terminal sessions retry failed acquisition when the previous owner
+    /// exits. A Runtime loaded without its writer lock must restart rather
+    /// than publish its stale snapshot. The flock is held on an open fd —
+    /// deleting the lock file does not release it (#5036).
     fn ensure_coordination_process_lock(&self) -> Result<(), String> {
+        if self.coordination_snapshot_read_only {
+            return Err(
+                "Runtime coordination was opened without its writer lock; stop and restart this Runtime process after the other session exits"
+                    .into(),
+            );
+        }
         if !self.coordination_process_lock_required {
             return Ok(());
         }
@@ -5696,8 +5689,8 @@ impl SubAgentManager {
     }
 
     /// Probe lock ownership for UI/inspect surfaces. Retries acquire when the
-    /// slot is empty so a session that started without the lock can recover
-    /// after the previous owner exits (#2.6 / #5036).
+    /// slot is empty so a terminal session can recover after the previous
+    /// owner exits (#2.6 / #5036); read-only Runtime snapshots require restart.
     pub fn coordination_process_lock_status(&self) -> Result<(), String> {
         self.ensure_coordination_process_lock()
     }
@@ -6319,9 +6312,7 @@ impl SubAgentManager {
         // Isolated-worktree builders mutate their own checkout, not the
         // shared workspace, so they must not contend for the per-workspace
         // coordination process lock (#5036).
-        if !isolated_worktree {
-            self.ensure_coordination_process_lock()?;
-        }
+        self.ensure_worker_coordination_locks(spec, origin)?;
         let claim = self.namespace_write_claim(&origin_workspace, isolated_worktree, claim)?;
         let scope = if isolated_worktree {
             None
@@ -6390,9 +6381,7 @@ impl SubAgentManager {
         let isolated_worktree = claim
             .as_ref()
             .is_some_and(|(_, isolated_worktree)| *isolated_worktree);
-        if !isolated_worktree {
-            self.ensure_coordination_process_lock()?;
-        }
+        self.ensure_worker_coordination_locks(&spec, &origin)?;
         let previous_worker_records = self.worker_records.clone();
         let previous_coordination = self.coordination.clone();
         let persisted_claim = claim
@@ -8759,29 +8748,24 @@ impl SubAgentManager {
                 runtime.max_spawn_depth
             ));
         }
-        // The built-in 30-minute clock is a default, not a ceiling: an explicit
-        // `wall_time_secs` may raise it up to MAX_CHILD_WALL_TIME. An operator
-        // `[subagents] default_wall_time_secs` stays a ceiling, and inherited
-        // profiles and deadlines still only narrow.
         let default_wall_time = runtime
             .execution_limits
             .as_ref()
             .map_or(self.wall_time, |limits| limits.default_wall_time);
-        let wall_time = options
-            .wall_time
-            .unwrap_or_else(|| default_wall_time.unwrap_or(DEFAULT_CHILD_WALL_TIME))
-            .min(default_wall_time.unwrap_or(MAX_CHILD_WALL_TIME))
-            .min(
+        let wall_time = narrow_optional_limit(
+            options.wall_time,
+            narrow_optional_limit(
+                default_wall_time,
                 runtime
                     .worker_profile
                     .wall_time_secs
-                    .map(Duration::from_secs)
-                    .unwrap_or(MAX_CHILD_WALL_TIME),
-            )
-            .min(MAX_CHILD_WALL_TIME);
+                    .map(Duration::from_secs),
+            ),
+        );
         let now_ms = epoch_millis_now();
-        let requested_deadline =
-            now_ms.saturating_add(u64::try_from(wall_time.as_millis()).unwrap_or(u64::MAX));
+        let requested_deadline = wall_time.map(|limit| {
+            now_ms.saturating_add(u64::try_from(limit.as_millis()).unwrap_or(u64::MAX))
+        });
         let source_deadline = options
             .resume_from_agent_id
             .as_deref()
@@ -8791,15 +8775,13 @@ impl SubAgentManager {
         // bounds a work clock restarted at launch (see `run_subagent_task_inner`).
         let wall_ceiling_ms =
             narrow_optional_limit(runtime.worker_profile.wall_deadline_ms, source_deadline);
-        let deadline_ms = wall_ceiling_ms.map_or(requested_deadline, |deadline| {
-            deadline.min(requested_deadline)
-        });
-        if deadline_ms <= now_ms {
+        let deadline_ms = narrow_optional_limit(wall_ceiling_ms, requested_deadline);
+        if deadline_ms.is_some_and(|deadline| deadline <= now_ms) {
             return Err(anyhow!(
                 "child wall-time budget exhausted; continuation cannot reset its deadline"
             ));
         }
-        let wall_time = Duration::from_millis(deadline_ms - now_ms);
+        let wall_time = deadline_ms.map(|deadline| Duration::from_millis(deadline - now_ms));
         let continuation_from = if options.checkpoint_continuation {
             let source = options
                 .resume_from_agent_id
@@ -8957,6 +8939,8 @@ impl SubAgentManager {
             if !options.isolated_worktree {
                 self.ensure_coordination_process_lock()
                     .map_err(anyhow::Error::msg)?;
+                self.ensure_origin_writer_lock(&origin)
+                    .map_err(anyhow::Error::msg)?;
             }
             if self.coordination_process_lock_required && self.state_path.is_none() {
                 return Err(anyhow!(
@@ -9083,12 +9067,12 @@ impl SubAgentManager {
         runtime_profile.max_spawn_depth = runtime.max_spawn_depth;
         runtime_profile.spawn_depth = runtime.spawn_depth;
         runtime_profile.max_steps = max_steps;
-        runtime_profile.wall_time_secs = Some(
-            wall_time
+        runtime_profile.wall_time_secs = wall_time.map(|limit| {
+            limit
                 .as_secs()
-                .saturating_add(u64::from(wall_time.subsec_nanos() > 0)),
-        );
-        runtime_profile.wall_deadline_ms = Some(deadline_ms);
+                .saturating_add(u64::from(limit.subsec_nanos() > 0))
+        });
+        runtime_profile.wall_deadline_ms = deadline_ms;
         runtime.worker_profile = runtime_profile.clone();
         let worker_spec = AgentWorkerSpec {
             worker_id: agent_id.clone(),
@@ -9571,12 +9555,13 @@ impl SubAgentManager {
         if let Some(record) = self.worker_records.get(&agent.id) {
             snap.usage = Some(record.usage.clone());
             snap.worker_status = Some(record.status);
-            snap.runtime_permissions = Some(crate::fleet::role::fleet_effective_permissions(
-                &record.spec.agent_type,
-                &record.spec.runtime_profile,
-                None,
-                None,
-            ));
+            snap.runtime_permissions =
+                Some(codewhale_agent_contract::role::fleet_effective_permissions(
+                    &record.spec.agent_type,
+                    &record.spec.runtime_profile,
+                    None,
+                    None,
+                ));
             snap.parent_run_id = record
                 .parent_run_id
                 .clone()
@@ -10607,7 +10592,7 @@ fn json_line(value: &Value) -> Result<Vec<u8>> {
 }
 
 fn subagent_transcript_artifact_relative_path(agent_id: &str) -> PathBuf {
-    let digest = crate::hashing::sha256_hex(agent_id.as_bytes());
+    let digest = codewhale_runtime::hashing::sha256_hex(agent_id.as_bytes());
     Path::new(".codewhale")
         .join("state")
         .join(SUBAGENT_TRANSCRIPT_ARTIFACT_DIR)
@@ -11244,6 +11229,21 @@ pub(crate) fn new_shared_runtime_subagent_manager(
     workspace: PathBuf,
     workers: usize,
 ) -> Result<SharedSubAgentManager> {
+    new_runtime_subagent_manager(workspace, workers, false)
+}
+
+pub(crate) fn new_exclusive_runtime_subagent_manager(
+    workspace: PathBuf,
+    workers: usize,
+) -> Result<SharedSubAgentManager> {
+    new_runtime_subagent_manager(workspace, workers, true)
+}
+
+fn new_runtime_subagent_manager(
+    workspace: PathBuf,
+    workers: usize,
+    exclusive: bool,
+) -> Result<SharedSubAgentManager> {
     type RuntimeManagerRegistry =
         parking_lot::Mutex<HashMap<PathBuf, (usize, std::sync::Weak<RwLock<SubAgentManager>>)>>;
     static MANAGERS: std::sync::OnceLock<RuntimeManagerRegistry> = std::sync::OnceLock::new();
@@ -11267,11 +11267,12 @@ pub(crate) fn new_shared_runtime_subagent_manager(
         .with_admission_limit(workers)
         .with_launch_concurrency(workers)
         .with_state_path(state_path);
-    manager.coordination_exclusive = true;
+    manager.coordination_exclusive = exclusive;
     manager = manager.require_coordination_process_lock();
-    manager
-        .ensure_coordination_process_lock()
-        .map_err(anyhow::Error::msg)?;
+    if let Err(error) = manager.ensure_coordination_process_lock() {
+        manager.coordination_snapshot_read_only = true;
+        tracing::warn!(target: "subagent", %error, "Runtime coordination is read-only; stop and restart this Runtime process after the other session exits to load current state and regain delegated writes");
+    }
     manager.load_state()?;
     let manager = Arc::new(RwLock::new(manager));
     managers.insert(key, (workers, Arc::downgrade(&manager)));
@@ -11498,8 +11499,8 @@ fn start_requests_read_only_role(input: &Value) -> bool {
     };
     let type_input = type_input.as_deref();
     let role_input = role_input.as_deref();
-    let parsed_type = type_input.and_then(FleetRole::from_str);
-    let parsed_role = role_input.and_then(FleetRole::from_str);
+    let parsed_type = type_input.and_then(FleetRole::parse);
+    let parsed_role = role_input.and_then(FleetRole::parse);
     let role = match (parsed_type, parsed_role) {
         (Some(from_type), Some(from_role)) if from_type == from_role => from_type,
         // A second token that does not parse as a canonical role may be a
@@ -11539,7 +11540,7 @@ static AGENT_TOOL_DESCRIPTION: std::sync::LazyLock<String> = std::sync::LazyLock
         "type selects the Fleet role: general (full tool access for multi-step tasks), explore (fast read-only exploration), planner (grounded strategy, read-only probes), reviewer (reads and grades code), implement (lands focused code changes), test (runs tests and reports evidence), advisor (read-only design counsel), or custom (allowed_tools on the parent's posture). ",
         "profile selects a saved member or built-in role. Saved profile and manual role pins are exact; model/strength choose unpinned routes; thinking overrides the tier. ",
         "Use action=roster for resolved roles, models, reasoning, context and cost evidence; it makes no provider request. ",
-        "max_steps and wall_time_secs only narrow inherited limits; the worker reserves one tools-disabled partial-report turn and falls back to recorded work when reporting is unavailable. There is no token budget: runs are never stopped by token accounting. ",
+        "Workers have no default turn or wall-clock budget. Only configured operator, role and inherited limits apply; legacy per-call max_steps, wall_time_secs and max_output_tokens are ignored. There is no token budget. ",
         "Prefer type=implement for write work and type=test (or the Run tool with action=\"verifiers\") after writes settle — dispatch is not completion. ",
         "action=claim widens your own enforced write scope: pass write_roots (and optionally exact_files, coordination_contracts) before mutating anything a fail-closed write refusal named. It records a durable claim receipt and fails on contention with a peer claim; it never touches another agent's scope. ",
         "Action contract: start requires prompt; message/followup require targets and a message; followup accepts one id, agent_ids or all_parked=true and returns continuation mappings. peek/interrupt/cancel require a target; claim requires scope entries; status is compact and paginated unless an addressed detail is requested. ",
@@ -11560,7 +11561,7 @@ impl ToolSpec for AgentTool {
     }
 
     /// One schema advertises the runtime's routing, scope, lifecycle and
-    /// narrowing-budget contract. Legacy aliases remain accepted for replay.
+    /// inherited-limit contract. Legacy aliases remain accepted for replay.
     fn input_schema(&self) -> Value {
         // Generic provider sanitization prunes required fields unless the
         // same schema node declares them. Presence tests inside `not` need
@@ -11680,18 +11681,6 @@ impl ToolSpec for AgentTool {
                     "type": "array",
                     "items": { "type": "string" },
                     "description": "Repo-relative directory trees a write-capable agent may mutate. On action=start: the scope this child claims, defaulting to the parent workspace ('.') when omitted. On action=claim: the trees to add to your own enforced scope, which you must do before mutating anything outside it. Paths outside the parent workspace are refused."
-                },
-                "max_output_tokens": {
-                    "type": "integer", "minimum": 1,
-                    "description": "Per-tool-result output token cap for this child (#6282). Overrides the 10k default; narrower values conserve context but may truncate tool results with [truncated: true] markers. Values above u32::MAX are rejected."
-                },
-                "max_steps": {
-                    "type": "integer", "minimum": 1, "maximum": MAX_SUBAGENT_STEPS,
-                    "description": "Maximum model turns for this run, only narrowing role/operator/parent limits. Continuation retains its remaining allowance."
-                },
-                "wall_time_secs": {
-                    "type": "integer", "minimum": 1, "maximum": MAX_CHILD_WALL_TIME.as_secs(),
-                    "description": "Whole-run wall time (queue, model, tools); default 1800, may exceed that but never inherited or operator limits. Continuation keeps the clock."
                 },
                 "deliverables": {
                     "type": "array", "maxItems": 16,
@@ -12029,11 +12018,27 @@ impl ToolSpec for AgentTool {
             .get("verbose")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        let ignored_limits: Vec<&str> = [
+            "max_steps",
+            "maxSteps",
+            "wall_time_secs",
+            "wallTimeSecs",
+            "max_output_tokens",
+            "maxOutputTokens",
+            "max_depth",
+            "maxDepth",
+            "max_spawn_depth",
+        ]
+        .into_iter()
+        .filter(|key| input.get(key).is_some())
+        .collect();
         let (snapshot, _spawn_metadata) = spawn_subagent_from_input(
             input,
             self.manager.clone(),
             self.runtime.clone(),
             false,
+            None,
+            None,
             None,
         )
         .await?;
@@ -12047,6 +12052,12 @@ impl ToolSpec for AgentTool {
         let mut value = serde_json::to_value(&projection)
             .map_err(|e| ToolError::execution_failed(e.to_string()))?;
         compact_spawn_receipt(&mut value, verbose);
+        if !ignored_limits.is_empty() {
+            value["ignored_limit_fields"] = json!(ignored_limits);
+            value["limits_note"] = json!(
+                "Per-call limits are retired. This worker uses operator, role and inherited limits; see effective_limits."
+            );
+        }
         let mut tool_result =
             ToolResult::json(&value).map_err(|e| ToolError::execution_failed(e.to_string()))?;
         let metadata = json!({
@@ -12594,6 +12605,8 @@ async fn spawn_subagent_from_input(
     mut runtime: SubAgentRuntime,
     verified_posture_denials: bool,
     workflow_identity: Option<&WorkflowTaskSpawnIdentity>,
+    response_schema: Option<Value>,
+    member_roster: Option<&crate::fleet::roster::FleetRoster>,
 ) -> Result<(SubAgentResult, WorkflowTaskSpawnMetadata), ToolError> {
     let exact_fleet_binding =
         workflow_identity.and_then(|identity| identity.exact_fleet_binding.as_ref());
@@ -12602,6 +12615,12 @@ async fn spawn_subagent_from_input(
         refresh_spawn_route_sources(&mut runtime);
     }
     let mut spawn_request = parse_spawn_request(&input)?;
+    spawn_request.max_steps = None;
+    spawn_request.wall_time = None;
+    spawn_request.max_output_tokens = None;
+    if exact_fleet_binding.is_none() {
+        spawn_request.max_depth = None;
+    }
     if !verified_posture_denials {
         // Keep caller restrictions in the inherited context before adding
         // structural role sentinels to the worker profile. A read-only role
@@ -12619,7 +12638,12 @@ async fn spawn_subagent_from_input(
             apply_spawn_profile(&mut spawn_request, &member)?;
             Some(member)
         }
-        None => resolve_spawn_route_profile(&runtime, &mut spawn_request, &spawn_roster(&runtime))?,
+        None => match member_roster {
+            Some(roster) => resolve_spawn_route_profile(&runtime, &mut spawn_request, roster)?,
+            None => {
+                resolve_spawn_route_profile(&runtime, &mut spawn_request, &spawn_roster(&runtime))?
+            }
+        },
     };
     // Role resolution runs before classification so the write contract sees
     // the effective role: read-only roles stay ergonomic, and a write-capable
@@ -12670,16 +12694,16 @@ async fn spawn_subagent_from_input(
         true,
         // Exact-bound spawns refuse provider substitution: their route is
         // preflighted and "will not guess or fall back".
-        exact_fleet_binding.is_none(),
+        exact_fleet_binding.is_none() && member_roster.is_none(),
     )
     .await?;
     // The pause is per provider route, so it is checked against the route
     // the child was just bound to, not the parent's: a 429 on the parent's
     // provider must not refuse a child headed to another provider or a local
     // runtime (and a child bound to a paused route is refused either way).
-    if let Some(remaining) =
-        crate::retry_status::rate_limit_remaining(&child_runtime.client.rate_limit_scope())
-    {
+    if let Some(remaining) = codewhale_runtime::retry_status::rate_limit_remaining(
+        &child_runtime.client.rate_limit_scope(),
+    ) {
         let seconds = remaining.as_secs() + u64::from(remaining.subsec_nanos() > 0);
         return Err(ToolError::execution_failed(format!(
             "Provider is rate-limiting; sub-agent spawning is paused for {seconds}s. \
@@ -12802,6 +12826,7 @@ async fn spawn_subagent_from_input(
     );
     apply_spawn_write_authority(&mut child_runtime, &spawn_request);
     let write_capable = spawn_request_is_write_capable(&spawn_request);
+    child_runtime.workflow_response_schema = response_schema.filter(|_| !write_capable);
     let write_claim = write_capable.then(|| WriteScopeClaim {
         owner: String::new(),
         roots: spawn_request.write_roots.clone(),
@@ -13309,6 +13334,8 @@ pub(crate) async fn spawn_workflow_task(
         runtime,
         identity.fleet_authority_fingerprint.is_some(),
         Some(&identity),
+        request.response_schema,
+        None,
     )
     .await?;
     let workflow_task_label = identity.workflow_task_label;
@@ -13403,7 +13430,7 @@ fn verify_fleet_authority_input(expected: &str, input: &Value) -> Result<()> {
 
 /// Build the system prompt for a sub-agent.
 ///
-/// Starts with the per-type prompt (`FleetRole::system_prompt`) and
+/// Starts with the per-type prompt (`role_system_prompt`) and
 /// appends a one-line role overlay when `assignment.role` is set. The
 /// full role library — TOML overlays from `~/.deepseek/roles/`, the
 /// `/roles` slash command, model overrides per role — lands in 0.6.7.
@@ -13411,7 +13438,7 @@ fn verify_fleet_authority_input(expected: &str, input: &Value) -> Result<()> {
 /// "You are operating in the role of `{name}`." as a final line so its
 /// behavior reflects the user's choice.
 fn build_subagent_system_prompt(agent_type: &FleetRole, assignment: &SubAgentAssignment) -> String {
-    let base = agent_type.system_prompt();
+    let base = role_system_prompt(agent_type);
     let mut prompt = match assignment.role.as_deref() {
         Some(role) if !role.trim().is_empty() => {
             format!(
@@ -13633,8 +13660,8 @@ struct SubAgentTask {
     max_steps: u32,
     /// Wall-clock budget for the child's work. A child that waits for a
     /// launch slot gets it in full from the moment it launches, bounded by
-    /// `wall_ceiling_ms`; the queue wait itself is bounded by the same length.
-    wall_time: Duration,
+    /// `wall_ceiling_ms`. `None` leaves the queue and work without a deadline.
+    wall_time: Option<Duration>,
     /// Inherited absolute deadline (epoch ms) from the parent, saved-run or
     /// source record, which a restarted work clock never passes.
     wall_ceiling_ms: Option<u64>,
@@ -13994,36 +14021,38 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
         }
     }
 
-    let mut deadline = (task.started_at + task.wall_time).min(
-        task.runtime.worker_profile.wall_deadline_ms.map_or(
-            task.started_at + task.wall_time,
-            |deadline| {
-                Instant::now() + Duration::from_millis(deadline.saturating_sub(epoch_millis_now()))
-            },
-        ),
+    let mut deadline = narrow_optional_limit(
+        task.wall_time
+            .and_then(|limit| task.started_at.checked_add(limit)),
+        task.runtime
+            .worker_profile
+            .wall_deadline_ms
+            .and_then(|deadline| {
+                Instant::now().checked_add(Duration::from_millis(
+                    deadline.saturating_sub(epoch_millis_now()),
+                ))
+            }),
     );
     // One effective deadline, visible to both layers. The inner stages read
-    // `worker_profile.wall_deadline_ms` (work deadline, reserved hand-back),
+    // `worker_profile.wall_deadline_ms`,
     // while an authored task wall time used to narrow the budget only through
     // the outer backstop below. The backstop must not race the deadline
     // (#6277), so fold the task wall time into the profile before the run:
     // enforcement, the model-visible budget block, and the receipt then all
     // describe the same limit.
-    let effective_deadline_ms = epoch_millis_now().saturating_add(
-        u64::try_from(
-            deadline
-                .saturating_duration_since(Instant::now())
-                .as_millis(),
+    let effective_deadline_ms = deadline.map(|deadline| {
+        epoch_millis_now().saturating_add(
+            u64::try_from(
+                deadline
+                    .saturating_duration_since(Instant::now())
+                    .as_millis(),
+            )
+            .unwrap_or(u64::MAX),
         )
-        .unwrap_or(u64::MAX),
-    );
-    task.runtime.worker_profile.wall_deadline_ms = Some(
-        task.runtime
-            .worker_profile
-            .wall_deadline_ms
-            .map_or(effective_deadline_ms, |existing| {
-                existing.min(effective_deadline_ms)
-            }),
+    });
+    task.runtime.worker_profile.wall_deadline_ms = narrow_optional_limit(
+        task.runtime.worker_profile.wall_deadline_ms,
+        effective_deadline_ms,
     );
 
     // Interactive launch gate (#3095): direct children acquire a permit
@@ -14050,12 +14079,12 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
         match Arc::clone(gate).try_acquire() {
             Some(permit) => _launch_permits.push(permit),
             None => {
-                match tokio::time::timeout_at(
-                    deadline.into(),
-                    acquire_queued_launch_permit(&task, Arc::clone(gate), deadline),
-                )
-                .await
-                {
+                let acquire = acquire_queued_launch_permit(&task, Arc::clone(gate), deadline);
+                let permit = match deadline {
+                    Some(deadline) => tokio::time::timeout_at(deadline.into(), acquire).await,
+                    None => Ok(acquire.await),
+                };
+                match permit {
                     Ok(permit) => {
                         if let Some(permit) = permit {
                             launched_from_queue = true;
@@ -14072,25 +14101,26 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
             }
         }
     }
-    let queue_limit = deadline.saturating_duration_since(task.started_at);
+    let queue_limit = deadline.map(|deadline| deadline.saturating_duration_since(task.started_at));
     let mut work_started_at = task.started_at;
     if launched_from_queue {
         let now = Instant::now();
         let now_ms = epoch_millis_now();
-        let restarted_ms =
-            now_ms.saturating_add(u64::try_from(task.wall_time.as_millis()).unwrap_or(u64::MAX));
-        let deadline_ms = task
-            .wall_ceiling_ms
-            .map_or(restarted_ms, |ceiling| ceiling.min(restarted_ms));
-        deadline = now + Duration::from_millis(deadline_ms.saturating_sub(now_ms));
-        task.runtime.worker_profile.wall_deadline_ms = Some(deadline_ms);
+        let restarted_ms = task.wall_time.map(|limit| {
+            now_ms.saturating_add(u64::try_from(limit.as_millis()).unwrap_or(u64::MAX))
+        });
+        let deadline_ms = narrow_optional_limit(task.wall_ceiling_ms, restarted_ms);
+        deadline = deadline_ms.and_then(|deadline| {
+            now.checked_add(Duration::from_millis(deadline.saturating_sub(now_ms)))
+        });
+        task.runtime.worker_profile.wall_deadline_ms = deadline_ms;
         work_started_at = now;
         // Continuation reads the saved deadline, so save the restarted one;
         // otherwise a child that launched late would be refused as out of
         // budget while most of its work budget was left.
         let mut manager = task.manager_handle.write().await;
         if let Some(record) = manager.worker_records.get_mut(&task.agent_id) {
-            record.spec.runtime_profile.wall_deadline_ms = Some(deadline_ms);
+            record.spec.runtime_profile.wall_deadline_ms = deadline_ms;
             record.updated_at_ms = now_ms;
             manager.persist_state_debounced();
         }
@@ -14100,20 +14130,22 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
         ._foreground_child_registration
         .as_ref()
         .map(ForegroundChildRegistration::parking_signal);
-    // Every inner stage bounds itself by `deadline` (step requests by the
-    // work deadline, and the reserved hand-back turn by the hard deadline),
+    // Every inner stage bounds itself by the owner-selected `deadline`,
     // so the inner run can always produce its own receipt: the specific stop
-    // cause, the hand-back outcome, and preserved usage. This outer backstop
+    // cause and preserved usage. This outer backstop
     // exists only for an inner stage that overruns anyway; racing it at the
     // same instant as the inner deadline replaced real receipts with the
     // generic error below (#6277). The grace keeps the anti-hang guarantee
     // while letting the inner receipt win.
-    let backstop = deadline + Duration::from_secs(30);
-    let effective_limit = deadline.saturating_duration_since(work_started_at);
+    let backstop = deadline.and_then(|deadline| deadline.checked_add(Duration::from_secs(30)));
+    let effective_limit =
+        deadline.map(|deadline| deadline.saturating_duration_since(work_started_at));
     let mut backstop_budget = false;
     let result = if launch_wait_timed_out {
         task.runtime.cancel_token.cancel();
-        Err(anyhow!(never_started_reason(queue_limit)))
+        Err(anyhow!(never_started_reason(
+            queue_limit.expect("timed queue has a deadline")
+        )))
     } else {
         let child = engine::run_child_agent(
             &task.runtime,
@@ -14134,12 +14166,17 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
             () = async {
                 tokio::select! {
                     () = task.runtime.cancel_token.cancelled() => {},
-                    () = tokio::time::sleep_until(backstop.into()) => {},
+                    () = async {
+                        match backstop {
+                            Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
+                            None => std::future::pending::<()>().await,
+                        }
+                    } => {},
                 }
             } => {
                 // Signal first, then keep polling the exact future that owns
                 // Core's approval receipt and actor join; never reopen work.
-                backstop_budget = Instant::now() >= backstop
+                backstop_budget = backstop.is_some_and(|deadline| Instant::now() >= deadline)
                     && !task.runtime.cancel_token.is_cancelled();
                 task.runtime.cancel_token.cancel();
                 // Core's driver owns a five-second cooperative join. One extra
@@ -14149,7 +14186,11 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
                 tokio::time::timeout(CHILD_STOP_SETTLE_GRACE + Duration::from_secs(1), &mut child)
                     .await.unwrap_or_else(|_| Err(anyhow!(engine::UnsettledChildCancellation(format!(
                         "{}; child cancellation did not settle",
-                        child_wall_time_exhausted_reason(effective_limit)
+                        if backstop_budget {
+                            child_wall_time_exhausted_reason(effective_limit.expect("budget backstop has a deadline"))
+                        } else {
+                            "child stop requested".to_string()
+                        }
                     )))))
             }
         }
@@ -14184,7 +14225,7 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
         ),
     };
     let failure_error = result.as_ref().err().map(|err| {
-        crate::logging::warn(format!(
+        codewhale_runtime::logging::warn(format!(
             "sub-agent {} model request failed: {err:#}",
             task.agent_id
         ));
@@ -14253,7 +14294,9 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
     let terminal = match result {
         Ok(result) if backstop_budget => budget_partial_result(
             result,
-            &child_wall_time_exhausted_reason(effective_limit),
+            &child_wall_time_exhausted_reason(
+                effective_limit.expect("budget backstop has a deadline"),
+            ),
             preservation_note.as_deref(),
         ),
         Ok(mut result) => {
@@ -14312,10 +14355,9 @@ async fn run_subagent_task_inner(mut task: SubAgentTask) {
 }
 
 /// Queued-row reason (addendum F5): why the child waits — a free slot, or the
-/// rate-limit governor's pause/throttle — and when it gives up waiting (as
-/// an end time). The work budget starts at launch (#6015); the queue wait is
-/// bounded separately so saturation cannot keep a child waiting forever.
-fn queued_launch_reason(task: &SubAgentTask, deadline: Instant) -> String {
+/// rate-limit governor's pause/throttle — and any owner-supplied deadline.
+/// The work budget starts at launch (#6015) when a budget is configured.
+fn queued_launch_reason(task: &SubAgentTask, deadline: Option<Instant>) -> String {
     let now = Instant::now();
     let governor_line = task
         .runtime
@@ -14335,13 +14377,16 @@ fn queued_launch_reason(task: &SubAgentTask, deadline: Instant) -> String {
         Some(line) => format!("{SUBAGENT_QUEUED_LAUNCH_REASON} — {line}"),
         None => SUBAGENT_QUEUED_LAUNCH_REASON.to_string(),
     };
-    format!(
-        "{base} {}",
-        queued_budget_note(
-            deadline.saturating_duration_since(now),
-            chrono::Local::now()
-        )
-    )
+    match deadline {
+        Some(deadline) => format!(
+            "{base} {}",
+            queued_budget_note(
+                deadline.saturating_duration_since(now),
+                chrono::Local::now()
+            )
+        ),
+        None => base,
+    }
 }
 
 /// The wall-budget half of a queued reason. The row is republished only when
@@ -14366,7 +14411,7 @@ fn queued_reason_cause(reason: &str) -> &str {
 async fn acquire_queued_launch_permit(
     task: &SubAgentTask,
     gate: Arc<governor::DynamicGate>,
-    deadline: Instant,
+    deadline: Option<Instant>,
 ) -> Option<governor::DynamicGatePermit> {
     // When the governor has paused launches over sustained provider 429s,
     // surface the reason in the queued status instead of the generic
@@ -15640,7 +15685,7 @@ fn parse_spawn_request(input: &Value) -> Result<SpawnRequest, ToolError> {
 
     let parsed_type = type_input
         .map(|kind| {
-            FleetRole::from_str(kind).ok_or_else(|| {
+            FleetRole::parse(kind).ok_or_else(|| {
                 ToolError::invalid_input(format!(
                     "Invalid sub-agent type '{kind}'. Use: {VALID_SUBAGENT_TYPES}"
                 ))
@@ -15651,7 +15696,7 @@ fn parse_spawn_request(input: &Value) -> Result<SpawnRequest, ToolError> {
     // Role may be either a FleetRole alias (reviewer → FleetRole::Reviewer)
     // or a Fleet role name resolved later (`resolve_spawn_role`). Type aliases
     // still set agent_type; non-alias roles resolve as the profile key (#4177).
-    let parsed_role_type = role_input.and_then(FleetRole::from_str);
+    let parsed_role_type = role_input.and_then(FleetRole::parse);
     let role_is_type_alias = parsed_role_type.is_some();
 
     if let (Some(type_kind), Some(role_kind)) = (&parsed_type, &parsed_role_type)
@@ -15748,18 +15793,12 @@ fn parse_spawn_request(input: &Value) -> Result<SpawnRequest, ToolError> {
         u32::MAX as u64,
     )?
     .map(|n| n as u32);
-    let max_steps = parse_optional_bounded_limit(
-        input,
-        &["max_steps", "maxSteps"],
-        u64::from(MAX_SUBAGENT_STEPS),
-    )?
-    .map(|steps| u32::try_from(steps).expect("validated model-turn range"));
-    let wall_time = parse_optional_bounded_limit(
-        input,
-        &["wall_time_secs", "wallTimeSecs"],
-        MAX_CHILD_WALL_TIME.as_secs(),
-    )?
-    .map(Duration::from_secs);
+    let max_steps =
+        parse_optional_bounded_limit(input, &["max_steps", "maxSteps"], u64::from(u32::MAX))?
+            .map(|steps| u32::try_from(steps).expect("validated model-turn range"));
+    let wall_time =
+        parse_optional_bounded_limit(input, &["wall_time_secs", "wallTimeSecs"], u64::MAX / 1_000)?
+            .map(Duration::from_secs);
 
     // #4042: optional caller-supplied tool deny-list (unioned with the parent's
     // inherited deny-list) and the legacy inheritance flag (cannot relax policy).
@@ -16268,7 +16307,7 @@ fn resolve_spawn_profile(
         .resolve_member(selector)
         .map_err(|error| ToolError::invalid_input(error.to_string()))?;
     let Some(member) = member else {
-        if !roster.is_exact_selection() && FleetRole::from_str(selector).is_some() {
+        if !roster.is_exact_selection() && FleetRole::parse(selector).is_some() {
             resolve_spawn_role(request)?;
             return Ok(None);
         }
@@ -16479,12 +16518,13 @@ fn enforce_fleet_member_route_requirements(
     .map_err(|error| {
         ToolError::execution_failed(format!(
             "Fleet member '{member_id}' requirements could not be checked against its exact child route: {}",
-            crate::safe_label::safe_error_text(&error.to_string())
+            codewhale_runtime::safe_label::safe_error_text(&error.to_string())
         ))
     })?;
     let provider_id = runtime.client.admitted_provider_identity().key.to_string();
-    let provider_id = crate::safe_label::SafeLabel::identifier(&provider_id);
-    let model_id = crate::safe_label::SafeLabel::catalog_model(candidate.wire_model_id().as_str());
+    let provider_id = codewhale_runtime::safe_label::SafeLabel::identifier(&provider_id);
+    let model_id =
+        codewhale_runtime::safe_label::SafeLabel::catalog_model(candidate.wire_model_id().as_str());
 
     for requirement in &member.requires {
         match crate::fleet::store::MemberCapability::parse(requirement) {
@@ -16519,7 +16559,7 @@ fn resolve_spawn_role(request: &mut SpawnRequest) -> Result<(), ToolError> {
     let Some(profile_id) = request.profile.clone() else {
         return Ok(());
     };
-    let Some(role) = FleetRole::from_str(&profile_id) else {
+    let Some(role) = FleetRole::parse(&profile_id) else {
         return Err(ToolError::invalid_input(format!(
             "Unknown Fleet role/profile '{profile_id}'. Fleet profiles are roles: {VALID_ROLE_ALIASES}."
         )));
@@ -16554,7 +16594,7 @@ pub(crate) fn session_permission_ceiling(
         write: runtime.worker_profile.permissions.write,
         network_tool: runtime.worker_profile.permissions.network
             && runtime.agent_tool_surface_options.web_search_enabled,
-        shell: crate::fleet::role::session_shell_ceiling(
+        shell: codewhale_agent_contract::role::session_shell_ceiling(
             runtime.worker_profile.shell,
             runtime.allow_shell,
         ),
@@ -17117,7 +17157,7 @@ async fn bind_spawn_model_route(
             .chars()
             .take(480)
             .collect();
-            crate::logging::warn(format!("sub-agent route fallback: {note}"));
+            codewhale_runtime::logging::warn(format!("sub-agent route fallback: {note}"));
             parent_route.install(runtime);
             runtime.route_origin = Some(Arc::new(spawn_route_origin(
                 SpawnRouteSource::SessionFallback,
@@ -17816,8 +17856,8 @@ pub(crate) fn configured_role_model_override<'a>(
         push_key(normalized);
     }
     push_key(agent_type.as_str().to_string());
-    if agent_type.legacy_type_name() != agent_type.as_str() {
-        push_key(agent_type.legacy_type_name().to_string());
+    if role_legacy_type_name(agent_type) != agent_type.as_str() {
+        push_key(role_legacy_type_name(agent_type).to_string());
     }
     // `[subagents.models].oracle` shipped before the public role was renamed.
     // Keep both historical advisory keys readable, but never expose them in
@@ -18192,7 +18232,7 @@ fn build_assignment_prompt(
         .role
         .as_deref()
         .map(|token| {
-            FleetRole::from_str(token)
+            FleetRole::parse(token)
                 .map(|role| role.as_str())
                 .unwrap_or(token)
         })
@@ -18685,7 +18725,7 @@ fn reject_network_reaching_input(name: &str, input: &Value) -> Result<()> {
 /// verification at all — `run_verifiers` takes `commands`, an array of arbitrary
 /// `program` + `args` pairs, and `run_tests` takes `args`, a raw cargo argv.
 /// `{"program": "bash", "args": ["-lc", "rm -rf src"]}` is exactly the raw shell
-/// that [`crate::fleet::role::RAW_SHELL_DENYLIST`] just removed, re-entered
+/// that [`codewhale_agent_contract::role::RAW_SHELL_DENYLIST`] just removed, re-entered
 /// through the one door that was left open for honest reasons.
 ///
 /// So the tools stay and the arbitrary arguments go. The default form — the one
@@ -18976,7 +19016,7 @@ fn annotate_child_model_error_with_origin(
 const SUBAGENT_SUMMARY_CHAR_BUDGET: usize = 12_000;
 
 fn subagent_summary_char_budget() -> usize {
-    crate::tools::large_output_router::WorkshopConfig::active_tool_result_max_bytes()
+    crate::tools::large_output_router::active_tool_result_max_bytes()
         .map(|bytes| bytes.clamp(SUBAGENT_SUMMARY_CHAR_BUDGET, 2 * 1024 * 1024))
         .unwrap_or(SUBAGENT_SUMMARY_CHAR_BUDGET)
 }
@@ -19115,15 +19155,16 @@ const GENERAL_AGENT_INTRO: &str = concat!(
     "You are a trusted Fleet worker. Your job is to complete the one task you were given, end-to-end, and report back concisely.\n",
     "Stay inside the assigned scope; put adjacent work under RISKS/BLOCKERS.\n",
     "For genuinely multi-step work, track progress with `todo_write`; skip it for short, focused tasks.\n",
-    "**Stop quickly on failure**: if the same tool call fails 2 times in a row, stop retrying and return what you have so far with a one-line note explaining what's missing. Do not loop on impossible queries (e.g. external API unreachable, rate-limited, or returning empty).\n",
+    "After a failed tool call, inspect the cause and adapt. Retry a transient failure when appropriate, use another supported approach, or report a concrete blocker when progress requires unavailable input or authority. Continue independent work.\n",
     "For builder or repair-style work, keep going within the assigned scope; checkpoint before broadening the task or after repeated failures instead of forcing a tiny tool-call cap.\n\n"
 );
 
 const EXPLORE_AGENT_INTRO: &str = concat!(
     "You are a trusted Fleet scout (role: `scout`). Your job is to map the relevant code quickly and stay strictly read-only.\n",
-    "Default to `EFFORT: quick`: stop at decisive evidence, not at a number — there is no per-agent call cap to save.\n",
+    "Gather enough evidence to answer the assigned question reliably; there is no per-agent call cap to save.\n",
     "Orient first: confirm the workspace/project root, read relevant AGENTS.md/README guidance when the tree is unfamiliar, then search only the likely scope.\n",
     "Use `read` for bounded file reads and `bash` only for the allowed read-only inspection subset: navigation/rg, safe Git reads (for example `git log -n 5`), and read-only GitHub views such as `gh issue view`. Builds, tests, writes, and shell control actions are unavailable.\n",
+    "Your shell is network-isolated: `curl` and every other outbound command fail no matter what the allowlist says, and the `web` tool is your only route to a web page. When a fetch fails, report that source as unfetched with the error you saw and never attribute that failure to a blocked program, a missing binary, or an absent network path.\n",
     "Use your private `todo_write` list as editable working notes when useful; it is agent-owned state, not permission to write project files. Those tool calls remain in the complete transcript artifact returned to the parent.\n",
     "Honor QUESTION, SCOPE, ALREADY_KNOWN, and STOP_CONDITION. Do not repeat ALREADY_KNOWN work unless evidence contradicts it; do not broaden once QUESTION is answered.\n",
     "Your value is compressed evidence: cite `path:line-range` for each finding and stop once evidence is sufficient. Return partial findings if the next step would be speculative or duplicative.\n",
@@ -19158,7 +19199,7 @@ const IMPLEMENTER_AGENT_INTRO: &str = concat!(
     "You are a trusted Fleet builder (role: `builder`). Your job is to land the assigned change with minimal surrounding edits.\n",
     "Use `edit` for precise unique replacements, `write` for whole-file changes, and discover `apply_patch` for unified multi-file patches when needed.\n",
     "Run relevant verification after edit batches; write needed tests with the implementation.\n",
-    "You are not limited to a scout-style 3-5 tool-call cap. Checkpoint before expanding scope or after repeated failures, then continue only inside the assigned brief.\n",
+    "Checkpoint before expanding scope or after repeated failures, then continue only inside the assigned brief.\n",
     "CHANGES is load-bearing: list every modified file with a one-line why.\n",
     "Before finishing, end with a VERDICT block: PASS or FAIL, the exact commands you ran (or why verification was impossible), and brief evidence. A diff alone is not completion.\n\n"
 );
@@ -19749,7 +19790,7 @@ mod owner_scoped_coordination_tests {
         let selected = root.join("selected");
         fs::create_dir_all(original.join("src")).unwrap();
         fs::create_dir_all(selected.join("src")).unwrap();
-        let authority = new_shared_runtime_subagent_manager(original.clone(), 2).unwrap();
+        let authority = new_exclusive_runtime_subagent_manager(original.clone(), 2).unwrap();
         let mut manager = authority.try_write().unwrap();
         admit(&mut manager, &original);
         admit(&mut manager, &selected);
@@ -20278,4 +20319,74 @@ mod captured_worker_origin_tests {
         );
         manager.coordination.validate_replay().unwrap();
     }
+}
+
+#[derive(Debug)]
+pub struct FleetMemberStart {
+    pub operation_key: String,
+    pub fleet: crate::fleet::store::FleetFile,
+    pub member_id: String,
+    pub display_name: String,
+    pub prompt: String,
+}
+
+pub(crate) async fn start_fleet_member(
+    manager: SharedSubAgentManager,
+    runtime: SubAgentRuntime,
+    start: FleetMemberStart,
+) -> Result<String, String> {
+    start.fleet.validate().map_err(|error| error.to_string())?;
+    let member = start
+        .fleet
+        .member(&start.member_id)
+        .ok_or_else(|| format!("Fleet member `{}` is not in this Fleet.", start.member_id))?;
+    if member.provider.is_none() || member.model.is_none() {
+        return Err(format!(
+            "Fleet member `{}` must pin an exact provider and model.",
+            start.member_id
+        ));
+    }
+    let request = serde_json::to_string(&json!({
+        "fleet": &start.fleet,
+        "member_id": &start.member_id,
+        "display_name": &start.display_name,
+        "prompt": &start.prompt,
+    }))
+    .map_err(|error| error.to_string())?;
+    if let Some((accepted, agent_id)) = manager.read().await.member_starts.get(&start.operation_key)
+    {
+        return if *accepted == request {
+            Ok(agent_id.clone())
+        } else {
+            Err("This operation key already started a different member request.".to_string())
+        };
+    }
+    let roster = crate::fleet::identity::roster_from_fleet(
+        &start.fleet,
+        crate::fleet::store::FleetScope::Personal,
+        std::path::Path::new("account-fleet"),
+    );
+    let input = json!({
+        "action": "start",
+        "profile": start.member_id,
+        "name": start.member_id,
+        "prompt": start.prompt,
+    });
+    let (result, _) = spawn_subagent_from_input(
+        input,
+        Arc::clone(&manager),
+        runtime,
+        false,
+        None,
+        None,
+        Some(&roster),
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    manager
+        .write()
+        .await
+        .member_starts
+        .insert(start.operation_key, (request, result.agent_id.clone()));
+    Ok(result.agent_id)
 }

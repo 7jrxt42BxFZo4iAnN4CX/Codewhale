@@ -145,7 +145,7 @@ pub(crate) fn publish_legacy_spillover_ownership(
     let ownership = LegacySpilloverOwnership {
         schema_version: LEGACY_SPILLOVER_OWNER_SCHEMA_VERSION,
         origin_session: session_id.to_string(),
-        digest: crate::hashing::sha256_hex(bytes),
+        digest: codewhale_runtime::hashing::sha256_hex(bytes),
         size_bytes: bytes.len().try_into().unwrap_or(u64::MAX),
     };
     let sidecar = legacy_spillover_ownership_path(payload_path);
@@ -559,7 +559,7 @@ fn apply_spillover_inner(
         SPILLOVER_HEAD_BYTES,
         SPILLOVER_TAIL_BYTES,
     );
-    let digest = crate::hashing::sha256_hex(original_content.as_bytes());
+    let digest = codewhale_runtime::hashing::sha256_hex(original_content.as_bytes());
     let path_str = path.display().to_string();
 
     // Keep publishing the legacy ownership proof even though the model-facing
@@ -708,7 +708,7 @@ fn bound_unpersisted_output(result: &mut ToolResult, head_bytes: usize, tail_byt
     let omitted_lines = original[head_len..original_bytes - tail_len]
         .lines()
         .count();
-    let digest = crate::hashing::sha256_hex(original.as_bytes());
+    let digest = codewhale_runtime::hashing::sha256_hex(original.as_bytes());
     result.content = format!(
         "{head}\n\n{}\n\n…\n{tail}",
         preview_footer(omitted, omitted_lines, None, None)
@@ -816,7 +816,7 @@ pub(crate) fn preserve_full_output_for_model_context(
                 relative_path.clone(),
                 &result.content,
             );
-            let digest = crate::hashing::sha256_hex(result.content.as_bytes());
+            let digest = codewhale_runtime::hashing::sha256_hex(result.content.as_bytes());
             let obj = metadata_object_mut(result);
             stamp_artifact_metadata(obj, &absolute_path, &relative_path, &record);
             obj.insert("content_digest".into(), format!("sha256:{digest}").into());
@@ -1021,7 +1021,7 @@ fn apply_adaptive_evidence_inner(
 
     let artifact_id = crate::artifacts::artifact_id_for_tool_call(tool_id);
     let relative_path = crate::artifacts::session_artifact_relative_path(&artifact_id);
-    let digest = crate::hashing::sha256_hex(original.as_bytes());
+    let digest = codewhale_runtime::hashing::sha256_hex(original.as_bytes());
     let now_ms = unix_millis_now();
     let proposed_artifact = EvidenceArtifact {
         handle: artifact_id.clone(),
@@ -1360,7 +1360,10 @@ mod tests {
         assert_eq!(metadata["fixture"], "preserved");
         assert_eq!(
             metadata["content_digest"],
-            format!("sha256:{}", crate::hashing::sha256_hex(original.as_bytes()))
+            format!(
+                "sha256:{}",
+                codewhale_runtime::hashing::sha256_hex(original.as_bytes())
+            )
         );
         assert!(metadata.get("artifact_id").is_none());
         assert!(metadata.get("spillover_path").is_none());
@@ -2244,7 +2247,7 @@ mod tests {
             // lane, so a turn artifact ref can carry a revision.
             assert_eq!(
                 metadata["artifact_digest"],
-                crate::hashing::sha256_hex(raw.as_bytes())
+                codewhale_runtime::hashing::sha256_hex(raw.as_bytes())
             );
             let artifact = tmp
                 .path()

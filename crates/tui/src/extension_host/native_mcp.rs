@@ -5,9 +5,8 @@ use super::protocol::{EntryRef, OwnerRef, RegisterKind, RegisterParams, Register
 use super::supervisor::HostRequestContext;
 use super::tier::HostTier;
 use crate::mcp::McpServerConfig;
-use crate::plugins::{
-    PluginRegistry, activation::PluginActivationCapability, types::PluginAuthority,
-};
+use crate::plugins::{PluginRegistry, activation::PluginActivationCapability};
+use codewhale_config::PluginAuthority;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 

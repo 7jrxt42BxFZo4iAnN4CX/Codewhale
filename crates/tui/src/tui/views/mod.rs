@@ -12,7 +12,6 @@ use std::fmt;
 use unicode_width::UnicodeWidthStr;
 
 use crate::config::{ApprovalPolicyControl, Config, ProviderKind};
-use crate::features::{FEATURES, Stage};
 use crate::settings::Settings;
 use crate::tools::UserInputResponse;
 use crate::tools::subagent::{
@@ -29,6 +28,7 @@ use codewhale_localization::{
     Locale, MessageId, configured_locale_is_partial_pack, normalize_configured_locale, tr, tr_key,
 };
 use codewhale_palette as palette;
+use codewhale_runtime::features::{FEATURES, Stage};
 
 pub mod automations;
 pub mod extensions;
@@ -3722,9 +3722,10 @@ impl ConfigView {
             && row.scope == ConfigScope::Saved
             && let Some(effective_currency) = effective
         {
-            let saved_cost_currency = crate::pricing::CostCurrency::from_setting(&row.value);
+            let saved_cost_currency =
+                codewhale_config::pricing::CostCurrency::from_setting(&row.value);
             let effective_cost_currency =
-                crate::pricing::CostCurrency::from_setting(effective_currency);
+                codewhale_config::pricing::CostCurrency::from_setting(effective_currency);
             if saved_cost_currency != effective_cost_currency {
                 return format!(
                     "{}{}",
@@ -3787,8 +3788,8 @@ fn config_base_url_row_value(app: &App) -> String {
 
 fn cost_currency_config_value(app: &App) -> String {
     match app.cost_currency {
-        crate::pricing::CostCurrency::Usd => "usd",
-        crate::pricing::CostCurrency::Cny => "cny",
+        codewhale_config::pricing::CostCurrency::Usd => "usd",
+        codewhale_config::pricing::CostCurrency::Cny => "cny",
     }
     .to_string()
 }
@@ -5899,7 +5900,7 @@ pub(crate) fn subagent_view_agents(
             HistoryCell::SubAgent(SubAgentCell::Delegate(card))
                 if seen.insert(card.agent_id.clone()) =>
             {
-                let agent_type = FleetRole::from_str(&card.agent_type).unwrap_or(FleetRole::Worker);
+                let agent_type = FleetRole::parse(&card.agent_type).unwrap_or(FleetRole::Worker);
                 let mut row = live_subagent_result(
                     &card.agent_id,
                     agent_type,
@@ -7517,7 +7518,12 @@ mod tests {
 
     fn cost_currency_row_for_settings(
         settings_toml: &str,
-    ) -> (String, String, crate::pricing::CostCurrency, Locale) {
+    ) -> (
+        String,
+        String,
+        codewhale_config::pricing::CostCurrency,
+        Locale,
+    ) {
         let _guard = ConfigSettingsEnvGuard::new(settings_toml);
         let app = create_test_app();
         let view = ConfigView::new_for_app(&app);
@@ -8135,7 +8141,7 @@ consent_version = 1
         let _path = crate::test_support::EnvVarGuard::set("OPENAI_CODEX_AUTH_FILE", &ambient_path);
         let mut app = create_test_app();
         app.config_path = Some(config_path);
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         let view = ConfigView::new_for_app(&app);
         let row = view
             .rows
@@ -8163,7 +8169,7 @@ consent_version = 1
                 .contains("external-revoke --provider openai-codex")
         );
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (0, 0, 0, 0, 0)
         );
     }
@@ -8738,7 +8744,10 @@ base_url = "https://api.xiaomimimo.com/v1"
         let _guard = ConfigSettingsEnvGuard::new("locale = \"zh-Hans\"\ncost_currency = \"usd\"\n");
         let app = create_test_app();
         assert_eq!(app.ui_locale, Locale::ZhHans);
-        assert_eq!(app.cost_currency, crate::pricing::CostCurrency::Cny);
+        assert_eq!(
+            app.cost_currency,
+            codewhale_config::pricing::CostCurrency::Cny
+        );
 
         let view = ConfigView::new_for_app(&app);
         let row = view
@@ -8761,7 +8770,10 @@ base_url = "https://api.xiaomimimo.com/v1"
                 ));
 
             assert_eq!(locale, Locale::ZhHans);
-            assert_eq!(effective_currency, crate::pricing::CostCurrency::Cny);
+            assert_eq!(
+                effective_currency,
+                codewhale_config::pricing::CostCurrency::Cny
+            );
             assert_eq!(saved_value, alias);
             assert_eq!(display_value, alias);
         }
@@ -8773,7 +8785,10 @@ base_url = "https://api.xiaomimimo.com/v1"
             cost_currency_row_for_settings("locale = \"zh-Hans\"\ncost_currency = \"cny\"\n");
 
         assert_eq!(locale, Locale::ZhHans);
-        assert_eq!(effective_currency, crate::pricing::CostCurrency::Cny);
+        assert_eq!(
+            effective_currency,
+            codewhale_config::pricing::CostCurrency::Cny
+        );
         assert_eq!(saved_value, "cny");
         assert_eq!(display_value, "cny");
     }
@@ -8784,7 +8799,10 @@ base_url = "https://api.xiaomimimo.com/v1"
             cost_currency_row_for_settings("locale = \"en\"\ncost_currency = \"cny\"\n");
 
         assert_eq!(locale, Locale::En);
-        assert_eq!(effective_currency, crate::pricing::CostCurrency::Cny);
+        assert_eq!(
+            effective_currency,
+            codewhale_config::pricing::CostCurrency::Cny
+        );
         assert_eq!(saved_value, "cny");
         assert_eq!(display_value, "cny");
     }

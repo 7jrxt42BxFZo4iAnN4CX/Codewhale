@@ -8,11 +8,11 @@ use std::time::Duration;
 
 use crate::config::DEFAULT_TEXT_MODEL;
 use crate::core::model_client::ModelClient;
-use crate::logging;
 use codewhale_models::Role;
 use codewhale_models::{
     CacheControl, ContentBlock, Message, MessageRequest, SystemBlock, SystemPrompt, Tool, Usage,
 };
+use codewhale_runtime::logging;
 
 #[path = "compaction/last_round.rs"]
 mod last_round;
@@ -1313,7 +1313,7 @@ pub fn report_compaction_failure(
     error: &anyhow::Error,
 ) -> String {
     let raw = error.to_string();
-    let safe_raw = crate::safe_label::safe_error_text(&raw);
+    let safe_raw = codewhale_runtime::safe_label::safe_error_text(&raw);
     tracing::warn!(
         compaction_id = %id,
         auto,
@@ -4332,7 +4332,8 @@ mod tests {
             // is no second, non-wire reasoning allowance.
             (1_000_000, 65_536),
         ] {
-            let budget = crate::context_budget::ContextBudget::new(window, 0, output_reserve);
+            let budget =
+                codewhale_runtime::context_budget::ContextBudget::new(window, 0, output_reserve);
             let threshold = usize::try_from(budget.compaction_trigger_for_percent(80.0))
                 .expect("test threshold fits usize");
             let raw_target = threshold.saturating_mul(7) / 10;

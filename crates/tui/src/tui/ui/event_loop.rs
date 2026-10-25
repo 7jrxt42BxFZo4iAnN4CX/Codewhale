@@ -920,9 +920,9 @@ pub async fn run_tui(
         // the alt-screen is active. The stderr redirect above catches raw
         // writes; this prevents the known verbose source at the origin.
         #[cfg(windows)]
-        crate::logging::snapshot_verbose_state();
+        codewhale_runtime::logging::snapshot_verbose_state();
         #[cfg(windows)]
-        crate::logging::set_verbose(false);
+        codewhale_runtime::logging::set_verbose(false);
     }
     // Mouse capture, bracketed paste, focus events, and the Kitty
     // keyboard-protocol escape-disambiguation flag (#442). Single source
@@ -1005,7 +1005,7 @@ pub async fn run_tui(
         app.low_motion || !app.fancy_animations,
         app.ui_theme.accent_primary,
     );
-    crate::startup_trace::mark("app_constructed");
+    codewhale_runtime::startup_trace::mark("app_constructed");
     sync_config_provider_from_app(config, &app);
     if let Err(error) = crate::tui::setup::record_configured_route(&app).await {
         app.push_status_toast(
@@ -1201,9 +1201,9 @@ pub async fn run_tui(
         hook_executor: app.runtime_services.hook_executor.clone(),
         handle_store: app.runtime_services.handle_store.clone(),
         rlm_sessions: app.runtime_services.rlm_sessions.clone(),
-        media_originals_dir: crate::media_originals::default_store_dir(),
+        media_originals_dir: codewhale_runtime::media_originals::default_store_dir(),
     };
-    crate::startup_trace::mark("task_manager_ready");
+    codewhale_runtime::startup_trace::mark("task_manager_ready");
     refresh_active_task_panel(&mut app, &task_manager).await;
     refresh_automation_panel_blocking(&mut app).await;
 
@@ -1215,7 +1215,7 @@ pub async fn run_tui(
 
     // Restore before admitting initial input, including resumed conversations.
     let engine_handle = spawn_tui_engine_with_session(&mut app, config, None).await?;
-    crate::startup_trace::mark("engine_spawned");
+    codewhale_runtime::startup_trace::mark("engine_spawned");
     // The translation client is optional: it never crashes the TUI on
     // startup, even when the API key is missing, the base URL is malformed,
     // or the network is unavailable.
@@ -1292,13 +1292,13 @@ pub async fn run_tui(
     }
     submit_initial_input_if_ready(&mut app, config, &engine_handle).await?;
 
-    crate::startup_trace::log_summary();
+    codewhale_runtime::startup_trace::log_summary();
     // Pin the cold-start measurement at the same moment the summary is logged.
     // `log_summary` computes the same number into a local, emits it, clears its
     // buffer, and returns `()`, so this reads `PROCESS_START` directly rather
     // than through it. Only this path calls it, which is what keeps the
     // cold-start bucket absent on surfaces with no event loop.
-    crate::startup_trace::mark_cold_start();
+    codewhale_runtime::startup_trace::mark_cold_start();
     let result = run_event_loop(
         &mut terminal,
         &mut app,
@@ -1378,6 +1378,11 @@ pub async fn run_tui(
         tracing::warn!(target: "lifecycle_outbox", %error, "TUI lifecycle outbox did not drain before exit");
     }
 
+    // The pane is ours until the process leaves it: release it before the
+    // terminal is restored so Herdr clears the agent immediately instead of
+    // waiting for its idle-prompt safety net.
+    crate::tui::herdr::release().await;
+
     // Flush the persistence actor, collect the durability report (write
     // failures are surfaced, not discarded), then shut down gracefully.
     //
@@ -1452,7 +1457,7 @@ pub async fn run_tui(
     if app.use_alt_screen() {
         leave_alt_screen(terminal.backend_mut())?;
         #[cfg(windows)]
-        crate::logging::restore_verbose_state();
+        codewhale_runtime::logging::restore_verbose_state();
     }
     if app.use_mouse_capture {
         execute!(terminal.backend_mut(), DisableMouseCapture)?;
@@ -1884,9 +1889,12 @@ pub(crate) async fn run_event_loop(
         .unwrap_or_else(Instant::now);
     // #6728: the last moment anything happened that wanted a prompt reaction:
     // a terminal event, an engine event, or any non-quiescent UI state. The
-    // idle poll, the automation scan and the git probe all back off from it,
-    // and all return to full cadence the moment it moves.
+    // idle poll and the automation scan back off from it and return to full
+    // cadence the moment it moves. The git probe backs off from
+    // `last_input_or_engine_event` instead, which a ticking label or an open
+    // card does not move.
     let mut last_ui_activity = Instant::now();
+    let mut last_input_or_engine_event = Instant::now();
     let mut skill_registry_epoch = None;
     let mut skill_cache_refresh: Option<SkillCacheRefresh> = None;
     // Whether the previous iteration found the UI quiescent and quiet (see
@@ -3224,7 +3232,7 @@ pub(crate) async fn run_event_loop(
                         }
                         crate::tui::notifications::clear_taskbar_progress();
                         if status != crate::core::events::TurnOutcomeStatus::Completed {
-                            crate::retry_status::clear();
+                            codewhale_runtime::retry_status::clear();
                             crate::tui::notifications::stop_title_animation_quietly();
                         }
                         let turn_tokens = usage.input_tokens.saturating_add(usage.output_tokens);
@@ -4101,6 +4109,7 @@ pub(crate) async fn run_event_loop(
                             app.agent_progress.insert(id.clone(), display.clone());
                         }
                         let meta = app.agent_progress_meta.entry(id.clone()).or_default();
+                        meta.last_progress_at = Some(Instant::now());
                         meta.parent_run_id = parent_run_id;
                         meta.spawn_depth = spawn_depth;
                         let current_tool = activity
@@ -4500,6 +4509,7 @@ pub(crate) async fn run_event_loop(
                             );
                         }
                     }
+                    EngineEvent::ProviderRequestReceipt { .. } => {}
                     EngineEvent::TurnUsage {
                         max_output_tokens: _,
                         usage,
@@ -4814,6 +4824,10 @@ pub(crate) async fn run_event_loop(
         maybe_throttled_recovery_snapshot(app, Instant::now(), &mut last_recovery_snapshot_at);
         let history_has_live_motion = history_has_live_motion(&app.history);
         crate::tui::pet_watch::tick(app, Instant::now());
+        crate::tui::herdr::sync(
+            crate::tui::underwater::ShellPhase::from_app(app),
+            app.current_session_id.as_deref(),
+        );
         let active_cell_has_live_motion = active_cell_has_live_motion(app);
         let translation_placeholder_has_live_motion = app.translation_enabled
             && (pending_thinking_translations > 0 || app.streaming_thinking_active_entry.is_some());
@@ -4903,8 +4917,8 @@ pub(crate) async fn run_event_loop(
             underwater_ambient_motion || underwater_completion_motion || launch_motion;
         let animation_active = status_motion || underwater_motion;
         // #6728: what the loop knows about its own quiet. Anything that
-        // wants a prompt reaction moves `last_ui_activity`; the idle poll,
-        // the automation scan and the git probe all back off from it.
+        // wants a prompt reaction moves `last_ui_activity`; the idle poll
+        // and the automation scan back off from it.
         let idle_facts = IdleFacts {
             has_running_agents,
             animation_active,
@@ -4914,17 +4928,24 @@ pub(crate) async fn run_event_loop(
         };
         {
             let tick_now = Instant::now();
+            if engine_event_seen {
+                last_input_or_engine_event = tick_now;
+            }
             if engine_event_seen || !ui_state_is_quiescent(app, &idle_facts, tick_now) {
                 last_ui_activity = tick_now;
             }
             let quiet_for = tick_now.saturating_duration_since(last_ui_activity);
             ui_quiet = quiet_for >= UI_QUIESCENT_AFTER
                 && ui_state_is_quiescent(app, &idle_facts, tick_now);
-            // The git cache TTL follows the same quiet clock, set every
-            // iteration so a stale back-off can never outlive the activity
-            // that ended it (a turn does not reach the probe block below).
+            // The git cache TTL follows the probe's input and engine-event
+            // clock, set every iteration so a stale back-off can never outlive
+            // the activity that ended it (a turn does not reach the probe
+            // block below).
             crate::git_status::set_probe_backoff(crate::git_status::probe_is_backed_off(
-                git_probe_quiet_for(app, quiet_for),
+                git_probe_quiet_for(
+                    app,
+                    tick_now.saturating_duration_since(last_input_or_engine_event),
+                ),
             ));
         }
         let animation_interval = Duration::from_millis(animation_interval_ms(
@@ -5068,8 +5089,10 @@ pub(crate) async fn run_event_loop(
             static GIT_PROBE_LOCK: std::sync::OnceLock<std::sync::Mutex<Option<Instant>>> =
                 std::sync::OnceLock::new();
             let slot = GIT_PROBE_LOCK.get_or_init(|| std::sync::Mutex::new(None));
-            let quiet_for =
-                git_probe_quiet_for(app, now.saturating_duration_since(last_ui_activity));
+            let quiet_for = git_probe_quiet_for(
+                app,
+                now.saturating_duration_since(last_input_or_engine_event),
+            );
             let should_probe = slot
                 .lock()
                 .map(|mut last| {
@@ -5114,6 +5137,8 @@ pub(crate) async fn run_event_loop(
             )));
         }
 
+        app.settle_stale_mcp_boot_prediction();
+
         let draw_wait = if app.needs_redraw {
             frame_rate_limiter.time_until_next_draw(now)
         } else {
@@ -5155,6 +5180,9 @@ pub(crate) async fn run_event_loop(
         if let Some(until_draw) = draw_wait {
             poll_timeout = poll_timeout.min(until_draw);
         }
+        if let Some(until_settle) = app.mcp_boot_prediction_due_in(now) {
+            poll_timeout = poll_timeout.min(until_settle);
+        }
         if let Some(until_stream_commit) = stream_display_clock.due_in(now) {
             poll_timeout = poll_timeout.min(until_stream_commit);
         }
@@ -5193,6 +5221,7 @@ pub(crate) async fn run_event_loop(
             next_terminal_event(&terminal_input, &mut pending_terminal_events, poll_timeout)?;
         if maybe_terminal_event.is_some() {
             last_ui_activity = Instant::now();
+            last_input_or_engine_event = last_ui_activity;
         }
         if maybe_terminal_event.is_none() {
             let now = Instant::now();
@@ -6597,11 +6626,12 @@ pub(crate) async fn run_event_loop(
                     copy_active_selection(app);
                 }
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    // Four behaviors layered on Ctrl+C in priority order — see
+                    // Five behaviors layered on Ctrl+C in priority order — see
                     // `CtrlCDisposition` for the unit-tested decision table.
                     // 1. selection active → copy + clear (Windows convention,
-                    //    #1337); 2. turn in flight → cancel; 3. quit-armed →
-                    //    exit; 4. otherwise → arm the 2-second exit prompt.
+                    //    #1337); 2. turn in flight → cancel; 3. non-empty
+                    //    composer → recoverable clear; 4. quit-armed → exit;
+                    //    5. otherwise → arm the 2-second exit prompt.
                     match ctrl_c_disposition(app) {
                         CtrlCDisposition::CopySelection => {
                             copy_active_selection(app);
@@ -6636,6 +6666,9 @@ pub(crate) async fn run_event_loop(
                             };
                             app.status_message = Some(parent_stop_status(app, base));
                             app.disarm_quit();
+                        }
+                        CtrlCDisposition::ClearInput => {
+                            app.clear_composer_draft();
                         }
                         CtrlCDisposition::ConfirmExit => {
                             let _ = engine_handle.send(Op::Shutdown).await;
@@ -6733,12 +6766,7 @@ pub(crate) async fn run_event_loop(
                             let _ = app.dismiss_plugin_cta_for_session();
                         }
                         EscapeAction::ClearInput => {
-                            app.backtrack.reset();
-                            app.edit_in_progress = false;
-                            app.clear_input_recoverable();
-                            let _ = app.maybe_show_behavioral_tip(
-                                crate::tui::behavioral_tips::BehavioralTip::ClearedInputRestore,
-                            );
+                            app.clear_composer_draft();
                         }
                         EscapeAction::Noop => {
                             // Nothing else cares about this Esc — route it
@@ -7435,7 +7463,7 @@ pub(crate) fn apply_mcp_session_boot_event(
     }
     app.mcp_snapshot = Some(snapshot);
     app.mcp_connecting = connecting;
-    app.mcp_initializing = !finished;
+    app.set_mcp_boot_initializing(!finished);
     app.needs_redraw = true;
 }
 
@@ -7719,7 +7747,13 @@ pub(crate) async fn run_plugin_oauth_from_tui(
             })
             .await??;
         } else {
-            crate::oauth::plugin_oauth_login(provider.clone(), base_url, oauth, authority).await?;
+            crate::plugins::providers::plugin_oauth_login(
+                provider.clone(),
+                base_url,
+                oauth,
+                authority,
+            )
+            .await?;
         }
         let ticket = crate::provider_catalog_live::begin_refresh_for_identity(
             identity.provider,
@@ -8018,6 +8052,50 @@ mod session_boot_event_tests {
         assert!(!chip.to_ascii_lowercase().contains("slack"), "{chip}");
     }
 
+    /// #7035: a boot prediction that outlives the pass must stop painting.
+    /// The pass can die without ever posting its finished event, and the old
+    /// flag had no age, so the surface said "connecting" indefinitely.
+    #[test]
+    fn a_boot_prediction_past_its_horizon_stops_claiming_to_connect() {
+        use crate::tui::session_boot::MCP_BOOT_PREDICTION_HORIZON;
+        use std::time::Duration;
+
+        let mut app = test_app();
+        app.mcp_connecting = vec!["alpha".into()];
+        apply_mcp_session_boot_event(
+            &mut app,
+            1,
+            snapshot(vec![server("alpha", false)]),
+            vec!["alpha".into()],
+            false,
+        );
+        let predicted_at = app.mcp_boot_predicted_at.expect("a stamp for the guess");
+
+        // A later progress event re-asserts the prediction without restarting
+        // its clock, or a talkative pass that never finishes would live on.
+        apply_mcp_session_boot_event(
+            &mut app,
+            2,
+            snapshot(vec![server("alpha", false)]),
+            vec!["alpha".into()],
+            false,
+        );
+        assert_eq!(app.mcp_boot_predicted_at, Some(predicted_at));
+
+        assert!(app.mcp_boot_initializing_at(predicted_at));
+        assert!(!app.mcp_boot_initializing_at(
+            predicted_at + MCP_BOOT_PREDICTION_HORIZON + Duration::from_secs(1)
+        ));
+
+        app.needs_redraw = false;
+        let past_horizon = predicted_at + MCP_BOOT_PREDICTION_HORIZON + Duration::from_secs(1);
+        app.settle_stale_mcp_boot_prediction_at(past_horizon);
+        assert!(!app.mcp_initializing);
+        assert_eq!(app.mcp_boot_predicted_at, None);
+        assert!(app.mcp_connecting.is_empty());
+        assert!(app.needs_redraw, "the stale rows must leave the screen");
+    }
+
     #[test]
     fn direct_mcp_snapshot_rejects_an_unseen_older_boot_generation() {
         let mut app = test_app();
@@ -8261,10 +8339,10 @@ mod launch_session_sync_tests {
     use crate::extension_host::{
         ExtensionHostManager, ExtensionHostOptions, TestManagerGuard, caller_view,
     };
-    use crate::features::Feature;
     use crate::plugins::PluginRegistry;
     use crate::plugins::activation::TestPolicyGuard;
     use codewhale_config::AppMode;
+    use codewhale_runtime::features::Feature;
     use std::sync::Arc;
 
     /// A submit on the startup screen begins a session and runs its input in

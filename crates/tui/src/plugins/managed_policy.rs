@@ -39,7 +39,7 @@
 //! [`verify_plugin_state_authority`](super::registry::verify_plugin_state_authority),
 //! the execution-boundary revocation probe, which re-reads the persisted
 //! `state.json` `enabled` bit directly and never sees the in-memory registry.
-//! A [`PluginAuthority`](super::types::PluginAuthority) minted before the
+//! A [`PluginAuthority`](codewhale_config::PluginAuthority) minted before the
 //! policy arrived and then *persisted* — today only the offline-queue
 //! `skill_provenance` receipt, which survives a restart — therefore
 //! revalidates against `state.json` alone. Closing that path means enforcing
@@ -53,7 +53,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::context::HostEnvironment;
-use super::types::PluginId;
+use codewhale_config::PluginId;
 
 /// Schema version of the managed policy document, versioned exactly like
 /// `PluginStateFile`: a required `schema_version` field that must match.

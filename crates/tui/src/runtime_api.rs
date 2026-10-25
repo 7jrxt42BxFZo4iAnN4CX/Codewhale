@@ -82,13 +82,12 @@ pub(super) use crate::runtime_threads::{RuntimeTurnStatus, TurnItemKind, TurnIte
 use crate::session_manager::default_sessions_dir;
 #[cfg(test)]
 pub(super) use crate::session_manager::{SavedSession, SessionMetadata};
-use crate::skill_state::SkillStateStore;
 use crate::task_manager::{
     NewTaskRequest, SharedTaskManager, TaskManager, TaskManagerConfig, TaskRecord, TaskSummary,
 };
 use crate::tools::subagent::{
     AgentWorkerRecord, AgentWorkerStatus, SharedSubAgentManager, SubAgentStatus,
-    new_shared_runtime_subagent_manager,
+    new_exclusive_runtime_subagent_manager,
 };
 #[cfg(test)]
 pub(super) use codewhale_models::{ContentBlock, Message};
@@ -97,6 +96,7 @@ use codewhale_protocol::fleet::{
     FleetRuntimeTarget, FleetSecurityPolicy, FleetTaskSpec, FleetWorkerEventPayload,
     FleetWorkerSpec, FleetWorkerStatus, FleetWorkflowDescriptor, FleetWorkflowKind,
 };
+use codewhale_runtime::skill_state::SkillStateStore;
 
 mod auth;
 mod avatars;
@@ -105,8 +105,10 @@ mod context;
 mod diagnostics;
 mod git;
 mod jobs;
+pub(crate) mod listener;
 mod lsp;
 mod mcp_import;
+mod members;
 mod memory_lens;
 mod mobile;
 mod plans;
@@ -1338,7 +1340,10 @@ fn default_runtime_capabilities() -> RuntimeCapabilities {
         client_token_intents: true,
         account_session: true,
         account_model_owner: true,
+        session_provider_keys: false,
         threads: true,
+        thread_create_idempotency: true,
+        thread_idle_precondition: true,
         thread_shell_consent: true,
         turns: true,
         turn_operation_idempotency: true,
@@ -1354,6 +1359,7 @@ fn default_runtime_capabilities() -> RuntimeCapabilities {
         environments: false,
         worker_runtime: true,
         fleet_run_create: true,
+        thread_fleet_members: true,
         fleet_run_start: true,
         fleet_event_replay: true,
         fleet_event_stream: true,
@@ -1383,7 +1389,7 @@ fn runtime_api_sub_agent_manager(
     workspace: &FsPath,
     workers: usize,
 ) -> Result<SharedSubAgentManager> {
-    new_shared_runtime_subagent_manager(workspace.to_path_buf(), workers)
+    new_exclusive_runtime_subagent_manager(workspace.to_path_buf(), workers)
 }
 
 #[derive(Debug, Serialize)]
@@ -1671,10 +1677,8 @@ fn replay_flag_is_absent(replayed: &bool) -> bool {
     !*replayed
 }
 
-fn install_runtime_server_workshop_budgets(
-    config: &Config,
-) -> crate::tools::large_output_router::WorkshopConfig {
-    crate::tools::large_output_router::WorkshopConfig::install_active(config.workshop.as_ref())
+fn install_runtime_server_workshop_budgets(config: &Config) -> codewhale_config::WorkshopConfig {
+    crate::tools::large_output_router::install_active_workshop(config.workshop.as_ref())
 }
 
 #[cfg(test)]
@@ -1683,10 +1687,7 @@ fn open_runtime_threads_for_server(
     workspace: PathBuf,
     manager_config: RuntimeThreadManagerConfig,
     plugin_registry: Arc<crate::plugins::PluginRegistry>,
-) -> Result<(
-    SharedRuntimeThreadManager,
-    crate::tools::large_output_router::WorkshopConfig,
-)> {
+) -> Result<(SharedRuntimeThreadManager, codewhale_config::WorkshopConfig)> {
     open_runtime_threads_for_host(
         config,
         workspace,
@@ -1706,10 +1707,7 @@ pub(crate) fn open_runtime_threads_for_host(
     acp: bool,
     preheld_lock: Option<crate::runtime_threads::RuntimeProcessOwnerLock>,
     binding: Option<&crate::runtime_threads::RuntimeStoreBinding>,
-) -> Result<(
-    SharedRuntimeThreadManager,
-    crate::tools::large_output_router::WorkshopConfig,
-)> {
+) -> Result<(SharedRuntimeThreadManager, codewhale_config::WorkshopConfig)> {
     // The Runtime API lazily creates engines after the HTTP/Web server starts.
     // Install the resolved process-wide read/tool byte limits before the
     // thread manager can spawn any of those engines, matching interactive and
@@ -1732,13 +1730,22 @@ pub(crate) fn open_runtime_threads_for_host(
     if let Some(skills_dir) = config.bundled_skills_install_dir()
         && let Err(error) = crate::skills::install_system_skills(&skills_dir)
     {
-        crate::logging::warn(format!("Failed to install system skills: {error}"));
+        codewhale_runtime::logging::warn(format!("Failed to install system skills: {error}"));
     }
     // Publish the same exact endpoint-scoped catalog as interactive startup
     // before the server admits turns. A cached model list alone does not make
     // its capabilities available to route resolution.
     crate::models_dev_live::maybe_load_persisted_cache();
     crate::provider_catalog_live::maybe_load_persisted_cache_for_config(config);
+    if let Ok(identity) = config.active_provider_identity()
+        && identity.provider == ProviderKind::Ollama
+        && let Ok(handle) = tokio::runtime::Handle::try_current()
+    {
+        let config = config.clone();
+        handle.spawn(async move {
+            crate::provider_lake::refresh_local_ollama_catalog(&config, &identity).await;
+        });
+    }
     crate::models_dev_live::spawn_background_refresh();
     Ok((manager, workshop_activation))
 }
@@ -1821,11 +1828,14 @@ pub const RUNTIME_LISTENING_PREFIX: &str = "Runtime API listening on http://";
 
 /// Start the runtime API server.
 pub async fn run_http_server(
-    config: Config,
+    mut config: Config,
     workspace: PathBuf,
     plugin_discovery: Arc<crate::plugins::PluginDiscoveryContext>,
     options: RuntimeApiOptions,
 ) -> Result<()> {
+    let inherited_listener = listener::take(&options.host, options.port, options.insecure_no_auth)?;
+    config.session_provider_keys_only =
+        secrets::session_keys_required().map_err(|error| anyhow!(error.message))?;
     validate_runtime_listener_security(&options)?;
     let acp_selected = matches!(
         options.control_frontend.as_ref(),
@@ -1870,6 +1880,10 @@ pub async fn run_http_server(
     let existing_binding: Option<crate::runtime_threads::RuntimeStoreBinding> = None;
     #[cfg(any(unix, windows))]
     if let Some(control) = published {
+        anyhow::ensure!(
+            inherited_listener.is_none(),
+            "An inherited Runtime listener cannot attach to an already running owner"
+        );
         anyhow::ensure!(
             !(acp_selected && control.routing().is_some_and(|routing| routing.acp_only)),
             "Another `codewhale serve --acp` already owns this runtime, and a second ACP server cannot attach to it. Close the other editor's agent session and try again, or set CODEWHALE_RUNTIME_DIR to a different directory."
@@ -1963,9 +1977,12 @@ pub async fn run_http_server(
     // No publication permits guessing an owner or bypassing its lease. The
     // real manager open below is still the exclusive bootstrap authority.
     let addr = runtime_bind_address(&options.host, options.port)?;
-    let listener = TcpListener::bind(addr)
-        .await
-        .with_context(|| format!("Failed to bind {addr}"))?;
+    let listener = match inherited_listener {
+        Some(listener) => listener,
+        None => TcpListener::bind(addr)
+            .await
+            .with_context(|| format!("Failed to bind {addr}"))?,
+    };
     let bound_addr = listener
         .local_addr()
         .context("Failed to read Runtime API listener address")?;
@@ -2141,7 +2158,9 @@ pub async fn run_http_server(
                 "Codewhale web bootstrap (single-use, expires in {} min): {bootstrap_url}",
                 web::BOOTSTRAP_TTL.as_secs() / 60
             );
-            if let Some(warning) = web_launcher_warning(crate::utils::open_url(&bootstrap_url)) {
+            if let Some(warning) =
+                web_launcher_warning(codewhale_runtime::browser::open_url(&bootstrap_url))
+            {
                 println!("{warning}");
             }
         }
@@ -2746,6 +2765,10 @@ pub fn build_router(state: RuntimeApiState) -> Router {
             post(jobs::resize_thread_job),
         )
         .route("/v1/threads/{id}/context", get(context::get_thread_context))
+        .route(
+            "/v1/threads/{id}/members",
+            post(members::start_thread_member),
+        )
         .route("/v1/threads/{id}/plan", get(plans::get_thread_plan))
         .route("/v1/threads/{id}/todo", get(plans::get_thread_todo))
         .route("/v1/plan", get(plans::latest_plan))
@@ -3303,6 +3326,33 @@ async fn health() -> Json<HealthResponse> {
     })
 }
 
+async fn refresh_local_default_catalog(
+    state: &RuntimeApiState,
+    requested: Option<&str>,
+    provider: Option<&str>,
+    provider_id: Option<&str>,
+) {
+    if requested.is_some_and(|model| {
+        !model.trim().is_empty()
+            && !model.trim().eq_ignore_ascii_case("auto")
+            && !crate::config::is_unresolved_local_ollama_model(model)
+    }) {
+        return;
+    }
+    let config = state.config.read().clone();
+    let provider = provider.map(str::trim).filter(|value| !value.is_empty());
+    let identity = if provider.is_some() || provider_id.is_some() {
+        config.resolve_persisted_provider_identity(provider, provider_id)
+    } else {
+        config.active_provider_identity()
+    };
+    if let Ok(identity) = identity
+        && identity.provider == ProviderKind::Ollama
+    {
+        crate::provider_lake::refresh_local_ollama_catalog(&config, &identity).await;
+    }
+}
+
 fn runtime_request_model(config: &Config, requested: Option<&str>) -> Result<String, ApiError> {
     if let Some(model) = requested {
         return Ok(model.to_string());
@@ -3329,6 +3379,13 @@ async fn create_task(
     if req.workspace.is_none() {
         req.workspace = Some(state.workspace.clone());
     }
+    refresh_local_default_catalog(
+        &state,
+        req.model.as_deref(),
+        req.model_provider.as_deref(),
+        req.model_provider_id.as_deref(),
+    )
+    .await;
     if req.model.is_none() && req.model_provider.is_none() && req.model_provider_id.is_none() {
         req.model = Some(runtime_request_model(&state.config.read(), None)?);
     }
@@ -3350,6 +3407,13 @@ async fn create_thread(
     if req.mode.as_ref().is_none_or(|m| m.trim().is_empty()) {
         req.mode = Some("agent".to_string());
     }
+    refresh_local_default_catalog(
+        &state,
+        req.model.as_deref(),
+        req.model_provider.as_deref(),
+        req.model_provider_id.as_deref(),
+    )
+    .await;
 
     let thread = state
         .runtime_threads
@@ -3359,7 +3423,13 @@ async fn create_thread(
             state.config_profile.as_deref(),
         )
         .await
-        .map_err(|e| ApiError::bad_request(e.to_string()))?;
+        .map_err(|e| {
+            if e.is::<crate::runtime_threads::RuntimeThreadCreateConflict>() {
+                ApiError::conflict(e.to_string())
+            } else {
+                ApiError::bad_request(e.to_string())
+            }
+        })?;
     Ok((StatusCode::CREATED, Json(thread)))
 }
 
@@ -3923,6 +3993,11 @@ async fn create_fleet_run(
     State(state): State<RuntimeApiState>,
     Json(request): Json<CreateFleetRunRequest>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
+    if state.config.read().session_provider_keys_only {
+        return Err(ApiError::conflict(
+            "External Fleet workers are unavailable under session-only provider key policy; use in-process subagents",
+        ));
+    }
     if request.target != FleetRuntimeTarget::ThisComputer {
         return Err(ApiError::not_implemented(format!(
             "Fleet target {:?} is not available in this local Runtime; choose this_computer",
@@ -5497,7 +5572,7 @@ fn mutation_context_settings(
     let network = config
         .network
         .clone()
-        .map(|p| p.into_runtime())
+        .map(crate::network_policy::NetworkPolicy::from)
         .unwrap_or_default();
     let skills_cfg = config.skills.as_ref();
     let max_size = skills_cfg
@@ -6116,6 +6191,12 @@ async fn runtime_info(
         &api_base,
         || runtime_account_info(state.config_profile.as_deref(), &api_base),
     );
+    let session_only = state.config.read().session_provider_keys_only;
+    let mut capabilities = default_runtime_capabilities();
+    capabilities.session_provider_keys = session_only;
+    capabilities.fleet_run_create = !session_only;
+    capabilities.fleet_run_start = !session_only;
+    capabilities.fleet_local_target = !session_only;
     Json(RuntimeInfoResponse {
         service: "codewhale-runtime-api",
         runtime_api_version: RUNTIME_API_VERSION,
@@ -6125,7 +6206,7 @@ async fn runtime_info(
         port: state.bind_port,
         auth_required: state.auth_required,
         transports: vec!["http", "sse"],
-        capabilities: default_runtime_capabilities(),
+        capabilities,
         account,
         experimental: RuntimeExperimentalCapabilities::default(),
         version,
@@ -6469,7 +6550,7 @@ fn mcp_pool_policy(config: &Config) -> Value {
         config
             .network
             .clone()
-            .map(crate::config::NetworkPolicyToml::into_runtime),
+            .map(crate::network_policy::NetworkPolicy::from),
         config.mcp_oauth_callback_port,
         config.mcp_oauth_callback_url,
     ])
@@ -6484,15 +6565,15 @@ fn load_mcp_management_pool(state: &RuntimeApiState) -> Result<(McpPool, Value)>
     let mut pool =
         McpPool::from_config_path_with_workspace_and_plugins(&path, &state.workspace, plugins)?;
     let config = state.config.read();
-    pool = pool
-        .with_backend(crate::mcp::McpBackend::from_config(&config))
-        .with_oauth_callback(
-            config.mcp_oauth_callback_port,
-            config.mcp_oauth_callback_url.clone(),
-        );
+    pool = pool.with_backend(config.mcp_backend()).with_oauth_callback(
+        config.mcp_oauth_callback_port,
+        config.mcp_oauth_callback_url.clone(),
+    );
     if let Some(network) = config.network.clone() {
         pool = pool.with_network_policy(
-            crate::network_policy::NetworkPolicyDecider::with_default_audit(network.into_runtime()),
+            crate::network_policy::NetworkPolicyDecider::with_default_audit(
+                crate::network_policy::NetworkPolicy::from(network),
+            ),
         );
     }
     pool.dynamic_servers = state.workspace_scopes.dynamic_servers.clone();
@@ -9744,6 +9825,7 @@ async fn stream_turn(
 
     crate::image_attach::prepare_runtime_images(&req.images).map_err(map_thread_err)?;
 
+    refresh_local_default_catalog(&state, req.model.as_deref(), None, None).await;
     let model = runtime_request_model(&state.config.read(), req.model.as_deref())?;
     if req.max_output_tokens.is_some() {
         let config = state.config.read();
@@ -10638,9 +10720,9 @@ struct ProviderEntry {
     /// "your key is owned elsewhere and this control cannot change it".
     #[serde(rename = "credentialSource")]
     credential_source: secrets::ProviderCredentialSource,
-    /// Whether `PUT`/`DELETE /v1/providers/{id}/key` will act on this route.
-    /// False means the write would be refused, so the control should be
-    /// disabled rather than allowed to fail late.
+    /// Whether durable `PUT`/`DELETE /v1/providers/{id}/key` can act on this route.
+    /// False means durable credential writes are refused; session-key removal
+    /// remains available independently of this owner.
     #[serde(rename = "credentialWritable")]
     credential_writable: bool,
     /// Why a write is refused, as user-facing copy. Present only when
@@ -10931,7 +11013,7 @@ fn provider_models_for_api(
         }
     }
     for model in config.custom_models.as_deref().unwrap_or_default() {
-        if crate::provider_lake::configured_model_for_route(
+        if crate::config::configured_model_for_route(
             config,
             provider,
             identity.key.as_str(),
@@ -11345,7 +11427,9 @@ fn provider_entry_for_api(
         credential_source: writeability.source,
         credential_writable: writeability.writable,
         credential_writable_reason: writeability.reason,
-        browser_connect: identity.provider == ProviderKind::Orcarouter && writeability.writable,
+        browser_connect: identity.provider == ProviderKind::Orcarouter
+            && writeability.writable
+            && !config.session_provider_keys_only,
     }
 }
 
@@ -11444,7 +11528,7 @@ async fn list_provider_models(
         .map_err(|error| {
             ApiError::internal(format!("Could not fingerprint provider route: {error}"))
         })?;
-        let route_fingerprint = Some(crate::hashing::sha256_hex(route));
+        let route_fingerprint = Some(codewhale_runtime::hashing::sha256_hex(route));
         let models = provider_models_for_api(&config, &identity)
             .into_iter()
             .map(|id| provider_model_entry_for_api(&config, &identity, id))
@@ -11675,8 +11759,7 @@ async fn switch_provider(
             let applied =
                 match Config::load(state.config_path.clone(), state.config_profile.as_deref()) {
                     Ok(mut reloaded) => {
-                        reloaded.account_model_access =
-                            state.config.read().account_model_access.clone();
+                        reloaded.preserve_runtime_credentials(&state.config.read());
                         match runtime.block_on(state.runtime_threads.reload_config(reloaded.clone())) {
                             Ok(_) => Ok(reloaded),
                             Err(err) => Err(ApiError::bad_request(format!(
@@ -11934,6 +12017,8 @@ async fn set_config(
     Json(req): Json<SetConfigRequest>,
 ) -> Result<Json<SetConfigResponse>, ApiError> {
     use crate::config_persistence;
+
+    let _credential_change = state.provider_switches.lock().await;
 
     let key = req.key.to_lowercase();
     let mut value = req.value;
@@ -12554,7 +12639,7 @@ async fn get_settings_schema(
                 // Feature rows are diagnostics: the effective flag state plus
                 // whether config.toml names the leaf — no decorated phrasing,
                 // the client owns presentation of default-vs-configured.
-                let value = crate::features::FEATURES
+                let value = codewhale_runtime::features::FEATURES
                     .iter()
                     .find(|spec| spec.key == feature_key)
                     .map(|spec| config.features().enabled(spec.id).to_string());
@@ -12690,7 +12775,7 @@ fn normalize_runtime_config_model(
         .map_err(ApiError::bad_request)?;
     let provider = identity.provider;
     let value = value.trim();
-    if crate::provider_lake::configured_model_for_route(
+    if crate::config::configured_model_for_route(
         config,
         provider,
         identity.key.as_str(),
@@ -12724,22 +12809,25 @@ fn normalize_runtime_config_model(
 async fn reload_config(
     State(state): State<RuntimeApiState>,
 ) -> Result<Json<ReloadConfigResponse>, ApiError> {
-    let mut reloaded = Config::load(state.config_path.clone(), state.config_profile.as_deref())
-        .map_err(|e| ApiError::internal(format!("Failed to reload config: {e}")))?;
-    reloaded.account_model_access = state.config.read().account_model_access.clone();
-    state
-        .runtime_threads
-        .reload_config(reloaded.clone())
-        .await
-        .map_err(|err| ApiError::bad_request(format!("Config reload rejected: {err}")))?;
-    {
-        let mut config = state.config.write();
-        *config = reloaded;
-    }
-    Ok(Json(ReloadConfigResponse {
-        message: "Config reloaded from disk; new turns will resolve the updated provider routes"
-            .to_string(),
-    }))
+    tokio::spawn(async move {
+        let _credential_change = state.provider_switches.lock().await;
+        let mut reloaded = Config::load(state.config_path.clone(), state.config_profile.as_deref())
+            .map_err(|e| ApiError::internal(format!("Failed to reload config: {e}")))?;
+        reloaded.preserve_runtime_credentials(&state.config.read());
+        state
+            .runtime_threads
+            .reload_config(reloaded.clone())
+            .await
+            .map_err(|err| ApiError::bad_request(format!("Config reload rejected: {err}")))?;
+        *state.config.write() = reloaded;
+        Ok(Json(ReloadConfigResponse {
+            message:
+                "Config reloaded from disk; new turns will resolve the updated provider routes"
+                    .to_string(),
+        }))
+    })
+    .await
+    .map_err(|_| ApiError::internal("config reload task failed"))?
 }
 
 // ── Memory inspection and lifecycle endpoints ──
@@ -12812,9 +12900,11 @@ struct ClearMemoryQuery {
 
 /// Build a `NativeMemoryStore` rooted at the same location the TUI uses.
 /// Mirrors `native_store()` in `commands/groups/memory/memory.rs`.
-fn native_store_for_state(state: &RuntimeApiState) -> crate::native_memory::NativeMemoryStore {
+fn native_store_for_state(
+    state: &RuntimeApiState,
+) -> codewhale_runtime::native_memory::NativeMemoryStore {
     let memory_path = state.config.read().memory_path();
-    crate::native_memory::NativeMemoryStore::from_memory_anchor(&memory_path)
+    codewhale_runtime::native_memory::NativeMemoryStore::from_memory_anchor(&memory_path)
 }
 
 /// Derive a scope label from a source path relative to the store root.
@@ -12842,7 +12932,7 @@ fn workspace_id_for_source(source: &FsPath, store_root: &FsPath) -> Option<Strin
 
 /// Convert a `MemoryHit` into a redacted, bounded `MemoryEntryRecord`.
 fn memory_hit_to_record(
-    hit: crate::native_memory::MemoryHit,
+    hit: codewhale_runtime::native_memory::MemoryHit,
     store_root: &FsPath,
 ) -> MemoryEntryRecord {
     let scope = scope_label_for_source(&hit.source, store_root);
@@ -12867,20 +12957,30 @@ fn memory_hit_to_record(
 fn resolve_memory_scope(
     scope_param: &Option<String>,
     workspace: &FsPath,
-) -> Result<(Option<crate::native_memory::MemoryScope>, Option<String>), ApiError> {
+) -> Result<
+    (
+        Option<codewhale_runtime::native_memory::MemoryScope>,
+        Option<String>,
+    ),
+    ApiError,
+> {
     match scope_param.as_deref().unwrap_or("all").trim() {
         "all" | "" => Ok((None, None)),
-        "global" => Ok((Some(crate::native_memory::MemoryScope::Global), None)),
+        "global" => Ok((
+            Some(codewhale_runtime::native_memory::MemoryScope::Global),
+            None,
+        )),
         "workspace" => {
-            let workspace_id = crate::native_memory::NativeMemoryStore::workspace_id(workspace)
-                .map_err(|e| ApiError::internal(format!("resolve workspace id: {e}")))?
-                .ok_or_else(|| {
-                    ApiError::bad_request(
-                        "workspace scope requires a git repository with a remote origin",
-                    )
-                })?;
+            let workspace_id =
+                codewhale_runtime::native_memory::NativeMemoryStore::workspace_id(workspace)
+                    .map_err(|e| ApiError::internal(format!("resolve workspace id: {e}")))?
+                    .ok_or_else(|| {
+                        ApiError::bad_request(
+                            "workspace scope requires a git repository with a remote origin",
+                        )
+                    })?;
             Ok((
-                Some(crate::native_memory::MemoryScope::Workspace),
+                Some(codewhale_runtime::native_memory::MemoryScope::Workspace),
                 Some(workspace_id),
             ))
         }
@@ -12921,11 +13021,12 @@ async fn list_memory(
         // "all" is global memory plus this repository's. With no identity
         // (no origin remote, or git unavailable) there is no workspace memory
         // to show, and the listing still serves global memory.
-        workspace_id = crate::native_memory::NativeMemoryStore::workspace_id(&state.workspace)
-            .unwrap_or_else(|error| {
-                tracing::warn!("memory list shows global memory only: {error}");
-                None
-            });
+        workspace_id =
+            codewhale_runtime::native_memory::NativeMemoryStore::workspace_id(&state.workspace)
+                .unwrap_or_else(|error| {
+                    tracing::warn!("memory list shows global memory only: {error}");
+                    None
+                });
     }
 
     let hits = if let Some(ref q) = query.q {
@@ -12938,12 +13039,14 @@ async fn list_memory(
                 store.search_in_workspace(workspace_id.as_deref(), &state.workspace, q, limit)
             }
             None => store.search(q, limit),
-            Some(crate::native_memory::MemoryScope::Global) => store.search(q, limit).map(|h| {
-                h.into_iter()
-                    .filter(|h| scope_label_for_source(&h.source, &root) == "global")
-                    .collect()
-            }),
-            Some(crate::native_memory::MemoryScope::Workspace) => store
+            Some(codewhale_runtime::native_memory::MemoryScope::Global) => {
+                store.search(q, limit).map(|h| {
+                    h.into_iter()
+                        .filter(|h| scope_label_for_source(&h.source, &root) == "global")
+                        .collect()
+                })
+            }
+            Some(codewhale_runtime::native_memory::MemoryScope::Workspace) => store
                 .search_for_workspace(&state.workspace, q, limit)
                 .map(|h| {
                     h.into_iter()
@@ -12997,22 +13100,23 @@ async fn create_memory_entry(
         req.scope.as_str()
     };
     let scope = match scope_str.trim() {
-        "global" => crate::native_memory::MemoryScope::Global,
-        "workspace" => crate::native_memory::MemoryScope::Workspace,
+        "global" => codewhale_runtime::native_memory::MemoryScope::Global,
+        "workspace" => codewhale_runtime::native_memory::MemoryScope::Workspace,
         other => {
             return Err(ApiError::bad_request(format!(
                 "Invalid scope '{other}': expected 'global' or 'workspace'"
             )));
         }
     };
-    let workspace_id = if scope == crate::native_memory::MemoryScope::Workspace {
-        let id = crate::native_memory::NativeMemoryStore::workspace_id(&state.workspace)
-            .map_err(|e| ApiError::internal(format!("resolve workspace id: {e}")))?
-            .ok_or_else(|| {
-                ApiError::bad_request(
-                    "workspace scope requires a git repository with a remote origin",
-                )
-            })?;
+    let workspace_id = if scope == codewhale_runtime::native_memory::MemoryScope::Workspace {
+        let id =
+            codewhale_runtime::native_memory::NativeMemoryStore::workspace_id(&state.workspace)
+                .map_err(|e| ApiError::internal(format!("resolve workspace id: {e}")))?
+                .ok_or_else(|| {
+                    ApiError::bad_request(
+                        "workspace scope requires a git repository with a remote origin",
+                    )
+                })?;
         Some(id)
     } else {
         None
@@ -13452,7 +13556,7 @@ base_url = "http://127.0.0.1:9/v1"
     }
 
     async fn post_json(addr: SocketAddr, path: &str, body: Value) -> Result<Value> {
-        let response = crate::tls::reqwest_client()
+        let response = codewhale_release::tls::reqwest_client()
             .post(format!("http://{addr}{path}"))
             .json(&body)
             .send()
@@ -13512,7 +13616,7 @@ model = "GLM-5.2"
         provider: &str,
         model: &str,
     ) -> Result<Value> {
-        let client = crate::tls::reqwest_client();
+        let client = codewhale_release::tls::reqwest_client();
         let catalog = client
             .get(format!("http://{addr}/v1/providers"))
             .send()
@@ -14017,7 +14121,7 @@ model = "GLM-5.2"
         )?;
         let (addr, state, server) = serve_fixture(config_path.clone()).await?;
         let _shutdown = state.task_manager.shutdown_guard();
-        let client = crate::tls::reqwest_client();
+        let client = codewhale_release::tls::reqwest_client();
         // The active CN route resolves `[providers.deepseek_cn].model`; the
         // runtime default_model surface must report that slot, not the primary.
         let reported: Value = client

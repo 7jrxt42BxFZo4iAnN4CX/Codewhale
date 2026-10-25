@@ -41,7 +41,7 @@ use tar::Builder;
 use crate::artifacts::{ARTIFACTS_DIR_NAME, is_valid_session_id};
 use crate::fleet::files::WorkspaceFile;
 use crate::session_manager::{SavedSession, SessionMetadata};
-use crate::session_tree::SessionImportContainer;
+use codewhale_runtime::session_tree::SessionImportContainer;
 
 /// Layout version of the exported archive. Bump when members change.
 pub const SESSION_ARCHIVE_FORMAT_VERSION: u32 = 1;
@@ -287,7 +287,7 @@ pub fn session_artifacts_dir(sessions_dir: &Path, session_id: &str) -> io::Resul
 
 pub(crate) fn export_recovery_hint(session_id: &str) -> String {
     format!(
-        "To keep its history without that provider, run `codewhale sessions export {session_id}`."
+        "To move it to a provider you still have, run `codewhale --provider <name> resume {session_id}`. To keep its history without that provider, run `codewhale sessions export {session_id}`."
     )
 }
 
@@ -482,8 +482,8 @@ fn append_member<W: Write>(
 mod tests {
     use super::*;
     use crate::session_manager::create_saved_session;
-    use crate::session_tree::SessionJournal;
     use codewhale_models::{ContentBlock, Message, Role};
+    use codewhale_runtime::session_tree::SessionJournal;
     use std::io::Read;
 
     fn fixture_session() -> SavedSession {

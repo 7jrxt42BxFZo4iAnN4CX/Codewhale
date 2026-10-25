@@ -462,11 +462,11 @@ pub(crate) fn maybe_warn_context_pressure_for_config(
         return;
     }
     let pressure_level = if percent >= CONTEXT_CRITICAL_THRESHOLD_PERCENT {
-        crate::context_budget::PressureLevel::Critical
+        codewhale_runtime::context_budget::PressureLevel::Critical
     } else if percent >= CONTEXT_WARNING_THRESHOLD_PERCENT {
-        crate::context_budget::PressureLevel::High
+        codewhale_runtime::context_budget::PressureLevel::High
     } else {
-        crate::context_budget::PressureLevel::Medium
+        codewhale_runtime::context_budget::PressureLevel::Medium
     };
     if app
         .context_pressure_warning_dismissed
@@ -513,7 +513,7 @@ pub(crate) fn maybe_warn_context_pressure_for_config(
 fn set_context_pressure_status(
     app: &mut App,
     text: String,
-    pressure_level: crate::context_budget::PressureLevel,
+    pressure_level: codewhale_runtime::context_budget::PressureLevel,
 ) {
     let can_replace = app.sticky_status.as_ref().is_none_or(|status| {
         matches!(

@@ -16,6 +16,7 @@ Run: python3 scripts/check-readme-translations.py
 from __future__ import annotations
 
 import hashlib
+import posixpath
 import re
 import sys
 from pathlib import Path
@@ -44,7 +45,7 @@ TRANSLATIONS = [
 ]
 STAMP_RE = re.compile(r"<!--\s*source:\s*README\.md\s+sha256:([0-9a-f]{12})\s*-->")
 FENCE_RE = re.compile(r"```[a-z]*\n(.*?)```", re.DOTALL)
-URL_RE = re.compile(r"\((?:\.\./)*(https?://[^)\s]+|docs/[^)\s]+|[A-Za-z0-9_./-]+\.md[^)\s]*)\)")
+URL_RE = re.compile(r"\((https?://[^)\s]+|(?:docs/|\.\./)[^)\s]+|[A-Za-z0-9_./-]+\.md[^)\s]*)\)")
 # The language-switcher line legitimately differs per translation (each file
 # links the *other* languages), so its links are exempt from the URL check.
 LANGUAGE_LINKS = {
@@ -78,18 +79,21 @@ def fences(text: str) -> list[str]:
     return [m.strip() for m in FENCE_RE.findall(text)]
 
 
-def urls(text: str) -> set[str]:
+def urls(text: str, document: str = "README.md") -> set[str]:
     """Links that must agree with README.md, independent of where a translation sits.
 
-    A translated README lives one directory deeper, so its relative links carry
-    a `../` the English source does not; and the language switcher legitimately
-    differs per file. Everything else is compared verbatim.
+    Relative links resolve from the document's repository directory. The
+    language switcher legitimately differs per file; external URLs are compared
+    verbatim.
     """
     out = set()
     for url in URL_RE.findall(text):
         if url in LANGUAGE_LINKS or url.rsplit("/", 1)[-1] in LANGUAGE_LINKS:
             continue
-        out.add(url.removeprefix("../"))
+        out.add(
+            url if url.startswith(("https://", "http://"))
+            else posixpath.normpath(posixpath.join(posixpath.dirname(document), url))
+        )
     return out
 
 
@@ -132,7 +136,7 @@ def main() -> int:
                 f"be translated or reordered)"
             )
 
-        missing = en_urls - urls(text)
+        missing = en_urls - urls(text, name)
         if missing:
             failures.append(f"{name}: missing links: {sorted(missing)[:5]}")
 

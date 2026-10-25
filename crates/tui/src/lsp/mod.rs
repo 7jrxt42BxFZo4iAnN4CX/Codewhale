@@ -50,20 +50,7 @@ pub use client::{LspTransport, StdioLspTransport};
 pub use diagnostics::{Diagnostic, DiagnosticBlock, Severity, render_blocks};
 pub use registry::Language;
 
-/// User-defined LSP server for one file extension.
-///
-/// Registered via `[lsp.custom.<ext>]` in the config. The extension key is the
-/// file suffix (without the leading dot), e.g. `"php"`, `"rb"`, `"cs"`.
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-pub struct CustomLspDef {
-    /// LSP `languageId` value used in `textDocument/didOpen`.
-    pub language_id: String,
-    /// Executable to spawn.
-    pub command: String,
-    /// Arguments passed to the executable.
-    #[serde(default)]
-    pub args: Vec<String>,
-}
+use codewhale_config::CustomLspDef;
 
 /// `[lsp]` config schema. Mirrors the TOML keys documented in
 /// `config.example.toml`. Unknown keys are ignored.
@@ -89,6 +76,24 @@ pub struct LspConfig {
     /// registry. Keyed by extension (e.g. `"php"`, `"rb"`).
     #[serde(default)]
     pub custom: HashMap<String, CustomLspDef>,
+}
+
+impl From<codewhale_config::LspConfigToml> for LspConfig {
+    fn from(toml: codewhale_config::LspConfigToml) -> Self {
+        let defaults = Self::default();
+        Self {
+            enabled: toml.enabled.unwrap_or(defaults.enabled),
+            poll_after_edit_ms: toml
+                .poll_after_edit_ms
+                .unwrap_or(defaults.poll_after_edit_ms),
+            max_diagnostics_per_file: toml
+                .max_diagnostics_per_file
+                .unwrap_or(defaults.max_diagnostics_per_file),
+            include_warnings: toml.include_warnings.unwrap_or(defaults.include_warnings),
+            servers: toml.servers.unwrap_or_default().into_iter().collect(),
+            custom: toml.custom.unwrap_or_default().into_iter().collect(),
+        }
+    }
 }
 
 impl Default for LspConfig {
@@ -345,7 +350,7 @@ impl LspManager {
         };
 
         let freshness = DiagnosticFreshness {
-            source_revision: Some(crate::hashing::sha256_hex(text.as_bytes())),
+            source_revision: Some(codewhale_runtime::hashing::sha256_hex(text.as_bytes())),
             document_version: raw.document_version,
             diagnostic_version: raw.diagnostic_version,
             freshness: Some(raw.freshness()),
@@ -579,7 +584,7 @@ impl LspManager {
                     .read_workspace_text(file)
                     .await
                     .map_err(|err| format!("read {}: {err}", file.display()))?;
-                let source_revision = crate::hashing::sha256_hex(text.as_bytes());
+                let source_revision = codewhale_runtime::hashing::sha256_hex(text.as_bytes());
                 if expected_revision.is_some_and(|expected| expected != source_revision) {
                     return Err("stale_document".into());
                 }
@@ -648,7 +653,7 @@ impl LspManager {
                     .read_workspace_text(file)
                     .await
                     .map_err(|_| "stale_document")?;
-                if crate::hashing::sha256_hex(current.as_bytes()) != source_revision {
+                if codewhale_runtime::hashing::sha256_hex(current.as_bytes()) != source_revision {
                     return Err("stale_document".into());
                 }
                 Ok(serde_json::json!({
@@ -774,7 +779,7 @@ impl LspManager {
             locations.push(SemanticLocation {
                 path,
                 range,
-                target_revision: crate::hashing::sha256_hex(text.as_bytes()),
+                target_revision: codewhale_runtime::hashing::sha256_hex(text.as_bytes()),
                 target_freshness: "unverified",
                 name: value
                     .get("name")
@@ -1225,7 +1230,7 @@ pub(crate) mod tests {
                 }),
             )
             .await;
-        let revision = crate::hashing::sha256_hex(b"fn main() {}\n");
+        let revision = codewhale_runtime::hashing::sha256_hex(b"fn main() {}\n");
         assert_eq!(
             manager
                 .intelligence_at_revision(
@@ -1271,7 +1276,7 @@ pub(crate) mod tests {
         assert_eq!(result["locations"][0]["path"], "a b.rs");
         assert_eq!(
             result["locations"][0]["target_revision"],
-            crate::hashing::sha256_hex("🐋foo\n".as_bytes())
+            codewhale_runtime::hashing::sha256_hex("🐋foo\n".as_bytes())
         );
         assert_eq!(result["locations"][0]["target_freshness"], "unverified");
         assert_eq!(result["omitted"], 0);
@@ -1688,7 +1693,7 @@ pub(crate) mod tests {
         assert_eq!(result["items"], serde_json::json!([]));
         assert_eq!(
             result["source_revision"],
-            crate::hashing::sha256_hex(text.as_bytes())
+            codewhale_runtime::hashing::sha256_hex(text.as_bytes())
         );
         assert_eq!(result["freshness"], "unverified");
         assert!(result["diagnostic_version"].is_null());

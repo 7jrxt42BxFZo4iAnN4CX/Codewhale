@@ -11,11 +11,11 @@
 //! stats the filesystem (#5772): external credential discovery is
 //! metadata-only, so the trait deliberately has no file probe.
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 use std::collections::BTreeMap;
 
 /// Ambient environment access for credential resolution.
-pub(crate) trait AuthContext: Send + Sync {
+pub trait AuthContext: Send + Sync {
     /// Read an environment variable, treating blank values as unset — a blank
     /// `DEEPSEEK_API_KEY=` is a leftover export, not a credential.
     fn env(&self, name: &str) -> Option<String>;
@@ -23,7 +23,7 @@ pub(crate) trait AuthContext: Send + Sync {
 
 /// The real process environment.
 #[derive(Debug, Clone, Copy, Default)]
-pub(crate) struct ProcessAuthContext;
+pub struct ProcessAuthContext;
 
 impl AuthContext for ProcessAuthContext {
     fn env(&self, name: &str) -> Option<String> {
@@ -34,25 +34,25 @@ impl AuthContext for ProcessAuthContext {
 }
 
 /// Test double: a fixed set of variables.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Default)]
-pub(crate) struct MapAuthContext {
+pub struct MapAuthContext {
     env: BTreeMap<String, String>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl MapAuthContext {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 
-    pub(crate) fn with_env(mut self, name: &str, value: &str) -> Self {
+    pub fn with_env(mut self, name: &str, value: &str) -> Self {
         self.env.insert(name.to_string(), value.to_string());
         self
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl AuthContext for MapAuthContext {
     fn env(&self, name: &str) -> Option<String> {
         self.env

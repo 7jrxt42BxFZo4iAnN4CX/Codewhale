@@ -87,7 +87,7 @@ pub struct AgentProfile {
     pub origin: ProfileOrigin,
     /// Runtime authority for a profile loaded from an immutable plugin
     /// snapshot. Rechecked at Agent spawn so another process can revoke it.
-    pub plugin_authority: Option<crate::plugins::types::PluginAuthority>,
+    pub plugin_authority: Option<codewhale_config::PluginAuthority>,
     pub native_preset: Option<crate::extension_host::composition_scope::NativePresetRef>,
 }
 
@@ -317,7 +317,7 @@ fn load_agent_profiles_from_dir_tolerant_in(
 
 pub(crate) fn load_plugin_agent_profiles_from_component(
     component: &Path,
-    authority: &crate::plugins::types::PluginAuthority,
+    authority: &codewhale_config::PluginAuthority,
 ) -> Result<(Vec<AgentProfile>, Vec<AgentProfileLoadIssue>)> {
     let (mut profiles, issues) = if component.is_dir() {
         load_agent_profiles_from_dir_tolerant(component, ProfileOrigin::Plugin)?
@@ -732,7 +732,7 @@ fn agent_profile_from_toml(path: &Path, parsed: AgentProfileToml) -> Result<Agen
 /// its saved id. Only the semantic role is migrated; every new receipt and UI
 /// label derived from it therefore uses the canonical public token.
 pub(crate) fn canonical_public_role_name(role: &str) -> String {
-    super::role::public_role_label(role)
+    codewhale_agent_contract::role::public_role_label(role)
 }
 
 fn reject_permission_expansion(

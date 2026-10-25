@@ -409,20 +409,20 @@
             provider: Some("openai-codex".to_string()),
             ..Config::default()
         };
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         assert!(CodewhaleClient::new(&config).is_err());
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (0, 0, 0, 0, 0)
         );
         let token =
             crate::oauth::install_test_chatgpt_registration(&mut config).expect("owned registration");
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         let client = CodewhaleClient::new(&config).expect("official ChatGPT client");
         assert_eq!(client.api_key, token);
         assert_eq!(client.base_url, "https://api.openai.com/v1");
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (0, 0, 0, 0, 0)
         );
     }
@@ -1090,10 +1090,10 @@
             "tail ".repeat(80)
         );
         assert!(raw.len() > 1024, "fixture must enter wire dedup size class");
-        let raw_sha = crate::hashing::sha256_hex(raw.as_bytes());
+        let raw_sha = codewhale_runtime::hashing::sha256_hex(raw.as_bytes());
         let prepared = client.prepare_model_bound_request(request_with_tool_result(raw));
         let sanitized = tool_result_content(&prepared).to_string();
-        let sanitized_sha = crate::hashing::sha256_hex(sanitized.as_bytes());
+        let sanitized_sha = codewhale_runtime::hashing::sha256_hex(sanitized.as_bytes());
 
         let wire = build_chat_messages_for_request(&prepared);
         let serialized = serde_json::to_string(&wire).expect("serialize chat wire messages");

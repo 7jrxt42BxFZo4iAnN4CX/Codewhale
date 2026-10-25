@@ -167,7 +167,10 @@ pub async fn execute_js_execution_tool(
     }
     let output = tokio::time::timeout(
         budget,
-        crate::process_tree::contained_output_with_input(&mut cmd, code.as_bytes().to_vec()),
+        codewhale_runtime::process_tree::contained_output_with_input(
+            &mut cmd,
+            code.as_bytes().to_vec(),
+        ),
     )
     .await
     .map_err(|_| ToolError::Timeout {
@@ -301,13 +304,13 @@ mod tests {
                     require('fs').writeFileSync('grandchild.pid', String(child.pid));\n\
                     setInterval(() => {}, 1000);";
         let input = json!({ "code": code });
-        let grandchild = crate::process_tree::drop_once_pid_written(
+        let grandchild = codewhale_runtime::process_tree::drop_once_pid_written(
             execute_js_execution_tool(&input, tmp.path(), &ToolContext::new(tmp.path())),
             &tmp.path().join("grandchild.pid"),
         )
         .await;
         assert!(
-            crate::process_tree::wait_for_pid_exit(grandchild, Duration::from_secs(5)),
+            codewhale_runtime::process_tree::wait_for_pid_exit(grandchild, Duration::from_secs(5)),
             "a process started by the dropped script is still running"
         );
     }

@@ -143,9 +143,9 @@ async fn frames_decode_in_order_and_violations_are_typed() {
 // Owner registry
 // ---------------------------------------------------------------------------
 
-pub(crate) fn fake_authority(plugin_id: &str) -> crate::plugins::types::PluginAuthority {
-    crate::plugins::types::PluginAuthority {
-        plugin_id: crate::plugins::types::PluginId(plugin_id.to_string()),
+pub(crate) fn fake_authority(plugin_id: &str) -> codewhale_config::PluginAuthority {
+    codewhale_config::PluginAuthority {
+        plugin_id: codewhale_config::PluginId(plugin_id.to_string()),
         plugin_name: plugin_id.to_string(),
         workspace: PathBuf::from("/w"),
         state_path: PathBuf::from("/s"),

@@ -1069,7 +1069,7 @@ impl ModalView for SessionPickerView {
             KeyCode::Char('r') | KeyCode::Char('R') => {
                 self.rename_mode = true;
                 self.rename_input.clear();
-                self.status = Some(tr(self.locale, MessageId::SessionsNewTitlePrompt).into_owned());
+                self.status = None;
                 ViewAction::None
             }
             KeyCode::Char('d') | KeyCode::Char('D') => {

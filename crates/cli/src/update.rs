@@ -61,6 +61,8 @@ pub fn run_update(beta: bool, check_only: bool, proxy_arg: Option<String>) -> Re
     let plan = update_plan_for_exe(&current_exe);
     let channel = ReleaseChannel::from_beta_flag(beta);
     let current_version = env!("CARGO_PKG_VERSION");
+    let build_version = env!("CODEWHALE_BUILD_VERSION");
+    let unreleased_checkout_build = build_version.ends_with(" (dev)");
     let proxy = proxy_arg
         .as_deref()
         .map(validate_and_build_proxy)
@@ -68,7 +70,7 @@ pub fn run_update(beta: bool, check_only: bool, proxy_arg: Option<String>) -> Re
 
     println!("Checking for {} updates...", channel.label());
     println!("Current binary: {}", current_exe.display());
-    println!("Current version: v{current_version}");
+    println!("Current version: v{build_version}");
     if legacy_binary {
         println!();
         println!("{}", legacy_binary_message(&current_exe));
@@ -94,7 +96,14 @@ pub fn run_update(beta: bool, check_only: bool, proxy_arg: Option<String>) -> Re
             .with_context(update_network_fallback_hint)?;
         let latest_tag = &fetched.release.tag_name;
         println!("Latest {} release: {latest_tag}", channel.label());
-        if update_is_needed(channel, current_version, latest_tag)? {
+        let replace_same_version = unreleased_checkout_build
+            && compare_release_versions(current_version, latest_tag)? == Ordering::Equal;
+        if update_is_needed(channel, current_version, latest_tag)? || replace_same_version {
+            if replace_same_version {
+                println!(
+                    "This build is not a published release ({build_version}); the {latest_tag} release artifact replaces it."
+                );
+            }
             if install_method.supports_self_update() && !protected_location {
                 println!(
                     "Update available. Run `{} update` to install {latest_tag}.",
@@ -138,7 +147,9 @@ pub fn run_update(beta: bool, check_only: bool, proxy_arg: Option<String>) -> Re
             fetched.source.describe()
         );
     }
-    if !update_is_needed(channel, current_version, latest_tag)? {
+    let replace_same_version = unreleased_checkout_build
+        && compare_release_versions(current_version, latest_tag)? == Ordering::Equal;
+    if !update_is_needed(channel, current_version, latest_tag)? && !replace_same_version {
         if compare_release_versions(current_version, latest_tag)? == Ordering::Greater {
             println!(
                 "Current build is newer than the latest published release; keeping v{current_version}. No downgrade or download performed."
@@ -147,6 +158,11 @@ pub fn run_update(beta: bool, check_only: bool, proxy_arg: Option<String>) -> Re
             println!("Already up to date; no download needed.");
         }
         return Ok(());
+    }
+    if replace_same_version {
+        println!(
+            "This build is not a published release ({build_version}); installing the {latest_tag} release artifact over it."
+        );
     }
 
     // Reject unrelated command paths before downloads or any sibling changes.

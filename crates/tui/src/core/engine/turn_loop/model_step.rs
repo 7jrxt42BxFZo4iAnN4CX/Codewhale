@@ -12,6 +12,7 @@ impl Engine {
         prepared: PreparedModelStep,
     ) -> PhaseResult<AcceptedModelStep> {
         let PreparedModelStep {
+            prefix_check,
             request: stream_request,
             zero_tool_turn,
             fleet_report_response,
@@ -52,21 +53,29 @@ impl Engine {
         let mut rlm_dispatch = None;
         let request_cancel = self.cancel_token.clone();
         let mut child_dispatch = None;
-        let child_reporting = self.child_report();
-        let child_logical_step = child_job.as_ref().map(|job| {
-            if child_reporting {
-                job.steps().saturating_add(1)
-            } else {
-                turn.steps_used().saturating_add(1)
-            }
-        });
+        let child_logical_step = child_job
+            .as_ref()
+            .map(|_| turn.steps_used().saturating_add(1));
         let retry_observation = self.request_retry_observation();
         let transport_retries = retry_observation.retries.clone();
+        let mut request_receipt = Some(PendingProviderRequestReceipt {
+            turn_id: turn.id.clone(),
+            request_index: turn
+                .stop_diagnostics
+                .model_requests_started
+                .saturating_add(1),
+            prefix_check,
+            reused_preparation: false,
+            wire: retry_observation.wire_observations.clone(),
+            transport_retries: transport_retries.clone(),
+            started_at: request_dispatched_at,
+        });
         let stream_result = tokio::select! {
             biased;
             () = request_cancel.cancelled() => {
                 turn.stop_diagnostics.transport_retries = turn.stop_diagnostics.transport_retries
                     .saturating_add(transport_retries.load(std::sync::atomic::Ordering::Relaxed));
+                self.settle_provider_request_receipt(&mut request_receipt, None, "cancelled_before_stream").await;
                 let _ = self.send_event(Event::status("Request cancelled")).await;
                 return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
             }
@@ -117,6 +126,8 @@ impl Engine {
                 s
             }
             Err(e) => {
+                self.settle_provider_request_receipt(&mut request_receipt, None, "open_failed")
+                    .await;
                 if let Some(dispatch) = rlm_dispatch.as_mut() {
                     dispatch.settle_open_error(&e).await;
                 }
@@ -127,12 +138,6 @@ impl Engine {
                         dispatch.settle_open_error(&e).await;
                     }
                     drop(child_dispatch.take());
-                }
-                if self.child_report() {
-                    return PhaseResult::Return((
-                        TurnOutcomeStatus::Failed,
-                        Some("bounded Core report request failed".into()),
-                    ));
                 }
                 // Replacement is permitted only if Core can still retract
                 // this exact unsent user message. A runtime note or rewrite
@@ -255,7 +260,7 @@ impl Engine {
                         "Retry attempt: stream-open {attempt}/{}; connection failed before response headers",
                         progress.stream_retry_budget.limit()
                     )).await;
-                    crate::logging::warn(format!(
+                    codewhale_runtime::logging::warn(format!(
                         "Stream failed to open (attempt {attempt}/{}); retrying request: {message}",
                         progress.stream_retry_budget.limit()
                     ));
@@ -350,6 +355,7 @@ impl Engine {
                 request_dispatched_at,
                 progress.stream_retry_budget.spent(),
                 &mut turn.stop_diagnostics,
+                request_receipt,
             )
             .await;
         self.turn_heartbeat.enter(
@@ -399,7 +405,7 @@ impl Engine {
             usage_reported.then_some(usage.output_tokens),
             stream_request.max_tokens,
         ) {
-            crate::logging::warn(format!(
+            codewhale_runtime::logging::warn(format!(
                 "Provider reported stop reason `stop`, but its usage shows the whole requested output allowance was used ({} tokens, reasoning tokens: {:?}); treating the response as cut at the output limit.",
                 usage.output_tokens, usage.reasoning_tokens
             ));
@@ -482,7 +488,7 @@ impl Engine {
             // but cannot replace the last admitted answer or execute FINAL/REPL.
             state.last_response = current_text_visible.clone();
         }
-        if response_stream_failed && self.child_host.is_some() && !self.child_report() {
+        if response_stream_failed && self.child_host.is_some() {
             let error = if progress
                 .turn_error
                 .as_deref()
@@ -561,7 +567,7 @@ impl Engine {
                 // is committed (and, for a tool-call response, after the
                 // tool result is appended) so the transcript stays
                 // well-formed.
-                crate::logging::warn(format!(
+                codewhale_runtime::logging::warn(format!(
                     "Model output truncated: provider stop reason `{reason}`; accepting partial response and continuing the turn."
                 ));
                 output_limit_truncated = Some(reason.to_string());
@@ -583,7 +589,7 @@ impl Engine {
                         "Model response incomplete: provider stop reason `{reason}`; no complete response or tool call was accepted."
                     )
                 };
-                crate::logging::warn(&error);
+                codewhale_runtime::logging::warn(&error);
                 self.post_held_frame_error(&frame_error).await;
                 return PhaseResult::Return((TurnOutcomeStatus::Failed, Some(error)));
             }
@@ -593,7 +599,7 @@ impl Engine {
         // when reqwest yields chunk decode errors three times in a row;
         // most of the time those are recoverable proxy / HTTP/2 issues
         // and the request can simply be re-issued. Re-issue silently up
-        // to MAX_STREAM_RETRIES, but only when the stream produced
+        // to DEFAULT_STREAM_MAX_RESUMES, but only when the stream produced
         // nothing actionable — if any tool call landed or text was
         // streamed, ship the partial state to the rest of the turn
         // pipeline so we don't double-bill the user by re-running it.
@@ -607,26 +613,6 @@ impl Engine {
         // appends a synthetic user message to the persisted
         // conversation — the retried request is the persisted
         // conversation re-issued, nothing else.
-        if self.child_report() {
-            let refusal = if !tool_uses.is_empty() {
-                Some("provider returned a tool call; no call executed")
-            } else if output_limit_truncated.is_some() {
-                Some("report did not finish: provider output limit")
-            } else if response_stream_failed {
-                Some("provider call failed; no complete report accepted")
-            } else if current_text_visible.trim().is_empty() {
-                Some("report did not finish: empty response")
-            } else {
-                None
-            };
-            if let Some(refusal) = refusal {
-                self.post_held_frame_error(&frame_error).await;
-                return PhaseResult::Return((
-                    TurnOutcomeStatus::Failed,
-                    Some(format!("bounded Core report refused: {refusal}")),
-                ));
-            }
-        }
         // A flushed redacted block or non-blank thinking is received content,
         // the same rule `current_thinking` follows.
         let stream_died_with_nothing = stream_errors > 0
@@ -673,7 +659,7 @@ impl Engine {
                 .await;
             match resume {
                 StreamResume::AfterSleep => {
-                    crate::logging::warn(format!(
+                    codewhale_runtime::logging::warn(format!(
                         "Resuming after system sleep (attempt {attempt}/{limit}); discarding partial output and retrying request"
                     ));
                     // Finalize any partially-rendered assistant cell so
@@ -685,7 +671,7 @@ impl Engine {
                     }
                 }
                 StreamResume::HeadlessNetworkDrop => {
-                    crate::logging::warn(format!(
+                    codewhale_runtime::logging::warn(format!(
                         "Resuming headless turn after mid-stream network drop (attempt {attempt}/{limit}); discarding partial output and retrying request"
                     ));
                 }
@@ -744,11 +730,11 @@ impl Engine {
                         // copy may claim a partial reply was preserved —
                         // that claim is what minted the fake `[runtime]`
                         // user turn in session 1589c05d.
-                        crate::logging::warn(format!(
+                        codewhale_runtime::logging::warn(format!(
                             "Resuming interactive turn after mid-stream network drop (attempt {attempt}/{limit}); only hidden reasoning streamed — no partial reply to preserve, retrying request"
                         ));
                     } else {
-                        crate::logging::warn(format!(
+                        codewhale_runtime::logging::warn(format!(
                             "Resuming interactive turn after mid-stream network drop (attempt {attempt}/{limit}); preserving partial reply and retrying request"
                         ));
                         // Finalize the partial text cell so the UI stops
@@ -774,7 +760,7 @@ impl Engine {
                     }
                 }
                 StreamResume::NoContentStreamDeath => {
-                    crate::logging::warn(format!(
+                    codewhale_runtime::logging::warn(format!(
                         "Stream died with no content (attempt {attempt}/{limit}); retrying request"
                     ));
                 }
@@ -798,7 +784,7 @@ impl Engine {
                     ))
                     .await;
             }
-            crate::logging::warn(format!(
+            codewhale_runtime::logging::warn(format!(
                 "Stream retry budget exhausted ({} attempts); failing turn",
                 progress.stream_retry_budget.spent()
             ));
@@ -1069,7 +1055,7 @@ impl Engine {
         // not announce the same omission a second time.
         progress.image_omission_notified = true;
         self.active_route_capabilities.image_input = CapabilityState::Unsupported;
-        crate::logging::warn(format!(
+        codewhale_runtime::logging::warn(format!(
             "model {} rejected image content; resending with images replaced by text",
             self.session.model
         ));
@@ -1132,9 +1118,6 @@ impl Engine {
     ) -> Option<PhaseResult<AcceptedModelStep>> {
         use crate::tools::subagent::engine::ChildRequestRecovery;
         let job = self.child_job()?;
-        if self.child_report() {
-            return None;
-        }
         let decision = progress
             .child_request_retries
             .decide(&job.authority.runtime, error)?;

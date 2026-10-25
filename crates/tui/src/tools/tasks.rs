@@ -540,7 +540,7 @@ impl TasksTool {
             // and a task started from a session must not run under authority
             // that session was never granted.
             permission_posture: Some(
-                crate::runtime_policy::approval_wire(context.approval_mode).to_string(),
+                codewhale_runtime::runtime_policy::approval_wire(context.approval_mode).to_string(),
             ),
             owner_session_id: Some(context.state_namespace.clone()),
         };
@@ -681,7 +681,7 @@ impl TasksTool {
         context: &ToolContext,
     ) -> Result<ToolResult, ToolError> {
         crate::core::engine::tool_catalog::enforce_tool_denial(context, "task_gate_run", input)?;
-        if context.shell_policy != crate::worker_profile::ShellPolicy::Full {
+        if context.shell_policy != codewhale_agent_contract::worker_profile::ShellPolicy::Full {
             return Err(ToolError::permission_denied(
                 "Gate commands require full shell permission.",
             ));
@@ -708,7 +708,7 @@ impl TasksTool {
         // Contained: when the timeout elapses the gate's whole process tree
         // is killed, instead of leaving it running behind a "timeout" result,
         // and what it wrote until then still reaches the log.
-        let output = crate::process_tree::contained_output_until(
+        let output = codewhale_runtime::process_tree::contained_output_until(
             &mut cmd,
             tokio::time::sleep(std::time::Duration::from_millis(timeout_ms)),
         )
@@ -1804,7 +1804,7 @@ mod tests {
 
         let mut context = ToolContext::new(workspace.path());
         context.approval_mode = codewhale_execpolicy::ApprovalMode::Auto;
-        context.shell_policy = crate::worker_profile::ShellPolicy::None;
+        context.shell_policy = codewhale_agent_contract::worker_profile::ShellPolicy::None;
         context.runtime.task_manager = Some(manager.clone());
 
         TasksTool::new("tasks")
@@ -1839,7 +1839,7 @@ mod tests {
         let turn = crate::task_manager::ExecutionTask::from(&created).turn_request();
         assert_eq!(turn.permission_posture.as_deref(), Some("auto_review"));
         assert_eq!(turn.auto_approve, None);
-        let policy = crate::runtime_policy::RuntimePolicyProjection::from_request(
+        let policy = codewhale_runtime::runtime_policy::RuntimePolicyProjection::from_request(
             turn.mode.as_deref().expect("mode"),
             turn.permission_posture.as_deref(),
             turn.auto_approve,
@@ -1865,7 +1865,7 @@ mod tests {
     async fn timed_out_gate_run_kills_the_gate_process_tree() {
         let workspace = tempfile::tempdir().expect("workspace");
         let context = ToolContext::new(workspace.path())
-            .with_shell_policy(crate::worker_profile::ShellPolicy::Full);
+            .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::Full);
         let result = TasksTool::new("tasks")
             .execute(
                 json!({
@@ -1886,12 +1886,15 @@ mod tests {
             "{}",
             result.content
         );
-        let child = crate::process_tree::read_pid_file(
+        let child = codewhale_runtime::process_tree::read_pid_file(
             &workspace.path().join("gate-child.pid"),
             std::time::Duration::from_secs(5),
         );
         assert!(
-            crate::process_tree::wait_for_pid_exit(child, std::time::Duration::from_secs(5)),
+            codewhale_runtime::process_tree::wait_for_pid_exit(
+                child,
+                std::time::Duration::from_secs(5)
+            ),
             "the timed-out gate's process is still running"
         );
     }

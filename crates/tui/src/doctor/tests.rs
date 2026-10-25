@@ -245,7 +245,7 @@ async fn search_probe_respects_network_policy_without_contacting_the_authority()
             api_key: None,
             native: None,
         }),
-        network: Some(crate::config::NetworkPolicyToml {
+        network: Some(codewhale_config::NetworkPolicyToml {
             default: "allow".to_string(),
             deny: vec!["search.example".to_string()],
             ..Default::default()
@@ -432,14 +432,14 @@ fn structural_url_authority_omits_every_secret_capable_component() {
         sentinels[0], sentinels[1], sentinels[2], sentinels[3], sentinels[4], sentinels[5]
     );
 
-    let authority = structural_url_authority(&raw);
+    let authority = codewhale_config::structural_url_authority(&raw);
 
     assert_eq!(authority, "https://example.invalid:8443");
     for sentinel in sentinels {
         assert!(!authority.contains(sentinel));
     }
     assert_eq!(
-        structural_url_authority("http://[::1]:9000/private?token=review-secret"),
+        codewhale_config::structural_url_authority("http://[::1]:9000/private?token=review-secret"),
         "http://[::1]:9000"
     );
 }

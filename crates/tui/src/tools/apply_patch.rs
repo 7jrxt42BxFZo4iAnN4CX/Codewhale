@@ -774,7 +774,7 @@ fn build_mutation_metadata(pending: &[PendingWrite], summaries: &[FileSummary]) 
         });
         if let Some(content) = created.content.as_deref() {
             rename["size"] = json!(content.len());
-            rename["sha256"] = json!(crate::hashing::sha256_hex(content.as_bytes()));
+            rename["sha256"] = json!(codewhale_runtime::hashing::sha256_hex(content.as_bytes()));
         }
         renames.push(rename);
     }
@@ -1891,7 +1891,7 @@ mod tests {
             "path": path,
             "outcome": outcome,
             "size": bytes.len(),
-            "sha256": crate::hashing::sha256_hex(&bytes),
+            "sha256": codewhale_runtime::hashing::sha256_hex(&bytes),
         })
     }
 
@@ -2680,7 +2680,7 @@ diff --git a/delete.txt b/delete.txt
                 "from": "old.txt",
                 "to": "new.txt",
                 "size": renamed.len(),
-                "sha256": crate::hashing::sha256_hex(&renamed),
+                "sha256": codewhale_runtime::hashing::sha256_hex(&renamed),
             }])
         );
         let exact = mutation["diff"].as_str().expect("exact mutation diff");

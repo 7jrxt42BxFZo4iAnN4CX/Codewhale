@@ -105,6 +105,15 @@ impl Default for SandboxPolicy {
 }
 
 impl SandboxPolicy {
+    pub fn config_value(&self) -> &'static str {
+        match self {
+            SandboxPolicy::ReadOnly { .. } => "read-only",
+            SandboxPolicy::WorkspaceWrite { .. } => "workspace-write",
+            SandboxPolicy::DangerFullAccess => "danger-full-access",
+            SandboxPolicy::ExternalSandbox { .. } => "external-sandbox",
+        }
+    }
+
     pub fn read_only() -> Self {
         SandboxPolicy::ReadOnly {
             network_access: false,

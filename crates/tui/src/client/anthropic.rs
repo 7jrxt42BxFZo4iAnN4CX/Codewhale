@@ -30,9 +30,9 @@ use serde_json::{Value, json};
 
 use crate::config::{ProviderKind, wire_model_for_provider_route};
 use crate::llm_client::StreamEventBox;
-use crate::logging;
 use crate::tools::schema_sanitize;
 use codewhale_models::{ContentBlock, MessageRequest, MessageResponse, StreamEvent, Usage};
+use codewhale_runtime::logging;
 
 use super::CodewhaleClient;
 use super::prepared::WireDialect;
@@ -121,7 +121,7 @@ impl CodewhaleClient {
         }
 
         if let Some(tool_choice) = request.tool_choice.as_ref() {
-            body["tool_choice"] = anthropic_tool_choice(tool_choice);
+            body["tool_choice"] = anthropic_tool_choice(tool_choice, &model);
         }
 
         // Thinking + effort shaping. MiniMax supports adaptive/disabled but
@@ -299,15 +299,10 @@ impl CodewhaleClient {
         .context("Anthropic Messages API request failed")
     }
 
-    /// Open the streaming Messages request through the shared stream-entry
-    /// transport policy: bounded header wait, dual-client selection, and at
-    /// most one HTTP/1.1 fallback retry on a classified H2 header stall.
-    /// Inside each open attempt the provider retry loop
-    /// (`send_stream_open_with_retry`) handles rate limits and transient
-    /// upstream failures before any stream body exists — with no total
-    /// deadline, which would ride on the returned body — as the Chat and
-    /// Responses adapters do. Wire-specific request construction (headers,
-    /// endpoint, body) stays here at the adapter edge.
+    /// Open Messages through the shared provider retry and stream-entry
+    /// policy. Each physical request has its own header wait and at most one
+    /// HTTP/1.1 fallback; provider backoff stays outside that wait. Request
+    /// construction remains at this wire-specific edge.
     async fn open_anthropic_stream_response(
         &self,
         url: &str,
@@ -316,28 +311,19 @@ impl CodewhaleClient {
         let url = self.messages_transport_url(url);
         let request_body =
             serde_json::to_vec(body).context("Failed to serialize Anthropic Messages request")?;
-        let open_req = self.stream_open_request();
-        super::stream_entry::open_sse_response(&open_req, |policy| {
-            let url = url.clone();
-            let request_body = request_body.clone();
-            async move {
-                let client = super::stream_entry::client_for_policy(
-                    &self.http_client,
-                    self.http1_fallback_client(),
-                    policy,
-                );
-                self.send_stream_open_with_retry(|| {
-                    client
-                        .post(&url)
-                        .header(reqwest::header::CONTENT_TYPE, "application/json")
-                        .header("Accept", "text/event-stream")
-                        .body(request_body.clone())
-                })
-                .await
-                .context("Anthropic Messages API request failed")
-            }
+        self.send_stream_open_with_retry(|policy| {
+            super::stream_entry::client_for_policy(
+                &self.http_client,
+                self.http1_fallback_client(),
+                policy,
+            )
+            .post(&url)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .header("Accept", "text/event-stream")
+            .body(request_body.clone())
         })
         .await
+        .context("Anthropic Messages API request failed")
     }
 
     /// Handle a streaming Messages API request.
@@ -742,8 +728,27 @@ fn anthropic_model_rejects_sampling(model: &str) -> bool {
 }
 
 /// Convert the engine's `tool_choice` value (OpenAI-style string or object)
-/// to the Anthropic object form.
-fn anthropic_tool_choice(tool_choice: &Value) -> Value {
+/// to the Anthropic object form. The Messages API tool-use reference lists
+/// Opus 5.5, Sonnet 5.5, Fable 5.1 and Mythos 5.1 as answering `any`/`tool`
+/// with a 400 error, so those models fall back to the server default `auto`
+/// (`none` still works and is passed through unchanged).
+fn anthropic_tool_choice(tool_choice: &Value, model: &str) -> Value {
+    let lower = model.to_ascii_lowercase();
+    let rejects_forced = lower.contains("opus-5-5")
+        || lower.contains("sonnet-5-5")
+        || lower.contains("fable")
+        || lower.contains("mythos");
+    let forced = match tool_choice.as_str() {
+        Some("any" | "required") => true,
+        Some(name) => !matches!(name, "auto" | "none"),
+        None => matches!(
+            tool_choice.get("type").and_then(Value::as_str),
+            Some("any" | "required" | "tool" | "function")
+        ),
+    };
+    if forced && rejects_forced {
+        return json!({ "type": "auto" });
+    }
     match tool_choice.as_str() {
         Some("auto") => json!({ "type": "auto" }),
         Some("none") => json!({ "type": "none" }),
@@ -1491,9 +1496,12 @@ mod tests {
         assert!(body.get("thinking").is_none(), "off omits thinking: {body}");
         assert!(body.get("output_config").is_none());
 
-        // Haiku is not thinking-capable: no thinking, no effort.
+        // A model the reviewed catalog does not carry is not thinking-capable:
+        // no thinking, no effort. `claude-3-5-haiku-latest` (and Haiku 4.5,
+        // which the reviewed catalog now marks `reasoning: true`) are not
+        // interchangeable here.
         let body = client.build_anthropic_body(
-            &request_with("claude-haiku-4-5", Some("high"), None, None),
+            &request_with("claude-3-5-haiku-latest", Some("high"), None, None),
             true,
         );
         assert!(body.get("thinking").is_none(), "{body}");
@@ -2831,8 +2839,9 @@ mod tests {
         use wiremock::matchers::{method, path};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
+        for force_http1 in [false, true] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
             .and(path("/v1/messages"))
             .respond_with(
                 ResponseTemplate::new(429)
@@ -2845,41 +2854,47 @@ mod tests {
             .expect(1)
             .mount(&server)
             .await;
-        Mock::given(method("POST"))
-            .and(path("/v1/messages"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("Content-Type", "text/event-stream")
-                    .set_body_string("data: {\"type\":\"message_stop\"}\n\n"),
-            )
-            .expect(1)
-            .mount(&server)
-            .await;
+            Mock::given(method("POST"))
+                .and(path("/v1/messages"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("Content-Type", "text/event-stream")
+                        .set_body_string("data: {\"type\":\"message_stop\"}\n\n"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
 
-        let mut client = deepseek_test_client(&server.uri());
-        client.retry.enabled = true;
-        client.retry.max_retries = 2;
-        client.retry.initial_delay = 0.0;
-        client.retry.max_delay = 0.0;
-        let started = std::time::Instant::now();
-        let stream = client
-            .handle_anthropic_stream(
-                &client
-                    .prepare_outbound_request(request_with("deepseek-v4", None, None, None), true)
-                    .expect("anthropic request prepares"),
-            )
-            .await;
-        assert!(
-            stream.is_ok(),
-            "a 429 before the stream body must be retried, not surfaced"
-        );
-        // The backoff is configured to zero, so only the provider's
-        // `Retry-After: 1` can account for the wait before the retry.
-        assert!(
-            started.elapsed() >= std::time::Duration::from_millis(900),
-            "the retry must wait out Retry-After, waited {:?}",
-            started.elapsed()
-        );
+            let mut client = deepseek_test_client(&server.uri());
+            client.force_http1 = force_http1;
+            client.stream_open_timeout = std::time::Duration::from_millis(250);
+            client.retry.enabled = true;
+            client.retry.max_retries = 2;
+            client.retry.initial_delay = 0.0;
+            client.retry.max_delay = 0.0;
+            let started = std::time::Instant::now();
+            let stream = client
+                .handle_anthropic_stream(
+                    &client
+                        .prepare_outbound_request(
+                            request_with("deepseek-v4", None, None, None),
+                            true,
+                        )
+                        .expect("anthropic request prepares"),
+                )
+                .await;
+            assert!(
+                stream.is_ok(),
+                "a 429 before the stream body must be retried, not surfaced"
+            );
+            // The backoff is configured to zero, so only the provider's
+            // `Retry-After: 1` can account for the wait before the retry.
+            assert!(
+                started.elapsed() >= std::time::Duration::from_millis(900),
+                "the retry must wait out Retry-After, waited {:?}",
+                started.elapsed()
+            );
+        }
     }
 
     /// A `system`-role history message — what a compaction summary, a branch

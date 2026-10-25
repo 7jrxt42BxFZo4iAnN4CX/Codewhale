@@ -24,7 +24,7 @@ Packages:
   jose@6.2.12 (MIT)
   js-yaml@4.3.2 (MIT)
   pkce-challenge@5.0.1 (MIT)
-  zod@4.6.5 (MIT)
+  zod@4.6.7 (MIT)
 
 ========================================================================
 @deepseek-ai/cordis@4.0.4 (MIT)
@@ -1010,7 +1010,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ========================================================================
-zod@4.6.5 (MIT)
+zod@4.6.7 (MIT)
 ========================================================================
 
 MIT License

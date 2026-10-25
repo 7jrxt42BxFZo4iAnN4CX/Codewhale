@@ -178,11 +178,8 @@ pub(crate) fn apply_picker_session_rename_to_active_app(
 /// Translate an `EngineEvent::Error` into UI state updates.
 ///
 /// The engine's `recoverable` flag (mirrored on `ErrorEnvelope`) decides
-/// whether the session flips into offline mode: stream stalls, chunk
-/// timeouts, transient network errors, and rate-limit/server hiccups arrive
-/// recoverable and must NOT flip into offline. Hard failures (auth, billing,
-/// invalid request) arrive non-recoverable; those flip offline so subsequent
-/// messages get queued instead of silently lost mid-flight.
+/// whether an active turn stays live. Only an environment-only authentication
+/// failure enables offline queueing here while reopening provider setup.
 ///
 /// `severity` drives transcript color: red for `Error`/`Critical`, amber for
 /// `Warning`, dim for `Info`.
@@ -291,7 +288,7 @@ pub(crate) fn apply_engine_error_to_app(
         // The setup screen covers the transcript, so it must say why it
         // opened. The log records the reason without the provider's message,
         // which the transcript already carries.
-        crate::logging::warn(format!(
+        codewhale_runtime::logging::warn(format!(
             "{} rejected the environment API key; opening provider setup",
             provider.as_str()
         ));
@@ -322,10 +319,6 @@ pub(crate) fn apply_engine_error_to_app(
             StatusToastLevel::Warning,
             Some(8_000),
         );
-        return;
-    }
-    if !recoverable {
-        app.offline_mode = true;
     }
     // Error is already in the transcript as HistoryCell::Error above;
     // don't emit a redundant status_message that would become a sticky
@@ -416,13 +409,14 @@ fn desired_goal_state(
             let goal = base
                 .as_mut()
                 .ok_or_else(|| "No goal is available for this control.".to_string())?;
+            let was_active = goal.status == crate::session_manager::SessionGoalStatus::Active;
             goal.status = match status {
                 GoalStatus::Active => crate::session_manager::SessionGoalStatus::Active,
                 GoalStatus::Paused => crate::session_manager::SessionGoalStatus::Paused,
                 GoalStatus::Complete => crate::session_manager::SessionGoalStatus::Complete,
                 GoalStatus::Blocked => crate::session_manager::SessionGoalStatus::Blocked,
             };
-            if *status == GoalStatus::Active {
+            if *status == GoalStatus::Active && !was_active {
                 goal.goal_id = Some(uuid::Uuid::new_v4().to_string());
                 goal.last_gap_fingerprint = None;
                 goal.repeated_gap_count = 0;
@@ -555,7 +549,7 @@ fn accept_goal_control(app: &mut App, engine_handle: &EngineHandle, intent: Goal
             clear: false
         }
     ) {
-        crate::audit::log_sensitive_event(
+        codewhale_runtime::audit::log_sensitive_event(
             "goal.user_completed",
             serde_json::json!({ "accepted": true }),
         );
@@ -2795,7 +2789,8 @@ async fn apply_command_result_inner(
                     // the posture this session is in, not under whatever a
                     // legacy bit happens to mean today.
                     permission_posture: Some(
-                        crate::runtime_policy::approval_wire(app.approval_mode).to_string(),
+                        codewhale_runtime::runtime_policy::approval_wire(app.approval_mode)
+                            .to_string(),
                     ),
                     owner_session_id: Some(owner_session_id),
                 };
@@ -3290,7 +3285,7 @@ pub(crate) async fn apply_approval_decision(
         // tool — approving one shell command must not approve every shell
         // command for the session (ops R2). The tool name is recorded as
         // audit evidence, not as a grant.
-        crate::audit::log_sensitive_event(
+        codewhale_runtime::audit::log_sensitive_event(
             "tool.approval.session_grant",
             serde_json::json!({
                 "tool_name": event.tool_name,
@@ -3761,7 +3756,7 @@ pub(crate) async fn apply_provider_picker_test_connection_with_verifier(
                 &scoped_config,
                 &identity,
                 &model,
-                crate::route_receipt::CredentialGeneration::derive(
+                codewhale_config::credentials::CredentialGeneration::derive(
                     &base_url,
                     &codewhale_secrets::normalize_api_key(&api_key),
                 ),
@@ -3778,7 +3773,7 @@ pub(crate) async fn apply_provider_picker_test_connection_with_verifier(
                 &scoped_config,
                 &identity,
                 &model,
-                crate::route_receipt::CredentialGeneration::derive(
+                codewhale_config::credentials::CredentialGeneration::derive(
                     &base_url,
                     &codewhale_secrets::normalize_api_key(&api_key),
                 ),
@@ -3874,7 +3869,7 @@ pub(crate) async fn apply_provider_picker_api_key_with_verifier(
                     &scoped_config,
                     &identity,
                     &verified_model,
-                    crate::route_receipt::CredentialGeneration::derive(
+                    codewhale_config::credentials::CredentialGeneration::derive(
                         &base_url,
                         &codewhale_secrets::normalize_api_key(&api_key),
                     ),

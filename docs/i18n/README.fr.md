@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:7e0946fcaecd -->
+<!-- source: README.md sha256:a027945e67d4 -->
 <div align="center">
 
 <picture>
@@ -30,6 +30,14 @@ qu’il a exécutées et les appels web et MCP qu’il a effectués.
 <sub>Une version de développement de la 0.10.2 avec un modèle de test scripté, en Full Access dans un espace de travail jetable. La modification, trois tests et une revue par un sous-agent ont réellement été exécutés.</sub>
 
 </div>
+
+<p align="center">
+  <a href="https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67" rel="sponsored">
+    <img src="../../web/public/codewhale-x-orcarouter.webp" alt="Codewhale × OrcaRouter — 30 % d’utilisation de DeepSeek v4.1 Flash en plus" width="760">
+  </a>
+</p>
+
+[Voir l’offre Codewhale × OrcaRouter](https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67). Codewhale reçoit une commission de recommandation d’OrcaRouter.
 
 ## Installation
 
@@ -87,8 +95,7 @@ Fix the failing tests and explain what changed.
 Les commandes en lecture seule s’exécutent immédiatement. Pour toute autre
 commande shell, Codewhale demande d’abord : `y` l’exécute une fois, `a` autorise
 les commandes similaires pour le reste de la conversation, `n` refuse. `/undo`
-annule votre dernière demande et ses modifications de fichiers (dans la 0.10.1,
-lancez d’abord `/trust on`). `/help` liste les commandes et les touches.
+annule votre dernière demande et ses modifications de fichiers. `/help` liste les commandes et les touches.
 
 Pour les scripts et la CI, `codewhale exec` exécute une tâche sans l’interface.
 Par défaut, `--auto` utilise Full Access : les outils s’exécutent sans demander,
@@ -158,9 +165,7 @@ d’une clé API (expérimental). Voir [Fournisseurs](../PROVIDERS.md).
 
 `/receipts`, ou `codewhale receipts --last` après avoir quitté, liste les
 fichiers modifiés, les commandes exécutées, les appels web et MCP, les agents
-lancés, les approbations et qui les a données, ainsi que les échecs. `/undo`
-annule votre dernière demande ; dans la 0.10.1, il nécessite `/trust on` pour
-les fichiers et revient en arrière d’un appel d’outil à la fois. `/restore`
+lancés, les approbations et qui les a données, ainsi que les échecs. `/undo` annule votre dernière demande et les fichiers qu’elle a modifiés, en une seule étape et sans mode de confiance. `/restore`
 ramène tout l’espace de travail à un instantané antérieur ; comme cela écrase
 les modifications ultérieures, il faut `/trust on` ou Full Access. Voir
 [Reçus](../RECEIPTS.md).

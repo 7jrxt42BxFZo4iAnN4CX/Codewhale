@@ -76,10 +76,7 @@ impl McpHttpAuth {
         }
         let mut headers = self.headers.clone();
         for (name, env_var) in &self.env_headers {
-            let value = self.reviewed_plugin.as_ref().map_or_else(
-                || std::env::var(env_var),
-                |source| source.host_environment.var(env_var),
-            );
+            let value = super::mcp_secret_var(self.reviewed_plugin.as_ref(), env_var);
             if let Ok(value) = value
                 && !value.trim().is_empty()
             {
@@ -88,10 +85,7 @@ impl McpHttpAuth {
         }
         if !mcp_headers_have_authorization(&headers)
             && let Some(env_var) = self.bearer_token_env_var.as_deref()
-            && let Ok(token) = self.reviewed_plugin.as_ref().map_or_else(
-                || std::env::var(env_var),
-                |source| source.host_environment.var(env_var),
-            )
+            && let Ok(token) = super::mcp_secret_var(self.reviewed_plugin.as_ref(), env_var)
         {
             let token = token.trim();
             if !token.is_empty() {
@@ -707,7 +701,7 @@ mod tests {
     #[tokio::test]
     async fn configured_mcp_credentials_refuse_remote_http_before_header_resolution() {
         let _env = crate::test_support::lock_test_env();
-        crate::tls::ensure_rustls_crypto_provider();
+        codewhale_release::tls::ensure_rustls_crypto_provider();
         let _token = crate::test_support::EnvVarGuard::set(
             "CODEWHALE_TEST_MCP_TLS_BEARER",
             "fixture-private-value",
@@ -768,7 +762,7 @@ mod tests {
     #[tokio::test]
     async fn remote_http_custom_credentials_never_reach_an_operator_proxy() {
         let _env = crate::test_support::lock_test_env();
-        crate::tls::ensure_rustls_crypto_provider();
+        codewhale_release::tls::ensure_rustls_crypto_provider();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let proxy_url = format!("http://{}", listener.local_addr().unwrap());
         let _https_proxy = crate::test_support::EnvVarGuard::set("HTTPS_PROXY", &proxy_url);
@@ -837,7 +831,7 @@ mod tests {
     async fn loopback_mcp_credentials_keep_live_auth_and_protocol_framing() {
         let _env = crate::test_support::lock_test_env();
         let _no_proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
-        crate::tls::ensure_rustls_crypto_provider();
+        codewhale_release::tls::ensure_rustls_crypto_provider();
         let _token =
             crate::test_support::EnvVarGuard::set("CODEWHALE_TEST_MCP_TLS_BEARER", "fixture-token");
         let _live =
@@ -881,7 +875,7 @@ mod tests {
     async fn oauth_form_credentials_refuse_http_redirect_before_destination_resolution() {
         let _env = crate::test_support::lock_test_env();
         let _no_proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
-        crate::tls::ensure_rustls_crypto_provider();
+        codewhale_release::tls::ensure_rustls_crypto_provider();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/token", listener.local_addr().unwrap());
         let server = tokio::spawn(reply_once(listener, "HTTP/1.1 307 Redirect\r\nLocation: http://mcp-guard-fixture.invalid/token\r\nConnection: close\r\nContent-Length: 0\r\n\r\n".to_string()));
@@ -1278,7 +1272,7 @@ mod tests {
     async fn event_stream_shares_the_client_and_other_bodies_keep_the_read_deadline() {
         let _env = crate::test_support::lock_test_env();
         let _no_proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "127.0.0.1");
-        crate::tls::ensure_rustls_crypto_provider();
+        codewhale_release::tls::ensure_rustls_crypto_provider();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/mcp", listener.local_addr().unwrap());
         // Every response promises 10 body bytes, sends 3 and then stalls.
@@ -1324,7 +1318,7 @@ mod tests {
     #[tokio::test]
     async fn mcp_session_clones_resolve_current_credentials_and_keep_framing() {
         let _env = crate::test_support::lock_test_env();
-        crate::tls::ensure_rustls_crypto_provider();
+        codewhale_release::tls::ensure_rustls_crypto_provider();
         let _first_token = crate::test_support::EnvVarGuard::set(
             "CODEWHALE_TEST_MCP_SESSION_BEARER",
             "first-fixture",
@@ -1410,7 +1404,7 @@ mod tests {
     async fn raw_oauth_execute_does_not_inherit_bound_mcp_credentials() {
         let _env = crate::test_support::lock_test_env();
         let _no_proxy = crate::test_support::EnvVarGuard::set("NO_PROXY", "*,127.0.0.1");
-        crate::tls::ensure_rustls_crypto_provider();
+        codewhale_release::tls::ensure_rustls_crypto_provider();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let origin = format!("http://{}", listener.local_addr().unwrap());
         let url = format!("{origin}/mcp");

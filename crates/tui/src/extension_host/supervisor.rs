@@ -1246,7 +1246,7 @@ pub(crate) struct HostProcess {
     /// How the cap is enforced for this process, settled at the handshake.
     memory: Arc<std::sync::OnceLock<MemoryEnforcement>>,
     pub sandbox: HostSandbox,
-    tree: Arc<crate::process_tree::ProcessTree>,
+    tree: Arc<codewhale_runtime::process_tree::ProcessTree>,
     #[cfg(windows)]
     windows: Option<super::windows::NativeSandbox>,
     outbound: mpsc::Sender<Vec<u8>>,
@@ -1304,7 +1304,7 @@ impl HostChild {
 struct SpawnedHost {
     child: HostChild,
     pid: Option<u32>,
-    tree: Arc<crate::process_tree::ProcessTree>,
+    tree: Arc<codewhale_runtime::process_tree::ProcessTree>,
     stdin: tokio::process::ChildStdin,
     stdout: tokio::process::ChildStdout,
     stderr: tokio::process::ChildStderr,
@@ -1356,7 +1356,7 @@ fn spawn_host(
             }
         })?;
     let pid = child.id();
-    let tree = match crate::process_tree::ProcessTree::attach_tokio(&child) {
+    let tree = match codewhale_runtime::process_tree::ProcessTree::attach_tokio(&child) {
         Ok(tree) => Arc::new(tree),
         Err(error) => {
             let _ = child.start_kill();
@@ -1389,7 +1389,7 @@ impl HostProcess {
     #[cfg(windows)]
     pub(crate) async fn admit_windows_root(
         &self,
-        authority: crate::plugins::types::PluginAuthority,
+        authority: codewhale_config::PluginAuthority,
     ) -> Result<(), String> {
         let sandbox = self
             .windows
@@ -1459,8 +1459,10 @@ impl HostProcess {
                 ("CODEWHALE_HOST_PARENT_PID", parent_pid.as_str()),
                 ("CODEWHALE_HOST_PROCESS_GROUP", own_group),
             ]);
-        let environment =
-            crate::child_env::sanitized_plugin_mcp_env_from(std::env::vars_os(), overrides);
+        let environment = codewhale_runtime::child_env::sanitized_plugin_mcp_env_from(
+            std::env::vars_os(),
+            overrides,
+        );
         command.envs(environment.iter().map(|(key, value)| (key, value)));
         #[cfg(unix)]
         command.process_group(0);

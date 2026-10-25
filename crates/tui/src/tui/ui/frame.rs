@@ -979,7 +979,9 @@ pub(crate) fn build_engine_config(app: &App, config: &Config) -> EngineConfig {
         subagents_enabled: identity
             .is_some_and(|identity| config.subagents_enabled_for_provider(identity)),
         features: config.features(),
-        auto_review_policy: config.auto_review_policy(),
+        auto_review_policy: crate::core::authority::auto_review::AutoReviewPolicy::from_config(
+            config,
+        ),
         compaction: app.compaction_config(),
         todos: app.todos.clone(),
         plan_state: app.plan_state.clone(),
@@ -1004,7 +1006,9 @@ pub(crate) fn build_engine_config(app: &App, config: &Config) -> EngineConfig {
         max_tool_calls: None,
         hook_executor: app.runtime_services.hook_executor.clone(),
         network_policy: config.network.clone().map(|toml_cfg| {
-            crate::network_policy::NetworkPolicyDecider::with_default_audit(toml_cfg.into_runtime())
+            crate::network_policy::NetworkPolicyDecider::with_default_audit(
+                crate::network_policy::NetworkPolicy::from(toml_cfg),
+            )
         }),
         snapshots_enabled: config.snapshots_config().enabled,
         snapshots_max_workspace_bytes: config
@@ -1014,10 +1018,7 @@ pub(crate) fn build_engine_config(app: &App, config: &Config) -> EngineConfig {
         // The TUI records no snapshot receipts; its post-turn snapshot stays
         // off the input path (#234).
         record_restore_points: false,
-        lsp_config: config
-            .lsp
-            .clone()
-            .map(crate::config::LspConfigToml::into_runtime),
+        lsp_config: config.lsp.clone().map(crate::lsp::LspConfig::from),
         runtime_services: app.runtime_services.clone(),
         subagent_model_overrides: config.subagent_model_overrides(),
         fleet_roster: std::sync::Arc::new(crate::fleet::identity::load_effective_roster(
@@ -1044,7 +1045,7 @@ pub(crate) fn build_engine_config(app: &App, config: &Config) -> EngineConfig {
             read_only_roots: config.bwrap_ro_roots.clone(),
             device_roots: config.bwrap_dev_roots.clone(),
         },
-        read_denylist: config.read_denylist(),
+        read_denylist: crate::sandbox::read_guard::ReadDenylist::from_config(config),
         memory_enabled: config.memory_enabled(),
         memory_path: config.memory_path(),
         speech_output_dir: config.speech_output_dir(),
@@ -1060,9 +1061,7 @@ pub(crate) fn build_engine_config(app: &App, config: &Config) -> EngineConfig {
         reasoning_only_reprompt_message: Some(config.reasoning_only_reprompt_message().to_string()),
         locale_tag: app.ui_locale.tag().to_string(),
         workshop: {
-            crate::tools::large_output_router::WorkshopConfig::install_active(
-                config.workshop.as_ref(),
-            );
+            crate::tools::large_output_router::install_active_workshop(config.workshop.as_ref());
             config.workshop.clone()
         },
         search_provider: config.search_provider(),
@@ -1070,7 +1069,7 @@ pub(crate) fn build_engine_config(app: &App, config: &Config) -> EngineConfig {
         search_base_url: config.search.as_ref().and_then(|s| s.base_url.clone()),
         search_native: config.search_native(),
         tools_always_load: config.tools_always_load(),
-        user_input_limits: config.user_input_limits(),
+        user_input_limits: crate::tools::user_input::UserInputLimits::from_config(config),
         user_input_timeout: config.user_input_timeout(),
         goal_max_steps: Some(config.goal_max_steps()),
         tools: config.tools.clone(),
@@ -1096,7 +1095,7 @@ pub(crate) fn build_app_system_prompt_with_goal(
     goal_objective: Option<&str>,
 ) -> SystemPrompt {
     let instructions = configured_instruction_sources(config);
-    let user_memory_block = crate::native_memory::native_prompt_block(
+    let user_memory_block = codewhale_runtime::native_memory::native_prompt_block(
         config.memory_enabled(),
         &config.memory_path(),
         &app.workspace,
@@ -1574,6 +1573,7 @@ pub(crate) fn render(f: &mut Frame, app: &mut App, _config: &Config) -> Option<(
     let body_area = shell_area;
 
     let body_height = body_area.height;
+    let density_rows = crate::tui::widgets::composer_max_height(app.composer_density);
     let composer_max_height = body_height
         .saturating_sub(
             MIN_CHAT_HEIGHT
@@ -1581,7 +1581,8 @@ pub(crate) fn render(f: &mut Frame, app: &mut App, _config: &Config) -> Option<(
                 .saturating_add(info_height)
                 .saturating_add(top_work_strip_height),
         )
-        .max(MIN_COMPOSER_HEIGHT);
+        .max(MIN_COMPOSER_HEIGHT)
+        .min((body_height / 2).max(density_rows));
     let composer_height = if !pet_main && mini && !mini_cfg.keep_input {
         0
     } else {

@@ -31,7 +31,7 @@ ALLOWED_NORMAL = {
     "proc-macro2", "unicode-ident", "wasm-bindgen-macro-support", "bumpalo", "syn",
     "wasm-bindgen-shared", "log", "windows-core", "windows-implement", "windows-interface",
     "windows-link", "windows-result", "windows-strings", "num-traits", "serde", "serde_core",
-    "serde_derive", "serde_json", "indexmap", "equivalent", "hashbrown", "itoa", "memchr",
+    "serde_derive", "serde_json", "indexmap", "equivalent", "hashbrown", "foldhash", "itoa", "memchr",
     "zmij", "uuid", "getrandom", "r-efi",
 }
 HOST_IMPORT = re.compile(

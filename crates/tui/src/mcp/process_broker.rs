@@ -22,7 +22,7 @@ use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::Mutex as TokioMutex;
 
 use super::McpServerConfig;
-use crate::child_env;
+use codewhale_runtime::child_env;
 
 pub(crate) struct BrokerSession {
     child: Arc<TokioMutex<Child>>,
@@ -33,7 +33,7 @@ pub(crate) struct BrokerSession {
     /// Keep the reviewed executable/script descriptors alive through cleanup.
     _reviewed_launch: Option<super::ReviewedStdioLaunch>,
     /// Owned until Drop transfers it to the bounded asynchronous cleanup.
-    process_tree: Option<Arc<crate::process_tree::ProcessTree>>,
+    process_tree: Option<Arc<codewhale_runtime::process_tree::ProcessTree>>,
 }
 
 /// How long `BrokerSession::shutdown` waits for the child to exit on SIGTERM
@@ -215,7 +215,8 @@ impl BrokerSession {
             anyhow::Error::new(error).context(message)
         })?;
 
-        let process_tree = match crate::process_tree::ProcessTree::attach_tokio(&child) {
+        let process_tree = match codewhale_runtime::process_tree::ProcessTree::attach_tokio(&child)
+        {
             Ok(tree) => Arc::new(tree),
             Err(error) => {
                 let _ = child.start_kill();
@@ -424,13 +425,16 @@ fn send_sigterm(child: &Child, contained: bool) -> bool {
 
 async fn terminate_child_for_authority_change(
     child: &Arc<TokioMutex<Child>>,
-    tree: &crate::process_tree::ProcessTree,
+    tree: &codewhale_runtime::process_tree::ProcessTree,
 ) {
     let mut child = child.lock().await;
     terminate_child(&mut child, Some(tree)).await;
 }
 
-async fn terminate_child(child: &mut Child, tree: Option<&crate::process_tree::ProcessTree>) {
+async fn terminate_child(
+    child: &mut Child,
+    tree: Option<&codewhale_runtime::process_tree::ProcessTree>,
+) {
     // Reap an already-exited child before resolving its PID. Until it is
     // reaped, the OS cannot recycle that identity; after it is reaped there is
     // nothing left to signal. This avoids a PID-only watcher ever targeting an

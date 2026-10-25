@@ -23,7 +23,7 @@ fn preset(fixture: &FixturePlugins, tag: &str) -> NativePresetRef {
         content_hash: source.authority.content_hash,
         entry: EntryRef {
             path: source.path.to_string_lossy().into(),
-            sha256: crate::hashing::sha256_hex(std::fs::read(source.path).unwrap()),
+            sha256: codewhale_runtime::hashing::sha256_hex(std::fs::read(source.path).unwrap()),
         },
     }
 }

@@ -2129,7 +2129,7 @@ fn fleet_runtime_cursor(
     );
     format!(
         "fev1_{}_{}",
-        crate::hashing::sha256_hex(material.as_bytes()),
+        codewhale_runtime::hashing::sha256_hex(material.as_bytes()),
         kind
     )
 }

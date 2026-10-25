@@ -159,22 +159,27 @@ pub(crate) fn restore_matching_offline_queue_state(
     true
 }
 
-/// A Running sub-agent older than every child's wall budget cannot still be
-/// doing bounded work: its terminal event was lost or its task is wedged
-/// (#6184 H2). The default child wall budget plus generous grace.
-pub(crate) const SUBAGENT_SUSPECT_AFTER: Duration =
-    crate::tools::subagent::DEFAULT_CHILD_WALL_TIME.saturating_add(Duration::from_secs(5 * 60));
-
-/// Running sub-agents that are past their bound: shown as suspect, and never a
-/// veto on turn recovery. A prior-session row still marked Running cannot be
-/// live in this process at all.
+/// Running rows that never veto recovery: a prior-session row has no live
+/// actor in this process, and a current child silent beyond its heartbeat
+/// bound (at least `TOOL_HANG_WATCHDOG_TIMEOUT`) may have lost its terminal event (#6184).
+/// Elapsed time alone does not establish that a current child is stalled.
 pub(crate) fn suspect_running_agents(app: &App, now: Instant) -> Vec<String> {
     app.subagent_cache
         .iter()
         .filter(|agent| matches!(agent.status, SubAgentStatus::Running))
-        .filter(|agent| match agent.started_at {
-            Some(started) => now.saturating_duration_since(started) > SUBAGENT_SUSPECT_AFTER,
-            None => agent.from_prior_session,
+        .filter(|agent| {
+            agent.from_prior_session
+                || app
+                    .agent_progress_meta
+                    .get(&agent.agent_id)
+                    .and_then(|meta| meta.last_progress_at)
+                    .or(agent.started_at)
+                    .is_some_and(|at| {
+                        now.saturating_duration_since(at)
+                            > TOOL_HANG_WATCHDOG_TIMEOUT.max(Duration::from_millis(
+                                agent.heartbeat_timeout_ms.unwrap_or(0),
+                            ))
+                    })
         })
         .map(|agent| agent.agent_id.clone())
         .collect()
@@ -210,7 +215,7 @@ fn record_ui_stall(app: &App, phase: &str, since_progress: Duration, bound: Dura
     let suspects = suspect_running_agents(app, Instant::now());
     let detail = (!suspects.is_empty()).then(|| {
         format!(
-            "sub-agent(s) past their bound, treated as suspect: {}",
+            "sub-agent(s) from a prior session or with no progress for 10m, treated as suspect: {}",
             suspects.join(", ")
         )
     });

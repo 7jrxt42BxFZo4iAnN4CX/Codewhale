@@ -847,6 +847,14 @@ pub(crate) async fn spawned_dispatch_inner(
     recovery: DispatchRecovery,
     engine_handle: EngineHandle,
 ) -> crate::tui::app::DispatchApplyFn {
+    if !prepare.auto_model {
+        crate::provider_lake::refresh_unverified_local_context(
+            &prepare.route_config,
+            &prepare.app_route_identity,
+            &prepare.app_model,
+        )
+        .await;
+    }
     // Bound in its own statement: the planner borrows `prepare`, and the error
     // arm moves it into the failure closure.
     let plan_result = plan_turn_route(TurnRoutePlanRequest {

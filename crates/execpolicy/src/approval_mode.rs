@@ -45,6 +45,14 @@ impl ApprovalMode {
     }
 
     #[must_use]
+    pub fn agent_baseline_sandbox_mode(self) -> &'static str {
+        match self {
+            Self::Bypass => "danger-full-access",
+            Self::Auto | Self::Suggest | Self::Never => "workspace-write",
+        }
+    }
+
+    #[must_use]
     pub fn cycle_permission_next(self) -> Self {
         let Some(index) = Self::PERMISSION_CYCLE.iter().position(|mode| *mode == self) else {
             return Self::Suggest;

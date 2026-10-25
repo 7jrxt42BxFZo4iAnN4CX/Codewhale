@@ -812,7 +812,7 @@
   "KbSendDraft": "待機中は送信、実行中はキュー。入力欄が空なら次のキューを今すぐ送信",
   "KbSteerCurrentTurn": "現在のターンをステア（待機中は通常送信）",
   "KbCloseMenu": "メニューを閉じる、リクエストをキャンセル、下書きを破棄、または入力をクリア",
-  "KbCancelOrExit": "リクエストをキャンセル、またはアイドル時に終了",
+  "KbCancelOrExit": "キャンセル、下書きを消去、またはアイドル時に終了",
   "KbShellControls": "実行中のシェル待機を /jobs へ移動",
   "KbExitEmpty": "入力が空の時に終了",
   "KbCommandPalette": "コマンドパレットを開く",

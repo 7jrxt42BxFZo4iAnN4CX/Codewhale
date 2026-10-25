@@ -21,9 +21,8 @@
 
 use std::fmt;
 
-use sha2::{Digest, Sha256};
-
 use crate::config::{ProviderIdentity, ProviderKind};
+use codewhale_config::credentials::CredentialGeneration;
 
 /// Endpoint identity for a string that is not a parseable URL.
 ///
@@ -50,55 +49,6 @@ pub fn endpoint_identity(base_url: &str) -> String {
     crate::client::redact_url_for_display(trimmed)
         .trim_end_matches('/')
         .to_string()
-}
-
-/// One-way digest proving a credential (and the endpoint it is bound to) is
-/// still the same one.
-///
-/// SHA-256 over a domain-separated, length-prefixed preimage, truncated to 128
-/// bits. Length prefixing keeps `(base_url, key)` unambiguous, so no pair of
-/// distinct routes can be made to share a generation by moving bytes across the
-/// boundary. The value is never rendered: it is credential-derived, and a
-/// stable public digest of a secret is a secret's shadow.
-#[derive(Clone, PartialEq, Eq)]
-pub struct CredentialGeneration(String);
-
-impl CredentialGeneration {
-    pub(crate) fn derive(base_url: &str, credential: &str) -> Self {
-        let mut hasher = Sha256::new();
-        hasher.update(b"codewhale/turn-route/credential-generation/v1\0");
-        hasher.update(
-            u64::try_from(base_url.len())
-                .unwrap_or(u64::MAX)
-                .to_le_bytes(),
-        );
-        hasher.update(base_url.as_bytes());
-        hasher.update(
-            u64::try_from(credential.len())
-                .unwrap_or(u64::MAX)
-                .to_le_bytes(),
-        );
-        hasher.update(credential.as_bytes());
-        let digest = hasher.finalize();
-        let mut hex = String::with_capacity(32);
-        for byte in &digest[..16] {
-            use fmt::Write as _;
-            let _ = write!(hex, "{byte:02x}");
-        }
-        Self(hex)
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-/// Redacted: see the type docs. There is no accessor for the digest string.
-impl fmt::Debug for CredentialGeneration {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("<redacted>")
-    }
 }
 
 /// Immutable proof of the exact base route a turn's client was installed on.

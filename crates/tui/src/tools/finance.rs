@@ -192,7 +192,7 @@ impl FinanceTool {
     pub fn new() -> Self {
         Self {
             endpoints: FinanceEndpoints::default(),
-            client: crate::tls::reqwest_client_builder()
+            client: codewhale_release::tls::reqwest_client_builder()
                 .user_agent(USER_AGENT)
                 .build()
                 .expect("failed to build HTTP client"),
@@ -206,7 +206,7 @@ impl FinanceTool {
                 quote_base: quote_base.into(),
                 chart_base: chart_base.into(),
             },
-            client: crate::tls::reqwest_client_builder()
+            client: codewhale_release::tls::reqwest_client_builder()
                 .user_agent(USER_AGENT)
                 .build()
                 .expect("failed to build HTTP client"),
@@ -305,7 +305,7 @@ impl ToolSpec for FinanceTool {
         let deadline = std::time::Instant::now() + timeout;
         let host = context
             .features
-            .enabled(crate::features::Feature::FinanceHost);
+            .enabled(codewhale_runtime::features::Feature::FinanceHost);
         let quote_result = if host {
             fetch_host_endpoint(
                 &self.client,

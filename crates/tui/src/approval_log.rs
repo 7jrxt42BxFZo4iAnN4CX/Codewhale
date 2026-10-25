@@ -583,7 +583,7 @@ impl ApprovalReceiptStore {
     ) -> io::Result<()> {
         let log = self.log_file(session_id, true)?;
         let lock_file = log.sibling(APPROVAL_LOCK_FILE)?.open_update(true, false)?;
-        crate::utils::restrict_to_owner(&lock_file)?;
+        codewhale_runtime::private_log::restrict_to_owner(&lock_file)?;
         let mut lock = fd_lock::RwLock::new(lock_file);
         let _guard = lock.write()?;
         let mut loaded = Self::load_unlocked(&log)?.unwrap_or_default();
@@ -600,7 +600,7 @@ impl ApprovalReceiptStore {
         line.push(b'\n');
         // Approval receipts are owner-only and never written through a link.
         let mut file = log.open_update(true, true)?;
-        crate::utils::restrict_to_owner(&file)?;
+        codewhale_runtime::private_log::restrict_to_owner(&file)?;
         if let Some(tail) = &loaded.torn_tail {
             // Validate the candidate and preserve evidence before touching the
             // live log. Any preservation error leaves the original intact.

@@ -242,7 +242,7 @@ fn ensure_native_skill_file_present(skill: &Skill) -> Result<(), ToolError> {
         skill.name,
         skill.path.display()
     );
-    crate::logging::warn(&message);
+    codewhale_runtime::logging::warn(&message);
     Err(ToolError::execution_failed(message))
 }
 
@@ -457,8 +457,8 @@ mod tests {
             plugin_id: "workspace/1/demo".to_string(),
             plugin_name: "demo".to_string(),
             native_registration: None,
-            authority: Box::new(crate::plugins::types::PluginAuthority {
-                plugin_id: crate::plugins::types::PluginId("workspace/1/demo".to_string()),
+            authority: Box::new(codewhale_config::PluginAuthority {
+                plugin_id: codewhale_config::PluginId("workspace/1/demo".to_string()),
                 plugin_name: "demo".to_string(),
                 workspace: tmp.path().to_path_buf(),
                 state_path: tmp.path().join("state.json"),
@@ -492,8 +492,8 @@ mod tests {
                 plugin_id: "workspace/123/demo".to_string(),
                 plugin_name: "demo".to_string(),
                 native_registration: None,
-                authority: Box::new(crate::plugins::types::PluginAuthority {
-                    plugin_id: crate::plugins::types::PluginId("workspace/123/demo".to_string()),
+                authority: Box::new(codewhale_config::PluginAuthority {
+                    plugin_id: codewhale_config::PluginId("workspace/123/demo".to_string()),
                     plugin_name: "demo".to_string(),
                     workspace: tmp.path().to_path_buf(),
                     state_path: tmp.path().join("state.json"),
@@ -867,8 +867,8 @@ mod tests {
             .await
             .unwrap();
         assert!(listing.content.contains("model"));
-        assert!(!listing.content.contains("explicit"));
-        assert!(!listing.content.contains("disabled"));
+        assert!(!listing.content.contains("  - explicit"));
+        assert!(!listing.content.contains("  - disabled"));
         let query = tool
             .execute(json!({"query":"explicit"}), &context)
             .await

@@ -105,63 +105,26 @@ impl Engine {
         // must see mid-turn (LSP diagnostics, steer input, subagent
         // completions) are appended to history above, never spliced into
         // the frozen prefix.
-        // A zero-tool turn (plain `exec`) spends extra steps only on
-        // output-limit continuations. It has no work to wrap up or report
-        // on, so the agent wrap-up notices below would only bend a
-        // one-shot answer; at the limit it ends honestly instead.
         let zero_tool_turn = progress.tool_catalog.is_empty();
         if let Some(job) = self.child_job() {
             if job.authority.runtime.cancel_token.is_cancelled() {
                 return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
             }
-            if !self.child_report() {
-                if let Some(notice) = job.pacing_notice() {
-                    self.add_session_message(self.user_text_message_with_turn_metadata(notice))
-                        .await;
-                }
-                if job
-                    .work_deadline
-                    .is_some_and(|deadline| Instant::now() >= deadline)
-                {
-                    job.stop_for_budget("child wall-time work budget exhausted");
-                    return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
-                }
-                if turn.at_max_steps() {
-                    job.stop_for_budget("child model-step work budget exhausted");
-                    return PhaseResult::Return((
-                        TurnOutcomeStatus::Failed,
-                        Some("child model-step work budget exhausted".into()),
-                    ));
-                }
+            if job
+                .deadline
+                .is_some_and(|deadline| Instant::now() >= deadline)
+            {
+                job.stop_for_budget("child wall-time work budget exhausted");
+                return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
+            }
+            if turn.at_max_steps() {
+                job.stop_for_budget("child model-step work budget exhausted");
+                return PhaseResult::Return((
+                    TurnOutcomeStatus::Failed,
+                    Some("child model-step work budget exhausted".into()),
+                ));
             }
         }
-        // A1 soft landing: with a finite step budget, once ~80% of it is
-        // spent tell the model once to stop exploring and write its final
-        // report. Savings proved out by the grok-style parity work (ops
-        // A1): a step-faithful harness ends mid-report far too often.
-        if self.child_host.is_none()
-            && !zero_tool_turn
-            && !turn.stop_diagnostics.soft_landing_sent
-            && let Some(step_limit) = turn.step_limit()
-            && step_limit > 0
-            && turn.steps_used() >= ((step_limit as f32 * 0.8).floor() as u32).max(1)
-        {
-            turn.stop_diagnostics.soft_landing_sent = true;
-            let notice = format!(
-                "Step budget soft landing: you have used about {}% of your {} step budget ({}). Stop exploring; write your final, complete report now, in final form, with evidence.",
-                80,
-                turn.max_steps,
-                turn.budget_source.key_label(),
-            );
-            self.add_session_message(self.user_text_message_with_turn_metadata(notice))
-                .await;
-            let _ = self
-                .send_event(Event::status(
-                    "Soft landing: wrap up with your final report",
-                ))
-                .await;
-        }
-
         if turn.at_max_steps() {
             turn.stop_diagnostics.reason = Some(TurnStopReason::StepBudgetExhausted);
             if self.child_host.is_none()
@@ -225,23 +188,19 @@ impl Engine {
             &progress.active_tool_names,
             strict_tool_mode,
         );
-        // The report already has a bounded text-only captured request. It
-        // cannot authorize an extra paid summarizer or mutate its evidence.
-        if !self.child_report() {
-            match self
-                .run_auto_compaction(
-                    client.as_ref(),
-                    active_tools.as_deref(),
-                    turn,
-                    &mut progress.auto_compaction_suppressed,
-                )
-                .await
-            {
-                AutoCompactionStep::Proceed => {}
-                AutoCompactionStep::Restart => return PhaseResult::Retry,
-                AutoCompactionStep::EndTurn(status, error) => {
-                    return PhaseResult::Return((status, error));
-                }
+        match self
+            .run_auto_compaction(
+                client.as_ref(),
+                active_tools.as_deref(),
+                turn,
+                &mut progress.auto_compaction_suppressed,
+            )
+            .await
+        {
+            AutoCompactionStep::Proceed => {}
+            AutoCompactionStep::Restart => return PhaseResult::Retry,
+            AutoCompactionStep::EndTurn(status, error) => {
+                return PhaseResult::Return((status, error));
             }
         }
 
@@ -269,14 +228,12 @@ impl Engine {
             )
             .and_then(|tokens| usize::try_from(tokens).ok())
             .unwrap_or(0);
-        if !self.child_report()
-            && let Some(budget) = route_context_budget_for_route(
-                self.api_provider,
-                &self.session.model,
-                self.active_route_limits,
-                estimated_input,
-            )
-        {
+        if let Some(budget) = route_context_budget_for_route(
+            self.api_provider,
+            &self.session.model,
+            self.active_route_limits,
+            estimated_input,
+        ) {
             let input_budget = usize::try_from(
                 crate::route_budget::route_admission_input_ceiling(
                     self.api_provider,
@@ -314,7 +271,7 @@ impl Engine {
                     effective_reasoning_effort.as_deref(),
                 ),
                 reserved_response_headroom_tokens = budget.output_cap_tokens,
-                safety_headroom_tokens = crate::context_budget::CONTEXT_HEADROOM_TOKENS,
+                safety_headroom_tokens = codewhale_runtime::context_budget::CONTEXT_HEADROOM_TOKENS,
                 resolved_route_input_limit_tokens = ?route_input_limit,
                 estimated_input_tokens = estimated_input,
                 input_budget_ceiling_tokens = budget.input_budget_ceiling,
@@ -349,12 +306,22 @@ impl Engine {
         // Sends an event on EVERY check so the TUI can maintain
         // its own counter for the stable-checks tally.
         let declared_change = self.session.pending_prefix_change_reason.take();
+        let mut prefix_check = json!({"outcome": "unavailable"});
         if let Some(pm) = self.session.prefix_stability.as_mut() {
             let system_text = codewhale_core::prefix_cache::system_prompt_text(
                 self.session.system_prompt.as_ref(),
             );
             let tools_ref: Option<&[codewhale_models::Tool]> = active_tools.as_deref();
             let outcome = pm.check(&system_text, tools_ref, declared_change.as_deref());
+            prefix_check = match &outcome {
+                codewhale_core::prefix_cache::PrefixCheck::Stable => json!({"outcome": "stable"}),
+                codewhale_core::prefix_cache::PrefixCheck::Repinned { reason, change } => {
+                    json!({"outcome": "repinned", "reason": reason, "system_changed": change.system_changed, "tools_changed": change.tools_changed})
+                }
+                codewhale_core::prefix_cache::PrefixCheck::Drift { change } => {
+                    json!({"outcome": "drift", "component": change.label(), "system_changed": change.system_changed, "tools_changed": change.tools_changed})
+                }
+            };
             // C5: request N's prefix may only diverge from N-1 across a
             // DECLARED change. An undeclared drift means the pinned header
             // moved without stamping a context update — the failure that
@@ -438,6 +405,21 @@ impl Engine {
                 }
             };
             let _ = self.send_event(event).await;
+        }
+
+        if prefix_check.get("tools_changed").and_then(Value::as_bool) == Some(true)
+            || (self.session.prefix_stability.is_none() && declared_change.is_some())
+        {
+            let snapshot = json!({
+                "type": "current_deferred_toolbox",
+                "active_deferred_tools": active_tools.iter().flatten().filter(|tool| tool.defer_loading.unwrap_or(false)).map(|tool| tool.name.as_str()).collect::<Vec<_>>(),
+                "authority": "This current deferred toolbox supersedes earlier activation, eviction and unavailable notices. Tools loaded eagerly remain available. Every execution still requires current permission.",
+            });
+            self.add_session_message(self.runtime_text_message_with_turn_metadata(
+                snapshot.to_string(),
+                UserInputProvenance::Runtime,
+            ))
+            .await;
         }
 
         // Three-zone prefix contract (#2264): freeze baseline on first
@@ -536,17 +518,6 @@ impl Engine {
             },
             reasoning_effort: effective_reasoning_effort,
         });
-        if let Some(report) = self
-            .child_host
-            .as_ref()
-            .and_then(|state| state.report.as_ref())
-        {
-            request.system = Some(report.system.clone());
-            request.messages = report.messages.clone();
-            request.max_tokens = report.output_tokens;
-            request.tools = None;
-            request.tool_choice = None;
-        }
         if turn.max_output_tokens.is_some() {
             request.max_tokens = request
                 .max_tokens
@@ -570,7 +541,7 @@ impl Engine {
             &self.session.model,
         );
         if stripped_images > 0 {
-            crate::logging::warn(format!(
+            codewhale_runtime::logging::warn(format!(
                 "{stripped_images} image block(s) replaced with text: model {} does not accept image input",
                 self.session.model
             ));
@@ -589,17 +560,12 @@ impl Engine {
             let window = crate::image_attach::cap_request_images(&mut request.messages, cap);
             self.note_request_image_window(image_provider, window).await;
         }
-        let report = self.child_report();
         let request_input = crate::compaction::estimate_request_input_tokens(
             &request.messages,
             request.system.as_ref(),
             request.tools.as_deref(),
         );
-        let request_input = if report {
-            request_input
-        } else {
-            request_input.max(estimated_input)
-        };
+        let request_input = request_input.max(estimated_input);
         let output_cap = crate::route_budget::request_output_cap_for_input(
             self.api_provider,
             &self.session.model,
@@ -609,17 +575,9 @@ impl Engine {
         )
         .filter(|cap| {
             *cap == request.max_tokens
-                || u64::from(*cap) >= crate::tools::subagent::budget_handback::MIN_HAND_BACK_OUTPUT
+                || u64::from(*cap) >= crate::route_budget::MIN_REQUEST_OUTPUT_TOKENS
         });
         let Some(output_cap) = output_cap else {
-            if report {
-                return PhaseResult::Return((
-                    TurnOutcomeStatus::Failed,
-                    Some(
-                        "bounded Core report request does not fit the route context window".into(),
-                    ),
-                ));
-            }
             progress.reasoning_only_nudge = request_nudge;
             let input_budget = crate::route_budget::route_admission_input_ceiling(
                 self.api_provider,
@@ -718,6 +676,7 @@ impl Engine {
         }
 
         PhaseResult::Ready(PreparedModelStep {
+            prefix_check,
             request: stream_request,
             zero_tool_turn,
             fleet_report_response,
@@ -824,7 +783,8 @@ impl Engine {
                 TurnOutcomeStatus::Failed,
                 Some(format!(
                     "RLM exhausted {} iterations without FINAL",
-                    crate::rlm::turn::MAX_RLM_ITERATIONS
+                    turn.step_limit()
+                        .expect("exhausted turn has an owner step limit")
                 )),
             ));
         }
@@ -899,6 +859,7 @@ impl Engine {
             .send_event(Event::ToolRequestSnapshot { snapshot })
             .await;
         PhaseResult::Ready(PreparedModelStep {
+            prefix_check: json!({"outcome": "unavailable", "surface": "rlm"}),
             request,
             zero_tool_turn: true,
             fleet_report_response: false,

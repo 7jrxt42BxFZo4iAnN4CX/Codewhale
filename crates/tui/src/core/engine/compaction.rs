@@ -134,7 +134,7 @@ impl Engine {
         if let Err(error) = tokio::task::spawn_blocking(move || {
             #[cfg(test)]
             let _membership = crate::test_support::join_env_scope(env_ticket);
-            crate::audit::log_sensitive_event(event, details);
+            codewhale_runtime::audit::log_sensitive_event(event, details);
         })
         .await
         {

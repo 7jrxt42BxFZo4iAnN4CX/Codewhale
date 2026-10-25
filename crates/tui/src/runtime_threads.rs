@@ -47,7 +47,6 @@ use crate::route_budget::{
     route_context_window_tokens,
 };
 use crate::route_runtime::{ResolvedRuntimeRoute, resolve_runtime_route_for_identity};
-use crate::runtime_policy::RuntimePolicyProjection;
 use crate::tools::plan::new_shared_plan_state;
 use crate::tools::shell::{SharedShellManager, new_shared_shell_manager};
 use crate::tools::subagent::{
@@ -71,6 +70,7 @@ use codewhale_protocol::runtime::{
     DynamicToolCallContent, DynamicToolCallParams, DynamicToolCallResult, DynamicToolSpec,
     TurnEnvironmentParams,
 };
+use codewhale_runtime::runtime_policy::RuntimePolicyProjection;
 
 const EVENT_CHANNEL_CAPACITY: usize = 1024;
 pub(crate) const RUNTIME_EVENT_REPLAY_BATCH_SIZE: usize = 256;
@@ -1338,7 +1338,7 @@ fn unanswered_call_result(
             Some(item.detail.clone().unwrap_or_else(|| item.summary.clone()))
         }
         TurnItemLifecycleStatus::Interrupted | TurnItemLifecycleStatus::Canceled => {
-            Some(crate::tool_history_repair::CRASH_REPAIR_CONTENT.to_string())
+            Some(codewhale_runtime::tool_history_repair::CRASH_REPAIR_CONTENT.to_string())
         }
         TurnItemLifecycleStatus::Queued
         | TurnItemLifecycleStatus::InProgress
@@ -2349,6 +2349,7 @@ pub(crate) struct RuntimeEventReplay {
 type RuntimeEventReader = BufReader<std::io::Take<File>>;
 
 enum RuntimeEventMatch {
+    ThreadStarted,
     TurnCompleted {
         turn_id: String,
     },
@@ -2708,6 +2709,16 @@ impl RuntimeThreadStore {
         )
     }
 
+    fn thread_create_operation_path(&self, fingerprint: &str) -> Result<PathBuf> {
+        validate_sha256_fingerprint(fingerprint, "thread creation operation fingerprint")?;
+        Self::record_path(
+            &self.turn_operations_dir,
+            &format!("thread_create_{fingerprint}"),
+            "json",
+            "thread creation operation",
+        )
+    }
+
     fn load_history_operation(&self, fingerprint: &str) -> Result<Option<RuntimeHistoryOperation>> {
         let path = self.history_operation_path(fingerprint)?;
         let raw = match read_store_file(&path) {
@@ -2803,6 +2814,20 @@ impl RuntimeThreadStore {
             }
             let raw = read_store_file(&path)
                 .with_context(|| format!("Failed to read {}", path.display()))?;
+            if path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("thread_create_"))
+            {
+                let binding: RuntimeThreadCreateBinding = serde_json::from_str(&raw)?;
+                binding.validate()?;
+                anyhow::ensure!(
+                    path == self
+                        .thread_create_operation_path(&binding.operation_key_fingerprint)?,
+                    "thread creation operation path mismatch"
+                );
+                continue;
+            }
             if path
                 .file_stem()
                 .and_then(|name| name.to_str())
@@ -4502,6 +4527,15 @@ impl RuntimeThreadStore {
         let path = self.events_path(thread_id)?;
         while let Some(event) = read_complete_event(&mut reader, &path)? {
             let matches = match expected {
+                RuntimeEventMatch::ThreadStarted => {
+                    event.event == "thread.started"
+                        && event
+                            .payload
+                            .get("thread")
+                            .and_then(|thread| thread.get("id"))
+                            .and_then(Value::as_str)
+                            == Some(thread_id)
+                }
                 RuntimeEventMatch::TurnCompleted { turn_id } => {
                     event.event == "turn.completed"
                         && event.turn_id.as_deref() == Some(turn_id.as_str())
@@ -5061,6 +5095,8 @@ pub enum ThreadListFilter {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CreateThreadRequest {
+    #[serde(default, alias = "operationKey")]
+    pub operation_key: Option<String>,
     pub model: Option<String>,
     /// Generic provider kind or, for legacy clients, an exact provider id.
     #[serde(default)]
@@ -5101,6 +5137,8 @@ pub struct CreateThreadRequest {
 /// having to recreate a thread or pass per-turn overrides on every send.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UpdateThreadRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_idle: Option<bool>,
     pub archived: Option<bool>,
     pub allow_shell: Option<bool>,
     pub trust_mode: Option<bool>,
@@ -5244,6 +5282,39 @@ struct RuntimeTurnOperationBinding {
     created_at: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RuntimeThreadCreateBinding {
+    schema_version: u32,
+    operation_key_fingerprint: String,
+    request_fingerprint: String,
+    thread_id: String,
+    created_at: DateTime<Utc>,
+    committed: bool,
+}
+
+impl RuntimeThreadCreateBinding {
+    fn validate(&self) -> Result<()> {
+        anyhow::ensure!(
+            self.schema_version == 1,
+            "unsupported thread creation operation schema"
+        );
+        validated_record_id(&self.thread_id, "thread creation operation id")?;
+        validate_sha256_fingerprint(
+            &self.operation_key_fingerprint,
+            "thread creation operation fingerprint",
+        )?;
+        validate_sha256_fingerprint(
+            &self.request_fingerprint,
+            "thread creation request fingerprint",
+        )
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("operation_key already binds a different thread creation request")]
+pub(crate) struct RuntimeThreadCreateConflict;
+
 impl RuntimeTurnOperationBinding {
     fn validate(&self) -> Result<()> {
         if self.schema_version > TURN_OPERATION_BINDING_SCHEMA_VERSION {
@@ -5307,7 +5378,7 @@ fn runtime_turn_operation_key_fingerprint(
     operation_key: &str,
 ) -> Result<String> {
     validate_runtime_turn_operation_key(operation_key)?;
-    Ok(crate::hashing::sha256_hex(format!(
+    Ok(codewhale_runtime::hashing::sha256_hex(format!(
         "runtime-turn-operation\u{1f}{owner_id}\u{1f}{thread_id}\u{1f}{operation_key}"
     )))
 }
@@ -5355,9 +5426,9 @@ fn runtime_turn_request_fingerprint(
     if let Some(max_output_tokens) = max_output_tokens {
         payload["maxOutputTokens"] = json!(max_output_tokens);
     }
-    Ok(crate::hashing::sha256_hex(crate::client::canonical_json(
-        &payload,
-    )))
+    Ok(codewhale_runtime::hashing::sha256_hex(
+        codewhale_runtime::hashing::canonical_json(&payload),
+    ))
 }
 
 #[derive(Debug, Clone)]
@@ -5915,6 +5986,24 @@ fn runtime_usage_bucket_key(
         ),
         UsageGroupBy::Thread => thread.id.clone(),
     }
+}
+
+fn priced_step_usage(route: Option<&EffectiveRouteEnvelope>, usage: &Usage) -> Option<Value> {
+    let audit = route?.audit(usage);
+    let estimate = audit.estimate?.sanitized();
+    Some(json!({
+        "usd": if audit.usd_priced { estimate.usd } else { 0.0 },
+        "cny": if audit.cny_priced { estimate.cny } else { 0.0 },
+        "usd_priced": audit.usd_priced,
+        "cny_priced": audit.cny_priced,
+    }))
+}
+
+fn billed_prompt_tokens(usage: &Usage) -> u32 {
+    usage
+        .request_usages
+        .last()
+        .map_or(usage.input_tokens, |last| last.input_tokens)
 }
 
 fn accumulate_runtime_usage_record(
@@ -6510,7 +6599,9 @@ impl RuntimeWorkerEventSink {
         } else {
             format!(
                 "item_{}",
-                crate::hashing::sha256_hex(format!("{turn_id}\0{agent_id}\0{event_name}"))
+                codewhale_runtime::hashing::sha256_hex(format!(
+                    "{turn_id}\0{agent_id}\0{event_name}"
+                ))
             )
         };
         match event {
@@ -7529,7 +7620,7 @@ impl RuntimeHistoryOperation {
         validate_runtime_turn_operation_key(&self.receipt.operation_key)?;
         anyhow::ensure!(
             self.key_fingerprint
-                == crate::hashing::sha256_hex(
+                == codewhale_runtime::hashing::sha256_hex(
                     format!(
                         "codewhale:history-operation:v1\0{}",
                         self.receipt.operation_key
@@ -7883,9 +7974,10 @@ impl RuntimeThreadManager {
     pub async fn reload_config(
         &self,
         mut new_config: Config,
-    ) -> Result<crate::tools::large_output_router::WorkshopConfig> {
+    ) -> Result<codewhale_config::WorkshopConfig> {
         new_config.runtime_thread_inference_unrelated = !new_config.runtime_chat_isolated;
         let _config_admission = self.config_admission.write().await;
+        new_config.preserve_runtime_credentials(&self.read_config());
         let _engine_load = self.engine_load.lock().await;
         let entries: Vec<(
             String,
@@ -7948,7 +8040,8 @@ impl RuntimeThreadManager {
         // engine from the accepted config before its process-wide read/tool
         // byte limits are active. Rejected reloads leave the prior limits in
         // place.
-        let workshop_activation = crate::tools::large_output_router::WorkshopConfig::install_active(
+        new_config.retain_compatible_session_keys();
+        let workshop_activation = crate::tools::large_output_router::install_active_workshop(
             new_config.workshop.as_ref(),
         );
         crate::config::initialize_cloud_facts(&new_config);
@@ -10923,6 +11016,113 @@ impl RuntimeThreadManager {
             saved_session_checkpoint: None,
             last_read: None,
         };
+        if let Some(operation_key) = req.operation_key {
+            let key_fingerprint = runtime_turn_operation_key_fingerprint(
+                &self.store.owner_id,
+                ":thread-create:",
+                &operation_key,
+            )?;
+            let request_fingerprint =
+                codewhale_runtime::hashing::sha256_hex(serde_json::to_vec(&json!({
+                    "version": 1,
+                    "model": thread.model,
+                    "model_provider": thread.model_provider,
+                    "model_provider_id": thread.model_provider_id,
+                    "reasoning_effort": thread.reasoning_effort,
+                    "allowed_tools": thread.allowed_tools,
+                    "workspace": thread.workspace,
+                    "mode": thread.mode,
+                    "permission_posture": thread.permission_posture,
+                    "allow_shell": thread.allow_shell,
+                    "trust_mode": thread.trust_mode,
+                    "auto_approve": thread.auto_approve,
+                    "archived": thread.archived,
+                    "system_prompt": thread.system_prompt,
+                    "task_id": thread.task_id,
+                    "dynamic_tools": req.dynamic_tools,
+                    "environments": req.environments,
+                }))?);
+            let _emit_order = self.event_emit.lock().await;
+            let store = self.store.clone();
+            let (thread, event) = tokio::task::spawn_blocking(move || {
+                store.with_turn_operation_claim(Some(&key_fingerprint), || {
+                    let path = store.thread_create_operation_path(&key_fingerprint)?;
+                    let mut binding = match read_store_file(&path) {
+                        Ok(raw) => {
+                            let binding: RuntimeThreadCreateBinding = serde_json::from_str(&raw)?;
+                            binding.validate()?;
+                            anyhow::ensure!(
+                                binding.operation_key_fingerprint == key_fingerprint,
+                                "thread creation operation does not match its binding"
+                            );
+                            if binding.request_fingerprint != request_fingerprint {
+                                return Err(RuntimeThreadCreateConflict.into());
+                            }
+                            binding
+                        }
+                        Err(error)
+                            if error.downcast_ref::<std::io::Error>().is_some_and(|error| {
+                                error.kind() == std::io::ErrorKind::NotFound
+                            }) =>
+                        {
+                            let binding = RuntimeThreadCreateBinding {
+                                schema_version: 1,
+                                operation_key_fingerprint: key_fingerprint.clone(),
+                                request_fingerprint,
+                                thread_id: thread.id.clone(),
+                                created_at: thread.created_at,
+                                committed: false,
+                            };
+                            binding.validate()?;
+                            write_json_atomic(&path, &binding)?;
+                            binding
+                        }
+                        Err(error) => return Err(error),
+                    };
+                    if binding.committed {
+                        return Ok((store.load_thread(&binding.thread_id)?, None));
+                    }
+                    let started = store
+                        .contains_event(&binding.thread_id, &RuntimeEventMatch::ThreadStarted)?;
+                    let thread_path = store.thread_path(&binding.thread_id)?;
+                    let thread = if thread_path.try_exists()? {
+                        store.load_thread(&binding.thread_id)?
+                    } else {
+                        anyhow::ensure!(
+                            !started && store.list_turns_for_thread(&binding.thread_id)?.is_empty(),
+                            "reserved thread data is missing; recovery required"
+                        );
+                        let mut thread = thread;
+                        thread.id.clone_from(&binding.thread_id);
+                        thread.created_at = binding.created_at;
+                        thread.updated_at = binding.created_at;
+                        store.save_thread(&thread)?;
+                        thread
+                    };
+                    let event = if started {
+                        None
+                    } else {
+                        Some(store.append_event_transaction(
+                            thread.id.clone(),
+                            None,
+                            None,
+                            "thread.started".into(),
+                            json!({ "thread": thread }),
+                            EVENT_TRANSACTION_LOCK_TIMEOUT,
+                        )?)
+                    };
+                    binding.committed = true;
+                    write_json_atomic(&path, &binding)?;
+                    Ok((thread, event))
+                })
+            })
+            .await
+            .context("Runtime thread creation worker failed")??;
+            if let Some(event) = event {
+                let _ = self.event_tx.send(event);
+            }
+            return Ok(thread);
+        }
         self.store.save_thread(&thread)?;
         if let Err(error) = self
             .emit_event(
@@ -11695,6 +11895,15 @@ impl RuntimeThreadManager {
                 .store
                 .load_thread(id)
                 .with_context(|| format!("Thread not found: {id}"))?;
+            if req.expected_idle == Some(true)
+                && active
+                    .engines
+                    .get(id)
+                    .and_then(|state| state.active_turn.as_ref())
+                    .is_some()
+            {
+                bail!("thread '{id}' already has an active turn; finish it before this update");
+            }
             // Shell opt-in broadens only an idle conversation. Check while
             // holding the same active + record locks used by turn admission.
             if req.allow_shell == Some(true)
@@ -12036,8 +12245,9 @@ impl RuntimeThreadManager {
         validate_runtime_turn_operation_key(key)?;
         validate_sha256_fingerprint(request_digest, "history request digest")?;
         validate_sha256_fingerprint(history_digest, "history digest")?;
-        let fingerprint =
-            crate::hashing::sha256_hex(format!("codewhale:history-operation:v1\0{key}").as_bytes());
+        let fingerprint = codewhale_runtime::hashing::sha256_hex(
+            format!("codewhale:history-operation:v1\0{key}").as_bytes(),
+        );
         self.store
             .with_turn_operation_claim(Some(&fingerprint), || {
                 if let Some(operation) = self.store.load_history_operation(&fingerprint)? {
@@ -12115,8 +12325,9 @@ impl RuntimeThreadManager {
         key: &str,
     ) -> Result<Option<RuntimeHistoryOperation>> {
         validate_runtime_turn_operation_key(key)?;
-        let fingerprint =
-            crate::hashing::sha256_hex(format!("codewhale:history-operation:v1\0{key}").as_bytes());
+        let fingerprint = codewhale_runtime::hashing::sha256_hex(
+            format!("codewhale:history-operation:v1\0{key}").as_bytes(),
+        );
         let operation = self.store.load_history_operation(&fingerprint)?;
         if let Some(operation) = operation.as_ref() {
             let binding = self.session_store_binding();
@@ -12321,8 +12532,8 @@ impl RuntimeThreadManager {
             "invalid imported goal source"
         );
         source.validate_stall_state().map_err(anyhow::Error::msg)?;
-        let source_digest = crate::hashing::sha256_hex(
-            crate::client::canonical_json(&serde_json::to_value(&source)?).as_bytes(),
+        let source_digest = codewhale_runtime::hashing::sha256_hex(
+            codewhale_runtime::hashing::canonical_json(&serde_json::to_value(&source)?).as_bytes(),
         );
         let mut target = source;
         target
@@ -12333,8 +12544,8 @@ impl RuntimeThreadManager {
             target.pause_reason = None;
         }
         target.normalize_restored_stall_state();
-        let target_digest = crate::hashing::sha256_hex(
-            crate::client::canonical_json(&serde_json::to_value(&target)?).as_bytes(),
+        let target_digest = codewhale_runtime::hashing::sha256_hex(
+            codewhale_runtime::hashing::canonical_json(&serde_json::to_value(&target)?).as_bytes(),
         );
         let fingerprint = operation.key_fingerprint.clone();
         self.store
@@ -12438,7 +12649,7 @@ impl RuntimeThreadManager {
 
     /// Lock order: `config_admission` (held by the caller) before `active`,
     /// matching turn admission and config reload.
-    async fn reject_active_turns_in_workspace(&self, workspace: &Path) -> Result<()> {
+    pub(crate) async fn reject_active_turns_in_workspace(&self, workspace: &Path) -> Result<()> {
         // A workspace directory that no longer exists cannot host a running
         // tool; compare the recorded path as-is in that case.
         let workspace = workspace
@@ -12836,7 +13047,7 @@ impl RuntimeThreadManager {
                 "native fork full graph exceeds entry bound; source retained"
             );
             crate::session_manager::SavedSession::import_foreign(
-                crate::session_tree::SessionImportContainer::new(
+                codewhale_runtime::session_tree::SessionImportContainer::new(
                     "native-fork-validation".into(),
                     journal,
                     None,
@@ -15190,6 +15401,16 @@ impl RuntimeThreadManager {
                 "The agent model requires an exact account provider and model");
         }
         let auto_model = requested_model.trim().eq_ignore_ascii_case("auto");
+        if !auto_model
+            && let Ok(identity) = self.provider_identity_for_thread(&cfg_snapshot, &route_thread)
+        {
+            crate::provider_lake::refresh_unverified_local_context(
+                &cfg_snapshot,
+                &identity,
+                &requested_model,
+            )
+            .await;
+        }
         if !image_blocks.is_empty() && (requested_model.is_empty() || requested_model.trim() != requested_model) {
             bail!("image inputs require an exact nonempty named model");
         }
@@ -15237,21 +15458,21 @@ impl RuntimeThreadManager {
                 req.max_output_tokens,
             )?;
             let request_fingerprint = if let Some(workspace) = expected_workspace.as_ref() {
-                crate::hashing::sha256_hex(crate::client::canonical_json(&json!({
+                codewhale_runtime::hashing::sha256_hex(codewhale_runtime::hashing::canonical_json(&json!({
                     "domain": "codewhale:selected-workspace-turn:v1",
                     "historical_fingerprint": request_fingerprint,
                     "expected_workspace": workspace,
                 })).as_bytes())
             } else { request_fingerprint };
             let request_fingerprint = if let Some(snapshot) = &req.profile_constitution {
-                crate::hashing::sha256_hex(crate::client::canonical_json(&json!({
+                codewhale_runtime::hashing::sha256_hex(codewhale_runtime::hashing::canonical_json(&json!({
                     "domain": "codewhale:profile-constitution-turn:v1",
                     "historical_fingerprint": request_fingerprint,
                     "profile_constitution": snapshot,
                 })).as_bytes())
             } else { request_fingerprint };
             let request_fingerprint = if let Some(owner) = &req.account_model_owner {
-                crate::hashing::sha256_hex(crate::client::canonical_json(&json!({
+                codewhale_runtime::hashing::sha256_hex(codewhale_runtime::hashing::canonical_json(&json!({
                     "domain": "codewhale:account-model-owner-turn:v1",
                     "historical_fingerprint": request_fingerprint,
                     "account_model_owner": owner,
@@ -16240,13 +16461,13 @@ impl RuntimeThreadManager {
                     .flatten()
                     .map(|toml_cfg| {
                         crate::network_policy::NetworkPolicyDecider::with_default_audit(
-                            toml_cfg.into_runtime(),
+                            crate::network_policy::NetworkPolicy::from(toml_cfg),
                         )
                     });
             let lsp_config = (!isolated_chat)
                 .then(|| cfg.lsp.clone())
                 .flatten()
-                .map(crate::config::LspConfigToml::into_runtime);
+                .map(crate::lsp::LspConfig::from);
             let max_subagents = cfg
                 .max_subagents_for_provider(&route_identity)
                 .clamp(1, MAX_SUBAGENTS);
@@ -16323,7 +16544,7 @@ impl RuntimeThreadManager {
             };
             let mut features = cfg.features();
             if self.host_profile.is_acp() {
-                features.disable(crate::features::Feature::Mcp);
+                features.disable(codewhale_runtime::features::Feature::Mcp);
             }
             let engine_cfg = EngineConfig {
                 model: route_model.clone(),
@@ -16375,7 +16596,8 @@ impl RuntimeThreadManager {
                 subagents_enabled: !isolated_chat
                     && cfg.subagents_enabled_for_provider(&route_identity),
                 features,
-                auto_review_policy: cfg.auto_review_policy(),
+                auto_review_policy:
+                    crate::core::authority::auto_review::AutoReviewPolicy::from_config(&cfg),
                 compaction,
                 todos: new_shared_todo_list(),
                 plan_state: new_shared_plan_state(),
@@ -16411,7 +16633,7 @@ impl RuntimeThreadManager {
                     hook_executor: Some(Arc::clone(&thread_hooks)),
                     handle_store: crate::tools::handle::new_shared_handle_store(),
                     rlm_sessions: crate::rlm::session::new_shared_rlm_session_store(),
-                    media_originals_dir: crate::media_originals::default_store_dir(),
+                    media_originals_dir: codewhale_runtime::media_originals::default_store_dir(),
                 },
                 subagent_model_overrides: if isolated_chat {
                     HashMap::new()
@@ -16446,7 +16668,7 @@ impl RuntimeThreadManager {
                     read_only_roots: cfg.bwrap_ro_roots.clone(),
                     device_roots: cfg.bwrap_dev_roots.clone(),
                 },
-                read_denylist: cfg.read_denylist(),
+                read_denylist: crate::sandbox::read_guard::ReadDenylist::from_config(&cfg),
                 memory_enabled: !isolated_chat && cfg.memory_enabled(),
                 memory_path: cfg.memory_path(),
                 speech_output_dir: cfg.speech_output_dir(),
@@ -16481,7 +16703,7 @@ impl RuntimeThreadManager {
                 } else {
                     cfg.tools_always_load()
                 },
-                user_input_limits: cfg.user_input_limits(),
+                user_input_limits: crate::tools::user_input::UserInputLimits::from_config(&cfg),
                 user_input_timeout: cfg.user_input_timeout(),
                 goal_max_steps: Some(cfg.goal_max_steps()),
                 tools: (!isolated_chat).then(|| cfg.tools.clone()).flatten(),
@@ -16816,7 +17038,7 @@ impl RuntimeThreadManager {
                     read_only_roots: cfg.bwrap_ro_roots.clone(),
                     device_roots: cfg.bwrap_dev_roots.clone(),
                 },
-                cfg.effective_sandbox_denied_read_paths(),
+                crate::sandbox::read_guard::ReadDenylist::from_config(&cfg).subtree_paths(),
             )
         };
         let mut active = self.active.lock().await;
@@ -17549,6 +17771,7 @@ impl RuntimeThreadManager {
         let mut saw_engine_activity = false;
         let mut saw_turn_started = false;
         let mut engine_turn_id: Option<String> = None;
+        let mut dispatched_route: Option<EffectiveRouteEnvelope> = None;
         let mut pending_events: VecDeque<EngineEvent> = VecDeque::new();
         let mut event_channel_closed = false;
         // Raw tool call IDs whose external approval this turn already settled.
@@ -17698,6 +17921,9 @@ impl RuntimeThreadManager {
                 } => {
                     saw_turn_started = true;
                     engine_turn_id = Some(started_turn_id);
+                    let started_route = route
+                        .as_ref()
+                        .and_then(crate::core::events::TurnRoute::cost_envelope);
                     {
                         let _turn_mutation = self.store.turn_mutation.lock();
                         let mut turn = self.store.load_turn(&turn_id)?;
@@ -17707,13 +17933,13 @@ impl RuntimeThreadManager {
                         // A lifecycle start carries no billing envelope, so
                         // there is nothing to persist yet. The dispatch event
                         // below is the only writer of effective-route columns.
-                        if let Some(route) = route
-                            .as_ref()
-                            .and_then(crate::core::events::TurnRoute::cost_envelope)
-                        {
-                            turn.persist_effective_route(&route);
+                        if let Some(route) = started_route.as_ref() {
+                            turn.persist_effective_route(route);
                         }
                         self.store.save_turn(&turn)?;
+                    }
+                    if started_route.is_some() {
+                        dispatched_route = started_route;
                     }
                     self.emit_event(
                         &thread_id,
@@ -17732,14 +17958,20 @@ impl RuntimeThreadManager {
                         .as_deref()
                         .is_some_and(|started| started == dispatched_turn_id)
                     {
-                        let _turn_mutation = self.store.turn_mutation.lock();
-                        let mut turn = self.store.load_turn(&turn_id)?;
-                        // Preserve whatever status the store already has (including
-                        // a concurrent terminal settle); only refresh route fields.
-                        if let Some(envelope) = route.cost_envelope() {
-                            turn.persist_effective_route(&envelope);
+                        let envelope = route.cost_envelope();
+                        {
+                            let _turn_mutation = self.store.turn_mutation.lock();
+                            let mut turn = self.store.load_turn(&turn_id)?;
+                            // Preserve whatever status the store already has (including
+                            // a concurrent terminal settle); only refresh route fields.
+                            if let Some(envelope) = envelope.as_ref() {
+                                turn.persist_effective_route(envelope);
+                            }
+                            self.store.save_turn(&turn)?;
                         }
-                        self.store.save_turn(&turn)?;
+                        if envelope.is_some() {
+                            dispatched_route = envelope;
+                        }
                     }
                 }
                 EngineEvent::MessageStarted { .. } => {
@@ -17993,7 +18225,7 @@ impl RuntimeThreadManager {
                         activity.observed_at = now;
                         let (name, mut payload) = match operation {
                             EngineEvent::OperationActivityStarted { span_id, activity_kind, action_id } => {
-                                let span_id = format!("operation:{}", crate::hashing::sha256_hex(span_id));
+                                let span_id = format!("operation:{}", codewhale_runtime::hashing::sha256_hex(span_id));
                                 let action_id = action_id.filter(|id| !id.is_empty() && id.len() <= 256 && !id.chars().any(char::is_control));
                                 if !activity.active.iter().any(|span| span.span_id == span_id) {
                                     if activity.active.len() < 256 {
@@ -18007,7 +18239,7 @@ impl RuntimeThreadManager {
                                 ("operation.activity_started", json!({"span_id":span_id,"activity_kind":activity_kind,"action_id":action_id,"observed_at":now}))
                             }
                             EngineEvent::OperationActivityCompleted { span_id, activity_kind, action_id, outcome } => {
-                                let span_id = format!("operation:{}", crate::hashing::sha256_hex(span_id));
+                                let span_id = format!("operation:{}", codewhale_runtime::hashing::sha256_hex(span_id));
                                 let action_id = action_id.filter(|id| !id.is_empty() && id.len() <= 256 && !id.chars().any(char::is_control));
                                 activity.active.retain(|span| span.span_id != span_id);
                                 activity.last_completed = Some(RuntimeOperationCompletion {
@@ -19180,6 +19412,16 @@ impl RuntimeThreadManager {
                     )
                     .await?;
                 }
+                EngineEvent::ProviderRequestReceipt { receipt } => {
+                    self.emit_event(
+                        &thread_id,
+                        Some(&turn_id),
+                        None,
+                        "turn.provider_request",
+                        receipt,
+                    )
+                    .await?;
+                }
                 EngineEvent::TurnUsage {
                     max_output_tokens,
                     usage,
@@ -19188,6 +19430,8 @@ impl RuntimeThreadManager {
                     request_ms,
                     finish_reason: _,
                 } => {
+                    let cost = priced_step_usage(dispatched_route.as_ref(), &usage);
+                    let billed_prompt = billed_prompt_tokens(&usage);
                     self.emit_event(
                         &thread_id,
                         Some(&turn_id),
@@ -19197,6 +19441,8 @@ impl RuntimeThreadManager {
                             "usage": usage, "duration_ms": duration_ms,
                             "first_token_ms": first_token_ms, "request_ms": request_ms,
                             "maxOutputTokens": max_output_tokens,
+                            "billed_prompt_tokens": billed_prompt,
+                            "cost": cost,
                         }),
                     )
                     .await?;
@@ -20381,7 +20627,7 @@ fn runtime_policy_with_overrides(
 /// Compatibility parser retained for focused Runtime tests.
 #[cfg(test)]
 fn parse_mode_opt(mode: &str) -> Option<AppMode> {
-    crate::runtime_policy::parse_runtime_mode(mode)
+    codewhale_runtime::runtime_policy::parse_runtime_mode(mode)
 }
 
 #[cfg(test)]

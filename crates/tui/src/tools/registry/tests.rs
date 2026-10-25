@@ -83,7 +83,7 @@ async fn shell_denial_reaches_registry_and_direct_delegation_sinks() {
 #[test]
 fn shell_denial_keeps_the_existing_bounded_child_read_only_exception() {
     use crate::core::engine::tool_catalog::enforce_tool_denial;
-    use crate::worker_profile::ShellPolicy;
+    use codewhale_agent_contract::worker_profile::ShellPolicy;
     let tmp = tempdir().unwrap();
     let mut context = ToolContext::new(tmp.path()).with_shell_policy(ShellPolicy::ReadOnly);
     context.disallowed_tools = vec!["Bash".into()];
@@ -669,7 +669,7 @@ fn builder_registers_speech_alias_tools() {
 #[test]
 fn agent_runtime_surface_skips_speech_without_a_client() {
     use super::AgentToolSurfaceOptions;
-    use crate::worker_profile::ShellPolicy;
+    use codewhale_agent_contract::worker_profile::ShellPolicy;
     let tmp = tempdir().expect("tempdir");
     let ctx = ToolContext::new(tmp.path().to_path_buf());
     let registry = ToolRegistryBuilder::new()
@@ -688,7 +688,7 @@ fn agent_runtime_surface_skips_speech_without_a_client() {
 #[test]
 fn model_visible_tool_descriptions_name_no_vendor() {
     use super::AgentToolSurfaceOptions;
-    use crate::worker_profile::ShellPolicy;
+    use codewhale_agent_contract::worker_profile::ShellPolicy;
     let tmp = tempdir().expect("tempdir");
     let ctx = ToolContext::new(tmp.path().to_path_buf());
     let mut options = AgentToolSurfaceOptions::new(ShellPolicy::Full);
@@ -1001,7 +1001,7 @@ fn machine_verifier_catalog_and_dispatch_add_only_bounded_run() {
     let tmp = tempdir().expect("tempdir");
     let registry = ToolRegistryBuilder::new()
         .with_agent_tools_policy(
-            crate::worker_profile::ShellPolicy::None,
+            codewhale_agent_contract::worker_profile::ShellPolicy::None,
             crate::tools::user_input::UserInputLimits::default(),
         )
         .with_web_tools()
@@ -1719,7 +1719,7 @@ fn with_verify_tool_registers_and_exposes_verify() {
 #[test]
 fn agent_runtime_surface_gates_verify_on_option() {
     use super::AgentToolSurfaceOptions;
-    use crate::worker_profile::ShellPolicy;
+    use codewhale_agent_contract::worker_profile::ShellPolicy;
 
     let build_surface = |verify_enabled: bool| {
         let tmp = tempdir().expect("tempdir");
@@ -1750,7 +1750,7 @@ fn agent_runtime_surface_gates_verify_on_option() {
 #[test]
 fn agent_runtime_surface_gates_request_plugin_install_on_option() {
     use super::AgentToolSurfaceOptions;
-    use crate::worker_profile::ShellPolicy;
+    use codewhale_agent_contract::worker_profile::ShellPolicy;
 
     // Policy rule 11: hosts without the TUI (exec, runtime API) and sessions
     // with contextual tips off get no plugin-offer tool in any mode.
@@ -1781,7 +1781,7 @@ fn test_builder_with_agent_tools_policy_includes_finance() {
 
     let registry = ToolRegistryBuilder::new()
         .with_agent_tools_policy(
-            crate::worker_profile::ShellPolicy::None,
+            codewhale_agent_contract::worker_profile::ShellPolicy::None,
             crate::tools::user_input::UserInputLimits::default(),
         )
         .build(ctx);
@@ -1796,7 +1796,7 @@ fn agent_tools_with_shell_policy_none_excludes_shell_tools() {
 
     let registry = ToolRegistryBuilder::new()
         .with_agent_tools_policy(
-            crate::worker_profile::ShellPolicy::None,
+            codewhale_agent_contract::worker_profile::ShellPolicy::None,
             crate::tools::user_input::UserInputLimits::default(),
         )
         .build(ctx);
@@ -1824,7 +1824,7 @@ fn agent_tools_with_shell_policy_readonly_exposes_only_run_only_bash() {
 
     let registry = ToolRegistryBuilder::new()
         .with_agent_tools_policy(
-            crate::worker_profile::ShellPolicy::ReadOnly,
+            codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly,
             crate::tools::user_input::UserInputLimits::default(),
         )
         .build(ctx);
@@ -1881,7 +1881,7 @@ fn machine_readonly_catalog_is_exactly_the_evidence_profile() {
     let tmp = tempdir().expect("tempdir");
     let registry = ToolRegistryBuilder::new()
         .with_agent_tools_policy(
-            crate::worker_profile::ShellPolicy::ReadOnly,
+            codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly,
             crate::tools::user_input::UserInputLimits::default(),
         )
         .with_web_tools()
@@ -1977,7 +1977,7 @@ fn agent_tools_with_shell_policy_full_includes_shell_tools() {
 
     let registry = ToolRegistryBuilder::new()
         .with_agent_tools_policy(
-            crate::worker_profile::ShellPolicy::Full,
+            codewhale_agent_contract::worker_profile::ShellPolicy::Full,
             crate::tools::user_input::UserInputLimits::default(),
         )
         .build(ctx);
@@ -2283,7 +2283,9 @@ fn runtime_surface_hardening_plugin_collisions_preserve_registered_tools() {
     )));
     let plugin_origin = format!(
         "plugin script tool.sh ({})",
-        crate::safe_label::SafeLabel::identifier(&tmp.path().join("tool.sh").to_string_lossy())
+        codewhale_runtime::safe_label::SafeLabel::identifier(
+            &tmp.path().join("tool.sh").to_string_lossy()
+        )
     );
     assert!(errors.contains(&format!("plugin_origin={plugin_origin:?}")));
     assert!(!errors.contains(tmp.path().to_string_lossy().as_ref()));

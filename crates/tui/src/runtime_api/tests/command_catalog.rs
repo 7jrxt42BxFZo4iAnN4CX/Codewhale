@@ -113,7 +113,7 @@ async fn get_v1_commands_serves_the_catalog_over_http() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let body: serde_json::Value = client
         .get(format!("http://{addr}/v1/commands"))
@@ -199,7 +199,7 @@ async fn get_v1_hooks_serves_the_runtime_hook_set() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let body: serde_json::Value = client
         .get(format!("http://{addr}/v1/hooks"))
         .send()

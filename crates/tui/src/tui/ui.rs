@@ -13,12 +13,12 @@ use std::sync::{
 use std::time::{Duration, Instant};
 
 use crate::error_taxonomy::{ErrorCategory, ErrorEnvelope, ErrorSeverity};
-use crate::resource_telemetry::estimate_output_tokens_from_text;
 use anyhow::{Context, Result};
 use codewhale_config::AppMode;
 use codewhale_core::ContextReference;
 use codewhale_execpolicy::ApprovalMode;
 use codewhale_release::InstallMethod;
+use codewhale_runtime::resource_telemetry::estimate_output_tokens_from_text;
 // On Windows the push/pop helpers write the escapes directly; crossterm's
 // PushKeyboardEnhancementFlags / PopKeyboardEnhancementFlags commands are
 // never referenced, so the imports are gated to avoid -D warnings failures.
@@ -46,7 +46,6 @@ use tracing;
 #[cfg(target_os = "windows")]
 use windows::Win32::System::Console::{GetConsoleMode, GetStdHandle, SetConsoleMode};
 
-use crate::audit::log_sensitive_event;
 use crate::automation_manager::{AutomationManager, AutomationSchedulerConfig, spawn_scheduler};
 use crate::client::{
     CACHE_WARMUP_MAX_TOKENS, CacheWarmupKey, CodewhaleClient, PromptInspection,
@@ -110,6 +109,7 @@ use crate::work_graph::task_owner_snapshot;
 use codewhale_localization::{MessageId, tr};
 use codewhale_models::{ContentBlock, Message, MessageRequest, SystemPrompt, Usage};
 use codewhale_palette as palette;
+use codewhale_runtime::audit::log_sensitive_event;
 // SelectionAutoscroll unused
 use crate::tui::motion::{FrameRequester, MotionMode};
 use crate::tui::session_picker::SessionPickerView;
@@ -631,7 +631,7 @@ const BALANCE_FETCH_COOLDOWN: Duration = Duration::from_secs(60);
 /// Shared `reqwest::Client` for balance fetches so connection pools are
 /// reused across successive background polls.
 static BALANCE_CLIENT: LazyLock<::reqwest::Client> = LazyLock::new(|| {
-    crate::tls::reqwest_client_builder()
+    codewhale_release::tls::reqwest_client_builder()
         .timeout(Duration::from_secs(10))
         .build()
         .unwrap_or_default()
@@ -867,7 +867,7 @@ fn open_fleet_setup_target(app: &mut App, config: &Config, member_id: Option<&st
                 );
                 return;
             };
-            let fleet_name = crate::safe_label::SafeLabel::phrase(&name);
+            let fleet_name = codewhale_runtime::safe_label::SafeLabel::phrase(&name);
             let picker = if member_id.is_some() {
                 let (editor_id, target) = view.direct_assignment();
                 let (role, scope) = view.assignment_context();
@@ -1148,7 +1148,7 @@ fn mark_active_turn_cancelled_locally(app: &mut App) {
     app.runtime_turn_id = None;
     app.runtime_turn_status = None;
     app.suppress_stream_events_until_turn_complete = true;
-    crate::retry_status::clear();
+    codewhale_runtime::retry_status::clear();
     crate::tui::notifications::clear_taskbar_progress();
     crate::tui::notifications::stop_title_animation_quietly();
 }

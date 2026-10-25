@@ -227,27 +227,6 @@ pub(crate) fn config_credential_shaped_keys(raw: &str) -> Vec<String> {
     flagged
 }
 
-/// Return only the non-secret network authority of a configured URL.
-///
-/// Userinfo, path, query keys and values, and fragments are all omitted because
-/// every one of those components can carry credentials. Parse failures also
-/// omit the original input rather than echoing an attacker-controlled value.
-pub(crate) fn structural_url_authority(url: &str) -> String {
-    let Some(parsed) = reqwest::Url::parse(url).ok() else {
-        return "unparseable (configured value omitted)".to_string();
-    };
-    let Some(host) = parsed.host_str() else {
-        return "unparseable (configured value omitted)".to_string();
-    };
-    // Url::host_str already includes the brackets around an IPv6 address.
-    let mut authority = format!("{}://{host}", parsed.scheme());
-    if let Some(port) = parsed.port() {
-        authority.push(':');
-        authority.push_str(&port.to_string());
-    }
-    authority
-}
-
 /// Explicit live operations requested for one doctor invocation.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct DoctorProbeRequest {
@@ -333,7 +312,7 @@ pub(crate) async fn doctor_search_probe(
     }
     if !config
         .features()
-        .enabled(crate::features::Feature::WebSearch)
+        .enabled(codewhale_runtime::features::Feature::WebSearch)
     {
         return DoctorSearchProbeReport::FeatureDisabled;
     }
@@ -347,12 +326,12 @@ pub(crate) async fn doctor_search_probe(
         Ok(target) => target,
         Err(error) => return DoctorSearchProbeReport::ConfigurationError(error),
     };
-    let authority = structural_url_authority(target.url.as_str());
+    let authority = codewhale_config::structural_url_authority(target.url.as_str());
 
     if let Some(policy) = config.network.clone().map(|network| {
         // Doctor is a read-only diagnostic. Evaluate the same typed policy as
         // web_search, but do not attach the runtime audit writer.
-        NetworkPolicyDecider::new(network.into_runtime(), None)
+        NetworkPolicyDecider::new(crate::network_policy::NetworkPolicy::from(network), None)
     }) {
         match policy.evaluate(&target.host, "web_search") {
             Decision::Allow => {}
@@ -363,7 +342,7 @@ pub(crate) async fn doctor_search_probe(
         }
     }
 
-    let client = match crate::tls::reqwest_client_builder()
+    let client = match codewhale_release::tls::reqwest_client_builder()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(SEARCH_PROBE_TIMEOUT)
         .timeout(SEARCH_PROBE_TIMEOUT)

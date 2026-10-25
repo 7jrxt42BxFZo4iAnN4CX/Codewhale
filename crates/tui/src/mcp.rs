@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use codewhale_config::McpBackend;
 use futures_util::FutureExt;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -104,8 +105,18 @@ fn reject_linked_workspace_state_path(path: &Path) -> Result<()> {
         .with_context(|| format!("MCP config {} is not safe to write", path.display()))
 }
 
-/// Expand `${NAME}` placeholders in an MCP config value from the process
-/// environment. This lets secrets (API keys, bearer tokens, …) be supplied
+fn mcp_secret_var(
+    reviewed_plugin: Option<&ReviewedPluginMcpSource>,
+    name: &str,
+) -> Result<String, std::env::VarError> {
+    match reviewed_plugin {
+        Some(source) => source.host_environment.var(name),
+        None => std::env::var(name),
+    }
+}
+
+/// Expand `${NAME}` placeholders in an MCP config value from its permitted
+/// environment source. This lets secrets (API keys, bearer tokens, …) be supplied
 /// through environment variables instead of being written in cleartext into
 /// the MCP config file on disk.
 ///
@@ -114,7 +125,7 @@ fn reject_linked_workspace_state_path(path: &Path) -> Result<()> {
 /// echoed into logs or error output.
 fn expand_env_placeholders_with(
     value: &str,
-    environment: Option<&crate::plugins::HostEnvironment>,
+    reviewed_plugin: Option<&ReviewedPluginMcpSource>,
 ) -> Result<String> {
     let mut out = String::new();
     let mut rest = value;
@@ -128,11 +139,9 @@ fn expand_env_placeholders_with(
         if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
             anyhow::bail!("invalid environment placeholder in MCP config value");
         }
-        let env_value = environment
-            .map_or_else(|| std::env::var(name), |env| env.var(name))
-            .with_context(|| {
-                format!("environment variable {name} required by MCP config is not set")
-            })?;
+        let env_value = mcp_secret_var(reviewed_plugin, name).with_context(|| {
+            format!("environment variable {name} required by MCP config is not set")
+        })?;
         out.push_str(&env_value);
         rest = &after[end + 1..];
     }
@@ -151,13 +160,13 @@ fn expand_env_placeholders(value: &str) -> Result<String> {
 fn expand_env_placeholders_map_with_environment(
     values: &HashMap<String, String>,
     context: &str,
-    environment: Option<&crate::plugins::HostEnvironment>,
+    reviewed_plugin: Option<&ReviewedPluginMcpSource>,
 ) -> Result<HashMap<String, String>> {
     let mut expanded = HashMap::with_capacity(values.len());
     for (key, value) in values {
         expanded.insert(
             key.clone(),
-            expand_env_placeholders_with(value, environment)
+            expand_env_placeholders_with(value, reviewed_plugin)
                 .with_context(|| format!("failed to expand MCP {context} value for {key}"))?,
         );
     }
@@ -173,28 +182,28 @@ fn expand_env_placeholders_map(
 }
 
 fn expanded_mcp_stdio_env(config: &McpServerConfig) -> Result<HashMap<String, String>> {
-    let environment = config
-        .reviewed_plugin
-        .as_ref()
-        .map(|source| source.host_environment.as_ref());
-    expand_env_placeholders_map_with_environment(&config.env, "env", environment)
+    expand_env_placeholders_map_with_environment(
+        &config.env,
+        "env",
+        config.reviewed_plugin.as_ref(),
+    )
 }
 
 /// Mirror the exact expanded and sanitized environment applied by the MCP
 /// stdio spawn path, without constructing or starting a process.
 fn mcp_stdio_child_env(config: &McpServerConfig) -> Result<Vec<(OsString, OsString)>> {
     let expanded_env = expanded_mcp_stdio_env(config)?;
-    let overrides = crate::child_env::string_map_env(&expanded_env);
+    let overrides = codewhale_runtime::child_env::string_map_env(&expanded_env);
     Ok(if let Some(source) = config.reviewed_plugin.as_ref() {
         // Plugin reviews name every extra environment source explicitly. Do
         // not silently widen that consent to the compatibility-oriented MCP
         // bootstrap namespace (for example NPM_CONFIG_*).
-        crate::child_env::sanitized_plugin_mcp_env_from(
+        codewhale_runtime::child_env::sanitized_plugin_mcp_env_from(
             source.host_environment.entries().iter().cloned(),
             overrides,
         )
     } else {
-        crate::child_env::sanitized_mcp_env(overrides)
+        codewhale_runtime::child_env::sanitized_mcp_env(overrides)
     })
 }
 
@@ -683,7 +692,7 @@ pub struct McpServerConfig {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ReviewedPluginMcpSource {
-    authority: crate::plugins::types::PluginAuthority,
+    authority: codewhale_config::PluginAuthority,
     approved_remote_endpoint: Option<String>,
     approved_remote_origin: Option<String>,
     host_environment: Arc<crate::plugins::HostEnvironment>,
@@ -699,7 +708,7 @@ impl ReviewedPluginMcpSource {
     }
 
     fn from_authority(
-        authority: crate::plugins::types::PluginAuthority,
+        authority: codewhale_config::PluginAuthority,
         remote_endpoint: Option<&str>,
         host_environment: Arc<crate::plugins::HostEnvironment>,
     ) -> Result<Self> {
@@ -1907,7 +1916,7 @@ async fn prepare_mcp_http_client(
     let oauth_runtime = if config.reviewed_plugin.is_some() {
         None
     } else {
-        match oauth::build_default_headers(&config.headers, &config.env_headers) {
+        match oauth::build_default_headers(config) {
             Ok(default_headers) => {
                 let prepared = tokio::select! {
                     biased;
@@ -3079,7 +3088,7 @@ struct McpToolRoute {
     server_name: String,
     tool_name: String,
     catalog_generation: u64,
-    plugin_authority: Option<crate::plugins::types::PluginAuthority>,
+    plugin_authority: Option<codewhale_config::PluginAuthority>,
 }
 
 /// Model-facing name suffix of the synthetic self-serve OAuth login tool
@@ -3138,24 +3147,6 @@ pub(crate) async fn authenticate_tool_via_pool(
 }
 
 /// Pool of MCP connections for reuse
-/// Protocol owner selected only by user configuration. Rust is the default;
-/// Host explicitly selects the SDK and never falls back to Rust on refusal.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum McpBackend {
-    #[default]
-    Rust,
-    Host,
-}
-impl McpBackend {
-    pub(crate) fn from_config(config: &crate::config::Config) -> Self {
-        config
-            .extension_host
-            .as_ref()
-            .map_or(Self::Rust, |host| host.mcp_backend)
-    }
-}
-
 pub struct McpPool {
     backend: McpBackend,
     /// Immutable operator ceiling; source reloads and shared child pools cannot relax it.
@@ -3236,7 +3227,7 @@ pub(crate) struct McpHandoff {
     connections: Vec<(String, McpServerIdentity, McpConnection)>,
 }
 
-type McpServerIdentity = (u64, Option<crate::plugins::types::PluginAuthority>);
+type McpServerIdentity = (u64, Option<codewhale_config::PluginAuthority>);
 
 fn mcp_server_identity(config: &McpConfig, name: &str) -> Option<McpServerIdentity> {
     config.servers.get(name).map(|server| {
@@ -3495,7 +3486,7 @@ impl McpPool {
     }
 
     pub(crate) fn tool_allowed(&self, name: &str) -> bool {
-        !crate::core::engine::tool_catalog::tool_matches_any_rule(&self.disallowed_tools, name)
+        !codewhale_execpolicy::tool_rules::tool_matches_any_rule(&self.disallowed_tools, name)
     }
 
     fn require_server(&self, server: &str) -> Result<()> {
@@ -3516,7 +3507,7 @@ impl McpPool {
         input: &serde_json::Value,
     ) -> Result<()> {
         anyhow::ensure!(
-            !crate::core::engine::tool_catalog::tool_matches_any_rule(rules, name),
+            !codewhale_execpolicy::tool_rules::tool_matches_any_rule(rules, name),
             "Unknown MCP tool name: {name}"
         );
         if matches!(
@@ -4579,7 +4570,7 @@ impl McpPool {
     ) -> Result<Vec<String>> {
         const MAX_DISCOVERY_SERVERS: usize = 8;
         let regex = match match_kind {
-            "regex" => Some(crate::regex_cache::compile_user_regex(query)?),
+            "regex" => Some(codewhale_runtime::regex_cache::compile_user_regex(query)?),
             "bm25" => None,
             _ => anyhow::bail!("Unsupported tool search match algorithm"),
         };
@@ -4926,7 +4917,7 @@ impl McpPool {
                     .filter(|tool| conn.config().is_tool_enabled(&tool.name))
                     .map(|tool| Self::mcp_model_tool_name(server_name, &tool.name))
                     .filter(|name| {
-                        !crate::core::engine::tool_catalog::tool_matches_any_rule(&rules, name)
+                        !codewhale_execpolicy::tool_rules::tool_matches_any_rule(&rules, name)
                     })
                     .collect();
                 let (status, detail) = match &outcome {
@@ -5827,7 +5818,7 @@ impl McpPool {
                     .get("authenticate_tool")
                     .and_then(serde_json::Value::as_str)
                     .is_some_and(|tool| {
-                        crate::core::engine::tool_catalog::tool_matches_any_rule(rules, tool)
+                        codewhale_execpolicy::tool_rules::tool_matches_any_rule(rules, tool)
                     })
                 {
                     item.as_object_mut()
@@ -5858,7 +5849,7 @@ impl McpPool {
         {
             tools.retain(|name| {
                 name.as_str().is_some_and(|name| {
-                    !crate::core::engine::tool_catalog::tool_matches_any_rule(rules, name)
+                    !codewhale_execpolicy::tool_rules::tool_matches_any_rule(rules, name)
                 })
             });
         }
@@ -6948,7 +6939,7 @@ fn merge_plugin_mcp_servers_from_plugins_with_environment(
         Item = (
             String,
             crate::plugins::types::LoadedPlugin,
-            crate::plugins::types::PluginAuthority,
+            codewhale_config::PluginAuthority,
         ),
     >,
     host_environment: Arc<crate::plugins::HostEnvironment>,
@@ -7040,7 +7031,7 @@ fn merge_plugin_mcp_servers_from_plugins(
         Item = (
             String,
             crate::plugins::types::LoadedPlugin,
-            crate::plugins::types::PluginAuthority,
+            codewhale_config::PluginAuthority,
         ),
     >,
 ) -> Result<McpConfig> {
@@ -7349,7 +7340,12 @@ impl std::error::Error for McpRevisionConflict {}
 fn config_revision(raw: Option<&str>) -> String {
     raw.map_or_else(
         || "mcp-v1-absent".to_owned(),
-        |raw| format!("mcp-v1-{}", crate::hashing::sha256_hex(raw.as_bytes())),
+        |raw| {
+            format!(
+                "mcp-v1-{}",
+                codewhale_runtime::hashing::sha256_hex(raw.as_bytes())
+            )
+        },
     )
 }
 

@@ -355,22 +355,9 @@ fn create_session(
 
     let (prepared, sandbox_confined) =
         prepare_pty_shell(&shell, &workspace, policy.clone(), shell_manager)?;
-    let mut command = portable_pty::CommandBuilder::new(&prepared.command[0]);
-    for arg in &prepared.command[1..] {
-        command.arg(arg);
-    }
-    command.cwd(&prepared.cwd);
-    // Same sanitized environment as the `exec_shell` PTY path; sandbox
-    // markers from `prepared.env` are applied as explicit overrides.
-    crate::child_env::apply_to_pty_command(
-        &mut command,
-        crate::child_env::string_map_env(&prepared.env),
-    );
-    let child = pair
-        .slave
-        .spawn_command(command)
+    let child = prepared
+        .spawn_pty(pair.slave, &prepared.cwd)
         .map_err(|e| format!("failed to start shell {shell}: {e}"))?;
-    drop(pair.slave);
 
     let reader = pair
         .master
@@ -999,7 +986,7 @@ fn timeout_secs(input: &serde_json::Value, key: &str) -> Result<Duration, ToolEr
 fn shell_allowed(context: &ToolContext, name: &str) -> Result<(), ToolError> {
     crate::core::engine::tool_catalog::enforce_tool_denial(context, name, &json!({}))?;
     if matches!(name, "terminal/run" | "terminal/send" | "terminal/reset")
-        && context.shell_policy != crate::worker_profile::ShellPolicy::Full
+        && context.shell_policy != codewhale_agent_contract::worker_profile::ShellPolicy::Full
     {
         return Err(ToolError::permission_denied(
             "Persistent terminal execution and input require full shell permission.",

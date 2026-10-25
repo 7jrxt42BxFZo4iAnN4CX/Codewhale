@@ -700,7 +700,7 @@ impl ProviderDashboardRow {
         let model_origin = ProviderModelOrigin::for_provider(provider, has_configured_model);
         // One sourced resolution per row: the picker must be able to say WHERE
         // it looked, not just that it found nothing (pi-mono's `AuthResult`
-        // source, ported in `crate::credentials`).
+        // source, ported in `codewhale_runtime::credentials`).
         let credential_resolution = crate::config::resolve_credential_source(config, &identity);
         let has_key = if provider == ProviderKind::Custom {
             custom_provider_has_auth(configured)
@@ -711,7 +711,7 @@ impl ProviderDashboardRow {
         // the exact path is disclosed only inside the explicit reuse
         // confirmation.
         let credential_source = match &credential_resolution.source {
-            crate::credentials::CredentialSource::ExternalGrant { cli, .. } => {
+            codewhale_runtime::credentials::CredentialSource::ExternalGrant { cli, .. } => {
                 format!("{cli} credentials (read-only)")
             }
             // Name the signed-in subscription account (label only) so two
@@ -721,7 +721,7 @@ impl ProviderDashboardRow {
             // that structural read (`usable_sign_in`, formerly
             // `credentials_present`) still runs synchronously when a row is
             // built, as it did before #6715; naming the account adds no read.
-            crate::credentials::CredentialSource::OAuth {
+            codewhale_runtime::credentials::CredentialSource::OAuth {
                 account: Some(account),
                 ..
             } => format!("{} · {account}", credential_resolution.source.label()),
@@ -788,7 +788,7 @@ impl ProviderDashboardRow {
                     .flatten()
             })
             .filter(|model| {
-                crate::provider_lake::configured_model_for_route(
+                crate::config::configured_model_for_route(
                     config,
                     provider,
                     &provider_id,
@@ -920,7 +920,7 @@ impl ProviderDashboardRow {
             capabilities.context_window = Some(context_window);
         }
         capabilities.context_window_source = route_context_window_source;
-        if let Some(declared) = crate::provider_lake::configured_model_for_route(
+        if let Some(declared) = crate::config::configured_model_for_route(
             config,
             provider,
             &provider_id,
@@ -1602,7 +1602,7 @@ fn missing_auth_message(
     provider: ProviderKind,
     configured: Option<&crate::config::ProviderConfig>,
     provider_id: &str,
-    resolution: &crate::credentials::CredentialResolution,
+    resolution: &codewhale_runtime::credentials::CredentialResolution,
 ) -> String {
     if provider == ProviderKind::Moonshot
         && configured.is_some_and(crate::config::provider_config_uses_kimi_imported_token)
@@ -1656,7 +1656,7 @@ fn configured_model_cost_label(config: &Config, row: &ProviderDashboardRow, mode
         crate::route_billing::BillingPresentation::Local => return "local".to_string(),
         _ => {}
     }
-    if let Some(declared) = crate::provider_lake::configured_model_for_route(
+    if let Some(declared) = crate::config::configured_model_for_route(
         config,
         row.provider,
         &row.provider_id,
@@ -1687,8 +1687,12 @@ fn model_cost_label(provider: ProviderKind, model: &str) -> String {
     // DeepSeek bills by time of day (`pricing_withheld` in
     // catalog_corrections.json), and live roster rows carry no price at all.
     // Ask pricing.rs before calling the price unknown, as `/model` does.
-    crate::pricing::model_rate_label(provider, model, crate::pricing::CostCurrency::Usd)
-        .map_or(label, |rate| format!("{rate} per 1M"))
+    crate::pricing::model_rate_label(
+        provider,
+        model,
+        codewhale_config::pricing::CostCurrency::Usd,
+    )
+    .map_or(label, |rate| format!("{rate} per 1M"))
 }
 
 /// Slice D two-pane picker: `(model, per-model cost, is_default_route)` rows
@@ -10159,7 +10163,7 @@ mod tests {
             ..Default::default()
         };
 
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         assert!(!has_api_key_for(
             &config,
             &(config).test_identity_for_kind(ProviderKind::OpenaiCodex)
@@ -10279,7 +10283,7 @@ mod tests {
             crate::route_billing::BillingPresentation::Metered
         );
         assert_eq!(
-            crate::external_credentials::side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::side_effect_trap_counts(),
             (0, 0),
             "picker, readiness, billing, and model inventory must not inspect inactive external files"
         );
@@ -10350,7 +10354,7 @@ mod tests {
             ..Default::default()
         };
 
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         let mut picker = ProviderPickerView::new(ProviderKind::Deepseek, &config);
         move_to_provider(&mut picker, ProviderKind::OpenaiCodex);
         let quoted = codewhale_config::quote_os_path(&codex_path);
@@ -10373,7 +10377,7 @@ mod tests {
         ));
         assert_eq!(picker.stage, Stage::ChatgptAuthChoice);
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (0, 0, 0, 0, 0),
             "ordinary selection must not touch external credential state"
         );
@@ -10403,7 +10407,7 @@ mod tests {
         );
         // …and even rendering the confirmation performed no external I/O.
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (0, 0, 0, 0, 0),
             "disclosure must not validate or read before affirmative confirmation"
         );
@@ -10459,7 +10463,7 @@ mod tests {
             ..Default::default()
         };
 
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         let mut picker = ProviderPickerView::new(ProviderKind::Deepseek, &config);
         move_to_provider(&mut picker, ProviderKind::OpenaiCodex);
 
@@ -10469,7 +10473,7 @@ mod tests {
         ));
         assert_eq!(picker.stage, Stage::ExternalConsentRevokeConfirm);
         assert_eq!(
-            crate::external_credentials::complete_side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
             (0, 0, 0, 0, 0),
             "revocation disclosure must not inspect the external file"
         );

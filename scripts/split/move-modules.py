@@ -7,10 +7,9 @@ For each named module this:
    `crates/runtime/src/`;
 2. deletes its `mod <m>;` / `pub mod <m>;` line from the TUI `lib.rs` and adds
    `pub mod <m>;` to the runtime `lib.rs` (sorted);
-3. adds `<m>` to the TUI's single path-alias block
-   `use codewhale_runtime::{...};`, so every `crate::<m>::...` path in the TUI
-   keeps resolving without a content change (the alias is deleted at the end
-   of the split by rewriting those paths);
+3. rewrites every `crate::<m>` path in `crates/tui/src` to
+   `codewhale_runtime::<m>` and, when the TUI `lib.rs` uses `<m>::` unqualified,
+   adds `use codewhale_runtime::<m>;` there;
 4. sweeps every string occurrence of the old path across the repository
    (`crates/tui/src/<m>` and `tui/src/<m>`), found with `git grep`.
    CHANGELOG files are history and are left alone.
@@ -36,8 +35,6 @@ TUI_SRC = REPO_ROOT / "crates" / "tui" / "src"
 RUNTIME_SRC = REPO_ROOT / "crates" / "runtime" / "src"
 TUI_LIB = TUI_SRC / "lib.rs"
 RUNTIME_LIB = RUNTIME_SRC / "lib.rs"
-ALIAS_START = "use codewhale_runtime::{"
-ALIAS_MARKER = "// Runtime split path alias"
 
 
 def git(*args: str, check: bool = True) -> str:
@@ -83,17 +80,35 @@ def add_runtime_mod(text: str, module: str) -> str:
     return "".join(lines)
 
 
-def add_alias(text: str, module: str) -> str:
-    start = text.find(ALIAS_START)
-    if start < 0:
-        raise SystemExit(
-            "move-modules: the TUI lib.rs has no `use codewhale_runtime::{...};` alias block"
-        )
-    end = text.index("};", start)
-    names = {n.strip() for n in text[start + len(ALIAS_START) : end].split(",") if n.strip()}
-    names.add(module)
-    body = "".join(f"    {n},\n" for n in sorted(names))
-    return text[:start] + ALIAS_START + "\n" + body + text[end:]
+def rewrite_callers(modules: list[str], dry_run: bool) -> list[str]:
+    alt = "|".join(re.escape(m) for m in modules)
+    pattern = re.compile(rf"\bcrate::({alt})(?![A-Za-z0-9_])")
+    touched: list[str] = []
+    for rel in git("ls-files", "crates/tui/src", check=False).split():
+        if not rel.endswith(".rs"):
+            continue
+        path = REPO_ROOT / rel
+        text = path.read_text(encoding="utf-8")
+        updated = pattern.sub(lambda m: f"codewhale_runtime::{m.group(1)}", text)
+        if updated != text:
+            touched.append(rel)
+            if not dry_run:
+                path.write_text(updated, encoding="utf-8")
+    return touched
+
+
+def import_unqualified(text: str, modules: list[str]) -> str:
+    needed = [
+        m
+        for m in modules
+        if re.search(rf"(?<![\w:]){re.escape(m)}::", text)
+        and f"use codewhale_runtime::{m};" not in text
+    ]
+    if not needed:
+        return text
+    anchor = re.search(r"^use codewhale_runtime::.*\n", text, re.M) or re.search(r"^use .*\n", text, re.M)
+    lines = "".join(f"use codewhale_runtime::{m};\n" for m in sorted(needed))
+    return text[: anchor.start()] + lines + text[anchor.start() :]
 
 
 def sweep_paths(module: str, dry_run: bool) -> list[str]:
@@ -139,14 +154,16 @@ def main(argv: list[str] | None = None) -> int:
         tui_lib, found = remove_mod_line(tui_lib, module)
         if not found:
             raise SystemExit(f"move-modules: no `mod {module};` line in crates/tui/src/lib.rs")
-        tui_lib = add_alias(tui_lib, module)
         runtime_lib = add_runtime_mod(runtime_lib, module)
         if not args.dry_run:
             for path in paths:
                 git("mv", str(path.relative_to(REPO_ROOT)), str((RUNTIME_SRC / path.name).relative_to(REPO_ROOT)))
     if not args.dry_run:
+        tui_lib = import_unqualified(tui_lib, args.modules)
         TUI_LIB.write_text(tui_lib, encoding="utf-8")
         RUNTIME_LIB.write_text(runtime_lib, encoding="utf-8")
+    for rel in rewrite_callers(args.modules, args.dry_run):
+        print(f"callers rewritten: {rel}")
     swept: set[str] = set()
     for module in args.modules:
         swept.update(sweep_paths(module, args.dry_run))

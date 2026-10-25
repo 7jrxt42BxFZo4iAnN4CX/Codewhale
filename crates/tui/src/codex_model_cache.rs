@@ -113,6 +113,39 @@ pub(crate) fn model_roster() -> CodexModelRoster {
 
 #[must_use]
 pub(crate) fn model_roster_for(config: &Config) -> CodexModelRoster {
+    let mut roster = cached_roster_for(config);
+    enrich_reasoning_from_catalog(&mut roster);
+    roster
+}
+
+fn enrich_reasoning_from_catalog(roster: &mut CodexModelRoster) {
+    for model in &mut roster.models {
+        if model.reasoning.is_some() && !model.efforts.is_empty() {
+            continue;
+        }
+        let Some(offering) =
+            crate::provider_lake::catalog_offering_for_model(ProviderKind::Openai, &model.id)
+        else {
+            continue;
+        };
+        if model.reasoning.is_none() {
+            model.reasoning = offering.reasoning;
+        }
+        if model.efforts.is_empty()
+            && let Some(efforts) =
+                crate::reasoning_preference::ReasoningEffort::catalog_effort_values_for_offering(
+                    &offering,
+                )
+        {
+            model.efforts = efforts
+                .into_iter()
+                .map(|effort| effort.as_setting().to_string())
+                .collect();
+        }
+    }
+}
+
+fn cached_roster_for(config: &Config) -> CodexModelRoster {
     let Some(path) = snapshot_path(config) else {
         return model_roster();
     };
@@ -204,10 +237,14 @@ fn load_snapshot(path: &Path, now: DateTime<Utc>) -> CodexModelRoster {
         );
     }
     if age > MODEL_CACHE_MAX_AGE {
-        return CodexModelRoster::fallback(
-            CodexModelCacheFreshness::Stale,
-            Some(snapshot.fetched_at),
-        );
+        return CodexModelRoster {
+            models: snapshot.models,
+            freshness: CodexModelCacheFreshness::Stale,
+            fetched_at: Some(snapshot.fetched_at),
+            observed_at: None,
+            source: "chatgpt_plan_api",
+            observation_persisted: true,
+        };
     }
     CodexModelRoster {
         models: snapshot.models,
@@ -294,6 +331,36 @@ pub(crate) async fn update_from_chatgpt(config: &Config) -> Result<CodexModelRos
     })
     .await
     .map_err(|_| "cache_write_failed")?
+}
+
+pub(crate) fn spawn_refresh_if_stale(config: &Config) {
+    let Ok(handle) = tokio::runtime::Handle::try_current() else {
+        return;
+    };
+    let config = config.clone();
+    handle.spawn(async move {
+        let probe = config.clone();
+        let Ok(freshness) =
+            tokio::task::spawn_blocking(move || model_roster_for(&probe).freshness).await
+        else {
+            return;
+        };
+        if freshness == CodexModelCacheFreshness::Fresh {
+            return;
+        }
+        match update_from_chatgpt(&config).await {
+            Ok(roster) => tracing::debug!(
+                target: "codex_model_cache",
+                model_count = roster.models.len(),
+                "ChatGPT plan roster refreshed"
+            ),
+            Err(err) => tracing::debug!(
+                target: "codex_model_cache",
+                error = %err,
+                "ChatGPT plan roster refresh skipped"
+            ),
+        }
+    });
 }
 
 fn read_cache_bytes(path: &Path) -> Result<Vec<u8>, CodexModelCacheFreshness> {
@@ -502,7 +569,8 @@ mod tests {
         );
         let stale = load_snapshot(&path, now);
         assert_eq!(stale.freshness, CodexModelCacheFreshness::Stale);
-        assert!(stale.models.is_empty());
+        assert_eq!(stale.model_ids(), ["old"]);
+        assert_eq!(stale.preferred_model_id(), None);
         save(
             &path,
             now + MAX_FUTURE_CLOCK_SKEW + Duration::seconds(1),

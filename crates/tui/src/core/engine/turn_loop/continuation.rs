@@ -33,22 +33,6 @@ impl Engine {
             stream_errors,
             prepared_output_tokens,
         } = response;
-        if self.child_report() {
-            // Reporting has one logical model step and never authorizes tool,
-            // code-fence, steer, child completion or goal continuation.
-            return if tool_uses.is_empty()
-                && output_limit_truncated.is_none()
-                && !current_text_visible.trim().is_empty()
-                && has_sendable_assistant_content
-            {
-                PhaseResult::Break
-            } else {
-                PhaseResult::Return((
-                    TurnOutcomeStatus::Failed,
-                    Some("bounded Core report did not finish as text".into()),
-                ))
-            };
-        }
         // A truncated response with no tool call cannot continue through
         // tool execution: surface the truncation as a bounded observation
         // and resume the loop so the model can act on it instead of the
@@ -258,7 +242,7 @@ impl Engine {
                 } else {
                     "re-requesting the answer"
                 };
-                crate::logging::warn(format!(
+                codewhale_runtime::logging::warn(format!(
                     "Model returned only reasoning with no answer or tool call (attempt {attempt}/{max_reprompts}); {how}"
                 ));
                 let _ = self.send_retry_status(format!(
@@ -312,7 +296,7 @@ impl Engine {
                         "re-requesting the answer with a nudge"
                     }
                 };
-                crate::logging::warn(format!(
+                codewhale_runtime::logging::warn(format!(
                     "Model returned terminal stop reason `{reason}` with no answer or tool call (attempt {attempt}/{EMPTY_STOP_MAX_RETRIES}); {how}"
                 ));
                 let _ = self.send_retry_status(format!(
@@ -366,7 +350,7 @@ impl Engine {
                 } else {
                     "Model stream ended with no answer or tool call.".to_string()
                 };
-                crate::logging::warn(&message);
+                codewhale_runtime::logging::warn(&message);
                 progress.turn_error = Some(message.clone());
                 let _ = self
                     .send_event(Event::error(ErrorEnvelope::classify(message, true)))

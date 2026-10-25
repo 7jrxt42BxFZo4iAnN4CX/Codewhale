@@ -760,7 +760,7 @@ async fn assert_admitted_route(
     assert_eq!(manifest.profile.role, spec.agent_type);
     assert_eq!(
         manifest.profile.model,
-        crate::worker_profile::ModelRoute::Fixed(spec.model.clone())
+        codewhale_agent_contract::worker_profile::ModelRoute::Fixed(spec.model.clone())
     );
     assert_eq!(
         manifest.profile.provider.as_deref(),

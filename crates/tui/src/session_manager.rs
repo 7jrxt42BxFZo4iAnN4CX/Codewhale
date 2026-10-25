@@ -11,7 +11,6 @@ use crate::artifacts::ArtifactRecord;
 use crate::config::ProviderKind;
 use crate::model_routing::AutoRouteReceipt;
 use crate::project_context::find_git_root;
-use crate::session_tree::{SessionEntry, SessionImportContainer, SessionJournal};
 use crate::tools::goal::{GoalPauseReason, GoalSnapshot};
 use crate::tools::plan::PlanSnapshot;
 use crate::tools::todo::TodoListSnapshot;
@@ -22,6 +21,7 @@ use codewhale_core::ContextReference;
 #[cfg(test)]
 use codewhale_core::{ContextReferenceKind, ContextReferenceSource};
 use codewhale_models::{ContentBlock, Message, SystemPrompt};
+use codewhale_runtime::session_tree::{SessionEntry, SessionImportContainer, SessionJournal};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
@@ -798,13 +798,13 @@ impl SessionCostSnapshot {
     /// Session + subagent cost in USD.
     pub fn total_usd(&self) -> f64 {
         self.total_estimate()
-            .amount(crate::pricing::CostCurrency::Usd)
+            .amount(codewhale_config::pricing::CostCurrency::Usd)
     }
 
     /// Session + subagent cost in CNY.
     pub fn total_cny(&self) -> f64 {
         self.total_estimate()
-            .amount(crate::pricing::CostCurrency::Cny)
+            .amount(codewhale_config::pricing::CostCurrency::Cny)
     }
 
     /// Whether this snapshot's coverage state must be shown as unknown.
@@ -1325,7 +1325,7 @@ impl SavedSession {
                     .filter(|entry| {
                         matches!(
                             entry.kind,
-                            crate::session_tree::SessionEntryKind::Message { .. }
+                            codewhale_runtime::session_tree::SessionEntryKind::Message { .. }
                         )
                     })
                     .map(|entry| entry.created_at)
@@ -1405,7 +1405,7 @@ impl SavedSession {
 /// a document instead of treating a truncated path as the complete conversation.
 fn validate_saved_journal(journal: &SessionJournal) -> io::Result<()> {
     let invalid = |message| io::Error::new(io::ErrorKind::InvalidData, message);
-    if journal.schema_version > crate::session_tree::CURRENT_JOURNAL_SCHEMA_VERSION {
+    if journal.schema_version > codewhale_runtime::session_tree::CURRENT_JOURNAL_SCHEMA_VERSION {
         return Err(invalid("saved journal schema is newer than supported"));
     }
     journal
@@ -1548,8 +1548,9 @@ fn serialize_saved_session(mut session: SavedSession) -> io::Result<String> {
 /// does, foreign `/load` files do not).
 pub(crate) fn repair_recovered_session(
     session: &mut SavedSession,
-) -> crate::tool_history_repair::ToolRepairReceipt {
-    let repair = crate::tool_history_repair::repair_tool_call_pairs(&mut session.messages);
+) -> codewhale_runtime::tool_history_repair::ToolRepairReceipt {
+    let repair =
+        codewhale_runtime::tool_history_repair::repair_tool_call_pairs(&mut session.messages);
     if !repair.is_empty() {
         if let Some(journal) = session.journal.as_mut() {
             journal.rebranch_active_messages(&session.messages);
@@ -3686,6 +3687,10 @@ impl SessionManager {
     /// strand the resume.
     pub fn resume_session(&self, id: &str) -> std::io::Result<SessionRecovery> {
         let recovery = self.recover_session_for_resume(id)?;
+        Ok(self.persist_resumed_repair(recovery))
+    }
+
+    fn persist_resumed_repair(&self, recovery: SessionRecovery) -> SessionRecovery {
         if recovery.changed
             && let Err(error) = self.save_session(&recovery.session)
         {
@@ -3695,7 +3700,7 @@ impl SessionManager {
                 "repaired session history could not be persisted; the repair will re-run on the next load"
             );
         }
-        Ok(recovery)
+        recovery
     }
 
     /// [`Self::resume_session`] for a surface that will own and autosave the
@@ -3711,8 +3716,10 @@ impl SessionManager {
     /// it while the turn's file edits stayed on disk.
     pub fn attach_session(&self, id: &str) -> std::io::Result<(SessionRecovery, SessionLease)> {
         let lease = self.reserve_session_for_attach(id)?;
-        self.promote_interrupted_checkpoint(id);
-        let recovery = self.resume_session(id)?;
+        let recovery = match self.promote_interrupted_checkpoint(id) {
+            Some(kept) => self.persist_resumed_repair(kept),
+            None => self.resume_session(id)?,
+        };
         Ok((recovery, lease))
     }
 
@@ -3721,29 +3728,34 @@ impl SessionManager {
     /// consume it. Callers hold the session's attach lease. A stale checkpoint
     /// never replaces a newer document; an unreadable document and a failed
     /// save leave both files as they were.
-    pub(crate) fn promote_interrupted_checkpoint(&self, id: &str) {
+    pub(crate) fn promote_interrupted_checkpoint(&self, id: &str) -> Option<SessionRecovery> {
         let Ok(Some(checkpoint)) = self.load_session_checkpoint(id) else {
-            return;
+            return None;
         };
-        match self.load_session(id) {
-            Ok(saved) if saved.metadata.updated_at >= checkpoint.metadata.updated_at => {}
+        let kept = match self.recover_session_for_resume(id) {
+            Ok(saved) if saved.session.metadata.updated_at >= checkpoint.metadata.updated_at => {
+                Some(saved)
+            }
             Ok(_) => {
                 let mut promoted = checkpoint;
                 self.merge_persisted_lifecycle(&mut promoted.metadata);
                 if self.save_session(&promoted).is_err() {
-                    return;
+                    return None;
                 }
+                None
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 if self.save_session(&checkpoint).is_err() {
-                    return;
+                    return None;
                 }
+                None
             }
             // A document that exists but cannot be read is not ours to
             // replace here; the attach reports it and the checkpoint stays.
-            Err(_) => return,
-        }
+            Err(_) => return None,
+        };
         let _ = self.clear_session_checkpoint(id);
+        kept
     }
 
     /// [`Self::attach_session`] with a partial-ID prefix.

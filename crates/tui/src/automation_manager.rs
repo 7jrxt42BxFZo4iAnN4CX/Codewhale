@@ -2298,9 +2298,9 @@ fn new_run_record(
 /// task from re-deriving a posture out of a legacy bit on every later change to
 /// what that bit means.
 fn automation_posture(auto_approve: bool) -> String {
-    crate::runtime_policy::approval_wire(crate::core::authority::posture_from_auto_approve(
-        auto_approve,
-    ))
+    codewhale_runtime::runtime_policy::approval_wire(
+        crate::core::authority::posture_from_auto_approve(auto_approve),
+    )
     .to_string()
 }
 

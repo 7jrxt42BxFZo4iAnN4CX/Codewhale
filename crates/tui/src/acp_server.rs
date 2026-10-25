@@ -3,6 +3,7 @@
 //! This module keeps only connection configuration, canonical bindings and
 //! JSON-RPC correlation. Secure cross-process attachment is not yet qualified.
 use crate::config::{Config, ProviderKind};
+use crate::core::authority::{SandboxNetworkAccess, sandbox_policy_for_turn};
 #[cfg(test)]
 use crate::runtime_threads::RuntimeThreadManagerConfig;
 use crate::runtime_threads::{CreateThreadRequest, RuntimeThreadManager, UpdateThreadRequest};
@@ -11,7 +12,7 @@ use codewhale_config::AppMode;
 use codewhale_execpolicy::ApprovalMode;
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(test)]
@@ -32,6 +33,7 @@ pub async fn run_acp_server(
     config_profile: Option<String>,
 ) -> Result<()> {
     ensure_acp_approval_posture(&config)?;
+    eprintln!("{}", acp_startup_posture(&config, &default_cwd));
     crate::runtime_api::run_http_server(
         config,
         default_cwd,
@@ -362,6 +364,7 @@ impl AcpServer {
         self.sessions.insert(id, AcpSession { thread_id, cursor });
     }
     async fn new_session(&mut self, params: Value) -> std::result::Result<Value, AcpError> {
+        validate_mcp_servers(&params)?;
         let cwd = params
             .get("cwd")
             .and_then(Value::as_str)
@@ -459,6 +462,7 @@ impl AcpServer {
     }
 
     async fn load_session(&mut self, params: Value) -> std::result::Result<Value, AcpError> {
+        validate_mcp_servers(&params)?;
         let requested = params
             .get("sessionId")
             .and_then(Value::as_str)
@@ -626,12 +630,7 @@ impl AcpServer {
         Ok(())
     }
     fn permission_value(&self) -> &'static str {
-        match acp_approval_mode(&self.config) {
-            ApprovalMode::Bypass => "full-access",
-            ApprovalMode::Auto => "auto-review",
-            ApprovalMode::Never => "never",
-            ApprovalMode::Suggest => "ask",
-        }
+        acp_permission_value(&self.config)
     }
     async fn session_configuration(
         &self,
@@ -837,7 +836,38 @@ impl AcpServer {
         Ok(self.current_model())
     }
 }
-const ACP_FULL_ACCESS_HINT: &str = "Start the server with `codewhale --yolo serve --acp`, or set `yolo = true` in config.toml. Full Access also turns off Codewhale's own sandbox unless sandbox_mode tightens it; Plan stays read-only.";
+const ACP_FULL_ACCESS_HINT: &str = "Start the server with `codewhale serve --acp --full-access` (alias `--yolo`), or set `yolo = true` in config.toml. Full Access also turns off Codewhale's own sandbox unless sandbox_mode tightens it; Plan stays read-only.";
+
+fn acp_permission_value(config: &Config) -> &'static str {
+    match acp_approval_mode(config) {
+        ApprovalMode::Bypass => "full-access",
+        ApprovalMode::Auto => "auto-review",
+        ApprovalMode::Never => "never",
+        ApprovalMode::Suggest => "ask",
+    }
+}
+
+fn acp_startup_posture(config: &Config, workspace: &Path) -> String {
+    let approval = acp_approval_mode(config);
+    let sandbox = sandbox_policy_for_turn(
+        acp_mode(config),
+        approval,
+        config.sandbox_mode.as_deref(),
+        workspace,
+        SandboxNetworkAccess::from_config(config.sandbox_network_access),
+    );
+    let mut line = format!(
+        "ACP permission: {}; sandbox: {}.",
+        acp_permission_value(config),
+        sandbox.config_value()
+    );
+    if approval != ApprovalMode::Bypass {
+        line.push_str(
+            " For Full Access start with `codewhale serve --acp --full-access` or set `yolo = true`; sandbox_mode alone never turns it on.",
+        );
+    }
+    line
+}
 
 fn acp_mode(config: &Config) -> AppMode {
     if config.sandbox_mode.as_deref() == Some("read-only") {
@@ -867,7 +897,7 @@ fn acp_approval_mode(config: &Config) -> ApprovalMode {
 fn ensure_acp_approval_posture(config: &Config) -> Result<()> {
     anyhow::ensure!(
         acp_approval_mode(config) != ApprovalMode::Never,
-        "approval_policy \"never\" is not supported by `codewhale serve --acp`: ACP sessions run under Ask, Auto-Review or Full Access. Set approval_policy = \"on-request\" for this server, or start it with --yolo for Full Access."
+        "approval_policy \"never\" is not supported by `codewhale serve --acp`: ACP sessions run under Ask, Auto-Review or Full Access. Set approval_policy = \"on-request\" for this server, or start it with --full-access for Full Access."
     );
     Ok(())
 }
@@ -1024,6 +1054,17 @@ impl AcpError {
             code: -32601,
             message: format!("method not found: {method}"),
         }
+    }
+}
+
+fn validate_mcp_servers(params: &Value) -> std::result::Result<(), AcpError> {
+    match params.get("mcpServers") {
+        None => Ok(()),
+        Some(Value::Array(servers)) if servers.is_empty() => Ok(()),
+        Some(Value::Array(_)) => Err(AcpError::invalid_params(
+            "Client-supplied MCP servers are unsupported by Codewhale's ACP adapter. Use an empty mcpServers list, or configure MCP through codewhale app-server --http and the Runtime API. ACP v1 stdio MCP support is incomplete.",
+        )),
+        Some(_) => Err(AcpError::invalid_params("mcpServers must be an array")),
     }
 }
 
@@ -1828,6 +1869,20 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn new_session_returns_durable_bare_uuid_without_provider_or_history() -> Result<()> {
         let mut rig = Rig::new(fixture_config(), vec![])?;
+        for servers in [
+            json!([{"name":"fixture","command":"must-not-execute","args":[],"env":[]}]),
+            json!({}),
+            Value::Null,
+        ] {
+            let error = rig
+                .server
+                .new_session(json!({"mcpServers":servers}))
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, -32602);
+            assert!(rig.server.sessions.is_empty());
+            assert!(rig.server.insertion_order.is_empty());
+        }
         let id = rig.new_session().await;
         uuid::Uuid::parse_str(&id)?;
         let store = crate::session_manager::SessionManager::new(rig.server.sessions_dir.clone())?;
@@ -1848,6 +1903,12 @@ mod tests {
             Some(id.as_str())
         );
         assert_eq!(rig.mock.call_count(), 0);
+        for requested in [id.as_str(), &id[..8]] {
+            let error = rig.server.load_session(json!({"sessionId":requested,"mcpServers":[{"name":"fixture","command":"must-not-execute","args":[],"env":[]}]})).await.unwrap_err();
+            assert_eq!(error.code, -32602);
+            assert_eq!(rig.server.sessions.len(), 1);
+            assert_eq!(rig.mock.call_count(), 0);
+        }
         let loaded = rig
             .server
             .load_session(json!({"sessionId":&id[..8]}))

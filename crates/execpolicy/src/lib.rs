@@ -4,6 +4,7 @@ pub mod command_safety;
 pub mod matcher;
 pub mod shell_expand;
 pub mod toml_rules;
+pub mod tool_rules;
 
 pub use approval_mode::ApprovalMode;
 

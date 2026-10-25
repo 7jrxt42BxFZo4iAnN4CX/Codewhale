@@ -61,7 +61,13 @@ pub struct RuntimeCapabilities {
     pub account_session: bool,
     #[serde(default)]
     pub account_model_owner: bool,
+    #[serde(default)]
+    pub session_provider_keys: bool,
     pub threads: bool,
+    #[serde(default)]
+    pub thread_create_idempotency: bool,
+    #[serde(default)]
+    pub thread_idle_precondition: bool,
     /// Explicit per-thread shell opt-in is checked against loaded policy and
     /// cannot broaden a conversation while it has an active turn.
     #[serde(default)]
@@ -97,6 +103,8 @@ pub struct RuntimeCapabilities {
     pub worker_runtime: bool,
     #[serde(default)]
     pub fleet_run_create: bool,
+    #[serde(default)]
+    pub thread_fleet_members: bool,
     #[serde(default)]
     pub fleet_run_start: bool,
     #[serde(default)]
@@ -444,7 +452,10 @@ mod tests {
             profile_constitution: false,
             account_session: true,
             account_model_owner: false,
+            session_provider_keys: false,
             threads: true,
+            thread_create_idempotency: true,
+            thread_idle_precondition: true,
             thread_shell_consent: true,
             turns: true,
             turn_operation_idempotency: true,
@@ -458,6 +469,7 @@ mod tests {
             environments: false,
             worker_runtime: false,
             fleet_run_create: true,
+            thread_fleet_members: true,
             fleet_run_start: true,
             fleet_event_replay: true,
             fleet_event_stream: true,

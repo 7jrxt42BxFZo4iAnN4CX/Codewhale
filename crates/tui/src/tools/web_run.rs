@@ -1103,7 +1103,7 @@ async fn run_image_search(
     context: &ToolContext,
 ) -> Result<(Vec<ImageResultEntry>, Option<String>), ToolError> {
     super::web_search::check_policy(context.network_policy.as_ref(), "duckduckgo.com")?;
-    let client = crate::tls::reqwest_client_builder()
+    let client = codewhale_release::tls::reqwest_client_builder()
         .timeout(Duration::from_millis(timeout_ms))
         .user_agent(USER_AGENT)
         .build()
@@ -1460,7 +1460,7 @@ fn page_from_document(
         }
         DocumentKind::Media => {
             let extension = document.media_extension.unwrap_or("bin");
-            let digest = crate::hashing::sha256_hex(&*payload.bytes);
+            let digest = codewhale_runtime::hashing::sha256_hex(&*payload.bytes);
             let artifact_id = format!("web_media_{}", &digest[..16]);
             let (_absolute, relative) = crate::artifacts::write_session_artifact_bytes(
                 &context.state_namespace,
@@ -1498,7 +1498,7 @@ fn bounded_web_run_result(
         full,
         context,
         |body| {
-            let digest = crate::hashing::sha256_hex(body.as_bytes());
+            let digest = codewhale_runtime::hashing::sha256_hex(body.as_bytes());
             format!("web_run_{}", &digest[..16])
         },
         "web.run result",

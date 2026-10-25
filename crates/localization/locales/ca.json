@@ -795,7 +795,7 @@
   "KbSendDraft": "Envia quan estigui lliure; encua mentre estigui ocupat; amb el redactor buit envia ara el següent seguiment en cua",
   "KbSteerCurrentTurn": "Dirigeix el torn actual (envia normalment quan està lliure)",
   "KbCloseMenu": "Tanca el menú, cancel·la la petició, descarta l'esborrany o neteja l'entrada",
-  "KbCancelOrExit": "Cancel·la la petició, o surt quan està lliure",
+  "KbCancelOrExit": "Cancel·la, esborra l’esborrany o surt quan està lliure",
   "KbShellControls": "Mou l'espera del shell en execució a /jobs",
   "KbExitEmpty": "Surt quan l'entrada és buida",
   "KbCommandPalette": "Obre la paleta de comandes",

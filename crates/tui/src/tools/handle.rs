@@ -844,7 +844,7 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    crate::hashing::sha256_hex(bytes)
+    codewhale_runtime::hashing::sha256_hex(bytes)
 }
 
 fn json_type(value: &Value) -> &'static str {

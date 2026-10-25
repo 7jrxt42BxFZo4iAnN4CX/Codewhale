@@ -42,13 +42,14 @@ use std::collections::{HashMap, HashSet, hash_map::DefaultHasher};
 use std::hash::{Hash, Hasher};
 use std::sync::{OnceLock, RwLock};
 
-use crate::logging;
+use codewhale_runtime::logging;
 
 /// Per-entry ceiling for a skill's one-line description in the ambient index.
 /// Split between the summary and its `Use when:` trigger when a description
 /// carries one, so the trigger phrase — the part the model actually routes on
-/// — survives shortening. Over-length descriptions are reported by
-/// `/skills` as a load warning rather than silently cut mid-sentence.
+/// — survives shortening. When the index shortens any row it ends with a
+/// count footer that `/context report` repeats, and `/skills inspect` notes each
+/// description over this cap.
 pub(crate) const MAX_SKILL_DESCRIPTION_CHARS: usize = 400;
 /// Floor for the model-facing skill index budget, in chars. The real budget
 /// scales with the route's context window ([`skills_prompt_budget_chars`]);
@@ -324,7 +325,7 @@ pub enum SkillSource {
     Plugin {
         plugin_id: String,
         plugin_name: String,
-        authority: Box<crate::plugins::types::PluginAuthority>,
+        authority: Box<codewhale_config::PluginAuthority>,
         native_registration: Option<crate::extension_host::skills::NativeSkillRef>,
     },
 }
@@ -335,24 +336,24 @@ pub enum SkillSource {
 #[serde(untagged)]
 pub enum SkillProvenance {
     NativeRoot(NativeSkillProvenance),
-    Plugin(crate::plugins::types::PluginAuthority),
+    Plugin(codewhale_config::PluginAuthority),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeSkillProvenance {
-    pub authority: crate::plugins::types::PluginAuthority,
+    pub authority: codewhale_config::PluginAuthority,
     pub registration: crate::extension_host::skills::NativeSkillRef,
 }
 
-impl From<crate::plugins::types::PluginAuthority> for SkillProvenance {
-    fn from(authority: crate::plugins::types::PluginAuthority) -> Self {
+impl From<codewhale_config::PluginAuthority> for SkillProvenance {
+    fn from(authority: codewhale_config::PluginAuthority) -> Self {
         Self::Plugin(authority)
     }
 }
 
 impl SkillProvenance {
-    pub fn authority(&self) -> &crate::plugins::types::PluginAuthority {
+    pub fn authority(&self) -> &codewhale_config::PluginAuthority {
         match self {
             Self::Plugin(authority) => authority,
             Self::NativeRoot(source) => &source.authority,
@@ -706,7 +707,13 @@ impl SkillRegistry {
                     };
                     crate::fs_confined::read_to_string(&root, &skill_path)
                 }
-                None => fs::read_to_string(&skill_path),
+                None => match fs::metadata(&skill_path) {
+                    Ok(meta) if !meta.is_file() => Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "SKILL.md is not a regular file",
+                    )),
+                    _ => fs::read_to_string(&skill_path),
+                },
             };
             match read_result {
                 Ok(content) => match Self::parse_verified_content(&skill_path, &content) {
@@ -1013,13 +1020,15 @@ impl SkillRegistry {
     /// this never changes the plugin bundle's trust or MCP lifecycle.
     #[must_use]
     pub(crate) fn into_enabled(self) -> Self {
-        self.into_enabled_with_state(crate::skill_state::SkillStateStore::load_default())
+        self.into_enabled_with_state(
+            codewhale_runtime::skill_state::SkillStateStore::load_default(),
+        )
     }
 
     #[must_use]
     fn into_enabled_with_state(
         mut self,
-        state: anyhow::Result<crate::skill_state::SkillStateStore>,
+        state: anyhow::Result<codewhale_runtime::skill_state::SkillStateStore>,
     ) -> Self {
         match state {
             Ok(state) => self.skills.retain(|skill| {
@@ -1099,7 +1108,7 @@ fn normalize_skill_name_segment(name: &str) -> String {
     }
     // Preserve ASCII identities, but distinguish UTF-8 source names the old
     // slug folded together. No transliteration or Unicode normalization.
-    let digest = crate::hashing::sha256_hex(name.to_ascii_lowercase().as_bytes());
+    let digest = codewhale_runtime::hashing::sha256_hex(name.to_ascii_lowercase().as_bytes());
     let prefix = legacy[..legacy.len().min(31)].trim_end_matches('-');
     format!("{prefix}-{}", &digest[..32])
 }
@@ -1506,7 +1515,7 @@ fn merge_plugin_skills_from_plugins(
     plugins: impl IntoIterator<
         Item = (
             crate::plugins::types::LoadedPlugin,
-            crate::plugins::types::PluginAuthority,
+            codewhale_config::PluginAuthority,
         ),
     >,
 ) {
@@ -1537,7 +1546,7 @@ fn merge_plugin_skill_snapshots(
     registry: &mut SkillRegistry,
     plugin_id: &str,
     plugin_name: &str,
-    authority: &crate::plugins::types::PluginAuthority,
+    authority: &codewhale_config::PluginAuthority,
     snapshots: Vec<crate::plugins::types::PluginSkillSnapshot>,
     native_registration: Option<crate::extension_host::skills::NativeSkillRef>,
 ) {
@@ -1896,6 +1905,10 @@ impl IndexRow<'_> {
     fn trigger_len(&self) -> usize {
         self.trigger.as_deref().map_or(0, |t| t.chars().count())
     }
+
+    fn exceeds_index_cap(&self) -> bool {
+        self.summary_len() + self.trigger_len() > MAX_SKILL_DESCRIPTION_CHARS
+    }
 }
 
 /// Split a description into its summary and `Use when:` trigger phrase, so
@@ -1943,6 +1956,17 @@ fn description_split(row: &IndexRow<'_>, cap: usize) -> (usize, usize) {
     }
     let trigger_share = (cap * t / (s + t)).max(cap / 2).min(t);
     (cap.saturating_sub(trigger_share).min(s), trigger_share)
+}
+
+pub(crate) fn description_exceeds_index_cap(description: &str) -> bool {
+    let (summary, trigger) = split_trigger(description);
+    IndexRow {
+        name: "",
+        summary,
+        trigger,
+        source: None,
+    }
+    .exceeds_index_cap()
 }
 
 /// Render the ambient skill index in three tiers, never dropping a skill's
@@ -2016,6 +2040,9 @@ Skills are optional instruction packs. This index exposes routing metadata; bodi
     // Reserve using the model-selectable total: an actual omitted count can
     // never exceed it. This remains safe for catalogues above 9,999 entries.
     let skill_omission_reserve = omitted_skills_line(rows.len()).chars().count();
+    let shortened_reserve = shortened_skills_line(rows.len(), rows.len())
+        .chars()
+        .count();
     let warning_omission_reserve = if warnings.is_empty() {
         0
     } else {
@@ -2030,9 +2057,11 @@ Skills are optional instruction packs. This index exposes routing metadata; bodi
         (budget_chars / 5).min(8 * (MAX_SKILL_DESCRIPTION_CHARS + 4))
     };
     let index_budget = budget_chars.saturating_sub(fixed + warning_slice);
+    let shortened_budget = index_budget.saturating_sub(shortened_reserve);
 
     let mut out = String::from(HEADER);
     let mut omitted = 0usize;
+    let mut shortened = 0usize;
 
     // Tier 1: full descriptions.
     let full_lines: Vec<String> = rows
@@ -2043,10 +2072,17 @@ Skills are optional instruction packs. This index exposes routing metadata; bodi
         })
         .collect();
     let full_total: usize = full_lines.iter().map(|l| l.chars().count()).sum();
-    if full_total <= index_budget {
+    let capped = rows.iter().filter(|row| row.exceeds_index_cap()).count();
+    let full_budget = if capped > 0 {
+        shortened_budget
+    } else {
+        index_budget
+    };
+    if full_total <= full_budget {
         for line in &full_lines {
             out.push_str(line);
         }
+        shortened = capped;
     } else {
         // Tier 2: shorten descriptions proportionally. Fixed cost per row is
         // the name-plus-source scaffolding; whatever remains is shared among
@@ -2062,8 +2098,8 @@ Skills are optional instruction packs. This index exposes routing metadata; bodi
                 s + t + if t > 0 { TRIGGER_JOIN.len() } else { 0 }
             })
             .sum();
-        let desc_avail = index_budget.saturating_sub(scaffold);
-        let shortened: Option<Vec<String>> = (desc_full > 0
+        let desc_avail = shortened_budget.saturating_sub(scaffold);
+        let shortened_lines: Option<Vec<(String, bool)>> = (desc_full > 0
             && desc_avail >= rows.len() * MIN_SHORTENED_DESCRIPTION_CHARS)
             .then(|| {
                 rows.iter()
@@ -2076,21 +2112,29 @@ Skills are optional instruction packs. This index exposes routing metadata; bodi
                             .max(MIN_SHORTENED_DESCRIPTION_CHARS)
                             .min(natural);
                         let (s, t) = description_split(row, cap);
-                        row.render(s, t)
+                        (
+                            row.render(s, t),
+                            s + t < row.summary_len() + row.trigger_len(),
+                        )
                     })
                     .collect()
             })
-            .filter(|lines: &Vec<String>| {
-                lines.iter().map(|l| l.chars().count()).sum::<usize>() <= index_budget
+            .filter(|lines: &Vec<(String, bool)>| {
+                lines
+                    .iter()
+                    .map(|(line, _)| line.chars().count())
+                    .sum::<usize>()
+                    <= shortened_budget
             });
-        if let Some(lines) = shortened {
-            for line in &lines {
+        if let Some(lines) = shortened_lines {
+            for (line, was_shortened) in &lines {
+                shortened += usize::from(*was_shortened);
                 out.push_str(line);
             }
         } else {
             // Tier 3: names only. Omission is the last resort and only when
             // even the names overflow.
-            let names_budget = index_budget.saturating_sub(skill_omission_reserve);
+            let names_budget = shortened_budget.saturating_sub(skill_omission_reserve);
             let mut used = 0usize;
             for row in &rows {
                 let line = row.render_name_only();
@@ -2100,6 +2144,7 @@ Skills are optional instruction packs. This index exposes routing metadata; bodi
                 } else {
                     used += len;
                     out.push_str(&line);
+                    shortened += usize::from(row.summary_len() + row.trigger_len() > 0);
                 }
             }
         }
@@ -2107,6 +2152,9 @@ Skills are optional instruction packs. This index exposes routing metadata; bodi
 
     if omitted > 0 {
         out.push_str(&omitted_skills_line(omitted));
+    }
+    if shortened > 0 {
+        out.push_str(&shortened_skills_line(shortened, rows.len()));
     }
 
     if !warnings.is_empty() {
@@ -2172,6 +2220,22 @@ fn omitted_skills_line(count: usize) -> String {
 
 fn omitted_warnings_line(count: usize) -> String {
     format!("- ... {count} additional warnings omitted; run `/skills` to inspect them.\n")
+}
+
+const SHORTENED_SKILLS_PREFIX: &str = "- ... descriptions shortened for ";
+
+fn shortened_skills_line(shortened: usize, total: usize) -> String {
+    format!(
+        "{SHORTENED_SKILLS_PREFIX}{shortened} of {total} skills; `load_skill` with `name=\"list\"` returns full text.\n"
+    )
+}
+
+pub(crate) fn shortened_skills_note(block: &str) -> Option<String> {
+    block.lines().find_map(|line| {
+        let rest = line.strip_prefix(SHORTENED_SKILLS_PREFIX)?;
+        let (counts, _) = rest.split_once(';')?;
+        Some(format!("descriptions shortened for {counts}"))
+    })
 }
 
 fn truncate_for_prompt(value: &str, max_chars: usize) -> String {

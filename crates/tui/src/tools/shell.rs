@@ -43,7 +43,7 @@ use windows::Win32::System::JobObjects::{
 use windows::core::PCWSTR;
 
 #[cfg(not(target_env = "ohos"))]
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use portable_pty::{PtySize, native_pty_system};
 
 mod guidance;
 mod output;
@@ -51,7 +51,6 @@ mod output;
 use super::shell_output::{
     kill_outcome_note, output_phase_hint, summarize_output, truncate_with_meta,
 };
-use crate::child_env;
 use crate::sandbox::{
     CommandSpec,
     ExecEnv,
@@ -67,7 +66,8 @@ use crate::work_graph::{
     EvidenceKind, EvidenceRef, OperationIntent, OperationOwnerSnapshot, OwnerState,
     SharedWorkRuntime,
 };
-use crate::worker_profile::ShellPolicy;
+use codewhale_agent_contract::worker_profile::ShellPolicy;
+use codewhale_runtime::child_env;
 use output::{
     BoundedOutputAccumulator, BoundedOutputSnapshot, RAW_STREAM_SETTLED_TAIL_BYTES,
     RawOutputBuffer, SharedRawOutput, new_shared_raw_output, tail_from_buffer, tail_text,
@@ -2454,7 +2454,7 @@ impl ShellManager {
 
         // Leave raw mode before spawn; the guard restores it only if raw mode
         // was active on entry (issue #1690).
-        let _raw_mode = crate::host_terminal::suspend_raw_mode();
+        let _raw_mode = codewhale_runtime::host_terminal::suspend_raw_mode();
 
         let mut child = cmd
             .spawn()
@@ -2598,7 +2598,7 @@ impl ShellManager {
 
         // Leave raw mode before spawn; the guard restores it only if raw mode
         // was active on entry (issue #1690).
-        let _raw_mode = crate::host_terminal::suspend_raw_mode();
+        let _raw_mode = codewhale_runtime::host_terminal::suspend_raw_mode();
 
         child_env::apply_to_command(&mut cmd, child_env::string_map_env(&exec_env.env));
 
@@ -2752,18 +2752,9 @@ impl ShellManager {
                     })
                     .context("Failed to open PTY")?;
 
-                let mut cmd = CommandBuilder::new(program);
-                for arg in args {
-                    cmd.arg(arg);
-                }
-                cmd.cwd(working_dir);
-                child_env::apply_to_pty_command(&mut cmd, child_env::string_map_env(&exec_env.env));
-
-                let mut child = pair
-                    .slave
-                    .spawn_command(cmd)
+                let mut child = exec_env
+                    .spawn_pty(pair.slave, working_dir)
                     .with_context(|| format!("Failed to spawn PTY command: {original_command}"))?;
-                drop(pair.slave);
 
                 let reader = match pair.master.try_clone_reader() {
                     Ok(reader) => reader,
@@ -2810,7 +2801,7 @@ impl ShellManager {
             child_env::apply_to_command(&mut cmd, child_env::string_map_env(&exec_env.env));
             remove_readonly_redirect_env(&mut cmd, &exec_env.env);
 
-            let child = cmd.spawn().with_context(|| {
+            let child = exec_env.spawn_background(cmd).with_context(|| {
                 format!("Failed to spawn persistent service: {original_command}")
             })?;
             (ShellChild::Process(child), None, None, None)
@@ -2836,8 +2827,8 @@ impl ShellManager {
             child_env::apply_to_command(&mut cmd, child_env::string_map_env(&exec_env.env));
             remove_readonly_redirect_env(&mut cmd, &exec_env.env);
 
-            let mut child = cmd
-                .spawn()
+            let mut child = exec_env
+                .spawn_background(cmd)
                 .with_context(|| format!("Failed to spawn background: {original_command}"))?;
             // Managed children die with the TUI (#6654); unlike the
             // persistent branch above, nobody can take ownership of them.
@@ -3830,7 +3821,6 @@ pub fn new_shared_shell_manager(workspace: PathBuf) -> SharedShellManager {
 
 // === ToolSpec Implementations ===
 
-use crate::features::Feature;
 use crate::tools::cargo_failure_summary::summarize_cargo_failure;
 use crate::tools::spec::{
     ApprovalRequirement, ToolCapability, ToolContext, ToolError, ToolResult, ToolSpec,
@@ -3843,6 +3833,7 @@ use codewhale_execpolicy::command_safety::{
     normalize_windows_command_paths, readonly_network_reads, split_leading_cd,
 };
 use codewhale_execpolicy::toml_rules::{ExecPolicyConfig, RuleDecision};
+use codewhale_runtime::features::Feature;
 use serde_json::json;
 
 /// The TOML execpolicy file lives in the user config home; the rule engine
@@ -4323,9 +4314,9 @@ pub(crate) fn sandboxed_runner_command(
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     // Workspace code never inherits parent credentials.
-    crate::child_env::apply_to_tokio_command(
+    codewhale_runtime::child_env::apply_to_tokio_command(
         &mut cmd,
-        crate::child_env::string_map_env(&exec_env.env),
+        codewhale_runtime::child_env::string_map_env(&exec_env.env),
     );
     Ok(cmd)
 }

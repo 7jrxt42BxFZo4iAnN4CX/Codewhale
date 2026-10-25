@@ -635,6 +635,11 @@ pub fn event_to_protocol(event: &Event, ids: &ProtocolIds) -> wire::EventMsg {
                 .map(|tools| tools.iter().map(to_value).collect()),
             base_url: base_url.clone(),
         },
+        Event::ProviderRequestReceipt { receipt } => wire::EventMsg::ProviderRequestReceipt {
+            thread_id,
+            session_id,
+            receipt: receipt.clone(),
+        },
         Event::TurnUsage {
             max_output_tokens,
             usage,
@@ -1138,6 +1143,9 @@ pub fn op_to_protocol(op: &Op) -> wire_op::Op {
         Op::FollowUpSubAgent { agent_id, text } => wire_op::Op::FollowUpSubAgent {
             agent_id: agent_id.clone(),
             text: text.clone(),
+        },
+        Op::StartFleetMember { start, tx: _ } => wire_op::Op::StartFleetMember {
+            member_id: start.member_id.clone(),
         },
         Op::ChangeMode {
             mode,

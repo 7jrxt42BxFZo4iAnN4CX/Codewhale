@@ -740,6 +740,12 @@ impl App {
             .as_ref()
             .and_then(|tui| tui.composer_arrows_scroll)
             .is_some();
+        // The initial `connecting` list is a prediction about the pass the
+        // engine is about to run, so it carries the boot stamp (#7035).
+        let mcp_boot_initializing = !mcp_connecting.is_empty()
+            && config
+                .features()
+                .enabled(codewhale_runtime::features::Feature::Mcp);
         let mut app = Self {
             mode: initial_mode,
             hotbar_actions,
@@ -808,7 +814,7 @@ impl App {
             next_history_revision: 1,
             api_messages: Arc::new(Vec::new()),
             api_message_stamps: Vec::new(),
-            session_journal: crate::session_tree::SessionJournal::new(),
+            session_journal: codewhale_runtime::session_tree::SessionJournal::new(),
             completed_assistant_outputs: Vec::new(),
             pending_plan_handoff: None,
             context_token_cache: std::cell::RefCell::new(Default::default()),
@@ -883,7 +889,7 @@ impl App {
             ),
             // #4022: the worker thread is spawned lazily on first submit, so
             // constructing an App never costs a thread.
-            lane_control: crate::lane_control::LaneControlQueue::new(),
+            lane_control: codewhale_runtime::lane_control::LaneControlQueue::new(),
             plugin_registry,
             config_path,
             config_profile,
@@ -1074,13 +1080,13 @@ impl App {
             runtime_services: RuntimeToolServices {
                 shell_manager: Some(shell_manager),
                 work: Some(work_runtime),
-                media_originals_dir: crate::media_originals::default_store_dir(),
+                media_originals_dir: codewhale_runtime::media_originals::default_store_dir(),
                 ..RuntimeToolServices::default()
             },
             coordination_detail: None,
             mcp_snapshot: None,
-            mcp_initializing: !mcp_connecting.is_empty()
-                && config.features().enabled(crate::features::Feature::Mcp),
+            mcp_initializing: mcp_boot_initializing,
+            mcp_boot_predicted_at: mcp_boot_initializing.then(std::time::Instant::now),
             mcp_snapshot_generation: 0,
             mcp_snapshot_generation_invalidated: false,
             mcp_connecting,

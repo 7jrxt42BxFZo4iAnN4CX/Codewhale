@@ -29,7 +29,7 @@ pub struct ImageAnalyzeTool {
 /// generation — precisely the healthy work a 120s cap used to kill. The
 /// client therefore bounds only the connect handshake, and this envelope
 /// (the same 30-minute wall clock as engine streaming,
-/// `STREAM_MAX_DURATION_SECS`) is the sole total bound; a stalled
+/// `DEFAULT_STREAM_MAX_DURATION_SECS`) is the sole total bound; a stalled
 /// connection errors out through it instead of hanging.
 const VISION_REQUEST_ENVELOPE: Duration = Duration::from_secs(1800);
 
@@ -53,7 +53,7 @@ impl ImageAnalyzeTool {
         config: VisionModelConfig,
         route_client: Option<CodewhaleClient>,
     ) -> Self {
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             // Bound only the connect handshake. A client- or request-level
             // `read_timeout` would start counting at `send()` and never
             // reset before the response headers, quietly re-introducing a

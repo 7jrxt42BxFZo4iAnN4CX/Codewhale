@@ -62,8 +62,8 @@ use crate::request_manifest::{
     SystemPromptAssembly, ToolSurfaceFacts, UnavailableReason,
 };
 use crate::route_runtime::ResolvedRuntimeRoute;
-use crate::safe_label::SafeLabel;
 use codewhale_core::request::{PrimaryTurnRequest, prepare_primary_turn_request};
+use codewhale_runtime::safe_label::SafeLabel;
 
 /// Everything the host must supply for the engine to describe the next
 /// request. These are the same posture fields a `SendMessage` would carry, so
@@ -193,13 +193,13 @@ impl Engine {
             Ok(state) => {
                 let snapshot = state.snapshot();
                 Ok(snapshot.is_active()
-                    && crate::goal_loop::token_budget_exhausted(
-                        crate::goal_loop::GoalProgress {
+                    && codewhale_runtime::goal_loop::token_budget_exhausted(
+                        codewhale_runtime::goal_loop::GoalProgress {
                             tokens_used: snapshot.tokens_used,
                             time_used_seconds: snapshot.time_used_seconds,
                             continuations: snapshot.continuation_count,
                         },
-                        crate::goal_loop::GoalBudget {
+                        codewhale_runtime::goal_loop::GoalBudget {
                             token_budget: snapshot.token_budget.map(u64::from),
                             time_budget_seconds: None,
                             enforce_token_budget: self.config.goal_enforce_token_budget,
@@ -697,7 +697,7 @@ impl Engine {
             base_prompt: BasePromptProvenance {
                 origin: crate::prompts::base_prompt_origin().label().to_string(),
                 bytes: base.len(),
-                sha256: crate::hashing::sha256_hex(base.as_bytes()),
+                sha256: codewhale_runtime::hashing::sha256_hex(base.as_bytes()),
             },
         }
     }
@@ -776,10 +776,12 @@ pub(crate) fn active_tool_catalog_sha256(tools: &[Tool]) -> String {
         canonical.push('\u{1}');
         canonical.push_str(&tool.description);
         canonical.push('\u{1}');
-        canonical.push_str(&crate::client::canonical_json(&tool.input_schema));
+        canonical.push_str(&codewhale_runtime::hashing::canonical_json(
+            &tool.input_schema,
+        ));
         canonical.push('\n');
     }
-    crate::hashing::sha256_hex(canonical.as_bytes())
+    codewhale_runtime::hashing::sha256_hex(canonical.as_bytes())
 }
 
 /// Whether the Standard and Full tool surfaces currently produce the same

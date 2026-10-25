@@ -3,9 +3,9 @@
 use super::*;
 use crate::extension_host::tests::node_for_tests;
 use crate::extension_host::{ExtensionHostManager, ExtensionHostOptions, TestManagerGuard};
-use crate::features::{Feature, Features};
 use crate::plugins::activation::TestPolicyGuard;
 use crate::tools::validate_data::ValidateDataTool;
+use codewhale_runtime::features::{Feature, Features};
 use std::sync::Arc;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -37,11 +37,11 @@ fn finance_and_data_host_flags_are_separate_and_default_to_rust() {
     assert!(!defaults.enabled(Feature::FinanceHost));
     assert!(!defaults.enabled(Feature::DataHost));
     assert_eq!(
-        crate::features::feature_from_key("finance_host"),
+        codewhale_runtime::features::feature_from_key("finance_host"),
         Some(Feature::FinanceHost)
     );
     assert_eq!(
-        crate::features::feature_from_key("data_host"),
+        codewhale_runtime::features::feature_from_key("data_host"),
         Some(Feature::DataHost)
     );
 }

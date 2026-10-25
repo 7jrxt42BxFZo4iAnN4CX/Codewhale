@@ -305,6 +305,9 @@ pub enum Op {
         agent_id: String,
         text: String,
     },
+    StartFleetMember {
+        member_id: String,
+    },
 
     ChangeMode {
         #[serde(default = "default_mode")]
@@ -460,6 +463,7 @@ pub const OP_KINDS: &[&str] = &[
     "get_sub_agent_settlement",
     "cancel_sub_agent",
     "follow_up_sub_agent",
+    "start_fleet_member",
     "change_mode",
     "set_model",
     "set_compaction",
@@ -505,6 +509,7 @@ impl Op {
             Self::GetSubAgentSettlement => "get_sub_agent_settlement",
             Self::CancelSubAgent { .. } => "cancel_sub_agent",
             Self::FollowUpSubAgent { .. } => "follow_up_sub_agent",
+            Self::StartFleetMember { .. } => "start_fleet_member",
             Self::ChangeMode { .. } => "change_mode",
             Self::SetModel { .. } => "set_model",
             Self::SetCompaction { .. } => "set_compaction",
@@ -645,6 +650,9 @@ mod tests {
             Op::FollowUpSubAgent {
                 agent_id: "a1".into(),
                 text: "go".into(),
+            },
+            Op::StartFleetMember {
+                member_id: "m1".into(),
             },
             Op::ChangeMode {
                 mode: "operate".into(),

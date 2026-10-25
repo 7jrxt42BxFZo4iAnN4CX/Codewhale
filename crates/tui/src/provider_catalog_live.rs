@@ -321,7 +321,10 @@ impl ProviderLivePricingQuote {
             }
             None => payload,
         };
-        Some(format!("sha256:{}", crate::hashing::sha256_hex(payload)))
+        Some(format!(
+            "sha256:{}",
+            codewhale_runtime::hashing::sha256_hex(payload)
+        ))
     }
 
     fn from_pricing(
@@ -669,6 +672,22 @@ pub(crate) fn provider_owns_live_catalog(provider: ProviderKind, base_url: &str)
         || codewhale_config::provider_preserves_custom_base_url_model(provider, base_url)
 }
 
+/// Whether a persisted `/models` partition is current evidence for its route.
+///
+/// A route that owns its own roster (a relay, a private endpoint) is
+/// authoritative even when the fetch is old: nothing else describes it. For an
+/// official endpoint the partition competes with the catalog snapshot, and an
+/// old or failed fetch is not evidence about what is served today, so it must
+/// not shadow a fresher roster.
+pub(crate) fn cached_roster_is_authoritative(
+    kind: ProviderKind,
+    base_url: &str,
+    entry: &codewhale_config::catalog::CachedProviderCatalog,
+) -> bool {
+    provider_owns_live_catalog(kind, base_url)
+        || entry.is_fresh(codewhale_config::catalog::now_unix())
+}
+
 /// Whether a catalog scope holds an account-scoped roster that must never be
 /// shared across credentials (#6289).
 ///
@@ -815,20 +834,61 @@ fn load_from_disk_unlocked_with_limit(path: &Path, max_bytes: u64) -> Option<Pro
     if cache.entries.len() > MAX_CACHE_SCOPES || cached_row_count(&cache) > MAX_CACHE_ROWS {
         return None;
     }
-    if !cache.entries.iter().all(|(key, entry)| {
-        let Some((kind, identity)) = entry.provider.split_once(':') else { return false; };
-        ProviderKind::parse(kind).is_some_and(|parsed| parsed.as_str() == kind)
+    let scopes_before = cache.entries.len();
+    cache.entries.retain(|key, entry| {
+        let Some((kind, identity)) = entry.provider.split_once(':') else {
+            return false;
+        };
+        let scope_valid = ProviderKind::parse_config_identity(kind)
+            .is_some_and(|parsed| parsed.as_str() == kind)
             && !identity.is_empty()
-            && key == &ProviderCatalogCache::cache_key(&entry.provider, &entry.base_url_fingerprint)
-            && entry.offerings.iter().all(|row| {
-                row.provider == identity
-                    && crate::provider_lake::valid_catalog_model_id(&row.wire_model_id)
-                    && provider_cost_source_allowed(row)
-                    && matches!(&row.source, codewhale_config::catalog::CatalogSource::Live {
-                        base_url_fingerprint, fetched_at
-                    } if base_url_fingerprint == &entry.base_url_fingerprint && *fetched_at == entry.fetched_at)
-            })
-    }) { return None; }
+            && key
+                == &ProviderCatalogCache::cache_key(&entry.provider, &entry.base_url_fingerprint);
+        if !scope_valid {
+            tracing::debug!(
+                target: "provider_catalog",
+                scope = %entry.provider,
+                "dropping invalid provider catalog scope"
+            );
+            return false;
+        }
+        let entry_fingerprint = entry.base_url_fingerprint.clone();
+        let entry_fetched_at = entry.fetched_at;
+        let rows_before = entry.offerings.len();
+        entry.offerings.retain(|row| {
+            row.provider == identity
+                && crate::provider_lake::valid_catalog_model_id(&row.wire_model_id)
+                && provider_cost_source_allowed(row)
+                && matches!(&row.source, codewhale_config::catalog::CatalogSource::Live {
+                    base_url_fingerprint, fetched_at
+                } if base_url_fingerprint == &entry_fingerprint && *fetched_at == entry_fetched_at)
+        });
+        if entry.offerings.len() != rows_before {
+            tracing::warn!(
+                target: "provider_catalog",
+                scope = %entry.provider,
+                rejected = rows_before - entry.offerings.len(),
+                kept = entry.offerings.len(),
+                "dropped unusable rows from a cached provider catalog"
+            );
+        }
+        if rows_before > 0 && entry.offerings.is_empty() {
+            tracing::debug!(
+                target: "provider_catalog",
+                scope = %entry.provider,
+                "dropping provider catalog scope whose every row was unusable"
+            );
+            return false;
+        }
+        true
+    });
+    if cache.entries.len() != scopes_before {
+        tracing::debug!(
+            target: "provider_catalog",
+            dropped = scopes_before - cache.entries.len(),
+            "provider catalog cache loaded with invalid scopes dropped"
+        );
+    }
     // Older builds could durably cache account-scoped rosters. Scrub
     // those entries on every load so upgrading cannot attach one workspace's
     // catalog to a different credential.
@@ -1260,7 +1320,8 @@ pub fn maybe_load_persisted_cache_for_config(config: &Config) -> usize {
     };
     let provider = identity.provider;
     let provider_identity = canonical_provider_scope(identity.key.as_str());
-    let fingerprint = base_url_fingerprint(&config.base_url_for_route(&identity));
+    let base_url = config.base_url_for_route(&identity);
+    let fingerprint = base_url_fingerprint(&base_url);
     if route_is_account_scoped(config, &identity) {
         forget_account_scoped_provider(provider, &provider_identity);
         return 0;
@@ -1285,7 +1346,18 @@ pub fn maybe_load_persisted_cache_for_config(config: &Config) -> usize {
     CACHE
         .read()
         .map(|guard| {
-            publish_exact_scope_for_identity(&guard, provider, &provider_identity, &fingerprint)
+            if provider_owns_live_catalog(provider, &base_url) {
+                publish_exact_scope_for_identity(&guard, provider, &provider_identity, &fingerprint)
+            } else {
+                // Models.dev owns this provider's roster, so a persisted /models
+                // partition can only shadow fresher snapshot rows (#6396).
+                crate::provider_lake::replace_provider_live_snapshot_for_identity(
+                    provider,
+                    &provider_identity,
+                    CatalogSnapshot::default(),
+                );
+                0
+            }
         })
         .unwrap_or(0)
 }
@@ -1895,11 +1967,22 @@ fn record_success_for_identity(
 ) -> CatalogStatus {
     let provider = canonical_provider_scope(&delta.provider);
     delta.provider = storage_provider(kind, &provider);
-    if delta.offerings.iter().any(|row| {
-        row.provider != provider
-            || !crate::provider_lake::valid_catalog_model_id(&row.wire_model_id)
-            || !provider_cost_source_allowed(row)
-    }) {
+    let submitted = delta.offerings.len();
+    delta.offerings.retain(|row| {
+        row.provider == provider
+            && crate::provider_lake::valid_catalog_model_id(&row.wire_model_id)
+            && provider_cost_source_allowed(row)
+    });
+    if delta.offerings.len() < submitted {
+        tracing::warn!(
+            target: "provider_catalog",
+            scope = %provider,
+            rejected = submitted - delta.offerings.len(),
+            kept = delta.offerings.len(),
+            "dropping unusable rows from a provider catalog refresh"
+        );
+    }
+    if submitted > 0 && delta.offerings.is_empty() {
         return record_failure_for_identity(
             kind,
             &provider,
@@ -3167,7 +3250,8 @@ mod tests {
             forged.cache.entries.values_mut().next().unwrap().offerings[0].cost_source =
                 Some(source);
             fs::write(&path, serde_json::to_vec(&forged).unwrap()).unwrap();
-            assert!(load_from_disk_unlocked(&path).is_none());
+            let loaded = load_from_disk_unlocked(&path).expect("valid scopes still load");
+            assert!(loaded.entries.is_empty(), "forged scope must be dropped");
         }
     }
 

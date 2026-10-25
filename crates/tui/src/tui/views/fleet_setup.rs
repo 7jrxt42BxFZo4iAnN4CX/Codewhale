@@ -40,13 +40,13 @@ use ratatui::{
 
 use crate::config::Config;
 use crate::fleet::profile::FleetProfileScope;
-use crate::fleet::role::public_role_label;
 use crate::tui::app::App;
 use crate::tui::menu_style;
 use crate::tui::views::{
     ActionHint, ModalKind, ModalView, ViewAction, ViewEvent, centered_modal_area,
     render_modal_footer_with_gutter, render_modal_surface, truncate_view_text,
 };
+use codewhale_agent_contract::role::public_role_label;
 use codewhale_localization::{MessageId, tr};
 use codewhale_palette as palette;
 
@@ -303,8 +303,7 @@ impl FleetSetupSnapshot {
             .fleet
             .as_ref()
             .map(|fleet| fleet.exec.max_spawn_depth)
-            .unwrap_or_else(|| codewhale_config::FleetExecConfig::default().max_spawn_depth)
-            .min(codewhale_config::MAX_SPAWN_DEPTH_CEILING);
+            .unwrap_or_else(|| codewhale_config::FleetExecConfig::default().max_spawn_depth);
         let roster =
             crate::fleet::roster::FleetRoster::load(&config.fleet_config(), &app.workspace);
         let roster_members = roster
@@ -3275,7 +3274,7 @@ approval_required = true
             known.description
         );
         assert!(
-            known.description.contains("1M ctx"),
+            known.description.contains("1.05M ctx"),
             "{}",
             known.description
         );

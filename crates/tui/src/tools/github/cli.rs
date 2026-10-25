@@ -230,7 +230,7 @@ async fn host_output(
     if cancel.is_cancelled() {
         return Err(ToolError::not_available("GitHub operation cancelled"));
     }
-    let output = crate::process_tree::contained_output_with_input_bounded(
+    let output = codewhale_runtime::process_tree::contained_output_with_input_bounded(
         command,
         input.to_vec(),
         1024 * 1024,

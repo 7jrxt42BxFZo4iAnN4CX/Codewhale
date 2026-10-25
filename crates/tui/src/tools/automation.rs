@@ -728,7 +728,7 @@ mod tests {
         )
         .expect("automation manager");
         let mut context = ToolContext::new(workspace.path());
-        context.shell_policy = crate::worker_profile::ShellPolicy::None;
+        context.shell_policy = codewhale_agent_contract::worker_profile::ShellPolicy::None;
         context.runtime.automations = Some(std::sync::Arc::new(tokio::sync::Mutex::new(manager)));
         let tool = AutomationTool::new("automation");
 

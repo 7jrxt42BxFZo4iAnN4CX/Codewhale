@@ -14,7 +14,7 @@
 //! contract. Runtime enforcement of every declared field remains incremental
 //! follow-up work (#3217).
 
-use crate::fleet::role::FleetRole;
+use crate::role::FleetRole;
 use serde::{Deserialize, Serialize};
 
 /// Coarse capability classes a worker may exercise, beyond read access (reads
@@ -175,8 +175,8 @@ pub enum ToolSurface {
 ///
 /// This is deliberately a *projection*, not a second persisted record:
 /// [`WorkerRuntimeProfile`] remains the wire/persistence shape and
-/// [`ChildAuthority`](crate::fleet::role::ChildAuthority) /
-/// [`ToolAuthorityEnvelope`](crate::tools::spec::ToolAuthorityEnvelope)
+/// `ChildAuthority` /
+/// `ToolAuthorityEnvelope`
 /// remain the transports that carry the same authority across the durable
 /// Fleet and `codewhale exec` subprocess boundaries. What this object retires
 /// is the *semantic* duplication — posture sentinel entries read back off a
@@ -250,7 +250,7 @@ impl ChildGrant {
     ///
     /// Every field takes the more restrictive side, so the result can never
     /// name authority the parent lacked. This is the in-process counterpart
-    /// of [`crate::fleet::role::ChildAuthority::clamp`].
+    /// of [`crate::role::ChildAuthority::clamp`].
     #[must_use]
     pub fn resolve(
         role: &FleetRole,
@@ -273,13 +273,13 @@ impl ChildGrant {
         // `exec_shell` (raw shell gone) is deliberately *not* folded: a
         // write-denied verifier installs it while keeping shell authority.
         let denied = |name: &str| {
-            crate::core::engine::tool_catalog::tool_denied(
+            codewhale_execpolicy::tool_rules::tool_denied(
                 Some(profile.denied_tools.as_slice()),
                 name,
             )
         };
         let resolved_shell = preset.shell.min(profile_shell);
-        let shell = if denied(crate::fleet::role::SHELL_AUTHORITY_SENTINEL) {
+        let shell = if denied(crate::role::SHELL_AUTHORITY_SENTINEL) {
             match resolved_shell {
                 ShellGrant::Inspect => ShellGrant::Inspect,
                 _ => ShellGrant::None,
@@ -301,7 +301,7 @@ impl ChildGrant {
             shell,
             network: preset.network
                 && profile.permissions.network
-                && !denied(crate::fleet::role::NETWORK_DENIAL_SENTINEL),
+                && !denied(crate::role::NETWORK_DENIAL_SENTINEL),
             desktop: false,
             surface: preset.surface,
             scope,
@@ -515,10 +515,7 @@ impl WorkerRuntimeProfile {
         };
         // Depth stays absolute; only the current position increments. Every
         // authority projection compares the position against this same ceiling.
-        let max_spawn_depth = requested
-            .max_spawn_depth
-            .min(self.max_spawn_depth)
-            .min(codewhale_config::MAX_SPAWN_DEPTH_CEILING);
+        let max_spawn_depth = requested.max_spawn_depth.min(self.max_spawn_depth);
         WorkerRuntimeProfile {
             role: requested.role.clone(),
             permissions,
@@ -556,10 +553,7 @@ impl WorkerRuntimeProfile {
 }
 
 /// Omission inherits; neither a child request nor a replay can widen a cap.
-pub(crate) fn narrow_optional_limit<T: Ord>(
-    inherited: Option<T>,
-    requested: Option<T>,
-) -> Option<T> {
+pub fn narrow_optional_limit<T: Ord>(inherited: Option<T>, requested: Option<T>) -> Option<T> {
     match (inherited, requested) {
         (Some(inherited), Some(requested)) => Some(inherited.min(requested)),
         (inherited, requested) => inherited.or(requested),
@@ -567,7 +561,7 @@ pub(crate) fn narrow_optional_limit<T: Ord>(
 }
 
 /// Zero is the operator/internal unbounded sentinel, never a widening request.
-pub(crate) fn narrow_model_steps(inherited: u32, requested: u32) -> u32 {
+pub fn narrow_model_steps(inherited: u32, requested: u32) -> u32 {
     narrow_optional_limit(
         (inherited > 0).then_some(inherited),
         (requested > 0).then_some(requested),

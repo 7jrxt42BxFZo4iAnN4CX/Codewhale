@@ -484,7 +484,7 @@ fn fetch_artifact_id(url: &str, bytes: &[u8]) -> String {
     let mut identity = Vec::with_capacity(url.len() + bytes.len());
     identity.extend_from_slice(url.as_bytes());
     identity.extend_from_slice(bytes);
-    let digest = crate::hashing::sha256_hex(&identity);
+    let digest = codewhale_runtime::hashing::sha256_hex(&identity);
     format!("fetch_{}", &digest[..16])
 }
 

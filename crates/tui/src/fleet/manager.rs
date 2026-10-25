@@ -535,6 +535,17 @@ impl FleetManager {
         })
     }
 
+    pub(crate) fn ensure_external_worker_credentials(&self) -> Result<()> {
+        anyhow::ensure!(
+            !self
+                .route_config
+                .as_ref()
+                .is_some_and(|config| config.session_provider_keys_only),
+            "External Fleet workers are unavailable under session-only provider key policy; use in-process subagents"
+        );
+        Ok(())
+    }
+
     /// Activate one durable queued run without leasing work.
     ///
     /// Managed clients use this transition before spawning the executor
@@ -542,6 +553,7 @@ impl FleetManager {
     /// Terminal runs are never reactivated through this method; the existing
     /// explicit worker restart control remains separate.
     pub fn activate_run(&self, run_id: &FleetRunId) -> Result<FleetRunReport> {
+        self.ensure_external_worker_credentials()?;
         let state = self.ledger.rebuild_state()?;
         let run =
             state
@@ -1192,6 +1204,7 @@ impl FleetManager {
     }
 
     pub fn restart_worker(&self, worker_id: &str) -> Result<FleetRestartReport> {
+        self.ensure_external_worker_credentials()?;
         let state = self.ledger.rebuild_state()?;
         let Some(task) = active_task_for_worker(&state, worker_id)
             .or_else(|| latest_task_for_worker(&state, worker_id))
@@ -1330,6 +1343,10 @@ impl FleetManager {
             .as_ref()
             .map(|manifest| manifest.generation)
             .ok_or_else(|| anyhow!("Fleet worker {worker_id} has no persisted launch manifest"))?;
+
+        coordination
+            .ensure_registered_worker_coordination_locks(worker_id)
+            .map_err(anyhow::Error::msg)?;
 
         match registered_generation {
             generation if generation == current_generation => {
@@ -1582,6 +1599,7 @@ impl FleetManager {
         codewhale_binary: &str,
         model: Option<&str>,
     ) -> Result<usize> {
+        self.ensure_external_worker_credentials()?;
         let state = self.ledger.rebuild_state()?;
         let run = state
             .runs
@@ -1612,19 +1630,23 @@ impl FleetManager {
                 .cloned()
                 .unwrap_or_else(|| default_local_worker(worker_id));
             let coordination_record = if let Some(manager) = self.sub_agent_manager.as_ref() {
-                let Ok(guard) = manager.try_read() else {
+                let Ok(mut guard) = manager.try_write() else {
                     continue;
                 };
-                Some(
+                let record = guard
+                    .fleet_worker_records_for_workspace(&self.workspace)
+                    .map_err(anyhow::Error::msg)?
+                    .into_iter()
+                    .find(|record| {
+                        record.spec.worker_id == worker_id
+                            && record.spec.run_id == task.entry.run_id.0
+                    });
+                if record.is_some() {
                     guard
-                        .fleet_worker_records_for_workspace(&self.workspace)
-                        .map_err(anyhow::Error::msg)?
-                        .into_iter()
-                        .find(|record| {
-                            record.spec.worker_id == worker_id
-                                && record.spec.run_id == task.entry.run_id.0
-                        }),
-                )
+                        .ensure_registered_worker_coordination_locks(worker_id)
+                        .map_err(anyhow::Error::msg)?;
+                }
+                Some(record)
             } else {
                 None
             };

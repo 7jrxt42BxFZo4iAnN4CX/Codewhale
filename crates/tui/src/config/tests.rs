@@ -1,4 +1,5 @@
 use super::*;
+use crate::provider_lake::{ProviderCapability, RequestPayloadMode, provider_capability};
 use crate::test_support::{EnvVarGuard, env_scope_ticket, join_env_scope, lock_test_env};
 use std::collections::HashMap;
 use std::env;
@@ -725,7 +726,7 @@ fn goal_max_continuations_loads_from_goal_table() -> Result<()> {
     let config: Config = toml::from_str("")?;
     assert_eq!(
         config.goal_max_continuations(),
-        crate::goal_loop::DEFAULT_MAX_GOAL_CONTINUATIONS
+        codewhale_runtime::goal_loop::DEFAULT_MAX_GOAL_CONTINUATIONS
     );
     assert_eq!(config.goal_max_continuations(), 0);
     assert_eq!(config.goal_continuation_delay_seconds(), 0);
@@ -772,7 +773,7 @@ continuation_delay_seconds = 999999999
     )?;
     assert_eq!(
         config.goal_continuation_delay_seconds(),
-        crate::goal_loop::MAX_GOAL_CONTINUATION_DELAY_SECONDS
+        codewhale_runtime::goal_loop::MAX_GOAL_CONTINUATION_DELAY_SECONDS
     );
 
     Ok(())
@@ -1096,7 +1097,7 @@ reason = "read_file is allowed"
     )?;
     config.validate()?;
 
-    let policy = config.auto_review_policy();
+    let policy = crate::core::authority::auto_review::AutoReviewPolicy::from_config(&config);
     let shell_context = crate::core::authority::auto_review::AutoReviewContext::from_tool_call(
         "exec_shell",
         &serde_json::json!({"command": "cargo test"}),
@@ -1146,7 +1147,7 @@ fn auto_review_scenario() -> Result<()> {
         )?;
 
         let merged = apply_profile(parsed, Some("strict"))?;
-        let policy = merged.auto_review_policy();
+        let policy = crate::core::authority::auto_review::AutoReviewPolicy::from_config(&merged);
 
         assert_eq!(policy.block_rules.len(), 1);
         assert_eq!(
@@ -1395,9 +1396,9 @@ web_search = true
         Some("https://token-plan-sgp.xiaomimimo.com/v1")
     );
     let features = config.features();
-    assert!(features.enabled(crate::features::Feature::ShellTool));
-    assert!(features.enabled(crate::features::Feature::Subagents));
-    assert!(features.enabled(crate::features::Feature::WebSearch));
+    assert!(features.enabled(codewhale_runtime::features::Feature::ShellTool));
+    assert!(features.enabled(codewhale_runtime::features::Feature::Subagents));
+    assert!(features.enabled(codewhale_runtime::features::Feature::WebSearch));
     Ok(())
 }
 
@@ -1677,7 +1678,7 @@ fn update_config_scenario() {
 
 #[test]
 fn network_policy_toml_maps_proxy_hosts_to_runtime_policy() {
-    let policy: NetworkPolicyToml = toml::from_str(
+    let policy: codewhale_config::NetworkPolicyToml = toml::from_str(
         r#"
         default = "allow"
         proxy = ["github.com", ".githubusercontent.com"]
@@ -1686,7 +1687,7 @@ fn network_policy_toml_maps_proxy_hosts_to_runtime_policy() {
     )
     .expect("network policy toml");
 
-    let runtime = policy.into_runtime();
+    let runtime = crate::network_policy::NetworkPolicy::from(policy);
 
     assert_eq!(runtime.proxy, ["github.com", ".githubusercontent.com"]);
     assert_eq!(runtime.proxy_fake_ip_cidrs, ["198.18.0.0/15"]);
@@ -2082,7 +2083,7 @@ fn tools_always_load_parses_and_trims_names() {
 #[test]
 fn user_input_limits_default_when_tools_table_is_absent() {
     let parsed: ConfigFile = toml::from_str("").expect("empty config");
-    let limits = parsed.base.user_input_limits();
+    let limits = crate::tools::user_input::UserInputLimits::from_config(&parsed.base);
     assert_eq!(limits.max_questions, 6);
     assert_eq!(limits.max_options, 4);
 }
@@ -2097,7 +2098,7 @@ fn user_input_limits_read_from_tools_table_and_clamp() {
         "#,
     )
     .expect("tools config");
-    let limits = parsed.base.user_input_limits();
+    let limits = crate::tools::user_input::UserInputLimits::from_config(&parsed.base);
     assert_eq!(limits.max_questions, 9);
     assert_eq!(limits.max_options, 6);
 
@@ -2109,7 +2110,7 @@ fn user_input_limits_read_from_tools_table_and_clamp() {
         "#,
     )
     .expect("tools config");
-    let clamped = clamped.base.user_input_limits();
+    let clamped = crate::tools::user_input::UserInputLimits::from_config(&clamped.base);
     assert_eq!(clamped.max_questions, 10);
     assert_eq!(clamped.max_options, 2);
 }
@@ -2138,14 +2139,8 @@ fn goal_max_steps_default_and_zero_are_uncapped() {
 }
 
 #[test]
-fn goal_max_steps_preserves_positive_limits_and_clamps() {
-    for (configured, expected) in [
-        (1, 1),
-        (50, 50),
-        (100_000, 100_000),
-        (500_000, 100_000),
-        (u32::MAX, 100_000),
-    ] {
+fn goal_max_steps_preserves_positive_limits() {
+    for (configured, expected) in [(1, 1), (50, 50), (100_000, 100_000), (500_000, 500_000)] {
         let source = format!("[goal]\nmax_steps = {configured}\n");
         let parsed: ConfigFile = toml::from_str(&source).expect("goal config");
         let resolved = parsed.base.goal_max_steps();
@@ -3879,7 +3874,7 @@ fn subagents_enabled_reports_disable_precedence() {
 }
 
 #[test]
-fn subagent_max_spawn_depth_defaults_allows_zero_and_clamps() {
+fn subagent_max_spawn_depth_defaults_allows_zero_and_preserves_owner_choice() {
     assert_eq!(
         Config::default().subagent_max_spawn_depth(),
         codewhale_config::DEFAULT_SPAWN_DEPTH
@@ -3896,15 +3891,12 @@ fn subagent_max_spawn_depth_defaults_allows_zero_and_clamps() {
 
     let high = Config {
         subagents: Some(SubagentsConfig {
-            max_depth: Some(codewhale_config::MAX_SPAWN_DEPTH_CEILING + 10),
+            max_depth: Some(99),
             ..SubagentsConfig::default()
         }),
         ..Config::default()
     };
-    assert_eq!(
-        high.subagent_max_spawn_depth(),
-        codewhale_config::MAX_SPAWN_DEPTH_CEILING
-    );
+    assert_eq!(high.subagent_max_spawn_depth(), 99);
 }
 
 #[test]
@@ -4663,7 +4655,7 @@ fn single_provider_logout_holds_the_slot_write_lock_across_config_and_store() ->
     let (held_tx, held_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel();
     let holder = std::thread::spawn(move || {
-        crate::credentials::store::with_provider_write_lock("openrouter", || {
+        codewhale_runtime::credentials::store::with_provider_write_lock("openrouter", || {
             let _ = held_tx.send(());
             let _ = release_rx.recv();
         });
@@ -4739,7 +4731,7 @@ fn full_logout_holds_every_slot_write_lock_across_config_and_store() -> Result<(
     let (held_tx, held_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel();
     let holder = std::thread::spawn(move || {
-        crate::credentials::store::with_provider_write_lock("openrouter", || {
+        codewhale_runtime::credentials::store::with_provider_write_lock("openrouter", || {
             let _ = held_tx.send(());
             let _ = release_rx.recv();
         });
@@ -6559,7 +6551,7 @@ consent_version = 1
         ),
     )?;
 
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     let config = Config::load(Some(config_path), None)?;
     assert!(
         config
@@ -6572,7 +6564,7 @@ consent_version = 1
         &(config).test_identity_for_kind(ProviderKind::OpenaiCodex)
     ));
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0),
         "managed config must not consent to user-owned external credentials"
     );
@@ -6626,7 +6618,7 @@ consent_version = 1
         ),
     )?;
     let _auth_path = EnvVarGuard::set("OPENAI_CODEX_AUTH_FILE", &external_path);
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     let config = Config::load(Some(config_path), None)?;
     let effective = config
         .provider_config_for(&config.test_identity_for_kind(ProviderKind::OpenaiCodex))
@@ -6641,7 +6633,7 @@ consent_version = 1
         &(config).test_identity_for_kind(ProviderKind::OpenaiCodex)
     ));
     assert_eq!(
-        crate::external_credentials::complete_side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
         (0, 0, 0, 0, 0),
         "managed deny must suppress lower consent before every side effect"
     );
@@ -11589,7 +11581,7 @@ fn codex_external_credentials_are_disabled_by_default_and_managed_fails_before_i
         provider: Some(ProviderKind::OpenaiCodex.as_str().to_string()),
         ..Default::default()
     };
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     assert!(!has_api_key_for(
         &disabled,
         &(disabled).test_identity_for_kind(ProviderKind::OpenaiCodex)
@@ -11600,7 +11592,7 @@ fn codex_external_credentials_are_disabled_by_default_and_managed_fails_before_i
     assert!(error.to_string().contains("Sign in with ChatGPT"));
     assert_eq!(disabled.codex_account_id(), None);
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0)
     );
 
@@ -11622,7 +11614,7 @@ fn codex_external_credentials_are_disabled_by_default_and_managed_fails_before_i
         }),
         ..Default::default()
     };
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     assert!(!has_api_key_for(
         &managed,
         &(managed).test_identity_for_kind(ProviderKind::OpenaiCodex)
@@ -11632,7 +11624,7 @@ fn codex_external_credentials_are_disabled_by_default_and_managed_fails_before_i
         .expect_err("managed access needs a preservation adapter");
     assert!(error.to_string().contains("Sign in with ChatGPT"));
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0)
     );
     assert_eq!(fs::read_to_string(&auth_path)?, raw);
@@ -11683,7 +11675,7 @@ fn codex_read_only_consent_reads_exact_file_without_mutation() -> Result<()> {
 
     let mut inactive = config.clone();
     inactive.provider = Some(ProviderKind::Deepseek.as_str().to_string());
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     assert!(inactive.external_credential_read_consent_configured(
         &inactive.test_identity_for_kind(ProviderKind::OpenaiCodex),
         codewhale_config::ExternalCredentialSource::CodexCli,
@@ -11697,7 +11689,7 @@ fn codex_read_only_consent_reads_exact_file_without_mutation() -> Result<()> {
         .expect_err("inactive providers cannot mint external read capabilities");
     assert!(dormant_error.to_string().contains("explicitly selected"));
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0)
     );
 
@@ -11712,10 +11704,10 @@ fn codex_read_only_consent_reads_exact_file_without_mutation() -> Result<()> {
         "the selected route remains pinned to the persisted consent path"
     );
 
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     assert!(config.active_route_api_key().is_err());
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0)
     );
     assert_eq!(fs::read_to_string(&auth_path)?, raw);
@@ -11723,11 +11715,11 @@ fn codex_read_only_consent_reads_exact_file_without_mutation() -> Result<()> {
 
     drop(_access);
     let _process_access = EnvVarGuard::set("OPENAI_CODEX_ACCESS_TOKEN", "process-token");
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     assert!(config.active_route_api_key().is_err());
     assert_eq!(config.codex_account_id(), None);
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0),
         "external tokens must never substitute for Codewhale-issued plan access"
     );
@@ -12241,14 +12233,14 @@ fn xai_oauth_selection_falls_back_to_explicit_api_key_without_external_io() -> R
         providers: Some(providers),
         ..Config::default()
     };
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     assert!(has_api_key_for(
         &api_key_config,
         &(api_key_config).test_identity_for_kind(ProviderKind::Xai)
     ));
     assert_eq!(api_key_config.active_route_api_key()?, "fake-xai-cfg-key");
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0)
     );
 
@@ -12290,14 +12282,14 @@ fn xai_invalid_owned_generation_blocks_external_and_uses_api_key_fallback() -> R
         ..Config::default()
     };
 
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     assert!(
         !crate::oauth::credentials_present(crate::oauth::OAuthProvider::Xai, &config),
         "an invalid owned generation pointer must not resolve external OAuth"
     );
     assert_eq!(config.active_route_api_key()?, "fake-xai-cfg-key");
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0),
         "an unusable owned generation must not access the external Grok CLI"
     );
@@ -14587,7 +14579,7 @@ fn picker_consent_persists_only_confirmed_exact_scope_and_revoke_is_one_step() {
         ..Config::default()
     };
 
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     {
         let captured_fixture_identity = (live).test_identity_for_kind(ProviderKind::OpenaiCodex);
         persist_external_credential_consent_for_at(
@@ -14612,13 +14604,13 @@ fn picker_consent_persists_only_confirmed_exact_scope_and_revoke_is_one_step() {
         .expect("live consent");
     assert_eq!(consent.path, external_path);
     assert_eq!(
-        crate::external_credentials::complete_side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
         (1, 1, 0, 0, 0),
         "grant persistence performs exactly the confirmed read (one secure open, one \
          bounded read) and never writes, refreshes, or reaches the network"
     );
 
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     {
         let captured_fixture_identity = (live).test_identity_for_kind(ProviderKind::OpenaiCodex);
         revoke_external_credential_consent_for_at(
@@ -14636,7 +14628,7 @@ fn picker_consent_persists_only_confirmed_exact_scope_and_revoke_is_one_step() {
             .is_none()
     );
     assert_eq!(
-        crate::external_credentials::complete_side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::complete_side_effect_trap_counts(),
         (0, 0, 0, 0, 0)
     );
 }
@@ -14818,7 +14810,7 @@ fn enabled_memory_always_resolves_to_native_store_path() {
         path.display()
     );
     assert!(
-        crate::native_memory::NativeMemoryStore::from_global_path(&path).is_some(),
+        codewhale_runtime::native_memory::NativeMemoryStore::from_global_path(&path).is_some(),
         "native store must accept the resolved memory path"
     );
 
@@ -14834,7 +14826,8 @@ fn enabled_memory_always_resolves_to_native_store_path() {
     };
     let custom_path = custom.memory_path();
     assert!(
-        crate::native_memory::NativeMemoryStore::from_global_path(&custom_path).is_some(),
+        codewhale_runtime::native_memory::NativeMemoryStore::from_global_path(&custom_path)
+            .is_some(),
         "custom memory paths are re-rooted into the native layout, got {}",
         custom_path.display()
     );
@@ -15653,7 +15646,7 @@ fn remembered_model_pick_defers_to_the_configured_spelling() {
 /// slot was skipped, and why.
 #[test]
 fn picker_and_request_path_disagree_when_the_secret_slot_marker_is_missing() -> Result<()> {
-    use crate::credentials::CredentialSource;
+    use codewhale_runtime::credentials::CredentialSource;
 
     let _lock = lock_test_env();
     let temp_root = tempfile::tempdir()?;
@@ -16929,7 +16922,10 @@ mod released_provider_serde {
                 &empty,
             ))
             .unwrap();
-            let revision = format!("sha256:{}", crate::hashing::sha256_hex(&old_payload));
+            let revision = format!(
+                "sha256:{}",
+                codewhale_runtime::hashing::sha256_hex(&old_payload)
+            );
             let old_quote = LegacyPricing {
                 provider: legacy,
                 provider_identity: id.into(),

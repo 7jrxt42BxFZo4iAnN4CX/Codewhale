@@ -812,7 +812,7 @@
   "KbSendDraft": "Enviar si está inactivo; encolar si está ocupado; con el compositor vacío, enviar ahora el siguiente seguimiento en cola",
   "KbSteerCurrentTurn": "Guiar el turno actual (envía normalmente si está inactivo)",
   "KbCloseMenu": "Cerrar menú, cancelar solicitud, descartar borrador o limpiar entrada",
-  "KbCancelOrExit": "Cancelar solicitud o salir cuando está inactivo",
+  "KbCancelOrExit": "Cancelar, borrar el borrador o salir cuando está inactivo",
   "KbShellControls": "Mover la espera del shell a /jobs",
   "KbExitEmpty": "Salir cuando la entrada está vacía",
   "KbCommandPalette": "Abrir paleta de comandos",

@@ -30,7 +30,7 @@ pub enum StepBudgetSource {
 }
 
 impl StepBudgetSource {
-    /// The configuration key named in soft-landing and exhaustion notices.
+    /// The configuration key named in exhaustion notices.
     #[must_use]
     pub const fn key_label(self) -> &'static str {
         match self {
@@ -225,7 +225,7 @@ impl TurnContext {
         self.step_limit().is_some_and(|limit| self.step >= limit)
     }
 
-    /// Model steps consumed so far (for soft-landing and reporting).
+    /// Model steps consumed so far (for reporting).
     #[must_use]
     pub fn steps_used(&self) -> u32 {
         self.step

@@ -469,7 +469,7 @@ impl ShellDispatcher {
         }
 
         // Leave raw mode; the guard restores it only if it was already enabled.
-        let _raw_mode = crate::host_terminal::suspend_raw_mode();
+        let _raw_mode = codewhale_runtime::host_terminal::suspend_raw_mode();
 
         let mut cmd = self.build_command(shell_command);
         cmd.current_dir(cwd);

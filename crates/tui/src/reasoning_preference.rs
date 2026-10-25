@@ -119,21 +119,21 @@ impl ReasoningEffort {
     /// for its compatibility fallback, but a new CLI, settings, or tool input
     /// must reject an unknown value instead of quietly turning it into `max`.
     pub fn parse_strict(value: &str) -> Result<Self, String> {
-        let trimmed = value.trim();
-        match trimmed.to_ascii_lowercase().as_str() {
-            "off" | "disabled" | "none" | "false" => Ok(Self::Off),
-            "minimal" => Ok(Self::Minimal),
-            "low" | "minimum" | "light" => Ok(Self::Low),
-            "medium" | "mid" => Ok(Self::Medium),
-            "high" => Ok(Self::High),
-            "xhigh" => Ok(Self::XHigh),
-            "auto" | "automatic" => Ok(Self::Auto),
-            "ultra" | "ultracode" => Ok(Self::Ultra),
-            "max" | "maximum" => Ok(Self::Max),
-            _ => Err(format!(
-                "Unrecognized reasoning effort {trimmed:?}. Expected one of: auto, off, minimal, low, medium, high, xhigh, ultra, or max."
-            )),
-        }
+        let canonical = codewhale_config::settings_schema::canonical_reasoning_effort(value)?;
+        Ok([
+            Self::Off,
+            Self::Minimal,
+            Self::Low,
+            Self::Medium,
+            Self::High,
+            Self::XHigh,
+            Self::Ultra,
+            Self::Auto,
+            Self::Max,
+        ]
+        .into_iter()
+        .find(|effort| effort.as_setting() == canonical)
+        .unwrap_or_default())
     }
 
     /// Parse a persisted config-file string into an effort tier. Unknown

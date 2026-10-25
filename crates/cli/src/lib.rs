@@ -364,10 +364,11 @@ Forwarded serve options:
       --cors-origin <URL>   Additional CORS origin to allow (repeatable)
       --auth-token <TOKEN>  Require this bearer token for /v1/* runtime API routes
       --insecure            Disable runtime API auth when no token is configured
+      --full-access         Run with Full Access: no approval prompts, no Codewhale sandbox (alias: --yolo)
 
 `codewhale serve --http` and `codewhale serve --mobile` remain compatibility
 aliases for `codewhale app-server --http` and `codewhale app-server --mobile`.
-New integrations should prefer `codewhale app-server`.")]
+New integrations should prefer `codewhale app-server --http` for the full Engine API.")]
     Serve(TuiPassthroughArgs),
     /// Open the first-class local browser client over the canonical Runtime API.
     #[command(
@@ -387,7 +388,7 @@ New integrations should prefer `codewhale app-server`.")]
     /// Manage an existing Codewhale account; new accounts are not open.
     #[command(visible_alias = "cloud")]
     Account(cloud::CloudArgs),
-    /// Run a task on a Codewhale cloud computer (not available: cloud computers and accounts are paused for new users).
+    /// Run a task on a Codewhale cloud computer using your configured model.
     Dispatch(dispatch::DispatchArgs),
     /// Run MCP server mode over stdio.
     McpServer,
@@ -399,17 +400,20 @@ New integrations should prefer `codewhale app-server`.")]
     Thread(ThreadArgs),
     /// Evaluate sandbox/approval policy decisions.
     Sandbox(SandboxArgs),
-    /// Run the canonical runtime API / control plane (HTTP/SSE, mobile, stdio).
+    /// Expose the full Engine API with --http, or smaller compatibility controls.
     #[command(after_help = "\
 Transports:
   codewhale app-server --http              Full HTTP/SSE runtime API (/v1/*) on 127.0.0.1:7878
   codewhale app-server --mobile            Runtime API + phone control page (127.0.0.1 only)
-  codewhale app-server --stdio             JSON-RPC control transport over stdio
+  codewhale app-server --stdio             Compatibility JSON-RPC controls and tool-free turns
   codewhale app-server                     Compatibility HTTP routes on the canonical owner at 127.0.0.1:8787
 
 `--http` and `--mobile` serve the same mature runtime API as `codewhale serve
 --http`/`--mobile`, which remain as compatibility aliases. The runtime API token
 is read from --auth-token, CODEWHALE_RUNTIME_TOKEN, or DEEPSEEK_RUNTIME_TOKEN.
+
+Compatibility turns require explicit allowed_tools: []; use --http for tools,
+approvals, clarification and the full event journal.
 
 See docs/RUNTIME_API.md.")]
     AppServer(AppServerArgs),
@@ -2001,8 +2005,8 @@ struct AppServerArgs {
     /// Equivalent to the legacy `codewhale serve --mobile`.
     #[arg(long, conflicts_with = "stdio")]
     mobile: bool,
-    /// Run the app-server JSON-RPC control transport over stdio.
-    /// Used by local SDKs and JSON-RPC integrations.
+    /// Run the smaller compatibility JSON-RPC control transport over stdio.
+    /// Tool-free turns require allowed_tools: []; use --http for interactive work.
     #[arg(long, default_value_t = false)]
     stdio: bool,
     /// Run as the desktop daemon: the same JSON-RPC control transport as
@@ -2051,6 +2055,7 @@ pub fn run_cli() -> std::process::ExitCode {
     install_rustls_crypto_provider();
 
     let outcome = run();
+    codewhale_tui::discard_runtime_listener_handoff();
     // A config write may have moved legacy top-level `base_url` / `api_key`
     // into their provider tables (#6394); say so once, off stdout.
     for notice in codewhale_config::legacy_root::take_notices() {
@@ -2266,12 +2271,20 @@ fn argv_secret_warning(cli: &Cli, command: Option<&Commands>) -> Option<&'static
 }
 
 fn run() -> Result<()> {
+    let inherited_listener = codewhale_tui::prepare_runtime_listener_handoff()?;
     let argv: Vec<_> = std::env::args_os().collect();
     let matches = Cli::command().get_matches_from(&argv);
     let project_bundle_scope = config_command_targets_project(&matches);
     let mut cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
+    anyhow::ensure!(
+        !inherited_listener
+            || matches!(cli.command.as_ref(), Some(Commands::Serve(_)))
+            || matches!(cli.command.as_ref(), Some(Commands::AppServer(args)) if args.http),
+        "An inherited Runtime listener requires serve --http or app-server --http"
+    );
     preserve_exec_separator(&mut cli, &argv);
     capture_exec_startup_options(&mut cli)?;
+    capture_serve_full_access(&mut cli);
 
     // The detached log proxy must not depend on user config parsing: its job
     // is to frame child output and publish a terminal receipt even when the
@@ -2972,6 +2985,26 @@ fn preserve_exec_separator(cli: &mut Cli, argv: &[impl AsRef<std::ffi::OsStr>]) 
             .all(|(raw, parsed)| raw.as_ref() == std::ffi::OsStr::new(parsed))
     {
         args.args.insert(0, "--".to_string());
+    }
+}
+
+fn capture_serve_full_access(cli: &mut Cli) {
+    let Some(Commands::Serve(args)) = cli.command.as_mut() else {
+        return;
+    };
+    let before = args.args.len();
+    let separator = args
+        .args
+        .iter()
+        .position(|arg| arg == "--")
+        .unwrap_or(before);
+    let mut index = 0;
+    args.args.retain(|arg| {
+        index += 1;
+        index > separator || !matches!(arg.as_str(), "--full-access" | "--yolo")
+    });
+    if args.args.len() != before {
+        cli.runtime_options.yolo = true;
     }
 }
 
@@ -5924,6 +5957,12 @@ fn run_model_command(
                             "capabilities: {}",
                             serde_json::to_string(&route.capabilities())?
                         );
+                        if !route.applied_limit_overrides().is_empty() {
+                            println!(
+                                "limit_overrides: {}",
+                                serde_json::to_string(route.applied_limit_overrides())?
+                            );
+                        }
                     }
                     Err(error) => println!("route_error: {error}"),
                 }
@@ -5989,6 +6028,12 @@ fn run_model_command(
                 "capabilities: {}",
                 serde_json::to_string(&candidate.capabilities())?
             );
+            if !candidate.applied_limit_overrides().is_empty() {
+                println!(
+                    "limit_overrides: {}",
+                    serde_json::to_string(candidate.applied_limit_overrides())?
+                );
+            }
             println!(
                 "provider_source: {}",
                 if subcommand_provider.is_some() {
@@ -6346,6 +6391,9 @@ fn run_app_server_command(
             path: args.socket_path.clone(),
         })
     } else if !args.http && !args.mobile {
+        eprintln!(
+            "note: bare app-server selects the compatibility API on port 8787 by default; use codewhale app-server --http for the full /v1/* API, approvals and SSE events"
+        );
         Some(RuntimeControlFrontend::LegacyHttp)
     } else {
         None

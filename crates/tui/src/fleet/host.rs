@@ -811,7 +811,7 @@ impl FleetHostAdapter for SshFleetHostAdapter {
                 "authentication_confirmed": false,
             }))
             .map_err(|error| FleetHostError::configuration(error.to_string()))?;
-            let hash = crate::hashing::sha256_hex(&bytes);
+            let hash = codewhale_runtime::hashing::sha256_hex(&bytes);
             transport_receipt = Some(
                 super::task_spec::write_fleet_artifact_ref(
                     &self.local.workspace,
@@ -1650,16 +1650,17 @@ fn process_base_env() -> BTreeMap<String, String> {
 /// Windows system/profile roots, locale and toolchain paths survive
 /// `env_clear()` while provider keys and other secret-shaped names do not.
 /// Proxy URLs keep their credentials for the worker process itself; see
-/// [`crate::child_env::sanitized_runtime_env_from`] for that policy.
+/// [`codewhale_runtime::child_env::sanitized_runtime_env_from`] for that policy.
 fn base_env_from<K, V>(parent: impl IntoIterator<Item = (K, V)>) -> BTreeMap<String, String>
 where
     K: AsRef<std::ffi::OsStr>,
     V: AsRef<std::ffi::OsStr>,
 {
-    let mut env: BTreeMap<String, String> = crate::child_env::sanitized_runtime_env_from(parent)
-        .into_iter()
-        .filter_map(|(key, value)| Some((key.into_string().ok()?, value.into_string().ok()?)))
-        .collect();
+    let mut env: BTreeMap<String, String> =
+        codewhale_runtime::child_env::sanitized_runtime_env_from(parent)
+            .into_iter()
+            .filter_map(|(key, value)| Some((key.into_string().ok()?, value.into_string().ok()?)))
+            .collect();
     force_worker_telemetry_off(&mut env);
     env
 }

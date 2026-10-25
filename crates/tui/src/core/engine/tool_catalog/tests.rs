@@ -403,7 +403,7 @@ fn catalog_build_does_not_append_registry_guidance_to_the_shell_tool() {
 
 #[test]
 fn requested_tool_mode_prefers_model_hint_then_flag_then_direct() {
-    use crate::features::{Feature, Features};
+    use codewhale_runtime::features::{Feature, Features};
 
     // #6562: code mode is the default; `[features] code_mode = false` is the
     // escape hatch back to Direct.
@@ -469,9 +469,12 @@ async fn dropped_code_execution_kills_the_interpreter_tree() {
     let input = json!({ "code": code });
     let context = crate::tools::spec::ToolContext::new(tmp.path());
     let run = super::execute_code_execution_tool(&input, tmp.path(), &context);
-    let grandchild = crate::process_tree::drop_once_pid_written(run, &pid_file).await;
+    let grandchild = codewhale_runtime::process_tree::drop_once_pid_written(run, &pid_file).await;
     assert!(
-        crate::process_tree::wait_for_pid_exit(grandchild, std::time::Duration::from_secs(5)),
+        codewhale_runtime::process_tree::wait_for_pid_exit(
+            grandchild,
+            std::time::Duration::from_secs(5)
+        ),
         "a process the script started outlived the dropped code_execution call"
     );
 }

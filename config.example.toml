@@ -525,9 +525,8 @@ show_whats_new = true
 #   max_depth = 0   # opt out completely — the agent never spawns sub-agents
 #   max_depth = 1   # the agent may spawn sub-agents, but those may not spawn more
 #   max_depth = 2   # one more level of nesting, etc.
-# Unset defaults to 3; any value is clamped to the hard ceiling (8). The depth
-# limit is enforced in code, not requested of the model — a sub-agent past the
-# limit cannot be spawned regardless of what the model decides.
+# Omit to leave delegation depth uncapped. Explicit owner limits are enforced
+# by the runtime and cannot be widened by descendants.
 # max_depth = 3
 
 # ─────────────────────────────────────────────────────────────────────────────────
@@ -661,7 +660,7 @@ base_url = "https://api.deepseek.com/beta"
 [providers.orcarouter]
 # api_key = "YOUR_ORCAROUTER_API_KEY"
 # base_url = "https://api.orcarouter.ai/v1"
-# model = "deepseek/deepseek-v4-pro"
+# model = "deepseek/deepseek-v4.1-flash-1017"   # built-in default for this provider
 # Namespaced wire models pass through verbatim (deepseek/deepseek-v4-pro,
 # deepseek/deepseek-v4-flash); OrcaRouter's own auto-routing model is
 # selectable as "orcarouter/auto".
@@ -968,7 +967,7 @@ base_url = "https://api.deepseek.com/beta"
 #   OPENAI_CODEX_ACCOUNT_ID / CODEX_ACCOUNT_ID, OPENAI_CODEX_AUTH_FILE, CODEX_HOME
 [providers.openai_codex]
 # base_url = "https://chatgpt.com/backend-api"
-# model = "gpt-5.6"
+# model = "gpt-6.1-sol"
 # The CLI writes this table after informed consent; do not copy it between
 # providers or machines. Absence means disabled.
 # [providers.openai_codex.external_credentials]
@@ -981,13 +980,13 @@ base_url = "https://api.deepseek.com/beta"
 # ─────────────────────────────────────────────────────────────────────────────────
 # Anthropic Provider (native Messages API)
 # Talks to https://api.anthropic.com/v1/messages with x-api-key auth — not an
-# OpenAI-compatible route. Models: claude-opus-4-8, claude-sonnet-4-6 (default),
-# claude-haiku-4-5. Env vars: ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL,
+# OpenAI-compatible route. Models: claude-opus-5-5, claude-sonnet-5-5 (default),
+# claude-haiku-5-5. Env vars: ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL,
 # ANTHROPIC_MODEL.
 [providers.anthropic]
 # api_key = "sk-ant-..."
 # base_url = "https://api.anthropic.com"
-# model = "claude-sonnet-4-6"
+# model = "claude-sonnet-5-5"
 
 # OpenModel Provider (Anthropic-compatible Messages API)
 # Talks to https://api.openmodel.ai/v1/messages with Bearer auth. OpenModel
@@ -1742,15 +1741,15 @@ base_url = "https://integrate.api.nvidia.com/v1"
 # auto_start_read_only = true
 # # Require an approval card before write/shell/network/high-budget launches.
 # require_approval_for_writes = true
-# # Hard ceiling on agents in one Workflow run (matches VM lifetime cap).
-# max_children = 1000
+# # Optional owner-selected total child limit. Zero leaves work uncapped.
+# max_children = 0
 # # Maximum concurrently live agents inside one run (others wait for a slot).
 # max_concurrent = 16
-# # Maximum structural nesting depth accepted for Workflow IR (default 5).
+# # Optional structural Workflow depth limit; zero leaves it uncapped.
 # # This is separate from Runtime child delegation below.
-# max_depth = 5
-# # Default shared token budget for a Workflow run and its children.
-# default_token_budget = 120000
+# max_depth = 0
+# # Legacy token hint retained in receipts; not metered or enforced.
+# default_token_budget = 0
 
 # ─────────────────────────────────────────────────────────────────────────────────
 # Agent Fleet roster, role registry, and execution requests (#3165, #3167)
@@ -1773,7 +1772,7 @@ base_url = "https://integrate.api.nvidia.com/v1"
 # # Runtime child-agent depth for fleet workers. Shares ONE recursion axis with
 # # standalone sub-agents (a fleet worker IS a headless sub-agent). This is an
 # # execution request, not Fleet member identity. 0 blocks child agents (the
-# # root worker still runs); 3 is the default and 8 is the opt-in hard ceiling.
+# # root worker still runs); omit to leave depth uncapped.
 # max_spawn_depth = 3
 # # Extra system prompt injected into every headless worker
 # append_system_prompt = "Never modify .git/config or change remotes."

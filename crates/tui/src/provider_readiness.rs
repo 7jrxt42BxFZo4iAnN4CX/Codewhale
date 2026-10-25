@@ -47,7 +47,7 @@ pub(crate) struct ProviderRouteIdentity {
     endpoint: String,
     model: String,
     auth_class: ProviderAuthClass,
-    credential_generation: Option<crate::route_receipt::CredentialGeneration>,
+    credential_generation: Option<codewhale_config::credentials::CredentialGeneration>,
 }
 
 pub(crate) fn route_identity_for_model(
@@ -72,6 +72,18 @@ pub(crate) fn auth_class_for_provider(
     let provider = identity.provider;
     if config.verify_provider_identity(identity).is_err() {
         return ProviderAuthClass::Legacy;
+    }
+    if config.required_account_model_owner.is_some()
+        || config.session_provider_api_key(identity).is_some()
+    {
+        return ProviderAuthClass::ApiKey;
+    }
+    if config.session_provider_keys_only {
+        return match credential_state_for_provider(config, identity) {
+            CredentialState::NoAuth => ProviderAuthClass::NoAuth,
+            CredentialState::Local => ProviderAuthClass::Local,
+            _ => ProviderAuthClass::ApiKey,
+        };
     }
     let auth_mode = config.auth_mode_for_provider(identity);
     if provider == ProviderKind::Anthropic && auth_mode.as_deref() == Some("oauth") {
@@ -126,6 +138,27 @@ pub(crate) fn credential_state_for_provider(
     }
     if config.verify_provider_identity(identity).is_err() {
         return CredentialState::MissingKey;
+    }
+    if config.required_account_model_owner.is_some() {
+        return if config.account_model_api_key(identity).is_some() {
+            CredentialState::Saved
+        } else {
+            CredentialState::MissingKey
+        };
+    }
+    if config.session_provider_api_key(identity).is_some() {
+        return CredentialState::Saved;
+    }
+    if let Some(source) = config.session_policy_without_key(identity) {
+        return match source {
+            codewhale_runtime::credentials::CredentialSource::AuthModeNone => {
+                CredentialState::NoAuth
+            }
+            codewhale_runtime::credentials::CredentialSource::KeylessRoute { .. } => {
+                CredentialState::Local
+            }
+            _ => CredentialState::MissingKey,
+        };
     }
     let auth_mode = config.auth_mode_for_provider(identity);
     if provider == ProviderKind::Anthropic && auth_mode.as_deref() == Some("oauth") {
@@ -605,7 +638,7 @@ impl ProviderReadinessSnapshot {
         config: &crate::config::Config,
         identity: &ProviderIdentity,
         model: &str,
-        generation: crate::route_receipt::CredentialGeneration,
+        generation: codewhale_config::credentials::CredentialGeneration,
         category: ErrorCategory,
         message: &str,
     ) {
@@ -626,7 +659,7 @@ impl ProviderReadinessSnapshot {
         config: &crate::config::Config,
         identity: &ProviderIdentity,
         model: &str,
-        generation: crate::route_receipt::CredentialGeneration,
+        generation: codewhale_config::credentials::CredentialGeneration,
     ) {
         let mut route = route_identity_for_model(config, identity, model);
         route.credential_generation = Some(generation);
@@ -770,7 +803,7 @@ pub(crate) struct RouteReadinessScope {
     endpoint: String,
     credentials: CredentialState,
     auth_class: ProviderAuthClass,
-    credential_generation: Option<crate::route_receipt::CredentialGeneration>,
+    credential_generation: Option<codewhale_config::credentials::CredentialGeneration>,
 }
 
 impl RouteReadinessScope {
@@ -1590,7 +1623,7 @@ mod tests {
             ..Default::default()
         };
 
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         assert_eq!(
             credential_state_for_provider(
                 &config,
@@ -1607,7 +1640,7 @@ mod tests {
             CredentialState::MissingLogin
         );
         assert_eq!(
-            crate::external_credentials::side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::side_effect_trap_counts(),
             (0, 0),
             "readiness must not inspect external OAuth files without consent"
         );

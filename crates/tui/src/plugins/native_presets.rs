@@ -74,7 +74,8 @@ pub(crate) fn metadata(
         .take(MAX_ENTRY + 1)
         .read_to_end(&mut bytes)
         .ok()?;
-    if bytes.len() > MAX_ENTRY as usize || crate::hashing::sha256_hex(&bytes) != preset.entry.sha256
+    if bytes.len() > MAX_ENTRY as usize
+        || codewhale_runtime::hashing::sha256_hex(&bytes) != preset.entry.sha256
     {
         return None;
     }
@@ -115,7 +116,7 @@ pub(crate) fn admitted_entries(
 ) -> Vec<(
     NativePresetRef,
     NativePresetMetadata,
-    super::types::PluginAuthority,
+    codewhale_config::PluginAuthority,
 )> {
     let (sources, _) =
         super::runtime::active_component_sources(plugins, PluginActivationCapability::Native);

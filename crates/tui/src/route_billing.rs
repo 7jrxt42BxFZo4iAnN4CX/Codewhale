@@ -13,7 +13,8 @@
 //! - unknown stays unknown — never `$0.00` and never an estimate-as-spend.
 
 use crate::config::{Config, ProviderConfig, ProviderIdentity, ProviderKind};
-use crate::pricing::{CostCurrency, UnpricedReason, format_cost_amount};
+use crate::pricing::{UnpricedReason, format_cost_amount};
+use codewhale_config::pricing::CostCurrency;
 use codewhale_localization::{Locale, MessageId, tr};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1216,7 +1217,7 @@ fn xiaomi_is_explicit_pay_as_you_go(config: Option<&ProviderConfig>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pricing::CostCurrency;
+    use codewhale_config::pricing::CostCurrency;
     use codewhale_models::Usage;
 
     fn config_with(provider: ProviderKind, provider_config: ProviderConfig) -> Config {
@@ -1790,13 +1791,13 @@ mod tests {
                 ..ProviderConfig::default()
             },
         );
-        crate::external_credentials::reset_side_effect_trap();
+        codewhale_runtime::external_credentials::reset_side_effect_trap();
         assert_eq!(
             for_route(&config, &(config).test_identity_for_kind(ProviderKind::Xai)),
             BillingPresentation::Metered
         );
         assert_eq!(
-            crate::external_credentials::side_effect_trap_counts(),
+            codewhale_runtime::external_credentials::side_effect_trap_counts(),
             (0, 0)
         );
         assert_eq!(
@@ -2282,7 +2283,7 @@ mod tests {
         std::fs::create_dir_all(owned_path.parent().expect("owned credential parent"))
             .expect("create owned credential directory");
         #[cfg(windows)]
-        crate::external_credentials::secure_codewhale_owned_windows_path(
+        codewhale_runtime::external_credentials::secure_codewhale_owned_windows_path(
             owned_path.parent().expect("owned credential parent"),
             true,
         )
@@ -2310,8 +2311,11 @@ mod tests {
                 .expect("secure owned credential file");
         }
         #[cfg(windows)]
-        crate::external_credentials::secure_codewhale_owned_windows_path(&owned_path, false)
-            .expect("secure owned credential file");
+        codewhale_runtime::external_credentials::secure_codewhale_owned_windows_path(
+            &owned_path,
+            false,
+        )
+        .expect("secure owned credential file");
         let oauth = config_with(
             ProviderKind::Xai,
             ProviderConfig {

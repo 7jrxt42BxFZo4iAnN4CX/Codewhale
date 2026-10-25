@@ -686,7 +686,7 @@ async fn test_write_file_tool() {
             "path": "output.txt",
             "outcome": "created",
             "size": "test content".len(),
-            "sha256": crate::hashing::sha256_hex(b"test content"),
+            "sha256": codewhale_runtime::hashing::sha256_hex(b"test content"),
         }])
     );
     assert!(
@@ -1223,7 +1223,7 @@ async fn test_edit_file_tool() {
             "path": "edit_me.txt",
             "outcome": "updated",
             "size": fs::read(tmp.path().join("edit_me.txt")).expect("edited").len(),
-            "sha256": crate::hashing::sha256_hex(
+            "sha256": codewhale_runtime::hashing::sha256_hex(
                 fs::read(tmp.path().join("edit_me.txt")).expect("edited")
             ),
         }])

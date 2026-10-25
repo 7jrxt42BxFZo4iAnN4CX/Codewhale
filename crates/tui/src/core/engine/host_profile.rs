@@ -29,7 +29,7 @@ impl TurnNarrowing {
     pub(crate) fn request_fingerprint(self, ordinary: String) -> String {
         match self {
             Self::Inherit => ordinary,
-            Self::Acp => crate::hashing::sha256_hex(format!(
+            Self::Acp => codewhale_runtime::hashing::sha256_hex(format!(
                 "runtime-turn-narrowing\u{1f}acp\u{1f}{ordinary}"
             )),
         }
@@ -64,9 +64,9 @@ impl Engine {
             && self.config.features.enabled(Feature::ShellTool)
             && (!requested || backend.is_some());
         context = context.with_shell_policy(if shell {
-            crate::worker_profile::ShellPolicy::Full
+            codewhale_agent_contract::worker_profile::ShellPolicy::Full
         } else {
-            crate::worker_profile::ShellPolicy::None
+            codewhale_agent_contract::worker_profile::ShellPolicy::None
         });
         if let Some(backend) = backend {
             context = context.with_sandbox_backend(backend);
@@ -373,12 +373,12 @@ mod tests {
         assert!(build.surface.registry.get("Bash").is_none());
         assert_eq!(
             build.surface.registry.context().shell_policy,
-            crate::worker_profile::ShellPolicy::None
+            codewhale_agent_contract::worker_profile::ShellPolicy::None
         );
     }
     #[test]
     fn narrowed_request_fingerprint_keeps_ordinary_historical_bytes_and_separates_acp() {
-        let historical = crate::hashing::sha256_hex("ordinary canonical payload");
+        let historical = codewhale_runtime::hashing::sha256_hex("ordinary canonical payload");
         assert_eq!(
             TurnNarrowing::Inherit.request_fingerprint(historical.clone()),
             historical

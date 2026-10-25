@@ -23,13 +23,13 @@ use crate::compaction::{
     estimate_text_tokens_conservative,
 };
 use crate::config::Config;
-#[cfg(test)]
-use crate::context_budget::PressureLevel;
 use crate::prompts::CORE_EXECUTION_PROFILE_PROMPT;
 use crate::route_budget::route_context_window_tokens;
 use crate::tui::app::App;
 use codewhale_config::AppMode;
 use codewhale_models::{CacheControl, ContentBlock, Message, SystemPrompt, Tool};
+#[cfg(test)]
+use codewhale_runtime::context_budget::PressureLevel;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PromptSourceMap {
@@ -399,9 +399,11 @@ pub fn build_headless_context_report(config: &Config, workspace: &Path) -> Promp
     let memory_path = config.memory_path();
     let memory_enabled = config.memory_enabled();
 
-    if let Some(memory_block) =
-        crate::native_memory::native_prompt_block(memory_enabled, &memory_path, workspace)
-    {
+    if let Some(memory_block) = codewhale_runtime::native_memory::native_prompt_block(
+        memory_enabled,
+        &memory_path,
+        workspace,
+    ) {
         builder.push(SourceEntry::text(
             SourceKind::UserMemory,
             "User memory",
@@ -611,7 +613,7 @@ fn base_source_entries(
         ),
     };
     if let Some(block) = skills_block {
-        builder.push(SourceEntry::text(
+        let mut entry = SourceEntry::text(
             SourceKind::SkillsBlock,
             "Available skills",
             skills_dir.map(|path| path.display().to_string()),
@@ -619,7 +621,9 @@ fn base_source_entries(
             &block,
             CountingConfidence::High,
             Some(5),
-        ));
+        );
+        entry.truncation_reason = crate::skills::shortened_skills_note(&block);
+        builder.push(entry);
     } else {
         builder.push(SourceEntry::omitted(
             SourceKind::SkillsBlock,
@@ -677,9 +681,11 @@ fn base_source_entries(
 }
 
 fn add_app_runtime_entries(builder: &mut ReportBuilder, app: &App) {
-    if let Some(memory_block) =
-        crate::native_memory::native_prompt_block(app.use_memory, &app.memory_path, &app.workspace)
-    {
+    if let Some(memory_block) = codewhale_runtime::native_memory::native_prompt_block(
+        app.use_memory,
+        &app.memory_path,
+        &app.workspace,
+    ) {
         builder.push(SourceEntry::text(
             SourceKind::UserMemory,
             "User memory",

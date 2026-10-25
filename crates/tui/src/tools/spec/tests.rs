@@ -756,14 +756,14 @@ fn delegated_shell_is_refused_outright_when_the_session_lacks_it() {
 
     // Leaving the flag out would fall back to the host default, which may
     // allow shell: a session without full shell must store an explicit "no".
-    ctx.shell_policy = crate::worker_profile::ShellPolicy::None;
+    ctx.shell_policy = codewhale_agent_contract::worker_profile::ShellPolicy::None;
     assert_eq!(ctx.cap_delegated_authority(None, None, None).0, Some(false));
     assert_eq!(
         ctx.cap_delegated_authority(Some(true), None, None).0,
         Some(false)
     );
 
-    ctx.shell_policy = crate::worker_profile::ShellPolicy::Full;
+    ctx.shell_policy = codewhale_agent_contract::worker_profile::ShellPolicy::Full;
     assert_eq!(ctx.cap_delegated_authority(None, None, None).0, None);
     assert_eq!(
         ctx.cap_delegated_authority(Some(true), None, None).0,

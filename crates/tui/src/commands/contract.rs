@@ -93,9 +93,9 @@ use crate::commands::groups::plugins::plugin_network_policy;
 
 use crate::dependencies::ExternalTool as _;
 use crate::network_policy::NetworkPolicy;
-use crate::pricing::CostCurrency;
 use crate::tui::app::App;
 use crate::tui::history::HistoryCell;
+use codewhale_config::pricing::CostCurrency;
 use codewhale_localization::{MessageId, tr};
 
 // ---------------------------------------------------------------------------
@@ -429,7 +429,7 @@ impl CommandSessionLifecycleContext for SessionLifecycleAdapter<'_> {
             if let Ok(mut session) = manager.load_session(&session_id) {
                 session.ensure_journal();
                 if let Some(journal) = session.journal.as_ref() {
-                    let mut rendered = crate::session_tree::render_tree(journal);
+                    let mut rendered = codewhale_runtime::session_tree::render_tree(journal);
                     match manager.load_journal_archive(&session_id) {
                         Ok(archived) if !archived.is_empty() => {
                             rendered.push_str(&format!(
@@ -657,13 +657,13 @@ impl CommandSessionLifecycleContext for SessionLifecycleAdapter<'_> {
         };
         source_session.ensure_journal();
         let journal = source_session.journal.clone().unwrap_or_else(|| {
-            crate::session_tree::SessionJournal::from_messages(
+            codewhale_runtime::session_tree::SessionJournal::from_messages(
                 source_session.messages.clone(),
                 source_session.metadata.spawn_depth,
             )
         });
         let forked_journal = journal.fork_from(None).unwrap_or_else(|_| {
-            crate::session_tree::SessionJournal::with_spawn_depth(
+            codewhale_runtime::session_tree::SessionJournal::with_spawn_depth(
                 source_session.metadata.spawn_depth.saturating_add(1),
             )
         });
@@ -1159,7 +1159,9 @@ impl CommandSessionControlContext for SessionControlAdapter<'_> {
                 })
             }
             Err(e) => {
-                if let Ok(container) = crate::session_tree::SessionImportContainer::from_json(raw) {
+                if let Ok(container) =
+                    codewhale_runtime::session_tree::SessionImportContainer::from_json(raw)
+                {
                     let mut app = self.host.app.borrow_mut();
                     let receipt = import_session_container(&mut app, container)?;
                     Ok(ResumeSource::Imported(receipt))
@@ -1309,7 +1311,7 @@ impl CommandSessionControlContext for SessionControlAdapter<'_> {
         };
         // Synchronous single attempt through the authoritative URL-opening
         // helper; never retried and never deferred to an external-URL action.
-        let launched = crate::utils::open_url(&url).is_ok();
+        let launched = codewhale_runtime::browser::open_url(&url).is_ok();
         map_browser_open_result(url, launched)
     }
 
@@ -1504,7 +1506,9 @@ fn import_foreign_file(app: &mut App, path: &Path) -> Result<ResumeImportReceipt
             ));
         }
     };
-    if let Ok(container) = crate::session_tree::SessionImportContainer::from_json(&content) {
+    if let Ok(container) =
+        codewhale_runtime::session_tree::SessionImportContainer::from_json(&content)
+    {
         return import_session_container(app, container);
     }
     if let Ok(foreign) = serde_json::from_str::<crate::session_manager::SavedSession>(&content) {
@@ -1521,7 +1525,7 @@ fn import_foreign_file(app: &mut App, path: &Path) -> Result<ResumeImportReceipt
 /// select it in a fresh picker, and return the portable receipt.
 fn import_session_container(
     app: &mut App,
-    container: crate::session_tree::SessionImportContainer,
+    container: codewhale_runtime::session_tree::SessionImportContainer,
 ) -> Result<ResumeImportReceipt, String> {
     let manager = match crate::session_manager::SessionManager::default_location() {
         Ok(m) => m,
@@ -2513,13 +2517,15 @@ pub(crate) struct MemoryAdapter<'a> {
 
 /// Derive the authoritative native-memory store from the resolved user-memory
 /// file path, mirroring the pre-migration `/memory` handler exactly.
-fn native_store_from_memory_path(memory_path: &Path) -> crate::native_memory::NativeMemoryStore {
-    crate::native_memory::NativeMemoryStore::from_memory_anchor(memory_path)
+fn native_store_from_memory_path(
+    memory_path: &Path,
+) -> codewhale_runtime::native_memory::NativeMemoryStore {
+    codewhale_runtime::native_memory::NativeMemoryStore::from_memory_anchor(memory_path)
 }
 
 /// Convert a TUI-owned native hit into the portable contract hit. Only the
 /// semantic fields the handler consumes for rendering cross the boundary (D2).
-fn portable_hit(hit: crate::native_memory::MemoryHit) -> MemoryHit {
+fn portable_hit(hit: codewhale_runtime::native_memory::MemoryHit) -> MemoryHit {
     MemoryHit {
         source: hit.source,
         line_start: hit.line_start,
@@ -2555,7 +2561,7 @@ impl CommandMemoryContext for MemoryAdapter<'_> {
     }
 
     fn workspace_id(&self, workspace: &Path) -> Result<String, String> {
-        match crate::native_memory::NativeMemoryStore::workspace_id(workspace) {
+        match codewhale_runtime::native_memory::NativeMemoryStore::workspace_id(workspace) {
             Ok(Some(id)) => Ok(id),
             Ok(None) => {
                 Err("workspace memory requires a git repository with an origin".to_string())
@@ -2586,9 +2592,11 @@ impl CommandMemoryContext for MemoryAdapter<'_> {
         let app = self.host.app.borrow();
         let store = native_store_from_memory_path(&app.memory_path);
         let (scope, workspace_id) = match target {
-            MemoryRememberTarget::Global => (crate::native_memory::MemoryScope::Global, None),
+            MemoryRememberTarget::Global => {
+                (codewhale_runtime::native_memory::MemoryScope::Global, None)
+            }
             MemoryRememberTarget::Workspace { workspace_id } => (
-                crate::native_memory::MemoryScope::Workspace,
+                codewhale_runtime::native_memory::MemoryScope::Workspace,
                 Some(workspace_id),
             ),
         };
@@ -2651,9 +2659,10 @@ impl CommandMemoryContext for MemoryAdapter<'_> {
         let store = native_store_from_memory_path(&app.memory_path);
         let result = match scope {
             MemoryDeleteScope::All => store.delete_all(None, None),
-            MemoryDeleteScope::Global => {
-                store.delete_all(Some(crate::native_memory::MemoryScope::Global), None)
-            }
+            MemoryDeleteScope::Global => store.delete_all(
+                Some(codewhale_runtime::native_memory::MemoryScope::Global),
+                None,
+            ),
         };
         result.map(|()| MemoryDelete).map_err(|err| err.to_string())
     }
@@ -2661,10 +2670,10 @@ impl CommandMemoryContext for MemoryAdapter<'_> {
     fn delete_workspace(&self, workspace: &Path) -> Result<MemoryDelete, String> {
         let app = self.host.app.borrow();
         let store = native_store_from_memory_path(&app.memory_path);
-        match crate::native_memory::NativeMemoryStore::workspace_id(workspace) {
+        match codewhale_runtime::native_memory::NativeMemoryStore::workspace_id(workspace) {
             Ok(Some(id)) => store
                 .delete_all(
-                    Some(crate::native_memory::MemoryScope::Workspace),
+                    Some(codewhale_runtime::native_memory::MemoryScope::Workspace),
                     Some(&id),
                 )
                 .map(|()| MemoryDelete)
@@ -2796,7 +2805,7 @@ fn installer_settings() -> (NetworkPolicy, u64, String) {
     let network = cfg
         .network
         .clone()
-        .map(|policy| policy.into_runtime())
+        .map(crate::network_policy::NetworkPolicy::from)
         .unwrap_or_default();
     let skills_cfg = cfg.skills.as_ref();
     let max_size = skills_cfg
@@ -5335,7 +5344,7 @@ mod tests {
             recorded_at: std::time::Instant::now(),
         });
         let expected_total =
-            app.displayed_session_cost_for_currency(crate::pricing::CostCurrency::Usd);
+            app.displayed_session_cost_for_currency(codewhale_config::pricing::CostCurrency::Usd);
         let mut bundle = app.command_contexts();
         let mut parts = bundle
             .contexts(CommandCapabilities::DEBUG_DIAGNOSTICS)

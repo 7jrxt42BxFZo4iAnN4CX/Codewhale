@@ -10052,7 +10052,7 @@ fn refresh_shell_exec_live_output_finalizes_restored_missing_shell_job() {
     let HistoryCell::Tool(ToolCell::Exec(exec)) = &app.history[0] else {
         panic!("expected exec cell");
     };
-    assert_eq!(exec.status, ToolStatus::Failed);
+    assert_eq!(exec.status, ToolStatus::Stopped);
     assert!(exec.live_output.is_none());
     assert!(
         exec.output
@@ -15742,12 +15742,10 @@ fn stall_engine_report_shows_phase_and_held_queue() {
     assert!(stall_toasts[0].text.contains("1 queued message is held"));
 }
 
-/// Fault injection: a sub-agent still marked Running long past every child's
-/// wall budget (its AgentComplete was lost) no longer vetoes recovery; the
-/// recovery leaves a log line, a `crashes/` record naming the suspect, and a
-/// UI status.
+/// Prior-session Running rows do not veto recovery. Current children remain
+/// live regardless of elapsed time while they report progress.
 #[test]
-fn stall_parked_subagent_past_bound_is_suspect_not_a_veto() {
+fn stall_prior_session_subagent_is_suspect_but_long_running_child_is_live() {
     use crate::core::engine::turn_heartbeat::{TurnPhase, set_test_stall_record_dir};
     let dir = tempfile::tempdir().expect("tempdir");
     set_test_stall_record_dir(Some(dir.path().to_path_buf()));
@@ -15766,11 +15764,8 @@ fn stall_parked_subagent_past_bound_is_suspect_not_a_veto() {
         "agent_ghost",
         crate::tools::subagent::SubAgentStatus::Running,
     );
-    ghost.started_at = now.checked_sub(SUBAGENT_SUSPECT_AFTER + Duration::from_secs(1));
-    assert!(
-        ghost.started_at.is_some(),
-        "monotonic clock has run long enough"
-    );
+    ghost.from_prior_session = true;
+    ghost.started_at = Some(now);
     app.subagent_cache = vec![ghost];
     let idle = stall_heartbeat(TurnPhase::Idle, None, None);
 
@@ -15807,7 +15802,7 @@ fn stall_parked_subagent_past_bound_is_suspect_not_a_veto() {
     assert!(records[0].contains("agent_ghost"), "{}", records[0]);
     assert!(records[0].contains("Turn: turn-with-ghost"));
 
-    // A fresh Running child still holds the turn open.
+    // A long-running current child still holds the turn open.
     let mut app = create_test_app();
     app.is_loading = true;
     app.runtime_turn_status = Some("in_progress".to_string());
@@ -15817,8 +15812,14 @@ fn stall_parked_subagent_past_bound_is_suspect_not_a_veto() {
         "agent_fresh",
         crate::tools::subagent::SubAgentStatus::Running,
     );
-    fresh.started_at = Some(now);
+    fresh.started_at = now.checked_sub(Duration::from_secs(2 * 60 * 60));
+    assert!(fresh.started_at.is_some());
     app.subagent_cache = vec![fresh];
+    app.agent_progress_meta
+        .entry("agent_fresh".to_string())
+        .or_default()
+        .last_progress_at = Some(now);
+    assert_eq!(live_running_agent_count(&app, now), 1);
     let engine = crate::core::engine::mock_engine_handle();
     assert!(!reconcile_turn_liveness_supervised(
         &mut app,
@@ -15831,6 +15832,7 @@ fn stall_parked_subagent_past_bound_is_suspect_not_a_veto() {
         !engine.handle.is_cancelled(),
         "a turn that is still live is never cancelled"
     );
+
     set_test_stall_record_dir(None);
 }
 
@@ -18660,14 +18662,14 @@ fn test_ctrl_c_cancels_streaming_sets_status() {
 
 #[test]
 fn local_cancel_marks_late_stream_events_for_suppression() {
-    let _retry_guard = crate::retry_status::test_guard();
+    let _retry_guard = codewhale_runtime::retry_status::test_guard();
     let mut app = create_test_app();
     app.is_loading = true;
     app.turn_started_at = Some(Instant::now());
     app.runtime_turn_id = Some("turn_cancel_me".to_string());
     app.runtime_turn_status = Some("in_progress".to_string());
     app.streaming_state.start_text(0);
-    crate::retry_status::start(2, Duration::from_secs(3), "network error");
+    codewhale_runtime::retry_status::start(2, Duration::from_secs(3), "network error");
 
     mark_active_turn_cancelled_locally(&mut app);
 
@@ -18676,8 +18678,8 @@ fn local_cancel_marks_late_stream_events_for_suppression() {
     assert!(app.runtime_turn_id.is_none());
     assert!(app.runtime_turn_status.is_none());
     assert!(matches!(
-        crate::retry_status::snapshot(),
-        crate::retry_status::RetryState::Idle
+        codewhale_runtime::retry_status::snapshot(),
+        codewhale_runtime::retry_status::RetryState::Idle
     ));
     assert!(app.suppress_stream_events_until_turn_complete);
     assert!(suppress_engine_event_after_local_cancel(
@@ -24109,7 +24111,7 @@ fn file_load_route_refresh_preserves_effective_permission_and_feature_overlays()
     effective_config.sandbox_mode = Some("read-only".to_string());
     effective_config.allow_shell = Some(false);
     effective_config.max_subagents = Some(1);
-    effective_config.features = Some(crate::features::FeaturesToml {
+    effective_config.features = Some(codewhale_runtime::features::FeaturesToml {
         entries: std::collections::BTreeMap::from([
             ("shell_tool".to_string(), false),
             ("subagents".to_string(), false),
@@ -24122,7 +24124,7 @@ fn file_load_route_refresh_preserves_effective_permission_and_feature_overlays()
     raw_disk_config.sandbox_mode = Some("danger-full-access".to_string());
     raw_disk_config.allow_shell = Some(true);
     raw_disk_config.max_subagents = Some(64);
-    raw_disk_config.features = Some(crate::features::FeaturesToml {
+    raw_disk_config.features = Some(codewhale_runtime::features::FeaturesToml {
         entries: std::collections::BTreeMap::from([
             ("shell_tool".to_string(), true),
             ("subagents".to_string(), true),
@@ -25352,8 +25354,8 @@ fn turn_complete_flushes_active_cell_into_history() {
     assert_eq!(exec_cells.len(), 1);
     assert_eq!(
         exec_cells[0].status,
-        ToolStatus::Failed,
-        "interrupted shell entry marked Failed (closest available terminal status)"
+        ToolStatus::Stopped,
+        "interrupted shell entry marked Stopped"
     );
 }
 
@@ -28486,11 +28488,10 @@ async fn agent_complete_clears_child_pending() {
     assert_eq!(rows.len(), 1);
 }
 
-/// Hard failures (auth, billing, malformed request) DO need to flip offline
-/// mode so subsequent typed messages get queued instead of silently lost
-/// against a broken upstream.
+/// Hard failures leave the session online for a retry; an error without
+/// TurnComplete must not strand subsequent messages offline.
 #[test]
-fn non_recoverable_engine_error_enters_offline_mode() {
+fn non_recoverable_engine_error_stays_online() {
     use crate::error_taxonomy::ErrorEnvelope;
     let mut app = create_test_app();
     assert!(!app.offline_mode);
@@ -28504,8 +28505,8 @@ fn non_recoverable_engine_error_enters_offline_mode() {
     );
 
     assert!(
-        app.offline_mode,
-        "non-recoverable error must enter offline mode"
+        !app.offline_mode,
+        "non-recoverable error must keep the session online for a retry"
     );
     assert!(!app.is_loading);
     assert_eq!(app.runtime_turn_status.as_deref(), Some("failed"));
@@ -28641,7 +28642,7 @@ async fn keyless_engine_error_stays_visible_after_a_config_ack() {
         }
     }
     drop(events);
-    assert!(app.offline_mode);
+    assert!(!app.offline_mode);
     assert!(!app.is_loading);
     for (width, height) in [(80, 24), (140, 40)] {
         let frame = render_test_app(&mut app, &config, width, height);

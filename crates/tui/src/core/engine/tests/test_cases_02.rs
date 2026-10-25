@@ -4,7 +4,7 @@ const REPRESENTATIVE_HANDOFF_RELAY: &str = "REPRESENTATIVE_HANDOFF_RELAY";
 fn ordinary_engine_default_does_not_install_a_step_budget() {
     assert_eq!(
         DEFAULT_MODEL_STEPS,
-        crate::core::engine::turn_budget::DEFAULT_MAX_MODEL_STEPS
+        codewhale_runtime::turn_budget::DEFAULT_MAX_MODEL_STEPS
     );
     assert_eq!(EngineConfig::default().max_steps, DEFAULT_MODEL_STEPS);
     let mut turn = TurnContext::new(EngineConfig::default().max_steps);
@@ -89,7 +89,7 @@ fn agent_tool_contexts_follow_the_published_posture() {
     );
     after.refresh_live_posture();
     assert!(!after.auto_approve);
-    assert_eq!(after.shell_policy, crate::worker_profile::ShellPolicy::None);
+    assert_eq!(after.shell_policy, codewhale_agent_contract::worker_profile::ShellPolicy::None);
     assert_eq!(
         after.elevated_sandbox_policy,
         Some(crate::sandbox::SandboxPolicy::read_only())

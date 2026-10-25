@@ -5,13 +5,13 @@
 //! engine module from accumulating unrelated context-policy details.
 
 use crate::config::ProviderKind;
-use crate::context_budget::ContextBudget;
 #[cfg(test)]
 pub(super) use crate::route_budget::effective_max_output_tokens;
 pub(super) use crate::route_budget::effective_max_output_tokens_for_route;
 use crate::tools::spec::ToolResult;
 use codewhale_config::route::RouteLimits;
 use codewhale_models::SystemPrompt;
+use codewhale_runtime::context_budget::ContextBudget;
 use serde_json::Value;
 /// Allow a few emergency recovery attempts before failing the turn.
 pub(super) const MAX_CONTEXT_RECOVERY_ATTEMPTS: u8 = 2;

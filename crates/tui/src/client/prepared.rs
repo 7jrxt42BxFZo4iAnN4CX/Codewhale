@@ -27,6 +27,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use codewhale_config::provider::WireFormat;
+use codewhale_runtime::hashing::canonical_json;
 
 use crate::config::ProviderKind;
 
@@ -350,12 +351,22 @@ impl PreparedOutboundRequest {
 
     /// SHA-256 over [`Self::canonical_body`]. Whole-body, not a prefix.
     pub(crate) fn body_sha256(&self) -> String {
-        crate::hashing::sha256_hex(self.canonical_body().as_bytes())
+        codewhale_runtime::hashing::sha256_hex(self.canonical_body().as_bytes())
     }
 
     /// Dialect-aware view of the finished body, for counting and estimation.
     pub(crate) fn wire_view(&self) -> WireBodyView<'_> {
         WireBodyView::extract(self.dialect, &self.body)
+    }
+
+    pub(crate) fn tool_wire_measurement(&self) -> crate::llm_client::ToolWireMeasurement {
+        let view = self.wire_view();
+        crate::llm_client::ToolWireMeasurement {
+            tool_schema_bytes: view.tool_schema_bytes,
+            tool_schema_sha256: view.tool_schema_sha256,
+            tool_count: view.tool_count,
+            omitted_tool_names: self.omitted_tool_names.clone(),
+        }
     }
 
     /// Attach the caller's named route identity (a `[providers.<name>]` key,
@@ -369,7 +380,7 @@ impl PreparedOutboundRequest {
     /// SHA-256 of the full endpoint URL. Lets two previews be compared for
     /// "same endpoint?" without either of them printing the path.
     pub(crate) fn endpoint_fingerprint(&self) -> String {
-        crate::hashing::sha256_hex(self.endpoint.url.as_bytes())
+        codewhale_runtime::hashing::sha256_hex(self.endpoint.url.as_bytes())
     }
 
     /// A bounded endpoint class that never publishes a remote authority.
@@ -377,7 +388,7 @@ impl PreparedOutboundRequest {
     /// non-loopback authority is represented by a short digest.
     pub(crate) fn safe_endpoint_host_class(&self) -> String {
         let Ok(url) = reqwest::Url::parse(&self.endpoint.url) else {
-            let digest = crate::hashing::sha256_hex(self.endpoint.url.as_bytes());
+            let digest = codewhale_runtime::hashing::sha256_hex(self.endpoint.url.as_bytes());
             return format!("unparseable sha256:{}", &digest[..12]);
         };
         let scheme = match url.scheme() {
@@ -397,7 +408,7 @@ impl PreparedOutboundRequest {
             || host.to_ascii_lowercase(),
             |port| format!("{}:{port}", host.to_ascii_lowercase()),
         );
-        let digest = crate::hashing::sha256_hex(authority.as_bytes());
+        let digest = codewhale_runtime::hashing::sha256_hex(authority.as_bytes());
         format!("{scheme} remote sha256:{}", &digest[..12])
     }
 
@@ -407,49 +418,6 @@ impl PreparedOutboundRequest {
             .into_iter()
             .find_map(|key| self.body.get(key).and_then(Value::as_u64))
     }
-}
-
-/// Canonical JSON: object keys sorted, no insignificant whitespace.
-///
-/// Deterministic for a given `Value` regardless of how it was built.
-pub(crate) fn canonical_json(value: &Value) -> String {
-    let mut out = String::new();
-    write_canonical(value, &mut out);
-    out
-}
-
-fn write_canonical(value: &Value, out: &mut String) {
-    match value {
-        Value::Object(map) => {
-            let mut keys: Vec<&String> = map.keys().collect();
-            keys.sort_unstable();
-            out.push('{');
-            for (index, key) in keys.iter().enumerate() {
-                if index > 0 {
-                    out.push(',');
-                }
-                push_json_string(key, out);
-                out.push(':');
-                write_canonical(&map[*key], out);
-            }
-            out.push('}');
-        }
-        Value::Array(items) => {
-            out.push('[');
-            for (index, item) in items.iter().enumerate() {
-                if index > 0 {
-                    out.push(',');
-                }
-                write_canonical(item, out);
-            }
-            out.push(']');
-        }
-        other => out.push_str(&other.to_string()),
-    }
-}
-
-fn push_json_string(value: &str, out: &mut String) {
-    out.push_str(&Value::String(value.to_string()).to_string());
 }
 
 /// Where a given dialect keeps its system text, turn items, and tool schemas.
@@ -552,7 +520,8 @@ impl<'a> WireBodyView<'a> {
         if let Some(tools) = object.get("tools") {
             let canonical_tools = canonical_json(tools);
             view.tool_schema_bytes = canonical_tools.len();
-            view.tool_schema_sha256 = crate::hashing::sha256_hex(canonical_tools.as_bytes());
+            view.tool_schema_sha256 =
+                codewhale_runtime::hashing::sha256_hex(canonical_tools.as_bytes());
             view.tool_count = tools.as_array().map_or(0, |tools| {
                 tools
                     .iter()
@@ -602,7 +571,7 @@ impl<'a> WireBodyView<'a> {
 
         view.system_bytes = system_region.len();
         if !system_region.is_empty() {
-            view.system_sha256 = crate::hashing::sha256_hex(system_region.as_bytes());
+            view.system_sha256 = codewhale_runtime::hashing::sha256_hex(system_region.as_bytes());
         }
 
         // Framing is the algebraic remainder, never a separately serialized
@@ -1312,7 +1281,7 @@ mod dialect_seam_tests {
     }
 
     fn sha256(value: &str) -> String {
-        crate::hashing::sha256_hex(value.as_bytes())
+        codewhale_runtime::hashing::sha256_hex(value.as_bytes())
     }
 
     /// The exact pre-processing `prepare_outbound_request` applies before the

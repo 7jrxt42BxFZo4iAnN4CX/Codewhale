@@ -330,11 +330,11 @@ pub(crate) fn switch_screen_mode(
             if on_alt_screen {
                 enter_alt_screen(&mut stdout)?;
                 #[cfg(windows)]
-                crate::logging::set_verbose(false);
+                codewhale_runtime::logging::set_verbose(false);
             } else {
                 leave_alt_screen(&mut stdout)?;
                 #[cfg(windows)]
-                crate::logging::restore_verbose_state();
+                codewhale_runtime::logging::restore_verbose_state();
             }
             Ok(())
         },
@@ -463,7 +463,7 @@ pub(crate) fn pause_terminal(
     if use_alt_screen {
         attempt(leave_alt_screen(terminal.backend_mut()));
         #[cfg(windows)]
-        crate::logging::restore_verbose_state();
+        codewhale_runtime::logging::restore_verbose_state();
     }
     if use_mouse_capture {
         attempt(execute!(terminal.backend_mut(), DisableMouseCapture));
@@ -493,7 +493,7 @@ pub(crate) fn resume_terminal(
         // Re-entering alt-screen after mode recovery — suppress verbose
         // CLI logging again so eprintln! doesn't leak into the TUI.
         #[cfg(windows)]
-        crate::logging::set_verbose(false);
+        codewhale_runtime::logging::set_verbose(false);
     }
     recover_terminal_modes(
         terminal.backend_mut(),
@@ -1289,12 +1289,12 @@ mod screen_mode_tests {
 }
 
 /// The terminal UI's implementation of the runtime's one terminal port
-/// (`crate::host_terminal`). The composition root installs it for every host
+/// (`codewhale_runtime::host_terminal`). The composition root installs it for every host
 /// this binary launches, so runtime code (the shell tools, the dispatcher)
 /// reaches raw mode only through it and never links crossterm.
 struct TuiHostTerminal;
 
-impl crate::host_terminal::HostTerminal for TuiHostTerminal {
+impl codewhale_runtime::host_terminal::HostTerminal for TuiHostTerminal {
     fn suspend_raw_mode(&self) -> bool {
         let was_enabled = crossterm::terminal::is_raw_mode_enabled().unwrap_or(false);
         if was_enabled {
@@ -1328,15 +1328,15 @@ impl crate::host_terminal::HostTerminal for TuiHostTerminal {
 /// Install the TUI as the process's terminal host. Idempotent: the first
 /// install wins.
 pub(crate) fn install_host_terminal() {
-    let _ = crate::host_terminal::install(Box::new(TuiHostTerminal));
+    let _ = codewhale_runtime::host_terminal::install(Box::new(TuiHostTerminal));
 }
 
 #[cfg(test)]
 mod host_terminal_tests {
     use super::TuiHostTerminal;
-    use crate::host_terminal::HostTerminal;
     use crate::notify::DeliveryOutcome;
     use crate::tui::notifications::{configured_method, install_configured_method};
+    use codewhale_runtime::host_terminal::HostTerminal;
 
     /// The `notify` tool reaches delivery only through the installed host:
     /// the TUI's host must hand the model's text to the delivery path that

@@ -15,10 +15,10 @@ use serde_json::json;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-use crate::audit::log_sensitive_event;
-use crate::credentials::CredentialStore;
-use crate::features::{Feature, Features, FeaturesToml, is_known_feature_key};
 use crate::hooks::HooksConfig;
+use codewhale_runtime::audit::log_sensitive_event;
+use codewhale_runtime::credentials::CredentialStore;
+use codewhale_runtime::features::{Feature, Features, FeaturesToml, is_known_feature_key};
 
 // Sub-agent concurrency/timeout limit constants and their clamp resolvers live
 // in the `subagent_limits` leaf module. The constants are re-exported (keeping
@@ -92,7 +92,14 @@ pub struct ProviderIdentity {
     /// serialized.
     pub(crate) migrated_legacy_ollama_cloud_route: bool,
     /// Parse-scoped, redacted proof for the id-less migrated root route.
-    pub(crate) legacy_root_custom_generation: Option<crate::route_receipt::CredentialGeneration>,
+    pub(crate) legacy_root_custom_generation:
+        Option<codewhale_config::credentials::CredentialGeneration>,
+}
+
+impl std::hash::Hash for ProviderIdentity {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(&self.key, state);
+    }
 }
 
 pub(crate) fn is_legacy_antigravity_identity(value: &str) -> bool {
@@ -154,50 +161,6 @@ fn normalize_subagent_provider_key(value: &str) -> String {
         .collect()
 }
 
-// ============================================================================
-// Provider Capability Matrix
-// ============================================================================
-
-/// Known capabilities for a provider + resolved-model combination.
-///
-/// Returned by [`provider_capability`] to describe what a given provider
-/// supports for the resolved model string.  All fields are derived from
-/// static knowledge (release docs, API guides) rather than live API probes.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub struct ProviderCapability {
-    /// Canonical provider identifier.
-    pub provider: ProviderKind,
-    /// Resolved model identifier that will be sent in the API payload.
-    pub resolved_model: String,
-    /// Context window in tokens (the maximum input the model can accept).
-    pub context_window: u32,
-    /// Known output ceiling for this provider/model metadata path, when one is
-    /// actually known.
-    ///
-    /// `None` means "this route publishes no output maximum we can stand
-    /// behind" — for example the Kimi Code membership ids, whose limits live in
-    /// the membership catalog rather than the static model catalogue. Unknown
-    /// must stay unknown: callers may **not** substitute a placeholder ceiling,
-    /// and in particular [`crate::route_budget`] does not clamp a requested
-    /// `max_tokens` against an unknown compatibility cap.
-    ///
-    /// When `Some`, the value is a documented exact-route maximum or a
-    /// deliberately conservative provider ceiling (Anthropic's 64K floor, the
-    /// Codex OAuth route). It is metadata for diagnostics and CI policy; normal
-    /// turns use a separate, more conservative request cap in the engine.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_output: Option<u32>,
-    /// Whether the provider+model supports thinking/reasoning mode.
-    pub thinking_supported: bool,
-    /// Whether the provider returns prompt-cache telemetry fields.
-    pub cache_telemetry_supported: bool,
-    /// Which request-payload dialect the provider uses.
-    pub request_payload_mode: RequestPayloadMode,
-    /// Deprecation metadata for compatibility aliases that are still accepted.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub alias_deprecation: Option<ModelAliasDeprecation>,
-}
-
 pub const DEEPSEEK_ALIAS_RETIREMENT_DATE: &str = "2026-07-24";
 pub const DEEPSEEK_ALIAS_RETIREMENT_UTC: &str = "2026-07-24T15:59:00Z";
 pub use codewhale_config::catalog::reviewed::constants::DEEPSEEK_ALIAS_REPLACEMENT;
@@ -212,253 +175,25 @@ pub struct ModelAliasDeprecation {
     pub notice: String,
 }
 
-/// Which request-payload dialect the provider speaks.
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-pub enum RequestPayloadMode {
-    /// Standard OpenAI-compatible `/v1/chat/completions` payload.
-    ChatCompletions,
-    /// OpenAI Responses API payload.
-    Responses,
-    /// Native Anthropic Messages API `/v1/messages` payload (#3014).
-    AnthropicMessages,
-}
-
-/// Resolve the provider capability for a given [`ProviderKind`] and resolved
-/// model string.
-///
-/// The `resolved_model` should be the final model identifier that will appear
-/// in the API payload (after normalization / provider-specific mapping).
-#[must_use]
-pub fn provider_capability(provider: ProviderKind, resolved_model: &str) -> ProviderCapability {
-    provider_capability_with_wire(provider, resolved_model, None)
-}
-
-/// Wire-aware variant of [`provider_capability`] that respects
-/// `wire = "responses" | "anthropic" | "chat"` for `Custom` providers.
-///
-/// Built-ins keep their fixed policy; `Custom` defaults to `Chat` when `wire`
-/// is absent so existing configs stay compatible. Mirrors
-/// `crates/tui/src/client.rs::provider_wire_format_for_config` and the
-/// `Custom` comment in `crates/config/src/provider.rs`.
-#[must_use]
-pub fn provider_capability_with_wire(
+pub(crate) fn configured_model_for_route<'a>(
+    config: &'a Config,
     provider: ProviderKind,
-    resolved_model: &str,
-    wire: Option<&str>,
-) -> ProviderCapability {
-    // Custom wire overrides must be checked before the generic fallback so
-    // `[providers.<name>] wire = "responses"` / `"anthropic"` is honored.
-    if provider == ProviderKind::Custom {
-        if wire_config_prefers_anthropic(wire) {
-            return ProviderCapability {
-                provider,
-                resolved_model: resolved_model.to_string(),
-                context_window: codewhale_models::context_window_for_model(resolved_model)
-                    .unwrap_or(codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS),
-                max_output: codewhale_models::max_output_tokens_for_model(resolved_model),
-                thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
-                cache_telemetry_supported: false,
-                request_payload_mode: RequestPayloadMode::AnthropicMessages,
-                alias_deprecation: None,
-            };
-        }
-        if wire_config_prefers_responses(wire) {
-            return ProviderCapability {
-                provider,
-                resolved_model: resolved_model.to_string(),
-                context_window: codewhale_models::context_window_for_model(resolved_model)
-                    .unwrap_or(codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS),
-                max_output: codewhale_models::max_output_tokens_for_model(resolved_model),
-                thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
-                cache_telemetry_supported: false,
-                request_payload_mode: RequestPayloadMode::Responses,
-                alias_deprecation: None,
-            };
-        }
+    identity: &str,
+    base_url: &str,
+    model: &str,
+) -> Option<&'a codewhale_config::catalog::configured::ConfiguredModel> {
+    // Account-owned OAuth rosters retain their separate authority.
+    if provider == ProviderKind::OpenaiCodex {
+        return None;
     }
-
-    if matches!(
-        provider,
-        ProviderKind::Anthropic | ProviderKind::MinimaxAnthropic | ProviderKind::Openmodel
-    ) {
-        return ProviderCapability {
-            provider,
-            resolved_model: resolved_model.to_string(),
-            // 200K is the conservative Anthropic floor; 4.6+ models resolve
-            // their 1M windows from models.rs rows (#3014).
-            context_window: codewhale_models::context_window_for_model(resolved_model)
-                .unwrap_or(200_000),
-            // 64K is the documented Anthropic Messages floor. For a model
-            // the catalogue describes this carries its documented ceiling;
-            // for an unknown one it is an *assumed* floor, and
-            // `route_budget::output_ceiling_source` labels it unverified so
-            // no receipt renders it as "documented" (#5440).
-            max_output: Some(
-                codewhale_models::max_output_tokens_for_model(resolved_model).unwrap_or(64_000),
-            ),
-            thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
-            cache_telemetry_supported: matches!(provider, ProviderKind::Anthropic),
-            request_payload_mode: RequestPayloadMode::AnthropicMessages,
-            alias_deprecation: None,
-        };
-    }
-
-    if matches!(provider, ProviderKind::OpenaiCodex) {
-        return ProviderCapability {
-            provider,
-            resolved_model: resolved_model.to_string(),
-            context_window: OPENAI_CODEX_EFFECTIVE_CONTEXT_WINDOW_TOKENS,
-            // The OAuth cache does not publish an output ceiling. This 4K is a
-            // deliberate, long-standing product decision for the Codex route
-            // (not a fallback): keep the compatibility capability conservative
-            // instead of inheriting the public API model's output limit. It is
-            // an assumption, not a documented fact — receipts label it
-            // unverified (#5440).
-            max_output: Some(4096),
-            thinking_supported: true,
-            cache_telemetry_supported: false,
-            request_payload_mode: RequestPayloadMode::Responses,
-            alias_deprecation: None,
-        };
-    }
-
-    // #3023: Delete the Openai/Atlascloud/Moonshot early-return so these
-    // providers use the generic model-based path below, which correctly
-    // resolves context windows, output limits, and thinking support from
-    // models.rs lookups.  Ollama also falls through to model-based lookups
-    // with 8192 as the last-resort fallback instead of a hardcoded floor.
-    if matches!(provider, ProviderKind::XiaomiMimo) {
-        return ProviderCapability {
-            provider,
-            resolved_model: resolved_model.to_string(),
-            context_window: codewhale_models::context_window_for_model(resolved_model)
-                .unwrap_or(codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS),
-            // No documented output maximum for these routes: stay unknown so
-            // no compatibility clamp is applied downstream.
-            max_output: codewhale_models::max_output_tokens_for_model(resolved_model),
-            thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
-            cache_telemetry_supported: false,
-            request_payload_mode: RequestPayloadMode::ChatCompletions,
-            alias_deprecation: None,
-        };
-    }
-
-    if matches!(provider, ProviderKind::Arcee) {
-        return ProviderCapability {
-            provider,
-            resolved_model: resolved_model.to_string(),
-            context_window: codewhale_models::context_window_for_model(resolved_model)
-                .unwrap_or(codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS),
-            // No documented output maximum for these routes: stay unknown so
-            // no compatibility clamp is applied downstream.
-            max_output: codewhale_models::max_output_tokens_for_model(resolved_model),
-            thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
-            cache_telemetry_supported: false,
-            request_payload_mode: RequestPayloadMode::ChatCompletions,
-            alias_deprecation: None,
-        };
-    }
-
-    let model_lower = resolved_model.to_ascii_lowercase();
-    let alias_deprecation = if matches!(
-        provider,
-        ProviderKind::Deepseek | ProviderKind::DeepseekAnthropic
-    ) {
-        deepseek_alias_deprecation(&model_lower)
-    } else {
-        None
-    };
-    let official_deepseek =
-        canonical_official_deepseek_model_id(&model_lower).is_some() || alias_deprecation.is_some();
-    let is_reasoner = matches!(provider, ProviderKind::WanjieArk)
-        && (model_lower.contains("reasoner") || model_lower.contains("r1"));
-
-    // Provider-owned wire IDs can have exact catalog facts without a legacy
-    // model-only row. Reuse those facts before conservative fallback budgets.
-    let offering =
-        crate::provider_lake::bundled_catalog_offering_for_model(provider, resolved_model);
-    let context_window = if official_deepseek {
-        codewhale_models::DEEPSEEK_V4_CONTEXT_WINDOW_TOKENS
-    } else if let Some(window) = codewhale_models::context_window_for_model(resolved_model) {
-        window
-    } else if let Some(window) = offering
-        .as_ref()
-        .and_then(|row| row.limit.as_ref())
-        .and_then(|limit| limit.context)
-        .and_then(|window| u32::try_from(window).ok())
-    {
-        window
-    } else if matches!(provider, ProviderKind::Ollama) {
-        8192
-    } else {
-        codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS
-    };
-
-    // Output limits require an exact catalog row or an explicitly recognized
-    // compatibility alias. A family-name match cannot document a new model.
-    // The catalog answers
-    // `None` when the catalogue has no row. That is the truthful state for
-    // membership routes such as the `kimi-for-coding` family, whose ceilings
-    // are owned by the membership catalog. It must not become a placeholder
-    // number: a fabricated 4K here silently clamped offline membership routes
-    // to 4K output via `route_budget`.
-    let max_output = codewhale_models::max_output_tokens_for_model(resolved_model)
-        .or_else(|| {
-            // Provider-owned wire IDs need not exist in the legacy model-only
-            // catalog (for example Fireworks' accounts/... slug). Reuse the
-            // exact bundled offering instead of inferring a family ceiling.
-            offering
-                .as_ref()
-                .and_then(|offering| offering.limit.as_ref())
-                .and_then(|limit| limit.output)
-                .and_then(|limit| u32::try_from(limit).ok())
-        })
-        .or_else(|| {
-            canonical_official_deepseek_model_id(resolved_model)
-                .or_else(|| {
-                    alias_deprecation
-                        .as_ref()
-                        .map(|_| DEEPSEEK_ALIAS_REPLACEMENT)
-                })
-                .and_then(codewhale_models::max_output_tokens_for_model)
-        });
-
-    // Exact catalog reasoning facts and recognized compatibility aliases only.
-    let thinking_supported = official_deepseek
-        || is_reasoner
-        || offering
-            .as_ref()
-            .is_some_and(|row| row.reasoning == Some(true))
-        || codewhale_models::model_supports_reasoning(resolved_model);
-
-    // Cache telemetry: returned only by DeepSeek-native and NVIDIA NIM endpoints.
-    let cache_telemetry_supported = matches!(
-        provider,
-        ProviderKind::Deepseek | ProviderKind::NvidiaNim | ProviderKind::Volcengine
-    );
-
-    let request_payload_mode = if matches!(
-        provider,
-        ProviderKind::DeepseekAnthropic | ProviderKind::MinimaxAnthropic | ProviderKind::Openmodel
-    ) {
-        RequestPayloadMode::AnthropicMessages
-    } else {
-        RequestPayloadMode::ChatCompletions
-    };
-
-    ProviderCapability {
-        provider,
-        resolved_model: resolved_model.to_string(),
-        context_window,
-        max_output,
-        thinking_supported,
-        cache_telemetry_supported,
-        request_payload_mode,
-        alias_deprecation,
-    }
+    let models = config.custom_models.as_deref()?;
+    codewhale_config::catalog::configured::validate_configured_models(models).ok()?;
+    models
+        .iter()
+        .find(|row| row.id == model && row.matches_route(identity, base_url))
 }
 
-fn deepseek_alias_deprecation(model_lower: &str) -> Option<ModelAliasDeprecation> {
+pub(crate) fn deepseek_alias_deprecation(model_lower: &str) -> Option<ModelAliasDeprecation> {
     match model_lower {
         "deepseek-chat" | "deepseek-reasoner" => Some(ModelAliasDeprecation {
             alias: model_lower.to_string(),
@@ -896,7 +631,7 @@ pub(crate) fn legacy_deepseek_alias_effort_for_route(
 /// fallback** (#4188).
 ///
 /// Preferred sources are the live Models.dev catalog and the offline bundled
-/// snapshot via [`crate::provider_lake`]. Call this directly only for
+/// snapshot via `crate::provider_lake`. Call this directly only for
 /// Codewhale-only / local providers Models.dev does not represent, or when
 /// probing the fallback table in tests. Picker, inventory, and subagent
 /// surfaces must go through the provider lake.
@@ -916,7 +651,7 @@ pub struct ExtensionHostConfig {
     /// Explicit MCP protocol backend. Rust remains default; Host supports stdio,
     /// HTTP and SSE independently of optional Native extension activation.
     #[serde(default)]
-    pub mcp_backend: crate::mcp::McpBackend,
+    pub mcp_backend: codewhale_config::McpBackend,
     /// Which runtime runs the host: `node` (the default), `bun`, or `auto`
     /// (Bun when a supported one is found and starts, else Node). `bun` and
     /// `auto` are opt-ins: Bun is not the default until it is qualified on
@@ -1092,13 +827,12 @@ pub struct TuiConfig {
     /// omitted. `0` maps to the default; values clamp to `1..=3600`.
     pub stream_chunk_timeout_secs: Option<u64>,
     /// Optional ceiling on model steps in a single turn. Omitted or `0`
-    /// leaves model steps uncapped; explicit positive values clamp to
-    /// `1..=100_000`. Wall-clock and stream budgets remain independent.
+    /// leaves model steps uncapped. Explicit positive values are preserved;
+    /// `u32::MAX` also represents no limit. Stream limits remain independent.
     pub max_model_steps: Option<u32>,
-    /// R1: cumulative wall-clock budget for a single turn, in seconds.
-    /// Omitted or `0` resolve to the finite default (3600); explicit values
-    /// clamp to `30..=86_400`. Time blocked on a human approval decision is
-    /// excluded from the measurement.
+    /// Cumulative wall-clock budget for a single turn, in seconds.
+    /// Omitted or `0` means no limit; positive values are preserved. Time
+    /// blocked on a human approval decision is excluded from the measurement.
     pub turn_wall_clock_secs: Option<u64>,
     /// R1: per-step cap on accumulated streamed content, in megabytes.
     /// Omitted or `0` resolve to the default (10 MB); explicit values clamp
@@ -1246,11 +980,11 @@ fn default_snapshots_enabled() -> bool {
 }
 
 fn default_snapshot_max_age_days() -> u64 {
-    crate::snapshot::DEFAULT_MAX_AGE.as_secs() / (24 * 60 * 60)
+    codewhale_config::DEFAULT_SNAPSHOT_MAX_AGE.as_secs() / (24 * 60 * 60)
 }
 
 fn default_snapshot_max_workspace_gb() -> u64 {
-    crate::snapshot::DEFAULT_MAX_WORKSPACE_BYTES_FOR_SNAPSHOT / (1024 * 1024 * 1024)
+    codewhale_config::DEFAULT_MAX_WORKSPACE_BYTES_FOR_SNAPSHOT / (1024 * 1024 * 1024)
 }
 
 /// Workspace side-git snapshot configuration (#137).
@@ -1356,13 +1090,13 @@ pub struct ToolsConfig {
 
     /// Ceiling on how many questions one `request_user_input` call may ask
     /// (#5949). `None` uses
-    /// [`crate::tools::user_input::DEFAULT_MAX_QUESTIONS`] (6). Values outside
+    /// `DEFAULT_MAX_QUESTIONS` (6). Values outside
     /// `1..=10` are clamped with a warning rather than failing the load.
     #[serde(default)]
     pub user_input_max_questions: Option<u32>,
 
     /// Ceiling on how many options each `request_user_input` question may
-    /// offer. `None` uses [`crate::tools::user_input::DEFAULT_MAX_OPTIONS`]
+    /// offer. `None` uses `DEFAULT_MAX_OPTIONS`
     /// (4). Values outside `2..=10` are clamped with a warning.
     #[serde(default)]
     pub user_input_max_options: Option<u32>,
@@ -1383,7 +1117,7 @@ pub struct GoalConfig {
     /// Goals are unlimited by default; token/time budgets are telemetry only.
     ///
     /// `None` uses the built-in default
-    /// ([`crate::goal_loop::DEFAULT_MAX_GOAL_CONTINUATIONS`], currently `0`);
+    /// ([`codewhale_runtime::goal_loop::DEFAULT_MAX_GOAL_CONTINUATIONS`], currently `0`);
     /// `0` disables the backstop entirely so only terminal status or user
     /// control ends the run.
     #[serde(default)]
@@ -1391,7 +1125,7 @@ pub struct GoalConfig {
 
     /// Optional per-engine-turn step ceiling while a goal is active (#6512).
     /// Like ordinary turns, `None` or `0` leaves model steps uncapped;
-    /// positive values clamp to `1..=100,000`. This bounds each turn, never
+    /// positive values are preserved. This bounds each turn, never
     /// the number of continuation passes; explicit per-invocation ceilings
     /// (`exec --max-turns`, child-worker caps) still win.
     #[serde(default)]
@@ -1754,10 +1488,9 @@ pub struct SubagentsConfig {
     /// spawn. `0` blocks the model-facing `agent` tool at this runtime depth;
     /// use `[subagents] enabled = false` for the clearer durable off switch.
     /// `1` allows one level, `2` two, and so on. When unset, defaults to
-    /// [`codewhale_config::DEFAULT_SPAWN_DEPTH`]; any value is clamped to
-    /// [`codewhale_config::MAX_SPAWN_DEPTH_CEILING`]. Fleet workers are
-    /// governed separately by `[fleet.exec] max_spawn_depth`; both share the
-    /// same default and ceiling so the limit cannot drift.
+    /// [`codewhale_config::DEFAULT_SPAWN_DEPTH`], with no product depth cap.
+    /// Fleet workers are governed separately by `[fleet.exec] max_spawn_depth`;
+    /// both use the same default.
     #[serde(default)]
     pub max_depth: Option<u32>,
     /// Number of direct (depth-1) sub-agents that may execute concurrently
@@ -1789,16 +1522,12 @@ pub struct SubagentsConfig {
     /// cancelled before their request timeout can fire (#2614).
     #[serde(default)]
     pub heartbeat_timeout_secs: Option<u64>,
-    /// Default per-child model-turn budget applied when an `agent` start
-    /// carries no explicit `max_steps` (#5324). Unset or zero remains
-    /// unbounded for every Fleet role; positive values are clamped to the
-    /// runtime ceiling (2000) at resolution.
+    /// Operator-selected per-child model-turn budget. Unset or zero leaves
+    /// every Fleet role unbounded unless an inherited limit applies.
     #[serde(default)]
     pub default_max_steps: Option<u32>,
-    /// Default per-child wall-clock budget in seconds applied when an
-    /// `agent` start carries no explicit `wall_time_secs` (#5324). When
-    /// unset, children get 1800s; values are clamped to 1..=86400 at
-    /// resolution.
+    /// Operator-selected per-child wall-clock budget in seconds. Unset or
+    /// zero leaves the run unbounded unless an inherited deadline applies.
     #[serde(default)]
     pub default_wall_time_secs: Option<u64>,
     /// Per-provider overrides for sub-agent fanout and budget knobs. Keys are
@@ -2197,7 +1926,7 @@ impl TranscriptConfig {
 #[derive(Debug, Clone)]
 pub(crate) struct AccountModelAccess {
     pub(crate) session_id: String,
-    pub(crate) credential: crate::credentials::Credential,
+    pub(crate) credential: codewhale_runtime::credentials::Credential,
     pub(crate) expires_at: i64,
     pub(crate) profile: Option<String>,
 }
@@ -2214,6 +1943,14 @@ pub struct Config {
     #[serde(skip)]
     pub(crate) account_model_access:
         std::sync::Arc<parking_lot::RwLock<Option<AccountModelAccess>>>,
+    #[serde(skip)]
+    pub(crate) session_provider_keys_only: bool,
+    #[serde(skip)]
+    pub(crate) session_provider_keys: std::sync::Arc<
+        parking_lot::RwLock<
+            HashMap<ProviderIdentity, (String, codewhale_runtime::credentials::Credential)>,
+        >,
+    >,
     #[serde(skip)]
     pub(crate) required_account_model_owner: Option<String>,
     /// Persisted exact-route declarations, separate from provider credentials.
@@ -2473,7 +2210,7 @@ pub struct Config {
     /// Per-domain network policy (#135). When absent, network tools fall back
     /// to a permissive default that mirrors pre-v0.7.0 behavior.
     #[serde(default)]
-    pub network: Option<NetworkPolicyToml>,
+    pub network: Option<codewhale_config::NetworkPolicyToml>,
 
     /// Verifier-preview behavior (#2093). When absent, automatic verifier
     /// preview stays off and verifier verdicts use the hunt policy.
@@ -2487,8 +2224,8 @@ pub struct Config {
 
     /// Community skill installer settings (#140). When absent, installer
     /// commands fall back to the bundled defaults
-    /// ([`crate::skills::install::DEFAULT_REGISTRY_URL`] +
-    /// [`crate::skills::install::DEFAULT_MAX_SIZE_BYTES`]).
+    /// (`crate::skills::install::DEFAULT_REGISTRY_URL` +
+    /// `crate::skills::install::DEFAULT_MAX_SIZE_BYTES`).
     #[serde(default)]
     pub skills: Option<SkillsConfig>,
 
@@ -2546,9 +2283,9 @@ pub struct Config {
     pub cloud_facts: Option<CloudFactsConfig>,
 
     /// Post-edit LSP diagnostics injection (#136). When absent, the engine
-    /// applies the defaults documented in [`LspConfigToml`].
+    /// applies the defaults documented in [`codewhale_config::LspConfigToml`].
     #[serde(default)]
-    pub lsp: Option<LspConfigToml>,
+    pub lsp: Option<codewhale_config::LspConfigToml>,
 
     /// Context configuration (project context pack; legacy seam keys are
     /// parsed but ignored since the 2026-07-23 removal).
@@ -2585,7 +2322,7 @@ pub struct Config {
     /// Workshop / large-tool-output routing (#548). When absent, the global
     /// default threshold of 4 096 tokens applies and routing is active.
     #[serde(default)]
-    pub workshop: Option<crate::tools::large_output_router::WorkshopConfig>,
+    pub workshop: Option<codewhale_config::WorkshopConfig>,
 
     /// Vision model configuration for the `image_analyze` tool.
     #[serde(default)]
@@ -2652,12 +2389,13 @@ pub struct Config {
     /// Bound at parse time, never reconstructed from later diagnostic notes.
     #[cfg(not(test))]
     #[serde(skip)]
-    legacy_root_custom_generation: Option<crate::route_receipt::CredentialGeneration>,
+    legacy_root_custom_generation: Option<codewhale_config::credentials::CredentialGeneration>,
     // Test fixtures construct Config through public-field struct updates. The
     // production receipt remains private; both builds run identical admission.
     #[cfg(test)]
     #[serde(skip)]
-    pub(crate) legacy_root_custom_generation: Option<crate::route_receipt::CredentialGeneration>,
+    pub(crate) legacy_root_custom_generation:
+        Option<codewhale_config::credentials::CredentialGeneration>,
 
     /// Mini-window (pinned, always-on-top) mode layout preferences
     /// (`[mini_window]` in config.toml). When the host terminal window is
@@ -2768,33 +2506,6 @@ pub struct AutoReviewRuleConfig {
 }
 
 impl AutoReviewConfig {
-    fn to_runtime_policy(&self) -> crate::core::authority::auto_review::AutoReviewPolicy {
-        crate::core::authority::auto_review::AutoReviewPolicy {
-            allow_rules: self
-                .allow
-                .iter()
-                .enumerate()
-                .map(|(index, rule)| {
-                    rule.to_runtime_rule(
-                        index,
-                        crate::core::authority::auto_review::AutoReviewAction::Allow,
-                    )
-                })
-                .collect(),
-            block_rules: self
-                .block
-                .iter()
-                .enumerate()
-                .map(|(index, rule)| {
-                    rule.to_runtime_rule(
-                        index,
-                        crate::core::authority::auto_review::AutoReviewAction::Block,
-                    )
-                })
-                .collect(),
-        }
-    }
-
     fn validate(&self) -> Result<()> {
         validate_auto_review_rules("allow", &self.allow)?;
         validate_auto_review_rules("block", &self.block)?;
@@ -2803,62 +2514,6 @@ impl AutoReviewConfig {
 }
 
 impl AutoReviewRuleConfig {
-    fn to_runtime_rule(
-        &self,
-        index: usize,
-        action: crate::core::authority::auto_review::AutoReviewAction,
-    ) -> crate::core::authority::auto_review::AutoReviewRule {
-        let id_prefix = match action {
-            crate::core::authority::auto_review::AutoReviewAction::Allow => "allow",
-            crate::core::authority::auto_review::AutoReviewAction::Block => "block",
-            crate::core::authority::auto_review::AutoReviewAction::AskUser => "ask",
-        };
-        let id = self
-            .id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| format!("config-{id_prefix}-{index}"));
-        let reason = self
-            .reason
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| format!("configured auto-review {id_prefix} rule"));
-        let mut rule = match action {
-            crate::core::authority::auto_review::AutoReviewAction::Allow => {
-                crate::core::authority::auto_review::AutoReviewRule::allow(id, reason)
-            }
-            crate::core::authority::auto_review::AutoReviewAction::Block => {
-                crate::core::authority::auto_review::AutoReviewRule::block(id, reason)
-            }
-            crate::core::authority::auto_review::AutoReviewAction::AskUser => {
-                crate::core::authority::auto_review::AutoReviewRule::block(id, reason)
-            }
-        };
-
-        if let Some(tool) = self
-            .tool
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            rule = rule.tool_name(tool.to_string());
-        }
-        if let Some(action_kind) = self
-            .action_kind
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .and_then(parse_auto_review_action_kind)
-        {
-            rule = rule.action_kind(action_kind);
-        }
-        rule
-    }
-
     fn has_matcher(&self) -> bool {
         self.tool
             .as_deref()
@@ -2888,7 +2543,7 @@ fn validate_auto_review_rules(kind: &str, rules: &[AutoReviewRuleConfig]) -> Res
         }
         if let Some(action_kind) = rule.action_kind.as_deref() {
             let normalized = action_kind.trim().to_ascii_lowercase().replace('-', "_");
-            if parse_auto_review_action_kind(&normalized).is_none() {
+            if auto_review_action_kind_name(&normalized).is_none() {
                 anyhow::bail!(
                     "Invalid auto_review.{kind}[{index}].action_kind '{action_kind}': expected read, write, shell, external, publish, or destructive."
                 );
@@ -2908,20 +2563,17 @@ fn validate_auto_review_rules(kind: &str, rules: &[AutoReviewRuleConfig]) -> Res
     Ok(())
 }
 
-fn parse_auto_review_action_kind(
-    raw: &str,
-) -> Option<crate::core::authority::auto_review::ToolActionKind> {
+/// Canonical action-kind name for an `auto_review` `action_kind` spelling,
+/// including the retired narrow kinds that fold into a current class.
+#[must_use]
+pub fn auto_review_action_kind_name(raw: &str) -> Option<&'static str> {
     match raw.trim().to_ascii_lowercase().replace('-', "_").as_str() {
-        "read" | "mcp_read" => Some(crate::core::authority::auto_review::ToolActionKind::Read),
-        "write" => Some(crate::core::authority::auto_review::ToolActionKind::Write),
-        "shell" => Some(crate::core::authority::auto_review::ToolActionKind::Shell),
-        "external" | "network" | "git" | "mcp_action" | "browser" | "unknown" => {
-            Some(crate::core::authority::auto_review::ToolActionKind::External)
-        }
-        "publish" => Some(crate::core::authority::auto_review::ToolActionKind::Publish),
-        "destructive" | "secret" => {
-            Some(crate::core::authority::auto_review::ToolActionKind::Destructive)
-        }
+        "read" | "mcp_read" => Some("read"),
+        "write" => Some("write"),
+        "shell" => Some("shell"),
+        "external" | "network" | "git" | "mcp_action" | "browser" | "unknown" => Some("external"),
+        "publish" => Some("publish"),
+        "destructive" | "secret" => Some("destructive"),
         _ => None,
     }
 }
@@ -2986,7 +2638,7 @@ pub struct RuntimeApiConfig {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct SkillsConfig {
     /// Curated registry index. `/skill install <name>` looks up the spec here.
-    /// Defaults to [`crate::skills::install::DEFAULT_REGISTRY_URL`].
+    /// Defaults to `crate::skills::install::DEFAULT_REGISTRY_URL`.
     #[serde(default)]
     pub registry_url: Option<String>,
     /// Per-skill maximum *uncompressed* size in bytes. Tarballs that exceed
@@ -3015,149 +2667,6 @@ impl SkillsConfig {
     #[must_use]
     pub fn scan_codewhale_only(&self) -> bool {
         self.scan_codewhale_only.unwrap_or(false)
-    }
-}
-
-/// `[network]` table — mirrors `codewhale_config::NetworkPolicyToml` so the live
-/// TUI runtime can construct a [`crate::network_policy::NetworkPolicy`]
-/// without reaching into the workspace config crate. See `config.example.toml`
-/// for documentation.
-#[derive(Debug, Clone, Deserialize)]
-pub struct NetworkPolicyToml {
-    /// Decision for hosts that are not in `allow` or `deny`. One of
-    /// `"allow" | "deny" | "prompt"`. Defaults to `"prompt"`.
-    #[serde(default = "default_network_decision")]
-    pub default: String,
-    /// Hosts that are always allowed. Subdomain rules: a leading dot
-    /// (`.example.com`) matches subdomains but not the apex.
-    #[serde(default)]
-    pub allow: Vec<String>,
-    /// Hosts that are always denied. Deny entries win over allow entries.
-    #[serde(default)]
-    pub deny: Vec<String>,
-    /// Hostnames whose DNS may resolve to fake-IP/private proxy ranges in an
-    /// explicitly trusted proxy setup. Literal IP URLs remain blocked.
-    #[serde(default)]
-    pub proxy: Vec<String>,
-    /// Explicit fake-IP placeholder CIDRs for those proxy hosts. Only subnets
-    /// within `198.18.0.0/15` are accepted by the runtime SSRF guard.
-    #[serde(default)]
-    pub proxy_fake_ip_cidrs: Vec<String>,
-    /// Whether to record one audit-log line per outbound network call.
-    #[serde(default = "default_network_audit")]
-    pub audit: bool,
-}
-
-fn default_network_decision() -> String {
-    "prompt".to_string()
-}
-
-fn default_network_audit() -> bool {
-    true
-}
-
-impl Default for NetworkPolicyToml {
-    fn default() -> Self {
-        Self {
-            default: default_network_decision(),
-            allow: Vec::new(),
-            deny: Vec::new(),
-            proxy: Vec::new(),
-            proxy_fake_ip_cidrs: Vec::new(),
-            audit: default_network_audit(),
-        }
-    }
-}
-
-impl NetworkPolicyToml {
-    /// Build a runtime [`crate::network_policy::NetworkPolicy`] from the
-    /// on-disk schema.
-    #[must_use]
-    pub fn into_runtime(self) -> crate::network_policy::NetworkPolicy {
-        crate::network_policy::NetworkPolicy {
-            default: crate::network_policy::Decision::parse(&self.default).into(),
-            allow: self.allow,
-            deny: self.deny,
-            proxy: self.proxy,
-            proxy_fake_ip_cidrs: self.proxy_fake_ip_cidrs,
-            audit: self.audit,
-        }
-    }
-}
-
-/// Re-read the `[network]` table from a configuration document.
-///
-/// Deliberately narrower than [`Config::load`]: this runs on the tool-context
-/// build path, where re-applying the environment, managed, and credential
-/// layers would be both wasteful and wrong. Only the document's own table comes
-/// back — the same table `/network allow <host>` edits.
-///
-/// `None` means there is nothing usable to adopt: the document is missing,
-/// unreadable, unparseable, or carries no `[network]` table. Callers keep the
-/// policy they already hold, which is the conservative direction for an
-/// allow/deny gate.
-///
-/// Known limitation: `[profiles.<name>.network]` is not consulted. `/network`
-/// does not write it either, so a live session and the command agree on this
-/// base table.
-#[must_use]
-pub fn network_policy_from_document(path: &Path) -> Option<crate::network_policy::NetworkPolicy> {
-    #[derive(Deserialize)]
-    struct NetworkTable {
-        network: Option<NetworkPolicyToml>,
-    }
-
-    let contents = fs::read_to_string(path).ok()?;
-    let parsed: NetworkTable = toml::from_str(&contents).ok()?;
-    parsed.network.map(NetworkPolicyToml::into_runtime)
-}
-
-/// `[lsp]` table — mirrors [`crate::lsp::LspConfig`]. Documented in
-/// `config.example.toml`. When omitted, defaults from `LspConfig::default()`
-/// apply (enabled, 5 s poll, 20 diagnostics/file, errors only, no overrides).
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct LspConfigToml {
-    /// Master switch. Defaults to `true`.
-    #[serde(default)]
-    pub enabled: Option<bool>,
-    /// How long to wait for the LSP server to publish diagnostics after a
-    /// `didOpen`/`didChange`. Defaults to 5000 ms.
-    #[serde(default)]
-    pub poll_after_edit_ms: Option<u64>,
-    /// Cap on diagnostics surfaced per file. Defaults to 20.
-    #[serde(default)]
-    pub max_diagnostics_per_file: Option<usize>,
-    /// Whether to surface warnings in addition to errors. Defaults to `false`.
-    #[serde(default)]
-    pub include_warnings: Option<bool>,
-    /// Optional override for the `Language -> [cmd, ...args]` table. Keys
-    /// are language slugs (`"rust"`, `"go"`, etc.).
-    #[serde(default)]
-    pub servers: Option<HashMap<String, Vec<String>>>,
-    /// User-defined LSP servers for file extensions not in the built-in
-    /// registry. Keyed by extension (e.g. `"php"`, `"rb"`).
-    #[serde(default)]
-    pub custom: Option<HashMap<String, crate::lsp::CustomLspDef>>,
-}
-
-impl LspConfigToml {
-    /// Build a runtime [`crate::lsp::LspConfig`] from the on-disk schema,
-    /// falling back to defaults for any unset fields.
-    #[must_use]
-    pub fn into_runtime(self) -> crate::lsp::LspConfig {
-        let defaults = crate::lsp::LspConfig::default();
-        crate::lsp::LspConfig {
-            enabled: self.enabled.unwrap_or(defaults.enabled),
-            poll_after_edit_ms: self
-                .poll_after_edit_ms
-                .unwrap_or(defaults.poll_after_edit_ms),
-            max_diagnostics_per_file: self
-                .max_diagnostics_per_file
-                .unwrap_or(defaults.max_diagnostics_per_file),
-            include_warnings: self.include_warnings.unwrap_or(defaults.include_warnings),
-            servers: self.servers.unwrap_or_default(),
-            custom: self.custom.unwrap_or_default(),
-        }
     }
 }
 
@@ -3241,7 +2750,7 @@ pub struct ProviderConfig {
     pub kind: Option<String>,
     /// Runtime-only receipt; a config file cannot manufacture plugin authority.
     #[serde(skip)]
-    pub plugin_authority: Option<crate::plugins::types::PluginAuthority>,
+    pub plugin_authority: Option<codewhale_config::PluginAuthority>,
     /// Name of the environment variable holding this custom provider's API key
     /// (#1519), e.g. `api_key_env = "EXAMPLE_API_KEY"`. The key value itself is
     /// never stored in config; only the env var name is.
@@ -3730,29 +3239,6 @@ pub(crate) fn approval_policy_baseline_from_permission_posture(
 // === Config Loading ===
 
 impl Config {
-    /// The read deny-list in force for this config (S1).
-    ///
-    /// Unions the built-in credential-store defaults (unless
-    /// `sandbox_read_denylist_defaults = false`) with
-    /// `sandbox_denied_read_paths`, minus `sandbox_read_denylist_exempt`.
-    /// Feeds both the in-process file-reading tools and the OS sandbox
-    /// wrappers, so a shell `cat` and a `read_file` call refuse the same paths.
-    #[must_use]
-    pub fn read_denylist(&self) -> crate::sandbox::read_guard::ReadDenylist {
-        crate::sandbox::read_guard::ReadDenylist::build(
-            self.sandbox_read_denylist_defaults.unwrap_or(true),
-            &self.sandbox_denied_read_paths,
-            &self.sandbox_read_denylist_exempt,
-        )
-    }
-
-    /// Every path the OS sandbox wrappers should deny reads under — the
-    /// deny-list's subtree rules, home-expanded and normalized.
-    #[must_use]
-    pub fn effective_sandbox_denied_read_paths(&self) -> Vec<std::path::PathBuf> {
-        self.read_denylist().subtree_paths()
-    }
-
     /// Whether Linux shell commands prefer bubblewrap confinement.
     ///
     /// On by default: an unset `prefer_bwrap` means sandboxed commands use
@@ -4130,16 +3616,6 @@ impl Config {
         }
     }
 
-    /// Whether an explicit config or requirements file owns approval posture.
-    /// TUI preferences may supply a default only when this is false.
-    #[must_use]
-    pub fn approval_policy_is_managed(&self) -> bool {
-        if self.approval_policy.is_some() {
-            return true;
-        }
-        self.approval_policy_is_requirements_managed()
-    }
-
     /// Whether organization requirements, rather than a user-editable config
     /// key, own approval posture. User config still outranks TUI settings, but
     /// `/config approval_mode ... --save` may edit that user-owned key.
@@ -4310,18 +3786,6 @@ impl Config {
             .unwrap_or_default()
     }
 
-    /// Effective `request_user_input` payload ceilings for this session
-    /// (#5949). Resolved once per engine build; out-of-range `[tools]` values
-    /// clamp with a single warning naming the key and the value used.
-    #[must_use]
-    pub fn user_input_limits(&self) -> crate::tools::user_input::UserInputLimits {
-        let tools = self.tools.as_ref();
-        crate::tools::user_input::UserInputLimits::from_config_values(
-            tools.and_then(|t| t.user_input_max_questions),
-            tools.and_then(|t| t.user_input_max_options),
-        )
-    }
-
     /// Effective wait for a user-input answer or an approval decision
     /// (#6003). `None` or `0` waits until the person answers or cancels.
     /// A positive value bounds that one wait; values above 24h clamp.
@@ -4338,14 +3802,6 @@ impl Config {
             );
         }
         Some(std::time::Duration::from_secs(seconds.min(MAX_SECONDS)))
-    }
-
-    #[must_use]
-    pub fn auto_review_policy(&self) -> crate::core::authority::auto_review::AutoReviewPolicy {
-        self.auto_review
-            .as_ref()
-            .map(AutoReviewConfig::to_runtime_policy)
-            .unwrap_or_default()
     }
 
     /// Load configuration from disk and merge with environment overrides.
@@ -4528,7 +3984,7 @@ impl Config {
                         .flatten()
                 })
                 .unwrap_or_default();
-            let declared = crate::provider_lake::configured_model_for_route(
+            let declared = configured_model_for_route(
                 &scoped,
                 provider,
                 identity.key.as_str(),
@@ -4627,7 +4083,7 @@ impl Config {
             && !model.trim().eq_ignore_ascii_case("auto")
             && !provider_passes_model_through(active_provider)
             && !self.active_provider_preserves_custom_base_url_model()
-            && crate::provider_lake::configured_model_for_route(
+            && configured_model_for_route(
                 self,
                 active_provider,
                 identity.key.as_str(),
@@ -5281,12 +4737,12 @@ impl Config {
 
     fn legacy_root_custom_table_generation(
         &self,
-    ) -> Option<crate::route_receipt::CredentialGeneration> {
+    ) -> Option<codewhale_config::credentials::CredentialGeneration> {
         let entry = self.providers.as_ref()?.custom.get("custom")?;
         let value = serde_json::to_value(entry).ok()?;
-        Some(crate::route_receipt::CredentialGeneration::derive(
+        Some(codewhale_config::credentials::CredentialGeneration::derive(
             "codewhale/legacy-root-custom-table/v1",
-            &crate::client::canonical_json(&value),
+            &codewhale_runtime::hashing::canonical_json(&value),
         ))
     }
 
@@ -5320,7 +4776,7 @@ impl Config {
 
     fn current_legacy_root_custom_generation(
         &self,
-    ) -> Option<crate::route_receipt::CredentialGeneration> {
+    ) -> Option<codewhale_config::credentials::CredentialGeneration> {
         let captured = self.legacy_root_custom_generation.as_ref()?;
         let current = self.legacy_root_custom_table_generation()?;
         (captured == &current).then_some(current)
@@ -5848,7 +5304,7 @@ impl Config {
         }
 
         let declared = |model: &str| {
-            crate::provider_lake::configured_model_for_route(
+            configured_model_for_route(
                 self,
                 provider,
                 identity.key.as_str(),
@@ -6389,6 +5845,67 @@ impl Config {
         Ok(())
     }
 
+    pub(crate) fn session_provider_api_key(&self, identity: &ProviderIdentity) -> Option<String> {
+        self.verify_provider_identity(identity).ok()?;
+        if self.should_skip_secret_store_for_provider(identity) {
+            return None;
+        }
+        let endpoint = self.base_url_for_route(identity);
+        self.session_provider_keys
+            .read()
+            .get(identity)
+            .filter(|(bound_endpoint, _)| bound_endpoint == &endpoint)
+            .map(|(_, credential)| credential.expose_secret().to_string())
+    }
+
+    pub(crate) fn preserve_runtime_credentials(&mut self, current: &Self) {
+        self.account_model_access = current.account_model_access.clone();
+        self.session_provider_keys = current.session_provider_keys.clone();
+        self.session_provider_keys_only = current.session_provider_keys_only;
+    }
+
+    pub(crate) fn retain_compatible_session_keys(&self) {
+        self.session_provider_keys
+            .write()
+            .retain(|identity, (endpoint, _)| {
+                self.verify_provider_identity(identity).is_ok()
+                    && !self.should_skip_secret_store_for_provider(identity)
+                    && self.base_url_for_route(identity) == *endpoint
+            });
+    }
+
+    pub(crate) fn session_policy_without_key(
+        &self,
+        identity: &ProviderIdentity,
+    ) -> Option<codewhale_runtime::credentials::CredentialSource> {
+        use codewhale_runtime::credentials::{CredentialProbe, CredentialSource};
+        if !self.session_provider_keys_only {
+            return None;
+        }
+        let mode = self.auth_mode_for_provider(identity);
+        if auth_mode_disables_api_key(mode.as_deref()) {
+            return Some(CredentialSource::AuthModeNone);
+        }
+        let endpoint = self.base_url_for_route(identity);
+        if identity.provider != ProviderKind::Codewhale
+            && !auth_mode_requires_api_key(mode.as_deref())
+            && !provider_uses_oauth_credentials(self, identity)
+            && !self
+                .provider_config_for(identity)
+                .is_some_and(|entry| entry.oauth.is_some())
+            && (provider_route_is_keyless_self_hosted(identity.provider, &endpoint)
+                || base_url_uses_local_host(&endpoint))
+        {
+            return Some(CredentialSource::KeylessRoute { base_url: endpoint });
+        }
+        Some(CredentialSource::Missing {
+            probed: vec![CredentialProbe::with_fix(
+                "session-only provider key",
+                "connect a session key to this Engine; stored credentials are disabled",
+            )],
+        })
+    }
+
     pub(crate) fn account_model_api_key(&self, identity: &ProviderIdentity) -> Option<String> {
         let provider = identity.provider;
         // Exact endpoint binding, including path. A custom Codewhale route
@@ -6431,7 +5948,7 @@ impl Config {
     pub(crate) fn readonly_health_credential_generation(
         &self,
         identity: &ProviderIdentity,
-    ) -> Option<crate::route_receipt::CredentialGeneration> {
+    ) -> Option<codewhale_config::credentials::CredentialGeneration> {
         if self.required_account_model_owner.is_some() {
             return None;
         }
@@ -6441,11 +5958,23 @@ impl Config {
         let endpoint = scoped.base_url_for_route(identity);
         let mode = scoped.auth_mode_for_provider(identity);
         let generation = |value: &str| {
-            crate::route_receipt::CredentialGeneration::derive(
+            codewhale_config::credentials::CredentialGeneration::derive(
                 &endpoint,
                 &codewhale_secrets::normalize_api_key(value),
             )
         };
+        if let Some(key) = scoped.session_provider_api_key(identity) {
+            return Some(generation(&key));
+        }
+        if let Some(source) = scoped.session_policy_without_key(identity) {
+            return match source {
+                codewhale_runtime::credentials::CredentialSource::AuthModeNone
+                | codewhale_runtime::credentials::CredentialSource::KeylessRoute { .. } => {
+                    Some(generation(""))
+                }
+                _ => None,
+            };
+        }
         if auth_mode_disables_api_key(mode.as_deref()) {
             return Some(generation(""));
         }
@@ -6499,7 +6028,7 @@ impl Config {
 
     /// Read the API key.
     ///
-    /// Precedence: **route-specific explicitly consented OAuth token → source-marked explicit CLI key →
+    /// Precedence: **required account owner → session key → route-specific explicitly consented OAuth token → source-marked explicit CLI key →
     /// provider/root config → configured custom-provider environment →
     /// secret store → ambient provider environment**.
     ///
@@ -6545,6 +6074,12 @@ impl Config {
     /// Grok CLI import), holding that sign-in's credentials.
     fn xai_oauth_route_credentials(&self) -> Option<Result<crate::oauth::OwnedOAuthCredentials>> {
         let identity = self.active_provider_identity().ok()?;
+        if self.required_account_model_owner.is_some()
+            || self.session_provider_keys_only
+            || self.session_provider_api_key(&identity).is_some()
+        {
+            return None;
+        }
         let provider = identity.provider;
 
         let selected = provider == ProviderKind::Xai
@@ -6591,6 +6126,12 @@ impl Config {
             .map_err(anyhow::Error::msg)?;
 
         let mut diagnostic = self.clone();
+        if self.session_provider_keys_only
+            || (self.required_account_model_owner.is_none()
+                && self.session_provider_api_key(&identity).is_some())
+        {
+            return Ok(diagnostic);
+        }
         if identity.provider == ProviderKind::Anthropic
             && self.auth_mode_for_provider(&identity).as_deref() == Some("oauth")
         {
@@ -6623,6 +6164,25 @@ impl Config {
             return self.account_model_api_key(&identity)
                 .map(|key| (key, "Codewhale account".to_string()))
                 .context("The selected account model access is unavailable; no credential fallback is allowed");
+        }
+        if let Some(key) = self.session_provider_api_key(&identity) {
+            return Ok((
+                key,
+                codewhale_runtime::credentials::CredentialSource::SessionKey
+                    .label()
+                    .into_owned(),
+            ));
+        }
+        if let Some(source) = self.session_policy_without_key(&identity) {
+            return match &source {
+                codewhale_runtime::credentials::CredentialSource::AuthModeNone
+                | codewhale_runtime::credentials::CredentialSource::KeylessRoute { .. } => {
+                    Ok((String::new(), source.label().into_owned()))
+                }
+                _ => anyhow::bail!(
+                    "This Engine requires a session provider key; stored credentials are disabled"
+                ),
+            };
         }
         let provider = identity.provider;
         let keyless = || (String::new(), "none (keyless route)".to_string());
@@ -6854,7 +6414,8 @@ impl Config {
                 &identity,
                 codewhale_config::ExternalCredentialSource::DshCli,
                 &path,
-            ) && let Some(value) = crate::dsh_credentials::deepseek_api_key_from_grant(&grant)?
+            ) && let Some(value) =
+                codewhale_runtime::dsh_credentials::deepseek_api_key_from_grant(&grant)?
             {
                 return Ok((
                     value,
@@ -7105,7 +6666,9 @@ impl Config {
             // inside it (`…/memory/global/memory/global/MEMORY.md`), silently
             // writing somewhere other than the file they named. Honour an
             // already-native path as itself.
-            if crate::native_memory::NativeMemoryStore::from_global_path(&legacy_path).is_some() {
+            if codewhale_runtime::native_memory::NativeMemoryStore::from_global_path(&legacy_path)
+                .is_some()
+            {
                 return legacy_path;
             }
             return legacy_path
@@ -7179,7 +6742,7 @@ impl Config {
         self.goal
             .as_ref()
             .and_then(|goal| goal.max_continuations)
-            .unwrap_or(crate::goal_loop::DEFAULT_MAX_GOAL_CONTINUATIONS)
+            .unwrap_or(codewhale_runtime::goal_loop::DEFAULT_MAX_GOAL_CONTINUATIONS)
     }
 
     /// Per-engine-turn model-step budget while a goal is active (#6512).
@@ -7188,7 +6751,7 @@ impl Config {
     #[must_use]
     pub fn goal_max_steps(&self) -> u32 {
         let configured = self.goal.as_ref().and_then(|goal| goal.max_steps);
-        let resolved = crate::core::engine::turn_budget::resolve_max_model_steps(configured);
+        let resolved = codewhale_runtime::turn_budget::resolve_max_model_steps(configured);
         if let Some(steps) = configured
             && steps > 0
             && resolved != steps
@@ -7216,7 +6779,7 @@ impl Config {
             .as_ref()
             .and_then(|goal| goal.continuation_delay_seconds)
             .unwrap_or(0)
-            .min(crate::goal_loop::MAX_GOAL_CONTINUATION_DELAY_SECONDS)
+            .min(codewhale_runtime::goal_loop::MAX_GOAL_CONTINUATION_DELAY_SECONDS)
     }
 
     /// Maximum number of automatic re-requests when the model returns only
@@ -7423,16 +6986,14 @@ impl Config {
     /// How many levels of nested sub-agents the interactive `agent` tool may
     /// spawn. Reads `[subagents] max_depth`; when unset it defaults to
     /// [`codewhale_config::DEFAULT_SPAWN_DEPTH`]. `0` is a valid value that
-    /// blocks the `agent` tool at this runtime depth. Any value is clamped to
-    /// [`codewhale_config::MAX_SPAWN_DEPTH_CEILING`] so the operator's choice
-    /// can never exceed the hard recursion ceiling.
+    /// blocks the `agent` tool at this runtime depth. Positive owner choices
+    /// are preserved without another product ceiling.
     #[must_use]
     pub fn subagent_max_spawn_depth(&self) -> u32 {
         self.subagents
             .as_ref()
             .and_then(|cfg| cfg.max_depth)
             .unwrap_or(codewhale_config::DEFAULT_SPAWN_DEPTH)
-            .min(codewhale_config::MAX_SPAWN_DEPTH_CEILING)
     }
 
     /// Return the provider-specific maximum sub-agent recursion depth.
@@ -7441,7 +7002,6 @@ impl Config {
         self.subagent_provider_config(identity)
             .and_then(|cfg| cfg.max_depth)
             .unwrap_or_else(|| self.subagent_max_spawn_depth())
-            .min(codewhale_config::MAX_SPAWN_DEPTH_CEILING)
     }
 
     /// Number of direct (depth-1) sub-agents that may execute concurrently
@@ -7504,9 +7064,8 @@ impl Config {
     }
 
     /// Default per-child model-turn budget from `[subagents]
-    /// default_max_steps`, applied when an `agent` start carries no explicit
-    /// `max_steps` (#5324). `None` or `0` mean unbounded; a positive value is
-    /// clamped to the runtime ceiling when applied.
+    /// default_max_steps`. `None` or `0` mean unbounded; positive values
+    /// remain an owner limit that descendants cannot widen.
     #[must_use]
     pub fn subagent_default_max_steps(&self) -> Option<u32> {
         self.subagents
@@ -7516,9 +7075,8 @@ impl Config {
     }
 
     /// Default per-child wall-clock budget in seconds from `[subagents]
-    /// default_wall_time_secs`, applied when an `agent` start carries no
-    /// explicit `wall_time_secs` (#5324). `None` or `0` keep the 1800s
-    /// default; the resolved value is clamped to 1..=86400 when applied.
+    /// default_wall_time_secs`. `None` or `0` mean unbounded; positive
+    /// values remain an owner limit that descendants cannot widen.
     #[must_use]
     pub fn subagent_default_wall_time_secs(&self) -> Option<u64> {
         self.subagents
@@ -7636,7 +7194,7 @@ impl Config {
                     .ok()
                     .and_then(|value| value.trim().parse::<u32>().ok())
             });
-        crate::core::engine::turn_budget::resolve_max_model_steps(raw)
+        codewhale_runtime::turn_budget::resolve_max_model_steps(raw)
     }
 
     /// R1: resolved cumulative per-turn wall-clock budget.
@@ -7655,13 +7213,13 @@ impl Config {
                     .ok()
                     .and_then(|value| value.trim().parse::<u64>().ok())
             });
-        crate::core::engine::turn_budget::resolve_turn_wall_clock(raw)
+        codewhale_runtime::turn_budget::resolve_turn_wall_clock(raw)
     }
 
     /// R1: resolved per-step cap on accumulated streamed content, in bytes.
     #[must_use]
     pub fn stream_max_content_bytes(&self) -> usize {
-        crate::core::engine::turn_budget::resolve_stream_max_content_bytes(
+        codewhale_runtime::turn_budget::resolve_stream_max_content_bytes(
             self.stream
                 .as_ref()
                 .and_then(|cfg| cfg.max_content_mb)
@@ -7673,7 +7231,7 @@ impl Config {
     #[must_use]
     pub fn stream_max_duration(&self) -> std::time::Duration {
         std::time::Duration::from_secs(
-            crate::core::engine::turn_budget::resolve_stream_max_duration_secs(
+            codewhale_runtime::turn_budget::resolve_stream_max_duration_secs(
                 self.stream
                     .as_ref()
                     .and_then(|cfg| cfg.max_duration_secs)
@@ -7688,10 +7246,10 @@ impl Config {
 
     /// Resolved `[stream]` retry budgets, falling back to legacy `[tui]` keys.
     #[must_use]
-    pub fn stream_retry_limits(&self) -> crate::core::engine::turn_budget::StreamRetryLimits {
+    pub fn stream_retry_limits(&self) -> codewhale_runtime::turn_budget::StreamRetryLimits {
         let tui = self.tui.as_ref();
         let stream = self.stream.as_ref();
-        crate::core::engine::turn_budget::resolve_stream_retry_limits(
+        codewhale_runtime::turn_budget::resolve_stream_retry_limits(
             stream
                 .and_then(|cfg| cfg.max_resumes)
                 .or_else(|| tui.and_then(|cfg| cfg.stream_max_resumes)),
@@ -7707,7 +7265,7 @@ impl Config {
     /// #6700: resolved wait for SSE response headers.
     #[must_use]
     pub fn stream_open_timeout(&self) -> std::time::Duration {
-        crate::client::resolve_stream_open_timeout(
+        codewhale_config::resolve_stream_open_timeout(
             self.stream
                 .as_ref()
                 .and_then(|cfg| cfg.open_timeout_secs)
@@ -7728,7 +7286,7 @@ impl Config {
             .and_then(|cfg| cfg.force_http1)
             .or_else(|| self.tui.as_ref().and_then(|cfg| cfg.force_http1))
             .unwrap_or(false)
-            || crate::client::force_http1_from_env()
+            || codewhale_config::force_http1_from_env()
     }
 
     /// #6700: resolved TCP/TLS connect timeout for the model HTTP client.
@@ -7848,7 +7406,7 @@ impl Config {
                 if key == "default" {
                     key
                 } else {
-                    crate::fleet::role::migrate_legacy_role_token(&key)
+                    codewhale_agent_contract::role::migrate_legacy_role_token(&key)
                         .unwrap_or(&key)
                         .to_string()
                 }
@@ -7877,7 +7435,7 @@ impl Config {
             if raw == "default" {
                 raw
             } else {
-                crate::fleet::role::migrate_legacy_role_token(&raw)
+                codewhale_agent_contract::role::migrate_legacy_role_token(&raw)
                     .unwrap_or(&raw)
                     .to_string()
             }
@@ -7902,16 +7460,11 @@ impl Config {
         self.fleet.clone().unwrap_or_default()
     }
 
-    /// The person's fleet as models (design MODEL-ROUTING-CATALOG §10 F1):
-    /// every exact provider + model route in the selected fleet for
-    /// `workspace`, with the roles each fills. `Ok(empty)` = the session
-    /// model only; `Err` = a selected fleet that cannot be read. This is the
-    /// seam the operator-awareness slice (F2) reads.
-    pub fn fleet_members(
-        &self,
-        workspace: &Path,
-    ) -> Result<Vec<crate::fleet::members::FleetModel>, crate::fleet::store::FleetStoreError> {
-        crate::fleet::members::fleet_models(workspace)
+    #[must_use]
+    pub fn mcp_backend(&self) -> codewhale_config::McpBackend {
+        self.extension_host
+            .as_ref()
+            .map_or(codewhale_config::McpBackend::Rust, |host| host.mcp_backend)
     }
 
     /// Parsed `[workflow]` table, or product defaults when the table is absent
@@ -9258,7 +8811,7 @@ fn normalize_model_config(config: &mut Config) {
             continue;
         };
         for model in config.custom_models.as_deref().unwrap_or_default() {
-            if crate::provider_lake::configured_model_for_route(
+            if configured_model_for_route(
                 config,
                 candidate.provider,
                 candidate.key.as_str(),
@@ -9570,10 +9123,6 @@ fn xiaomi_mimo_env_api_key_for_runtime(
 
 fn wire_config_prefers_anthropic(wire: Option<&str>) -> bool {
     codewhale_config::provider::wire_dialect_prefers_anthropic(wire)
-}
-
-fn wire_config_prefers_responses(wire: Option<&str>) -> bool {
-    codewhale_config::provider::wire_dialect_prefers_responses(wire)
 }
 
 fn modelstudio_mode_is_coding_plan(provider: ProviderKind, mode: Option<&str>) -> bool {
@@ -10644,6 +10193,8 @@ fn merge_config(base: Config, override_cfg: Config) -> Config {
         legacy_root: base.legacy_root,
         legacy_root_custom_generation: base.legacy_root_custom_generation,
         account_model_access: base.account_model_access,
+        session_provider_keys: base.session_provider_keys,
+        session_provider_keys_only: base.session_provider_keys_only,
         required_account_model_owner: base.required_account_model_owner,
         account_profile: override_cfg.account_profile.or(base.account_profile),
         plugin_oauth_read_only: base.plugin_oauth_read_only || override_cfg.plugin_oauth_read_only,
@@ -11246,15 +10797,14 @@ fn apply_requirements(config: &mut Config) -> Result<()> {
     }
     if !requirements.allowed_sandbox_modes.is_empty() {
         // At config load there is no live turn mode yet. Check the Agent
-        // baseline with the engine's resolver; Plan can narrow it later.
+        // baseline that the engine's resolver derives from the same approval
+        // posture; Plan can narrow it later.
         // Explicit settings retain their existing allow-list check.
         let mode = config
             .sandbox_mode
             .as_deref()
             .map(str::to_ascii_lowercase)
             .unwrap_or_else(|| {
-                use crate::core::authority::{SandboxNetworkAccess, sandbox_policy_for_turn};
-                use crate::sandbox::SandboxPolicy;
                 use codewhale_execpolicy::ApprovalMode;
 
                 // Sandbox requirements lock approval posture at startup,
@@ -11264,19 +10814,7 @@ fn apply_requirements(config: &mut Config) -> Result<()> {
                     .as_deref()
                     .and_then(ApprovalMode::from_config_value)
                     .unwrap_or_default();
-                match sandbox_policy_for_turn(
-                    codewhale_config::AppMode::Agent,
-                    approval,
-                    None,
-                    Path::new("."),
-                    SandboxNetworkAccess::from_config(config.sandbox_network_access),
-                ) {
-                    SandboxPolicy::ReadOnly { .. } => "read-only",
-                    SandboxPolicy::WorkspaceWrite { .. } => "workspace-write",
-                    SandboxPolicy::DangerFullAccess => "danger-full-access",
-                    SandboxPolicy::ExternalSandbox { .. } => "external-sandbox",
-                }
-                .to_string()
+                approval.agent_baseline_sandbox_mode().to_string()
             });
         if !requirements
             .allowed_sandbox_modes
@@ -11453,21 +10991,23 @@ fn save_root_api_key_for_secret_slot(
     if let Some(secrets) = credential_secret_store() {
         // Same read-modify-write as the per-provider save below; hold the slot's
         // write lock across snapshot, store write, config write, and rollback.
-        return crate::credentials::store::with_provider_write_lock(secret_slot, || {
-            let prior_secret = secrets.get(secret_slot);
-            match prior_secret.as_ref() {
-                Ok(prior) => match secrets.set(secret_slot, trimmed) {
-                    Ok(()) => {
-                        if let Err(error) =
-                            save_root_api_key_metadata_without_plaintext(&path, table)
-                        {
-                            let current = secrets.get(secret_slot).map_err(|rollback| {
+        return codewhale_runtime::credentials::store::with_provider_write_lock(
+            secret_slot,
+            || {
+                let prior_secret = secrets.get(secret_slot);
+                match prior_secret.as_ref() {
+                    Ok(prior) => match secrets.set(secret_slot, trimmed) {
+                        Ok(()) => {
+                            if let Err(error) =
+                                save_root_api_key_metadata_without_plaintext(&path, table)
+                            {
+                                let current = secrets.get(secret_slot).map_err(|rollback| {
                         anyhow::anyhow!(
                             "{error}; additionally could not verify secret-store rollback for {secret_slot}: {rollback}"
                         )
                     })?;
-                            if current.as_deref() == Some(trimmed) {
-                                match prior {
+                                if current.as_deref() == Some(trimmed) {
+                                    match prior {
                             Some(previous) => secrets.set(secret_slot, previous),
                             None => secrets.delete(secret_slot),
                         }
@@ -11476,28 +11016,31 @@ fn save_root_api_key_for_secret_slot(
                                 "{error}; additionally failed to restore prior secret-store state for {secret_slot}: {rollback}"
                             )
                         })?;
+                                }
+                                return Err(error);
                             }
-                            return Err(error);
+                            codewhale_config::scrub_plaintext_api_keys_from_config_backup(&path)?;
+                            let backend = secrets.backend_name().to_string();
+                            log_sensitive_event(
+                                "credential.save",
+                                json!({
+                                    "backend": backend.clone(),
+                                    "config_path": path.display().to_string(),
+                                    "plaintext_config_fallback": false,
+                                }),
+                            );
+                            Ok(SavedCredential::KeyringAndConfigFile { backend, path })
                         }
-                        codewhale_config::scrub_plaintext_api_keys_from_config_backup(&path)?;
-                        let backend = secrets.backend_name().to_string();
-                        log_sensitive_event(
-                            "credential.save",
-                            json!({
-                                "backend": backend.clone(),
-                                "config_path": path.display().to_string(),
-                                "plaintext_config_fallback": false,
-                            }),
-                        );
-                        Ok(SavedCredential::KeyringAndConfigFile { backend, path })
-                    }
-                    Err(err) => Err(plaintext_credential_fallback_refused("write", &path, &err)),
-                },
-                Err(error) => Err(plaintext_credential_fallback_refused(
-                    "snapshot", &path, &error,
-                )),
-            }
-        });
+                        Err(err) => {
+                            Err(plaintext_credential_fallback_refused("write", &path, &err))
+                        }
+                    },
+                    Err(error) => Err(plaintext_credential_fallback_refused(
+                        "snapshot", &path, &error,
+                    )),
+                }
+            },
+        );
     }
 
     let path = save_api_key_to_config_file(trimmed, table)?;
@@ -11741,12 +11284,18 @@ pub fn active_provider_has_env_api_key(config: &Config) -> bool {
 }
 
 /// Where the active provider's environment key comes from, in the resolver's
-/// env precedence (`credential_resolve` steps 2-4): `--api-key`, the route's
+/// env precedence (`credential_resolve` steps 4-6): `--api-key`, the route's
 /// `api_key_env` variable, or the provider's own ambient variable. Returns the
 /// place's name only; any value read to test presence is dropped here.
 #[must_use]
 pub(crate) fn active_provider_env_api_key_source(config: &Config) -> Option<String> {
     let identity = config.active_provider_identity().ok()?;
+    if config.required_account_model_owner.is_some()
+        || config.session_provider_keys_only
+        || config.session_provider_api_key(&identity).is_some()
+    {
+        return None;
+    }
     let provider = identity.provider;
     if provider == ProviderKind::OpenaiCodex && !config.provider_uses_custom_endpoint(&identity) {
         return None;
@@ -11867,6 +11416,10 @@ impl Config {
     /// Resolve Codewhale's verified ChatGPT grant. Credential refresh remains
     /// serialized by the owned-store lifecycle transaction.
     pub(crate) fn codex_credentials(&self) -> Result<crate::oauth::OwnedOAuthCredentials> {
+        anyhow::ensure!(
+            !self.session_provider_keys_only,
+            "Stored ChatGPT sign-in is unavailable under session-only provider key policy"
+        );
         let identity = self
             .active_provider_identity()
             .map_err(anyhow::Error::msg)?;
@@ -12103,55 +11656,64 @@ fn save_api_key_for_identity_unlocked(
         // so a concurrent save or logout on the same slot cannot interleave and
         // leave the secret store and the config document disagreeing. This is
         // the `modify`-is-the-only-write-path rule ported from pi-mono; see
-        // `crate::credentials::store`.
-        return crate::credentials::store::with_provider_write_lock(secret_slot, || {
-            let prior_secret = secrets.get(secret_slot);
-            match prior_secret.as_ref() {
-                Ok(prior) => match secrets.set(secret_slot, api_key) {
-                    Ok(()) => {
-                        let config_result = crate::config_persistence::mutate_config_document(
-                            &config_path,
-                            |doc| {
-                                if pin_kimi_code_base_url {
+        // `codewhale_runtime::credentials::store`.
+        return codewhale_runtime::credentials::store::with_provider_write_lock(
+            secret_slot,
+            || {
+                let prior_secret = secrets.get(secret_slot);
+                match prior_secret.as_ref() {
+                    Ok(prior) => match secrets.set(secret_slot, api_key) {
+                        Ok(()) => {
+                            let config_result = crate::config_persistence::mutate_config_document(
+                                &config_path,
+                                |doc| {
+                                    if pin_kimi_code_base_url {
+                                        crate::config_persistence::set_document_value(
+                                            doc,
+                                            &["providers", key_inside, "base_url"],
+                                            DEFAULT_KIMI_CODE_BASE_URL,
+                                        )?;
+                                    }
                                     crate::config_persistence::set_document_value(
                                         doc,
-                                        &["providers", key_inside, "base_url"],
-                                        DEFAULT_KIMI_CODE_BASE_URL,
+                                        &["providers", key_inside, "auth_mode"],
+                                        "api_key",
                                     )?;
-                                }
-                                crate::config_persistence::set_document_value(
-                                    doc,
-                                    &["providers", key_inside, "auth_mode"],
-                                    "api_key",
-                                )?;
-                                crate::config_persistence::unset_document_value(
-                                    doc,
-                                    &["providers", key_inside, "external_credentials"],
-                                )?;
-                                if matches!(provider, ProviderKind::Xai | ProviderKind::Anthropic) {
                                     crate::config_persistence::unset_document_value(
                                         doc,
-                                        &["providers", key_inside, "oauth_credential_generation"],
+                                        &["providers", key_inside, "external_credentials"],
                                     )?;
-                                }
-                                crate::config_persistence::unset_document_value(
-                                    doc,
-                                    &["providers", key_inside, "api_key"],
-                                )?;
-                                Ok(())
-                            },
-                        )
-                        .with_context(|| {
-                            format!("Failed to write config to {}", config_path.display())
-                        });
-                        if let Err(error) = config_result {
-                            let current = secrets.get(secret_slot).map_err(|rollback| {
+                                    if matches!(
+                                        provider,
+                                        ProviderKind::Xai | ProviderKind::Anthropic
+                                    ) {
+                                        crate::config_persistence::unset_document_value(
+                                            doc,
+                                            &[
+                                                "providers",
+                                                key_inside,
+                                                "oauth_credential_generation",
+                                            ],
+                                        )?;
+                                    }
+                                    crate::config_persistence::unset_document_value(
+                                        doc,
+                                        &["providers", key_inside, "api_key"],
+                                    )?;
+                                    Ok(())
+                                },
+                            )
+                            .with_context(|| {
+                                format!("Failed to write config to {}", config_path.display())
+                            });
+                            if let Err(error) = config_result {
+                                let current = secrets.get(secret_slot).map_err(|rollback| {
                         anyhow::anyhow!(
                             "{error}; additionally could not verify secret-store rollback for {secret_slot}: {rollback}"
                         )
                     })?;
-                            if current.as_deref() == Some(api_key) {
-                                match prior {
+                                if current.as_deref() == Some(api_key) {
+                                    match prior {
                             Some(previous) => secrets.set(secret_slot, previous),
                             None => secrets.delete(secret_slot),
                         }
@@ -12160,40 +11722,41 @@ fn save_api_key_for_identity_unlocked(
                                 "{error}; additionally failed to restore prior secret-store state for {secret_slot}: {rollback}"
                             )
                         })?;
+                                }
+                                return Err(error);
                             }
-                            return Err(error);
+                            codewhale_config::scrub_plaintext_api_keys_from_config_backup(
+                                &config_path,
+                            )?;
+                            let backend = secrets.backend_name().to_string();
+                            log_sensitive_event(
+                                "credential.save",
+                                json!({
+                                    "backend": backend.clone(),
+                                    "provider": identity.key,
+                                    "config_path": config_path.display().to_string(),
+                                    "plaintext_config_fallback": false,
+                                }),
+                            );
+                            Ok(SavedCredential::KeyringAndConfigFile {
+                                backend,
+                                path: config_path,
+                            })
                         }
-                        codewhale_config::scrub_plaintext_api_keys_from_config_backup(
+                        Err(err) => Err(plaintext_credential_fallback_refused(
+                            "write",
                             &config_path,
-                        )?;
-                        let backend = secrets.backend_name().to_string();
-                        log_sensitive_event(
-                            "credential.save",
-                            json!({
-                                "backend": backend.clone(),
-                                "provider": identity.key,
-                                "config_path": config_path.display().to_string(),
-                                "plaintext_config_fallback": false,
-                            }),
-                        );
-                        Ok(SavedCredential::KeyringAndConfigFile {
-                            backend,
-                            path: config_path,
-                        })
-                    }
-                    Err(err) => Err(plaintext_credential_fallback_refused(
-                        "write",
+                            &err,
+                        )),
+                    },
+                    Err(error) => Err(plaintext_credential_fallback_refused(
+                        "snapshot",
                         &config_path,
-                        &err,
+                        &error,
                     )),
-                },
-                Err(error) => Err(plaintext_credential_fallback_refused(
-                    "snapshot",
-                    &config_path,
-                    &error,
-                )),
-            }
-        });
+                }
+            },
+        );
     }
 
     // Edit the `[providers.<name>]` table in place so unrelated sections,
@@ -12356,7 +11919,7 @@ fn validate_external_credential_before_consent(
             crate::oauth::validate_grok_external_credentials(&grant)
         }
         codewhale_config::ExternalCredentialSource::DshCli => {
-            crate::dsh_credentials::deepseek_api_key_from_grant(&grant)?
+            codewhale_runtime::dsh_credentials::deepseek_api_key_from_grant(&grant)?
                 .map(|_| ())
                 .context("the DeepSeek Harness credentials file holds no DEEPSEEK_API_KEY")
         }
@@ -12624,11 +12187,13 @@ fn provider_secret_store_api_key_with_mode(
         codewhale_secrets::Secrets::auto_detect()
     };
     // Read through the credential-store trait so every read of a durable slot
-    // goes through one adapter (`crate::credentials::store`), and the value is
+    // goes through one adapter (`codewhale_runtime::credentials::store`), and the value is
     // carried as a type-tagged `Credential` rather than a bare String that can
     // drift into a log line.
-    let store =
-        crate::credentials::store::SecretStoreCredentials::new(secrets, known_secret_store_slots());
+    let store = codewhale_runtime::credentials::store::SecretStoreCredentials::new(
+        secrets,
+        known_secret_store_slots(),
+    );
     let primary = store
         .read(provider_secret_store_slot(provider))
         .ok()
@@ -12656,7 +12221,7 @@ fn provider_secret_store_api_key_with_mode(
 /// Every durable credential slot CodeWhale knows how to write.
 ///
 /// The backing keyring exposes no key enumeration, so
-/// [`crate::credentials::store::SecretStoreCredentials::list`] is given the
+/// [`codewhale_runtime::credentials::store::SecretStoreCredentials::list`] is given the
 /// slot names to probe. Deduplicated because shared-account families collapse
 /// several providers onto one slot.
 fn known_secret_store_slots() -> Vec<String> {
@@ -12821,7 +12386,7 @@ fn clear_api_key_unlocked() -> Result<()> {
     // Same read-modify-write as the saves: hold every durable slot's write
     // lock across the config-document mutation and the store deletes so a
     // concurrent save cannot interleave and leave the two disagreeing.
-    crate::credentials::store::with_provider_write_locks(
+    codewhale_runtime::credentials::store::with_provider_write_locks(
         known_secret_store_slots(),
         clear_api_key_under_slot_locks,
     )
@@ -12894,14 +12459,14 @@ fn clear_all_provider_api_keys_from_secret_store(
     secrets: codewhale_secrets::Secrets,
 ) -> Vec<String> {
     let mut failures = Vec::new();
-    let store = crate::credentials::store::SecretStoreCredentials::new(
+    let store = codewhale_runtime::credentials::store::SecretStoreCredentials::new(
         secrets.clone(),
         known_secret_store_slots(),
     );
     // `list` enumerates the slots that actually hold something, without
     // exposing any value — the deduplication that used to live here is now the
     // slot table's job.
-    let stored: Vec<crate::credentials::CredentialInfo> = match store.list() {
+    let stored: Vec<codewhale_runtime::credentials::CredentialInfo> = match store.list() {
         Ok(stored) => stored,
         Err(error) => {
             failures.push(format!("secret store enumeration: {error}"));
@@ -12936,7 +12501,7 @@ pub fn clear_active_provider_api_key(provider: &str) -> Result<()> {
 fn clear_active_provider_api_key_unlocked(provider: &str) -> Result<()> {
     let slot = compatibility_for_id(provider).map(|row| provider_secret_store_slot(row.kind));
     match slot {
-        Some(slot) => crate::credentials::store::with_provider_write_lock(slot, || {
+        Some(slot) => codewhale_runtime::credentials::store::with_provider_write_lock(slot, || {
             clear_active_provider_api_key_under_lock(provider)
         }),
         None => clear_active_provider_api_key_under_lock(provider),

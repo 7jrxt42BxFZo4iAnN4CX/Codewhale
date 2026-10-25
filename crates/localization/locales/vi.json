@@ -812,7 +812,7 @@
   "KbSendDraft": "Gửi khi rảnh; xếp hàng khi bận; khung soạn thảo trống sẽ gửi ngay follow-up tiếp theo trong hàng đợi",
   "KbSteerCurrentTurn": "Điều hướng lượt hiện tại (gửi bình thường khi rảnh)",
   "KbCloseMenu": "Đóng menu, hủy yêu cầu, hủy bản nháp hoặc xóa sạch đầu vào",
-  "KbCancelOrExit": "Hủy yêu cầu, hoặc thoát khi rảnh",
+  "KbCancelOrExit": "Hủy, xóa bản nháp hoặc thoát khi rảnh",
   "KbShellControls": "Chuyển phiên chờ shell sang /jobs",
   "KbExitEmpty": "Thoát khi khung nhập trống",
   "KbCommandPalette": "Mở bảng lệnh (command palette)",

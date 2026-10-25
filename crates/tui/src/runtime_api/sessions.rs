@@ -443,7 +443,7 @@ pub(crate) async fn resume_session_in_runtime(
             .metadata
             .mode
             .clone()
-            .filter(|mode| crate::runtime_policy::parse_runtime_mode(mode).is_some())
+            .filter(|mode| codewhale_runtime::runtime_policy::parse_runtime_mode(mode).is_some())
             .unwrap_or_else(|| "agent".to_string())
     });
 
@@ -1586,7 +1586,7 @@ mod tool_media_artifact_tests {
         let now = unix_millis_now();
         let evidence = EvidenceArtifact {
             handle: id,
-            digest: crate::hashing::sha256_hex(&bytes),
+            digest: codewhale_runtime::hashing::sha256_hex(&bytes),
             size_bytes: bytes.len() as u64,
             content_type: "image/png".into(),
             tool_name: "screenshot".into(),
@@ -1644,7 +1644,10 @@ mod tool_media_artifact_tests {
         assert!(!rest.truncated);
         let mut bytes = decode(&first);
         bytes.extend(decode(&rest));
-        assert_eq!(crate::hashing::sha256_hex(&bytes), evidence.digest);
+        assert_eq!(
+            codewhale_runtime::hashing::sha256_hex(&bytes),
+            evidence.digest
+        );
         assert_eq!(
             read_session_artifact_window(temp.path(), "other_owner", &evidence.handle, 0, 1024)
                 .unwrap_err()

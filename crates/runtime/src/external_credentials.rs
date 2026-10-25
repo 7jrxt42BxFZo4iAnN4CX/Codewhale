@@ -23,7 +23,7 @@ thread_local! {
         std::cell::RefCell::new(None);
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     /// Per-test-thread real sink counters. Keeping the trap thread-local makes
     /// parallel tests unable to contaminate one another while still counting
@@ -33,7 +33,7 @@ thread_local! {
     };
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn increment_side_effect(index: usize) {
     SIDE_EFFECT_TRAP.with(|trap| {
         let mut counts = trap.get();
@@ -44,8 +44,8 @@ fn increment_side_effect(index: usize) {
 
 /// Open and read the exact granted file once. Missing files are reported as
 /// `Ok(None)`; every other unsafe or malformed filesystem shape fails closed.
-pub(crate) fn read_to_string(grant: &ExternalCredentialReadGrant) -> Result<Option<String>> {
-    #[cfg(test)]
+pub fn read_to_string(grant: &ExternalCredentialReadGrant) -> Result<Option<String>> {
+    #[cfg(any(test, feature = "test-support"))]
     increment_side_effect(0);
 
     let mut file = match open_secure_regular_file(grant.path(), false) {
@@ -62,7 +62,7 @@ pub(crate) fn read_to_string(grant: &ExternalCredentialReadGrant) -> Result<Opti
         }
     };
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     increment_side_effect(1);
 
     let mut bytes = Vec::new();
@@ -99,7 +99,7 @@ pub(crate) fn read_to_string(grant: &ExternalCredentialReadGrant) -> Result<Opti
 /// must belong to the effective user and have no group/other permission bits.
 /// The caller is responsible for constraining `path` to a validated basename
 /// below Codewhale's credentials directory before invoking this function.
-pub(crate) fn read_codewhale_owned_to_string(path: &Path) -> Result<Option<String>> {
+pub fn read_codewhale_owned_to_string(path: &Path) -> Result<Option<String>> {
     let mut file = match open_secure_regular_file(path, true) {
         Ok(file) => file,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -362,8 +362,8 @@ fn normalize_windows_path_for_comparison(path: &Path) -> io::Result<String> {
 
 /// Apply a protected DACL granting only the current Windows user full access.
 /// Directories propagate that owner-only policy to newly staged generations.
-#[cfg(all(windows, test))]
-pub(crate) fn secure_codewhale_owned_windows_path(
+#[cfg(all(windows, any(test, feature = "test-support")))]
+pub fn secure_codewhale_owned_windows_path(
     path: &Path,
     inherit_to_children: bool,
 ) -> io::Result<()> {
@@ -639,41 +639,41 @@ fn open_secure_regular_file(_path: &Path, _require_owner_only: bool) -> io::Resu
     ))
 }
 
-#[cfg(test)]
-pub(crate) fn reset_side_effect_trap() {
+#[cfg(any(test, feature = "test-support"))]
+pub fn reset_side_effect_trap() {
     SIDE_EFFECT_TRAP.with(|trap| trap.set([0; 5]));
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[must_use]
-pub(crate) fn side_effect_trap_counts() -> (usize, usize) {
+pub fn side_effect_trap_counts() -> (usize, usize) {
     SIDE_EFFECT_TRAP.with(|trap| {
         let counts = trap.get();
         (counts[0], counts[1])
     })
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[must_use]
-pub(crate) fn complete_side_effect_trap_counts() -> (usize, usize, usize, usize, usize) {
+pub fn complete_side_effect_trap_counts() -> (usize, usize, usize, usize, usize) {
     SIDE_EFFECT_TRAP.with(|trap| {
         let counts = trap.get();
         (counts[0], counts[1], counts[2], counts[3], counts[4])
     })
 }
 
-#[cfg(test)]
-pub(crate) fn record_owned_credential_write() {
+#[cfg(any(test, feature = "test-support"))]
+pub fn record_owned_credential_write() {
     increment_side_effect(2);
 }
 
-#[cfg(test)]
-pub(crate) fn record_oauth_refresh() {
+#[cfg(any(test, feature = "test-support"))]
+pub fn record_oauth_refresh() {
     increment_side_effect(3);
 }
 
-#[cfg(test)]
-pub(crate) fn record_oauth_network() {
+#[cfg(any(test, feature = "test-support"))]
+pub fn record_oauth_network() {
     increment_side_effect(4);
 }
 

@@ -899,7 +899,7 @@ async fn run_git_command_async(
 /// Run git under a hard deadline. `Ok(None)` means the deadline passed and the
 /// child was killed, so a timed-out fetch never lingers.
 ///
-/// git runs contained ([`crate::process_tree::contained_output`]) and the whole
+/// git runs contained ([`codewhale_runtime::process_tree::contained_output`]) and the whole
 /// tree is killed at the deadline or when the call is cancelled: git hands the
 /// network to a transport child (`git-remote-http`, `ssh`) that survives a
 /// SIGKILL to git alone and would otherwise keep the stalled connection open
@@ -915,7 +915,12 @@ async fn run_git_command_bounded(
         ));
     };
     cmd.args(args).current_dir(working_dir);
-    match tokio::time::timeout(timeout, crate::process_tree::contained_output(&mut cmd)).await {
+    match tokio::time::timeout(
+        timeout,
+        codewhale_runtime::process_tree::contained_output(&mut cmd),
+    )
+    .await
+    {
         Ok(Ok(output)) => Ok(Some(output)),
         Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => Err(ToolError::not_available(
             "git is not installed or not in PATH",
@@ -1489,9 +1494,13 @@ mod tests {
             "hang".to_string(),
         ];
         let run = run_git_command_bounded(tmp.path(), &args, std::time::Duration::from_secs(600));
-        let grandchild = crate::process_tree::drop_once_pid_written(run, &pid_file).await;
+        let grandchild =
+            codewhale_runtime::process_tree::drop_once_pid_written(run, &pid_file).await;
         assert!(
-            crate::process_tree::wait_for_pid_exit(grandchild, std::time::Duration::from_secs(5)),
+            codewhale_runtime::process_tree::wait_for_pid_exit(
+                grandchild,
+                std::time::Duration::from_secs(5)
+            ),
             "a process git started outlived the cancelled call"
         );
     }

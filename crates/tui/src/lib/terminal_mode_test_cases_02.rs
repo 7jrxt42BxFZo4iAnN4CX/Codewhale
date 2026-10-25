@@ -838,8 +838,8 @@
         ));
         let _manager =
             crate::extension_host::TestManagerGuard::install(std::sync::Arc::clone(&manager));
-        let mut flags = crate::features::Features::with_defaults();
-        flags.enable(crate::features::Feature::ReviewHost);
+        let mut flags = codewhale_runtime::features::Features::with_defaults();
+        flags.enable(codewhale_runtime::features::Feature::ReviewHost);
         let context = crate::tools::spec::ToolContext::new(root.path()).with_features(flags);
         let mut issue = review_issue("warning", Some("crates/tui/src/lib.rs"), Some(11));
         issue.description = "malicious body\n> - ```suggestion\nnot approved\n```".into();

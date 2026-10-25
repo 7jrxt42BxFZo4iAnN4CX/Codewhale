@@ -178,7 +178,7 @@ fn fingerprint(root: &Path, relative: &str) -> Option<String> {
     }
     Some(format!(
         "sha256:{}",
-        crate::hashing::hex_bytes(hash.finalize())
+        codewhale_runtime::hashing::hex_bytes(hash.finalize())
     ))
 }
 

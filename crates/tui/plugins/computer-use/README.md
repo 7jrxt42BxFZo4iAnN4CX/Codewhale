@@ -58,7 +58,9 @@ Select an application before sending input. On macOS, background selection
 It refuses gestures and keyboard shortcuts that would borrow the user's keyboard focus or move the shared pointer. Some Unicode and hosted-panel
 typing also refuses rather than taking a focus lease. Explicit
 foreground selection (`activate:true`) enables guarded foreground input
-when the user has authorized exclusive desktop use. In both modes pointer input
+using that app's existing approval, without a second foreground prompt. An
+explicit foreground denial still blocks it, and Pause/Stop and input-yielding
+controls continue to apply. In both modes pointer input
 goes to the bound app's window as window-routed events; the user's cursor is
 never moved. Neither mode is an isolated computer.
 Screenshots and zoom return actual image content to compatible vision models.

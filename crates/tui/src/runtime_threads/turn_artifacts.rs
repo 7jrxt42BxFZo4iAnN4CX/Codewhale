@@ -127,7 +127,7 @@ pub(crate) struct ToolArtifactContext<'a> {
 
 /// The stable ref id for a workspace file path.
 pub(crate) fn file_artifact_id(path: &str) -> String {
-    let digest = crate::hashing::sha256_hex(path.as_bytes());
+    let digest = codewhale_runtime::hashing::sha256_hex(path.as_bytes());
     format!("file_{}", &digest[..32])
 }
 
@@ -689,7 +689,7 @@ mod tests {
     #[test]
     fn mutation_receipt_yields_confined_file_refs_with_written_facts() {
         let workspace = tempfile::tempdir().unwrap();
-        let digest = crate::hashing::sha256_hex(b"new\n");
+        let digest = codewhale_runtime::hashing::sha256_hex(b"new\n");
         let absolute = workspace.path().join("src/abs.rs");
         let metadata = json!({
             "mutation": {
@@ -777,7 +777,7 @@ mod tests {
     #[test]
     fn spill_and_media_receipts_yield_session_refs_and_forgeries_yield_none() {
         let workspace = tempfile::tempdir().unwrap();
-        let digest = crate::hashing::sha256_hex(b"output");
+        let digest = codewhale_runtime::hashing::sha256_hex(b"output");
         let handle = format!("art_image_{digest}");
         let metadata = json!({
             "artifact_id": "art_call_1",

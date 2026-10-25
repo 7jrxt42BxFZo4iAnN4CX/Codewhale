@@ -301,7 +301,7 @@ fn mcp_server_review(name: &str, cfg: &crate::mcp::McpServerConfig) -> PluginMcp
         url: cfg
             .url
             .as_deref()
-            .map(crate::doctor::structural_url_authority),
+            .map(codewhale_config::structural_url_authority),
         env_keys,
         header_keys,
     }
@@ -402,7 +402,7 @@ async fn run_plugin_mutation(
         config
             .network
             .clone()
-            .map(|policy| policy.into_runtime())
+            .map(crate::network_policy::NetworkPolicy::from)
             .unwrap_or_default()
     };
     let ctx = PluginMutationContext {

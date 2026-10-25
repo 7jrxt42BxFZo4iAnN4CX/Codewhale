@@ -70,9 +70,15 @@
   "crates/release/src/launch.rs": {
     "std_fs": 2
   },
+  "crates/runtime/src/external_credentials.rs": {
+    "std_fs": 1
+  },
   "crates/runtime/src/media_originals.rs": {
     "path_canonicalize": 2,
     "std_fs": 6
+  },
+  "crates/runtime/src/private_log.rs": {
+    "std_fs": 2
   },
   "crates/secrets/src/file_lock.rs": {
     "path_canonicalize": 1
@@ -93,7 +99,7 @@
     "std_fs": 1
   },
   "crates/tui/src/codex_model_cache.rs": {
-    "std_fs": 2
+    "std_fs": 3
   },
   "crates/tui/src/commands/contract.rs": {
     "path_canonicalize": 5,
@@ -162,9 +168,6 @@
   },
   "crates/tui/src/extension_host/windows.rs": {
     "path_canonicalize": 1
-  },
-  "crates/tui/src/external_credentials.rs": {
-    "std_fs": 1
   },
   "crates/tui/src/fleet/executor.rs": {
     "std_fs": 1

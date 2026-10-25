@@ -579,9 +579,12 @@ jobs:
         if: needs.changes.outputs.heavy == 'true'
         # crates/config/assets/models_dev.bundled.json is rendered from
         # scripts/catalog/models_dev_seed.toml and its lock (#6396). A hand edit
-        # fails here; docs/CATALOG_REFRESH.md has the regenerate steps.
+        # fails here; docs/CATALOG_REFRESH.md has the regenerate steps. The age
+        # check fails a pin that has silently rotted: render --check only proves
+        # the asset matches the lock, never that the lock is recent.
         run: |
           python3 scripts/catalog_models_dev.py seed render --check
+          python3 scripts/catalog_models_dev.py seed age --max-days 30
           python3 -m unittest scripts/catalog_models_dev_test.py
       - name: Check command-contract prototype boundary
         if: needs.changes.outputs.heavy == 'true'

@@ -14,7 +14,6 @@ pub mod manager;
 pub mod members;
 pub mod placement;
 pub mod profile;
-pub mod role;
 pub mod roster;
 pub mod scheduler;
 pub mod scout;

@@ -356,7 +356,7 @@ fn read_owned_legacy_spillover(path: &std::path::Path, session_id: &str) -> Opti
     }
     let bytes = std::fs::read(path).ok()?;
     if ownership.size_bytes != u64::try_from(bytes.len()).unwrap_or(u64::MAX)
-        || ownership.digest != crate::hashing::sha256_hex(&bytes)
+        || ownership.digest != codewhale_runtime::hashing::sha256_hex(&bytes)
     {
         return None;
     }

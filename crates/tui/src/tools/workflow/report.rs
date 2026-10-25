@@ -24,7 +24,7 @@ pub(super) fn write_run_report_artifact(workspace: &Path, record: &WorkflowRunRe
     if let Err(err) =
         crate::fs_confined::write(workspace, &path, render_run_report(record).as_bytes())
     {
-        crate::logging::warn(format!(
+        codewhale_runtime::logging::warn(format!(
             "workflow report {} not written: {err}",
             path.display()
         ));
@@ -100,7 +100,7 @@ pub(super) fn write_schema_raw_artifact(
     match crate::fs_confined::write(workspace, &path, raw.as_bytes()) {
         Ok(()) => Some(path.display().to_string()),
         Err(err) => {
-            crate::logging::warn(format!(
+            codewhale_runtime::logging::warn(format!(
                 "workflow schema artifact {} not written: {err}",
                 path.display()
             ));

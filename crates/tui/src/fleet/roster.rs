@@ -270,7 +270,7 @@ impl FleetRoster {
             for (preset, authority) in crate::extension_host::native_presets_for_plugins(plugins) {
                 // An ordinary roster member backed by the existing live owner
                 // receipt. Selection is not authority: preparation checks it.
-                let identity = crate::hashing::sha256_hex(
+                let identity = codewhale_runtime::hashing::sha256_hex(
                     format!("{}:{}", preset.plugin_id, preset.entry.path).as_bytes(),
                 );
                 let metadata = crate::plugins::native_presets::metadata(plugins, &preset);
@@ -661,8 +661,10 @@ impl FleetRoster {
             .filter(|issue| {
                 let same_id = issue.id.eq_ignore_ascii_case(requested_id)
                     || member.is_some_and(|member| {
-                        super::role::public_role_label(&issue.id)
-                            .eq_ignore_ascii_case(&super::role::public_role_label(&member.id))
+                        codewhale_agent_contract::role::public_role_label(&issue.id)
+                            .eq_ignore_ascii_case(
+                                &codewhale_agent_contract::role::public_role_label(&member.id),
+                            )
                     });
                 same_id
                     && member.is_none_or(|member| {
@@ -961,7 +963,7 @@ mod tests {
     /// plain agent spawns in production (#6244).
     #[test]
     fn built_in_members_have_one_member_per_canonical_role() {
-        use crate::fleet::role::public_role_label;
+        use codewhale_agent_contract::role::public_role_label;
         let mut seen: std::collections::BTreeMap<String, String> =
             std::collections::BTreeMap::new();
         for member in FleetRoster::built_in_members() {

@@ -6,10 +6,10 @@
 //! restart. This module owns both the exact live envelope and the narrow,
 //! idempotent restore projection so creation and recognition cannot drift.
 
-use crate::safe_label::SafeLabel;
 use crate::tools::subagent::{AgentWorkerStatus, SubAgentResult, SubAgentStatus};
 use codewhale_models::Role;
 use codewhale_models::{ContentBlock, Message};
+use codewhale_runtime::safe_label::SafeLabel;
 use serde::{Deserialize, Serialize};
 
 const COMPLETION_EVENT_PREFIX: &str = concat!(
@@ -243,7 +243,7 @@ fn mode_event_body(mode: codewhale_config::AppMode) -> &'static str {
 ///
 /// KV-cache effect: append-only user history; the system prompt stays
 /// byte-identical across modes. The engine records it when a session starts
-/// in or enters Plan, and again whenever the mode then differs from the last
+/// in or enters Plan or Operate, and again whenever the mode differs from the last
 /// recorded notice, so a notice in history is never stale.
 pub(crate) fn mode_runtime_message(mode: codewhale_config::AppMode) -> Message {
     runtime_handoff_message_with_meta(

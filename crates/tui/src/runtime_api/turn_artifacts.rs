@@ -544,7 +544,7 @@ fn call_span_files(
             match repo.read_blob(&post, &change.path, FILE_SERVE_MAX_BYTES) {
                 Ok(Some(bytes)) => (
                     Some(bytes.len() as u64),
-                    Some(crate::hashing::sha256_hex(&bytes)),
+                    Some(codewhale_runtime::hashing::sha256_hex(&bytes)),
                 ),
                 Ok(None) => (None, None),
                 Err(error) => {

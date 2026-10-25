@@ -37,6 +37,16 @@
 # --- Flag-backed tools (crates/runtime/src/features.rs) ---
 
 [[feature]]
+id = "cloud-computer-dispatch"
+name = "Cloud computer conversations"
+summary = "Dispatch, inspect, continue and stop one account cloud conversation from terminal and desktop, saved whales included."
+status = "experimental"
+surfaces = { tui = "preview" }
+since = "unreleased"
+docs = "docs/CLOUD_DISPATCH.md"
+owner = "crates/cli/src/cloud/computer.rs"
+
+[[feature]]
 id = "shell-tool"
 name = "Shell tool"
 summary = "Runs shell commands for the agent through the approval gate and sandbox."
@@ -277,7 +287,7 @@ owner = "crates/execpolicy/src/approval_mode.rs"
 [[feature]]
 id = "sandbox"
 name = "Command sandbox"
-summary = "Wraps commands in Seatbelt on macOS; bubblewrap on Linux is on by default once installed and verified."
+summary = "Seatbelt on macOS; verified bubblewrap on Linux by default. Sandboxed PTYs require util-linux setsid."
 status = "stable"
 surfaces = { tui = "stable" }
 docs = "docs/SANDBOX.md"
@@ -424,7 +434,7 @@ owner = "crates/tui/src/plugins"
 [[feature]]
 id = "computer-use"
 name = "Computer Use"
-summary = "Reviewed app control with consent, fresh element targets, observation diffs and bounded named action batches."
+summary = "Reviewed app control: one approval covers background and foreground use, fresh targets, bounded batches."
 status = "experimental"
 surfaces = { tui = "preview", api = "preview" }
 docs = "docs/PLUGIN_BUNDLES.md"
@@ -477,11 +487,31 @@ owner = "crates/tui/src/lsp"
 [[feature]]
 id = "runtime-api"
 name = "Runtime API"
-summary = "Local API: threads, events, approvals, project trust, workspace leases, Unix store sockets and scoped device tokens."
+summary = "Local API: replay-safe thread creation, events, approvals, project trust, workspace leases, Unix sockets, device tokens."
 status = "stable"
 surfaces = { api = "stable" }
 docs = "docs/RUNTIME_API.md"
 owner = "crates/tui/src/runtime_api.rs"
+
+[[feature]]
+id = "compatibility-tool-free-turns"
+name = "Compatibility turn admission"
+summary = "Compatibility transports require explicit tool-free turns; interactive clients use the full HTTP/SSE API."
+status = "stable"
+surfaces = { api = "stable" }
+since = "0.10.2"
+docs = "docs/RUNTIME_API.md#compatibility-execution-limits"
+owner = "crates/app-server/src/lib.rs"
+
+[[feature]]
+id = "runtime-provider-keys"
+name = "Runtime provider keys"
+summary = "Runtime API provider keys: durable or process-only memory, with a session-only policy that disables stored fallback."
+status = "stable"
+surfaces = { api = "stable" }
+since = "0.10.2"
+docs = "docs/RUNTIME_API.md#put-v1providersidkey--write-only-credential"
+owner = "crates/tui/src/runtime_api/secrets.rs"
 
 [[feature]]
 id = "headless-exec"
@@ -759,3 +789,12 @@ surfaces = { tui = "preview" }
 since = "0.10.2"
 docs = "docs/PLUGINS.md"
 owner = "crates/tui/src/plugins/mutation.rs"
+
+[[feature]]
+id = "herdr-agent-state"
+name = "Herdr agent state"
+summary = "Reports idle, working or blocked to the Herdr multiplexer and reopens the session after a restart."
+status = "stable"
+since = "0.10.2"
+surfaces = { tui = "stable" }
+owner = "crates/tui/src/tui/herdr.rs"

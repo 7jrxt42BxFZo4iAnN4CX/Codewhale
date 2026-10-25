@@ -96,6 +96,19 @@ impl ToolActionKind {
         }
     }
 
+    fn from_name(name: &str) -> Option<Self> {
+        [
+            Self::Read,
+            Self::Write,
+            Self::Shell,
+            Self::External,
+            Self::Publish,
+            Self::Destructive,
+        ]
+        .into_iter()
+        .find(|kind| kind.as_str() == name)
+    }
+
     #[must_use]
     pub fn from_tool_name(tool_name: &str, category: ToolCategory) -> Self {
         Self::from_tool_call(tool_name, &Value::Null, category, None)
@@ -630,6 +643,53 @@ impl AutoReviewRule {
     }
 }
 
+fn rule_from_config(
+    config: &crate::config::AutoReviewRuleConfig,
+    index: usize,
+    action: AutoReviewAction,
+) -> AutoReviewRule {
+    let id_prefix = match action {
+        AutoReviewAction::Allow => "allow",
+        AutoReviewAction::Block => "block",
+        AutoReviewAction::AskUser => "ask",
+    };
+    let id = config
+        .id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("config-{id_prefix}-{index}"));
+    let reason = config
+        .reason
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| format!("configured auto-review {id_prefix} rule"));
+    let mut rule = match action {
+        AutoReviewAction::Allow => AutoReviewRule::allow(id, reason),
+        AutoReviewAction::Block | AutoReviewAction::AskUser => AutoReviewRule::block(id, reason),
+    };
+    if let Some(tool) = config
+        .tool
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        rule = rule.tool_name(tool.to_string());
+    }
+    if let Some(action_kind) = config
+        .action_kind
+        .as_deref()
+        .and_then(crate::config::auto_review_action_kind_name)
+        .and_then(ToolActionKind::from_name)
+    {
+        rule = rule.action_kind(action_kind);
+    }
+    rule
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AutoReviewPolicy {
     pub allow_rules: Vec<AutoReviewRule>,
@@ -637,6 +697,27 @@ pub struct AutoReviewPolicy {
 }
 
 impl AutoReviewPolicy {
+    #[must_use]
+    pub fn from_config(config: &crate::config::Config) -> Self {
+        let Some(rules) = config.auto_review.as_ref() else {
+            return Self::default();
+        };
+        Self {
+            allow_rules: rules
+                .allow
+                .iter()
+                .enumerate()
+                .map(|(index, rule)| rule_from_config(rule, index, AutoReviewAction::Allow))
+                .collect(),
+            block_rules: rules
+                .block
+                .iter()
+                .enumerate()
+                .map(|(index, rule)| rule_from_config(rule, index, AutoReviewAction::Block))
+                .collect(),
+        }
+    }
+
     #[must_use]
     pub fn evaluate(&self, ctx: &AutoReviewContext<'_>) -> AutoReviewDecision {
         if let Some(rule) = self.block_rules.iter().find(|rule| rule.matches(ctx)) {

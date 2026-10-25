@@ -43,7 +43,7 @@ pub struct ToolRegistry {
 pub(crate) fn override_refusal_notice(tool_name: &str) -> String {
     format!(
         "Refused [tools.overrides.{name}]: a script or command override cannot replace the built-in tool '{name}', which stays active. Set type = \"disabled\" to turn it off, or key the override by a new tool name.",
-        name = crate::safe_label::SafeLabel::identifier(tool_name)
+        name = codewhale_runtime::safe_label::SafeLabel::identifier(tool_name)
     )
 }
 
@@ -65,7 +65,7 @@ impl ToolRegistry {
             tracing::warn!(
                 previous_origin = ?previous.registration_origin(),
                 replacement_origin = ?tool.registration_origin(),
-                "Overwriting existing tool: {}", crate::safe_label::SafeLabel::identifier(&name)
+                "Overwriting existing tool: {}", codewhale_runtime::safe_label::SafeLabel::identifier(&name)
             );
         }
         self.tools.insert(name, tool);
@@ -566,7 +566,7 @@ impl ToolRegistry {
                     previous_origin = ?previous.registration_origin(),
                     plugin_origin = ?tool.registration_origin(),
                     "Cannot load plugin tool '{}': name is already registered; script tools cannot replace a registered tool, so give the script its own name",
-                    crate::safe_label::SafeLabel::identifier(tool.name())
+                    codewhale_runtime::safe_label::SafeLabel::identifier(tool.name())
                 );
                 continue;
             }
@@ -664,7 +664,7 @@ pub(crate) fn enforce_tool_authority(
         let canonical = super::canonical_action::canonical_action_alias(name, input);
         if matches!(name, "bash" | "Bash" | "exec_shell") || canonical.starts_with("exec_shell") {
             let prepared = tool.prepare(input.clone(), context)?;
-            if context.shell_policy == crate::worker_profile::ShellPolicy::None
+            if context.shell_policy == codewhale_agent_contract::worker_profile::ShellPolicy::None
                 || prepared
                     .input
                     .get("action")
@@ -893,7 +893,7 @@ pub struct ToolRegistryBuilder {
 /// gated behind feature flags or config state.
 #[derive(Clone)]
 pub struct AgentToolSurfaceOptions {
-    pub shell_policy: crate::worker_profile::ShellPolicy,
+    pub shell_policy: codewhale_agent_contract::worker_profile::ShellPolicy,
     pub apply_patch_enabled: bool,
     pub web_search_enabled: bool,
     pub memory_tool_enabled: bool,
@@ -915,7 +915,7 @@ pub struct AgentToolSurfaceOptions {
 
 impl AgentToolSurfaceOptions {
     #[must_use]
-    pub fn new(shell_policy: crate::worker_profile::ShellPolicy) -> Self {
+    pub fn new(shell_policy: codewhale_agent_contract::worker_profile::ShellPolicy) -> Self {
         Self {
             shell_policy,
             apply_patch_enabled: false,
@@ -983,7 +983,7 @@ impl ToolRegistryBuilder {
                     existing_origin = ?existing.registration_origin(),
                     refused_origin = ?tool.registration_origin(),
                     "Refusing runtime dynamic tool that collides with a registered tool: {}",
-                    crate::safe_label::SafeLabel::identifier(tool.name())
+                    codewhale_runtime::safe_label::SafeLabel::identifier(tool.name())
                 );
                 continue;
             }
@@ -1508,7 +1508,7 @@ impl ToolRegistryBuilder {
     #[must_use]
     pub fn with_agent_tools_policy(
         self,
-        shell_policy: crate::worker_profile::ShellPolicy,
+        shell_policy: codewhale_agent_contract::worker_profile::ShellPolicy,
         user_input_limits: super::user_input::UserInputLimits,
     ) -> Self {
         let builder = self
@@ -1535,11 +1535,13 @@ impl ToolRegistryBuilder {
             .with_finance_tool();
 
         match shell_policy {
-            crate::worker_profile::ShellPolicy::Full => {
+            codewhale_agent_contract::worker_profile::ShellPolicy::Full => {
                 builder.with_shell_tools().with_runtime_task_shell_tools()
             }
-            crate::worker_profile::ShellPolicy::ReadOnly => builder.with_read_only_shell_tool(),
-            crate::worker_profile::ShellPolicy::None => builder,
+            codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly => {
+                builder.with_read_only_shell_tool()
+            }
+            codewhale_agent_contract::worker_profile::ShellPolicy::None => builder,
         }
     }
 
@@ -1750,7 +1752,7 @@ impl ToolSpec for McpToolAdapter {
     }
 
     fn registration_origin(&self) -> std::borrow::Cow<'_, str> {
-        use crate::safe_label::SafeLabel;
+        use codewhale_runtime::safe_label::SafeLabel;
         match &self.server_name {
             Some(server) => format!(
                 "MCP server {}, tool {}",

@@ -2,8 +2,8 @@ use super::*;
 use crate::config::ProviderKind;
 use crate::fleet::roster::FleetRoster;
 use crate::tools::{AgentToolSurfaceOptions, ToolRegistryBuilder};
-use crate::worker_profile::ShellPolicy;
 use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing::post};
+use codewhale_agent_contract::worker_profile::ShellPolicy;
 use std::collections::HashSet;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -744,7 +744,7 @@ async fn explicit_read_only_general_can_inspect_git_but_cannot_mutate() {
     assert!(registry.unavailable_allowed_tools().is_empty());
     assert_ne!(
         registry.grant.files,
-        crate::worker_profile::FileGrant::Write
+        codewhale_agent_contract::worker_profile::FileGrant::Write
     );
     for command in ["pwd", "git status --short", "git log --oneline -1"] {
         let output = registry
@@ -1195,11 +1195,32 @@ fn coordination_hot_paths_count_only_active_authoritative_owners() {
 }
 
 #[test]
+fn runtime_mount_coordination_lock_is_shared_with_parallel_sessions() {
+    let tmp = tempdir().expect("tempdir");
+    let runtime_authority = new_shared_runtime_subagent_manager(tmp.path().to_path_buf(), 8)
+        .expect("admit TUI runtime writer");
+    let session =
+        SubAgentManager::new(tmp.path().to_path_buf(), 8).require_coordination_process_lock();
+    session
+        .ensure_coordination_process_lock()
+        .expect("a second session appends beside the runtime");
+    assert!(!session.coordination_snapshot_read_only);
+    session
+        .persist_state_synchronously()
+        .expect("session append");
+    let runtime = runtime_authority.try_write().expect("runtime lock");
+    assert!(!runtime.coordination_snapshot_read_only);
+    runtime
+        .persist_state_synchronously()
+        .expect("runtime append");
+}
+
+#[test]
 fn headless_worker_registration_enforces_live_claims_and_projects_context() {
     let tmp = tempdir().expect("tempdir");
-    let authority_a = new_shared_runtime_subagent_manager(tmp.path().to_path_buf(), 8)
+    let authority_a = new_exclusive_runtime_subagent_manager(tmp.path().to_path_buf(), 8)
         .expect("admit Runtime writer");
-    let authority_b = new_shared_runtime_subagent_manager(tmp.path().join("."), 8)
+    let authority_b = new_exclusive_runtime_subagent_manager(tmp.path().join("."), 8)
         .expect("reuse canonical Runtime writer");
     assert!(Arc::ptr_eq(&authority_a, &authority_b));
     let mut manager = authority_a.try_write().expect("first authority lock");
@@ -3208,18 +3229,15 @@ fn estimate_tool_description_tokens_conservative(text: &str) -> usize {
 
 #[test]
 fn test_agent_type_from_str() {
-    assert_eq!(FleetRole::from_str("general"), Some(FleetRole::Worker));
-    assert_eq!(FleetRole::from_str("explore"), Some(FleetRole::Scout));
-    assert_eq!(FleetRole::from_str("PLAN"), Some(FleetRole::Planner));
-    assert_eq!(
-        FleetRole::from_str("code-review"),
-        Some(FleetRole::Reviewer)
-    );
-    assert_eq!(FleetRole::from_str("worker"), Some(FleetRole::Worker));
-    assert_eq!(FleetRole::from_str("default"), Some(FleetRole::Worker));
-    assert_eq!(FleetRole::from_str("explorer"), Some(FleetRole::Scout));
-    assert_eq!(FleetRole::from_str("awaiter"), Some(FleetRole::Planner));
-    assert_eq!(FleetRole::from_str("invalid"), None);
+    assert_eq!(FleetRole::parse("general"), Some(FleetRole::Worker));
+    assert_eq!(FleetRole::parse("explore"), Some(FleetRole::Scout));
+    assert_eq!(FleetRole::parse("PLAN"), Some(FleetRole::Planner));
+    assert_eq!(FleetRole::parse("code-review"), Some(FleetRole::Reviewer));
+    assert_eq!(FleetRole::parse("worker"), Some(FleetRole::Worker));
+    assert_eq!(FleetRole::parse("default"), Some(FleetRole::Worker));
+    assert_eq!(FleetRole::parse("explorer"), Some(FleetRole::Scout));
+    assert_eq!(FleetRole::parse("awaiter"), Some(FleetRole::Planner));
+    assert_eq!(FleetRole::parse("invalid"), None);
 }
 
 #[test]
@@ -3228,13 +3246,13 @@ fn test_agent_type_implementer_aliases() {
     // likely to reach for when the user says "build this".
     for alias in ["implementer", "implement", "implementation", "builder"] {
         assert_eq!(
-            FleetRole::from_str(alias),
+            FleetRole::parse(alias),
             Some(FleetRole::Builder),
             "alias {alias} should resolve to Builder"
         );
     }
     // Case-insensitive.
-    assert_eq!(FleetRole::from_str("IMPLEMENTER"), Some(FleetRole::Builder));
+    assert_eq!(FleetRole::parse("IMPLEMENTER"), Some(FleetRole::Builder));
 }
 
 #[test]
@@ -3243,12 +3261,12 @@ fn test_agent_type_verifier_aliases() {
     // Reviewer, which is for *grading* code rather than *running* it.
     for alias in ["verifier", "verify", "verification", "validator", "tester"] {
         assert_eq!(
-            FleetRole::from_str(alias),
+            FleetRole::parse(alias),
             Some(FleetRole::Verifier),
             "alias {alias} should resolve to Verifier"
         );
     }
-    assert_eq!(FleetRole::from_str("VERIFY"), Some(FleetRole::Verifier));
+    assert_eq!(FleetRole::parse("VERIFY"), Some(FleetRole::Verifier));
 }
 
 #[test]
@@ -3267,7 +3285,7 @@ fn test_agent_type_round_trips_via_as_str() {
         FleetRole::Custom,
     ] {
         let label = t.as_str();
-        let back = FleetRole::from_str(label)
+        let back = FleetRole::parse(label)
             .unwrap_or_else(|| panic!("as_str label {label:?} doesn't round-trip via from_str"));
         assert_eq!(back, t, "round-trip failed for {t:?} via {label:?}");
     }
@@ -3371,9 +3389,9 @@ fn test_implementer_and_verifier_have_distinct_prompts() {
     // The whole point of adding the types is that they carry distinct
     // posture. Defensive guard: catch the easy bug where copy-paste
     // leaves two new variants with the same prompt as `Worker`.
-    let implementer = FleetRole::Builder.system_prompt();
-    let verifier = FleetRole::Verifier.system_prompt();
-    let general = FleetRole::Worker.system_prompt();
+    let implementer = role_system_prompt(&FleetRole::Builder);
+    let verifier = role_system_prompt(&FleetRole::Verifier);
+    let general = role_system_prompt(&FleetRole::Worker);
     assert_ne!(
         implementer, general,
         "Implementer prompt must differ from General"
@@ -3413,7 +3431,7 @@ fn test_agent_type_prompts_include_shared_output_contract_once() {
         (FleetRole::Verifier, "Fleet verifier"),
         (FleetRole::Custom, "custom Fleet worker"),
     ] {
-        let prompt = agent_type.system_prompt();
+        let prompt = role_system_prompt(&agent_type);
         assert!(prompt.contains(marker));
         // Every role shares the parseable output-contract spine exactly once.
         assert_eq!(
@@ -3446,7 +3464,7 @@ fn test_agent_type_prompts_include_shared_output_contract_once() {
 
 #[test]
 fn explore_prompt_orients_before_searching() {
-    let prompt = FleetRole::Scout.system_prompt();
+    let prompt = role_system_prompt(&FleetRole::Scout);
     assert!(prompt.contains("role: `scout`"));
     assert!(prompt.contains("AGENTS.md/README"));
     assert!(prompt.contains("workspace/project root"));
@@ -3454,10 +3472,10 @@ fn explore_prompt_orients_before_searching() {
 }
 
 #[test]
-fn explore_prompt_is_quick_bounded_and_read_only() {
-    let prompt = FleetRole::Scout.system_prompt();
-    assert!(prompt.contains("Default to `EFFORT: quick`"));
-    assert!(prompt.contains("stop at decisive evidence, not at a number"));
+fn explore_prompt_requires_evidence_and_read_only_scope() {
+    let prompt = role_system_prompt(&FleetRole::Scout);
+    assert!(prompt.contains("Gather enough evidence to answer the assigned question reliably"));
+    assert!(prompt.contains("there is no per-agent call cap to save"));
     assert!(prompt.contains("strictly read-only"));
     assert!(prompt.contains("ALREADY_KNOWN"));
     assert!(prompt.contains("STOP_CONDITION"));
@@ -3468,26 +3486,26 @@ fn explore_prompt_is_quick_bounded_and_read_only() {
     assert!(prompt.contains("allowed read-only inspection subset"));
     assert!(prompt.contains("`git log -n 5`"));
     assert!(!prompt.contains("use RLM"));
-    let reviewer = FleetRole::Reviewer.system_prompt();
+    let reviewer = role_system_prompt(&FleetRole::Reviewer);
     assert!(reviewer.contains("allowed read-only navigation/rg"));
     assert!(reviewer.contains("shell control actions are unavailable"));
 }
 
 #[test]
 fn implementer_prompt_is_not_forced_into_explorer_cap() {
-    let prompt = FleetRole::Builder.system_prompt();
-    assert!(prompt.contains("not limited to a scout-style 3-5 tool-call cap"));
+    let prompt = role_system_prompt(&FleetRole::Builder);
+    assert!(!prompt.contains("3-5 tool-call cap"));
     assert!(prompt.contains("Checkpoint before expanding scope"));
     assert!(!prompt.contains("Default to `EFFORT: quick`"));
 }
 
 #[test]
 fn role_prompts_use_lowercase_primitive_contract() {
-    let explore = FleetRole::Scout.system_prompt();
+    let explore = role_system_prompt(&FleetRole::Scout);
     assert!(explore.contains("Use `read` for bounded file reads"));
     assert!(explore.contains("`bash` only for the allowed read-only"));
 
-    let implementer = FleetRole::Builder.system_prompt();
+    let implementer = role_system_prompt(&FleetRole::Builder);
     assert!(implementer.contains("Use `edit` for precise unique replacements"));
     assert!(implementer.contains("`write` for whole-file changes"));
     assert!(implementer.contains("discover `apply_patch`"));
@@ -3504,8 +3522,8 @@ fn role_prompts_use_lowercase_primitive_contract() {
 
 #[test]
 fn review_and_verifier_prompts_stop_after_decisive_evidence() {
-    let review = FleetRole::Reviewer.system_prompt();
-    let verifier = FleetRole::Verifier.system_prompt();
+    let review = role_system_prompt(&FleetRole::Reviewer);
+    let verifier = role_system_prompt(&FleetRole::Verifier);
     assert!(review.contains("stop after decisive evidence"));
     assert!(review.contains("private `todo_write` list as editable working notes"));
     assert!(verifier.contains("stop after decisive pass/fail evidence"));
@@ -4069,12 +4087,9 @@ fn a_fast_lane_the_router_cannot_serve_carries_a_note() {
 /// silently reclassify a consultant as the default worker.
 #[test]
 fn consultant_round_trips_canonically_and_accepts_compatibility_aliases() {
-    assert_eq!(
-        FleetRole::from_str("consultant"),
-        Some(FleetRole::Consultant)
-    );
-    assert_eq!(FleetRole::from_str("oracle"), Some(FleetRole::Consultant));
-    assert_eq!(FleetRole::from_str("advisor"), Some(FleetRole::Consultant));
+    assert_eq!(FleetRole::parse("consultant"), Some(FleetRole::Consultant));
+    assert_eq!(FleetRole::parse("oracle"), Some(FleetRole::Consultant));
+    assert_eq!(FleetRole::parse("advisor"), Some(FleetRole::Consultant));
     assert_eq!(FleetRole::Consultant.as_str(), "advisor");
 
     let json = serde_json::to_string(&FleetRole::Consultant).expect("serialize");
@@ -4535,7 +4550,7 @@ fn test_parse_spawn_request_rejects_out_of_range_max_depth() {
     let input = json!({
         "name": "review.parser",
         "prompt": "inspect parser",
-        "max_depth": ceiling + 1
+        "max_depth": u64::from(ceiling) + 1
     });
     let err = parse_spawn_request(&input).expect_err("max_depth should be capped at schema range");
     assert!(
@@ -5429,7 +5444,7 @@ fn test_child_max_spawn_depth_request_cannot_widen_inherited_budget() {
     // Root chose an absolute max_spawn_depth of 2; a nested child at
     // spawn_depth 2 requesting the global ceiling must stay bounded by 2,
     // not jump to the ceiling. Before the fix this returned
-    // MAX_SPAWN_DEPTH_CEILING (8), letting the descendant keep spawning past
+    // MAX_SPAWN_DEPTH_CEILING, letting the descendant keep spawning past
     // the root's chosen boundary.
     assert_eq!(
         child_max_spawn_depth_for_spawn(2, 2, Some(codewhale_config::MAX_SPAWN_DEPTH_CEILING)),
@@ -5847,7 +5862,7 @@ fn test_parse_spawn_request_accepts_fleet_role_token_for_runtime_resolution() {
 
 #[test]
 fn test_parse_spawn_request_accepts_full_role_vocabulary() {
-    // Regression for #2649: every token `FleetRole::from_str` accepts must
+    // Regression for #2649: every token `FleetRole::parse` accepts must
     // pass the spawn boundary through `role` *and* `type`, in any case and
     // with surrounding whitespace, land on the canonical serialized role,
     // never become a profile key, and conflict with a different type.
@@ -6077,8 +6092,6 @@ fn subagent_tool_schemas_advertise_real_type_and_role_vocabulary() {
         "expected_artifact",
         "fork_context",
         "limit",
-        "max_output_tokens",
-        "max_steps",
         "message",
         "model",
         "model_strength",
@@ -6090,7 +6103,6 @@ fn subagent_tool_schemas_advertise_real_type_and_role_vocabulary() {
         "thinking",
         "type",
         "until",
-        "wall_time_secs",
         "worktree",
         "write_authority",
         "write_roots",
@@ -6103,6 +6115,9 @@ fn subagent_tool_schemas_advertise_real_type_and_role_vocabulary() {
     );
     for unadvertised in [
         "max_depth",
+        "max_steps",
+        "wall_time_secs",
+        "max_output_tokens",
         "workspace_policy",
         "worktree_base",
         "worktree_branch",
@@ -7531,7 +7546,9 @@ fn role_grants_block_writes_and_raw_shell_for_read_only_roles() {
     // never hold write authority, regardless of parent auto-approval, and the
     // bounded shell grants are exactly Inspect (evidence reads) and Verify
     // (the workspace's own checks).
-    use crate::worker_profile::{ChildGrant, FileGrant, ShellGrant, ToolSurface};
+    use codewhale_agent_contract::worker_profile::{
+        ChildGrant, FileGrant, ShellGrant, ToolSurface,
+    };
     let full_parent = WorkerRuntimeProfile::for_role(FleetRole::Worker);
 
     for role in [
@@ -7592,7 +7609,7 @@ fn role_grants_block_writes_and_raw_shell_for_read_only_roles() {
 /// visible. Asserted against the real child registry.
 #[tokio::test]
 async fn issue_5633_catalog_and_dispatch_are_one_grant() {
-    use crate::worker_profile::{FileGrant, ShellGrant};
+    use codewhale_agent_contract::worker_profile::{FileGrant, ShellGrant};
     for role in FleetRole::all() {
         let tmp = tempdir().expect("tempdir");
         let mut runtime =
@@ -8219,10 +8236,11 @@ fn an_explicit_parent_tool_scope_is_enforced_by_the_child_registry() {
     let mut runtime =
         stub_runtime().with_agent_tool_surface_options(enabled_agent_surface_options());
     runtime.context = ToolContext::new(tmp.path().to_path_buf());
-    runtime.worker_profile.tools = crate::worker_profile::ToolScope::Explicit(vec![
-        "read_file".to_string(),
-        "grep_files".to_string(),
-    ]);
+    runtime.worker_profile.tools =
+        codewhale_agent_contract::worker_profile::ToolScope::Explicit(vec![
+            "read_file".to_string(),
+            "grep_files".to_string(),
+        ]);
 
     let registry = ChildCoreProbe::new(
         runtime,
@@ -8253,7 +8271,7 @@ fn an_explicit_parent_tool_scope_is_enforced_by_the_child_registry() {
 /// outside it, however it asks.
 #[test]
 fn a_child_allowlist_cannot_widen_an_explicit_parent_tool_scope() {
-    let parent = crate::worker_profile::ToolScope::Explicit(vec![
+    let parent = codewhale_agent_contract::worker_profile::ToolScope::Explicit(vec![
         "read_file".to_string(),
         "File".to_string(),
     ]);
@@ -8281,13 +8299,16 @@ fn a_child_allowlist_cannot_widen_an_explicit_parent_tool_scope() {
     // An unrestricted parent leaves the child's request untouched.
     assert_eq!(
         intersect_explicit_tool_scope(
-            &crate::worker_profile::ToolScope::Inherit,
+            &codewhale_agent_contract::worker_profile::ToolScope::Inherit,
             Some(vec!["exec_shell".to_string()])
         ),
         Some(vec!["exec_shell".to_string()]),
     );
     assert_eq!(
-        intersect_explicit_tool_scope(&crate::worker_profile::ToolScope::Inherit, None),
+        intersect_explicit_tool_scope(
+            &codewhale_agent_contract::worker_profile::ToolScope::Inherit,
+            None
+        ),
         None
     );
 }
@@ -8945,7 +8966,7 @@ fn subagent_feature_gates_match_parent_agent_surface() {
 /// deny list via `allows_bounded_readonly_bash`, so seeding the rule is what
 /// makes these tests exercise the carve-out rather than an absent denial.
 fn seed_read_only_role_deny_list(runtime: &mut SubAgentRuntime) {
-    use crate::fleet::role::{MUTATING_TOOL_DENYLIST, RAW_SHELL_DENYLIST};
+    use codewhale_agent_contract::role::{MUTATING_TOOL_DENYLIST, RAW_SHELL_DENYLIST};
     for rule in RAW_SHELL_DENYLIST
         .iter()
         .chain(MUTATING_TOOL_DENYLIST.iter())
@@ -10048,7 +10069,7 @@ async fn api_timeout_preserves_checkpoint_and_returns_needs_input_without_parkin
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 3,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -10223,7 +10244,7 @@ async fn subagent_retries_api_timeout_before_succeeding() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 3,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -10423,7 +10444,7 @@ async fn subagent_retries_transient_provider_header_timeout_before_succeeding() 
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 3,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -10498,7 +10519,7 @@ async fn subagent_rate_limit_exhaustion_interrupts_with_checkpoint() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 3,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -13059,9 +13080,9 @@ fn child_launch_error_names_provider_model_and_route_source() {
 }
 
 #[test]
-fn subagent_runtime_default_max_depth_is_three() {
+fn subagent_runtime_default_depth_does_not_restrict_delegation() {
     // Sanity-check the constant — bumping it without a test means stale docs.
-    assert_eq!(DEFAULT_MAX_SPAWN_DEPTH, 3);
+    assert_eq!(DEFAULT_MAX_SPAWN_DEPTH, u32::MAX);
 }
 
 #[test]
@@ -13113,18 +13134,18 @@ fn clamp_child_max_spawn_depth_enforces_absolute_ceiling() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn rate_limit_pause_blocks_subagent_spawn() {
-    let _guard = crate::retry_status::test_guard();
+    let _guard = codewhale_runtime::retry_status::test_guard();
     // Drop-clear the window even if an assertion below panics: this state is
     // process-global, and a leaked 30s pause strands every concurrently
     // running test whose worker issues a model request.
     let _clear = ClearRateLimitOnDrop;
-    crate::retry_status::clear();
-    crate::retry_status::clear_rate_limit();
+    codewhale_runtime::retry_status::clear();
+    codewhale_runtime::retry_status::clear_rate_limit();
 
     let tmp = tempdir().expect("tempdir");
     let mut runtime = stub_runtime();
     runtime.context = ToolContext::new(tmp.path().to_path_buf());
-    crate::retry_status::note_rate_limit(
+    codewhale_runtime::retry_status::note_rate_limit(
         &runtime.client.rate_limit_scope(),
         Duration::from_secs(30),
     );
@@ -13135,6 +13156,8 @@ async fn rate_limit_pause_blocks_subagent_spawn() {
         Arc::clone(&manager),
         runtime,
         false,
+        None,
+        None,
         None,
     )
     .await
@@ -15619,6 +15642,7 @@ pub(crate) fn stub_runtime() -> SubAgentRuntime {
         parent_agent_id: None,
         parent_completion_tx: None,
         fork_context: None,
+        workflow_response_schema: None,
         parent_mode: AppMode::Agent,
         auto_review_policy: std::sync::Arc::new(
             crate::core::authority::auto_review::AutoReviewPolicy::default(),
@@ -16842,7 +16866,7 @@ async fn run_subagent_task_claims_before_delivery_and_then_finalizes() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 1,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -16931,7 +16955,7 @@ async fn cancellation_wins_task_race_but_still_fans_in_exactly_once() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 1,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -17145,7 +17169,7 @@ async fn fatal_provider_failure_mid_run_parks_a_continuable_checkpoint() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 4,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -17250,7 +17274,7 @@ async fn fatal_provider_failure_mid_run_parks_a_continuable_checkpoint() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 2,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: resume_input_rx,
         launch_gate: None,
@@ -17423,7 +17447,7 @@ async fn repeated_typed_denials_stop_worker_as_failed_not_budget() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 20,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -17521,7 +17545,7 @@ async fn non_retryable_provider_failure_fans_in_to_every_terminal_sink() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 1,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -18226,22 +18250,19 @@ fn format_step_counter_keeps_concrete_budgets() {
 }
 
 #[test]
-fn child_step_override_wins_and_clamps_to_hard_ceiling() {
+fn child_step_limits_preserve_the_owners_allowance() {
     assert_eq!(resolve_max_steps(FleetRole::Scout, None, None), 0);
     assert_eq!(resolve_max_steps(FleetRole::Scout, Some(0), Some(90)), 90);
     assert_eq!(resolve_max_steps(FleetRole::Builder, Some(7), None), 7);
     assert_eq!(
         resolve_max_steps(FleetRole::Worker, Some(u32::MAX), None),
-        MAX_SUBAGENT_STEPS
+        u32::MAX
     );
-    // #5324: `[subagents] default_max_steps` is the configured fallback when
-    // the call carries no explicit budget; an explicit value still wins and
-    // the hard ceiling still clamps the configured default.
     assert_eq!(resolve_max_steps(FleetRole::Scout, None, Some(90)), 90);
     assert_eq!(resolve_max_steps(FleetRole::Builder, Some(7), Some(90)), 7);
     assert_eq!(
         resolve_max_steps(FleetRole::Worker, None, Some(u32::MAX)),
-        MAX_SUBAGENT_STEPS
+        u32::MAX
     );
 }
 
@@ -18331,7 +18352,7 @@ async fn launch_gate_queues_extra_direct_children() {
             fork_context: false,
             started_at: Instant::now(),
             max_steps: 1,
-            wall_time: DEFAULT_CHILD_WALL_TIME,
+            wall_time: None,
             wall_ceiling_ms: None,
             input_rx,
             launch_gate: gate,
@@ -18491,7 +18512,7 @@ async fn queued_turn_owned_child_parks_without_a_false_start_transition() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 1,
-        wall_time: Duration::from_secs(5),
+        wall_time: Some(Duration::from_secs(5)),
         wall_ceiling_ms: None,
         input_rx,
         launch_gate: Some(Arc::clone(&gate)),
@@ -18640,7 +18661,7 @@ async fn launch_gate_wait_that_never_ends_fails_as_never_started() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 1,
-        wall_time: WALL_TIME,
+        wall_time: Some(WALL_TIME),
         wall_ceiling_ms: None,
         input_rx,
         launch_gate: Some(Arc::clone(&gate)),
@@ -18928,7 +18949,7 @@ pub(super) async fn run_incomplete_response_worker(
         fork_context: false,
         started_at: Instant::now(),
         max_steps,
-        wall_time: DEFAULT_CHILD_WALL_TIME,
+        wall_time: None,
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -19148,14 +19169,14 @@ async fn spawn_budget_capped_worker_with_pause(
         fork_context: false,
         started_at: Instant::now(),
         max_steps,
-        wall_time,
+        wall_time: Some(wall_time),
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
         _foreground_child_registration: None,
     };
     if let Some(pause) = pause {
-        crate::retry_status::note_rate_limit(&runtime.client.rate_limit_scope(), pause);
+        codewhale_runtime::retry_status::note_rate_limit(&runtime.client.rate_limit_scope(), pause);
     }
     let task_handle = tokio::spawn(run_subagent_task(task));
     (manager, agent_id, calls, task_handle)
@@ -19354,7 +19375,7 @@ async fn worker_compacts_past_its_context_window_and_keeps_working() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 20,
-        wall_time: Duration::from_secs(300),
+        wall_time: Some(Duration::from_secs(300)),
         wall_ceiling_ms: None,
         input_rx: task_input_rx,
         launch_gate: None,
@@ -19425,7 +19446,7 @@ struct ClearRateLimitOnDrop;
 
 impl Drop for ClearRateLimitOnDrop {
     fn drop(&mut self) {
-        crate::retry_status::clear_rate_limit();
+        codewhale_runtime::retry_status::clear_rate_limit();
     }
 }
 
@@ -19439,7 +19460,7 @@ async fn worker_is_not_stranded_by_transient_global_rate_limit_window() {
     // re-checking, blowing the 5s timeouts in the budget tests above. The
     // pause must be re-polled so an already-cleared window releases
     // in-flight requests promptly.
-    let _guard = crate::retry_status::test_guard();
+    let _guard = codewhale_runtime::retry_status::test_guard();
     let _clear = ClearRateLimitOnDrop;
 
     let tmp = tempdir().expect("tempdir");
@@ -19448,7 +19469,7 @@ async fn worker_is_not_stranded_by_transient_global_rate_limit_window() {
         60,
         40,
         4,
-        DEFAULT_CHILD_WALL_TIME,
+        Duration::from_secs(30),
         Some(Duration::from_secs(30)),
     )
     .await;
@@ -19457,7 +19478,7 @@ async fn worker_is_not_stranded_by_transient_global_rate_limit_window() {
     // after the worker's first request has already observed it.
     tokio::spawn(async {
         tokio::time::sleep(Duration::from_millis(250)).await;
-        crate::retry_status::clear_rate_limit();
+        codewhale_runtime::retry_status::clear_rate_limit();
     });
 
     tokio::time::timeout(Duration::from_secs(5), task_handle)
@@ -21058,7 +21079,7 @@ async fn child_work_state_publishes_only_real_changes_from_its_own_list() {
 #[test]
 fn an_exact_member_with_tools_false_gets_no_model_tools_at_all() {
     let tmp = tempdir().expect("tempdir");
-    let authority = crate::fleet::role::ChildAuthority::clamp(
+    let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
         codewhale_workflow::PermissionCeiling::ROUTER,
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -21096,7 +21117,7 @@ fn an_exact_member_with_tools_false_gets_no_model_tools_at_all() {
 #[tokio::test]
 async fn an_exact_member_without_a_network_tool_really_loses_the_network_surface() {
     let tmp = tempdir().expect("tempdir");
-    let authority = crate::fleet::role::ChildAuthority::clamp(
+    let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
         codewhale_workflow::PermissionCeiling::preset("read_write").expect("preset"),
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -21284,7 +21305,8 @@ async fn a_read_only_inspection_member_gets_only_bounded_web_search() {
         delegation_depth: codewhale_config::DEFAULT_SPAWN_DEPTH,
         tools: true,
     };
-    let authority = crate::fleet::role::ChildAuthority::from_runtime_role("scout", parent);
+    let authority =
+        codewhale_agent_contract::role::ChildAuthority::from_runtime_role("scout", parent);
     assert_eq!(authority.posture_role, "explore");
     assert!(!authority.ceiling.network_tool);
 
@@ -21349,7 +21371,7 @@ async fn a_read_only_inspection_member_gets_only_bounded_web_search() {
     );
 
     // A Runtime builder under a full parent keeps the whole family.
-    let full_authority = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let full_authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "builder",
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -21392,7 +21414,7 @@ async fn a_read_only_inspection_member_gets_only_bounded_web_search() {
 #[test]
 fn the_unified_rlm_action_cannot_bypass_a_denied_alias() {
     let tmp = tempdir().expect("tempdir");
-    let authority = crate::fleet::role::ChildAuthority::clamp(
+    let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
         codewhale_workflow::PermissionCeiling::preset("read_write").expect("preset"),
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -21644,7 +21666,7 @@ async fn a_parent_read_only_session_narrows_a_full_exact_member_in_the_child_reg
         delegation_depth: 0,
         tools: true,
     };
-    let authority = crate::fleet::role::ChildAuthority::clamp(
+    let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
         session,
     );
@@ -21752,7 +21774,7 @@ fn the_session_ceiling_reflects_the_live_parent_posture() {
 /// The child registry a Runtime verifier under a full parent actually runs with.
 fn read_only_with_shell_registry() -> (tempfile::TempDir, ChildCoreProbe) {
     let tmp = tempdir().expect("tempdir");
-    let authority = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "verifier",
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -21812,7 +21834,7 @@ fn shell_denial_from_parent_is_not_a_read_only_role_exception() {
             if explicit_rule.is_some() {
                 assert_eq!(
                     registry.grant.shell,
-                    crate::worker_profile::ShellGrant::None
+                    codewhale_agent_contract::worker_profile::ShellGrant::None
                 );
                 assert!(!registry.is_tool_allowed("bash"));
             }
@@ -22052,7 +22074,7 @@ fn bounded_read_only_and_verification_paths_survive_the_ceiling() {
 #[test]
 fn a_write_capable_member_keeps_every_execution_gate() {
     let tmp = tempdir().expect("tempdir");
-    let authority = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "builder",
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -22128,7 +22150,7 @@ fn the_durable_work_families_resolve_their_actions_through_the_policy_seam() {
 /// Legacy opt-out inputs cannot relax role or operator ceilings.
 #[test]
 fn posture_denials_survive_a_child_that_declines_to_inherit() {
-    let authority = crate::fleet::role::ChildAuthority::clamp(
+    let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
         codewhale_workflow::PermissionCeiling::preset("read_write").expect("preset"),
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -22163,12 +22185,12 @@ fn posture_denials_survive_a_child_that_declines_to_inherit() {
         "operator rules also remain a ceiling; got {child:?}"
     );
     assert!(
-        !crate::fleet::role::is_posture_denial("some_session_preference"),
+        !codewhale_agent_contract::role::is_posture_denial("some_session_preference"),
         "only ceiling-derived rules are sealed"
     );
-    for name in crate::fleet::role::NON_SHELL_EXECUTION_DENYLIST {
+    for name in codewhale_agent_contract::role::NON_SHELL_EXECUTION_DENYLIST {
         assert!(
-            crate::fleet::role::is_posture_denial(name),
+            codewhale_agent_contract::role::is_posture_denial(name),
             "{name} is installed by a ceiling and must be sealed"
         );
     }
@@ -22183,7 +22205,8 @@ fn posture_denials_survive_a_child_that_declines_to_inherit() {
 fn the_authority_fingerprint_distinguishes_every_envelope_it_names() {
     let session = codewhale_workflow::PermissionCeiling::preset("full").expect("preset");
     let fingerprint = |role: &str| {
-        crate::fleet::role::ChildAuthority::from_runtime_role(role, session).fingerprint()
+        codewhale_agent_contract::role::ChildAuthority::from_runtime_role(role, session)
+            .fingerprint()
     };
 
     let mut seen = HashSet::new();
@@ -22207,7 +22230,7 @@ fn the_authority_fingerprint_distinguishes_every_envelope_it_names() {
     assert_eq!(fingerprint("verifier"), fingerprint("verifier"));
     // The parent posture is part of it: the same Runtime role under a narrower
     // parent is a different envelope.
-    let narrow = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let narrow = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "builder",
         codewhale_workflow::PermissionCeiling::preset("read_only").expect("preset"),
     );
@@ -22219,7 +22242,7 @@ fn the_authority_fingerprint_distinguishes_every_envelope_it_names() {
 /// is not enforced authority.
 #[test]
 fn the_spawn_boundary_fails_closed_on_a_missing_or_mismatched_authority() {
-    let authority = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "verifier",
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -22281,7 +22304,7 @@ fn the_spawn_boundary_fails_closed_on_a_missing_or_mismatched_authority() {
 /// and that fingerprint is what the spawn boundary accepts.
 #[test]
 fn the_launched_authority_is_the_one_the_spawn_boundary_accepts() {
-    let authority = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "auditor",
         codewhale_workflow::PermissionCeiling::preset("analyst").expect("preset"),
     );
@@ -22303,7 +22326,7 @@ fn the_launched_authority_is_the_one_the_spawn_boundary_accepts() {
         .expect("the launched envelope must satisfy its own receipt");
 
     // A different member's envelope must not satisfy it.
-    let other = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let other = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "builder",
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -22578,17 +22601,24 @@ async fn runtime_surface_hardening_resume_from_requires_descendant_control() {
     };
     runtime.parent_agent_id = Some(caller);
     let input = json!({"prompt": "Continue the completed work", "resume_from": source});
-    let err =
-        spawn_subagent_from_input(input.clone(), manager.clone(), runtime.clone(), false, None)
-            .await
-            .expect_err("a sibling is not a continuation source");
+    let err = spawn_subagent_from_input(
+        input.clone(),
+        manager.clone(),
+        runtime.clone(),
+        false,
+        None,
+        None,
+        None,
+    )
+    .await
+    .expect_err("a sibling is not a continuation source");
     assert!(
         err.to_string().contains("only its own descendants"),
         "{err}"
     );
 
     runtime.parent_agent_id = None;
-    let err = spawn_subagent_from_input(input, manager.clone(), runtime, false, None)
+    let err = spawn_subagent_from_input(input, manager.clone(), runtime, false, None, None, None)
         .await
         .expect_err("root still observes the workspace boundary");
     assert!(err.to_string().contains("different workspace"), "{err}");
@@ -24078,6 +24108,8 @@ async fn refuse_worktree_spawn_and_expect_cleanup(repo: &tempfile::TempDir, bran
         Arc::clone(&manager),
         runtime,
         false,
+        None,
+        None,
         None,
     )
     .await
@@ -26480,9 +26512,10 @@ fn agent_tool_description_names_only_schema_roles() {
     // sentence must be a value the `type` enum accepts; the legacy aliases
     // parse at the deserialization boundary but a strict gateway rejects
     // them against the declared enum (#5940).
-    let schema: std::collections::HashSet<&str> = crate::fleet::role::FLEET_ROLE_SCHEMA_VALUES
-        .into_iter()
-        .collect();
+    let schema: std::collections::HashSet<&str> =
+        codewhale_agent_contract::role::FLEET_ROLE_SCHEMA_VALUES
+            .into_iter()
+            .collect();
     let texts = [
         super::AGENT_TOOL_DESCRIPTION.as_str(),
         super::SUBAGENT_TYPE_DESCRIPTION,
@@ -26854,7 +26887,7 @@ mod readonly_shell_6015 {
             fork_context: false,
             started_at: Instant::now(),
             max_steps: 20,
-            wall_time: DEFAULT_CHILD_WALL_TIME,
+            wall_time: None,
             wall_ceiling_ms: None,
             input_rx,
             launch_gate: None,
@@ -27293,7 +27326,7 @@ async fn late_launch_permit_still_gets_the_full_work_budget() {
         fork_context: false,
         started_at: Instant::now(),
         max_steps: 1,
-        wall_time: WALL_TIME,
+        wall_time: Some(WALL_TIME),
         wall_ceiling_ms: None,
         input_rx,
         launch_gate: Some(Arc::clone(&gate)),

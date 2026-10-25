@@ -28,8 +28,8 @@ use super::{Credential, CredentialKind};
 
 /// Non-secret credential metadata for account/status enumeration.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CredentialInfo {
-    pub(crate) provider_id: String,
+pub struct CredentialInfo {
+    pub provider_id: String,
     pub(crate) kind: CredentialKind,
 }
 
@@ -46,7 +46,7 @@ pub(crate) struct CredentialInfo {
 /// credential from enumeration (status, `/provider`, logout). `list` fails
 /// only when enumeration itself cannot run. `list` must not execute
 /// configured API-key commands or open network flows.
-pub(crate) trait CredentialStore: Send + Sync {
+pub trait CredentialStore: Send + Sync {
     /// Read the stored credential, possibly expired. Display/status use.
     fn read(&self, provider_id: &str) -> Result<Option<Credential>>;
 
@@ -68,7 +68,6 @@ pub(crate) trait CredentialStore: Send + Sync {
     /// sequence instead. Collapsing them onto `modify` would change their
     /// error messages and rollback shape, which is deliberately out of this
     /// change's scope.
-    #[cfg_attr(not(test), expect(dead_code))]
     fn modify(
         &self,
         provider_id: &str,
@@ -82,7 +81,6 @@ pub(crate) trait CredentialStore: Send + Sync {
     /// than through this trait. Routing it here is the remaining half of the
     /// port and is deliberately not folded into this change — logout is
     /// security-sensitive and deserves its own commit and its own tests.
-    #[cfg_attr(not(test), expect(dead_code))]
     fn delete(&self, provider_id: &str) -> Result<()>;
 }
 
@@ -106,7 +104,7 @@ fn provider_lock(provider_id: &str) -> Arc<Mutex<()>> {
 }
 
 /// Run `body` holding this provider's write lock.
-pub(crate) fn with_provider_write_lock<T>(provider_id: &str, body: impl FnOnce() -> T) -> T {
+pub fn with_provider_write_lock<T>(provider_id: &str, body: impl FnOnce() -> T) -> T {
     let lock = provider_lock(provider_id);
     let _guard = lock
         .lock()
@@ -120,7 +118,7 @@ pub(crate) fn with_provider_write_lock<T>(provider_id: &str, body: impl FnOnce()
 /// covers every slot cannot deadlock with a per-provider save (which holds
 /// only one). Callers that also take the xAI OAuth lifecycle lock must take
 /// that lock first, matching the documented xAI-then-config order.
-pub(crate) fn with_provider_write_locks<T>(
+pub fn with_provider_write_locks<T>(
     provider_ids: impl IntoIterator<Item = impl AsRef<str>>,
     body: impl FnOnce() -> T,
 ) -> T {
@@ -220,7 +218,7 @@ impl CredentialStore for InMemoryCredentialStore {
 /// `codewhale_secrets::Secrets` already owns. Its value is that every write now
 /// goes through `modify` under the provider's lock, so a save racing a rotate
 /// no longer interleaves.
-pub(crate) struct SecretStoreCredentials {
+pub struct SecretStoreCredentials {
     secrets: codewhale_secrets::Secrets,
     /// Slots to probe for `list`. The backing keyring exposes no key
     /// enumeration, so the caller supplies the known slot names.
@@ -228,7 +226,7 @@ pub(crate) struct SecretStoreCredentials {
 }
 
 impl SecretStoreCredentials {
-    pub(crate) fn new(secrets: codewhale_secrets::Secrets, known_slots: Vec<String>) -> Self {
+    pub fn new(secrets: codewhale_secrets::Secrets, known_slots: Vec<String>) -> Self {
         Self {
             secrets,
             known_slots,

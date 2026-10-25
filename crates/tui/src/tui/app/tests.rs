@@ -2181,7 +2181,7 @@ fn context_pressure_toast_kind_is_not_inferred_from_display_text() {
 
     app.sticky_status = Some(StatusToast::context_pressure(
         "localized pressure warning",
-        crate::context_budget::PressureLevel::High,
+        codewhale_runtime::context_budget::PressureLevel::High,
     ));
     assert!(app.dismiss_context_pressure_warning());
     assert!(app.sticky_status.is_none());
@@ -2192,7 +2192,7 @@ fn critical_context_pressure_remains_visible_over_transient_info_toasts() {
     let mut app = App::new(test_options(false), &Config::default());
     app.sticky_status = Some(StatusToast::context_pressure(
         "Context critical: 95%",
-        crate::context_budget::PressureLevel::Critical,
+        codewhale_runtime::context_budget::PressureLevel::Critical,
     ));
     app.push_status_toast("Saved", StatusToastLevel::Info, None);
 
@@ -6520,16 +6520,16 @@ fn startup_and_fallback_skip_inactive_external_only_routes_without_io() {
     let mut options = test_options(false);
     options.skip_onboarding = true;
 
-    crate::external_credentials::reset_side_effect_trap();
+    codewhale_runtime::external_credentials::reset_side_effect_trap();
     let mut app = App::new(options, &config);
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0),
         "startup readiness must not inspect inactive external credentials"
     );
     assert_eq!(app.advance_fallback("active route unavailable"), None);
     assert_eq!(
-        crate::external_credentials::side_effect_trap_counts(),
+        codewhale_runtime::external_credentials::side_effect_trap_counts(),
         (0, 0),
         "fallback selection must skip external-only inactive routes without inspection"
     );

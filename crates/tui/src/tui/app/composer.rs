@@ -1594,6 +1594,16 @@ impl App {
         self.clear_input();
     }
 
+    pub fn clear_composer_draft(&mut self) {
+        self.backtrack.reset();
+        self.disarm_quit();
+        self.edit_in_progress = false;
+        self.clear_input_recoverable();
+        let _ = self.maybe_show_behavioral_tip(
+            crate::tui::behavioral_tips::BehavioralTip::ClearedInputRestore,
+        );
+    }
+
     pub fn start_history_search(&mut self) {
         if self.composer_history_search.is_some() {
             return;
@@ -1864,6 +1874,8 @@ impl App {
     pub fn apply_external_edit(&mut self, new: String) {
         self.input = new;
         self.resync_command_line_claim();
+        self.pending_paste_reference = None;
+        self.oversized_paste_full_text = None;
         self.cursor_position = char_count(&self.input);
         self.history_index = None;
         self.history_navigation_draft = None;
