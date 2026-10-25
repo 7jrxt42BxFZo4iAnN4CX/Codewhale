@@ -76,10 +76,7 @@ impl McpHttpAuth {
         }
         let mut headers = self.headers.clone();
         for (name, env_var) in &self.env_headers {
-            let value = self.reviewed_plugin.as_ref().map_or_else(
-                || std::env::var(env_var),
-                |source| source.host_environment.var(env_var),
-            );
+            let value = super::mcp_secret_var(self.reviewed_plugin.as_ref(), env_var);
             if let Ok(value) = value
                 && !value.trim().is_empty()
             {
@@ -88,10 +85,7 @@ impl McpHttpAuth {
         }
         if !mcp_headers_have_authorization(&headers)
             && let Some(env_var) = self.bearer_token_env_var.as_deref()
-            && let Ok(token) = self.reviewed_plugin.as_ref().map_or_else(
-                || std::env::var(env_var),
-                |source| source.host_environment.var(env_var),
-            )
+            && let Ok(token) = super::mcp_secret_var(self.reviewed_plugin.as_ref(), env_var)
         {
             let token = token.trim();
             if !token.is_empty() {

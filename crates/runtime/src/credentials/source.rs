@@ -17,16 +17,16 @@ use std::borrow::Cow;
 /// One place credential resolution looked, and what would put a credential
 /// there. Labels only; never a value.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CredentialProbe {
+pub struct CredentialProbe {
     /// Where we looked, e.g. `"env DEEPSEEK_API_KEY"` or `"secret store slot \"deepseek\""`.
     pub(crate) place: Cow<'static, str>,
     /// What the user would do to make this place answer, if there is a
     /// one-line answer. `None` when the place is informational only.
-    pub(crate) fix: Option<Cow<'static, str>>,
+    pub fix: Option<Cow<'static, str>>,
 }
 
 impl CredentialProbe {
-    pub(crate) fn with_fix(
+    pub fn with_fix(
         place: impl Into<Cow<'static, str>>,
         fix: impl Into<Cow<'static, str>>,
     ) -> Self {
@@ -40,7 +40,7 @@ impl CredentialProbe {
 /// The place a credential was resolved from, or the fact that no place had
 /// one. This is the single value every readiness surface should render.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum CredentialSource {
+pub enum CredentialSource {
     /// `auth_mode = "none"`: the route intentionally sends no credential.
     AuthModeNone,
     /// A keyless self-hosted or loopback route.
@@ -92,13 +92,13 @@ pub(crate) enum CredentialSource {
 }
 
 impl CredentialSource {
-    pub(crate) fn is_present(&self) -> bool {
+    pub fn is_present(&self) -> bool {
         !matches!(self, Self::Missing { .. })
     }
 
     /// Short human-readable label, in pi's spirit: the name of the place, not
     /// a sentence. Safe to render anywhere — never contains a secret.
-    pub(crate) fn label(&self) -> Cow<'static, str> {
+    pub fn label(&self) -> Cow<'static, str> {
         match self {
             Self::AuthModeNone => Cow::Borrowed("auth_mode = \"none\""),
             Self::KeylessRoute { base_url } => Cow::Owned(format!(
@@ -122,7 +122,7 @@ impl CredentialSource {
     }
 
     /// The ordered places that were probed, for a failed resolution.
-    pub(crate) fn probed(&self) -> &[CredentialProbe] {
+    pub fn probed(&self) -> &[CredentialProbe] {
         match self {
             Self::Missing { probed } => probed,
             _ => &[],
@@ -134,29 +134,29 @@ impl CredentialSource {
 /// readiness surfaces need the source, and the request path already has its
 /// own resolver that returns the secret.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct CredentialResolution {
-    pub(crate) source: CredentialSource,
+pub struct CredentialResolution {
+    pub source: CredentialSource,
 }
 
 impl CredentialResolution {
-    pub(crate) fn found(source: CredentialSource) -> Self {
+    pub fn found(source: CredentialSource) -> Self {
         debug_assert!(source.is_present());
         Self { source }
     }
 
-    pub(crate) fn missing(probed: Vec<CredentialProbe>) -> Self {
+    pub fn missing(probed: Vec<CredentialProbe>) -> Self {
         Self {
             source: CredentialSource::Missing { probed },
         }
     }
 
-    pub(crate) fn is_present(&self) -> bool {
+    pub fn is_present(&self) -> bool {
         self.source.is_present()
     }
 
     /// One line naming the places checked, for a status row. Empty when the
     /// resolution succeeded.
-    pub(crate) fn checked_places(&self) -> String {
+    pub fn checked_places(&self) -> String {
         self.source
             .probed()
             .iter()
@@ -166,7 +166,7 @@ impl CredentialResolution {
     }
 
     /// The first actionable fix among the probed places, if any.
-    pub(crate) fn first_fix(&self) -> Option<&str> {
+    pub fn first_fix(&self) -> Option<&str> {
         self.source
             .probed()
             .iter()

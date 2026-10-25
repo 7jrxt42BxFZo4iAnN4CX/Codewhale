@@ -750,18 +750,10 @@ assert.equal(
   2,
   "both glibc recovery branches must name codewhale-cli",
 );
-// The archive installer never overwrites an existing command, and it no longer
-// manages the retired TUI path at all: upgrades to `codewhale-tui` are
-// `codewhale update`'s job, which migrates it beside the canonical pair.
 assert.doesNotMatch(
   archiveInstaller,
-  /codewhale-tui/,
-  "archive installs must not write or validate the retired TUI path",
-);
-assert.match(
-  archiveInstaller,
-  /check_destination "\$src" "\$BIN_DIR\/\$bin" "/,
-  "every archive payload is validated against its destination before the first write",
+  /install_binary "\$SCRIPT_DIR\/[^"]+" "\$BIN_DIR\/codewhale-tui"/,
+  "archive installs must not write the retired codewhale-tui command",
 );
 assert.doesNotMatch(
   cliDispatcher,

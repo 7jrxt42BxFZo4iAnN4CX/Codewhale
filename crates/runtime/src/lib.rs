@@ -17,6 +17,7 @@ pub mod browser;
 pub mod child_env;
 pub mod context_budget;
 pub mod continual_harness;
+pub mod credentials;
 pub mod dsh_credentials;
 pub mod external_credentials;
 pub mod fast_hash;

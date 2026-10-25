@@ -151,8 +151,12 @@ pub(crate) fn credential_state_for_provider(
     }
     if let Some(source) = config.session_policy_without_key(identity) {
         return match source {
-            crate::credentials::CredentialSource::AuthModeNone => CredentialState::NoAuth,
-            crate::credentials::CredentialSource::KeylessRoute { .. } => CredentialState::Local,
+            codewhale_runtime::credentials::CredentialSource::AuthModeNone => {
+                CredentialState::NoAuth
+            }
+            codewhale_runtime::credentials::CredentialSource::KeylessRoute { .. } => {
+                CredentialState::Local
+            }
             _ => CredentialState::MissingKey,
         };
     }

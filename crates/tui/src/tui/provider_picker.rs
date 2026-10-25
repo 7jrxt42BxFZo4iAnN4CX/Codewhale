@@ -700,7 +700,7 @@ impl ProviderDashboardRow {
         let model_origin = ProviderModelOrigin::for_provider(provider, has_configured_model);
         // One sourced resolution per row: the picker must be able to say WHERE
         // it looked, not just that it found nothing (pi-mono's `AuthResult`
-        // source, ported in `crate::credentials`).
+        // source, ported in `codewhale_runtime::credentials`).
         let credential_resolution = crate::config::resolve_credential_source(config, &identity);
         let has_key = if provider == ProviderKind::Custom {
             custom_provider_has_auth(configured)
@@ -711,7 +711,7 @@ impl ProviderDashboardRow {
         // the exact path is disclosed only inside the explicit reuse
         // confirmation.
         let credential_source = match &credential_resolution.source {
-            crate::credentials::CredentialSource::ExternalGrant { cli, .. } => {
+            codewhale_runtime::credentials::CredentialSource::ExternalGrant { cli, .. } => {
                 format!("{cli} credentials (read-only)")
             }
             // Name the signed-in subscription account (label only) so two
@@ -721,7 +721,7 @@ impl ProviderDashboardRow {
             // that structural read (`usable_sign_in`, formerly
             // `credentials_present`) still runs synchronously when a row is
             // built, as it did before #6715; naming the account adds no read.
-            crate::credentials::CredentialSource::OAuth {
+            codewhale_runtime::credentials::CredentialSource::OAuth {
                 account: Some(account),
                 ..
             } => format!("{} · {account}", credential_resolution.source.label()),
@@ -1602,7 +1602,7 @@ fn missing_auth_message(
     provider: ProviderKind,
     configured: Option<&crate::config::ProviderConfig>,
     provider_id: &str,
-    resolution: &crate::credentials::CredentialResolution,
+    resolution: &codewhale_runtime::credentials::CredentialResolution,
 ) -> String {
     if provider == ProviderKind::Moonshot
         && configured.is_some_and(crate::config::provider_config_uses_kimi_imported_token)

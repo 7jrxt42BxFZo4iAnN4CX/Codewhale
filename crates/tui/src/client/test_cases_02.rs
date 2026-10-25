@@ -1102,7 +1102,7 @@
                 &(config).test_identity_for_kind(ProviderKind::Xai)
             )
             .source,
-            crate::credentials::CredentialSource::OAuth {
+            codewhale_runtime::credentials::CredentialSource::OAuth {
                 flow: "xAI".to_string(),
                 account: Some("grok@example.com".to_string()),
             }

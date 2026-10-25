@@ -1652,7 +1652,7 @@ pub struct App {
     /// each TurnStarted; background suggestion tasks capture the token and
     /// discard their result if the token no longer matches.
     pub prompt_suggestion_gen: std::sync::atomic::AtomicU64,
-    /// Degraded connectivity mode; new user inputs are queued for later retry.
+    /// Queue new submissions while browsing offline or recovering provider setup.
     pub offline_mode: bool,
     /// Whether an `EngineEvent::Error` has already been posted for the
     /// current turn. Suppresses the redundant "Turn failed:" status line

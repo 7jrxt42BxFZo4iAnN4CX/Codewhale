@@ -1852,6 +1852,18 @@ mod recovery {
                 .iter()
                 .all(|event| event.payload["maxOutputTokens"] == 1500)
         );
+        assert!(
+            receipts
+                .iter()
+                .all(|event| event.payload["billed_prompt_tokens"] == 11),
+            "each receipt names the prompt the provider billed: {receipts:?}"
+        );
+        assert!(
+            receipts
+                .iter()
+                .all(|event| event.payload.get("cost").is_some()),
+            "the live-cost slot is always emitted: {receipts:?}"
+        );
         assert_eq!(
             manager.start_turn(&thread.id, request.clone()).await?.id,
             first.id

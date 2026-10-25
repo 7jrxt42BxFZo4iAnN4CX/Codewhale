@@ -178,11 +178,8 @@ pub(crate) fn apply_picker_session_rename_to_active_app(
 /// Translate an `EngineEvent::Error` into UI state updates.
 ///
 /// The engine's `recoverable` flag (mirrored on `ErrorEnvelope`) decides
-/// whether the session flips into offline mode: stream stalls, chunk
-/// timeouts, transient network errors, and rate-limit/server hiccups arrive
-/// recoverable and must NOT flip into offline. Hard failures (auth, billing,
-/// invalid request) arrive non-recoverable; those flip offline so subsequent
-/// messages get queued instead of silently lost mid-flight.
+/// whether an active turn stays live. Only an environment-only authentication
+/// failure enables offline queueing here while reopening provider setup.
 ///
 /// `severity` drives transcript color: red for `Error`/`Critical`, amber for
 /// `Warning`, dim for `Info`.
@@ -323,9 +320,6 @@ pub(crate) fn apply_engine_error_to_app(
             Some(8_000),
         );
         return;
-    }
-    if !recoverable {
-        app.offline_mode = true;
     }
     // Error is already in the transcript as HistoryCell::Error above;
     // don't emit a redundant status_message that would become a sticky

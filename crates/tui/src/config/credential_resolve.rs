@@ -1,7 +1,7 @@
 //! The one place provider credential precedence is decided.
 //!
 //! Ported from pi-mono `packages/ai/src/auth/resolve.ts` (MIT, Copyright (c)
-//! 2025 Mario Zechner; full notice in `crate::credentials`). The idea taken is
+//! 2025 Mario Zechner; full notice in `codewhale_runtime::credentials`). The idea taken is
 //! pi's: a single resolver, one precedence rule stated in a doc comment beside
 //! it, and a result that names the place it resolved from. The walk itself is
 //! CodeWhale's — it is the former body of `has_api_key_for`, moved here
@@ -64,7 +64,7 @@
 //! existing helper and discards the value with `.is_some()`.
 
 use super::*;
-use crate::credentials::{
+use codewhale_runtime::credentials::{
     AuthContext, CredentialProbe, CredentialResolution, CredentialSource,
     context::ProcessAuthContext,
 };
@@ -398,8 +398,8 @@ fn resolve_external_grant(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::credentials::context::MapAuthContext;
     use crate::test_support::{EnvVarGuard, lock_test_env};
+    use codewhale_runtime::credentials::context::MapAuthContext;
 
     fn deepseek_config() -> Config {
         Config {
