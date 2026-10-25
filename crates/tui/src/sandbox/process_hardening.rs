@@ -381,7 +381,7 @@ mod tests {
 /// Kernel-flag proof. `PR_SET_NO_NEW_PRIVS` is irreversible and inherited by
 /// descendants, so the decision can only be observed end-to-end in a fresh
 /// child process: the child applies hardening under one posture and reports
-/// the kernel's own record from `/proc/self/status`. These tests exist only
+/// the kernel's own record through `PR_GET_NO_NEW_PRIVS`. These tests exist only
 /// on Linux; on other hosts `apply_process_hardening` is a no-op and the flag
 /// does not exist.
 #[cfg(all(test, target_os = "linux", not(target_env = "ohos")))]
@@ -431,6 +431,17 @@ mod linux_flag_tests {
         String::from_utf8_lossy(&output.stdout).into_owned()
     }
 
+    fn ratchet_expectation(expected: &'static str, row: &str) -> &'static str {
+        if expected == "0" && no_new_privs_active() == Some(true) {
+            eprintln!(
+                "{row}: parent already holds NoNewPrivs, which children cannot clear; \
+                 asserting the child keeps NNP=1 instead of NNP=0"
+            );
+            return "1";
+        }
+        expected
+    }
+
     #[test]
     fn no_new_privs_flag_tracks_startup_posture_in_child_processes() {
         // Never recurse when this test binary is itself the spawned child.
@@ -444,6 +455,7 @@ mod linux_flag_tests {
             (Some("external-sandbox"), "1"),
             (Some("danger-full-access"), "0"),
         ] {
+            let expected = ratchet_expectation(expected, &format!("mode {mode:?}"));
             let stdout = run_child(mode, None);
             assert!(
                 stdout.contains(&format!("NNP={expected}")),
@@ -463,6 +475,10 @@ mod linux_flag_tests {
             // Explicit falsey opts out under a narrow posture (#5413).
             ("workspace-write", "0", "0"),
         ] {
+            let expected = ratchet_expectation(
+                expected,
+                &format!("mode {mode:?} with {NO_NEW_PRIVS_ENV}={override_value}"),
+            );
             let stdout = run_child(Some(mode), Some(override_value));
             assert!(
                 stdout.contains(&format!("NNP={expected}")),
