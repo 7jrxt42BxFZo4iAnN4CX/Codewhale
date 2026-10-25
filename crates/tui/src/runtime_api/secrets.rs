@@ -221,7 +221,7 @@ fn install_account_model_access(
     }
     *access = Some(crate::config::AccountModelAccess {
         session_id: request.session_id,
-        credential: crate::credentials::Credential::ApiKey { key: request.key },
+        credential: codewhale_runtime::credentials::Credential::ApiKey { key: request.key },
         expires_at: request.expires_at,
         profile: profile.map(str::to_string),
     });
@@ -363,7 +363,7 @@ pub(super) async fn set_provider_key(
                     )?;
                 let target = credential_store.as_mut().unwrap_or(&mut store);
                 let slot = codewhale_config::credentials::provider_slot(kind_owned);
-                crate::credentials::store::with_provider_write_lock(slot, || {
+                codewhale_runtime::credentials::store::with_provider_write_lock(slot, || {
                     codewhale_config::credentials::set_provider_api_key(
                         target, &secrets, kind_owned, &key_owned,
                     )
@@ -394,7 +394,7 @@ pub(super) async fn set_provider_key(
                 }
                 config.session_provider_keys.write().insert(
                     provider_owned.clone(),
-                    (endpoint, crate::credentials::Credential::ApiKey { key }),
+                    (endpoint, codewhale_runtime::credentials::Credential::ApiKey { key }),
                 );
             } else {
                 mirror_saved_key_markers(&mut config, &provider_owned)?;
@@ -830,7 +830,7 @@ pub(super) fn credential_writeability(
         underlying.session_provider_keys = Default::default();
         matches!(
             crate::config::resolve_credential_source(&underlying, identity).source,
-            crate::credentials::CredentialSource::AccountSession
+            codewhale_runtime::credentials::CredentialSource::AccountSession
         )
     } {
         return CredentialWriteability {
@@ -957,7 +957,7 @@ pub(super) async fn clear_provider_key(
                     .map_err(|error| ApiError::internal(format!("credential store: {error}")))?;
             let target = credential_store.as_mut().unwrap_or(&mut store);
             let slot = codewhale_config::credentials::provider_slot(kind);
-            crate::credentials::store::with_provider_write_lock(slot, || {
+            codewhale_runtime::credentials::store::with_provider_write_lock(slot, || {
                 codewhale_config::credentials::clear_provider_api_key(target, &secrets, kind)
             })
             .map_err(|error| {
@@ -1271,7 +1271,7 @@ mod tests {
             .api_key = Some("manual-key".into());
         *config.account_model_access.write() = Some(crate::config::AccountModelAccess {
             session_id: "current".into(),
-            credential: crate::credentials::Credential::ApiKey {
+            credential: codewhale_runtime::credentials::Credential::ApiKey {
                 key: "cwc_fixture".into(),
             },
             expires_at: chrono::Utc::now().timestamp() + 60,

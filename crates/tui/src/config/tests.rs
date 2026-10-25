@@ -4655,7 +4655,7 @@ fn single_provider_logout_holds_the_slot_write_lock_across_config_and_store() ->
     let (held_tx, held_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel();
     let holder = std::thread::spawn(move || {
-        crate::credentials::store::with_provider_write_lock("openrouter", || {
+        codewhale_runtime::credentials::store::with_provider_write_lock("openrouter", || {
             let _ = held_tx.send(());
             let _ = release_rx.recv();
         });
@@ -4731,7 +4731,7 @@ fn full_logout_holds_every_slot_write_lock_across_config_and_store() -> Result<(
     let (held_tx, held_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel();
     let holder = std::thread::spawn(move || {
-        crate::credentials::store::with_provider_write_lock("openrouter", || {
+        codewhale_runtime::credentials::store::with_provider_write_lock("openrouter", || {
             let _ = held_tx.send(());
             let _ = release_rx.recv();
         });
@@ -15646,7 +15646,7 @@ fn remembered_model_pick_defers_to_the_configured_spelling() {
 /// slot was skipped, and why.
 #[test]
 fn picker_and_request_path_disagree_when_the_secret_slot_marker_is_missing() -> Result<()> {
-    use crate::credentials::CredentialSource;
+    use codewhale_runtime::credentials::CredentialSource;
 
     let _lock = lock_test_env();
     let temp_root = tempfile::tempdir()?;

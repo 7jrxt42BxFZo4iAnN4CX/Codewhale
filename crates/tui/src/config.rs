@@ -15,7 +15,7 @@ use serde_json::json;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-use crate::credentials::CredentialStore;
+use codewhale_runtime::credentials::CredentialStore;
 use crate::hooks::HooksConfig;
 use codewhale_runtime::audit::log_sensitive_event;
 use codewhale_runtime::features::{Feature, Features, FeaturesToml, is_known_feature_key};
@@ -1926,7 +1926,7 @@ impl TranscriptConfig {
 #[derive(Debug, Clone)]
 pub(crate) struct AccountModelAccess {
     pub(crate) session_id: String,
-    pub(crate) credential: crate::credentials::Credential,
+    pub(crate) credential: codewhale_runtime::credentials::Credential,
     pub(crate) expires_at: i64,
     pub(crate) profile: Option<String>,
 }
@@ -1947,7 +1947,7 @@ pub struct Config {
     pub(crate) session_provider_keys_only: bool,
     #[serde(skip)]
     pub(crate) session_provider_keys: std::sync::Arc<
-        parking_lot::RwLock<HashMap<ProviderIdentity, (String, crate::credentials::Credential)>>,
+        parking_lot::RwLock<HashMap<ProviderIdentity, (String, codewhale_runtime::credentials::Credential)>>,
     >,
     #[serde(skip)]
     pub(crate) required_account_model_owner: Option<String>,
@@ -5900,8 +5900,8 @@ impl Config {
     pub(crate) fn session_policy_without_key(
         &self,
         identity: &ProviderIdentity,
-    ) -> Option<crate::credentials::CredentialSource> {
-        use crate::credentials::{CredentialProbe, CredentialSource};
+    ) -> Option<codewhale_runtime::credentials::CredentialSource> {
+        use codewhale_runtime::credentials::{CredentialProbe, CredentialSource};
         if !self.session_provider_keys_only {
             return None;
         }
@@ -5991,8 +5991,8 @@ impl Config {
         }
         if let Some(source) = scoped.session_policy_without_key(identity) {
             return match source {
-                crate::credentials::CredentialSource::AuthModeNone
-                | crate::credentials::CredentialSource::KeylessRoute { .. } => Some(generation("")),
+                codewhale_runtime::credentials::CredentialSource::AuthModeNone
+                | codewhale_runtime::credentials::CredentialSource::KeylessRoute { .. } => Some(generation("")),
                 _ => None,
             };
         }
@@ -6189,15 +6189,15 @@ impl Config {
         if let Some(key) = self.session_provider_api_key(&identity) {
             return Ok((
                 key,
-                crate::credentials::CredentialSource::SessionKey
+                codewhale_runtime::credentials::CredentialSource::SessionKey
                     .label()
                     .into_owned(),
             ));
         }
         if let Some(source) = self.session_policy_without_key(&identity) {
             return match &source {
-                crate::credentials::CredentialSource::AuthModeNone
-                | crate::credentials::CredentialSource::KeylessRoute { .. } => {
+                codewhale_runtime::credentials::CredentialSource::AuthModeNone
+                | codewhale_runtime::credentials::CredentialSource::KeylessRoute { .. } => {
                     Ok((String::new(), source.label().into_owned()))
                 }
                 _ => anyhow::bail!(
@@ -11020,7 +11020,7 @@ fn save_root_api_key_for_secret_slot(
     if let Some(secrets) = credential_secret_store() {
         // Same read-modify-write as the per-provider save below; hold the slot's
         // write lock across snapshot, store write, config write, and rollback.
-        return crate::credentials::store::with_provider_write_lock(secret_slot, || {
+        return codewhale_runtime::credentials::store::with_provider_write_lock(secret_slot, || {
             let prior_secret = secrets.get(secret_slot);
             match prior_secret.as_ref() {
                 Ok(prior) => match secrets.set(secret_slot, trimmed) {
@@ -11680,8 +11680,8 @@ fn save_api_key_for_identity_unlocked(
         // so a concurrent save or logout on the same slot cannot interleave and
         // leave the secret store and the config document disagreeing. This is
         // the `modify`-is-the-only-write-path rule ported from pi-mono; see
-        // `crate::credentials::store`.
-        return crate::credentials::store::with_provider_write_lock(secret_slot, || {
+        // `codewhale_runtime::credentials::store`.
+        return codewhale_runtime::credentials::store::with_provider_write_lock(secret_slot, || {
             let prior_secret = secrets.get(secret_slot);
             match prior_secret.as_ref() {
                 Ok(prior) => match secrets.set(secret_slot, api_key) {
@@ -12201,11 +12201,11 @@ fn provider_secret_store_api_key_with_mode(
         codewhale_secrets::Secrets::auto_detect()
     };
     // Read through the credential-store trait so every read of a durable slot
-    // goes through one adapter (`crate::credentials::store`), and the value is
+    // goes through one adapter (`codewhale_runtime::credentials::store`), and the value is
     // carried as a type-tagged `Credential` rather than a bare String that can
     // drift into a log line.
     let store =
-        crate::credentials::store::SecretStoreCredentials::new(secrets, known_secret_store_slots());
+        codewhale_runtime::credentials::store::SecretStoreCredentials::new(secrets, known_secret_store_slots());
     let primary = store
         .read(provider_secret_store_slot(provider))
         .ok()
@@ -12233,7 +12233,7 @@ fn provider_secret_store_api_key_with_mode(
 /// Every durable credential slot CodeWhale knows how to write.
 ///
 /// The backing keyring exposes no key enumeration, so
-/// [`crate::credentials::store::SecretStoreCredentials::list`] is given the
+/// [`codewhale_runtime::credentials::store::SecretStoreCredentials::list`] is given the
 /// slot names to probe. Deduplicated because shared-account families collapse
 /// several providers onto one slot.
 fn known_secret_store_slots() -> Vec<String> {
@@ -12398,7 +12398,7 @@ fn clear_api_key_unlocked() -> Result<()> {
     // Same read-modify-write as the saves: hold every durable slot's write
     // lock across the config-document mutation and the store deletes so a
     // concurrent save cannot interleave and leave the two disagreeing.
-    crate::credentials::store::with_provider_write_locks(
+    codewhale_runtime::credentials::store::with_provider_write_locks(
         known_secret_store_slots(),
         clear_api_key_under_slot_locks,
     )
@@ -12471,14 +12471,14 @@ fn clear_all_provider_api_keys_from_secret_store(
     secrets: codewhale_secrets::Secrets,
 ) -> Vec<String> {
     let mut failures = Vec::new();
-    let store = crate::credentials::store::SecretStoreCredentials::new(
+    let store = codewhale_runtime::credentials::store::SecretStoreCredentials::new(
         secrets.clone(),
         known_secret_store_slots(),
     );
     // `list` enumerates the slots that actually hold something, without
     // exposing any value — the deduplication that used to live here is now the
     // slot table's job.
-    let stored: Vec<crate::credentials::CredentialInfo> = match store.list() {
+    let stored: Vec<codewhale_runtime::credentials::CredentialInfo> = match store.list() {
         Ok(stored) => stored,
         Err(error) => {
             failures.push(format!("secret store enumeration: {error}"));
@@ -12513,7 +12513,7 @@ pub fn clear_active_provider_api_key(provider: &str) -> Result<()> {
 fn clear_active_provider_api_key_unlocked(provider: &str) -> Result<()> {
     let slot = compatibility_for_id(provider).map(|row| provider_secret_store_slot(row.kind));
     match slot {
-        Some(slot) => crate::credentials::store::with_provider_write_lock(slot, || {
+        Some(slot) => codewhale_runtime::credentials::store::with_provider_write_lock(slot, || {
             clear_active_provider_api_key_under_lock(provider)
         }),
         None => clear_active_provider_api_key_under_lock(provider),
