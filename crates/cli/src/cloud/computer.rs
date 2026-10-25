@@ -537,6 +537,65 @@ pub(super) fn run<T: CloudTransport, W: Write>(
             "key": local.api_key.as_deref(), "expectedBaseUrl": local.base_url }),
         ).context("The computer could not confirm your model connection. Check that its provider endpoint matches your configured model")?;
     }
+    let mut member_connections = Vec::new();
+    if use_local_model {
+        let lead = thread["agentId"].as_str().unwrap_or("");
+        let mut connected = vec![provider.to_string()];
+        for participant in thread["group"]["participants"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|row| row["state"] == "active" && row["agentId"].as_str() != Some(lead))
+        {
+            let id = participant["agentId"]
+                .as_str()
+                .context("A group member has no whale ID. Refresh the group.")?;
+            validate_resource_id(id, "Whale")?;
+            let name = printable(participant["name"].as_str().unwrap_or("A member"));
+            let agent = account.request(HttpMethod::Get, &format!("/api/agents/{id}"), None)?;
+            let route = &agent["agent"]["configuration"]["model"];
+            let (Some(member_provider), Some(member_model)) =
+                (route["provider"].as_str(), route["model"].as_str())
+            else {
+                bail!("{name} has no saved model. Give it a configured model in Codewhale.");
+            };
+            if agent["agent"]["id"].as_str() != Some(id) {
+                bail!("The account returned a different whale for {name}.");
+            }
+            validate_model_route(member_provider, member_model)?;
+            if connected.iter().any(|done| done == member_provider) {
+                continue;
+            }
+            let kind =
+                codewhale_config::ProviderKind::parse(member_provider).with_context(|| {
+                    format!("Configure the {member_provider} provider in Codewhale for {name}.")
+                })?;
+            let member_local = config.config.resolve_runtime_options_with_secrets(
+                &codewhale_config::CliRuntimeOverrides {
+                    provider: Some(kind),
+                    model: Some(member_model.to_string()),
+                    ..Default::default()
+                },
+                secrets,
+            );
+            portable_model(&member_local, config)
+                .with_context(|| format!("{name} uses {member_provider}"))?;
+            account
+                .operation(
+                    thread_id,
+                    &computer,
+                    &runtime,
+                    "key",
+                    json!({ "provider": member_provider,
+                    "key": member_local.api_key.as_deref(), "expectedBaseUrl": member_local.base_url }),
+                )
+                .with_context(|| {
+                    format!("The computer could not confirm the {member_provider} connection for {name}")
+                })?;
+            connected.push(member_provider.to_string());
+            member_connections.push(json!({ "agentId": id, "provider": member_provider }));
+        }
+    }
     if let Some(key) = key {
         validate_api_key(&key)?;
         account.operation(
@@ -579,7 +638,8 @@ pub(super) fn run<T: CloudTransport, W: Write>(
         }
         reply
     } else if options.prepare_model {
-        json!({ "prepared": true, "provider": provider, "model": model, "backend": "memory" })
+        json!({ "prepared": true, "provider": provider, "model": model, "backend": "memory",
+            "members": member_connections })
     } else {
         detail
     };

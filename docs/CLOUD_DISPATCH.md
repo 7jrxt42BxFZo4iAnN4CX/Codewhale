@@ -63,6 +63,11 @@ with that whale: the service takes the route from the whale's saved
 configuration, and your local configuration for that provider supplies the
 memory-only key. Later `--thread` follow-ups keep using the whale's current
 saved model; a changed whale applies to the next turn, not to a running one.
+In a group conversation, a send or `--prepare-model` also connects the provider
+of each active member whose saved provider differs from the lead's, from your
+local configuration for that provider, memory-only like the lead's key. A
+member whose provider is not configured locally stops the send with that
+member's name; it is never skipped.
 
 Every send prints a replay key before submission. After an uncertain response,
 repeat the original command and prompt with `--operation-key KEY`. Keep the
