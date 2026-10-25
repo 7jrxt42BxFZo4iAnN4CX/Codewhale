@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installs provider access in the running computer's memory. Retries retain
   one operation key and the account/VM binding. Existing Agent Work dispatch
   remains available when no computer conversation is selected.
+- A delegated agent still marked running that has reported no progress for 10
+  minutes no longer holds its parent turn open: the turn's stall watchdogs can
+  recover again, and the stall record names the agent. A child's running time
+  stays unlimited; only silence counts (#6184).
 - A long draft or paste now grows the composer past its density row limit, up
   to half the screen (never less than that limit) while leaving room for the
   transcript, so the text can be read and edited before sending. While a

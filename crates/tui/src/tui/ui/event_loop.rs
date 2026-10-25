@@ -4109,6 +4109,7 @@ pub(crate) async fn run_event_loop(
                             app.agent_progress.insert(id.clone(), display.clone());
                         }
                         let meta = app.agent_progress_meta.entry(id.clone()).or_default();
+                        meta.last_progress_at = Some(Instant::now());
                         meta.parent_run_id = parent_run_id;
                         meta.spawn_depth = spawn_depth;
                         let current_tool = activity

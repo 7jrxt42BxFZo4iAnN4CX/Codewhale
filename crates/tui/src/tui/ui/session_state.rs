@@ -159,20 +159,35 @@ pub(crate) fn restore_matching_offline_queue_state(
     true
 }
 
-/// Prior-session Running rows have no live actor in this process. Elapsed
-/// time alone does not establish that a current child is stalled.
-pub(crate) fn suspect_running_agents(app: &App) -> Vec<String> {
+/// Running rows that never veto recovery: a prior-session row has no live
+/// actor in this process, and a current child silent beyond its heartbeat
+/// bound (at least `TOOL_HANG_WATCHDOG_TIMEOUT`) may have lost its terminal event (#6184).
+/// Elapsed time alone does not establish that a current child is stalled.
+pub(crate) fn suspect_running_agents(app: &App, now: Instant) -> Vec<String> {
     app.subagent_cache
         .iter()
         .filter(|agent| matches!(agent.status, SubAgentStatus::Running))
-        .filter(|agent| agent.from_prior_session)
+        .filter(|agent| {
+            agent.from_prior_session
+                || app
+                    .agent_progress_meta
+                    .get(&agent.agent_id)
+                    .and_then(|meta| meta.last_progress_at)
+                    .or(agent.started_at)
+                    .is_some_and(|at| {
+                        now.saturating_duration_since(at)
+                            > TOOL_HANG_WATCHDOG_TIMEOUT.max(Duration::from_millis(
+                                agent.heartbeat_timeout_ms.unwrap_or(0),
+                            ))
+                    })
+        })
         .map(|agent| agent.agent_id.clone())
         .collect()
 }
 
 /// Running sub-agents that still legitimately hold the turn open.
-pub(crate) fn live_running_agent_count(app: &App) -> usize {
-    let suspects = suspect_running_agents(app);
+pub(crate) fn live_running_agent_count(app: &App, now: Instant) -> usize {
+    let suspects = suspect_running_agents(app, now);
     let mut ids: std::collections::HashSet<&str> =
         app.agent_progress.keys().map(String::as_str).collect();
     for agent in app
@@ -197,10 +212,10 @@ fn held_queue_note(app: &App) -> String {
 
 /// Log, record under `crashes/`, and name a stall the UI watchdog saw.
 fn record_ui_stall(app: &App, phase: &str, since_progress: Duration, bound: Duration) {
-    let suspects = suspect_running_agents(app);
+    let suspects = suspect_running_agents(app, Instant::now());
     let detail = (!suspects.is_empty()).then(|| {
         format!(
-            "sub-agent(s) retained from a prior session, with no live actor: {}",
+            "sub-agent(s) from a prior session or with no progress for 10m, treated as suspect: {}",
             suspects.join(", ")
         )
     });
@@ -247,7 +262,7 @@ pub(crate) fn reconcile_turn_liveness_supervised(
         let text = format!("{}{}", stall.status_line(), held_queue_note(app));
         app.push_status_toast(text, StatusToastLevel::Error, None);
     }
-    let has_live_agents = live_running_agent_count(app) > 0;
+    let has_live_agents = live_running_agent_count(app, now) > 0;
     let recovered = reconcile_turn_liveness_with(app, now, has_live_agents, Some(heartbeat));
     if recovered && turn_in_progress && app.runtime_turn_status.is_none() {
         engine.cancel_with_reason(crate::core::engine::CancelReason::Stalled);
