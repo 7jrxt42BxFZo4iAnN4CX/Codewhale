@@ -58,6 +58,13 @@ pub(crate) struct ComputerOptions {
     pub prepare_model: bool,
     #[arg(long, hide = true)]
     pub expected_account: Option<String>,
+    #[arg(
+        long,
+        value_name = "AGENT_ID",
+        conflicts_with_all = ["thread", "cloud_provider", "cloud_model"],
+        help = "Start a cloud conversation with this whale, using its saved model"
+    )]
+    pub whale: Option<String>,
 }
 
 impl ComputerOptions {
@@ -73,6 +80,7 @@ impl ComputerOptions {
             || self.json
             || self.configured_model
             || self.prepare_model
+            || self.whale.is_some()
     }
 }
 
@@ -169,7 +177,7 @@ pub(super) fn run<T: CloudTransport, W: Write>(
     config: &ConfigStore,
     secrets: &Secrets,
 ) -> Result<()> {
-    let local = config.config.resolve_runtime_options_with_secrets(
+    let mut local = config.config.resolve_runtime_options_with_secrets(
         &codewhale_config::CliRuntimeOverrides::default(),
         secrets,
     );
@@ -242,13 +250,13 @@ pub(super) fn run<T: CloudTransport, W: Write>(
     if options.thread.is_none() && prompt.is_empty() {
         bail!("Give a task to dispatch, or continue with --thread <id>.");
     }
+    if let Some(value) = &options.whale {
+        validate_resource_id(value, "Whale")?;
+    }
     let use_local_model = options.cloud_provider.is_none()
         && !options.key_stdin
         && (!prompt.is_empty() || options.prepare_model);
-    if use_local_model {
-        portable_model(&local, config)?;
-    }
-    if options.thread.is_none() && options.cloud_provider.is_none() {
+    if options.thread.is_none() && options.cloud_provider.is_none() && options.whale.is_none() {
         options.cloud_provider = Some(local.provider.as_str().to_string());
         options.cloud_model = Some(local.model.clone());
     }
@@ -316,6 +324,49 @@ pub(super) fn run<T: CloudTransport, W: Write>(
             bail!("This account conversation is unavailable.");
         }
     }
+    let whale_id = options.whale.clone().or_else(|| {
+        thread["agentId"]
+            .as_str()
+            .filter(|id| !id.is_empty() && thread["agentFleetRevision"].as_u64().is_some())
+            .map(str::to_string)
+    });
+    let whale_route = match &whale_id {
+        Some(id) => {
+            validate_resource_id(id, "Whale")?;
+            let agent = account.request(HttpMethod::Get, &format!("/api/agents/{id}"), None)?;
+            let route = &agent["agent"]["configuration"]["model"];
+            match (route["provider"].as_str(), route["model"].as_str()) {
+                (Some(provider), Some(model)) if agent["agent"]["id"].as_str() == Some(id) => {
+                    validate_model_route(provider, model)?;
+                    Some((provider.to_string(), model.to_string()))
+                }
+                _ => bail!(
+                    "This whale has no saved model. Give it a configured model in Codewhale before dispatching."
+                ),
+            }
+        }
+        None => None,
+    };
+    if let Some((provider, model)) = &whale_route
+        && (use_local_model || options.prepare_model)
+    {
+        let kind = codewhale_config::ProviderKind::parse(provider).with_context(|| {
+            format!(
+                "Configure the {provider} provider in Codewhale before dispatching to this whale."
+            )
+        })?;
+        local = config.config.resolve_runtime_options_with_secrets(
+            &codewhale_config::CliRuntimeOverrides {
+                provider: Some(kind),
+                model: Some(model.clone()),
+                ..Default::default()
+            },
+            secrets,
+        );
+        portable_model(&local, config)?;
+    } else if use_local_model {
+        portable_model(&local, config)?;
+    }
     let selected = if options.computer.is_none() && options.thread.is_none() {
         let list = account.request(HttpMethod::Get, "/api/computers", None)?;
         let machines = list["computers"]
@@ -369,7 +420,7 @@ pub(super) fn run<T: CloudTransport, W: Write>(
     }
     if options.thread.is_none() {
         let value = account.request(HttpMethod::Post, "/v1/threads", Some(json!({
-            "title": prompt.chars().take(120).collect::<String>(), "agentId": "", "computerId": computer,
+            "title": prompt.chars().take(120).collect::<String>(), "agentId": whale_id.as_deref().unwrap_or(""), "computerId": computer,
             "productMode": "chat", "mode": "chat", "billingMode": "byok_external", "requiresByok": true,
             "modelProvider": options.cloud_provider, "model": options.cloud_model, "operationKey": operation_key,
         })))?;
@@ -427,6 +478,7 @@ pub(super) fn run<T: CloudTransport, W: Write>(
     let provider = options
         .cloud_provider
         .as_deref()
+        .or(whale_route.as_ref().map(|(provider, _)| provider.as_str()))
         .or_else(|| latest.and_then(|turn| turn["effective_provider"].as_str()))
         .or_else(|| {
             latest_id
@@ -438,6 +490,7 @@ pub(super) fn run<T: CloudTransport, W: Write>(
     let model = options
         .cloud_model
         .as_deref()
+        .or(whale_route.as_ref().map(|(_, model)| model.as_str()))
         .or_else(|| latest.and_then(|turn| turn["effective_model"].as_str()))
         .or_else(|| {
             latest_id
@@ -446,7 +499,7 @@ pub(super) fn run<T: CloudTransport, W: Write>(
                 .flatten()
         })
         .unwrap_or("");
-    let provider_id = if options.cloud_provider.is_some() {
+    let provider_id = if options.cloud_provider.is_some() || whale_route.is_some() {
         None
     } else {
         latest
