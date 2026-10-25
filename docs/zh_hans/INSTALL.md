@@ -764,7 +764,7 @@ v0.10.0 的已知 bug。bash 和 fish 没问题。
 | Windows | arm64 | `codewhale-windows-arm64.exe`, `codew-windows-arm64.exe` | ✅ | ✅ |
 | Linux x64 或 arm64 上的 musl（Alpine） | 原生架构 | 匹配的静态 Linux 资源 | ✅（静态） | ✅ |
 | 其他 Linux（其他架构上的 musl） | — | 从源码构建 | ❌¹ | ✅² |
-| FreeBSD 14+ / OpenBSD | x64, arm64 | `cargo install codewhale-cli --locked`（无预编译；见 § FreeBSD） | ❌ | ✅² |
+| FreeBSD 14+ | x64, arm64 | `cargo install codewhale-cli --locked`（无预编译；见 § FreeBSD） | ❌ | ✅² |
 
 ¹ npm 包会以明确的错误退出，并引导你到这里。
 ² 前提是你的工具链能编译较新的 Rust workspace；见下文[从源码构建](#5-cargo-与从源码构建)。

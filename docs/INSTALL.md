@@ -1005,7 +1005,7 @@ v0.8.8 onward. Linux RISC-V prebuilts are temporarily paused because the locked
 | Windows | arm64 | `codewhale-windows-arm64.exe`, `codew-windows-arm64.exe` | ✅ | ✅ |
 | Linux x64 or arm64 on musl (Alpine) | native arch | matching static Linux asset | ✅ (static) | ✅ |
 | Other Linux (musl on other arches) | — | build from source | ❌¹ | ✅² |
-| FreeBSD 14+ / OpenBSD | x64, arm64 | `cargo install codewhale-cli --locked` (no prebuilt; see § FreeBSD) | ❌ | ✅² |
+| FreeBSD 14+ | x64, arm64 | `cargo install codewhale-cli --locked` (no prebuilt; see § FreeBSD) | ❌ | ✅² |
 
 ¹ The npm package will exit with a clear error and point you here.
 ² Provided your toolchain can compile a recent Rust workspace; see
