@@ -15,9 +15,9 @@ use serde_json::json;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-use codewhale_runtime::credentials::CredentialStore;
 use crate::hooks::HooksConfig;
 use codewhale_runtime::audit::log_sensitive_event;
+use codewhale_runtime::credentials::CredentialStore;
 use codewhale_runtime::features::{Feature, Features, FeaturesToml, is_known_feature_key};
 
 // Sub-agent concurrency/timeout limit constants and their clamp resolvers live
@@ -1947,7 +1947,9 @@ pub struct Config {
     pub(crate) session_provider_keys_only: bool,
     #[serde(skip)]
     pub(crate) session_provider_keys: std::sync::Arc<
-        parking_lot::RwLock<HashMap<ProviderIdentity, (String, codewhale_runtime::credentials::Credential)>>,
+        parking_lot::RwLock<
+            HashMap<ProviderIdentity, (String, codewhale_runtime::credentials::Credential)>,
+        >,
     >,
     #[serde(skip)]
     pub(crate) required_account_model_owner: Option<String>,
@@ -5992,7 +5994,9 @@ impl Config {
         if let Some(source) = scoped.session_policy_without_key(identity) {
             return match source {
                 codewhale_runtime::credentials::CredentialSource::AuthModeNone
-                | codewhale_runtime::credentials::CredentialSource::KeylessRoute { .. } => Some(generation("")),
+                | codewhale_runtime::credentials::CredentialSource::KeylessRoute { .. } => {
+                    Some(generation(""))
+                }
                 _ => None,
             };
         }
@@ -11020,21 +11024,23 @@ fn save_root_api_key_for_secret_slot(
     if let Some(secrets) = credential_secret_store() {
         // Same read-modify-write as the per-provider save below; hold the slot's
         // write lock across snapshot, store write, config write, and rollback.
-        return codewhale_runtime::credentials::store::with_provider_write_lock(secret_slot, || {
-            let prior_secret = secrets.get(secret_slot);
-            match prior_secret.as_ref() {
-                Ok(prior) => match secrets.set(secret_slot, trimmed) {
-                    Ok(()) => {
-                        if let Err(error) =
-                            save_root_api_key_metadata_without_plaintext(&path, table)
-                        {
-                            let current = secrets.get(secret_slot).map_err(|rollback| {
+        return codewhale_runtime::credentials::store::with_provider_write_lock(
+            secret_slot,
+            || {
+                let prior_secret = secrets.get(secret_slot);
+                match prior_secret.as_ref() {
+                    Ok(prior) => match secrets.set(secret_slot, trimmed) {
+                        Ok(()) => {
+                            if let Err(error) =
+                                save_root_api_key_metadata_without_plaintext(&path, table)
+                            {
+                                let current = secrets.get(secret_slot).map_err(|rollback| {
                         anyhow::anyhow!(
                             "{error}; additionally could not verify secret-store rollback for {secret_slot}: {rollback}"
                         )
                     })?;
-                            if current.as_deref() == Some(trimmed) {
-                                match prior {
+                                if current.as_deref() == Some(trimmed) {
+                                    match prior {
                             Some(previous) => secrets.set(secret_slot, previous),
                             None => secrets.delete(secret_slot),
                         }
@@ -11043,28 +11049,31 @@ fn save_root_api_key_for_secret_slot(
                                 "{error}; additionally failed to restore prior secret-store state for {secret_slot}: {rollback}"
                             )
                         })?;
+                                }
+                                return Err(error);
                             }
-                            return Err(error);
+                            codewhale_config::scrub_plaintext_api_keys_from_config_backup(&path)?;
+                            let backend = secrets.backend_name().to_string();
+                            log_sensitive_event(
+                                "credential.save",
+                                json!({
+                                    "backend": backend.clone(),
+                                    "config_path": path.display().to_string(),
+                                    "plaintext_config_fallback": false,
+                                }),
+                            );
+                            Ok(SavedCredential::KeyringAndConfigFile { backend, path })
                         }
-                        codewhale_config::scrub_plaintext_api_keys_from_config_backup(&path)?;
-                        let backend = secrets.backend_name().to_string();
-                        log_sensitive_event(
-                            "credential.save",
-                            json!({
-                                "backend": backend.clone(),
-                                "config_path": path.display().to_string(),
-                                "plaintext_config_fallback": false,
-                            }),
-                        );
-                        Ok(SavedCredential::KeyringAndConfigFile { backend, path })
-                    }
-                    Err(err) => Err(plaintext_credential_fallback_refused("write", &path, &err)),
-                },
-                Err(error) => Err(plaintext_credential_fallback_refused(
-                    "snapshot", &path, &error,
-                )),
-            }
-        });
+                        Err(err) => {
+                            Err(plaintext_credential_fallback_refused("write", &path, &err))
+                        }
+                    },
+                    Err(error) => Err(plaintext_credential_fallback_refused(
+                        "snapshot", &path, &error,
+                    )),
+                }
+            },
+        );
     }
 
     let path = save_api_key_to_config_file(trimmed, table)?;
@@ -11681,54 +11690,63 @@ fn save_api_key_for_identity_unlocked(
         // leave the secret store and the config document disagreeing. This is
         // the `modify`-is-the-only-write-path rule ported from pi-mono; see
         // `codewhale_runtime::credentials::store`.
-        return codewhale_runtime::credentials::store::with_provider_write_lock(secret_slot, || {
-            let prior_secret = secrets.get(secret_slot);
-            match prior_secret.as_ref() {
-                Ok(prior) => match secrets.set(secret_slot, api_key) {
-                    Ok(()) => {
-                        let config_result = crate::config_persistence::mutate_config_document(
-                            &config_path,
-                            |doc| {
-                                if pin_kimi_code_base_url {
+        return codewhale_runtime::credentials::store::with_provider_write_lock(
+            secret_slot,
+            || {
+                let prior_secret = secrets.get(secret_slot);
+                match prior_secret.as_ref() {
+                    Ok(prior) => match secrets.set(secret_slot, api_key) {
+                        Ok(()) => {
+                            let config_result = crate::config_persistence::mutate_config_document(
+                                &config_path,
+                                |doc| {
+                                    if pin_kimi_code_base_url {
+                                        crate::config_persistence::set_document_value(
+                                            doc,
+                                            &["providers", key_inside, "base_url"],
+                                            DEFAULT_KIMI_CODE_BASE_URL,
+                                        )?;
+                                    }
                                     crate::config_persistence::set_document_value(
                                         doc,
-                                        &["providers", key_inside, "base_url"],
-                                        DEFAULT_KIMI_CODE_BASE_URL,
+                                        &["providers", key_inside, "auth_mode"],
+                                        "api_key",
                                     )?;
-                                }
-                                crate::config_persistence::set_document_value(
-                                    doc,
-                                    &["providers", key_inside, "auth_mode"],
-                                    "api_key",
-                                )?;
-                                crate::config_persistence::unset_document_value(
-                                    doc,
-                                    &["providers", key_inside, "external_credentials"],
-                                )?;
-                                if matches!(provider, ProviderKind::Xai | ProviderKind::Anthropic) {
                                     crate::config_persistence::unset_document_value(
                                         doc,
-                                        &["providers", key_inside, "oauth_credential_generation"],
+                                        &["providers", key_inside, "external_credentials"],
                                     )?;
-                                }
-                                crate::config_persistence::unset_document_value(
-                                    doc,
-                                    &["providers", key_inside, "api_key"],
-                                )?;
-                                Ok(())
-                            },
-                        )
-                        .with_context(|| {
-                            format!("Failed to write config to {}", config_path.display())
-                        });
-                        if let Err(error) = config_result {
-                            let current = secrets.get(secret_slot).map_err(|rollback| {
+                                    if matches!(
+                                        provider,
+                                        ProviderKind::Xai | ProviderKind::Anthropic
+                                    ) {
+                                        crate::config_persistence::unset_document_value(
+                                            doc,
+                                            &[
+                                                "providers",
+                                                key_inside,
+                                                "oauth_credential_generation",
+                                            ],
+                                        )?;
+                                    }
+                                    crate::config_persistence::unset_document_value(
+                                        doc,
+                                        &["providers", key_inside, "api_key"],
+                                    )?;
+                                    Ok(())
+                                },
+                            )
+                            .with_context(|| {
+                                format!("Failed to write config to {}", config_path.display())
+                            });
+                            if let Err(error) = config_result {
+                                let current = secrets.get(secret_slot).map_err(|rollback| {
                         anyhow::anyhow!(
                             "{error}; additionally could not verify secret-store rollback for {secret_slot}: {rollback}"
                         )
                     })?;
-                            if current.as_deref() == Some(api_key) {
-                                match prior {
+                                if current.as_deref() == Some(api_key) {
+                                    match prior {
                             Some(previous) => secrets.set(secret_slot, previous),
                             None => secrets.delete(secret_slot),
                         }
@@ -11737,40 +11755,41 @@ fn save_api_key_for_identity_unlocked(
                                 "{error}; additionally failed to restore prior secret-store state for {secret_slot}: {rollback}"
                             )
                         })?;
+                                }
+                                return Err(error);
                             }
-                            return Err(error);
+                            codewhale_config::scrub_plaintext_api_keys_from_config_backup(
+                                &config_path,
+                            )?;
+                            let backend = secrets.backend_name().to_string();
+                            log_sensitive_event(
+                                "credential.save",
+                                json!({
+                                    "backend": backend.clone(),
+                                    "provider": identity.key,
+                                    "config_path": config_path.display().to_string(),
+                                    "plaintext_config_fallback": false,
+                                }),
+                            );
+                            Ok(SavedCredential::KeyringAndConfigFile {
+                                backend,
+                                path: config_path,
+                            })
                         }
-                        codewhale_config::scrub_plaintext_api_keys_from_config_backup(
+                        Err(err) => Err(plaintext_credential_fallback_refused(
+                            "write",
                             &config_path,
-                        )?;
-                        let backend = secrets.backend_name().to_string();
-                        log_sensitive_event(
-                            "credential.save",
-                            json!({
-                                "backend": backend.clone(),
-                                "provider": identity.key,
-                                "config_path": config_path.display().to_string(),
-                                "plaintext_config_fallback": false,
-                            }),
-                        );
-                        Ok(SavedCredential::KeyringAndConfigFile {
-                            backend,
-                            path: config_path,
-                        })
-                    }
-                    Err(err) => Err(plaintext_credential_fallback_refused(
-                        "write",
+                            &err,
+                        )),
+                    },
+                    Err(error) => Err(plaintext_credential_fallback_refused(
+                        "snapshot",
                         &config_path,
-                        &err,
+                        &error,
                     )),
-                },
-                Err(error) => Err(plaintext_credential_fallback_refused(
-                    "snapshot",
-                    &config_path,
-                    &error,
-                )),
-            }
-        });
+                }
+            },
+        );
     }
 
     // Edit the `[providers.<name>]` table in place so unrelated sections,
@@ -12204,8 +12223,10 @@ fn provider_secret_store_api_key_with_mode(
     // goes through one adapter (`codewhale_runtime::credentials::store`), and the value is
     // carried as a type-tagged `Credential` rather than a bare String that can
     // drift into a log line.
-    let store =
-        codewhale_runtime::credentials::store::SecretStoreCredentials::new(secrets, known_secret_store_slots());
+    let store = codewhale_runtime::credentials::store::SecretStoreCredentials::new(
+        secrets,
+        known_secret_store_slots(),
+    );
     let primary = store
         .read(provider_secret_store_slot(provider))
         .ok()

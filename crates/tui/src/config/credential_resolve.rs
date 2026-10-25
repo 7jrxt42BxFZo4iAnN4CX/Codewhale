@@ -398,8 +398,8 @@ fn resolve_external_grant(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codewhale_runtime::credentials::context::MapAuthContext;
     use crate::test_support::{EnvVarGuard, lock_test_env};
+    use codewhale_runtime::credentials::context::MapAuthContext;
 
     fn deepseek_config() -> Config {
         Config {
