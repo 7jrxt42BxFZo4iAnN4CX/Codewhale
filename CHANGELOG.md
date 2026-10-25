@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The model's skills index now says when it shortens skill descriptions.
+  When a description hits the 400-char row cap, or rows are cut to fit the
+  context budget, the index ends with "descriptions shortened for N of M
+  skills" and points to `load_skill` with `name="list"` for the full text;
+  `/context report` and `/context json` show the same count on the skills entry.
+  `/skills inspect` now
+  flags a description by the same rule the index uses (#7073).
 - The TUI Terminal dock now also shows the model's shell commands for the
   session: each running or recent command is a read-only tab with its live
   output, beside the interactive shells. "No live terminals" appears only when
