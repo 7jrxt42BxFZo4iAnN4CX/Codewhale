@@ -312,9 +312,15 @@ fn unimported_foreign_warnings(
             continue;
         }
         // `CLAUDE.md` is read by the default fallback, so telling the user it
-        // "is not loaded" would be false. The opt-in is still named when the
-        // fallback is off.
-        if *format == ForeignInstructionFormat::Claude && claude_fallback_enabled() {
+        // "is not loaded" would be false — but only when a fallback candidate
+        // actually exists. `.claude/instructions.md` is not a fallback
+        // candidate, so it keeps its opt-in hint.
+        if *format == ForeignInstructionFormat::Claude
+            && claude_fallback_enabled()
+            && CLAUDE_CONTEXT_FILES
+                .iter()
+                .any(|filename| context_candidate_exists(&workspace.join(filename)))
+        {
             continue;
         }
         let direct_context_present = format

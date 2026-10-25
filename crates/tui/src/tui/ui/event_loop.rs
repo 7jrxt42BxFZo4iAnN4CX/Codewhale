@@ -1119,10 +1119,15 @@ pub async fn run_tui(
         .into_iter()
         .map(Into::into)
         .collect();
+    let instruction_budget_window = crate::route_budget::route_context_window_tokens(
+        app.api_provider,
+        app.effective_model_for_budget(),
+        app.active_route_limits,
+    ) as usize;
     match crate::project_context::startup_instruction_notice(
         &app.workspace,
         &configured_sources,
-        None,
+        Some(instruction_budget_window),
     ) {
         Ok(Some(notice)) => {
             app.add_message(HistoryCell::System { content: notice });

@@ -438,6 +438,13 @@ pub(crate) async fn run_exec_agent(
         );
     let active_route_limits =
         crate::route_budget::known_route_limits(validated_route.candidate.limits());
+    // The startup instruction notice budgets against the window this route will
+    // actually use; the 128k default exists for callers that have no route.
+    let instruction_budget_window = crate::route_budget::route_context_window_tokens(
+        effective_provider,
+        &effective_model,
+        active_route_limits,
+    ) as usize;
     let max_subagents = if max_subagents
         == config.max_subagents_for_provider(
             &config
@@ -742,8 +749,11 @@ pub(crate) async fn run_exec_agent(
         .into_iter()
         .map(Into::into)
         .collect();
-    match crate::project_context::startup_instruction_notice(&workspace, &configured_sources, None)
-    {
+    match crate::project_context::startup_instruction_notice(
+        &workspace,
+        &configured_sources,
+        Some(instruction_budget_window),
+    ) {
         Ok(Some(notice)) => {
             if output_format == ExecOutputFormat::Text && !json_output {
                 eprintln!("{notice}");

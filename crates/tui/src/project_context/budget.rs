@@ -392,7 +392,7 @@ impl std::fmt::Display for InstructionNotice {
         if self.action == InstructionAction::Trimmed {
             write!(
                 f,
-                " kept {} of {} bytes and ~{} of ~{} tokens",
+                " kept {} of {} bytes and ~{} of ~{} estimated tokens",
                 self.bytes_kept,
                 self.bytes_kept.saturating_add(self.bytes_dropped),
                 self.tokens_kept,
