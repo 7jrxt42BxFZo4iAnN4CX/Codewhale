@@ -681,7 +681,7 @@ impl TasksTool {
         context: &ToolContext,
     ) -> Result<ToolResult, ToolError> {
         crate::core::engine::tool_catalog::enforce_tool_denial(context, "task_gate_run", input)?;
-        if context.shell_policy != crate::worker_profile::ShellPolicy::Full {
+        if context.shell_policy != codewhale_agent_contract::worker_profile::ShellPolicy::Full {
             return Err(ToolError::permission_denied(
                 "Gate commands require full shell permission.",
             ));
@@ -1804,7 +1804,7 @@ mod tests {
 
         let mut context = ToolContext::new(workspace.path());
         context.approval_mode = codewhale_execpolicy::ApprovalMode::Auto;
-        context.shell_policy = crate::worker_profile::ShellPolicy::None;
+        context.shell_policy = codewhale_agent_contract::worker_profile::ShellPolicy::None;
         context.runtime.task_manager = Some(manager.clone());
 
         TasksTool::new("tasks")
@@ -1865,7 +1865,7 @@ mod tests {
     async fn timed_out_gate_run_kills_the_gate_process_tree() {
         let workspace = tempfile::tempdir().expect("workspace");
         let context = ToolContext::new(workspace.path())
-            .with_shell_policy(crate::worker_profile::ShellPolicy::Full);
+            .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::Full);
         let result = TasksTool::new("tasks")
             .execute(
                 json!({

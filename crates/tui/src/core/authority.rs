@@ -16,7 +16,7 @@ use std::path::{Component, Path, PathBuf};
 use crate::sandbox::SandboxPolicy;
 use crate::tools::canonical_action::canonical_action_alias;
 use crate::tools::spec::{ApprovalRequirement, normalize_path};
-use crate::worker_profile::ShellPolicy;
+use codewhale_agent_contract::worker_profile::ShellPolicy;
 use codewhale_config::AppMode;
 use codewhale_execpolicy::ApprovalMode;
 use serde_json::Value;

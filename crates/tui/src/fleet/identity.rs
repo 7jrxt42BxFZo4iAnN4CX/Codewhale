@@ -15,11 +15,11 @@ use codewhale_config::{
 };
 
 use super::profile::AgentProfile;
-use super::role::public_role_label;
 use super::roster::{FleetRoster, ProfileOrigin};
 use super::store::{
     FleetFile, FleetScope, MemberCapability, load_fleet_at, resolve_selected_fleet,
 };
+use codewhale_agent_contract::role::public_role_label;
 
 const MAX_IDENTITY_FIELD_CHARS: usize = 160;
 

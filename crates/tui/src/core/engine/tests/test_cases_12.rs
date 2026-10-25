@@ -889,7 +889,7 @@ fn turn_tool_registry_builder_keeps_plan_primitive_identity() {
     assert!(registry.contains("handle_read"));
     assert_eq!(
         registry.context().shell_policy,
-        crate::worker_profile::ShellPolicy::None
+        codewhale_agent_contract::worker_profile::ShellPolicy::None
     );
 }
 
@@ -1091,7 +1091,7 @@ fn plan_mode_registry_can_expose_agent_launcher_without_shell_tools() {
 #[test]
 fn mode_invariant_matrix_covers_context_catalog_subagents_and_prompt_metadata() {
     use crate::sandbox::SandboxPolicy;
-    use crate::worker_profile::ShellPolicy;
+    use codewhale_agent_contract::worker_profile::ShellPolicy;
     use ApprovalMode;
 
     #[derive(Clone, Copy)]
@@ -1496,13 +1496,13 @@ fn build_tool_context_uses_typed_shell_policy_per_mode() {
     // Plan mode is shell-free and exposes no shell tools.
     assert_eq!(
         engine.build_tool_context(AppMode::Plan, false).shell_policy,
-        crate::worker_profile::ShellPolicy::None
+        codewhale_agent_contract::worker_profile::ShellPolicy::None
     );
     assert_eq!(
         engine
             .build_tool_context(AppMode::Agent, false)
             .shell_policy,
-        crate::worker_profile::ShellPolicy::Full
+        codewhale_agent_contract::worker_profile::ShellPolicy::Full
     );
 
     config.allow_shell = false;
@@ -1511,7 +1511,7 @@ fn build_tool_context_uses_typed_shell_policy_per_mode() {
         engine
             .build_tool_context(AppMode::Agent, false)
             .shell_policy,
-        crate::worker_profile::ShellPolicy::None
+        codewhale_agent_contract::worker_profile::ShellPolicy::None
     );
 }
 
@@ -1551,7 +1551,7 @@ fn turn_tool_context_uses_planned_authority_and_route_not_installed_session() {
     let context = engine.build_tool_context_for_turn(&authority, &route);
     assert_eq!(
         context.shell_policy,
-        crate::worker_profile::ShellPolicy::Full
+        codewhale_agent_contract::worker_profile::ShellPolicy::Full
     );
     assert!(context.trust_mode);
     assert!(context.auto_approve);

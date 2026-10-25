@@ -7956,7 +7956,7 @@ impl Config {
                 if key == "default" {
                     key
                 } else {
-                    crate::fleet::role::migrate_legacy_role_token(&key)
+                    codewhale_agent_contract::role::migrate_legacy_role_token(&key)
                         .unwrap_or(&key)
                         .to_string()
                 }
@@ -7985,7 +7985,7 @@ impl Config {
             if raw == "default" {
                 raw
             } else {
-                crate::fleet::role::migrate_legacy_role_token(&raw)
+                codewhale_agent_contract::role::migrate_legacy_role_token(&raw)
                     .unwrap_or(&raw)
                     .to_string()
             }

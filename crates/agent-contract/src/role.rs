@@ -29,7 +29,7 @@ use crate::worker_profile::{ShellPolicy, ToolScope, WorkerRuntimeProfile};
 /// closed `enum` advertised on the Agent tool's `type` property. Legacy
 /// aliases are accepted only at replay/deserialization boundaries
 /// ([`migrate_legacy_role_token`]) and are never advertised to models.
-pub(crate) const FLEET_ROLE_SCHEMA_VALUES: [&str; 8] = [
+pub const FLEET_ROLE_SCHEMA_VALUES: [&str; 8] = [
     "general",
     "explore",
     "planner",
@@ -45,7 +45,7 @@ pub(crate) const FLEET_ROLE_SCHEMA_VALUES: [&str; 8] = [
 /// [`migrate_legacy_role_token`] and the `from_str` match arms; those two are
 /// the only role parser (#2649 was a second table in the spawn tool drifting
 /// from this set).
-pub(crate) const VALID_ROLE_ALIASES: &str = "general; explore; planner; reviewer; implement; test; advisor; custom \
+pub const VALID_ROLE_ALIASES: &str = "general; explore; planner; reviewer; implement; test; advisor; custom \
      (legacy aliases remain accepted: worker; scout; builder; verifier; consultant; default; general-purpose; general_purpose; exploration; explorer; plan; planning; awaiter; review; code-review; code_review; implementer; implementation; verify; verification; validator; tester; oracle)";
 
 /// Canonical Fleet role for a delegated worker, with specialized behavior
@@ -242,7 +242,7 @@ pub fn public_role_label(token: &str) -> String {
 /// The `mcp*` wildcards are load-bearing: a remote MCP server's tools arrive
 /// under a runtime-generated name, so they cannot be enumerated here and must be
 /// matched by prefix. `is_tool_denied` supports `prefix*` globs for exactly this.
-pub(crate) const NETWORK_TOOL_DENYLIST: &[&str] = &[
+pub const NETWORK_TOOL_DENYLIST: &[&str] = &[
     // Web search / fetch / browse, and the canonical family that fronts them.
     //
     // The `Web` family name itself is deliberately NOT denied. Its `search`
@@ -288,7 +288,7 @@ pub(crate) const NETWORK_TOOL_DENYLIST: &[&str] = &[
     // contract was considered and rejected: `rlm_open` chooses its source from
     // *input fields* (`file_path` / `content` / `url` / `session_object`), not
     // from the action name, and the action-policy seam
-    // ([`crate::tools::canonical_action`]) resolves names, not field shapes —
+    // (`crate::tools::canonical_action`) resolves names, not field shapes —
     // it cannot prove a source is local before execution. So this fails closed.
     // A network-denied member loses `rlm` loading and evaluation entirely,
     // including the purely local `file_path` form, and keeps only the bounded
@@ -315,7 +315,7 @@ pub(crate) const NETWORK_TOOL_DENYLIST: &[&str] = &[
 /// network axis off the resolved grant, which folds this sentinel in at
 /// resolve time — so the transport denial and the semantic answer can never
 /// disagree.
-pub(crate) const NETWORK_DENIAL_SENTINEL: &str = "fetch_url";
+pub const NETWORK_DENIAL_SENTINEL: &str = "fetch_url";
 
 /// Tool names that mutate the workspace directly.
 ///
@@ -334,7 +334,7 @@ pub(crate) const NETWORK_DENIAL_SENTINEL: &str = "fetch_url";
 /// receipt said otherwise. The rest of the family — including the local
 /// `file_path` load — survives a write denial, because reading a large file
 /// into a kernel is exactly what a read-only member is for.
-pub(crate) const MUTATING_TOOL_DENYLIST: &[&str] = &[
+pub const MUTATING_TOOL_DENYLIST: &[&str] = &[
     "write_file",
     "edit_file",
     "apply_patch",
@@ -364,9 +364,9 @@ pub(crate) const MUTATING_TOOL_DENYLIST: &[&str] = &[
 /// Denying the tools outright would take the verifier's whole purpose with
 /// them, so the *unbounded arguments* are refused at the execution seam
 /// instead; see `reject_unbounded_verification` in
-/// [`crate::tools::subagent`]. The name deny list and that guard are one
+/// `crate::tools::subagent`. The name deny list and that guard are one
 /// contract split across the only two places that can each see half of it.
-pub(crate) const RAW_SHELL_DENYLIST: &[&str] = &[
+pub const RAW_SHELL_DENYLIST: &[&str] = &[
     "Bash",
     "exec_shell",
     "exec_shell_wait",
@@ -394,17 +394,16 @@ pub(crate) const RAW_SHELL_DENYLIST: &[&str] = &[
 /// is answered by the resolved grant's `shell` axis, which distinguishes
 /// "no process surface" from "bounded verification surface" by grant field
 /// rather than by a sentinel name.
-#[cfg_attr(not(test), expect(dead_code))]
-pub(crate) const RAW_SHELL_SENTINEL: &str = "exec_shell";
+pub const RAW_SHELL_SENTINEL: &str = "exec_shell";
 
 /// The built-in verification surface: the workspace's own configured checks.
 ///
-/// Bounded in its arguments (see [`crate::tools::execution_envelope`]) but not
+/// Bounded in its arguments (see `crate::tools::execution_envelope`) but not
 /// free of consequence — every entry forks a process. A member whose shell
 /// ceiling is narrower than `full` holds no authority to start one, so this
 /// list comes off its surface entirely. A `write = false, shell = "full"`
 /// member keeps it, because running the checks is what that preset is for.
-pub(crate) const VERIFICATION_SURFACE_DENYLIST: &[&str] = &["Run", "run_tests", "run_verifiers"];
+pub const VERIFICATION_SURFACE_DENYLIST: &[&str] = &["Run", "run_tests", "run_verifiers"];
 
 /// The deny-list entry that stands for "this child holds no shell authority".
 ///
@@ -418,7 +417,7 @@ pub(crate) const VERIFICATION_SURFACE_DENYLIST: &[&str] = &["Run", "run_tests", 
 /// this sentinel into its `shell` axis at resolve time: `Verify`/`Full`
 /// collapse to `None`, while `Inspect` — classifier-bounded evidence reads,
 /// not process-start authority — survives.
-pub(crate) const SHELL_AUTHORITY_SENTINEL: &str = "run_tests";
+pub const SHELL_AUTHORITY_SENTINEL: &str = "run_tests";
 
 /// Execution primitives that are **not** spelled as shell.
 ///
@@ -427,7 +426,7 @@ pub(crate) const SHELL_AUTHORITY_SENTINEL: &str = "run_tests";
 /// a stored automation with its own cwd and prompt, `start_mcp_server` spawns a
 /// process, and `pr_attempt_*` writes durable work state. They are listed here
 /// so a write-denied child never *sees* them; the authoritative refusal is
-/// capability-derived and lives in [`crate::tools::execution_envelope`], which
+/// capability-derived and lives in `crate::tools::execution_envelope`, which
 /// also covers the ones no list can name — repository plugin tools and MCP
 /// server tools registered at runtime.
 ///
@@ -435,7 +434,7 @@ pub(crate) const SHELL_AUTHORITY_SENTINEL: &str = "run_tests";
 /// what the canonical-action seam exists for: denying `tasks` outright would
 /// take `list`/`read` with it, and durable-task bookkeeping is exactly what a
 /// read-only member should keep.
-pub(crate) const NON_SHELL_EXECUTION_DENYLIST: &[&str] = &[
+pub const NON_SHELL_EXECUTION_DENYLIST: &[&str] = &[
     "task_gate_run",
     "task_create",
     "task_cancel",
@@ -453,9 +452,8 @@ pub(crate) const NON_SHELL_EXECUTION_DENYLIST: &[&str] = &[
 /// Whether a deny rule belongs to an enforced role posture. Operator and
 /// ancestor denials are also immutable; this identifies posture rules for
 /// authority diagnostics and tests, not a child opt-out exception.
-#[cfg(test)]
 #[must_use]
-pub(crate) fn is_posture_denial(rule: &str) -> bool {
+pub fn is_posture_denial(rule: &str) -> bool {
     [
         NETWORK_TOOL_DENYLIST,
         MUTATING_TOOL_DENYLIST,
@@ -471,22 +469,22 @@ pub(crate) fn is_posture_denial(rule: &str) -> bool {
 /// A Runtime role policy intersected with the live parent and translated into
 /// the concrete knobs a child spawn actually carries.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ChildAuthority {
+pub struct ChildAuthority {
     /// The clamped ceiling. Never wider than either input.
-    pub(crate) ceiling: PermissionCeiling,
+    pub ceiling: PermissionCeiling,
     /// `Some(list)` narrows the child's model-visible surface to exactly
     /// `list`. `Some(vec![])` — the `tools = false` case — means *no tools at
     /// all*, which is what the child registry's empty-allowlist path produces.
     /// `None` means full inheritance from the parent surface.
-    pub(crate) allowed_tools: Option<Vec<String>>,
+    pub allowed_tools: Option<Vec<String>>,
     /// Names/globs the child must never see or call. Deny wins over allow.
-    pub(crate) disallowed_tools: Vec<String>,
+    pub disallowed_tools: Vec<String>,
     /// Spawn write authority implied by the clamped ceiling.
-    pub(crate) write_authority: &'static str,
+    pub write_authority: &'static str,
     /// Nested-delegation budget, clamped.
-    pub(crate) max_depth: u32,
+    pub max_depth: u32,
     /// Canonical posture role that governs the child's tool posture.
-    pub(crate) posture_role: &'static str,
+    pub posture_role: &'static str,
 }
 
 impl ChildAuthority {
@@ -495,7 +493,7 @@ impl ChildAuthority {
     /// Every field takes the more restrictive side, so a child can never widen
     /// live authority.
     #[must_use]
-    pub(crate) fn clamp(requested: PermissionCeiling, session: PermissionCeiling) -> Self {
+    pub fn clamp(requested: PermissionCeiling, session: PermissionCeiling) -> Self {
         let ceiling = requested.clamp_to(session);
 
         // `tools = false` is total: an empty allowlist leaves the child with no
@@ -602,7 +600,7 @@ impl ChildAuthority {
     /// the fail-closed error, and an operator debugging a refused launch should
     /// be able to see which side differs without a lookup table.
     #[must_use]
-    pub(crate) fn fingerprint(&self) -> String {
+    pub fn fingerprint(&self) -> String {
         let allowed = match &self.allowed_tools {
             None => "inherit".to_string(),
             Some(list) if list.is_empty() => "none".to_string(),
@@ -632,7 +630,7 @@ impl ChildAuthority {
     /// selection. Free-form semantic roles map to Runtime `custom`; neither
     /// the Fleet definition nor its legacy `permissions` key participates.
     #[must_use]
-    pub(crate) fn from_runtime_role(role: &str, session: PermissionCeiling) -> Self {
+    pub fn from_runtime_role(role: &str, session: PermissionCeiling) -> Self {
         let runtime_role = runtime_role_for_member(role);
         let requested = runtime_permission_ceiling(&runtime_role);
         let mut authority = Self::clamp(requested, session);
@@ -718,7 +716,7 @@ fn member_role_alias(token: &str) -> Option<FleetRole> {
 /// raw shell, network reads and classifier-bounded `Bash` inspection. An
 /// operator who genuinely wants "inherit whatever the parent has" spells that
 /// `custom`, which is a declared role and resolves at step 2.
-pub(crate) fn runtime_role_for_member(role: &str) -> FleetRole {
+pub fn runtime_role_for_member(role: &str) -> FleetRole {
     let token = role.trim().to_ascii_lowercase();
     if token.is_empty() {
         return FleetRole::Worker;
@@ -750,7 +748,7 @@ fn runtime_permission_ceiling(role: &FleetRole) -> PermissionCeiling {
 
 /// Intersect a worker shell policy with the session's legacy shell opt-in.
 #[must_use]
-pub(crate) fn session_shell_ceiling(shell: ShellPolicy, allow_shell: bool) -> ShellCeiling {
+pub fn session_shell_ceiling(shell: ShellPolicy, allow_shell: bool) -> ShellCeiling {
     match shell {
         ShellPolicy::None => ShellCeiling::None,
         ShellPolicy::ReadOnly => ShellCeiling::ReadOnly,
@@ -762,7 +760,7 @@ pub(crate) fn session_shell_ceiling(shell: ShellPolicy, allow_shell: bool) -> Sh
 /// Map a permission ceiling onto the canonical posture role that governs the
 /// child's tool surface.
 #[must_use]
-pub(crate) fn posture_role_for(ceiling: PermissionCeiling) -> &'static str {
+pub fn posture_role_for(ceiling: PermissionCeiling) -> &'static str {
     if !ceiling.tools {
         // No tools at all; the narrowest posture, and the allowlist is empty
         // anyway.
@@ -781,7 +779,7 @@ pub(crate) fn posture_role_for(ceiling: PermissionCeiling) -> &'static str {
 /// requested runtime profile says. Spawn narrows the child to a read-only
 /// shell for these roles, and every receipt must report that same posture.
 #[must_use]
-pub(crate) fn role_requires_read_only_shell(role: &FleetRole) -> bool {
+pub fn role_requires_read_only_shell(role: &FleetRole) -> bool {
     matches!(
         role,
         FleetRole::Scout | FleetRole::Reviewer | FleetRole::Planner
@@ -792,7 +790,7 @@ pub(crate) fn role_requires_read_only_shell(role: &FleetRole) -> bool {
 /// profile with the shell narrowed for read-only roles. Receipts and headers
 /// derive from this, never from the requested profile alone (#5542 review).
 #[must_use]
-pub(crate) fn effective_runtime_profile_for_role(
+pub fn effective_runtime_profile_for_role(
     role: &FleetRole,
     requested: &WorkerRuntimeProfile,
 ) -> WorkerRuntimeProfile {
@@ -825,7 +823,7 @@ fn tool_scope_label(tools: &ToolScope) -> &'static str {
 /// identify a saved Fleet member when one selected the role; `None` for
 /// direct role dispatches.
 #[must_use]
-pub(crate) fn fleet_effective_permissions(
+pub fn fleet_effective_permissions(
     role: &FleetRole,
     requested: &WorkerRuntimeProfile,
     profile_id: Option<&str>,

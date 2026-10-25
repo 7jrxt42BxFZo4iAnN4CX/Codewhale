@@ -145,7 +145,6 @@ mod vision;
 mod voice;
 pub mod whats_new;
 mod work_graph;
-mod worker_profile;
 mod working_set;
 mod workspace_lease;
 mod workspace_trust;

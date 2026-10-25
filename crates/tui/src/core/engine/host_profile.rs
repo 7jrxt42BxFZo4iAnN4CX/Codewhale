@@ -64,9 +64,9 @@ impl Engine {
             && self.config.features.enabled(Feature::ShellTool)
             && (!requested || backend.is_some());
         context = context.with_shell_policy(if shell {
-            crate::worker_profile::ShellPolicy::Full
+            codewhale_agent_contract::worker_profile::ShellPolicy::Full
         } else {
-            crate::worker_profile::ShellPolicy::None
+            codewhale_agent_contract::worker_profile::ShellPolicy::None
         });
         if let Some(backend) = backend {
             context = context.with_sandbox_backend(backend);
@@ -373,7 +373,7 @@ mod tests {
         assert!(build.surface.registry.get("Bash").is_none());
         assert_eq!(
             build.surface.registry.context().shell_policy,
-            crate::worker_profile::ShellPolicy::None
+            codewhale_agent_contract::worker_profile::ShellPolicy::None
         );
     }
     #[test]

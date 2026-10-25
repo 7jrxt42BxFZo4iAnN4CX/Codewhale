@@ -5,7 +5,7 @@
 use super::*;
 use crate::core::authority::shell_policy_for_mode;
 use crate::tools::AgentToolSurfaceOptions;
-use crate::worker_profile::ShellPolicy;
+use codewhale_agent_contract::worker_profile::ShellPolicy;
 
 fn should_register_remember_tool(memory_enabled: bool) -> bool {
     memory_enabled

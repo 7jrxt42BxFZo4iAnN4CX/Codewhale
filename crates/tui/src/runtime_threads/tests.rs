@@ -10010,7 +10010,7 @@ async fn worker_lifecycle_receipts_preserve_owner_outcome_and_durable_replay() -
     use crate::tools::subagent::{
         AgentWorkerSpec, AgentWorkerStatus, AgentWorkerToolProfile, FleetRole, SubAgentManager,
     };
-    use crate::worker_profile::WorkerRuntimeProfile;
+    use codewhale_agent_contract::worker_profile::WorkerRuntimeProfile;
 
     let runtime_dir = test_runtime_dir();
     let manager = test_manager(runtime_dir.clone())?;
@@ -20792,7 +20792,7 @@ async fn notices_raise_from_engine_events_and_clear_on_settle_or_ack() -> Result
     use crate::tools::subagent::{
         AgentWorkerSpec, AgentWorkerToolProfile, FleetRole, SubAgentManager,
     };
-    use crate::worker_profile::WorkerRuntimeProfile;
+    use codewhale_agent_contract::worker_profile::WorkerRuntimeProfile;
 
     let manager = test_manager(test_runtime_dir())?;
     let thread = manager

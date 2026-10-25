@@ -692,7 +692,7 @@ pub(crate) fn enforce_tool_denial(
 ) -> Result<(), ToolError> {
     let bounded_child_read = name == "bash"
         && context.owner_agent_id.is_some()
-        && context.shell_policy == crate::worker_profile::ShellPolicy::ReadOnly
+        && context.shell_policy == codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly
         && crate::tools::shell::agent_readonly_bash_input(input);
     if !bounded_child_read && tool_call_denied(Some(&context.disallowed_tools), name, input) {
         return Err(ToolError::permission_denied(format!(

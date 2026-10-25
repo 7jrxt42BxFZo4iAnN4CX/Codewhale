@@ -46,15 +46,15 @@ use codewhale_workflow::{
     router_call_plan, router_system_prompt, router_user_message,
 };
 
-use super::role::{ChildAuthority, public_role_label};
-#[cfg(test)]
-use super::role::{
-    NETWORK_DENIAL_SENTINEL, NETWORK_TOOL_DENYLIST, RAW_SHELL_SENTINEL, is_posture_denial,
-    session_shell_ceiling,
-};
 use crate::config::{Config, ProviderKind};
 use crate::llm_client::LlmClient;
 use crate::reasoning_preference::ReasoningEffort;
+use codewhale_agent_contract::role::{ChildAuthority, public_role_label};
+#[cfg(test)]
+use codewhale_agent_contract::role::{
+    NETWORK_DENIAL_SENTINEL, NETWORK_TOOL_DENYLIST, RAW_SHELL_SENTINEL, is_posture_denial,
+    session_shell_ceiling,
+};
 use codewhale_models::Role;
 
 /// Where exact Fleet definitions and Reasoning Router profiles are looked up,
@@ -1795,7 +1795,10 @@ mod shell_ceiling_tests {
         );
         assert_eq!(planner_parent_shell_off.posture_role, "planner");
         assert_eq!(
-            session_shell_ceiling(crate::worker_profile::ShellPolicy::Full, false),
+            session_shell_ceiling(
+                codewhale_agent_contract::worker_profile::ShellPolicy::Full,
+                false
+            ),
             ShellCeiling::None
         );
     }

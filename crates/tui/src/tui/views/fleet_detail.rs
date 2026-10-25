@@ -24,7 +24,6 @@ use ratatui::{
 };
 
 use crate::config::Config;
-use crate::fleet::role::public_role_label;
 use crate::fleet::store::{
     FleetFile, FleetMember, FleetOperator, FleetScope, MemberCapability, load_fleet_in_scope,
     save_fleet, set_selected,
@@ -34,6 +33,7 @@ use crate::tui::menu_style;
 use crate::tui::views::{
     ActionHint, ModalKind, ModalView, ViewAction, ViewEvent, render_modal_footer,
 };
+use codewhale_agent_contract::role::public_role_label;
 use codewhale_localization::{Locale, MessageId, tr};
 use codewhale_palette as palette;
 

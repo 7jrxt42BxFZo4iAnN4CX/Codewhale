@@ -2,8 +2,8 @@ use super::*;
 use crate::config::ProviderKind;
 use crate::fleet::roster::FleetRoster;
 use crate::tools::{AgentToolSurfaceOptions, ToolRegistryBuilder};
-use crate::worker_profile::ShellPolicy;
 use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing::post};
+use codewhale_agent_contract::worker_profile::ShellPolicy;
 use std::collections::HashSet;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -744,7 +744,7 @@ async fn explicit_read_only_general_can_inspect_git_but_cannot_mutate() {
     assert!(registry.unavailable_allowed_tools().is_empty());
     assert_ne!(
         registry.grant.files,
-        crate::worker_profile::FileGrant::Write
+        codewhale_agent_contract::worker_profile::FileGrant::Write
     );
     for command in ["pwd", "git status --short", "git log --oneline -1"] {
         let output = registry
@@ -3392,9 +3392,9 @@ fn test_implementer_and_verifier_have_distinct_prompts() {
     // The whole point of adding the types is that they carry distinct
     // posture. Defensive guard: catch the easy bug where copy-paste
     // leaves two new variants with the same prompt as `Worker`.
-    let implementer = FleetRole::Builder.system_prompt();
-    let verifier = FleetRole::Verifier.system_prompt();
-    let general = FleetRole::Worker.system_prompt();
+    let implementer = role_system_prompt(&FleetRole::Builder);
+    let verifier = role_system_prompt(&FleetRole::Verifier);
+    let general = role_system_prompt(&FleetRole::Worker);
     assert_ne!(
         implementer, general,
         "Implementer prompt must differ from General"
@@ -3434,7 +3434,7 @@ fn test_agent_type_prompts_include_shared_output_contract_once() {
         (FleetRole::Verifier, "Fleet verifier"),
         (FleetRole::Custom, "custom Fleet worker"),
     ] {
-        let prompt = agent_type.system_prompt();
+        let prompt = role_system_prompt(&agent_type);
         assert!(prompt.contains(marker));
         // Every role shares the parseable output-contract spine exactly once.
         assert_eq!(
@@ -3467,7 +3467,7 @@ fn test_agent_type_prompts_include_shared_output_contract_once() {
 
 #[test]
 fn explore_prompt_orients_before_searching() {
-    let prompt = FleetRole::Scout.system_prompt();
+    let prompt = role_system_prompt(&FleetRole::Scout);
     assert!(prompt.contains("role: `scout`"));
     assert!(prompt.contains("AGENTS.md/README"));
     assert!(prompt.contains("workspace/project root"));
@@ -3476,7 +3476,7 @@ fn explore_prompt_orients_before_searching() {
 
 #[test]
 fn explore_prompt_requires_evidence_and_read_only_scope() {
-    let prompt = FleetRole::Scout.system_prompt();
+    let prompt = role_system_prompt(&FleetRole::Scout);
     assert!(prompt.contains("Gather enough evidence to answer the assigned question reliably"));
     assert!(prompt.contains("there is no per-agent call cap to save"));
     assert!(prompt.contains("strictly read-only"));
@@ -3489,14 +3489,14 @@ fn explore_prompt_requires_evidence_and_read_only_scope() {
     assert!(prompt.contains("allowed read-only inspection subset"));
     assert!(prompt.contains("`git log -n 5`"));
     assert!(!prompt.contains("use RLM"));
-    let reviewer = FleetRole::Reviewer.system_prompt();
+    let reviewer = role_system_prompt(&FleetRole::Reviewer);
     assert!(reviewer.contains("allowed read-only navigation/rg"));
     assert!(reviewer.contains("shell control actions are unavailable"));
 }
 
 #[test]
 fn implementer_prompt_is_not_forced_into_explorer_cap() {
-    let prompt = FleetRole::Builder.system_prompt();
+    let prompt = role_system_prompt(&FleetRole::Builder);
     assert!(!prompt.contains("3-5 tool-call cap"));
     assert!(prompt.contains("Checkpoint before expanding scope"));
     assert!(!prompt.contains("Default to `EFFORT: quick`"));
@@ -3504,11 +3504,11 @@ fn implementer_prompt_is_not_forced_into_explorer_cap() {
 
 #[test]
 fn role_prompts_use_lowercase_primitive_contract() {
-    let explore = FleetRole::Scout.system_prompt();
+    let explore = role_system_prompt(&FleetRole::Scout);
     assert!(explore.contains("Use `read` for bounded file reads"));
     assert!(explore.contains("`bash` only for the allowed read-only"));
 
-    let implementer = FleetRole::Builder.system_prompt();
+    let implementer = role_system_prompt(&FleetRole::Builder);
     assert!(implementer.contains("Use `edit` for precise unique replacements"));
     assert!(implementer.contains("`write` for whole-file changes"));
     assert!(implementer.contains("discover `apply_patch`"));
@@ -3525,8 +3525,8 @@ fn role_prompts_use_lowercase_primitive_contract() {
 
 #[test]
 fn review_and_verifier_prompts_stop_after_decisive_evidence() {
-    let review = FleetRole::Reviewer.system_prompt();
-    let verifier = FleetRole::Verifier.system_prompt();
+    let review = role_system_prompt(&FleetRole::Reviewer);
+    let verifier = role_system_prompt(&FleetRole::Verifier);
     assert!(review.contains("stop after decisive evidence"));
     assert!(review.contains("private `todo_write` list as editable working notes"));
     assert!(verifier.contains("stop after decisive pass/fail evidence"));
@@ -7552,7 +7552,9 @@ fn role_grants_block_writes_and_raw_shell_for_read_only_roles() {
     // never hold write authority, regardless of parent auto-approval, and the
     // bounded shell grants are exactly Inspect (evidence reads) and Verify
     // (the workspace's own checks).
-    use crate::worker_profile::{ChildGrant, FileGrant, ShellGrant, ToolSurface};
+    use codewhale_agent_contract::worker_profile::{
+        ChildGrant, FileGrant, ShellGrant, ToolSurface,
+    };
     let full_parent = WorkerRuntimeProfile::for_role(FleetRole::Worker);
 
     for role in [
@@ -7613,7 +7615,7 @@ fn role_grants_block_writes_and_raw_shell_for_read_only_roles() {
 /// visible. Asserted against the real child registry.
 #[tokio::test]
 async fn issue_5633_catalog_and_dispatch_are_one_grant() {
-    use crate::worker_profile::{FileGrant, ShellGrant};
+    use codewhale_agent_contract::worker_profile::{FileGrant, ShellGrant};
     for role in FleetRole::all() {
         let tmp = tempdir().expect("tempdir");
         let mut runtime =
@@ -8240,10 +8242,11 @@ fn an_explicit_parent_tool_scope_is_enforced_by_the_child_registry() {
     let mut runtime =
         stub_runtime().with_agent_tool_surface_options(enabled_agent_surface_options());
     runtime.context = ToolContext::new(tmp.path().to_path_buf());
-    runtime.worker_profile.tools = crate::worker_profile::ToolScope::Explicit(vec![
-        "read_file".to_string(),
-        "grep_files".to_string(),
-    ]);
+    runtime.worker_profile.tools =
+        codewhale_agent_contract::worker_profile::ToolScope::Explicit(vec![
+            "read_file".to_string(),
+            "grep_files".to_string(),
+        ]);
 
     let registry = ChildCoreProbe::new(
         runtime,
@@ -8274,7 +8277,7 @@ fn an_explicit_parent_tool_scope_is_enforced_by_the_child_registry() {
 /// outside it, however it asks.
 #[test]
 fn a_child_allowlist_cannot_widen_an_explicit_parent_tool_scope() {
-    let parent = crate::worker_profile::ToolScope::Explicit(vec![
+    let parent = codewhale_agent_contract::worker_profile::ToolScope::Explicit(vec![
         "read_file".to_string(),
         "File".to_string(),
     ]);
@@ -8302,13 +8305,16 @@ fn a_child_allowlist_cannot_widen_an_explicit_parent_tool_scope() {
     // An unrestricted parent leaves the child's request untouched.
     assert_eq!(
         intersect_explicit_tool_scope(
-            &crate::worker_profile::ToolScope::Inherit,
+            &codewhale_agent_contract::worker_profile::ToolScope::Inherit,
             Some(vec!["exec_shell".to_string()])
         ),
         Some(vec!["exec_shell".to_string()]),
     );
     assert_eq!(
-        intersect_explicit_tool_scope(&crate::worker_profile::ToolScope::Inherit, None),
+        intersect_explicit_tool_scope(
+            &codewhale_agent_contract::worker_profile::ToolScope::Inherit,
+            None
+        ),
         None
     );
 }
@@ -8966,7 +8972,7 @@ fn subagent_feature_gates_match_parent_agent_surface() {
 /// deny list via `allows_bounded_readonly_bash`, so seeding the rule is what
 /// makes these tests exercise the carve-out rather than an absent denial.
 fn seed_read_only_role_deny_list(runtime: &mut SubAgentRuntime) {
-    use crate::fleet::role::{MUTATING_TOOL_DENYLIST, RAW_SHELL_DENYLIST};
+    use codewhale_agent_contract::role::{MUTATING_TOOL_DENYLIST, RAW_SHELL_DENYLIST};
     for rule in RAW_SHELL_DENYLIST
         .iter()
         .chain(MUTATING_TOOL_DENYLIST.iter())
@@ -21078,7 +21084,7 @@ async fn child_work_state_publishes_only_real_changes_from_its_own_list() {
 #[test]
 fn an_exact_member_with_tools_false_gets_no_model_tools_at_all() {
     let tmp = tempdir().expect("tempdir");
-    let authority = crate::fleet::role::ChildAuthority::clamp(
+    let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
         codewhale_workflow::PermissionCeiling::ROUTER,
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -21116,7 +21122,7 @@ fn an_exact_member_with_tools_false_gets_no_model_tools_at_all() {
 #[tokio::test]
 async fn an_exact_member_without_a_network_tool_really_loses_the_network_surface() {
     let tmp = tempdir().expect("tempdir");
-    let authority = crate::fleet::role::ChildAuthority::clamp(
+    let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
         codewhale_workflow::PermissionCeiling::preset("read_write").expect("preset"),
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -21304,7 +21310,8 @@ async fn a_read_only_inspection_member_gets_only_bounded_web_search() {
         delegation_depth: codewhale_config::DEFAULT_SPAWN_DEPTH,
         tools: true,
     };
-    let authority = crate::fleet::role::ChildAuthority::from_runtime_role("scout", parent);
+    let authority =
+        codewhale_agent_contract::role::ChildAuthority::from_runtime_role("scout", parent);
     assert_eq!(authority.posture_role, "explore");
     assert!(!authority.ceiling.network_tool);
 
@@ -21369,7 +21376,7 @@ async fn a_read_only_inspection_member_gets_only_bounded_web_search() {
     );
 
     // A Runtime builder under a full parent keeps the whole family.
-    let full_authority = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let full_authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "builder",
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -21412,7 +21419,7 @@ async fn a_read_only_inspection_member_gets_only_bounded_web_search() {
 #[test]
 fn the_unified_rlm_action_cannot_bypass_a_denied_alias() {
     let tmp = tempdir().expect("tempdir");
-    let authority = crate::fleet::role::ChildAuthority::clamp(
+    let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
         codewhale_workflow::PermissionCeiling::preset("read_write").expect("preset"),
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -21664,7 +21671,7 @@ async fn a_parent_read_only_session_narrows_a_full_exact_member_in_the_child_reg
         delegation_depth: 0,
         tools: true,
     };
-    let authority = crate::fleet::role::ChildAuthority::clamp(
+    let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
         session,
     );
@@ -21772,7 +21779,7 @@ fn the_session_ceiling_reflects_the_live_parent_posture() {
 /// The child registry a Runtime verifier under a full parent actually runs with.
 fn read_only_with_shell_registry() -> (tempfile::TempDir, ChildCoreProbe) {
     let tmp = tempdir().expect("tempdir");
-    let authority = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "verifier",
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -21832,7 +21839,7 @@ fn shell_denial_from_parent_is_not_a_read_only_role_exception() {
             if explicit_rule.is_some() {
                 assert_eq!(
                     registry.grant.shell,
-                    crate::worker_profile::ShellGrant::None
+                    codewhale_agent_contract::worker_profile::ShellGrant::None
                 );
                 assert!(!registry.is_tool_allowed("bash"));
             }
@@ -22072,7 +22079,7 @@ fn bounded_read_only_and_verification_paths_survive_the_ceiling() {
 #[test]
 fn a_write_capable_member_keeps_every_execution_gate() {
     let tmp = tempdir().expect("tempdir");
-    let authority = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "builder",
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -22148,7 +22155,7 @@ fn the_durable_work_families_resolve_their_actions_through_the_policy_seam() {
 /// Legacy opt-out inputs cannot relax role or operator ceilings.
 #[test]
 fn posture_denials_survive_a_child_that_declines_to_inherit() {
-    let authority = crate::fleet::role::ChildAuthority::clamp(
+    let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
         codewhale_workflow::PermissionCeiling::preset("read_write").expect("preset"),
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -22183,12 +22190,12 @@ fn posture_denials_survive_a_child_that_declines_to_inherit() {
         "operator rules also remain a ceiling; got {child:?}"
     );
     assert!(
-        !crate::fleet::role::is_posture_denial("some_session_preference"),
+        !codewhale_agent_contract::role::is_posture_denial("some_session_preference"),
         "only ceiling-derived rules are sealed"
     );
-    for name in crate::fleet::role::NON_SHELL_EXECUTION_DENYLIST {
+    for name in codewhale_agent_contract::role::NON_SHELL_EXECUTION_DENYLIST {
         assert!(
-            crate::fleet::role::is_posture_denial(name),
+            codewhale_agent_contract::role::is_posture_denial(name),
             "{name} is installed by a ceiling and must be sealed"
         );
     }
@@ -22203,7 +22210,8 @@ fn posture_denials_survive_a_child_that_declines_to_inherit() {
 fn the_authority_fingerprint_distinguishes_every_envelope_it_names() {
     let session = codewhale_workflow::PermissionCeiling::preset("full").expect("preset");
     let fingerprint = |role: &str| {
-        crate::fleet::role::ChildAuthority::from_runtime_role(role, session).fingerprint()
+        codewhale_agent_contract::role::ChildAuthority::from_runtime_role(role, session)
+            .fingerprint()
     };
 
     let mut seen = HashSet::new();
@@ -22227,7 +22235,7 @@ fn the_authority_fingerprint_distinguishes_every_envelope_it_names() {
     assert_eq!(fingerprint("verifier"), fingerprint("verifier"));
     // The parent posture is part of it: the same Runtime role under a narrower
     // parent is a different envelope.
-    let narrow = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let narrow = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "builder",
         codewhale_workflow::PermissionCeiling::preset("read_only").expect("preset"),
     );
@@ -22239,7 +22247,7 @@ fn the_authority_fingerprint_distinguishes_every_envelope_it_names() {
 /// is not enforced authority.
 #[test]
 fn the_spawn_boundary_fails_closed_on_a_missing_or_mismatched_authority() {
-    let authority = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "verifier",
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -22301,7 +22309,7 @@ fn the_spawn_boundary_fails_closed_on_a_missing_or_mismatched_authority() {
 /// and that fingerprint is what the spawn boundary accepts.
 #[test]
 fn the_launched_authority_is_the_one_the_spawn_boundary_accepts() {
-    let authority = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "auditor",
         codewhale_workflow::PermissionCeiling::preset("analyst").expect("preset"),
     );
@@ -22323,7 +22331,7 @@ fn the_launched_authority_is_the_one_the_spawn_boundary_accepts() {
         .expect("the launched envelope must satisfy its own receipt");
 
     // A different member's envelope must not satisfy it.
-    let other = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let other = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "builder",
         codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
     );
@@ -26507,9 +26515,10 @@ fn agent_tool_description_names_only_schema_roles() {
     // sentence must be a value the `type` enum accepts; the legacy aliases
     // parse at the deserialization boundary but a strict gateway rejects
     // them against the declared enum (#5940).
-    let schema: std::collections::HashSet<&str> = crate::fleet::role::FLEET_ROLE_SCHEMA_VALUES
-        .into_iter()
-        .collect();
+    let schema: std::collections::HashSet<&str> =
+        codewhale_agent_contract::role::FLEET_ROLE_SCHEMA_VALUES
+            .into_iter()
+            .collect();
     let texts = [
         super::AGENT_TOOL_DESCRIPTION.as_str(),
         super::SUBAGENT_TYPE_DESCRIPTION,

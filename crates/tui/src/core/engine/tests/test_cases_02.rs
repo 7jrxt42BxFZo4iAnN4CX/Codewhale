@@ -89,7 +89,7 @@ fn agent_tool_contexts_follow_the_published_posture() {
     );
     after.refresh_live_posture();
     assert!(!after.auto_approve);
-    assert_eq!(after.shell_policy, crate::worker_profile::ShellPolicy::None);
+    assert_eq!(after.shell_policy, codewhale_agent_contract::worker_profile::ShellPolicy::None);
     assert_eq!(
         after.elevated_sandbox_policy,
         Some(crate::sandbox::SandboxPolicy::read_only())

@@ -60,8 +60,8 @@ use crate::tools::todo::{SharedTodoList, new_shared_todo_list};
 use crate::tools::user_input::{UserInputRequest, UserInputResponse};
 use crate::tools::{ToolContext, ToolRegistryBuilder};
 use crate::utils::spawn_supervised;
-use crate::worker_profile::WorkerRuntimeProfile;
 use crate::working_set::WorkingSet;
+use codewhale_agent_contract::worker_profile::WorkerRuntimeProfile;
 use codewhale_config::AppMode;
 use codewhale_execpolicy::ApprovalMode;
 #[cfg(test)]
@@ -6008,7 +6008,9 @@ impl Engine {
                     self.config.disallowed_tools.clone().unwrap_or_default();
                 if let Some(allowed) = allowed_tools.as_ref() {
                     rt.worker_profile.tools =
-                        crate::worker_profile::ToolScope::Explicit(allowed.clone());
+                        codewhale_agent_contract::worker_profile::ToolScope::Explicit(
+                            allowed.clone(),
+                        );
                 }
                 if let Some(context) = fork_context_for_runtime.clone() {
                     rt = rt.with_fork_context(context);
@@ -7499,7 +7501,8 @@ impl Engine {
         }
         rt.worker_profile.denied_tools = self.config.disallowed_tools.clone().unwrap_or_default();
         if let Some(allowed) = self.config.allowed_tools.as_ref() {
-            rt.worker_profile.tools = crate::worker_profile::ToolScope::Explicit(allowed.clone());
+            rt.worker_profile.tools =
+                codewhale_agent_contract::worker_profile::ToolScope::Explicit(allowed.clone());
         }
         Some(rt)
     }

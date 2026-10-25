@@ -220,17 +220,20 @@ async fn child_shell_ceiling_survives_every_context_policy_setter() {
     let _home = crate::test_support::SealedHome::at(dir.path());
     let (_engine, _handle, authority, _route) = fixture(dir.path(), None);
     let ceiling = authority.grant.shell_policy();
-    assert_ne!(ceiling, crate::worker_profile::ShellPolicy::Full);
+    assert_ne!(
+        ceiling,
+        codewhale_agent_contract::worker_profile::ShellPolicy::Full
+    );
     let mut context = authority
         .context()
-        .with_shell_policy(crate::worker_profile::ShellPolicy::Full);
+        .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::Full);
     assert_eq!(context.shell_policy, ceiling);
-    context.set_shell_policy(crate::worker_profile::ShellPolicy::None);
+    context.set_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::None);
     assert_eq!(
         context.shell_policy,
-        crate::worker_profile::ShellPolicy::None
+        codewhale_agent_contract::worker_profile::ShellPolicy::None
     );
-    context.set_shell_policy(crate::worker_profile::ShellPolicy::Full);
+    context.set_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::Full);
     assert_eq!(context.shell_policy, ceiling);
 }
 
@@ -605,7 +608,9 @@ async fn actual_child_transport_services_approval_and_cancel_with_saturated_stee
         let (_old, _old_handle, captured, _) = fixture(dir.path(), Some(vec!["bash".into()]));
         let mut runtime = captured.runtime.clone();
         runtime.worker_profile =
-            crate::worker_profile::WorkerRuntimeProfile::for_role(FleetRole::Worker);
+            codewhale_agent_contract::worker_profile::WorkerRuntimeProfile::for_role(
+                FleetRole::Worker,
+            );
         runtime.parent_can_prompt = true;
         runtime.context.auto_approve = false;
         runtime.context.approval_mode = ApprovalMode::Suggest;
@@ -1355,7 +1360,9 @@ async fn detached_child_catastrophic_shell_floor_uses_captured_origin_in_every_p
         let (_old, _handle, captured, _) = fixture(dir.path(), Some(vec!["bash".into()]));
         let mut runtime = captured.runtime.clone();
         runtime.worker_profile =
-            crate::worker_profile::WorkerRuntimeProfile::for_role(FleetRole::Worker);
+            codewhale_agent_contract::worker_profile::WorkerRuntimeProfile::for_role(
+                FleetRole::Worker,
+            );
         runtime.context.live_posture = None;
         runtime.context.approval_mode = approval_mode;
         runtime.context.auto_approve = approval_mode == ApprovalMode::Bypass;

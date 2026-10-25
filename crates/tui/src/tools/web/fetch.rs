@@ -16,7 +16,7 @@ use super::guard::{
     DnsPin, guarded_reqwest_client_builder, validate_fetch_target, validate_network_policy,
 };
 use crate::tools::spec::{ToolContext, ToolError};
-use crate::worker_profile::ShellPolicy;
+use codewhale_agent_contract::worker_profile::ShellPolicy;
 use codewhale_runtime::features::Feature;
 
 pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);

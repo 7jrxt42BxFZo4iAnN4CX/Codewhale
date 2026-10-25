@@ -7894,7 +7894,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         std::fs::write(tmp.path().join("legacy.txt"), "before\n").expect("fixture");
         let context = crate::tools::spec::ToolContext::new(tmp.path().to_path_buf())
-            .with_shell_policy(crate::worker_profile::ShellPolicy::Full);
+            .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::Full);
         let registry = crate::tools::ToolRegistryBuilder::new()
             .with_file_tools()
             .with_foreground_shell_tools()

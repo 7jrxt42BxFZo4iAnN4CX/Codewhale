@@ -664,7 +664,7 @@ pub(crate) fn enforce_tool_authority(
         let canonical = super::canonical_action::canonical_action_alias(name, input);
         if matches!(name, "bash" | "Bash" | "exec_shell") || canonical.starts_with("exec_shell") {
             let prepared = tool.prepare(input.clone(), context)?;
-            if context.shell_policy == crate::worker_profile::ShellPolicy::None
+            if context.shell_policy == codewhale_agent_contract::worker_profile::ShellPolicy::None
                 || prepared
                     .input
                     .get("action")
@@ -893,7 +893,7 @@ pub struct ToolRegistryBuilder {
 /// gated behind feature flags or config state.
 #[derive(Clone)]
 pub struct AgentToolSurfaceOptions {
-    pub shell_policy: crate::worker_profile::ShellPolicy,
+    pub shell_policy: codewhale_agent_contract::worker_profile::ShellPolicy,
     pub apply_patch_enabled: bool,
     pub web_search_enabled: bool,
     pub memory_tool_enabled: bool,
@@ -915,7 +915,7 @@ pub struct AgentToolSurfaceOptions {
 
 impl AgentToolSurfaceOptions {
     #[must_use]
-    pub fn new(shell_policy: crate::worker_profile::ShellPolicy) -> Self {
+    pub fn new(shell_policy: codewhale_agent_contract::worker_profile::ShellPolicy) -> Self {
         Self {
             shell_policy,
             apply_patch_enabled: false,
@@ -1508,7 +1508,7 @@ impl ToolRegistryBuilder {
     #[must_use]
     pub fn with_agent_tools_policy(
         self,
-        shell_policy: crate::worker_profile::ShellPolicy,
+        shell_policy: codewhale_agent_contract::worker_profile::ShellPolicy,
         user_input_limits: super::user_input::UserInputLimits,
     ) -> Self {
         let builder = self
@@ -1535,11 +1535,13 @@ impl ToolRegistryBuilder {
             .with_finance_tool();
 
         match shell_policy {
-            crate::worker_profile::ShellPolicy::Full => {
+            codewhale_agent_contract::worker_profile::ShellPolicy::Full => {
                 builder.with_shell_tools().with_runtime_task_shell_tools()
             }
-            crate::worker_profile::ShellPolicy::ReadOnly => builder.with_read_only_shell_tool(),
-            crate::worker_profile::ShellPolicy::None => builder,
+            codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly => {
+                builder.with_read_only_shell_tool()
+            }
+            codewhale_agent_contract::worker_profile::ShellPolicy::None => builder,
         }
     }
 

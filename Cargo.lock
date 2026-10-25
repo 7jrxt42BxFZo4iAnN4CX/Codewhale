@@ -840,6 +840,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "codewhale-agent-contract"
+version = "0.10.2"
+dependencies = [
+ "codewhale-config",
+ "codewhale-execpolicy",
+ "codewhale-protocol",
+ "codewhale-workflow",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "codewhale-app-server"
 version = "0.10.2"
 dependencies = [
@@ -1301,6 +1313,7 @@ dependencies = [
  "chrono",
  "clap",
  "codewhale-agent",
+ "codewhale-agent-contract",
  "codewhale-app-server",
  "codewhale-build-support",
  "codewhale-cloud-facts",

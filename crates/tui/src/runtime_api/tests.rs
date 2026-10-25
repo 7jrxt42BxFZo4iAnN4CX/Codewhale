@@ -2954,7 +2954,7 @@ async fn agent_runs_runtime_api_exposes_persisted_worker_receipts() -> Result<()
         AgentRunTakeoverTarget, AgentRunUsage, AgentRunVerificationSummary, AgentWorkerEvent,
         AgentWorkerRecord, AgentWorkerSpec, AgentWorkerStatus, AgentWorkerToolProfile, FleetRole,
     };
-    use crate::worker_profile::{ModelRoute, ToolScope, WorkerRuntimeProfile};
+    use codewhale_agent_contract::worker_profile::{ModelRoute, ToolScope, WorkerRuntimeProfile};
     use std::collections::VecDeque;
 
     let root = std::env::temp_dir().join(format!("codewhale-agent-runs-api-{}", Uuid::new_v4()));

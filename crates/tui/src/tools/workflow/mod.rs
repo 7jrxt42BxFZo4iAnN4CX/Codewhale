@@ -35,7 +35,6 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::core::events::Event;
-use crate::fleet::role::{FleetRole, public_role_label};
 use crate::tools::spec::{
     ApprovalRequirement, ToolCapability, ToolContext, ToolError, ToolResult, ToolSpec,
     optional_bool, optional_str, optional_u64,
@@ -55,6 +54,7 @@ use crate::work_graph::{
     CancelOutcome, EvidenceKind, EvidenceRef, OperationIntent, OperationObservation,
     OperationOwnerSnapshot, OwnerState, SharedWorkRuntime,
 };
+use codewhale_agent_contract::role::{FleetRole, public_role_label};
 
 /// Keep promoted artifacts compact without clipping ordinary evidence reports.
 /// A 900-character cap cut six-line source receipts in half during live Fleet

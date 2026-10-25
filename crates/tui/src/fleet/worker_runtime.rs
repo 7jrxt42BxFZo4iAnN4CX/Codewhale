@@ -28,11 +28,13 @@ use super::profile::{
     AgentProfile, FleetDelegationHints, FleetLoadout, FleetProfile, FleetProfilePermissions,
     FleetRole as FleetProfileRole, FleetSlot, ProfileOrigin, canonical_public_role_name,
 };
-use super::role::runtime_role_for_member;
 use crate::config::{Config, ProviderKind};
 use crate::route_runtime::resolve_route_candidate;
 use crate::tools::subagent::{AgentWorkerSpec, AgentWorkerToolProfile, FleetRole};
-use crate::worker_profile::{ChildLaunchManifest, ModelRoute, ToolScope, WorkerRuntimeProfile};
+use codewhale_agent_contract::role::runtime_role_for_member;
+use codewhale_agent_contract::worker_profile::{
+    ChildLaunchManifest, ModelRoute, ToolScope, WorkerRuntimeProfile,
+};
 
 /// Reserved durable task metadata written after author input is validated.
 ///
@@ -1512,7 +1514,7 @@ pub(crate) fn fleet_effective_permissions_for_task(
     let agent_profile = resolve_task_agent_profile(task_spec, agent_profiles)
         .ok()
         .flatten();
-    crate::fleet::role::fleet_effective_permissions(
+    codewhale_agent_contract::role::fleet_effective_permissions(
         &spec.agent_type,
         &spec.runtime_profile,
         agent_profile.as_ref().map(|profile| profile.id.as_str()),
@@ -1602,11 +1604,13 @@ fn profile_origin_label(origin: crate::fleet::roster::ProfileOrigin) -> &'static
     }
 }
 
-fn shell_policy_label(shell: crate::worker_profile::ShellPolicy) -> &'static str {
+fn shell_policy_label(
+    shell: codewhale_agent_contract::worker_profile::ShellPolicy,
+) -> &'static str {
     match shell {
-        crate::worker_profile::ShellPolicy::None => "none",
-        crate::worker_profile::ShellPolicy::ReadOnly => "read_only",
-        crate::worker_profile::ShellPolicy::Full => "full",
+        codewhale_agent_contract::worker_profile::ShellPolicy::None => "none",
+        codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly => "read_only",
+        codewhale_agent_contract::worker_profile::ShellPolicy::Full => "full",
     }
 }
 
@@ -1655,9 +1659,9 @@ mod tests {
 
     #[test]
     fn read_only_roles_report_the_narrowed_shell_they_actually_run_under() {
-        use crate::fleet::role;
         use crate::tools::subagent::FleetRole;
-        use crate::worker_profile::ShellPolicy;
+        use codewhale_agent_contract::role;
+        use codewhale_agent_contract::worker_profile::ShellPolicy;
         let mut requested = WorkerRuntimeProfile {
             shell: ShellPolicy::Full,
             ..WorkerRuntimeProfile::default()
@@ -2291,7 +2295,7 @@ mod tests {
             assert_eq!(runtime_role_for_member(role), expected, "role {role}");
             // The exact driver's authority comes from the same mapper.
             assert_eq!(
-                crate::fleet::role::ChildAuthority::from_runtime_role(role, session)
+                codewhale_agent_contract::role::ChildAuthority::from_runtime_role(role, session)
                     .write_authority,
                 expected_write,
                 "role {role} must resolve the same authority on the exact driver"
@@ -2712,7 +2716,7 @@ mod tests {
                 );
                 assert_eq!(
                     spec.runtime_profile.shell,
-                    crate::worker_profile::ShellPolicy::None
+                    codewhale_agent_contract::worker_profile::ShellPolicy::None
                 );
                 assert_eq!(
                     fleet_worker_launch_reasoning_effort(&task, &[]).as_deref(),
@@ -4507,7 +4511,7 @@ mod tests {
         );
         assert_eq!(
             spec.runtime_profile.shell,
-            crate::worker_profile::ShellPolicy::Full
+            codewhale_agent_contract::worker_profile::ShellPolicy::Full
         );
         assert_eq!(
             spec.runtime_profile.tools,
@@ -4517,7 +4521,7 @@ mod tests {
         assert_eq!(spec.max_spawn_depth, 2);
         assert_eq!(spec.spawn_depth, 1);
 
-        let permissions = crate::fleet::role::fleet_effective_permissions(
+        let permissions = codewhale_agent_contract::role::fleet_effective_permissions(
             &spec.agent_type,
             &spec.runtime_profile,
             None,
@@ -4707,7 +4711,7 @@ mod tests {
             )
             .expect("worker spec with empty profiles");
 
-            let public_role = crate::fleet::role::public_role_label(role);
+            let public_role = codewhale_agent_contract::role::public_role_label(role);
             assert_eq!(spec.role.as_deref(), Some(public_role.as_str()));
             assert_eq!(spec.agent_type, expected_type, "role {role}");
             assert_eq!(spec.tool_profile, expected_tools, "role {role}");

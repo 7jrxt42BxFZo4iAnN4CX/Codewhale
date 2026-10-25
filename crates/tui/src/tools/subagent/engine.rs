@@ -139,7 +139,7 @@ impl ChildAccountingProjection {
 
 #[derive(Clone)]
 pub(crate) struct ChildAuthority {
-    pub(crate) grant: crate::worker_profile::ChildGrant,
+    pub(crate) grant: codewhale_agent_contract::worker_profile::ChildGrant,
     pub(super) disallowed_tools: Vec<String>,
     pub(super) accept_edits: bool,
     pub(crate) agent_type: FleetRole,
@@ -176,7 +176,7 @@ impl ChildAuthority {
         let mut effective = runtime.worker_profile.clone();
         effective.shell = effective.shell.min_with(parent_shell);
         let scope = intersect_explicit_tool_scope(&effective.tools, explicit_allowed_tools);
-        let grant = crate::worker_profile::ChildGrant::resolve(
+        let grant = codewhale_agent_contract::worker_profile::ChildGrant::resolve(
             &agent_type,
             &effective,
             scope,
@@ -364,7 +364,7 @@ impl ChildAuthority {
             )));
         }
         let action = input.get("action").and_then(Value::as_str);
-        if self.grant.surface == crate::worker_profile::ToolSurface::Evidence
+        if self.grant.surface == codewhale_agent_contract::worker_profile::ToolSurface::Evidence
             && name == "Web"
             && !matches!(action, Some("search" | "fetch"))
         {
@@ -574,7 +574,7 @@ impl ChildAuthority {
             .is_some_and(|spec| match spec.approval_requirement_for(input) {
                 ApprovalRequirement::Auto => true,
                 ApprovalRequirement::Suggest => {
-                    self.grant.files == crate::worker_profile::FileGrant::Write
+                    self.grant.files == codewhale_agent_contract::worker_profile::FileGrant::Write
                         && (self.accept_edits
                             || Self::role_can_delegate_writes(&self.agent_type)
                             || self.workspace_write_carve_out_permits(registry, name, input))
@@ -599,7 +599,7 @@ impl ChildAuthority {
         // This is a bounded convenience for write-capable children, not an
         // authority escalation: every target must resolve inside the workspace
         // and still pass sensitive-path, repository-law, and claim checks.
-        if self.grant.files != crate::worker_profile::FileGrant::Write {
+        if self.grant.files != codewhale_agent_contract::worker_profile::FileGrant::Write {
             return false;
         }
         crate::core::authority::paths_within_workspace_write_carve_out(
@@ -637,7 +637,7 @@ impl ChildAuthority {
             ) {
                 ApprovalRequirement::Auto => true,
                 ApprovalRequirement::Suggest => {
-                    self.grant.files == crate::worker_profile::FileGrant::Write
+                    self.grant.files == codewhale_agent_contract::worker_profile::FileGrant::Write
                 }
                 ApprovalRequirement::Required => {
                     // An outbound read needs approval because its payload can
@@ -674,7 +674,7 @@ impl ChildAuthority {
                     // `Verify` holds process-start authority for the bounded
                     // verification surface; the envelope below still refuses
                     // its ExecutesCode/WritesFiles calls by capability.
-                    self.grant.shell >= crate::worker_profile::ShellGrant::Verify
+                    self.grant.shell >= codewhale_agent_contract::worker_profile::ShellGrant::Verify
                 }
             },
             None => true,
@@ -689,7 +689,8 @@ impl ChildAuthority {
     }
 
     pub(crate) fn allows_bounded_readonly_bash(&self, name: &str) -> bool {
-        name == "bash" && self.grant.shell == crate::worker_profile::ShellGrant::Inspect
+        name == "bash"
+            && self.grant.shell == codewhale_agent_contract::worker_profile::ShellGrant::Inspect
     }
 
     pub(crate) fn legacy_action_alias(family: &str, action: &str) -> Option<&'static str> {
@@ -759,7 +760,7 @@ impl ChildAuthority {
                 .is_some_and(|tool| crate::tools::registry::readonly_evidence_tool(tool.as_ref()));
         // The Evidence surface admits only the hardened evidence tools and
         // `agent` (delegation).
-        if self.grant.surface == crate::worker_profile::ToolSurface::Evidence
+        if self.grant.surface == codewhale_agent_contract::worker_profile::ToolSurface::Evidence
             && lower != "agent"
             && !evidence_tool
         {
@@ -776,7 +777,7 @@ impl ChildAuthority {
             )
             || lower.starts_with("terminal/");
         raw_shell
-            && self.grant.shell < crate::worker_profile::ShellGrant::Full
+            && self.grant.shell < codewhale_agent_contract::worker_profile::ShellGrant::Full
             && !self.allows_bounded_readonly_bash(name)
     }
 
@@ -785,11 +786,11 @@ impl ChildAuthority {
     }
 
     pub(crate) fn write_is_denied(&self) -> bool {
-        self.grant.files != crate::worker_profile::FileGrant::Write
+        self.grant.files != codewhale_agent_contract::worker_profile::FileGrant::Write
     }
 
     pub(crate) fn shell_is_denied(&self) -> bool {
-        self.grant.shell < crate::worker_profile::ShellGrant::Verify
+        self.grant.shell < codewhale_agent_contract::worker_profile::ShellGrant::Verify
     }
 
     pub(crate) fn execution_envelope(&self) -> crate::tools::execution_envelope::ExecutionEnvelope {
@@ -797,7 +798,7 @@ impl ChildAuthority {
         // dispatch derive it from the same fields, never from a deny-list
         // sentinel or a role re-mapping that could disagree with them.
         crate::tools::execution_envelope::ExecutionEnvelope {
-            write: self.grant.files == crate::worker_profile::FileGrant::Write,
+            write: self.grant.files == codewhale_agent_contract::worker_profile::FileGrant::Write,
             network: self.grant.network,
             shell: !self.shell_is_denied(),
         }
@@ -838,7 +839,7 @@ impl ChildAuthority {
         if !matches!(action, "claim" | "release") {
             return true;
         }
-        self.grant.files == crate::worker_profile::FileGrant::Write
+        self.grant.files == codewhale_agent_contract::worker_profile::FileGrant::Write
             && !self.is_tool_denied("agents/coordinate")
     }
 
@@ -846,7 +847,7 @@ impl ChildAuthority {
         // Visibility and dispatch consult the same capability guard. These
         // representative calls let a read-only bash schema survive catalog
         // shaping without treating an empty input as arbitrary shell authority.
-        if self.grant.shell != crate::worker_profile::ShellGrant::Inspect {
+        if self.grant.shell != codewhale_agent_contract::worker_profile::ShellGrant::Inspect {
             return None;
         }
         match name {
@@ -932,10 +933,11 @@ impl ChildAuthority {
                     return false;
                 };
                 let posture_allows = tool.name != "File"
-                    || self.grant.files == crate::worker_profile::FileGrant::Write
+                    || self.grant.files
+                        == codewhale_agent_contract::worker_profile::FileGrant::Write
                     || matches!(action, "read" | "list" | "search_name" | "search_content");
                 let evidence_action = self.grant.surface
-                    != crate::worker_profile::ToolSurface::Evidence
+                    != codewhale_agent_contract::worker_profile::ToolSurface::Evidence
                     || tool.name != "Web"
                     || matches!(action, "search" | "fetch");
                 let mut representative = self

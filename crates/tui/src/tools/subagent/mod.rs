@@ -45,13 +45,6 @@ use crate::core::events::{AgentProgressEventMeta, Event};
 #[cfg(test)]
 use crate::core::session::ToolActivationCache;
 use crate::dependencies::{ExternalTool, Git};
-/// Compatibility re-export: the closed role set lives in
-/// [`crate::fleet::role`], the lightweight role surface every spawn path
-/// consumes. Existing `tools::subagent::FleetRole` paths keep resolving.
-pub use crate::fleet::role::FleetRole;
-use crate::fleet::role::{
-    FLEET_ROLE_SCHEMA_VALUES, VALID_ROLE_ALIASES, migrate_legacy_role_token, public_role_label,
-};
 use crate::llm_client::LlmError;
 use crate::reasoning_preference::ReasoningEffort;
 use crate::request_tuning::RequestTuning;
@@ -77,7 +70,14 @@ use crate::work_graph::{
     EvidenceKind, EvidenceRef, OperationIntent, OperationOwnerSnapshot, OwnerState,
     SharedWorkRuntime,
 };
-use crate::worker_profile::{
+/// Compatibility re-export: the closed role set lives in
+/// [`codewhale_agent_contract::role`], the lightweight role surface every spawn path
+/// consumes. Existing `tools::subagent::FleetRole` paths keep resolving.
+pub use codewhale_agent_contract::role::FleetRole;
+use codewhale_agent_contract::role::{
+    FLEET_ROLE_SCHEMA_VALUES, VALID_ROLE_ALIASES, migrate_legacy_role_token, public_role_label,
+};
+use codewhale_agent_contract::worker_profile::{
     ChildLaunchManifest, ModelRoute, ShellPolicy, ToolScope, WorkerRuntimeProfile,
     narrow_model_steps, narrow_optional_limit,
 };
@@ -581,46 +581,44 @@ impl SubAgentAssignment {
 }
 
 /// Role presentation: system prompts and config key lookup. The role itself
-/// ([`FleetRole`], parsing, posture) lives in [`crate::fleet::role`]; this
-/// impl stays on the agent tool because it renders prompt text the tool owns.
-impl FleetRole {
-    /// Pre-Fleet model-override key (`explorer_model` / `ni_model` tables).
-    /// Not used for receipts or UI — only config key lookup.
-    #[must_use]
-    fn legacy_type_name(&self) -> &'static str {
-        match self {
-            Self::Worker => "general",
-            Self::Scout => "explore",
-            Self::Planner => "plan",
-            Self::Reviewer => "review",
-            Self::Builder => "implementer",
-            Self::Verifier => "verifier",
-            // Consultant is post-Fleet; it never had a pre-Fleet override table key.
-            Self::Consultant => "consultant",
-            Self::Custom => "custom",
-        }
+/// ([`FleetRole`], parsing, posture) lives in [`codewhale_agent_contract::role`]; these
+/// functions stay on the agent tool because they render prompt text the tool owns.
+/// Pre-Fleet model-override key (`explorer_model` / `ni_model` tables).
+/// Not used for receipts or UI — only config key lookup.
+#[must_use]
+fn role_legacy_type_name(role: &FleetRole) -> &'static str {
+    match role {
+        FleetRole::Worker => "general",
+        FleetRole::Scout => "explore",
+        FleetRole::Planner => "plan",
+        FleetRole::Reviewer => "review",
+        FleetRole::Builder => "implementer",
+        FleetRole::Verifier => "verifier",
+        // Consultant is post-Fleet; it never had a pre-Fleet override table key.
+        FleetRole::Consultant => "consultant",
+        FleetRole::Custom => "custom",
     }
+}
 
-    /// Get the system prompt for this Fleet role.
-    #[must_use]
-    pub fn system_prompt(&self) -> String {
-        let role_intro = match self {
-            Self::Worker => GENERAL_AGENT_INTRO,
-            Self::Scout => EXPLORE_AGENT_INTRO,
-            Self::Planner => PLAN_AGENT_INTRO,
-            Self::Reviewer => REVIEW_AGENT_INTRO,
-            Self::Builder => IMPLEMENTER_AGENT_INTRO,
-            Self::Verifier => VERIFIER_AGENT_INTRO,
-            Self::Consultant => CONSULTANT_AGENT_INTRO,
-            Self::Custom => CUSTOM_AGENT_INTRO,
-        };
-        match self {
-            Self::Scout => format!(
-                "{role_intro}{}",
-                crate::prompts::text::SUBAGENT_SCOUT_OUTPUT_FORMAT
-            ),
-            _ => format!("{role_intro}{SUBAGENT_OUTPUT_FORMAT}"),
-        }
+/// Get the system prompt for this Fleet role.
+#[must_use]
+pub fn role_system_prompt(role: &FleetRole) -> String {
+    let role_intro = match role {
+        FleetRole::Worker => GENERAL_AGENT_INTRO,
+        FleetRole::Scout => EXPLORE_AGENT_INTRO,
+        FleetRole::Planner => PLAN_AGENT_INTRO,
+        FleetRole::Reviewer => REVIEW_AGENT_INTRO,
+        FleetRole::Builder => IMPLEMENTER_AGENT_INTRO,
+        FleetRole::Verifier => VERIFIER_AGENT_INTRO,
+        FleetRole::Consultant => CONSULTANT_AGENT_INTRO,
+        FleetRole::Custom => CUSTOM_AGENT_INTRO,
+    };
+    match role {
+        FleetRole::Scout => format!(
+            "{role_intro}{}",
+            crate::prompts::text::SUBAGENT_SCOUT_OUTPUT_FORMAT
+        ),
+        _ => format!("{role_intro}{SUBAGENT_OUTPUT_FORMAT}"),
     }
 }
 
@@ -9558,12 +9556,13 @@ impl SubAgentManager {
         if let Some(record) = self.worker_records.get(&agent.id) {
             snap.usage = Some(record.usage.clone());
             snap.worker_status = Some(record.status);
-            snap.runtime_permissions = Some(crate::fleet::role::fleet_effective_permissions(
-                &record.spec.agent_type,
-                &record.spec.runtime_profile,
-                None,
-                None,
-            ));
+            snap.runtime_permissions =
+                Some(codewhale_agent_contract::role::fleet_effective_permissions(
+                    &record.spec.agent_type,
+                    &record.spec.runtime_profile,
+                    None,
+                    None,
+                ));
             snap.parent_run_id = record
                 .parent_run_id
                 .clone()
@@ -13432,7 +13431,7 @@ fn verify_fleet_authority_input(expected: &str, input: &Value) -> Result<()> {
 /// "You are operating in the role of `{name}`." as a final line so its
 /// behavior reflects the user's choice.
 fn build_subagent_system_prompt(agent_type: &FleetRole, assignment: &SubAgentAssignment) -> String {
-    let base = agent_type.system_prompt();
+    let base = role_system_prompt(&agent_type);
     let mut prompt = match assignment.role.as_deref() {
         Some(role) if !role.trim().is_empty() => {
             format!(
@@ -16588,7 +16587,7 @@ pub(crate) fn session_permission_ceiling(
         write: runtime.worker_profile.permissions.write,
         network_tool: runtime.worker_profile.permissions.network
             && runtime.agent_tool_surface_options.web_search_enabled,
-        shell: crate::fleet::role::session_shell_ceiling(
+        shell: codewhale_agent_contract::role::session_shell_ceiling(
             runtime.worker_profile.shell,
             runtime.allow_shell,
         ),
@@ -17850,8 +17849,8 @@ pub(crate) fn configured_role_model_override<'a>(
         push_key(normalized);
     }
     push_key(agent_type.as_str().to_string());
-    if agent_type.legacy_type_name() != agent_type.as_str() {
-        push_key(agent_type.legacy_type_name().to_string());
+    if role_legacy_type_name(&agent_type) != agent_type.as_str() {
+        push_key(role_legacy_type_name(&agent_type).to_string());
     }
     // `[subagents.models].oracle` shipped before the public role was renamed.
     // Keep both historical advisory keys readable, but never expose them in
@@ -18719,7 +18718,7 @@ fn reject_network_reaching_input(name: &str, input: &Value) -> Result<()> {
 /// verification at all — `run_verifiers` takes `commands`, an array of arbitrary
 /// `program` + `args` pairs, and `run_tests` takes `args`, a raw cargo argv.
 /// `{"program": "bash", "args": ["-lc", "rm -rf src"]}` is exactly the raw shell
-/// that [`crate::fleet::role::RAW_SHELL_DENYLIST`] just removed, re-entered
+/// that [`codewhale_agent_contract::role::RAW_SHELL_DENYLIST`] just removed, re-entered
 /// through the one door that was left open for honest reasons.
 ///
 /// So the tools stay and the arbitrary arguments go. The default form — the one

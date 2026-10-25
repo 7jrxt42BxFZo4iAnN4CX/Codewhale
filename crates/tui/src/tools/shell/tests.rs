@@ -538,7 +538,7 @@ async fn execution_receipt_keeps_spawn_cwd_when_the_command_retargets_the_worksp
 async fn lowercase_bash_keeps_raw_command_under_readonly_policy() {
     let workspace = tempdir().expect("workspace");
     let context = ToolContext::new(workspace.path())
-        .with_shell_policy(crate::worker_profile::ShellPolicy::ReadOnly);
+        .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly);
     let result = LowercaseBashTool
         .execute(json!({"command": "pwd"}), &context)
         .await
@@ -558,7 +558,7 @@ async fn lowercase_bash_keeps_raw_command_under_readonly_policy() {
 async fn lowercase_bash_readonly_refusal_names_work_mode() {
     let workspace = tempdir().expect("workspace");
     let context = ToolContext::new(workspace.path())
-        .with_shell_policy(crate::worker_profile::ShellPolicy::ReadOnly);
+        .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly);
     let error = LowercaseBashTool
         .execute(json!({"command": "touch blocked-by-plan"}), &context)
         .await
@@ -1134,7 +1134,7 @@ async fn readonly_shell_refuses_raw_string_external_backend() {
     let tmp = tempdir().expect("tempdir");
     let backend = std::sync::Arc::new(Backend(std::sync::atomic::AtomicBool::new(false)));
     let mut context = ToolContext::new(tmp.path().to_path_buf())
-        .with_shell_policy(crate::worker_profile::ShellPolicy::ReadOnly);
+        .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly);
     context.sandbox_backend = Some(backend.clone());
     let error = BashTool::read_only("Bash")
         .execute(json!({"action": "run", "command": "pwd"}), &context)
@@ -1253,8 +1253,8 @@ async fn readonly_git_reads_run_no_clean_filter_or_textconv() {
     git(&["config", "diff.conv.textconv", &helper]);
     std::fs::write(repo.join("c.txt"), "c2\n").expect("modify");
 
-    let ctx =
-        ToolContext::new(repo).with_shell_policy(crate::worker_profile::ShellPolicy::ReadOnly);
+    let ctx = ToolContext::new(repo)
+        .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly);
     let tool = BashTool::new("Bash");
     for command in ["git diff", "git blame c.txt"] {
         let result = tool
@@ -1494,7 +1494,7 @@ fn readonly_github_shell_calls_obey_the_host_network_policy_before_spawn() {
 
     // Read-only agents: every admitted network segment is judged.
     let readonly_deny = context(crate::network_policy::DecisionToml::Deny)
-        .with_shell_policy(crate::worker_profile::ShellPolicy::ReadOnly);
+        .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly);
     for command in ["gh pr view 1 | head", "ls && gh issue list"] {
         let denied = enforce_readonly_network_reads(command, &readonly_deny)
             .expect_err("a network read inside a composition is still judged")
@@ -1528,7 +1528,7 @@ fn exec_shell_interact_requires_approval() {
 async fn read_only_shell_policy_blocks_non_readonly_commands() {
     let tmp = tempdir().expect("tempdir");
     let ctx = ToolContext::new(tmp.path())
-        .with_shell_policy(crate::worker_profile::ShellPolicy::ReadOnly);
+        .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly);
     let tool = BashTool::new("Bash");
 
     for (input, rule) in [
@@ -1572,7 +1572,7 @@ async fn read_only_refusal_names_child_alternatives_instead_of_mode_switch() {
     // and only tools a read-only child actually has (#6015).
     let tmp = tempdir().expect("tempdir");
     let child_ctx = ToolContext::new(tmp.path())
-        .with_shell_policy(crate::worker_profile::ShellPolicy::ReadOnly)
+        .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly)
         .with_owner_agent("agent_child", "child");
     let tool = BashTool::new("Bash");
     let message = tool
@@ -1595,7 +1595,7 @@ async fn read_only_refusal_names_child_alternatives_instead_of_mode_switch() {
     assert!(!tmp.path().join("evil.txt").exists());
 
     let parent_ctx = ToolContext::new(tmp.path())
-        .with_shell_policy(crate::worker_profile::ShellPolicy::ReadOnly);
+        .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly);
     let message = tool
         .execute(json!({"command": "cargo build"}), &parent_ctx)
         .await
@@ -1642,7 +1642,7 @@ async fn read_only_shell_runs_chains_and_leading_cd() {
     std::fs::write(workspace.path().join("sub").join("a.txt"), "alpha\n").expect("a");
     std::fs::write(workspace.path().join("b.txt"), "beta\n").expect("b");
     let ctx = ToolContext::new(workspace.path())
-        .with_shell_policy(crate::worker_profile::ShellPolicy::ReadOnly);
+        .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly);
     let tool = BashTool::new("Bash");
     let result = tool
         .execute(json!({"command": "cd sub && ls"}), &ctx)
@@ -1683,7 +1683,7 @@ async fn read_only_shell_runs_chains_and_leading_cd() {
 async fn read_only_operand_checks_apply_to_every_segment() {
     let workspace = tempdir().expect("workspace");
     let ctx = ToolContext::new(workspace.path())
-        .with_shell_policy(crate::worker_profile::ShellPolicy::ReadOnly);
+        .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly);
     let error = BashTool::new("Bash")
         .execute(json!({"command": "gh pr view 1 && cat /etc/passwd"}), &ctx)
         .await
@@ -1705,7 +1705,7 @@ async fn read_only_shell_resolves_operands_from_the_effective_cwd() {
     std::os::unix::fs::symlink(outside.path().join("secret"), subdir.join("secret-link"))
         .expect("symlink");
     let ctx = ToolContext::new(workspace.path())
-        .with_shell_policy(crate::worker_profile::ShellPolicy::ReadOnly);
+        .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly);
     let error = BashTool::new("Bash")
         .execute(
             json!({"action": "run", "command": "cat secret-link", "cwd": "subdir"}),
@@ -1735,7 +1735,7 @@ async fn read_only_shell_skips_shell_env_hooks() {
         tmp.path().to_path_buf(),
     );
     let mut context = ToolContext::new(tmp.path())
-        .with_shell_policy(crate::worker_profile::ShellPolicy::ReadOnly);
+        .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly);
     context.runtime.hook_executor = Some(std::sync::Arc::new(executor));
 
     let result = BashTool::read_only("Bash")
@@ -1750,7 +1750,7 @@ async fn read_only_shell_skips_shell_env_hooks() {
 async fn read_only_shell_policy_allows_readonly_inspection() {
     let tmp = tempdir().expect("tempdir");
     let ctx = ToolContext::new(tmp.path())
-        .with_shell_policy(crate::worker_profile::ShellPolicy::ReadOnly);
+        .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly);
 
     let result = BashTool::new("Bash")
         .execute(json!({"command": "pwd"}), &ctx)
@@ -5470,7 +5470,7 @@ async fn readonly_pipeline_preserves_arguments_and_disables_git_helpers() {
         std::fs::write(workspace.path().join(name), "option-shaped filename\n").unwrap();
     }
     let ctx = ToolContext::new(workspace.path())
-        .with_shell_policy(crate::worker_profile::ShellPolicy::ReadOnly);
+        .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly);
     let tool = BashTool::new("Bash");
     for command in ["sort * | cat", "sed -n 1p * | cat", "cat * | cat"] {
         // #6675: a word-leading unquoted `*` is refused before anything runs
@@ -5520,7 +5520,7 @@ async fn readonly_sed_extra_options_never_mutate_files() {
     let source = workspace.path().join("input.txt");
     std::fs::write(&source, "first\nsecond\n").unwrap();
     let ctx = ToolContext::new(workspace.path())
-        .with_shell_policy(crate::worker_profile::ShellPolicy::ReadOnly);
+        .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly);
     for command in [
         "sed -n 1p input.txt -i",
         "sed -n 1p -i.bak input.txt",

@@ -18,12 +18,12 @@ use std::time::Instant;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::fleet::role::public_role_label;
 use crate::todo_snapshot::{TodoCardProjection, card_omission_line, card_todo_projection};
 use crate::tools::subagent::MailboxMessage;
 use crate::tools::todo::TodoListSnapshot;
 use crate::tui::ui_text::truncate_line_to_width;
 use crate::tui::widgets::tool_card::{ToolFamily, family_glyph};
+use codewhale_agent_contract::role::public_role_label;
 use codewhale_palette as palette;
 use unicode_width::UnicodeWidthStr;
 

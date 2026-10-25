@@ -526,7 +526,7 @@
         assert!(!context.trust_mode);
         assert_eq!(
             context.shell_policy,
-            crate::worker_profile::ShellPolicy::None
+            codewhale_agent_contract::worker_profile::ShellPolicy::None
         );
         assert!(matches!(
             context.elevated_sandbox_policy,

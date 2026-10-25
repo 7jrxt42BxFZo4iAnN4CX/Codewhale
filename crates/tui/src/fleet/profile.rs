@@ -732,7 +732,7 @@ fn agent_profile_from_toml(path: &Path, parsed: AgentProfileToml) -> Result<Agen
 /// its saved id. Only the semantic role is migrated; every new receipt and UI
 /// label derived from it therefore uses the canonical public token.
 pub(crate) fn canonical_public_role_name(role: &str) -> String {
-    super::role::public_role_label(role)
+    codewhale_agent_contract::role::public_role_label(role)
 }
 
 fn reject_permission_expansion(

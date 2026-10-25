@@ -5,7 +5,7 @@ use crate::tools::subagent::{
     AgentRunUsage, AgentWorkerEvent, AgentWorkerRecord, AgentWorkerSpec, AgentWorkerStatus,
     AgentWorkerToolProfile, FleetRole,
 };
-use crate::worker_profile::WorkerRuntimeProfile;
+use codewhale_agent_contract::worker_profile::WorkerRuntimeProfile;
 
 fn usage_none() -> AgentRunUsage {
     AgentRunUsage {
