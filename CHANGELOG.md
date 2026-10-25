@@ -31,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installs provider access in the running computer's memory. Retries retain
   one operation key and the account/VM binding. Existing Agent Work dispatch
   remains available when no computer conversation is selected.
+- The To-do that a Plan-to-Work handoff seeds is now titled with the plan's
+  first line, without markdown, instead of the whole plan run together
+  (#7068).
 
 ## [0.10.2] - 2026-10-22
 

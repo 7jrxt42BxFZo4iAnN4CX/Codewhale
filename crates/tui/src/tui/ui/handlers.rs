@@ -1556,8 +1556,29 @@ pub(crate) fn is_plan_handoff_request(app: &App, tool_id: &str) -> bool {
 
 fn plan_handoff_seed_title(plan: &crate::tui::plan_handoff::PendingPlanHandoff) -> String {
     // Match the graph's trimmed title without changing the approved message.
-    plan.text
-        .trim()
+    let collapse = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut in_fence = false;
+    let title = plan
+        .text
+        .lines()
+        .map(str::trim)
+        .filter(|line| {
+            if line.starts_with("```") || line.starts_with("~~~") {
+                in_fence = !in_fence;
+                return false;
+            }
+            !in_fence && !line.starts_with('#')
+        })
+        .map(|line| {
+            collapse(
+                &line
+                    .trim_start_matches(|ch: char| matches!(ch, '-' | '*' | '+' | '>'))
+                    .replace(|ch: char| matches!(ch, '*' | '`'), ""),
+            )
+        })
+        .find(|line| !line.is_empty())
+        .unwrap_or_else(|| collapse(&plan.text));
+    title
         .chars()
         .take(1024)
         .collect::<String>()

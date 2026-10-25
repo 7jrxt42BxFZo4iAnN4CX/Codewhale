@@ -274,10 +274,7 @@ async fn prose_work_seeds_preserves_other_work_and_queues_exact_text_once() {
     assert_eq!(todos.items.len(), 2);
     assert_eq!(todos.items[0].content, "Unrelated work");
     assert_eq!(todos.items[1].status, TodoStatus::Pending);
-    assert_eq!(
-        todos.items[1].content,
-        text.trim().chars().take(1024).collect::<String>().trim()
-    );
+    assert_eq!(todos.items[1].content, "先检查输入。");
     assert!(app.pending_plan_handoff.is_none());
     assert_eq!(app.queued_message_count(), 1);
     assert_eq!(
@@ -400,7 +397,10 @@ async fn refused_checkpoint_rolls_back_seed_and_retry_queues_once() {
         );
         assert_eq!(
             todos.items[0].content,
-            text.trim().chars().take(1024).collect::<String>().trim()
+            text.lines()
+                .map(str::trim)
+                .find(|line| !line.is_empty())
+                .unwrap()
         );
         assert_eq!(app.queued_message_count(), 1);
         assert_eq!(
