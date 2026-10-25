@@ -3994,6 +3994,38 @@ impl Engine {
                                 }
                             }
                         }
+                        Op::StartFleetMember { start, tx } => {
+                            let result = match self.off_turn_subagent_runtime() {
+                                Some(runtime) => {
+                                    crate::tools::subagent::start_fleet_member(
+                                        Arc::clone(&self.subagent_manager),
+                                        runtime,
+                                        *start,
+                                    )
+                                    .await
+                                }
+                                None => {
+                                    Err("This session has no model connection to start a member."
+                                        .to_string())
+                                }
+                            };
+                            if let Some(tx) = tx
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .take()
+                            {
+                                let _ = tx.send(result);
+                            }
+                            let refresh = {
+                                let manager = self.subagent_manager.read().await;
+                                agent_list_event(&manager, &self.session.id)
+                            };
+                            if self.tx_event.try_send(refresh).is_err() {
+                                tracing::debug!(
+                                    "Event channel full; dropping StartFleetMember refresh"
+                                );
+                            }
+                        }
                         Op::FollowUpSubAgent { agent_id, text } => {
                             let active_session_id = self.session.id.clone();
                             let runtime = self.off_turn_subagent_runtime();

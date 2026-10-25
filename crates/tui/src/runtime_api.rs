@@ -108,6 +108,7 @@ mod jobs;
 pub(crate) mod listener;
 mod lsp;
 mod mcp_import;
+mod members;
 mod memory_lens;
 mod mobile;
 mod plans;
@@ -1358,6 +1359,7 @@ fn default_runtime_capabilities() -> RuntimeCapabilities {
         environments: false,
         worker_runtime: true,
         fleet_run_create: true,
+        thread_fleet_members: true,
         fleet_run_start: true,
         fleet_event_replay: true,
         fleet_event_stream: true,
@@ -2752,6 +2754,10 @@ pub fn build_router(state: RuntimeApiState) -> Router {
             post(jobs::resize_thread_job),
         )
         .route("/v1/threads/{id}/context", get(context::get_thread_context))
+        .route(
+            "/v1/threads/{id}/members",
+            post(members::start_thread_member),
+        )
         .route("/v1/threads/{id}/plan", get(plans::get_thread_plan))
         .route("/v1/threads/{id}/todo", get(plans::get_thread_todo))
         .route("/v1/plan", get(plans::latest_plan))

@@ -13164,6 +13164,7 @@ async fn rate_limit_pause_blocks_subagent_spawn() {
         false,
         None,
         None,
+        None,
     )
     .await
     .expect_err("active provider rate-limit pause must refuse new sub-agent work");
@@ -22613,6 +22614,7 @@ async fn runtime_surface_hardening_resume_from_requires_descendant_control() {
         false,
         None,
         None,
+        None,
     )
     .await
     .expect_err("a sibling is not a continuation source");
@@ -22622,7 +22624,7 @@ async fn runtime_surface_hardening_resume_from_requires_descendant_control() {
     );
 
     runtime.parent_agent_id = None;
-    let err = spawn_subagent_from_input(input, manager.clone(), runtime, false, None, None)
+    let err = spawn_subagent_from_input(input, manager.clone(), runtime, false, None, None, None)
         .await
         .expect_err("root still observes the workspace boundary");
     assert!(err.to_string().contains("different workspace"), "{err}");
@@ -24112,6 +24114,7 @@ async fn refuse_worktree_spawn_and_expect_cleanup(repo: &tempfile::TempDir, bran
         Arc::clone(&manager),
         runtime,
         false,
+        None,
         None,
         None,
     )

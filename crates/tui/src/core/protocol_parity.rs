@@ -1144,6 +1144,9 @@ pub fn op_to_protocol(op: &Op) -> wire_op::Op {
             agent_id: agent_id.clone(),
             text: text.clone(),
         },
+        Op::StartFleetMember { start, tx: _ } => wire_op::Op::StartFleetMember {
+            member_id: start.member_id.clone(),
+        },
         Op::ChangeMode {
             mode,
             allow_shell,

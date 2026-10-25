@@ -3105,6 +3105,31 @@ Verification:
 npm test --workspace @codewhale/runtime-sdk
 ```
 
+## Thread Fleet members
+
+`thread_fleet_members` in runtime capabilities enables
+`POST /v1/threads/{id}/members`. The body is
+`{operation_key, member_id, display_name, prompt, fleet}`, where `fleet` is a
+complete Fleet v2 document (the same shape as a saved `fleets/*.toml`, as JSON)
+and `member_id` names one of its members with an exact `provider` and `model`.
+The thread's Engine starts that member as an ordinary child of the session,
+through the same spawn path as the `agent` tool: the member's provider and
+model are bound exactly and never fall back to the session route, its
+instructions join the child's task prompt as its Fleet profile, and the child
+keeps the session's permissions and spawn limits. The document is used for this
+start only; it is not saved and does not change the selected Fleet.
+
+The response is `200 {thread_id, member_id, agent_id, state: "started"}`, or
+`202 {state: "queued"}` when the thread is mid-turn: host requests are handled
+between turns. Repeating the same `operation_key` with the same body returns
+the original `agent_id` once started; a different body under the same key is
+refused. The child appears in `/v1/agent-runs` with `owner_session_id` set to the
+thread and its `display_name` as `session_name`; `agent.spawned`,
+`agent.progress` and `agent.completed` arrive on the thread's event stream.
+Stop it with `POST /v1/agent-runs/{id}/cancel`, which also stops its
+descendants. A second start for a member whose child is still running is
+refused by the existing session-name rule; follow up with that child instead.
+
 ## Agent Run Receipts
 
 Sub-agent lanes persist compact run receipts in
