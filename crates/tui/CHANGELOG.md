@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   split across lines) now shows those lines on its Live card while it runs and
   after it succeeds, within the card's usual line limit, instead of only the
   first line. Transcript shows the whole command. Single-line cards are
-  unchanged (#6436).
+  unchanged (#6436, #7082).
 - `codewhale review` no longer accepts leaked tool-call markup as a review: a
   pass whose reply is a DeepSeek DSML (or other) tool-call wrapper outside code
   now fails as incomplete, with no tally and nothing posted (#7072). A Low-risk
@@ -47,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stderr line naming the permission and sandbox it runs with, and the ACP
   permission option's Full Access hint names the working command. A configured
   `sandbox_mode = "danger-full-access"` still never widens Ask or Auto-Review
-  (#6992).
+  (#6992, #4955). Thanks @eugenicum for the request.
 - Preview: `dispatch --computer` starts an account cloud conversation that can
   also be opened in desktop. `--thread` continues or inspects it; `--stop`,
   `--approve` and `--deny` control its current task. Explicit `--key-stdin`
@@ -82,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of arming exit, and Ctrl+Z restores it. The "press Ctrl+C again" exit prompt
   arms only once the composer is empty, and Ctrl+C during a running turn still
   cancels the turn first. Clearing a draft with Ctrl+C or Esc also resets a
-  pending exit prompt (#6237).
+  pending exit prompt (#6237, #7084).
 - While a background job runs, the git status probe now backs off after 30
   seconds without input or engine events, as it already did in an idle
   session, instead of starting about a dozen git processes every 2 seconds for
