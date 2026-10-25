@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The To-do that a Plan-to-Work handoff seeds is now titled with the plan's
   first line, without markdown, instead of the whole plan run together
   (#7068).
+- Composer history is no longer rewritten from a partial read: when the
+  history file cannot be read, new entries are not saved over it and a
+  warning is logged. An empty declarative workflow is refused ("workflow must
+  contain at least one node") instead of succeeding with no work (#6559).
 - A `SKILL.md` that is not a regular file is reported as a skill load warning
   instead of being read, so a FIFO in a skills directory can no longer stall
   discovery (#6554).
