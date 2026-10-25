@@ -40,7 +40,7 @@ pub const FLEET_ROLE_SCHEMA_VALUES: [&str; 8] = [
     "custom",
 ];
 
-/// Human-readable hint listing every token [`FleetRole::from_str`] accepts,
+/// Human-readable hint listing every token [`FleetRole::parse`] accepts,
 /// for spawn-time error messages. Keep in sync with
 /// [`migrate_legacy_role_token`] and the `from_str` match arms; those two are
 /// the only role parser (#2649 was a second table in the spawn tool drifting
@@ -114,7 +114,7 @@ impl<'de> serde::Deserialize<'de> for FleetRole {
         D: serde::Deserializer<'de>,
     {
         let raw = String::deserialize(deserializer)?;
-        Self::from_str(&raw)
+        Self::parse(&raw)
             .ok_or_else(|| serde::de::Error::unknown_variant(&raw, &FLEET_ROLE_SCHEMA_VALUES))
     }
 }
@@ -123,7 +123,7 @@ impl<'de> serde::Deserialize<'de> for FleetRole {
 ///
 /// Call this only at load / parse edges. Runtime code must use Fleet role
 /// names via [`FleetRole::as_str`]. Returns `None` for tokens that are
-/// already canonical or unknown — callers should prefer [`FleetRole::from_str`]
+/// already canonical or unknown — callers should prefer [`FleetRole::parse`]
 /// for full acceptance (canonical + legacy).
 #[must_use]
 pub fn migrate_legacy_role_token(token: &str) -> Option<&'static str> {
@@ -145,7 +145,7 @@ impl FleetRole {
     /// Accepts Fleet role names and, at this parse boundary only, legacy
     /// aliases (`scout` → explore, `plan` → planner, …).
     #[must_use]
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         let normalized = s.trim().to_ascii_lowercase();
         // Boundary migration first, then canonical Fleet names.
         let token = migrate_legacy_role_token(&normalized).unwrap_or(normalized.as_str());
@@ -222,7 +222,7 @@ impl FleetRole {
 /// anything else passes through trimmed.
 #[must_use]
 pub fn public_role_label(token: &str) -> String {
-    FleetRole::from_str(token).map_or_else(
+    FleetRole::parse(token).map_or_else(
         || token.trim().to_string(),
         |role| role.as_str().to_string(),
     )
@@ -659,7 +659,7 @@ impl ChildAuthority {
 /// model-facing spawn vocabulary.
 ///
 /// Deliberately *not* folded into [`migrate_legacy_role_token`]. That table
-/// feeds [`FleetRole::from_str`], which is also the closed vocabulary the
+/// feeds [`FleetRole::parse`], which is also the closed vocabulary the
 /// `agent` tool validates its `type` against, and — decisively — the test the
 /// spawn parser uses to decide whether a `role` string is a posture alias or a
 /// roster profile key. Teaching `from_str` about `manager` or `smoke-runner`
@@ -705,7 +705,7 @@ fn member_role_alias(token: &str) -> Option<FleetRole> {
 /// Resolution order, and nothing else:
 /// 1. an empty label means *unspecified*, which is the documented general
 ///    default a Fleet task without a `role` has always had;
-/// 2. [`FleetRole::from_str`] — the declared closed vocabulary plus its
+/// 2. [`FleetRole::parse`] — the declared closed vocabulary plus its
 ///    documented legacy aliases ([`VALID_ROLE_ALIASES`]);
 /// 3. `member_role_alias` — the org-chart/slot spellings above;
 /// 4. **fail closed.**
@@ -723,7 +723,7 @@ pub fn runtime_role_for_member(role: &str) -> FleetRole {
     if token.is_empty() {
         return FleetRole::Worker;
     }
-    FleetRole::from_str(&token)
+    FleetRole::parse(&token)
         .or_else(|| member_role_alias(&token))
         .unwrap_or(FleetRole::Scout)
 }
