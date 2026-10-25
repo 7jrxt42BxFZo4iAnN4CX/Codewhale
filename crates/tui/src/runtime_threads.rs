@@ -5137,6 +5137,8 @@ pub struct CreateThreadRequest {
 /// having to recreate a thread or pass per-turn overrides on every send.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct UpdateThreadRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_idle: Option<bool>,
     pub archived: Option<bool>,
     pub allow_shell: Option<bool>,
     pub trust_mode: Option<bool>,
@@ -11872,6 +11874,15 @@ impl RuntimeThreadManager {
                 .store
                 .load_thread(id)
                 .with_context(|| format!("Thread not found: {id}"))?;
+            if req.expected_idle == Some(true)
+                && active
+                    .engines
+                    .get(id)
+                    .and_then(|state| state.active_turn.as_ref())
+                    .is_some()
+            {
+                bail!("thread '{id}' already has an active turn; finish it before this update");
+            }
             // Shell opt-in broadens only an idle conversation. Check while
             // holding the same active + record locks used by turn admission.
             if req.allow_shell == Some(true)
@@ -12615,7 +12626,7 @@ impl RuntimeThreadManager {
 
     /// Lock order: `config_admission` (held by the caller) before `active`,
     /// matching turn admission and config reload.
-    async fn reject_active_turns_in_workspace(&self, workspace: &Path) -> Result<()> {
+    pub(crate) async fn reject_active_turns_in_workspace(&self, workspace: &Path) -> Result<()> {
         // A workspace directory that no longer exists cannot host a running
         // tool; compare the recorded path as-is in that case.
         let workspace = workspace

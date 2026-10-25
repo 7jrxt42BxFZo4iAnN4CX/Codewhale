@@ -3237,7 +3237,15 @@ fn run_with<T: CloudTransport, W: Write>(
         CloudCommand::Computers(computers) => {
             run_computers(computers.command, &client, machine, out)
         }
-        CloudCommand::Session(args) => computer::run(args, &client, machine, out, key_reader),
+        CloudCommand::Session(args) => computer::run(
+            args,
+            &client,
+            machine,
+            out,
+            key_reader,
+            config,
+            provider_secrets,
+        ),
         CloudCommand::Projects(projects) => run_projects(projects.command, &client, machine, out),
         CloudCommand::Github(github) => run_github(github.command, &client, machine, out),
         CloudCommand::Agents(agents) => run_agents(agents.command, &client, machine, out),

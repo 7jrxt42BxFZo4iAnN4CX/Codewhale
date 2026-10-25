@@ -16,12 +16,14 @@ use super::{ApiError, ProviderCredentialState, RuntimeApiState};
 const MAX_KEY_BYTES: usize = 4 * 1024;
 
 /// Request body cap for the key route — the key plus JSON framing.
-pub(super) const PROVIDER_KEY_BODY_LIMIT_BYTES: usize = MAX_KEY_BYTES + 1024;
+pub(super) const PROVIDER_KEY_BODY_LIMIT_BYTES: usize = MAX_KEY_BYTES + 3072;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct SetProviderKeyRequest {
     key: String,
+    #[serde(default)]
+    expected_base_url: Option<String>,
     #[serde(default)]
     scope: ProviderKeyScope,
 }
@@ -313,6 +315,9 @@ pub(super) async fn set_provider_key(
         {
             return Err(ApiError::conflict("This Engine accepts session-only keys"));
         }
+        if request.expected_base_url.as_ref().is_some_and(|url| request.scope != ProviderKeyScope::Session || url.len() > 2048) {
+            return Err(ApiError::bad_request("Endpoint-bound credentials require session scope and a bounded endpoint."));
+        }
         // Both scopes validate the exact provider and credential authority;
         // only session writes may replace an existing eligible memory overlay.
         let identity = writable_provider(&state.config.read(), &id, request.scope)?;
@@ -384,6 +389,9 @@ pub(super) async fn set_provider_key(
             if request.scope == ProviderKeyScope::Session {
                 writable_provider(&config, &id, request.scope)?;
                 let endpoint = config.base_url_for_route(&provider_owned);
+                if request.expected_base_url.as_ref().is_some_and(|expected| expected.trim_end_matches('/') != endpoint.trim_end_matches('/')) {
+                    return Err(ApiError::conflict("The configured model endpoint differs from this computer. No credential was installed."));
+                }
                 config.session_provider_keys.write().insert(
                     provider_owned.clone(),
                     (endpoint, crate::credentials::Credential::ApiKey { key }),

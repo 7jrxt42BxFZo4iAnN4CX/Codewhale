@@ -49,6 +49,15 @@ pub(crate) struct ComputerOptions {
     pub deny: Option<String>,
     #[arg(long, help = "Print the session receipt as JSON")]
     pub json: bool,
+    #[arg(long, help = "Show the configured model available to cloud dispatch")]
+    pub configured_model: bool,
+    #[arg(
+        long,
+        help = "Connect the configured model to --thread without sending a message"
+    )]
+    pub prepare_model: bool,
+    #[arg(long, hide = true)]
+    pub expected_account: Option<String>,
 }
 
 impl ComputerOptions {
@@ -62,6 +71,8 @@ impl ComputerOptions {
             || self.approve.is_some()
             || self.deny.is_some()
             || self.json
+            || self.configured_model
+            || self.prepare_model
     }
 }
 
@@ -155,19 +166,68 @@ pub(super) fn run<T: CloudTransport, W: Write>(
     machine: &machine::MachineKeyEnv,
     out: &mut W,
     key_reader: &mut dyn FnMut(KeyReadMode) -> Result<String>,
+    config: &ConfigStore,
+    secrets: &Secrets,
 ) -> Result<()> {
+    let local = config.config.resolve_runtime_options_with_secrets(
+        &codewhale_config::CliRuntimeOverrides::default(),
+        secrets,
+    );
+    if args.options.configured_model {
+        if !args.prompt.is_empty()
+            || args.options.prepare_model
+            || args.options.key_stdin
+            || args.options.stop
+            || args.options.approve.is_some()
+            || args.options.deny.is_some()
+        {
+            bail!("Use --configured-model without a session action.");
+        }
+        let available = portable_model(&local, config).is_ok();
+        let reason = portable_model(&local, config)
+            .err()
+            .map(|error| error.to_string());
+        writeln!(
+            out,
+            "{}",
+            serde_json::to_string(
+                &json!({ "provider": local.provider.as_str(), "model": local.model,
+            "configured": available, "reason": reason })
+            )?
+        )?;
+        return Ok(());
+    }
     if machine.is_present() {
         bail!(
             "Cloud conversations require an account login; unset CODEWHALE_API_KEY and run `codewhale login`."
         );
     }
-    let options = args.options;
-    let prompt = args.prompt.join(" ").trim().to_string();
+    let mut options = args.options;
+    let mut prompt = args.prompt.join(" ").trim().to_string();
+    if prompt.is_empty()
+        && !io::stdin().is_terminal()
+        && !options.key_stdin
+        && !options.prepare_model
+        && !options.stop
+        && options.approve.is_none()
+        && options.deny.is_none()
+    {
+        let mut piped = String::new();
+        io::stdin()
+            .take(512_001)
+            .read_to_string(&mut piped)
+            .context("Read the task from standard input")?;
+        if piped.len() > 512_000 {
+            bail!("The piped task is too large.");
+        }
+        prompt = piped.trim().to_string();
+    }
     if [
         !prompt.is_empty(),
         options.stop,
         options.approve.is_some(),
         options.deny.is_some(),
+        options.prepare_model,
     ]
     .into_iter()
     .filter(|x| *x)
@@ -179,13 +239,18 @@ pub(super) fn run<T: CloudTransport, W: Write>(
     if prompt.chars().count() > 128_000 {
         bail!("The cloud prompt is too long; keep it under 128,000 characters.");
     }
-    if options.thread.is_none() && (options.computer.is_none() || prompt.is_empty()) {
-        bail!("Start with --computer <id> and a prompt, or continue with --thread <id>.");
+    if options.thread.is_none() && prompt.is_empty() {
+        bail!("Give a task to dispatch, or continue with --thread <id>.");
     }
-    if options.thread.is_none()
-        && (options.cloud_provider.is_none() || options.cloud_model.is_none())
-    {
-        bail!("Choose --cloud-provider and --cloud-model for a new cloud conversation.");
+    let use_local_model = options.cloud_provider.is_none()
+        && !options.key_stdin
+        && (!prompt.is_empty() || options.prepare_model);
+    if use_local_model {
+        portable_model(&local, config)?;
+    }
+    if options.thread.is_none() && options.cloud_provider.is_none() {
+        options.cloud_provider = Some(local.provider.as_str().to_string());
+        options.cloud_model = Some(local.model.clone());
     }
     if let Some(value) = &options.thread {
         validate_resource_id(value, "Conversation")?;
@@ -207,6 +272,13 @@ pub(super) fn run<T: CloudTransport, W: Write>(
         bail!("The operation key must start with a letter or number.");
     }
     let user = client.me()?;
+    if options
+        .expected_account
+        .as_deref()
+        .is_some_and(|id| id != user.id)
+    {
+        bail!("The signed-in account changed. Reopen the original cloud conversation.");
+    }
     let stored = client
         .load_auth()?
         .context("Sign in with `codewhale login` first")?;
@@ -244,10 +316,35 @@ pub(super) fn run<T: CloudTransport, W: Write>(
             bail!("This account conversation is unavailable.");
         }
     }
+    let selected = if options.computer.is_none() && options.thread.is_none() {
+        let list = account.request(HttpMethod::Get, "/api/computers", None)?;
+        let machines = list["computers"]
+            .as_array()
+            .context("The account computer list is unavailable")?;
+        let running: Vec<_> = machines
+            .iter()
+            .filter(|computer| {
+                computer["ownerId"].as_str() == Some(&account.account)
+                    && computer["status"] == "running"
+            })
+            .collect();
+        match running.as_slice() {
+            [computer] => computer["id"].as_str().map(str::to_string),
+            [] => bail!(
+                "No Boat computer is running. Start one in Codewhale Computers, then dispatch your task."
+            ),
+            _ => bail!(
+                "More than one computer is running. Choose --computer <id>; `codewhale account computers list` shows their IDs."
+            ),
+        }
+    } else {
+        None
+    };
     let computer = options
         .computer
         .as_deref()
         .or_else(|| thread["computerId"].as_str())
+        .or(selected.as_deref())
         .context("This conversation has no cloud computer")?
         .to_string();
     validate_resource_id(&computer, "Computer")?;
@@ -369,6 +466,24 @@ pub(super) fn run<T: CloudTransport, W: Write>(
     if !prompt.is_empty() || key.is_some() {
         validate_model_route(provider, model).context("The last model route is unconfirmed. Choose --cloud-provider and --cloud-model explicitly")?;
     }
+    if use_local_model {
+        if provider != local.provider.as_str()
+            || model != local.model
+            || provider_id.is_some_and(|id| id != provider)
+        {
+            bail!(
+                "This conversation uses a different model from your configured model. Select its model locally or explicitly choose --cloud-provider and --cloud-model to use the computer's existing connection."
+            );
+        }
+        account.operation(
+            thread_id,
+            &computer,
+            &runtime,
+            "key",
+            json!({ "provider": provider,
+            "key": local.api_key.as_deref(), "expectedBaseUrl": local.base_url }),
+        ).context("The computer could not confirm your model connection. Check that its provider endpoint matches your configured model")?;
+    }
     if let Some(key) = key {
         validate_api_key(&key)?;
         account.operation(
@@ -410,6 +525,8 @@ pub(super) fn run<T: CloudTransport, W: Write>(
             bail!("This approval is no longer waiting. Refresh the conversation.");
         }
         reply
+    } else if options.prepare_model {
+        json!({ "prepared": true, "provider": provider, "model": model, "backend": "memory" })
     } else {
         detail
     };
@@ -480,5 +597,67 @@ pub(super) fn run<T: CloudTransport, W: Write>(
             "Inspect: codewhale dispatch --thread {thread_id}\nContinue: codewhale dispatch --thread {thread_id} \"your next task\"\nStop: codewhale dispatch --thread {thread_id} --stop"
         )?;
     }
+    Ok(())
+}
+
+fn portable_model(
+    local: &codewhale_config::ResolvedRuntimeOptions,
+    config: &ConfigStore,
+) -> Result<()> {
+    local
+        .route
+        .as_ref()
+        .map_err(|_| anyhow!("Choose a valid model in Codewhale before dispatching."))?;
+    let endpoint =
+        Url::parse(&local.base_url).context("The configured model endpoint is invalid")?;
+    let local_host = endpoint.host_str().is_some_and(|host| {
+        host.eq_ignore_ascii_case("localhost")
+            || host.ends_with(".localhost")
+            || host
+                .trim_matches(['[', ']'])
+                .parse::<IpAddr>()
+                .is_ok_and(|address| address.is_loopback() || address.is_unspecified())
+    });
+    if endpoint.scheme() != "https"
+        || local_host
+        || endpoint.host_str().is_none()
+        || !endpoint.username().is_empty()
+        || endpoint.password().is_some()
+        || endpoint.query().is_some()
+        || endpoint.fragment().is_some()
+        || local.insecure_skip_tls_verify
+    {
+        bail!(
+            "Cloud dispatch needs a model endpoint reachable over HTTPS from Boat. A model running only on this computer cannot continue after it disconnects."
+        );
+    }
+    if codewhale_config::auth_mode_disables_api_key(local.auth_mode.as_deref())
+        || config
+            .config
+            .providers
+            .for_provider(local.provider)
+            .external_credentials
+            .is_some()
+        || config
+            .config
+            .providers
+            .for_provider(local.provider)
+            .oauth_credential_generation
+            .is_some()
+        || !local.http_headers.is_empty()
+        || matches!(
+            local.provider,
+            codewhale_config::ProviderKind::OpenaiCodex | codewhale_config::ProviderKind::Custom
+        )
+        || local
+            .auth_mode
+            .as_deref()
+            .is_some_and(|mode| !matches!(mode, "api_key" | "auto"))
+    {
+        bail!(
+            "This configured connection cannot be copied to Boat. Use a portable API-key model connection; device-bound sign-ins stay on their credential owner."
+        );
+    }
+    validate_api_key(local.api_key.as_deref().context("Configure a model API key in Codewhale before dispatching. Boat provides the computer, not model credentials.")?)?;
     Ok(())
 }

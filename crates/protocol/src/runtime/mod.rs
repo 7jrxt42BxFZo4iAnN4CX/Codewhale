@@ -66,6 +66,8 @@ pub struct RuntimeCapabilities {
     pub threads: bool,
     #[serde(default)]
     pub thread_create_idempotency: bool,
+    #[serde(default)]
+    pub thread_idle_precondition: bool,
     /// Explicit per-thread shell opt-in is checked against loaded policy and
     /// cannot broaden a conversation while it has an active turn.
     #[serde(default)]
@@ -451,6 +453,7 @@ mod tests {
             session_provider_keys: false,
             threads: true,
             thread_create_idempotency: true,
+            thread_idle_precondition: true,
             thread_shell_consent: true,
             turns: true,
             turn_operation_idempotency: true,

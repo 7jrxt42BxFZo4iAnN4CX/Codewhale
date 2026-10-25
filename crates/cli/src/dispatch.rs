@@ -53,7 +53,16 @@ pub(crate) fn run(
     config: &mut ConfigStore,
 ) -> Result<()> {
     use crate::cloud::{AccountDispatch, run_dispatch};
-    if args.computer.selected() {
+    let legacy_work = args.agent.is_some()
+        || args.seconds.is_some()
+        || args.context_file.is_some()
+        || !args.file_refs.is_empty()
+        || args.message_id.is_some()
+        || args.yes
+        || args.confirm_eu_compute
+        || args.show.is_some()
+        || args.cancel.is_some();
+    if args.computer.selected() || !legacy_work {
         if args.agent.is_some()
             || args.seconds.is_some()
             || args.context_file.is_some()

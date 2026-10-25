@@ -387,7 +387,7 @@ New integrations should prefer `codewhale app-server --http` for the full Engine
     /// Manage an existing Codewhale account; new accounts are not open.
     #[command(visible_alias = "cloud")]
     Account(cloud::CloudArgs),
-    /// Run a task on a Codewhale cloud computer (not available: cloud computers and accounts are paused for new users).
+    /// Run a task on a Codewhale cloud computer using your configured model.
     Dispatch(dispatch::DispatchArgs),
     /// Run MCP server mode over stdio.
     McpServer,

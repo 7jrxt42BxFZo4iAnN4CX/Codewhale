@@ -1342,6 +1342,7 @@ fn default_runtime_capabilities() -> RuntimeCapabilities {
         session_provider_keys: false,
         threads: true,
         thread_create_idempotency: true,
+        thread_idle_precondition: true,
         thread_shell_consent: true,
         turns: true,
         turn_operation_idempotency: true,
