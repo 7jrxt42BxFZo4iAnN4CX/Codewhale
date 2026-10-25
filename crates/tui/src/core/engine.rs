@@ -10377,7 +10377,7 @@ use context::{context_input_budget_for_provider, effective_max_output_tokens};
 mod dispatch;
 mod lsp_hooks;
 pub(crate) mod reviewer;
-mod streaming;
+pub(crate) mod streaming;
 mod token_estimate_cache;
 pub(crate) mod tool_catalog;
 pub(crate) mod tool_execution;

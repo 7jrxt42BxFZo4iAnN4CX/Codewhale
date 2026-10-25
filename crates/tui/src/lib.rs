@@ -10456,10 +10456,24 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
     let mut accumulator = pr_plan
         .as_ref()
         .map(crate::tools::review::PrReviewAccumulator::new);
+    let review_triage = crate::tools::review_triage::triage_review(&diff);
+    let review_rates = match (args.input_usd_per_mtok, args.output_usd_per_mtok) {
+        (Some(input), Some(output)) => Some(crate::tools::review_triage::SpendRates {
+            input_usd_per_million: input,
+            output_usd_per_million: output,
+        }),
+        _ => None,
+    };
+    let review_budget = crate::tools::review_triage::budget_for(&review_triage).with_money_cap(
+        args.money_cap_usd,
+        review_rates.map(|rates| (rates.input_usd_per_million, rates.output_usd_per_million)),
+    );
     // Visible-text reserve for this exact route/model (#6285). A reasoning route
     // shares one `max_tokens` allowance between hidden reasoning and visible
     // text, so the review request has to keep room for the review itself.
-    let review_allowance = client.effective_max_output_tokens(&request_route.model);
+    let review_allowance = client
+        .effective_max_output_tokens(&request_route.model)
+        .min(review_budget.max_output_tokens);
     let review_reserve_percent =
         crate::route_budget::review_visible_text_reserve_percent(&request_route.model);
     let review_reserve_tokens = crate::route_budget::review_visible_text_reserve_tokens(
@@ -10477,18 +10491,6 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
     };
     let mut review_anchors = crate::tools::review_core::ReviewAnchorReport::default();
     let mut review_tools_used: Vec<String> = Vec::new();
-    let review_triage = crate::tools::review_triage::triage_review(&diff);
-    let review_rates = match (args.input_usd_per_mtok, args.output_usd_per_mtok) {
-        (Some(input), Some(output)) => Some(crate::tools::review_triage::SpendRates {
-            input_usd_per_million: input,
-            output_usd_per_million: output,
-        }),
-        _ => None,
-    };
-    let review_budget = crate::tools::review_triage::budget_for(&review_triage).with_money_cap(
-        args.money_cap_usd,
-        review_rates.map(|rates| (rates.input_usd_per_million, rates.output_usd_per_million)),
-    );
     let mut review_stop: Option<crate::tools::review_triage::ReviewStop> = None;
     let mut review_spend_usd = None;
     for (index, user_prompt) in prompts.into_iter().enumerate() {
@@ -10498,16 +10500,13 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
                 &model,
                 effort,
                 review_reserve_percent,
+                review_allowance,
             )
         });
         let mut request = crate::tools::review_core::ReviewCoreRequest::new(&diff, user_prompt);
         request.workspace = review_tool_workspace.clone();
         request.budget = review_budget.tool_budget();
-        request.max_output_tokens = Some(
-            client
-                .effective_max_output_tokens(&request_route.model)
-                .min(review_budget.max_output_tokens),
-        );
+        request.max_output_tokens = Some(review_allowance);
         request.reasoning_effort = reasoning_effort;
         request.spend_rates = review_rates;
         request.money_cap_usd = review_budget
@@ -10556,6 +10555,16 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
             let reasoning_tokens = usage
                 .reasoning_tokens
                 .map_or_else(|| "unknown".to_string(), |tokens| tokens.to_string());
+            let visible_tokens = usage
+                .output_tokens
+                .saturating_sub(usage.reasoning_tokens.unwrap_or(0));
+            let outcome_clause = if visible_tokens > 0 {
+                format!(
+                    "was cut off before the review finished ({visible_tokens} visible tokens came back)"
+                )
+            } else {
+                "produced no review text".to_string()
+            };
             let reserve_clause = if review_reserve_percent == 0 {
                 "no reasoning reserve was needed for this model".to_string()
             } else {
@@ -10566,7 +10575,7 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
                 index,
                 publication,
                 format!(
-                    "Review pass {}/{} exhausted its output allowance and produced no review text. This is an infrastructure/budget outcome, not a review result: the provider stopped with reason `{}` after reporting {} of {} requested output tokens as reasoning; this model's review reserve is {} tokens ({review_reserve_percent}% of the allowance) and {reserve_clause}. Coverage: {}. Reviewed so far: {} of {} planned pass(es). The partial review was not accepted or posted.",
+                    "Review pass {}/{} exhausted its output allowance and {outcome_clause}. This is an infrastructure/budget outcome, not a review result: the provider stopped with reason `{}` after reporting {} of {} requested output tokens as reasoning; this model's review reserve is {} tokens ({review_reserve_percent}% of the allowance) and {reserve_clause}. Coverage: {}. Reviewed so far: {} of {} planned pass(es). The partial review was not accepted or posted.",
                     index + 1,
                     planned_passes,
                     codewhale_models::stop_reason_detail(review_stop_reason.as_deref()),
@@ -10577,6 +10586,14 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
                     index,
                     planned_passes,
                 ),
+            );
+        }
+        if result.outcome == crate::tools::review_core::ReviewCoreOutcome::LeakedToolCall {
+            return report_failure(
+                &usage,
+                index,
+                publication,
+                crate::tools::review::leaked_tool_call_message(index + 1, planned_passes),
             );
         }
         let pass_output = result.raw;
@@ -13789,13 +13806,15 @@ fn review_reasoning_effort_value_for_prompt(
     model: &str,
     effort: crate::reasoning_preference::ReasoningEffort,
     reserve_percent: u32,
+    allowance: u32,
 ) -> Option<String> {
     let resolved = if effort == crate::reasoning_preference::ReasoningEffort::Auto {
         crate::auto_reasoning::select()
     } else {
         effort
     };
-    let bounded = crate::tools::review::bounded_review_reasoning_effort(resolved, reserve_percent);
+    let bounded =
+        crate::tools::review::bounded_review_reasoning_effort(resolved, reserve_percent, allowance);
     cli_reasoning_effort_value(config, model, bounded)
 }
 
