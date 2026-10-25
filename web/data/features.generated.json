@@ -2,13 +2,13 @@
   "format": "codewhale.features.v1",
   "source": {
     "path": "docs/features.toml",
-    "sha256": "e21df91be46c5d92ebf555d4e49ab21bdea488e1353492c5e14f3770138568fa"
+    "sha256": "3d8f93a9ff28fb245b1794a1bebc800d39c353b8efee1cf06eed925cc60fba45"
   },
   "features": [
     {
       "id": "cloud-computer-dispatch",
       "name": "Cloud computer conversations",
-      "summary": "Dispatch, inspect, continue and stop the same account cloud conversation from terminal and desktop, including conversations with a saved whale.",
+      "summary": "Dispatch, inspect, continue and stop one account cloud conversation from terminal and desktop, saved whales included.",
       "status": "experimental",
       "surfaces": {
         "tui": "preview"
