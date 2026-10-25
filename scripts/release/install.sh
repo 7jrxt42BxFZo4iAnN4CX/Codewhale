@@ -95,7 +95,8 @@ preflight_glibc() {
 }
 
 # This script installs an already checksum-verified archive. Existing different
-# binaries go through `codewhale update`, the sole version-aware updater.
+# binaries go through `codewhale update`, or through CODEWHALE_FORCE_REINSTALL=1
+# here when the installed file is not a published release artifact.
 case "$BIN_DIR" in
     /*) ;;
     *) echo "ERROR: PREFIX must be an absolute user path" >&2; exit 1 ;;
@@ -119,8 +120,21 @@ check_destination() {
             destination_exists=1
             return 0
         fi
+        if [[ "${CODEWHALE_FORCE_REINSTALL:-}" == 1 && ! -L "$dst" && -f "$dst" ]]; then
+            local backup="$dst.bak-$(date -u +%Y%m%dT%H%M%SZ)" suffix=1
+            while [[ -e "$backup" || -L "$backup" ]]; do
+                backup="$dst.bak-$(date -u +%Y%m%dT%H%M%SZ)-$suffix"
+                suffix=$((suffix + 1))
+            done
+            mv "$dst" "$backup"
+            forced_backups+=("$backup")
+            echo "Replacing $dst (previous file kept at $backup)"
+            return 0
+        fi
         echo "ERROR: refusing to replace existing $dst; no existing file was changed." >&2
         echo "For an existing direct Codewhale install, run its full path with 'update'." >&2
+        echo "To replace it with this archive and keep the previous file beside it:" >&2
+        echo '  CODEWHALE_FORCE_REINSTALL=1 ./install.sh' >&2
         echo "To migrate, install this verified archive into a fresh user prefix:" >&2
         echo '  mkdir -p "$HOME/.local"' >&2
         echo '  codewhale_prefix="$(mktemp -d "$HOME/.local/codewhale-release.XXXXXX")"' >&2
@@ -133,26 +147,10 @@ check_destination() {
 
 # The image is an explicit installer choice; presence never changes Core's
 # Node default. Archives carry notices/source beside any qualified image.
-payloads=(codewhale codew)
-if [[ "${CODEWHALE_INSTALL_COMPILED_HOST:-}" == 1 ]]; then
-    for file in codewhale-extension-host codewhale-extension-host.LICENSES.txt codewhale-extension-host.relink-source.tar.gz codewhale-extension-host.release.json; do
-        [[ -f "$SCRIPT_DIR/$file" && ! -L "$SCRIPT_DIR/$file" ]] || { echo "ERROR: compiled host requested but archive has no complete qualified payload ($file); use Node" >&2; exit 1; }
-        payloads+=("$file")
-    done
-fi
-# Validate every source and destination before the first write.
-for bin in "${payloads[@]}"; do
-    src="$SCRIPT_DIR/$bin"
-    [[ -f "$src" ]] || { echo "ERROR: $src not found in archive" >&2; exit 1; }
-    mode=0644
-    case "$bin" in codewhale|codew|codewhale-extension-host) mode=0755; preflight_glibc "$src" "${bin/codewhale-extension-host/compiled host}" ;; esac
-    check_destination "$src" "$BIN_DIR/$bin" "$mode"
-done
-legacy_tui="$BIN_DIR/codewhale-tui"
-if [[ -e "$legacy_tui" || -L "$legacy_tui" ]]; then
-    check_destination "$SCRIPT_DIR/codewhale" "$legacy_tui"
-fi
-
+# Backups this run made under CODEWHALE_FORCE_REINSTALL. A run that fails after
+# moving a command aside puts it back, so a forced install that does not
+# complete never leaves a command missing from the prefix.
+forced_backups=()
 stage=""
 stage_dir=""
 # Commands this run published, as "source<TAB>destination" lines. If a later
@@ -171,12 +169,37 @@ rollback_published() {
     done <<< "$published"
 }
 on_exit() {
-    local status=$?
+    local status=$? dst backup
     if [[ -n "$stage" ]]; then rm -f "$stage"; fi
     if [[ -n "$stage_dir" ]]; then rmdir "$stage_dir"; fi
     if [[ "$status" -ne 0 && -n "$published" ]]; then rollback_published; fi
+    if [[ "$status" -ne 0 ]]; then
+        for backup in "${forced_backups[@]}"; do
+            [[ -e "$backup" ]] || continue
+            dst="$(printf '%s' "$backup" | sed 's/\.bak-[0-9TZ]*\(-[0-9][0-9]*\)\{0,1\}$//')"
+            if [[ ! -e "$dst" && ! -L "$dst" ]]; then
+                mv "$backup" "$dst" && echo "Restored $dst: this install did not complete." >&2
+            fi
+        done
+    fi
 }
 trap on_exit EXIT
+payloads=(codewhale codew)
+if [[ "${CODEWHALE_INSTALL_COMPILED_HOST:-}" == 1 ]]; then
+    for file in codewhale-extension-host codewhale-extension-host.LICENSES.txt codewhale-extension-host.relink-source.tar.gz codewhale-extension-host.release.json; do
+        [[ -f "$SCRIPT_DIR/$file" && ! -L "$SCRIPT_DIR/$file" ]] || { echo "ERROR: compiled host requested but archive has no complete qualified payload ($file); use Node" >&2; exit 1; }
+        payloads+=("$file")
+    done
+fi
+# Validate every source and destination before the first write.
+for bin in "${payloads[@]}"; do
+    src="$SCRIPT_DIR/$bin"
+    [[ -f "$src" ]] || { echo "ERROR: $src not found in archive" >&2; exit 1; }
+    mode=0644
+    case "$bin" in codewhale|codew|codewhale-extension-host) mode=0755; preflight_glibc "$src" "${bin/codewhale-extension-host/compiled host}" ;; esac
+    check_destination "$src" "$BIN_DIR/$bin" "$mode"
+done
+
 install_binary() {
     local src="$1" dst="$2" mode="${3:-0755}"
     check_destination "$src" "$dst" "$mode"
