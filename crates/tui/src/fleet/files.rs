@@ -472,7 +472,7 @@ impl WorkspaceFile {
 /// than 1, so a concurrent reader failed with InvalidData. `Ok(false)` sends
 /// the caller back to `linkat`, which keeps that window: other Unixes, and any
 /// kernel, filesystem or sandbox that refuses the exclusive rename.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn rename_exclusive(
     directory: libc::c_int,
     from: &std::ffi::CStr,
@@ -511,14 +511,14 @@ fn rename_exclusive(
     exclusive_rename_outcome(renamed == 0)
 }
 
-#[cfg(all(unix, not(any(target_os = "linux", target_vendor = "apple"))))]
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "android", target_vendor = "apple"))))]
 fn rename_exclusive(_: libc::c_int, _: &std::ffi::CStr, _: &std::ffi::CStr) -> io::Result<bool> {
     Ok(false)
 }
 
 /// Only an existing target is final. Any other refusal falls back to `linkat`,
 /// so publication is never worse off than before the exclusive rename.
-#[cfg(any(target_os = "linux", target_vendor = "apple"))]
+#[cfg(any(target_os = "linux", target_os = "android", target_vendor = "apple"))]
 fn exclusive_rename_outcome(renamed: bool) -> io::Result<bool> {
     if renamed {
         return Ok(true);

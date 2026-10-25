@@ -338,11 +338,11 @@ impl PrivateDirectory {
                         .context("atomically replacing xAI OAuth credentials");
                 }
             } else {
-                #[cfg(any(target_os = "macos", target_os = "linux"))]
+                #[cfg(any(target_os = "macos", target_os = "linux", target_os = "android"))]
                 // Exclusive rename publishes one link atomically. A hard-link
                 // publication briefly exposes two links to concurrent readers.
                 self.move_no_replace(&temp_name, name)?;
-                #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+                #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
                 {
                     // `linkat` installs the unique generation without clobbering an
                     // existing path. The temporary link is removed immediately.
@@ -1379,7 +1379,7 @@ impl PrivateDirectory {
         Ok(())
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "android"))]
     fn move_no_replace(&self, from: &str, to: &str) -> Result<()> {
         use std::os::fd::AsRawFd as _;
         validate_private_basename(from)?;
@@ -1397,7 +1397,7 @@ impl PrivateDirectory {
                 libc::RENAME_EXCL,
             )
         };
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         // Use the kernel syscall because musl need not export a renameat2 wrapper.
         // SAFETY: same retained directory; NOREPLACE is required, never emulated by a check.
         let result = unsafe {
@@ -1417,7 +1417,7 @@ impl PrivateDirectory {
         Ok(())
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
     fn move_no_replace(&self, _from: &str, _to: &str) -> Result<()> {
         bail!("exclusive endpoint retirement is unsupported on this platform")
     }
@@ -1907,7 +1907,7 @@ pub fn unix_process_start(pid: u32) -> Result<String> {
             info.pbi_start_tvsec, info.pbi_start_tvusec
         ))
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         use std::io::Read as _;
         use std::os::fd::{AsRawFd as _, FromRawFd as _};
@@ -1972,11 +1972,11 @@ pub fn unix_process_start(pid: u32) -> Result<String> {
         validate_linux_process_status(&status, pid, PrivateDirectory::current_user_id())?;
         Ok(format!("linux:{}:{start}", linux_boot_id()?))
     }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android")))]
     bail!("local process generation authentication unsupported on this platform")
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn linux_boot_id() -> Result<String> {
     use std::io::Read as _;
     let mut boot = String::new();
@@ -1991,7 +1991,7 @@ fn linux_boot_id() -> Result<String> {
     Ok(boot.to_string())
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 pub fn linux_process_start_predates_boot(recorded: &str) -> Result<bool> {
     let recorded_boot = recorded
         .strip_prefix("linux:")
@@ -2001,7 +2001,7 @@ pub fn linux_process_start_predates_boot(recorded: &str) -> Result<bool> {
     Ok(recorded_boot != linux_boot_id()?)
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 fn validate_linux_process_status(status: &str, pid: u32, uid: u32) -> Result<()> {
     let mut actual_pid = None;
     let mut actual_uid = None;

@@ -427,7 +427,7 @@ fn verify_snapshot(root: &Path, files: &BTreeMap<PathBuf, &[u8]>) -> io::Result<
 
 /// Atomic no-replace directory publication. A check followed by ordinary Unix
 /// rename is insufficient: rename is allowed to replace an existing empty dir.
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "android"))]
 pub(super) fn publish_snapshot(source: &Path, destination: &Path) -> io::Result<()> {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt as _;
@@ -439,7 +439,7 @@ pub(super) fn publish_snapshot(source: &Path, destination: &Path) -> io::Result<
     #[cfg(target_os = "macos")]
     let result =
         unsafe { libc::renamex_np(source.as_ptr(), destination.as_ptr(), libc::RENAME_EXCL) };
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     let result = unsafe {
         // Static musl may lack the libc wrapper; use the same kernel operation.
         libc::syscall(
@@ -492,7 +492,7 @@ pub(super) fn publish_snapshot(source: &Path, destination: &Path) -> io::Result<
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android", windows)))]
 pub(super) fn publish_snapshot(_source: &Path, _destination: &Path) -> io::Result<()> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
