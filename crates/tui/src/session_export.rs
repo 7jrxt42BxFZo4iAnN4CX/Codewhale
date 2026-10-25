@@ -287,7 +287,7 @@ pub fn session_artifacts_dir(sessions_dir: &Path, session_id: &str) -> io::Resul
 
 pub(crate) fn export_recovery_hint(session_id: &str) -> String {
     format!(
-        "To keep its history without that provider, run `codewhale sessions export {session_id}`."
+        "To move it to a provider you still have, run `codewhale --provider <name> resume {session_id}`. To keep its history without that provider, run `codewhale sessions export {session_id}`."
     )
 }
 

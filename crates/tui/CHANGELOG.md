@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `codewhale --provider <name> resume <id>` now moves the saved session to the
+  named provider, as `exec --resume` already did, so a session whose provider
+  table was deleted can be reopened on a provider you still have. It takes
+  that provider's default model unless `--model` is also given. Without
+  `--provider` the resume still refuses rather than fall back, and the refusal,
+  now also on the `codewhale resume` and `fork` mount path, names this command
+  beside `codewhale sessions export <id>` (#6996). Thanks @luestr.
 - The model's skills index now says when it shortens skill descriptions.
   When a description hits the 400-char row cap, or rows are cut to fit the
   context budget, the index ends with "descriptions shortened for N of M

@@ -10039,22 +10039,53 @@ async fn prepare_mounted_session(
     })?;
     let source_id = saved.metadata.id.clone();
     let source_title = saved.metadata.title.clone();
+    let move_to_launch_provider = matches!(intent, MountedHistoryIntent::Resume)
+        && crate::config::explicit_launch_provider_override().is_some();
+    let mut route_overrides = serde_json::Value::Null;
     if cli.operation_key.is_none() {
-        let identity = prepared
-            .config
-            .resolve_persisted_provider_identity(
-                Some(&saved.metadata.model_provider),
-                saved.metadata.model_provider_id.as_deref(),
-            )
-            .map_err(anyhow::Error::msg)?;
+        let (identity, model) = if move_to_launch_provider {
+            let identity = prepared
+                .config
+                .active_provider_identity()
+                .map_err(anyhow::Error::msg)?;
+            (identity, crate::config::explicit_launch_model_override())
+        } else {
+            let identity = prepared
+                .config
+                .resolve_persisted_provider_identity(
+                    Some(&saved.metadata.model_provider),
+                    saved.metadata.model_provider_id.as_deref(),
+                )
+                .map_err(|reason| {
+                    anyhow!(
+                        "{reason}. {}",
+                        session_export::export_recovery_hint(&source_id)
+                    )
+                })?;
+            (identity, Some(saved.metadata.model.clone()))
+        };
         // Same exact route projection as mounted restore; policy and credentials
         // come only from this already captured merged Config.
         let route = crate::route_runtime::resolve_runtime_route_for_identity(
             &prepared.config,
             &identity,
-            Some(&saved.metadata.model),
+            model.as_deref(),
         )
+        .and_then(|route| {
+            if move_to_launch_provider {
+                route.preflight()
+            } else {
+                Ok(route)
+            }
+        })
         .map_err(anyhow::Error::msg)?;
+        if move_to_launch_provider {
+            route_overrides = serde_json::json!({
+                "model_provider": identity.persisted_kind(),
+                "model_provider_id": identity.persisted_id(),
+                "model": route.model,
+            });
+        }
         prepared.config = *route.config;
     }
     let task_config = crate::task_manager::TaskManagerConfig::from_runtime(
@@ -10185,6 +10216,7 @@ async fn prepare_mounted_session(
                 expected_document_digest: source_digest,
             };
             let options = CanonicalHistoryOptions {
+                overrides: route_overrides,
                 expected_session_goal_digest: Some(source_goal_digest),
                 ..Default::default()
             };

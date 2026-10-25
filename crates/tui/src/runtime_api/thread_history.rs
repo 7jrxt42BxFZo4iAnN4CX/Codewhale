@@ -2041,8 +2041,10 @@ fn apply_history_create_overrides(
     }
     if update.model_provider.is_some() {
         create.model_provider.clone_from(&update.model_provider);
-    }
-    if update.model_provider_id.is_some() {
+        create
+            .model_provider_id
+            .clone_from(&update.model_provider_id);
+    } else if update.model_provider_id.is_some() {
         create
             .model_provider_id
             .clone_from(&update.model_provider_id);
