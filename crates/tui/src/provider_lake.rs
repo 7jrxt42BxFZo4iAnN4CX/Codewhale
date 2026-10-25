@@ -1988,6 +1988,35 @@ pub(crate) async fn refresh_local_ollama_catalog(config: &Config, identity: &Pro
     }
 }
 
+pub(crate) async fn refresh_unverified_local_context(
+    config: &Config,
+    identity: &ProviderIdentity,
+    model: &str,
+) {
+    if identity.provider != ProviderKind::Ollama {
+        return;
+    }
+    let provider = identity.provider;
+    let key = identity.key.as_str().to_string();
+    let base_url = config.base_url_for_route(identity);
+    let model = model.to_string();
+    let known = tokio::task::spawn_blocking(move || {
+        catalog_offering_for_route(provider, &key, &base_url, &model)
+            .and_then(|row| row.limit)
+            .and_then(|limit| limit.context)
+            .is_some()
+    })
+    .await
+    .unwrap_or(false);
+    if !known {
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            refresh_local_ollama_catalog(config, identity),
+        )
+        .await;
+    }
+}
+
 pub(crate) async fn refresh_account_catalog_before_first_request(config: &Config) {
     let Ok(identity) = config.active_provider_identity() else {
         return;
