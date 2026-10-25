@@ -612,6 +612,7 @@ pub(crate) fn assemble_instruction_block(
         ctx.instruction_segments.push(segment);
     }
 
+    ctx.notices.append(&mut fresh_notices);
     ctx.notices.append(&mut apply_instruction_budgets(
         &mut ctx.instruction_segments,
         &mut ctx.rules_block,
@@ -781,6 +782,10 @@ fn configured_instruction_segments(
 struct DirInstructions {
     segments: Vec<InstructionSegment>,
     notices: Vec<InstructionNotice>,
+    /// Human-readable reason a candidate was refused. The notice carries the
+    /// structured form; this is the text `/context report` and the Runtime API
+    /// listing have always shown.
+    warnings: Vec<String>,
 }
 /// Load project context from the workspace directory.
 ///
@@ -824,6 +829,7 @@ pub(crate) fn load_project_context_with_imports(
         ctx.source_path = last.path.clone();
     }
     ctx.notices.extend(dir.notices);
+    ctx.warnings.extend(dir.warnings);
     ctx.instruction_segments.extend(dir.segments);
 
     ctx.warnings
@@ -912,6 +918,7 @@ fn load_dir_instructions(dir: &Path, scope: &mut DirLoadContext<'_>) -> DirInstr
                 if preferred_skipped.is_none() {
                     preferred_skipped = Some(path.clone());
                 }
+                out.warnings.push(error.to_string());
                 out.notices.push(skip_notice(origin, &path, &error));
             }
         }
@@ -961,6 +968,7 @@ fn load_dir_instructions(dir: &Path, scope: &mut DirLoadContext<'_>) -> DirInstr
                     break;
                 }
                 Err(error) => {
+                    out.warnings.push(error.to_string());
                     out.notices
                         .push(skip_notice(InstructionOrigin::Claude, &path, &error))
                 }
@@ -1155,6 +1163,7 @@ fn load_project_context_with_parents_and_home_imports(
             ctx.warnings.extend(ignored_project_whale_warnings(dir));
             let dir_instructions = load_dir_instructions(dir, &mut scope);
             ctx.notices.extend(dir_instructions.notices);
+            ctx.warnings.extend(dir_instructions.warnings);
             project_segments.extend(dir_instructions.segments);
         }
     }

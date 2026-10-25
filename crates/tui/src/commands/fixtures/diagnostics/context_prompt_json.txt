@@ -32,6 +32,16 @@ message:
         "truncation_reason": null
       },
       {
+        "source_kind": "project_context",
+        "label": "Instruction budget",
+        "source_path": null,
+        "activation_reason": "config_enabled",
+        "estimated_tokens": 139,
+        "counting_confidence": "high",
+        "authority_tier": 5,
+        "truncation_reason": "global 0 / 100000 estimated tokens; project 139 / 100000 estimated tokens; policy trim; usable window 897952 tokens; static-prefix guard 718361 tokens"
+      },
+      {
         "source_kind": "project_context_pack",
         "label": "Project context pack",
         "source_path": "<workspace>",
@@ -152,7 +162,7 @@ message:
         "truncation_reason": "no API messages yet"
       }
     ],
-    "total_estimated_tokens": 2367,
+    "total_estimated_tokens": 2506,
     "active_context_estimated_tokens": 48,
     "overflow_guard_estimated_tokens": 48,
     "context_window_tokens": 1000000,
