@@ -3687,6 +3687,10 @@ impl SessionManager {
     /// strand the resume.
     pub fn resume_session(&self, id: &str) -> std::io::Result<SessionRecovery> {
         let recovery = self.recover_session_for_resume(id)?;
+        Ok(self.persist_resumed_repair(recovery))
+    }
+
+    fn persist_resumed_repair(&self, recovery: SessionRecovery) -> SessionRecovery {
         if recovery.changed
             && let Err(error) = self.save_session(&recovery.session)
         {
@@ -3696,7 +3700,7 @@ impl SessionManager {
                 "repaired session history could not be persisted; the repair will re-run on the next load"
             );
         }
-        Ok(recovery)
+        recovery
     }
 
     /// [`Self::resume_session`] for a surface that will own and autosave the
@@ -3712,8 +3716,10 @@ impl SessionManager {
     /// it while the turn's file edits stayed on disk.
     pub fn attach_session(&self, id: &str) -> std::io::Result<(SessionRecovery, SessionLease)> {
         let lease = self.reserve_session_for_attach(id)?;
-        self.promote_interrupted_checkpoint(id);
-        let recovery = self.resume_session(id)?;
+        let recovery = match self.promote_interrupted_checkpoint(id) {
+            Some(kept) => self.persist_resumed_repair(kept),
+            None => self.resume_session(id)?,
+        };
         Ok((recovery, lease))
     }
 
@@ -3722,29 +3728,34 @@ impl SessionManager {
     /// consume it. Callers hold the session's attach lease. A stale checkpoint
     /// never replaces a newer document; an unreadable document and a failed
     /// save leave both files as they were.
-    pub(crate) fn promote_interrupted_checkpoint(&self, id: &str) {
+    pub(crate) fn promote_interrupted_checkpoint(&self, id: &str) -> Option<SessionRecovery> {
         let Ok(Some(checkpoint)) = self.load_session_checkpoint(id) else {
-            return;
+            return None;
         };
-        match self.load_session(id) {
-            Ok(saved) if saved.metadata.updated_at >= checkpoint.metadata.updated_at => {}
+        let kept = match self.recover_session_for_resume(id) {
+            Ok(saved) if saved.session.metadata.updated_at >= checkpoint.metadata.updated_at => {
+                Some(saved)
+            }
             Ok(_) => {
                 let mut promoted = checkpoint;
                 self.merge_persisted_lifecycle(&mut promoted.metadata);
                 if self.save_session(&promoted).is_err() {
-                    return;
+                    return None;
                 }
+                None
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 if self.save_session(&checkpoint).is_err() {
-                    return;
+                    return None;
                 }
+                None
             }
             // A document that exists but cannot be read is not ours to
             // replace here; the attach reports it and the checkpoint stays.
-            Err(_) => return,
-        }
+            Err(_) => return None,
+        };
         let _ = self.clear_session_checkpoint(id);
+        kept
     }
 
     /// [`Self::attach_session`] with a partial-ID prefix.
