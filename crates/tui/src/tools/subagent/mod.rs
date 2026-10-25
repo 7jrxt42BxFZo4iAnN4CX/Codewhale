@@ -11499,8 +11499,8 @@ fn start_requests_read_only_role(input: &Value) -> bool {
     };
     let type_input = type_input.as_deref();
     let role_input = role_input.as_deref();
-    let parsed_type = type_input.and_then(FleetRole::parse_label);
-    let parsed_role = role_input.and_then(FleetRole::parse_label);
+    let parsed_type = type_input.and_then(FleetRole::parse);
+    let parsed_role = role_input.and_then(FleetRole::parse);
     let role = match (parsed_type, parsed_role) {
         (Some(from_type), Some(from_role)) if from_type == from_role => from_type,
         // A second token that does not parse as a canonical role may be a
@@ -15685,7 +15685,7 @@ fn parse_spawn_request(input: &Value) -> Result<SpawnRequest, ToolError> {
 
     let parsed_type = type_input
         .map(|kind| {
-            FleetRole::parse_label(kind).ok_or_else(|| {
+            FleetRole::parse(kind).ok_or_else(|| {
                 ToolError::invalid_input(format!(
                     "Invalid sub-agent type '{kind}'. Use: {VALID_SUBAGENT_TYPES}"
                 ))
@@ -15696,7 +15696,7 @@ fn parse_spawn_request(input: &Value) -> Result<SpawnRequest, ToolError> {
     // Role may be either a FleetRole alias (reviewer → FleetRole::Reviewer)
     // or a Fleet role name resolved later (`resolve_spawn_role`). Type aliases
     // still set agent_type; non-alias roles resolve as the profile key (#4177).
-    let parsed_role_type = role_input.and_then(FleetRole::parse_label);
+    let parsed_role_type = role_input.and_then(FleetRole::parse);
     let role_is_type_alias = parsed_role_type.is_some();
 
     if let (Some(type_kind), Some(role_kind)) = (&parsed_type, &parsed_role_type)
@@ -16307,7 +16307,7 @@ fn resolve_spawn_profile(
         .resolve_member(selector)
         .map_err(|error| ToolError::invalid_input(error.to_string()))?;
     let Some(member) = member else {
-        if !roster.is_exact_selection() && FleetRole::parse_label(selector).is_some() {
+        if !roster.is_exact_selection() && FleetRole::parse(selector).is_some() {
             resolve_spawn_role(request)?;
             return Ok(None);
         }
@@ -16559,7 +16559,7 @@ fn resolve_spawn_role(request: &mut SpawnRequest) -> Result<(), ToolError> {
     let Some(profile_id) = request.profile.clone() else {
         return Ok(());
     };
-    let Some(role) = FleetRole::parse_label(&profile_id) else {
+    let Some(role) = FleetRole::parse(&profile_id) else {
         return Err(ToolError::invalid_input(format!(
             "Unknown Fleet role/profile '{profile_id}'. Fleet profiles are roles: {VALID_ROLE_ALIASES}."
         )));
@@ -18232,7 +18232,7 @@ fn build_assignment_prompt(
         .role
         .as_deref()
         .map(|token| {
-            FleetRole::parse_label(token)
+            FleetRole::parse(token)
                 .map(|role| role.as_str())
                 .unwrap_or(token)
         })

@@ -15401,6 +15401,16 @@ impl RuntimeThreadManager {
                 "The agent model requires an exact account provider and model");
         }
         let auto_model = requested_model.trim().eq_ignore_ascii_case("auto");
+        if !auto_model
+            && let Ok(identity) = self.provider_identity_for_thread(&cfg_snapshot, &route_thread)
+        {
+            crate::provider_lake::refresh_unverified_local_context(
+                &cfg_snapshot,
+                &identity,
+                &requested_model,
+            )
+            .await;
+        }
         if !image_blocks.is_empty() && (requested_model.is_empty() || requested_model.trim() != requested_model) {
             bail!("image inputs require an exact nonempty named model");
         }

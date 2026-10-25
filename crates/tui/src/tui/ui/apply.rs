@@ -319,7 +319,6 @@ pub(crate) fn apply_engine_error_to_app(
             StatusToastLevel::Warning,
             Some(8_000),
         );
-        return;
     }
     // Error is already in the transcript as HistoryCell::Error above;
     // don't emit a redundant status_message that would become a sticky

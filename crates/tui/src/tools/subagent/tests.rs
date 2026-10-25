@@ -3229,18 +3229,15 @@ fn estimate_tool_description_tokens_conservative(text: &str) -> usize {
 
 #[test]
 fn test_agent_type_from_str() {
-    assert_eq!(FleetRole::parse_label("general"), Some(FleetRole::Worker));
-    assert_eq!(FleetRole::parse_label("explore"), Some(FleetRole::Scout));
-    assert_eq!(FleetRole::parse_label("PLAN"), Some(FleetRole::Planner));
-    assert_eq!(
-        FleetRole::parse_label("code-review"),
-        Some(FleetRole::Reviewer)
-    );
-    assert_eq!(FleetRole::parse_label("worker"), Some(FleetRole::Worker));
-    assert_eq!(FleetRole::parse_label("default"), Some(FleetRole::Worker));
-    assert_eq!(FleetRole::parse_label("explorer"), Some(FleetRole::Scout));
-    assert_eq!(FleetRole::parse_label("awaiter"), Some(FleetRole::Planner));
-    assert_eq!(FleetRole::parse_label("invalid"), None);
+    assert_eq!(FleetRole::parse("general"), Some(FleetRole::Worker));
+    assert_eq!(FleetRole::parse("explore"), Some(FleetRole::Scout));
+    assert_eq!(FleetRole::parse("PLAN"), Some(FleetRole::Planner));
+    assert_eq!(FleetRole::parse("code-review"), Some(FleetRole::Reviewer));
+    assert_eq!(FleetRole::parse("worker"), Some(FleetRole::Worker));
+    assert_eq!(FleetRole::parse("default"), Some(FleetRole::Worker));
+    assert_eq!(FleetRole::parse("explorer"), Some(FleetRole::Scout));
+    assert_eq!(FleetRole::parse("awaiter"), Some(FleetRole::Planner));
+    assert_eq!(FleetRole::parse("invalid"), None);
 }
 
 #[test]
@@ -3249,16 +3246,13 @@ fn test_agent_type_implementer_aliases() {
     // likely to reach for when the user says "build this".
     for alias in ["implementer", "implement", "implementation", "builder"] {
         assert_eq!(
-            FleetRole::parse_label(alias),
+            FleetRole::parse(alias),
             Some(FleetRole::Builder),
             "alias {alias} should resolve to Builder"
         );
     }
     // Case-insensitive.
-    assert_eq!(
-        FleetRole::parse_label("IMPLEMENTER"),
-        Some(FleetRole::Builder)
-    );
+    assert_eq!(FleetRole::parse("IMPLEMENTER"), Some(FleetRole::Builder));
 }
 
 #[test]
@@ -3267,12 +3261,12 @@ fn test_agent_type_verifier_aliases() {
     // Reviewer, which is for *grading* code rather than *running* it.
     for alias in ["verifier", "verify", "verification", "validator", "tester"] {
         assert_eq!(
-            FleetRole::parse_label(alias),
+            FleetRole::parse(alias),
             Some(FleetRole::Verifier),
             "alias {alias} should resolve to Verifier"
         );
     }
-    assert_eq!(FleetRole::parse_label("VERIFY"), Some(FleetRole::Verifier));
+    assert_eq!(FleetRole::parse("VERIFY"), Some(FleetRole::Verifier));
 }
 
 #[test]
@@ -3291,7 +3285,7 @@ fn test_agent_type_round_trips_via_as_str() {
         FleetRole::Custom,
     ] {
         let label = t.as_str();
-        let back = FleetRole::parse_label(label)
+        let back = FleetRole::parse(label)
             .unwrap_or_else(|| panic!("as_str label {label:?} doesn't round-trip via from_str"));
         assert_eq!(back, t, "round-trip failed for {t:?} via {label:?}");
     }
@@ -4093,18 +4087,9 @@ fn a_fast_lane_the_router_cannot_serve_carries_a_note() {
 /// silently reclassify a consultant as the default worker.
 #[test]
 fn consultant_round_trips_canonically_and_accepts_compatibility_aliases() {
-    assert_eq!(
-        FleetRole::parse_label("consultant"),
-        Some(FleetRole::Consultant)
-    );
-    assert_eq!(
-        FleetRole::parse_label("oracle"),
-        Some(FleetRole::Consultant)
-    );
-    assert_eq!(
-        FleetRole::parse_label("advisor"),
-        Some(FleetRole::Consultant)
-    );
+    assert_eq!(FleetRole::parse("consultant"), Some(FleetRole::Consultant));
+    assert_eq!(FleetRole::parse("oracle"), Some(FleetRole::Consultant));
+    assert_eq!(FleetRole::parse("advisor"), Some(FleetRole::Consultant));
     assert_eq!(FleetRole::Consultant.as_str(), "advisor");
 
     let json = serde_json::to_string(&FleetRole::Consultant).expect("serialize");
@@ -5877,7 +5862,7 @@ fn test_parse_spawn_request_accepts_fleet_role_token_for_runtime_resolution() {
 
 #[test]
 fn test_parse_spawn_request_accepts_full_role_vocabulary() {
-    // Regression for #2649: every token `FleetRole::parse_label` accepts must
+    // Regression for #2649: every token `FleetRole::parse` accepts must
     // pass the spawn boundary through `role` *and* `type`, in any case and
     // with surrounding whitespace, land on the canonical serialized role,
     // never become a profile key, and conflict with a different type.

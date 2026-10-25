@@ -3088,7 +3088,7 @@ fn parse_plan_agent_type(raw: Option<&str>) -> Result<AgentType, ToolError> {
     let role = if kind.eq_ignore_ascii_case("delegate") {
         Some(FleetRole::Worker)
     } else {
-        FleetRole::parse_label(kind)
+        FleetRole::parse(kind)
     };
     match role {
         Some(FleetRole::Worker) => Ok(AgentType::General),
