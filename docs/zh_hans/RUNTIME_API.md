@@ -2411,7 +2411,7 @@ Fleet 流（`/v1/fleet/runs/{run_id}/events`）保留自己的结束帧，
 `tool_call.timeout`、`tool_call.canceled`、`sandbox.denied`、
 `turn.workspace_snapshot`、`turn.provider_request`、`runtime.store_failure`。
 
-`turn.usage` 是**一次模型调用**的回执：每个报告了用量的提供商请求发出一次，
+`turn.usage` 是**一次模型调用**的回执：父回合的模型调用报告用量时发出，
 而不是每个回合一次。它的 `payload` 携带该次调用的 `usage`，
 `duration_ms` / `first_token_ms` / `request_ms` 计时，`maxOutputTokens` 额度，
 `billed_prompt_tokens`（提供商实际计费的提示大小：发生重试时取最后一次
@@ -2419,9 +2419,16 @@ Fleet 流（`/v1/fleet/runs/{run_id}/events`）保留自己的结束帧，
 路由定价，形如 `{usd, cny, usd_priced, cny_priced}`。
 
 当该路由无法为这次调用用到的所有 token 类别定价时，`cost` 为 `null`；
-客户端不得把它读成“免费”。这些数字是显示辅助：让界面在长回合运行期间
-就能推动费用与上下文读数；回合的权威累计总量仍随 `turn.completed` 到达，
-而 `GET /v1/threads/{id}/usage` 的线程总量仍是记账依据。
+客户端不得把它读成“免费”。某币种的 `*_priced` 为 false 时，该币种未定价。
+这些回执覆盖父回合的模型调用；子代理和压缩用量通过其他路径到达。
+因此，逐调用价格之和只是部分估算，不是整个回合的完整账单。
+
+`turn.completed` 的 `payload.turn.usage` 携带回合的权威累计 token 用量，
+包括路由到其他工作的用量；它替换运行中的 token 计数，但不提供权威的
+上一回合费用。`GET /v1/threads/{id}/usage` 的线程总量仍是记账依据。
+移动页面在回合结束后保留已观察到的已定价调用估算，并标记为部分估算，
+并在新回合开始时重置读数。重放的日志序号只计数一次。
+`billed_prompt_tokens` 供 API 客户端使用；移动页头显示 token 用量和部分费用。
 
 `turn.provider_request` 携带请求诊断观察，不增加计费用量；详见
 [每次请求的缓存回执](CACHE.md#每次请求的回执)。

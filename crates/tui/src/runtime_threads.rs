@@ -5988,15 +5988,6 @@ fn runtime_usage_bucket_key(
     }
 }
 
-/// Price one model call against the route it was actually dispatched on.
-///
-/// This is the same audit the accumulator below applies to a turn's cumulative
-/// usage, applied to a single step so a client can move its cost display while
-/// a long agentic turn is still running (the terminal UI prices per-step
-/// `TurnUsage` receipts the same way). `None` means the route could not price
-/// every token class this call used: the step is then absent from that live
-/// figure rather than shown as free, and the turn's authoritative total at
-/// `turn.completed` stays the record of what it cost.
 fn priced_step_usage(route: Option<&EffectiveRouteEnvelope>, usage: &Usage) -> Option<Value> {
     let audit = route?.audit(usage);
     let estimate = audit.estimate?.sanitized();
@@ -6008,9 +5999,6 @@ fn priced_step_usage(route: Option<&EffectiveRouteEnvelope>, usage: &Usage) -> O
     }))
 }
 
-/// The provider-billed prompt size of one model call, on the same basis the
-/// context meter reads: the last itemised request's input when the provider
-/// reported retries, else the call's own input count.
 fn billed_prompt_tokens(usage: &Usage) -> u32 {
     usage
         .request_usages
@@ -17772,11 +17760,6 @@ impl RuntimeThreadManager {
         let mut saw_engine_activity = false;
         let mut saw_turn_started = false;
         let mut engine_turn_id: Option<String> = None;
-        // The route the turn's current model call was dispatched on. Captured
-        // here so each per-step `TurnUsage` receipt can be priced while the
-        // turn runs, exactly as the terminal UI prices it from the active
-        // turn's route: no store read on the hot path, and the price always
-        // names the route that actually served that step.
         let mut dispatched_route: Option<EffectiveRouteEnvelope> = None;
         let mut pending_events: VecDeque<EngineEvent> = VecDeque::new();
         let mut event_channel_closed = false;
@@ -17927,10 +17910,6 @@ impl RuntimeThreadManager {
                 } => {
                     saw_turn_started = true;
                     engine_turn_id = Some(started_turn_id);
-                    // A legacy/non-model host may attach a route at start;
-                    // model turns follow with `RouteDispatched`. Either way the
-                    // newest envelope is what the next step's receipt is
-                    // priced against.
                     let started_route = route
                         .as_ref()
                         .and_then(crate::core::events::TurnRoute::cost_envelope);
@@ -19440,14 +19419,6 @@ impl RuntimeThreadManager {
                     request_ms,
                     finish_reason: _,
                 } => {
-                    // A client that hears from a turn only when it ends cannot
-                    // move its cost or context display while a long agentic
-                    // turn runs. Emit the two facts that reading needs beside
-                    // the receipt: this call priced on the route it was
-                    // dispatched on, and the provider-billed prompt size the
-                    // context meter reads. Both describe this step; the
-                    // turn's authoritative cumulative totals still arrive with
-                    // `turn.completed`.
                     let cost = priced_step_usage(dispatched_route.as_ref(), &usage);
                     let billed_prompt = billed_prompt_tokens(&usage);
                     self.emit_event(

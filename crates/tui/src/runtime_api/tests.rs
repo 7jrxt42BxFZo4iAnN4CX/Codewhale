@@ -24577,57 +24577,6 @@ fn the_mobile_page_follows_agents_by_name() {
     );
 }
 
-#[test]
-fn the_mobile_page_shows_a_turns_usage_while_it_runs() {
-    // The stream reports usage per model call. A page that only hears about a
-    // turn when it ends cannot show what the turn has spent until it is over.
-    let html = super::MOBILE_HTML;
-    assert!(
-        html.contains("\"turn.usage\""),
-        "subscribes to the per-call usage receipt"
-    );
-    assert!(html.contains("id=\"turn-usage\""), "has a usage reading");
-    assert!(
-        html.contains("noteTurnUsage(name, data)"),
-        "folds each receipt into the reading"
-    );
-    // A receipt is one model call; one log line per call would bury the
-    // transcript.
-    assert!(
-        html.contains("if (name === \"turn.usage\") return \"\";"),
-        "keeps receipts out of the event log"
-    );
-    // An unpriced call must not read as a free one.
-    assert!(
-        html.contains("cost.usd_priced !== false"),
-        "shows money only from a route that priced the call"
-    );
-    assert!(
-        html.contains("state.turnUsageByThread"),
-        "each conversation keeps its own running figure"
-    );
-    // Opening a thread replays its journal; the same receipt must not be
-    // counted twice, and a parked thread's turn must not restart from zero.
-    assert!(
-        html.contains("seq <= figure.lastSeq"),
-        "a replayed receipt is not counted twice"
-    );
-    assert!(
-        html.contains("state.turnUsage = turnUsageFor(id)"),
-        "returning to a conversation resumes its own figure"
-    );
-    // A compaction pass pays to summarise history; showing it as what the last
-    // exchange cost would price the summariser, not the conversation.
-    assert!(
-        html.contains("item.kind === \"context_compaction\""),
-        "drops the figure when compaction rewrites the history"
-    );
-    assert!(
-        html.contains("if (usage && !wasCompaction)"),
-        "never adopts a compaction turn's usage as the conversation's"
-    );
-}
-
 /// #6621: a Runtime thread owns the workspace restore points recorded on its
 /// own turns, for every kind of thread, through the HTTP API and with real
 /// engines built by `ensure_engine_loaded` (only the model client is

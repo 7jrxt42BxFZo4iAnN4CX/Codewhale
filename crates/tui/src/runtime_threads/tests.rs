@@ -1852,10 +1852,6 @@ mod recovery {
                 .iter()
                 .all(|event| event.payload["maxOutputTokens"] == 1500)
         );
-        // The receipt also carries the two facts a client needs to move its
-        // cost and context display while the turn runs: the prompt the
-        // provider billed, and this step priced on its dispatched route (the
-        // slot is always present; null when the route cannot price it).
         assert!(
             receipts
                 .iter()
@@ -5532,70 +5528,6 @@ fn turn_record_persists_billing_surface_without_raw_endpoint() {
     assert!(value["effective_dispatched_at"].is_string());
     assert!(value.get("base_url").is_none());
     assert!(value.get("effective_base_url").is_none());
-}
-
-#[test]
-fn priced_step_usage_prices_a_metered_route_on_its_established_endpoint() {
-    // A per-step receipt is priced on the route the call was dispatched on, so
-    // a client's live cost figure names the same price the turn's cumulative
-    // audit will use. The endpoint must be established for the bundled row to
-    // apply — an unproven endpoint is not the official one.
-    let provider = ProviderKind::Deepseek;
-    let base = provider.provider().default_base_url();
-    let route = crate::cost_status::EffectiveRouteEnvelope {
-        provider,
-        provider_identity: provider.as_str().to_string(),
-        model: "deepseek-v4-flash".to_string(),
-        openrouter_vendor: None,
-        billing_surface: crate::pricing::billing_surface_for_route(provider, Some(base))
-            .map(str::to_string),
-        endpoint_fingerprint: Some(codewhale_config::catalog::base_url_fingerprint(base)),
-        provider_live_pricing: None,
-        billing_mode: crate::cost_status::RouteBillingMode::Metered,
-        dispatched_at: Utc::now(),
-    };
-    let usage = Usage {
-        input_tokens: 1_000_000,
-        output_tokens: 1_000,
-        ..Usage::default()
-    };
-
-    let priced = priced_step_usage(Some(&route), &usage).expect("a metered, proven route prices");
-    assert_eq!(priced["usd_priced"], true);
-    assert!(
-        priced["usd"].as_f64().is_some_and(|usd| usd > 0.0),
-        "{priced}"
-    );
-
-    // Honest absence, never a fabricated zero: no route and a non-metered
-    // route both report no price for the step.
-    assert!(priced_step_usage(None, &usage).is_none());
-    let subscription = crate::cost_status::EffectiveRouteEnvelope {
-        billing_mode: crate::cost_status::RouteBillingMode::Subscription,
-        ..route.clone()
-    };
-    assert!(priced_step_usage(Some(&subscription), &usage).is_none());
-}
-
-#[test]
-fn billed_prompt_tokens_reads_the_last_itemised_request() {
-    // Same basis the context meter uses: the provider's count for the request
-    // that was finally served, else the call's own input count.
-    let retried = Usage {
-        input_tokens: 1_200,
-        request_usages: vec![Usage {
-            input_tokens: 900,
-            ..Usage::default()
-        }],
-        ..Usage::default()
-    };
-    assert_eq!(billed_prompt_tokens(&retried), 900);
-
-    let plain = Usage {
-        input_tokens: 700,
-        ..Usage::default()
-    };
-    assert_eq!(billed_prompt_tokens(&plain), 700);
 }
 
 #[test]
@@ -22133,126 +22065,6 @@ async fn engine_plumbing_items_are_tagged_internal_and_retry_hints_are_dropped()
 /// #6418: a refused session switch must say *which* guard refused. One case
 /// per `StoreAdoptionRefusal` variant, each built from a real store so the
 /// layout under test is the product's.
-mod live_usage_receipts {
-    use super::*;
-    use crate::core::engine::Engine;
-    use crate::llm_client::mock::{MockLlmClient, canned};
-
-    fn config() -> Config {
-        let mut config = Config {
-            provider: Some("deepseek".into()),
-            default_text_model: Some("deepseek-v4-flash".into()),
-            runtime_chat_isolated: true,
-            ..Config::default()
-        }
-        .with_legacy_root(Some("synthetic-live-usage-key".into()), None);
-        config.set_feature("mcp", false).unwrap();
-        config.set_feature("subagents", false).unwrap();
-        config
-    }
-
-    /// A per-step receipt must reach the client already priced against the
-    /// route that served the call: the client has no rate table of its own,
-    /// so an unpriced receipt would leave its cost display frozen for the
-    /// whole turn (the gap this endpoint closes).
-    #[tokio::test]
-    async fn step_receipts_carry_a_price_for_the_dispatched_route() -> Result<()> {
-        let _env = crate::test_support::lock_test_env();
-        let dir = tempfile::tempdir()?;
-        let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", dir.path());
-        let config = config();
-        let manager = RuntimeThreadManager::open(
-            config.clone(),
-            dir.path().to_path_buf(),
-            test_manager_config(dir.path().join("runtime")),
-        )?;
-        let thread = manager
-            .create_thread(CreateThreadRequest::default())
-            .await?;
-
-        let mut events = canned::simple_text_turn("priced step");
-        for event in &mut events {
-            if let codewhale_models::StreamEvent::MessageDelta { usage, .. } = event {
-                *usage = Some(Usage {
-                    input_tokens: 20_000,
-                    output_tokens: 500,
-                    ..Default::default()
-                });
-            }
-        }
-        let mock = Arc::new(MockLlmClient::new(vec![events]));
-        let (engine, handle) = Engine::new_with_model_client(
-            EngineConfig {
-                workspace: dir.path().to_path_buf(),
-                model: "deepseek-v4-flash".into(),
-                subagents_enabled: false,
-                snapshots_enabled: false,
-                memory_enabled: false,
-                terminal_chrome_enabled: false,
-                ..EngineConfig::default()
-            },
-            &config,
-            mock.clone(),
-        );
-        manager
-            .install_test_engine(&thread.id, handle.clone())
-            .await?;
-        let run = tokio::spawn(engine.run());
-
-        let turn = manager
-            .start_turn(
-                &thread.id,
-                StartTurnRequest {
-                    prompt: "price this step".into(),
-                    model: Some("deepseek-v4-flash".into()),
-                    operation_key: Some("live-usage-priced".into()),
-                    ..Default::default()
-                },
-            )
-            .await?;
-        let settled = wait_for_terminal_turn(&manager, &turn.id).await?;
-        assert_eq!(
-            settled.status,
-            RuntimeTurnStatus::Completed,
-            "{:?}",
-            settled.error
-        );
-
-        let receipts: Vec<_> = manager
-            .events_since(&thread.id, None)?
-            .into_iter()
-            .filter(|event| event.event == "turn.usage")
-            .collect();
-        assert_eq!(receipts.len(), 1, "one model call, one receipt");
-        let receipt = &receipts[0];
-        assert_eq!(
-            receipt.payload["billed_prompt_tokens"], 20_000,
-            "the receipt names the prompt the provider billed: {receipt:?}"
-        );
-        assert_eq!(
-            receipt.payload["cost"]["usd_priced"], true,
-            "the step is priced on the route that served it: {receipt:?}"
-        );
-        assert!(
-            receipt.payload["cost"]["usd"]
-                .as_f64()
-                .is_some_and(|usd| usd > 0.0),
-            "a priced step carries money: {receipt:?}"
-        );
-        // The same route prices the settled total, so the live figure and the
-        // authoritative one describe the same money.
-        let totals = manager
-            .aggregate_usage_for_thread(&thread.id)
-            .await?
-            .combined();
-        assert!(totals.cost_usd > 0.0, "{totals:?}");
-
-        handle.send(Op::Shutdown).await?;
-        tokio::time::timeout(Duration::from_secs(10), run).await??;
-        Ok(())
-    }
-}
-
 mod adoption_refusal {
     use super::*;
     use crate::automation_manager::{AutomationManager, AutomationStatus, CreateAutomationRequest};

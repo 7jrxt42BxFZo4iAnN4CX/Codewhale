@@ -158,7 +158,6 @@
       font-size: 12px;
       overflow-wrap: anywhere;
     }
-    /* Three items now share the header row, so the title yields first. */
     #active-title {
       flex: 1;
       min-width: 0;
@@ -166,8 +165,6 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    /* The turn's usage, beside the event count: one line, and the live
-       variant is accented so a running figure is never read as settled. */
     #turn-usage {
       margin-top: 0;
       font-variant-numeric: tabular-nums;
@@ -325,29 +322,18 @@
       // Sub-agents of the open thread, by agent id: rebuilt from the
       // agent.* events the stream replays, so a reconnect restores it.
       agents: new Map(),
-      // Usage of the turn on screen. The stream reports usage per model call,
-      // so the header can move while the turn runs; `turn.completed` replaces
-      // the running figure with that turn's own total.
       turnUsage: emptyTurnUsage(),
-      // The same figure per thread. Opening a thread replays its recent journal,
-      // so a conversation read once and read again must not add the same
-      // receipts twice; each figure remembers the last receipt seq it counted.
-      turnUsageByThread: new Map(),
-      // Turn that is a context compaction rather than a conversation turn. Its
-      // model call pays to summarise the history, so its tokens are not what
-      // the person's last exchange cost.
-      compactionTurnId: ""
+      turnUsageByThread: new Map()
     };
 
     function emptyTurnUsage() {
       return {
         input: 0, output: 0, usd: 0, cny: 0,
         usdPriced: false, cnyPriced: false, live: false,
-        lastSeq: 0
+        turnId: "", lastSeq: 0
       };
     }
 
-    // The figure for one thread, created on first use and kept across switches.
     function turnUsageFor(threadId) {
       if (!threadId) return state.turnUsage;
       let figure = state.turnUsageByThread.get(threadId);
@@ -358,7 +344,6 @@
       return figure;
     }
 
-    // Compact token counts: the header is one line on a phone.
     function formatTokens(count) {
       if (!Number.isFinite(count) || count <= 0) return "0";
       if (count < 1000) return String(count);
@@ -617,77 +602,51 @@
       }
       if (name === "turn.lifecycle") return "Turn status: " + (payload.status || "");
       if (name === "turn.completed") return "Turn completed";
-      // A receipt is one model call, several per agentic turn: it belongs in
-      // the header reading, not as a log line per call.
       if (name === "turn.usage") return "";
       return JSON.stringify(payload, null, 2);
     }
 
-    // Costs are shown only from a route that actually priced the call: a null
-    // `cost` means the route cannot price that step, not that it was free.
     function noteTurnUsage(name, data) {
-      if (name === "turn.usage") {
-        const payload = eventPayload(data) || {};
+      if (name !== "turn.started" && name !== "turn.usage" && name !== "turn.completed") return;
+      const payload = eventPayload(data) || {};
+      const turnId = String((data && data.turn_id) || (payload.turn || {}).id || "");
+      if (!turnId) return;
+      let figure = turnUsageFor(state.threadId);
+      const seq = Number(data && data.seq);
+      if (Number.isSafeInteger(seq) && seq > 0) {
+        if (seq <= figure.lastSeq) return;
+        figure.lastSeq = seq;
+      }
+      if (figure.turnId !== turnId) {
+        figure = Object.assign(emptyTurnUsage(), { turnId, lastSeq: figure.lastSeq });
+        if (state.threadId) state.turnUsageByThread.set(state.threadId, figure);
+      }
+      state.turnUsage = figure;
+      if (name === "turn.started") {
+        figure.live = true;
+      } else if (name === "turn.usage") {
         const usage = payload.usage || {};
-        const figure = turnUsageFor(state.threadId);
-        // A replayed frame is a receipt this figure may already hold.
-        const seq = Number(data && data.seq);
-        if (Number.isSafeInteger(seq) && seq > 0) {
-          if (seq <= figure.lastSeq) return;
-          figure.lastSeq = seq;
-        }
         figure.input += Number(usage.input_tokens || 0) || 0;
         figure.output += Number(usage.output_tokens || 0) || 0;
         const cost = payload.cost;
-        if (cost && cost.usd_priced !== false && Number.isFinite(Number(cost.usd))) {
+        if (cost && cost.usd_priced === true && Number.isFinite(Number(cost.usd))) {
           figure.usd += Number(cost.usd);
           figure.usdPriced = true;
         }
-        if (cost && cost.cny_priced !== false && Number.isFinite(Number(cost.cny))) {
+        if (cost && cost.cny_priced === true && Number.isFinite(Number(cost.cny))) {
           figure.cny += Number(cost.cny);
           figure.cnyPriced = true;
         }
         figure.live = true;
-        renderTurnUsage();
-        return;
-      }
-      if (name === "turn.completed") {
-        // The turn's own cumulative total just arrived, so the running figure
-        // is superseded rather than discarded: it stays on screen as what the
-        // finished turn cost.
-        const payload = eventPayload(data) || {};
-        const settled = data && data.turn_id ? String(data.turn_id) : "";
-        const wasCompaction = settled !== "" && settled === state.compactionTurnId;
-        if (wasCompaction) state.compactionTurnId = "";
-        const usage = (payload.turn || {}).usage || null;
-        const figure = emptyTurnUsage();
-        figure.lastSeq = Number(data && data.seq) || 0;
-        // A compaction pass is not the conversation. Describing it as what the
-        // last exchange cost would price the summariser, not the work.
-        if (usage && !wasCompaction) {
+      } else {
+        const usage = (payload.turn || {}).usage;
+        if (usage) {
           figure.input = Number(usage.input_tokens || 0) || 0;
           figure.output = Number(usage.output_tokens || 0) || 0;
         }
-        state.turnUsage = figure;
-        if (state.threadId) state.turnUsageByThread.set(state.threadId, figure);
-        renderTurnUsage();
-        return;
+        figure.live = false;
       }
-      if (name === "item.completed") {
-        // Compaction rewrote the history, so the running figure describes a
-        // prompt that no longer exists.
-        const item = (eventPayload(data) || {}).item || {};
-        if (item.kind === "context_compaction") {
-          if (data && data.turn_id) state.compactionTurnId = String(data.turn_id);
-          const figure = turnUsageFor(state.threadId);
-          // Keep the dedupe cursor: the summary call's own receipt still needs
-          // to be recognised as already counted if the journal replays.
-          const lastSeq = figure.lastSeq;
-          state.turnUsage = Object.assign(emptyTurnUsage(), { lastSeq });
-          if (state.threadId) state.turnUsageByThread.set(state.threadId, state.turnUsage);
-          renderTurnUsage();
-        }
-      }
+      renderTurnUsage();
     }
 
     function renderTurnUsage() {
@@ -701,11 +660,12 @@
         return;
       }
       const parts = ["\u2191" + formatTokens(figure.input), "\u2193" + formatTokens(figure.output)];
-      if (figure.cnyPriced) parts.push("\u00a5" + figure.cny.toFixed(figure.cny < 0.01 ? 4 : 2));
-      else if (figure.usdPriced) parts.push("$" + figure.usd.toFixed(figure.usd < 0.01 ? 4 : 2));
+      if (figure.cnyPriced) parts.push("~\u00a5" + figure.cny.toFixed(figure.cny < 0.01 ? 4 : 2) + " partial");
+      else if (figure.usdPriced) parts.push("~$" + figure.usd.toFixed(figure.usd < 0.01 ? 4 : 2) + " partial");
       el.textContent = parts.join(" ");
       el.className = figure.live ? "meta live" : "meta";
-      el.title = figure.live ? "This turn so far" : "Last turn";
+      el.title = (figure.live ? "This turn so far" : "Last turn") +
+        "; cost is a partial estimate from priced calls, excluding unpriced, child and compaction work";
       el.hidden = false;
     }
 
@@ -839,11 +799,7 @@
       state.openedAt = 0;
       state.eventCount = 0;
       $("event-count").textContent = "0 events";
-      // The figure describes one conversation's turn. Each thread keeps its
-      // own, so returning to a parked conversation resumes what its running
-      // turn has spent instead of starting again from zero.
       state.turnUsage = turnUsageFor(id);
-      state.compactionTurnId = "";
       renderTurnUsage();
       $("active-title").textContent = title || id;
       $("events").innerHTML = "";
