@@ -11,6 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refreshes the live catalog before switching. Exec and Runtime API defaults use
   the same discovery path. Fresh context observations come from loaded models'
   served windows; unloaded models retain an explicitly unverified fallback (#5848).
+- The Runtime API's `turn.usage` receipts now carry each model call's priced
+  cost on the route that served it and the prompt size the provider billed, so
+  a client can follow a long turn while it runs. The mobile control page shows
+  live token usage and a partial cost estimate in its header, keeps the
+  estimate after the turn settles, starts fresh for the next turn, and counts a
+  replayed receipt once (#7074). Thanks @gaord.
+- A fatal engine error no longer turns on offline queueing by itself. When the
+  error came from a step that never starts a turn (a finished background
+  shell, a goal continuation or a child completion that cannot resolve its
+  route), every later message used to be queued behind it; it is now sent
+  normally. An environment-only authentication failure still reopens provider
+  setup and queues until you fix it (#6561).
 - `codewhale --provider <name> resume <id>` now moves the saved session to the
   named provider, as `exec --resume` already did, so a session whose provider
   table was deleted can be reopened on a provider you still have. It takes
