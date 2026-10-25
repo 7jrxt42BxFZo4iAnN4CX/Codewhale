@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The TUI Terminal dock now also shows the model's shell commands for the
+  session: each running or recent command is a read-only tab with its live
+  output, beside the interactive shells. "No live terminals" appears only when
+  there are neither.
 - `codewhale review` no longer accepts leaked tool-call markup as a review: a
   pass whose reply is a DeepSeek DSML (or other) tool-call wrapper outside code
   now fails as incomplete, with no tally and nothing posted (#7072). A Low-risk
