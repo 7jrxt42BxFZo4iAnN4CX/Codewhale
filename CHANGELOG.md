@@ -43,6 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installs provider access in the running computer's memory. Retries retain
   one operation key and the account/VM binding. Existing Agent Work dispatch
   remains available when no computer conversation is selected.
+- `/balance` and the balance status chip work on the default DeepSeek route
+  again. The balance request now goes to the DeepSeek API root instead of the
+  `/beta` inference path, which failed with "Could not fetch DeepSeek account
+  balance" (#7055).
 - An `AGENTS.md` or global instruction file over 100 KiB is no longer
   skipped (which could let a sibling file load in its place): Codewhale loads
   its first 100 KiB, ends it with a marker giving the bytes omitted, and names
