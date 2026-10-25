@@ -5988,6 +5988,24 @@ fn runtime_usage_bucket_key(
     }
 }
 
+fn priced_step_usage(route: Option<&EffectiveRouteEnvelope>, usage: &Usage) -> Option<Value> {
+    let audit = route?.audit(usage);
+    let estimate = audit.estimate?.sanitized();
+    Some(json!({
+        "usd": if audit.usd_priced { estimate.usd } else { 0.0 },
+        "cny": if audit.cny_priced { estimate.cny } else { 0.0 },
+        "usd_priced": audit.usd_priced,
+        "cny_priced": audit.cny_priced,
+    }))
+}
+
+fn billed_prompt_tokens(usage: &Usage) -> u32 {
+    usage
+        .request_usages
+        .last()
+        .map_or(usage.input_tokens, |last| last.input_tokens)
+}
+
 fn accumulate_runtime_usage_record(
     totals: &mut UsageTotals,
     buckets: &mut std::collections::BTreeMap<String, UsageBucket>,
@@ -17743,6 +17761,7 @@ impl RuntimeThreadManager {
         let mut saw_engine_activity = false;
         let mut saw_turn_started = false;
         let mut engine_turn_id: Option<String> = None;
+        let mut dispatched_route: Option<EffectiveRouteEnvelope> = None;
         let mut pending_events: VecDeque<EngineEvent> = VecDeque::new();
         let mut event_channel_closed = false;
         // Raw tool call IDs whose external approval this turn already settled.
@@ -17892,6 +17911,9 @@ impl RuntimeThreadManager {
                 } => {
                     saw_turn_started = true;
                     engine_turn_id = Some(started_turn_id);
+                    let started_route = route
+                        .as_ref()
+                        .and_then(crate::core::events::TurnRoute::cost_envelope);
                     {
                         let _turn_mutation = self.store.turn_mutation.lock();
                         let mut turn = self.store.load_turn(&turn_id)?;
@@ -17901,13 +17923,13 @@ impl RuntimeThreadManager {
                         // A lifecycle start carries no billing envelope, so
                         // there is nothing to persist yet. The dispatch event
                         // below is the only writer of effective-route columns.
-                        if let Some(route) = route
-                            .as_ref()
-                            .and_then(crate::core::events::TurnRoute::cost_envelope)
-                        {
-                            turn.persist_effective_route(&route);
+                        if let Some(route) = started_route.as_ref() {
+                            turn.persist_effective_route(route);
                         }
                         self.store.save_turn(&turn)?;
+                    }
+                    if started_route.is_some() {
+                        dispatched_route = started_route;
                     }
                     self.emit_event(
                         &thread_id,
@@ -17926,14 +17948,20 @@ impl RuntimeThreadManager {
                         .as_deref()
                         .is_some_and(|started| started == dispatched_turn_id)
                     {
-                        let _turn_mutation = self.store.turn_mutation.lock();
-                        let mut turn = self.store.load_turn(&turn_id)?;
-                        // Preserve whatever status the store already has (including
-                        // a concurrent terminal settle); only refresh route fields.
-                        if let Some(envelope) = route.cost_envelope() {
-                            turn.persist_effective_route(&envelope);
+                        let envelope = route.cost_envelope();
+                        {
+                            let _turn_mutation = self.store.turn_mutation.lock();
+                            let mut turn = self.store.load_turn(&turn_id)?;
+                            // Preserve whatever status the store already has (including
+                            // a concurrent terminal settle); only refresh route fields.
+                            if let Some(envelope) = envelope.as_ref() {
+                                turn.persist_effective_route(envelope);
+                            }
+                            self.store.save_turn(&turn)?;
                         }
-                        self.store.save_turn(&turn)?;
+                        if envelope.is_some() {
+                            dispatched_route = envelope;
+                        }
                     }
                 }
                 EngineEvent::MessageStarted { .. } => {
@@ -19392,6 +19420,8 @@ impl RuntimeThreadManager {
                     request_ms,
                     finish_reason: _,
                 } => {
+                    let cost = priced_step_usage(dispatched_route.as_ref(), &usage);
+                    let billed_prompt = billed_prompt_tokens(&usage);
                     self.emit_event(
                         &thread_id,
                         Some(&turn_id),
@@ -19401,6 +19431,8 @@ impl RuntimeThreadManager {
                             "usage": usage, "duration_ms": duration_ms,
                             "first_token_ms": first_token_ms, "request_ms": request_ms,
                             "maxOutputTokens": max_output_tokens,
+                            "billed_prompt_tokens": billed_prompt,
+                            "cost": cost,
                         }),
                     )
                     .await?;
