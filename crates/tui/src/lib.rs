@@ -9662,6 +9662,7 @@ fn load_config_with_cli_preferences(
     // exec, ACP, and the app-server passthrough all resolve config here — so
     // the loader never has to be handed the setting at each of its call sites.
     install_foreign_instruction_imports(&config);
+    install_instruction_budget(&config)?;
     Ok(config)
 }
 
@@ -9762,6 +9763,21 @@ fn apply_selected_fleet_operator_for_launch(
 /// Unrecognized names are reported rather than dropped: a typo in this key
 /// silently means "import nothing", which is exactly the failure mode a user
 /// would not notice.
+/// Validate and install `[instruction_budget]` before anything can load
+/// project context.
+///
+/// A broken table fails the launch: a nonsensical budget applied silently is
+/// worse than a clear error, and the table is self-contained enough to be
+/// checked at load time.
+fn install_instruction_budget(config: &Config) -> Result<()> {
+    let table = config.instruction_budget.clone().unwrap_or_default();
+    table
+        .validate()
+        .map_err(|error| anyhow::anyhow!("invalid [instruction_budget]: {error}"))?;
+    crate::project_context::set_instruction_budget_config(table);
+    Ok(())
+}
+
 fn install_foreign_instruction_imports(config: &Config) {
     let (imports, unknown) = crate::project_context::ForeignInstructionImports::from_config(
         &config.project_instruction_imports,
@@ -13272,6 +13288,16 @@ fn merge_project_config_with_approval_baseline(
         eprintln!(
             "warning: project-scope `instructions` is ignored — \
              configure instruction files from user config instead. \
+             (See #417.)"
+        );
+    }
+    // #6526: the per-scope instruction budget is user authority for the same
+    // reason `instructions` is — a cloned repository must not be able to
+    // shrink the user's global budget or force `policy = "refuse"`.
+    if table.contains_key("instruction_budget") {
+        eprintln!(
+            "warning: project-scope `instruction_budget` is ignored — \
+             set instruction budgets in user config instead. \
              (See #417.)"
         );
     }
@@ -19101,6 +19127,41 @@ instructions = ["./AGENTS.md", "./extra.md"]
             config.instructions.as_deref(),
             Some(user.as_slice()),
             "project overlay must not replace user-owned instructions"
+        );
+    }
+
+    #[test]
+    fn project_overlay_cannot_set_global_budget() {
+        let tmp = workspace_with_project_config(
+            r#"
+[instruction_budget]
+global_budget_tokens = 1
+policy = "refuse"
+"#,
+        );
+        let mut config = Config {
+            instruction_budget: Some(crate::project_context::InstructionBudgetConfig {
+                global_budget_tokens: Some(100_000),
+                ..Default::default()
+            }),
+            ..Config::default()
+        };
+        merge_project_config(&mut config, tmp.path());
+        assert_eq!(
+            config
+                .instruction_budget
+                .as_ref()
+                .and_then(|budget| budget.global_budget_tokens),
+            Some(100_000),
+            "a cloned repository must not shrink the user's global budget"
+        );
+        assert_eq!(
+            config
+                .instruction_budget
+                .as_ref()
+                .and_then(|budget| budget.policy),
+            None,
+            "a cloned repository must not force policy = refuse"
         );
     }
 

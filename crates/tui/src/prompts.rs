@@ -12,7 +12,7 @@
 
 use crate::project_context::load_project_context_with_parents;
 use codewhale_config::AppMode;
-use codewhale_models::{SystemBlock, SystemPrompt};
+use codewhale_models::{SystemBlock, SystemPrompt, Tool};
 use std::path::{Path, PathBuf};
 use std::sync::{LazyLock, Mutex};
 
@@ -105,12 +105,13 @@ pub(crate) fn resolve_handoff_path(workspace: &Path) -> (PathBuf, &'static str) 
     }
 }
 
-/// Per-file size cap for `instructions = [...]` entries (#454). Mirrors
-/// the existing project-context cap in `project_context::load_context_file`
-/// so a malicious / oversized include can't blow the prompt budget on
-/// its own. Files larger than this are truncated with an explicit `[…truncated: N bytes omitted]`
-/// marker rather than skipped entirely so the model still sees the head.
-const INSTRUCTIONS_FILE_MAX_BYTES: usize = 100 * 1024;
+/// Per-file size cap for the workspace relay artifact (`/relay`, compaction).
+///
+/// Deliberately separate from the instruction-file ceiling: the relay is a
+/// workspace-writable checkpoint with its own trim marker, and
+/// `[instruction_budget] policy = "refuse"` must not change how the relay is
+/// read.
+const RELAY_ARTIFACT_MAX_BYTES: usize = 100 * 1024;
 
 /// Read at most `cap` bytes of a prompt file plus slack for the leading
 /// whitespace the renderers trim, so an oversized file is never read whole
@@ -433,10 +434,9 @@ impl Drop for RecordedEnvironmentGuard {
 /// keep working with a `.into()` upgrade at the call site.
 #[derive(Debug, Clone)]
 pub enum InstructionSource {
-    /// Load this file from disk at prompt-render time. Original behavior:
-    /// missing files are skipped with a warning, oversized files are
-    /// truncated to `INSTRUCTIONS_FILE_MAX_BYTES` with an `[…elided]`
-    /// marker.
+    /// Read this file from disk when the instruction assembly runs.
+    /// Missing, empty, and over-`file_max_bytes` files are skipped with a
+    /// notice; a file that fits is charged to the global scope budget.
     File(PathBuf),
     /// Use the provided string directly. `name` becomes the
     /// `<instructions source="…">` attribute (typically a synthetic
@@ -456,63 +456,6 @@ impl From<&PathBuf> for InstructionSource {
     }
 }
 
-/// Render the `instructions = [...]` config array as a single
-/// system-prompt block (#454). Each source is processed in declared order;
-/// missing `File` sources are skipped with a tracing warning so a stale entry
-/// doesn't fail the launch. Empty input (or all sources missing/empty)
-/// returns `None` so callers append nothing.
-fn render_instructions_block(sources: &[InstructionSource]) -> Option<String> {
-    let mut sections: Vec<String> = Vec::new();
-    for source in sources {
-        let mut total_len: Option<usize> = None;
-        let (raw_source_name, raw_content): (String, String) = match source {
-            InstructionSource::File(path) => {
-                match read_prompt_file_bounded(path, INSTRUCTIONS_FILE_MAX_BYTES) {
-                    Ok((raw, full_len)) => {
-                        // `full_len` covers bytes the bounded read left unread.
-                        total_len = Some(full_len);
-                        (path.display().to_string(), raw)
-                    }
-                    Err(err) => {
-                        tracing::warn!(
-                            target: "instructions",
-                            ?err,
-                            ?path,
-                            "skipping unreadable instructions file"
-                        );
-                        continue;
-                    }
-                }
-            }
-            InstructionSource::Inline { name, content } => (name.clone(), content.clone()),
-        };
-        let trimmed = raw_content.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        // A bounded read that stopped short makes the file's own length the
-        // total; otherwise the trimmed text is everything there was.
-        let total = match total_len {
-            Some(full_len) if raw_content.len() < full_len => full_len,
-            _ => trimmed.len(),
-        };
-        let body = cap_prompt_text(
-            trimmed,
-            total,
-            INSTRUCTIONS_FILE_MAX_BYTES,
-            "consider splitting this instructions file",
-        );
-        sections.push(format!(
-            "<instructions source=\"{raw_source_name}\">\n{body}\n</instructions>"
-        ));
-    }
-    if sections.is_empty() {
-        None
-    } else {
-        Some(sections.join("\n\n"))
-    }
-}
-
 /// Read the workspace-local relay artifact, if present, and format it as a
 /// system-prompt block. Returns `None` when the file is absent or empty so
 /// callers can keep the default-uncluttered prompt for fresh workspaces.
@@ -520,7 +463,7 @@ fn load_handoff_block(workspace: &Path) -> Option<String> {
     let (path, shown) = resolve_handoff_path(workspace);
     // The relay is workspace-writable, so it gets the same per-file cap as
     // an instructions file rather than an unbounded read into the prompt.
-    let (raw, full_len) = read_prompt_file_bounded(&path, INSTRUCTIONS_FILE_MAX_BYTES).ok()?;
+    let (raw, full_len) = read_prompt_file_bounded(&path, RELAY_ARTIFACT_MAX_BYTES).ok()?;
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return None;
@@ -533,7 +476,7 @@ fn load_handoff_block(workspace: &Path) -> Option<String> {
     let relay = cap_prompt_text(
         trimmed,
         total,
-        INSTRUCTIONS_FILE_MAX_BYTES,
+        RELAY_ARTIFACT_MAX_BYTES,
         "shorten the relay artifact",
     );
     Some(format!(
@@ -1278,6 +1221,33 @@ pub(crate) fn system_prompt_for_mode_with_context_skills_session_and_approval_fo
     session_context: PromptSessionContext<'_>,
     prompt_host: PromptHost,
 ) -> SystemPrompt {
+    system_prompt_with_instruction_assembly_for_host(
+        workspace,
+        _working_set_summary,
+        skills_dir,
+        instructions,
+        session_context,
+        prompt_host,
+        None,
+    )
+    .0
+}
+
+/// Compose the system prompt **and** the instruction assembly that produced
+/// its instruction block.
+///
+/// The assembly carries the per-scope budgets and every trim/skip notice, so
+/// the engine can enforce the static-prefix guard and surface the losses to
+/// the user, the model, and `/context` from one measurement.
+pub(crate) fn system_prompt_with_instruction_assembly_for_host(
+    workspace: &Path,
+    _working_set_summary: Option<&str>,
+    skills_dir: Option<&Path>,
+    instructions: Option<&[InstructionSource]>,
+    session_context: PromptSessionContext<'_>,
+    prompt_host: PromptHost,
+    guard_trim: Option<crate::project_context::InstructionGuardTrim>,
+) -> (SystemPrompt, crate::project_context::InstructionAssembly) {
     // One base prompt for every host (AGENTS.md: `BASE_PROMPT` is the sole
     // base prompt). Headless still skips interactive ceremony layers below —
     // the execution profile and authority recap — which are host chrome, not
@@ -1293,8 +1263,31 @@ pub(crate) fn system_prompt_for_mode_with_context_skills_session_and_approval_fo
         &default_layers,
     );
 
-    // Load project context from workspace
-    let project_context = load_project_context_with_parents(workspace);
+    // Load project context from workspace, then charge it against the
+    // per-scope budgets. The cache keeps raw segments; trimming happens here,
+    // per request, so a window change never invalidates the file cache and a
+    // content change never reuses trimmed text.
+    let mut project_context = load_project_context_with_parents(workspace);
+    let window_tokens = session_context
+        .context_window_override
+        .map(|window| usize::try_from(window).unwrap_or(usize::MAX));
+    let mut budgets = match crate::project_context::active_instruction_budgets(window_tokens) {
+        Ok(budgets) => budgets,
+        Err(error) => {
+            // Validation runs when the table is installed, so reaching this
+            // branch means a budget was resolved before config was applied.
+            tracing::error!(target: "project_context", %error, "invalid instruction budget");
+            crate::project_context::InstructionBudgets::defaults_for(window_tokens)
+        }
+    };
+    if let Some(trim) = guard_trim {
+        budgets = budgets.trimmed_for_guard(trim.scope, trim.tokens);
+    }
+    let assembly = crate::project_context::assemble_instruction_block(
+        &mut project_context,
+        instructions.unwrap_or(&[]),
+        &budgets,
+    );
 
     // 0. Locale-native reinforcement preamble (#1118 follow-up). When the
     // user's UI locale is non-English we prepend a short native-script
@@ -1311,7 +1304,7 @@ pub(crate) fn system_prompt_for_mode_with_context_skills_session_and_approval_fo
     // `load_project_context_with_parents` generates an in-memory bounded
     // overview when no context file exists, so the fallback should usually be
     // available without writing project-local files.
-    let mut full_prompt = if let Some(project_block) = project_context.as_system_block() {
+    let mut full_prompt = if let Some(project_block) = assembly.block.as_deref() {
         format!("{}\n\n{project_block}", composed.trim())
     } else {
         // Extremely unlikely: context generation failed (e.g. filesystem error).
@@ -1444,8 +1437,11 @@ pub(crate) fn system_prompt_for_mode_with_context_skills_session_and_approval_fo
     }
     let workspace_body = workspace_parts.join("\n\n");
 
-    // Permissions fragment: configured `instructions = [...]` files (#454).
-    let permissions_body = instructions.and_then(render_instructions_block);
+    // Configured `instructions = [...]` files (#454) are global-scope
+    // instruction authority now: the assembly reads and charges them, and they
+    // render inside the project-instructions block instead of as a separate
+    // world-state fragment. Exactly one owner, one charge.
+    let permissions_body: Option<String> = None;
 
     // Route fragment: verbosity / translation posture (the model id was
     // removed by the turn-meta diet — it is telemetry the model cannot act on).
@@ -1499,7 +1495,37 @@ pub(crate) fn system_prompt_for_mode_with_context_skills_session_and_approval_fo
         });
     }
 
-    SystemPrompt::Blocks(blocks)
+    (SystemPrompt::Blocks(blocks), assembly)
+}
+
+/// Estimated tokens of the **stable** prefix: the constitution block — base
+/// prompt, instructions, skills index, execution profile — plus the tool
+/// schemas the request carries.
+///
+/// Volatile world-state blocks (environment, memory, goals, relay) are
+/// excluded on purpose: they drift mid-session, are not part of the pinned
+/// KV-cache prefix, and carry their own budgets. Only the first block plus the
+/// tool catalog is what the static-prefix guard protects.
+#[must_use]
+pub(crate) fn measure_static_prefix(system: Option<&SystemPrompt>, tools: &[Tool]) -> usize {
+    let text_tokens = match system {
+        Some(SystemPrompt::Text(text)) => {
+            crate::compaction::estimate_text_tokens_conservative(text)
+        }
+        Some(SystemPrompt::Blocks(blocks)) => blocks.first().map_or(0, |block| {
+            crate::compaction::estimate_text_tokens_conservative(&block.text)
+        }),
+        None => 0,
+    };
+    let tool_tokens: usize = tools
+        .iter()
+        .map(|tool| {
+            serde_json::to_string(tool).map_or(0, |json| {
+                crate::compaction::estimate_text_tokens_conservative(&json)
+            })
+        })
+        .sum();
+    text_tokens.saturating_add(tool_tokens)
 }
 
 /// Flatten a system prompt to joined text (tests + debug inspectors).
@@ -3767,12 +3793,6 @@ mod tests {
         assert!(!prompt.contains("# Session relay"));
     }
 
-    #[test]
-    fn render_instructions_block_returns_none_for_empty_input() {
-        let empty: &[super::InstructionSource] = &[];
-        assert!(super::render_instructions_block(empty).is_none());
-    }
-
     /// #4632 — The system prompt prefix (the byte-stable part cached by
     /// inference servers) must never contain private content: absolute
     /// filesystem paths, API keys, or home-directory references.
@@ -3826,112 +3846,109 @@ mod tests {
         );
     }
 
-    #[test]
-    fn render_instructions_block_skips_missing_files_with_warning() {
-        let tmp = tempdir().expect("tempdir");
-        let real = tmp.path().join("real.md");
-        std::fs::write(&real, "real content here").unwrap();
-        let bogus = tmp.path().join("does-not-exist.md");
-
-        let block = super::render_instructions_block(&[bogus.clone().into(), real.clone().into()])
-            .expect("present file should produce a block");
-        assert!(block.contains("real content here"));
-        assert!(block.contains(&real.display().to_string()));
-        // Bogus path is skipped, not rendered.
-        assert!(!block.contains(&bogus.display().to_string()));
+    fn test_tool(name: &str, description: &str) -> Tool {
+        Tool {
+            tool_type: Some("function".to_string()),
+            name: name.to_string(),
+            description: description.to_string(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {"path": {"type": "string"}}
+            }),
+            allowed_callers: None,
+            defer_loading: None,
+            input_examples: None,
+            strict: None,
+            cache_control: None,
+        }
     }
 
     #[test]
-    fn render_instructions_block_concatenates_in_declared_order() {
-        let tmp = tempdir().expect("tempdir");
-        let a = tmp.path().join("a.md");
-        let b = tmp.path().join("b.md");
-        std::fs::write(&a, "ALPHA_MARKER").unwrap();
-        std::fs::write(&b, "BRAVO_MARKER").unwrap();
-
-        let block = super::render_instructions_block(&[a.into(), b.into()]).expect("non-empty");
-        let alpha_pos = block.find("ALPHA_MARKER").expect("alpha rendered");
-        let bravo_pos = block.find("BRAVO_MARKER").expect("bravo rendered");
+    fn static_prefix_guard_measures_tool_schemas() {
+        let prompt = SystemPrompt::Blocks(vec![SystemBlock {
+            block_type: "text".to_string(),
+            text: "constitution".to_string(),
+            cache_control: None,
+        }]);
+        let without_tools = super::measure_static_prefix(Some(&prompt), &[]);
+        let with_tools = super::measure_static_prefix(
+            Some(&prompt),
+            &[test_tool("read_file", "Read a file from the workspace")],
+        );
         assert!(
-            alpha_pos < bravo_pos,
-            "instructions must concatenate in declared order"
+            with_tools > without_tools,
+            "tool schemas are part of the stable prefix ({with_tools} vs {without_tools})"
         );
     }
 
     #[test]
-    fn render_instructions_block_skips_empty_files() {
-        let tmp = tempdir().expect("tempdir");
-        let empty = tmp.path().join("empty.md");
-        let real = tmp.path().join("real.md");
-        std::fs::write(&empty, "   \n   \n").unwrap();
-        std::fs::write(&real, "real content").unwrap();
-
-        let block =
-            super::render_instructions_block(&[empty.into(), real.into()]).expect("non-empty");
-        // Empty file produces no `<instructions>` section, only the real one.
-        let count = block.matches("<instructions").count();
-        assert_eq!(count, 1, "only the non-empty file should produce a section");
-    }
-
-    #[test]
-    fn render_instructions_block_truncates_oversize_files() {
-        let tmp = tempdir().expect("tempdir");
-        let big = tmp.path().join("big.md");
-        // 200 KiB of content — well above the 100 KiB cap.
-        std::fs::write(&big, "X".repeat(200 * 1024)).unwrap();
-
-        let block = super::render_instructions_block(&[big.into()]).expect("non-empty");
-        assert!(block.contains("[…truncated:"), "truncation marker missing");
-        // Block should be much smaller than the original file.
-        assert!(
-            block.len() < 110 * 1024,
-            "block should be capped near 100 KiB"
-        );
-    }
-
-    /// `InstructionSource::Inline` bypasses disk reads — the content is used
-    /// directly and `name` becomes the `<instructions source="…">` attribute.
-    /// Empty / oversize handling mirrors `File` variant.
-    #[test]
-    fn render_instructions_block_handles_inline_source() {
-        let block = super::render_instructions_block(&[super::InstructionSource::Inline {
-            name: "embedded:test/template".to_string(),
-            content: "INLINE_MARKER_CONTENT".to_string(),
-        }])
-        .expect("non-empty");
-        assert!(block.contains("INLINE_MARKER_CONTENT"));
-        assert!(block.contains("source=\"embedded:test/template\""));
-
-        // Empty inline → skipped just like empty file.
-        let empty_inline = super::InstructionSource::Inline {
-            name: "empty".to_string(),
-            content: "   ".to_string(),
+    fn stable_prefix_guard_ignores_memory_growth() {
+        let stable = SystemBlock {
+            block_type: "text".to_string(),
+            text: "stable prefix".to_string(),
+            cache_control: None,
         };
-        assert!(super::render_instructions_block(&[empty_inline]).is_none());
-
-        // Oversize inline → truncated with elided marker.
-        let big_inline = super::InstructionSource::Inline {
-            name: "huge".to_string(),
-            content: "Y".repeat(200 * 1024),
-        };
-        let trimmed = super::render_instructions_block(&[big_inline]).expect("non-empty");
-        assert!(trimmed.contains("[…truncated:"));
-
-        // File + Inline 混用,顺序保持。
-        let tmp = tempdir().expect("tempdir");
-        let file_path = tmp.path().join("file-first.md");
-        std::fs::write(&file_path, "FILE_MARKER").unwrap();
-        let mixed = super::render_instructions_block(&[
-            file_path.into(),
-            super::InstructionSource::Inline {
-                name: "inline-second".to_string(),
-                content: "INLINE_MARKER".to_string(),
+        let one_block = SystemPrompt::Blocks(vec![stable.clone()]);
+        let with_volatile = SystemPrompt::Blocks(vec![
+            stable,
+            SystemBlock {
+                block_type: "text".to_string(),
+                text: "MEMORY_BLOCK ".repeat(2_000),
+                cache_control: None,
             },
-        ])
-        .expect("non-empty");
-        let file_pos = mixed.find("FILE_MARKER").expect("file rendered");
-        let inline_pos = mixed.find("INLINE_MARKER").expect("inline rendered");
-        assert!(file_pos < inline_pos, "声明顺序必须保留(File then Inline)");
+        ]);
+        assert_eq!(
+            super::measure_static_prefix(Some(&one_block), &[]),
+            super::measure_static_prefix(Some(&with_volatile), &[]),
+            "volatile world-state blocks are not part of the guarded prefix"
+        );
+    }
+
+    #[test]
+    fn relay_artifact_cap_unchanged() {
+        // The relay keeps its own 100 KiB cap; the instruction ceiling comes
+        // from `[instruction_budget] file_max_bytes` and must not change how a
+        // relay artifact is read.
+        assert_eq!(super::RELAY_ARTIFACT_MAX_BYTES, 100 * 1024);
+    }
+
+    #[test]
+    fn configured_instructions_render_inside_the_instruction_block() {
+        let tmp = tempdir().expect("tempdir");
+        let workspace = tmp.path();
+        let present = workspace.join("present.md");
+        std::fs::write(&present, "CONFIGURED_PRESENT").unwrap();
+        let empty = workspace.join("empty.md");
+        std::fs::write(&empty, "   \n\n").unwrap();
+        let missing = workspace.join("missing.md");
+        let configured = vec![
+            super::InstructionSource::File(missing),
+            super::InstructionSource::File(empty),
+            super::InstructionSource::File(present.clone()),
+            super::InstructionSource::Inline {
+                name: "embedded:test".to_string(),
+                content: "INLINE_PRESENT".to_string(),
+            },
+        ];
+        let mut ctx = crate::project_context::load_project_context_with_parents(workspace);
+        let budgets = crate::project_context::InstructionBudgets::defaults_for(Some(128_000));
+        let assembly =
+            crate::project_context::assemble_instruction_block(&mut ctx, &configured, &budgets);
+        let block = assembly.block.expect("a block");
+        assert!(block.contains("CONFIGURED_PRESENT"), "{block}");
+        assert!(block.contains("INLINE_PRESENT"), "{block}");
+        assert!(block.contains("source=\"embedded:test\""), "{block}");
+        let present_at = block.find("CONFIGURED_PRESENT").unwrap();
+        let inline_at = block.find("INLINE_PRESENT").unwrap();
+        assert!(present_at < inline_at, "declared order is preserved");
+        assert!(
+            assembly
+                .notices
+                .iter()
+                .any(|notice| notice.action == crate::project_context::InstructionAction::Skipped),
+            "missing and empty entries are reported: {:?}",
+            assembly.notices
+        );
     }
 
     #[test]

@@ -890,9 +890,13 @@ pub(super) struct WorkspaceInstructionsResponse {
     /// True when no file-based instructions exist anywhere and the
     /// prompt carries the ephemeral generated context instead.
     generated_fallback: bool,
-    /// Aggregate byte ceiling applied across instructions and rules at
-    /// render (`project_context::MAX_PROJECT_INSTRUCTION_BYTES`).
-    aggregate_budget_bytes: usize,
+    /// Resolved per-scope ceilings in estimated tokens (#6526): the global
+    /// scope, the project scope (instructions + rules), the static-prefix
+    /// guard, and the usable window they are percentages of.
+    global_budget_tokens: usize,
+    project_budget_tokens: usize,
+    static_guard_tokens: usize,
+    usable_window_tokens: usize,
     /// Warnings from the real load pass — includes assembly-level notices
     /// (unimported foreign formats, ignored WHALE.md, constitution parse)
     /// alongside what per-source `warning` fields already carry.
@@ -937,6 +941,10 @@ pub(super) async fn workspace_instructions(
     let workspace = state.workspace.clone();
     let home = crate::config::effective_home_dir();
     let configured = state.config.read().instructions_paths();
+    // Budgets are resolved per route window; this route has no model context
+    // window of its own, so it reports what the loader would use when the
+    // window is unknown.
+    let budgets = crate::project_context::active_instruction_budgets(None).ok();
 
     let (sources, generated_fallback, warnings, workspace_root) =
         tokio::task::spawn_blocking(move || {
@@ -999,7 +1007,10 @@ pub(super) async fn workspace_instructions(
             .map(str::to_string)
             .collect(),
         generated_fallback,
-        aggregate_budget_bytes: crate::project_context::MAX_PROJECT_INSTRUCTION_BYTES,
+        global_budget_tokens: budgets.map_or(0, |budgets| budgets.global_tokens),
+        project_budget_tokens: budgets.map_or(0, |budgets| budgets.project_tokens),
+        static_guard_tokens: budgets.map_or(0, |budgets| budgets.static_guard_tokens),
+        usable_window_tokens: budgets.map_or(0, |budgets| budgets.usable_window_tokens),
         warnings,
     }))
 }

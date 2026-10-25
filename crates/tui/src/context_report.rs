@@ -282,6 +282,7 @@ pub fn build_context_report(app: &App) -> PromptSourceMap {
         app.mode,
         Some(app.plugin_registry.as_ref()),
         Some(context_window.tokens),
+        &[],
     );
     add_app_runtime_entries(&mut builder, app);
     builder.finish(
@@ -395,6 +396,7 @@ pub fn build_headless_context_report(config: &Config, workspace: &Path) -> Promp
         AppMode::Agent,
         None,
         Some(context_window.tokens),
+        &config.instructions_paths(),
     );
     let memory_path = config.memory_path();
     let memory_enabled = config.memory_enabled();
@@ -463,6 +465,7 @@ fn base_source_entries(
     mode: AppMode,
     plugin_registry: Option<&crate::plugins::PluginRegistry>,
     context_window_tokens: Option<u32>,
+    configured_instruction_paths: &[std::path::PathBuf],
 ) -> ReportBuilder {
     let mut builder = ReportBuilder::new();
 
@@ -557,6 +560,53 @@ fn base_source_entries(
             "no project context block available",
         ));
     }
+    // #6526: per-source instruction losses and the budgets this request
+    // resolved, from the same assembly the prompt used.
+    if let Ok(budgets) = crate::project_context::active_instruction_budgets(
+        context_window_tokens.map(|tokens| tokens as usize),
+    ) {
+        let mut instructions = crate::project_context::load_project_context_with_parents(workspace);
+        let configured: Vec<crate::prompts::InstructionSource> = configured_instruction_paths
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect();
+        let assembly = crate::project_context::assemble_instruction_block(
+            &mut instructions,
+            &configured,
+            &budgets,
+        );
+        builder.push(SourceEntry::diagnostic(
+            SourceKind::ProjectContext,
+            "Instruction budget",
+            None::<String>,
+            ActivationReason::ConfigEnabled,
+            format!(
+                "global {} / {} estimated tokens; project {} / {} estimated tokens; policy {}; usable window {} tokens; static-prefix guard {} tokens",
+                assembly.global_tokens,
+                assembly.budgets.global_tokens,
+                assembly.project_tokens,
+                assembly.budgets.project_tokens,
+                assembly.budgets.policy.as_str(),
+                assembly.budgets.usable_window_tokens,
+                assembly.budgets.static_guard_tokens,
+            ),
+            assembly.tokens_kept(),
+            Some(5),
+        ));
+        for notice in assembly.notices.iter().filter(|notice| notice.is_loss()) {
+            builder.push(SourceEntry::diagnostic(
+                SourceKind::ProjectContextWarning,
+                format!("Instruction source: {}", notice.label()),
+                notice.path.as_ref().map(|path| path.display().to_string()),
+                ActivationReason::RuntimeState,
+                notice.to_string(),
+                notice.tokens_kept,
+                Some(5),
+            ));
+        }
+    }
+
     if !project_context.warnings.is_empty() {
         let warnings = project_context.warnings.join("\n");
         let estimated_tokens = estimate_text_tokens_conservative(&warnings);
@@ -1012,6 +1062,40 @@ mod tests {
         let json = context_report_json(&report);
         assert!(json.contains("\"repo_constitution\""));
         assert!(json.contains("branch_policy appears stale"));
+    }
+
+    #[test]
+    fn context_report_shows_actions_and_budgets() {
+        let tmp = tempdir().expect("workspace");
+        std::fs::write(tmp.path().join("AGENTS.md"), "T".repeat(20_000)).expect("write agents");
+        crate::project_context::with_test_instruction_budget_config(
+            crate::project_context::InstructionBudgetConfig {
+                project_budget_tokens: Some(50),
+                ..Default::default()
+            },
+            || {
+                let report = build_headless_context_report(&Config::default(), tmp.path());
+                assert!(
+                    report
+                        .entries
+                        .iter()
+                        .any(|entry| entry.label == "Instruction budget"),
+                    "the resolved per-scope budgets are a source-map row: {:?}",
+                    report.entries
+                );
+                assert!(
+                    report.entries.iter().any(|entry| {
+                        entry.label.starts_with("Instruction source:")
+                            && entry
+                                .truncation_reason
+                                .as_deref()
+                                .is_some_and(|reason| reason.contains("scope_budget"))
+                    }),
+                    "each loss names its action and limit kind: {:?}",
+                    report.entries
+                );
+            },
+        );
     }
 
     #[test]

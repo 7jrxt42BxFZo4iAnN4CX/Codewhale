@@ -1021,6 +1021,12 @@ pub struct Engine {
     codewhale_client_error: Option<String>,
     api_key_env_only_recovery: Option<String>,
     session: Session,
+    /// One-shot instruction-budget notice for the model (#6526), delivered as
+    /// a synthetic user message on the first turn and then cleared.
+    pending_instruction_notice: Option<String>,
+    /// Whether the static-prefix guard has already run for this session. The
+    /// guard is a safety net with a one-shot notice, not a per-turn meter.
+    static_prefix_guard_checked: bool,
     /// One lazy, session-scoped working kernel for inline `repl` blocks.
     /// Its context is refreshed before each run, while user-created Python
     /// state stays alive across model turns.
@@ -2264,12 +2270,15 @@ impl Engine {
         } else {
             prompts::PromptHost::Headless
         };
-        let system_prompt = if let Some(host) = host.as_ref() {
-            host.system_prompt().clone()
+        let (system_prompt, instruction_assembly) = if let Some(host) = host.as_ref() {
+            (host.system_prompt().clone(), None)
         } else if api_config.runtime_chat_isolated {
-            SystemPrompt::Text(ISOLATED_CHAT_SYSTEM_PROMPT.to_string())
+            (
+                SystemPrompt::Text(ISOLATED_CHAT_SYSTEM_PROMPT.to_string()),
+                None,
+            )
         } else {
-            prompts::system_prompt_for_mode_with_context_skills_session_and_approval_for_host(
+            let (prompt, assembly) = prompts::system_prompt_with_instruction_assembly_for_host(
                 &config.workspace,
                 None,
                 Some(&config.skills_dir),
@@ -2297,8 +2306,13 @@ impl Engine {
                     mode: AppMode::Agent,
                 },
                 prompt_host,
-            )
+                None,
+            );
+            (prompt, Some(assembly))
         };
+        let pending_instruction_notice = instruction_assembly
+            .as_ref()
+            .and_then(|assembly| crate::project_context::render_notice_body(&assembly.notices));
         let stable_prompt = Some(system_prompt);
         session.last_system_prompt_hash = Some(system_prompt_hash(stable_prompt.as_ref()));
         session.system_prompt = stable_prompt;
@@ -2476,6 +2490,8 @@ impl Engine {
             codewhale_client_error,
             api_key_env_only_recovery,
             session,
+            pending_instruction_notice,
+            static_prefix_guard_checked: false,
             repl_kernel: None,
             subagent_manager,
             subagent_execution_limits,
@@ -9178,17 +9194,38 @@ impl Engine {
         &self,
         context: &NextTurnPromptContext,
     ) -> Option<SystemPrompt> {
+        self.compose_stable_system_prompt_with_assembly(context, None)
+            .0
+    }
+
+    /// Compose the stable system prompt together with the instruction assembly
+    /// that produced it, optionally under a static-prefix guard trim.
+    ///
+    /// The assembly carries the budgets and every trim/skip notice, so the
+    /// guard can trim the largest scope and the caller can tell the user and
+    /// the model what was lost.
+    pub(super) fn compose_stable_system_prompt_with_assembly(
+        &self,
+        context: &NextTurnPromptContext,
+        guard_trim: Option<crate::project_context::InstructionGuardTrim>,
+    ) -> (
+        Option<SystemPrompt>,
+        Option<crate::project_context::InstructionAssembly>,
+    ) {
         if let Some(rlm) = self.rlm_host.as_ref() {
-            return Some(rlm.system_prompt.clone());
+            return (Some(rlm.system_prompt.clone()), None);
         }
         if let Some(child) = self.child_host.as_ref() {
             // The configured role is input to this same composer, and is
             // retained across route/mode/header refreshes. Volatile Native
             // contributions and work facts still append to Core Session.
-            return Some(child.system_prompt.clone());
+            return (Some(child.system_prompt.clone()), None);
         }
         if self.api_config.runtime_chat_isolated {
-            return Some(SystemPrompt::Text(ISOLATED_CHAT_SYSTEM_PROMPT.to_string()));
+            return (
+                Some(SystemPrompt::Text(ISOLATED_CHAT_SYSTEM_PROMPT.to_string())),
+                None,
+            );
         }
         let user_memory_block = codewhale_runtime::native_memory::native_prompt_block_traced(
             self.config.memory_enabled,
@@ -9207,35 +9244,123 @@ impl Engine {
             &self.config.workspace,
             Some(self.session.id.as_str()),
         );
-        let base =
-            prompts::system_prompt_for_mode_with_context_skills_session_and_approval_for_host(
-                &self.config.workspace,
-                None,
-                Some(&self.config.skills_dir),
-                Some(&self.config.instructions),
-                prompts::PromptSessionContext {
-                    user_memory_block: user_memory_block.as_deref(),
-                    goal_objective: context.goal_objective.as_deref(),
-                    project_context_pack_enabled: self.config.project_context_pack_enabled,
-                    locale_tag: &self.config.locale_tag,
-                    translation_enabled: context.translation_enabled,
-                    model_id: &context.model,
-                    context_window_override: Some(
-                        crate::route_budget::route_context_window_tokens(
-                            context.provider,
-                            &context.model,
-                            context.route_limits,
-                        ),
-                    ),
-                    verbosity: context.verbosity.as_deref(),
-                    recovery_hint: recovery_hint.as_deref(),
-                    skills_discovery_mode: self.config.skills_discovery_mode,
-                    plugin_registry: Some(self.plugin_registry.as_ref()),
-                    mode: context.mode,
-                },
-                prompt_host,
-            );
-        Some(base)
+        let (base, assembly) = prompts::system_prompt_with_instruction_assembly_for_host(
+            &self.config.workspace,
+            None,
+            Some(&self.config.skills_dir),
+            Some(&self.config.instructions),
+            prompts::PromptSessionContext {
+                user_memory_block: user_memory_block.as_deref(),
+                goal_objective: context.goal_objective.as_deref(),
+                project_context_pack_enabled: self.config.project_context_pack_enabled,
+                locale_tag: &self.config.locale_tag,
+                translation_enabled: context.translation_enabled,
+                model_id: &context.model,
+                context_window_override: Some(crate::route_budget::route_context_window_tokens(
+                    context.provider,
+                    &context.model,
+                    context.route_limits,
+                )),
+                verbosity: context.verbosity.as_deref(),
+                recovery_hint: recovery_hint.as_deref(),
+                skills_discovery_mode: self.config.skills_discovery_mode,
+                plugin_registry: Some(self.plugin_registry.as_ref()),
+                mode: context.mode,
+            },
+            prompt_host,
+            guard_trim,
+        );
+        (Some(base), Some(assembly))
+    }
+
+    /// Deliver the one-shot instruction-budget notice and, once per session,
+    /// enforce the static-prefix guard (#6526).
+    ///
+    /// The notice reaches the model as a synthetic user message with runtime
+    /// provenance — the same mechanism LSP diagnostics use — so it is part of
+    /// the logged transcript rather than an invisible prompt edit.
+    pub(super) async fn apply_instruction_budget_notices(
+        &mut self,
+        tools: &[codewhale_models::Tool],
+    ) {
+        if let Some(body) = self.pending_instruction_notice.take() {
+            self.add_session_message(self.runtime_text_message_with_turn_metadata(
+                body,
+                crate::core::ops::UserInputProvenance::Runtime,
+            ))
+            .await;
+        }
+        if self.static_prefix_guard_checked {
+            return;
+        }
+        self.static_prefix_guard_checked = true;
+        if let Some(body) = self.enforce_static_prefix_guard(tools) {
+            self.add_session_message(self.runtime_text_message_with_turn_metadata(
+                body,
+                crate::core::ops::UserInputProvenance::Runtime,
+            ))
+            .await;
+        }
+    }
+
+    /// Keep the stable prefix — base prompt, instructions, skills index and
+    /// tool schemas — under `static_prefix_guard_percent` of the usable
+    /// window.
+    ///
+    /// Trims the largest instruction scope by the overage, recomposes once,
+    /// re-measures once. No loop: when every scope is already zero and the
+    /// prefix is still over, the session continues under `policy = "trim"`
+    /// with an explicit `static_guard_unsatisfied` notice (`policy = "refuse"`
+    /// is enforced at session start, before the engine exists).
+    fn enforce_static_prefix_guard(&mut self, tools: &[codewhale_models::Tool]) -> Option<String> {
+        if self.session.system_prompt_override {
+            return None;
+        }
+        let context = self.session.pinned_prompt_context.clone()?;
+        let window = crate::route_budget::route_context_window_tokens(
+            self.api_provider,
+            &self.session.model,
+            self.active_route_limits,
+        ) as usize;
+        let budgets = crate::project_context::active_instruction_budgets(Some(window))
+            .unwrap_or_else(|_| {
+                crate::project_context::InstructionBudgets::defaults_for(Some(window))
+            });
+        let measured = prompts::measure_static_prefix(self.session.system_prompt.as_ref(), tools);
+        if measured <= budgets.static_guard_tokens {
+            return None;
+        }
+        let over = measured - budgets.static_guard_tokens;
+        let scope = crate::project_context::largest_instruction_scope(
+            &self.config.workspace,
+            &self.config.instructions,
+            &budgets,
+        );
+        let (prompt, assembly) = self.compose_stable_system_prompt_with_assembly(
+            &context,
+            Some(crate::project_context::InstructionGuardTrim {
+                scope,
+                tokens: over,
+            }),
+        );
+        let prompt = prompt?;
+        let after = prompts::measure_static_prefix(Some(&prompt), tools);
+        self.session.system_prompt = Some(prompt);
+        self.session.last_system_prompt_hash =
+            Some(system_prompt_hash(self.session.system_prompt.as_ref()));
+        self.session.pending_prefix_change_reason =
+            Some("instruction-budget:static-guard".to_string());
+        let tokens_kept = assembly
+            .as_ref()
+            .map_or(0, |assembly| assembly.tokens_kept());
+        let unsatisfiable = matches!(
+            crate::project_context::static_guard_outcome(after, &budgets, Some(scope), tokens_kept),
+            crate::project_context::StaticGuardOutcome::Unsatisfiable { .. }
+        );
+        Some(
+            crate::project_context::InstructionNotice::static_guard(scope, over, unsatisfiable)
+                .to_string(),
+        )
     }
 
     fn installed_next_turn_prompt_context(&self) -> NextTurnPromptContext {

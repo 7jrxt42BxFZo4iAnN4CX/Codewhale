@@ -735,6 +735,24 @@ pub(crate) async fn run_exec_agent(
         eprintln!("warning: {sandbox_posture} — shell commands will run unrestricted");
     }
 
+    // #6526: headless runs report standing-instruction losses on stderr, the
+    // same content the interactive start puts in a system cell.
+    let configured_sources: Vec<crate::prompts::InstructionSource> = execution_config
+        .instructions_paths()
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    match crate::project_context::startup_instruction_notice(&workspace, &configured_sources, None)
+    {
+        Ok(Some(notice)) => {
+            if output_format == ExecOutputFormat::Text && !json_output {
+                eprintln!("{notice}");
+            }
+        }
+        Ok(None) => {}
+        Err(error) => anyhow::bail!(error),
+    }
+
     let resuming_session = resume_session.is_some();
     let mut loaded_session_id = None;
     if let Some(saved) = resume_session {
