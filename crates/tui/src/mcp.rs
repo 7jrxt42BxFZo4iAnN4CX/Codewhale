@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use codewhale_config::McpBackend;
 use futures_util::FutureExt;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -683,7 +684,7 @@ pub struct McpServerConfig {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ReviewedPluginMcpSource {
-    authority: crate::plugins::types::PluginAuthority,
+    authority: codewhale_config::PluginAuthority,
     approved_remote_endpoint: Option<String>,
     approved_remote_origin: Option<String>,
     host_environment: Arc<crate::plugins::HostEnvironment>,
@@ -699,7 +700,7 @@ impl ReviewedPluginMcpSource {
     }
 
     fn from_authority(
-        authority: crate::plugins::types::PluginAuthority,
+        authority: codewhale_config::PluginAuthority,
         remote_endpoint: Option<&str>,
         host_environment: Arc<crate::plugins::HostEnvironment>,
     ) -> Result<Self> {
@@ -3079,7 +3080,7 @@ struct McpToolRoute {
     server_name: String,
     tool_name: String,
     catalog_generation: u64,
-    plugin_authority: Option<crate::plugins::types::PluginAuthority>,
+    plugin_authority: Option<codewhale_config::PluginAuthority>,
 }
 
 /// Model-facing name suffix of the synthetic self-serve OAuth login tool
@@ -3138,24 +3139,6 @@ pub(crate) async fn authenticate_tool_via_pool(
 }
 
 /// Pool of MCP connections for reuse
-/// Protocol owner selected only by user configuration. Rust is the default;
-/// Host explicitly selects the SDK and never falls back to Rust on refusal.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum McpBackend {
-    #[default]
-    Rust,
-    Host,
-}
-impl McpBackend {
-    pub(crate) fn from_config(config: &crate::config::Config) -> Self {
-        config
-            .extension_host
-            .as_ref()
-            .map_or(Self::Rust, |host| host.mcp_backend)
-    }
-}
-
 pub struct McpPool {
     backend: McpBackend,
     /// Immutable operator ceiling; source reloads and shared child pools cannot relax it.
@@ -3236,7 +3219,7 @@ pub(crate) struct McpHandoff {
     connections: Vec<(String, McpServerIdentity, McpConnection)>,
 }
 
-type McpServerIdentity = (u64, Option<crate::plugins::types::PluginAuthority>);
+type McpServerIdentity = (u64, Option<codewhale_config::PluginAuthority>);
 
 fn mcp_server_identity(config: &McpConfig, name: &str) -> Option<McpServerIdentity> {
     config.servers.get(name).map(|server| {
@@ -6948,7 +6931,7 @@ fn merge_plugin_mcp_servers_from_plugins_with_environment(
         Item = (
             String,
             crate::plugins::types::LoadedPlugin,
-            crate::plugins::types::PluginAuthority,
+            codewhale_config::PluginAuthority,
         ),
     >,
     host_environment: Arc<crate::plugins::HostEnvironment>,
@@ -7040,7 +7023,7 @@ fn merge_plugin_mcp_servers_from_plugins(
         Item = (
             String,
             crate::plugins::types::LoadedPlugin,
-            crate::plugins::types::PluginAuthority,
+            codewhale_config::PluginAuthority,
         ),
     >,
 ) -> Result<McpConfig> {

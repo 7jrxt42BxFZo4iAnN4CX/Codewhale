@@ -457,8 +457,8 @@ mod tests {
             plugin_id: "workspace/1/demo".to_string(),
             plugin_name: "demo".to_string(),
             native_registration: None,
-            authority: Box::new(crate::plugins::types::PluginAuthority {
-                plugin_id: crate::plugins::types::PluginId("workspace/1/demo".to_string()),
+            authority: Box::new(codewhale_config::PluginAuthority {
+                plugin_id: codewhale_config::PluginId("workspace/1/demo".to_string()),
                 plugin_name: "demo".to_string(),
                 workspace: tmp.path().to_path_buf(),
                 state_path: tmp.path().join("state.json"),
@@ -492,8 +492,8 @@ mod tests {
                 plugin_id: "workspace/123/demo".to_string(),
                 plugin_name: "demo".to_string(),
                 native_registration: None,
-                authority: Box::new(crate::plugins::types::PluginAuthority {
-                    plugin_id: crate::plugins::types::PluginId("workspace/123/demo".to_string()),
+                authority: Box::new(codewhale_config::PluginAuthority {
+                    plugin_id: codewhale_config::PluginId("workspace/123/demo".to_string()),
                     plugin_name: "demo".to_string(),
                     workspace: tmp.path().to_path_buf(),
                     state_path: tmp.path().join("state.json"),

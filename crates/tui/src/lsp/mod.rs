@@ -50,20 +50,7 @@ pub use client::{LspTransport, StdioLspTransport};
 pub use diagnostics::{Diagnostic, DiagnosticBlock, Severity, render_blocks};
 pub use registry::Language;
 
-/// User-defined LSP server for one file extension.
-///
-/// Registered via `[lsp.custom.<ext>]` in the config. The extension key is the
-/// file suffix (without the leading dot), e.g. `"php"`, `"rb"`, `"cs"`.
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-pub struct CustomLspDef {
-    /// LSP `languageId` value used in `textDocument/didOpen`.
-    pub language_id: String,
-    /// Executable to spawn.
-    pub command: String,
-    /// Arguments passed to the executable.
-    #[serde(default)]
-    pub args: Vec<String>,
-}
+use codewhale_config::CustomLspDef;
 
 /// `[lsp]` config schema. Mirrors the TOML keys documented in
 /// `config.example.toml`. Unknown keys are ignored.
@@ -89,6 +76,24 @@ pub struct LspConfig {
     /// registry. Keyed by extension (e.g. `"php"`, `"rb"`).
     #[serde(default)]
     pub custom: HashMap<String, CustomLspDef>,
+}
+
+impl From<codewhale_config::LspConfigToml> for LspConfig {
+    fn from(toml: codewhale_config::LspConfigToml) -> Self {
+        let defaults = Self::default();
+        Self {
+            enabled: toml.enabled.unwrap_or(defaults.enabled),
+            poll_after_edit_ms: toml
+                .poll_after_edit_ms
+                .unwrap_or(defaults.poll_after_edit_ms),
+            max_diagnostics_per_file: toml
+                .max_diagnostics_per_file
+                .unwrap_or(defaults.max_diagnostics_per_file),
+            include_warnings: toml.include_warnings.unwrap_or(defaults.include_warnings),
+            servers: toml.servers.unwrap_or_default().into_iter().collect(),
+            custom: toml.custom.unwrap_or_default().into_iter().collect(),
+        }
+    }
 }
 
 impl Default for LspConfig {

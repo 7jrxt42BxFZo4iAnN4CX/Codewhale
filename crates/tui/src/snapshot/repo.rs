@@ -211,18 +211,6 @@ const BYTES_PER_MB: u64 = 1024 * 1024;
 /// so the repo doesn't hit the limit again one snapshot later.
 const PRUNE_TARGET_MB: u64 = 400;
 
-/// Default workspace-size ceiling above which snapshots self-disable
-/// on first use (2 GB of non-excluded content). Reports from users with
-/// multi-hundred-GB project directories — datasets, model weights,
-/// docker image dumps that fall outside the built-in excludes —
-/// surfaced that `git add -A` on first init would hang the TUI for
-/// minutes-to-hours while indexing the workspace. Snapshots are a
-/// rollback safety net, not a backup tool; bailing out on workspaces
-/// that big is the right tradeoff. Users with legitimate large
-/// monorepos can raise `[snapshots] max_workspace_gb` (or set it to
-/// `0` to disable the cap entirely).
-pub const DEFAULT_MAX_WORKSPACE_BYTES_FOR_SNAPSHOT: u64 = 2 * 1024 * 1024 * 1024;
-
 /// Hard cap on the number of file entries the bounded size estimator
 /// will inspect before declaring the workspace "too large". Protects
 /// against a workspace with millions of tiny files (no individual
@@ -411,7 +399,10 @@ impl SnapshotRepo {
     ///    the user's global git identity (we don't want our snapshots to
     ///    look like they came from the user).
     pub fn open_or_init(workspace: &Path) -> io::Result<Self> {
-        Self::open_or_init_with_cap(workspace, DEFAULT_MAX_WORKSPACE_BYTES_FOR_SNAPSHOT)
+        Self::open_or_init_with_cap(
+            workspace,
+            codewhale_config::DEFAULT_MAX_WORKSPACE_BYTES_FOR_SNAPSHOT,
+        )
     }
 
     /// Variant of [`Self::open_or_init`] that accepts an explicit

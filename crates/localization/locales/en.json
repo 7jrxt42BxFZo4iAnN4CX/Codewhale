@@ -812,7 +812,7 @@
   "KbSendDraft": "Send when idle; queue when busy; empty input sends the next queued item",
   "KbSteerCurrentTurn": "Steer this turn (sends normally when idle)",
   "KbCloseMenu": "Close menus, cancel, discard the draft, or clear input",
-  "KbCancelOrExit": "Cancel, or exit when idle",
+  "KbCancelOrExit": "Cancel, clear draft, or exit when idle",
   "KbShellControls": "Move the running shell wait to /jobs",
   "KbExitEmpty": "Exit when input is empty",
   "KbCommandPalette": "Open the command palette",

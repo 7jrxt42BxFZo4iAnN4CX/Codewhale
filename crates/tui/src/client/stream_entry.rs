@@ -16,43 +16,6 @@ use reqwest::Client;
 
 use crate::llm_client::LlmError;
 
-/// Default bounded wait for SSE response headers. Intentionally shorter than
-/// the per-chunk idle timeout: it covers connection setup and upstream header
-/// return only, never model thinking time after streaming has started.
-pub(crate) const DEFAULT_STREAM_OPEN_TIMEOUT: Duration = Duration::from_secs(45);
-/// Accepted response-header wait range, in seconds.
-pub(crate) const MIN_STREAM_OPEN_TIMEOUT_SECS: u64 = 5;
-pub(crate) const MAX_STREAM_OPEN_TIMEOUT_SECS: u64 = 300;
-
-/// Resolve the response-header wait shared by every streaming adapter.
-///
-/// A positive `[stream].open_timeout_secs` (legacy `[tui]` fallback) wins; omitted or `0`
-/// falls back to the env override (`CODEWHALE_STREAM_OPEN_TIMEOUT_SECS`,
-/// legacy `DEEPSEEK_STREAM_OPEN_TIMEOUT_SECS`), then the 45s default. Every
-/// source clamps to `5..=300`.
-#[must_use]
-pub(crate) fn resolve_stream_open_timeout(configured_secs: Option<u64>) -> Duration {
-    match configured_secs {
-        Some(secs) if secs > 0 => Duration::from_secs(
-            secs.clamp(MIN_STREAM_OPEN_TIMEOUT_SECS, MAX_STREAM_OPEN_TIMEOUT_SECS),
-        ),
-        _ => stream_open_timeout_from_env(
-            std::env::var("CODEWHALE_STREAM_OPEN_TIMEOUT_SECS")
-                .or_else(|_| std::env::var("DEEPSEEK_STREAM_OPEN_TIMEOUT_SECS"))
-                .ok()
-                .as_deref(),
-        ),
-    }
-}
-
-pub(crate) fn stream_open_timeout_from_env(value: Option<&str>) -> Duration {
-    let secs = value
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(DEFAULT_STREAM_OPEN_TIMEOUT.as_secs())
-        .clamp(MIN_STREAM_OPEN_TIMEOUT_SECS, MAX_STREAM_OPEN_TIMEOUT_SECS);
-    Duration::from_secs(secs)
-}
-
 /// Default wait for the first body byte after the response headers (#6184).
 /// Well under the 900s default inter-chunk idle budget: a provider that has
 /// answered the headers and then sends nothing at all — not even an SSE
@@ -480,6 +443,10 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
+    use codewhale_config::{
+        MAX_STREAM_OPEN_TIMEOUT_SECS, MIN_STREAM_OPEN_TIMEOUT_SECS, resolve_stream_open_timeout,
+        stream_open_timeout_from_env,
+    };
 
     fn open_req(policy: StreamHttpPolicy, open_timeout: Duration) -> StreamOpenRequest {
         StreamOpenRequest {
@@ -552,7 +519,7 @@ force_http1 = {pinned}
     #[tokio::test]
     async fn open_returns_first_attempt_response_on_dual_policy() {
         let server = ok_server().await;
-        let client = crate::tls::reqwest_client();
+        let client = codewhale_release::tls::reqwest_client();
         let attempts = Arc::new(AtomicUsize::new(0));
         let response = open_sse_response(
             &open_req(StreamHttpPolicy::DualWithH1Fallback, Duration::from_secs(5)),
@@ -613,7 +580,7 @@ force_http1 = {pinned}
     #[tokio::test]
     async fn transport_error_before_headers_retries_exactly_once_on_h1() {
         let server = ok_server().await;
-        let client = crate::tls::reqwest_client();
+        let client = codewhale_release::tls::reqwest_client();
         let attempts = Arc::new(AtomicUsize::new(0));
         let response = open_sse_response(
             &open_req(StreamHttpPolicy::DualWithH1Fallback, Duration::from_secs(5)),
@@ -712,7 +679,7 @@ force_http1 = {pinned}
             let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
             listener.local_addr().expect("addr").port()
         };
-        let client = crate::tls::reqwest_client();
+        let client = codewhale_release::tls::reqwest_client();
         let url = format!("http://127.0.0.1:{port}/v1/chat");
         let err = open_sse_response(
             &open_req(StreamHttpPolicy::DualWithH1Fallback, Duration::from_secs(5)),
@@ -756,8 +723,8 @@ force_http1 = {pinned}
                 let _ = tokio::io::copy(&mut socket, &mut tokio::io::sink()).await;
             }
         });
-        crate::tls::ensure_rustls_crypto_provider();
-        let client = crate::tls::reqwest_client();
+        codewhale_release::tls::ensure_rustls_crypto_provider();
+        let client = codewhale_release::tls::reqwest_client();
         let url = format!("https://127.0.0.1:{port}/v1/chat");
         let err = open_sse_response(
             &open_req(StreamHttpPolicy::DualWithH1Fallback, Duration::from_secs(5)),

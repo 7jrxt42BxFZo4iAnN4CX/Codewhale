@@ -49,7 +49,7 @@ owner = "crates/tui/src/project_context/budget.rs"
 [[feature]]
 id = "cloud-computer-dispatch"
 name = "Cloud computer conversations"
-summary = "Dispatch, inspect, continue and stop the same account cloud conversation from terminal and desktop."
+summary = "Dispatch, inspect, continue and stop the same account cloud conversation from terminal and desktop, including conversations with a saved whale."
 status = "experimental"
 surfaces = { tui = "preview" }
 since = "unreleased"

@@ -104,6 +104,8 @@ pub struct RuntimeCapabilities {
     #[serde(default)]
     pub fleet_run_create: bool,
     #[serde(default)]
+    pub thread_fleet_members: bool,
+    #[serde(default)]
     pub fleet_run_start: bool,
     #[serde(default)]
     pub fleet_event_replay: bool,
@@ -467,6 +469,7 @@ mod tests {
             environments: false,
             worker_runtime: false,
             fleet_run_create: true,
+            thread_fleet_members: true,
             fleet_run_start: true,
             fleet_event_replay: true,
             fleet_event_stream: true,

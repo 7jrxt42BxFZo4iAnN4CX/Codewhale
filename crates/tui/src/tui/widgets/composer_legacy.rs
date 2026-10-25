@@ -769,7 +769,7 @@ impl Renderable for ComposerWidget<'_> {
         composer_height(
             self.app.composer_display_input(),
             width,
-            self.max_height.min(self.max_height_cap()),
+            self.max_height,
             self.active_menu_reserved_rows(),
             self.app.composer_density,
             self.wants_enclosed_panel(),

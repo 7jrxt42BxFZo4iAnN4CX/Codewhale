@@ -904,6 +904,24 @@ fn row_matches_endpoint_fingerprint(row: &CatalogOffering, fingerprint: &str) ->
     )
 }
 
+fn current_local_context(provider: ProviderKind, mut row: CatalogOffering) -> CatalogOffering {
+    if provider != ProviderKind::Ollama {
+        return row;
+    }
+    let now = codewhale_config::catalog::now_unix();
+    let current = matches!(
+        row.fact_source("limit.context"),
+        CatalogSource::Live { base_url_fingerprint, fetched_at }
+            if row_matches_endpoint_fingerprint(&row, base_url_fingerprint)
+                && *fetched_at <= now
+                && now - *fetched_at < 60
+    );
+    if !current && let Some(limit) = row.limit.as_mut() {
+        limit.context = None;
+    }
+    row
+}
+
 /// Build or reuse the runtime resolver for an exact provider identity.
 ///
 /// Only a fresh provider-owned partition whose source fingerprint matches the
@@ -933,7 +951,8 @@ pub(crate) fn runtime_catalog_resolver_for_identity(
         fingerprint
     );
 
-    if let Ok(cache) = RUNTIME_RESOLVER_CACHE.read()
+    if provider != ProviderKind::Ollama
+        && let Ok(cache) = RUNTIME_RESOLVER_CACHE.read()
         && let Some(cached) = cache.get(&cache_key)
         && cached.generation == generation
         && cached.cloud_generation == cloud_generation
@@ -1066,6 +1085,9 @@ pub(crate) fn runtime_catalog_resolver_for_identity(
             }
         }
     }
+    if provider == ProviderKind::Ollama {
+        route_offerings.retain(|_, offering| offering.provider.as_str() != catalog_id.as_ref());
+    }
     if endpoint_catalog_authoritative {
         let transport_provider = if provider == ProviderKind::Custom {
             ProviderKind::Custom.as_str()
@@ -1079,7 +1101,7 @@ pub(crate) fn runtime_catalog_resolver_for_identity(
                 row.complete_from(lower, Some(base_url));
             }
             row.provider = transport_provider.to_string();
-            let offering = row.to_offering();
+            let offering = current_local_context(provider, row).to_offering();
             route_offerings.insert(offering_key(&offering), offering);
         }
         // The roster replaced its whole scope, but an id it explicitly attests
@@ -1094,30 +1116,17 @@ pub(crate) fn runtime_catalog_resolver_for_identity(
         )
         .into_values()
         {
-            let offering = row.to_offering();
+            let offering = current_local_context(provider, row).to_offering();
             route_offerings
                 .entry(offering_key(&offering))
                 .or_insert(offering);
         }
     }
 
-    // Ollama's tag list does not mark a provider default. In the absence of
-    // an explicit tag, elect a stable row only from this fresh exact endpoint.
-    // Other providers retain their reported or curated default semantics.
-    if provider == ProviderKind::Ollama
-        && endpoint_catalog_authoritative
-        && !route_offerings.values().any(|offering| {
-            offering.provider.as_str() == catalog_id.as_ref() && offering.default_for_provider
-        })
-        && let Some(offering) = route_offerings
-            .values_mut()
-            .find(|offering| offering.provider.as_str() == catalog_id.as_ref())
-    {
-        offering.default_for_provider = true;
-    }
-
     let resolver = RouteResolver::from_offerings(route_offerings.into_values().collect());
-    if let Ok(mut cache) = RUNTIME_RESOLVER_CACHE.write() {
+    if provider != ProviderKind::Ollama
+        && let Ok(mut cache) = RUNTIME_RESOLVER_CACHE.write()
+    {
         cache.retain(|_, entry| {
             entry.generation == generation && entry.cloud_generation == cloud_generation
         });
@@ -1299,6 +1308,7 @@ pub fn catalog_offering_for_model_identity(
         needle,
     )
     .cloned()
+    .map(|row| current_local_context(provider, row))
 }
 
 /// What one exact-route lookup found in the provider's own catalog entry.
@@ -1366,7 +1376,7 @@ pub(crate) fn catalog_offering_for_route(
                     row.complete_from(lower, Some(base_url));
                 }
             }
-            return Some(*row);
+            return Some(current_local_context(provider, *row));
         }
         // A successful fetch that does not list this id is authoritative about
         // its absence. Only an explicitly attested unlisted row may still name
@@ -1375,7 +1385,8 @@ pub(crate) fn catalog_offering_for_route(
         Ok(Some(RouteCatalogLookup::NotListed)) => {
             return cloud_unlisted_offerings_for_route(provider, identity, base_url)
                 .into_values()
-                .find(|row| row.wire_model_id == model);
+                .find(|row| row.wire_model_id == model)
+                .map(|row| current_local_context(provider, row));
         }
         Ok(Some(RouteCatalogLookup::NoRoster)) | Ok(None) | Err(_) => {}
     }
@@ -1393,25 +1404,7 @@ pub(crate) fn catalog_offering_for_route(
     {
         return None;
     }
-    Some(offering)
-}
-
-pub(crate) fn configured_model_for_route<'a>(
-    config: &'a Config,
-    provider: ProviderKind,
-    identity: &str,
-    base_url: &str,
-    model: &str,
-) -> Option<&'a codewhale_config::catalog::configured::ConfiguredModel> {
-    // Account-owned OAuth rosters retain their separate authority.
-    if provider == ProviderKind::OpenaiCodex {
-        return None;
-    }
-    let models = config.custom_models.as_deref()?;
-    codewhale_config::catalog::configured::validate_configured_models(models).ok()?;
-    models
-        .iter()
-        .find(|row| row.id == model && row.matches_route(identity, base_url))
+    Some(current_local_context(provider, offering))
 }
 
 /// Config declarations take precedence only for the exact selected route.
@@ -1423,7 +1416,7 @@ pub(crate) fn configured_catalog_offering_for_route(
     model: &str,
 ) -> Option<CatalogOffering> {
     let lower = catalog_offering_for_route(provider, identity, base_url, model);
-    configured_model_for_route(config, provider, identity, base_url, model)
+    crate::config::configured_model_for_route(config, provider, identity, base_url, model)
         .map(|row| {
             let mut offering = row.to_catalog_offering();
             if let Some(lower) = lower.as_ref() {
@@ -1942,6 +1935,59 @@ pub(crate) async fn update_provider_catalog(
     receipt
 }
 
+pub(crate) async fn refresh_local_ollama_catalog(config: &Config, identity: &ProviderIdentity) {
+    #[cfg(test)]
+    let _ = (config, identity);
+    #[cfg(not(test))]
+    {
+        if identity.provider != ProviderKind::Ollama {
+            return;
+        }
+        static REFRESH_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        let queued_at = codewhale_config::catalog::now_unix();
+        let refresh_guard = REFRESH_LOCK.lock().await;
+        let handle = tokio::runtime::Handle::current();
+        let config = config.clone();
+        let identity = identity.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            let _refresh_guard = refresh_guard;
+            let now = codewhale_config::catalog::now_unix();
+            let base_url = config.base_url_for_route(&identity);
+            let recent = crate::provider_catalog_live::with_cached_entry_for_route(
+                identity.provider,
+                identity.key.as_str(),
+                &base_url,
+                |entry| {
+                    entry.is_fresh(now)
+                        && matches!(
+                            entry.status,
+                            codewhale_config::catalog::CatalogStatus::Fresh
+                        )
+                        && entry.fetched_at >= queued_at
+                        && entry.fetched_at <= now
+                        && entry.offerings.iter().any(|row| row.default_for_provider)
+                },
+            )
+            .ok()
+            .flatten()
+            .unwrap_or(false);
+            if recent
+                && runtime_catalog_resolver_for_identity(
+                    identity.provider,
+                    Some(identity.key.as_str()),
+                    &base_url,
+                    codewhale_config::catalog::CatalogStatus::Fresh,
+                )
+                .endpoint_catalog_authoritative
+            {
+                return;
+            }
+            handle.block_on(update_provider_catalog(&config, &identity));
+        })
+        .await;
+    }
+}
+
 pub(crate) async fn refresh_account_catalog_before_first_request(config: &Config) {
     let Ok(identity) = config.active_provider_identity() else {
         return;
@@ -2165,6 +2211,296 @@ pub(crate) async fn run_models(
         println!("{}", tr(locale, MessageId::ModelsListHint));
     }
     Ok(())
+}
+
+// ============================================================================
+// Provider Capability Matrix
+// ============================================================================
+
+/// Known capabilities for a provider + resolved-model combination.
+///
+/// Returned by [`provider_capability`] to describe what a given provider
+/// supports for the resolved model string.  All fields are derived from
+/// static knowledge (release docs, API guides) rather than live API probes.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+pub struct ProviderCapability {
+    /// Canonical provider identifier.
+    pub provider: ProviderKind,
+    /// Resolved model identifier that will be sent in the API payload.
+    pub resolved_model: String,
+    /// Context window in tokens (the maximum input the model can accept).
+    pub context_window: u32,
+    /// Known output ceiling for this provider/model metadata path, when one is
+    /// actually known.
+    ///
+    /// `None` means "this route publishes no output maximum we can stand
+    /// behind" — for example the Kimi Code membership ids, whose limits live in
+    /// the membership catalog rather than the static model catalogue. Unknown
+    /// must stay unknown: callers may **not** substitute a placeholder ceiling,
+    /// and in particular [`crate::route_budget`] does not clamp a requested
+    /// `max_tokens` against an unknown compatibility cap.
+    ///
+    /// When `Some`, the value is a documented exact-route maximum or a
+    /// deliberately conservative provider ceiling (Anthropic's 64K floor, the
+    /// Codex OAuth route). It is metadata for diagnostics and CI policy; normal
+    /// turns use a separate, more conservative request cap in the engine.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_output: Option<u32>,
+    /// Whether the provider+model supports thinking/reasoning mode.
+    pub thinking_supported: bool,
+    /// Whether the provider returns prompt-cache telemetry fields.
+    pub cache_telemetry_supported: bool,
+    /// Which request-payload dialect the provider uses.
+    pub request_payload_mode: RequestPayloadMode,
+    /// Deprecation metadata for compatibility aliases that are still accepted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alias_deprecation: Option<crate::config::ModelAliasDeprecation>,
+}
+
+/// Which request-payload dialect the provider speaks.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub enum RequestPayloadMode {
+    /// Standard OpenAI-compatible `/v1/chat/completions` payload.
+    ChatCompletions,
+    /// OpenAI Responses API payload.
+    Responses,
+    /// Native Anthropic Messages API `/v1/messages` payload (#3014).
+    AnthropicMessages,
+}
+
+/// Resolve the provider capability for a given [`ProviderKind`] and resolved
+/// model string.
+///
+/// The `resolved_model` should be the final model identifier that will appear
+/// in the API payload (after normalization / provider-specific mapping).
+#[must_use]
+pub fn provider_capability(provider: ProviderKind, resolved_model: &str) -> ProviderCapability {
+    provider_capability_with_wire(provider, resolved_model, None)
+}
+
+/// Wire-aware variant of [`provider_capability`] that respects
+/// `wire = "responses" | "anthropic" | "chat"` for `Custom` providers.
+///
+/// Built-ins keep their fixed policy; `Custom` defaults to `Chat` when `wire`
+/// is absent so existing configs stay compatible. Mirrors
+/// `crates/tui/src/client.rs::provider_wire_format_for_config` and the
+/// `Custom` comment in `crates/config/src/provider.rs`.
+#[must_use]
+pub fn provider_capability_with_wire(
+    provider: ProviderKind,
+    resolved_model: &str,
+    wire: Option<&str>,
+) -> ProviderCapability {
+    // Custom wire overrides must be checked before the generic fallback so
+    // `[providers.<name>] wire = "responses"` / `"anthropic"` is honored.
+    if provider == ProviderKind::Custom {
+        if codewhale_config::provider::wire_dialect_prefers_anthropic(wire) {
+            return ProviderCapability {
+                provider,
+                resolved_model: resolved_model.to_string(),
+                context_window: codewhale_models::context_window_for_model(resolved_model)
+                    .unwrap_or(codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS),
+                max_output: codewhale_models::max_output_tokens_for_model(resolved_model),
+                thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
+                cache_telemetry_supported: false,
+                request_payload_mode: RequestPayloadMode::AnthropicMessages,
+                alias_deprecation: None,
+            };
+        }
+        if codewhale_config::provider::wire_dialect_prefers_responses(wire) {
+            return ProviderCapability {
+                provider,
+                resolved_model: resolved_model.to_string(),
+                context_window: codewhale_models::context_window_for_model(resolved_model)
+                    .unwrap_or(codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS),
+                max_output: codewhale_models::max_output_tokens_for_model(resolved_model),
+                thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
+                cache_telemetry_supported: false,
+                request_payload_mode: RequestPayloadMode::Responses,
+                alias_deprecation: None,
+            };
+        }
+    }
+
+    if matches!(
+        provider,
+        ProviderKind::Anthropic | ProviderKind::MinimaxAnthropic | ProviderKind::Openmodel
+    ) {
+        return ProviderCapability {
+            provider,
+            resolved_model: resolved_model.to_string(),
+            // 200K is the conservative Anthropic floor; 4.6+ models resolve
+            // their 1M windows from models.rs rows (#3014).
+            context_window: codewhale_models::context_window_for_model(resolved_model)
+                .unwrap_or(200_000),
+            // 64K is the documented Anthropic Messages floor. For a model
+            // the catalogue describes this carries its documented ceiling;
+            // for an unknown one it is an *assumed* floor, and
+            // `route_budget::output_ceiling_source` labels it unverified so
+            // no receipt renders it as "documented" (#5440).
+            max_output: Some(
+                codewhale_models::max_output_tokens_for_model(resolved_model).unwrap_or(64_000),
+            ),
+            thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
+            cache_telemetry_supported: matches!(provider, ProviderKind::Anthropic),
+            request_payload_mode: RequestPayloadMode::AnthropicMessages,
+            alias_deprecation: None,
+        };
+    }
+
+    if matches!(provider, ProviderKind::OpenaiCodex) {
+        return ProviderCapability {
+            provider,
+            resolved_model: resolved_model.to_string(),
+            context_window: crate::config::OPENAI_CODEX_EFFECTIVE_CONTEXT_WINDOW_TOKENS,
+            // The OAuth cache does not publish an output ceiling. This 4K is a
+            // deliberate, long-standing product decision for the Codex route
+            // (not a fallback): keep the compatibility capability conservative
+            // instead of inheriting the public API model's output limit. It is
+            // an assumption, not a documented fact — receipts label it
+            // unverified (#5440).
+            max_output: Some(4096),
+            thinking_supported: true,
+            cache_telemetry_supported: false,
+            request_payload_mode: RequestPayloadMode::Responses,
+            alias_deprecation: None,
+        };
+    }
+
+    // #3023: Delete the Openai/Atlascloud/Moonshot early-return so these
+    // providers use the generic model-based path below, which correctly
+    // resolves context windows, output limits, and thinking support from
+    // models.rs lookups.  Ollama also falls through to model-based lookups
+    // with 8192 as the last-resort fallback instead of a hardcoded floor.
+    if matches!(provider, ProviderKind::XiaomiMimo) {
+        return ProviderCapability {
+            provider,
+            resolved_model: resolved_model.to_string(),
+            context_window: codewhale_models::context_window_for_model(resolved_model)
+                .unwrap_or(codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS),
+            // No documented output maximum for these routes: stay unknown so
+            // no compatibility clamp is applied downstream.
+            max_output: codewhale_models::max_output_tokens_for_model(resolved_model),
+            thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
+            cache_telemetry_supported: false,
+            request_payload_mode: RequestPayloadMode::ChatCompletions,
+            alias_deprecation: None,
+        };
+    }
+
+    if matches!(provider, ProviderKind::Arcee) {
+        return ProviderCapability {
+            provider,
+            resolved_model: resolved_model.to_string(),
+            context_window: codewhale_models::context_window_for_model(resolved_model)
+                .unwrap_or(codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS),
+            // No documented output maximum for these routes: stay unknown so
+            // no compatibility clamp is applied downstream.
+            max_output: codewhale_models::max_output_tokens_for_model(resolved_model),
+            thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
+            cache_telemetry_supported: false,
+            request_payload_mode: RequestPayloadMode::ChatCompletions,
+            alias_deprecation: None,
+        };
+    }
+
+    let model_lower = resolved_model.to_ascii_lowercase();
+    let alias_deprecation = if matches!(
+        provider,
+        ProviderKind::Deepseek | ProviderKind::DeepseekAnthropic
+    ) {
+        crate::config::deepseek_alias_deprecation(&model_lower)
+    } else {
+        None
+    };
+    let official_deepseek = codewhale_models::canonical_official_deepseek_model_id(&model_lower)
+        .is_some()
+        || alias_deprecation.is_some();
+    let is_reasoner = matches!(provider, ProviderKind::WanjieArk)
+        && (model_lower.contains("reasoner") || model_lower.contains("r1"));
+
+    // Provider-owned wire IDs can have exact catalog facts without a legacy
+    // model-only row. Reuse those facts before conservative fallback budgets.
+    let offering = bundled_catalog_offering_for_model(provider, resolved_model);
+    let context_window = if provider == ProviderKind::Ollama {
+        8192
+    } else if official_deepseek {
+        codewhale_models::DEEPSEEK_V4_CONTEXT_WINDOW_TOKENS
+    } else if let Some(window) = codewhale_models::context_window_for_model(resolved_model) {
+        window
+    } else if let Some(window) = offering
+        .as_ref()
+        .and_then(|row| row.limit.as_ref())
+        .and_then(|limit| limit.context)
+        .and_then(|window| u32::try_from(window).ok())
+    {
+        window
+    } else {
+        codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS
+    };
+
+    // Output limits require an exact catalog row or an explicitly recognized
+    // compatibility alias. A family-name match cannot document a new model.
+    // The catalog answers
+    // `None` when the catalogue has no row. That is the truthful state for
+    // membership routes such as the `kimi-for-coding` family, whose ceilings
+    // are owned by the membership catalog. It must not become a placeholder
+    // number: a fabricated 4K here silently clamped offline membership routes
+    // to 4K output via `route_budget`.
+    let max_output = codewhale_models::max_output_tokens_for_model(resolved_model)
+        .or_else(|| {
+            // Provider-owned wire IDs need not exist in the legacy model-only
+            // catalog (for example Fireworks' accounts/... slug). Reuse the
+            // exact bundled offering instead of inferring a family ceiling.
+            offering
+                .as_ref()
+                .and_then(|offering| offering.limit.as_ref())
+                .and_then(|limit| limit.output)
+                .and_then(|limit| u32::try_from(limit).ok())
+        })
+        .or_else(|| {
+            codewhale_models::canonical_official_deepseek_model_id(resolved_model)
+                .or_else(|| {
+                    alias_deprecation.as_ref().map(|_| {
+                        codewhale_config::catalog::reviewed::constants::DEEPSEEK_ALIAS_REPLACEMENT
+                    })
+                })
+                .and_then(codewhale_models::max_output_tokens_for_model)
+        });
+
+    // Exact catalog reasoning facts and recognized compatibility aliases only.
+    let thinking_supported = official_deepseek
+        || is_reasoner
+        || offering
+            .as_ref()
+            .is_some_and(|row| row.reasoning == Some(true))
+        || codewhale_models::model_supports_reasoning(resolved_model);
+
+    // Cache telemetry: returned only by DeepSeek-native and NVIDIA NIM endpoints.
+    let cache_telemetry_supported = matches!(
+        provider,
+        ProviderKind::Deepseek | ProviderKind::NvidiaNim | ProviderKind::Volcengine
+    );
+
+    let request_payload_mode = if matches!(
+        provider,
+        ProviderKind::DeepseekAnthropic | ProviderKind::MinimaxAnthropic | ProviderKind::Openmodel
+    ) {
+        RequestPayloadMode::AnthropicMessages
+    } else {
+        RequestPayloadMode::ChatCompletions
+    };
+
+    ProviderCapability {
+        provider,
+        resolved_model: resolved_model.to_string(),
+        context_window,
+        max_output,
+        thinking_supported,
+        cache_telemetry_supported,
+        request_payload_mode,
+        alias_deprecation,
+    }
 }
 
 #[cfg(test)]

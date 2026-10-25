@@ -9,20 +9,113 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Standing instructions are budgeted per scope (`global` and `project`) in
   estimated tokens instead of one 48 KiB byte ceiling shared by everything, and
-  every trim, skip, and refusal is reported — as a system cell at session
-  start, on stderr in `exec`, to the model as a runtime-provenance message, and
-  per source in `/context report`. `AGENTS.md` still wins; a directory without
-  one now falls back to its `CLAUDE.md` (`claude_fallback = false` opts out).
+  every trim, skip, and refusal is reported — as a system cell at session start,
+  on stderr in `exec`, to the model as a runtime-provenance message, and per
+  source in `/context report`. `AGENTS.md` still wins; a directory without one
+  now falls back to its `CLAUDE.md` (`claude_fallback = false` opts out).
   Configured `instructions = [...]` entries are charged to the global scope.
   New `[instruction_budget]` table (user config only) with per-scope token
   budgets, percentages of the usable window, `file_max_bytes`, `policy`, the
   static-prefix guard, and `claude_fallback` (#6526).
+- Local Ollama defaults now come from chat-capable tags, and `/provider ollama`
+  refreshes the live catalog before switching. Exec and Runtime API defaults use
+  the same discovery path. Fresh context observations come from loaded models'
+  served windows; unloaded models retain an explicitly unverified fallback (#5848).
+- `codewhale --provider <name> resume <id>` now moves the saved session to the
+  named provider, as `exec --resume` already did, so a session whose provider
+  table was deleted can be reopened on a provider you still have. It takes
+  that provider's default model unless `--model` is also given. Without
+  `--provider` the resume still refuses rather than fall back, and the refusal,
+  now also on the `codewhale resume` and `fork` mount path, names this command
+  beside `codewhale sessions export <id>` (#6996). Thanks @luestr.
+- The model's skills index now says when it shortens skill descriptions.
+  When a description hits the 400-char row cap, or rows are cut to fit the
+  context budget, the index ends with "descriptions shortened for N of M
+  skills" and points to `load_skill` with `name="list"` for the full text;
+  `/context report` and `/context json` show the same count on the skills entry.
+  `/skills inspect` now
+  flags a description by the same rule the index uses (#7073).
+- The TUI Terminal dock now also shows the model's shell commands for the
+  session: each running or recent command is a read-only tab with its live
+  output, beside the interactive shells. "No live terminals" appears only when
+  there are neither.
+- A shell command that spans several lines (a heredoc, a loop, an `&&` chain
+  split across lines) now shows those lines on its Live card while it runs and
+  after it succeeds, within the card's usual line limit, instead of only the
+  first line. Transcript shows the whole command. Single-line cards are
+  unchanged (#6436).
+- `codewhale review` no longer accepts leaked tool-call markup as a review: a
+  pass whose reply is a DeepSeek DSML (or other) tool-call wrapper outside code
+  now fails as incomplete, with no tally and nothing posted (#7072). A Low-risk
+  review on a reasoning model caps its reasoning at low so the 4,000-token
+  allowance leaves room for the review, and an exhausted pass now reports the
+  allowance and reserve actually sent and says "cut off" when visible text came
+  back (#7067).
+- `--full-access` is now the documented flag for Full Access (`--yolo` stays an
+  alias), and `serve` accepts it after the subcommand: `codewhale serve --acp
+  --yolo` used to fail with "unexpected argument". `serve --acp` also writes one
+  stderr line naming the permission and sandbox it runs with, and the ACP
+  permission option's Full Access hint names the working command. A configured
+  `sandbox_mode = "danger-full-access"` still never widens Ask or Auto-Review
+  (#6992).
 - Preview: `dispatch --computer` starts an account cloud conversation that can
   also be opened in desktop. `--thread` continues or inspects it; `--stop`,
   `--approve` and `--deny` control its current task. Explicit `--key-stdin`
   installs provider access in the running computer's memory. Retries retain
   one operation key and the account/VM binding. Existing Agent Work dispatch
   remains available when no computer conversation is selected.
+- A delegated agent still marked running that has reported no progress for 10
+  minutes no longer holds its parent turn open: the turn's stall watchdogs can
+  recover again, and the stall record names the agent. A child's running time
+  stays unlimited; only silence counts (#6184).
+- A long draft or paste now grows the composer past its density row limit, up
+  to half the screen (never less than that limit) while leaving room for the
+  transcript, so the text can be read and edited before sending. While a
+  slash, mention or history-search menu is open the composer keeps its usual
+  height (#7049).
+- Code blocks inside reasoning cells now take their syntax colours from the
+  active theme instead of the terminal's detected light or dark mode, so a dark
+  theme such as Shoreline in a light-profile terminal no longer paints
+  near-black code on its dark reasoning surface. The pager and clipboard copies
+  still follow terminal detection (#7043).
+- `/balance` and the balance status chip work on the default DeepSeek route
+  again. The balance request now goes to the DeepSeek API root instead of the
+  `/beta` inference path, which failed with "Could not fetch DeepSeek account
+  balance" (#7055).
+- An `AGENTS.md` or global instruction file over 100 KiB is no longer
+  skipped (which could let a sibling file load in its place): Codewhale loads
+  its first 100 KiB, ends it with a marker giving the bytes omitted, and names
+  the file in `/context report`. The shared 48 KiB instruction budget still
+  applies after that, and the marker it leaves when it drops broader scopes
+  now gives the bytes dropped and the total (#6526).
+- Ctrl+C on an idle composer that holds a draft now clears the draft instead
+  of arming exit, and Ctrl+Z restores it. The "press Ctrl+C again" exit prompt
+  arms only once the composer is empty, and Ctrl+C during a running turn still
+  cancels the turn first. Clearing a draft with Ctrl+C or Esc also resets a
+  pending exit prompt (#6237).
+- While a background job runs, the git status probe now backs off after 30
+  seconds without input or engine events, as it already did in an idle
+  session, instead of starting about a dozen git processes every 2 seconds for
+  as long as the job lives (#6728).
+- `write` over an existing file now says when it kept that file's CRLF or LF
+  line endings, so the agent no longer reports a line-ending conversion that
+  did not happen (#7070).
+- The To-do that a Plan-to-Work handoff seeds is now titled with the plan's
+  first non-heading line outside code fences, without list or emphasis
+  markdown, instead of the whole plan run together
+  (#7068).
+- Right-click "Open in editor" on a transcript cell now also offers a bare
+  workspace file path with no line number, opening it at line 1 (#2342).
+- Composer history is no longer rewritten from a partial read: when the
+  history file cannot be read, new entries are not saved over it and a
+  warning is logged. An empty declarative workflow is refused ("workflow must
+  contain at least one node") instead of succeeding with no work (#6559).
+- A `SKILL.md` that is not a regular file is reported as a skill load warning
+  instead of being read, so a FIFO in a skills directory can no longer stall
+  discovery (#6554).
+- `app-server`: a turn whose `response_start` could not be written to stdio
+  is now interrupted instead of running on with nothing able to stop it
+  (#6558).
 
 ## [0.10.2] - 2026-10-22
 

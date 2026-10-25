@@ -27,7 +27,7 @@ pub(crate) type DnsPin = Option<(String, IpAddr)>;
 /// receive the original hostname, resolve it again outside this process, and
 /// bypass the validated DNS pin.
 pub(crate) fn guarded_reqwest_client_builder() -> reqwest::ClientBuilder {
-    crate::tls::reqwest_client_builder().no_proxy()
+    codewhale_release::tls::reqwest_client_builder().no_proxy()
 }
 
 /// Check if an IP address is loopback, private, link-local, cloud-metadata,
@@ -430,7 +430,7 @@ mod tests {
         let builder = if guarded {
             guarded_reqwest_client_builder()
         } else {
-            crate::tls::reqwest_client_builder()
+            codewhale_release::tls::reqwest_client_builder()
         };
         let client = builder
             .timeout(Duration::from_secs(2))

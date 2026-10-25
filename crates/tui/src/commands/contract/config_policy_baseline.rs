@@ -45,7 +45,7 @@ fn normalize(message: &str, temp: &TempDir) -> String {
             text = text.replace(workspace, "<WORKSPACE>");
         }
     }
-    if let Some(audit) = crate::audit::audit_log_path() {
+    if let Some(audit) = codewhale_runtime::audit::audit_log_path() {
         text = text.replace(
             &codewhale_config::quote_os_path(&audit),
             "\"<TEST_AUDIT_LOG>\"",

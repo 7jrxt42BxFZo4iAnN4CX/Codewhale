@@ -786,7 +786,8 @@ pub fn orcarouter_pkce_login(
         params.display_name
     )?;
     writeln!(challenge, "  Open:  {}", request.authorize_url)?;
-    if inputs.open_browser && crate::utils::open_url(&request.authorize_url).is_err() {
+    if inputs.open_browser && codewhale_runtime::browser::open_url(&request.authorize_url).is_err()
+    {
         writeln!(
             challenge,
             "  Browser could not be opened; copy the URL above into a browser."
@@ -974,7 +975,7 @@ fn oauth_endpoint_url(raw: &str) -> Result<reqwest::Url> {
 }
 
 fn oauth_http_client(endpoint: &reqwest::Url, purpose: &str) -> Result<reqwest::blocking::Client> {
-    let builder = crate::tls::reqwest_blocking_client_builder()
+    let builder = codewhale_release::tls::reqwest_blocking_client_builder()
         // An issuer-approved endpoint cannot delegate credential-bearing forms
         // to a redirect destination, including HTTPS-to-HTTP downgrades.
         .redirect(reqwest::redirect::Policy::none())
@@ -2099,7 +2100,7 @@ fn wait_for_callback(
     wait_for_callback_validated(listeners, params, expected_state, None)
 }
 
-fn wait_for_callback_validated(
+pub(crate) fn wait_for_callback_validated(
     listeners: &[TcpListener],
     params: &OAuthProviderParams,
     expected_state: &str,
@@ -4589,7 +4590,7 @@ impl PluginOAuthConfig {
         Ok(())
     }
 
-    fn callback_params(&self) -> OAuthProviderParams<'_> {
+    pub(crate) fn callback_params(&self) -> OAuthProviderParams<'_> {
         OAuthProviderParams {
             display_name: "Plugin provider",
             default_issuer: &self.issuer,
@@ -4618,7 +4619,7 @@ impl PluginOAuthConfig {
         }
     }
 
-    fn authorize_url(
+    pub(crate) fn authorize_url(
         &self,
         redirect_uri: &str,
         state: &str,
@@ -4674,13 +4675,13 @@ fn validate_plugin_callback(query: &str, issuer: &str) -> Result<()> {
 }
 
 #[derive(Serialize, Deserialize)]
-struct PluginOAuthTokens {
+pub(crate) struct PluginOAuthTokens {
     access_token: String,
     refresh_token: Option<String>,
     expires_at: u64,
 }
 
-fn plugin_oauth_slot(
+pub(crate) fn plugin_oauth_slot(
     provider: &str,
     base_url: &str,
     descriptor: &PluginOAuthConfig,
@@ -4704,7 +4705,7 @@ struct PluginTokenResponse {
     token_type: Option<String>,
 }
 
-fn plugin_token_response(
+pub(crate) fn plugin_token_response(
     descriptor: &PluginOAuthConfig,
     form: &[(&str, &str)],
     previous_refresh: Option<String>,
@@ -4746,80 +4747,6 @@ fn plugin_token_response(
         expires_at: (now_unix_secs().context("System clock before UNIX epoch")? as u64)
             .saturating_add(lifetime),
     })
-}
-
-/// Core-owned standard public-client PKCE login. Blocking sockets and secure
-/// storage stay on the dedicated worker; plugins never receive token material.
-pub async fn plugin_oauth_login(
-    provider: String,
-    base_url: String,
-    descriptor: PluginOAuthConfig,
-    authority: crate::plugins::types::PluginAuthority,
-) -> Result<()> {
-    let policy = crate::plugins::activation::extension_host_policy_enabled();
-    tokio::task::spawn_blocking(move || {
-        let _scope = crate::plugins::activation::PolicyScope::propagate(policy);
-        crate::plugins::providers::verify_provider_binding(
-            &authority,
-            &provider,
-            &base_url,
-            &descriptor,
-            None,
-        )
-        .map_err(anyhow::Error::msg)?;
-        let slot = plugin_oauth_slot(&provider, &base_url, &descriptor)?;
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
-        listener.set_nonblocking(true)?;
-        let redirect_uri = format!(
-            "http://127.0.0.1:{}{}",
-            listener.local_addr()?.port(),
-            descriptor.callback_path
-        );
-        let pkce = generate_pkce();
-        let state = generate_state();
-        let authorize_url = descriptor.authorize_url(&redirect_uri, &state, &pkce)?;
-        eprintln!("{provider} sign-in (PKCE)\n  Open: {authorize_url}");
-        if std::env::var_os("CODEWHALE_PLUGIN_OAUTH_NO_BROWSER").is_none() {
-            let _ = webbrowser::open(&authorize_url);
-        }
-        let (code, _) = wait_for_callback_validated(
-            &[listener],
-            &descriptor.callback_params(),
-            &state,
-            Some(&descriptor.issuer),
-        )?;
-        crate::plugins::providers::verify_provider_binding(
-            &authority,
-            &provider,
-            &base_url,
-            &descriptor,
-            None,
-        )
-        .map_err(anyhow::Error::msg)?;
-        let mut form = vec![
-            ("grant_type", "authorization_code"),
-            ("client_id", descriptor.client_id.as_str()),
-            ("redirect_uri", redirect_uri.as_str()),
-            ("code", code.as_str()),
-            ("code_verifier", pkce.verifier.as_str()),
-        ];
-        if let Some(resource) = &descriptor.resource {
-            form.push(("resource", resource));
-        }
-        let token = plugin_token_response(&descriptor, &form, None)?;
-        crate::plugins::providers::verify_provider_binding(
-            &authority,
-            &provider,
-            &base_url,
-            &descriptor,
-            None,
-        )
-        .map_err(anyhow::Error::msg)?;
-        codewhale_secrets::Secrets::auto_detect().set(&slot, &serde_json::to_string(&token)?)?;
-        Ok(())
-    })
-    .await
-    .context("Plugin OAuth login worker failed")?
 }
 
 /// Prompt-free stored-login status. Readiness reads only this exact host-owned

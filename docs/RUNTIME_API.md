@@ -785,6 +785,15 @@ posture are server-owned read-only options; the editor cannot widen them.
 `approval_policy = "never"` is not an ACP posture, so the server refuses to
 start with it instead of serving it as Ask.
 
+Full Access is `yolo`. Start it with `codewhale serve --acp --full-access`
+(the flag may also come before `serve`; `--yolo` is an alias) or set
+`yolo = true` in config. A configured `sandbox_mode = "danger-full-access"` does
+not turn it on: that value can only narrow the sandbox the permission picks, so
+under Ask or Auto-Review it changes nothing, and `ask` is not a config key. At
+startup the server writes one line to stderr naming the permission and sandbox it
+will run with, so an editor's agent log shows which posture a launch command
+produced.
+
 Tool updates begin `pending`. `in_progress` means Core reached final dispatch;
 `completed`/`failed` and typed image blocks come from the actual Core result.
 `session/request_permission` correlates a private JSON-RPC ID to the same
@@ -3095,6 +3104,32 @@ Verification:
 ```bash
 npm test --workspace @codewhale/runtime-sdk
 ```
+
+## Thread Fleet members
+
+`thread_fleet_members` in runtime capabilities enables
+`POST /v1/threads/{id}/members`. The body is
+`{operation_key, member_id, display_name, prompt, fleet}`, where `fleet` is a
+complete Fleet v2 document (the same shape as a saved `fleets/*.toml`, as JSON)
+and `member_id` names one of its members with an exact `provider` and `model`.
+The thread's Engine starts that member as an ordinary child of the session,
+through the same spawn path as the `agent` tool: the member's provider and
+model are bound exactly and never fall back to the session route, its
+instructions join the child's task prompt as its Fleet profile, and the child
+keeps the session's permissions and spawn limits. The document is used for this
+start only; it is not saved and does not change the selected Fleet.
+
+The response is `200 {thread_id, member_id, agent_id, state: "started"}`, or
+`202 {state: "queued"}` when the thread is mid-turn: host requests are handled
+between turns. Repeating the same `operation_key` with the same body returns
+the original `agent_id` once started; a different body under the same key is
+refused. The child appears in `/v1/agent-runs` with `owner_session_id` set to the
+thread and its `member_id` as `session_name` (a display name may hold spaces or
+non-ASCII text, which session names refuse); `agent.spawned`,
+`agent.progress` and `agent.completed` arrive on the thread's event stream.
+Stop it with `POST /v1/agent-runs/{id}/cancel`, which also stops its
+descendants. A second start for a member whose child is still running is
+refused by the existing session-name rule; follow up with that child instead.
 
 ## Agent Run Receipts
 

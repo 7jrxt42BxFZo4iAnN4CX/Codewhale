@@ -117,7 +117,7 @@ async fn authenticated_owner_guest_runs_real_engine_and_reuses_held_store() -> R
     assert_eq!(after_acp_eof.data_dir, captured.data_dir);
     assert_eq!(after_generation, captured.lease_generation);
     assert!(!threads.is_acp_host());
-    let unauthenticated = crate::tls::reqwest_client()
+    let unauthenticated = codewhale_release::tls::reqwest_client()
         .get(format!("http://{addr}/v1/threads"))
         .send()
         .await?;
@@ -176,7 +176,7 @@ async fn authenticated_owner_guest_runs_real_engine_and_reuses_held_store() -> R
         )
         .await??;
     }
-    let catalog: Value = crate::tls::reqwest_client()
+    let catalog: Value = codewhale_release::tls::reqwest_client()
         .get(format!("http://{addr}/v1/threads"))
         .bearer_auth(&token)
         .send()
@@ -710,7 +710,7 @@ async fn real_owner_exact_listener_reuse_scope_refusal_and_fresh_browser_project
     );
     // Cookies/proofs are admitted only at this selected origin and cannot
     // replace the original listener's bearer gate.
-    let unauth = crate::tls::reqwest_client();
+    let unauth = codewhale_release::tls::reqwest_client();
     let selected_origin = format!("http://{}", selected.endpoint);
     let created: Value = unauth
         .post(format!("{selected_origin}/v1/threads"))
@@ -1469,7 +1469,7 @@ async fn canonical_history_import_runs_real_engine_retains_all_branches_and_refu
         reqwest::header::AUTHORIZATION,
         format!("Bearer {token}").parse()?,
     );
-    let client = crate::tls::reqwest_client_builder()
+    let client = codewhale_release::tls::reqwest_client_builder()
         .default_headers(headers)
         .build()?;
     let endpoint = format!("http://{addr}/v1/thread-history/import");
@@ -1750,7 +1750,7 @@ impl HistoryOperationFixture {
         Ok(Self {
             addr,
             runtime,
-            client: crate::tls::reqwest_client_builder()
+            client: codewhale_release::tls::reqwest_client_builder()
                 .default_headers(headers)
                 .build()?,
             sessions_dir,

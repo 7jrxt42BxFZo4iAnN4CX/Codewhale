@@ -3722,9 +3722,10 @@ impl ConfigView {
             && row.scope == ConfigScope::Saved
             && let Some(effective_currency) = effective
         {
-            let saved_cost_currency = crate::pricing::CostCurrency::from_setting(&row.value);
+            let saved_cost_currency =
+                codewhale_config::pricing::CostCurrency::from_setting(&row.value);
             let effective_cost_currency =
-                crate::pricing::CostCurrency::from_setting(effective_currency);
+                codewhale_config::pricing::CostCurrency::from_setting(effective_currency);
             if saved_cost_currency != effective_cost_currency {
                 return format!(
                     "{}{}",
@@ -3787,8 +3788,8 @@ fn config_base_url_row_value(app: &App) -> String {
 
 fn cost_currency_config_value(app: &App) -> String {
     match app.cost_currency {
-        crate::pricing::CostCurrency::Usd => "usd",
-        crate::pricing::CostCurrency::Cny => "cny",
+        codewhale_config::pricing::CostCurrency::Usd => "usd",
+        codewhale_config::pricing::CostCurrency::Cny => "cny",
     }
     .to_string()
 }
@@ -7517,7 +7518,12 @@ mod tests {
 
     fn cost_currency_row_for_settings(
         settings_toml: &str,
-    ) -> (String, String, crate::pricing::CostCurrency, Locale) {
+    ) -> (
+        String,
+        String,
+        codewhale_config::pricing::CostCurrency,
+        Locale,
+    ) {
         let _guard = ConfigSettingsEnvGuard::new(settings_toml);
         let app = create_test_app();
         let view = ConfigView::new_for_app(&app);
@@ -8738,7 +8744,10 @@ base_url = "https://api.xiaomimimo.com/v1"
         let _guard = ConfigSettingsEnvGuard::new("locale = \"zh-Hans\"\ncost_currency = \"usd\"\n");
         let app = create_test_app();
         assert_eq!(app.ui_locale, Locale::ZhHans);
-        assert_eq!(app.cost_currency, crate::pricing::CostCurrency::Cny);
+        assert_eq!(
+            app.cost_currency,
+            codewhale_config::pricing::CostCurrency::Cny
+        );
 
         let view = ConfigView::new_for_app(&app);
         let row = view
@@ -8761,7 +8770,10 @@ base_url = "https://api.xiaomimimo.com/v1"
                 ));
 
             assert_eq!(locale, Locale::ZhHans);
-            assert_eq!(effective_currency, crate::pricing::CostCurrency::Cny);
+            assert_eq!(
+                effective_currency,
+                codewhale_config::pricing::CostCurrency::Cny
+            );
             assert_eq!(saved_value, alias);
             assert_eq!(display_value, alias);
         }
@@ -8773,7 +8785,10 @@ base_url = "https://api.xiaomimimo.com/v1"
             cost_currency_row_for_settings("locale = \"zh-Hans\"\ncost_currency = \"cny\"\n");
 
         assert_eq!(locale, Locale::ZhHans);
-        assert_eq!(effective_currency, crate::pricing::CostCurrency::Cny);
+        assert_eq!(
+            effective_currency,
+            codewhale_config::pricing::CostCurrency::Cny
+        );
         assert_eq!(saved_value, "cny");
         assert_eq!(display_value, "cny");
     }
@@ -8784,7 +8799,10 @@ base_url = "https://api.xiaomimimo.com/v1"
             cost_currency_row_for_settings("locale = \"en\"\ncost_currency = \"cny\"\n");
 
         assert_eq!(locale, Locale::En);
-        assert_eq!(effective_currency, crate::pricing::CostCurrency::Cny);
+        assert_eq!(
+            effective_currency,
+            codewhale_config::pricing::CostCurrency::Cny
+        );
         assert_eq!(saved_value, "cny");
         assert_eq!(display_value, "cny");
     }

@@ -15,9 +15,9 @@ use serde_json::json;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-use crate::audit::log_sensitive_event;
 use crate::credentials::CredentialStore;
 use crate::hooks::HooksConfig;
+use codewhale_runtime::audit::log_sensitive_event;
 use codewhale_runtime::features::{Feature, Features, FeaturesToml, is_known_feature_key};
 
 // Sub-agent concurrency/timeout limit constants and their clamp resolvers live
@@ -92,7 +92,8 @@ pub struct ProviderIdentity {
     /// serialized.
     pub(crate) migrated_legacy_ollama_cloud_route: bool,
     /// Parse-scoped, redacted proof for the id-less migrated root route.
-    pub(crate) legacy_root_custom_generation: Option<crate::route_receipt::CredentialGeneration>,
+    pub(crate) legacy_root_custom_generation:
+        Option<codewhale_config::credentials::CredentialGeneration>,
 }
 
 impl std::hash::Hash for ProviderIdentity {
@@ -160,50 +161,6 @@ fn normalize_subagent_provider_key(value: &str) -> String {
         .collect()
 }
 
-// ============================================================================
-// Provider Capability Matrix
-// ============================================================================
-
-/// Known capabilities for a provider + resolved-model combination.
-///
-/// Returned by [`provider_capability`] to describe what a given provider
-/// supports for the resolved model string.  All fields are derived from
-/// static knowledge (release docs, API guides) rather than live API probes.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub struct ProviderCapability {
-    /// Canonical provider identifier.
-    pub provider: ProviderKind,
-    /// Resolved model identifier that will be sent in the API payload.
-    pub resolved_model: String,
-    /// Context window in tokens (the maximum input the model can accept).
-    pub context_window: u32,
-    /// Known output ceiling for this provider/model metadata path, when one is
-    /// actually known.
-    ///
-    /// `None` means "this route publishes no output maximum we can stand
-    /// behind" — for example the Kimi Code membership ids, whose limits live in
-    /// the membership catalog rather than the static model catalogue. Unknown
-    /// must stay unknown: callers may **not** substitute a placeholder ceiling,
-    /// and in particular [`crate::route_budget`] does not clamp a requested
-    /// `max_tokens` against an unknown compatibility cap.
-    ///
-    /// When `Some`, the value is a documented exact-route maximum or a
-    /// deliberately conservative provider ceiling (Anthropic's 64K floor, the
-    /// Codex OAuth route). It is metadata for diagnostics and CI policy; normal
-    /// turns use a separate, more conservative request cap in the engine.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_output: Option<u32>,
-    /// Whether the provider+model supports thinking/reasoning mode.
-    pub thinking_supported: bool,
-    /// Whether the provider returns prompt-cache telemetry fields.
-    pub cache_telemetry_supported: bool,
-    /// Which request-payload dialect the provider uses.
-    pub request_payload_mode: RequestPayloadMode,
-    /// Deprecation metadata for compatibility aliases that are still accepted.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub alias_deprecation: Option<ModelAliasDeprecation>,
-}
-
 pub const DEEPSEEK_ALIAS_RETIREMENT_DATE: &str = "2026-07-24";
 pub const DEEPSEEK_ALIAS_RETIREMENT_UTC: &str = "2026-07-24T15:59:00Z";
 pub use codewhale_config::catalog::reviewed::constants::DEEPSEEK_ALIAS_REPLACEMENT;
@@ -218,253 +175,25 @@ pub struct ModelAliasDeprecation {
     pub notice: String,
 }
 
-/// Which request-payload dialect the provider speaks.
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-pub enum RequestPayloadMode {
-    /// Standard OpenAI-compatible `/v1/chat/completions` payload.
-    ChatCompletions,
-    /// OpenAI Responses API payload.
-    Responses,
-    /// Native Anthropic Messages API `/v1/messages` payload (#3014).
-    AnthropicMessages,
-}
-
-/// Resolve the provider capability for a given [`ProviderKind`] and resolved
-/// model string.
-///
-/// The `resolved_model` should be the final model identifier that will appear
-/// in the API payload (after normalization / provider-specific mapping).
-#[must_use]
-pub fn provider_capability(provider: ProviderKind, resolved_model: &str) -> ProviderCapability {
-    provider_capability_with_wire(provider, resolved_model, None)
-}
-
-/// Wire-aware variant of [`provider_capability`] that respects
-/// `wire = "responses" | "anthropic" | "chat"` for `Custom` providers.
-///
-/// Built-ins keep their fixed policy; `Custom` defaults to `Chat` when `wire`
-/// is absent so existing configs stay compatible. Mirrors
-/// `crates/tui/src/client.rs::provider_wire_format_for_config` and the
-/// `Custom` comment in `crates/config/src/provider.rs`.
-#[must_use]
-pub fn provider_capability_with_wire(
+pub(crate) fn configured_model_for_route<'a>(
+    config: &'a Config,
     provider: ProviderKind,
-    resolved_model: &str,
-    wire: Option<&str>,
-) -> ProviderCapability {
-    // Custom wire overrides must be checked before the generic fallback so
-    // `[providers.<name>] wire = "responses"` / `"anthropic"` is honored.
-    if provider == ProviderKind::Custom {
-        if wire_config_prefers_anthropic(wire) {
-            return ProviderCapability {
-                provider,
-                resolved_model: resolved_model.to_string(),
-                context_window: codewhale_models::context_window_for_model(resolved_model)
-                    .unwrap_or(codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS),
-                max_output: codewhale_models::max_output_tokens_for_model(resolved_model),
-                thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
-                cache_telemetry_supported: false,
-                request_payload_mode: RequestPayloadMode::AnthropicMessages,
-                alias_deprecation: None,
-            };
-        }
-        if wire_config_prefers_responses(wire) {
-            return ProviderCapability {
-                provider,
-                resolved_model: resolved_model.to_string(),
-                context_window: codewhale_models::context_window_for_model(resolved_model)
-                    .unwrap_or(codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS),
-                max_output: codewhale_models::max_output_tokens_for_model(resolved_model),
-                thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
-                cache_telemetry_supported: false,
-                request_payload_mode: RequestPayloadMode::Responses,
-                alias_deprecation: None,
-            };
-        }
+    identity: &str,
+    base_url: &str,
+    model: &str,
+) -> Option<&'a codewhale_config::catalog::configured::ConfiguredModel> {
+    // Account-owned OAuth rosters retain their separate authority.
+    if provider == ProviderKind::OpenaiCodex {
+        return None;
     }
-
-    if matches!(
-        provider,
-        ProviderKind::Anthropic | ProviderKind::MinimaxAnthropic | ProviderKind::Openmodel
-    ) {
-        return ProviderCapability {
-            provider,
-            resolved_model: resolved_model.to_string(),
-            // 200K is the conservative Anthropic floor; 4.6+ models resolve
-            // their 1M windows from models.rs rows (#3014).
-            context_window: codewhale_models::context_window_for_model(resolved_model)
-                .unwrap_or(200_000),
-            // 64K is the documented Anthropic Messages floor. For a model
-            // the catalogue describes this carries its documented ceiling;
-            // for an unknown one it is an *assumed* floor, and
-            // `route_budget::output_ceiling_source` labels it unverified so
-            // no receipt renders it as "documented" (#5440).
-            max_output: Some(
-                codewhale_models::max_output_tokens_for_model(resolved_model).unwrap_or(64_000),
-            ),
-            thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
-            cache_telemetry_supported: matches!(provider, ProviderKind::Anthropic),
-            request_payload_mode: RequestPayloadMode::AnthropicMessages,
-            alias_deprecation: None,
-        };
-    }
-
-    if matches!(provider, ProviderKind::OpenaiCodex) {
-        return ProviderCapability {
-            provider,
-            resolved_model: resolved_model.to_string(),
-            context_window: OPENAI_CODEX_EFFECTIVE_CONTEXT_WINDOW_TOKENS,
-            // The OAuth cache does not publish an output ceiling. This 4K is a
-            // deliberate, long-standing product decision for the Codex route
-            // (not a fallback): keep the compatibility capability conservative
-            // instead of inheriting the public API model's output limit. It is
-            // an assumption, not a documented fact — receipts label it
-            // unverified (#5440).
-            max_output: Some(4096),
-            thinking_supported: true,
-            cache_telemetry_supported: false,
-            request_payload_mode: RequestPayloadMode::Responses,
-            alias_deprecation: None,
-        };
-    }
-
-    // #3023: Delete the Openai/Atlascloud/Moonshot early-return so these
-    // providers use the generic model-based path below, which correctly
-    // resolves context windows, output limits, and thinking support from
-    // models.rs lookups.  Ollama also falls through to model-based lookups
-    // with 8192 as the last-resort fallback instead of a hardcoded floor.
-    if matches!(provider, ProviderKind::XiaomiMimo) {
-        return ProviderCapability {
-            provider,
-            resolved_model: resolved_model.to_string(),
-            context_window: codewhale_models::context_window_for_model(resolved_model)
-                .unwrap_or(codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS),
-            // No documented output maximum for these routes: stay unknown so
-            // no compatibility clamp is applied downstream.
-            max_output: codewhale_models::max_output_tokens_for_model(resolved_model),
-            thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
-            cache_telemetry_supported: false,
-            request_payload_mode: RequestPayloadMode::ChatCompletions,
-            alias_deprecation: None,
-        };
-    }
-
-    if matches!(provider, ProviderKind::Arcee) {
-        return ProviderCapability {
-            provider,
-            resolved_model: resolved_model.to_string(),
-            context_window: codewhale_models::context_window_for_model(resolved_model)
-                .unwrap_or(codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS),
-            // No documented output maximum for these routes: stay unknown so
-            // no compatibility clamp is applied downstream.
-            max_output: codewhale_models::max_output_tokens_for_model(resolved_model),
-            thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
-            cache_telemetry_supported: false,
-            request_payload_mode: RequestPayloadMode::ChatCompletions,
-            alias_deprecation: None,
-        };
-    }
-
-    let model_lower = resolved_model.to_ascii_lowercase();
-    let alias_deprecation = if matches!(
-        provider,
-        ProviderKind::Deepseek | ProviderKind::DeepseekAnthropic
-    ) {
-        deepseek_alias_deprecation(&model_lower)
-    } else {
-        None
-    };
-    let official_deepseek =
-        canonical_official_deepseek_model_id(&model_lower).is_some() || alias_deprecation.is_some();
-    let is_reasoner = matches!(provider, ProviderKind::WanjieArk)
-        && (model_lower.contains("reasoner") || model_lower.contains("r1"));
-
-    // Provider-owned wire IDs can have exact catalog facts without a legacy
-    // model-only row. Reuse those facts before conservative fallback budgets.
-    let offering =
-        crate::provider_lake::bundled_catalog_offering_for_model(provider, resolved_model);
-    let context_window = if official_deepseek {
-        codewhale_models::DEEPSEEK_V4_CONTEXT_WINDOW_TOKENS
-    } else if let Some(window) = codewhale_models::context_window_for_model(resolved_model) {
-        window
-    } else if let Some(window) = offering
-        .as_ref()
-        .and_then(|row| row.limit.as_ref())
-        .and_then(|limit| limit.context)
-        .and_then(|window| u32::try_from(window).ok())
-    {
-        window
-    } else if matches!(provider, ProviderKind::Ollama) {
-        8192
-    } else {
-        codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS
-    };
-
-    // Output limits require an exact catalog row or an explicitly recognized
-    // compatibility alias. A family-name match cannot document a new model.
-    // The catalog answers
-    // `None` when the catalogue has no row. That is the truthful state for
-    // membership routes such as the `kimi-for-coding` family, whose ceilings
-    // are owned by the membership catalog. It must not become a placeholder
-    // number: a fabricated 4K here silently clamped offline membership routes
-    // to 4K output via `route_budget`.
-    let max_output = codewhale_models::max_output_tokens_for_model(resolved_model)
-        .or_else(|| {
-            // Provider-owned wire IDs need not exist in the legacy model-only
-            // catalog (for example Fireworks' accounts/... slug). Reuse the
-            // exact bundled offering instead of inferring a family ceiling.
-            offering
-                .as_ref()
-                .and_then(|offering| offering.limit.as_ref())
-                .and_then(|limit| limit.output)
-                .and_then(|limit| u32::try_from(limit).ok())
-        })
-        .or_else(|| {
-            canonical_official_deepseek_model_id(resolved_model)
-                .or_else(|| {
-                    alias_deprecation
-                        .as_ref()
-                        .map(|_| DEEPSEEK_ALIAS_REPLACEMENT)
-                })
-                .and_then(codewhale_models::max_output_tokens_for_model)
-        });
-
-    // Exact catalog reasoning facts and recognized compatibility aliases only.
-    let thinking_supported = official_deepseek
-        || is_reasoner
-        || offering
-            .as_ref()
-            .is_some_and(|row| row.reasoning == Some(true))
-        || codewhale_models::model_supports_reasoning(resolved_model);
-
-    // Cache telemetry: returned only by DeepSeek-native and NVIDIA NIM endpoints.
-    let cache_telemetry_supported = matches!(
-        provider,
-        ProviderKind::Deepseek | ProviderKind::NvidiaNim | ProviderKind::Volcengine
-    );
-
-    let request_payload_mode = if matches!(
-        provider,
-        ProviderKind::DeepseekAnthropic | ProviderKind::MinimaxAnthropic | ProviderKind::Openmodel
-    ) {
-        RequestPayloadMode::AnthropicMessages
-    } else {
-        RequestPayloadMode::ChatCompletions
-    };
-
-    ProviderCapability {
-        provider,
-        resolved_model: resolved_model.to_string(),
-        context_window,
-        max_output,
-        thinking_supported,
-        cache_telemetry_supported,
-        request_payload_mode,
-        alias_deprecation,
-    }
+    let models = config.custom_models.as_deref()?;
+    codewhale_config::catalog::configured::validate_configured_models(models).ok()?;
+    models
+        .iter()
+        .find(|row| row.id == model && row.matches_route(identity, base_url))
 }
 
-fn deepseek_alias_deprecation(model_lower: &str) -> Option<ModelAliasDeprecation> {
+pub(crate) fn deepseek_alias_deprecation(model_lower: &str) -> Option<ModelAliasDeprecation> {
     match model_lower {
         "deepseek-chat" | "deepseek-reasoner" => Some(ModelAliasDeprecation {
             alias: model_lower.to_string(),
@@ -902,7 +631,7 @@ pub(crate) fn legacy_deepseek_alias_effort_for_route(
 /// fallback** (#4188).
 ///
 /// Preferred sources are the live Models.dev catalog and the offline bundled
-/// snapshot via [`crate::provider_lake`]. Call this directly only for
+/// snapshot via `crate::provider_lake`. Call this directly only for
 /// Codewhale-only / local providers Models.dev does not represent, or when
 /// probing the fallback table in tests. Picker, inventory, and subagent
 /// surfaces must go through the provider lake.
@@ -922,7 +651,7 @@ pub struct ExtensionHostConfig {
     /// Explicit MCP protocol backend. Rust remains default; Host supports stdio,
     /// HTTP and SSE independently of optional Native extension activation.
     #[serde(default)]
-    pub mcp_backend: crate::mcp::McpBackend,
+    pub mcp_backend: codewhale_config::McpBackend,
     /// Which runtime runs the host: `node` (the default), `bun`, or `auto`
     /// (Bun when a supported one is found and starts, else Node). `bun` and
     /// `auto` are opt-ins: Bun is not the default until it is qualified on
@@ -1251,11 +980,11 @@ fn default_snapshots_enabled() -> bool {
 }
 
 fn default_snapshot_max_age_days() -> u64 {
-    crate::snapshot::DEFAULT_MAX_AGE.as_secs() / (24 * 60 * 60)
+    codewhale_config::DEFAULT_SNAPSHOT_MAX_AGE.as_secs() / (24 * 60 * 60)
 }
 
 fn default_snapshot_max_workspace_gb() -> u64 {
-    crate::snapshot::DEFAULT_MAX_WORKSPACE_BYTES_FOR_SNAPSHOT / (1024 * 1024 * 1024)
+    codewhale_config::DEFAULT_MAX_WORKSPACE_BYTES_FOR_SNAPSHOT / (1024 * 1024 * 1024)
 }
 
 /// Workspace side-git snapshot configuration (#137).
@@ -1361,13 +1090,13 @@ pub struct ToolsConfig {
 
     /// Ceiling on how many questions one `request_user_input` call may ask
     /// (#5949). `None` uses
-    /// [`crate::tools::user_input::DEFAULT_MAX_QUESTIONS`] (6). Values outside
+    /// `DEFAULT_MAX_QUESTIONS` (6). Values outside
     /// `1..=10` are clamped with a warning rather than failing the load.
     #[serde(default)]
     pub user_input_max_questions: Option<u32>,
 
     /// Ceiling on how many options each `request_user_input` question may
-    /// offer. `None` uses [`crate::tools::user_input::DEFAULT_MAX_OPTIONS`]
+    /// offer. `None` uses `DEFAULT_MAX_OPTIONS`
     /// (4). Values outside `2..=10` are clamped with a warning.
     #[serde(default)]
     pub user_input_max_options: Option<u32>,
@@ -2486,7 +2215,7 @@ pub struct Config {
     /// Per-domain network policy (#135). When absent, network tools fall back
     /// to a permissive default that mirrors pre-v0.7.0 behavior.
     #[serde(default)]
-    pub network: Option<NetworkPolicyToml>,
+    pub network: Option<codewhale_config::NetworkPolicyToml>,
 
     /// Verifier-preview behavior (#2093). When absent, automatic verifier
     /// preview stays off and verifier verdicts use the hunt policy.
@@ -2500,8 +2229,8 @@ pub struct Config {
 
     /// Community skill installer settings (#140). When absent, installer
     /// commands fall back to the bundled defaults
-    /// ([`crate::skills::install::DEFAULT_REGISTRY_URL`] +
-    /// [`crate::skills::install::DEFAULT_MAX_SIZE_BYTES`]).
+    /// (`crate::skills::install::DEFAULT_REGISTRY_URL` +
+    /// `crate::skills::install::DEFAULT_MAX_SIZE_BYTES`).
     #[serde(default)]
     pub skills: Option<SkillsConfig>,
 
@@ -2559,9 +2288,9 @@ pub struct Config {
     pub cloud_facts: Option<CloudFactsConfig>,
 
     /// Post-edit LSP diagnostics injection (#136). When absent, the engine
-    /// applies the defaults documented in [`LspConfigToml`].
+    /// applies the defaults documented in [`codewhale_config::LspConfigToml`].
     #[serde(default)]
-    pub lsp: Option<LspConfigToml>,
+    pub lsp: Option<codewhale_config::LspConfigToml>,
 
     /// Context configuration (project context pack; legacy seam keys are
     /// parsed but ignored since the 2026-07-23 removal).
@@ -2598,7 +2327,7 @@ pub struct Config {
     /// Workshop / large-tool-output routing (#548). When absent, the global
     /// default threshold of 4 096 tokens applies and routing is active.
     #[serde(default)]
-    pub workshop: Option<crate::tools::large_output_router::WorkshopConfig>,
+    pub workshop: Option<codewhale_config::WorkshopConfig>,
 
     /// Vision model configuration for the `image_analyze` tool.
     #[serde(default)]
@@ -2665,12 +2394,13 @@ pub struct Config {
     /// Bound at parse time, never reconstructed from later diagnostic notes.
     #[cfg(not(test))]
     #[serde(skip)]
-    legacy_root_custom_generation: Option<crate::route_receipt::CredentialGeneration>,
+    legacy_root_custom_generation: Option<codewhale_config::credentials::CredentialGeneration>,
     // Test fixtures construct Config through public-field struct updates. The
     // production receipt remains private; both builds run identical admission.
     #[cfg(test)]
     #[serde(skip)]
-    pub(crate) legacy_root_custom_generation: Option<crate::route_receipt::CredentialGeneration>,
+    pub(crate) legacy_root_custom_generation:
+        Option<codewhale_config::credentials::CredentialGeneration>,
 
     /// Mini-window (pinned, always-on-top) mode layout preferences
     /// (`[mini_window]` in config.toml). When the host terminal window is
@@ -2781,33 +2511,6 @@ pub struct AutoReviewRuleConfig {
 }
 
 impl AutoReviewConfig {
-    fn to_runtime_policy(&self) -> crate::core::authority::auto_review::AutoReviewPolicy {
-        crate::core::authority::auto_review::AutoReviewPolicy {
-            allow_rules: self
-                .allow
-                .iter()
-                .enumerate()
-                .map(|(index, rule)| {
-                    rule.to_runtime_rule(
-                        index,
-                        crate::core::authority::auto_review::AutoReviewAction::Allow,
-                    )
-                })
-                .collect(),
-            block_rules: self
-                .block
-                .iter()
-                .enumerate()
-                .map(|(index, rule)| {
-                    rule.to_runtime_rule(
-                        index,
-                        crate::core::authority::auto_review::AutoReviewAction::Block,
-                    )
-                })
-                .collect(),
-        }
-    }
-
     fn validate(&self) -> Result<()> {
         validate_auto_review_rules("allow", &self.allow)?;
         validate_auto_review_rules("block", &self.block)?;
@@ -2816,62 +2519,6 @@ impl AutoReviewConfig {
 }
 
 impl AutoReviewRuleConfig {
-    fn to_runtime_rule(
-        &self,
-        index: usize,
-        action: crate::core::authority::auto_review::AutoReviewAction,
-    ) -> crate::core::authority::auto_review::AutoReviewRule {
-        let id_prefix = match action {
-            crate::core::authority::auto_review::AutoReviewAction::Allow => "allow",
-            crate::core::authority::auto_review::AutoReviewAction::Block => "block",
-            crate::core::authority::auto_review::AutoReviewAction::AskUser => "ask",
-        };
-        let id = self
-            .id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| format!("config-{id_prefix}-{index}"));
-        let reason = self
-            .reason
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| format!("configured auto-review {id_prefix} rule"));
-        let mut rule = match action {
-            crate::core::authority::auto_review::AutoReviewAction::Allow => {
-                crate::core::authority::auto_review::AutoReviewRule::allow(id, reason)
-            }
-            crate::core::authority::auto_review::AutoReviewAction::Block => {
-                crate::core::authority::auto_review::AutoReviewRule::block(id, reason)
-            }
-            crate::core::authority::auto_review::AutoReviewAction::AskUser => {
-                crate::core::authority::auto_review::AutoReviewRule::block(id, reason)
-            }
-        };
-
-        if let Some(tool) = self
-            .tool
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            rule = rule.tool_name(tool.to_string());
-        }
-        if let Some(action_kind) = self
-            .action_kind
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .and_then(parse_auto_review_action_kind)
-        {
-            rule = rule.action_kind(action_kind);
-        }
-        rule
-    }
-
     fn has_matcher(&self) -> bool {
         self.tool
             .as_deref()
@@ -2901,7 +2548,7 @@ fn validate_auto_review_rules(kind: &str, rules: &[AutoReviewRuleConfig]) -> Res
         }
         if let Some(action_kind) = rule.action_kind.as_deref() {
             let normalized = action_kind.trim().to_ascii_lowercase().replace('-', "_");
-            if parse_auto_review_action_kind(&normalized).is_none() {
+            if auto_review_action_kind_name(&normalized).is_none() {
                 anyhow::bail!(
                     "Invalid auto_review.{kind}[{index}].action_kind '{action_kind}': expected read, write, shell, external, publish, or destructive."
                 );
@@ -2921,20 +2568,17 @@ fn validate_auto_review_rules(kind: &str, rules: &[AutoReviewRuleConfig]) -> Res
     Ok(())
 }
 
-fn parse_auto_review_action_kind(
-    raw: &str,
-) -> Option<crate::core::authority::auto_review::ToolActionKind> {
+/// Canonical action-kind name for an `auto_review` `action_kind` spelling,
+/// including the retired narrow kinds that fold into a current class.
+#[must_use]
+pub fn auto_review_action_kind_name(raw: &str) -> Option<&'static str> {
     match raw.trim().to_ascii_lowercase().replace('-', "_").as_str() {
-        "read" | "mcp_read" => Some(crate::core::authority::auto_review::ToolActionKind::Read),
-        "write" => Some(crate::core::authority::auto_review::ToolActionKind::Write),
-        "shell" => Some(crate::core::authority::auto_review::ToolActionKind::Shell),
-        "external" | "network" | "git" | "mcp_action" | "browser" | "unknown" => {
-            Some(crate::core::authority::auto_review::ToolActionKind::External)
-        }
-        "publish" => Some(crate::core::authority::auto_review::ToolActionKind::Publish),
-        "destructive" | "secret" => {
-            Some(crate::core::authority::auto_review::ToolActionKind::Destructive)
-        }
+        "read" | "mcp_read" => Some("read"),
+        "write" => Some("write"),
+        "shell" => Some("shell"),
+        "external" | "network" | "git" | "mcp_action" | "browser" | "unknown" => Some("external"),
+        "publish" => Some("publish"),
+        "destructive" | "secret" => Some("destructive"),
         _ => None,
     }
 }
@@ -2999,7 +2643,7 @@ pub struct RuntimeApiConfig {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct SkillsConfig {
     /// Curated registry index. `/skill install <name>` looks up the spec here.
-    /// Defaults to [`crate::skills::install::DEFAULT_REGISTRY_URL`].
+    /// Defaults to `crate::skills::install::DEFAULT_REGISTRY_URL`.
     #[serde(default)]
     pub registry_url: Option<String>,
     /// Per-skill maximum *uncompressed* size in bytes. Tarballs that exceed
@@ -3028,149 +2672,6 @@ impl SkillsConfig {
     #[must_use]
     pub fn scan_codewhale_only(&self) -> bool {
         self.scan_codewhale_only.unwrap_or(false)
-    }
-}
-
-/// `[network]` table — mirrors `codewhale_config::NetworkPolicyToml` so the live
-/// TUI runtime can construct a [`crate::network_policy::NetworkPolicy`]
-/// without reaching into the workspace config crate. See `config.example.toml`
-/// for documentation.
-#[derive(Debug, Clone, Deserialize)]
-pub struct NetworkPolicyToml {
-    /// Decision for hosts that are not in `allow` or `deny`. One of
-    /// `"allow" | "deny" | "prompt"`. Defaults to `"prompt"`.
-    #[serde(default = "default_network_decision")]
-    pub default: String,
-    /// Hosts that are always allowed. Subdomain rules: a leading dot
-    /// (`.example.com`) matches subdomains but not the apex.
-    #[serde(default)]
-    pub allow: Vec<String>,
-    /// Hosts that are always denied. Deny entries win over allow entries.
-    #[serde(default)]
-    pub deny: Vec<String>,
-    /// Hostnames whose DNS may resolve to fake-IP/private proxy ranges in an
-    /// explicitly trusted proxy setup. Literal IP URLs remain blocked.
-    #[serde(default)]
-    pub proxy: Vec<String>,
-    /// Explicit fake-IP placeholder CIDRs for those proxy hosts. Only subnets
-    /// within `198.18.0.0/15` are accepted by the runtime SSRF guard.
-    #[serde(default)]
-    pub proxy_fake_ip_cidrs: Vec<String>,
-    /// Whether to record one audit-log line per outbound network call.
-    #[serde(default = "default_network_audit")]
-    pub audit: bool,
-}
-
-fn default_network_decision() -> String {
-    "prompt".to_string()
-}
-
-fn default_network_audit() -> bool {
-    true
-}
-
-impl Default for NetworkPolicyToml {
-    fn default() -> Self {
-        Self {
-            default: default_network_decision(),
-            allow: Vec::new(),
-            deny: Vec::new(),
-            proxy: Vec::new(),
-            proxy_fake_ip_cidrs: Vec::new(),
-            audit: default_network_audit(),
-        }
-    }
-}
-
-impl NetworkPolicyToml {
-    /// Build a runtime [`crate::network_policy::NetworkPolicy`] from the
-    /// on-disk schema.
-    #[must_use]
-    pub fn into_runtime(self) -> crate::network_policy::NetworkPolicy {
-        crate::network_policy::NetworkPolicy {
-            default: crate::network_policy::Decision::parse(&self.default).into(),
-            allow: self.allow,
-            deny: self.deny,
-            proxy: self.proxy,
-            proxy_fake_ip_cidrs: self.proxy_fake_ip_cidrs,
-            audit: self.audit,
-        }
-    }
-}
-
-/// Re-read the `[network]` table from a configuration document.
-///
-/// Deliberately narrower than [`Config::load`]: this runs on the tool-context
-/// build path, where re-applying the environment, managed, and credential
-/// layers would be both wasteful and wrong. Only the document's own table comes
-/// back — the same table `/network allow <host>` edits.
-///
-/// `None` means there is nothing usable to adopt: the document is missing,
-/// unreadable, unparseable, or carries no `[network]` table. Callers keep the
-/// policy they already hold, which is the conservative direction for an
-/// allow/deny gate.
-///
-/// Known limitation: `[profiles.<name>.network]` is not consulted. `/network`
-/// does not write it either, so a live session and the command agree on this
-/// base table.
-#[must_use]
-pub fn network_policy_from_document(path: &Path) -> Option<crate::network_policy::NetworkPolicy> {
-    #[derive(Deserialize)]
-    struct NetworkTable {
-        network: Option<NetworkPolicyToml>,
-    }
-
-    let contents = fs::read_to_string(path).ok()?;
-    let parsed: NetworkTable = toml::from_str(&contents).ok()?;
-    parsed.network.map(NetworkPolicyToml::into_runtime)
-}
-
-/// `[lsp]` table — mirrors [`crate::lsp::LspConfig`]. Documented in
-/// `config.example.toml`. When omitted, defaults from `LspConfig::default()`
-/// apply (enabled, 5 s poll, 20 diagnostics/file, errors only, no overrides).
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct LspConfigToml {
-    /// Master switch. Defaults to `true`.
-    #[serde(default)]
-    pub enabled: Option<bool>,
-    /// How long to wait for the LSP server to publish diagnostics after a
-    /// `didOpen`/`didChange`. Defaults to 5000 ms.
-    #[serde(default)]
-    pub poll_after_edit_ms: Option<u64>,
-    /// Cap on diagnostics surfaced per file. Defaults to 20.
-    #[serde(default)]
-    pub max_diagnostics_per_file: Option<usize>,
-    /// Whether to surface warnings in addition to errors. Defaults to `false`.
-    #[serde(default)]
-    pub include_warnings: Option<bool>,
-    /// Optional override for the `Language -> [cmd, ...args]` table. Keys
-    /// are language slugs (`"rust"`, `"go"`, etc.).
-    #[serde(default)]
-    pub servers: Option<HashMap<String, Vec<String>>>,
-    /// User-defined LSP servers for file extensions not in the built-in
-    /// registry. Keyed by extension (e.g. `"php"`, `"rb"`).
-    #[serde(default)]
-    pub custom: Option<HashMap<String, crate::lsp::CustomLspDef>>,
-}
-
-impl LspConfigToml {
-    /// Build a runtime [`crate::lsp::LspConfig`] from the on-disk schema,
-    /// falling back to defaults for any unset fields.
-    #[must_use]
-    pub fn into_runtime(self) -> crate::lsp::LspConfig {
-        let defaults = crate::lsp::LspConfig::default();
-        crate::lsp::LspConfig {
-            enabled: self.enabled.unwrap_or(defaults.enabled),
-            poll_after_edit_ms: self
-                .poll_after_edit_ms
-                .unwrap_or(defaults.poll_after_edit_ms),
-            max_diagnostics_per_file: self
-                .max_diagnostics_per_file
-                .unwrap_or(defaults.max_diagnostics_per_file),
-            include_warnings: self.include_warnings.unwrap_or(defaults.include_warnings),
-            servers: self.servers.unwrap_or_default(),
-            custom: self.custom.unwrap_or_default(),
-        }
     }
 }
 
@@ -3254,7 +2755,7 @@ pub struct ProviderConfig {
     pub kind: Option<String>,
     /// Runtime-only receipt; a config file cannot manufacture plugin authority.
     #[serde(skip)]
-    pub plugin_authority: Option<crate::plugins::types::PluginAuthority>,
+    pub plugin_authority: Option<codewhale_config::PluginAuthority>,
     /// Name of the environment variable holding this custom provider's API key
     /// (#1519), e.g. `api_key_env = "EXAMPLE_API_KEY"`. The key value itself is
     /// never stored in config; only the env var name is.
@@ -4145,16 +3646,6 @@ impl Config {
         }
     }
 
-    /// Whether an explicit config or requirements file owns approval posture.
-    /// TUI preferences may supply a default only when this is false.
-    #[must_use]
-    pub fn approval_policy_is_managed(&self) -> bool {
-        if self.approval_policy.is_some() {
-            return true;
-        }
-        self.approval_policy_is_requirements_managed()
-    }
-
     /// Whether organization requirements, rather than a user-editable config
     /// key, own approval posture. User config still outranks TUI settings, but
     /// `/config approval_mode ... --save` may edit that user-owned key.
@@ -4325,18 +3816,6 @@ impl Config {
             .unwrap_or_default()
     }
 
-    /// Effective `request_user_input` payload ceilings for this session
-    /// (#5949). Resolved once per engine build; out-of-range `[tools]` values
-    /// clamp with a single warning naming the key and the value used.
-    #[must_use]
-    pub fn user_input_limits(&self) -> crate::tools::user_input::UserInputLimits {
-        let tools = self.tools.as_ref();
-        crate::tools::user_input::UserInputLimits::from_config_values(
-            tools.and_then(|t| t.user_input_max_questions),
-            tools.and_then(|t| t.user_input_max_options),
-        )
-    }
-
     /// Effective wait for a user-input answer or an approval decision
     /// (#6003). `None` or `0` waits until the person answers or cancels.
     /// A positive value bounds that one wait; values above 24h clamp.
@@ -4353,14 +3832,6 @@ impl Config {
             );
         }
         Some(std::time::Duration::from_secs(seconds.min(MAX_SECONDS)))
-    }
-
-    #[must_use]
-    pub fn auto_review_policy(&self) -> crate::core::authority::auto_review::AutoReviewPolicy {
-        self.auto_review
-            .as_ref()
-            .map(AutoReviewConfig::to_runtime_policy)
-            .unwrap_or_default()
     }
 
     /// Load configuration from disk and merge with environment overrides.
@@ -4543,7 +4014,7 @@ impl Config {
                         .flatten()
                 })
                 .unwrap_or_default();
-            let declared = crate::provider_lake::configured_model_for_route(
+            let declared = configured_model_for_route(
                 &scoped,
                 provider,
                 identity.key.as_str(),
@@ -4642,7 +4113,7 @@ impl Config {
             && !model.trim().eq_ignore_ascii_case("auto")
             && !provider_passes_model_through(active_provider)
             && !self.active_provider_preserves_custom_base_url_model()
-            && crate::provider_lake::configured_model_for_route(
+            && configured_model_for_route(
                 self,
                 active_provider,
                 identity.key.as_str(),
@@ -5296,12 +4767,12 @@ impl Config {
 
     fn legacy_root_custom_table_generation(
         &self,
-    ) -> Option<crate::route_receipt::CredentialGeneration> {
+    ) -> Option<codewhale_config::credentials::CredentialGeneration> {
         let entry = self.providers.as_ref()?.custom.get("custom")?;
         let value = serde_json::to_value(entry).ok()?;
-        Some(crate::route_receipt::CredentialGeneration::derive(
+        Some(codewhale_config::credentials::CredentialGeneration::derive(
             "codewhale/legacy-root-custom-table/v1",
-            &crate::client::canonical_json(&value),
+            &codewhale_runtime::hashing::canonical_json(&value),
         ))
     }
 
@@ -5335,7 +4806,7 @@ impl Config {
 
     fn current_legacy_root_custom_generation(
         &self,
-    ) -> Option<crate::route_receipt::CredentialGeneration> {
+    ) -> Option<codewhale_config::credentials::CredentialGeneration> {
         let captured = self.legacy_root_custom_generation.as_ref()?;
         let current = self.legacy_root_custom_table_generation()?;
         (captured == &current).then_some(current)
@@ -5863,7 +5334,7 @@ impl Config {
         }
 
         let declared = |model: &str| {
-            crate::provider_lake::configured_model_for_route(
+            configured_model_for_route(
                 self,
                 provider,
                 identity.key.as_str(),
@@ -6507,7 +5978,7 @@ impl Config {
     pub(crate) fn readonly_health_credential_generation(
         &self,
         identity: &ProviderIdentity,
-    ) -> Option<crate::route_receipt::CredentialGeneration> {
+    ) -> Option<codewhale_config::credentials::CredentialGeneration> {
         if self.required_account_model_owner.is_some() {
             return None;
         }
@@ -6517,7 +5988,7 @@ impl Config {
         let endpoint = scoped.base_url_for_route(identity);
         let mode = scoped.auth_mode_for_provider(identity);
         let generation = |value: &str| {
-            crate::route_receipt::CredentialGeneration::derive(
+            codewhale_config::credentials::CredentialGeneration::derive(
                 &endpoint,
                 &codewhale_secrets::normalize_api_key(value),
             )
@@ -7308,7 +6779,7 @@ impl Config {
     #[must_use]
     pub fn goal_max_steps(&self) -> u32 {
         let configured = self.goal.as_ref().and_then(|goal| goal.max_steps);
-        let resolved = crate::core::engine::turn_budget::resolve_max_model_steps(configured);
+        let resolved = codewhale_runtime::turn_budget::resolve_max_model_steps(configured);
         if let Some(steps) = configured
             && steps > 0
             && resolved != steps
@@ -7751,7 +7222,7 @@ impl Config {
                     .ok()
                     .and_then(|value| value.trim().parse::<u32>().ok())
             });
-        crate::core::engine::turn_budget::resolve_max_model_steps(raw)
+        codewhale_runtime::turn_budget::resolve_max_model_steps(raw)
     }
 
     /// R1: resolved cumulative per-turn wall-clock budget.
@@ -7770,13 +7241,13 @@ impl Config {
                     .ok()
                     .and_then(|value| value.trim().parse::<u64>().ok())
             });
-        crate::core::engine::turn_budget::resolve_turn_wall_clock(raw)
+        codewhale_runtime::turn_budget::resolve_turn_wall_clock(raw)
     }
 
     /// R1: resolved per-step cap on accumulated streamed content, in bytes.
     #[must_use]
     pub fn stream_max_content_bytes(&self) -> usize {
-        crate::core::engine::turn_budget::resolve_stream_max_content_bytes(
+        codewhale_runtime::turn_budget::resolve_stream_max_content_bytes(
             self.stream
                 .as_ref()
                 .and_then(|cfg| cfg.max_content_mb)
@@ -7788,7 +7259,7 @@ impl Config {
     #[must_use]
     pub fn stream_max_duration(&self) -> std::time::Duration {
         std::time::Duration::from_secs(
-            crate::core::engine::turn_budget::resolve_stream_max_duration_secs(
+            codewhale_runtime::turn_budget::resolve_stream_max_duration_secs(
                 self.stream
                     .as_ref()
                     .and_then(|cfg| cfg.max_duration_secs)
@@ -7803,10 +7274,10 @@ impl Config {
 
     /// Resolved `[stream]` retry budgets, falling back to legacy `[tui]` keys.
     #[must_use]
-    pub fn stream_retry_limits(&self) -> crate::core::engine::turn_budget::StreamRetryLimits {
+    pub fn stream_retry_limits(&self) -> codewhale_runtime::turn_budget::StreamRetryLimits {
         let tui = self.tui.as_ref();
         let stream = self.stream.as_ref();
-        crate::core::engine::turn_budget::resolve_stream_retry_limits(
+        codewhale_runtime::turn_budget::resolve_stream_retry_limits(
             stream
                 .and_then(|cfg| cfg.max_resumes)
                 .or_else(|| tui.and_then(|cfg| cfg.stream_max_resumes)),
@@ -7822,7 +7293,7 @@ impl Config {
     /// #6700: resolved wait for SSE response headers.
     #[must_use]
     pub fn stream_open_timeout(&self) -> std::time::Duration {
-        crate::client::resolve_stream_open_timeout(
+        codewhale_config::resolve_stream_open_timeout(
             self.stream
                 .as_ref()
                 .and_then(|cfg| cfg.open_timeout_secs)
@@ -7843,7 +7314,7 @@ impl Config {
             .and_then(|cfg| cfg.force_http1)
             .or_else(|| self.tui.as_ref().and_then(|cfg| cfg.force_http1))
             .unwrap_or(false)
-            || crate::client::force_http1_from_env()
+            || codewhale_config::force_http1_from_env()
     }
 
     /// #6700: resolved TCP/TLS connect timeout for the model HTTP client.
@@ -8017,16 +7488,11 @@ impl Config {
         self.fleet.clone().unwrap_or_default()
     }
 
-    /// The person's fleet as models (design MODEL-ROUTING-CATALOG §10 F1):
-    /// every exact provider + model route in the selected fleet for
-    /// `workspace`, with the roles each fills. `Ok(empty)` = the session
-    /// model only; `Err` = a selected fleet that cannot be read. This is the
-    /// seam the operator-awareness slice (F2) reads.
-    pub fn fleet_members(
-        &self,
-        workspace: &Path,
-    ) -> Result<Vec<crate::fleet::members::FleetModel>, crate::fleet::store::FleetStoreError> {
-        crate::fleet::members::fleet_models(workspace)
+    #[must_use]
+    pub fn mcp_backend(&self) -> codewhale_config::McpBackend {
+        self.extension_host
+            .as_ref()
+            .map_or(codewhale_config::McpBackend::Rust, |host| host.mcp_backend)
     }
 
     /// Parsed `[workflow]` table, or product defaults when the table is absent
@@ -9373,7 +8839,7 @@ fn normalize_model_config(config: &mut Config) {
             continue;
         };
         for model in config.custom_models.as_deref().unwrap_or_default() {
-            if crate::provider_lake::configured_model_for_route(
+            if configured_model_for_route(
                 config,
                 candidate.provider,
                 candidate.key.as_str(),
@@ -9685,10 +9151,6 @@ fn xiaomi_mimo_env_api_key_for_runtime(
 
 fn wire_config_prefers_anthropic(wire: Option<&str>) -> bool {
     codewhale_config::provider::wire_dialect_prefers_anthropic(wire)
-}
-
-fn wire_config_prefers_responses(wire: Option<&str>) -> bool {
-    codewhale_config::provider::wire_dialect_prefers_responses(wire)
 }
 
 fn modelstudio_mode_is_coding_plan(provider: ProviderKind, mode: Option<&str>) -> bool {
@@ -11375,7 +10837,6 @@ fn apply_requirements(config: &mut Config) -> Result<()> {
             .map(str::to_ascii_lowercase)
             .unwrap_or_else(|| {
                 use crate::core::authority::{SandboxNetworkAccess, sandbox_policy_for_turn};
-                use crate::sandbox::SandboxPolicy;
                 use codewhale_execpolicy::ApprovalMode;
 
                 // Sandbox requirements lock approval posture at startup,
@@ -11385,18 +10846,14 @@ fn apply_requirements(config: &mut Config) -> Result<()> {
                     .as_deref()
                     .and_then(ApprovalMode::from_config_value)
                     .unwrap_or_default();
-                match sandbox_policy_for_turn(
+                sandbox_policy_for_turn(
                     codewhale_config::AppMode::Agent,
                     approval,
                     None,
                     Path::new("."),
                     SandboxNetworkAccess::from_config(config.sandbox_network_access),
-                ) {
-                    SandboxPolicy::ReadOnly { .. } => "read-only",
-                    SandboxPolicy::WorkspaceWrite { .. } => "workspace-write",
-                    SandboxPolicy::DangerFullAccess => "danger-full-access",
-                    SandboxPolicy::ExternalSandbox { .. } => "external-sandbox",
-                }
+                )
+                .config_value()
                 .to_string()
             });
         if !requirements

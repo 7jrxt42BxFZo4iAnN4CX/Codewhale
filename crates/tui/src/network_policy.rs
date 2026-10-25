@@ -187,6 +187,46 @@ impl From<Decision> for DecisionToml {
     }
 }
 
+impl From<codewhale_config::NetworkPolicyToml> for NetworkPolicy {
+    fn from(toml: codewhale_config::NetworkPolicyToml) -> Self {
+        Self {
+            default: Decision::parse(&toml.default).into(),
+            allow: toml.allow,
+            deny: toml.deny,
+            proxy: toml.proxy,
+            proxy_fake_ip_cidrs: toml.proxy_fake_ip_cidrs,
+            audit: toml.audit,
+        }
+    }
+}
+
+/// Re-read the `[network]` table from a configuration document.
+///
+/// Deliberately narrower than `Config::load`: this runs on the tool-context
+/// build path, where re-applying the environment, managed, and credential
+/// layers would be both wasteful and wrong. Only the document's own table comes
+/// back — the same table `/network allow <host>` edits.
+///
+/// `None` means there is nothing usable to adopt: the document is missing,
+/// unreadable, unparseable, or carries no `[network]` table. Callers keep the
+/// policy they already hold, which is the conservative direction for an
+/// allow/deny gate.
+///
+/// Known limitation: `[profiles.<name>.network]` is not consulted. `/network`
+/// does not write it either, so a live session and the command agree on this
+/// base table.
+#[must_use]
+pub fn network_policy_from_document(path: &Path) -> Option<NetworkPolicy> {
+    #[derive(Deserialize)]
+    struct NetworkTable {
+        network: Option<codewhale_config::NetworkPolicyToml>,
+    }
+
+    let contents = fs::read_to_string(path).ok()?;
+    let parsed: NetworkTable = toml::from_str(&contents).ok()?;
+    parsed.network.map(NetworkPolicy::from)
+}
+
 impl NetworkPolicy {
     /// Fold a lower-precedence layer (the user's config document) onto this
     /// policy without letting it widen what a higher authority set.
@@ -397,7 +437,10 @@ impl NetworkAuditor {
     /// no Codewhale home resolves.
     #[must_use]
     pub fn default_path(enabled: bool) -> Option<Self> {
-        Some(Self::new(crate::audit::audit_log_path()?, enabled))
+        Some(Self::new(
+            codewhale_runtime::audit::audit_log_path()?,
+            enabled,
+        ))
     }
 
     /// Append one line. Best-effort: errors are logged via `eprintln!` but
@@ -773,7 +816,7 @@ mod tests {
     fn default_auditor_writes_to_the_shared_audit_log() {
         assert_eq!(
             NetworkAuditor::default_path(true).map(|auditor| auditor.path),
-            crate::audit::audit_log_path()
+            codewhale_runtime::audit::audit_log_path()
         );
     }
 

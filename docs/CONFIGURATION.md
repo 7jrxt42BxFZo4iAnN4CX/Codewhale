@@ -71,6 +71,19 @@ controls do not blur together.
   `project_instruction_imports` key, for example `["claude"]`, `["cursor"]` or
   `["all"]` (see `config.example.toml`); Codewhale warns when it finds one it
   did not load.
+
+  Codewhale reads one instruction file per directory, from the repository
+  root down to the workspace, and puts your global instruction file (such as
+  `~/.codewhale/AGENTS.md`) in front of them. The nearest scope reads last
+  and wins: the workspace file overrides its parents, and project files
+  override the global file. Global and project instructions are budgeted
+  separately in estimated tokens (see [Instruction budget](#instruction-budget-instruction_budget-6526)
+  below): a scope over its budget drops whole files from the broadest end
+  first, and a single file larger than the remaining budget keeps its head
+  with a marker that names the bytes and tokens dropped. A file larger than
+  `file_max_bytes` is skipped with a notice, never truncated in place. Every
+  loss — trimmed, skipped, or refused — reaches the operator, the model, and
+  `/context report`.
 - **Memory and handoffs** — recalled state. Useful, but lower authority than
   constitutions and project instructions.
 
@@ -1269,7 +1282,7 @@ provider = "ollama"
 
 [profiles.ollama.providers.ollama]
 base_url = "http://localhost:11434/v1"
-model = "qwen2.5-coder:7b" # any tag `ollama list` shows
+model = "qwen2.5-coder:7b" # an installed chat-capable tag
 
 [profiles.ollama-cloud]
 provider = "ollama-cloud"
@@ -1285,6 +1298,16 @@ Select a profile with:
 - Env: `DEEPSEEK_PROFILE=work`
 
 If a profile is selected but missing, codewhale exits with an error listing available profiles.
+
+For local Ollama, omit `providers.ollama.model` to select a tag whose native
+catalog confirms completion support. `/provider ollama`, exec, and Runtime API
+default-model admission refresh that catalog; embedding-only catalogs have no
+automatic chat default. An explicit model keeps its exact tag.
+
+A loaded model's `/api/ps` context observation is usable for 60 seconds.
+`/api/show` reports the trained maximum, which does not establish the served
+window. An unloaded model or an expired observation uses the unverified 8192-token
+fallback; explicit context-window configuration still takes precedence.
 
 ## Legacy top-level `base_url` and `api_key`
 
@@ -1598,8 +1621,10 @@ Behaviour:
   trimmed. The same applies to a whitespace-only file and to files beyond the
   50-per-directory rules cap.
 - `policy = "trim"` (default) trims and reports. `policy = "refuse"` stops the
-  session when a budget or the static-prefix guard would trim; skips stay
-  skips, because one bad file must not make the project unopenable.
+  session when a scope budget or the rules budget would trim; skips stay skips,
+  because one bad file must not make the project unopenable. The static-prefix
+  guard is a safety net rather than a promise: it trims, reports, and lets the
+  session start even under `refuse`.
 - `static_prefix_guard_percent` caps the stable prefix (base prompt,
   instructions, skills index, tool schemas). When it trips, the largest scope
   is trimmed by the overage, the header is recomposed and re-pinned once, and

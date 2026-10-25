@@ -556,7 +556,7 @@ fn accept_goal_control(app: &mut App, engine_handle: &EngineHandle, intent: Goal
             clear: false
         }
     ) {
-        crate::audit::log_sensitive_event(
+        codewhale_runtime::audit::log_sensitive_event(
             "goal.user_completed",
             serde_json::json!({ "accepted": true }),
         );
@@ -3292,7 +3292,7 @@ pub(crate) async fn apply_approval_decision(
         // tool — approving one shell command must not approve every shell
         // command for the session (ops R2). The tool name is recorded as
         // audit evidence, not as a grant.
-        crate::audit::log_sensitive_event(
+        codewhale_runtime::audit::log_sensitive_event(
             "tool.approval.session_grant",
             serde_json::json!({
                 "tool_name": event.tool_name,
@@ -3763,7 +3763,7 @@ pub(crate) async fn apply_provider_picker_test_connection_with_verifier(
                 &scoped_config,
                 &identity,
                 &model,
-                crate::route_receipt::CredentialGeneration::derive(
+                codewhale_config::credentials::CredentialGeneration::derive(
                     &base_url,
                     &codewhale_secrets::normalize_api_key(&api_key),
                 ),
@@ -3780,7 +3780,7 @@ pub(crate) async fn apply_provider_picker_test_connection_with_verifier(
                 &scoped_config,
                 &identity,
                 &model,
-                crate::route_receipt::CredentialGeneration::derive(
+                codewhale_config::credentials::CredentialGeneration::derive(
                     &base_url,
                     &codewhale_secrets::normalize_api_key(&api_key),
                 ),
@@ -3876,7 +3876,7 @@ pub(crate) async fn apply_provider_picker_api_key_with_verifier(
                     &scoped_config,
                     &identity,
                     &verified_model,
-                    crate::route_receipt::CredentialGeneration::derive(
+                    codewhale_config::credentials::CredentialGeneration::derive(
                         &base_url,
                         &codewhale_secrets::normalize_api_key(&api_key),
                     ),

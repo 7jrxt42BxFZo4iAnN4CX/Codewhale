@@ -720,7 +720,7 @@ impl WebSearchTool {
         api_key: Option<&str>,
         context: &ToolContext,
     ) -> AdapterResult<(Vec<WebSearchEntry>, String)> {
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             .timeout(Duration::from_millis(timeout_ms))
             .user_agent(USER_AGENT)
             .build()
@@ -846,7 +846,7 @@ impl WebSearchTool {
         };
         check_policy(context.network_policy.as_ref(), &host)?;
 
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             .timeout(Duration::from_millis(timeout_ms))
             .user_agent(USER_AGENT)
             .build()
@@ -932,7 +932,7 @@ impl WebSearchTool {
                 )
             })?;
 
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             .timeout(Duration::from_millis(timeout_ms))
             .build()
             .map_err(|e| {
@@ -1016,7 +1016,7 @@ impl WebSearchTool {
                 )
             })?;
 
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             .timeout(Duration::from_millis(timeout_ms))
             .build()
             .map_err(|e| {
@@ -1111,7 +1111,7 @@ impl WebSearchTool {
                 )
             })?;
 
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             .timeout(Duration::from_millis(timeout_ms))
             .build()
             .map_err(|e| {
@@ -1190,7 +1190,7 @@ impl WebSearchTool {
                 "DeepSeek search requires an API key. Set `[search] api_key` in config.toml or the DEEPSEEK_API_KEY env var.",
             )
         })?;
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             .timeout(Duration::from_millis(timeout_ms))
             .build()
             .map_err(|e| {
@@ -1255,7 +1255,7 @@ impl WebSearchTool {
                 )
             })?;
 
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             .timeout(Duration::from_millis(timeout_ms))
             .build()
             .map_err(|e| {
@@ -1354,7 +1354,7 @@ impl WebSearchTool {
                 )
             })?;
 
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             .timeout(Duration::from_millis(timeout_ms))
             .build()
             .map_err(|e| {
@@ -1460,7 +1460,7 @@ impl WebSearchTool {
                 )
             })?;
 
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             .timeout(Duration::from_millis(timeout_ms))
             .build()
             .map_err(|e| {
@@ -1570,7 +1570,7 @@ impl WebSearchTool {
 
         let effective_timeout = timeout_ms.max(90_000);
 
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             .connect_timeout(Duration::from_secs(15))
             .timeout(Duration::from_millis(effective_timeout))
             .tcp_keepalive(Some(Duration::from_secs(30)))
@@ -2511,7 +2511,7 @@ async fn run_scrape_search_with_endpoints(
     let started = Instant::now();
     let budget = Duration::from_millis(timeout_ms);
     let decider = context.network_policy.as_ref();
-    let client = crate::tls::reqwest_client_builder()
+    let client = codewhale_release::tls::reqwest_client_builder()
         .timeout(budget)
         .user_agent(USER_AGENT)
         .build()

@@ -108,6 +108,7 @@ mod jobs;
 pub(crate) mod listener;
 mod lsp;
 mod mcp_import;
+mod members;
 mod memory_lens;
 mod mobile;
 mod plans;
@@ -1358,6 +1359,7 @@ fn default_runtime_capabilities() -> RuntimeCapabilities {
         environments: false,
         worker_runtime: true,
         fleet_run_create: true,
+        thread_fleet_members: true,
         fleet_run_start: true,
         fleet_event_replay: true,
         fleet_event_stream: true,
@@ -1675,10 +1677,8 @@ fn replay_flag_is_absent(replayed: &bool) -> bool {
     !*replayed
 }
 
-fn install_runtime_server_workshop_budgets(
-    config: &Config,
-) -> crate::tools::large_output_router::WorkshopConfig {
-    crate::tools::large_output_router::WorkshopConfig::install_active(config.workshop.as_ref())
+fn install_runtime_server_workshop_budgets(config: &Config) -> codewhale_config::WorkshopConfig {
+    crate::tools::large_output_router::install_active_workshop(config.workshop.as_ref())
 }
 
 #[cfg(test)]
@@ -1687,10 +1687,7 @@ fn open_runtime_threads_for_server(
     workspace: PathBuf,
     manager_config: RuntimeThreadManagerConfig,
     plugin_registry: Arc<crate::plugins::PluginRegistry>,
-) -> Result<(
-    SharedRuntimeThreadManager,
-    crate::tools::large_output_router::WorkshopConfig,
-)> {
+) -> Result<(SharedRuntimeThreadManager, codewhale_config::WorkshopConfig)> {
     open_runtime_threads_for_host(
         config,
         workspace,
@@ -1710,10 +1707,7 @@ pub(crate) fn open_runtime_threads_for_host(
     acp: bool,
     preheld_lock: Option<crate::runtime_threads::RuntimeProcessOwnerLock>,
     binding: Option<&crate::runtime_threads::RuntimeStoreBinding>,
-) -> Result<(
-    SharedRuntimeThreadManager,
-    crate::tools::large_output_router::WorkshopConfig,
-)> {
+) -> Result<(SharedRuntimeThreadManager, codewhale_config::WorkshopConfig)> {
     // The Runtime API lazily creates engines after the HTTP/Web server starts.
     // Install the resolved process-wide read/tool byte limits before the
     // thread manager can spawn any of those engines, matching interactive and
@@ -1743,6 +1737,15 @@ pub(crate) fn open_runtime_threads_for_host(
     // its capabilities available to route resolution.
     crate::models_dev_live::maybe_load_persisted_cache();
     crate::provider_catalog_live::maybe_load_persisted_cache_for_config(config);
+    if let Ok(identity) = config.active_provider_identity()
+        && identity.provider == ProviderKind::Ollama
+        && let Ok(handle) = tokio::runtime::Handle::try_current()
+    {
+        let config = config.clone();
+        handle.spawn(async move {
+            crate::provider_lake::refresh_local_ollama_catalog(&config, &identity).await;
+        });
+    }
     crate::models_dev_live::spawn_background_refresh();
     Ok((manager, workshop_activation))
 }
@@ -2155,7 +2158,9 @@ pub async fn run_http_server(
                 "Codewhale web bootstrap (single-use, expires in {} min): {bootstrap_url}",
                 web::BOOTSTRAP_TTL.as_secs() / 60
             );
-            if let Some(warning) = web_launcher_warning(crate::utils::open_url(&bootstrap_url)) {
+            if let Some(warning) =
+                web_launcher_warning(codewhale_runtime::browser::open_url(&bootstrap_url))
+            {
                 println!("{warning}");
             }
         }
@@ -2760,6 +2765,10 @@ pub fn build_router(state: RuntimeApiState) -> Router {
             post(jobs::resize_thread_job),
         )
         .route("/v1/threads/{id}/context", get(context::get_thread_context))
+        .route(
+            "/v1/threads/{id}/members",
+            post(members::start_thread_member),
+        )
         .route("/v1/threads/{id}/plan", get(plans::get_thread_plan))
         .route("/v1/threads/{id}/todo", get(plans::get_thread_todo))
         .route("/v1/plan", get(plans::latest_plan))
@@ -3317,6 +3326,33 @@ async fn health() -> Json<HealthResponse> {
     })
 }
 
+async fn refresh_local_default_catalog(
+    state: &RuntimeApiState,
+    requested: Option<&str>,
+    provider: Option<&str>,
+    provider_id: Option<&str>,
+) {
+    if requested.is_some_and(|model| {
+        !model.trim().is_empty()
+            && !model.trim().eq_ignore_ascii_case("auto")
+            && !crate::config::is_unresolved_local_ollama_model(model)
+    }) {
+        return;
+    }
+    let config = state.config.read().clone();
+    let provider = provider.map(str::trim).filter(|value| !value.is_empty());
+    let identity = if provider.is_some() || provider_id.is_some() {
+        config.resolve_persisted_provider_identity(provider, provider_id)
+    } else {
+        config.active_provider_identity()
+    };
+    if let Ok(identity) = identity
+        && identity.provider == ProviderKind::Ollama
+    {
+        crate::provider_lake::refresh_local_ollama_catalog(&config, &identity).await;
+    }
+}
+
 fn runtime_request_model(config: &Config, requested: Option<&str>) -> Result<String, ApiError> {
     if let Some(model) = requested {
         return Ok(model.to_string());
@@ -3343,6 +3379,13 @@ async fn create_task(
     if req.workspace.is_none() {
         req.workspace = Some(state.workspace.clone());
     }
+    refresh_local_default_catalog(
+        &state,
+        req.model.as_deref(),
+        req.model_provider.as_deref(),
+        req.model_provider_id.as_deref(),
+    )
+    .await;
     if req.model.is_none() && req.model_provider.is_none() && req.model_provider_id.is_none() {
         req.model = Some(runtime_request_model(&state.config.read(), None)?);
     }
@@ -3364,6 +3407,13 @@ async fn create_thread(
     if req.mode.as_ref().is_none_or(|m| m.trim().is_empty()) {
         req.mode = Some("agent".to_string());
     }
+    refresh_local_default_catalog(
+        &state,
+        req.model.as_deref(),
+        req.model_provider.as_deref(),
+        req.model_provider_id.as_deref(),
+    )
+    .await;
 
     let thread = state
         .runtime_threads
@@ -5522,7 +5572,7 @@ fn mutation_context_settings(
     let network = config
         .network
         .clone()
-        .map(|p| p.into_runtime())
+        .map(crate::network_policy::NetworkPolicy::from)
         .unwrap_or_default();
     let skills_cfg = config.skills.as_ref();
     let max_size = skills_cfg
@@ -6500,7 +6550,7 @@ fn mcp_pool_policy(config: &Config) -> Value {
         config
             .network
             .clone()
-            .map(crate::config::NetworkPolicyToml::into_runtime),
+            .map(crate::network_policy::NetworkPolicy::from),
         config.mcp_oauth_callback_port,
         config.mcp_oauth_callback_url,
     ])
@@ -6515,15 +6565,15 @@ fn load_mcp_management_pool(state: &RuntimeApiState) -> Result<(McpPool, Value)>
     let mut pool =
         McpPool::from_config_path_with_workspace_and_plugins(&path, &state.workspace, plugins)?;
     let config = state.config.read();
-    pool = pool
-        .with_backend(crate::mcp::McpBackend::from_config(&config))
-        .with_oauth_callback(
-            config.mcp_oauth_callback_port,
-            config.mcp_oauth_callback_url.clone(),
-        );
+    pool = pool.with_backend(config.mcp_backend()).with_oauth_callback(
+        config.mcp_oauth_callback_port,
+        config.mcp_oauth_callback_url.clone(),
+    );
     if let Some(network) = config.network.clone() {
         pool = pool.with_network_policy(
-            crate::network_policy::NetworkPolicyDecider::with_default_audit(network.into_runtime()),
+            crate::network_policy::NetworkPolicyDecider::with_default_audit(
+                crate::network_policy::NetworkPolicy::from(network),
+            ),
         );
     }
     pool.dynamic_servers = state.workspace_scopes.dynamic_servers.clone();
@@ -9775,6 +9825,7 @@ async fn stream_turn(
 
     crate::image_attach::prepare_runtime_images(&req.images).map_err(map_thread_err)?;
 
+    refresh_local_default_catalog(&state, req.model.as_deref(), None, None).await;
     let model = runtime_request_model(&state.config.read(), req.model.as_deref())?;
     if req.max_output_tokens.is_some() {
         let config = state.config.read();
@@ -10962,7 +11013,7 @@ fn provider_models_for_api(
         }
     }
     for model in config.custom_models.as_deref().unwrap_or_default() {
-        if crate::provider_lake::configured_model_for_route(
+        if crate::config::configured_model_for_route(
             config,
             provider,
             identity.key.as_str(),
@@ -12724,7 +12775,7 @@ fn normalize_runtime_config_model(
         .map_err(ApiError::bad_request)?;
     let provider = identity.provider;
     let value = value.trim();
-    if crate::provider_lake::configured_model_for_route(
+    if crate::config::configured_model_for_route(
         config,
         provider,
         identity.key.as_str(),
@@ -13505,7 +13556,7 @@ base_url = "http://127.0.0.1:9/v1"
     }
 
     async fn post_json(addr: SocketAddr, path: &str, body: Value) -> Result<Value> {
-        let response = crate::tls::reqwest_client()
+        let response = codewhale_release::tls::reqwest_client()
             .post(format!("http://{addr}{path}"))
             .json(&body)
             .send()
@@ -13565,7 +13616,7 @@ model = "GLM-5.2"
         provider: &str,
         model: &str,
     ) -> Result<Value> {
-        let client = crate::tls::reqwest_client();
+        let client = codewhale_release::tls::reqwest_client();
         let catalog = client
             .get(format!("http://{addr}/v1/providers"))
             .send()
@@ -14070,7 +14121,7 @@ model = "GLM-5.2"
         )?;
         let (addr, state, server) = serve_fixture(config_path.clone()).await?;
         let _shutdown = state.task_manager.shutdown_guard();
-        let client = crate::tls::reqwest_client();
+        let client = codewhale_release::tls::reqwest_client();
         // The active CN route resolves `[providers.deepseek_cn].model`; the
         // runtime default_model surface must report that slot, not the primary.
         let reported: Value = client

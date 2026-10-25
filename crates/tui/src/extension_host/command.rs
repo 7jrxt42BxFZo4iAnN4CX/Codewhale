@@ -55,7 +55,7 @@ use super::ManagerShared;
 use super::protocol::{CommandResultWire, CommandRunParams, CoreRequest};
 use super::registry::CommandRegistration;
 use super::supervisor::HostCallError;
-use crate::plugins::types::PluginAuthority;
+use codewhale_config::PluginAuthority;
 
 /// How long the user waits for one command before it is cancelled.
 pub const COMMAND_RUN_DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);

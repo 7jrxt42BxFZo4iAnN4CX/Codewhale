@@ -113,17 +113,23 @@ pub(crate) fn resolve_handoff_path(workspace: &Path) -> (PathBuf, &'static str) 
 /// read.
 const RELAY_ARTIFACT_MAX_BYTES: usize = 100 * 1024;
 
+fn read_prompt_file_bounded(path: &Path, cap: usize) -> std::io::Result<(String, usize)> {
+    read_prompt_text_bounded(std::fs::File::open(path)?, cap)
+}
+
 /// Read at most `cap` bytes of a prompt file plus slack for the leading
 /// whitespace the renderers trim, so an oversized file is never read whole
 /// into memory just to be truncated. Returns the text and the file's full
 /// length (for the truncation note). A file that is not UTF-8 within the read
 /// window is an error, as a whole-file `read_to_string` would report; only a
 /// character cut by the window's end is dropped.
-fn read_prompt_file_bounded(path: &Path, cap: usize) -> std::io::Result<(String, usize)> {
+pub(crate) fn read_prompt_text_bounded(
+    file: std::fs::File,
+    cap: usize,
+) -> std::io::Result<(String, usize)> {
     use std::io::Read as _;
 
     const LEADING_WHITESPACE_SLACK: usize = 4 * 1024;
-    let file = std::fs::File::open(path)?;
     let full_len = usize::try_from(file.metadata()?.len()).unwrap_or(usize::MAX);
     let mut bytes = Vec::new();
     file.take((cap + LEADING_WHITESPACE_SLACK) as u64)
@@ -152,7 +158,7 @@ fn read_prompt_file_bounded(path: &Path, cap: usize) -> std::io::Result<(String,
 
 /// Cap `trimmed` at `cap` bytes on a character boundary, noting what was
 /// omitted out of `total` (the file length when the read itself was bounded).
-fn cap_prompt_text(trimmed: &str, total: usize, cap: usize, hint: &str) -> String {
+pub(crate) fn cap_prompt_text(trimmed: &str, total: usize, cap: usize, hint: &str) -> String {
     if trimmed.len() <= cap && total <= trimmed.len() {
         return trimmed.to_string();
     }

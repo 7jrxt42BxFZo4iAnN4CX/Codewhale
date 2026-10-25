@@ -170,7 +170,9 @@ What it does (verified):
 * It **never uses sudo and never edits your shell profile.** It refuses to
   install into system or package-manager directories (`/usr/bin`,
   `~/.cargo/bin`, Homebrew, `node_modules`, `/nix/store`…) and refuses to
-  overwrite a *different* existing `codewhale`.
+  overwrite a *different* existing `codewhale` unless you ask for it with
+  `CODEWHALE_FORCE_REINSTALL=1` (see [re-running the
+  installer](#re-running-the-installer)).
 
 Expected output:
 
@@ -258,8 +260,15 @@ codewhale doctor        # diagnostics; see the note in §8 about what it does NO
   `Already installed: …` and exits 0.
 * Different version already installed: it **refuses**
   (`codewhale install: refusing to replace existing …/codewhale`), exits 1 and
-  changes nothing. It downloads ~160 MB before refusing. Use
+  changes nothing. It downloads the release before refusing. Use
   [`codewhale update`](#7-updating-and-rolling-back) instead.
+* Not a release build, at the same version (a local `cargo build` reports
+  `0.10.2 (dev)`): `codewhale update` still reinstalls the release artifact
+  over it, because that build has no release provenance to preserve.
+* Deliberate replacement: `CODEWHALE_FORCE_REINSTALL=1` replaces a differing
+  `codewhale`/`codew` in the install directory and keeps each previous file
+  beside it as `<name>.bak-<utc-timestamp>`. It never replaces a symlink or a
+  non-regular file, and never replaces a file in a managed directory.
 
 ### Upgrade / uninstall
 
@@ -587,6 +596,12 @@ It updates `codewhale` **and** `codew` together. It took 10 s here. Run it
 again and you get `Already up to date; no download needed.` Other options:
 `--beta` and `--proxy <URL>`.
 
+A build that is not a published release reports its provenance in
+`codewhale --version` (`0.10.2 (dev)` for a local build, a commit hash for a
+release). `codewhale update` compares the release, not just the version, so a
+same-version `(dev)` build is replaced by the release artifact instead of
+reporting "Already up to date" forever.
+
 <a id="roll-back-to-a-previous-release"></a>
 
 ### Rolling back (e.g. to v0.9.13)
@@ -758,7 +773,7 @@ codewhale
   this session, `n` deny, `Esc` abort the turn.
 * Useful keys: **F1** help (or `/help`), **Ctrl-K** command palette, **F3**
   provider/model picker, **Ctrl-R** resume a past session, **Ctrl-U** clear the
-  input (**Ctrl-Z** restores it), **Ctrl-C** cancel or quit, **Ctrl-D** quit
+  input (**Ctrl-Z** restores it), **Ctrl-C** cancel, clear the draft, or quit, **Ctrl-D** quit
   with an empty input. Full list: [KEYBINDINGS.md](KEYBINDINGS.md).
 * On exit it prints `To resume this session, run codewhale resume <id>`.
 
@@ -990,7 +1005,7 @@ v0.8.8 onward. Linux RISC-V prebuilts are temporarily paused because the locked
 | Windows | arm64 | `codewhale-windows-arm64.exe`, `codew-windows-arm64.exe` | ✅ | ✅ |
 | Linux x64 or arm64 on musl (Alpine) | native arch | matching static Linux asset | ✅ (static) | ✅ |
 | Other Linux (musl on other arches) | — | build from source | ❌¹ | ✅² |
-| FreeBSD 14+ / OpenBSD | x64, arm64 | `cargo install codewhale-cli --locked` (no prebuilt; see § FreeBSD) | ❌ | ✅² |
+| FreeBSD 14+ | x64, arm64 | `cargo install codewhale-cli --locked` (no prebuilt; see § FreeBSD) | ❌ | ✅² |
 
 ¹ The npm package will exit with a clear error and point you here.
 ² Provided your toolchain can compile a recent Rust workspace; see

@@ -1428,7 +1428,7 @@ struct BackgroundHookJob {
     stdin_bytes: Option<Vec<u8>>,
     label: String,
     timeout: Duration,
-    plugin_authority: Option<crate::plugins::types::PluginAuthority>,
+    plugin_authority: Option<codewhale_config::PluginAuthority>,
     project_authority: Option<super::authority::ProjectHookAuthority>,
 }
 
@@ -2047,7 +2047,7 @@ impl HookExecutor {
                 continue;
             }
             // Audit-log the *keys* — never the values.
-            crate::audit::log_sensitive_event(
+            codewhale_runtime::audit::log_sensitive_event(
                 "shell_env_hook",
                 serde_json::json!({
                     // Bounded and de-fanged like every other rendering of a

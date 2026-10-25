@@ -18,7 +18,7 @@ use serde_json::Value;
 
 use super::protocol::{EntryRef, OwnerRef, RegisterKind, RegisterParams};
 use super::tier::HostTier;
-use crate::plugins::types::PluginAuthority;
+use codewhale_config::PluginAuthority;
 
 /// Largest accepted tool input schema, serialized.
 pub const MAX_SCHEMA_BYTES: usize = 64 * 1024;

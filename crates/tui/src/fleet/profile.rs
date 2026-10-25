@@ -87,7 +87,7 @@ pub struct AgentProfile {
     pub origin: ProfileOrigin,
     /// Runtime authority for a profile loaded from an immutable plugin
     /// snapshot. Rechecked at Agent spawn so another process can revoke it.
-    pub plugin_authority: Option<crate::plugins::types::PluginAuthority>,
+    pub plugin_authority: Option<codewhale_config::PluginAuthority>,
     pub native_preset: Option<crate::extension_host::composition_scope::NativePresetRef>,
 }
 
@@ -317,7 +317,7 @@ fn load_agent_profiles_from_dir_tolerant_in(
 
 pub(crate) fn load_plugin_agent_profiles_from_component(
     component: &Path,
-    authority: &crate::plugins::types::PluginAuthority,
+    authority: &codewhale_config::PluginAuthority,
 ) -> Result<(Vec<AgentProfile>, Vec<AgentProfileLoadIssue>)> {
     let (mut profiles, issues) = if component.is_dir() {
         load_agent_profiles_from_dir_tolerant(component, ProfileOrigin::Plugin)?

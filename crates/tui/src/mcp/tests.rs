@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 fn test_http_client() -> reqwest::Client {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    crate::tls::reqwest_client()
+    codewhale_release::tls::reqwest_client()
 }
 
 async fn lock_mcp_loopback_tests() -> tokio::sync::MutexGuard<'static, ()> {
@@ -2340,7 +2340,7 @@ fn active_plugin_fixture(
     plugin_base: &Path,
 ) -> (
     crate::plugins::types::LoadedPlugin,
-    crate::plugins::types::PluginAuthority,
+    codewhale_config::PluginAuthority,
 ) {
     let plugins_root = plugin_base.parent().expect("plugin parent").to_path_buf();
     // Callers use both `<temp>/plugins/<name>` and `<temp>/<name>` layouts.

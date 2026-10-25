@@ -55,7 +55,7 @@ pub(crate) fn approved_project_hooks(
 }
 
 pub(crate) fn verify_hook_authorities(
-    plugin: Option<&crate::plugins::types::PluginAuthority>,
+    plugin: Option<&codewhale_config::PluginAuthority>,
     project: Option<&ProjectHookAuthority>,
 ) -> Result<(), String> {
     if let Some(authority) = plugin {

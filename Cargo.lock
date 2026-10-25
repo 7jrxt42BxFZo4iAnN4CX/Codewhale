@@ -986,6 +986,7 @@ dependencies = [
  "toml 1.1.4+spec-1.1.0",
  "toml_edit 0.25.15+spec-1.1.0",
  "tracing",
+ "url",
  "windows-sys 0.61.2",
 ]
 
@@ -1200,6 +1201,7 @@ dependencies = [
  "codewhale-memory",
  "codewhale-models",
  "codewhale-palette",
+ "codewhale-paths",
  "colored",
  "fd-lock",
  "libc",

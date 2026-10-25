@@ -13,7 +13,8 @@
 //! - unknown stays unknown — never `$0.00` and never an estimate-as-spend.
 
 use crate::config::{Config, ProviderConfig, ProviderIdentity, ProviderKind};
-use crate::pricing::{CostCurrency, UnpricedReason, format_cost_amount};
+use crate::pricing::{UnpricedReason, format_cost_amount};
+use codewhale_config::pricing::CostCurrency;
 use codewhale_localization::{Locale, MessageId, tr};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1216,7 +1217,7 @@ fn xiaomi_is_explicit_pay_as_you_go(config: Option<&ProviderConfig>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pricing::CostCurrency;
+    use codewhale_config::pricing::CostCurrency;
     use codewhale_models::Usage;
 
     fn config_with(provider: ProviderKind, provider_config: ProviderConfig) -> Config {

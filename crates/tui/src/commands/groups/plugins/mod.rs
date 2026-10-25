@@ -917,7 +917,7 @@ pub(crate) fn plugin_network_policy() -> crate::network_policy::NetworkPolicy {
     crate::config::Config::load(None, None)
         .unwrap_or_default()
         .network
-        .map(|policy| policy.into_runtime())
+        .map(crate::network_policy::NetworkPolicy::from)
         .unwrap_or_default()
 }
 

@@ -663,7 +663,7 @@ fn base_source_entries(
         ),
     };
     if let Some(block) = skills_block {
-        builder.push(SourceEntry::text(
+        let mut entry = SourceEntry::text(
             SourceKind::SkillsBlock,
             "Available skills",
             skills_dir.map(|path| path.display().to_string()),
@@ -671,7 +671,9 @@ fn base_source_entries(
             &block,
             CountingConfidence::High,
             Some(5),
-        ));
+        );
+        entry.truncation_reason = crate::skills::shortened_skills_note(&block);
+        builder.push(entry);
     } else {
         builder.push(SourceEntry::omitted(
             SourceKind::SkillsBlock,

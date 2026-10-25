@@ -780,7 +780,7 @@
             let _lock = crate::test_support::lock_test_env();
             let _guard = ForceHttp1EnvGuard::capture();
             unsafe { std::env::remove_var("DEEPSEEK_FORCE_HTTP1") };
-            assert!(!force_http1_from_env());
+            assert!(!codewhale_config::force_http1_from_env());
         }
         // from force_http1_truthy_values
         {
@@ -790,7 +790,7 @@
                 // Safety: serialized by lock_test_env; reverted by guard.
                 unsafe { std::env::set_var("DEEPSEEK_FORCE_HTTP1", value) };
                 assert!(
-                    force_http1_from_env(),
+                    codewhale_config::force_http1_from_env(),
                     "{value:?} should be parsed as truthy",
                 );
             }
@@ -802,7 +802,7 @@
             for value in ["0", "false", "no", "off", "", "garbage", "2"] {
                 unsafe { std::env::set_var("DEEPSEEK_FORCE_HTTP1", value) };
                 assert!(
-                    !force_http1_from_env(),
+                    !codewhale_config::force_http1_from_env(),
                     "{value:?} should NOT be parsed as truthy"
                 );
             }
@@ -1100,6 +1100,7 @@
                         provider: "ollama".into(),
                         wire_model_id: id.into(),
                         endpoint_key: "chat".into(),
+                        default_for_provider: id == "alpha:tag",
                         source: CatalogSource::Live {
                             base_url_fingerprint: fingerprint.clone(),
                             fetched_at,

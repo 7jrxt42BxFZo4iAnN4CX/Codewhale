@@ -1389,7 +1389,7 @@ impl HostProcess {
     #[cfg(windows)]
     pub(crate) async fn admit_windows_root(
         &self,
-        authority: crate::plugins::types::PluginAuthority,
+        authority: codewhale_config::PluginAuthority,
     ) -> Result<(), String> {
         let sandbox = self
             .windows

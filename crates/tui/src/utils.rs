@@ -1,13 +1,11 @@
 //! Utility helpers shared across the `DeepSeek` CLI.
 
 use std::fs;
-use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::Result;
 use codewhale_models::{ContentBlock, Message};
 use ignore::WalkBuilder;
 use std::io;
@@ -774,122 +772,6 @@ fn is_stray_atomic_write_temp_name(name: &str) -> bool {
     random.len() == 6 && random.chars().all(|c| c.is_ascii_alphanumeric())
 }
 
-/// Open or create a file for appending at `path`, optionally syncing after
-/// every write. Use this for append-only logs like `audit.log`.
-///
-/// The returned `BufWriter<fs::File>` wraps the append handle. Call
-/// `.flush()` followed by `.get_ref().sync_all()` after each batch.
-pub fn open_append(path: &Path) -> std::io::Result<std::io::BufWriter<std::fs::File>> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let file = private_log_options().append(true).open(path)?;
-    restrict_to_owner(&file)?;
-    Ok(std::io::BufWriter::new(file))
-}
-
-/// Open options for an owner-only log or lock file: created 0600 and never
-/// opened through a link at the final component (Unix). Callers add the
-/// access mode they need.
-pub fn private_log_options() -> std::fs::OpenOptions {
-    let mut options = std::fs::OpenOptions::new();
-    options.create(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
-    }
-    options
-}
-
-/// Tighten a log created by an earlier version at the default mode. No-op
-/// outside Unix.
-pub fn restrict_to_owner(file: &std::fs::File) -> std::io::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    }
-    #[cfg(not(unix))]
-    let _ = file;
-    Ok(())
-}
-
-/// Flush a `BufWriter` wrapping a `File`, then `fsync` the underlying file.
-pub fn flush_and_sync(writer: &mut std::io::BufWriter<std::fs::File>) -> std::io::Result<()> {
-    writer.flush()?;
-    writer.get_ref().sync_all()
-}
-
-/// Open a URL in the system's default browser.
-///
-/// Dispatches to the platform-appropriate opener:
-/// - macOS: `open`
-/// - Linux / BSD: `xdg-open`
-/// - Windows: `rundll32 url.dll,FileProtocolHandler`
-/// - Other: returns an error.
-///
-/// This is the single entry point for URL opening — every call site in
-/// the codebase should use this instead of hardcoding `Command::new("open")`,
-/// `Command::new("xdg-open")`, or `Command::new("cmd")`.
-pub fn open_url(url: &str) -> Result<()> {
-    let mut command = browser_open_command(url)?;
-    command
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| anyhow::anyhow!("failed to launch browser command: {e}"))
-}
-
-fn browser_open_command(url: &str) -> Result<Command> {
-    if url.trim().is_empty() {
-        return Err(anyhow::anyhow!("browser URL cannot be empty"));
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let mut command = Command::new("open");
-        command.arg(url);
-        Ok(command)
-    }
-
-    #[cfg(any(
-        all(target_os = "linux", not(target_env = "ohos")),
-        target_os = "netbsd",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "dragonfly"
-    ))]
-    {
-        let mut command = Command::new("xdg-open");
-        command.arg(url);
-        Ok(command)
-    }
-
-    // Not `cmd /C start`: cmd.exe would parse `&`, `|`, `^` and `%` inside
-    // the URL. The protocol handler receives it as data.
-    #[cfg(target_os = "windows")]
-    {
-        let mut cmd = Command::new("rundll32");
-        cmd.args(["url.dll,FileProtocolHandler", url]);
-        Ok(cmd)
-    }
-
-    #[cfg(not(any(
-        target_os = "macos",
-        all(target_os = "linux", not(target_env = "ohos")),
-        target_os = "windows",
-        target_os = "netbsd",
-        target_os = "freebsd",
-        target_os = "openbsd",
-        target_os = "dragonfly"
-    )))]
-    Err(anyhow::anyhow!(
-        "browser opening is unsupported on this platform"
-    ))
-}
-
 /// Spawn a tokio task with panic supervision.
 ///
 /// Wraps the future in `AssertUnwindSafe` + `catch_unwind`. On panic:
@@ -1644,14 +1526,16 @@ mod atomic_write_tests {
 
     #[test]
     fn flush_and_sync_writes_and_syncs() {
+        use std::io::Write as _;
         let tmp = tempdir().expect("tempdir");
         let path = tmp.path().join("append.log");
         {
-            let mut writer = open_append(&path).expect("open_append");
+            let mut writer =
+                codewhale_runtime::private_log::open_append(&path).expect("open_append");
             writeln!(writer, "line 1").expect("write");
-            flush_and_sync(&mut writer).expect("flush_and_sync");
+            codewhale_runtime::private_log::flush_and_sync(&mut writer).expect("flush_and_sync");
             writeln!(writer, "line 2").expect("write");
-            flush_and_sync(&mut writer).expect("flush_and_sync");
+            codewhale_runtime::private_log::flush_and_sync(&mut writer).expect("flush_and_sync");
         }
         let content = fs::read_to_string(&path).expect("read");
         assert_eq!(content, "line 1\nline 2\n");
@@ -2100,86 +1984,6 @@ mod project_mapping_tests {
         assert_eq!(suffix, "Makefile, README.md");
     }
 
-    // ===================================================================
-    // open_url tests
-    // ===================================================================
-
-    #[test]
-    fn open_url_builds_platform_command_without_spawning() {
-        let command = super::browser_open_command("https://example.com").expect("command");
-
-        #[cfg(target_os = "macos")]
-        {
-            assert_eq!(command.get_program(), "open");
-            assert_eq!(
-                command
-                    .get_args()
-                    .map(|arg| arg.to_string_lossy().into_owned())
-                    .collect::<Vec<_>>(),
-                vec!["https://example.com"]
-            );
-        }
-
-        #[cfg(any(
-            target_os = "netbsd",
-            target_os = "freebsd",
-            target_os = "openbsd",
-            target_os = "dragonfly"
-        ))]
-        {
-            assert_eq!(command.get_program(), "xdg-open");
-        }
-
-        #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
-        {
-            assert_eq!(command.get_program(), "xdg-open");
-            assert_eq!(
-                command
-                    .get_args()
-                    .map(|arg| arg.to_string_lossy().into_owned())
-                    .collect::<Vec<_>>(),
-                vec!["https://example.com"]
-            );
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            assert_eq!(command.get_program(), "rundll32");
-            assert_eq!(
-                command
-                    .get_args()
-                    .map(|arg| arg.to_string_lossy().into_owned())
-                    .collect::<Vec<_>>(),
-                vec!["url.dll,FileProtocolHandler", "https://example.com"]
-            );
-            // Shell metacharacters stay inside the single URL argument.
-            let url = "https://example.com/?a=1&b=2|x^y%PATH%";
-            let command = super::browser_open_command(url).expect("command");
-            assert_eq!(command.get_program(), "rundll32");
-            assert_eq!(
-                command
-                    .get_args()
-                    .last()
-                    .map(|arg| arg.to_string_lossy().into_owned()),
-                Some(url.to_string())
-            );
-        }
-    }
-
-    #[test]
-    fn open_url_rejects_empty_url_gracefully() {
-        // An empty URL should fail with a clear error, not panic.
-        let result = super::browser_open_command("");
-        match result {
-            Ok(_) => panic!("empty URL should not build an opener command"),
-            Err(e) => {
-                let msg = e.to_string();
-                assert!(!msg.is_empty(), "error message must not be empty");
-                assert!(msg.contains("empty"), "unexpected error message: {msg}");
-            }
-        }
-    }
-
     #[cfg(unix)]
     #[test]
     fn append_logs_are_owner_only_and_not_opened_through_links() {
@@ -2187,13 +1991,13 @@ mod project_mapping_tests {
         let dir = tempfile::tempdir().expect("tempdir");
 
         let log = dir.path().join("audit.log");
-        drop(super::open_append(&log).expect("open"));
+        drop(codewhale_runtime::private_log::open_append(&log).expect("open"));
         let mode = std::fs::metadata(&log).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
 
         // A log left world-readable by an earlier version is tightened.
         std::fs::set_permissions(&log, std::fs::Permissions::from_mode(0o644)).unwrap();
-        drop(super::open_append(&log).expect("reopen"));
+        drop(codewhale_runtime::private_log::open_append(&log).expect("reopen"));
         let mode = std::fs::metadata(&log).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
 
@@ -2201,6 +2005,6 @@ mod project_mapping_tests {
         std::fs::write(&target, "").unwrap();
         let link = dir.path().join("linked.log");
         std::os::unix::fs::symlink(&target, &link).unwrap();
-        assert!(super::open_append(&link).is_err());
+        assert!(codewhale_runtime::private_log::open_append(&link).is_err());
     }
 }

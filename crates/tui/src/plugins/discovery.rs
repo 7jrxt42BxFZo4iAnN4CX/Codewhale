@@ -10,9 +10,10 @@ use super::manifest::{PluginManifest, ValidatedManifest};
 use super::path_identity::metadata_is_link_or_reparse;
 use super::registry::PluginRegistry;
 use super::types::{
-    LoadedPlugin, PluginDiagnostic, PluginId, PluginOrigin, PluginScope, PluginSkillSnapshot,
+    LoadedPlugin, PluginDiagnostic, PluginOrigin, PluginScope, PluginSkillSnapshot,
     PluginTrustStatus,
 };
+use codewhale_config::PluginId;
 
 #[derive(Debug, Clone)]
 pub struct DiscoveryConfig {
@@ -562,7 +563,7 @@ pub(crate) fn load_staged_skill_snapshots(
 }
 
 pub(crate) fn load_staged_skill_root_snapshots(
-    authority: &super::types::PluginAuthority,
+    authority: &codewhale_config::PluginAuthority,
     relative: &Path,
 ) -> Result<Vec<PluginSkillSnapshot>, String> {
     let staged_root = super::agent_plugin::plugin_root_for_manifest(&authority.staged_manifest)

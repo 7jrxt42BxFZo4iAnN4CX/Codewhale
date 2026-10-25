@@ -14,10 +14,8 @@ use super::manifest::PluginInventory;
 use super::path_identity::metadata_is_link_or_reparse;
 #[cfg(windows)]
 use super::path_identity::windows_file_identity;
-use super::types::{
-    LoadedPlugin, PluginAuthority, PluginDiagnostic, PluginDiagnosticLevel, PluginId,
-    PluginTrustStatus,
-};
+use super::types::{LoadedPlugin, PluginDiagnostic, PluginDiagnosticLevel, PluginTrustStatus};
+use codewhale_config::{PluginAuthority, PluginId};
 
 pub(crate) mod gc;
 

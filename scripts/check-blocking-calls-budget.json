@@ -77,6 +77,9 @@
     "path_canonicalize": 2,
     "std_fs": 6
   },
+  "crates/runtime/src/private_log.rs": {
+    "std_fs": 2
+  },
   "crates/secrets/src/file_lock.rs": {
     "path_canonicalize": 1
   },

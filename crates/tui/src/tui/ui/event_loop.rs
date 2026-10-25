@@ -1914,9 +1914,12 @@ pub(crate) async fn run_event_loop(
         .unwrap_or_else(Instant::now);
     // #6728: the last moment anything happened that wanted a prompt reaction:
     // a terminal event, an engine event, or any non-quiescent UI state. The
-    // idle poll, the automation scan and the git probe all back off from it,
-    // and all return to full cadence the moment it moves.
+    // idle poll and the automation scan back off from it and return to full
+    // cadence the moment it moves. The git probe backs off from
+    // `last_input_or_engine_event` instead, which a ticking label or an open
+    // card does not move.
     let mut last_ui_activity = Instant::now();
+    let mut last_input_or_engine_event = Instant::now();
     let mut skill_registry_epoch = None;
     let mut skill_cache_refresh: Option<SkillCacheRefresh> = None;
     // Whether the previous iteration found the UI quiescent and quiet (see
@@ -4131,6 +4134,7 @@ pub(crate) async fn run_event_loop(
                             app.agent_progress.insert(id.clone(), display.clone());
                         }
                         let meta = app.agent_progress_meta.entry(id.clone()).or_default();
+                        meta.last_progress_at = Some(Instant::now());
                         meta.parent_run_id = parent_run_id;
                         meta.spawn_depth = spawn_depth;
                         let current_tool = activity
@@ -4938,8 +4942,8 @@ pub(crate) async fn run_event_loop(
             underwater_ambient_motion || underwater_completion_motion || launch_motion;
         let animation_active = status_motion || underwater_motion;
         // #6728: what the loop knows about its own quiet. Anything that
-        // wants a prompt reaction moves `last_ui_activity`; the idle poll,
-        // the automation scan and the git probe all back off from it.
+        // wants a prompt reaction moves `last_ui_activity`; the idle poll
+        // and the automation scan back off from it.
         let idle_facts = IdleFacts {
             has_running_agents,
             animation_active,
@@ -4949,17 +4953,24 @@ pub(crate) async fn run_event_loop(
         };
         {
             let tick_now = Instant::now();
+            if engine_event_seen {
+                last_input_or_engine_event = tick_now;
+            }
             if engine_event_seen || !ui_state_is_quiescent(app, &idle_facts, tick_now) {
                 last_ui_activity = tick_now;
             }
             let quiet_for = tick_now.saturating_duration_since(last_ui_activity);
             ui_quiet = quiet_for >= UI_QUIESCENT_AFTER
                 && ui_state_is_quiescent(app, &idle_facts, tick_now);
-            // The git cache TTL follows the same quiet clock, set every
-            // iteration so a stale back-off can never outlive the activity
-            // that ended it (a turn does not reach the probe block below).
+            // The git cache TTL follows the probe's input and engine-event
+            // clock, set every iteration so a stale back-off can never outlive
+            // the activity that ended it (a turn does not reach the probe
+            // block below).
             crate::git_status::set_probe_backoff(crate::git_status::probe_is_backed_off(
-                git_probe_quiet_for(app, quiet_for),
+                git_probe_quiet_for(
+                    app,
+                    tick_now.saturating_duration_since(last_input_or_engine_event),
+                ),
             ));
         }
         let animation_interval = Duration::from_millis(animation_interval_ms(
@@ -5103,8 +5114,10 @@ pub(crate) async fn run_event_loop(
             static GIT_PROBE_LOCK: std::sync::OnceLock<std::sync::Mutex<Option<Instant>>> =
                 std::sync::OnceLock::new();
             let slot = GIT_PROBE_LOCK.get_or_init(|| std::sync::Mutex::new(None));
-            let quiet_for =
-                git_probe_quiet_for(app, now.saturating_duration_since(last_ui_activity));
+            let quiet_for = git_probe_quiet_for(
+                app,
+                now.saturating_duration_since(last_input_or_engine_event),
+            );
             let should_probe = slot
                 .lock()
                 .map(|mut last| {
@@ -5233,6 +5246,7 @@ pub(crate) async fn run_event_loop(
             next_terminal_event(&terminal_input, &mut pending_terminal_events, poll_timeout)?;
         if maybe_terminal_event.is_some() {
             last_ui_activity = Instant::now();
+            last_input_or_engine_event = last_ui_activity;
         }
         if maybe_terminal_event.is_none() {
             let now = Instant::now();
@@ -6637,11 +6651,12 @@ pub(crate) async fn run_event_loop(
                     copy_active_selection(app);
                 }
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    // Four behaviors layered on Ctrl+C in priority order — see
+                    // Five behaviors layered on Ctrl+C in priority order — see
                     // `CtrlCDisposition` for the unit-tested decision table.
                     // 1. selection active → copy + clear (Windows convention,
-                    //    #1337); 2. turn in flight → cancel; 3. quit-armed →
-                    //    exit; 4. otherwise → arm the 2-second exit prompt.
+                    //    #1337); 2. turn in flight → cancel; 3. non-empty
+                    //    composer → recoverable clear; 4. quit-armed → exit;
+                    //    5. otherwise → arm the 2-second exit prompt.
                     match ctrl_c_disposition(app) {
                         CtrlCDisposition::CopySelection => {
                             copy_active_selection(app);
@@ -6676,6 +6691,9 @@ pub(crate) async fn run_event_loop(
                             };
                             app.status_message = Some(parent_stop_status(app, base));
                             app.disarm_quit();
+                        }
+                        CtrlCDisposition::ClearInput => {
+                            app.clear_composer_draft();
                         }
                         CtrlCDisposition::ConfirmExit => {
                             let _ = engine_handle.send(Op::Shutdown).await;
@@ -6773,12 +6791,7 @@ pub(crate) async fn run_event_loop(
                             let _ = app.dismiss_plugin_cta_for_session();
                         }
                         EscapeAction::ClearInput => {
-                            app.backtrack.reset();
-                            app.edit_in_progress = false;
-                            app.clear_input_recoverable();
-                            let _ = app.maybe_show_behavioral_tip(
-                                crate::tui::behavioral_tips::BehavioralTip::ClearedInputRestore,
-                            );
+                            app.clear_composer_draft();
                         }
                         EscapeAction::Noop => {
                             // Nothing else cares about this Esc — route it
@@ -7759,7 +7772,13 @@ pub(crate) async fn run_plugin_oauth_from_tui(
             })
             .await??;
         } else {
-            crate::oauth::plugin_oauth_login(provider.clone(), base_url, oauth, authority).await?;
+            crate::plugins::providers::plugin_oauth_login(
+                provider.clone(),
+                base_url,
+                oauth,
+                authority,
+            )
+            .await?;
         }
         let ticket = crate::provider_catalog_live::begin_refresh_for_identity(
             identity.provider,

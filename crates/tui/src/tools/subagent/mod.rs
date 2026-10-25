@@ -3992,6 +3992,7 @@ pub struct SubAgentManager {
     /// agent id, so the task's failure text blames the route that failed.
     /// Taken when the task settles.
     rerouted_requests: HashMap<String, ReroutedRequest>,
+    member_starts: HashMap<String, (String, String)>,
 }
 
 /// One child request waiting on a person (approvals C2). The store is the
@@ -4438,6 +4439,7 @@ impl SubAgentManager {
             reported_pending: HashSet::new(),
             refused_routes: HashMap::new(),
             rerouted_requests: HashMap::new(),
+            member_starts: HashMap::new(),
         }
     }
 
@@ -12037,6 +12039,7 @@ impl ToolSpec for AgentTool {
             false,
             None,
             None,
+            None,
         )
         .await?;
         let worker_record = {
@@ -12603,6 +12606,7 @@ async fn spawn_subagent_from_input(
     verified_posture_denials: bool,
     workflow_identity: Option<&WorkflowTaskSpawnIdentity>,
     response_schema: Option<Value>,
+    member_roster: Option<&crate::fleet::roster::FleetRoster>,
 ) -> Result<(SubAgentResult, WorkflowTaskSpawnMetadata), ToolError> {
     let exact_fleet_binding =
         workflow_identity.and_then(|identity| identity.exact_fleet_binding.as_ref());
@@ -12634,7 +12638,12 @@ async fn spawn_subagent_from_input(
             apply_spawn_profile(&mut spawn_request, &member)?;
             Some(member)
         }
-        None => resolve_spawn_route_profile(&runtime, &mut spawn_request, &spawn_roster(&runtime))?,
+        None => match member_roster {
+            Some(roster) => resolve_spawn_route_profile(&runtime, &mut spawn_request, roster)?,
+            None => {
+                resolve_spawn_route_profile(&runtime, &mut spawn_request, &spawn_roster(&runtime))?
+            }
+        },
     };
     // Role resolution runs before classification so the write contract sees
     // the effective role: read-only roles stay ergonomic, and a write-capable
@@ -12685,7 +12694,7 @@ async fn spawn_subagent_from_input(
         true,
         // Exact-bound spawns refuse provider substitution: their route is
         // preflighted and "will not guess or fall back".
-        exact_fleet_binding.is_none(),
+        exact_fleet_binding.is_none() && member_roster.is_none(),
     )
     .await?;
     // The pause is per provider route, so it is checked against the route
@@ -13326,6 +13335,7 @@ pub(crate) async fn spawn_workflow_task(
         identity.fleet_authority_fingerprint.is_some(),
         Some(&identity),
         request.response_schema,
+        None,
     )
     .await?;
     let workflow_task_label = identity.workflow_task_label;
@@ -19006,7 +19016,7 @@ fn annotate_child_model_error_with_origin(
 const SUBAGENT_SUMMARY_CHAR_BUDGET: usize = 12_000;
 
 fn subagent_summary_char_budget() -> usize {
-    crate::tools::large_output_router::WorkshopConfig::active_tool_result_max_bytes()
+    crate::tools::large_output_router::active_tool_result_max_bytes()
         .map(|bytes| bytes.clamp(SUBAGENT_SUMMARY_CHAR_BUDGET, 2 * 1024 * 1024))
         .unwrap_or(SUBAGENT_SUMMARY_CHAR_BUDGET)
 }
@@ -20309,4 +20319,74 @@ mod captured_worker_origin_tests {
         );
         manager.coordination.validate_replay().unwrap();
     }
+}
+
+#[derive(Debug)]
+pub struct FleetMemberStart {
+    pub operation_key: String,
+    pub fleet: crate::fleet::store::FleetFile,
+    pub member_id: String,
+    pub display_name: String,
+    pub prompt: String,
+}
+
+pub(crate) async fn start_fleet_member(
+    manager: SharedSubAgentManager,
+    runtime: SubAgentRuntime,
+    start: FleetMemberStart,
+) -> Result<String, String> {
+    start.fleet.validate().map_err(|error| error.to_string())?;
+    let member = start
+        .fleet
+        .member(&start.member_id)
+        .ok_or_else(|| format!("Fleet member `{}` is not in this Fleet.", start.member_id))?;
+    if member.provider.is_none() || member.model.is_none() {
+        return Err(format!(
+            "Fleet member `{}` must pin an exact provider and model.",
+            start.member_id
+        ));
+    }
+    let request = serde_json::to_string(&json!({
+        "fleet": &start.fleet,
+        "member_id": &start.member_id,
+        "display_name": &start.display_name,
+        "prompt": &start.prompt,
+    }))
+    .map_err(|error| error.to_string())?;
+    if let Some((accepted, agent_id)) = manager.read().await.member_starts.get(&start.operation_key)
+    {
+        return if *accepted == request {
+            Ok(agent_id.clone())
+        } else {
+            Err("This operation key already started a different member request.".to_string())
+        };
+    }
+    let roster = crate::fleet::identity::roster_from_fleet(
+        &start.fleet,
+        crate::fleet::store::FleetScope::Personal,
+        std::path::Path::new("account-fleet"),
+    );
+    let input = json!({
+        "action": "start",
+        "profile": start.member_id,
+        "name": start.member_id,
+        "prompt": start.prompt,
+    });
+    let (result, _) = spawn_subagent_from_input(
+        input,
+        Arc::clone(&manager),
+        runtime,
+        false,
+        None,
+        None,
+        Some(&roster),
+    )
+    .await
+    .map_err(|error| error.to_string())?;
+    manager
+        .write()
+        .await
+        .member_starts
+        .insert(start.operation_key, (request, result.agent_id.clone()));
+    Ok(result.agent_id)
 }

@@ -1578,7 +1578,7 @@ pub(super) async fn run_child_agent(
     let config = crate::core::engine::EngineConfig {
         workspace: runtime.context.workspace.clone(),
         model: runtime.model.clone(),
-        max_steps: crate::core::engine::turn_budget::resolve_max_model_steps(Some(max_steps)),
+        max_steps: codewhale_runtime::turn_budget::resolve_max_model_steps(Some(max_steps)),
         compaction: runtime.compaction.clone(),
         subagent_api_timeout: runtime.step_api_timeout,
         auto_review_policy: runtime.auto_review_policy.as_ref().clone(),

@@ -957,8 +957,7 @@ fn highlight_incremental_code_line(
 /// Convenience wrapper: parse + render in one call.
 ///
 /// Equivalent to `render_parsed(&parse(content), width, base_style)`. Callers
-/// that don't manage their own cache (the Thinking body, the immediate message
-/// body) use this.
+/// that don't manage their own cache (the archived-context body) use this.
 #[must_use]
 pub fn render_markdown(content: &str, width: u16, base_style: Style) -> Vec<Line<'static>> {
     let parsed = parse(content);

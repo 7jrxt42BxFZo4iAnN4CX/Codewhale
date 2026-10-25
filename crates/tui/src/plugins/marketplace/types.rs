@@ -24,7 +24,8 @@ use serde::{Deserialize, Serialize};
 
 use super::super::install::PluginInstallSource;
 use super::super::manifest::{PluginCompatibility, PluginInventory, PluginWhen};
-use super::super::types::{PluginDiagnosticLevel, PluginId};
+use super::super::types::PluginDiagnosticLevel;
+use codewhale_config::PluginId;
 
 /// Which real catalog format a document follows.
 ///

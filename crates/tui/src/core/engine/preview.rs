@@ -776,7 +776,9 @@ pub(crate) fn active_tool_catalog_sha256(tools: &[Tool]) -> String {
         canonical.push('\u{1}');
         canonical.push_str(&tool.description);
         canonical.push('\u{1}');
-        canonical.push_str(&crate::client::canonical_json(&tool.input_schema));
+        canonical.push_str(&codewhale_runtime::hashing::canonical_json(
+            &tool.input_schema,
+        ));
         canonical.push('\n');
     }
     codewhale_runtime::hashing::sha256_hex(canonical.as_bytes())

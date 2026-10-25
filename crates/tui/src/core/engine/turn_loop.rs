@@ -1498,7 +1498,7 @@ impl Engine {
         // R1: restart the cumulative per-turn wall-clock budget. This is the
         // only place it is started, so exactly one turn owns it at a time.
         self.turn_wall_clock =
-            crate::core::engine::turn_budget::TurnWallClock::start(self.config.turn_wall_clock);
+            codewhale_runtime::turn_budget::TurnWallClock::start(self.config.turn_wall_clock);
         self.turn_heartbeat.begin_turn(&turn.id);
 
         // Only interactive TUI hosts own terminal chrome. Headless exec,
@@ -1642,7 +1642,7 @@ impl Engine {
         // Phase 3), the host slept mid-turn (#2990), or a host hit a
         // mid-stream network drop (v0.9.4 Terminal-Bench P0), we re-issue
         // the request up to `[tui].stream_max_resumes` times (default
-        // MAX_STREAM_RETRIES) before surfacing the failure to the user. A
+        // DEFAULT_STREAM_MAX_RESUMES) before surfacing the failure to the user. A
         // stream that never opened (#6699) spends the same budget.
         // `StreamRetryBudget` enforces that bound in mechanism —
         // `authorize()` is the only way to spend a resume.
@@ -4957,7 +4957,7 @@ impl Engine {
                     // to the conversation, and no tool from the incomplete
                     // response has executed, so break out and let the
                     // post-loop block re-issue the request (bounded by
-                    // MAX_STREAM_RETRIES), exactly like the #2990
+                    // DEFAULT_STREAM_MAX_RESUMES), exactly like the #2990
                     // sleep-resume. Do NOT emit an error event here: the
                     // exec host forwards every error event onto the
                     // stream-json error channel, and a successful retry
@@ -4994,7 +4994,7 @@ impl Engine {
                     // Interactive TUI: a network/timeout-class stream drop
                     // after partial text (but before any tool call) should
                     // preserve the visible fragment and re-issue the
-                    // request, bounded by MAX_STREAM_RETRIES. This keeps the
+                    // request, bounded by DEFAULT_STREAM_MAX_RESUMES. This keeps the
                     // turn alive instead of failing with a terminal-looking
                     // error. The resume is typed state — no synthetic user
                     // continuation message is appended.
@@ -6208,7 +6208,7 @@ mod stream_timeout_tests {
     fn awaiting_model_bound_covers_the_http1_fallback() {
         for (open, idle) in [
             (
-                crate::client::resolve_stream_open_timeout(None),
+                codewhale_config::resolve_stream_open_timeout(None),
                 Duration::from_secs(crate::config::DEFAULT_STREAM_CHUNK_TIMEOUT_SECS),
             ),
             (Duration::from_secs(300), Duration::from_secs(60)),

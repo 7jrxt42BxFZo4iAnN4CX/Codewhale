@@ -599,7 +599,7 @@ impl Engine {
         // when reqwest yields chunk decode errors three times in a row;
         // most of the time those are recoverable proxy / HTTP/2 issues
         // and the request can simply be re-issued. Re-issue silently up
-        // to MAX_STREAM_RETRIES, but only when the stream produced
+        // to DEFAULT_STREAM_MAX_RESUMES, but only when the stream produced
         // nothing actionable — if any tool call landed or text was
         // streamed, ship the partial state to the rest of the turn
         // pipeline so we don't double-bill the user by re-running it.

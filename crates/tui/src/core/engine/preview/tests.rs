@@ -1004,7 +1004,7 @@ async fn assert_preview_matches_first_wire_body(
     let first_wire_body: serde_json::Value =
         serde_json::from_slice(&requests[0].body).expect("first HTTP body is JSON");
     let first_wire_hash = codewhale_runtime::hashing::sha256_hex(
-        crate::client::canonical_json(&first_wire_body).as_bytes(),
+        codewhale_runtime::hashing::canonical_json(&first_wire_body).as_bytes(),
     );
     assert_eq!(
         preview_hash, first_wire_hash,
@@ -1600,7 +1600,7 @@ async fn assert_matrix_route(route: &MatrixRoute) {
 
     // --- Body identity, byte accounting, and size estimates ----------
     let facts_body = manifest.body.exact().expect("a prompted body is exact");
-    let canonical = crate::client::canonical_json(&body);
+    let canonical = codewhale_runtime::hashing::canonical_json(&body);
     assert_eq!(
         facts_body.body_sha256,
         codewhale_runtime::hashing::sha256_hex(canonical.as_bytes()),
@@ -1647,7 +1647,9 @@ async fn assert_matrix_route(route: &MatrixRoute) {
     assert_eq!(
         facts_body.tool_schema_wire_sha256,
         body.get("tools").map(|tools| {
-            codewhale_runtime::hashing::sha256_hex(crate::client::canonical_json(tools).as_bytes())
+            codewhale_runtime::hashing::sha256_hex(
+                codewhale_runtime::hashing::canonical_json(tools).as_bytes(),
+            )
         }),
         "{name}: the tool-schema digest must be over the schemas on the wire"
     );

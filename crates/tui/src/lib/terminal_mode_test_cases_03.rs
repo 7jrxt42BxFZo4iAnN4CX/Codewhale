@@ -10,7 +10,7 @@
         let defaulted = exec_max_steps(args.max_turns);
         assert_eq!(
             defaulted,
-            crate::core::engine::turn_budget::DEFAULT_MAX_MODEL_STEPS
+            codewhale_runtime::turn_budget::DEFAULT_MAX_MODEL_STEPS
         );
         assert_eq!(
             crate::core::turn::TurnContext::new(defaulted).step_limit(),
@@ -25,7 +25,7 @@
         assert_eq!(capped.stop_diagnostics.effective_max_steps, Some(7));
         assert_eq!(
             exec_max_steps(Some(u32::MAX)),
-            crate::core::engine::turn_budget::DEFAULT_MAX_MODEL_STEPS,
+            codewhale_runtime::turn_budget::DEFAULT_MAX_MODEL_STEPS,
             "the compatibility sentinel remains unbounded"
         );
     }

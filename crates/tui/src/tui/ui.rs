@@ -46,7 +46,6 @@ use tracing;
 #[cfg(target_os = "windows")]
 use windows::Win32::System::Console::{GetConsoleMode, GetStdHandle, SetConsoleMode};
 
-use crate::audit::log_sensitive_event;
 use crate::automation_manager::{AutomationManager, AutomationSchedulerConfig, spawn_scheduler};
 use crate::client::{
     CACHE_WARMUP_MAX_TOKENS, CacheWarmupKey, CodewhaleClient, PromptInspection,
@@ -110,6 +109,7 @@ use crate::work_graph::task_owner_snapshot;
 use codewhale_localization::{MessageId, tr};
 use codewhale_models::{ContentBlock, Message, MessageRequest, SystemPrompt, Usage};
 use codewhale_palette as palette;
+use codewhale_runtime::audit::log_sensitive_event;
 // SelectionAutoscroll unused
 use crate::tui::motion::{FrameRequester, MotionMode};
 use crate::tui::session_picker::SessionPickerView;
@@ -631,7 +631,7 @@ const BALANCE_FETCH_COOLDOWN: Duration = Duration::from_secs(60);
 /// Shared `reqwest::Client` for balance fetches so connection pools are
 /// reused across successive background polls.
 static BALANCE_CLIENT: LazyLock<::reqwest::Client> = LazyLock::new(|| {
-    crate::tls::reqwest_client_builder()
+    codewhale_release::tls::reqwest_client_builder()
         .timeout(Duration::from_secs(10))
         .build()
         .unwrap_or_default()
@@ -1329,7 +1329,7 @@ pub(crate) fn flush_background_finished(app: &mut App, config: &Config, parent_i
         return;
     }
     let mode = config.notifications_config().subagent_completion;
-    let finite_work_live = session_state::live_running_agent_count(app) > 0
+    let finite_work_live = session_state::live_running_agent_count(app, Instant::now()) > 0
         || frame::workflow_tool_is_running(app)
         || app.task_panel.iter().any(|entry| {
             // A stale entry (a recovered task whose ownership is unverified)

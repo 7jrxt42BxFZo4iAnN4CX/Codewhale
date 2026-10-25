@@ -260,7 +260,7 @@ async fn post_chat_completions(
 ) -> Result<serde_json::Value, String> {
     crate::client::apply_openrouter_vendor(&mut body, openrouter_vendor);
     let _inference = crate::client::acquire_remote_control_inference_participant().await;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let resp = client
         .post(chat_completions_url(base_url))
         .header("Content-Type", "application/json")

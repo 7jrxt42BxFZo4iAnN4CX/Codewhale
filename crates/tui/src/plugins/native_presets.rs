@@ -116,7 +116,7 @@ pub(crate) fn admitted_entries(
 ) -> Vec<(
     NativePresetRef,
     NativePresetMetadata,
-    super::types::PluginAuthority,
+    codewhale_config::PluginAuthority,
 )> {
     let (sources, _) =
         super::runtime::active_component_sources(plugins, PluginActivationCapability::Native);

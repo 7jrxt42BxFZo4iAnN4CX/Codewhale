@@ -473,7 +473,7 @@ pub struct EngineConfig {
     /// schemas into DeepSeek beta strict mode.
     pub strict_tool_mode: bool,
     /// Workshop / large-tool-output routing (#548). `None` disables routing.
-    pub workshop: Option<crate::tools::large_output_router::WorkshopConfig>,
+    pub workshop: Option<codewhale_config::WorkshopConfig>,
     /// Which search backend `web_search` should use. Default: Firecrawl.
     pub search_provider: crate::config::SearchProvider,
     /// Optional Firecrawl key, or required key for other API search providers.
@@ -501,12 +501,12 @@ pub struct EngineConfig {
     pub turn_wall_clock: Duration,
     /// Per-step cap on accumulated streamed content, in bytes (R1). Resolved
     /// from `[tui].stream_max_content_mb`. Pre-R1 this was the hard-coded
-    /// `STREAM_MAX_CONTENT_BYTES`; it is still finite by default and now
+    /// `DEFAULT_STREAM_MAX_CONTENT_BYTES`; it is still finite by default and now
     /// overridable.
     pub stream_max_content_bytes: usize,
     /// Per-step cap on a single stream's wall-clock duration (R1). Resolved
     /// from `[tui].stream_max_duration_secs`. Pre-R1 this was the hard-coded
-    /// `STREAM_MAX_DURATION_SECS`.
+    /// `DEFAULT_STREAM_MAX_DURATION_SECS`.
     pub stream_max_duration: Duration,
     /// Stream-level retry budgets (#6700): whole-request resumes (also spent
     /// by stream-open failures, #6699), in-stream transparent retries, and
@@ -614,7 +614,7 @@ impl Default for EngineConfig {
             network_policy: None,
             snapshots_enabled: true,
             snapshots_max_workspace_bytes:
-                crate::snapshot::DEFAULT_MAX_WORKSPACE_BYTES_FOR_SNAPSHOT,
+                codewhale_config::DEFAULT_MAX_WORKSPACE_BYTES_FOR_SNAPSHOT,
             record_restore_points: false,
             lsp_config: None,
             runtime_services: RuntimeToolServices::default(),
@@ -656,7 +656,7 @@ impl Default for EngineConfig {
             stream_max_content_bytes: turn_budget::DEFAULT_STREAM_MAX_CONTENT_BYTES,
             stream_max_duration: Duration::from_secs(turn_budget::DEFAULT_STREAM_MAX_DURATION_SECS),
             stream_retry_limits: turn_budget::StreamRetryLimits::default(),
-            stream_open_timeout: crate::client::resolve_stream_open_timeout(None),
+            stream_open_timeout: codewhale_config::resolve_stream_open_timeout(None),
             subagent_heartbeat_timeout: Duration::from_secs(
                 crate::config::DEFAULT_SUBAGENT_HEARTBEAT_TIMEOUT_SECS,
             ),
@@ -2072,7 +2072,7 @@ impl Engine {
         mut host: Option<EngineHostSetup>,
         supplied_subagent_manager: Option<SharedSubAgentManager>,
     ) -> (Self, EngineHandle) {
-        crate::tls::ensure_rustls_crypto_provider();
+        codewhale_release::tls::ensure_rustls_crypto_provider();
 
         // Compaction re-states the user's `/anchor` file after its summary;
         // hand it the workspace root once so every prepared pass can read it.
@@ -4008,6 +4008,38 @@ impl Engine {
                                         )),
                                     ));
                                 }
+                            }
+                        }
+                        Op::StartFleetMember { start, tx } => {
+                            let result = match self.off_turn_subagent_runtime() {
+                                Some(runtime) => {
+                                    crate::tools::subagent::start_fleet_member(
+                                        Arc::clone(&self.subagent_manager),
+                                        runtime,
+                                        *start,
+                                    )
+                                    .await
+                                }
+                                None => {
+                                    Err("This session has no model connection to start a member."
+                                        .to_string())
+                                }
+                            };
+                            if let Some(tx) = tx
+                                .lock()
+                                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                                .take()
+                            {
+                                let _ = tx.send(result);
+                            }
+                            let refresh = {
+                                let manager = self.subagent_manager.read().await;
+                                agent_list_event(&manager, &self.session.id)
+                            };
+                            if self.tx_event.try_send(refresh).is_err() {
+                                tracing::debug!(
+                                    "Event channel full; dropping StartFleetMember refresh"
+                                );
                             }
                         }
                         Op::FollowUpSubAgent { agent_id, text } => {
@@ -7590,7 +7622,7 @@ impl Engine {
         let Some(path) = self.api_config.loaded_config_path.as_deref() else {
             return self.config.network_policy.clone();
         };
-        let Some(document) = crate::config::network_policy_from_document(path) else {
+        let Some(document) = crate::network_policy::network_policy_from_document(path) else {
             // The document carries no `[network]` table. Keep what the session
             // resolved: removing a table must not ungate a gated run.
             return self.config.network_policy.clone();
@@ -7928,7 +7960,7 @@ impl Engine {
                 )))
                 .await;
         }
-        pool = pool.with_backend(crate::mcp::McpBackend::from_config(&self.api_config));
+        pool = pool.with_backend(self.api_config.mcp_backend());
         pool = pool.with_disallowed_tools(self.config.disallowed_tools.clone().unwrap_or_default());
         if let Some(decider) = self.current_network_decider() {
             pool = pool.with_network_policy(decider);
@@ -10470,7 +10502,7 @@ use context::{context_input_budget_for_provider, effective_max_output_tokens};
 mod dispatch;
 mod lsp_hooks;
 pub(crate) mod reviewer;
-mod streaming;
+pub(crate) mod streaming;
 mod token_estimate_cache;
 pub(crate) mod tool_catalog;
 pub(crate) mod tool_execution;
@@ -10479,7 +10511,7 @@ pub(crate) use tool_execution::pin_replay_span_sequence;
 mod tool_media;
 mod tool_preparation;
 mod tool_setup;
-pub(crate) mod turn_budget;
+use codewhale_runtime::turn_budget;
 pub(crate) mod turn_heartbeat;
 pub(crate) mod turn_loop;
 pub(crate) use approval::HumanDecision;
@@ -10516,10 +10548,6 @@ use self::streaming::{
     should_resume_interactive_after_network_drop, should_transparently_retry_stream,
     sleep_gap_detected, stream_read_error_user_message,
 };
-#[cfg(test)]
-use self::streaming::{
-    MAX_STREAM_ERRORS_BEFORE_FAIL, MAX_STREAM_RETRIES, MAX_TRANSPARENT_STREAM_RETRIES,
-};
 use self::tool_catalog::{
     CODE_EXECUTION_TOOL_NAME, EXECUTE_TOOLS_TOOL_NAME, JS_EXECUTION_TOOL_NAME,
     REQUEST_USER_INPUT_NAME, ToolSurfacePolicy, active_tools_for_request,
@@ -10536,6 +10564,10 @@ use self::tool_catalog::{
 pub(crate) use self::tool_execution::emit_tool_audit;
 use self::tool_preparation::{prepare_tool_call, reprepare_tool_call_after_hook};
 use crate::tools::js_execution::execute_js_execution_tool;
+#[cfg(test)]
+use codewhale_runtime::turn_budget::{
+    DEFAULT_STREAM_MAX_ERRORS, DEFAULT_STREAM_MAX_RESUMES, DEFAULT_STREAM_MAX_TRANSPARENT_RETRIES,
+};
 
 #[cfg(test)]
 pub(crate) mod tests;

@@ -167,7 +167,7 @@ mod tests {
         for bundle in crate::plugins::builtin::materialized_dirs() {
             inside("built-in plugins", &bundle);
         }
-        let audit = crate::audit::audit_log_path().expect("audit log path");
+        let audit = codewhale_runtime::audit::audit_log_path().expect("audit log path");
         assert!(
             audit.starts_with(std::env::temp_dir()),
             "the audit log resolved outside the temp dir: {}",

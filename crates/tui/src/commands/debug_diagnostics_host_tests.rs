@@ -255,12 +255,12 @@ fn cost_coverage_is_currency_specific_for_mixed_deepseek_openai() {
     app.accrue_session_cost_estimate(deepseek.estimate.expect("DeepSeek priced"));
     app.accrue_session_cost_estimate(openai.estimate.expect("OpenAI priced"));
 
-    app.cost_currency = crate::pricing::CostCurrency::Usd;
+    app.cost_currency = codewhale_config::pricing::CostCurrency::Usd;
     let usd = cost(&mut app).message.expect("USD report");
     assert!(usd.contains("Covered: 2 of 2"), "{usd}");
     assert!(usd.contains("Estimated total:"), "{usd}");
 
-    app.cost_currency = crate::pricing::CostCurrency::Cny;
+    app.cost_currency = codewhale_config::pricing::CostCurrency::Cny;
     let cny = cost(&mut app).message.expect("CNY report");
     assert!(cny.contains("Covered: 1 of 2"), "{cny}");
     assert!(cny.contains("Priced subtotal:"), "{cny}");
@@ -1480,9 +1480,10 @@ mod cost_breakdown_tests {
     use super::*;
     use crate::commands::contract::DebugCostComponents as CostComponents;
     use crate::config::Config;
-    use crate::pricing::{CostCurrency, CostEstimate, TurnCostAudit};
+    use crate::pricing::{CostEstimate, TurnCostAudit};
     use crate::tui::app::App;
     use crate::tui::app::{TuiOptions, TurnCacheRecord};
+    use codewhale_config::pricing::CostCurrency;
     use std::path::PathBuf;
     use std::time::Instant;
 

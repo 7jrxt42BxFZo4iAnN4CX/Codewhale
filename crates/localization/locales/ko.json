@@ -812,7 +812,7 @@
   "KbSendDraft": "대기 중이면 전송, 실행 중이면 대기열에 추가; 입력창이 비어 있으면 다음 후속 메시지를 즉시 전송",
   "KbSteerCurrentTurn": "현재 턴 조정 (대기 중에는 일반 전송)",
   "KbCloseMenu": "메뉴 닫기, 요청 취소, 초안 버리기, 또는 입력 지우기",
-  "KbCancelOrExit": "요청 취소, 유휴 상태면 종료",
+  "KbCancelOrExit": "취소, 초안 지우기 또는 유휴 상태에서 종료",
   "KbShellControls": "실행 중인 셸 대기를 /jobs로 이동",
   "KbExitEmpty": "입력창이 비어 있으면 종료",
   "KbCommandPalette": "명령 팔레트 열기",

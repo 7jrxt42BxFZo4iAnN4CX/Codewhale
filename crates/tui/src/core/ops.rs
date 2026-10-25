@@ -16,6 +16,8 @@ use std::path::PathBuf;
 /// Prefix used for tool-call ids created by local composer shell shortcuts.
 pub const USER_SHELL_TOOL_ID_PREFIX: &str = "user_shell_";
 
+pub type FleetMemberStarted = Result<String, String>;
+
 /// Snapshot of session state for saving to disk.
 /// Returned by `Op::GetSessionSnapshot` via a oneshot channel.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -320,6 +322,13 @@ pub enum Op {
     /// id) for an interrupted or completed child. Terminal failed/cancelled
     /// children answer with a receipt explaining why they cannot continue.
     FollowUpSubAgent { agent_id: String, text: String },
+
+    StartFleetMember {
+        start: Box<crate::tools::subagent::FleetMemberStart>,
+        tx: std::sync::Arc<
+            std::sync::Mutex<Option<tokio::sync::oneshot::Sender<FleetMemberStarted>>>,
+        >,
+    },
 
     /// Change the operating mode
     ChangeMode {

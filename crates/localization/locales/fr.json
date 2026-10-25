@@ -795,7 +795,7 @@
   "KbSendDraft": "Envoyer si inactif ; mettre en file si occupé ; composer vide envoie le prochain suivi en file",
   "KbSteerCurrentTurn": "Orienter le tour en cours (envoie normalement si inactif)",
   "KbCloseMenu": "Fermer le menu, annuler la requête, abandonner le brouillon ou vider la saisie",
-  "KbCancelOrExit": "Annuler la requête, ou quitter si inactif",
+  "KbCancelOrExit": "Annuler, effacer le brouillon ou quitter si inactif",
   "KbShellControls": "Déplacer l'attente du shell en cours vers /jobs",
   "KbExitEmpty": "Quitter quand la saisie est vide",
   "KbCommandPalette": "Ouvrir la palette de commandes",

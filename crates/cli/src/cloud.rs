@@ -196,6 +196,12 @@ enum CloudAgentsCommand {
         /// Assign an existing account Project to this Agent.
         #[arg(long)]
         project_id: Option<String>,
+        /// Exact configured provider id saved in the whale's Fleet member.
+        #[arg(long, requires = "model")]
+        provider: Option<String>,
+        /// Exact model id on that provider.
+        #[arg(long, requires = "provider")]
+        model: Option<String>,
         #[arg(long)]
         operation_key: String,
     },
@@ -632,6 +638,23 @@ struct AccountAgent {
     #[serde(default)]
     project_id: String,
     revision: u64,
+    #[serde(default)]
+    configuration: Option<AgentConfiguration>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentConfiguration {
+    #[serde(default)]
+    revision: u64,
+    #[serde(default)]
+    model: Option<AgentModelRoute>,
+}
+
+#[derive(Clone, Deserialize)]
+struct AgentModelRoute {
+    provider: String,
+    model: String,
 }
 
 #[derive(Deserialize)]
@@ -1176,6 +1199,7 @@ impl<'a, T: CloudTransport> CloudClient<'a, T> {
         &self,
         name: &str,
         project_id: Option<&str>,
+        route: Option<(&str, &str)>,
         operation_key: &str,
     ) -> Result<AccountAgent> {
         let name = validate_named_text(name, "Agent name", 80)?;
@@ -1184,6 +1208,12 @@ impl<'a, T: CloudTransport> CloudClient<'a, T> {
             "name": name,
             "operationKey": operation_key,
         });
+        if let Some((provider, model)) = route {
+            body["model"] = serde_json::json!({
+                "provider": validate_named_text(provider, "Provider", 256)?,
+                "model": validate_named_text(model, "Model", 256)?,
+            });
+        }
         if let Some(project_id) = project_id {
             body["projectId"] = serde_json::json!(validate_resource_id(project_id, "Project")?);
         }
@@ -2313,16 +2343,33 @@ fn run_agents<T: CloudTransport, W: Write>(
             writeln!(out, "Codewhale Agents ({})", listing.agents.len())?;
             for agent in listing.agents {
                 validate_resource_id(&agent.id, "Agent")?;
-                writeln!(out, "{} — {}", printable(&agent.name), agent.id)?;
+                match agent
+                    .configuration
+                    .as_ref()
+                    .and_then(|configuration| configuration.model.as_ref())
+                {
+                    Some(route) => writeln!(
+                        out,
+                        "{} — {} ({}/{})",
+                        printable(&agent.name),
+                        agent.id,
+                        printable(&route.provider),
+                        printable(&route.model)
+                    )?,
+                    None => writeln!(out, "{} — {}", printable(&agent.name), agent.id)?,
+                }
             }
             Ok(())
         }
         CloudAgentsCommand::Create {
             name,
             project_id,
+            provider,
+            model,
             operation_key,
         } => {
-            let agent = client.create_agent(&name, project_id.as_deref(), &operation_key)?;
+            let route = provider.as_deref().zip(model.as_deref());
+            let agent = client.create_agent(&name, project_id.as_deref(), route, &operation_key)?;
             validate_resource_id(&agent.id, "Agent")?;
             if let Some(project_id) = project_id.as_deref()
                 && agent.project_id != validate_resource_id(project_id, "Project")?
@@ -2331,6 +2378,24 @@ fn run_agents<T: CloudTransport, W: Write>(
             }
             writeln!(out, "Agent: {}", printable(&agent.name))?;
             writeln!(out, "ID: {}", agent.id)?;
+            if let Some(configuration) = agent.configuration.as_ref()
+                && let Some(saved) = configuration.model.as_ref()
+            {
+                if route.is_some_and(|(provider, model)| {
+                    provider != saved.provider || model != saved.model
+                }) {
+                    bail!("The Codewhale service saved a different model than requested");
+                }
+                writeln!(
+                    out,
+                    "Model: {}/{} (Fleet revision {})",
+                    printable(&saved.provider),
+                    printable(&saved.model),
+                    configuration.revision
+                )?;
+            } else if route.is_some() {
+                bail!("The Codewhale service did not save the requested model");
+            }
             if !agent.project_id.is_empty() {
                 writeln!(
                     out,

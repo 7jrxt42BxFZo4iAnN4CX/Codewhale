@@ -155,10 +155,10 @@ async fn http_and_web_server_thread_manager_installs_configured_workshop_byte_bu
     let workspace = temp.path().join("workspace");
     fs::create_dir_all(&workspace)?;
     let config = Config {
-        workshop: Some(crate::tools::large_output_router::WorkshopConfig {
+        workshop: Some(codewhale_config::WorkshopConfig {
             read_result_max_bytes: Some(73_728),
             tool_result_max_bytes: Some(65_536),
-            ..crate::tools::large_output_router::WorkshopConfig::default()
+            ..codewhale_config::WorkshopConfig::default()
         }),
         ..Config::default()
     };
@@ -178,20 +178,20 @@ async fn http_and_web_server_thread_manager_installs_configured_workshop_byte_bu
     assert_eq!(startup_activation.read_result_max_bytes, Some(73_728));
     assert_eq!(startup_activation.tool_result_max_bytes, Some(65_536));
     assert_eq!(
-        crate::tools::large_output_router::WorkshopConfig::active_read_result_max_bytes(),
+        crate::tools::large_output_router::active_read_result_max_bytes(),
         Some(73_728)
     );
     assert_eq!(
-        crate::tools::large_output_router::WorkshopConfig::active_tool_result_max_bytes(),
+        crate::tools::large_output_router::active_tool_result_max_bytes(),
         Some(65_536)
     );
 
     let reload_activation = runtime_threads
         .reload_config(Config {
-            workshop: Some(crate::tools::large_output_router::WorkshopConfig {
+            workshop: Some(codewhale_config::WorkshopConfig {
                 read_result_max_bytes: Some(81_920),
                 tool_result_max_bytes: Some(77_824),
-                ..crate::tools::large_output_router::WorkshopConfig::default()
+                ..codewhale_config::WorkshopConfig::default()
             }),
             ..Config::default()
         })
@@ -199,14 +199,14 @@ async fn http_and_web_server_thread_manager_installs_configured_workshop_byte_bu
     assert_eq!(reload_activation.read_result_max_bytes, Some(81_920));
     assert_eq!(reload_activation.tool_result_max_bytes, Some(77_824));
     assert_eq!(
-        crate::tools::large_output_router::WorkshopConfig::active_read_result_max_bytes(),
+        crate::tools::large_output_router::active_read_result_max_bytes(),
         Some(81_920)
     );
     assert_eq!(
-        crate::tools::large_output_router::WorkshopConfig::active_tool_result_max_bytes(),
+        crate::tools::large_output_router::active_tool_result_max_bytes(),
         Some(77_824)
     );
-    crate::tools::large_output_router::WorkshopConfig::install_active(None);
+    crate::tools::large_output_router::install_active_workshop(None);
     Ok(())
 }
 
@@ -1679,7 +1679,7 @@ async fn health_and_tasks_endpoints_work() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let health: serde_json::Value = client
         .get(format!("http://{addr}/health"))
@@ -1742,7 +1742,7 @@ async fn created_tasks_keep_their_given_name() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let named: serde_json::Value = client
         .post(format!("http://{addr}/v1/tasks"))
@@ -1827,7 +1827,7 @@ async fn omitted_runtime_models_use_the_active_provider_default() -> Result<()> 
         ] {
             let mut request = pin;
             request["prompt"] = json!("reject missing pinned model");
-            let rejected = crate::tls::reqwest_client()
+            let rejected = codewhale_release::tls::reqwest_client()
                 .post(format!("http://{addr}/v1/tasks"))
                 .json(&request)
                 .send()
@@ -1841,7 +1841,7 @@ async fn omitted_runtime_models_use_the_active_provider_default() -> Result<()> 
             );
         }
 
-        let created: serde_json::Value = crate::tls::reqwest_client()
+        let created: serde_json::Value = codewhale_release::tls::reqwest_client()
             .post(format!("http://{addr}/v1/tasks"))
             .json(&json!({ "prompt": format!("{label} omitted model") }))
             .send()
@@ -1851,7 +1851,7 @@ async fn omitted_runtime_models_use_the_active_provider_default() -> Result<()> 
             .await?;
         assert_eq!(created["model"], expected, "{label} durable task model");
 
-        let stream_client = crate::tls::reqwest_client();
+        let stream_client = codewhale_release::tls::reqwest_client();
         let mut stream_task = tokio::spawn(async move {
             stream_client
                 .post(format!("http://{addr}/v1/stream"))
@@ -1924,7 +1924,7 @@ async fn mcp_tools_endpoint_is_passive_until_connect_requested() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let passive: serde_json::Value = client
         .get(format!("http://{addr}/v1/apps/mcp/tools"))
@@ -1972,7 +1972,7 @@ async fn runtime_token_guard_protects_v1_routes() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let health = client
         .get(format!("http://{addr}/health"))
@@ -2059,7 +2059,7 @@ async fn web_bootstrap_sets_strict_cookie_once_and_preserves_v1_auth() -> Result
         tracing::warn!("needs socket run: loopback listener is unavailable");
         return Ok(());
     };
-    let client = crate::tls::reqwest_client_builder()
+    let client = codewhale_release::tls::reqwest_client_builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
 
@@ -2247,7 +2247,7 @@ async fn web_assets_are_absent_outside_web_mode() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     for path in [
         "/",
         "/assets/codewhale-web.css",
@@ -2293,7 +2293,7 @@ async fn thread_summary_includes_workspace_branch_metadata() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let git_thread: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
@@ -2391,7 +2391,7 @@ async fn workspace_file_search_auth_matching_and_bounds() -> Result<()> {
     )
     .await?
     .context("file search test requires a loopback listener")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let url = format!("http://{addr}/v1/workspace/files/search");
     let search_url = |pairs: &[(&str, &str)]| {
         let mut url = reqwest::Url::parse(&url).unwrap();
@@ -2492,7 +2492,7 @@ async fn workspace_and_automation_endpoints_work() -> Result<()> {
         return Ok(());
     };
     let (automations, tasks) = automation_rx.await?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let workspace: serde_json::Value = client
         .get(format!("http://{addr}/v1/workspace/status"))
@@ -2739,7 +2739,7 @@ async fn fleet_status_runtime_api_exposes_state_and_actions() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let runs: serde_json::Value = client
         .get(format!("http://{addr}/v1/fleet/runs"))
@@ -3083,7 +3083,7 @@ async fn agent_runs_runtime_api_exposes_persisted_worker_receipts() -> Result<()
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let runs: serde_json::Value = client
         .get(format!("http://{addr}/v1/agent-runs"))
@@ -3210,7 +3210,7 @@ async fn agent_run_cancel_stops_a_live_child_and_returns_its_receipt() -> Result
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let response = client
         .post(format!("http://{addr}/v1/agent-runs/{agent_id}/cancel"))
@@ -3276,7 +3276,7 @@ async fn agent_run_cancel_remains_idempotent_before_receipt_persistence() -> Res
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     for _ in 0..2 {
         let response = client
             .post(format!("http://{addr}/v1/agent-runs/{agent_id}/cancel"))
@@ -3339,7 +3339,7 @@ async fn agent_run_cancel_refuses_a_run_owned_by_a_session_it_does_not_host() ->
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let response = client
         .post(format!(
             "http://{addr}/v1/agent-runs/agent_elsewhere/cancel"
@@ -3359,7 +3359,7 @@ async fn stream_requires_prompt() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .post(format!("http://{addr}/v1/stream"))
@@ -3395,7 +3395,7 @@ async fn compatibility_stream_closes_losslessly_across_replay_live_handoff() -> 
         return Ok(());
     };
 
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let stream_client = client.clone();
     let stream_task = tokio::spawn(async move {
         let response = stream_client
@@ -3608,7 +3608,7 @@ async fn compatibility_stream_exposes_and_resolves_user_input_without_answer_ech
         return Ok(());
     };
 
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let stream_client = client.clone();
     let request_task = tokio::spawn(async move {
         let response = stream_client
@@ -3951,7 +3951,7 @@ async fn thread_endpoints_expose_lifecycle_contract() -> Result<()> {
     let Some((addr, runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let created: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
@@ -4232,7 +4232,7 @@ async fn turn_endpoint_operation_key_returns_original_and_conflicts_on_mismatch(
     let Some((addr, runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let created: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
         .json(&json!({}))
@@ -4375,7 +4375,7 @@ async fn turn_operation_lookup_is_authenticated_read_only_and_survives_restart()
     )
     .await?
     .context("loopback listener required for turn operation lookup proof")?;
-    let client = crate::tls::reqwest_client_builder()
+    let client = codewhale_release::tls::reqwest_client_builder()
         .timeout(ci_scaled(Duration::from_secs(2)))
         .build()?;
     let thread = manager.create_thread(Default::default()).await?;
@@ -4574,7 +4574,7 @@ async fn events_endpoint_respects_since_seq_cursor() -> Result<()> {
     let Some((addr, runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let created: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
@@ -4706,7 +4706,7 @@ async fn thread_event_frames_carry_the_id_a_reconnect_resumes_from() -> Result<(
     let Some((addr, runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let thread = runtime_threads
         .create_thread(CreateThreadRequest::default())
         .await?;
@@ -4982,7 +4982,7 @@ async fn pet_stream_progress_is_opt_in_and_advertised_by_the_actual_endpoint() -
     let thread = runtime_threads
         .create_thread(CreateThreadRequest::default())
         .await?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let response = client
         .get(format!(
             "http://{addr}/v1/threads/{}/events?progress=true",
@@ -5220,7 +5220,7 @@ async fn replay_failure_ends_stream_at_last_delivered_seq_and_resumes_from_it() 
         .emit_event_for_test(&thread.id, None, "item.completed", json!({"n": 3}))
         .await?;
     let last_seq = end_payload["last_seq"].as_u64().context("last_seq")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     for request in [
         client.get(format!(
             "http://{addr}/v1/threads/{}/events?since_seq={last_seq}",
@@ -5256,7 +5256,7 @@ async fn replay_failure_over_http_sends_stream_end_then_eof() -> Result<()> {
     std::io::Write::write_all(&mut journal, b"{malformed-but-terminated}\n")?;
     drop(journal);
 
-    let response = crate::tls::reqwest_client()
+    let response = codewhale_release::tls::reqwest_client()
         .get(format!(
             "http://{addr}/v1/threads/{}/events?since_seq=0",
             thread.id
@@ -5413,7 +5413,7 @@ async fn runtime_shutdown_ends_open_streams_through_graceful_serve() -> Result<(
     let event = runtime_threads
         .emit_event_for_test(&thread.id, None, "item.completed", json!({"n": 1}))
         .await?;
-    let response = crate::tls::reqwest_client()
+    let response = codewhale_release::tls::reqwest_client()
         .get(format!(
             "http://{addr}/v1/threads/{}/events?since_seq=0&progress=true",
             thread.id
@@ -5466,7 +5466,7 @@ async fn thread_events_pre_stream_failures_are_http_errors_not_sse() -> Result<(
     let (addr, runtime_threads, handle) = spawn_test_server()
         .await?
         .context("Runtime socket unavailable for stream error acceptance")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let missing = client
         .get(format!("http://{addr}/v1/threads/thr_missing/events"))
         .send()
@@ -5505,7 +5505,7 @@ async fn steer_and_interrupt_endpoints_work_on_active_turn() -> Result<()> {
     let Some((addr, runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let created: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
@@ -6064,7 +6064,7 @@ async fn stream_endpoint_remains_backward_compatible() -> Result<()> {
     let Some((addr, runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Create a thread and install a mock engine so /v1/stream doesn't call the real API.
     let created: serde_json::Value = client
@@ -6185,7 +6185,7 @@ async fn session_get_returns_404_for_missing_id() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .get(format!("http://{addr}/v1/sessions/nonexistent_id"))
@@ -6202,7 +6202,7 @@ async fn session_endpoints_reject_invalid_id() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let get_resp = client
         .get(format!("http://{addr}/v1/sessions/invalid%20id"))
@@ -6234,7 +6234,7 @@ async fn session_resume_thread_returns_404_for_missing_session() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .post(format!(
@@ -6287,7 +6287,7 @@ async fn session_resume_thread_returns_400_when_saved_custom_provider_was_remove
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let resp = client
         .post(format!(
             "http://{addr}/v1/sessions/sess_removed_custom_provider/resume-thread"
@@ -6346,7 +6346,7 @@ async fn session_resume_thread_creates_thread_from_saved_session() -> Result<()>
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .post(format!(
@@ -6426,7 +6426,7 @@ async fn session_resume_thread_reuses_the_thread_that_already_holds_it() -> Resu
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let url = format!("http://{addr}/v1/sessions/sess_reuse_resume/resume-thread");
 
     let first = client.post(&url).json(&json!({})).send().await?;
@@ -6513,7 +6513,7 @@ async fn session_export_of_a_resumed_thread_leaves_the_source_document_untouched
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let resumed = client
         .post(format!(
             "http://{addr}/v1/sessions/sess_export_source/resume-thread"
@@ -6582,7 +6582,7 @@ async fn session_resume_thread_mints_a_fresh_thread_when_the_document_grew() -> 
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let url = format!("http://{addr}/v1/sessions/sess_grown_resume/resume-thread");
     let first = client.post(&url).json(&json!({})).send().await?;
     assert_eq!(first.status(), StatusCode::CREATED);
@@ -6690,7 +6690,7 @@ async fn session_resume_thread_ignores_an_archived_thread_holding_the_session() 
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let url = format!("http://{addr}/v1/sessions/sess_archived_reuse/resume-thread");
 
     let first = client.post(&url).json(&json!({})).send().await?;
@@ -6730,7 +6730,7 @@ async fn session_create_from_completed_thread_saves_messages() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let created: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
@@ -6898,7 +6898,7 @@ async fn session_export_retry_after_a_crash_binds_the_document_it_wrote() -> Res
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let thread = runtime_threads
         .create_thread(crate::runtime_threads::CreateThreadRequest {
             workspace: Some(root.join("workspace")),
@@ -7017,7 +7017,7 @@ async fn session_create_from_thread_returns_404_for_missing_thread() -> Result<(
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .post(format!("http://{addr}/v1/sessions"))
@@ -7044,7 +7044,7 @@ async fn session_save_without_an_id_keeps_the_conversation_that_owns_the_snapsho
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let created: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
@@ -7163,7 +7163,7 @@ async fn create_seeded_thread(
     root: &FsPath,
     user_text: &str,
 ) -> Result<String> {
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let created: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
         .json(&json!({
@@ -7216,7 +7216,7 @@ async fn undo_endpoint_forks_thread_and_returns_original_user_text() -> Result<(
     };
     let thread_id =
         create_seeded_thread(&addr, &runtime_threads, &root, "Please undo this turn").await?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .post(format!("http://{addr}/v1/threads/{thread_id}/undo"))
@@ -7250,7 +7250,7 @@ async fn undo_endpoint_404s_for_missing_thread() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let resp = client
         .post(format!("http://{addr}/v1/threads/thr_missing/undo"))
         .json(&json!({}))
@@ -7274,7 +7274,7 @@ async fn fork_at_turn_endpoint_cuts_at_the_named_turn() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let created: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
         .json(&json!({
@@ -7445,7 +7445,7 @@ async fn fork_at_turn_endpoint_rejects_a_non_user_turn() -> Result<()> {
     };
     let thread_id =
         create_seeded_thread(&addr, &runtime_threads, &root, "Please fork this turn").await?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .post(format!("http://{addr}/v1/threads/{thread_id}/fork-at-turn"))
@@ -7470,7 +7470,7 @@ async fn patch_undo_endpoint_refuses_turns_it_cannot_prove() -> Result<()> {
     };
     let thread_id =
         create_seeded_thread(&addr, &runtime_threads, &root, "Roll back the patch").await?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // A workspace directory that is not available proves nothing about the
     // files a turn changed: the undo is refused instead of forking the
@@ -8390,7 +8390,7 @@ async fn file_revert_route_probes_as_available_and_404s_unknown_threads() -> Res
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let probe = client
         .get(format!("http://{addr}/v1/threads/__probe__/file-revert"))
@@ -8442,7 +8442,7 @@ async fn file_revert_route_validates_body_then_trust_then_ownership() -> Result<
     fs::create_dir_all(&workspace)?;
     let file = workspace.join("a.txt");
     fs::write(&file, "keep")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let url = format!("http://{addr}/v1/threads/{thread_id}/file-revert");
     let well_formed = json!({
         "path": "a.txt",
@@ -8511,7 +8511,7 @@ async fn restore_routes_refuse_an_active_turn_in_the_workspace() -> Result<()> {
     fs::create_dir_all(&workspace)?;
     let file = workspace.join("a.txt");
     fs::write(&file, "live")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     client
         .patch(format!("http://{addr}/v1/threads/{thread_id}"))
         .json(&json!({ "trust_mode": true }))
@@ -8584,7 +8584,7 @@ async fn retry_endpoint_reuses_dropped_user_text_to_start_a_turn() -> Result<()>
     };
     let thread_id =
         create_seeded_thread(&addr, &runtime_threads, &root, "Retry this request").await?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .post(format!("http://{addr}/v1/threads/{thread_id}/retry"))
@@ -8629,7 +8629,7 @@ async fn session_create_from_thread_rejects_active_turn() -> Result<()> {
     let Some((addr, runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let created: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
@@ -8831,7 +8831,7 @@ async fn session_summary_route_projects_rows_and_honours_archive_filters() -> Re
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let active: Vec<serde_json::Value> = client
         .get(format!(
@@ -8896,7 +8896,7 @@ async fn session_patch_route_renames_archives_and_reports_real_changes() -> Resu
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let patched: serde_json::Value = client
         .patch(format!(
@@ -8979,7 +8979,7 @@ async fn session_patch_route_refuses_a_live_session_with_a_conflict() -> Result<
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     crate::session_manager::set_live_session(Some("sess-live"));
     let conflict = client
@@ -9016,7 +9016,7 @@ async fn session_detail_route_serves_a_bounded_redacted_peek_on_request() -> Res
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let peek: serde_json::Value = client
         .get(format!(
@@ -9070,7 +9070,7 @@ async fn session_delete_returns_404_for_missing_id() -> Result<()> {
     let Some((addr, sessions_dir, handle)) = spawn_server_with_saved_sessions(&[]).await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let resp = client
         .delete(format!("http://{addr}/v1/sessions/nonexistent-id"))
         .send()
@@ -9116,7 +9116,7 @@ async fn cors_layer_appends_extra_origins_and_keeps_defaults() -> Result<()> {
         let _ = axum::serve(listener, router).await;
     });
 
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // The user-supplied origin is allowed.
     let resp = client
@@ -9234,7 +9234,7 @@ async fn patch_thread_accepts_extended_field_set() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let created: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
@@ -9321,7 +9321,7 @@ async fn list_threads_archived_only_filter_matches_only_archived() -> Result<()>
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Two threads — keep one active, archive the other.
     let active: serde_json::Value = client
@@ -9431,7 +9431,7 @@ async fn list_thread_summary_filters_ids_before_limit() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let mut owned_ids = Vec::new();
 
     for _ in 0..2 {
@@ -9533,7 +9533,7 @@ async fn usage_endpoint_returns_empty_aggregation_for_fresh_store() -> Result<()
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let body: serde_json::Value = client
         .get(format!("http://{addr}/v1/usage"))
@@ -9597,7 +9597,7 @@ async fn thread_usage_endpoint_scopes_totals_to_one_thread() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let created: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
@@ -9651,7 +9651,7 @@ async fn thread_receipt_routes_require_auth_and_return_the_receipt_shape() -> Re
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let created: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
         .bearer_auth(&token)
@@ -9720,7 +9720,7 @@ async fn thread_history_operation_routes_require_auth() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     for path in [
         "/v1/thread-history/operations/lookup",
@@ -9773,7 +9773,7 @@ async fn approvals_endpoint_lists_decided_and_pending_newest_first() -> Result<(
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let store = ApprovalReceiptStore::new(sessions_dir);
 
     fn at(hour: u32) -> DateTime<Utc> {
@@ -9875,7 +9875,7 @@ async fn session_save_merges_thread_cost_split_and_records_coverage() -> Result<
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let created: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
@@ -10077,7 +10077,7 @@ async fn session_save_persists_parent_cny_unpriced_reasons_without_double_count(
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let created: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
@@ -10223,7 +10223,7 @@ async fn watch_client_token_refuses_runtime_mutations_and_upgrades() -> Result<(
     else {
         bail!("the owned client-token HTTP fixture could not bind");
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
     let info: Value = client
         .get(format!("{base}/v1/runtime/info"))
@@ -10315,7 +10315,7 @@ async fn runtime_info_reports_bind_state() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let info: serde_json::Value = client
         .get(format!("http://{addr}/v1/runtime/info"))
         .send()
@@ -10426,7 +10426,7 @@ async fn create_thread_accepts_dynamic_tools_and_environments() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let created: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
@@ -10460,7 +10460,7 @@ async fn create_thread_normalizes_and_persists_named_permission_posture() -> Res
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let created: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
@@ -10516,7 +10516,7 @@ async fn start_turn_accepts_dynamic_tools_and_environment_id() -> Result<()> {
         let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
             return Ok(());
         };
-        let client = crate::tls::reqwest_client();
+        let client = codewhale_release::tls::reqwest_client();
 
         let created: serde_json::Value = client
             .post(format!("http://{addr}/v1/threads"))
@@ -10576,7 +10576,7 @@ async fn turn_record_reports_the_mode_it_ran_in() -> Result<()> {
         let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
             return Ok(());
         };
-        let client = crate::tls::reqwest_client();
+        let client = codewhale_release::tls::reqwest_client();
 
         let created: serde_json::Value = client
             .post(format!("http://{addr}/v1/threads"))
@@ -10703,7 +10703,7 @@ async fn mobile_page_is_available_only_when_enabled() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let disabled = client.get(format!("http://{addr}/mobile")).send().await?;
     assert_eq!(disabled.status(), StatusCode::NOT_FOUND);
     handle.abort();
@@ -10751,7 +10751,7 @@ async fn mobile_page_serves_shell_when_auth_enabled() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let shell = client
         .get(format!("http://{addr}/mobile"))
@@ -10802,7 +10802,7 @@ async fn mobile_bootstrap_uses_opaque_origin_bound_session_and_single_use_stream
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client_builder()
+    let client = codewhale_release::tls::reqwest_client_builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()?;
     let origin = format!("http://{addr}");
@@ -11011,7 +11011,7 @@ async fn mobile_insecure_mode_allows_page_and_v1_routes_without_token() -> Resul
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let page = client
         .get(format!("http://{addr}/mobile"))
@@ -11036,7 +11036,7 @@ async fn thread_summary_projects_typed_pending_attention_count() -> Result<()> {
     let Some((addr, runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let attention_thread: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
@@ -11099,7 +11099,7 @@ async fn thread_summary_search_finds_a_match_older_than_the_row_limit() -> Resul
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // `POST /v1/threads` has no title field; the title is a PATCH. Patching
     // also re-stamps `updated_at`, so ordering is not left to two creates
@@ -11189,7 +11189,7 @@ async fn thread_summary_search_does_not_scan_the_whole_store_per_thread() -> Res
     // Settle the server's startup item-index warm-up, so the read counts below
     // measure this route and not a background pass over the directory.
     runtime_threads.warm_item_index()?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     const THREADS: usize = 8;
     const TURNS_PER_THREAD: usize = 4;
@@ -11312,7 +11312,7 @@ async fn thread_summary_listing_never_walks_the_items_directory() -> Result<()> 
     // Settle the server's startup item-index warm-up, so the read counts below
     // measure this route and not a background pass over the directory.
     runtime_threads.warm_item_index()?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     const THREADS: usize = 8;
     const TURNS_PER_THREAD: usize = 4;
@@ -11502,7 +11502,7 @@ async fn decide_approval_404s_when_nothing_pending() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let resp = client
         .post(format!("http://{addr}/v1/approvals/no_such_id"))
         .json(&json!({ "decision": "allow" }))
@@ -11524,7 +11524,7 @@ async fn submit_user_input_404s_without_entering_engine_mailbox_for_unknown_id()
         .await?;
     let mut harness = install_mock_engine(&runtime_threads, &thread.id).await;
 
-    let response = crate::tls::reqwest_client()
+    let response = codewhale_release::tls::reqwest_client()
         .post(format!(
             "http://{addr}/v1/user-input/{}/input-missing",
             thread.id
@@ -11561,7 +11561,7 @@ async fn events_endpoint_rejects_unbounded_tail_requests() -> Result<()> {
     let thread = runtime_threads
         .create_thread(CreateThreadRequest::default())
         .await?;
-    let response = crate::tls::reqwest_client()
+    let response = codewhale_release::tls::reqwest_client()
         .get(format!(
             "http://{addr}/v1/threads/{}/events?replay_limit={}",
             thread.id,
@@ -11580,7 +11580,7 @@ async fn decide_approval_400s_on_bad_decision() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let resp = client
         .post(format!("http://{addr}/v1/approvals/whatever"))
         .json(&json!({ "decision": "yolo" }))
@@ -11597,7 +11597,7 @@ async fn decide_approval_delivers_to_runtime() -> Result<()> {
     let Some((addr, runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     // The caller never chooses the approval ID; the runtime mints it and the
     // client echoes it back verbatim.
     let (approval_id, rx) = runtime_threads.register_pending_approval_for_test("ext_id");
@@ -11651,7 +11651,7 @@ async fn thread_snapshot_separates_approval_capability_from_tool_correlator() ->
     let Some((addr, runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let thread: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
         .json(&json!({}))
@@ -11706,7 +11706,7 @@ async fn dynamic_tool_result_endpoint_delivers_to_runtime() -> Result<()> {
     let Some((addr, runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let thread: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
         .json(&json!({}))
@@ -11778,7 +11778,7 @@ async fn skills_endpoint_includes_enabled_field() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let body: serde_json::Value = client
         .get(format!("http://{addr}/v1/skills"))
         .send()
@@ -11830,7 +11830,7 @@ async fn unicode_skill_activation_matches_api_load_and_owned_lifecycle() -> Resu
     )
     .await?
     .context("isolated skill API fixture requires loopback")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let context = ToolContext::new(&workspace).with_skills_config(
         workspace.join(".codewhale/skills"),
         crate::skills::SkillDiscoveryMode::Compatible,
@@ -11984,7 +11984,7 @@ async fn skills_endpoint_exposes_safe_plugin_provenance_and_shared_toggle() -> R
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let list = client
         .get(format!("http://{addr}/v1/skills"))
         .send()
@@ -12037,7 +12037,7 @@ async fn skill_toggle_endpoint_404s_for_unknown_skill() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let resp = client
         .post(format!("http://{addr}/v1/skills/no-such-skill"))
         .json(&json!({ "enabled": false }))
@@ -12371,7 +12371,7 @@ async fn set_config_rejects_unknown_key_with_bad_request() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let (status, body) = post_set_config(&client, &addr, "nonexistent_key", "x", true).await;
     assert_eq!(
@@ -12403,7 +12403,7 @@ async fn set_config_validates_max_history_input() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Non-integer input must be rejected.
     let (status, body) = post_set_config(&client, &addr, "max_history", "not-a-number", true).await;
@@ -12436,7 +12436,7 @@ async fn set_config_validates_subagents_enabled_input() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let (status, body) = post_set_config(&client, &addr, "subagents_enabled", "maybe", true).await;
     assert_eq!(
@@ -12468,7 +12468,7 @@ async fn set_config_validates_subagents_max_depth_input() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let (status, body) = post_set_config(&client, &addr, "subagents_max_depth", "deep", true).await;
     assert_eq!(
@@ -12496,7 +12496,7 @@ async fn set_config_with_config_path_writes_to_specified_file() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Persist a subagents_max_depth value above the ceiling to also verify
     // clamping (Fix #1).
@@ -12567,7 +12567,7 @@ async fn get_config_search_provider_reports_runtime_source() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let body: serde_json::Value = client
         .get(format!("http://{addr}/v1/config"))
         .send()
@@ -12608,7 +12608,7 @@ async fn set_config_search_provider_persist_skips_firecrawl_default_round_trip()
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // GET returns `firecrawl`; saving it back must NOT write a pin, because
     // `provider = "firecrawl"` would flip source Default -> Config and then
@@ -12655,7 +12655,7 @@ async fn set_config_search_provider_persist_skips_tavily_autodetect() -> Result<
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let (status, body) = post_set_config(&client, &addr, "search_provider", "tavily", true).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
@@ -12686,7 +12686,7 @@ async fn reload_config_endpoint_returns_success() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .post(format!("http://{addr}/v1/config/reload"))
@@ -12806,7 +12806,7 @@ async fn settings_schema_serves_every_declared_row_with_runtime_state() -> Resul
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let body = get_settings_schema(&client, &addr).await;
     handle.abort();
 
@@ -12908,7 +12908,7 @@ async fn settings_schema_write_fallthrough_persists_declared_settings_keys() -> 
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // A schema-declared settings.toml key outside the curated arm list must
     // persist through the shared validator rather than 400.
@@ -13221,7 +13221,7 @@ async fn provider_catalog_and_switch_preserve_each_listed_route_identity() -> Re
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let providers = get_providers(&client, &addr).await;
     let catalog = providers["providers"].as_array().expect("provider list");
     assert!(!catalog.is_empty());
@@ -13303,7 +13303,7 @@ async fn get_config_returns_active_provider_model() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let body = get_config(&client, &addr).await;
     assert_eq!(body["provider"].as_str(), Some("volcengine"));
@@ -13335,7 +13335,7 @@ async fn api_surfaces_only_configured_model_for_custom_provider_route() -> Resul
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let config_body = get_config(&client, &addr).await;
     assert_eq!(config_body["provider"].as_str(), Some("volcengine"));
@@ -13397,7 +13397,7 @@ async fn api_surfaces_only_active_model_when_runtime_route_passes_ids_through() 
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let config_body = get_config(&client, &addr).await;
     assert_eq!(config_body["provider"].as_str(), Some("volcengine"));
@@ -13447,7 +13447,7 @@ async fn provider_models_expose_exact_image_input_facts_and_thread_selection_sta
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let models = get_provider_models(&client, &addr, "deepseek").await;
     let entries = models["models"].as_array().context("models array")?;
@@ -13689,7 +13689,7 @@ model = "gpt-6-astra"
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let before = get_config(&client, &addr).await;
     let response = client
         .get(format!(
@@ -13867,7 +13867,7 @@ api_key_env = "CW_OPERATE_MISSING_TEST_KEY"
         )
         .await?
         .context("loopback server is required for Operate API acceptance")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let url = format!("http://{addr}/v1/operate");
     let started: serde_json::Value = client
         .post(&url)
@@ -14036,7 +14036,7 @@ model = "local-model"
         else {
             return Ok(());
         };
-        let providers = get_providers(&crate::tls::reqwest_client(), &addr).await;
+        let providers = get_providers(&codewhale_release::tls::reqwest_client(), &addr).await;
         assert_eq!(providers["current"], "custom");
         let custom = providers["providers"]
             .as_array()
@@ -14145,7 +14145,7 @@ api_key = "local-test-key"
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let config_before = get_config(&client, &addr).await;
     assert_eq!(config_before["provider"], "lm-studio");
@@ -14222,7 +14222,7 @@ base_url = "http://127.0.0.1:18191/v1"
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let providers = get_providers(&client, &addr).await;
     assert_eq!(providers["current"], "deepseek");
@@ -14379,7 +14379,7 @@ model = "glm-5.3"
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let (status, body) = post_switch_provider(&client, &addr, "bigmodel-cn", &json!({})).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -14436,7 +14436,7 @@ model = "glm-5.2"
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let before = get_config(&client, &addr).await;
     assert_eq!(
         before["base_url"], "http://127.0.0.1:2/v1",
@@ -14499,7 +14499,7 @@ async fn set_config_base_url_moves_the_root_route_endpoint() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let (status, body) = post_set_config(
         &client,
@@ -14554,7 +14554,7 @@ model = "glm-5.3"
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let (status, body) = post_set_config(
         &client,
@@ -14623,7 +14623,7 @@ async fn reload_config_reads_from_config_path_and_updates_in_memory_state() -> R
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Step 1: Record initial model value (should be the default, since
     // Config::default() has default_text_model = None).
@@ -14759,7 +14759,7 @@ model = "glm-2"
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Switch to volcengine WITHOUT a model arg — simulates a picker click.
     let (status, body) =
@@ -14836,7 +14836,7 @@ model = "glm-2"
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let (status, body) =
         post_switch_provider(&client, &addr, "volcengine", &serde_json::json!({})).await;
@@ -14877,7 +14877,7 @@ model = "glm-2"
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Switch to volcengine WITH an explicit model arg.
     let (status, body) = post_switch_provider(
@@ -14917,7 +14917,7 @@ async fn switch_provider_rejects_unknown_provider_id() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let (status, _body) = post_switch_provider(
         &client,
@@ -14950,7 +14950,7 @@ async fn switch_provider_rejects_legacy_deepseek_cn_alias() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let (status, body) =
         post_switch_provider(&client, &addr, "deepseek-cn", &serde_json::json!({})).await;
@@ -14999,7 +14999,7 @@ model = "glm-2"
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Switch to deepseek WITH an explicit model override.
     let (status, body) = post_switch_provider(
@@ -15082,7 +15082,7 @@ model = "glm-2"
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let (status, body) = post_switch_provider(
         &client,
@@ -15134,7 +15134,7 @@ model = "glm-2"
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let (status, _body) =
         post_switch_provider(&client, &addr, "volcengine", &serde_json::json!({})).await;
@@ -15194,7 +15194,7 @@ model = "glm-2"
 "#;
     fs::write(&config_file, edited)?;
 
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let (status, body) =
         post_switch_provider(&client, &addr, "volcengine", &serde_json::json!({})).await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
@@ -15236,7 +15236,7 @@ async fn switch_provider_waiting_for_config_lock_keeps_the_async_worker_running(
     });
     entered_rx.await?;
 
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let switch_client = client.clone();
     let request = tokio::spawn(async move {
         post_switch_provider(&switch_client, &addr, "deepseek", &json!({})).await
@@ -15284,7 +15284,7 @@ async fn switch_provider_that_fails_to_load_removes_the_config_file_it_created()
         return Ok(());
     };
 
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let (status, body) =
         post_switch_provider(&client, &addr, "deepseek", &serde_json::json!({})).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
@@ -15325,7 +15325,7 @@ model = "GLM-5.2"
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let response = client
         .post(format!("http://{addr}/v1/config/reload"))
@@ -15400,7 +15400,7 @@ api_key = "profile-test-key"
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let response = client
         .post(format!("http://{addr}/v1/config/reload"))
@@ -15443,7 +15443,7 @@ async fn reload_config_refreshes_mcp_config_path() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Record initial mcp_config_path (set by test helper to root/mcp.json).
     let before = get_config(&client, &addr).await;
@@ -15510,7 +15510,7 @@ async fn set_config_with_persist_false_does_not_write_to_disk() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let (status, body) = post_set_config(&client, &addr, "model", "deepseek-v4-flash", false).await;
     assert_eq!(
@@ -15561,7 +15561,7 @@ async fn set_config_subagents_max_depth_below_ceiling_not_clamped() -> Result<()
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Test a value at the ceiling (should not be clamped).
     let ceiling = u64::from(codewhale_config::MAX_SPAWN_DEPTH_CEILING);
@@ -15618,7 +15618,7 @@ async fn set_config_subagents_enabled_false_persists() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let (status, body) = post_set_config(&client, &addr, "subagents_enabled", "false", true).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
@@ -15652,7 +15652,7 @@ async fn reload_config_with_malformed_file_returns_error() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Corrupt the config file with invalid TOML.
     fs::write(&config_file, "this is = = not valid toml [[[\n")?;
@@ -15703,7 +15703,7 @@ async fn set_config_model_follows_persisted_provider_before_reload() -> Result<(
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let (status, body) = post_set_config(&client, &addr, "provider", "volcengine", true).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
@@ -15766,7 +15766,7 @@ async fn reload_config_applies_multiple_persisted_keys() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Record initial values.
     let before = get_config(&client, &addr).await;
@@ -15859,7 +15859,7 @@ async fn set_config_response_contains_all_expected_fields() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // persist:true → persisted=true, requires_reload=true
     let (status, body) = post_set_config(&client, &addr, "model", "deepseek-v4-flash", true).await;
@@ -15934,7 +15934,7 @@ async fn cors_layer_advertises_exact_supported_headers_and_never_an_extra() -> R
         let _ = axum::serve(listener, router).await;
     });
 
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let allowed = client
         .request(reqwest::Method::OPTIONS, format!("http://{addr}/probe"))
@@ -16030,7 +16030,7 @@ async fn thread_goal_crud_and_invalid_transition() -> Result<()> {
     let Some((addr, runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Create a thread to associate goals with.
     let thread: serde_json::Value = client
@@ -16176,7 +16176,7 @@ async fn thread_goal_block_transition() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let thread: serde_json::Value = client
         .post(format!("http://{addr}/v1/threads"))
@@ -16227,7 +16227,7 @@ async fn thread_goal_on_unknown_thread_returns_404() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .get(format!("http://{addr}/v1/threads/nonexistent-id/goal"))
@@ -16251,7 +16251,7 @@ async fn runtime_info_advertises_thread_goals_capability() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let info: serde_json::Value = client
         .get(format!("http://{addr}/v1/runtime/info"))
@@ -16500,7 +16500,7 @@ async fn fleet_receipt_api_list_and_get_round_trip() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // List receipts for the run.
     let list: serde_json::Value = client
@@ -16627,7 +16627,7 @@ async fn memory_info_capability_is_advertised() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let info: serde_json::Value = client
         .get(format!("http://{addr}/v1/runtime/info"))
         .send()
@@ -16654,7 +16654,7 @@ async fn memory_list_returns_empty_for_fresh_store() -> Result<()> {
     let Some((addr, _rt, handle)) = spawn_test_server_with_root(root, sessions_dir).await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let body: serde_json::Value = client
         .get(format!("http://{addr}/v1/memory"))
@@ -16713,7 +16713,7 @@ async fn memory_create_list_and_get_entry() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Create a global memory entry.
     let create_resp = client
@@ -16785,7 +16785,7 @@ async fn memory_summary_is_redacted_to_max_chars() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let long_note = "x".repeat(350);
     let create_resp = client
@@ -16823,7 +16823,7 @@ async fn memory_clear_removes_global_scope() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Seed two entries.
     for note in ["first note", "second note"] {
@@ -16882,7 +16882,7 @@ async fn memory_create_rejects_empty_text_and_bad_scope() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Empty text must be rejected with 400.
     let empty = client
@@ -16916,7 +16916,7 @@ async fn memory_search_query_filters_results() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Seed two entries with distinct text.
     for note in ["prefer functional style", "always use snake_case"] {
@@ -16984,7 +16984,7 @@ async fn memory_all_scope_includes_workspace_notes() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     for (text, scope) in [
         ("global cedar note", "global"),
         ("workspace cedar note", "workspace"),
@@ -17049,7 +17049,7 @@ async fn memory_workspace_scope_without_a_remote_is_a_client_error() -> Result<(
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     client
         .post(format!("http://{addr}/v1/memory"))
         .json(&json!({ "text": "global cedar note", "scope": "global" }))
@@ -17090,7 +17090,7 @@ async fn mcp_server_management_crud() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}/v1/apps/mcp/servers");
 
     // 1. Create a new server.
@@ -17298,7 +17298,7 @@ async fn mcp_server_management_create_requires_command_or_url() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Missing both command and url → 400.
     let resp = client
@@ -17331,7 +17331,7 @@ async fn mcp_server_management_redacts_credentials() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}/v1/apps/mcp/servers");
 
     // Create a server with sensitive fields.
@@ -17379,7 +17379,7 @@ async fn runtime_info_advertises_mcp_server_management() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let info: serde_json::Value = client
         .get(format!("http://{addr}/v1/runtime/info"))
@@ -17457,7 +17457,7 @@ async fn skill_detail_returns_body_and_routing_metadata() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let detail: serde_json::Value = client
         .get(format!("http://{addr}/v1/skills/activatable"))
@@ -17505,7 +17505,7 @@ async fn skill_detail_404s_for_unknown_skill() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .get(format!("http://{addr}/v1/skills/no-such-skill"))
@@ -17547,7 +17547,7 @@ async fn skill_list_rows_carry_routing_metadata() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let list: serde_json::Value = client
         .get(format!("http://{addr}/v1/skills"))
@@ -17611,7 +17611,7 @@ async fn listed_tier_belongs_to_the_bundled_copy_only() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let list: serde_json::Value = client
         .get(format!("http://{addr}/v1/skills"))
@@ -17644,7 +17644,7 @@ async fn runtime_info_advertises_skill_detail_capability() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let info: serde_json::Value = client
         .get(format!("http://{addr}/v1/runtime/info"))
@@ -17689,7 +17689,7 @@ async fn skill_lifecycle_uninstall_removes_installed_skill() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Confirm skill is visible.
     let list: serde_json::Value = client
@@ -17726,7 +17726,7 @@ async fn skill_lifecycle_uninstall_404s_for_unknown_skill() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .delete(format!("http://{addr}/v1/skills/no-such-skill"))
@@ -17743,7 +17743,7 @@ async fn skill_lifecycle_uninstall_rejects_invalid_scope() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .delete(format!("http://{addr}/v1/skills/hello?scope=badscope"))
@@ -17777,7 +17777,7 @@ async fn skill_lifecycle_trust_marks_installed_skill() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .post(format!("http://{addr}/v1/skills/trustme/trust"))
@@ -17805,7 +17805,7 @@ async fn skill_lifecycle_trust_404s_for_unknown_skill() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .post(format!("http://{addr}/v1/skills/no-such/trust"))
@@ -17823,7 +17823,7 @@ async fn skill_lifecycle_trust_rejects_invalid_scope() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .post(format!("http://{addr}/v1/skills/hello/trust"))
@@ -17858,7 +17858,7 @@ async fn skill_lifecycle_trust_rejects_digest_drift() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Pass a deliberately wrong digest to confirm drift detection.
     let resp = client
@@ -17894,7 +17894,7 @@ async fn skill_lifecycle_audit_returns_receipt_for_installed_skill() -> Result<(
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp: serde_json::Value = client
         .get(format!("http://{addr}/v1/skills/auditable/audit"))
@@ -17927,7 +17927,7 @@ async fn skill_lifecycle_audit_404s_for_unknown_skill() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .get(format!("http://{addr}/v1/skills/no-such-skill/audit"))
@@ -17944,7 +17944,7 @@ async fn skill_lifecycle_audit_rejects_invalid_scope() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .get(format!("http://{addr}/v1/skills/hello/audit?scope=nope"))
@@ -17961,7 +17961,7 @@ async fn skill_lifecycle_install_rejects_empty_source() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .post(format!("http://{addr}/v1/skills/install"))
@@ -17979,7 +17979,7 @@ async fn skill_lifecycle_install_rejects_invalid_scope() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .post(format!("http://{addr}/v1/skills/install"))
@@ -17997,7 +17997,7 @@ async fn skill_lifecycle_update_rejects_invalid_scope() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .post(format!("http://{addr}/v1/skills/hello/update"))
@@ -18020,7 +18020,7 @@ async fn skill_lifecycle_endpoints_require_auth_when_token_is_set() -> Result<()
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // All skill lifecycle endpoints must require auth.
     for (method, path) in &[
@@ -18057,7 +18057,7 @@ async fn skill_lifecycle_runtime_info_advertises_skill_lifecycle_capability() ->
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let info: serde_json::Value = client
         .get(format!("http://{addr}/v1/runtime/info"))
@@ -18163,7 +18163,7 @@ async fn runtime_info_advertises_plugin_management_capability() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let info: serde_json::Value = client
         .get(format!("http://{addr}/v1/runtime/info"))
@@ -18186,7 +18186,7 @@ async fn runtime_info_advertises_terminal_capabilities() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let info: serde_json::Value = client
         .get(format!("http://{addr}/v1/runtime/info"))
@@ -18236,7 +18236,7 @@ async fn terminal_routes_serve_a_live_engine_session_over_http() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}/v1/terminal/pane");
 
     // The agent's terminal tools own session creation; stand in for that
@@ -18368,7 +18368,7 @@ async fn terminal_output_for_an_unknown_session_is_not_found_and_creates_nothing
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}/v1/terminal");
 
     // The route exists and answers for a name that has no live session: the
@@ -18403,7 +18403,7 @@ async fn plugin_lifecycle_over_http_installs_reviews_enables_and_uninstalls() ->
     let Some((addr, handle)) = spawn_plugin_api_server(root, workspace).await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}/v1/apps/plugins");
 
     // Empty inventory to start.
@@ -18537,7 +18537,7 @@ async fn plugin_api_404s_for_unknown_selector() -> Result<()> {
     let Some((addr, handle)) = spawn_plugin_api_server(root, workspace).await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let detail = client
         .get(format!("http://{addr}/v1/apps/plugins/ghost"))
@@ -18576,7 +18576,7 @@ async fn dsh_package_preview_then_exact_install_over_http() -> Result<()> {
     let Some((addr, handle)) = spawn_plugin_api_server(root, workspace).await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let mut preview_response = client
         .post(format!("http://{addr}/v1/apps/plugins/import/dsh/preview"))
@@ -18671,7 +18671,7 @@ async fn marketplace_catalog_lifecycle_over_http_lists_installs_and_removes() ->
     let Some((addr, handle)) = spawn_plugin_api_server(root, workspace).await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}/v1/apps/marketplaces");
 
     let add_resp = client
@@ -18838,7 +18838,7 @@ async fn marketplace_builtin_name_is_reviewable_without_install_or_network_acces
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}/v1/apps");
     let catalog: serde_json::Value = client
         .get(format!("{base}/marketplaces/codewhale"))
@@ -18908,7 +18908,7 @@ async fn marketplace_add_rejects_symlink_documents_over_http() -> Result<()> {
     let Some((addr, handle)) = spawn_plugin_api_server(root, workspace).await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let resp = client
         .post(format!("http://{addr}/v1/apps/marketplaces"))
@@ -18967,7 +18967,7 @@ async fn reload_config_updates_openrouter_vendor_for_new_clients_only() -> Resul
     let (addr, manager, handle) = spawn_test_server_with_config_path(config_file.clone())
         .await?
         .expect("local Runtime API must be available for reload regression");
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     for vendor in ["deepinfra/turbo", "another-vendor/region", ""] {
         fs::write(
             &config_file,
@@ -19098,6 +19098,7 @@ fn api_provider_default_and_model_list_follow_exact_local_catalog() {
                 provider: "ollama".into(),
                 wire_model_id: "local-default:tag".into(),
                 endpoint_key: "chat".into(),
+                default_for_provider: true,
                 source: CatalogSource::Live {
                     base_url_fingerprint: fingerprint.clone(),
                     fetched_at,
@@ -19177,7 +19178,7 @@ async fn api_config_reports_local_default_availability_without_blocking_config_r
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let unavailable = get_config(&client, &addr).await;
     assert_eq!(unavailable["model"], "");
     assert_eq!(unavailable["model_available"], false);
@@ -19216,6 +19217,7 @@ async fn api_config_reports_local_default_availability_without_blocking_config_r
                 provider: "ollama".into(),
                 wire_model_id: "available:tag".into(),
                 endpoint_key: "chat".into(),
+                default_for_provider: true,
                 source: CatalogSource::Live {
                     base_url_fingerprint: fingerprint,
                     fetched_at,
@@ -19257,7 +19259,7 @@ keep = "untouched"
         spawn_test_server_with_config_path_and_profile(path.clone(), "desktop".into())
             .await?
             .expect("loopback Runtime must be available");
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let reload = || client.post(format!("http://{addr}/v1/config/reload"));
     assert_eq!(reload().send().await?.status(), StatusCode::OK);
     let before = get_config(&client, &addr).await;
@@ -19336,7 +19338,7 @@ async fn native_notification_preparation_authenticates_current_events_and_reuses
     )
     .await?
     .expect("loopback Runtime must be available");
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let token = "notification-fixture-token";
     let reload = || {
         client
@@ -19572,7 +19574,7 @@ async fn native_notification_replay_rechecks_requests_settled_during_the_read() 
     )
     .await?
     .expect("loopback Runtime must be available");
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let token = "notification-race-fixture-token";
     client
         .post(format!("http://{addr}/v1/config/reload"))
@@ -19634,7 +19636,7 @@ async fn native_notification_replay_rechecks_requests_settled_during_the_read() 
         let (hook_tx, mut hook_rx) = mpsc::unbounded_channel();
         manager.set_replay_test_hook(hook_tx);
         let pending_request = tokio::spawn(async move {
-            crate::tls::reqwest_client()
+            codewhale_release::tls::reqwest_client()
                 .post(endpoint)
                 .bearer_auth(token)
                 .json(&request)
@@ -19732,7 +19734,7 @@ async fn runtime_image_http_rejects_before_dispatch_and_accepts_large_canonical_
     .context("loopback listener required for image contract proof")?;
     let thread = manager.create_thread(Default::default()).await?;
     let mut harness = install_mock_engine(&manager, &thread.id).await;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let url = format!("http://{addr}/v1/threads/{}/turns", thread.id);
     let good = runtime_image_fixture(7);
     for body in [
@@ -19854,7 +19856,7 @@ async fn runtime_image_stream_rejection_does_not_leave_empty_threads() -> Result
     )
     .await?
     .context("loopback listener required")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let good = runtime_image_fixture(3);
     for body in [
         json!({"prompt":"look", "images":[{"mime":"image/png","dataBase64":"garbage"}]}),
@@ -19924,7 +19926,7 @@ async fn runtime_image_named_catalog_resolves_and_echoes_exact_configured_identi
     )
     .await?
     .context("loopback listener required")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     for identity in ["vision-personal", "vision-work"] {
         let response: Value = client
             .get({
@@ -20027,7 +20029,7 @@ async fn runtime_image_saved_session_import_validates_before_creating_a_thread()
         spawn_test_server_with_root(dir.path().to_path_buf(), sessions_dir.clone())
             .await?
             .context("loopback listener required")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let expected =
         vec![crate::image_attach::tests::runtime_image_fixture_bytes(3 * 1024 * 1024); 2];
     let historical = crate::image_attach::prepare_stored_images(&expected)?;
@@ -20154,7 +20156,7 @@ async fn output_cap_compatibility_stream_rejects_before_thread_creation() -> Res
     )
     .await?
     .context("loopback fixture must bind")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     for input in [
         json!({"prompt":"review","model":"gpt-5.5","maxOutputTokens":1500}),
         json!({"prompt":"review","model":"auto","maxOutputTokens":1500}),
@@ -20198,7 +20200,7 @@ async fn workspace_file_put_keeps_the_edited_files_mode() -> Result<()> {
     )
     .await?
     .context("files test requires a loopback listener")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
 
     // An executable script keeps its bits (set-user-id is never carried
@@ -20318,7 +20320,7 @@ async fn workspace_files_list_read_write_bounds_and_confinement() -> Result<()> 
     )
     .await?
     .context("files test requires a loopback listener")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
     let url = |route: &str, pairs: &[(&str, &str)]| {
         let mut url = reqwest::Url::parse(&format!("{base}{route}")).unwrap();
@@ -20737,7 +20739,7 @@ async fn session_artifacts_list_and_bounded_read() -> Result<()> {
     )
     .await?
     .context("artifacts test requires a loopback listener")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
 
     let status = client
@@ -20992,7 +20994,7 @@ async fn turn_artifact_routes_list_and_read_by_reference() -> Result<()> {
     }))?;
     store.save_turn(&turn)?;
 
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!(
         "http://{addr}/v1/threads/{}/turns/turn_artifacts_route/artifacts",
         thread.id
@@ -21256,7 +21258,7 @@ async fn call_change_route_reads_one_calls_workspace_span() -> Result<()> {
     }))?;
     store.save_turn(&storeless_turn)?;
 
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
     let url = |thread_id: &str, turn_id: &str, call: &str| {
         format!("{base}/v1/threads/{thread_id}/turns/{turn_id}/calls/{call}/changes")
@@ -21499,7 +21501,7 @@ async fn jobs_api_lists_creates_streams_stdin_and_kills() -> Result<()> {
     )
     .await?
     .context("jobs test requires a loopback listener")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
 
     // Auth is required on every jobs route.
@@ -21751,7 +21753,7 @@ async fn thread_context_reports_live_budget_from_the_engine() -> Result<()> {
     )
     .await?
     .context("context test requires a loopback listener")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
 
     let status = client
@@ -21853,7 +21855,7 @@ async fn provider_key_write_is_write_only_and_reports_readiness() -> Result<()> 
         )
         .await?
         .context("secrets test requires a loopback listener")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
 
     let status = client
@@ -22088,7 +22090,7 @@ async fn diagnostics_list_and_read_bounded_windows() -> Result<()> {
     )
     .await?
     .context("diagnostics test requires a loopback listener")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
 
     let status = client.get(format!("{base}/v1/logs")).send().await?.status();
@@ -22215,7 +22217,7 @@ async fn targets_report_self_and_probe_remote_endpoints() -> Result<()> {
     )
     .await?
     .context("targets test requires a loopback listener")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
 
     let status = client
@@ -22393,7 +22395,7 @@ async fn lsp_routes_serve_workspace_files_through_a_transport() -> Result<()> {
         )
         .await?
         .context("lsp test requires a loopback listener")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
 
     let status = client.get(format!("{base}/v1/lsp")).send().await?.status();
@@ -22506,7 +22508,7 @@ async fn voice_routes_report_capability_and_fail_closed_without_a_recorder() -> 
         )
         .await?
         .context("voice test requires a loopback listener")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
 
     let status = client
@@ -22603,7 +22605,7 @@ async fn git_routes_drive_a_real_workspace_repo() -> Result<()> {
     )
     .await?
     .context("git test requires a loopback listener")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
 
     let status = client.get(format!("{base}/v1/git")).send().await?.status();
@@ -22899,7 +22901,7 @@ async fn git_write_preconditions_reject_stale_state() -> Result<()> {
     )
     .await?
     .context("git test requires a loopback listener")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
     let read = || async {
         client
@@ -23204,7 +23206,7 @@ async fn provider_key_clear_round_trips_and_reports_writability() -> Result<()> 
     )
     .await?
     .context("secrets test requires a loopback listener")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
 
     // Clearing is a credential operation: it authenticates like the write.
@@ -23330,7 +23332,7 @@ async fn agent_mail_cancel_withdraws_queued_mail() -> Result<()> {
     let Some((addr, _runtime_threads, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
 
     // Agent Mail addressability needs task-bound threads, and the sender
@@ -23488,7 +23490,7 @@ async fn threads_running_lists_active_turns_and_clears_on_settle() -> Result<()>
     let Some((addr, manager, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
 
     let idle: serde_json::Value = client
@@ -23602,7 +23604,7 @@ async fn thread_notices_serve_list_and_ack() -> Result<()> {
     let Some((addr, manager, handle)) = spawn_test_server().await? else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
 
     let created: serde_json::Value = client
@@ -23716,7 +23718,7 @@ api_key = "refresh-fixture-key"
     let (addr, _, handle) = spawn_test_server_with_config_path(config_path)
         .await?
         .expect("loopback server required");
-    let client = crate::tls::reqwest_client_builder()
+    let client = codewhale_release::tls::reqwest_client_builder()
         .timeout(Duration::from_secs(5))
         .build()?;
     for suffix in [
@@ -23811,7 +23813,7 @@ async fn mcp_management_selected_connection_and_retry_preserve_siblings() -> Res
         spawn_test_server_with_root(root.path().to_owned(), root.path().join("sessions"))
             .await?
             .context("MCP management test requires loopback")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}/v1/apps/mcp");
     let failed: Value = client
         .get(format!("{base}/tools?server=broken&connect=true"))
@@ -23983,7 +23985,7 @@ async fn mcp_management_project_ownership_blocks_global_shadow_mutations() -> Re
     )
     .await?
     .context("MCP ownership test requires loopback")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}/v1/apps/mcp/servers");
     let listing: Value = client
         .get(&base)
@@ -24139,7 +24141,7 @@ async fn mcp_server_management_blocks_credential_retargeting() -> Result<()> {
         spawn_test_server_with_root(root.path().to_owned(), root.path().join("sessions"))
             .await?
             .context("MCP credential guard test requires loopback")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}/v1/apps/mcp/servers");
     for name in [
         "env",
@@ -24256,7 +24258,7 @@ async fn mcp_management_revision_precondition_prevents_stale_mutation() -> Resul
         spawn_test_server_with_root(root.path().to_owned(), root.path().join("sessions"))
             .await?
             .context("loopback required")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}/v1/apps/mcp/servers");
     let absent = mcp_test_revision(&client, &base).await?;
     assert_eq!(absent, "\"mcp-v1-absent\"");
@@ -24341,7 +24343,7 @@ async fn jobs_api_pty_resize_raw_input_and_nonblocking_poll() -> Result<()> {
     )
     .await?
     .context("PTY test requires loopback listener")?;
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let base = format!("http://{addr}");
     let thread: Value = client
         .post(format!("{base}/v1/threads"))
@@ -24634,7 +24636,7 @@ mod thread_snapshot_ownership {
             threads,
             server,
             mock,
-            client: crate::tls::reqwest_client(),
+            client: codewhale_release::tls::reqwest_client(),
         }))
     }
 
@@ -25669,7 +25671,7 @@ api_key = "sk-or-test"
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let (status, away) =
         post_switch_provider(&client, &addr, "openrouter", &serde_json::json!({})).await;
@@ -25740,7 +25742,7 @@ api_key = "sk-or-test"
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let (status, away) =
         post_switch_provider(&client, &addr, "openrouter", &serde_json::json!({})).await;
@@ -25821,7 +25823,7 @@ async fn session_export_keeps_execution_identity_and_rejects_invalid_item_correl
     }
     assert_eq!(messages_from_thread_detail(&runtime, &coalesced)?, original);
 
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let exported = client
         .post(format!("http://{addr}/v1/sessions"))
         .json(&json!({"thread_id":thread.id}))
@@ -25925,7 +25927,7 @@ async fn workspace_trust_is_reported_and_written_through_the_api() -> Result<()>
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
     let expected_workspace = fs::canonicalize(&workspace)?;
 
     let before: serde_json::Value = client
@@ -26026,7 +26028,7 @@ async fn workspace_trust_route_refuses_malformed_bodies() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     // Trust it first, so a write that slipped through would be visible as a
     // changed record rather than as a config file nobody reads.

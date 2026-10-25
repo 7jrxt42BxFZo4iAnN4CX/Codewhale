@@ -15,7 +15,7 @@ use crate::core::ops::TurnSpec;
 /// Omission leaves model steps uncapped. Clap rejects `--max-turns 0`;
 /// explicit positive values retain the documented finite range.
 pub(crate) fn exec_max_steps(max_turns: Option<u32>) -> u32 {
-    crate::core::engine::turn_budget::resolve_max_model_steps(max_turns)
+    codewhale_runtime::turn_budget::resolve_max_model_steps(max_turns)
 }
 
 /// Model-step ceiling for a plain (zero-tool) `exec` run without
@@ -507,7 +507,7 @@ pub(crate) async fn run_exec_agent(
             execution_config
                 .lsp
                 .clone()
-                .map(crate::config::LspConfigToml::into_runtime)
+                .map(crate::lsp::LspConfig::from)
         })
         .flatten();
     let mut engine_features = execution_config.features();
@@ -617,7 +617,9 @@ pub(crate) async fn run_exec_agent(
         subagents_enabled: !fleet_authority_active
             && execution_config.subagents_enabled_for_provider(&effective_identity),
         features: engine_features,
-        auto_review_policy: execution_config.auto_review_policy(),
+        auto_review_policy: crate::core::authority::auto_review::AutoReviewPolicy::from_config(
+            &execution_config,
+        ),
         compaction: compaction.clone(),
         todos: new_shared_todo_list(),
         plan_state: new_shared_plan_state(),
@@ -690,9 +692,7 @@ pub(crate) async fn run_exec_agent(
             .tag()
             .to_string(),
         workshop: {
-            crate::tools::large_output_router::WorkshopConfig::install_active(
-                config.workshop.as_ref(),
-            );
+            crate::tools::large_output_router::install_active_workshop(config.workshop.as_ref());
             config.workshop.clone()
         },
         search_provider: execution_config.search_provider(),
@@ -710,7 +710,9 @@ pub(crate) async fn run_exec_agent(
         } else {
             execution_config.tools_always_load()
         },
-        user_input_limits: execution_config.user_input_limits(),
+        user_input_limits: crate::tools::user_input::UserInputLimits::from_config(
+            &execution_config,
+        ),
         user_input_timeout: execution_config.user_input_timeout(),
         goal_max_steps: None,
         tools: if fleet_authority_active {

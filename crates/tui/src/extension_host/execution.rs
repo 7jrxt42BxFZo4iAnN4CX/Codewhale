@@ -20,8 +20,8 @@ use super::tier::HostTier;
 use super::{ExtensionHostManager, ManagerShared, activation};
 use crate::plugins::PluginRegistry;
 use crate::plugins::activation::PluginActivationCapability;
-use crate::plugins::types::PluginAuthority;
 use crate::tools::spec::{ToolContext, ToolError, ToolResult};
+use codewhale_config::PluginAuthority;
 
 const DEADLINE: Duration = Duration::from_secs(120);
 const MAX_JOBS: usize = 32;

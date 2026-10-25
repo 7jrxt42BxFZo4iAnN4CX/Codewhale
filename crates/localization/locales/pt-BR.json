@@ -812,7 +812,7 @@
   "KbSendDraft": "Enviar quando ocioso; enfileirar quando ocupado; com o compositor vazio, enviar agora o próximo follow-up",
   "KbSteerCurrentTurn": "Direcionar o turno atual (envia normalmente quando ocioso)",
   "KbCloseMenu": "Fechar menu, cancelar requisição, descartar rascunho ou limpar entrada",
-  "KbCancelOrExit": "Cancelar requisição ou sair quando ocioso",
+  "KbCancelOrExit": "Cancelar, limpar rascunho ou sair quando ocioso",
   "KbShellControls": "Mover a espera do shell para /jobs",
   "KbExitEmpty": "Sair quando entrada vazia",
   "KbCommandPalette": "Abrir paleta de comandos",

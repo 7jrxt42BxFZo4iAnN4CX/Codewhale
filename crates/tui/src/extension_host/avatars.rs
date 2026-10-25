@@ -10,9 +10,9 @@ use super::{
 use crate::plugins::{
     activation::PluginActivationCapability,
     manifest::{PluginManifest, ValidatedManifest},
-    types::PluginAuthority,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use codewhale_config::PluginAuthority;
 use codewhale_ratatui::avatar::{MAX_PACK_BYTES, MAX_PNG_BYTES, Pack, RegisteredPack};
 use sha2::{Digest, Sha256};
 use std::{

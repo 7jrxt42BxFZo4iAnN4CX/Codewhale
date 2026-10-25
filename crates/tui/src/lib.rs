@@ -20,7 +20,6 @@ mod acp_server;
 pub mod agent_roster;
 mod approval_log;
 mod artifacts;
-mod audit;
 mod auto_reasoning;
 mod automation_manager;
 mod client;
@@ -128,9 +127,6 @@ mod task_manager;
 mod telemetry_notice;
 #[cfg(test)]
 mod test_support;
-// TLS bootstrap and platform client builders live in codewhale-release;
-// `crate::tls::*` keeps resolving for every caller.
-use codewhale_release::tls;
 mod todo_snapshot;
 mod tool_inspection;
 mod tool_output_receipts;
@@ -186,7 +182,7 @@ fn configure_windows_console_utf8() {
 fn configure_windows_console_utf8() {}
 
 fn install_rustls_crypto_provider() {
-    crate::tls::ensure_rustls_crypto_provider();
+    codewhale_release::tls::ensure_rustls_crypto_provider();
 }
 
 mod runtime_options;
@@ -2672,7 +2668,7 @@ async fn run_async_main_dispatch(
                 TuiAuthCommand::OrcarouterRevoke => run_orcarouter_revoke(cli.config.as_deref()),
                 TuiAuthCommand::PluginLogin { provider } => {
                     let entry = plugin_auth_entry_from_cli(&cli, &provider).await?;
-                    crate::oauth::plugin_oauth_login(
+                    crate::plugins::providers::plugin_oauth_login(
                         provider,
                         entry.base_url.clone().unwrap(),
                         entry.oauth.clone().unwrap(),
@@ -4747,7 +4743,7 @@ fn run_setup_status(
     );
     println!(
         "  · base_url: {}",
-        crate::doctor::structural_url_authority(&config.active_route_base_url())
+        codewhale_config::structural_url_authority(&config.active_route_base_url())
     );
     let model = config
         .default_text_model
@@ -5307,7 +5303,7 @@ async fn run_doctor(
     println!("  · provider: {}", api_target.provider);
     println!(
         "  · base_url: {}",
-        crate::doctor::structural_url_authority(&api_target.base_url)
+        codewhale_config::structural_url_authority(&api_target.base_url)
     );
     match api_target.resolution {
         DoctorModelResolution::Resolved => {
@@ -5338,12 +5334,12 @@ async fn run_doctor(
     if let Some(recommended) = strict_tool_mode.recommended_base_url.as_deref() {
         println!(
             "    Use the {} endpoint for DeepSeek strict schemas.",
-            crate::doctor::structural_url_authority(recommended)
+            codewhale_config::structural_url_authority(recommended)
         );
     }
-    let capability = identity
-        .as_ref()
-        .map(|identity| crate::config::provider_capability(identity.provider, &api_target.model));
+    let capability = identity.as_ref().map(|identity| {
+        crate::provider_lake::provider_capability(identity.provider, &api_target.model)
+    });
     if let Some(alias) = capability
         .as_ref()
         .and_then(|capability| capability.alias_deprecation.as_ref())
@@ -5561,8 +5557,7 @@ async fn run_doctor(
                     std::sync::Arc::new(plugins.clone()),
                 ) {
                     Ok(pool) => {
-                        let mut pool =
-                            pool.with_backend(crate::mcp::McpBackend::from_config(config));
+                        let mut pool = pool.with_backend(config.mcp_backend());
                         let errors = pool.connect_all().await;
                         let failed = errors
                             .iter()
@@ -5906,8 +5901,7 @@ async fn run_doctor(
         let native_enabled = config
             .features()
             .enabled(codewhale_runtime::features::Feature::ExtensionHost);
-        let mcp_enabled =
-            crate::mcp::McpBackend::from_config(config) == crate::mcp::McpBackend::Host;
+        let mcp_enabled = config.mcp_backend() == codewhale_config::McpBackend::Host;
         let enabled = native_enabled || mcp_enabled;
         let tier = if mcp_enabled {
             crate::extension_host::tier::HostTier::Builtin
@@ -7681,10 +7675,10 @@ fn doctor_provider_model_report_json(config: &Config) -> serde_json::Value {
     let credential_help = provider.provider().credential_help();
     let credential_url = credential_help
         .credential_url
-        .map(crate::doctor::structural_url_authority);
+        .map(codewhale_config::structural_url_authority);
     let credential_docs_url = credential_help
         .docs_url
-        .map(crate::doctor::structural_url_authority);
+        .map(codewhale_config::structural_url_authority);
 
     json!({
         "provider": {
@@ -8248,7 +8242,7 @@ fn run_doctor_json(
         },
         "external_credentials": doctor_external_credential_consent_json(config),
         "dsh_integration": doctor_dsh_integration_json(config, workspace),
-        "base_url": crate::doctor::structural_url_authority(&api_target.base_url),
+        "base_url": codewhale_config::structural_url_authority(&api_target.base_url),
         "default_text_model": api_target.model,
         // DGF-01: this report describes the route a session launched now
         // would resolve; a running session keeps its launch-time route.
@@ -8390,7 +8384,7 @@ fn provider_capability_report(config: &Config) -> serde_json::Value {
     // Wire-aware so a custom provider's `wire = "responses" | "anthropic"`
     // reports the payload mode the client will actually speak instead of the
     // static Chat default.
-    let cap = crate::config::provider_capability_with_wire(
+    let cap = crate::provider_lake::provider_capability_with_wire(
         provider,
         resolved_model,
         config.provider_wire_dialect(&identity),
@@ -8466,7 +8460,7 @@ fn doctor_route_report(config: &Config) -> serde_json::Value {
         }
     };
     let provider = identity.provider;
-    let redacted_base_url = crate::doctor::structural_url_authority(&target.base_url);
+    let redacted_base_url = codewhale_config::structural_url_authority(&target.base_url);
     let route_result = crate::route_runtime::resolve_runtime_route_for_identity(
         config,
         &identity,
@@ -8485,7 +8479,7 @@ fn doctor_route_report(config: &Config) -> serde_json::Value {
     })
     .unwrap_or_else(|| {
         json!({
-            "tokens": crate::config::provider_capability(provider, &target.model).context_window,
+            "tokens": crate::provider_lake::provider_capability(provider, &target.model).context_window,
             "source": crate::route_runtime::ContextWindowSource::Fallback.label(),
         })
     });
@@ -8825,7 +8819,7 @@ fn doctor_strict_tool_mode_report_json(status: &DoctorStrictToolModeStatus) -> s
         "recommended_base_url": status
             .recommended_base_url
             .as_deref()
-            .map(crate::doctor::structural_url_authority),
+            .map(codewhale_config::structural_url_authority),
     })
 }
 
@@ -8895,7 +8889,7 @@ fn doctor_timeout_recovery_lines(config: &Config) -> Vec<String> {
     let mut lines = vec![
         format!(
             "Connection timed out while reaching {}.",
-            crate::doctor::structural_url_authority(&target.base_url)
+            codewhale_config::structural_url_authority(&target.base_url)
         ),
         // #6889: some providers load a model on its first call, which can
         // take longer than this check waits.
@@ -10061,22 +10055,53 @@ async fn prepare_mounted_session(
     })?;
     let source_id = saved.metadata.id.clone();
     let source_title = saved.metadata.title.clone();
+    let move_to_launch_provider = matches!(intent, MountedHistoryIntent::Resume)
+        && crate::config::explicit_launch_provider_override().is_some();
+    let mut route_overrides = serde_json::Value::Null;
     if cli.operation_key.is_none() {
-        let identity = prepared
-            .config
-            .resolve_persisted_provider_identity(
-                Some(&saved.metadata.model_provider),
-                saved.metadata.model_provider_id.as_deref(),
-            )
-            .map_err(anyhow::Error::msg)?;
+        let (identity, model) = if move_to_launch_provider {
+            let identity = prepared
+                .config
+                .active_provider_identity()
+                .map_err(anyhow::Error::msg)?;
+            (identity, crate::config::explicit_launch_model_override())
+        } else {
+            let identity = prepared
+                .config
+                .resolve_persisted_provider_identity(
+                    Some(&saved.metadata.model_provider),
+                    saved.metadata.model_provider_id.as_deref(),
+                )
+                .map_err(|reason| {
+                    anyhow!(
+                        "{reason}. {}",
+                        session_export::export_recovery_hint(&source_id)
+                    )
+                })?;
+            (identity, Some(saved.metadata.model.clone()))
+        };
         // Same exact route projection as mounted restore; policy and credentials
         // come only from this already captured merged Config.
         let route = crate::route_runtime::resolve_runtime_route_for_identity(
             &prepared.config,
             &identity,
-            Some(&saved.metadata.model),
+            model.as_deref(),
         )
+        .and_then(|route| {
+            if move_to_launch_provider {
+                route.preflight()
+            } else {
+                Ok(route)
+            }
+        })
         .map_err(anyhow::Error::msg)?;
+        if move_to_launch_provider {
+            route_overrides = serde_json::json!({
+                "model_provider": identity.persisted_kind(),
+                "model_provider_id": identity.persisted_id(),
+                "model": route.model,
+            });
+        }
         prepared.config = *route.config;
     }
     let task_config = crate::task_manager::TaskManagerConfig::from_runtime(
@@ -10207,6 +10232,7 @@ async fn prepare_mounted_session(
                 expected_document_digest: source_digest,
             };
             let options = CanonicalHistoryOptions {
+                overrides: route_overrides,
                 expected_session_goal_digest: Some(source_goal_digest),
                 ..Default::default()
             };
@@ -10475,10 +10501,24 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
     let mut accumulator = pr_plan
         .as_ref()
         .map(crate::tools::review::PrReviewAccumulator::new);
+    let review_triage = crate::tools::review_triage::triage_review(&diff);
+    let review_rates = match (args.input_usd_per_mtok, args.output_usd_per_mtok) {
+        (Some(input), Some(output)) => Some(crate::tools::review_triage::SpendRates {
+            input_usd_per_million: input,
+            output_usd_per_million: output,
+        }),
+        _ => None,
+    };
+    let review_budget = crate::tools::review_triage::budget_for(&review_triage).with_money_cap(
+        args.money_cap_usd,
+        review_rates.map(|rates| (rates.input_usd_per_million, rates.output_usd_per_million)),
+    );
     // Visible-text reserve for this exact route/model (#6285). A reasoning route
     // shares one `max_tokens` allowance between hidden reasoning and visible
     // text, so the review request has to keep room for the review itself.
-    let review_allowance = client.effective_max_output_tokens(&request_route.model);
+    let review_allowance = client
+        .effective_max_output_tokens(&request_route.model)
+        .min(review_budget.max_output_tokens);
     let review_reserve_percent =
         crate::route_budget::review_visible_text_reserve_percent(&request_route.model);
     let review_reserve_tokens = crate::route_budget::review_visible_text_reserve_tokens(
@@ -10496,18 +10536,6 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
     };
     let mut review_anchors = crate::tools::review_core::ReviewAnchorReport::default();
     let mut review_tools_used: Vec<String> = Vec::new();
-    let review_triage = crate::tools::review_triage::triage_review(&diff);
-    let review_rates = match (args.input_usd_per_mtok, args.output_usd_per_mtok) {
-        (Some(input), Some(output)) => Some(crate::tools::review_triage::SpendRates {
-            input_usd_per_million: input,
-            output_usd_per_million: output,
-        }),
-        _ => None,
-    };
-    let review_budget = crate::tools::review_triage::budget_for(&review_triage).with_money_cap(
-        args.money_cap_usd,
-        review_rates.map(|rates| (rates.input_usd_per_million, rates.output_usd_per_million)),
-    );
     let mut review_stop: Option<crate::tools::review_triage::ReviewStop> = None;
     let mut review_spend_usd = None;
     for (index, user_prompt) in prompts.into_iter().enumerate() {
@@ -10517,16 +10545,13 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
                 &model,
                 effort,
                 review_reserve_percent,
+                review_allowance,
             )
         });
         let mut request = crate::tools::review_core::ReviewCoreRequest::new(&diff, user_prompt);
         request.workspace = review_tool_workspace.clone();
         request.budget = review_budget.tool_budget();
-        request.max_output_tokens = Some(
-            client
-                .effective_max_output_tokens(&request_route.model)
-                .min(review_budget.max_output_tokens),
-        );
+        request.max_output_tokens = Some(review_allowance);
         request.reasoning_effort = reasoning_effort;
         request.spend_rates = review_rates;
         request.money_cap_usd = review_budget
@@ -10575,6 +10600,16 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
             let reasoning_tokens = usage
                 .reasoning_tokens
                 .map_or_else(|| "unknown".to_string(), |tokens| tokens.to_string());
+            let visible_tokens = usage
+                .output_tokens
+                .saturating_sub(usage.reasoning_tokens.unwrap_or(0));
+            let outcome_clause = if visible_tokens > 0 {
+                format!(
+                    "was cut off before the review finished ({visible_tokens} visible tokens came back)"
+                )
+            } else {
+                "produced no review text".to_string()
+            };
             let reserve_clause = if review_reserve_percent == 0 {
                 "no reasoning reserve was needed for this model".to_string()
             } else {
@@ -10585,7 +10620,7 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
                 index,
                 publication,
                 format!(
-                    "Review pass {}/{} exhausted its output allowance and produced no review text. This is an infrastructure/budget outcome, not a review result: the provider stopped with reason `{}` after reporting {} of {} requested output tokens as reasoning; this model's review reserve is {} tokens ({review_reserve_percent}% of the allowance) and {reserve_clause}. Coverage: {}. Reviewed so far: {} of {} planned pass(es). The partial review was not accepted or posted.",
+                    "Review pass {}/{} exhausted its output allowance and {outcome_clause}. This is an infrastructure/budget outcome, not a review result: the provider stopped with reason `{}` after reporting {} of {} requested output tokens as reasoning; this model's review reserve is {} tokens ({review_reserve_percent}% of the allowance) and {reserve_clause}. Coverage: {}. Reviewed so far: {} of {} planned pass(es). The partial review was not accepted or posted.",
                     index + 1,
                     planned_passes,
                     codewhale_models::stop_reason_detail(review_stop_reason.as_deref()),
@@ -10596,6 +10631,14 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
                     index,
                     planned_passes,
                 ),
+            );
+        }
+        if result.outcome == crate::tools::review_core::ReviewCoreOutcome::LeakedToolCall {
+            return report_failure(
+                &usage,
+                index,
+                publication,
+                crate::tools::review::leaked_tool_call_message(index + 1, planned_passes),
             );
         }
         let pass_output = result.raw;
@@ -12011,7 +12054,9 @@ async fn run_mcp_command(
 ) -> Result<()> {
     let config_path = config.mcp_config_path();
     let network_policy = config.network.clone().map(|network| {
-        crate::network_policy::NetworkPolicyDecider::with_default_audit(network.into_runtime())
+        crate::network_policy::NetworkPolicyDecider::with_default_audit(
+            crate::network_policy::NetworkPolicy::from(network),
+        )
     });
     match command {
         McpCommand::Init { force } => {
@@ -12091,7 +12136,7 @@ async fn run_mcp_command(
                 workspace,
                 std::sync::Arc::new(plugins.clone()),
             )?
-            .with_backend(crate::mcp::McpBackend::from_config(config));
+            .with_backend(config.mcp_backend());
             if let Some(name) = server {
                 if let Err(err) = pool.get_or_connect(&name).await {
                     if crate::mcp::oauth::error_looks_auth_required(&err) {
@@ -12124,7 +12169,7 @@ async fn run_mcp_command(
                 workspace,
                 std::sync::Arc::new(plugins.clone()),
             )?
-            .with_backend(crate::mcp::McpBackend::from_config(config));
+            .with_backend(config.mcp_backend());
             if let Some(name) = server {
                 let conn = match pool.get_or_connect(&name).await {
                     Ok(conn) => conn,
@@ -12308,7 +12353,7 @@ async fn run_mcp_command(
                 workspace,
                 std::sync::Arc::new(plugins.clone()),
             )?
-            .with_backend(crate::mcp::McpBackend::from_config(config));
+            .with_backend(config.mcp_backend());
             let errors = pool.connect_all().await;
             if errors.is_empty() {
                 println!("MCP config is valid. All enabled servers connected.");
@@ -12444,7 +12489,7 @@ fn doctor_mcp_server_json(name: &str, server: &McpServerConfig) -> serde_json::V
         "status": status.legacy_status(),
         "detail": status.detail(),
         "transport": if server.url.is_some() { "http" } else { "stdio" },
-        "endpoint": server.url.as_deref().map(crate::doctor::structural_url_authority),
+        "endpoint": server.url.as_deref().map(codewhale_config::structural_url_authority),
         "command_configured": server.command.is_some(),
         "args_count": server.args.len(),
         "env_count": server.env.len(),
@@ -12481,7 +12526,7 @@ fn doctor_check_mcp_server(server: &McpServerConfig) -> McpServerDoctorStatus {
 
     // URL-based server: omit userinfo, query, and fragment entirely.
     if let Some(ref url) = server.url {
-        let authority = crate::doctor::structural_url_authority(url);
+        let authority = codewhale_config::structural_url_authority(url);
         return if authority.starts_with("unparseable") {
             McpServerDoctorStatus::Warning(
                 "HTTP/SSE server URL is invalid; configured value omitted".to_string(),
@@ -13816,13 +13861,15 @@ fn review_reasoning_effort_value_for_prompt(
     model: &str,
     effort: crate::reasoning_preference::ReasoningEffort,
     reserve_percent: u32,
+    allowance: u32,
 ) -> Option<String> {
     let resolved = if effort == crate::reasoning_preference::ReasoningEffort::Auto {
         crate::auto_reasoning::select()
     } else {
         effort
     };
-    let bounded = crate::tools::review::bounded_review_reasoning_effort(resolved, reserve_percent);
+    let bounded =
+        crate::tools::review::bounded_review_reasoning_effort(resolved, reserve_percent, allowance);
     cli_reasoning_effort_value(config, model, bounded)
 }
 
@@ -13937,6 +13984,22 @@ async fn resolve_cli_exec_route(
     prompt: &str,
     force_configured_route: bool,
 ) -> Result<CliAutoRoute> {
+    let mut local_default = None;
+    if let Ok(identity) = config.active_provider_identity()
+        && identity.provider == crate::config::ProviderKind::Ollama
+    {
+        crate::provider_lake::refresh_local_ollama_catalog(config, &identity).await;
+        if crate::config::is_unresolved_local_ollama_model(model)
+            || (force_configured_route && model.trim().eq_ignore_ascii_case("auto"))
+        {
+            local_default = Some(
+                crate::route_runtime::resolve_runtime_route_for_identity(config, &identity, None)
+                    .map_err(anyhow::Error::msg)?
+                    .model,
+            );
+        }
+    }
+    let model = local_default.as_deref().unwrap_or(model);
     if force_configured_route && !model.trim().eq_ignore_ascii_case("auto") {
         let reasoning_effort = config
             .reasoning_effort()
@@ -14585,7 +14648,7 @@ async fn initialize_direct_workflow_mcp_pool(
         tracing::debug!("No MCP config for direct Workflow runtime: {error:#}");
         crate::mcp::McpPool::new(crate::mcp::McpConfig::default())
     });
-    pool = pool.with_backend(crate::mcp::McpBackend::from_config(config));
+    pool = pool.with_backend(config.mcp_backend());
     if let Some(policy) = network_policy {
         pool = pool.with_network_policy(policy);
     }
@@ -14664,7 +14727,9 @@ async fn build_direct_workflow_tool(
         crate::core::authority::SandboxNetworkAccess::from_config(config.sandbox_network_access),
     ));
     let network_policy = config.network.clone().map(|network| {
-        crate::network_policy::NetworkPolicyDecider::with_default_audit(network.into_runtime())
+        crate::network_policy::NetworkPolicyDecider::with_default_audit(
+            crate::network_policy::NetworkPolicy::from(network),
+        )
     });
     if let Some(policy) = network_policy.as_ref() {
         context = context.with_network_policy(policy.clone());
@@ -15158,7 +15223,9 @@ fn exec_network_policy(
         );
     }
     config.network.clone().map(|toml_cfg| {
-        crate::network_policy::NetworkPolicyDecider::with_default_audit(toml_cfg.into_runtime())
+        crate::network_policy::NetworkPolicyDecider::with_default_audit(
+            crate::network_policy::NetworkPolicy::from(toml_cfg),
+        )
     })
 }
 
@@ -16282,7 +16349,7 @@ mod doctor_setup_state_tests {
             approval_policy: Some("never".to_string()),
             allow_shell: Some(false),
             sandbox_mode: Some("read-only".to_string()),
-            network: Some(crate::config::NetworkPolicyToml {
+            network: Some(codewhale_config::NetworkPolicyToml {
                 default: "deny".to_string(),
                 ..Default::default()
             }),
@@ -16757,7 +16824,7 @@ mod doctor_endpoint_tests {
         assert_eq!(report["resolved_model"], "deepseek-v4-pro");
         assert!(report["alias_deprecation"].is_null());
         assert!(
-            crate::config::provider_capability(
+            crate::provider_lake::provider_capability(
                 crate::config::ProviderKind::Deepseek,
                 "deepseek-v4-pro"
             )
@@ -16839,7 +16906,9 @@ mod doctor_endpoint_tests {
         assert_eq!(report["model"], crate::config::DEFAULT_SILICONFLOW_MODEL);
         assert_eq!(
             report["base_url"]["redacted"],
-            crate::doctor::structural_url_authority(crate::config::DEFAULT_SILICONFLOW_CN_BASE_URL)
+            codewhale_config::structural_url_authority(
+                crate::config::DEFAULT_SILICONFLOW_CN_BASE_URL
+            )
         );
         assert_eq!(report["base_url"]["class"], "default");
         assert_eq!(report["auth"]["scheme"], "bearer");

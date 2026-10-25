@@ -54,6 +54,21 @@ configured model still matches the conversation before transferring a key.
 without returning a credential. `--prepare-model --thread ID` reconnects that
 model without starting a turn.
 
+A whale is a named account collaborator with a saved provider and model.
+`codewhale account agents create NAME --provider PROVIDER --model MODEL
+--operation-key KEY` saves one without starting work or a computer, and
+`codewhale account agents list` shows each whale's saved model.
+`codewhale dispatch --whale AGENT_ID "your task"` starts a cloud conversation
+with that whale: the service takes the route from the whale's saved
+configuration, and your local configuration for that provider supplies the
+memory-only key. Later `--thread` follow-ups keep using the whale's current
+saved model; a changed whale applies to the next turn, not to a running one.
+In a group conversation, a send or `--prepare-model` also connects the provider
+of each active member whose saved provider differs from the lead's, from your
+local configuration for that provider, memory-only like the lead's key. A
+member whose provider is not configured locally stops the send with that
+member's name; it is never skipped.
+
 Every send prints a replay key before submission. After an uncertain response,
 repeat the original command and prompt with `--operation-key KEY`. Keep the
 original `--computer` target when retrying creation, or the original `--thread`
