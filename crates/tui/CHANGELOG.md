@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   session: each running or recent command is a read-only tab with its live
   output, beside the interactive shells. "No live terminals" appears only when
   there are neither.
+- A shell command that spans several lines (a heredoc, a loop, an `&&` chain
+  split across lines) now shows those lines on its Live card while it runs and
+  after it succeeds, within the card's usual line limit, instead of only the
+  first line. Transcript shows the whole command. Single-line cards are
+  unchanged (#6436).
 - `codewhale review` no longer accepts leaked tool-call markup as a review: a
   pass whose reply is a DeepSeek DSML (or other) tool-call wrapper outside code
   now fails as incomplete, with no tally and nothing posted (#7072). A Low-risk

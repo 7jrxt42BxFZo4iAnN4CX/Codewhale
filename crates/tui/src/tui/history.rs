@@ -1102,6 +1102,14 @@ impl ExecCell {
 
         lines.extend(self.description_lines(width, locale));
 
+        if self.interaction.is_none()
+            && self.command.trim_end().lines().nth(1).is_some()
+            && (self.is_foreground_shell_wait()
+                || (mode == RenderMode::Live && self.status == ToolStatus::Success))
+        {
+            lines.extend(render_command_mode(&self.command, width, mode, false));
+        }
+
         // A foreground shell wait stays a compact card — command, optional note,
         // spinner and running badge. Live output and artifact paths belong in the
         // Activity sidebar and `/jobs` detail surfaces.
@@ -1229,9 +1237,14 @@ impl ExecCell {
         let multi_line_command = self.command.trim_end().lines().nth(1).is_some();
 
         if self.interaction.is_none() {
-            if self.status == ToolStatus::Failed
-                && (description.is_some() || headline_clipped || multi_line_command)
-            {
+            let show_command = match self.status {
+                ToolStatus::Failed => {
+                    description.is_some() || headline_clipped || multi_line_command
+                }
+                ToolStatus::Running | ToolStatus::Success => multi_line_command,
+                ToolStatus::Hydrated | ToolStatus::Stopped | ToolStatus::Warning => false,
+            };
+            if show_command {
                 lines.extend(render_command_mode(
                     &self.command,
                     width,
