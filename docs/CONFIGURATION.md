@@ -71,6 +71,19 @@ controls do not blur together.
   `project_instruction_imports` key, for example `["claude"]`, `["cursor"]` or
   `["all"]` (see `config.example.toml`); Codewhale warns when it finds one it
   did not load.
+
+  Codewhale reads one instruction file per directory, from the repository
+  root down to the workspace, and puts your global instruction file (such as
+  `~/.codewhale/AGENTS.md`) in front of them. The nearest scope reads last
+  and wins: the workspace file overrides its parents, and project files
+  override the global file. A file over 100 KiB is cut to its first 100 KiB
+  and ends with a `[…truncated: N of M bytes omitted …]` marker, and
+  `/context report` names the file. Instruction and rules files share one
+  48 KiB budget, and instruction files claim it first. Instruction text past
+  the budget is dropped from the front, broadest scope first (the global
+  file, then the repository root), so a file larger than the budget keeps
+  only its end; a marker gives the bytes dropped. Rules past what is left
+  are cut from the end.
 - **Memory and handoffs** — recalled state. Useful, but lower authority than
   constitutions and project instructions.
 
