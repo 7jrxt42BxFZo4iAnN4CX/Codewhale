@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installs provider access in the running computer's memory. Retries retain
   one operation key and the account/VM binding. Existing Agent Work dispatch
   remains available when no computer conversation is selected.
+- Code blocks inside reasoning cells now take their syntax colours from the
+  active theme instead of the terminal's detected light or dark mode, so a dark
+  theme such as Shoreline in a light-profile terminal no longer paints
+  near-black code on its dark reasoning surface. The pager and clipboard copies
+  still follow terminal detection (#7043).
 - `/balance` and the balance status chip work on the default DeepSeek route
   again. The balance request now goes to the DeepSeek API root instead of the
   `/beta` inference path, which failed with "Could not fetch DeepSeek account
