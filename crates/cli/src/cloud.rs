@@ -26,6 +26,7 @@ use codewhale_secrets::account::{
 use reqwest::Url;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
+pub(crate) mod computer;
 pub(crate) mod machine;
 mod work;
 
@@ -65,6 +66,8 @@ enum CloudCommand {
     Keys(CloudKeysArgs),
     /// Manage Computers in this signed-in Codewhale account.
     Computers(CloudComputersArgs),
+    #[command(about = "Start or continue an account conversation on a cloud computer")]
+    Session(computer::SessionArgs),
     /// List Projects available to this signed-in Codewhale account.
     Projects(CloudProjectsArgs),
     /// Inspect GitHub repositories authorized for this account.
@@ -850,6 +853,14 @@ impl CloudTransport for ReqwestTransport {
                 .is_some_and(|id| validate_account_file_id(id).is_ok());
         let max_response_bytes = if file_download {
             MAX_FILE_DOWNLOAD_BYTES
+        } else if matches!(request.method, HttpMethod::Get | HttpMethod::Post)
+            && request
+                .path
+                .strip_prefix("/v1/threads/")
+                .and_then(|path| path.strip_suffix("/computer"))
+                .is_some_and(|id| validate_resource_id(id, "Conversation").is_ok())
+        {
+            16 * 1024 * 1024 + 64 * 1024
         } else {
             MAX_RESPONSE_BYTES
         };
@@ -1572,6 +1583,16 @@ impl<'a, T: CloudTransport> CloudClient<'a, T> {
         body: Option<Vec<u8>>,
     ) -> Result<(CloudResponse, AccountSessionSnapshot)> {
         let snapshot = self.account_store.snapshot()?;
+        self.execute_from_snapshot(method, path, body, snapshot)
+    }
+
+    fn execute_from_snapshot(
+        &self,
+        method: HttpMethod,
+        path: &str,
+        body: Option<Vec<u8>>,
+        snapshot: AccountSessionSnapshot,
+    ) -> Result<(CloudResponse, AccountSessionSnapshot)> {
         let Some(mut stored) = snapshot.load()? else {
             bail!("Not signed in. Run `codewhale login` first");
         };
@@ -1610,6 +1631,19 @@ impl<'a, T: CloudTransport> CloudClient<'a, T> {
                 }
                 let mut next: AuthBundle = parse_json_body(&refresh.body)?;
                 validate_auth_bundle(&next)?;
+                if next
+                    .user
+                    .as_ref()
+                    .zip(stored.bundle.user.as_ref())
+                    .is_some_and(|(next, previous)| next.id != previous.id)
+                    || next
+                        .session
+                        .as_ref()
+                        .zip(stored.bundle.session.as_ref())
+                        .is_some_and(|(next, previous)| next.id != previous.id)
+                {
+                    bail!("The refreshed account changed. Sign in again before retrying.");
+                }
                 if next.user.is_none() {
                     next.user = stored.bundle.user.take();
                 }
@@ -1963,6 +1997,7 @@ fn dispatch_stamp(objective: &str) -> String {
 }
 
 pub(crate) enum AccountDispatch {
+    Computer(computer::SessionArgs),
     Run {
         objective: String,
         agent: Option<String>,
@@ -1984,6 +2019,16 @@ pub(crate) fn run_dispatch(
     config: &mut ConfigStore,
 ) -> Result<()> {
     let command = match call {
+        AccountDispatch::Computer(args) => {
+            return run(
+                CloudArgs {
+                    api_base: None,
+                    command: CloudCommand::Session(args),
+                },
+                profile,
+                config,
+            );
+        }
         AccountDispatch::Run {
             objective,
             agent,
@@ -3192,6 +3237,7 @@ fn run_with<T: CloudTransport, W: Write>(
         CloudCommand::Computers(computers) => {
             run_computers(computers.command, &client, machine, out)
         }
+        CloudCommand::Session(args) => computer::run(args, &client, machine, out, key_reader),
         CloudCommand::Projects(projects) => run_projects(projects.command, &client, machine, out),
         CloudCommand::Github(github) => run_github(github.command, &client, machine, out),
         CloudCommand::Agents(agents) => run_agents(agents.command, &client, machine, out),

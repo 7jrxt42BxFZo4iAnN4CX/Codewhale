@@ -37,6 +37,16 @@
 # --- Flag-backed tools (crates/runtime/src/features.rs) ---
 
 [[feature]]
+id = "cloud-computer-dispatch"
+name = "Cloud computer conversations"
+summary = "Dispatch, inspect, continue and stop the same account cloud conversation from terminal and desktop."
+status = "experimental"
+surfaces = { tui = "preview" }
+since = "unreleased"
+docs = "docs/CLOUD_DISPATCH.md"
+owner = "crates/cli/src/cloud/computer.rs"
+
+[[feature]]
 id = "shell-tool"
 name = "Shell tool"
 summary = "Runs shell commands for the agent through the approval gate and sandbox."
