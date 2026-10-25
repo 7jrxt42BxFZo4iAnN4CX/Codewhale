@@ -1277,7 +1277,10 @@ pub(crate) fn system_prompt_with_instruction_assembly_for_host(
     let window_tokens = session_context
         .context_window_override
         .map(|window| usize::try_from(window).unwrap_or(usize::MAX));
-    let mut budgets = match crate::project_context::active_instruction_budgets(window_tokens) {
+    let mut budgets = match crate::project_context::active_instruction_budgets(
+        window_tokens,
+        Some(session_context.model_id),
+    ) {
         Ok(budgets) => budgets,
         Err(error) => {
             // Validation runs when the table is installed, so reaching this
@@ -1287,7 +1290,7 @@ pub(crate) fn system_prompt_with_instruction_assembly_for_host(
         }
     };
     if let Some(trim) = guard_trim {
-        budgets = budgets.trimmed_for_guard(trim.scope, trim.tokens);
+        budgets = budgets.with_scope_ceiling(trim.scope, trim.tokens);
     }
     let assembly = crate::project_context::assemble_instruction_block(
         &mut project_context,

@@ -418,13 +418,28 @@ pub(crate) fn render_notice_body(notices: &[InstructionNotice]) -> Option<String
     if losses.is_empty() {
         return None;
     }
+    // Bounded on purpose: a rules directory beyond the cap yields one loss per
+    // extra file, and an unbounded summary would be a first-turn message larger
+    // than the budget it describes.
+    const MAX_LINES: usize = 12;
+    const MAX_BYTES: usize = 2_000;
     let mut body = String::from(
         "Standing instructions were trimmed or skipped before this session started:\n",
     );
-    for notice in losses {
-        body.push_str("- ");
-        body.push_str(&notice.to_string());
-        body.push('\n');
+    let mut shown = 0usize;
+    for notice in &losses {
+        let line = format!("- {notice}\n");
+        if shown >= MAX_LINES || body.len() + line.len() > MAX_BYTES {
+            break;
+        }
+        body.push_str(&line);
+        shown += 1;
+    }
+    if shown < losses.len() {
+        body.push_str(&format!(
+            "- …and {} more loss(es); the full list is in /context report.\n",
+            losses.len() - shown
+        ));
     }
     body.push_str("Run /context report for the full per-source breakdown.");
     Some(body)
@@ -562,18 +577,16 @@ impl InstructionBudgets {
         }
     }
 
-    /// Reduce one scope's ceiling by `over`, the amount the static guard is
-    /// over its own limit. Saturates at zero; the caller reports
-    /// `static_guard_unsatisfied` when both scopes reach zero and the guard
-    /// is still exceeded.
-    pub(crate) fn trimmed_for_guard(mut self, scope: InstructionScope, over: usize) -> Self {
+    /// Set one scope's ceiling to an absolute value, for the static guard.
+    ///
+    /// Deliberately absolute rather than "ceiling minus the overage": a scope
+    /// that uses less than its ceiling would otherwise keep every byte and the
+    /// prefix would stay over the guard. The guard computes the new ceiling
+    /// from the scope's *retained* usage minus the overage.
+    pub(crate) fn with_scope_ceiling(mut self, scope: InstructionScope, tokens: usize) -> Self {
         match scope {
-            InstructionScope::Global => {
-                self.global_tokens = self.global_tokens.saturating_sub(over);
-            }
-            InstructionScope::Project => {
-                self.project_tokens = self.project_tokens.saturating_sub(over);
-            }
+            InstructionScope::Global => self.global_tokens = tokens,
+            InstructionScope::Project => self.project_tokens = tokens,
         }
         self
     }
@@ -583,6 +596,7 @@ impl InstructionBudgets {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct InstructionGuardTrim {
     pub(crate) scope: InstructionScope,
+    /// New ceiling for `scope`, in estimated tokens.
     pub(crate) tokens: usize,
 }
 

@@ -1027,6 +1027,10 @@ pub struct Engine {
     /// Whether the static-prefix guard has already run for this session. The
     /// guard is a safety net with a one-shot notice, not a per-turn meter.
     static_prefix_guard_checked: bool,
+    /// The ceiling the guard settled on, kept so every later composition of
+    /// this session honours it: without it a plain turn would recompose with
+    /// the configured budget and put the trimmed files back.
+    active_guard_trim: Option<crate::project_context::InstructionGuardTrim>,
     /// One lazy, session-scoped working kernel for inline `repl` blocks.
     /// Its context is refreshed before each run, while user-created Python
     /// state stays alive across model turns.
@@ -2492,6 +2496,7 @@ impl Engine {
             session,
             pending_instruction_notice,
             static_prefix_guard_checked: false,
+            active_guard_trim: None,
             repl_kernel: None,
             subagent_manager,
             subagent_execution_limits,
@@ -4213,6 +4218,11 @@ impl Engine {
                             workspace,
                             mode,
                         } => {
+                            // A fresh conversation arrives with its own
+                            // sources: re-arm the guard and rebuild the notice
+                            // from the assembly that installs its header.
+                            self.static_prefix_guard_checked = false;
+                            self.active_guard_trim = None;
                             let plugin_workspace_changed =
                                 self.plugin_registry.workspace() != workspace.as_path();
                             let previous_session_id = self.session.id.clone();
@@ -9140,7 +9150,17 @@ impl Engine {
         reason: &str,
     ) {
         self.record_project_trust_warning();
-        let stable_prompt = self.compose_stable_system_prompt(context);
+        let (stable_prompt, assembly) =
+            self.compose_stable_system_prompt_with_assembly(context, self.active_guard_trim);
+        // The assembly that installs the header is what the operator and the
+        // model must hear about: a route change can drop files that the
+        // construction-time assembly did not.
+        if let Some(body) = assembly
+            .as_ref()
+            .and_then(|assembly| crate::project_context::render_notice_body(&assembly.notices))
+        {
+            self.pending_instruction_notice = Some(body);
+        }
 
         let stable_hash = system_prompt_hash(stable_prompt.as_ref());
         if self.session.system_prompt_override {
@@ -9226,7 +9246,7 @@ impl Engine {
         &self,
         context: &NextTurnPromptContext,
     ) -> Option<SystemPrompt> {
-        self.compose_stable_system_prompt_with_assembly(context, None)
+        self.compose_stable_system_prompt_with_assembly(context, self.active_guard_trim)
             .0
     }
 
@@ -9325,8 +9345,7 @@ impl Engine {
         if self.static_prefix_guard_checked {
             return;
         }
-        self.static_prefix_guard_checked = true;
-        if let Some(body) = self.enforce_static_prefix_guard(tools) {
+        if let Some(body) = self.enforce_static_prefix_guard(tools).await {
             self.add_session_message(self.runtime_text_message_with_turn_metadata(
                 body,
                 crate::core::ops::UserInputProvenance::Runtime,
@@ -9344,7 +9363,10 @@ impl Engine {
     /// prefix is still over, the session continues under `policy = "trim"`
     /// with an explicit `static_guard_unsatisfied` notice (`policy = "refuse"`
     /// is enforced at session start, before the engine exists).
-    fn enforce_static_prefix_guard(&mut self, tools: &[codewhale_models::Tool]) -> Option<String> {
+    async fn enforce_static_prefix_guard(
+        &mut self,
+        tools: &[codewhale_models::Tool],
+    ) -> Option<String> {
         if self.session.system_prompt_override {
             return None;
         }
@@ -9354,27 +9376,59 @@ impl Engine {
             &self.session.model,
             self.active_route_limits,
         ) as usize;
-        let budgets = crate::project_context::active_instruction_budgets(Some(window))
-            .unwrap_or_else(|_| {
-                crate::project_context::InstructionBudgets::defaults_for(Some(window))
-            });
+        let budgets = crate::project_context::active_instruction_budgets(
+            Some(window),
+            Some(&self.session.model),
+        )
+        .unwrap_or_else(|_| crate::project_context::InstructionBudgets::defaults_for(Some(window)));
         let measured = prompts::measure_static_prefix(self.session.system_prompt.as_ref(), tools);
         if measured <= budgets.static_guard_tokens {
             return None;
         }
         let over = measured - budgets.static_guard_tokens;
-        let scope = crate::project_context::largest_instruction_scope(
-            &self.config.workspace,
-            &self.config.instructions,
-            &budgets,
-        );
-        let (prompt, assembly) = self.compose_stable_system_prompt_with_assembly(
-            &context,
-            Some(crate::project_context::InstructionGuardTrim {
-                scope,
-                tokens: over,
-            }),
-        );
+
+        // The assembly reads directories and configured files: run it on a
+        // blocking worker so a slow disk cannot stall the engine's runtime
+        // thread before a provider request.
+        let workspace = self.config.workspace.clone();
+        let configured = self.config.instructions.clone();
+        let assembly = tokio::task::spawn_blocking(move || {
+            crate::project_context::instruction_assembly_for(&workspace, &configured, &budgets)
+        })
+        .await
+        .ok()?;
+
+        let scope = assembly
+            .largest_scope
+            .unwrap_or(crate::project_context::InstructionScope::Global);
+        let retained = match scope {
+            crate::project_context::InstructionScope::Global => assembly.global_tokens,
+            crate::project_context::InstructionScope::Project => assembly.project_tokens,
+        };
+
+        // Nothing left to trim: the guard is unsatisfiable. Continue under
+        // `policy = "trim"` with an explicit terminal notice — `refuse` is
+        // enforced at session start, before the engine exists.
+        if retained <= over {
+            self.session.pending_prefix_change_reason =
+                Some("instruction-budget:static-guard-unsatisfiable".to_string());
+            self.active_guard_trim =
+                Some(crate::project_context::InstructionGuardTrim { scope, tokens: 0 });
+            self.static_prefix_guard_checked = true;
+            return Some(
+                crate::project_context::InstructionNotice::static_guard(scope, over, true)
+                    .to_string(),
+            );
+        }
+
+        // Trim by the overage from what the scope actually kept, so the
+        // recomposed prefix really loses that many tokens.
+        let trim = crate::project_context::InstructionGuardTrim {
+            scope,
+            tokens: retained - over,
+        };
+        let (prompt, trimmed_assembly) =
+            self.compose_stable_system_prompt_with_assembly(&context, Some(trim));
         let prompt = prompt?;
         let after = prompts::measure_static_prefix(Some(&prompt), tools);
         self.session.system_prompt = Some(prompt);
@@ -9382,17 +9436,34 @@ impl Engine {
             Some(system_prompt_hash(self.session.system_prompt.as_ref()));
         self.session.pending_prefix_change_reason =
             Some("instruction-budget:static-guard".to_string());
-        let tokens_kept = assembly
+        self.active_guard_trim = Some(trim);
+        self.static_prefix_guard_checked = true;
+
+        let retained_after = trimmed_assembly
             .as_ref()
             .map_or(0, |assembly| assembly.tokens_kept());
         let unsatisfiable = matches!(
-            crate::project_context::static_guard_outcome(after, &budgets, Some(scope), tokens_kept),
+            crate::project_context::static_guard_outcome(
+                after,
+                &budgets,
+                Some(scope),
+                retained_after
+            ),
             crate::project_context::StaticGuardOutcome::Unsatisfiable { .. }
         );
-        Some(
+        let mut body =
             crate::project_context::InstructionNotice::static_guard(scope, over, unsatisfiable)
-                .to_string(),
-        )
+                .to_string();
+        // The guard's own rebuild produces per-source losses; publish them with
+        // the scope-level sentence so the model sees which files went.
+        if let Some(losses) = trimmed_assembly
+            .as_ref()
+            .and_then(|assembly| crate::project_context::render_notice_body(&assembly.notices))
+        {
+            body.push('\n');
+            body.push_str(&losses);
+        }
+        Some(body)
     }
 
     fn installed_next_turn_prompt_context(&self) -> NextTurnPromptContext {

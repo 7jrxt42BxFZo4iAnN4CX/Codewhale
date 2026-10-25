@@ -1124,16 +1124,30 @@ pub async fn run_tui(
         app.effective_model_for_budget(),
         app.active_route_limits,
     ) as usize;
-    match crate::project_context::startup_instruction_notice(
-        &app.workspace,
-        &configured_sources,
-        Some(instruction_budget_window),
-    ) {
-        Ok(Some(notice)) => {
+    // The check walks directories and reads configured files; keep it off the
+    // UI's async task.
+    let notice_workspace = app.workspace.clone();
+    let notice_model = app.effective_model_for_budget().to_string();
+    let notice = tokio::task::spawn_blocking(move || {
+        crate::project_context::startup_instruction_notice(
+            &notice_workspace,
+            &configured_sources,
+            Some(instruction_budget_window),
+            Some(&notice_model),
+        )
+    })
+    .await;
+    match notice {
+        Ok(Ok(Some(notice))) => {
             app.add_message(HistoryCell::System { content: notice });
         }
-        Ok(None) => {}
-        Err(error) => return Err(anyhow::anyhow!(error)),
+        Ok(Ok(None)) => {}
+        Ok(Err(error)) => return Err(anyhow::anyhow!(error)),
+        Err(error) => {
+            return Err(anyhow::anyhow!(
+                "instruction check did not complete: {error}"
+            ));
+        }
     }
 
     let session_id = ensure_runtime_session_id(&mut app);

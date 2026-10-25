@@ -510,18 +510,48 @@ fn base_source_entries(
         ));
     }
 
-    if let Some(content) = project_context.instructions.as_deref() {
-        // Same helper as ProjectContext::as_system_block, so the report's
-        // source token derives from the same label the prompt shows. (The
-        // entry below still displays the absolute source path for operators;
-        // only the prompt label is relativized.)
+    // #6526: assemble once, so the source row counts the content the prompt
+    // keeps, and the budget/loss rows below carry no token cost of their own.
+    // Counting the raw text here and the retained text again there would
+    // include discarded content and inflate the total even without a trim.
+    let instruction_assembly = crate::project_context::active_instruction_budgets(
+        context_window_tokens.map(|tokens| tokens as usize),
+        Some(model),
+    )
+    .ok()
+    .map(|budgets| {
+        let mut instructions = crate::project_context::load_project_context_with_parents(workspace);
+        let configured: Vec<crate::prompts::InstructionSource> = configured_instruction_paths
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect();
+        crate::project_context::assemble_instruction_block(&mut instructions, &configured, &budgets)
+    });
+
+    if let Some(block) = instruction_assembly
+        .as_ref()
+        .and_then(|assembly| assembly.block.as_deref())
+    {
+        builder.push(SourceEntry::text(
+            SourceKind::ProjectContext,
+            "Project instructions",
+            project_context
+                .source_path
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            ActivationReason::FilePresent,
+            block,
+            CountingConfidence::High,
+            Some(5),
+        ));
+    } else if let Some(content) = project_context.instructions.as_deref() {
         let source = crate::project_context::project_instructions_source_label(
             project_context.source_path.as_deref(),
         );
         let mut block = format!(
             "<project_instructions source=\"{source}\">\n{content}\n</project_instructions>"
         );
-        // Include rules in the report when present
         if let Some(rules) = &project_context.rules_block {
             block.push('\n');
             block.push_str(rules);
@@ -539,7 +569,6 @@ fn base_source_entries(
             Some(5),
         ));
     } else if let Some(rules) = &project_context.rules_block {
-        // Rules exist without main instructions
         builder.push(SourceEntry::text(
             SourceKind::ProjectContext,
             "Project rules",
@@ -560,22 +589,8 @@ fn base_source_entries(
             "no project context block available",
         ));
     }
-    // #6526: per-source instruction losses and the budgets this request
-    // resolved, from the same assembly the prompt used.
-    if let Ok(budgets) = crate::project_context::active_instruction_budgets(
-        context_window_tokens.map(|tokens| tokens as usize),
-    ) {
-        let mut instructions = crate::project_context::load_project_context_with_parents(workspace);
-        let configured: Vec<crate::prompts::InstructionSource> = configured_instruction_paths
-            .iter()
-            .cloned()
-            .map(Into::into)
-            .collect();
-        let assembly = crate::project_context::assemble_instruction_block(
-            &mut instructions,
-            &configured,
-            &budgets,
-        );
+
+    if let Some(assembly) = instruction_assembly.as_ref() {
         builder.push(SourceEntry::diagnostic(
             SourceKind::ProjectContext,
             "Instruction budget",
@@ -591,7 +606,7 @@ fn base_source_entries(
                 assembly.budgets.usable_window_tokens,
                 assembly.budgets.static_guard_tokens,
             ),
-            assembly.tokens_kept(),
+            0,
             Some(5),
         ));
         for notice in assembly.notices.iter().filter(|notice| notice.is_loss()) {
@@ -601,7 +616,7 @@ fn base_source_entries(
                 notice.path.as_ref().map(|path| path.display().to_string()),
                 ActivationReason::RuntimeState,
                 notice.to_string(),
-                notice.tokens_kept,
+                0,
                 Some(5),
             ));
         }

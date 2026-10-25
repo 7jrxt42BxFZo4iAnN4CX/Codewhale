@@ -597,7 +597,7 @@ fn refuse_policy_stops_on_trim_but_not_on_skip() {
     with_test_instruction_budget_config(trim_config, || {
         let ws = tempdir().unwrap();
         write(&ws.path().join("AGENTS.md"), &"T".repeat(4_000));
-        let outcome = startup_instruction_notice(ws.path(), &[], Some(128_000));
+        let outcome = startup_instruction_notice(ws.path(), &[], Some(128_000), None);
         let error = outcome.expect_err("refuse stops on a trim");
         assert!(error.contains("refuse"), "{error}");
     });
@@ -610,7 +610,7 @@ fn refuse_policy_stops_on_trim_but_not_on_skip() {
     with_test_instruction_budget_config(skip_config, || {
         let ws = tempdir().unwrap();
         write(&ws.path().join("AGENTS.md"), &"S".repeat(1_000));
-        let notice = startup_instruction_notice(ws.path(), &[], Some(128_000))
+        let notice = startup_instruction_notice(ws.path(), &[], Some(128_000), None)
             .expect("a skip is not a refusal")
             .expect("a skip is reported");
         assert!(notice.contains("skipped"), "{notice}");
@@ -627,7 +627,7 @@ fn startup_notice_names_the_loss_and_numbers() {
         || {
             let ws = tempdir().unwrap();
             write(&ws.path().join("AGENTS.md"), &"N".repeat(4_000));
-            let notice = startup_instruction_notice(ws.path(), &[], Some(128_000))
+            let notice = startup_instruction_notice(ws.path(), &[], Some(128_000), None)
                 .expect("valid config")
                 .expect("a trim is reported");
             assert!(notice.contains("trimmed"), "{notice}");

@@ -485,11 +485,17 @@ pub fn active_instruction_budget_config() -> Option<InstructionBudgetConfig> {
 /// so a broken table fails loud instead of producing a nonsensical ceiling.
 pub(crate) fn active_instruction_budgets(
     window_tokens: Option<usize>,
+    model: Option<&str>,
 ) -> Result<InstructionBudgets, String> {
+    // The route's own output reservation is what the usable window must
+    // subtract; the 2,048-token fallback is only for a caller with no model.
+    let output_tokens = model
+        .and_then(codewhale_models::max_output_tokens_for_model)
+        .map(|tokens| usize::try_from(tokens).unwrap_or(usize::MAX));
     InstructionBudgets::resolve(
         active_instruction_budget_config().as_ref(),
         window_tokens,
-        None,
+        output_tokens,
     )
 }
 
@@ -660,8 +666,9 @@ pub fn startup_instruction_notice(
     workspace: &Path,
     configured: &[crate::prompts::InstructionSource],
     window_tokens: Option<usize>,
+    model: Option<&str>,
 ) -> Result<Option<String>, String> {
-    let budgets = active_instruction_budgets(window_tokens)?;
+    let budgets = active_instruction_budgets(window_tokens, model)?;
     let mut ctx = load_project_context_with_parents(workspace);
     let assembly = assemble_instruction_block(&mut ctx, configured, &budgets);
     if budgets.policy == InstructionBudgetPolicy::Refuse
@@ -684,19 +691,40 @@ pub fn startup_instruction_notice(
     Ok(render_notice_body(&assembly.notices))
 }
 
-/// Pick the scope the static-prefix guard should trim first: the scope that
-/// currently holds the most instruction tokens.
+/// Read a configured instruction file without trusting its metadata length.
 ///
-/// Measured through the same assembly the prompt uses, so the choice cannot
-/// disagree with what was actually charged. Read-only from the cache.
-pub(crate) fn largest_instruction_scope(
+/// Returns the text and whether the file exceeded `cap`. An over-cap file
+/// returns no text at all: the caller reports a skip, and nothing past the
+/// ceiling is read into memory.
+fn read_instruction_file_bounded(path: &Path, cap: u64) -> std::io::Result<(String, bool)> {
+    use std::io::Read as _;
+
+    let file = fs::File::open(path)?;
+    if !file.metadata()?.is_file() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "not a regular file",
+        ));
+    }
+    let mut bytes = Vec::new();
+    file.take(cap.saturating_add(1)).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > cap {
+        return Ok((String::new(), true));
+    }
+    String::from_utf8(bytes)
+        .map(|text| (text, false))
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+}
+
+/// Assemble the instruction block for these budgets without composing a
+/// prompt. The caller can inspect retained usage before asking for a rebuild.
+pub(crate) fn instruction_assembly_for(
     workspace: &Path,
     configured: &[crate::prompts::InstructionSource],
     budgets: &InstructionBudgets,
-) -> InstructionScope {
+) -> InstructionAssembly {
     let mut ctx = load_project_context_with_parents(workspace);
-    let assembly = assemble_instruction_block(&mut ctx, configured, budgets);
-    assembly.largest_scope.unwrap_or(InstructionScope::Global)
+    assemble_instruction_block(&mut ctx, configured, budgets)
 }
 
 /// Read the configured `instructions = [...]` entries as global-scope
@@ -714,24 +742,30 @@ fn configured_instruction_segments(
     for source in configured {
         let (path, name, content, read_error) = match source {
             InstructionSource::File(path) => {
-                let size = fs::metadata(path).ok().map(|metadata| metadata.len());
-                if size.is_some_and(|size| size > file_max_bytes) {
-                    notices.push(InstructionNotice::loss(
-                        InstructionScope::Global,
-                        InstructionOrigin::Configured,
-                        Some(path.clone()),
-                        InstructionLimit::FileCeiling,
-                        InstructionAction::Skipped,
-                    ));
-                    continue;
+                // Bound the read on the open handle instead of trusting the
+                // metadata length: a zero-length device such as `/dev/zero`, or
+                // a file that grows after the check, must not become an
+                // unbounded read.
+                match read_instruction_file_bounded(path, file_max_bytes) {
+                    Ok((_, true)) => {
+                        notices.push(InstructionNotice {
+                            path: Some(path.clone()),
+                            scope: InstructionScope::Global,
+                            origin: InstructionOrigin::Configured,
+                            action: InstructionAction::Skipped,
+                            bytes_kept: 0,
+                            bytes_dropped: file_max_bytes,
+                            tokens_kept: 0,
+                            tokens_dropped: 0,
+                            limit: InstructionLimit::FileCeiling,
+                            fallback_selected: None,
+                            detail: Some(format!("larger than the {file_max_bytes} byte ceiling")),
+                        });
+                        continue;
+                    }
+                    Ok((text, false)) => (Some(path.clone()), None, text, None),
+                    Err(error) => (Some(path.clone()), None, String::new(), Some(error)),
                 }
-                let read = fs::read_to_string(path);
-                (
-                    Some(path.clone()),
-                    None,
-                    read.as_deref().unwrap_or("").to_string(),
-                    read.err(),
-                )
             }
             InstructionSource::Inline { name, content } => {
                 (None, Some(name.clone()), content.clone(), None)

@@ -944,7 +944,7 @@ pub(super) async fn workspace_instructions(
     // Budgets are resolved per route window; this route has no model context
     // window of its own, so it reports what the loader would use when the
     // window is unknown.
-    let budgets = crate::project_context::active_instruction_budgets(None).ok();
+    let budgets = crate::project_context::active_instruction_budgets(None, None).ok();
 
     let (sources, generated_fallback, warnings, workspace_root) =
         tokio::task::spawn_blocking(move || {
