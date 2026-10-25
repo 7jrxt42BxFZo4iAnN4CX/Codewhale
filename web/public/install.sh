@@ -245,9 +245,6 @@ esac
 tmpdir="$(mktemp -d 2>/dev/null || mktemp -d -t codewhale-install)"
 trap 'rm -rf "$tmpdir"' EXIT INT TERM
 
-# Backups this run made under CODEWHALE_FORCE_REINSTALL, newest last. A run that
-# fails after moving a command aside puts it back, so a forced install that does
-# not complete never leaves the command missing from the install directory.
 forced_backups="$tmpdir/.forced-backups"
 : > "$forced_backups"
 
@@ -273,8 +270,6 @@ restore_forced_backups() {
   while IFS= read -r backup; do
     [ -n "$backup" ] || continue
     [ -e "$backup" ] || continue
-    # The name this run generated ends in .bak-<utc-stamp>[-<n>]; the
-    # destination is everything before it.
     destination="$(printf '%s' "$backup" | sed 's/\.bak-[0-9TZ]*\(-[0-9][0-9]*\)\{0,1\}$//')"
     if [ ! -e "$destination" ] && [ ! -L "$destination" ]; then
       mv "$backup" "$destination" && say "Restored $destination: this install did not complete." >&2

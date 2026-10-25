@@ -62,10 +62,6 @@ pub fn run_update(beta: bool, check_only: bool, proxy_arg: Option<String>) -> Re
     let channel = ReleaseChannel::from_beta_flag(beta);
     let current_version = env!("CARGO_PKG_VERSION");
     let build_version = env!("CODEWHALE_BUILD_VERSION");
-    // The build script marks an unstamped checkout with `(dev)` and nothing
-    // else: a release artifact carries its short SHA and a Cargo source
-    // package carries the plain version. Only the checkout marker means the
-    // installed file has no published artifact behind it.
     let unreleased_checkout_build = build_version.ends_with(" (dev)");
     let proxy = proxy_arg
         .as_deref()

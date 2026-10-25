@@ -147,9 +147,6 @@ check_destination() {
 
 # The image is an explicit installer choice; presence never changes Core's
 # Node default. Archives carry notices/source beside any qualified image.
-# Backups this run made under CODEWHALE_FORCE_REINSTALL. A run that fails after
-# moving a command aside puts it back, so a forced install that does not
-# complete never leaves a command missing from the prefix.
 forced_backups=()
 stage=""
 stage_dir=""
