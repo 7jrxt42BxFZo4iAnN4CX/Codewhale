@@ -2403,13 +2403,25 @@ Fleet 流（`/v1/fleet/runs/{run_id}/events`）保留自己的结束帧，
 请读条目的状态，或等待那个事件。
 
 常见事件名：`thread.started`、`thread.forked`、`turn.started`、
-`turn.lifecycle`、`turn.steered`、`turn.steer_dropped`、`turn.interrupt_requested`、
+`turn.lifecycle`、`turn.usage`、`turn.steered`、`turn.steer_dropped`、`turn.interrupt_requested`、
 `turn.completed`、`turn.artifacts`、`item.started`、`item.delta`、`item.completed`、
 `item.failed`、`item.interrupted`、`approval.required`、`approval.decided`、
 `approval.timeout`、`user_input.required`、`user_input.answered`、
 `user_input.canceled`、`tool_call.requested`、`tool_call.resolved`、
 `tool_call.timeout`、`tool_call.canceled`、`sandbox.denied`、
 `turn.workspace_snapshot`、`turn.provider_request`、`runtime.store_failure`。
+
+`turn.usage` 是**一次模型调用**的回执：每个报告了用量的提供商请求发出一次，
+而不是每个回合一次。它的 `payload` 携带该次调用的 `usage`，
+`duration_ms` / `first_token_ms` / `request_ms` 计时，`maxOutputTokens` 额度，
+`billed_prompt_tokens`（提供商实际计费的提示大小：发生重试时取最后一次
+请求的输入，否则取本次调用的输入数）、以及 `cost` —— 该次调用按它实际派发的
+路由定价，形如 `{usd, cny, usd_priced, cny_priced}`。
+
+当该路由无法为这次调用用到的所有 token 类别定价时，`cost` 为 `null`；
+客户端不得把它读成“免费”。这些数字是显示辅助：让界面在长回合运行期间
+就能推动费用与上下文读数；回合的权威累计总量仍随 `turn.completed` 到达，
+而 `GET /v1/threads/{id}/usage` 的线程总量仍是记账依据。
 
 `turn.provider_request` 携带请求诊断观察，不增加计费用量；详见
 [每次请求的缓存回执](CACHE.md#每次请求的回执)。

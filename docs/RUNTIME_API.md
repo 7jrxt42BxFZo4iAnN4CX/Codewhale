@@ -2902,13 +2902,28 @@ A client that treats `200` as "the model saw it" is therefore wrong in the third
 case: read the item's status, or wait for the event.
 
 Common event names: `thread.started`, `thread.forked`, `turn.started`,
-`turn.lifecycle`, `turn.steered`, `turn.steer_dropped`, `turn.interrupt_requested`,
+`turn.lifecycle`, `turn.usage`, `turn.steered`, `turn.steer_dropped`,
+`turn.interrupt_requested`,
 `turn.completed`, `turn.artifacts`, `item.started`, `item.delta`, `item.completed`,
 `item.failed`, `item.interrupted`, `approval.required`, `approval.decided`,
 `approval.timeout`, `user_input.required`, `user_input.answered`,
 `user_input.canceled`, `tool_call.requested`, `tool_call.resolved`,
 `tool_call.timeout`, `tool_call.canceled`, `sandbox.denied`,
 `turn.workspace_snapshot`, `turn.provider_request`, `runtime.store_failure`.
+
+`turn.usage` is one model call's receipt, emitted once per provider request that
+reported usage — not once per turn. Its `payload` carries the call's `usage`,
+its `duration_ms` / `first_token_ms` / `request_ms` timings, the
+`maxOutputTokens` allowance, `billed_prompt_tokens` (the prompt size the
+provider billed: the last itemised request's input when retries were reported,
+else the call's own input count), and `cost` — that call priced on the route it
+was dispatched on, as `{usd, cny, usd_priced, cny_priced}`.
+
+`cost` is `null` when the route cannot price every token class the call used; a
+client must not read that as a free call. These figures are a display aid so a
+UI can move its cost and context meters while a long turn runs: the turn's
+authoritative cumulative totals still arrive with `turn.completed`, and
+the thread totals at `GET /v1/threads/{id}/usage` remain the record.
 
 `turn.provider_request` carries diagnostic request observations, not additional
 billing usage. See [per-request cache receipts](CACHE.md#per-request-receipts).
