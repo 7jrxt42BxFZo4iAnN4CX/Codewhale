@@ -20369,7 +20369,7 @@ pub(crate) async fn start_fleet_member(
     let input = json!({
         "action": "start",
         "profile": start.member_id,
-        "name": start.display_name,
+        "name": start.member_id,
         "prompt": start.prompt,
     });
     let (result, _) = spawn_subagent_from_input(

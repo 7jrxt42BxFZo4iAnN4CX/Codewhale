@@ -3124,7 +3124,8 @@ The response is `200 {thread_id, member_id, agent_id, state: "started"}`, or
 between turns. Repeating the same `operation_key` with the same body returns
 the original `agent_id` once started; a different body under the same key is
 refused. The child appears in `/v1/agent-runs` with `owner_session_id` set to the
-thread and its `display_name` as `session_name`; `agent.spawned`,
+thread and its `member_id` as `session_name` (a display name may hold spaces or
+non-ASCII text, which session names refuse); `agent.spawned`,
 `agent.progress` and `agent.completed` arrive on the thread's event stream.
 Stop it with `POST /v1/agent-runs/{id}/cancel`, which also stops its
 descendants. A second start for a member whose child is still running is
