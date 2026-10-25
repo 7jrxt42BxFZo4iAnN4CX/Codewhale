@@ -1274,17 +1274,6 @@ impl SavedSession {
         self.leaf_id = journal.leaf_id.clone();
         self.journal = Some(journal);
     }
-    #[expect(dead_code)]
-    pub fn journal_append_message(&mut self, message: Message) -> String {
-        self.ensure_journal();
-        let journal = self.journal.as_mut().expect("journal ensured");
-        let id = journal.append_message(message.clone());
-        self.leaf_id = journal.leaf_id.clone();
-        self.messages = journal.to_messages();
-        self.metadata.message_count = self.messages.len();
-        self.metadata.updated_at = Utc::now();
-        id
-    }
     pub fn journal_branch_to(&mut self, entry_id: &str) -> Result<(), String> {
         self.ensure_journal();
         let journal = self.journal.as_mut().expect("journal ensured");

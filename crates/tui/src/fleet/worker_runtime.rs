@@ -1237,28 +1237,6 @@ pub(crate) fn explicit_fleet_provider_id(agent_profile: Option<&AgentProfile>) -
         .map(str::to_string)
 }
 
-/// The built-in provider a resolved agent profile EXPLICITLY pins, if any (#4093).
-///
-/// This returns `None` (never the DeepSeek default) when no profile names a
-/// provider, so call sites can leave `--provider` off the worker argv and
-/// preserve today's behavior for profile-less / provider-less workers (they
-/// resolve their provider from their own session default). EPIC #2608: never
-/// inferred from `model`.
-///
-/// `pub(crate)` so the interactive-TUI in-process spawn path
-/// (`tools::subagent`) resolves the pinned provider from the SAME
-/// explicit-only source as the headless `codewhale exec` launch route (#4193),
-/// instead of re-deriving it and risking a second, divergent policy. User-named
-/// custom providers intentionally return `None` here; launch paths that can
-/// carry strings should use [`explicit_fleet_provider_id`].
-pub(crate) fn explicit_fleet_provider(
-    agent_profile: Option<&AgentProfile>,
-) -> Option<ProviderKind> {
-    explicit_fleet_provider_id(agent_profile)
-        .as_deref()
-        .and_then(ProviderKind::parse)
-}
-
 pub(crate) fn effective_fleet_reasoning_effort(
     agent_profile: Option<&AgentProfile>,
 ) -> Option<String> {

@@ -6193,7 +6193,7 @@ impl Engine {
             self.config.disallowed_tools.clone(),
             self.config.max_tool_calls,
             // Model metadata wins once wired; today the hint is always None
-            // and the [features] flags decide (model_registry follow-up).
+            // and the [features] flags decide.
             tool_catalog::requested_tool_mode(None, &self.config.features),
         );
         if let Some(child) = self.child_host.as_ref() {

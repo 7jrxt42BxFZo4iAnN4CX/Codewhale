@@ -4917,14 +4917,6 @@ struct ModelListItem {
 #[derive(Debug, Deserialize)]
 struct OpenRouterModelItem {
     id: String,
-    // Captured from OpenRouter for future display/deprecation surfaces. The
-    // current CatalogOffering shape has no honest fields for these yet.
-    #[serde(default)]
-    #[expect(dead_code)]
-    name: Option<String>,
-    #[serde(default)]
-    #[expect(dead_code)]
-    created: Option<u64>,
     #[serde(default)]
     context_length: Option<u32>,
     #[serde(default)]
@@ -4940,9 +4932,6 @@ struct OpenRouterModelItem {
     /// separated from image/video/rerank rows without guessing from the name.
     #[serde(default)]
     supported_endpoint_types: Option<Vec<String>>,
-    #[serde(default)]
-    #[expect(dead_code)]
-    expiration_date: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -287,7 +287,7 @@ pub(crate) enum ToolMode {
 
 /// Resolve the turn's tool mode: model hint first, `[features] code_mode`
 /// second, [`ToolMode::Direct`] otherwise. The engine passes `None` for the
-/// hint until per-model metadata is wired (model_registry follow-up).
+/// hint until per-model metadata is wired.
 pub(crate) fn requested_tool_mode(model_hint: Option<ToolMode>, features: &Features) -> ToolMode {
     model_hint.unwrap_or_else(|| {
         if features.enabled(Feature::CodeMode) {

@@ -4,7 +4,7 @@
 //!
 //! Every sandbox posture Codewhale ships — including `read-only` — grants the
 //! sandboxed process read access to the entire filesystem
-//! (`policy.rs::has_full_disk_read_access`). #5568 added the *plumbing* for an
+//! (`policy.rs`). #5568 added the *plumbing* for an
 //! opt-in deny-list (Seatbelt last-match-wins `deny file-read*` rules;
 //! bubblewrap masks), but the list shipped empty, so in practice nothing was
 //! denied. This module supplies (a) a curated default set covering the obvious

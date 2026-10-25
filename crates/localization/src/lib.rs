@@ -2823,7 +2823,6 @@ pub enum MessageId {
     ExecFlagAfterPrompt,
 }
 
-#[allow(dead_code)]
 pub const ALL_MESSAGE_IDS: &[MessageId] = &[
     MessageId::MobileStreamReplayFailed,
     MessageId::MobileStreamCatchUpFailed,
@@ -5585,7 +5584,6 @@ where
     Locale::En
 }
 
-#[allow(dead_code)]
 pub fn truncate_to_width(text: &str, max_width: usize) -> String {
     if max_width == 0 {
         return String::new();
