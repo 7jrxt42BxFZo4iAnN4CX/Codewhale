@@ -773,7 +773,7 @@ codewhale
   this session, `n` deny, `Esc` abort the turn.
 * Useful keys: **F1** help (or `/help`), **Ctrl-K** command palette, **F3**
   provider/model picker, **Ctrl-R** resume a past session, **Ctrl-U** clear the
-  input (**Ctrl-Z** restores it), **Ctrl-C** cancel or quit, **Ctrl-D** quit
+  input (**Ctrl-Z** restores it), **Ctrl-C** cancel, clear the draft, or quit, **Ctrl-D** quit
   with an empty input. Full list: [KEYBINDINGS.md](KEYBINDINGS.md).
 * On exit it prints `To resume this session, run codewhale resume <id>`.
 

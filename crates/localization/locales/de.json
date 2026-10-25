@@ -795,7 +795,7 @@
   "KbSendDraft": "Bei Leerlauf senden; bei Arbeit einreihen; leerer Composer sendet die nächste Folgenachricht sofort",
   "KbSteerCurrentTurn": "Aktuellen Zug steuern (sendet normal bei Leerlauf)",
   "KbCloseMenu": "Menü schließen, Anfrage abbrechen, Entwurf verwerfen oder Eingabe leeren",
-  "KbCancelOrExit": "Anfrage abbrechen oder bei Leerlauf beenden",
+  "KbCancelOrExit": "Abbrechen, Entwurf leeren oder im Leerlauf beenden",
   "KbShellControls": "Laufendes Shell-Warten nach /jobs verschieben",
   "KbExitEmpty": "Beenden, wenn die Eingabe leer ist",
   "KbCommandPalette": "Befehlspalette öffnen",

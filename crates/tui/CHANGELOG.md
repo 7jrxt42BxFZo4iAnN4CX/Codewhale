@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installs provider access in the running computer's memory. Retries retain
   one operation key and the account/VM binding. Existing Agent Work dispatch
   remains available when no computer conversation is selected.
+- Ctrl+C on an idle composer that holds a draft now clears the draft instead
+  of arming exit, and Ctrl+Z restores it. The "press Ctrl+C again" exit prompt
+  arms only once the composer is empty, and Ctrl+C during a running turn still
+  cancels the turn first. Clearing a draft with Ctrl+C or Esc also resets a
+  pending exit prompt (#6237).
 - While a background job runs, the git status probe now backs off after 30
   seconds without input or engine events, as it already did in an idle
   session, instead of starting about a dozen git processes every 2 seconds for

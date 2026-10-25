@@ -6625,11 +6625,12 @@ pub(crate) async fn run_event_loop(
                     copy_active_selection(app);
                 }
                 KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    // Four behaviors layered on Ctrl+C in priority order — see
+                    // Five behaviors layered on Ctrl+C in priority order — see
                     // `CtrlCDisposition` for the unit-tested decision table.
                     // 1. selection active → copy + clear (Windows convention,
-                    //    #1337); 2. turn in flight → cancel; 3. quit-armed →
-                    //    exit; 4. otherwise → arm the 2-second exit prompt.
+                    //    #1337); 2. turn in flight → cancel; 3. non-empty
+                    //    composer → recoverable clear; 4. quit-armed → exit;
+                    //    5. otherwise → arm the 2-second exit prompt.
                     match ctrl_c_disposition(app) {
                         CtrlCDisposition::CopySelection => {
                             copy_active_selection(app);
@@ -6664,6 +6665,9 @@ pub(crate) async fn run_event_loop(
                             };
                             app.status_message = Some(parent_stop_status(app, base));
                             app.disarm_quit();
+                        }
+                        CtrlCDisposition::ClearInput => {
+                            app.clear_composer_draft();
                         }
                         CtrlCDisposition::ConfirmExit => {
                             let _ = engine_handle.send(Op::Shutdown).await;
@@ -6761,12 +6765,7 @@ pub(crate) async fn run_event_loop(
                             let _ = app.dismiss_plugin_cta_for_session();
                         }
                         EscapeAction::ClearInput => {
-                            app.backtrack.reset();
-                            app.edit_in_progress = false;
-                            app.clear_input_recoverable();
-                            let _ = app.maybe_show_behavioral_tip(
-                                crate::tui::behavioral_tips::BehavioralTip::ClearedInputRestore,
-                            );
+                            app.clear_composer_draft();
                         }
                         EscapeAction::Noop => {
                             // Nothing else cares about this Esc — route it

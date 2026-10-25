@@ -1594,6 +1594,16 @@ impl App {
         self.clear_input();
     }
 
+    pub fn clear_composer_draft(&mut self) {
+        self.backtrack.reset();
+        self.disarm_quit();
+        self.edit_in_progress = false;
+        self.clear_input_recoverable();
+        let _ = self.maybe_show_behavioral_tip(
+            crate::tui::behavioral_tips::BehavioralTip::ClearedInputRestore,
+        );
+    }
+
     pub fn start_history_search(&mut self) {
         if self.composer_history_search.is_some() {
             return;

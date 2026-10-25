@@ -812,7 +812,7 @@
   "KbSendDraft": "空闲时发送，忙碌时排队；输入框为空时立即发送下一条排队消息",
   "KbSteerCurrentTurn": "调整当前回合（空闲时正常发送）",
   "KbCloseMenu": "关闭菜单、取消请求、丢弃草稿或清空输入",
-  "KbCancelOrExit": "取消请求，或空闲时退出",
+  "KbCancelOrExit": "取消请求、清空草稿，或空闲时退出",
   "KbShellControls": "将正在等待的 shell 移到 /jobs",
   "KbExitEmpty": "输入框为空时退出",
   "KbCommandPalette": "打开命令面板",

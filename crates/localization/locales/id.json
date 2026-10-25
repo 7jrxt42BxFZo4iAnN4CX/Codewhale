@@ -795,7 +795,7 @@
   "KbSendDraft": "Kirim saat idle; antrekan saat sibuk; komposer kosong mengirim tindak lanjut berikutnya dalam antrean sekarang",
   "KbSteerCurrentTurn": "Arahkan giliran saat ini (terkirim normal saat idle)",
   "KbCloseMenu": "Tutup menu, batalkan permintaan, buang draf, atau bersihkan input",
-  "KbCancelOrExit": "Batalkan permintaan, atau keluar saat idle",
+  "KbCancelOrExit": "Batalkan, hapus draf, atau keluar saat idle",
   "KbShellControls": "Pindahkan penantian shell yang berjalan ke /jobs",
   "KbExitEmpty": "Keluar saat input kosong",
   "KbCommandPalette": "Buka palet perintah",
