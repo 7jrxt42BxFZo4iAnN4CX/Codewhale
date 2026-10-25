@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The TUI Terminal dock now also shows the model's shell commands for the
+  session: each running or recent command is a read-only tab with its live
+  output, beside the interactive shells. "No live terminals" appears only when
+  there are neither.
+- `codewhale review` no longer accepts leaked tool-call markup as a review: a
+  pass whose reply is a DeepSeek DSML (or other) tool-call wrapper outside code
+  now fails as incomplete, with no tally and nothing posted (#7072). A Low-risk
+  review on a reasoning model caps its reasoning at low so the 4,000-token
+  allowance leaves room for the review, and an exhausted pass now reports the
+  allowance and reserve actually sent and says "cut off" when visible text came
+  back (#7067).
+- `--full-access` is now the documented flag for Full Access (`--yolo` stays an
+  alias), and `serve` accepts it after the subcommand: `codewhale serve --acp
+  --yolo` used to fail with "unexpected argument". `serve --acp` also writes one
+  stderr line naming the permission and sandbox it runs with, and the ACP
+  permission option's Full Access hint names the working command. A configured
+  `sandbox_mode = "danger-full-access"` still never widens Ask or Auto-Review
+  (#6992).
+- Preview: `dispatch --computer` starts an account cloud conversation that can
+  also be opened in desktop. `--thread` continues or inspects it; `--stop`,
+  `--approve` and `--deny` control its current task. Explicit `--key-stdin`
+  installs provider access in the running computer's memory. Retries retain
+  one operation key and the account/VM binding. Existing Agent Work dispatch
+  remains available when no computer conversation is selected.
+
 ## [0.10.2] - 2026-10-22
 
 Codewhale v0.10.2 adds an animated pet view (`/pet on`), a live Terminal work
