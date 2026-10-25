@@ -37,6 +37,16 @@
 # --- Flag-backed tools (crates/runtime/src/features.rs) ---
 
 [[feature]]
+id = "instruction-budget"
+name = "Per-scope instruction budgets"
+summary = "Budgets standing instructions per scope in tokens and reports every trim, skip and refusal."
+status = "stable"
+surfaces = { tui = "stable", api = "stable" }
+since = "unreleased"
+docs = "docs/CONFIGURATION.md"
+owner = "crates/tui/src/project_context/budget.rs"
+
+[[feature]]
 id = "cloud-computer-dispatch"
 name = "Cloud computer conversations"
 summary = "Dispatch, inspect, continue and stop the same account cloud conversation from terminal and desktop."

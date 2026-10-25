@@ -168,11 +168,24 @@ sandbox_mode = "workspace-write" # read-only | workspace-write | danger-full-acc
 # "muse", or "all". Env: CODEWHALE_PROJECT_INSTRUCTION_IMPORTS (comma-separated).
 # project_instruction_imports = ["claude"]
 #
-# Everything that reaches the model as standing project instruction authority —
-# the repository-root -> workspace AGENTS.md chain, the global fallback layer,
-# .codewhale/rules/*.md, and any imported foreign files — shares one 48 KiB
-# aggregate budget. Instructions claim it first and are trimmed from the
-# broadest scope inward, so the nearest-scope file is the last thing dropped.
+# Standing instructions are budgeted per scope, in estimated tokens, and every
+# trim or skip is reported at session start, to the model, and in /context.
+# `global` covers ~/.codewhale/AGENTS.md (or ~/.agents/AGENTS.md), the global
+# instructions.md fallbacks, ~/.claude/CLAUDE.md (last resort) and the
+# `instructions = [...]` array. `project` covers the repository-root ->
+# workspace AGENTS.md chain, co-read foreign files, and .codewhale/rules/*.md.
+# A scope is capped at the smaller of its absolute token budget and its share
+# of the usable window (context window minus the response ceiling and a 10%
+# safety reserve). User config only: a cloned repository cannot change it.
+# [instruction_budget]
+# global_budget_tokens = 100000    # positive; absolute cap for the global scope
+# project_budget_tokens = 100000   # positive; absolute cap for the project scope
+# global_budget_percent = 25       # 1..=100, share of the usable window
+# project_budget_percent = 25      # 1..=100, share of the usable window
+# static_prefix_guard_percent = 80 # 1..=100; guard must leave >=10 points
+# file_max_bytes = 8388608         # hard per-file ceiling; larger files skip
+# policy = "trim"                  # trim | refuse
+# claude_fallback = true           # AGENTS.md wins; else CLAUDE.md
 # prompt_suggestion = true  # opt-in: show ghost-text follow-up question in composer after each turn
 
 # Optional tab/window title shown as `[title] …` in front of the terminal

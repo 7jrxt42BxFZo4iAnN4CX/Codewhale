@@ -1540,14 +1540,82 @@ instructions = [
 Rules:
 
 - Paths run through `expand_path` so `~` and env vars work.
-- Each file is capped at 100 KiB; oversized files are
-  truncated with a `[…elided]` marker rather than skipped.
-- Missing files are skipped with a tracing warning so a stale
-  entry doesn't fail the launch.
+- These entries are **global-scope** instruction authority: they are charged
+  to the global budget together with the global `AGENTS.md`/`instructions.md`
+  fallbacks and `~/.claude/CLAUDE.md`.
+- A file larger than `[instruction_budget] file_max_bytes` (8 MiB by default)
+  is skipped with a notice, not truncated. Missing and empty files are skipped
+  with a notice so a stale entry doesn't fail the launch.
 - Only user-owned config, profiles, and managed config may set this array.
   Project config (`<workspace>/.codewhale/config.toml`, or legacy
   `<workspace>/.deepseek/config.toml`) ignores `instructions` so a cloned repo
   cannot choose arbitrary local files to place into the prompt.
+
+### Instruction budget (`[instruction_budget]`, #6526)
+
+Standing instruction files are assembled into two independent scopes and
+budgeted in **estimated tokens** — the same conservative estimator `/context`
+uses, never a `bytes/4` shortcut, which underestimates Cyrillic by 30–50%.
+
+- **global** — `~/.codewhale/AGENTS.md` (or the `.agents`/`.deepseek`
+  fallbacks), the global `instructions.md` fallbacks, `~/.claude/CLAUDE.md`
+  as a last resort, and the `instructions = [...]` array.
+- **project** — the repository-root → workspace `AGENTS.md` chain, co-read
+  foreign files, and the `.codewhale/rules`/`.claude/rules` block.
+
+Each scope is capped at `min(absolute_tokens, percent × usable_window)`, where
+the usable window is the route window minus the response ceiling and a safety
+reserve of 10% (minimum 2,048 tokens).
+
+```toml
+[instruction_budget]
+global_budget_tokens = 100000
+project_budget_tokens = 100000
+global_budget_percent = 25
+project_budget_percent = 25
+static_prefix_guard_percent = 80
+file_max_bytes = 8388608
+policy = "trim"
+claude_fallback = true
+```
+
+| window | usable (approx) | per scope | both scopes | guard 80% |
+| --- | --- | --- | --- | --- |
+| 32k | 26.8k | 6,700 | 13,400 | 21,400 |
+| 128k | 113.1k | 28,275 | 56,550 | 90,500 |
+| 1M | 897.9k | 100,000 | 200,000 | 718,300 |
+
+Behaviour:
+
+- **Nothing is trimmed while a source is within its scope budget.**
+- A scope over budget drops whole files from the broadest end first — the
+  root-most ancestor goes first, the workspace file last — and a single file
+  that alone exceeds the remaining budget keeps its **head** and drops its
+  tail with a marker carrying bytes and estimated tokens.
+- Rules are charged to the project scope after the instruction chain and keep
+  a head-first trim.
+- `file_max_bytes` is a hard ceiling: a larger file is **skipped**, never
+  trimmed. The same applies to a whitespace-only file and to files beyond the
+  50-per-directory rules cap.
+- `policy = "trim"` (default) trims and reports. `policy = "refuse"` stops the
+  session when a budget or the static-prefix guard would trim; skips stay
+  skips, because one bad file must not make the project unopenable.
+- `static_prefix_guard_percent` caps the stable prefix (base prompt,
+  instructions, skills index, tool schemas). When it trips, the largest scope
+  is trimmed by the overage, the header is recomposed and re-pinned once, and
+  a notice is recorded. The guard must leave at least 10 points above the two
+  scope percents.
+- `claude_fallback = true` (default): a directory with no `AGENTS.md` (or
+  codewhale `instructions.md`) uses its `CLAUDE.md`. A skipped `AGENTS.md`
+  counts as absent; a file already loaded from a wider scope (a symlink) is a
+  reported duplicate, not a fallback trigger.
+- Every loss — trimmed, skipped, refused — is reported as a system cell at
+  session start, on stderr in `exec`, to the model as a runtime-provenance
+  message, and per source in `/context report`.
+- The table is **user config only**, like `instructions`: project config is
+  ignored and a cloned repository cannot shrink the global budget or force
+  `refuse`. An invalid table (unknown key, zero budget, percent outside
+  1–100, guard without room left) fails the launch.
 
 ### Hooks
 

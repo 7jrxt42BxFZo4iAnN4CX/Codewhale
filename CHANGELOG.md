@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Standing instructions are budgeted per scope (`global` and `project`) in
+  estimated tokens instead of one 48 KiB byte ceiling shared by everything, and
+  every trim, skip, and refusal is reported — as a system cell at session
+  start, on stderr in `exec`, to the model as a runtime-provenance message, and
+  per source in `/context report`. `AGENTS.md` still wins; a directory without
+  one now falls back to its `CLAUDE.md` (`claude_fallback = false` opts out).
+  Configured `instructions = [...]` entries are charged to the global scope.
+  New `[instruction_budget]` table (user config only) with per-scope token
+  budgets, percentages of the usable window, `file_max_bytes`, `policy`, the
+  static-prefix guard, and `claude_fallback` (#6526).
 - Preview: `dispatch --computer` starts an account cloud conversation that can
   also be opened in desktop. `--thread` continues or inspects it; `--stop`,
   `--approve` and `--deny` control its current task. Explicit `--key-stdin`
