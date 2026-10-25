@@ -314,15 +314,14 @@ pub(super) fn run<T: CloudTransport, W: Write>(
     } else {
         Value::Null
     };
-    if let Some(id) = &options.thread {
-        if thread["id"].as_str() != Some(id)
+    if let Some(id) = &options.thread
+        && (thread["id"].as_str() != Some(id)
             || thread["userId"].as_str() != Some(&account.account)
             || thread["archivedAt"]
                 .as_str()
-                .is_some_and(|value| !value.is_empty())
-        {
-            bail!("This account conversation is unavailable.");
-        }
+                .is_some_and(|value| !value.is_empty()))
+    {
+        bail!("This account conversation is unavailable.");
     }
     let whale_id = options.whale.clone().or_else(|| {
         thread["agentId"]
@@ -643,10 +642,10 @@ pub(super) fn run<T: CloudTransport, W: Write>(
     } else {
         detail
     };
-    if let Some(turn) = result.get("turn") {
-        if turn["thread_id"].as_str() != Some(&runtime) {
-            bail!("The computer returned a different task");
-        }
+    if let Some(turn) = result.get("turn")
+        && turn["thread_id"].as_str() != Some(&runtime)
+    {
+        bail!("The computer returned a different task");
     }
     if options.json {
         writeln!(
