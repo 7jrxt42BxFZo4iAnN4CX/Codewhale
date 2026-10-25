@@ -19,7 +19,8 @@ async fn repl_fence_obeys_auto_review_block_under_full_access() {
     let client: crate::core::model_client::SharedModelClient = mock.clone();
     let mut config = deterministic_engine_config(workspace.path());
     // Built through the config entry point, as production does.
-    config.auto_review_policy = Config {
+    config.auto_review_policy =
+        crate::core::authority::auto_review::AutoReviewPolicy::from_config(&Config {
         auto_review: Some(crate::config::AutoReviewConfig {
             block: vec![crate::config::AutoReviewRuleConfig {
                 id: Some("no-code".to_string()),
@@ -30,8 +31,7 @@ async fn repl_fence_obeys_auto_review_block_under_full_access() {
             ..Default::default()
         }),
         ..Config::default()
-    }
-    .auto_review_policy();
+    });
     let (mut engine, handle) = Engine::new_with_model_client(config, &Config::default(), client);
     engine.session.auto_approve = true;
     engine.session.add_message(Message {

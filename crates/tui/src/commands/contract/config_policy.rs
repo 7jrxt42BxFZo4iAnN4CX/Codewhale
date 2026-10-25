@@ -54,7 +54,7 @@ impl CommandPermissionsContext for PermissionsAdapter<'_> {
                 }
             },
             approval_mode: to_command_approval(app.approval_mode),
-            audit_path: crate::audit::audit_log_path(),
+            audit_path: codewhale_runtime::audit::audit_log_path(),
         })
     }
     fn remove_rule(

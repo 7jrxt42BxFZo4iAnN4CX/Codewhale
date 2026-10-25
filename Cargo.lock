@@ -1200,6 +1200,7 @@ dependencies = [
  "codewhale-memory",
  "codewhale-models",
  "codewhale-palette",
+ "codewhale-paths",
  "colored",
  "fd-lock",
  "libc",

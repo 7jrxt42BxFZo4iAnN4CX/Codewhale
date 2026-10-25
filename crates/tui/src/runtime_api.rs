@@ -5522,7 +5522,7 @@ fn mutation_context_settings(
     let network = config
         .network
         .clone()
-        .map(|p| p.into_runtime())
+        .map(crate::network_policy::NetworkPolicy::from)
         .unwrap_or_default();
     let skills_cfg = config.skills.as_ref();
     let max_size = skills_cfg
@@ -6500,7 +6500,7 @@ fn mcp_pool_policy(config: &Config) -> Value {
         config
             .network
             .clone()
-            .map(crate::config::NetworkPolicyToml::into_runtime),
+            .map(crate::network_policy::NetworkPolicy::from),
         config.mcp_oauth_callback_port,
         config.mcp_oauth_callback_url,
     ])
@@ -6515,15 +6515,15 @@ fn load_mcp_management_pool(state: &RuntimeApiState) -> Result<(McpPool, Value)>
     let mut pool =
         McpPool::from_config_path_with_workspace_and_plugins(&path, &state.workspace, plugins)?;
     let config = state.config.read();
-    pool = pool
-        .with_backend(crate::mcp::McpBackend::from_config(&config))
-        .with_oauth_callback(
-            config.mcp_oauth_callback_port,
-            config.mcp_oauth_callback_url.clone(),
-        );
+    pool = pool.with_backend(config.mcp_backend()).with_oauth_callback(
+        config.mcp_oauth_callback_port,
+        config.mcp_oauth_callback_url.clone(),
+    );
     if let Some(network) = config.network.clone() {
         pool = pool.with_network_policy(
-            crate::network_policy::NetworkPolicyDecider::with_default_audit(network.into_runtime()),
+            crate::network_policy::NetworkPolicyDecider::with_default_audit(
+                crate::network_policy::NetworkPolicy::from(network),
+            ),
         );
     }
     pool.dynamic_servers = state.workspace_scopes.dynamic_servers.clone();

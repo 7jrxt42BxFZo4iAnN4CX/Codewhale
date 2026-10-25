@@ -1096,7 +1096,7 @@ reason = "read_file is allowed"
     )?;
     config.validate()?;
 
-    let policy = config.auto_review_policy();
+    let policy = crate::core::authority::auto_review::AutoReviewPolicy::from_config(&config);
     let shell_context = crate::core::authority::auto_review::AutoReviewContext::from_tool_call(
         "exec_shell",
         &serde_json::json!({"command": "cargo test"}),
@@ -1146,7 +1146,7 @@ fn auto_review_scenario() -> Result<()> {
         )?;
 
         let merged = apply_profile(parsed, Some("strict"))?;
-        let policy = merged.auto_review_policy();
+        let policy = crate::core::authority::auto_review::AutoReviewPolicy::from_config(&merged);
 
         assert_eq!(policy.block_rules.len(), 1);
         assert_eq!(
@@ -1677,7 +1677,7 @@ fn update_config_scenario() {
 
 #[test]
 fn network_policy_toml_maps_proxy_hosts_to_runtime_policy() {
-    let policy: NetworkPolicyToml = toml::from_str(
+    let policy: codewhale_config::NetworkPolicyToml = toml::from_str(
         r#"
         default = "allow"
         proxy = ["github.com", ".githubusercontent.com"]
@@ -1686,7 +1686,7 @@ fn network_policy_toml_maps_proxy_hosts_to_runtime_policy() {
     )
     .expect("network policy toml");
 
-    let runtime = policy.into_runtime();
+    let runtime = crate::network_policy::NetworkPolicy::from(policy);
 
     assert_eq!(runtime.proxy, ["github.com", ".githubusercontent.com"]);
     assert_eq!(runtime.proxy_fake_ip_cidrs, ["198.18.0.0/15"]);

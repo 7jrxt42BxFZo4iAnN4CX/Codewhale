@@ -534,11 +534,11 @@ async fn reasoning_only_forever_is_bounded_then_fails() {
 #[tokio::test]
 async fn headless_turn_fails_with_real_error_after_network_drop_budget_exhausted() {
     let (model, events) =
-        run_headless_turn_with_flaky_network(1 + super::MAX_STREAM_RETRIES as usize).await;
+        run_headless_turn_with_flaky_network(1 + super::DEFAULT_STREAM_MAX_RESUMES as usize).await;
 
     assert_eq!(
         model.calls.load(std::sync::atomic::Ordering::SeqCst),
-        1 + super::MAX_STREAM_RETRIES as usize,
+        1 + super::DEFAULT_STREAM_MAX_RESUMES as usize,
         "initial attempt plus the bounded resume budget, then the turn fails"
     );
     let (status, error) = events
@@ -580,10 +580,10 @@ async fn headless_turn_fails_with_real_error_after_network_drop_budget_exhausted
                 Event::Status { message } if message.starts_with("Retry attempt: stream-resume ")
             ))
             .count(),
-        super::MAX_STREAM_RETRIES as usize,
+        super::DEFAULT_STREAM_MAX_RESUMES as usize,
         "every admitted resume must have its own numbered progress receipt"
     );
-    for attempt in 1..=super::MAX_STREAM_RETRIES {
+    for attempt in 1..=super::DEFAULT_STREAM_MAX_RESUMES {
         assert!(events.iter().any(|event| matches!(event,
             Event::Status { message } if message.starts_with(&format!("Retry attempt: stream-resume {attempt}/"))
         )));

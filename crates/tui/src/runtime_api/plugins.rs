@@ -402,7 +402,7 @@ async fn run_plugin_mutation(
         config
             .network
             .clone()
-            .map(|policy| policy.into_runtime())
+            .map(crate::network_policy::NetworkPolicy::from)
             .unwrap_or_default()
     };
     let ctx = PluginMutationContext {

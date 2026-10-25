@@ -5427,7 +5427,7 @@ fn runtime_turn_request_fingerprint(
         payload["maxOutputTokens"] = json!(max_output_tokens);
     }
     Ok(codewhale_runtime::hashing::sha256_hex(
-        crate::client::canonical_json(&payload),
+        codewhale_runtime::hashing::canonical_json(&payload),
     ))
 }
 
@@ -12515,7 +12515,7 @@ impl RuntimeThreadManager {
         );
         source.validate_stall_state().map_err(anyhow::Error::msg)?;
         let source_digest = codewhale_runtime::hashing::sha256_hex(
-            crate::client::canonical_json(&serde_json::to_value(&source)?).as_bytes(),
+            codewhale_runtime::hashing::canonical_json(&serde_json::to_value(&source)?).as_bytes(),
         );
         let mut target = source;
         target
@@ -12527,7 +12527,7 @@ impl RuntimeThreadManager {
         }
         target.normalize_restored_stall_state();
         let target_digest = codewhale_runtime::hashing::sha256_hex(
-            crate::client::canonical_json(&serde_json::to_value(&target)?).as_bytes(),
+            codewhale_runtime::hashing::canonical_json(&serde_json::to_value(&target)?).as_bytes(),
         );
         let fingerprint = operation.key_fingerprint.clone();
         self.store
@@ -15430,21 +15430,21 @@ impl RuntimeThreadManager {
                 req.max_output_tokens,
             )?;
             let request_fingerprint = if let Some(workspace) = expected_workspace.as_ref() {
-                codewhale_runtime::hashing::sha256_hex(crate::client::canonical_json(&json!({
+                codewhale_runtime::hashing::sha256_hex(codewhale_runtime::hashing::canonical_json(&json!({
                     "domain": "codewhale:selected-workspace-turn:v1",
                     "historical_fingerprint": request_fingerprint,
                     "expected_workspace": workspace,
                 })).as_bytes())
             } else { request_fingerprint };
             let request_fingerprint = if let Some(snapshot) = &req.profile_constitution {
-                codewhale_runtime::hashing::sha256_hex(crate::client::canonical_json(&json!({
+                codewhale_runtime::hashing::sha256_hex(codewhale_runtime::hashing::canonical_json(&json!({
                     "domain": "codewhale:profile-constitution-turn:v1",
                     "historical_fingerprint": request_fingerprint,
                     "profile_constitution": snapshot,
                 })).as_bytes())
             } else { request_fingerprint };
             let request_fingerprint = if let Some(owner) = &req.account_model_owner {
-                codewhale_runtime::hashing::sha256_hex(crate::client::canonical_json(&json!({
+                codewhale_runtime::hashing::sha256_hex(codewhale_runtime::hashing::canonical_json(&json!({
                     "domain": "codewhale:account-model-owner-turn:v1",
                     "historical_fingerprint": request_fingerprint,
                     "account_model_owner": owner,
@@ -16433,13 +16433,13 @@ impl RuntimeThreadManager {
                     .flatten()
                     .map(|toml_cfg| {
                         crate::network_policy::NetworkPolicyDecider::with_default_audit(
-                            toml_cfg.into_runtime(),
+                            crate::network_policy::NetworkPolicy::from(toml_cfg),
                         )
                     });
             let lsp_config = (!isolated_chat)
                 .then(|| cfg.lsp.clone())
                 .flatten()
-                .map(crate::config::LspConfigToml::into_runtime);
+                .map(crate::lsp::LspConfig::from);
             let max_subagents = cfg
                 .max_subagents_for_provider(&route_identity)
                 .clamp(1, MAX_SUBAGENTS);
@@ -16568,7 +16568,8 @@ impl RuntimeThreadManager {
                 subagents_enabled: !isolated_chat
                     && cfg.subagents_enabled_for_provider(&route_identity),
                 features,
-                auto_review_policy: cfg.auto_review_policy(),
+                auto_review_policy:
+                    crate::core::authority::auto_review::AutoReviewPolicy::from_config(&cfg),
                 compaction,
                 todos: new_shared_todo_list(),
                 plan_state: new_shared_plan_state(),

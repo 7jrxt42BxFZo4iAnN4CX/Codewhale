@@ -93,9 +93,9 @@ use crate::commands::groups::plugins::plugin_network_policy;
 
 use crate::dependencies::ExternalTool as _;
 use crate::network_policy::NetworkPolicy;
-use crate::pricing::CostCurrency;
 use crate::tui::app::App;
 use crate::tui::history::HistoryCell;
+use codewhale_config::pricing::CostCurrency;
 use codewhale_localization::{MessageId, tr};
 
 // ---------------------------------------------------------------------------
@@ -2805,7 +2805,7 @@ fn installer_settings() -> (NetworkPolicy, u64, String) {
     let network = cfg
         .network
         .clone()
-        .map(|policy| policy.into_runtime())
+        .map(crate::network_policy::NetworkPolicy::from)
         .unwrap_or_default();
     let skills_cfg = cfg.skills.as_ref();
     let max_size = skills_cfg
@@ -5344,7 +5344,7 @@ mod tests {
             recorded_at: std::time::Instant::now(),
         });
         let expected_total =
-            app.displayed_session_cost_for_currency(crate::pricing::CostCurrency::Usd);
+            app.displayed_session_cost_for_currency(codewhale_config::pricing::CostCurrency::Usd);
         let mut bundle = app.command_contexts();
         let mut parts = bundle
             .contexts(CommandCapabilities::DEBUG_DIAGNOSTICS)

@@ -17,31 +17,8 @@ use crate::config::{
     DEEPSEEK_ALIAS_RETIREMENT_UTC, DEFAULT_STEPFUN_BASE_URL, DEFAULT_STEPFUN_PLAN_BASE_URL,
     ProviderKind, canonical_model_id_for_provider,
 };
+use codewhale_config::pricing::CostCurrency;
 use codewhale_models::{Usage, has_date_snapshot_suffix};
-
-/// Cost display currency.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CostCurrency {
-    Usd,
-    Cny,
-}
-
-impl CostCurrency {
-    pub fn from_setting(value: &str) -> Option<Self> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "usd" | "dollar" | "dollars" | "$" => Some(Self::Usd),
-            "cny" | "rmb" | "yuan" | "¥" => Some(Self::Cny),
-            _ => None,
-        }
-    }
-
-    fn symbol(self) -> &'static str {
-        match self {
-            Self::Usd => "$",
-            Self::Cny => "¥",
-        }
-    }
-}
 
 /// Cost estimate in displayable currencies.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]

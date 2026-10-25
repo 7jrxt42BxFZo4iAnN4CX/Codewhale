@@ -27,6 +27,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use codewhale_config::provider::WireFormat;
+use codewhale_runtime::hashing::canonical_json;
 
 use crate::config::ProviderKind;
 
@@ -417,49 +418,6 @@ impl PreparedOutboundRequest {
             .into_iter()
             .find_map(|key| self.body.get(key).and_then(Value::as_u64))
     }
-}
-
-/// Canonical JSON: object keys sorted, no insignificant whitespace.
-///
-/// Deterministic for a given `Value` regardless of how it was built.
-pub(crate) fn canonical_json(value: &Value) -> String {
-    let mut out = String::new();
-    write_canonical(value, &mut out);
-    out
-}
-
-fn write_canonical(value: &Value, out: &mut String) {
-    match value {
-        Value::Object(map) => {
-            let mut keys: Vec<&String> = map.keys().collect();
-            keys.sort_unstable();
-            out.push('{');
-            for (index, key) in keys.iter().enumerate() {
-                if index > 0 {
-                    out.push(',');
-                }
-                push_json_string(key, out);
-                out.push(':');
-                write_canonical(&map[*key], out);
-            }
-            out.push('}');
-        }
-        Value::Array(items) => {
-            out.push('[');
-            for (index, item) in items.iter().enumerate() {
-                if index > 0 {
-                    out.push(',');
-                }
-                write_canonical(item, out);
-            }
-            out.push(']');
-        }
-        other => out.push_str(&other.to_string()),
-    }
-}
-
-fn push_json_string(value: &str, out: &mut String) {
-    out.push_str(&Value::String(value.to_string()).to_string());
 }
 
 /// Where a given dialect keeps its system text, turn items, and tool schemas.

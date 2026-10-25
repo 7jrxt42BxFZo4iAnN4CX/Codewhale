@@ -46,7 +46,6 @@ use tracing;
 #[cfg(target_os = "windows")]
 use windows::Win32::System::Console::{GetConsoleMode, GetStdHandle, SetConsoleMode};
 
-use crate::audit::log_sensitive_event;
 use crate::automation_manager::{AutomationManager, AutomationSchedulerConfig, spawn_scheduler};
 use crate::client::{
     CACHE_WARMUP_MAX_TOKENS, CacheWarmupKey, CodewhaleClient, PromptInspection,
@@ -110,6 +109,7 @@ use crate::work_graph::task_owner_snapshot;
 use codewhale_localization::{MessageId, tr};
 use codewhale_models::{ContentBlock, Message, MessageRequest, SystemPrompt, Usage};
 use codewhale_palette as palette;
+use codewhale_runtime::audit::log_sensitive_event;
 // SelectionAutoscroll unused
 use crate::tui::motion::{FrameRequester, MotionMode};
 use crate::tui::session_picker::SessionPickerView;

@@ -12,6 +12,7 @@
 
 pub use codewhale_command_contract::elapsed;
 
+pub mod audit;
 pub mod child_env;
 pub mod context_budget;
 pub mod continual_harness;
@@ -28,6 +29,7 @@ pub mod logging;
 pub mod media_originals;
 pub mod model_context;
 pub mod native_memory;
+pub mod private_log;
 pub mod process_tree;
 pub mod prompt_zones;
 pub mod regex_cache;
@@ -42,6 +44,7 @@ pub mod startup_trace;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
 pub mod tool_history_repair;
+pub mod turn_budget;
 pub mod workspace_discovery;
 
 pub const CODEWHALE_MAIN_STACK_BYTES: usize = 32 * 1024 * 1024;

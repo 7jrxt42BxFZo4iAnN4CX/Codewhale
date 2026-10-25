@@ -203,7 +203,7 @@ impl FleetDenialGuard {
             hasher.update([0]);
             // Tool JSON preserves insertion order; reordered equivalent keys
             // must not manufacture a new read request.
-            hasher.update(crate::client::canonical_json(&semantic_input).as_bytes());
+            hasher.update(codewhale_runtime::hashing::canonical_json(&semantic_input).as_bytes());
             let key: [u8; 32] = hasher.finalize().into();
             let contents = original_content_digest
                 .unwrap_or_else(|| Sha256::digest(output.content.as_bytes()).into());

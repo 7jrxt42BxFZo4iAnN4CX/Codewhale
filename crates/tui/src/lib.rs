@@ -20,7 +20,6 @@ mod acp_server;
 pub mod agent_roster;
 mod approval_log;
 mod artifacts;
-mod audit;
 mod auto_reasoning;
 mod automation_manager;
 mod client;
@@ -5561,8 +5560,7 @@ async fn run_doctor(
                     std::sync::Arc::new(plugins.clone()),
                 ) {
                     Ok(pool) => {
-                        let mut pool =
-                            pool.with_backend(crate::mcp::McpBackend::from_config(config));
+                        let mut pool = pool.with_backend(config.mcp_backend());
                         let errors = pool.connect_all().await;
                         let failed = errors
                             .iter()
@@ -5906,8 +5904,7 @@ async fn run_doctor(
         let native_enabled = config
             .features()
             .enabled(codewhale_runtime::features::Feature::ExtensionHost);
-        let mcp_enabled =
-            crate::mcp::McpBackend::from_config(config) == crate::mcp::McpBackend::Host;
+        let mcp_enabled = config.mcp_backend() == codewhale_config::McpBackend::Host;
         let enabled = native_enabled || mcp_enabled;
         let tier = if mcp_enabled {
             crate::extension_host::tier::HostTier::Builtin
@@ -11995,7 +11992,9 @@ async fn run_mcp_command(
 ) -> Result<()> {
     let config_path = config.mcp_config_path();
     let network_policy = config.network.clone().map(|network| {
-        crate::network_policy::NetworkPolicyDecider::with_default_audit(network.into_runtime())
+        crate::network_policy::NetworkPolicyDecider::with_default_audit(
+            crate::network_policy::NetworkPolicy::from(network),
+        )
     });
     match command {
         McpCommand::Init { force } => {
@@ -12075,7 +12074,7 @@ async fn run_mcp_command(
                 workspace,
                 std::sync::Arc::new(plugins.clone()),
             )?
-            .with_backend(crate::mcp::McpBackend::from_config(config));
+            .with_backend(config.mcp_backend());
             if let Some(name) = server {
                 if let Err(err) = pool.get_or_connect(&name).await {
                     if crate::mcp::oauth::error_looks_auth_required(&err) {
@@ -12108,7 +12107,7 @@ async fn run_mcp_command(
                 workspace,
                 std::sync::Arc::new(plugins.clone()),
             )?
-            .with_backend(crate::mcp::McpBackend::from_config(config));
+            .with_backend(config.mcp_backend());
             if let Some(name) = server {
                 let conn = match pool.get_or_connect(&name).await {
                     Ok(conn) => conn,
@@ -12292,7 +12291,7 @@ async fn run_mcp_command(
                 workspace,
                 std::sync::Arc::new(plugins.clone()),
             )?
-            .with_backend(crate::mcp::McpBackend::from_config(config));
+            .with_backend(config.mcp_backend());
             let errors = pool.connect_all().await;
             if errors.is_empty() {
                 println!("MCP config is valid. All enabled servers connected.");
@@ -14559,7 +14558,7 @@ async fn initialize_direct_workflow_mcp_pool(
         tracing::debug!("No MCP config for direct Workflow runtime: {error:#}");
         crate::mcp::McpPool::new(crate::mcp::McpConfig::default())
     });
-    pool = pool.with_backend(crate::mcp::McpBackend::from_config(config));
+    pool = pool.with_backend(config.mcp_backend());
     if let Some(policy) = network_policy {
         pool = pool.with_network_policy(policy);
     }
@@ -14638,7 +14637,9 @@ async fn build_direct_workflow_tool(
         crate::core::authority::SandboxNetworkAccess::from_config(config.sandbox_network_access),
     ));
     let network_policy = config.network.clone().map(|network| {
-        crate::network_policy::NetworkPolicyDecider::with_default_audit(network.into_runtime())
+        crate::network_policy::NetworkPolicyDecider::with_default_audit(
+            crate::network_policy::NetworkPolicy::from(network),
+        )
     });
     if let Some(policy) = network_policy.as_ref() {
         context = context.with_network_policy(policy.clone());
@@ -15132,7 +15133,9 @@ fn exec_network_policy(
         );
     }
     config.network.clone().map(|toml_cfg| {
-        crate::network_policy::NetworkPolicyDecider::with_default_audit(toml_cfg.into_runtime())
+        crate::network_policy::NetworkPolicyDecider::with_default_audit(
+            crate::network_policy::NetworkPolicy::from(toml_cfg),
+        )
     })
 }
 
@@ -16256,7 +16259,7 @@ mod doctor_setup_state_tests {
             approval_policy: Some("never".to_string()),
             allow_shell: Some(false),
             sandbox_mode: Some("read-only".to_string()),
-            network: Some(crate::config::NetworkPolicyToml {
+            network: Some(codewhale_config::NetworkPolicyToml {
                 default: "deny".to_string(),
                 ..Default::default()
             }),

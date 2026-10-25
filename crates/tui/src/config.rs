@@ -15,9 +15,9 @@ use serde_json::json;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-use crate::audit::log_sensitive_event;
 use crate::credentials::CredentialStore;
 use crate::hooks::HooksConfig;
+use codewhale_runtime::audit::log_sensitive_event;
 use codewhale_runtime::features::{Feature, Features, FeaturesToml, is_known_feature_key};
 
 // Sub-agent concurrency/timeout limit constants and their clamp resolvers live
@@ -92,7 +92,8 @@ pub struct ProviderIdentity {
     /// serialized.
     pub(crate) migrated_legacy_ollama_cloud_route: bool,
     /// Parse-scoped, redacted proof for the id-less migrated root route.
-    pub(crate) legacy_root_custom_generation: Option<crate::route_receipt::CredentialGeneration>,
+    pub(crate) legacy_root_custom_generation:
+        Option<codewhale_config::credentials::CredentialGeneration>,
 }
 
 impl std::hash::Hash for ProviderIdentity {
@@ -922,7 +923,7 @@ pub struct ExtensionHostConfig {
     /// Explicit MCP protocol backend. Rust remains default; Host supports stdio,
     /// HTTP and SSE independently of optional Native extension activation.
     #[serde(default)]
-    pub mcp_backend: crate::mcp::McpBackend,
+    pub mcp_backend: codewhale_config::McpBackend,
     /// Which runtime runs the host: `node` (the default), `bun`, or `auto`
     /// (Bun when a supported one is found and starts, else Node). `bun` and
     /// `auto` are opt-ins: Bun is not the default until it is qualified on
@@ -1251,11 +1252,11 @@ fn default_snapshots_enabled() -> bool {
 }
 
 fn default_snapshot_max_age_days() -> u64 {
-    crate::snapshot::DEFAULT_MAX_AGE.as_secs() / (24 * 60 * 60)
+    codewhale_config::DEFAULT_SNAPSHOT_MAX_AGE.as_secs() / (24 * 60 * 60)
 }
 
 fn default_snapshot_max_workspace_gb() -> u64 {
-    crate::snapshot::DEFAULT_MAX_WORKSPACE_BYTES_FOR_SNAPSHOT / (1024 * 1024 * 1024)
+    codewhale_config::DEFAULT_MAX_WORKSPACE_BYTES_FOR_SNAPSHOT / (1024 * 1024 * 1024)
 }
 
 /// Workspace side-git snapshot configuration (#137).
@@ -2479,7 +2480,7 @@ pub struct Config {
     /// Per-domain network policy (#135). When absent, network tools fall back
     /// to a permissive default that mirrors pre-v0.7.0 behavior.
     #[serde(default)]
-    pub network: Option<NetworkPolicyToml>,
+    pub network: Option<codewhale_config::NetworkPolicyToml>,
 
     /// Verifier-preview behavior (#2093). When absent, automatic verifier
     /// preview stays off and verifier verdicts use the hunt policy.
@@ -2552,9 +2553,9 @@ pub struct Config {
     pub cloud_facts: Option<CloudFactsConfig>,
 
     /// Post-edit LSP diagnostics injection (#136). When absent, the engine
-    /// applies the defaults documented in [`LspConfigToml`].
+    /// applies the defaults documented in [`codewhale_config::LspConfigToml`].
     #[serde(default)]
-    pub lsp: Option<LspConfigToml>,
+    pub lsp: Option<codewhale_config::LspConfigToml>,
 
     /// Context configuration (project context pack; legacy seam keys are
     /// parsed but ignored since the 2026-07-23 removal).
@@ -2658,12 +2659,13 @@ pub struct Config {
     /// Bound at parse time, never reconstructed from later diagnostic notes.
     #[cfg(not(test))]
     #[serde(skip)]
-    legacy_root_custom_generation: Option<crate::route_receipt::CredentialGeneration>,
+    legacy_root_custom_generation: Option<codewhale_config::credentials::CredentialGeneration>,
     // Test fixtures construct Config through public-field struct updates. The
     // production receipt remains private; both builds run identical admission.
     #[cfg(test)]
     #[serde(skip)]
-    pub(crate) legacy_root_custom_generation: Option<crate::route_receipt::CredentialGeneration>,
+    pub(crate) legacy_root_custom_generation:
+        Option<codewhale_config::credentials::CredentialGeneration>,
 
     /// Mini-window (pinned, always-on-top) mode layout preferences
     /// (`[mini_window]` in config.toml). When the host terminal window is
@@ -2774,33 +2776,6 @@ pub struct AutoReviewRuleConfig {
 }
 
 impl AutoReviewConfig {
-    fn to_runtime_policy(&self) -> crate::core::authority::auto_review::AutoReviewPolicy {
-        crate::core::authority::auto_review::AutoReviewPolicy {
-            allow_rules: self
-                .allow
-                .iter()
-                .enumerate()
-                .map(|(index, rule)| {
-                    rule.to_runtime_rule(
-                        index,
-                        crate::core::authority::auto_review::AutoReviewAction::Allow,
-                    )
-                })
-                .collect(),
-            block_rules: self
-                .block
-                .iter()
-                .enumerate()
-                .map(|(index, rule)| {
-                    rule.to_runtime_rule(
-                        index,
-                        crate::core::authority::auto_review::AutoReviewAction::Block,
-                    )
-                })
-                .collect(),
-        }
-    }
-
     fn validate(&self) -> Result<()> {
         validate_auto_review_rules("allow", &self.allow)?;
         validate_auto_review_rules("block", &self.block)?;
@@ -2809,62 +2784,6 @@ impl AutoReviewConfig {
 }
 
 impl AutoReviewRuleConfig {
-    fn to_runtime_rule(
-        &self,
-        index: usize,
-        action: crate::core::authority::auto_review::AutoReviewAction,
-    ) -> crate::core::authority::auto_review::AutoReviewRule {
-        let id_prefix = match action {
-            crate::core::authority::auto_review::AutoReviewAction::Allow => "allow",
-            crate::core::authority::auto_review::AutoReviewAction::Block => "block",
-            crate::core::authority::auto_review::AutoReviewAction::AskUser => "ask",
-        };
-        let id = self
-            .id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| format!("config-{id_prefix}-{index}"));
-        let reason = self
-            .reason
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| format!("configured auto-review {id_prefix} rule"));
-        let mut rule = match action {
-            crate::core::authority::auto_review::AutoReviewAction::Allow => {
-                crate::core::authority::auto_review::AutoReviewRule::allow(id, reason)
-            }
-            crate::core::authority::auto_review::AutoReviewAction::Block => {
-                crate::core::authority::auto_review::AutoReviewRule::block(id, reason)
-            }
-            crate::core::authority::auto_review::AutoReviewAction::AskUser => {
-                crate::core::authority::auto_review::AutoReviewRule::block(id, reason)
-            }
-        };
-
-        if let Some(tool) = self
-            .tool
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            rule = rule.tool_name(tool.to_string());
-        }
-        if let Some(action_kind) = self
-            .action_kind
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .and_then(parse_auto_review_action_kind)
-        {
-            rule = rule.action_kind(action_kind);
-        }
-        rule
-    }
-
     fn has_matcher(&self) -> bool {
         self.tool
             .as_deref()
@@ -2894,7 +2813,7 @@ fn validate_auto_review_rules(kind: &str, rules: &[AutoReviewRuleConfig]) -> Res
         }
         if let Some(action_kind) = rule.action_kind.as_deref() {
             let normalized = action_kind.trim().to_ascii_lowercase().replace('-', "_");
-            if parse_auto_review_action_kind(&normalized).is_none() {
+            if auto_review_action_kind_name(&normalized).is_none() {
                 anyhow::bail!(
                     "Invalid auto_review.{kind}[{index}].action_kind '{action_kind}': expected read, write, shell, external, publish, or destructive."
                 );
@@ -2914,20 +2833,17 @@ fn validate_auto_review_rules(kind: &str, rules: &[AutoReviewRuleConfig]) -> Res
     Ok(())
 }
 
-fn parse_auto_review_action_kind(
-    raw: &str,
-) -> Option<crate::core::authority::auto_review::ToolActionKind> {
+/// Canonical action-kind name for an `auto_review` `action_kind` spelling,
+/// including the retired narrow kinds that fold into a current class.
+#[must_use]
+pub fn auto_review_action_kind_name(raw: &str) -> Option<&'static str> {
     match raw.trim().to_ascii_lowercase().replace('-', "_").as_str() {
-        "read" | "mcp_read" => Some(crate::core::authority::auto_review::ToolActionKind::Read),
-        "write" => Some(crate::core::authority::auto_review::ToolActionKind::Write),
-        "shell" => Some(crate::core::authority::auto_review::ToolActionKind::Shell),
-        "external" | "network" | "git" | "mcp_action" | "browser" | "unknown" => {
-            Some(crate::core::authority::auto_review::ToolActionKind::External)
-        }
-        "publish" => Some(crate::core::authority::auto_review::ToolActionKind::Publish),
-        "destructive" | "secret" => {
-            Some(crate::core::authority::auto_review::ToolActionKind::Destructive)
-        }
+        "read" | "mcp_read" => Some("read"),
+        "write" => Some("write"),
+        "shell" => Some("shell"),
+        "external" | "network" | "git" | "mcp_action" | "browser" | "unknown" => Some("external"),
+        "publish" => Some("publish"),
+        "destructive" | "secret" => Some("destructive"),
         _ => None,
     }
 }
@@ -3021,149 +2937,6 @@ impl SkillsConfig {
     #[must_use]
     pub fn scan_codewhale_only(&self) -> bool {
         self.scan_codewhale_only.unwrap_or(false)
-    }
-}
-
-/// `[network]` table — mirrors `codewhale_config::NetworkPolicyToml` so the live
-/// TUI runtime can construct a [`crate::network_policy::NetworkPolicy`]
-/// without reaching into the workspace config crate. See `config.example.toml`
-/// for documentation.
-#[derive(Debug, Clone, Deserialize)]
-pub struct NetworkPolicyToml {
-    /// Decision for hosts that are not in `allow` or `deny`. One of
-    /// `"allow" | "deny" | "prompt"`. Defaults to `"prompt"`.
-    #[serde(default = "default_network_decision")]
-    pub default: String,
-    /// Hosts that are always allowed. Subdomain rules: a leading dot
-    /// (`.example.com`) matches subdomains but not the apex.
-    #[serde(default)]
-    pub allow: Vec<String>,
-    /// Hosts that are always denied. Deny entries win over allow entries.
-    #[serde(default)]
-    pub deny: Vec<String>,
-    /// Hostnames whose DNS may resolve to fake-IP/private proxy ranges in an
-    /// explicitly trusted proxy setup. Literal IP URLs remain blocked.
-    #[serde(default)]
-    pub proxy: Vec<String>,
-    /// Explicit fake-IP placeholder CIDRs for those proxy hosts. Only subnets
-    /// within `198.18.0.0/15` are accepted by the runtime SSRF guard.
-    #[serde(default)]
-    pub proxy_fake_ip_cidrs: Vec<String>,
-    /// Whether to record one audit-log line per outbound network call.
-    #[serde(default = "default_network_audit")]
-    pub audit: bool,
-}
-
-fn default_network_decision() -> String {
-    "prompt".to_string()
-}
-
-fn default_network_audit() -> bool {
-    true
-}
-
-impl Default for NetworkPolicyToml {
-    fn default() -> Self {
-        Self {
-            default: default_network_decision(),
-            allow: Vec::new(),
-            deny: Vec::new(),
-            proxy: Vec::new(),
-            proxy_fake_ip_cidrs: Vec::new(),
-            audit: default_network_audit(),
-        }
-    }
-}
-
-impl NetworkPolicyToml {
-    /// Build a runtime [`crate::network_policy::NetworkPolicy`] from the
-    /// on-disk schema.
-    #[must_use]
-    pub fn into_runtime(self) -> crate::network_policy::NetworkPolicy {
-        crate::network_policy::NetworkPolicy {
-            default: crate::network_policy::Decision::parse(&self.default).into(),
-            allow: self.allow,
-            deny: self.deny,
-            proxy: self.proxy,
-            proxy_fake_ip_cidrs: self.proxy_fake_ip_cidrs,
-            audit: self.audit,
-        }
-    }
-}
-
-/// Re-read the `[network]` table from a configuration document.
-///
-/// Deliberately narrower than [`Config::load`]: this runs on the tool-context
-/// build path, where re-applying the environment, managed, and credential
-/// layers would be both wasteful and wrong. Only the document's own table comes
-/// back — the same table `/network allow <host>` edits.
-///
-/// `None` means there is nothing usable to adopt: the document is missing,
-/// unreadable, unparseable, or carries no `[network]` table. Callers keep the
-/// policy they already hold, which is the conservative direction for an
-/// allow/deny gate.
-///
-/// Known limitation: `[profiles.<name>.network]` is not consulted. `/network`
-/// does not write it either, so a live session and the command agree on this
-/// base table.
-#[must_use]
-pub fn network_policy_from_document(path: &Path) -> Option<crate::network_policy::NetworkPolicy> {
-    #[derive(Deserialize)]
-    struct NetworkTable {
-        network: Option<NetworkPolicyToml>,
-    }
-
-    let contents = fs::read_to_string(path).ok()?;
-    let parsed: NetworkTable = toml::from_str(&contents).ok()?;
-    parsed.network.map(NetworkPolicyToml::into_runtime)
-}
-
-/// `[lsp]` table — mirrors [`crate::lsp::LspConfig`]. Documented in
-/// `config.example.toml`. When omitted, defaults from `LspConfig::default()`
-/// apply (enabled, 5 s poll, 20 diagnostics/file, errors only, no overrides).
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct LspConfigToml {
-    /// Master switch. Defaults to `true`.
-    #[serde(default)]
-    pub enabled: Option<bool>,
-    /// How long to wait for the LSP server to publish diagnostics after a
-    /// `didOpen`/`didChange`. Defaults to 5000 ms.
-    #[serde(default)]
-    pub poll_after_edit_ms: Option<u64>,
-    /// Cap on diagnostics surfaced per file. Defaults to 20.
-    #[serde(default)]
-    pub max_diagnostics_per_file: Option<usize>,
-    /// Whether to surface warnings in addition to errors. Defaults to `false`.
-    #[serde(default)]
-    pub include_warnings: Option<bool>,
-    /// Optional override for the `Language -> [cmd, ...args]` table. Keys
-    /// are language slugs (`"rust"`, `"go"`, etc.).
-    #[serde(default)]
-    pub servers: Option<HashMap<String, Vec<String>>>,
-    /// User-defined LSP servers for file extensions not in the built-in
-    /// registry. Keyed by extension (e.g. `"php"`, `"rb"`).
-    #[serde(default)]
-    pub custom: Option<HashMap<String, crate::lsp::CustomLspDef>>,
-}
-
-impl LspConfigToml {
-    /// Build a runtime [`crate::lsp::LspConfig`] from the on-disk schema,
-    /// falling back to defaults for any unset fields.
-    #[must_use]
-    pub fn into_runtime(self) -> crate::lsp::LspConfig {
-        let defaults = crate::lsp::LspConfig::default();
-        crate::lsp::LspConfig {
-            enabled: self.enabled.unwrap_or(defaults.enabled),
-            poll_after_edit_ms: self
-                .poll_after_edit_ms
-                .unwrap_or(defaults.poll_after_edit_ms),
-            max_diagnostics_per_file: self
-                .max_diagnostics_per_file
-                .unwrap_or(defaults.max_diagnostics_per_file),
-            include_warnings: self.include_warnings.unwrap_or(defaults.include_warnings),
-            servers: self.servers.unwrap_or_default(),
-            custom: self.custom.unwrap_or_default(),
-        }
     }
 }
 
@@ -4138,16 +3911,6 @@ impl Config {
         }
     }
 
-    /// Whether an explicit config or requirements file owns approval posture.
-    /// TUI preferences may supply a default only when this is false.
-    #[must_use]
-    pub fn approval_policy_is_managed(&self) -> bool {
-        if self.approval_policy.is_some() {
-            return true;
-        }
-        self.approval_policy_is_requirements_managed()
-    }
-
     /// Whether organization requirements, rather than a user-editable config
     /// key, own approval posture. User config still outranks TUI settings, but
     /// `/config approval_mode ... --save` may edit that user-owned key.
@@ -4346,14 +4109,6 @@ impl Config {
             );
         }
         Some(std::time::Duration::from_secs(seconds.min(MAX_SECONDS)))
-    }
-
-    #[must_use]
-    pub fn auto_review_policy(&self) -> crate::core::authority::auto_review::AutoReviewPolicy {
-        self.auto_review
-            .as_ref()
-            .map(AutoReviewConfig::to_runtime_policy)
-            .unwrap_or_default()
     }
 
     /// Load configuration from disk and merge with environment overrides.
@@ -5289,12 +5044,12 @@ impl Config {
 
     fn legacy_root_custom_table_generation(
         &self,
-    ) -> Option<crate::route_receipt::CredentialGeneration> {
+    ) -> Option<codewhale_config::credentials::CredentialGeneration> {
         let entry = self.providers.as_ref()?.custom.get("custom")?;
         let value = serde_json::to_value(entry).ok()?;
-        Some(crate::route_receipt::CredentialGeneration::derive(
+        Some(codewhale_config::credentials::CredentialGeneration::derive(
             "codewhale/legacy-root-custom-table/v1",
-            &crate::client::canonical_json(&value),
+            &codewhale_runtime::hashing::canonical_json(&value),
         ))
     }
 
@@ -5328,7 +5083,7 @@ impl Config {
 
     fn current_legacy_root_custom_generation(
         &self,
-    ) -> Option<crate::route_receipt::CredentialGeneration> {
+    ) -> Option<codewhale_config::credentials::CredentialGeneration> {
         let captured = self.legacy_root_custom_generation.as_ref()?;
         let current = self.legacy_root_custom_table_generation()?;
         (captured == &current).then_some(current)
@@ -6500,7 +6255,7 @@ impl Config {
     pub(crate) fn readonly_health_credential_generation(
         &self,
         identity: &ProviderIdentity,
-    ) -> Option<crate::route_receipt::CredentialGeneration> {
+    ) -> Option<codewhale_config::credentials::CredentialGeneration> {
         if self.required_account_model_owner.is_some() {
             return None;
         }
@@ -6510,7 +6265,7 @@ impl Config {
         let endpoint = scoped.base_url_for_route(identity);
         let mode = scoped.auth_mode_for_provider(identity);
         let generation = |value: &str| {
-            crate::route_receipt::CredentialGeneration::derive(
+            codewhale_config::credentials::CredentialGeneration::derive(
                 &endpoint,
                 &codewhale_secrets::normalize_api_key(value),
             )
@@ -7301,7 +7056,7 @@ impl Config {
     #[must_use]
     pub fn goal_max_steps(&self) -> u32 {
         let configured = self.goal.as_ref().and_then(|goal| goal.max_steps);
-        let resolved = crate::core::engine::turn_budget::resolve_max_model_steps(configured);
+        let resolved = codewhale_runtime::turn_budget::resolve_max_model_steps(configured);
         if let Some(steps) = configured
             && steps > 0
             && resolved != steps
@@ -7744,7 +7499,7 @@ impl Config {
                     .ok()
                     .and_then(|value| value.trim().parse::<u32>().ok())
             });
-        crate::core::engine::turn_budget::resolve_max_model_steps(raw)
+        codewhale_runtime::turn_budget::resolve_max_model_steps(raw)
     }
 
     /// R1: resolved cumulative per-turn wall-clock budget.
@@ -7763,13 +7518,13 @@ impl Config {
                     .ok()
                     .and_then(|value| value.trim().parse::<u64>().ok())
             });
-        crate::core::engine::turn_budget::resolve_turn_wall_clock(raw)
+        codewhale_runtime::turn_budget::resolve_turn_wall_clock(raw)
     }
 
     /// R1: resolved per-step cap on accumulated streamed content, in bytes.
     #[must_use]
     pub fn stream_max_content_bytes(&self) -> usize {
-        crate::core::engine::turn_budget::resolve_stream_max_content_bytes(
+        codewhale_runtime::turn_budget::resolve_stream_max_content_bytes(
             self.stream
                 .as_ref()
                 .and_then(|cfg| cfg.max_content_mb)
@@ -7781,7 +7536,7 @@ impl Config {
     #[must_use]
     pub fn stream_max_duration(&self) -> std::time::Duration {
         std::time::Duration::from_secs(
-            crate::core::engine::turn_budget::resolve_stream_max_duration_secs(
+            codewhale_runtime::turn_budget::resolve_stream_max_duration_secs(
                 self.stream
                     .as_ref()
                     .and_then(|cfg| cfg.max_duration_secs)
@@ -7796,10 +7551,10 @@ impl Config {
 
     /// Resolved `[stream]` retry budgets, falling back to legacy `[tui]` keys.
     #[must_use]
-    pub fn stream_retry_limits(&self) -> crate::core::engine::turn_budget::StreamRetryLimits {
+    pub fn stream_retry_limits(&self) -> codewhale_runtime::turn_budget::StreamRetryLimits {
         let tui = self.tui.as_ref();
         let stream = self.stream.as_ref();
-        crate::core::engine::turn_budget::resolve_stream_retry_limits(
+        codewhale_runtime::turn_budget::resolve_stream_retry_limits(
             stream
                 .and_then(|cfg| cfg.max_resumes)
                 .or_else(|| tui.and_then(|cfg| cfg.stream_max_resumes)),
@@ -7815,7 +7570,7 @@ impl Config {
     /// #6700: resolved wait for SSE response headers.
     #[must_use]
     pub fn stream_open_timeout(&self) -> std::time::Duration {
-        crate::client::resolve_stream_open_timeout(
+        codewhale_config::resolve_stream_open_timeout(
             self.stream
                 .as_ref()
                 .and_then(|cfg| cfg.open_timeout_secs)
@@ -7836,7 +7591,7 @@ impl Config {
             .and_then(|cfg| cfg.force_http1)
             .or_else(|| self.tui.as_ref().and_then(|cfg| cfg.force_http1))
             .unwrap_or(false)
-            || crate::client::force_http1_from_env()
+            || codewhale_config::force_http1_from_env()
     }
 
     /// #6700: resolved TCP/TLS connect timeout for the model HTTP client.
@@ -8010,16 +7765,11 @@ impl Config {
         self.fleet.clone().unwrap_or_default()
     }
 
-    /// The person's fleet as models (design MODEL-ROUTING-CATALOG §10 F1):
-    /// every exact provider + model route in the selected fleet for
-    /// `workspace`, with the roles each fills. `Ok(empty)` = the session
-    /// model only; `Err` = a selected fleet that cannot be read. This is the
-    /// seam the operator-awareness slice (F2) reads.
-    pub fn fleet_members(
-        &self,
-        workspace: &Path,
-    ) -> Result<Vec<crate::fleet::members::FleetModel>, crate::fleet::store::FleetStoreError> {
-        crate::fleet::members::fleet_models(workspace)
+    #[must_use]
+    pub fn mcp_backend(&self) -> codewhale_config::McpBackend {
+        self.extension_host
+            .as_ref()
+            .map_or(codewhale_config::McpBackend::Rust, |host| host.mcp_backend)
     }
 
     /// Parsed `[workflow]` table, or product defaults when the table is absent

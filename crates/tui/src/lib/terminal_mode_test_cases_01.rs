@@ -74,10 +74,10 @@
     #[test]
     fn headless_consultant_authority_overrides_network_allow_and_disables_web_search() {
         let config = Config {
-            network: Some(crate::config::NetworkPolicyToml {
+            network: Some(codewhale_config::NetworkPolicyToml {
                 default: "allow".to_string(),
                 audit: false,
-                ..crate::config::NetworkPolicyToml::default()
+                ..codewhale_config::NetworkPolicyToml::default()
             }),
             ..Config::default()
         };

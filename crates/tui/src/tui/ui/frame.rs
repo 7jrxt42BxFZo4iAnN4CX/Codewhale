@@ -979,7 +979,9 @@ pub(crate) fn build_engine_config(app: &App, config: &Config) -> EngineConfig {
         subagents_enabled: identity
             .is_some_and(|identity| config.subagents_enabled_for_provider(identity)),
         features: config.features(),
-        auto_review_policy: config.auto_review_policy(),
+        auto_review_policy: crate::core::authority::auto_review::AutoReviewPolicy::from_config(
+            &config,
+        ),
         compaction: app.compaction_config(),
         todos: app.todos.clone(),
         plan_state: app.plan_state.clone(),
@@ -1004,7 +1006,9 @@ pub(crate) fn build_engine_config(app: &App, config: &Config) -> EngineConfig {
         max_tool_calls: None,
         hook_executor: app.runtime_services.hook_executor.clone(),
         network_policy: config.network.clone().map(|toml_cfg| {
-            crate::network_policy::NetworkPolicyDecider::with_default_audit(toml_cfg.into_runtime())
+            crate::network_policy::NetworkPolicyDecider::with_default_audit(
+                crate::network_policy::NetworkPolicy::from(toml_cfg),
+            )
         }),
         snapshots_enabled: config.snapshots_config().enabled,
         snapshots_max_workspace_bytes: config
@@ -1014,10 +1018,7 @@ pub(crate) fn build_engine_config(app: &App, config: &Config) -> EngineConfig {
         // The TUI records no snapshot receipts; its post-turn snapshot stays
         // off the input path (#234).
         record_restore_points: false,
-        lsp_config: config
-            .lsp
-            .clone()
-            .map(crate::config::LspConfigToml::into_runtime),
+        lsp_config: config.lsp.clone().map(crate::lsp::LspConfig::from),
         runtime_services: app.runtime_services.clone(),
         subagent_model_overrides: config.subagent_model_overrides(),
         fleet_roster: std::sync::Arc::new(crate::fleet::identity::load_effective_roster(

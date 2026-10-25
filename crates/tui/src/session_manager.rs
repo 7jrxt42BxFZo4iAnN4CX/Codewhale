@@ -798,13 +798,13 @@ impl SessionCostSnapshot {
     /// Session + subagent cost in USD.
     pub fn total_usd(&self) -> f64 {
         self.total_estimate()
-            .amount(crate::pricing::CostCurrency::Usd)
+            .amount(codewhale_config::pricing::CostCurrency::Usd)
     }
 
     /// Session + subagent cost in CNY.
     pub fn total_cny(&self) -> f64 {
         self.total_estimate()
-            .amount(crate::pricing::CostCurrency::Cny)
+            .amount(codewhale_config::pricing::CostCurrency::Cny)
     }
 
     /// Whether this snapshot's coverage state must be shown as unknown.

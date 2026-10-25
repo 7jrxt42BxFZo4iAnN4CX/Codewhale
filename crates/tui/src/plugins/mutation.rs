@@ -106,7 +106,7 @@ pub async fn install_from_cli(
         let _scope = crate::plugins::activation::PolicyScope::propagate(policy);
         let network = config
             .network
-            .map(|network| network.into_runtime())
+            .map(crate::network_policy::NetworkPolicy::from)
             .unwrap_or_default();
         let source = PluginInstallSource::parse(&source)?;
         runtime.block_on(execute(

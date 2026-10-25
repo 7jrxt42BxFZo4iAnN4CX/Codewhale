@@ -1687,8 +1687,12 @@ fn model_cost_label(provider: ProviderKind, model: &str) -> String {
     // DeepSeek bills by time of day (`pricing_withheld` in
     // catalog_corrections.json), and live roster rows carry no price at all.
     // Ask pricing.rs before calling the price unknown, as `/model` does.
-    crate::pricing::model_rate_label(provider, model, crate::pricing::CostCurrency::Usd)
-        .map_or(label, |rate| format!("{rate} per 1M"))
+    crate::pricing::model_rate_label(
+        provider,
+        model,
+        codewhale_config::pricing::CostCurrency::Usd,
+    )
+    .map_or(label, |rate| format!("{rate} per 1M"))
 }
 
 /// Slice D two-pane picker: `(model, per-model cost, is_default_route)` rows

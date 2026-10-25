@@ -275,7 +275,9 @@ async fn verify_next_user_turn_after_loss(failure: Failure) {
         );
     }
     let partial_count = match failure {
-        Failure::TruncatedBody => usize::try_from(super::super::MAX_STREAM_RETRIES).unwrap() + 1,
+        Failure::TruncatedBody => {
+            usize::try_from(super::super::DEFAULT_STREAM_MAX_RESUMES).unwrap() + 1
+        }
         Failure::StalledBody => 1,
     };
     assert_eq!(
@@ -290,7 +292,7 @@ async fn verify_next_user_turn_after_loss(failure: Failure) {
         "terminal parent-request count must match POSTs observed by the loopback"
     );
     let expected_resumes = match failure {
-        Failure::TruncatedBody => super::super::MAX_STREAM_RETRIES,
+        Failure::TruncatedBody => super::super::DEFAULT_STREAM_MAX_RESUMES,
         Failure::StalledBody => 0,
     };
     assert_eq!(first_terminal.stream_resumes, expected_resumes);

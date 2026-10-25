@@ -1476,19 +1476,6 @@ fn build_speech_synthesis_body(
 
 // === CodewhaleClient ===
 
-/// Returns true when CODEWHALE_FORCE_HTTP1 (legacy alias: DEEPSEEK_FORCE_HTTP1)
-/// is set to a truthy value (`1`, `true`, `yes`, `on`, case-insensitive). Read
-/// only by `Config::force_http1`, which ORs it with the selected stream config flag; every
-/// client builder and stream open takes that resolved value (#103, #6700). Anything else (unset, `0`,
-/// `false`, ...) leaves HTTP/2 on.
-pub(crate) fn force_http1_from_env() -> bool {
-    std::env::var("CODEWHALE_FORCE_HTTP1")
-        .or_else(|_| std::env::var("DEEPSEEK_FORCE_HTTP1"))
-        .ok()
-        .map(|v| v.trim().to_ascii_lowercase())
-        .is_some_and(|v| matches!(v.as_str(), "1" | "true" | "yes" | "on"))
-}
-
 /// Read `SSL_CERT_FILE` and add its contents as extra root
 /// certificates on the reqwest builder (#418). Tries the PEM-bundle
 /// parser first (covers single-cert files too), then falls back to
@@ -6626,7 +6613,7 @@ pub(crate) fn stream_first_response_bound(open: Duration, idle: Duration) -> Dur
 
 #[cfg(test)]
 pub(crate) use stream_entry::first_byte_timeout as stream_first_byte_timeout;
-pub(crate) use stream_entry::{is_stream_open_transport_failure, resolve_stream_open_timeout};
+pub(crate) use stream_entry::is_stream_open_transport_failure;
 mod wire;
 
 // Retain the crate-visible accounting helpers at the existing client seam.
@@ -6659,7 +6646,7 @@ pub(crate) use chat::{
 };
 pub(crate) use prepared::{
     CallerStreamMode, EndpointIdentity, PreparedOutboundRequest, RouteShape, WireBodyView,
-    WireDialect, canonical_json,
+    WireDialect,
 };
 pub(crate) use provider_native_search::{ProviderNativeSearchClient, ProviderNativeSearchRequest};
 

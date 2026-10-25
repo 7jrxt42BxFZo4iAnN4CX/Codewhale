@@ -551,7 +551,9 @@ fn start_mcp_login(app: &mut App, config: &Config, name: String, scopes: Vec<Str
     let workspace = app.workspace.clone();
     let plugin_registry = Arc::clone(&app.plugin_registry);
     let network_policy = config.network.clone().map(|network| {
-        crate::network_policy::NetworkPolicyDecider::with_default_audit(network.into_runtime())
+        crate::network_policy::NetworkPolicyDecider::with_default_audit(
+            crate::network_policy::NetworkPolicy::from(network),
+        )
     });
     let callback_port = config.mcp_oauth_callback_port;
     let callback_url = config.mcp_oauth_callback_url.clone();
@@ -1222,7 +1224,9 @@ pub(crate) async fn handle_mcp_ui_action(
         }
     } else if discover {
         let network_policy = config.network.clone().map(|toml_cfg| {
-            crate::network_policy::NetworkPolicyDecider::with_default_audit(toml_cfg.into_runtime())
+            crate::network_policy::NetworkPolicyDecider::with_default_audit(
+                crate::network_policy::NetworkPolicy::from(toml_cfg),
+            )
         });
         mcp::discover_manager_snapshot_with_workspace_and_plugins(
             &path,
@@ -1230,7 +1234,7 @@ pub(crate) async fn handle_mcp_ui_action(
             network_policy,
             app.mcp_reload_required,
             std::sync::Arc::clone(&app.plugin_registry),
-            mcp::McpBackend::from_config(config),
+            config.mcp_backend(),
         )
         .await
         .map(|snapshot| (snapshot, None))
@@ -1382,7 +1386,7 @@ pub(crate) async fn handle_skill_mutation_requested(
     let network = cfg
         .network
         .clone()
-        .map(|policy| policy.into_runtime())
+        .map(crate::network_policy::NetworkPolicy::from)
         .unwrap_or_default();
     let skills_cfg = cfg.skills.as_ref();
     let max_size = skills_cfg

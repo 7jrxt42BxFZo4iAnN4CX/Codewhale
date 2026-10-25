@@ -245,7 +245,7 @@ async fn search_probe_respects_network_policy_without_contacting_the_authority()
             api_key: None,
             native: None,
         }),
-        network: Some(crate::config::NetworkPolicyToml {
+        network: Some(codewhale_config::NetworkPolicyToml {
             default: "allow".to_string(),
             deny: vec!["search.example".to_string()],
             ..Default::default()

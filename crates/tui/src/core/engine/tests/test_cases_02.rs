@@ -4,7 +4,7 @@ const REPRESENTATIVE_HANDOFF_RELAY: &str = "REPRESENTATIVE_HANDOFF_RELAY";
 fn ordinary_engine_default_does_not_install_a_step_budget() {
     assert_eq!(
         DEFAULT_MODEL_STEPS,
-        crate::core::engine::turn_budget::DEFAULT_MAX_MODEL_STEPS
+        codewhale_runtime::turn_budget::DEFAULT_MAX_MODEL_STEPS
     );
     assert_eq!(EngineConfig::default().max_steps, DEFAULT_MODEL_STEPS);
     let mut turn = TurnContext::new(EngineConfig::default().max_steps);

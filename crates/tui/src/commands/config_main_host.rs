@@ -424,8 +424,8 @@ pub(crate) fn show_single_setting(app: &App, key: &str) -> ConfigReply {
         ),
         "cost_currency" | "currency" => Some(
             match app.cost_currency {
-                crate::pricing::CostCurrency::Usd => "usd",
-                crate::pricing::CostCurrency::Cny => "cny",
+                codewhale_config::pricing::CostCurrency::Usd => "usd",
+                codewhale_config::pricing::CostCurrency::Cny => "cny",
             }
             .to_string(),
         ),
@@ -2509,8 +2509,9 @@ pub fn set_config_value(app: &mut App, key: &str, value: &str, persist: bool) ->
             app.needs_redraw = true;
         }
         "cost_currency" | "currency" => {
-            app.cost_currency = crate::pricing::CostCurrency::from_setting(&settings.cost_currency)
-                .unwrap_or(crate::pricing::CostCurrency::Usd);
+            app.cost_currency =
+                codewhale_config::pricing::CostCurrency::from_setting(&settings.cost_currency)
+                    .unwrap_or(codewhale_config::pricing::CostCurrency::Usd);
             app.needs_redraw = true;
         }
         key @ ("mini_window.keep_header"
@@ -4328,7 +4329,10 @@ mod tests {
         let msg = result.message.unwrap();
 
         assert_eq!(msg, "cost_currency = cny (saved)");
-        assert_eq!(app.cost_currency, crate::pricing::CostCurrency::Cny);
+        assert_eq!(
+            app.cost_currency,
+            codewhale_config::pricing::CostCurrency::Cny
+        );
 
         let settings_path = Settings::path().unwrap();
         let saved = fs::read_to_string(settings_path).unwrap();

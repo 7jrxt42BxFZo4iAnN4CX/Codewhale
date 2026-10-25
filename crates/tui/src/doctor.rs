@@ -352,7 +352,7 @@ pub(crate) async fn doctor_search_probe(
     if let Some(policy) = config.network.clone().map(|network| {
         // Doctor is a read-only diagnostic. Evaluate the same typed policy as
         // web_search, but do not attach the runtime audit writer.
-        NetworkPolicyDecider::new(network.into_runtime(), None)
+        NetworkPolicyDecider::new(crate::network_policy::NetworkPolicy::from(network), None)
     }) {
         match policy.evaluate(&target.host, "web_search") {
             Decision::Allow => {}

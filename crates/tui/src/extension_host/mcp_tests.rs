@@ -3,8 +3,9 @@
 use super::*;
 use crate::extension_host::tests::{FixturePlugins, node_for_tests};
 use crate::extension_host::{ExtensionHostOptions, TestManagerGuard};
-use crate::mcp::{McpBackend, McpConnection, McpTimeouts, McpTransport};
+use crate::mcp::{McpConnection, McpTimeouts, McpTransport};
 use crate::plugins::activation::TestPolicyGuard;
+use codewhale_config::McpBackend;
 use std::sync::atomic::Ordering;
 
 const PEER: &str = r#"

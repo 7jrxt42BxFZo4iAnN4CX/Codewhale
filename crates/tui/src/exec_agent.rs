@@ -15,7 +15,7 @@ use crate::core::ops::TurnSpec;
 /// Omission leaves model steps uncapped. Clap rejects `--max-turns 0`;
 /// explicit positive values retain the documented finite range.
 pub(crate) fn exec_max_steps(max_turns: Option<u32>) -> u32 {
-    crate::core::engine::turn_budget::resolve_max_model_steps(max_turns)
+    codewhale_runtime::turn_budget::resolve_max_model_steps(max_turns)
 }
 
 /// Model-step ceiling for a plain (zero-tool) `exec` run without
@@ -500,7 +500,7 @@ pub(crate) async fn run_exec_agent(
             execution_config
                 .lsp
                 .clone()
-                .map(crate::config::LspConfigToml::into_runtime)
+                .map(crate::lsp::LspConfig::from)
         })
         .flatten();
     let mut engine_features = execution_config.features();
@@ -610,7 +610,9 @@ pub(crate) async fn run_exec_agent(
         subagents_enabled: !fleet_authority_active
             && execution_config.subagents_enabled_for_provider(&effective_identity),
         features: engine_features,
-        auto_review_policy: execution_config.auto_review_policy(),
+        auto_review_policy: crate::core::authority::auto_review::AutoReviewPolicy::from_config(
+            &execution_config,
+        ),
         compaction: compaction.clone(),
         todos: new_shared_todo_list(),
         plan_state: new_shared_plan_state(),

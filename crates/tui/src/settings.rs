@@ -1725,14 +1725,15 @@ impl Settings {
                 self.session_auto_resume = parse_bool(value)?;
             }
             "cost_currency" | "currency" => {
-                let Some(currency) = crate::pricing::CostCurrency::from_setting(value) else {
+                let Some(currency) = codewhale_config::pricing::CostCurrency::from_setting(value)
+                else {
                     anyhow::bail!(
                         "Failed to update setting: invalid cost currency '{value}'. Expected: usd, cny, rmb, yuan."
                     );
                 };
                 self.cost_currency = match currency {
-                    crate::pricing::CostCurrency::Usd => "usd",
-                    crate::pricing::CostCurrency::Cny => "cny",
+                    codewhale_config::pricing::CostCurrency::Usd => "usd",
+                    codewhale_config::pricing::CostCurrency::Cny => "cny",
                 }
                 .to_string();
             }
@@ -2132,25 +2133,6 @@ impl Settings {
             label: None,
         });
         true
-    }
-
-    #[allow(dead_code)] // label editing surface is exposed through settings serialization first
-    pub fn set_pinned_model_label(
-        &mut self,
-        provider: &str,
-        model: &str,
-        label: Option<String>,
-    ) -> bool {
-        self.pinned_models
-            .iter_mut()
-            .find(|pin| {
-                pin.provider.eq_ignore_ascii_case(provider) && pin.model.eq_ignore_ascii_case(model)
-            })
-            .map(|pin| {
-                pin.label = label.filter(|value| !value.trim().is_empty());
-                true
-            })
-            .unwrap_or(false)
     }
 
     pub fn move_pinned_model(&mut self, provider: &str, model: &str, delta: isize) -> bool {
@@ -5943,7 +5925,7 @@ zai = ["GLM-5.2", "GLM-5.3"]
         assert_eq!(settings.pinned_models[0].provider, "zai");
         assert!(settings.move_pinned_model("openrouter", "glm-5.2", -1));
         assert_eq!(settings.pinned_models[0].provider, "openrouter");
-        assert!(settings.set_pinned_model_label("openrouter", "glm-5.2", Some("fast".to_string())));
+        settings.pinned_models[0].label = Some("fast".to_string());
         let encoded = toml::to_string(&settings).unwrap();
         let decoded: Settings = toml::from_str(&encoded).unwrap();
         assert_eq!(decoded.pinned_models, settings.pinned_models);

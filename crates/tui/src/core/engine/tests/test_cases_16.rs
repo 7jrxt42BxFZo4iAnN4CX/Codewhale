@@ -1556,7 +1556,7 @@ fn stream_retry_scenario() {
             super::should_transparently_retry_stream(
                 false,
                 0,
-                super::MAX_TRANSPARENT_STREAM_RETRIES,
+                super::DEFAULT_STREAM_MAX_TRANSPARENT_RETRIES,
                 false
             ),
             "first attempt with no content must be eligible for transparent retry"
@@ -1565,7 +1565,7 @@ fn stream_retry_scenario() {
             super::should_transparently_retry_stream(
                 false,
                 1,
-                super::MAX_TRANSPARENT_STREAM_RETRIES,
+                super::DEFAULT_STREAM_MAX_TRANSPARENT_RETRIES,
                 false
             ),
             "second attempt (one prior retry) with no content must still be eligible"
@@ -1581,7 +1581,7 @@ fn stream_retry_scenario() {
             !super::should_transparently_retry_stream(
                 true,
                 0,
-                super::MAX_TRANSPARENT_STREAM_RETRIES,
+                super::DEFAULT_STREAM_MAX_TRANSPARENT_RETRIES,
                 false
             ),
             "any content received → no transparent retry, even with full budget"
@@ -1590,7 +1590,7 @@ fn stream_retry_scenario() {
             !super::should_transparently_retry_stream(
                 true,
                 1,
-                super::MAX_TRANSPARENT_STREAM_RETRIES,
+                super::DEFAULT_STREAM_MAX_TRANSPARENT_RETRIES,
                 false
             ),
             "any content received → no transparent retry on subsequent attempts"
@@ -1604,7 +1604,7 @@ fn stream_retry_scenario() {
             !super::should_transparently_retry_stream(
                 false,
                 0,
-                super::MAX_TRANSPARENT_STREAM_RETRIES,
+                super::DEFAULT_STREAM_MAX_TRANSPARENT_RETRIES,
                 true
             ),
             "cancelled turn must not be transparently retried"
@@ -1613,7 +1613,7 @@ fn stream_retry_scenario() {
             !super::should_transparently_retry_stream(
                 false,
                 1,
-                super::MAX_TRANSPARENT_STREAM_RETRIES,
+                super::DEFAULT_STREAM_MAX_TRANSPARENT_RETRIES,
                 true
             ),
             "cancelled turn must not be transparently retried even with budget"
@@ -1623,7 +1623,7 @@ fn stream_retry_scenario() {
     {
         // "At most one bounded retry per drop" is enforced by types, not by a
         // comment: `authorize()` is the only way to spend a resume and it refuses
-        // once MAX_STREAM_RETRIES resumes have been issued, whatever the guard
+        // once DEFAULT_STREAM_MAX_RESUMES resumes have been issued, whatever the guard
         // predicates say. A healthy round resets the chain.
         let mut budget = super::StreamRetryBudget::default();
         assert_eq!(budget.spent(), 0);
@@ -1633,10 +1633,10 @@ fn stream_retry_scenario() {
         assert_eq!(
             budget.authorize(),
             None,
-            "authorize() must refuse past MAX_STREAM_RETRIES"
+            "authorize() must refuse past DEFAULT_STREAM_MAX_RESUMES"
         );
         assert_eq!(budget.authorize(), None, "and keep refusing");
-        assert_eq!(budget.spent(), super::MAX_STREAM_RETRIES);
+        assert_eq!(budget.spent(), super::DEFAULT_STREAM_MAX_RESUMES);
         budget.reset();
         assert_eq!(budget.spent(), 0);
         assert_eq!(budget.authorize(), Some(1));
@@ -1648,14 +1648,14 @@ fn stream_retry_scenario() {
         // HTTP/2 keepalive defaults make spurious decode errors rarer.
         // This test pins the constant so a future regression to 3 fails loudly.
         assert_eq!(
-            super::MAX_STREAM_ERRORS_BEFORE_FAIL,
+            super::DEFAULT_STREAM_MAX_ERRORS,
             5,
             "the consecutive-stream-error threshold should be 5; \
              lowering it back to 3 will fail mid-turn under transient flakiness"
         );
         // And a regression guard on the transparent-retry cap.
         assert_eq!(
-            super::MAX_TRANSPARENT_STREAM_RETRIES,
+            super::DEFAULT_STREAM_MAX_TRANSPARENT_RETRIES,
             2,
             "transparent-retry cap should be 2; raising it risks hammering the \
              provider on real outages"

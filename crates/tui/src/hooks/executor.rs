@@ -2047,7 +2047,7 @@ impl HookExecutor {
                 continue;
             }
             // Audit-log the *keys* — never the values.
-            crate::audit::log_sensitive_event(
+            codewhale_runtime::audit::log_sensitive_event(
                 "shell_env_hook",
                 serde_json::json!({
                     // Bounded and de-fanged like every other rendering of a

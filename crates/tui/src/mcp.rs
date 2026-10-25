@@ -16,6 +16,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use codewhale_config::McpBackend;
 use futures_util::FutureExt;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
@@ -3138,24 +3139,6 @@ pub(crate) async fn authenticate_tool_via_pool(
 }
 
 /// Pool of MCP connections for reuse
-/// Protocol owner selected only by user configuration. Rust is the default;
-/// Host explicitly selects the SDK and never falls back to Rust on refusal.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum McpBackend {
-    #[default]
-    Rust,
-    Host,
-}
-impl McpBackend {
-    pub(crate) fn from_config(config: &crate::config::Config) -> Self {
-        config
-            .extension_host
-            .as_ref()
-            .map_or(Self::Rust, |host| host.mcp_backend)
-    }
-}
-
 pub struct McpPool {
     backend: McpBackend,
     /// Immutable operator ceiling; source reloads and shared child pools cannot relax it.

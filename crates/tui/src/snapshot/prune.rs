@@ -11,9 +11,6 @@ use std::time::Duration;
 use super::paths::snapshot_git_dir;
 use super::repo::SnapshotRepo;
 
-/// Default snapshot retention window: 7 days.
-pub const DEFAULT_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
-
 /// Prune snapshots older than `max_age` for the given workspace.
 ///
 /// If no snapshot repo exists yet (first run) this is a cheap no-op.
@@ -45,7 +42,8 @@ mod tests {
         let tmp = tempdir().unwrap();
         let _lock = lock_test_env();
         let _profile = EnvVarGuard::set("CODEWHALE_HOME", tmp.path().join("profile"));
-        let removed = prune_older_than(tmp.path(), DEFAULT_MAX_AGE).unwrap();
+        let removed =
+            prune_older_than(tmp.path(), codewhale_config::DEFAULT_SNAPSHOT_MAX_AGE).unwrap();
         assert_eq!(removed, 0);
     }
 

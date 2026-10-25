@@ -47,7 +47,7 @@ pub(crate) struct ProviderRouteIdentity {
     endpoint: String,
     model: String,
     auth_class: ProviderAuthClass,
-    credential_generation: Option<crate::route_receipt::CredentialGeneration>,
+    credential_generation: Option<codewhale_config::credentials::CredentialGeneration>,
 }
 
 pub(crate) fn route_identity_for_model(
@@ -634,7 +634,7 @@ impl ProviderReadinessSnapshot {
         config: &crate::config::Config,
         identity: &ProviderIdentity,
         model: &str,
-        generation: crate::route_receipt::CredentialGeneration,
+        generation: codewhale_config::credentials::CredentialGeneration,
         category: ErrorCategory,
         message: &str,
     ) {
@@ -655,7 +655,7 @@ impl ProviderReadinessSnapshot {
         config: &crate::config::Config,
         identity: &ProviderIdentity,
         model: &str,
-        generation: crate::route_receipt::CredentialGeneration,
+        generation: codewhale_config::credentials::CredentialGeneration,
     ) {
         let mut route = route_identity_for_model(config, identity, model);
         route.credential_generation = Some(generation);
@@ -799,7 +799,7 @@ pub(crate) struct RouteReadinessScope {
     endpoint: String,
     credentials: CredentialState,
     auth_class: ProviderAuthClass,
-    credential_generation: Option<crate::route_receipt::CredentialGeneration>,
+    credential_generation: Option<codewhale_config::credentials::CredentialGeneration>,
 }
 
 impl RouteReadinessScope {

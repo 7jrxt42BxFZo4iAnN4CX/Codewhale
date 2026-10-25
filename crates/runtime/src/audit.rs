@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use serde_json::{Value, json};
 
-use crate::utils::{flush_and_sync, open_append};
+use crate::private_log::{flush_and_sync, open_append};
 
 /// Append an audit event to `$CODEWHALE_HOME/audit.log` (or the default
 /// `~/.codewhale/audit.log` when no explicit CodeWhale home is configured).
@@ -16,7 +16,7 @@ use crate::utils::{flush_and_sync, open_append};
 pub fn log_sensitive_event(event: &str, details: Value) {
     let result = default_audit_path().and_then(|path| append_event(&path, event, details));
     if let Err(err) = result {
-        codewhale_runtime::logging::warn(format!("audit log write failed: {err}"));
+        crate::logging::warn(format!("audit log write failed: {err}"));
     }
 }
 
@@ -26,7 +26,7 @@ pub fn log_sensitive_event(event: &str, details: Value) {
 /// than in whatever home the process environment names (#6534).
 pub fn log_sensitive_event_in(codewhale_home: &Path, event: &str, details: Value) {
     if let Err(err) = append_event(&codewhale_home.join("audit.log"), event, details) {
-        codewhale_runtime::logging::warn(format!("audit log write failed: {err}"));
+        crate::logging::warn(format!("audit log write failed: {err}"));
     }
 }
 
@@ -86,7 +86,7 @@ fn default_audit_path() -> anyhow::Result<PathBuf> {
     // developer's real ~/.codewhale/audit.log (#6534); it gets a per-process
     // scratch log instead. An *ambient* CODEWHALE_HOME is not a seal: it names
     // somebody's real profile just as `~/.codewhale` does.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     if !crate::test_support::home_is_sealed() {
         return Ok(std::env::temp_dir()
             .join(format!("codewhale-test-audit-{}", std::process::id()))
