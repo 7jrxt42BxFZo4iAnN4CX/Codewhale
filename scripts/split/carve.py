@@ -325,6 +325,8 @@ def main(argv=None) -> int:
     carver = Carver(args.file, json.loads(Path(args.plan).read_text(encoding="utf-8")))
     carver.run()
     for rel in carver.files:
+        if not (REPO_ROOT / rel).resolve().is_relative_to(REPO_ROOT.resolve()):
+            raise SplitError(f"{rel} resolves outside the repository")
         if rel != args.file and (REPO_ROOT / rel).exists():
             raise SplitError(f"{rel} already exists")
     if args.no_format:

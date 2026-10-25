@@ -87,16 +87,6 @@ def split_entries(text: str, masked: str, a: int, b: int) -> list[tuple[str, str
     return [(t.strip(), m.strip()) for t, m in entries if m.strip()]
 
 
-def attribute_lines_above(text: str, pos: int, indent: str) -> str:
-    lines = text[:pos].split("\n")
-    if lines and lines[-1] == "":
-        lines = lines[:-1]
-    block: list[str] = []
-    while lines and re.match(r"^\s*#\[.*\]\s*$", lines[-1]):
-        block.append(lines.pop().strip())
-    return "".join(f"{indent}{line}\n" for line in reversed(block))
-
-
 class Stats:
     def __init__(self) -> None:
         self.plain: dict[str, int] = {}
@@ -136,7 +126,7 @@ def split_groups(text: str, rel: str, bases: list[str], mods: set[str], dest_ide
         stats.grouped.append({"file": rel, "line": line, "moved": [first_segment(mk) for t, mk in entries if t in moved]})
         moved_stmt = f"{indent}{vis}use {dest_ident}::{{{', '.join(moved)}}};"
         if kept:
-            attrs = attribute_lines_above(text, m.start(), indent)
+            attrs = sl.attribute_lines_above(text, m.start(), indent)
             new = f"{indent}{vis}use {base}::{{{', '.join(kept)}}};\n{attrs}{moved_stmt}"
         else:
             new = moved_stmt

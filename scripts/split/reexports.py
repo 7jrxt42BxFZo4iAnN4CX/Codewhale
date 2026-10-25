@@ -16,6 +16,8 @@ import re
 import sys
 from pathlib import Path
 
+from splitlib import attribute_lines_above
+
 
 def flatten_groups_impl(mg, text: str, facades: list[str]) -> str:
     masked = mg.lex_mask(text)
@@ -46,7 +48,8 @@ def flatten_groups_impl(mg, text: str, facades: list[str]) -> str:
         if kept:
             stmts.insert(0, f"{indent}{vis}use crate::{{{', '.join(kept)}}};")
         out.append(text[pos : m.start()])
-        out.append("\n".join(stmts))
+        attrs = attribute_lines_above(text, m.start(), indent)
+        out.append(("\n" + attrs).join(stmts))
         pos = semi + 1
     if not out:
         return text
@@ -242,7 +245,8 @@ def run(args, sl, mg) -> int:
                     body = leaves[0] if len(leaves) == 1 else "{" + ", ".join(leaves) + "}"
                     stmts.append(f"{indent}{vis}use {parent}::{body};")
                 pieces.append(out[pos : m.start()])
-                pieces.append("\n".join(stmts))
+                attrs = attribute_lines_above(out, m.start(), indent)
+                pieces.append(("\n" + attrs).join(stmts))
                 pos = semi + 1
                 grouped.append(f"{rel}:{masked.count(chr(10), 0, m.start()) + 1}")
             if pieces:

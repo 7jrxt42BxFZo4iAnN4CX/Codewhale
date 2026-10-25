@@ -52,6 +52,16 @@ def run_main(fn) -> int:
         return exc.exit_code
 
 
+def attribute_lines_above(text: str, pos: int, indent: str) -> str:
+    lines = text[:pos].split("\n")
+    if lines and lines[-1] == "":
+        lines = lines[:-1]
+    block: list[str] = []
+    while lines and re.match(r"^\s*#\[.*\]\s*$", lines[-1]):
+        block.append(lines.pop().strip())
+    return "".join(f"{indent}{line}\n" for line in reversed(block))
+
+
 def git(*args: str, input_text: str | None = None) -> str:
     proc = subprocess.run(
         ["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, input=input_text
