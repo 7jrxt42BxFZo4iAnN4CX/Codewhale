@@ -28488,11 +28488,10 @@ async fn agent_complete_clears_child_pending() {
     assert_eq!(rows.len(), 1);
 }
 
-/// Hard failures (auth, billing, malformed request) DO need to flip offline
-/// mode so subsequent typed messages get queued instead of silently lost
-/// against a broken upstream.
+/// Hard failures leave the session online for a retry; an error without
+/// TurnComplete must not strand subsequent messages offline.
 #[test]
-fn non_recoverable_engine_error_enters_offline_mode() {
+fn non_recoverable_engine_error_stays_online() {
     use crate::error_taxonomy::ErrorEnvelope;
     let mut app = create_test_app();
     assert!(!app.offline_mode);
@@ -28506,8 +28505,8 @@ fn non_recoverable_engine_error_enters_offline_mode() {
     );
 
     assert!(
-        app.offline_mode,
-        "non-recoverable error must enter offline mode"
+        !app.offline_mode,
+        "non-recoverable error must keep the session online for a retry"
     );
     assert!(!app.is_loading);
     assert_eq!(app.runtime_turn_status.as_deref(), Some("failed"));
@@ -28643,7 +28642,7 @@ async fn keyless_engine_error_stays_visible_after_a_config_ack() {
         }
     }
     drop(events);
-    assert!(app.offline_mode);
+    assert!(!app.offline_mode);
     assert!(!app.is_loading);
     for (width, height) in [(80, 24), (140, 40)] {
         let frame = render_test_app(&mut app, &config, width, height);
