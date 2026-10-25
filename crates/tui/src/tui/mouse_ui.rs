@@ -1401,9 +1401,9 @@ pub(crate) fn build_context_menu_entries(app: &App, mouse: MouseEvent) -> Vec<Co
             )
             .with_glyph("⎘"),
         );
-        // Offered only when a `path:line` on the clicked line (or, failing
-        // that, in the cell) resolves to a file inside the workspace. Model
-        // output is not trusted to name files outside it.
+        // Offered only when a `path:line` or bare file path on the clicked
+        // line (or, failing that, in the cell) resolves to a file inside the
+        // workspace. Model output is not trusted to name files outside it.
         if let Some((path, line)) = context_menu_file_reference(app, mouse, cell_index) {
             let shown = path
                 .strip_prefix(&app.workspace)
@@ -1666,7 +1666,8 @@ fn push_work_row_entries(app: &App, mouse: MouseEvent, entries: &mut Vec<Context
 }
 
 /// The workspace file a right-click on a transcript cell points at: the first
-/// `path:line` on the clicked line, else the first in the cell. Both must be
+/// `path:line` on the clicked line, else a bare path there at line 1, else
+/// the same search over the cell. All must be
 /// regular files inside the workspace, reached without links
 /// (`history::workspace_file`); `open_file_in_editor` checks again.
 fn context_menu_file_reference(
@@ -1681,10 +1682,10 @@ fn context_menu_file_reference(
             .get(point.line_index)
             .map(line_to_plain)
     });
-    if let Some(found) = clicked_line
-        .as_deref()
-        .and_then(|line| crate::tui::history::file_line_reference(line, &app.workspace))
-    {
+    if let Some(found) = clicked_line.as_deref().and_then(|line| {
+        crate::tui::history::file_line_reference(line, &app.workspace)
+            .or_else(|| crate::tui::history::bare_file_reference(line, &app.workspace))
+    }) {
         return Some(found);
     }
     let width = app

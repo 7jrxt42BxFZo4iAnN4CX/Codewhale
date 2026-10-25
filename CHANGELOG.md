@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The To-do that a Plan-to-Work handoff seeds is now titled with the plan's
   first line, without markdown, instead of the whole plan run together
   (#7068).
+- Right-click "Open in editor" on a transcript cell now also offers a bare
+  workspace file path with no line number, opening it at line 1 (#2342).
 - Composer history is no longer rewritten from a partial read: when the
   history file cannot be read, new entries are not saved over it and a
   warning is logged. An empty declarative workflow is refused ("workflow must

@@ -3388,7 +3388,8 @@ fn tool_value_style() -> Style {
     Style::default().fg(palette::TEXT_MUTED)
 }
 
-/// Find the first `path:line` reference in a rendered cell.
+/// Find the first `path:line` reference in a rendered cell, else the first
+/// bare workspace file path, at line 1.
 ///
 /// Pure: it resolves and stats candidate paths but never launches anything.
 /// Spawning the editor belongs to `external_editor`, which owns the terminal
@@ -3402,6 +3403,10 @@ fn tool_value_style() -> Style {
 pub(crate) fn first_file_line_reference(text: &str, workspace: &Path) -> Option<(PathBuf, u32)> {
     text.lines()
         .find_map(|line| file_line_reference(line, workspace))
+        .or_else(|| {
+            text.lines()
+                .find_map(|line| bare_file_reference(line, workspace))
+        })
 }
 
 /// The first `path:line` on one line of text that names a file inside the
@@ -3413,17 +3418,33 @@ pub(crate) fn first_file_line_reference(text: &str, workspace: &Path) -> Option<
 /// name a file: every candidate goes through [`workspace_file`], which
 /// refuses `..`, absolute paths outside the workspace and links.
 pub(crate) fn file_line_reference(line: &str, workspace: &Path) -> Option<(PathBuf, u32)> {
-    line.split_whitespace().find_map(|token| {
-        // Leading `.` stays: `./src/a.rs` is relative, not `/src/a.rs`.
-        let token = token
-            .trim_start_matches(['`', '\'', '"', '(', '[', '<'])
-            .trim_end_matches(['`', '\'', '"', ')', ']', '>', ',', ';', '.']);
+    reference_tokens(line).find_map(|token| {
         let (path_str, line_no) = split_path_line(token)?;
         if !looks_like_file_path(path_str) {
             return None;
         }
         let path_str = path_str.strip_prefix("./").unwrap_or(path_str);
         workspace_file(workspace, path_str).map(|absolute| (absolute, line_no))
+    })
+}
+
+pub(crate) fn bare_file_reference(line: &str, workspace: &Path) -> Option<(PathBuf, u32)> {
+    reference_tokens(line).find_map(|token| {
+        let token = token.trim_end_matches(':');
+        if !looks_like_file_path(token) {
+            return None;
+        }
+        let token = token.strip_prefix("./").unwrap_or(token);
+        workspace_file(workspace, token).map(|absolute| (absolute, 1))
+    })
+}
+
+fn reference_tokens(line: &str) -> impl Iterator<Item = &str> {
+    line.split_whitespace().map(|token| {
+        // Leading `.` stays: `./src/a.rs` is relative, not `/src/a.rs`.
+        token
+            .trim_start_matches(['`', '\'', '"', '(', '[', '<'])
+            .trim_end_matches(['`', '\'', '"', ')', ']', '>', ',', ';', '.'])
     })
 }
 
