@@ -196,7 +196,7 @@
       "docs/SANDBOX.md",
       "docs/RUNTIME_API.md",
       "docs/WEB.md",
-      "crates/tui/src/audit.rs",
+      "crates/runtime/src/audit.rs",
       "web/app/[locale]/faq/page.tsx",
       "web/app/[locale]/install/page.tsx"
     ]
