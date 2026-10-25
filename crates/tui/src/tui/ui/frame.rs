@@ -1573,6 +1573,7 @@ pub(crate) fn render(f: &mut Frame, app: &mut App, _config: &Config) -> Option<(
     let body_area = shell_area;
 
     let body_height = body_area.height;
+    let density_rows = crate::tui::widgets::composer_max_height(app.composer_density);
     let composer_max_height = body_height
         .saturating_sub(
             MIN_CHAT_HEIGHT
@@ -1580,7 +1581,8 @@ pub(crate) fn render(f: &mut Frame, app: &mut App, _config: &Config) -> Option<(
                 .saturating_add(info_height)
                 .saturating_add(top_work_strip_height),
         )
-        .max(MIN_COMPOSER_HEIGHT);
+        .max(MIN_COMPOSER_HEIGHT)
+        .min((body_height / 2).max(density_rows));
     let composer_height = if !pet_main && mini && !mini_cfg.keep_input {
         0
     } else {

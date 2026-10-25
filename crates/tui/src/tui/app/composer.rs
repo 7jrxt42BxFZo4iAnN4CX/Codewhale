@@ -1874,6 +1874,8 @@ impl App {
     pub fn apply_external_edit(&mut self, new: String) {
         self.input = new;
         self.resync_command_line_claim();
+        self.pending_paste_reference = None;
+        self.oversized_paste_full_text = None;
         self.cursor_position = char_count(&self.input);
         self.history_index = None;
         self.history_navigation_draft = None;

@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installs provider access in the running computer's memory. Retries retain
   one operation key and the account/VM binding. Existing Agent Work dispatch
   remains available when no computer conversation is selected.
+- A long draft or paste now grows the composer past its density row limit, up
+  to half the screen (never less than that limit) while leaving room for the
+  transcript, so the text can be read and edited before sending. While a
+  slash, mention or history-search menu is open the composer keeps its usual
+  height (#7049).
 - Code blocks inside reasoning cells now take their syntax colours from the
   active theme instead of the terminal's detected light or dark mode, so a dark
   theme such as Shoreline in a light-profile terminal no longer paints
