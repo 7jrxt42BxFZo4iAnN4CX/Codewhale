@@ -162,12 +162,17 @@ def rustfmt_text(text: str, label: str) -> str:
     return proc.stdout
 
 
-def format_many(items: dict[str, tuple[str | None, str]], workers: int = 8) -> tuple[dict[str, str], list[str]]:
-    """Format rewritten Rust in memory.
+def format_many(
+    items: dict[str, tuple[str | None, str]], workers: int = 8, strict: bool = False
+) -> tuple[dict[str, str], list[str]]:
+    """Format rewritten Rust in memory with rustfmt on stdin; every failure is fatal.
 
-    `items` maps a label to (base_text_or_None, new_text). A file whose base
-    text is not already rustfmt-stable is left exactly as rewritten, so a
-    rewrite never reflows lines it did not change; the labels are returned.
+    `items` maps a label to (base_text_or_None, new_text). rustfmt's exit status
+    is never trusted (stdin mode exits 0 over a diff): the formatted bytes are
+    what gets written, a rustfmt error aborts, and the formatted text must be a
+    fixed point of a second pass. A file whose base text is not already
+    rustfmt-stable is left exactly as rewritten so no foreign line is reflowed;
+    those labels are returned, and `strict` turns them into an error.
     """
     result: dict[str, str] = {}
     unstable: list[str] = []
@@ -175,10 +180,10 @@ def format_many(items: dict[str, tuple[str | None, str]], workers: int = 8) -> t
     def one(label: str) -> tuple[str, str, bool]:
         base, new = items[label]
         formatted = rustfmt_text(new, label)
-        if base is None:
-            return label, formatted, False
-        if rustfmt_text(base, label) != base:
+        if base is not None and rustfmt_text(base, label) != base:
             return label, new, True
+        if rustfmt_text(formatted, label) != formatted:
+            raise SplitError(f"rustfmt output for {label} is not a fixed point; refusing to write it")
         return label, formatted, False
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -186,6 +191,10 @@ def format_many(items: dict[str, tuple[str | None, str]], workers: int = 8) -> t
             result[label] = text
             if was_unstable:
                 unstable.append(label)
+    if strict and unstable:
+        raise SplitError(
+            "--strict-format: these files were not rustfmt-stable before the rewrite:\n  " + "\n  ".join(unstable)
+        )
     return result, unstable
 
 

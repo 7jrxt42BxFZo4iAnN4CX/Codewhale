@@ -261,6 +261,7 @@ class Mover:
         self.cfg_sites: list[dict] = []
         self.manifest: dict = {}
         self.extra_changes: list[str] = []
+        self.unformatted_base = None
 
     def load(self, rel: str) -> str:
         if rel in self.texts:
@@ -609,7 +610,7 @@ class Mover:
                 continue
             fmt_items[rel] = (base, text)
         if fmt_items:
-            formatted, unstable = sl.format_many(fmt_items)
+            formatted, unstable = sl.format_many(fmt_items, strict=self.args.strict_format)
             self.unformatted_base = unstable
             for rel, text in formatted.items():
                 final[rel] = text
@@ -667,6 +668,7 @@ class Mover:
                 "used_outside": sum(1 for c in self.cfg_sites if c["used_outside"] and c["class"] == "test_item"),
                 "detail": self.cfg_sites,
             },
+            "rustfmt_unstable_base": self.unformatted_base,
             "rewrite_set": self.rewrite_set(),
             "clean": clean,
         }
@@ -731,6 +733,8 @@ def print_report(rep: dict, dry: bool) -> None:
     print(f"residue moved->staying: {sum(v['sites'] for v in rep['residue_moved_to_staying'].values())} sites in {len(rep['residue_moved_to_staying'])} modules; super-root residue: {len(rep['super_root_residue'])}")
     print(f"cfg sites: {rep['cfg_plan']['sites']} {rep['cfg_plan']['by_class']}; manifest: {json.dumps(rep['manifest_plan'])}")
     c = rep["clean"]
+    if rep["rustfmt_unstable_base"]:
+        print(f"left unformatted (base not rustfmt-stable): {len(rep['rustfmt_unstable_base'])} files")
     print(f"rewrite set: {len(rep['rewrite_set'])} paths; dirty overlap: {len(c['dirty'])}; recent (<min): {len(c['recent'])}")
 
 
@@ -759,6 +763,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pause-mid-write", type=float, default=0.0, help="seconds to wait once half the writes are done (exercises the restore path)")
     parser.add_argument("--restore", metavar="JOURNAL_DIR")
     parser.add_argument("--no-format", action="store_true")
+    parser.add_argument("--strict-format", action="store_true", help="fail when a file to rewrite was not rustfmt-stable before the rewrite")
     parser.add_argument("--derive-facts", action="store_true")
     args = parser.parse_args(argv)
     if args.restore:
