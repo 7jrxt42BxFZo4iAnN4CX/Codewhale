@@ -234,7 +234,7 @@ fn dock_commands(
     let (mut running, mut finished): (Vec<_>, Vec<_>) = jobs
         .into_iter()
         .partition(|job| job.status == ShellStatus::Running);
-    finished.sort_by(|a, b| b.finished_at.cmp(&a.finished_at));
+    finished.sort_by_key(|job| std::cmp::Reverse(job.finished_at));
     finished.truncate(FINISHED_COMMAND_TABS);
     running.extend(finished);
     running

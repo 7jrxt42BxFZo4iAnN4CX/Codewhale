@@ -5900,7 +5900,8 @@ pub(crate) fn subagent_view_agents(
             HistoryCell::SubAgent(SubAgentCell::Delegate(card))
                 if seen.insert(card.agent_id.clone()) =>
             {
-                let agent_type = FleetRole::from_str(&card.agent_type).unwrap_or(FleetRole::Worker);
+                let agent_type =
+                    FleetRole::parse_label(&card.agent_type).unwrap_or(FleetRole::Worker);
                 let mut row = live_subagent_result(
                     &card.agent_id,
                     agent_type,

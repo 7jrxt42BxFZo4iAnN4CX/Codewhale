@@ -980,7 +980,7 @@ pub(crate) fn build_engine_config(app: &App, config: &Config) -> EngineConfig {
             .is_some_and(|identity| config.subagents_enabled_for_provider(identity)),
         features: config.features(),
         auto_review_policy: crate::core::authority::auto_review::AutoReviewPolicy::from_config(
-            &config,
+            config,
         ),
         compaction: app.compaction_config(),
         todos: app.todos.clone(),
@@ -1069,7 +1069,7 @@ pub(crate) fn build_engine_config(app: &App, config: &Config) -> EngineConfig {
         search_base_url: config.search.as_ref().and_then(|s| s.base_url.clone()),
         search_native: config.search_native(),
         tools_always_load: config.tools_always_load(),
-        user_input_limits: crate::tools::user_input::UserInputLimits::from_config(&config),
+        user_input_limits: crate::tools::user_input::UserInputLimits::from_config(config),
         user_input_timeout: config.user_input_timeout(),
         goal_max_steps: Some(config.goal_max_steps()),
         tools: config.tools.clone(),
