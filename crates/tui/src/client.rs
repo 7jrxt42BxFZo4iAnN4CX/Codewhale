@@ -999,8 +999,8 @@ pub(super) enum ErrorBodyDisclosure {
 /// the connection and never answers hangs model-list, catalog refresh, and
 /// health checks forever (ops R4).
 pub(super) const NON_STREAMING_HTTP_TIMEOUT: Duration = Duration::from_secs(30);
-const PROVIDER_CATALOG_MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
-const PROVIDER_CATALOG_MAX_ROWS: usize = 10_000;
+pub(crate) const PROVIDER_CATALOG_MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+pub(crate) const PROVIDER_CATALOG_MAX_ROWS: usize = 10_000;
 
 #[derive(Clone, Copy)]
 struct ModelsFetchLimits {
@@ -1200,7 +1200,7 @@ pub(super) async fn bounded_error_text(response: reqwest::Response, max_bytes: u
     String::from_utf8_lossy(&buf).into_owned()
 }
 
-async fn bounded_provider_catalog_text(
+pub(crate) async fn bounded_provider_catalog_text(
     response: reqwest::Response,
     max_bytes: usize,
 ) -> Result<String, CatalogRefreshError> {
@@ -3780,6 +3780,15 @@ impl CodewhaleClient {
         // Go is unpaginated. A Messages generation dialect or a custom identity
         // resembling a built-in provider does not establish this list contract.
         let cursor_query = (self.api_provider == ProviderKind::Anthropic).then_some("after_id");
+        self.models_document_at(endpoint, cursor_query, mode).await
+    }
+
+    async fn models_document_at(
+        &self,
+        endpoint: reqwest::Url,
+        cursor_query: Option<&str>,
+        mode: ModelsRequestMode,
+    ) -> Result<(String, tokio::time::Instant), ModelsFetchError> {
         collect_models_document(
             endpoint,
             cursor_query,
@@ -3854,17 +3863,101 @@ impl CodewhaleClient {
         catalog_endpoint_is_baseten(self.api_provider, &self.base_url)
     }
 
-    /// Fetch the provider's live `/models` listing as a secret-free
+    /// Fetch the provider's live model listing as a secret-free
     /// [`ProviderCatalogDelta`] (#3385).
     ///
-    /// Uses the same URL construction and auth client as [`Self::list_models`],
-    /// but fetches pages without `send_with_retry` so a refresh
+    /// Uses the listing auth client, with native catalog routes for Ollama,
+    /// and fetches pages without `send_with_retry` so a refresh
     /// failure stays typed and non-fatal — bundled / saved / static rows are
     /// untouched. The delta is scoped to the base-URL fingerprint and stamped
     /// with the fetch time; the API key authorizes the request but is **never**
     /// persisted into the delta or cache. Unknown live rows carry no canonical
     /// model, capabilities, or pricing, per the #3385 contract.
     pub async fn fetch_catalog_delta(&self) -> Result<ProviderCatalogDelta, CatalogRefreshError> {
+        if self.api_provider == ProviderKind::Ollama {
+            let origin = crate::local_ollama::ollama_native_origin(&self.base_url);
+            let tags_url = reqwest::Url::parse(&format!("{origin}/api/tags"))
+                .map_err(|_| CatalogRefreshError::InvalidResponse)?;
+            let (body, deadline) = self
+                .models_document_at(tags_url, None, ModelsRequestMode::Refresh)
+                .await
+                .map_err(ModelsFetchError::into_catalog)?;
+            let (tags, mut profiles) = crate::local_ollama::parse_ollama_tags_with_profiles(&body)
+                .map_err(|_| CatalogRefreshError::InvalidResponse)?;
+            if tags.iter().any(|tag| {
+                self.model_bound_secret_values
+                    .iter()
+                    .any(|secret| !secret.is_empty() && tag.contains(secret))
+            }) {
+                return Err(CatalogRefreshError::InvalidResponse);
+            }
+            let fetched = tokio::time::timeout_at(
+                deadline,
+                crate::local_ollama::fetch_tag_profiles(&tags, &profiles, |tag| {
+                    let origin = &origin;
+                    async move {
+                        let result = async {
+                            let request = self
+                                .models_http_client
+                                .post(format!("{origin}/api/show"))
+                                .json(&serde_json::json!({ "model": tag }))
+                                .timeout(Duration::from_secs(2));
+                            let response =
+                                self.authorize_plugin_request(request).await?.send().await?;
+                            anyhow::ensure!(
+                                response.status().is_success(),
+                                "Ollama profile request failed"
+                            );
+                            let body = bounded_provider_catalog_text(
+                                response,
+                                PROVIDER_CATALOG_MAX_RESPONSE_BYTES,
+                            )
+                            .await
+                            .map_err(|reason| {
+                                anyhow::anyhow!("Ollama profile rejected: {reason:?}")
+                            })?;
+                            crate::local_ollama::parse_ollama_show_response(&body)
+                        }
+                        .await;
+                        result.map_err(|error: anyhow::Error| {
+                            anyhow::anyhow!(self.redact_model_bound_text(&error.to_string()))
+                        })
+                    }
+                }),
+            )
+            .await
+            .map_err(|_| CatalogRefreshError::Network)?;
+            profiles.extend(fetched);
+            let running_url = reqwest::Url::parse(&format!("{origin}/api/ps"))
+                .map_err(|_| CatalogRefreshError::InvalidResponse)?;
+            let running_deadline =
+                deadline.min(tokio::time::Instant::now() + Duration::from_secs(2));
+            let running = tokio::time::timeout_at(
+                running_deadline,
+                self.models_document_at(running_url, None, ModelsRequestMode::Refresh),
+            )
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .map(|(body, _)| body);
+            let delta = crate::local_ollama::ollama_catalog_delta(
+                &self.catalog_provider_id(),
+                &self.base_url,
+                &tags,
+                &profiles,
+                running.as_deref(),
+            );
+            if tokio::time::Instant::now() >= deadline
+                || delta.offerings.iter().any(|row| {
+                    self.model_bound_secret_values
+                        .iter()
+                        .any(|secret| !secret.is_empty() && row.wire_model_id.contains(secret))
+                })
+            {
+                return Err(CatalogRefreshError::InvalidResponse);
+            }
+            return Ok(delta);
+        }
         let (body, deadline) = self
             .models_document(ModelsRequestMode::Refresh)
             .await

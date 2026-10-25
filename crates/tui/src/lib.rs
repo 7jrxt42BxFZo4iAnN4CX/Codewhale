@@ -13958,6 +13958,22 @@ async fn resolve_cli_exec_route(
     prompt: &str,
     force_configured_route: bool,
 ) -> Result<CliAutoRoute> {
+    let mut local_default = None;
+    if let Ok(identity) = config.active_provider_identity()
+        && identity.provider == crate::config::ProviderKind::Ollama
+    {
+        crate::provider_lake::refresh_local_ollama_catalog(config, &identity).await;
+        if crate::config::is_unresolved_local_ollama_model(model)
+            || (force_configured_route && model.trim().eq_ignore_ascii_case("auto"))
+        {
+            local_default = Some(
+                crate::route_runtime::resolve_runtime_route_for_identity(config, &identity, None)
+                    .map_err(anyhow::Error::msg)?
+                    .model,
+            );
+        }
+    }
+    let model = local_default.as_deref().unwrap_or(model);
     if force_configured_route && !model.trim().eq_ignore_ascii_case("auto") {
         let reasoning_effort = config
             .reasoning_effort()

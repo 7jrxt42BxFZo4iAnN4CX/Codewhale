@@ -673,6 +673,7 @@ pub(crate) async fn switch_provider(
         config.default_text_model = None;
     }
 
+    crate::provider_lake::refresh_local_ollama_catalog(config, &identity).await;
     let resolved_route =
         match resolve_runtime_route_for_identity(config, &identity, model_override.as_deref()) {
             Ok(route) => route,

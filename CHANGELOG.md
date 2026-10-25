@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Local Ollama defaults now come from chat-capable tags, and `/provider ollama`
+  refreshes the live catalog before switching. Exec and Runtime API defaults use
+  the same discovery path. Fresh context observations come from loaded models'
+  served windows; unloaded models retain an explicitly unverified fallback (#5848).
 - `codewhale --provider <name> resume <id>` now moves the saved session to the
   named provider, as `exec --resume` already did, so a session whose provider
   table was deleted can be reopened on a provider you still have. It takes

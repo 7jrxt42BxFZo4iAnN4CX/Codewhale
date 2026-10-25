@@ -1587,6 +1587,7 @@ mod tests {
                     provider: "ollama".into(),
                     wire_model_id: "qwen2.5:0.5b".into(),
                     endpoint_key: "chat".into(),
+                    default_for_provider: true,
                     source: CatalogSource::Live {
                         base_url_fingerprint: fingerprint.clone(),
                         fetched_at: now,

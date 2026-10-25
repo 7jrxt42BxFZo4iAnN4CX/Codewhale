@@ -1282,7 +1282,7 @@ provider = "ollama"
 
 [profiles.ollama.providers.ollama]
 base_url = "http://localhost:11434/v1"
-model = "qwen2.5-coder:7b" # any tag `ollama list` shows
+model = "qwen2.5-coder:7b" # an installed chat-capable tag
 
 [profiles.ollama-cloud]
 provider = "ollama-cloud"
@@ -1298,6 +1298,16 @@ Select a profile with:
 - Env: `DEEPSEEK_PROFILE=work`
 
 If a profile is selected but missing, codewhale exits with an error listing available profiles.
+
+For local Ollama, omit `providers.ollama.model` to select a tag whose native
+catalog confirms completion support. `/provider ollama`, exec, and Runtime API
+default-model admission refresh that catalog; embedding-only catalogs have no
+automatic chat default. An explicit model keeps its exact tag.
+
+A loaded model's `/api/ps` context observation is usable for 60 seconds.
+`/api/show` reports the trained maximum, which does not establish the served
+window. An unloaded model or an expired observation uses the unverified 8192-token
+fallback; explicit context-window configuration still takes precedence.
 
 ## Legacy top-level `base_url` and `api_key`
 

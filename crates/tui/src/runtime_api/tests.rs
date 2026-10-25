@@ -19098,6 +19098,7 @@ fn api_provider_default_and_model_list_follow_exact_local_catalog() {
                 provider: "ollama".into(),
                 wire_model_id: "local-default:tag".into(),
                 endpoint_key: "chat".into(),
+                default_for_provider: true,
                 source: CatalogSource::Live {
                     base_url_fingerprint: fingerprint.clone(),
                     fetched_at,
@@ -19216,6 +19217,7 @@ async fn api_config_reports_local_default_availability_without_blocking_config_r
                 provider: "ollama".into(),
                 wire_model_id: "available:tag".into(),
                 endpoint_key: "chat".into(),
+                default_for_provider: true,
                 source: CatalogSource::Live {
                     base_url_fingerprint: fingerprint,
                     fetched_at,

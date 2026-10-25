@@ -1,4 +1,4 @@
-//! Unconfigured first-run adoption of a live local Ollama catalog.
+//! Live local Ollama catalog facts and unconfigured first-run adoption.
 //!
 //! Virgin sessions default to the DeepSeek costume (`deepseek-flash`). When a
 //! real local daemon answers `GET /api/tags` (or the OpenAI-compat
@@ -186,67 +186,156 @@ struct OllamaTagModel {
     name: String,
     #[serde(default)]
     model: String,
+    #[serde(default)]
+    capabilities: Option<Vec<String>>,
+    #[serde(default)]
+    details: Option<serde_json::Value>,
+    #[serde(default)]
+    context_length: Option<u64>,
 }
 
 /// Parse native Ollama `GET /api/tags` JSON into sorted unique tag ids.
+#[cfg(test)]
 pub(crate) fn parse_ollama_tags_response(payload: &str) -> anyhow::Result<Vec<String>> {
-    let parsed: OllamaTagsResponse = serde_json::from_str(payload)
-        .map_err(|err| anyhow::anyhow!("Failed to parse Ollama /api/tags JSON: {err}"))?;
-    let mut tags: Vec<String> = parsed
-        .models
-        .into_iter()
-        .filter_map(|row| {
-            let name = row.name.trim();
-            if !name.is_empty() {
-                return Some(name.to_string());
-            }
-            let model = row.model.trim();
-            if !model.is_empty() {
-                Some(model.to_string())
-            } else {
-                None
-            }
-        })
-        .collect();
-    tags.sort();
-    tags.dedup();
-    Ok(tags)
+    parse_ollama_tags_with_profiles(payload).map(|(tags, _)| tags)
 }
 
-fn record_ollama_tags_into_lake(endpoint_v1: &str, tags: &[String]) {
-    if tags.is_empty() {
-        return;
+pub(crate) fn parse_ollama_tags_with_profiles(
+    payload: &str,
+) -> anyhow::Result<(
+    Vec<String>,
+    std::collections::HashMap<String, OllamaTagProfile>,
+)> {
+    let parsed: OllamaTagsResponse = serde_json::from_str(payload)
+        .map_err(|err| anyhow::anyhow!("Failed to parse Ollama /api/tags JSON: {err}"))?;
+    anyhow::ensure!(
+        parsed.models.len() <= crate::client::PROVIDER_CATALOG_MAX_ROWS,
+        "Ollama catalog exceeds the model row limit"
+    );
+    let mut profiles = std::collections::HashMap::new();
+    for row in parsed.models {
+        let tag = if row.name.trim().is_empty() {
+            row.model.trim()
+        } else {
+            row.name.trim()
+        };
+        if !crate::provider_lake::valid_catalog_model_id(tag) {
+            continue;
+        }
+        let profile = OllamaTagProfile {
+            capabilities: row.capabilities,
+            context_length: row
+                .details
+                .as_ref()
+                .and_then(|details| details.get("context_length"))
+                .and_then(serde_json::Value::as_u64),
+        };
+        if let Some(previous) = profiles.insert(tag.to_string(), profile.clone()) {
+            anyhow::ensure!(
+                previous == profile,
+                "Ollama reported conflicting tag capabilities"
+            );
+        }
     }
-    let fingerprint = base_url_fingerprint(endpoint_v1);
-    let fetched_at = now_unix();
-    let offerings = tags
-        .iter()
-        .map(|tag| CatalogOffering {
-            provider: "ollama".into(),
-            wire_model_id: tag.clone(),
-            endpoint_key: "chat".into(),
-            source: CatalogSource::Live {
-                base_url_fingerprint: fingerprint.clone(),
-                fetched_at,
-            },
-            default_for_provider: false,
-            ..Default::default()
+    let mut tags: Vec<String> = profiles.keys().cloned().collect();
+    tags.sort();
+    Ok((tags, profiles))
+}
+
+pub(crate) fn ollama_catalog_delta(
+    provider: &str,
+    endpoint_v1: &str,
+    tags: &[String],
+    profiles: &std::collections::HashMap<String, OllamaTagProfile>,
+    running_body: Option<&str>,
+) -> ProviderCatalogDelta {
+    let running: std::collections::HashMap<String, u64> = running_body
+        .and_then(|body| serde_json::from_str::<OllamaTagsResponse>(body).ok())
+        .filter(|response| response.models.len() <= crate::client::PROVIDER_CATALOG_MAX_ROWS)
+        .into_iter()
+        .flat_map(|response| response.models)
+        .filter_map(|row| {
+            let context = row.context_length.filter(|value| *value > 0)?;
+            let context = u32::try_from(context).ok().map(u64::from)?;
+            let tag = if row.name.trim().is_empty() {
+                row.model.trim()
+            } else {
+                row.name.trim()
+            };
+            (!tag.is_empty()).then(|| (tag.to_string(), context))
         })
         .collect();
+    let chat_tags: Vec<String> = tags
+        .iter()
+        .filter(|tag| crate::provider_lake::valid_catalog_model_id(tag))
+        .filter(|tag| {
+            profiles
+                .get(*tag)
+                .is_some_and(|profile| profile.has_capability("completion") == Some(true))
+        })
+        .cloned()
+        .collect();
+    let preferred = choose_chat_tag(&chat_tags, profiles);
+    let fingerprint = base_url_fingerprint(endpoint_v1);
+    let fetched_at = now_unix();
+    let offerings = chat_tags
+        .iter()
+        .filter_map(|tag| {
+            let profile = profiles.get(tag)?;
+            Some(CatalogOffering {
+                provider: provider.to_string(),
+                wire_model_id: tag.clone(),
+                endpoint_key: "chat".into(),
+                default_for_provider: preferred.as_deref() == Some(tag.as_str()),
+                tool_call: profile.has_capability("tools"),
+                reasoning: profile.has_capability("thinking"),
+                limit: running.get(tag).copied().map(|context| {
+                    codewhale_config::models_dev::ModelsDevLimit {
+                        context: Some(context),
+                        ..Default::default()
+                    }
+                }),
+                source: CatalogSource::Live {
+                    base_url_fingerprint: fingerprint.clone(),
+                    fetched_at,
+                },
+                ..Default::default()
+            })
+        })
+        .collect();
+    ProviderCatalogDelta {
+        provider: provider.to_string(),
+        base_url_fingerprint: fingerprint,
+        fetched_at,
+        offerings,
+    }
+}
+
+fn record_ollama_tags_into_lake(
+    endpoint_v1: &str,
+    tags: &[String],
+    profiles: &std::collections::HashMap<String, OllamaTagProfile>,
+    running_body: Option<&str>,
+) -> Option<String> {
+    let delta = ollama_catalog_delta("ollama", endpoint_v1, tags, profiles, running_body);
+    let chat_tag = delta
+        .offerings
+        .iter()
+        .find(|offering| offering.default_for_provider)
+        .map(|offering| offering.wire_model_id.clone());
     let ticket = crate::provider_catalog_live::begin_refresh_for_identity(
         ProviderKind::Ollama,
         "ollama",
         endpoint_v1,
     );
-    let _ = crate::provider_catalog_live::record_success_if_current(
-        &ticket,
-        ProviderCatalogDelta {
-            provider: "ollama".into(),
-            base_url_fingerprint: fingerprint,
-            fetched_at,
-            offerings,
-        },
-    );
+    if matches!(
+        crate::provider_catalog_live::record_success_if_current(&ticket, delta),
+        Some(codewhale_config::catalog::CatalogStatus::Fresh)
+    ) {
+        chat_tag
+    } else {
+        None
+    }
 }
 
 fn probe_client() -> anyhow::Result<reqwest::Client> {
@@ -263,7 +352,12 @@ async fn fetch_text(url: &str) -> anyhow::Result<String> {
     if !response.status().is_success() {
         anyhow::bail!("HTTP {}", response.status());
     }
-    Ok(response.text().await?)
+    crate::client::bounded_provider_catalog_text(
+        response,
+        crate::client::PROVIDER_CATALOG_MAX_RESPONSE_BYTES,
+    )
+    .await
+    .map_err(|reason| anyhow::anyhow!("Ollama catalog response rejected: {reason:?}"))
 }
 
 async fn fetch_tag_profile(origin: &str, tag: &str) -> anyhow::Result<OllamaTagProfile> {
@@ -275,36 +369,45 @@ async fn fetch_tag_profile(origin: &str, tag: &str) -> anyhow::Result<OllamaTagP
     if !response.status().is_success() {
         anyhow::bail!("HTTP {}", response.status());
     }
-    parse_ollama_show_response(&response.text().await?)
+    let body = crate::client::bounded_provider_catalog_text(
+        response,
+        crate::client::PROVIDER_CATALOG_MAX_RESPONSE_BYTES,
+    )
+    .await
+    .map_err(|reason| anyhow::anyhow!("Ollama profile response rejected: {reason:?}"))?;
+    parse_ollama_show_response(&body)
 }
 
-/// Ask `/api/show` about the plausible chat tags. Failures leave a tag
-/// unprofiled, so the name heuristic decides for it.
-async fn fetch_tag_profiles(
-    origin: &str,
+/// Ask `/api/show` about plausible tags whose capabilities are still unknown.
+/// An unprofiled tag cannot become an executable catalog default.
+pub(crate) async fn fetch_tag_profiles<F, Fut>(
     tags: &[String],
-) -> std::collections::HashMap<String, OllamaTagProfile> {
+    profiles: &std::collections::HashMap<String, OllamaTagProfile>,
+    mut fetch: F,
+) -> std::collections::HashMap<String, OllamaTagProfile>
+where
+    F: FnMut(String) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<OllamaTagProfile>>,
+{
     let candidates: Vec<&String> = tags
         .iter()
-        .filter(|tag| !looks_like_non_chat_tag(tag))
+        .filter(|tag| {
+            profiles
+                .get(*tag)
+                .is_none_or(|profile| profile.capabilities.is_none())
+                && !looks_like_non_chat_tag(tag)
+        })
         .take(SHOW_PROBE_LIMIT)
         .collect();
-    let lookups = candidates
-        .iter()
-        .map(|tag| fetch_tag_profile(origin, tag.as_str()));
-    let results = futures_util::future::join_all(lookups).await;
+    let results =
+        futures_util::future::join_all(candidates.iter().map(|tag| fetch((*tag).clone()))).await;
     candidates
         .into_iter()
         .zip(results)
         .filter_map(|(tag, result)| match result {
             Ok(profile) => Some((tag.clone(), profile)),
             Err(err) => {
-                tracing::debug!(
-                    target: "local_ollama",
-                    error = %err,
-                    tag = %tag,
-                    "POST /api/show probe failed"
-                );
+                tracing::debug!(target: "local_ollama", error = %err, tag = %tag, "POST /api/show probe failed");
                 None
             }
         })
@@ -320,37 +423,27 @@ pub(crate) async fn probe_live_local_ollama_catalog(
     let endpoint_v1 = ollama_v1_base_url(config);
     let origin = ollama_native_origin(&endpoint_v1);
     let tags_url = format!("{origin}/api/tags");
-
-    let tags = match fetch_text(&tags_url).await {
-        Ok(body) => match parse_ollama_tags_response(&body) {
-            Ok(tags) if !tags.is_empty() => tags,
+    let (tags, mut profiles) = match fetch_text(&tags_url).await {
+        Ok(body) => match parse_ollama_tags_with_profiles(&body) {
+            Ok((tags, profiles)) if !tags.is_empty() => (tags, profiles),
             Ok(_) => return None,
             Err(err) => {
-                tracing::debug!(
-                    target: "local_ollama",
-                    error = %err,
-                    "GET /api/tags returned unusable body"
-                );
-                Vec::new()
+                tracing::debug!(target: "local_ollama", error = %err, "GET /api/tags returned unusable body");
+                (Vec::new(), std::collections::HashMap::new())
             }
         },
         Err(err) => {
-            tracing::debug!(
-                target: "local_ollama",
-                error = %err,
-                url = %tags_url,
-                "GET /api/tags probe failed"
-            );
-            Vec::new()
+            tracing::debug!(target: "local_ollama", error = %err, url = %tags_url, "GET /api/tags probe failed");
+            (Vec::new(), std::collections::HashMap::new())
         }
     };
-
     let tags = if tags.is_empty() {
-        // Fallback: OpenAI-compat roster (same tags, different shape).
         let models_url = format!("{}/models", endpoint_v1.trim_end_matches('/'));
         match fetch_text(&models_url).await {
             Ok(body) => match crate::client::parse_models_response(&body) {
-                Ok(models) if !models.is_empty() => models.into_iter().map(|m| m.id).collect(),
+                Ok(models) if !models.is_empty() => {
+                    models.into_iter().map(|model| model.id).collect()
+                }
                 _ => return None,
             },
             Err(_) => return None,
@@ -358,10 +451,27 @@ pub(crate) async fn probe_live_local_ollama_catalog(
     } else {
         tags
     };
-
-    record_ollama_tags_into_lake(&endpoint_v1, &tags);
-    let profiles = fetch_tag_profiles(&origin, &tags).await;
-    let chat_tag = choose_chat_tag(&tags, &profiles);
+    let fetched = fetch_tag_profiles(&tags, &profiles, |tag| {
+        let origin = &origin;
+        async move { fetch_tag_profile(origin, &tag).await }
+    })
+    .await;
+    for (tag, profile) in fetched {
+        profiles
+            .entry(tag)
+            .and_modify(|known| {
+                if known.capabilities.is_none() {
+                    known.capabilities = profile.capabilities.clone();
+                }
+                if known.context_length.is_none() {
+                    known.context_length = profile.context_length;
+                }
+            })
+            .or_insert(profile);
+    }
+    let running_body = fetch_text(&format!("{origin}/api/ps")).await.ok();
+    let chat_tag =
+        record_ollama_tags_into_lake(&endpoint_v1, &tags, &profiles, running_body.as_deref());
     Some(LiveLocalOllamaCatalog {
         endpoint_v1,
         tags,
@@ -561,7 +671,7 @@ mod tests {
             use std::io::{Read, Write};
             let mut buf = [0u8; 1024];
             let _ = stream.read(&mut buf);
-            let body = br#"{"models":[{"name":"qwen2.5:0.5b","model":"qwen2.5:0.5b"}]}"#;
+            let body = br#"{"models":[{"name":"qwen2.5:0.5b","model":"qwen2.5:0.5b","capabilities":["completion"]}]}"#;
             let header = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                 body.len()

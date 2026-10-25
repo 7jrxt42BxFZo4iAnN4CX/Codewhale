@@ -1100,6 +1100,7 @@
                         provider: "ollama".into(),
                         wire_model_id: id.into(),
                         endpoint_key: "chat".into(),
+                        default_for_provider: id == "alpha:tag",
                         source: CatalogSource::Live {
                             base_url_fingerprint: fingerprint.clone(),
                             fetched_at,

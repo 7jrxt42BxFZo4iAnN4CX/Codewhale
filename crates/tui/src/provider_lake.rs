@@ -904,6 +904,24 @@ fn row_matches_endpoint_fingerprint(row: &CatalogOffering, fingerprint: &str) ->
     )
 }
 
+fn current_local_context(provider: ProviderKind, mut row: CatalogOffering) -> CatalogOffering {
+    if provider != ProviderKind::Ollama {
+        return row;
+    }
+    let now = codewhale_config::catalog::now_unix();
+    let current = matches!(
+        row.fact_source("limit.context"),
+        CatalogSource::Live { base_url_fingerprint, fetched_at }
+            if row_matches_endpoint_fingerprint(&row, base_url_fingerprint)
+                && *fetched_at <= now
+                && now - *fetched_at < 60
+    );
+    if !current && let Some(limit) = row.limit.as_mut() {
+        limit.context = None;
+    }
+    row
+}
+
 /// Build or reuse the runtime resolver for an exact provider identity.
 ///
 /// Only a fresh provider-owned partition whose source fingerprint matches the
@@ -933,7 +951,8 @@ pub(crate) fn runtime_catalog_resolver_for_identity(
         fingerprint
     );
 
-    if let Ok(cache) = RUNTIME_RESOLVER_CACHE.read()
+    if provider != ProviderKind::Ollama
+        && let Ok(cache) = RUNTIME_RESOLVER_CACHE.read()
         && let Some(cached) = cache.get(&cache_key)
         && cached.generation == generation
         && cached.cloud_generation == cloud_generation
@@ -1066,6 +1085,9 @@ pub(crate) fn runtime_catalog_resolver_for_identity(
             }
         }
     }
+    if provider == ProviderKind::Ollama {
+        route_offerings.retain(|_, offering| offering.provider.as_str() != catalog_id.as_ref());
+    }
     if endpoint_catalog_authoritative {
         let transport_provider = if provider == ProviderKind::Custom {
             ProviderKind::Custom.as_str()
@@ -1079,7 +1101,7 @@ pub(crate) fn runtime_catalog_resolver_for_identity(
                 row.complete_from(lower, Some(base_url));
             }
             row.provider = transport_provider.to_string();
-            let offering = row.to_offering();
+            let offering = current_local_context(provider, row).to_offering();
             route_offerings.insert(offering_key(&offering), offering);
         }
         // The roster replaced its whole scope, but an id it explicitly attests
@@ -1094,30 +1116,17 @@ pub(crate) fn runtime_catalog_resolver_for_identity(
         )
         .into_values()
         {
-            let offering = row.to_offering();
+            let offering = current_local_context(provider, row).to_offering();
             route_offerings
                 .entry(offering_key(&offering))
                 .or_insert(offering);
         }
     }
 
-    // Ollama's tag list does not mark a provider default. In the absence of
-    // an explicit tag, elect a stable row only from this fresh exact endpoint.
-    // Other providers retain their reported or curated default semantics.
-    if provider == ProviderKind::Ollama
-        && endpoint_catalog_authoritative
-        && !route_offerings.values().any(|offering| {
-            offering.provider.as_str() == catalog_id.as_ref() && offering.default_for_provider
-        })
-        && let Some(offering) = route_offerings
-            .values_mut()
-            .find(|offering| offering.provider.as_str() == catalog_id.as_ref())
-    {
-        offering.default_for_provider = true;
-    }
-
     let resolver = RouteResolver::from_offerings(route_offerings.into_values().collect());
-    if let Ok(mut cache) = RUNTIME_RESOLVER_CACHE.write() {
+    if provider != ProviderKind::Ollama
+        && let Ok(mut cache) = RUNTIME_RESOLVER_CACHE.write()
+    {
         cache.retain(|_, entry| {
             entry.generation == generation && entry.cloud_generation == cloud_generation
         });
@@ -1299,6 +1308,7 @@ pub fn catalog_offering_for_model_identity(
         needle,
     )
     .cloned()
+    .map(|row| current_local_context(provider, row))
 }
 
 /// What one exact-route lookup found in the provider's own catalog entry.
@@ -1366,7 +1376,7 @@ pub(crate) fn catalog_offering_for_route(
                     row.complete_from(lower, Some(base_url));
                 }
             }
-            return Some(*row);
+            return Some(current_local_context(provider, *row));
         }
         // A successful fetch that does not list this id is authoritative about
         // its absence. Only an explicitly attested unlisted row may still name
@@ -1375,7 +1385,8 @@ pub(crate) fn catalog_offering_for_route(
         Ok(Some(RouteCatalogLookup::NotListed)) => {
             return cloud_unlisted_offerings_for_route(provider, identity, base_url)
                 .into_values()
-                .find(|row| row.wire_model_id == model);
+                .find(|row| row.wire_model_id == model)
+                .map(|row| current_local_context(provider, row));
         }
         Ok(Some(RouteCatalogLookup::NoRoster)) | Ok(None) | Err(_) => {}
     }
@@ -1393,7 +1404,7 @@ pub(crate) fn catalog_offering_for_route(
     {
         return None;
     }
-    Some(offering)
+    Some(current_local_context(provider, offering))
 }
 
 /// Config declarations take precedence only for the exact selected route.
@@ -1924,6 +1935,59 @@ pub(crate) async fn update_provider_catalog(
     receipt
 }
 
+pub(crate) async fn refresh_local_ollama_catalog(config: &Config, identity: &ProviderIdentity) {
+    #[cfg(test)]
+    let _ = (config, identity);
+    #[cfg(not(test))]
+    {
+        if identity.provider != ProviderKind::Ollama {
+            return;
+        }
+        static REFRESH_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        let queued_at = codewhale_config::catalog::now_unix();
+        let refresh_guard = REFRESH_LOCK.lock().await;
+        let handle = tokio::runtime::Handle::current();
+        let config = config.clone();
+        let identity = identity.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            let _refresh_guard = refresh_guard;
+            let now = codewhale_config::catalog::now_unix();
+            let base_url = config.base_url_for_route(&identity);
+            let recent = crate::provider_catalog_live::with_cached_entry_for_route(
+                identity.provider,
+                identity.key.as_str(),
+                &base_url,
+                |entry| {
+                    entry.is_fresh(now)
+                        && matches!(
+                            entry.status,
+                            codewhale_config::catalog::CatalogStatus::Fresh
+                        )
+                        && entry.fetched_at >= queued_at
+                        && entry.fetched_at <= now
+                        && entry.offerings.iter().any(|row| row.default_for_provider)
+                },
+            )
+            .ok()
+            .flatten()
+            .unwrap_or(false);
+            if recent
+                && runtime_catalog_resolver_for_identity(
+                    identity.provider,
+                    Some(identity.key.as_str()),
+                    &base_url,
+                    codewhale_config::catalog::CatalogStatus::Fresh,
+                )
+                .endpoint_catalog_authoritative
+            {
+                return;
+            }
+            handle.block_on(update_provider_catalog(&config, &identity));
+        })
+        .await;
+    }
+}
+
 pub(crate) async fn refresh_account_catalog_before_first_request(config: &Config) {
     let Ok(identity) = config.active_provider_identity() else {
         return;
@@ -2358,7 +2422,9 @@ pub fn provider_capability_with_wire(
     // Provider-owned wire IDs can have exact catalog facts without a legacy
     // model-only row. Reuse those facts before conservative fallback budgets.
     let offering = bundled_catalog_offering_for_model(provider, resolved_model);
-    let context_window = if official_deepseek {
+    let context_window = if provider == ProviderKind::Ollama {
+        8192
+    } else if official_deepseek {
         codewhale_models::DEEPSEEK_V4_CONTEXT_WINDOW_TOKENS
     } else if let Some(window) = codewhale_models::context_window_for_model(resolved_model) {
         window
@@ -2369,8 +2435,6 @@ pub fn provider_capability_with_wire(
         .and_then(|window| u32::try_from(window).ok())
     {
         window
-    } else if matches!(provider, ProviderKind::Ollama) {
-        8192
     } else {
         codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS
     };

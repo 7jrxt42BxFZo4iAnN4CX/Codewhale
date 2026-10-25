@@ -1737,6 +1737,15 @@ pub(crate) fn open_runtime_threads_for_host(
     // its capabilities available to route resolution.
     crate::models_dev_live::maybe_load_persisted_cache();
     crate::provider_catalog_live::maybe_load_persisted_cache_for_config(config);
+    if let Ok(identity) = config.active_provider_identity()
+        && identity.provider == ProviderKind::Ollama
+        && let Ok(handle) = tokio::runtime::Handle::try_current()
+    {
+        let config = config.clone();
+        handle.spawn(async move {
+            crate::provider_lake::refresh_local_ollama_catalog(&config, &identity).await;
+        });
+    }
     crate::models_dev_live::spawn_background_refresh();
     Ok((manager, workshop_activation))
 }
@@ -3317,6 +3326,33 @@ async fn health() -> Json<HealthResponse> {
     })
 }
 
+async fn refresh_local_default_catalog(
+    state: &RuntimeApiState,
+    requested: Option<&str>,
+    provider: Option<&str>,
+    provider_id: Option<&str>,
+) {
+    if requested.is_some_and(|model| {
+        !model.trim().is_empty()
+            && !model.trim().eq_ignore_ascii_case("auto")
+            && !crate::config::is_unresolved_local_ollama_model(model)
+    }) {
+        return;
+    }
+    let config = state.config.read().clone();
+    let provider = provider.map(str::trim).filter(|value| !value.is_empty());
+    let identity = if provider.is_some() || provider_id.is_some() {
+        config.resolve_persisted_provider_identity(provider, provider_id)
+    } else {
+        config.active_provider_identity()
+    };
+    if let Ok(identity) = identity
+        && identity.provider == ProviderKind::Ollama
+    {
+        crate::provider_lake::refresh_local_ollama_catalog(&config, &identity).await;
+    }
+}
+
 fn runtime_request_model(config: &Config, requested: Option<&str>) -> Result<String, ApiError> {
     if let Some(model) = requested {
         return Ok(model.to_string());
@@ -3343,6 +3379,13 @@ async fn create_task(
     if req.workspace.is_none() {
         req.workspace = Some(state.workspace.clone());
     }
+    refresh_local_default_catalog(
+        &state,
+        req.model.as_deref(),
+        req.model_provider.as_deref(),
+        req.model_provider_id.as_deref(),
+    )
+    .await;
     if req.model.is_none() && req.model_provider.is_none() && req.model_provider_id.is_none() {
         req.model = Some(runtime_request_model(&state.config.read(), None)?);
     }
@@ -3364,6 +3407,13 @@ async fn create_thread(
     if req.mode.as_ref().is_none_or(|m| m.trim().is_empty()) {
         req.mode = Some("agent".to_string());
     }
+    refresh_local_default_catalog(
+        &state,
+        req.model.as_deref(),
+        req.model_provider.as_deref(),
+        req.model_provider_id.as_deref(),
+    )
+    .await;
 
     let thread = state
         .runtime_threads
@@ -9775,6 +9825,7 @@ async fn stream_turn(
 
     crate::image_attach::prepare_runtime_images(&req.images).map_err(map_thread_err)?;
 
+    refresh_local_default_catalog(&state, req.model.as_deref(), None, None).await;
     let model = runtime_request_model(&state.config.read(), req.model.as_deref())?;
     if req.max_output_tokens.is_some() {
         let config = state.config.read();

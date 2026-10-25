@@ -2496,7 +2496,7 @@ mod tests {
             .into_iter()
             .map(|model| {
                 let mut row = live_catalog_offering("ollama", model, endpoint);
-                row.default_for_provider = false; // Real Ollama tags have no default flag.
+                row.default_for_provider = model == "alpha:tag";
                 row
             })
             .collect();
