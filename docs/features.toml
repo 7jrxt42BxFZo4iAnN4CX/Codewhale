@@ -39,7 +39,7 @@
 [[feature]]
 id = "cloud-computer-dispatch"
 name = "Cloud computer conversations"
-summary = "Dispatch, inspect, continue and stop the same account cloud conversation from terminal and desktop, including conversations with a saved whale."
+summary = "Dispatch, inspect, continue and stop one account cloud conversation from terminal and desktop, saved whales included."
 status = "experimental"
 surfaces = { tui = "preview" }
 since = "unreleased"
