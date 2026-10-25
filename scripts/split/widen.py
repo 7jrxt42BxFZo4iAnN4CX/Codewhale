@@ -58,6 +58,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNTIME_SRC = REPO_ROOT / "crates" / "runtime" / "src"
 RUNTIME_MANIFEST = REPO_ROOT / "crates" / "runtime" / "Cargo.toml"
 CONSUMER_DIRS = ["tui", "cli"]
+VIS = "pub"
 COMMON_NAMES = {
     "new", "fmt", "from", "into", "default", "len", "get", "set", "build", "name", "id", "path", "run",
     "load", "save", "parse", "take", "text", "kind", "value", "data", "state", "config", "error",
@@ -125,16 +126,17 @@ def widen_line(line: str, name: str | None) -> str | None:
     """Rewrite one definition line to `pub`; None when it cannot be done safely."""
     m = re.match(r"^(\s*)pub\s*\((?:crate|super|in [^)]*)\)\s+", line)
     if m:
-        return m.group(1) + "pub " + line[m.end() :]
+        new = m.group(1) + VIS + " " + line[m.end() :]
+        return None if new == line else new
     if re.match(r"^\s*pub\s", line):
         return None  # already public: the error is about a parent module
     m = re.match(rf"^(\s*)(?={ITEM_KW})", line)
     if m:
-        return m.group(1) + "pub " + line[m.end() :]
+        return m.group(1) + VIS + " " + line[m.end() :]
     if name:
         m = re.match(rf"^(\s*)(?={re.escape(name)}\s*:)", line)
         if m:
-            return m.group(1) + "pub " + line[m.end() :]
+            return m.group(1) + VIS + " " + line[m.end() :]
     return None
 
 
@@ -338,10 +340,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--src-crate", default="tui")
     parser.add_argument("--packages", help="comma separated; default codewhale-<dest>,codewhale-<src>")
     parser.add_argument("--extra", default="--lib --tests")
+    parser.add_argument("--vis", choices=("pub", "pub(crate)"), default="pub", help="visibility given to widened items (pub, or pub(crate) inside one crate)")
     parser.add_argument("--prepass", action="store_true", help="widen declarations the consumers name before the first compile")
     parser.add_argument("--keep-unused-imports", action="store_true", help="do not apply the compiler's unused-import removals")
     args = parser.parse_args(argv)
     configure(args.dest_crate, args.src_crate)
+    global VIS
+    VIS = args.vis
     cargo = shlex.split(args.cargo)
     packages = (args.packages or f"codewhale-{args.dest_crate},codewhale-{args.src_crate}").split(",")
     extra = shlex.split(args.extra)
