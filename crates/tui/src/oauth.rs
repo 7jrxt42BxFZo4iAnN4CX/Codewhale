@@ -974,7 +974,7 @@ fn oauth_endpoint_url(raw: &str) -> Result<reqwest::Url> {
 }
 
 fn oauth_http_client(endpoint: &reqwest::Url, purpose: &str) -> Result<reqwest::blocking::Client> {
-    let builder = crate::tls::reqwest_blocking_client_builder()
+    let builder = codewhale_release::tls::reqwest_blocking_client_builder()
         // An issuer-approved endpoint cannot delegate credential-bearing forms
         // to a redirect destination, including HTTPS-to-HTTP downgrades.
         .redirect(reqwest::redirect::Policy::none())

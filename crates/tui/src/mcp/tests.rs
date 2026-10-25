@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 fn test_http_client() -> reqwest::Client {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    crate::tls::reqwest_client()
+    codewhale_release::tls::reqwest_client()
 }
 
 async fn lock_mcp_loopback_tests() -> tokio::sync::MutexGuard<'static, ()> {

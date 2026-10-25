@@ -155,7 +155,7 @@ async fn collect_fixture(
     server: &MockServer,
     limits: ModelsFetchLimits,
 ) -> Result<String, ModelsFetchError> {
-    let http = crate::tls::reqwest_client_builder()
+    let http = codewhale_release::tls::reqwest_client_builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .unwrap();
@@ -639,7 +639,9 @@ async fn chunked_catalog_body_is_bounded_without_content_length() {
             read_head(&mut stream).await;
             stream.write_all(response.as_bytes()).await.unwrap();
         });
-        let http = crate::tls::reqwest_client_builder().build().unwrap();
+        let http = codewhale_release::tls::reqwest_client_builder()
+            .build()
+            .unwrap();
         let result = collect_models_document(
             reqwest::Url::parse(&endpoint).unwrap(),
             None,
@@ -686,7 +688,7 @@ async fn traversal_deadline_bounds_pending_and_completed_later_pages() {
     // Fetch the first fixture response before starting the short clock so host
     // scheduling/connection setup cannot make this accidentally a page-one test.
     let mut first = Some(
-        crate::tls::reqwest_client_builder()
+        codewhale_release::tls::reqwest_client_builder()
             .build()
             .unwrap()
             .get(format!("{}/v1/models", server.uri()))

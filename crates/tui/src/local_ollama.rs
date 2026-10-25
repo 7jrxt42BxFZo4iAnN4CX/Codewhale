@@ -253,7 +253,7 @@ fn probe_client() -> anyhow::Result<reqwest::Client> {
     // The first-run probe can run before any provider client has installed
     // the rustls crypto provider; the shared builder installs it (the bare
     // `reqwest::Client::builder()` panics under `rustls-no-provider`).
-    Ok(crate::tls::reqwest_client_builder()
+    Ok(codewhale_release::tls::reqwest_client_builder()
         .timeout(TAGS_PROBE_TIMEOUT)
         .build()?)
 }

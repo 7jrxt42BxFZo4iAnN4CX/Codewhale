@@ -2066,7 +2066,7 @@ impl Engine {
         mut host: Option<EngineHostSetup>,
         supplied_subagent_manager: Option<SharedSubAgentManager>,
     ) -> (Self, EngineHandle) {
-        crate::tls::ensure_rustls_crypto_provider();
+        codewhale_release::tls::ensure_rustls_crypto_provider();
 
         // Compaction re-states the user's `/anchor` file after its summary;
         // hand it the workspace root once so every prepared pass can read it.

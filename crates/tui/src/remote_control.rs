@@ -3239,7 +3239,7 @@ async fn relay_worker(
     phase: &mut RelayPhase,
 ) -> Result<(), String> {
     let base = runner_control_plane_base()?;
-    let client = crate::tls::reqwest_client_builder()
+    let client = codewhale_release::tls::reqwest_client_builder()
         .https_only(!cfg!(debug_assertions))
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(20))
@@ -6026,7 +6026,7 @@ mod tests {
             .expect(1)
             .mount(&server)
             .await;
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("fixture client");
@@ -6744,7 +6744,7 @@ mod tests {
             .mount(&server)
             .await;
         let enrollment = fixture_enrollment(&format!("{}/", server.uri()));
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("fixture client");
@@ -7453,7 +7453,7 @@ mod tests {
             })))
             .mount(&server)
             .await;
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             .https_only(false)
             .redirect(reqwest::redirect::Policy::none())
             .timeout(Duration::from_secs(5))
@@ -7649,7 +7649,7 @@ mod tests {
             },
             access_token: "fixture-runner-access-token".to_string(),
         };
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("fixture client");
@@ -7856,7 +7856,7 @@ mod tests {
             .await;
         let mut enrollment = fixture_enrollment(&format!("{}/", server.uri()));
         let mut runner_id = "runner_fixture".to_string();
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("fixture client");
@@ -7942,7 +7942,7 @@ mod tests {
             .await;
         let mut enrollment = fixture_enrollment(&format!("{}/", server.uri()));
         let mut runner_id = "runner_fixture".to_string();
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("fixture client");
@@ -7991,7 +7991,7 @@ mod tests {
             .await;
         let mut enrollment = fixture_enrollment(&format!("{}/", server.uri()));
         let mut runner_id = "runner_fixture".to_string();
-        let client = crate::tls::reqwest_client_builder()
+        let client = codewhale_release::tls::reqwest_client_builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .expect("fixture client");
@@ -8909,7 +8909,7 @@ mod tests {
         let server = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
-        let client = crate::tls::reqwest_client();
+        let client = codewhale_release::tls::reqwest_client();
         let url = format!("http://{addr}/");
         assert!(
             read_bounded_json(client.get(&url).send().await.unwrap())

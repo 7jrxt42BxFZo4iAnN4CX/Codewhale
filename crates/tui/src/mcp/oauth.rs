@@ -2226,7 +2226,7 @@ impl McpServerConfig {
 mod tests {
     #[test]
     fn typed_oauth_client_requires_https_or_explicit_loopback_without_header_guessing() {
-        crate::tls::ensure_rustls_crypto_provider();
+        codewhale_release::tls::ensure_rustls_crypto_provider();
         let server: super::McpServerConfig = serde_json::from_value(serde_json::json!({
             "url": "https://example.invalid/mcp"
         }))

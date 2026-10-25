@@ -519,7 +519,7 @@ force_http1 = {pinned}
     #[tokio::test]
     async fn open_returns_first_attempt_response_on_dual_policy() {
         let server = ok_server().await;
-        let client = crate::tls::reqwest_client();
+        let client = codewhale_release::tls::reqwest_client();
         let attempts = Arc::new(AtomicUsize::new(0));
         let response = open_sse_response(
             &open_req(StreamHttpPolicy::DualWithH1Fallback, Duration::from_secs(5)),
@@ -580,7 +580,7 @@ force_http1 = {pinned}
     #[tokio::test]
     async fn transport_error_before_headers_retries_exactly_once_on_h1() {
         let server = ok_server().await;
-        let client = crate::tls::reqwest_client();
+        let client = codewhale_release::tls::reqwest_client();
         let attempts = Arc::new(AtomicUsize::new(0));
         let response = open_sse_response(
             &open_req(StreamHttpPolicy::DualWithH1Fallback, Duration::from_secs(5)),
@@ -679,7 +679,7 @@ force_http1 = {pinned}
             let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
             listener.local_addr().expect("addr").port()
         };
-        let client = crate::tls::reqwest_client();
+        let client = codewhale_release::tls::reqwest_client();
         let url = format!("http://127.0.0.1:{port}/v1/chat");
         let err = open_sse_response(
             &open_req(StreamHttpPolicy::DualWithH1Fallback, Duration::from_secs(5)),
@@ -723,8 +723,8 @@ force_http1 = {pinned}
                 let _ = tokio::io::copy(&mut socket, &mut tokio::io::sink()).await;
             }
         });
-        crate::tls::ensure_rustls_crypto_provider();
-        let client = crate::tls::reqwest_client();
+        codewhale_release::tls::ensure_rustls_crypto_provider();
+        let client = codewhale_release::tls::reqwest_client();
         let url = format!("https://127.0.0.1:{port}/v1/chat");
         let err = open_sse_response(
             &open_req(StreamHttpPolicy::DualWithH1Fallback, Duration::from_secs(5)),

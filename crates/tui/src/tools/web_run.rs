@@ -1103,7 +1103,7 @@ async fn run_image_search(
     context: &ToolContext,
 ) -> Result<(Vec<ImageResultEntry>, Option<String>), ToolError> {
     super::web_search::check_policy(context.network_policy.as_ref(), "duckduckgo.com")?;
-    let client = crate::tls::reqwest_client_builder()
+    let client = codewhale_release::tls::reqwest_client_builder()
         .timeout(Duration::from_millis(timeout_ms))
         .user_agent(USER_AGENT)
         .build()

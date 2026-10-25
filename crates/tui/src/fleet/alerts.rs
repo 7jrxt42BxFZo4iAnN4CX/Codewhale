@@ -335,7 +335,7 @@ fn send_alert<R>(
 where
     R: FleetAlertSecretResolver,
 {
-    let client = crate::tls::reqwest_blocking_client_builder()
+    let client = codewhale_release::tls::reqwest_blocking_client_builder()
         .timeout(Duration::from_secs(DEFAULT_ALERT_TIMEOUT_SECONDS))
         .build()
         .context("building Fleet alert HTTP client")?;

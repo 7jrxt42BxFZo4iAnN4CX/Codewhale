@@ -342,7 +342,7 @@ pub(crate) async fn doctor_search_probe(
         }
     }
 
-    let client = match crate::tls::reqwest_client_builder()
+    let client = match codewhale_release::tls::reqwest_client_builder()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(SEARCH_PROBE_TIMEOUT)
         .timeout(SEARCH_PROBE_TIMEOUT)

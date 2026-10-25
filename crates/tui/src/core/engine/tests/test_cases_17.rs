@@ -399,7 +399,7 @@ impl StreamOpenFailure {
                 let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
                 let addr = listener.local_addr().expect("local addr");
                 drop(listener);
-                let client = crate::tls::reqwest_client_builder()
+                let client = codewhale_release::tls::reqwest_client_builder()
                     .no_proxy()
                     .build()
                     .expect("client");

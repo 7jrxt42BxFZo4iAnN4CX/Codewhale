@@ -40,7 +40,7 @@ async fn get_v1_workspace_instructions_lists_effective_sources() -> Result<()> {
     else {
         return Ok(());
     };
-    let client = crate::tls::reqwest_client();
+    let client = codewhale_release::tls::reqwest_client();
 
     let body: serde_json::Value = client
         .get(format!("http://{addr}/v1/workspace/instructions"))

@@ -127,9 +127,6 @@ mod task_manager;
 mod telemetry_notice;
 #[cfg(test)]
 mod test_support;
-// TLS bootstrap and platform client builders live in codewhale-release;
-// `crate::tls::*` keeps resolving for every caller.
-use codewhale_release::tls;
 mod todo_snapshot;
 mod tool_inspection;
 mod tool_output_receipts;
@@ -185,7 +182,7 @@ fn configure_windows_console_utf8() {
 fn configure_windows_console_utf8() {}
 
 fn install_rustls_crypto_provider() {
-    crate::tls::ensure_rustls_crypto_provider();
+    codewhale_release::tls::ensure_rustls_crypto_provider();
 }
 
 mod runtime_options;

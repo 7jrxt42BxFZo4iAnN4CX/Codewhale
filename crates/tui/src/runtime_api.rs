@@ -13503,7 +13503,7 @@ base_url = "http://127.0.0.1:9/v1"
     }
 
     async fn post_json(addr: SocketAddr, path: &str, body: Value) -> Result<Value> {
-        let response = crate::tls::reqwest_client()
+        let response = codewhale_release::tls::reqwest_client()
             .post(format!("http://{addr}{path}"))
             .json(&body)
             .send()
@@ -13563,7 +13563,7 @@ model = "GLM-5.2"
         provider: &str,
         model: &str,
     ) -> Result<Value> {
-        let client = crate::tls::reqwest_client();
+        let client = codewhale_release::tls::reqwest_client();
         let catalog = client
             .get(format!("http://{addr}/v1/providers"))
             .send()
@@ -14068,7 +14068,7 @@ model = "GLM-5.2"
         )?;
         let (addr, state, server) = serve_fixture(config_path.clone()).await?;
         let _shutdown = state.task_manager.shutdown_guard();
-        let client = crate::tls::reqwest_client();
+        let client = codewhale_release::tls::reqwest_client();
         // The active CN route resolves `[providers.deepseek_cn].model`; the
         // runtime default_model surface must report that slot, not the primary.
         let reported: Value = client
