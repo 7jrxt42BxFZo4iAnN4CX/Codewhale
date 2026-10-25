@@ -13,10 +13,15 @@ lines in its reverse closure (what a change to it can rebuild).
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import subprocess
 import sys
 from pathlib import Path
+
+_spec = importlib.util.spec_from_file_location("count_lines", Path(__file__).with_name("count_lines.py"))
+cl = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(cl)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -70,6 +75,11 @@ def main() -> None:
     parser.add_argument("--sort", choices=["name", "own", "closure", "reverse"], default="closure")
     parser.add_argument("--top", type=int, default=0)
     parser.add_argument("--tests", action="store_true", help="count test files too")
+    parser.add_argument(
+        "--non-test",
+        action="store_true",
+        help="size crates by strict production lines (inline cfg(test) code excluded) instead of file-level lines",
+    )
     args = parser.parse_args()
 
     meta = metadata()
@@ -88,8 +98,13 @@ def main() -> None:
 
     own = {}
     for name, pkg in packages.items():
-        src = Path(pkg["manifest_path"]).parent / "src"
-        own[name] = rust_lines(src, args.tests) if src.is_dir() else 0
+        crate_dir = Path(pkg["manifest_path"]).parent
+        src = crate_dir / "src"
+        if args.non_test:
+            _, res = cl.classify_crate(str(crate_dir))
+            own[name] = sum(prod for (prod, _t, _o) in res.values())
+        else:
+            own[name] = rust_lines(src, args.tests) if src.is_dir() else 0
 
     rows = []
     for name in packages:
