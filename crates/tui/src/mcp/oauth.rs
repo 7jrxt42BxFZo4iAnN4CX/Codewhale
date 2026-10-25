@@ -959,7 +959,7 @@ pub async fn auth_status_for_server(
         }
     }
 
-    let headers = match build_default_headers(&server.headers, &server.env_headers) {
+    let headers = match build_default_headers(server) {
         Ok(headers) => headers,
         Err(err) => {
             tracing::warn!(target: "mcp", server = %name, error = %err, "failed to build MCP OAuth discovery headers");
@@ -989,7 +989,7 @@ pub async fn oauth_login_support(
     if server_has_manual_authorization(server) {
         return Ok(None);
     }
-    let headers = build_default_headers(&server.headers, &server.env_headers)?;
+    let headers = build_default_headers(server)?;
     discover_streamable_http_oauth_for_server(server, url, headers, network_policy).await
 }
 
@@ -1016,7 +1016,7 @@ fn oauth_login_client(
     url: &str,
     network_policy: Option<&NetworkPolicyDecider>,
 ) -> Result<McpHttpClient> {
-    let headers = build_default_headers(&server.headers, &server.env_headers)?;
+    let headers = build_default_headers(server)?;
     Ok(oauth_http_client(server, url, network_policy)?.with_default_headers(headers))
 }
 
@@ -1423,16 +1423,13 @@ pub(crate) fn server_has_manual_authorization(server: &McpServerConfig) -> bool 
         || contains_authorization_header(&server.env_headers)
 }
 
-pub fn build_default_headers(
-    http_headers: &HashMap<String, String>,
-    env_headers: &HashMap<String, String>,
-) -> Result<HeaderMap> {
+pub(super) fn build_default_headers(server: &McpServerConfig) -> Result<HeaderMap> {
     let mut headers = HeaderMap::new();
-    for (name, value) in http_headers {
+    for (name, value) in &server.headers {
         insert_header(&mut headers, name, value)?;
     }
-    for (name, env_var) in env_headers {
-        if let Ok(value) = std::env::var(env_var)
+    for (name, env_var) in &server.env_headers {
+        if let Ok(value) = super::mcp_secret_var(server.reviewed_plugin.as_ref(), env_var)
             && !value.trim().is_empty()
         {
             insert_header(&mut headers, name, &value)?;

@@ -105,8 +105,18 @@ fn reject_linked_workspace_state_path(path: &Path) -> Result<()> {
         .with_context(|| format!("MCP config {} is not safe to write", path.display()))
 }
 
-/// Expand `${NAME}` placeholders in an MCP config value from the process
-/// environment. This lets secrets (API keys, bearer tokens, …) be supplied
+fn mcp_secret_var(
+    reviewed_plugin: Option<&ReviewedPluginMcpSource>,
+    name: &str,
+) -> Result<String, std::env::VarError> {
+    match reviewed_plugin {
+        Some(source) => source.host_environment.var(name),
+        None => std::env::var(name),
+    }
+}
+
+/// Expand `${NAME}` placeholders in an MCP config value from its permitted
+/// environment source. This lets secrets (API keys, bearer tokens, …) be supplied
 /// through environment variables instead of being written in cleartext into
 /// the MCP config file on disk.
 ///
@@ -115,7 +125,7 @@ fn reject_linked_workspace_state_path(path: &Path) -> Result<()> {
 /// echoed into logs or error output.
 fn expand_env_placeholders_with(
     value: &str,
-    environment: Option<&crate::plugins::HostEnvironment>,
+    reviewed_plugin: Option<&ReviewedPluginMcpSource>,
 ) -> Result<String> {
     let mut out = String::new();
     let mut rest = value;
@@ -129,11 +139,9 @@ fn expand_env_placeholders_with(
         if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
             anyhow::bail!("invalid environment placeholder in MCP config value");
         }
-        let env_value = environment
-            .map_or_else(|| std::env::var(name), |env| env.var(name))
-            .with_context(|| {
-                format!("environment variable {name} required by MCP config is not set")
-            })?;
+        let env_value = mcp_secret_var(reviewed_plugin, name).with_context(|| {
+            format!("environment variable {name} required by MCP config is not set")
+        })?;
         out.push_str(&env_value);
         rest = &after[end + 1..];
     }
@@ -152,13 +160,13 @@ fn expand_env_placeholders(value: &str) -> Result<String> {
 fn expand_env_placeholders_map_with_environment(
     values: &HashMap<String, String>,
     context: &str,
-    environment: Option<&crate::plugins::HostEnvironment>,
+    reviewed_plugin: Option<&ReviewedPluginMcpSource>,
 ) -> Result<HashMap<String, String>> {
     let mut expanded = HashMap::with_capacity(values.len());
     for (key, value) in values {
         expanded.insert(
             key.clone(),
-            expand_env_placeholders_with(value, environment)
+            expand_env_placeholders_with(value, reviewed_plugin)
                 .with_context(|| format!("failed to expand MCP {context} value for {key}"))?,
         );
     }
@@ -174,11 +182,11 @@ fn expand_env_placeholders_map(
 }
 
 fn expanded_mcp_stdio_env(config: &McpServerConfig) -> Result<HashMap<String, String>> {
-    let environment = config
-        .reviewed_plugin
-        .as_ref()
-        .map(|source| source.host_environment.as_ref());
-    expand_env_placeholders_map_with_environment(&config.env, "env", environment)
+    expand_env_placeholders_map_with_environment(
+        &config.env,
+        "env",
+        config.reviewed_plugin.as_ref(),
+    )
 }
 
 /// Mirror the exact expanded and sanitized environment applied by the MCP
@@ -1908,7 +1916,7 @@ async fn prepare_mcp_http_client(
     let oauth_runtime = if config.reviewed_plugin.is_some() {
         None
     } else {
-        match oauth::build_default_headers(&config.headers, &config.env_headers) {
+        match oauth::build_default_headers(config) {
             Ok(default_headers) => {
                 let prepared = tokio::select! {
                     biased;
