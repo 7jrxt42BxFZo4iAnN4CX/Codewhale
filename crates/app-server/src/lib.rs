@@ -2519,14 +2519,31 @@ impl RuntimeBridge {
             });
         }
 
-        emit_stdio_event(
+        if let Err(error) = emit_stdio_event(
             writer,
             json!({
                 "type": "response_start",
                 "response_id": response_id,
             }),
         )
-        .await?;
+        .await
+        {
+            let orphan = InFlightTurn {
+                base_url: self.base_url.clone(),
+                auth_token: self.auth_token.clone(),
+                runtime_thread_id: thread_id.to_string(),
+                turn_id: turn_id.clone(),
+            };
+            if let Err(interrupt) = interrupt_turn_request(&orphan).await {
+                tracing::warn!(
+                    thread_id,
+                    turn_id = %turn_id,
+                    "failed to interrupt a turn whose response_start could not be written: {}",
+                    interrupt.message
+                );
+            }
+            return Err(error);
+        }
 
         // Publish the turn only for the streaming window, and take it back
         // before any `?` below: a turn that has already finished must never

@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The To-do that a Plan-to-Work handoff seeds is now titled with the plan's
   first line, without markdown, instead of the whole plan run together
   (#7068).
+- `app-server`: a turn whose `response_start` could not be written to stdio
+  is now interrupted instead of running on with nothing able to stop it
+  (#6558).
 
 ## [0.10.2] - 2026-10-22
 
