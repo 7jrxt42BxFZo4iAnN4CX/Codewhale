@@ -364,6 +364,7 @@ Forwarded serve options:
       --cors-origin <URL>   Additional CORS origin to allow (repeatable)
       --auth-token <TOKEN>  Require this bearer token for /v1/* runtime API routes
       --insecure            Disable runtime API auth when no token is configured
+      --full-access         Run with Full Access: no approval prompts, no Codewhale sandbox (alias: --yolo)
 
 `codewhale serve --http` and `codewhale serve --mobile` remain compatibility
 aliases for `codewhale app-server --http` and `codewhale app-server --mobile`.
@@ -2283,6 +2284,7 @@ fn run() -> Result<()> {
     );
     preserve_exec_separator(&mut cli, &argv);
     capture_exec_startup_options(&mut cli)?;
+    capture_serve_full_access(&mut cli);
 
     // The detached log proxy must not depend on user config parsing: its job
     // is to frame child output and publish a terminal receipt even when the
@@ -2983,6 +2985,22 @@ fn preserve_exec_separator(cli: &mut Cli, argv: &[impl AsRef<std::ffi::OsStr>]) 
             .all(|(raw, parsed)| raw.as_ref() == std::ffi::OsStr::new(parsed))
     {
         args.args.insert(0, "--".to_string());
+    }
+}
+
+fn capture_serve_full_access(cli: &mut Cli) {
+    let Some(Commands::Serve(args)) = cli.command.as_mut() else {
+        return;
+    };
+    let before = args.args.len();
+    let separator = args.args.iter().position(|arg| arg == "--").unwrap_or(before);
+    let mut index = 0;
+    args.args.retain(|arg| {
+        index += 1;
+        index > separator || !matches!(arg.as_str(), "--full-access" | "--yolo")
+    });
+    if args.args.len() != before {
+        cli.runtime_options.yolo = true;
     }
 }
 

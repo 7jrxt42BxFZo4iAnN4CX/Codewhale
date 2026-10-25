@@ -11114,7 +11114,6 @@ fn apply_requirements(config: &mut Config) -> Result<()> {
             .map(str::to_ascii_lowercase)
             .unwrap_or_else(|| {
                 use crate::core::authority::{SandboxNetworkAccess, sandbox_policy_for_turn};
-                use crate::sandbox::SandboxPolicy;
                 use codewhale_execpolicy::ApprovalMode;
 
                 // Sandbox requirements lock approval posture at startup,
@@ -11124,18 +11123,14 @@ fn apply_requirements(config: &mut Config) -> Result<()> {
                     .as_deref()
                     .and_then(ApprovalMode::from_config_value)
                     .unwrap_or_default();
-                match sandbox_policy_for_turn(
+                sandbox_policy_for_turn(
                     codewhale_config::AppMode::Agent,
                     approval,
                     None,
                     Path::new("."),
                     SandboxNetworkAccess::from_config(config.sandbox_network_access),
-                ) {
-                    SandboxPolicy::ReadOnly { .. } => "read-only",
-                    SandboxPolicy::WorkspaceWrite { .. } => "workspace-write",
-                    SandboxPolicy::DangerFullAccess => "danger-full-access",
-                    SandboxPolicy::ExternalSandbox { .. } => "external-sandbox",
-                }
+                )
+                .config_value()
                 .to_string()
             });
         if !requirements

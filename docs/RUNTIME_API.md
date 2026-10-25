@@ -785,6 +785,15 @@ posture are server-owned read-only options; the editor cannot widen them.
 `approval_policy = "never"` is not an ACP posture, so the server refuses to
 start with it instead of serving it as Ask.
 
+Full Access is `yolo`. Start it with `codewhale serve --acp --full-access`
+(the flag may also come before `serve`; `--yolo` is an alias) or set
+`yolo = true` in config. A configured `sandbox_mode = "danger-full-access"` does
+not turn it on: that value can only narrow the sandbox the permission picks, so
+under Ask or Auto-Review it changes nothing, and `ask` is not a config key. At
+startup the server writes one line to stderr naming the permission and sandbox it
+will run with, so an editor's agent log shows which posture a launch command
+produced.
+
 Tool updates begin `pending`. `in_progress` means Core reached final dispatch;
 `completed`/`failed` and typed image blocks come from the actual Core result.
 `session/request_permission` correlates a private JSON-RPC ID to the same

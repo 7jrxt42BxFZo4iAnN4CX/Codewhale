@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `--full-access` is now the documented flag for Full Access (`--yolo` stays an
+  alias), and `serve` accepts it after the subcommand: `codewhale serve --acp
+  --yolo` used to fail with "unexpected argument". `serve --acp` also writes one
+  stderr line naming the permission and sandbox it runs with, and the ACP
+  permission option's Full Access hint names the working command. A configured
+  `sandbox_mode = "danger-full-access"` still never widens Ask or Auto-Review
+  (#6992).
 - Preview: `dispatch --computer` starts an account cloud conversation that can
   also be opened in desktop. `--thread` continues or inspects it; `--stop`,
   `--approve` and `--deny` control its current task. Explicit `--key-stdin`
