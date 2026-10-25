@@ -472,6 +472,14 @@ this section. One extraction at a time per crate; one native build slot.
 | P8 | TUI: split reducer from render (`tui/ui/event_loop.rs`, `tui/app`), then views behind `runtime-wire` only | TUI sandbox holds no runtime code |
 | P9 | `cli` becomes the only composition root; delete the `lib.rs` path alias, `module_graph.py` ratchet and every shim | Cargo enforces tiers; `crates/tui` under ~350k including tests |
 
+Measured after P1, RS-10, X7 and X8 (`refactor/0.10.3-crate-split`, against
+`ff466b2ed0`): the largest component went from 84 to 83 modules, and the one
+module that left it is `worker_profile`. P1's caller migration removed the
+`crate::` alias references but did not shrink the component, because the
+moved `rt` modules were already singleton components. The P1 gate (SCC below
+70) and the P2 gate (edges at zero) are not met; edge cuts in P2 and P3 remain
+the work that moves mass.
+
 Targets, measured not asserted: no feature or provider leaf with a closure
 over 60k lines; warm provider edit under 10 s and 2 GB; `crates/tui` under
 350k lines.

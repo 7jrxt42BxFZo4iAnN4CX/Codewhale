@@ -362,8 +362,8 @@ fn normalize_windows_path_for_comparison(path: &Path) -> io::Result<String> {
 
 /// Apply a protected DACL granting only the current Windows user full access.
 /// Directories propagate that owner-only policy to newly staged generations.
-#[cfg(all(windows, test))]
-pub(crate) fn secure_codewhale_owned_windows_path(
+#[cfg(all(windows, any(test, feature = "test-support")))]
+pub fn secure_codewhale_owned_windows_path(
     path: &Path,
     inherit_to_children: bool,
 ) -> io::Result<()> {

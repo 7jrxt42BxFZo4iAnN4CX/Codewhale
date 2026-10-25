@@ -1,9 +1,8 @@
 //! Codewhale runtime: the headless half of the runtime/TUI split.
 //!
 //! Modules move here from `crates/tui/src` with `git mv`, in the order
-//! `docs/design/TUI_DECONSTRUCTION.md` records. The TUI reaches them through
-//! one path-alias block in its `lib.rs`, so moved code keeps its
-//! `crate::<module>` paths on both sides until the split deletes the alias.
+//! `docs/design/TUI_DECONSTRUCTION.md` records. The TUI calls them by their
+//! `codewhale_runtime::<module>` paths; there is no alias block.
 //!
 //! This crate never depends on the terminal UI: no `codewhale-tui`, ratatui
 //! or crossterm (`scripts/check-command-crate-boundaries.py`).

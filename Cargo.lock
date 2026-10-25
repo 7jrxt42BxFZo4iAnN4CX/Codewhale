@@ -848,7 +848,6 @@ dependencies = [
  "codewhale-protocol",
  "codewhale-workflow",
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -1218,6 +1217,8 @@ dependencies = [
  "tracing",
  "uuid",
  "wait-timeout",
+ "windows",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

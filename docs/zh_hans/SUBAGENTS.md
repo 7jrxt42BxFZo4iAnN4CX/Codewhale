@@ -42,7 +42,7 @@ Fleet 角色是委派工作面向用户的词汇：父智能体通过 `agent` �
 
 **委派转移的是工作，绝不是权限。** 只读的父智能体可以委派给 `implement`，但子智能体的有效写入、网络、shell 和工具权限仍在父智能体的实时姿态范围之内。检查类角色可以使用分类过的只读 shell 界面；在具备原生强制隔离的平台上，还可以使用下文所述的显式只读分析模式。换一个角色名，或加一个 `read_only` 标志，都不能授予调用方本来没有的 shell 工具。`fleet/exact.rs` 中的 `ChildAuthority::clamp` 让每个字段都与较窄的一方取交集。拒绝列表取并集，因此 `inherit_disallowed_tools: false` 无法丢掉任何操作者或祖先的拒绝规则。恢复已保存的 `worker` 时，会再次把它保存的姿态与当前调用方的姿态取交集。这一约束由 `crates/tui/src/fleet/exact.rs` 测试中的 `a_read_only_parents_delegation_never_widens_authority` 钉住。
 
-在进程内部，解析后的权限是一个对象——`crates/tui/src/worker_profile.rs` 中的 `ChildGrant`：`files`（none/read/write）、`shell`（none/inspect/verify/full）、`network`、`desktop`（绝不授予子智能体）、具名工具 `surface`、调用方的显式 `scope`，以及剩余的 `spawn` 深度。角色是这个对象上的一组预设（`ChildGrant::for_role`）；`ChildGrant::resolve` 把它与由父智能体派生的 profile 取交集。子智能体的工具目录、分发时的拒绝和能力包络读取的是同一组字段——可见的工具就可以调用，被拒绝的工具永远不会出现。
+在进程内部，解析后的权限是一个对象——`crates/agent-contract/src/worker_profile.rs` 中的 `ChildGrant`：`files`（none/read/write）、`shell`（none/inspect/verify/full）、`network`、`desktop`（绝不授予子智能体）、具名工具 `surface`、调用方的显式 `scope`，以及剩余的 `spawn` 深度。角色是这个对象上的一组预设（`ChildGrant::for_role`）；`ChildGrant::resolve` 把它与由父智能体派生的 profile 取交集。子智能体的工具目录、分发时的拒绝和能力包络读取的是同一组字段——可见的工具就可以调用，被拒绝的工具永远不会出现。
 
 会话的**权限姿态**在每个子智能体内部的适用方式，与它在父回合上完全一致：在 Auto-Review 下，同一个确定性底线和一次性的模型守护者来裁决 `worker` 被扣留的调用（从不弹提示；守护者不可用时拒绝，即 fail closed）；在 Ask 下，角色无法代为决定的被扣留调用，会作为审批提示出现在父智能体的 UI 中，`worker` 显式地等待（`waiting for user`），在无法弹提示的主机上则带着原因被拒绝；Full Access 与父回合完全一致地生效，用户已授予的调用不会再被 Auto-Review 底线拦下。每一次无人被提示的裁决，都是该 `worker` 转录中的一行备注（聚焦它时可见）和一条审计日志记录。参见 `docs/MODES.md`。
 

@@ -394,6 +394,7 @@ pub const RAW_SHELL_DENYLIST: &[&str] = &[
 /// is answered by the resolved grant's `shell` axis, which distinguishes
 /// "no process surface" from "bounded verification surface" by grant field
 /// rather than by a sentinel name.
+#[cfg(any(test, feature = "test-support"))]
 pub const RAW_SHELL_SENTINEL: &str = "exec_shell";
 
 /// The built-in verification surface: the workspace's own configured checks.
@@ -407,7 +408,7 @@ pub const VERIFICATION_SURFACE_DENYLIST: &[&str] = &["Run", "run_tests", "run_ve
 
 /// The deny-list entry that stands for "this child holds no shell authority".
 ///
-/// Distinct from [`RAW_SHELL_SENTINEL`], and the distinction is the point.
+/// Distinct from `RAW_SHELL_SENTINEL`, and the distinction is the point.
 /// `exec_shell` is installed whenever the *raw* shell is removed, which
 /// includes the write-denied verifier that still holds shell authority — so
 /// reading shell authority off it would take the verification surface away
@@ -452,6 +453,7 @@ pub const NON_SHELL_EXECUTION_DENYLIST: &[&str] = &[
 /// Whether a deny rule belongs to an enforced role posture. Operator and
 /// ancestor denials are also immutable; this identifies posture rules for
 /// authority diagnostics and tests, not a child opt-out exception.
+#[cfg(any(test, feature = "test-support"))]
 #[must_use]
 pub fn is_posture_denial(rule: &str) -> bool {
     [
@@ -705,7 +707,7 @@ fn member_role_alias(token: &str) -> Option<FleetRole> {
 ///    default a Fleet task without a `role` has always had;
 /// 2. [`FleetRole::from_str`] — the declared closed vocabulary plus its
 ///    documented legacy aliases ([`VALID_ROLE_ALIASES`]);
-/// 3. [`member_role_alias`] — the org-chart/slot spellings above;
+/// 3. `member_role_alias` — the org-chart/slot spellings above;
 /// 4. **fail closed.**
 ///
 /// Step 4 is the privilege boundary. An unrecognized label is still useful

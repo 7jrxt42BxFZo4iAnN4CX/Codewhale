@@ -122,6 +122,7 @@ rather than a traced write path.
   `codew` and legacy release filename aliases contain the same executable.
 - **`crates/tools`** - Shared tool invocation primitives, including tool result/error/capability types used by the TUI runtime.
 - **`crates/agent`** - Model/provider registry (ModelRegistry) for resolving model IDs to provider endpoints.
+- **`crates/agent-contract`** - Fleet role, child authority (`ChildAuthority`, `ChildGrant`) and worker runtime profile types the agent tool resolves before it spawns a child.
 - **`crates/app-server`** - HTTP/SSE + JSON-RPC app server transport for
   headless agent workflows. The canonical executable dispatches
   `app-server --http`/`--mobile` in process to the runtime API hosted by the

@@ -11,7 +11,8 @@ description = "Headless Codewhale runtime, split out of the terminal UI one modu
 workspace = true
 
 # Test helpers (process-global state guards, snapshots, diff renders) that
-# the TUI's tests use. It only *adds* `pub` items; it changes no behavior.
+# the TUI's tests use. It adds `pub` items, and the side-effect trap that
+# counts external credential reads; it changes no other behavior.
 # The TUI enables it from [dev-dependencies] only, so `-p codewhale-cli` /
 # `-p codewhale-tui` release builds never see it; a `--workspace
 # --all-features` build does, which is harmless for helpers.
@@ -68,6 +69,10 @@ tempfile.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization", "Win32_Storage_FileSystem", "Win32_System_Threading"] }
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Environment", "Win32_System_JobObjects", "Win32_System_Registry", "Win32_System_Threading"] }
 
 [target.'cfg(not(target_env = "ohos"))'.dependencies]
 portable-pty = "0.9"

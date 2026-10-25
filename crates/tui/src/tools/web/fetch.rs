@@ -406,7 +406,7 @@ fn js_shell_message(
 /// Both facts already exist: the web family is feature-gated, and a
 /// network-denied Fleet worker carries `network_access: Some(false)` on the
 /// authority envelope that also removes the web tools from its registry
-/// (`fleet::role::NETWORK_TOOL_DENYLIST`). Nothing new is registered here.
+/// (`codewhale_agent_contract::role::NETWORK_TOOL_DENYLIST`). Nothing new is registered here.
 fn web_tool_available(context: &ToolContext) -> bool {
     context.features.enabled(Feature::WebSearch) && network_authorized(context)
 }

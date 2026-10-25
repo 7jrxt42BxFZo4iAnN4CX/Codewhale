@@ -88,7 +88,7 @@ impl ProcessTree {
     /// Typed owned handle from a suspended Core-selected process. The caller
     /// attaches/caps the Job before any process thread is resumed.
     #[cfg(windows)]
-    pub(crate) fn attach_windows_handle(
+    pub fn attach_windows_handle(
         pid: u32,
         process: &std::os::windows::io::OwnedHandle,
     ) -> std::io::Result<Self> {
@@ -153,7 +153,7 @@ impl ProcessTree {
     /// `bytes` each (`JOB_OBJECT_LIMIT_PROCESS_MEMORY`); an allocation past
     /// it fails. Kill-on-close stays set. The extension host's memory cap.
     #[cfg(windows)]
-    pub(crate) fn limit_process_memory(&self, bytes: u64) -> std::io::Result<()> {
+    pub fn limit_process_memory(&self, bytes: u64) -> std::io::Result<()> {
         self.job.limit_process_memory(bytes)
     }
 

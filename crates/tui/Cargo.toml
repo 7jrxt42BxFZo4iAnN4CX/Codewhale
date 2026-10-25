@@ -205,6 +205,9 @@ shell-words = "1.1.1"
 codewhale-build-support = { path = "../build-support", version = "0.10.2" }
 
 [dev-dependencies]
+codewhale-agent-contract = { path = "../agent-contract", version = "0.10.2", features = [
+    "test-support",
+] }
 codewhale-runtime = { path = "../runtime", version = "0.10.2", features = [
     "test-support",
     "test-thread-scoped-state",

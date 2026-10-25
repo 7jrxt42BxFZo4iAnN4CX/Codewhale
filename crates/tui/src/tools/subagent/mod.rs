@@ -580,9 +580,6 @@ impl SubAgentAssignment {
     }
 }
 
-/// Role presentation: system prompts and config key lookup. The role itself
-/// ([`FleetRole`], parsing, posture) lives in [`codewhale_agent_contract::role`]; these
-/// functions stay on the agent tool because they render prompt text the tool owns.
 /// Pre-Fleet model-override key (`explorer_model` / `ni_model` tables).
 /// Not used for receipts or UI — only config key lookup.
 #[must_use]
@@ -13423,7 +13420,7 @@ fn verify_fleet_authority_input(expected: &str, input: &Value) -> Result<()> {
 
 /// Build the system prompt for a sub-agent.
 ///
-/// Starts with the per-type prompt (`FleetRole::system_prompt`) and
+/// Starts with the per-type prompt (`role_system_prompt`) and
 /// appends a one-line role overlay when `assignment.role` is set. The
 /// full role library — TOML overlays from `~/.deepseek/roles/`, the
 /// `/roles` slash command, model overrides per role — lands in 0.6.7.
@@ -13431,7 +13428,7 @@ fn verify_fleet_authority_input(expected: &str, input: &Value) -> Result<()> {
 /// "You are operating in the role of `{name}`." as a final line so its
 /// behavior reflects the user's choice.
 fn build_subagent_system_prompt(agent_type: &FleetRole, assignment: &SubAgentAssignment) -> String {
-    let base = role_system_prompt(&agent_type);
+    let base = role_system_prompt(agent_type);
     let mut prompt = match assignment.role.as_deref() {
         Some(role) if !role.trim().is_empty() => {
             format!(
@@ -17849,8 +17846,8 @@ pub(crate) fn configured_role_model_override<'a>(
         push_key(normalized);
     }
     push_key(agent_type.as_str().to_string());
-    if role_legacy_type_name(&agent_type) != agent_type.as_str() {
-        push_key(role_legacy_type_name(&agent_type).to_string());
+    if role_legacy_type_name(agent_type) != agent_type.as_str() {
+        push_key(role_legacy_type_name(agent_type).to_string());
     }
     // `[subagents.models].oracle` shipped before the public role was renamed.
     // Keep both historical advisory keys readable, but never expose them in

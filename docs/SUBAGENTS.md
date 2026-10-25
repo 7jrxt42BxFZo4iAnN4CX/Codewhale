@@ -108,7 +108,7 @@ posture again. This containment is pinned by
 `crates/tui/src/fleet/exact.rs` tests.
 
 Inside the process, the resolved authority is one object —
-`ChildGrant` in `crates/tui/src/worker_profile.rs`: `files`
+`ChildGrant` in `crates/agent-contract/src/worker_profile.rs`: `files`
 (none/read/write), `shell` (none/inspect/verify/full), `network`, `desktop`
 (never granted to a child), the named tool `surface`, the caller's explicit
 `scope`, and remaining `spawn` depth. A role is a preset over that object

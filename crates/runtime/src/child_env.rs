@@ -148,7 +148,7 @@ const GIT_PASSTHROUGH_KEYS: &[&str] = &[
 ];
 
 /// Start a git child from the sanitized environment plus
-/// [`GIT_PASSTHROUGH_KEYS`]. Repository config (`core.fsmonitor`, hooks,
+/// `GIT_PASSTHROUGH_KEYS`. Repository config (`core.fsmonitor`, hooks,
 /// filters, `core.sshCommand`) can make any git command run a program chosen
 /// by whoever wrote the workspace, so git must not hand that program the
 /// parent's credentials.
