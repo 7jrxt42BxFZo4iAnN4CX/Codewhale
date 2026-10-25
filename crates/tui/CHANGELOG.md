@@ -31,8 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   installs provider access in the running computer's memory. Retries retain
   one operation key and the account/VM binding. Existing Agent Work dispatch
   remains available when no computer conversation is selected.
+- While a background job runs, the git status probe now backs off after 30
+  seconds without input or engine events, as it already did in an idle
+  session, instead of starting about a dozen git processes every 2 seconds for
+  as long as the job lives (#6728).
 - The To-do that a Plan-to-Work handoff seeds is now titled with the plan's
-  first line, without markdown, instead of the whole plan run together
+  first non-heading line outside code fences, without list or emphasis
+  markdown, instead of the whole plan run together
   (#7068).
 - Right-click "Open in editor" on a transcript cell now also offers a bare
   workspace file path with no line number, opening it at line 1 (#2342).

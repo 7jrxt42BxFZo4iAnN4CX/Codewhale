@@ -328,8 +328,7 @@ async fn existing_current_turn_checklist_is_not_replaced_or_seeded_again() {
 
 #[tokio::test]
 async fn refused_checkpoint_rolls_back_seed_and_retry_queues_once() {
-    // Cover surrounding/multiline whitespace and a Unicode title whose
-    // bounded prefix ends on whitespace before the graph normalizes it.
+    // Cover surrounding/multiline whitespace and a Unicode title.
     for text in [
         " \n\tRead the data.\n\nBuild the report.\r\n ".to_string(),
         format!("\n{} \nKeep the full message.\t", "鲸".repeat(1023)),
