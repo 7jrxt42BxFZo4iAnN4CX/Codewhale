@@ -1045,7 +1045,7 @@ pub(crate) fn build_engine_config(app: &App, config: &Config) -> EngineConfig {
             read_only_roots: config.bwrap_ro_roots.clone(),
             device_roots: config.bwrap_dev_roots.clone(),
         },
-        read_denylist: config.read_denylist(),
+        read_denylist: crate::sandbox::read_guard::ReadDenylist::from_config(config),
         memory_enabled: config.memory_enabled(),
         memory_path: config.memory_path(),
         speech_output_dir: config.speech_output_dir(),

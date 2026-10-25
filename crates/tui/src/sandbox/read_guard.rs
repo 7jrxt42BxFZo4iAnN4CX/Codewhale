@@ -217,6 +217,24 @@ impl ReadDenylist {
         Self::default()
     }
 
+    /// The read deny-list in force for a config (S1).
+    ///
+    /// Unions the built-in credential-store defaults (unless
+    /// `sandbox_read_denylist_defaults = false`) with
+    /// `sandbox_denied_read_paths`, minus `sandbox_read_denylist_exempt`.
+    /// Feeds both the in-process file-reading tools and the OS sandbox
+    /// wrappers. A `read_file` call refuses every rule; a shell `cat` refuses
+    /// only the rules scoped to the process, which excludes a tool's own auth
+    /// config.
+    #[must_use]
+    pub(crate) fn from_config(config: &crate::config::Config) -> Self {
+        Self::build(
+            config.sandbox_read_denylist_defaults.unwrap_or(true),
+            &config.sandbox_denied_read_paths,
+            &config.sandbox_read_denylist_exempt,
+        )
+    }
+
     /// Build the effective deny-list.
     ///
     /// * `include_defaults` — apply the built-in credential-store set.

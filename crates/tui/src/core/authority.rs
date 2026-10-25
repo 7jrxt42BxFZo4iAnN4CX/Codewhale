@@ -359,7 +359,9 @@ pub(crate) fn sandbox_policy_for_turn(
 ) -> SandboxPolicy {
     let default = if mode == AppMode::Plan {
         SandboxPolicy::read_only()
-    } else if approval_mode == ApprovalMode::Bypass {
+    } else if approval_mode.agent_baseline_sandbox_mode()
+        == SandboxPolicy::DangerFullAccess.config_value()
+    {
         SandboxPolicy::DangerFullAccess
     } else {
         workspace_write_policy(workspace, network_access)

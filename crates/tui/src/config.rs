@@ -3239,31 +3239,6 @@ pub(crate) fn approval_policy_baseline_from_permission_posture(
 // === Config Loading ===
 
 impl Config {
-    /// The read deny-list in force for this config (S1).
-    ///
-    /// Unions the built-in credential-store defaults (unless
-    /// `sandbox_read_denylist_defaults = false`) with
-    /// `sandbox_denied_read_paths`, minus `sandbox_read_denylist_exempt`.
-    /// Feeds both the in-process file-reading tools and the OS sandbox
-    /// wrappers. A `read_file` call refuses every rule; a shell `cat` refuses
-    /// only the rules scoped to the process, which excludes a tool's own auth
-    /// config.
-    #[must_use]
-    pub fn read_denylist(&self) -> crate::sandbox::read_guard::ReadDenylist {
-        crate::sandbox::read_guard::ReadDenylist::build(
-            self.sandbox_read_denylist_defaults.unwrap_or(true),
-            &self.sandbox_denied_read_paths,
-            &self.sandbox_read_denylist_exempt,
-        )
-    }
-
-    /// Every path the OS sandbox wrappers should deny reads under — the
-    /// deny-list's subtree rules, home-expanded and normalized.
-    #[must_use]
-    pub fn effective_sandbox_denied_read_paths(&self) -> Vec<std::path::PathBuf> {
-        self.read_denylist().subtree_paths()
-    }
-
     /// Whether Linux shell commands prefer bubblewrap confinement.
     ///
     /// On by default: an unset `prefer_bwrap` means sandboxed commands use
@@ -10822,14 +10797,14 @@ fn apply_requirements(config: &mut Config) -> Result<()> {
     }
     if !requirements.allowed_sandbox_modes.is_empty() {
         // At config load there is no live turn mode yet. Check the Agent
-        // baseline with the engine's resolver; Plan can narrow it later.
+        // baseline that the engine's resolver derives from the same approval
+        // posture; Plan can narrow it later.
         // Explicit settings retain their existing allow-list check.
         let mode = config
             .sandbox_mode
             .as_deref()
             .map(str::to_ascii_lowercase)
             .unwrap_or_else(|| {
-                use crate::core::authority::{SandboxNetworkAccess, sandbox_policy_for_turn};
                 use codewhale_execpolicy::ApprovalMode;
 
                 // Sandbox requirements lock approval posture at startup,
@@ -10839,15 +10814,7 @@ fn apply_requirements(config: &mut Config) -> Result<()> {
                     .as_deref()
                     .and_then(ApprovalMode::from_config_value)
                     .unwrap_or_default();
-                sandbox_policy_for_turn(
-                    codewhale_config::AppMode::Agent,
-                    approval,
-                    None,
-                    Path::new("."),
-                    SandboxNetworkAccess::from_config(config.sandbox_network_access),
-                )
-                .config_value()
-                .to_string()
+                approval.agent_baseline_sandbox_mode().to_string()
             });
         if !requirements
             .allowed_sandbox_modes

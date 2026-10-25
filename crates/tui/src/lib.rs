@@ -12633,7 +12633,9 @@ fn run_sandbox_command(config: &Config, args: SandboxArgs) -> Result<()> {
         read_only_roots: config.bwrap_ro_roots.clone(),
         device_roots: config.bwrap_dev_roots.clone(),
     });
-    manager.set_denied_read_subpaths(config.effective_sandbox_denied_read_paths());
+    manager.set_denied_read_subpaths(
+        crate::sandbox::read_guard::ReadDenylist::from_config(config).subtree_paths(),
+    );
     let exec_env = manager.prepare(&spec);
     if spec.sandbox_policy.should_sandbox() && !exec_env.is_sandboxed() {
         bail!(

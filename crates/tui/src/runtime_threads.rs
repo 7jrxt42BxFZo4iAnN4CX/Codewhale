@@ -16668,7 +16668,7 @@ impl RuntimeThreadManager {
                     read_only_roots: cfg.bwrap_ro_roots.clone(),
                     device_roots: cfg.bwrap_dev_roots.clone(),
                 },
-                read_denylist: cfg.read_denylist(),
+                read_denylist: crate::sandbox::read_guard::ReadDenylist::from_config(&cfg),
                 memory_enabled: !isolated_chat && cfg.memory_enabled(),
                 memory_path: cfg.memory_path(),
                 speech_output_dir: cfg.speech_output_dir(),
@@ -17038,7 +17038,7 @@ impl RuntimeThreadManager {
                     read_only_roots: cfg.bwrap_ro_roots.clone(),
                     device_roots: cfg.bwrap_dev_roots.clone(),
                 },
-                cfg.effective_sandbox_denied_read_paths(),
+                crate::sandbox::read_guard::ReadDenylist::from_config(&cfg).subtree_paths(),
             )
         };
         let mut active = self.active.lock().await;
