@@ -706,7 +706,13 @@ impl SkillRegistry {
                     };
                     crate::fs_confined::read_to_string(&root, &skill_path)
                 }
-                None => fs::read_to_string(&skill_path),
+                None => match fs::metadata(&skill_path) {
+                    Ok(meta) if !meta.is_file() => Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "SKILL.md is not a regular file",
+                    )),
+                    _ => fs::read_to_string(&skill_path),
+                },
             };
             match read_result {
                 Ok(content) => match Self::parse_verified_content(&skill_path, &content) {

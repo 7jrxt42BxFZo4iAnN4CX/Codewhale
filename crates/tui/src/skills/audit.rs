@@ -565,6 +565,14 @@ fn parse_skill_md_bounded(
             None,
         );
     }
+    if !meta.is_file() {
+        return (
+            ParserState::Broken("SKILL.md is not a regular file".into()),
+            None,
+            None,
+            None,
+        );
+    }
     if meta.len() > AUDIT_MAX_SKILL_MD_BYTES {
         return (ParserState::Oversized, None, None, None);
     }

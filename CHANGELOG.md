@@ -34,6 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The To-do that a Plan-to-Work handoff seeds is now titled with the plan's
   first line, without markdown, instead of the whole plan run together
   (#7068).
+- A `SKILL.md` that is not a regular file is reported as a skill load warning
+  instead of being read, so a FIFO in a skills directory can no longer stall
+  discovery (#6554).
 - `app-server`: a turn whose `response_start` could not be written to stdio
   is now interrupted instead of running on with nothing able to stop it
   (#6558).
