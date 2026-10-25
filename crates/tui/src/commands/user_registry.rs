@@ -79,7 +79,7 @@ pub struct UserCommandMetadata {
     pub pausable: bool,
     pub aliases: Vec<String>,
     pub hidden: bool,
-    pub plugin_authority: Option<crate::plugins::types::PluginAuthority>,
+    pub plugin_authority: Option<codewhale_config::PluginAuthority>,
     /// Set for a command contributed by an extension-host plugin: it runs in
     /// the host (`command/run`) instead of expanding `body`.
     pub extension: Option<crate::extension_host::command::ExtensionCommandRef>,
@@ -532,7 +532,7 @@ struct CommandSourceEntry {
     name: String,
     content: String,
     path: PathBuf,
-    plugin_authority: Option<crate::plugins::types::PluginAuthority>,
+    plugin_authority: Option<codewhale_config::PluginAuthority>,
     /// Came from a workspace (repository) directory rather than the user's
     /// own global store or a reviewed plugin.
     workspace_sourced: bool,

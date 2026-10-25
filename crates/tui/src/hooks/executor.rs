@@ -1428,7 +1428,7 @@ struct BackgroundHookJob {
     stdin_bytes: Option<Vec<u8>>,
     label: String,
     timeout: Duration,
-    plugin_authority: Option<crate::plugins::types::PluginAuthority>,
+    plugin_authority: Option<codewhale_config::PluginAuthority>,
     project_authority: Option<super::authority::ProjectHookAuthority>,
 }
 

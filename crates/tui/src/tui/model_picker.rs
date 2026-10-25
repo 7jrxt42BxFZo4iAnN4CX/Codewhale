@@ -2561,7 +2561,7 @@ fn push_provider_model_rows(
     let base_url = config.base_url_for_route(admitted);
     let fresh_roster = fresh_roster_listing(provider, &identity, &base_url);
     for declaration in config.custom_models.as_deref().unwrap_or_default() {
-        if crate::provider_lake::configured_model_for_route(
+        if crate::config::configured_model_for_route(
             config,
             provider,
             &identity,
@@ -3709,7 +3709,7 @@ fn effective_picker_metadata_with_codex(
         .or_else(|| config.context_window_for_provider_config(admitted));
     let base_url = config.base_url_for_route(admitted);
     if let Some(declared) =
-        crate::provider_lake::configured_model_for_route(config, provider, identity, &base_url, id)
+        crate::config::configured_model_for_route(config, provider, identity, &base_url, id)
     {
         let (wire_model_id, canonical_model) = picker_offering_identity(offering.as_ref(), id);
         return EffectivePickerMetadata {

@@ -294,7 +294,7 @@ pub struct Hook {
     /// Never accepted from TOML; only the reviewed staged adapter may attach
     /// it after parsing immutable bytes.
     #[serde(skip)]
-    pub plugin_authority: Option<crate::plugins::types::PluginAuthority>,
+    pub plugin_authority: Option<codewhale_config::PluginAuthority>,
 
     /// Exact-byte project approval attached by the loader; never read from TOML.
     #[serde(skip)]
@@ -716,7 +716,7 @@ impl HooksConfig {
 
 fn load_plugin_hook_component(
     component: &Path,
-    authority: &crate::plugins::types::PluginAuthority,
+    authority: &codewhale_config::PluginAuthority,
 ) -> Result<HooksConfig, String> {
     let mut paths = if component.is_file() {
         vec![component.to_path_buf()]

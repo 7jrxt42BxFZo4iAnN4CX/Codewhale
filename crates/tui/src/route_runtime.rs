@@ -949,7 +949,7 @@ fn plan_limit_overrides(
     }
 
     let fallback_tokens =
-        crate::config::provider_capability(provider, resolved.wire_model_id().as_str())
+        crate::provider_lake::provider_capability(provider, resolved.wire_model_id().as_str())
             .context_window;
     LimitOverridePlan {
         overrides,
@@ -1612,7 +1612,7 @@ mod tests {
         // OpenCode Go may not own a models.dev row for kimi-k3; capability and
         // budget resolution still must use the 1M K3 contract, never the 128K
         // legacy fallback or the 131K max-output field.
-        let cap = crate::config::provider_capability(ProviderKind::OpencodeGo, "kimi-k3");
+        let cap = crate::provider_lake::provider_capability(ProviderKind::OpencodeGo, "kimi-k3");
         assert_eq!(cap.context_window, 1_048_576);
         assert_eq!(cap.max_output, Some(131_072));
         assert_ne!(Some(cap.context_window), cap.max_output);
@@ -1711,7 +1711,7 @@ mod tests {
             candidate.limits().output_tokens
         );
         assert_eq!(
-            crate::config::provider_capability(
+            crate::provider_lake::provider_capability(
                 ProviderKind::Moonshot,
                 crate::config::KIMI_CODE_K3_MODEL
             )

@@ -301,7 +301,7 @@ fn mcp_server_review(name: &str, cfg: &crate::mcp::McpServerConfig) -> PluginMcp
         url: cfg
             .url
             .as_deref()
-            .map(crate::doctor::structural_url_authority),
+            .map(codewhale_config::structural_url_authority),
         env_keys,
         header_keys,
     }

@@ -2340,7 +2340,7 @@ fn active_plugin_fixture(
     plugin_base: &Path,
 ) -> (
     crate::plugins::types::LoadedPlugin,
-    crate::plugins::types::PluginAuthority,
+    codewhale_config::PluginAuthority,
 ) {
     let plugins_root = plugin_base.parent().expect("plugin parent").to_path_buf();
     // Callers use both `<temp>/plugins/<name>` and `<temp>/<name>` layouts.

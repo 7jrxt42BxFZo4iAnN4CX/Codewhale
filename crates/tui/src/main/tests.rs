@@ -301,7 +301,7 @@ fn doctor_provider_json_redacts_every_credential_url_to_its_authority() {
             };
             assert_eq!(
                 value,
-                crate::doctor::structural_url_authority(value),
+                codewhale_config::structural_url_authority(value),
                 "{provider:?} {field} must be authority-only"
             );
             assert!(
@@ -334,10 +334,10 @@ fn doctor_provider_url_reports_omit_secret_capable_components() {
     let target = doctor_api_target(&config);
     let human = format!(
         "base_url: {}",
-        crate::doctor::structural_url_authority(&target.base_url)
+        codewhale_config::structural_url_authority(&target.base_url)
     );
     let json = serde_json::json!({
-        "base_url": crate::doctor::structural_url_authority(&target.base_url),
+        "base_url": codewhale_config::structural_url_authority(&target.base_url),
         "route": doctor_route_report(&config),
     })
     .to_string();

@@ -161,50 +161,6 @@ fn normalize_subagent_provider_key(value: &str) -> String {
         .collect()
 }
 
-// ============================================================================
-// Provider Capability Matrix
-// ============================================================================
-
-/// Known capabilities for a provider + resolved-model combination.
-///
-/// Returned by [`provider_capability`] to describe what a given provider
-/// supports for the resolved model string.  All fields are derived from
-/// static knowledge (release docs, API guides) rather than live API probes.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub struct ProviderCapability {
-    /// Canonical provider identifier.
-    pub provider: ProviderKind,
-    /// Resolved model identifier that will be sent in the API payload.
-    pub resolved_model: String,
-    /// Context window in tokens (the maximum input the model can accept).
-    pub context_window: u32,
-    /// Known output ceiling for this provider/model metadata path, when one is
-    /// actually known.
-    ///
-    /// `None` means "this route publishes no output maximum we can stand
-    /// behind" — for example the Kimi Code membership ids, whose limits live in
-    /// the membership catalog rather than the static model catalogue. Unknown
-    /// must stay unknown: callers may **not** substitute a placeholder ceiling,
-    /// and in particular [`crate::route_budget`] does not clamp a requested
-    /// `max_tokens` against an unknown compatibility cap.
-    ///
-    /// When `Some`, the value is a documented exact-route maximum or a
-    /// deliberately conservative provider ceiling (Anthropic's 64K floor, the
-    /// Codex OAuth route). It is metadata for diagnostics and CI policy; normal
-    /// turns use a separate, more conservative request cap in the engine.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_output: Option<u32>,
-    /// Whether the provider+model supports thinking/reasoning mode.
-    pub thinking_supported: bool,
-    /// Whether the provider returns prompt-cache telemetry fields.
-    pub cache_telemetry_supported: bool,
-    /// Which request-payload dialect the provider uses.
-    pub request_payload_mode: RequestPayloadMode,
-    /// Deprecation metadata for compatibility aliases that are still accepted.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub alias_deprecation: Option<ModelAliasDeprecation>,
-}
-
 pub const DEEPSEEK_ALIAS_RETIREMENT_DATE: &str = "2026-07-24";
 pub const DEEPSEEK_ALIAS_RETIREMENT_UTC: &str = "2026-07-24T15:59:00Z";
 pub use codewhale_config::catalog::reviewed::constants::DEEPSEEK_ALIAS_REPLACEMENT;
@@ -219,253 +175,25 @@ pub struct ModelAliasDeprecation {
     pub notice: String,
 }
 
-/// Which request-payload dialect the provider speaks.
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
-pub enum RequestPayloadMode {
-    /// Standard OpenAI-compatible `/v1/chat/completions` payload.
-    ChatCompletions,
-    /// OpenAI Responses API payload.
-    Responses,
-    /// Native Anthropic Messages API `/v1/messages` payload (#3014).
-    AnthropicMessages,
-}
-
-/// Resolve the provider capability for a given [`ProviderKind`] and resolved
-/// model string.
-///
-/// The `resolved_model` should be the final model identifier that will appear
-/// in the API payload (after normalization / provider-specific mapping).
-#[must_use]
-pub fn provider_capability(provider: ProviderKind, resolved_model: &str) -> ProviderCapability {
-    provider_capability_with_wire(provider, resolved_model, None)
-}
-
-/// Wire-aware variant of [`provider_capability`] that respects
-/// `wire = "responses" | "anthropic" | "chat"` for `Custom` providers.
-///
-/// Built-ins keep their fixed policy; `Custom` defaults to `Chat` when `wire`
-/// is absent so existing configs stay compatible. Mirrors
-/// `crates/tui/src/client.rs::provider_wire_format_for_config` and the
-/// `Custom` comment in `crates/config/src/provider.rs`.
-#[must_use]
-pub fn provider_capability_with_wire(
+pub(crate) fn configured_model_for_route<'a>(
+    config: &'a Config,
     provider: ProviderKind,
-    resolved_model: &str,
-    wire: Option<&str>,
-) -> ProviderCapability {
-    // Custom wire overrides must be checked before the generic fallback so
-    // `[providers.<name>] wire = "responses"` / `"anthropic"` is honored.
-    if provider == ProviderKind::Custom {
-        if wire_config_prefers_anthropic(wire) {
-            return ProviderCapability {
-                provider,
-                resolved_model: resolved_model.to_string(),
-                context_window: codewhale_models::context_window_for_model(resolved_model)
-                    .unwrap_or(codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS),
-                max_output: codewhale_models::max_output_tokens_for_model(resolved_model),
-                thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
-                cache_telemetry_supported: false,
-                request_payload_mode: RequestPayloadMode::AnthropicMessages,
-                alias_deprecation: None,
-            };
-        }
-        if wire_config_prefers_responses(wire) {
-            return ProviderCapability {
-                provider,
-                resolved_model: resolved_model.to_string(),
-                context_window: codewhale_models::context_window_for_model(resolved_model)
-                    .unwrap_or(codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS),
-                max_output: codewhale_models::max_output_tokens_for_model(resolved_model),
-                thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
-                cache_telemetry_supported: false,
-                request_payload_mode: RequestPayloadMode::Responses,
-                alias_deprecation: None,
-            };
-        }
+    identity: &str,
+    base_url: &str,
+    model: &str,
+) -> Option<&'a codewhale_config::catalog::configured::ConfiguredModel> {
+    // Account-owned OAuth rosters retain their separate authority.
+    if provider == ProviderKind::OpenaiCodex {
+        return None;
     }
-
-    if matches!(
-        provider,
-        ProviderKind::Anthropic | ProviderKind::MinimaxAnthropic | ProviderKind::Openmodel
-    ) {
-        return ProviderCapability {
-            provider,
-            resolved_model: resolved_model.to_string(),
-            // 200K is the conservative Anthropic floor; 4.6+ models resolve
-            // their 1M windows from models.rs rows (#3014).
-            context_window: codewhale_models::context_window_for_model(resolved_model)
-                .unwrap_or(200_000),
-            // 64K is the documented Anthropic Messages floor. For a model
-            // the catalogue describes this carries its documented ceiling;
-            // for an unknown one it is an *assumed* floor, and
-            // `route_budget::output_ceiling_source` labels it unverified so
-            // no receipt renders it as "documented" (#5440).
-            max_output: Some(
-                codewhale_models::max_output_tokens_for_model(resolved_model).unwrap_or(64_000),
-            ),
-            thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
-            cache_telemetry_supported: matches!(provider, ProviderKind::Anthropic),
-            request_payload_mode: RequestPayloadMode::AnthropicMessages,
-            alias_deprecation: None,
-        };
-    }
-
-    if matches!(provider, ProviderKind::OpenaiCodex) {
-        return ProviderCapability {
-            provider,
-            resolved_model: resolved_model.to_string(),
-            context_window: OPENAI_CODEX_EFFECTIVE_CONTEXT_WINDOW_TOKENS,
-            // The OAuth cache does not publish an output ceiling. This 4K is a
-            // deliberate, long-standing product decision for the Codex route
-            // (not a fallback): keep the compatibility capability conservative
-            // instead of inheriting the public API model's output limit. It is
-            // an assumption, not a documented fact — receipts label it
-            // unverified (#5440).
-            max_output: Some(4096),
-            thinking_supported: true,
-            cache_telemetry_supported: false,
-            request_payload_mode: RequestPayloadMode::Responses,
-            alias_deprecation: None,
-        };
-    }
-
-    // #3023: Delete the Openai/Atlascloud/Moonshot early-return so these
-    // providers use the generic model-based path below, which correctly
-    // resolves context windows, output limits, and thinking support from
-    // models.rs lookups.  Ollama also falls through to model-based lookups
-    // with 8192 as the last-resort fallback instead of a hardcoded floor.
-    if matches!(provider, ProviderKind::XiaomiMimo) {
-        return ProviderCapability {
-            provider,
-            resolved_model: resolved_model.to_string(),
-            context_window: codewhale_models::context_window_for_model(resolved_model)
-                .unwrap_or(codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS),
-            // No documented output maximum for these routes: stay unknown so
-            // no compatibility clamp is applied downstream.
-            max_output: codewhale_models::max_output_tokens_for_model(resolved_model),
-            thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
-            cache_telemetry_supported: false,
-            request_payload_mode: RequestPayloadMode::ChatCompletions,
-            alias_deprecation: None,
-        };
-    }
-
-    if matches!(provider, ProviderKind::Arcee) {
-        return ProviderCapability {
-            provider,
-            resolved_model: resolved_model.to_string(),
-            context_window: codewhale_models::context_window_for_model(resolved_model)
-                .unwrap_or(codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS),
-            // No documented output maximum for these routes: stay unknown so
-            // no compatibility clamp is applied downstream.
-            max_output: codewhale_models::max_output_tokens_for_model(resolved_model),
-            thinking_supported: codewhale_models::model_supports_reasoning(resolved_model),
-            cache_telemetry_supported: false,
-            request_payload_mode: RequestPayloadMode::ChatCompletions,
-            alias_deprecation: None,
-        };
-    }
-
-    let model_lower = resolved_model.to_ascii_lowercase();
-    let alias_deprecation = if matches!(
-        provider,
-        ProviderKind::Deepseek | ProviderKind::DeepseekAnthropic
-    ) {
-        deepseek_alias_deprecation(&model_lower)
-    } else {
-        None
-    };
-    let official_deepseek =
-        canonical_official_deepseek_model_id(&model_lower).is_some() || alias_deprecation.is_some();
-    let is_reasoner = matches!(provider, ProviderKind::WanjieArk)
-        && (model_lower.contains("reasoner") || model_lower.contains("r1"));
-
-    // Provider-owned wire IDs can have exact catalog facts without a legacy
-    // model-only row. Reuse those facts before conservative fallback budgets.
-    let offering =
-        crate::provider_lake::bundled_catalog_offering_for_model(provider, resolved_model);
-    let context_window = if official_deepseek {
-        codewhale_models::DEEPSEEK_V4_CONTEXT_WINDOW_TOKENS
-    } else if let Some(window) = codewhale_models::context_window_for_model(resolved_model) {
-        window
-    } else if let Some(window) = offering
-        .as_ref()
-        .and_then(|row| row.limit.as_ref())
-        .and_then(|limit| limit.context)
-        .and_then(|window| u32::try_from(window).ok())
-    {
-        window
-    } else if matches!(provider, ProviderKind::Ollama) {
-        8192
-    } else {
-        codewhale_models::LEGACY_DEEPSEEK_CONTEXT_WINDOW_TOKENS
-    };
-
-    // Output limits require an exact catalog row or an explicitly recognized
-    // compatibility alias. A family-name match cannot document a new model.
-    // The catalog answers
-    // `None` when the catalogue has no row. That is the truthful state for
-    // membership routes such as the `kimi-for-coding` family, whose ceilings
-    // are owned by the membership catalog. It must not become a placeholder
-    // number: a fabricated 4K here silently clamped offline membership routes
-    // to 4K output via `route_budget`.
-    let max_output = codewhale_models::max_output_tokens_for_model(resolved_model)
-        .or_else(|| {
-            // Provider-owned wire IDs need not exist in the legacy model-only
-            // catalog (for example Fireworks' accounts/... slug). Reuse the
-            // exact bundled offering instead of inferring a family ceiling.
-            offering
-                .as_ref()
-                .and_then(|offering| offering.limit.as_ref())
-                .and_then(|limit| limit.output)
-                .and_then(|limit| u32::try_from(limit).ok())
-        })
-        .or_else(|| {
-            canonical_official_deepseek_model_id(resolved_model)
-                .or_else(|| {
-                    alias_deprecation
-                        .as_ref()
-                        .map(|_| DEEPSEEK_ALIAS_REPLACEMENT)
-                })
-                .and_then(codewhale_models::max_output_tokens_for_model)
-        });
-
-    // Exact catalog reasoning facts and recognized compatibility aliases only.
-    let thinking_supported = official_deepseek
-        || is_reasoner
-        || offering
-            .as_ref()
-            .is_some_and(|row| row.reasoning == Some(true))
-        || codewhale_models::model_supports_reasoning(resolved_model);
-
-    // Cache telemetry: returned only by DeepSeek-native and NVIDIA NIM endpoints.
-    let cache_telemetry_supported = matches!(
-        provider,
-        ProviderKind::Deepseek | ProviderKind::NvidiaNim | ProviderKind::Volcengine
-    );
-
-    let request_payload_mode = if matches!(
-        provider,
-        ProviderKind::DeepseekAnthropic | ProviderKind::MinimaxAnthropic | ProviderKind::Openmodel
-    ) {
-        RequestPayloadMode::AnthropicMessages
-    } else {
-        RequestPayloadMode::ChatCompletions
-    };
-
-    ProviderCapability {
-        provider,
-        resolved_model: resolved_model.to_string(),
-        context_window,
-        max_output,
-        thinking_supported,
-        cache_telemetry_supported,
-        request_payload_mode,
-        alias_deprecation,
-    }
+    let models = config.custom_models.as_deref()?;
+    codewhale_config::catalog::configured::validate_configured_models(models).ok()?;
+    models
+        .iter()
+        .find(|row| row.id == model && row.matches_route(identity, base_url))
 }
 
-fn deepseek_alias_deprecation(model_lower: &str) -> Option<ModelAliasDeprecation> {
+pub(crate) fn deepseek_alias_deprecation(model_lower: &str) -> Option<ModelAliasDeprecation> {
     match model_lower {
         "deepseek-chat" | "deepseek-reasoner" => Some(ModelAliasDeprecation {
             alias: model_lower.to_string(),
@@ -903,7 +631,7 @@ pub(crate) fn legacy_deepseek_alias_effort_for_route(
 /// fallback** (#4188).
 ///
 /// Preferred sources are the live Models.dev catalog and the offline bundled
-/// snapshot via [`crate::provider_lake`]. Call this directly only for
+/// snapshot via `crate::provider_lake`. Call this directly only for
 /// Codewhale-only / local providers Models.dev does not represent, or when
 /// probing the fallback table in tests. Picker, inventory, and subagent
 /// surfaces must go through the provider lake.
@@ -1362,13 +1090,13 @@ pub struct ToolsConfig {
 
     /// Ceiling on how many questions one `request_user_input` call may ask
     /// (#5949). `None` uses
-    /// [`crate::tools::user_input::DEFAULT_MAX_QUESTIONS`] (6). Values outside
+    /// `DEFAULT_MAX_QUESTIONS` (6). Values outside
     /// `1..=10` are clamped with a warning rather than failing the load.
     #[serde(default)]
     pub user_input_max_questions: Option<u32>,
 
     /// Ceiling on how many options each `request_user_input` question may
-    /// offer. `None` uses [`crate::tools::user_input::DEFAULT_MAX_OPTIONS`]
+    /// offer. `None` uses `DEFAULT_MAX_OPTIONS`
     /// (4). Values outside `2..=10` are clamped with a warning.
     #[serde(default)]
     pub user_input_max_options: Option<u32>,
@@ -2494,8 +2222,8 @@ pub struct Config {
 
     /// Community skill installer settings (#140). When absent, installer
     /// commands fall back to the bundled defaults
-    /// ([`crate::skills::install::DEFAULT_REGISTRY_URL`] +
-    /// [`crate::skills::install::DEFAULT_MAX_SIZE_BYTES`]).
+    /// (`crate::skills::install::DEFAULT_REGISTRY_URL` +
+    /// `crate::skills::install::DEFAULT_MAX_SIZE_BYTES`).
     #[serde(default)]
     pub skills: Option<SkillsConfig>,
 
@@ -2592,7 +2320,7 @@ pub struct Config {
     /// Workshop / large-tool-output routing (#548). When absent, the global
     /// default threshold of 4 096 tokens applies and routing is active.
     #[serde(default)]
-    pub workshop: Option<crate::tools::large_output_router::WorkshopConfig>,
+    pub workshop: Option<codewhale_config::WorkshopConfig>,
 
     /// Vision model configuration for the `image_analyze` tool.
     #[serde(default)]
@@ -2908,7 +2636,7 @@ pub struct RuntimeApiConfig {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct SkillsConfig {
     /// Curated registry index. `/skill install <name>` looks up the spec here.
-    /// Defaults to [`crate::skills::install::DEFAULT_REGISTRY_URL`].
+    /// Defaults to `crate::skills::install::DEFAULT_REGISTRY_URL`.
     #[serde(default)]
     pub registry_url: Option<String>,
     /// Per-skill maximum *uncompressed* size in bytes. Tarballs that exceed
@@ -3020,7 +2748,7 @@ pub struct ProviderConfig {
     pub kind: Option<String>,
     /// Runtime-only receipt; a config file cannot manufacture plugin authority.
     #[serde(skip)]
-    pub plugin_authority: Option<crate::plugins::types::PluginAuthority>,
+    pub plugin_authority: Option<codewhale_config::PluginAuthority>,
     /// Name of the environment variable holding this custom provider's API key
     /// (#1519), e.g. `api_key_env = "EXAMPLE_API_KEY"`. The key value itself is
     /// never stored in config; only the env var name is.
@@ -4081,18 +3809,6 @@ impl Config {
             .unwrap_or_default()
     }
 
-    /// Effective `request_user_input` payload ceilings for this session
-    /// (#5949). Resolved once per engine build; out-of-range `[tools]` values
-    /// clamp with a single warning naming the key and the value used.
-    #[must_use]
-    pub fn user_input_limits(&self) -> crate::tools::user_input::UserInputLimits {
-        let tools = self.tools.as_ref();
-        crate::tools::user_input::UserInputLimits::from_config_values(
-            tools.and_then(|t| t.user_input_max_questions),
-            tools.and_then(|t| t.user_input_max_options),
-        )
-    }
-
     /// Effective wait for a user-input answer or an approval decision
     /// (#6003). `None` or `0` waits until the person answers or cancels.
     /// A positive value bounds that one wait; values above 24h clamp.
@@ -4291,7 +4007,7 @@ impl Config {
                         .flatten()
                 })
                 .unwrap_or_default();
-            let declared = crate::provider_lake::configured_model_for_route(
+            let declared = configured_model_for_route(
                 &scoped,
                 provider,
                 identity.key.as_str(),
@@ -4390,7 +4106,7 @@ impl Config {
             && !model.trim().eq_ignore_ascii_case("auto")
             && !provider_passes_model_through(active_provider)
             && !self.active_provider_preserves_custom_base_url_model()
-            && crate::provider_lake::configured_model_for_route(
+            && configured_model_for_route(
                 self,
                 active_provider,
                 identity.key.as_str(),
@@ -5611,7 +5327,7 @@ impl Config {
         }
 
         let declared = |model: &str| {
-            crate::provider_lake::configured_model_for_route(
+            configured_model_for_route(
                 self,
                 provider,
                 identity.key.as_str(),
@@ -9116,7 +8832,7 @@ fn normalize_model_config(config: &mut Config) {
             continue;
         };
         for model in config.custom_models.as_deref().unwrap_or_default() {
-            if crate::provider_lake::configured_model_for_route(
+            if configured_model_for_route(
                 config,
                 candidate.provider,
                 candidate.key.as_str(),
@@ -9428,10 +9144,6 @@ fn xiaomi_mimo_env_api_key_for_runtime(
 
 fn wire_config_prefers_anthropic(wire: Option<&str>) -> bool {
     codewhale_config::provider::wire_dialect_prefers_anthropic(wire)
-}
-
-fn wire_config_prefers_responses(wire: Option<&str>) -> bool {
-    codewhale_config::provider::wire_dialect_prefers_responses(wire)
 }
 
 fn modelstudio_mode_is_coding_plan(provider: ProviderKind, mode: Option<&str>) -> bool {

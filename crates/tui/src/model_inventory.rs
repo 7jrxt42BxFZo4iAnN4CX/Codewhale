@@ -9,9 +9,10 @@ use serde::Serialize;
 use crate::client::system_one::DecisionRouterRoute;
 use crate::config::{
     AutoRouterKind, Config, ProviderIdentity, ProviderKind, has_api_key_for,
-    normalize_model_name_for_provider, provider_capability,
+    normalize_model_name_for_provider,
 };
 use crate::provider_lake::models_for_provider;
+use crate::provider_lake::provider_capability;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -253,7 +254,7 @@ impl ModelInventory {
                 push_model(&mut models, provider, &model);
             }
             for declaration in config.custom_models.as_deref().unwrap_or_default() {
-                if crate::provider_lake::configured_model_for_route(
+                if crate::config::configured_model_for_route(
                     config,
                     provider,
                     identity.key.as_str(),

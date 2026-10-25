@@ -685,9 +685,7 @@ pub(crate) async fn run_exec_agent(
             .tag()
             .to_string(),
         workshop: {
-            crate::tools::large_output_router::WorkshopConfig::install_active(
-                config.workshop.as_ref(),
-            );
+            crate::tools::large_output_router::install_active_workshop(config.workshop.as_ref());
             config.workshop.clone()
         },
         search_provider: execution_config.search_provider(),
@@ -705,7 +703,9 @@ pub(crate) async fn run_exec_agent(
         } else {
             execution_config.tools_always_load()
         },
-        user_input_limits: execution_config.user_input_limits(),
+        user_input_limits: crate::tools::user_input::UserInputLimits::from_config(
+            &execution_config,
+        ),
         user_input_timeout: execution_config.user_input_timeout(),
         goal_max_steps: None,
         tools: if fleet_authority_active {

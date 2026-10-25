@@ -1005,36 +1005,6 @@ fn discover_tools_with_bm25_like(catalog: &[Tool], query: &str, max_results: usi
         .collect()
 }
 
-fn edit_distance(a: &str, b: &str) -> usize {
-    if a == b {
-        return 0;
-    }
-    if a.is_empty() {
-        return b.chars().count();
-    }
-    if b.is_empty() {
-        return a.chars().count();
-    }
-
-    let b_chars: Vec<char> = b.chars().collect();
-    let mut prev: Vec<usize> = (0..=b_chars.len()).collect();
-    let mut curr = vec![0usize; b_chars.len() + 1];
-
-    for (i, a_ch) in a.chars().enumerate() {
-        curr[0] = i + 1;
-        for (j, b_ch) in b_chars.iter().enumerate() {
-            let cost = if a_ch == *b_ch { 0 } else { 1 };
-            let delete = prev[j + 1] + 1;
-            let insert = curr[j] + 1;
-            let substitute = prev[j] + cost;
-            curr[j + 1] = delete.min(insert).min(substitute);
-        }
-        std::mem::swap(&mut prev, &mut curr);
-    }
-
-    prev[b_chars.len()]
-}
-
 fn suggest_tool_names(catalog: &[Tool], requested: &str, limit: usize) -> Vec<String> {
     let requested = requested.trim().to_ascii_lowercase();
     if requested.is_empty() || limit == 0 {
@@ -1046,7 +1016,7 @@ fn suggest_tool_names(catalog: &[Tool], requested: &str, limit: usize) -> Vec<St
         let candidate = tool.name.to_ascii_lowercase();
         let prefix_match = candidate.starts_with(&requested) || requested.starts_with(&candidate);
         let contains_match = candidate.contains(&requested) || requested.contains(&candidate);
-        let distance = edit_distance(&candidate, &requested);
+        let distance = codewhale_config::suggest::edit_distance(&candidate, &requested);
         let close_typo = distance <= 3;
 
         if !(prefix_match || contains_match || close_typo) {

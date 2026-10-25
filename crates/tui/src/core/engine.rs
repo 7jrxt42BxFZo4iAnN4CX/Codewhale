@@ -473,7 +473,7 @@ pub struct EngineConfig {
     /// schemas into DeepSeek beta strict mode.
     pub strict_tool_mode: bool,
     /// Workshop / large-tool-output routing (#548). `None` disables routing.
-    pub workshop: Option<crate::tools::large_output_router::WorkshopConfig>,
+    pub workshop: Option<codewhale_config::WorkshopConfig>,
     /// Which search backend `web_search` should use. Default: Firecrawl.
     pub search_provider: crate::config::SearchProvider,
     /// Optional Firecrawl key, or required key for other API search providers.

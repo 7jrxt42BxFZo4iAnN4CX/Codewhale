@@ -1061,9 +1061,7 @@ pub(crate) fn build_engine_config(app: &App, config: &Config) -> EngineConfig {
         reasoning_only_reprompt_message: Some(config.reasoning_only_reprompt_message().to_string()),
         locale_tag: app.ui_locale.tag().to_string(),
         workshop: {
-            crate::tools::large_output_router::WorkshopConfig::install_active(
-                config.workshop.as_ref(),
-            );
+            crate::tools::large_output_router::install_active_workshop(config.workshop.as_ref());
             config.workshop.clone()
         },
         search_provider: config.search_provider(),
@@ -1071,7 +1069,7 @@ pub(crate) fn build_engine_config(app: &App, config: &Config) -> EngineConfig {
         search_base_url: config.search.as_ref().and_then(|s| s.base_url.clone()),
         search_native: config.search_native(),
         tools_always_load: config.tools_always_load(),
-        user_input_limits: config.user_input_limits(),
+        user_input_limits: crate::tools::user_input::UserInputLimits::from_config(&config),
         user_input_timeout: config.user_input_timeout(),
         goal_max_steps: Some(config.goal_max_steps()),
         tools: config.tools.clone(),

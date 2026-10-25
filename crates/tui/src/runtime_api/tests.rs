@@ -155,10 +155,10 @@ async fn http_and_web_server_thread_manager_installs_configured_workshop_byte_bu
     let workspace = temp.path().join("workspace");
     fs::create_dir_all(&workspace)?;
     let config = Config {
-        workshop: Some(crate::tools::large_output_router::WorkshopConfig {
+        workshop: Some(codewhale_config::WorkshopConfig {
             read_result_max_bytes: Some(73_728),
             tool_result_max_bytes: Some(65_536),
-            ..crate::tools::large_output_router::WorkshopConfig::default()
+            ..codewhale_config::WorkshopConfig::default()
         }),
         ..Config::default()
     };
@@ -178,20 +178,20 @@ async fn http_and_web_server_thread_manager_installs_configured_workshop_byte_bu
     assert_eq!(startup_activation.read_result_max_bytes, Some(73_728));
     assert_eq!(startup_activation.tool_result_max_bytes, Some(65_536));
     assert_eq!(
-        crate::tools::large_output_router::WorkshopConfig::active_read_result_max_bytes(),
+        crate::tools::large_output_router::active_read_result_max_bytes(),
         Some(73_728)
     );
     assert_eq!(
-        crate::tools::large_output_router::WorkshopConfig::active_tool_result_max_bytes(),
+        crate::tools::large_output_router::active_tool_result_max_bytes(),
         Some(65_536)
     );
 
     let reload_activation = runtime_threads
         .reload_config(Config {
-            workshop: Some(crate::tools::large_output_router::WorkshopConfig {
+            workshop: Some(codewhale_config::WorkshopConfig {
                 read_result_max_bytes: Some(81_920),
                 tool_result_max_bytes: Some(77_824),
-                ..crate::tools::large_output_router::WorkshopConfig::default()
+                ..codewhale_config::WorkshopConfig::default()
             }),
             ..Config::default()
         })
@@ -199,14 +199,14 @@ async fn http_and_web_server_thread_manager_installs_configured_workshop_byte_bu
     assert_eq!(reload_activation.read_result_max_bytes, Some(81_920));
     assert_eq!(reload_activation.tool_result_max_bytes, Some(77_824));
     assert_eq!(
-        crate::tools::large_output_router::WorkshopConfig::active_read_result_max_bytes(),
+        crate::tools::large_output_router::active_read_result_max_bytes(),
         Some(81_920)
     );
     assert_eq!(
-        crate::tools::large_output_router::WorkshopConfig::active_tool_result_max_bytes(),
+        crate::tools::large_output_router::active_tool_result_max_bytes(),
         Some(77_824)
     );
-    crate::tools::large_output_router::WorkshopConfig::install_active(None);
+    crate::tools::large_output_router::install_active_workshop(None);
     Ok(())
 }
 

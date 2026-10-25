@@ -12,7 +12,6 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{expand_path, normalize_model_name};
-use crate::reasoning_preference::ReasoningEffort;
 use codewhale_config::resolve::Layer;
 use codewhale_localization::normalize_configured_locale;
 use codewhale_palette::{normalize_hex_rgb_color, normalize_theme_setting};
@@ -403,7 +402,7 @@ pub struct Settings {
     /// always take precedence; when this is on, startup still refuses to
     /// resume an archived, unreadable, or foreign-workspace session and falls
     /// back to a fresh transcript with a receipt. See
-    /// [`crate::session_resume`] for the decision table.
+    /// `crate::session_resume` for the decision table.
     #[serde(default, skip_serializing_if = "is_false")]
     pub session_auto_resume: bool,
     /// Cost display currency: usd or cny.
@@ -2771,8 +2770,8 @@ fn normalize_reasoning_effort_setting(value: &str) -> Result<Option<String>> {
         return Ok(None);
     }
 
-    ReasoningEffort::parse_strict(trimmed)
-        .map(|effort| Some(effort.as_setting().to_string()))
+    codewhale_config::settings_schema::canonical_reasoning_effort(trimmed)
+        .map(|effort| Some(effort.to_string()))
         .map_err(|err| anyhow::anyhow!("Failed to update setting: {err}"))
 }
 

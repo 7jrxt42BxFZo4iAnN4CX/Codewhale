@@ -788,7 +788,7 @@ impl ProviderDashboardRow {
                     .flatten()
             })
             .filter(|model| {
-                crate::provider_lake::configured_model_for_route(
+                crate::config::configured_model_for_route(
                     config,
                     provider,
                     &provider_id,
@@ -920,7 +920,7 @@ impl ProviderDashboardRow {
             capabilities.context_window = Some(context_window);
         }
         capabilities.context_window_source = route_context_window_source;
-        if let Some(declared) = crate::provider_lake::configured_model_for_route(
+        if let Some(declared) = crate::config::configured_model_for_route(
             config,
             provider,
             &provider_id,
@@ -1656,7 +1656,7 @@ fn configured_model_cost_label(config: &Config, row: &ProviderDashboardRow, mode
         crate::route_billing::BillingPresentation::Local => return "local".to_string(),
         _ => {}
     }
-    if let Some(declared) = crate::provider_lake::configured_model_for_route(
+    if let Some(declared) = crate::config::configured_model_for_route(
         config,
         row.provider,
         &row.provider_id,

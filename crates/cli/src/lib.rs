@@ -2993,7 +2993,11 @@ fn capture_serve_full_access(cli: &mut Cli) {
         return;
     };
     let before = args.args.len();
-    let separator = args.args.iter().position(|arg| arg == "--").unwrap_or(before);
+    let separator = args
+        .args
+        .iter()
+        .position(|arg| arg == "--")
+        .unwrap_or(before);
     let mut index = 0;
     args.args.retain(|arg| {
         index += 1;

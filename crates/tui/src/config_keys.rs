@@ -175,7 +175,7 @@ pub(crate) fn nearest_key<'a>(
     candidates
         .into_iter()
         .filter_map(|candidate| {
-            crate::commands::best_suggestion_score(query, [candidate])
+            codewhale_config::suggest::best_suggestion_score(query, [candidate])
                 .map(|score| (score, candidate))
         })
         .min_by_key(|(score, _)| *score)
@@ -244,7 +244,7 @@ pub(crate) fn settings_toml_keys() -> impl Iterator<Item = &'static str> {
 ///   the value is one [`codewhale_config::config_toml_choices`] names, since
 ///   the TUI loader rejects the whole file otherwise.
 /// - `reasoning_effort` is checked against its reader,
-///   [`ReasoningEffort::parse_strict`], and stored in canonical spelling.
+///   [`codewhale_config::settings_schema::canonical_reasoning_effort`], and stored in canonical spelling.
 /// - A root field the TUI `Config` reads but `SETTINGS_SCHEMA` does not
 ///   declare (`yolo`, `max_subagents`, `mcp_oauth_callback_port`, ...) is
 ///   typed by that field's own deserializer: a string in a boolean or
@@ -252,7 +252,6 @@ pub(crate) fn settings_toml_keys() -> impl Iterator<Item = &'static str> {
 ///   value is stored as the first of string, boolean, integer or number the
 ///   field accepts, and refused when it accepts none.
 ///
-/// [`ReasoningEffort::parse_strict`]: crate::reasoning_preference::ReasoningEffort::parse_strict
 pub fn config_toml_value(key: &str, value: &str) -> Result<Option<toml::Value>> {
     let key = key.trim();
     if TABLE_ROOT_KEYS.contains(&key) {
@@ -263,9 +262,9 @@ pub fn config_toml_value(key: &str, value: &str) -> Result<Option<toml::Value>> 
     }
     codewhale_config::check_config_toml_choice(key, value)?;
     if key == "reasoning_effort" {
-        let effort = crate::reasoning_preference::ReasoningEffort::parse_strict(value)
+        let effort = codewhale_config::settings_schema::canonical_reasoning_effort(value)
             .map_err(|error| anyhow::anyhow!("invalid value for '{key}': {error}"))?;
-        return Ok(Some(toml::Value::String(effort.as_setting().to_string())));
+        return Ok(Some(toml::Value::String(effort.to_string())));
     }
     if key.contains('.')
         || codewhale_config::setting(key).is_some()

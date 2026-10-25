@@ -722,11 +722,10 @@ async fn load_contract_source(
 /// request never shrinks a budget the operator widened, and an operator who
 /// widened it process-wide keeps that floor when the model asks for less.
 fn effective_read_max_bytes(requested: Option<usize>) -> usize {
-    let baseline =
-        crate::tools::large_output_router::WorkshopConfig::active_read_result_max_bytes()
-            .map_or(READ_DEFAULT_MAX_BYTES, |configured| {
-                configured.clamp(READ_DEFAULT_MAX_BYTES, READ_RESULT_ABSOLUTE_MAX_BYTES)
-            });
+    let baseline = crate::tools::large_output_router::active_read_result_max_bytes()
+        .map_or(READ_DEFAULT_MAX_BYTES, |configured| {
+            configured.clamp(READ_DEFAULT_MAX_BYTES, READ_RESULT_ABSOLUTE_MAX_BYTES)
+        });
     match requested {
         Some(requested) => baseline.max(requested.min(READ_REQUEST_MAX_BYTES)),
         None => baseline,
@@ -1473,10 +1472,9 @@ fn render_line_window(
     // short head (budget/5) plus the matching tail so the model sees both
     // ends of a long range. The full file already lives at `path_str` — the
     // recovery note names that absolute/workspace path for a re-read.
-    let visible_bytes =
-        crate::tools::large_output_router::WorkshopConfig::active_read_result_max_bytes()
-            .map(|n| n.clamp(MAX_VISIBLE_BYTES, READ_RESULT_ABSOLUTE_MAX_BYTES))
-            .unwrap_or(MAX_VISIBLE_BYTES);
+    let visible_bytes = crate::tools::large_output_router::active_read_result_max_bytes()
+        .map(|n| n.clamp(MAX_VISIBLE_BYTES, READ_RESULT_ABSOLUTE_MAX_BYTES))
+        .unwrap_or(MAX_VISIBLE_BYTES);
     let truncated_by_bytes = numbered.len() > visible_bytes;
     let shown_content = if truncated_by_bytes {
         let (head, tail) = head_tail_for_budget(&numbered, visible_bytes);

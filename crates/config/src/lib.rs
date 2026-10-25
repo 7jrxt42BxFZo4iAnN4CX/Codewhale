@@ -25,6 +25,7 @@ pub mod resolve;
 pub mod route;
 pub mod settings_schema;
 pub mod setup_state;
+pub mod suggest;
 pub mod user_constitution;
 #[cfg(windows)]
 pub mod windows_identity;
@@ -1724,6 +1725,68 @@ pub struct ToolsToml {
     pub extras: BTreeMap<String, toml::Value>,
 }
 
+/// Existing `[workshop]` threshold configuration, retained for compatibility.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct WorkshopConfig {
+    /// Token threshold above which results become handle-only evidence.
+    #[serde(default)]
+    pub large_output_threshold_tokens: Option<usize>,
+
+    /// Per-tool threshold overrides (tool name → token limit). A tool whose
+    /// name appears here uses this limit instead of
+    /// `large_output_threshold_tokens`.
+    #[serde(default)]
+    pub per_tool_thresholds: Option<std::collections::HashMap<String, usize>>,
+
+    /// Optional model-visible byte budget for a single `read` / `read_file`
+    /// result. Absent keeps the compile-time default (#5367).
+    #[serde(default)]
+    pub read_result_max_bytes: Option<usize>,
+
+    /// Optional model-visible byte budget for a generic tool result after
+    /// spillover. Absent keeps the compile-time default (#5367).
+    #[serde(default)]
+    pub tool_result_max_bytes: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PluginId(pub String);
+
+impl PluginId {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Persistable proof of the exact reviewed plugin authority attached to a
+/// Skill or MCP server. Runtime contexts keep this receipt instead of a
+/// pointer to mutable process-global discovery state, and revalidate it at
+/// every side-effect boundary.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PluginAuthority {
+    pub plugin_id: PluginId,
+    pub plugin_name: String,
+    pub workspace: std::path::PathBuf,
+    pub state_path: std::path::PathBuf,
+    pub source_manifest: std::path::PathBuf,
+    pub staged_manifest: std::path::PathBuf,
+    pub content_hash: String,
+    pub capability_hash: String,
+    /// Monotonic generation of this plugin's persisted authority. Any trust,
+    /// enablement, disablement, or revocation transition invalidates receipts
+    /// held by another process immediately, even when hashes are unchanged.
+    pub state_generation: u64,
+}
+
+impl std::fmt::Display for PluginId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 /// Protocol owner selected only by user configuration. Rust is the default;
 /// Host explicitly selects the SDK and never falls back to Rust on refusal.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1732,6 +1795,28 @@ pub enum McpBackend {
     #[default]
     Rust,
     Host,
+}
+
+/// Return only the non-secret network authority of a configured URL.
+///
+/// Userinfo, path, query keys and values, and fragments are all omitted because
+/// every one of those components can carry credentials. Parse failures also
+/// omit the original input rather than echoing an attacker-controlled value.
+#[must_use]
+pub fn structural_url_authority(url: &str) -> String {
+    let Some(parsed) = url::Url::parse(url).ok() else {
+        return "unparseable (configured value omitted)".to_string();
+    };
+    let Some(host) = parsed.host_str() else {
+        return "unparseable (configured value omitted)".to_string();
+    };
+    // Url::host_str already includes the brackets around an IPv6 address.
+    let mut authority = format!("{}://{host}", parsed.scheme());
+    if let Some(port) = parsed.port() {
+        authority.push(':');
+        authority.push_str(&port.to_string());
+    }
+    authority
 }
 
 /// Default snapshot retention window: 7 days.

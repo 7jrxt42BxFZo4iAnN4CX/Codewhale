@@ -324,7 +324,7 @@ pub enum SkillSource {
     Plugin {
         plugin_id: String,
         plugin_name: String,
-        authority: Box<crate::plugins::types::PluginAuthority>,
+        authority: Box<codewhale_config::PluginAuthority>,
         native_registration: Option<crate::extension_host::skills::NativeSkillRef>,
     },
 }
@@ -335,24 +335,24 @@ pub enum SkillSource {
 #[serde(untagged)]
 pub enum SkillProvenance {
     NativeRoot(NativeSkillProvenance),
-    Plugin(crate::plugins::types::PluginAuthority),
+    Plugin(codewhale_config::PluginAuthority),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct NativeSkillProvenance {
-    pub authority: crate::plugins::types::PluginAuthority,
+    pub authority: codewhale_config::PluginAuthority,
     pub registration: crate::extension_host::skills::NativeSkillRef,
 }
 
-impl From<crate::plugins::types::PluginAuthority> for SkillProvenance {
-    fn from(authority: crate::plugins::types::PluginAuthority) -> Self {
+impl From<codewhale_config::PluginAuthority> for SkillProvenance {
+    fn from(authority: codewhale_config::PluginAuthority) -> Self {
         Self::Plugin(authority)
     }
 }
 
 impl SkillProvenance {
-    pub fn authority(&self) -> &crate::plugins::types::PluginAuthority {
+    pub fn authority(&self) -> &codewhale_config::PluginAuthority {
         match self {
             Self::Plugin(authority) => authority,
             Self::NativeRoot(source) => &source.authority,
@@ -1508,7 +1508,7 @@ fn merge_plugin_skills_from_plugins(
     plugins: impl IntoIterator<
         Item = (
             crate::plugins::types::LoadedPlugin,
-            crate::plugins::types::PluginAuthority,
+            codewhale_config::PluginAuthority,
         ),
     >,
 ) {
@@ -1539,7 +1539,7 @@ fn merge_plugin_skill_snapshots(
     registry: &mut SkillRegistry,
     plugin_id: &str,
     plugin_name: &str,
-    authority: &crate::plugins::types::PluginAuthority,
+    authority: &codewhale_config::PluginAuthority,
     snapshots: Vec<crate::plugins::types::PluginSkillSnapshot>,
     native_registration: Option<crate::extension_host::skills::NativeSkillRef>,
 ) {

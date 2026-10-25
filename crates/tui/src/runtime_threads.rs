@@ -7956,7 +7956,7 @@ impl RuntimeThreadManager {
     pub async fn reload_config(
         &self,
         mut new_config: Config,
-    ) -> Result<crate::tools::large_output_router::WorkshopConfig> {
+    ) -> Result<codewhale_config::WorkshopConfig> {
         new_config.runtime_thread_inference_unrelated = !new_config.runtime_chat_isolated;
         let _config_admission = self.config_admission.write().await;
         new_config.preserve_runtime_credentials(&self.read_config());
@@ -8023,7 +8023,7 @@ impl RuntimeThreadManager {
         // byte limits are active. Rejected reloads leave the prior limits in
         // place.
         new_config.retain_compatible_session_keys();
-        let workshop_activation = crate::tools::large_output_router::WorkshopConfig::install_active(
+        let workshop_activation = crate::tools::large_output_router::install_active_workshop(
             new_config.workshop.as_ref(),
         );
         crate::config::initialize_cloud_facts(&new_config);
@@ -16675,7 +16675,7 @@ impl RuntimeThreadManager {
                 } else {
                     cfg.tools_always_load()
                 },
-                user_input_limits: cfg.user_input_limits(),
+                user_input_limits: crate::tools::user_input::UserInputLimits::from_config(&cfg),
                 user_input_timeout: cfg.user_input_timeout(),
                 goal_max_steps: Some(cfg.goal_max_steps()),
                 tools: (!isolated_chat).then(|| cfg.tools.clone()).flatten(),

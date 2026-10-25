@@ -47,6 +47,12 @@ fn default_history_path() -> Option<PathBuf> {
     if let Some(home) = crate::test_support::unsealed_state_dir(".") {
         return history_path_with_home(Some(home));
     }
+    if codewhale_paths::codewhale_home_is_explicit() {
+        return codewhale_paths::codewhale_home()
+            .ok()
+            .flatten()
+            .map(|home| home.join(HISTORY_FILE_NAME));
+    }
     history_path_with_home(crate::config::effective_home_dir())
 }
 

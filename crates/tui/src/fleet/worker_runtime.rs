@@ -373,7 +373,7 @@ fn validate_fleet_reasoning_effort(
         return Ok(());
     };
     let provider = ProviderKind::parse(&route.provider_kind).unwrap_or(ProviderKind::Custom);
-    let capability = crate::config::provider_capability(provider, &route.wire_model_id);
+    let capability = crate::provider_lake::provider_capability(provider, &route.wire_model_id);
     if capability.thinking_supported {
         return Ok(());
     }

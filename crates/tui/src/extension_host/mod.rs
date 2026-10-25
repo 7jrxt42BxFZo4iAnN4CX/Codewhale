@@ -166,7 +166,7 @@ use self::supervisor::{HostEvents, HostProcess, HostRequestContext};
 use self::tier::{BuiltinModule, HostTier};
 use crate::plugins::PluginRegistry;
 use crate::plugins::activation::{self, PluginActivationCapability};
-use crate::plugins::types::PluginAuthority;
+use codewhale_config::PluginAuthority;
 
 /// The host bundle, embedded so every distribution channel carries it.
 const BUNDLE: &[u8] = include_bytes!("../../extension-host/dist/codewhale-extension-host.mjs");

@@ -1675,10 +1675,8 @@ fn replay_flag_is_absent(replayed: &bool) -> bool {
     !*replayed
 }
 
-fn install_runtime_server_workshop_budgets(
-    config: &Config,
-) -> crate::tools::large_output_router::WorkshopConfig {
-    crate::tools::large_output_router::WorkshopConfig::install_active(config.workshop.as_ref())
+fn install_runtime_server_workshop_budgets(config: &Config) -> codewhale_config::WorkshopConfig {
+    crate::tools::large_output_router::install_active_workshop(config.workshop.as_ref())
 }
 
 #[cfg(test)]
@@ -1687,10 +1685,7 @@ fn open_runtime_threads_for_server(
     workspace: PathBuf,
     manager_config: RuntimeThreadManagerConfig,
     plugin_registry: Arc<crate::plugins::PluginRegistry>,
-) -> Result<(
-    SharedRuntimeThreadManager,
-    crate::tools::large_output_router::WorkshopConfig,
-)> {
+) -> Result<(SharedRuntimeThreadManager, codewhale_config::WorkshopConfig)> {
     open_runtime_threads_for_host(
         config,
         workspace,
@@ -1710,10 +1705,7 @@ pub(crate) fn open_runtime_threads_for_host(
     acp: bool,
     preheld_lock: Option<crate::runtime_threads::RuntimeProcessOwnerLock>,
     binding: Option<&crate::runtime_threads::RuntimeStoreBinding>,
-) -> Result<(
-    SharedRuntimeThreadManager,
-    crate::tools::large_output_router::WorkshopConfig,
-)> {
+) -> Result<(SharedRuntimeThreadManager, codewhale_config::WorkshopConfig)> {
     // The Runtime API lazily creates engines after the HTTP/Web server starts.
     // Install the resolved process-wide read/tool byte limits before the
     // thread manager can spawn any of those engines, matching interactive and
@@ -10962,7 +10954,7 @@ fn provider_models_for_api(
         }
     }
     for model in config.custom_models.as_deref().unwrap_or_default() {
-        if crate::provider_lake::configured_model_for_route(
+        if crate::config::configured_model_for_route(
             config,
             provider,
             identity.key.as_str(),
@@ -12724,7 +12716,7 @@ fn normalize_runtime_config_model(
         .map_err(ApiError::bad_request)?;
     let provider = identity.provider;
     let value = value.trim();
-    if crate::provider_lake::configured_model_for_route(
+    if crate::config::configured_model_for_route(
         config,
         provider,
         identity.key.as_str(),

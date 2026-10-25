@@ -19006,7 +19006,7 @@ fn annotate_child_model_error_with_origin(
 const SUBAGENT_SUMMARY_CHAR_BUDGET: usize = 12_000;
 
 fn subagent_summary_char_budget() -> usize {
-    crate::tools::large_output_router::WorkshopConfig::active_tool_result_max_bytes()
+    crate::tools::large_output_router::active_tool_result_max_bytes()
         .map(|bytes| bytes.clamp(SUBAGENT_SUMMARY_CHAR_BUDGET, 2 * 1024 * 1024))
         .unwrap_or(SUBAGENT_SUMMARY_CHAR_BUDGET)
 }

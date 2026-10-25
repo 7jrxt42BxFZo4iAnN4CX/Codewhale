@@ -733,7 +733,7 @@ fn context_budget_scenario() {
             .expect("OpenAI Codex should use a conservative fallback without route metadata");
         let expected = usize::try_from(crate::config::OPENAI_CODEX_EFFECTIVE_CONTEXT_WINDOW_TOKENS)
             .expect("context window fits usize")
-            - crate::config::provider_capability(ProviderKind::OpenaiCodex, "gpt-5.5")
+            - crate::provider_lake::provider_capability(ProviderKind::OpenaiCodex, "gpt-5.5")
                 .max_output
                 .expect("Codex route publishes a deliberate conservative output cap")
                 as usize
@@ -759,7 +759,7 @@ fn route_context_scenario() {
         assert_eq!(
             budget.output_cap_tokens,
             u64::from(
-                crate::config::provider_capability(ProviderKind::OpenaiCodex, "gpt-5.5")
+                crate::provider_lake::provider_capability(ProviderKind::OpenaiCodex, "gpt-5.5")
                     .max_output
                     .expect("Codex route publishes a deliberate conservative output cap")
             )

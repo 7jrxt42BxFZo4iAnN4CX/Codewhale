@@ -10,7 +10,8 @@ use super::protocol::{OwnerRef, RegisterParams, RegisterResult};
 use super::supervisor::HostRequestContext;
 use super::tier::HostTier;
 use crate::plugins::activation::PluginActivationCapability;
-use crate::plugins::types::{PluginAuthority, PluginSkillSnapshot};
+use crate::plugins::types::PluginSkillSnapshot;
+use codewhale_config::PluginAuthority;
 
 pub const MAX_ROOTS_PER_OWNER: usize = 8;
 pub const MAX_ROOTS_PER_HOST: usize = 64;

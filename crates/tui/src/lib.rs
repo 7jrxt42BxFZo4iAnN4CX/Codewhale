@@ -4746,7 +4746,7 @@ fn run_setup_status(
     );
     println!(
         "  · base_url: {}",
-        crate::doctor::structural_url_authority(&config.active_route_base_url())
+        codewhale_config::structural_url_authority(&config.active_route_base_url())
     );
     let model = config
         .default_text_model
@@ -5306,7 +5306,7 @@ async fn run_doctor(
     println!("  · provider: {}", api_target.provider);
     println!(
         "  · base_url: {}",
-        crate::doctor::structural_url_authority(&api_target.base_url)
+        codewhale_config::structural_url_authority(&api_target.base_url)
     );
     match api_target.resolution {
         DoctorModelResolution::Resolved => {
@@ -5337,12 +5337,12 @@ async fn run_doctor(
     if let Some(recommended) = strict_tool_mode.recommended_base_url.as_deref() {
         println!(
             "    Use the {} endpoint for DeepSeek strict schemas.",
-            crate::doctor::structural_url_authority(recommended)
+            codewhale_config::structural_url_authority(recommended)
         );
     }
-    let capability = identity
-        .as_ref()
-        .map(|identity| crate::config::provider_capability(identity.provider, &api_target.model));
+    let capability = identity.as_ref().map(|identity| {
+        crate::provider_lake::provider_capability(identity.provider, &api_target.model)
+    });
     if let Some(alias) = capability
         .as_ref()
         .and_then(|capability| capability.alias_deprecation.as_ref())
@@ -7678,10 +7678,10 @@ fn doctor_provider_model_report_json(config: &Config) -> serde_json::Value {
     let credential_help = provider.provider().credential_help();
     let credential_url = credential_help
         .credential_url
-        .map(crate::doctor::structural_url_authority);
+        .map(codewhale_config::structural_url_authority);
     let credential_docs_url = credential_help
         .docs_url
-        .map(crate::doctor::structural_url_authority);
+        .map(codewhale_config::structural_url_authority);
 
     json!({
         "provider": {
@@ -8245,7 +8245,7 @@ fn run_doctor_json(
         },
         "external_credentials": doctor_external_credential_consent_json(config),
         "dsh_integration": doctor_dsh_integration_json(config, workspace),
-        "base_url": crate::doctor::structural_url_authority(&api_target.base_url),
+        "base_url": codewhale_config::structural_url_authority(&api_target.base_url),
         "default_text_model": api_target.model,
         // DGF-01: this report describes the route a session launched now
         // would resolve; a running session keeps its launch-time route.
@@ -8387,7 +8387,7 @@ fn provider_capability_report(config: &Config) -> serde_json::Value {
     // Wire-aware so a custom provider's `wire = "responses" | "anthropic"`
     // reports the payload mode the client will actually speak instead of the
     // static Chat default.
-    let cap = crate::config::provider_capability_with_wire(
+    let cap = crate::provider_lake::provider_capability_with_wire(
         provider,
         resolved_model,
         config.provider_wire_dialect(&identity),
@@ -8463,7 +8463,7 @@ fn doctor_route_report(config: &Config) -> serde_json::Value {
         }
     };
     let provider = identity.provider;
-    let redacted_base_url = crate::doctor::structural_url_authority(&target.base_url);
+    let redacted_base_url = codewhale_config::structural_url_authority(&target.base_url);
     let route_result = crate::route_runtime::resolve_runtime_route_for_identity(
         config,
         &identity,
@@ -8482,7 +8482,7 @@ fn doctor_route_report(config: &Config) -> serde_json::Value {
     })
     .unwrap_or_else(|| {
         json!({
-            "tokens": crate::config::provider_capability(provider, &target.model).context_window,
+            "tokens": crate::provider_lake::provider_capability(provider, &target.model).context_window,
             "source": crate::route_runtime::ContextWindowSource::Fallback.label(),
         })
     });
@@ -8822,7 +8822,7 @@ fn doctor_strict_tool_mode_report_json(status: &DoctorStrictToolModeStatus) -> s
         "recommended_base_url": status
             .recommended_base_url
             .as_deref()
-            .map(crate::doctor::structural_url_authority),
+            .map(codewhale_config::structural_url_authority),
     })
 }
 
@@ -8892,7 +8892,7 @@ fn doctor_timeout_recovery_lines(config: &Config) -> Vec<String> {
     let mut lines = vec![
         format!(
             "Connection timed out while reaching {}.",
-            crate::doctor::structural_url_authority(&target.base_url)
+            codewhale_config::structural_url_authority(&target.base_url)
         ),
         // #6889: some providers load a model on its first call, which can
         // take longer than this check waits.
@@ -12427,7 +12427,7 @@ fn doctor_mcp_server_json(name: &str, server: &McpServerConfig) -> serde_json::V
         "status": status.legacy_status(),
         "detail": status.detail(),
         "transport": if server.url.is_some() { "http" } else { "stdio" },
-        "endpoint": server.url.as_deref().map(crate::doctor::structural_url_authority),
+        "endpoint": server.url.as_deref().map(codewhale_config::structural_url_authority),
         "command_configured": server.command.is_some(),
         "args_count": server.args.len(),
         "env_count": server.env.len(),
@@ -12464,7 +12464,7 @@ fn doctor_check_mcp_server(server: &McpServerConfig) -> McpServerDoctorStatus {
 
     // URL-based server: omit userinfo, query, and fragment entirely.
     if let Some(ref url) = server.url {
-        let authority = crate::doctor::structural_url_authority(url);
+        let authority = codewhale_config::structural_url_authority(url);
         return if authority.starts_with("unparseable") {
             McpServerDoctorStatus::Warning(
                 "HTTP/SSE server URL is invalid; configured value omitted".to_string(),
@@ -16734,7 +16734,7 @@ mod doctor_endpoint_tests {
         assert_eq!(report["resolved_model"], "deepseek-v4-pro");
         assert!(report["alias_deprecation"].is_null());
         assert!(
-            crate::config::provider_capability(
+            crate::provider_lake::provider_capability(
                 crate::config::ProviderKind::Deepseek,
                 "deepseek-v4-pro"
             )
@@ -16816,7 +16816,9 @@ mod doctor_endpoint_tests {
         assert_eq!(report["model"], crate::config::DEFAULT_SILICONFLOW_MODEL);
         assert_eq!(
             report["base_url"]["redacted"],
-            crate::doctor::structural_url_authority(crate::config::DEFAULT_SILICONFLOW_CN_BASE_URL)
+            codewhale_config::structural_url_authority(
+                crate::config::DEFAULT_SILICONFLOW_CN_BASE_URL
+            )
         );
         assert_eq!(report["base_url"]["class"], "default");
         assert_eq!(report["auth"]["scheme"], "bearer");

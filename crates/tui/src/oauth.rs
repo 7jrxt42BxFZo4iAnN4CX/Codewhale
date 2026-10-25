@@ -4754,7 +4754,7 @@ pub async fn plugin_oauth_login(
     provider: String,
     base_url: String,
     descriptor: PluginOAuthConfig,
-    authority: crate::plugins::types::PluginAuthority,
+    authority: codewhale_config::PluginAuthority,
 ) -> Result<()> {
     let policy = crate::plugins::activation::extension_host_policy_enabled();
     tokio::task::spawn_blocking(move || {

@@ -1796,7 +1796,7 @@ pub fn set_config_value(app: &mut App, key: &str, value: &str, persist: bool) ->
                 // endpoint owns its model namespace, so an id declared for the
                 // saved DeepSeek route validates verbatim before the catalog
                 // normalization runs.
-                if crate::provider_lake::configured_model_for_route(
+                if crate::config::configured_model_for_route(
                     &saved,
                     ProviderKind::Deepseek,
                     identity.key.as_str(),

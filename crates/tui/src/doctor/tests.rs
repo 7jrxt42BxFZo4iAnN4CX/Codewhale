@@ -432,14 +432,14 @@ fn structural_url_authority_omits_every_secret_capable_component() {
         sentinels[0], sentinels[1], sentinels[2], sentinels[3], sentinels[4], sentinels[5]
     );
 
-    let authority = structural_url_authority(&raw);
+    let authority = codewhale_config::structural_url_authority(&raw);
 
     assert_eq!(authority, "https://example.invalid:8443");
     for sentinel in sentinels {
         assert!(!authority.contains(sentinel));
     }
     assert_eq!(
-        structural_url_authority("http://[::1]:9000/private?token=review-secret"),
+        codewhale_config::structural_url_authority("http://[::1]:9000/private?token=review-secret"),
         "http://[::1]:9000"
     );
 }

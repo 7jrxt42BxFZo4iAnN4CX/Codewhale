@@ -202,7 +202,7 @@ pub(crate) fn plugin_auth_entry(config: &Config, provider: &str) -> anyhow::Resu
 /// `None` skips public-header comparison for login/logout; inference must pass
 /// `Some` with its effective configured headers, including an empty map.
 pub(crate) fn verify_provider_binding(
-    authority: &super::types::PluginAuthority,
+    authority: &codewhale_config::PluginAuthority,
     name: &str,
     base_url: &str,
     oauth: &crate::oauth::PluginOAuthConfig,

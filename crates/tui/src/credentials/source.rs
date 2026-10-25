@@ -103,7 +103,7 @@ impl CredentialSource {
             Self::AuthModeNone => Cow::Borrowed("auth_mode = \"none\""),
             Self::KeylessRoute { base_url } => Cow::Owned(format!(
                 "keyless route {}",
-                crate::doctor::structural_url_authority(base_url)
+                codewhale_config::structural_url_authority(base_url)
             )),
             Self::CliOverride => Cow::Borrowed("--api-key"),
             Self::ProviderConfigApiKey { table } => Cow::Owned(format!("[{table}] api_key")),

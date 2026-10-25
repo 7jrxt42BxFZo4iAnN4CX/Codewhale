@@ -1,4 +1,5 @@
 use super::*;
+use crate::provider_lake::{ProviderCapability, RequestPayloadMode, provider_capability};
 use crate::test_support::{EnvVarGuard, env_scope_ticket, join_env_scope, lock_test_env};
 use std::collections::HashMap;
 use std::env;
@@ -2082,7 +2083,7 @@ fn tools_always_load_parses_and_trims_names() {
 #[test]
 fn user_input_limits_default_when_tools_table_is_absent() {
     let parsed: ConfigFile = toml::from_str("").expect("empty config");
-    let limits = parsed.base.user_input_limits();
+    let limits = crate::tools::user_input::UserInputLimits::from_config(&parsed.base);
     assert_eq!(limits.max_questions, 6);
     assert_eq!(limits.max_options, 4);
 }
@@ -2097,7 +2098,7 @@ fn user_input_limits_read_from_tools_table_and_clamp() {
         "#,
     )
     .expect("tools config");
-    let limits = parsed.base.user_input_limits();
+    let limits = crate::tools::user_input::UserInputLimits::from_config(&parsed.base);
     assert_eq!(limits.max_questions, 9);
     assert_eq!(limits.max_options, 6);
 
@@ -2109,7 +2110,7 @@ fn user_input_limits_read_from_tools_table_and_clamp() {
         "#,
     )
     .expect("tools config");
-    let clamped = clamped.base.user_input_limits();
+    let clamped = crate::tools::user_input::UserInputLimits::from_config(&clamped.base);
     assert_eq!(clamped.max_questions, 10);
     assert_eq!(clamped.max_options, 2);
 }

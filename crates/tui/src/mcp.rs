@@ -684,7 +684,7 @@ pub struct McpServerConfig {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ReviewedPluginMcpSource {
-    authority: crate::plugins::types::PluginAuthority,
+    authority: codewhale_config::PluginAuthority,
     approved_remote_endpoint: Option<String>,
     approved_remote_origin: Option<String>,
     host_environment: Arc<crate::plugins::HostEnvironment>,
@@ -700,7 +700,7 @@ impl ReviewedPluginMcpSource {
     }
 
     fn from_authority(
-        authority: crate::plugins::types::PluginAuthority,
+        authority: codewhale_config::PluginAuthority,
         remote_endpoint: Option<&str>,
         host_environment: Arc<crate::plugins::HostEnvironment>,
     ) -> Result<Self> {
@@ -3080,7 +3080,7 @@ struct McpToolRoute {
     server_name: String,
     tool_name: String,
     catalog_generation: u64,
-    plugin_authority: Option<crate::plugins::types::PluginAuthority>,
+    plugin_authority: Option<codewhale_config::PluginAuthority>,
 }
 
 /// Model-facing name suffix of the synthetic self-serve OAuth login tool
@@ -3219,7 +3219,7 @@ pub(crate) struct McpHandoff {
     connections: Vec<(String, McpServerIdentity, McpConnection)>,
 }
 
-type McpServerIdentity = (u64, Option<crate::plugins::types::PluginAuthority>);
+type McpServerIdentity = (u64, Option<codewhale_config::PluginAuthority>);
 
 fn mcp_server_identity(config: &McpConfig, name: &str) -> Option<McpServerIdentity> {
     config.servers.get(name).map(|server| {
@@ -6931,7 +6931,7 @@ fn merge_plugin_mcp_servers_from_plugins_with_environment(
         Item = (
             String,
             crate::plugins::types::LoadedPlugin,
-            crate::plugins::types::PluginAuthority,
+            codewhale_config::PluginAuthority,
         ),
     >,
     host_environment: Arc<crate::plugins::HostEnvironment>,
@@ -7023,7 +7023,7 @@ fn merge_plugin_mcp_servers_from_plugins(
         Item = (
             String,
             crate::plugins::types::LoadedPlugin,
-            crate::plugins::types::PluginAuthority,
+            codewhale_config::PluginAuthority,
         ),
     >,
 ) -> Result<McpConfig> {
