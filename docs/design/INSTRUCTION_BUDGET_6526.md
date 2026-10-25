@@ -514,10 +514,12 @@ mechanism did not exist; none of them changes the behaviour contract in §3.
   bounded-fragment cap and are not charged to the project scope; they are
   reported in `/context` and named as a known limitation in `budget.rs`.
 - **Window used by the startup line.** The TUI/exec startup notice resolves
-  budgets for an unknown window (the 128k default), because the route window is
-  not known before the engine exists. The model-facing notice and `/context`
-  use the route's real window, so the numbers can differ between the two lines
-  by percentage-driven differences only.
+  budgets for the route window they are about to launch with
+  (`route_context_window_tokens` from the app's effective model, or from the
+  validated CLI route in `exec`); the 128k default is only a fallback for a
+  caller that has no route. A first pass used that default unconditionally,
+  which could report a trim that would not happen and, under
+  `policy = "refuse"`, stop a session that would have fitted.
 - **The user/model channels** are: a `HistoryCell::System` cell at TUI start,
   `eprintln!` for `exec` text output, one runtime-provenance transcript
   message for the model, and per-source rows in `/context report`. The notice
