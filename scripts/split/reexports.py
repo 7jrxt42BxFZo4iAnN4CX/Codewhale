@@ -153,8 +153,6 @@ def run(args, sl, mg) -> int:
             child_names = {k.split("::")[-1] for k in files if k.startswith(modpath + "::") and k.count("::") == modpath.count("::") + 1}
             local_children[modpath] = child_names
             for m in re.finditer(r"(?m)^(?P<attrs>(?:[ \t]*#\[[^\n]*\]\s*\n)*)pub(?:\([^)]*\))?[ \t]+use[ \t]+", masked):
-                if "cfg(test)" in m.group("attrs"):
-                    continue
                 end = masked.find(";", m.end())
                 for bound, path in mg.use_leaves(masked[m.end() : end]):
                     head = path[0]
@@ -268,7 +266,7 @@ def run(args, sl, mg) -> int:
             direct_lines += len(lines)
             direct_files_set.add(rel)
         for facade in facades:
-            if re.search(rf"\buse\s+crate::{re.escape(facade)}\s*(;|as\b)|crate::\{{[^}}]*\b{re.escape(facade)}\b[^:]", masked):
+            if rel in (f"{src_dir}/lib.rs", f"{src_dir}/main.rs") or re.search(rf"\buse\s+crate::{re.escape(facade)}\s*(;|as\b)|crate::\{{[^}}]*\b{re.escape(facade)}\b[^:]", masked):
                 ex = exports.get(facade, {})
                 for mo in re.finditer(rf"(?<![\w:$]){re.escape(facade)}::(\w+)", masked):
                     if mo.group(1) in ex:
