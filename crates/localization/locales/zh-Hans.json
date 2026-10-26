@@ -185,6 +185,7 @@
   "ComposerHintOfflineConnect": "↵ 先保存 · /provider 连接",
   "ComposerHintSendNow": "↵ 立即发送",
   "ComposerHintSendIntoTurn": "↵ 发进本回合",
+  "ComposerHintLongDraft": "{shortcut}：外部编辑器",
   "PendingSendingIntoTurnPrefix": "  ↳ 正在发进本回合： ",
   "PendingCouldNotSendIntoTurnPrefix": "  ↳ 留待下一回合： ",
   "PendingEditingFollowUpPrefix": "  ↳ 正在编辑后续消息： ",

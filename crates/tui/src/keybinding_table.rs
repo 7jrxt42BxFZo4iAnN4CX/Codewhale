@@ -89,6 +89,8 @@ pub struct KeybindingEntry {
     pub section: KeybindingSection,
 }
 
+pub const EXTERNAL_EDITOR_CHORD: &str = "Ctrl+Shift+O / F4";
+
 /// Canonical list of keybindings shown in the help overlay.
 ///
 /// Strings are written in the same notation the existing help screen uses so
@@ -292,7 +294,7 @@ pub const KEYBINDINGS: &[KeybindingEntry] = &[
         section: KeybindingSection::Submission,
     },
     KeybindingEntry {
-        chord: "Ctrl+Shift+O / F4",
+        chord: EXTERNAL_EDITOR_CHORD,
         description_id: codewhale_localization::MessageId::KbExternalEditor,
         section: KeybindingSection::Editing,
     },

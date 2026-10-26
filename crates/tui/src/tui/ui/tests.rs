@@ -924,6 +924,7 @@ fn shell_binding_probe(id: ShellBindingId) -> KeyEvent {
         ShellBindingId::ContextInspector => KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT),
         ShellBindingId::ProviderRoute => KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE),
         ShellBindingId::Help => KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE),
+        ShellBindingId::ExternalEditor => KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE),
         ShellBindingId::Settings => KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE),
         ShellBindingId::ModeCycle => KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
         ShellBindingId::PermissionCycle => KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE),

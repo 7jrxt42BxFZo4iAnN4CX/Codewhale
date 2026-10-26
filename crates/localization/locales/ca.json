@@ -185,6 +185,7 @@
   "ComposerHintOfflineConnect": "↵ desar per més tard · /provider connecta",
   "ComposerHintSendNow": "↵ enviar ara",
   "ComposerHintSendIntoTurn": "↵ enviar a aquest torn",
+  "ComposerHintLongDraft": "{shortcut}: editor extern",
   "PendingSendingIntoTurnPrefix": "  ↳ S'està enviant a aquest torn: ",
   "PendingCouldNotSendIntoTurnPrefix": "  ↳ No s'ha pogut enviar a aquest torn: ",
   "PendingEditingFollowUpPrefix": "  ↳ S'està editant el seguiment: ",

@@ -185,6 +185,7 @@
   "ComposerHintOfflineConnect": "↵ बाद के लिए सहेजें · /provider जोड़ता है",
   "ComposerHintSendNow": "↵ अभी भेजें",
   "ComposerHintSendIntoTurn": "↵ इस टर्न में भेजें",
+  "ComposerHintLongDraft": "{shortcut}: बाहरी संपादक",
   "PendingSendingIntoTurnPrefix": "  ↳ इस टर्न में भेजा जा रहा है: ",
   "PendingCouldNotSendIntoTurnPrefix": "  ↳ इस टर्न में नहीं भेजा जा सका: ",
   "PendingEditingFollowUpPrefix": "  ↳ फॉलो-अप संपादित हो रहा है: ",

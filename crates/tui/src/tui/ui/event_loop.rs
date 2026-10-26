@@ -7208,7 +7208,11 @@ pub(crate) async fn run_event_loop(
                     app.move_cursor_end();
                 }
                 _ if handle_composer_alt_word_motion_key(app, key) => {}
-                _ if key_shortcuts::is_external_editor_shortcut(&key) => {
+                _ if crate::tui::shell_key_routing::binding(
+                    crate::tui::shell_key_routing::ShellBindingId::ExternalEditor,
+                )
+                .matches(&key) =>
+                {
                     // Ctrl+Shift+O (or F4 on terminals that cannot report the
                     // shifted chord): spawn $EDITOR on the composer contents
                     // (#91). Plain Ctrl+O belongs exclusively to the Turn

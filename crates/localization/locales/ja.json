@@ -185,6 +185,7 @@
   "ComposerHintOfflineConnect": "↵ あとで送るために保存 · /provider で接続",
   "ComposerHintSendNow": "↵ すぐ送信",
   "ComposerHintSendIntoTurn": "↵ このターンに送る",
+  "ComposerHintLongDraft": "{shortcut}: 外部エディター",
   "PendingSendingIntoTurnPrefix": "  ↳ このターンに送信中: ",
   "PendingCouldNotSendIntoTurnPrefix": "  ↳ このターンに送れませんでした: ",
   "PendingEditingFollowUpPrefix": "  ↳ フォローアップを編集中: ",

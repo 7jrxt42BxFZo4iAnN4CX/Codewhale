@@ -185,6 +185,7 @@
   "ComposerHintOfflineConnect": "↵ guardar para después · /provider conecta",
   "ComposerHintSendNow": "↵ enviar ahora",
   "ComposerHintSendIntoTurn": "↵ enviar a este turno",
+  "ComposerHintLongDraft": "{shortcut}: editor externo",
   "PendingSendingIntoTurnPrefix": "  ↳ Enviando a este turno: ",
   "PendingCouldNotSendIntoTurnPrefix": "  ↳ No se pudo enviar a este turno: ",
   "PendingEditingFollowUpPrefix": "  ↳ Editando el seguimiento: ",

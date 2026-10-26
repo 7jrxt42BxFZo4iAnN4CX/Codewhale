@@ -185,6 +185,7 @@
   "ComposerHintOfflineConnect": "↵ 나중에 보내도록 저장 · /provider로 연결",
   "ComposerHintSendNow": "↵ 지금 보내기",
   "ComposerHintSendIntoTurn": "↵ 이 턴으로 보내기",
+  "ComposerHintLongDraft": "{shortcut}: 외부 편집기",
   "PendingSendingIntoTurnPrefix": "  ↳ 이 턴으로 보내는 중: ",
   "PendingCouldNotSendIntoTurnPrefix": "  ↳ 이 턴으로 보내지 못함: ",
   "PendingEditingFollowUpPrefix": "  ↳ 후속 메시지 편집 중: ",

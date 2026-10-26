@@ -135,6 +135,7 @@ pub enum ShellBindingId {
     ContextInspector,
     ProviderRoute,
     Help,
+    ExternalEditor,
     Settings,
     /// Tab: cycle the session mode.
     ModeCycle,
@@ -217,6 +218,7 @@ impl ShellBinding {
             ShellBindingId::ContextInspector => is_context_inspector_shortcut(key),
             ShellBindingId::ProviderRoute => is_provider_route_shortcut(key),
             ShellBindingId::Help => is_help_shortcut(key),
+            ShellBindingId::ExternalEditor => key_shortcuts::is_external_editor_shortcut(key),
             ShellBindingId::Settings => is_settings_shortcut(key),
             ShellBindingId::ModeCycle => is_mode_cycle_shortcut(key),
             ShellBindingId::PermissionCycle => is_permission_cycle_shortcut(key),
@@ -428,6 +430,12 @@ pub const SHELL_BINDINGS: &[ShellBinding] = &[
         catalog_chord: "F3 / /provider",
         footer_chord: "F3",
         // The route is also pickable before a session exists.
+        focus: FocusScope::AnyShell,
+    },
+    ShellBinding {
+        id: ShellBindingId::ExternalEditor,
+        catalog_chord: crate::keybinding_table::EXTERNAL_EDITOR_CHORD,
+        footer_chord: "F4",
         focus: FocusScope::AnyShell,
     },
     ShellBinding {

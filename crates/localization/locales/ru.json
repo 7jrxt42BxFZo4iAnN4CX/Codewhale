@@ -185,6 +185,7 @@
   "ComposerHintOfflineConnect": "↵ сохранить на потом · /provider подключает",
   "ComposerHintSendNow": "↵ отправить сейчас",
   "ComposerHintSendIntoTurn": "↵ отправить в этот ход",
+  "ComposerHintLongDraft": "{shortcut}: внешний редактор",
   "PendingSendingIntoTurnPrefix": "  ↳ Отправка в этот ход: ",
   "PendingCouldNotSendIntoTurnPrefix": "  ↳ Не удалось отправить в этот ход: ",
   "PendingEditingFollowUpPrefix": "  ↳ Редактируется следующее сообщение: ",

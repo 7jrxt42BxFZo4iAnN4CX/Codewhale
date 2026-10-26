@@ -185,6 +185,7 @@
   "ComposerHintOfflineConnect": "↵ зберегти на потім · /provider підключає",
   "ComposerHintSendNow": "↵ надіслати зараз",
   "ComposerHintSendIntoTurn": "↵ надіслати в цей хід",
+  "ComposerHintLongDraft": "{shortcut}: зовнішній редактор",
   "PendingSendingIntoTurnPrefix": "  ↳ Надсилання в цей хід: ",
   "PendingCouldNotSendIntoTurnPrefix": "  ↳ Не вдалося надіслати в цей хід: ",
   "PendingEditingFollowUpPrefix": "  ↳ Редагується наступне повідомлення: ",

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Long drafts now show a localized external-editor hint when the actual composer
+  viewport clips their text. The hint uses the shared F4 binding and preserves
+  queue, running-turn, history, and menu hints (#7049). Thanks @Lstarsky0.
 - Archived context markdown now uses the active theme's palette when rendered
   in the transcript, preventing unreadable dark text on dark backgrounds (#7043).
   Thanks @Statter.

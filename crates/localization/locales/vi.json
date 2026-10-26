@@ -185,6 +185,7 @@
   "ComposerHintOfflineConnect": "↵ lưu để gửi sau · /provider kết nối",
   "ComposerHintSendNow": "↵ gửi ngay",
   "ComposerHintSendIntoTurn": "↵ gửi vào lượt này",
+  "ComposerHintLongDraft": "{shortcut}: trình sửa ngoài",
   "PendingSendingIntoTurnPrefix": "  ↳ Đang gửi vào lượt này: ",
   "PendingCouldNotSendIntoTurnPrefix": "  ↳ Không gửi được vào lượt này: ",
   "PendingEditingFollowUpPrefix": "  ↳ Đang sửa tin theo sau: ",
