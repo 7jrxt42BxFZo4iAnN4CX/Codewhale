@@ -1247,7 +1247,7 @@ mod tests {
         let _guard = setup();
         let home = tempdir().unwrap();
         with_test_home(home.path(), || {
-            let provider = crate::config::ProviderKind::Deepseek;
+            let provider = codewhale_config::ProviderKind::Deepseek;
             let model = "deepseek-v3.2-128k";
             let budget =
                 crate::route_budget::route_inline_char_budget_for_route(provider, model, None);

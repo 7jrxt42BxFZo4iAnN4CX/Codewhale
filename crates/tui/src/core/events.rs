@@ -8,12 +8,12 @@ use std::{path::PathBuf, sync::Arc};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
-use crate::config::ProviderKind;
 use crate::error_taxonomy::ErrorEnvelope;
 use crate::tools::goal::GoalSnapshot;
 use crate::tools::spec::{ToolError, ToolResult};
 use crate::tools::subagent::{AgentWorkerStatus, CoordinationDetailProjection, SubAgentResult};
 use crate::tools::user_input::UserInputRequest;
+use codewhale_config::ProviderKind;
 use codewhale_models::{Message, SystemPrompt, Tool, Usage};
 
 /// Provider correlation retained only for model-history reconstruction.

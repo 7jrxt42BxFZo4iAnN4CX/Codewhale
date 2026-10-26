@@ -20,8 +20,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
+use crate::config::{Config, MemoryBackend, MemoryConfig, SkillsConfig};
 use crate::{
-    config::{Config, MemoryBackend, MemoryConfig, SkillsConfig},
     core::engine::ISOLATED_CHAT_SYSTEM_PROMPT,
     plugins::PluginRegistry,
     runtime_threads::{
@@ -2117,7 +2117,9 @@ mod tests {
     fn catalog_is_challenge_bound_active_ready_and_secret_free() {
         let mut config = Config {
             provider: Some("ollama".to_string()),
-            default_text_model: Some(crate::config::DEFAULT_OLLAMA_MODEL.to_string()),
+            default_text_model: Some(
+                codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_MODEL.to_string(),
+            ),
             ..Config::default()
         };
         config.set_legacy_root(Some("must-not-cross".to_string()), None);

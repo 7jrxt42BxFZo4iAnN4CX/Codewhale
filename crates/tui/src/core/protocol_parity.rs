@@ -29,7 +29,6 @@ use serde_json::Value;
 
 use crate::agent_roster::{AgentRosterRow, RosterState};
 use crate::compaction::CompactionConfig;
-use crate::config::ProviderKind;
 use crate::core::engine::preview::PreviewUnresolved;
 use crate::core::events::{
     Event, RouteBillingEnvelope, ToolGate, ToolGateVerdict, TurnOutcomeStatus, TurnRoute,
@@ -43,6 +42,7 @@ use crate::tools::spec::ToolError;
 use crate::tools::subagent::AgentWorkerStatus;
 use crate::tools::user_input::UserInputRequest;
 use codewhale_config::AppMode;
+use codewhale_config::ProviderKind;
 use codewhale_execpolicy::ApprovalMode;
 use codewhale_models::Usage;
 use codewhale_protocol::ResponseChannel;

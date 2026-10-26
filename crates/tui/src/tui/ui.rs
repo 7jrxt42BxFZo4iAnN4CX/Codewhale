@@ -57,7 +57,7 @@ use crate::compaction::{estimate_input_tokens_conservative, estimate_tokens};
 #[cfg(test)]
 use crate::config::ProviderConfig;
 use crate::config::{
-    Config, ProviderIdentity, ProviderKind, ProvidersConfig, StatusItem, UpdateConfig,
+    Config, ProviderIdentity, ProvidersConfig, StatusItem, UpdateConfig,
     persist_external_credential_consent_for_at, revoke_external_credential_consent_for_at,
 };
 use crate::core::engine::{EngineConfig, EngineHandle, spawn_engine};
@@ -106,6 +106,7 @@ use crate::tui::persistence_actor::{self, PersistRequest};
 use crate::tui::scrolling::TranscriptScroll;
 use crate::turn_route_plan::{PlannedTurnRoute, TurnRoutePlanRequest, plan_turn_route};
 use crate::work_graph::task_owner_snapshot;
+use codewhale_config::ProviderKind;
 use codewhale_localization::{MessageId, tr};
 use codewhale_models::{ContentBlock, Message, MessageRequest, SystemPrompt, Usage};
 use codewhale_palette as palette;
@@ -1349,7 +1350,7 @@ pub(crate) fn flush_background_finished(app: &mut App, config: &Config, parent_i
         return;
     }
     let batch = std::mem::take(&mut app.background_finished);
-    if mode == crate::config::SubagentCompletionNotification::Off {
+    if mode == codewhale_config::notifications::SubagentCompletionNotification::Off {
         return;
     }
     let Some((method, threshold, include_summary)) = notifications::settings(config) else {
@@ -1357,7 +1358,7 @@ pub(crate) fn flush_background_finished(app: &mut App, config: &Config, parent_i
     };
     let in_tmux = std::env::var("TMUX").is_ok_and(|v| !v.is_empty());
     let notices: Vec<&[crate::tui::background_finished::FinishedWork]> =
-        if mode == crate::config::SubagentCompletionNotification::Always {
+        if mode == codewhale_config::notifications::SubagentCompletionNotification::Always {
             batch.chunks(1).collect()
         } else {
             vec![batch.as_slice()]
@@ -1830,7 +1831,7 @@ mod provider_key_validation_tests {
         let verified_route = crate::provider_readiness::route_identity_for_model(
             &probed_config,
             &probed_identity,
-            crate::config::DEFAULT_OPENROUTER_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_MODEL,
         );
         assert_eq!(
             crate::provider_readiness::resolve_with_identity(
@@ -1907,7 +1908,7 @@ mod provider_key_validation_tests {
         let verified_route = crate::provider_readiness::route_identity_for_model(
             &config,
             &(config).test_identity_for_kind(ProviderKind::Openrouter),
-            crate::config::DEFAULT_OPENROUTER_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_MODEL,
         );
         assert_eq!(
             crate::provider_readiness::resolve_with_identity(
@@ -1962,7 +1963,7 @@ mod provider_key_validation_tests {
         let verified_route = crate::provider_readiness::route_identity_for_model(
             &config,
             &(config).test_identity_for_kind(ProviderKind::Openrouter),
-            crate::config::DEFAULT_OPENROUTER_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_MODEL,
         );
         assert_eq!(
             crate::provider_readiness::resolve_with_identity(
@@ -2023,7 +2024,7 @@ mod provider_key_validation_tests {
         let verified_route = crate::provider_readiness::route_identity_for_model(
             &config,
             &(config).test_identity_for_kind(ProviderKind::Openrouter),
-            crate::config::DEFAULT_OPENROUTER_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_MODEL,
         );
         assert!(matches!(
             crate::provider_readiness::resolve_with_identity(
@@ -2055,7 +2056,9 @@ mod provider_key_validation_tests {
             &mut config,
             identity,
             "step-plan-key".to_string(),
-            Some(crate::config::DEFAULT_STEPFUN_PLAN_BASE_URL.to_string()),
+            Some(
+                codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_PLAN_BASE_URL.to_string(),
+            ),
             &verifier,
         )
         .await;
@@ -2065,7 +2068,7 @@ mod provider_key_validation_tests {
             vec![(
                 ProviderKind::Stepfun,
                 "step-plan-key".to_string(),
-                crate::config::DEFAULT_STEPFUN_PLAN_BASE_URL.to_string()
+                codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_PLAN_BASE_URL.to_string()
             )],
             "the chosen Step Plan endpoint must be the one live-validated"
         );
@@ -2102,9 +2105,11 @@ mod provider_key_validation_tests {
             &mut config,
             identity,
             "step-plan-key".to_string(),
-            crate::config::DEFAULT_STEPFUN_MODEL.to_string(),
+            codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_MODEL.to_string(),
             None,
-            Some(crate::config::DEFAULT_STEPFUN_PLAN_BASE_URL.to_string()),
+            Some(
+                codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_PLAN_BASE_URL.to_string(),
+            ),
         )
         .await;
 
@@ -2119,7 +2124,7 @@ mod provider_key_validation_tests {
                 .get("stepfun")
                 .and_then(|entry| entry.get("base_url"))
                 .and_then(toml::Value::as_str),
-            Some(crate::config::DEFAULT_STEPFUN_PLAN_BASE_URL)
+            Some(codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_PLAN_BASE_URL)
         );
         assert_eq!(
             providers.keys().collect::<Vec<_>>(),
@@ -2135,7 +2140,7 @@ mod provider_key_validation_tests {
                 .providers
                 .as_ref()
                 .and_then(|providers| providers.stepfun.base_url.as_deref()),
-            Some(crate::config::DEFAULT_STEPFUN_PLAN_BASE_URL),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_PLAN_BASE_URL),
             "the live config mirrors the persisted endpoint"
         );
     }
@@ -2183,7 +2188,7 @@ auth_mode = "kimi_oauth"
             vec![(
                 ProviderKind::Moonshot,
                 "sk-kimi-supported".to_string(),
-                crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string(),
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string(),
             )],
             "replacement keys must be verified against Kimi Code, not the ordinary Moonshot API"
         );
@@ -2194,7 +2199,7 @@ auth_mode = "kimi_oauth"
             &mut config,
             identity,
             "sk-kimi-supported".to_string(),
-            crate::config::DEFAULT_KIMI_CODE_MODEL.to_string(),
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_MODEL.to_string(),
             None,
             None,
         )
@@ -2208,7 +2213,7 @@ auth_mode = "kimi_oauth"
         assert_eq!(moonshot.auth_mode.as_deref(), Some("api_key"));
         assert_eq!(
             moonshot.base_url.as_deref(),
-            Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL)
+            Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL)
         );
         assert_eq!(moonshot.api_key.as_deref(), Some("sk-kimi-supported"));
 
@@ -2217,7 +2222,7 @@ auth_mode = "kimi_oauth"
         assert!(saved.contains("auth_mode = \"api_key\""));
         assert!(saved.contains(&format!(
             "base_url = \"{}\"",
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL
         )));
     }
 

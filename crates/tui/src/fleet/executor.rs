@@ -495,7 +495,7 @@ fn parse_exec_terminal_route(value: &serde_json::Value) -> ParsedTerminalRoute {
         if provider.is_empty() || model.is_empty() {
             return None;
         }
-        let provider_kind = crate::config::ProviderKind::parse(provider)?;
+        let provider_kind = codewhale_config::ProviderKind::parse(provider)?;
         let provider_exact_id = match meta.get("provider_id") {
             None => None,
             Some(value) => {
@@ -506,7 +506,7 @@ fn parse_exec_terminal_route(value: &serde_json::Value) -> ParsedTerminalRoute {
                 Some(id.to_string())
             }
         };
-        if provider_exact_id.is_some() && provider_kind != crate::config::ProviderKind::Custom {
+        if provider_exact_id.is_some() && provider_kind != codewhale_config::ProviderKind::Custom {
             return None;
         }
         Some(FleetWorkerReportedRoute {

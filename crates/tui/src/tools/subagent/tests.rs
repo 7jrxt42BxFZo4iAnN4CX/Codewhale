@@ -1,9 +1,9 @@
 use super::*;
-use crate::config::ProviderKind;
 use crate::fleet::roster::FleetRoster;
 use crate::tools::{AgentToolSurfaceOptions, ToolRegistryBuilder};
 use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing::post};
 use codewhale_agent_contract::worker_profile::ShellPolicy;
+use codewhale_config::ProviderKind;
 use std::collections::HashSet;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -5309,7 +5309,9 @@ fn providerless_spawn_model_gate_rejects_known_foreign_route_before_spawn() {
         .expect("an explicit aggregator route remains allowed");
     assert_eq!(
         explicit.model_route,
-        ModelRoute::Fixed(crate::config::DEFAULT_OPENROUTER_MODEL.to_string()),
+        ModelRoute::Fixed(
+            codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_MODEL.to_string()
+        ),
         "the child and receipt must use the provider's exact wire id"
     );
 }
@@ -12872,7 +12874,7 @@ fn annotated_failure_message_composes_class_tag_and_model_hint() {
     ))
     .context("Responses API request failed");
 
-    let provider = crate::config::ProviderKind::OpenaiCodex;
+    let provider = codewhale_config::ProviderKind::OpenaiCodex;
     let route = ModelRoute::Fixed("gpt-5.5-codex".to_string());
     let annotated = annotate_child_model_error(
         &subagent_failure_message(&err),
@@ -12952,7 +12954,7 @@ fn subagent_failure_message_preserves_error_chain() {
 fn annotate_child_model_error_adds_actionable_hint() {
     // #2653: a bare provider 403 becomes actionable by naming the model and the
     // recovery path, while unrelated errors pass through unchanged.
-    let provider = crate::config::ProviderKind::Moonshot;
+    let provider = codewhale_config::ProviderKind::Moonshot;
     let inherit = ModelRoute::Inherit;
     let auth = annotate_child_model_error("403 Forbidden", "kimi-k2", provider, &inherit);
     assert!(auth.contains("kimi-k2"), "names the model: {auth}");
@@ -12989,7 +12991,7 @@ fn annotate_child_model_error_adds_actionable_hint() {
     let openai_style = annotate_child_model_error(
         "The model `gpt-5.5-nano` does not exist or you do not have access to it.",
         "gpt-5.5-nano",
-        crate::config::ProviderKind::OpenaiCodex,
+        codewhale_config::ProviderKind::OpenaiCodex,
         &ModelRoute::Fixed("gpt-5.5-nano".to_string()),
     );
     assert!(
@@ -13027,7 +13029,7 @@ fn child_runtime_capability_errors_are_not_misreported_as_model_access_errors() 
             annotate_child_model_error(
                 error,
                 "deepseek-flash",
-                crate::config::ProviderKind::Deepseek,
+                codewhale_config::ProviderKind::Deepseek,
                 &ModelRoute::Inherit,
             ),
             error,
@@ -13044,7 +13046,7 @@ fn child_launch_error_names_provider_model_and_route_source() {
     let err = anyhow::Error::new(crate::llm_client::LlmError::ModelError(
         "Model \"deepseek-v4-pro\" not found".to_string(),
     ));
-    let provider = crate::config::ProviderKind::Deepseek;
+    let provider = codewhale_config::ProviderKind::Deepseek;
     let route = ModelRoute::Fixed("deepseek-v4-pro".to_string());
     let annotated = annotate_child_model_error(
         &subagent_failure_message(&err),
@@ -15994,7 +15996,7 @@ fn spawn_child_runtime_inherits_session_client_and_config() {
     let runtime = cross_provider_runtime();
     assert_eq!(
         runtime.client.api_provider(),
-        crate::config::ProviderKind::Deepseek,
+        codewhale_config::ProviderKind::Deepseek,
         "precondition: session is on DeepSeek"
     );
 
@@ -16003,7 +16005,7 @@ fn spawn_child_runtime_inherits_session_client_and_config() {
     for child in [runtime.child_runtime(), runtime.background_runtime()] {
         assert_eq!(
             child.client.api_provider(),
-            crate::config::ProviderKind::Deepseek
+            codewhale_config::ProviderKind::Deepseek
         );
         assert!(
             child
@@ -17989,7 +17991,10 @@ fn inherit_route_remaps_stale_deepseek_model_for_sakana_provider() {
 
     let validated = ensure_subagent_model_for_provider(&runtime, &route.model_route, route.model)
         .expect("inherit should remap to operator route");
-    assert_eq!(validated, crate::config::DEFAULT_SAKANA_MODEL);
+    assert_eq!(
+        validated,
+        codewhale_config::descriptors::defaults::DEFAULT_SAKANA_MODEL
+    );
     assert!(
         !validated.contains("deepseek"),
         "Sakana inherit must not keep DeepSeek ids: {validated}"
@@ -18009,7 +18014,10 @@ fn faster_route_remaps_stale_deepseek_model_for_sakana_provider() {
     );
     let validated = ensure_subagent_model_for_provider(&runtime, &route.model_route, route.model)
         .expect("faster should remap to operator route");
-    assert_eq!(validated, crate::config::DEFAULT_SAKANA_MODEL);
+    assert_eq!(
+        validated,
+        codewhale_config::descriptors::defaults::DEFAULT_SAKANA_MODEL
+    );
 }
 
 #[test]
@@ -18032,7 +18040,7 @@ fn normalize_requested_subagent_model_rejects_cross_namespace_for_sakana() {
     let err = normalize_requested_subagent_model(
         "deepseek-v4-flash",
         "model",
-        crate::config::ProviderKind::Sakana,
+        codewhale_config::ProviderKind::Sakana,
     )
     .expect_err("Sakana must reject DeepSeek-only model ids at spawn");
     assert!(
@@ -18173,7 +18181,7 @@ fn operator_model_for_subagent_enumerates_from_catalog_facade() {
     runtime.model = "definitely-not-a-real-model".to_string();
 
     let provider = runtime.client.api_provider();
-    assert_eq!(provider, crate::config::ProviderKind::Deepseek);
+    assert_eq!(provider, codewhale_config::ProviderKind::Deepseek);
     // Sanity: the strict provider really does reject the invalid id, so
     // operator_model_for_subagent must take the enumeration branch.
     assert!(crate::config::validate_route(provider, &runtime.model).is_err());
@@ -18211,7 +18219,7 @@ fn normalize_requested_subagent_model_is_provider_aware() {
         normalize_requested_subagent_model(
             "kimi-k2.5",
             "model",
-            crate::config::ProviderKind::Moonshot
+            codewhale_config::ProviderKind::Moonshot
         )
         .expect("Moonshot accepts its own ids"),
         "kimi-k2.5"
@@ -18220,7 +18228,7 @@ fn normalize_requested_subagent_model_is_provider_aware() {
         normalize_requested_subagent_model(
             "qwen3:32b",
             "model",
-            crate::config::ProviderKind::Ollama
+            codewhale_config::ProviderKind::Ollama
         )
         .expect("Ollama tags pass through"),
         "qwen3:32b"
@@ -18229,7 +18237,7 @@ fn normalize_requested_subagent_model_is_provider_aware() {
         normalize_requested_subagent_model(
             "kimi-k2.5",
             "model",
-            crate::config::ProviderKind::Deepseek
+            codewhale_config::ProviderKind::Deepseek
         )
         .is_err(),
         "official DeepSeek API rejects foreign ids"

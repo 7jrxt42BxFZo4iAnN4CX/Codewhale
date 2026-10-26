@@ -272,7 +272,8 @@ const ITEM_SEPARATOR_WIDTH: usize = 3;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{config::Config, tui::app::TuiOptions};
+    use crate::config::Config;
+    use crate::tui::app::TuiOptions;
     use std::path::PathBuf;
 
     fn test_app() -> App {
@@ -504,7 +505,7 @@ mod tests {
     #[test]
     fn unproven_effort_keeps_named_provider_when_the_route_fits() {
         let mut app = test_app();
-        app.set_provider_identity(crate::config::ProviderKind::Custom, "lab-gateway");
+        app.set_provider_identity(codewhale_config::ProviderKind::Custom, "lab-gateway");
         app.model = "unlisted-model".to_string();
         assert!(app.provable_reasoning_effort_label().is_none());
         let fields = route_identity_fields(&app, ShellTier::for_chrome_width(160), 100).unwrap();
@@ -528,7 +529,7 @@ mod tests {
         let mut app = test_app();
         app.ui_locale = codewhale_localization::Locale::En;
         app.set_provider_identity(
-            crate::config::ProviderKind::Custom,
+            codewhale_config::ProviderKind::Custom,
             "acme-research-gateway-eu-central",
         );
         app.model = model.to_string();

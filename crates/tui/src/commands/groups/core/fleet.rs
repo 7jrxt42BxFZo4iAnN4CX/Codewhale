@@ -108,7 +108,7 @@ fn fleet_models_text(app: &App) -> String {
             .replace("{count}", &models.len().to_string()),
     ];
     for member in &models {
-        let provider = crate::config::ProviderKind::parse(&member.provider);
+        let provider = codewhale_config::ProviderKind::parse(&member.provider);
         let facts = provider
             .and_then(|p| crate::provider_lake::catalog_offering_for_model(p, &member.model))
             .map(|row| {
@@ -190,7 +190,7 @@ pub(crate) fn fleet_catalog_rejection(
     provider: &str,
     model: &str,
 ) -> Option<String> {
-    let known = crate::config::ProviderKind::parse(provider)?;
+    let known = codewhale_config::ProviderKind::parse(provider)?;
     let served = crate::provider_lake::all_catalog_models_for_provider(known);
     (!served.is_empty() && !served.iter().any(|id| id.eq_ignore_ascii_case(model))).then(|| {
         tr(locale, MessageId::FleetAddModelNotServed)
@@ -424,7 +424,7 @@ mod tests {
         assert!(fleet_provider_rejection(&app, &live, "openrouter").is_some());
         // An in-session credential change is visible without restarting.
         live.provider_config_for_mut(
-            &live.test_identity_for_kind(crate::config::ProviderKind::Openrouter),
+            &live.test_identity_for_kind(codewhale_config::ProviderKind::Openrouter),
         )
         .unwrap()
         .api_key = Some("test-key".to_string());

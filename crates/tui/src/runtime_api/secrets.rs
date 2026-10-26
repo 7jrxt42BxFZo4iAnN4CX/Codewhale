@@ -7,7 +7,7 @@ use codewhale_config::ConfigStore;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::config::ProviderKind;
+use codewhale_config::ProviderKind;
 
 use super::{ApiError, ProviderCredentialState, RuntimeApiState};
 
@@ -63,7 +63,8 @@ fn account_model_access_receipt(config: &crate::config::Config) -> Value {
         .as_ref()
         .map(|identity| config.base_url_for_route(identity))
         .unwrap_or_default();
-    let supported = api_base.trim_end_matches('/') == crate::config::DEFAULT_CODEWHALE_BASE_URL
+    let supported = api_base.trim_end_matches('/')
+        == codewhale_config::descriptors::defaults::DEFAULT_CODEWHALE_BASE_URL
         && super::runtime_account_api_base()
             == codewhale_secrets::account::DEFAULT_ACCOUNT_API_BASE;
     let access = config.account_model_access.read().clone();
@@ -131,7 +132,7 @@ fn install_account_model_access(
     let identity = config
         .builtin_provider_identity(ProviderKind::Codewhale)
         .map_err(ApiError::conflict)?;
-    let expected_base = crate::config::DEFAULT_CODEWHALE_BASE_URL;
+    let expected_base = codewhale_config::descriptors::defaults::DEFAULT_CODEWHALE_BASE_URL;
     if request.api_base.trim_end_matches('/') != expected_base
         || config.base_url_for_route(&identity).trim_end_matches('/') != expected_base
         || super::runtime_account_api_base() != codewhale_secrets::account::DEFAULT_ACCOUNT_API_BASE
@@ -1047,7 +1048,7 @@ mod tests {
 
     fn account_request(owner: Option<&str>) -> SetAccountModelAccessRequest {
         SetAccountModelAccessRequest {
-            api_base: crate::config::DEFAULT_CODEWHALE_BASE_URL.into(),
+            api_base: codewhale_config::descriptors::defaults::DEFAULT_CODEWHALE_BASE_URL.into(),
             session_id: "fixture-session".into(),
             expected_session_id: owner.map(str::to_string),
             key: "cwc_fixture_device_credential_not_real".into(),
@@ -1067,7 +1068,7 @@ mod tests {
         );
         let _api_base = crate::test_support::EnvVarGuard::set(
             "CODEWHALE_API_BASE",
-            crate::config::DEFAULT_CODEWHALE_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_CODEWHALE_BASE_URL,
         );
         let _api_key = crate::test_support::EnvVarGuard::set("CODEWHALE_API_KEY", "");
         let store = saved_account_session("fixture-session");
@@ -1108,7 +1109,7 @@ mod tests {
         use codewhale_config::catalog::{
             CatalogStatus, ProviderCatalogDelta, base_url_fingerprint,
         };
-        let endpoint = crate::config::DEFAULT_CODEWHALE_BASE_URL;
+        let endpoint = codewhale_config::descriptors::defaults::DEFAULT_CODEWHALE_BASE_URL;
         let ticket = crate::provider_catalog_live::begin_refresh_for_identity(
             ProviderKind::Codewhale,
             "codewhale",
@@ -1199,7 +1200,7 @@ mod tests {
         );
         let _api_base = crate::test_support::EnvVarGuard::set(
             "CODEWHALE_API_BASE",
-            crate::config::DEFAULT_CODEWHALE_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_CODEWHALE_BASE_URL,
         );
         let _api_key = crate::test_support::EnvVarGuard::set("CODEWHALE_API_KEY", "");
         saved_account_session("fixture-session");

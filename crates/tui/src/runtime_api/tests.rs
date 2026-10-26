@@ -126,7 +126,11 @@ fn provider_default_model_cases() -> Vec<(&'static str, Config, &'static str)> {
 
     vec![
         ("deepseek", deepseek, "deepseek-v4-flash"),
-        ("zai", zai, crate::config::DEFAULT_ZAI_MODEL),
+        (
+            "zai",
+            zai,
+            codewhale_config::descriptors::defaults::DEFAULT_ZAI_MODEL,
+        ),
         ("custom", custom, "acme-coder"),
     ]
 }
@@ -13295,7 +13299,7 @@ async fn get_config_returns_active_provider_model() -> Result<()> {
         &config_file,
         format!(
             "default_text_model = \"deepseek-v4-pro\"\nprovider = \"volcengine\"\n\n[providers.volcengine]\nmodel = \"{}\"\n",
-            crate::config::DEFAULT_VOLCENGINE_FLASH_MODEL
+            codewhale_config::descriptors::defaults::DEFAULT_VOLCENGINE_FLASH_MODEL
         ),
     )?;
 
@@ -13310,7 +13314,7 @@ async fn get_config_returns_active_provider_model() -> Result<()> {
     assert_eq!(body["provider"].as_str(), Some("volcengine"));
     assert_eq!(
         body["model"].as_str(),
-        Some(crate::config::DEFAULT_VOLCENGINE_FLASH_MODEL),
+        Some(codewhale_config::descriptors::defaults::DEFAULT_VOLCENGINE_FLASH_MODEL),
         "GET /v1/config should expose the active provider model, not the root DeepSeek default"
     );
 
@@ -15049,7 +15053,7 @@ model = "glm-2"
     let reloaded = Config::load(Some(config_file.clone()), None)?;
     assert_eq!(
         reloaded.active_provider_identity().unwrap().provider,
-        crate::config::ProviderKind::Deepseek
+        codewhale_config::ProviderKind::Deepseek
     );
     assert_eq!(reloaded.default_model(), "deepseek-v4-pro");
 
@@ -15695,7 +15699,7 @@ async fn set_config_model_follows_persisted_provider_before_reload() -> Result<(
         &config_file,
         format!(
             "provider = \"deepseek\"\ndefault_text_model = \"deepseek-v4-pro\"\n\n[providers.volcengine]\nmodel = \"{}\"\n",
-            crate::config::DEFAULT_VOLCENGINE_MODEL
+            codewhale_config::descriptors::defaults::DEFAULT_VOLCENGINE_MODEL
         ),
     )?;
 
@@ -15709,7 +15713,7 @@ async fn set_config_model_follows_persisted_provider_before_reload() -> Result<(
     let (status, body) = post_set_config(&client, &addr, "provider", "volcengine", true).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
 
-    let target_model = crate::config::DEFAULT_VOLCENGINE_FLASH_MODEL;
+    let target_model = codewhale_config::descriptors::defaults::DEFAULT_VOLCENGINE_FLASH_MODEL;
     let (status, body) = post_set_config(&client, &addr, "model", target_model, true).await;
     assert_eq!(status, StatusCode::OK, "body: {body}");
 
@@ -15721,7 +15725,7 @@ async fn set_config_model_follows_persisted_provider_before_reload() -> Result<(
     // The persisted value is the normalized wire id (lowercase), not the
     // display spelling of DEFAULT_VOLCENGINE_FLASH_MODEL.
     let expected_wire = crate::config::normalize_model_name_for_provider(
-        crate::config::ProviderKind::Volcengine,
+        codewhale_config::ProviderKind::Volcengine,
         target_model,
     )
     .expect("volcengine flash model should normalize");
@@ -16441,7 +16445,7 @@ async fn fleet_receipt_api_list_and_get_round_trip() -> Result<()> {
         metadata: std::collections::BTreeMap::new(),
     };
     let manager = crate::fleet::manager::FleetManager::open(&workspace)?
-        .with_session_model(crate::config::DEFAULT_TEXT_MODEL)
+        .with_session_model(codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL)
         .with_route_config(test_fleet_route_config());
     let report = manager.create_run(
         FleetTaskSpecDocument {
@@ -18986,7 +18990,7 @@ vendor = "{vendor}"
         let old_config = manager.read_config().clone();
         let old_vendor = old_config.openrouter_vendor()?;
         let old_client = if old_config.active_provider_identity().unwrap().provider
-            == crate::config::ProviderKind::Openrouter
+            == codewhale_config::ProviderKind::Openrouter
         {
             Some(crate::client::CodewhaleClient::new(&old_config)?)
         } else {

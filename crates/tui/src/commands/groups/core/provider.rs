@@ -5,8 +5,9 @@
 //! keeps the v0.6.6 CLI form for muscle-memory + scripted use.
 
 use crate::commands::traits::{CommandInfo, RegisterCommand};
-use crate::config::{ProviderKind, canonical_model_id_for_provider, provider_passes_model_through};
+use crate::config::{canonical_model_id_for_provider, provider_passes_model_through};
 use crate::tui::app::{App, AppAction};
+use codewhale_config::ProviderKind;
 use codewhale_localization::MessageId;
 
 use super::CommandResult;
@@ -248,7 +249,7 @@ mod tests {
         };
         let mut app = App::new(options, &Config::default());
         app.ui_locale = codewhale_localization::Locale::En;
-        app.api_provider = crate::config::ProviderKind::Deepseek;
+        app.api_provider = codewhale_config::ProviderKind::Deepseek;
         app
     }
 
@@ -271,7 +272,7 @@ mod tests {
             let message = result.message.expect("tombstone message");
             assert!(message.contains("non-runnable"), "{identity}: {message}");
             assert!(message.contains("GEMINI_API_KEY"), "{identity}: {message}");
-            assert_eq!(app.api_provider, crate::config::ProviderKind::Deepseek);
+            assert_eq!(app.api_provider, codewhale_config::ProviderKind::Deepseek);
 
             let setup = provider_setup_action_for_name(identity)
                 .expect_err("setup must not open for the tombstone");
@@ -722,7 +723,7 @@ mod tests {
                                 official_base_url,
                                 model.as_deref().expect("command model"),
                             ),
-                            crate::config::DEEPSEEK_ALIAS_REPLACEMENT
+                            codewhale_config::catalog::reviewed::constants::DEEPSEEK_ALIAS_REPLACEMENT
                         );
                         app.reasoning_effort = crate::reasoning_preference::ReasoningEffort::Max;
                         app.reasoning_effort_preference = None;
@@ -793,7 +794,7 @@ mod tests {
         app.reasoning_effort_preference = Some(crate::reasoning_preference::ReasoningEffort::Max);
         app.apply_provider_switch_reasoning_effort(
             ProviderKind::Deepseek,
-            crate::config::DEFAULT_DEEPSEEK_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
             Some(&model),
         );
         assert_eq!(

@@ -15,8 +15,8 @@ use codewhale_localization::{Locale, MessageId};
 
 use crate::commands::debug_diagnostics_test_support::{DiagnosticsHarness, assert_fixture};
 use crate::commands::{CommandResult, execute};
-use crate::config::ProviderKind;
 use crate::tui::app::AppAction;
+use codewhale_config::ProviderKind;
 
 /// The eight declared diagnostics commands in registry order, with their exact
 /// aliases and catalog description ids.

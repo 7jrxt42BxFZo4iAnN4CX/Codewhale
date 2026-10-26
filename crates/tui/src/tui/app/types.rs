@@ -783,7 +783,7 @@ pub enum AppAction {
     },
     /// Apply one `/config notifications` scalar to the live Config.
     UpdateNotification {
-        update: crate::config::NotificationConfigUpdate,
+        update: codewhale_config::notifications::NotificationConfigUpdate,
     },
     /// Enable or disable the background advisor watcher for this session (#3982).
     SetAdvisorEnabled {

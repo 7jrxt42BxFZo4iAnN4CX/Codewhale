@@ -12,8 +12,9 @@ use base64::{Engine as _, engine::general_purpose};
 use serde_json::{Value, json};
 
 use crate::client::{CodewhaleClient, SpeechSynthesisRequest};
-use crate::config::{ProviderKind, normalize_model_name_for_provider};
+use crate::config::normalize_model_name_for_provider;
 use crate::network_policy::{Decision, host_from_url};
+use codewhale_config::ProviderKind;
 
 use super::spec::{
     ApprovalRequirement, ToolCapability, ToolContext, ToolError, ToolResult, ToolSpec,

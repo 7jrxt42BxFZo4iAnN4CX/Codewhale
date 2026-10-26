@@ -525,11 +525,12 @@ fn suggest_command_names(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, ProviderKind};
+    use crate::config::Config;
     use crate::tools::plan::{PlanItemArg, StepStatus, UpdatePlanArgs};
     use crate::tools::todo::TodoStatus;
     use crate::tui::app::{App, AppAction, TuiOptions};
     use crate::tui::work_surface::{RailPanel, WorkSurfacePlacement};
+    use codewhale_config::ProviderKind;
     use codewhale_localization::{Locale, MessageId};
     use std::path::{Path, PathBuf};
     use tempfile::tempdir;

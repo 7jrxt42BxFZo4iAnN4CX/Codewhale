@@ -18,7 +18,8 @@ use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::config::{Config, ProviderKind};
+use crate::config::Config;
+use codewhale_config::ProviderKind;
 
 const MAX_MODEL_CACHE_BYTES: u64 = 4 * 1024 * 1024;
 const MODEL_CACHE_MAX_AGE: Duration = Duration::hours(24);

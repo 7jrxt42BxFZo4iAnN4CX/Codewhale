@@ -5342,7 +5342,10 @@ async fn create_thread_scenario() -> Result<()> {
             .await?;
 
         assert_eq!(thread.model_provider.as_deref(), Some("zai"));
-        assert_eq!(thread.model, crate::config::DEFAULT_ZAI_MODEL);
+        assert_eq!(
+            thread.model,
+            codewhale_config::descriptors::defaults::DEFAULT_ZAI_MODEL
+        );
     }
     // from create_thread_defaults_auto_approve_to_false
     {

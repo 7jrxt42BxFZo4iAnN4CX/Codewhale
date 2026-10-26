@@ -12,11 +12,12 @@ use tempfile::TempDir;
 
 use crate::commands::groups::session::MAX_TITLE_LEN;
 use crate::commands::{CommandResult, execute};
-use crate::config::{Config, ProviderKind};
+use crate::config::Config;
 use crate::session_manager::{SessionManager, create_saved_session_with_mode};
 use crate::test_support::{EnvVarGuard, TestEnvLock};
 use crate::tui::app::{App, AppAction, TuiOptions};
 use codewhale_config::AppMode;
+use codewhale_config::ProviderKind;
 use codewhale_localization::{Locale, MessageId, tr};
 use codewhale_models::{ContentBlock, Message, Role, SystemPrompt};
 

@@ -18,7 +18,7 @@
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::config::ProviderKind;
+use codewhale_config::ProviderKind;
 
 use super::events::{ChangeReceipt, ObservationSummary, WorkGraphProposal};
 use super::ids::{BindingId, WorkEdgeId, WorkNodeId};

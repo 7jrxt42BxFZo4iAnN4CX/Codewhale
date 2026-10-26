@@ -29,7 +29,7 @@ fn create_test_app() -> App {
     };
     let mut app = App::new(options, &Config::default());
     app.ui_locale = codewhale_localization::Locale::En;
-    app.api_provider = crate::config::ProviderKind::Deepseek;
+    app.api_provider = codewhale_config::ProviderKind::Deepseek;
     app.model = "deepseek-v4-pro".to_string();
     app.auto_model = false;
     app.model_ids_passthrough = false;

@@ -12,7 +12,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 
-use crate::config::{ProviderIdentity, ProviderKind, StatusItem, expand_path};
+use crate::config::{ProviderIdentity, StatusItem, expand_path};
+use codewhale_config::ProviderKind;
 
 /// Parse the TOML document at `path` (an absent or empty file yields an empty
 /// document), apply `mutate`, and atomically persist the result.
@@ -684,7 +685,7 @@ fn normalize_custom_provider_id(raw: &str) -> anyhow::Result<String> {
     if value == "__custom__" {
         bail!("custom provider name is reserved");
     }
-    if crate::config::ProviderKind::parse(value).is_some() {
+    if codewhale_config::ProviderKind::parse(value).is_some() {
         bail!("custom provider name must not shadow a built-in provider");
     }
     if !value
@@ -1071,7 +1072,7 @@ mod tests {
         assert_eq!(loaded.provider.as_deref(), Some("acme_ai"));
         assert_eq!(
             loaded.active_provider_identity().unwrap().provider,
-            crate::config::ProviderKind::Custom
+            codewhale_config::ProviderKind::Custom
         );
         let entry = loaded
             .providers
@@ -1644,12 +1645,12 @@ slot = 1
             (
                 "a stale DeepSeek id must not be forwarded to a native non-DeepSeek endpoint",
                 "provider = \"zai\"\ndefault_text_model = \"deepseek-chat\"\n\n[providers.zai]\napi_key = \"k\"\n",
-                crate::config::DEFAULT_ZAI_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_ZAI_MODEL,
             ),
             (
                 "no root default falls through to the provider default",
                 "provider = \"zai\"\n\n[providers.zai]\napi_key = \"k\"\n",
-                crate::config::DEFAULT_ZAI_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_ZAI_MODEL,
             ),
             (
                 "a provider-scoped model outranks the root default",
@@ -1664,7 +1665,7 @@ slot = 1
             (
                 "a vendor-locked endpoint refuses a DeepSeek id (#3227)",
                 "provider = \"xai\"\ndefault_text_model = \"deepseek-v4-pro\"\n\n[providers.xai]\napi_key = \"k\"\n",
-                crate::config::DEFAULT_XAI_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_XAI_MODEL,
             ),
             (
                 "an aggregator legitimately serves DeepSeek ids",

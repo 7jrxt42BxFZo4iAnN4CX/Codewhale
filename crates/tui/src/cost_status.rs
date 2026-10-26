@@ -37,9 +37,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use chrono::{DateTime, Utc};
 
-use crate::config::ProviderKind;
 use crate::pricing::{CostEstimate, TurnCostAudit};
 use crate::route_billing::BillingPresentation;
+use codewhale_config::ProviderKind;
 use codewhale_models::Usage;
 
 /// Everything a drained background accrual needs to be explained.
@@ -1281,7 +1281,7 @@ struct RuntimeUsageSinkEntry {
 pub(crate) fn decision_receipt_fixture(source_id: &str) -> RuntimeDecisionReceipt {
     let mut route = EffectiveRouteEnvelope::capture(
         None,
-        crate::config::ProviderKind::Custom,
+        codewhale_config::ProviderKind::Custom,
         "typesafe",
         "jev-latest",
         Some("https://api.typesafe.ai/v1"),
@@ -3103,7 +3103,7 @@ mod tests {
              base_url = \"{base}\"\nid = \"{DECLARED_OPENROUTER_MODEL}\"\n{extra}\n\n\
              [providers.openrouter]\nbase_url = \"{base}\"\n\
              api_key = \"fixture-not-a-provider-credential\"\n{vendor}",
-            base = crate::config::DEFAULT_OPENROUTER_BASE_URL,
+            base = codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_BASE_URL,
         ))
         .expect("declared OpenRouter config")
     }
@@ -3136,8 +3136,10 @@ mod tests {
         let _live = crate::provider_lake::lock_live_snapshot();
         crate::provider_lake::clear_live_snapshot();
 
-        let fingerprint = endpoint_fingerprint(crate::config::DEFAULT_OPENROUTER_BASE_URL)
-            .expect("official endpoint");
+        let fingerprint = endpoint_fingerprint(
+            codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_BASE_URL,
+        )
+        .expect("official endpoint");
         let now = u64::try_from(Utc::now().timestamp()).expect("timestamp");
         let rateless = declared_openrouter_client(&openrouter_declared_config("", None));
         let declared = declared_openrouter_client(&openrouter_declared_config(
@@ -3212,7 +3214,7 @@ mod tests {
                 ProviderKind::Openrouter,
                 "openrouter",
                 DECLARED_OPENROUTER_MODEL,
-                Some(crate::config::DEFAULT_OPENROUTER_BASE_URL),
+                Some(codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_BASE_URL),
                 Utc::now(),
             )
         };
@@ -3551,7 +3553,7 @@ mod tests {
                 ProviderKind::Openrouter.as_str(),
                 "synthetic-openrouter-frozen-price",
                 codewhale_config::catalog::base_url_fingerprint(
-                    crate::config::DEFAULT_OPENROUTER_BASE_URL,
+                    codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_BASE_URL,
                 ),
                 crate::pricing::AGGREGATOR_BILLING_SURFACE,
                 RouteBillingMode::Metered,
@@ -3677,7 +3679,7 @@ mod tests {
                 ProviderKind::Openrouter.as_str(),
                 "synthetic-openrouter-legacy",
                 &codewhale_config::catalog::base_url_fingerprint(
-                    crate::config::DEFAULT_OPENROUTER_BASE_URL,
+                    codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_BASE_URL,
                 ),
                 Some(crate::pricing::AGGREGATOR_BILLING_SURFACE),
                 RouteBillingMode::Metered,
@@ -3736,7 +3738,7 @@ mod tests {
         let fetched_at = u64::try_from(dispatched_at.timestamp()).expect("timestamp");
         let model = "qwen/qwen3.8-flash";
         let fingerprint = codewhale_config::catalog::base_url_fingerprint(
-            crate::config::DEFAULT_OPENROUTER_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_BASE_URL,
         );
         let route = provider_live_usage_envelope(
             ProviderKind::Openrouter,
@@ -3803,7 +3805,7 @@ mod tests {
                 ProviderKind::Openrouter.as_str(),
                 "synthetic-openrouter-future",
                 codewhale_config::catalog::base_url_fingerprint(
-                    crate::config::DEFAULT_OPENROUTER_BASE_URL,
+                    codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_BASE_URL,
                 ),
                 crate::pricing::AGGREGATOR_BILLING_SURFACE,
                 RouteBillingMode::Metered,
@@ -4081,8 +4083,9 @@ mod tests {
     }
 
     fn deepseek() -> BackgroundRoute<'static> {
-        BackgroundRoute::new(ProviderKind::Deepseek, "deepseek-v4-flash")
-            .with_base_url(Some(crate::config::DEFAULT_DEEPSEEK_BASE_URL))
+        BackgroundRoute::new(ProviderKind::Deepseek, "deepseek-v4-flash").with_base_url(Some(
+            codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
+        ))
     }
 
     fn deepseek_envelope() -> EffectiveRouteEnvelope {
@@ -4094,7 +4097,7 @@ mod tests {
             Some(&config),
             &identity,
             "deepseek-v4-flash",
-            Some(crate::config::DEFAULT_DEEPSEEK_BASE_URL),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL),
             Utc::now(),
         )
     }
@@ -5040,8 +5043,9 @@ mod tests {
         );
         report(
             scope_token(),
-            &BackgroundRoute::new(ProviderKind::Moonshot, "kimi-for-coding")
-                .with_base_url(Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL)),
+            &BackgroundRoute::new(ProviderKind::Moonshot, "kimi-for-coding").with_base_url(Some(
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+            )),
             &small_usage(),
         );
         let drained = drain();

@@ -1281,7 +1281,7 @@ async fn sync_session_without_prompt_repins_full_system_prompt_on_next_turn() {
             messages: Vec::new(),
             system_prompt: None,
             system_prompt_override: false,
-            model: crate::config::DEFAULT_TEXT_MODEL.to_string(),
+            model: codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
             workspace: workspace.path().to_path_buf(),
             mode: AppMode::Agent,
         })

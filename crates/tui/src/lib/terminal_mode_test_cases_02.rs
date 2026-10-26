@@ -126,7 +126,7 @@
         .expect("pinned review route");
         let execution = config_for_cli_route(&pinned_config, &route).expect("admitted execution route");
 
-        assert_eq!(route.provider.provider, crate::config::ProviderKind::Deepseek);
+        assert_eq!(route.provider.provider, codewhale_config::ProviderKind::Deepseek);
         assert_eq!(route.model, "shared-review-model");
         assert_eq!(
             execution.active_provider_identity().unwrap().key.as_str(),
@@ -158,7 +158,7 @@
         .expect("pinned custom review route");
         let custom_execution = config_for_cli_route(&custom_config, &custom_route).expect("admitted execution route");
 
-        assert_eq!(custom_route.provider.provider, crate::config::ProviderKind::Custom);
+        assert_eq!(custom_route.provider.provider, codewhale_config::ProviderKind::Custom);
         assert_eq!(custom_route.model, "shared-review-model");
         assert_eq!(
             custom_execution
@@ -1032,7 +1032,7 @@
         .expect("configured workflow route");
         let execution = config_for_cli_route(&config, &route).expect("admitted execution route");
 
-        assert_eq!(route.provider.provider, crate::config::ProviderKind::Custom);
+        assert_eq!(route.provider.provider, codewhale_config::ProviderKind::Custom);
         assert_eq!(
             execution.active_provider_identity().unwrap().key.as_str(),
             "custom-a"
@@ -1149,7 +1149,7 @@
 
     #[test]
     fn resumed_exec_persistence_updates_provider_and_model_as_one_route() {
-        let saved_a = saved_exec_session("custom-a", crate::config::ZAI_GLM_5_2_MODEL);
+        let saved_a = saved_exec_session("custom-a", codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL);
         let mut config = custom_exec_config("custom-a");
         apply_exec_provider_override(&mut config, "custom-b").expect("custom B");
         let model = resolve_exec_resume_route(&mut config, &saved_a, true, None)
@@ -1158,7 +1158,7 @@
         stamp_exec_session_metadata(
             &mut persisted,
             &model,
-            crate::config::ProviderKind::Custom.as_str(),
+            codewhale_config::ProviderKind::Custom.as_str(),
             Some("custom-b"),
             Path::new("/tmp/exec-resume"),
         );
@@ -1190,7 +1190,7 @@
         stamp_exec_session_metadata(
             &mut saved,
             "legacy-root-model",
-            crate::config::ProviderKind::Custom.as_str(),
+            codewhale_config::ProviderKind::Custom.as_str(),
             None,
             Path::new("/tmp/exec-root"),
         );
@@ -1251,8 +1251,8 @@
             provider: Some("moonshot".to_string()),
             providers: Some(crate::config::ProvidersConfig {
                 moonshot: crate::config::ProviderConfig {
-                    base_url: Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
-                    model: Some(crate::config::KIMI_CODE_K3_MODEL.to_string()),
+                    base_url: Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
+                    model: Some(codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL.to_string()),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -1265,7 +1265,7 @@
         assert_eq!(
             cli_reasoning_effort_value_for_prompt(
                 &config,
-                crate::config::KIMI_CODE_K3_MODEL,
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
                 crate::reasoning_preference::ReasoningEffort::Auto,
             )
             .as_deref(),
@@ -1276,7 +1276,7 @@
         assert_eq!(
             cli_reasoning_effort_value_for_prompt(
                 &config,
-                crate::config::KIMI_CODE_K3_MODEL,
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
                 crate::reasoning_preference::ReasoningEffort::Off,
             )
             .as_deref(),
@@ -1290,15 +1290,15 @@
         use crate::reasoning_preference::ReasoningEffort;
 
         let fixed_model_auto_reasoning = CliAutoRoute {
-            provider: Config::default().test_identity_for_kind(crate::config::ProviderKind::Deepseek),
-            model: crate::config::DEFAULT_TEXT_MODEL.to_string(),
+            provider: Config::default().test_identity_for_kind(codewhale_config::ProviderKind::Deepseek),
+            model: codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
             reasoning_effort: Some(ReasoningEffort::Auto),
             auto_controls_reasoning: true,
             auto_model: false,
         };
         let auto_model_fixed_reasoning = CliAutoRoute {
-            provider: Config::default().test_identity_for_kind(crate::config::ProviderKind::OpenaiCodex),
-            model: crate::config::DEFAULT_OPENAI_CODEX_MODEL.to_string(),
+            provider: Config::default().test_identity_for_kind(codewhale_config::ProviderKind::OpenaiCodex),
+            model: codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL.to_string(),
             reasoning_effort: Some(ReasoningEffort::High),
             auto_controls_reasoning: false,
             auto_model: true,
@@ -1339,7 +1339,7 @@
 
         let resolved = cli_reasoning_effort_value_for_prompt(
             &config,
-            crate::config::ZAI_GLM_5_2_MODEL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL,
             crate::reasoning_preference::ReasoningEffort::Auto,
         )
         .expect("Auto must resolve to a concrete tier");

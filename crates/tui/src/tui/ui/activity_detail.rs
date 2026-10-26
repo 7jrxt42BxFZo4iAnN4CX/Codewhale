@@ -1557,7 +1557,7 @@ fn turn_route_lines(app: &App) -> Vec<String> {
         .as_ref()
         .and_then(|turn| turn.route.as_ref())
     {
-        let provider = if route.provider == crate::config::ProviderKind::Custom {
+        let provider = if route.provider == codewhale_config::ProviderKind::Custom {
             route.provider_identity.clone()
         } else {
             route.provider.provider().display_name().to_string()
@@ -1812,7 +1812,7 @@ mod tests {
     fn turn_route_lines_show_decision_evidence_and_a_failing_router() {
         let mut app = test_app();
         app.auto_model = true;
-        app.last_effective_provider = Some(crate::config::ProviderKind::Deepseek);
+        app.last_effective_provider = Some(codewhale_config::ProviderKind::Deepseek);
         app.last_effective_model = Some("deepseek-v4-pro".to_string());
         let decision = crate::model_routing::AutoRouteDecisionEvidence {
             choice: "strong".to_string(),
@@ -1872,18 +1872,23 @@ mod tests {
     fn turn_route_lines_include_truthful_auto_receipt() {
         let mut app = test_app();
         app.auto_model = true;
-        app.last_effective_provider = Some(crate::config::ProviderKind::Zai);
-        app.last_effective_model = Some(crate::config::ZAI_GLM_5_TURBO_MODEL.to_string());
+        app.last_effective_provider = Some(codewhale_config::ProviderKind::Zai);
+        app.last_effective_model =
+            Some(codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_TURBO_MODEL.to_string());
         app.last_auto_route_receipt = Some(crate::model_routing::AutoRouteReceipt {
             tier: crate::model_routing::AutoRouteTier::Fast,
             pair: crate::model_routing::AutoRoutePair {
-                strong: crate::config::ZAI_GLM_5_2_MODEL.to_string(),
-                fast: Some(crate::config::ZAI_GLM_5_TURBO_MODEL.to_string()),
+                strong: codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL
+                    .to_string(),
+                fast: Some(
+                    codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_TURBO_MODEL
+                        .to_string(),
+                ),
             },
             scope: crate::model_routing::AutoRouteScope::RunnableProviders,
             data_path: crate::model_routing::AutoRouteDataPath::Classifier {
                 provider: "deepseek".into(),
-                provider_kind: crate::config::ProviderKind::Deepseek,
+                provider_kind: codewhale_config::ProviderKind::Deepseek,
                 model: "deepseek-v4-flash".to_string(),
             },
             reason: crate::model_routing::AutoRouteReason::ClassifierRecommendation,

@@ -19,9 +19,7 @@ use codewhale_execpolicy::ApprovalMode;
 use crate::artifacts::ArtifactRecord;
 use crate::client::{CacheWarmupKey, PromptInspection};
 use crate::compaction::CompactionConfig;
-use crate::config::{
-    ApprovalPolicyControl, Config, DEFAULT_TEXT_MODEL, ProviderKind, has_api_key, has_api_key_for,
-};
+use crate::config::{ApprovalPolicyControl, Config, has_api_key, has_api_key_for};
 use crate::core::authority::{ModeSessionPrefs, base_policy_for_mode};
 use crate::core::events::TurnRoute;
 use crate::hooks::{HookContext, HookEvent, HookExecutor};
@@ -48,6 +46,8 @@ use crate::tui::shell_key_routing::Focus;
 use crate::tui::streaming::StreamingState;
 use crate::tui::transcript::TranscriptViewCache;
 use crate::tui::views::ViewStack;
+use codewhale_config::ProviderKind;
+use codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL;
 use codewhale_config::pricing::CostCurrency;
 use codewhale_localization::{Locale, MessageId, resolve_locale, tr};
 use codewhale_models::{ContentBlock, Message, SystemPrompt, Tool, Usage};
@@ -1647,7 +1647,7 @@ pub struct App {
     /// Generated asynchronously after each completed turn; cleared on new input.
     pub prompt_suggestion: Option<String>,
     /// Read-only view of the current Config, refreshed by its notification delta owner.
-    pub notification_settings: crate::config::NotificationsConfig,
+    pub notification_settings: codewhale_config::notifications::NotificationsConfig,
     /// Monotonic turn counter for stale-suggestion protection. Incremented on
     /// each TurnStarted; background suggestion tasks capture the token and
     /// discard their result if the token no longer matches.
@@ -2977,7 +2977,7 @@ impl App {
             RouteSaveChoice::SaveAsNewFleet => {
                 let display = format!(
                     "{} {}",
-                    crate::config::ProviderKind::parse(&pending.provider_identity)
+                    codewhale_config::ProviderKind::parse(&pending.provider_identity)
                         .map(|p| p.provider().display_name().to_string())
                         .unwrap_or_else(|| pending.provider_identity.clone()),
                     pending.model

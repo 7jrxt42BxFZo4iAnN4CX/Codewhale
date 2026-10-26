@@ -1,5 +1,6 @@
 //! Configuration loading and defaults for codewhale.
 
+use codewhale_config::opencode_go_models;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -36,15 +37,24 @@ mod subagent_limits;
 pub use subagent_limits::*;
 use subagent_limits::{resolve_subagent_api_timeout_secs, resolve_subagent_heartbeat_timeout_secs};
 
-// Provider model-name and base-URL constants live in the `models` leaf module
-// and are re-exported below so every `crate::config::<CONST>` path is unchanged
-// (#3311).
-mod models;
-pub use models::*;
+pub const XIAOMI_MIMO_PAY_AS_YOU_GO_BASE_URL: &str = "https://api.xiaomimimo.com/v1";
+pub const XIAOMI_MIMO_TOKEN_PLAN_CN_BASE_URL: &str = "https://token-plan-cn.xiaomimimo.com/v1";
+pub const XIAOMI_MIMO_TOKEN_PLAN_SGP_BASE_URL: &str = DEFAULT_XIAOMI_MIMO_BASE_URL;
+pub const XIAOMI_MIMO_TOKEN_PLAN_AMS_BASE_URL: &str = "https://token-plan-ams.xiaomimimo.com/v1";
+pub const KIMI_CODE_MEMBERSHIP_PLAN_CONSOLE_URL: &str =
+    codewhale_config::provider::KIMI_CODE_MEMBERSHIP_PLAN_CONSOLE_URL;
+/// True when `model` is the pre-refresh local-Ollama placeholder, not a tag.
+#[must_use]
+pub fn is_unresolved_local_ollama_model(model: &str) -> bool {
+    model.trim().eq_ignore_ascii_case(DEFAULT_OLLAMA_MODEL)
+}
+/// Conservative offline floor for an OAuth model absent from a fresh Codex
+/// roster. Fresh account-scoped cache metadata overrides this in route_runtime.
+pub const OPENAI_CODEX_EFFECTIVE_CONTEXT_WINDOW_TOKENS: u32 = 128_000;
 
 #[cfg(test)]
-pub(crate) use codewhale_config::API_KEYRING_SENTINEL;
-pub(crate) use codewhale_config::{ConfigApiKeyValueKind, classify_config_api_key_value};
+use codewhale_config::API_KEYRING_SENTINEL;
+use codewhale_config::{ConfigApiKeyValueKind, classify_config_api_key_value};
 
 pub const DEFAULT_ZAI_PROVIDER_MAX_CONCURRENCY: usize = 3;
 pub const MAX_PROVIDER_REQUEST_CONCURRENCY: usize = 64;
@@ -68,7 +78,9 @@ pub fn default_stop_words() -> Vec<String> {
         .collect()
 }
 
-pub use codewhale_config::ProviderKind;
+use codewhale_config::ProviderKind;
+use codewhale_config::catalog::reviewed::constants::*;
+use codewhale_config::descriptors::defaults::*;
 use codewhale_config::descriptors::{compatibility_for_id, compatibility_for_selector};
 use codewhale_config::route::ProviderId;
 
@@ -163,7 +175,7 @@ fn normalize_subagent_provider_key(value: &str) -> String {
 
 pub const DEEPSEEK_ALIAS_RETIREMENT_DATE: &str = "2026-07-24";
 pub const DEEPSEEK_ALIAS_RETIREMENT_UTC: &str = "2026-07-24T15:59:00Z";
-pub use codewhale_config::catalog::reviewed::constants::DEEPSEEK_ALIAS_REPLACEMENT;
+use codewhale_config::catalog::reviewed::constants::DEEPSEEK_ALIAS_REPLACEMENT;
 
 /// Upstream retirement metadata for a model alias that remains compatible.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -968,12 +980,13 @@ impl ChromeRowPreset {
 }
 
 #[cfg(test)]
-pub use codewhale_config::notifications::{EventSoundConfig, NotificationEventsConfig};
+use codewhale_config::notifications::{EventSoundConfig, NotificationEventsConfig};
 
-pub use codewhale_config::notifications::{
-    CompletionSound, NotificationCondition, NotificationConfigUpdate, NotificationMethod,
-    NotificationSetting, NotificationsConfig, SubagentCompletionNotification,
+#[cfg(test)]
+use codewhale_config::notifications::{
+    CompletionSound, NotificationConfigUpdate, NotificationMethod,
 };
+use codewhale_config::notifications::{NotificationCondition, NotificationsConfig};
 
 fn default_snapshots_enabled() -> bool {
     true
@@ -9808,7 +9821,7 @@ pub(crate) fn provider_config_uses_kimi_imported_token(config: &ProviderConfig) 
         .is_some_and(auth_mode_uses_kimi_imported_token)
 }
 
-pub(crate) use codewhale_config::{
+use codewhale_config::{
     auth_mode_disables_api_key, auth_mode_requires_api_key, auth_mode_uses_kimi_imported_token,
 };
 

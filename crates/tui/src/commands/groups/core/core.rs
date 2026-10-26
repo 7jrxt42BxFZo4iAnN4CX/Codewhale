@@ -1,10 +1,11 @@
 //! Remaining legacy core commands: clear, exit, model and related interactions.
 
-use crate::config::{ProviderKind, normalize_custom_model_id, normalize_model_name_for_provider};
+use crate::config::{normalize_custom_model_id, normalize_model_name_for_provider};
 #[cfg(test)]
 use crate::reasoning_preference::ReasoningEffort;
 use crate::tui::app::{App, AppAction};
 use crate::tui::views::{ModalKind, SubAgentsView, subagent_view_agents};
+use codewhale_config::ProviderKind;
 use codewhale_localization::Locale;
 use codewhale_localization::{MessageId, tr};
 
@@ -425,7 +426,7 @@ mod tests {
         };
         let mut app = App::new(options, &Config::default());
         app.ui_locale = codewhale_localization::Locale::En;
-        app.api_provider = crate::config::ProviderKind::Deepseek;
+        app.api_provider = codewhale_config::ProviderKind::Deepseek;
         app.model = "deepseek-v4-pro".to_string();
         app.auto_model = false;
         app.model_ids_passthrough = false;
@@ -680,34 +681,50 @@ mod tests {
     fn model_command_preserves_active_kimi_code_endpoint_for_bare_k3() {
         let _settings = SettingsPathGuard::new();
         let mut app = create_test_app();
-        app.set_provider_identity(crate::config::ProviderKind::Moonshot, "moonshot");
+        app.set_provider_identity(codewhale_config::ProviderKind::Moonshot, "moonshot");
         app.model_ids_passthrough = true;
-        app.active_route_base_url = crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string();
+        app.active_route_base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string();
         app.active_context_window_override = None;
 
-        let result = model(&mut app, Some(crate::config::KIMI_CODE_K3_MODEL));
+        let result = model(
+            &mut app,
+            Some(codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL),
+        );
 
         assert!(
             !result.is_error,
             "Kimi Code K3 route should resolve: {result:?}"
         );
-        assert_eq!(app.model, crate::config::KIMI_CODE_K3_MODEL);
+        assert_eq!(
+            app.model,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL
+        );
         assert_eq!(
             app.active_route_limits
                 .and_then(|limits| limits.context_tokens),
-            Some(u64::from(crate::config::KIMI_CODE_K3_CONTEXT_WINDOW_TOKENS))
+            Some(u64::from(
+                codewhale_models::KIMI_CODE_K3_CONTEXT_WINDOW_TOKENS
+            ))
         );
 
         // Switching to the direct platform endpoint requires the direct model
         // id (`kimi-k3`); bare `k3` is fail-closed (#4687).
-        app.active_route_base_url = crate::config::DEFAULT_MOONSHOT_BASE_URL.to_string();
-        let rejected = model(&mut app, Some(crate::config::KIMI_CODE_K3_MODEL));
+        app.active_route_base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL.to_string();
+        let rejected = model(
+            &mut app,
+            Some(codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL),
+        );
         assert!(
             rejected.is_error,
             "bare k3 on direct Moonshot must fail closed: {rejected:?}"
         );
 
-        let direct = model(&mut app, Some(crate::config::MOONSHOT_KIMI_K3_MODEL));
+        let direct = model(
+            &mut app,
+            Some(codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL),
+        );
         assert!(
             !direct.is_error,
             "direct Moonshot kimi-k3 remains valid: {direct:?}"
@@ -715,7 +732,9 @@ mod tests {
         assert_ne!(
             app.active_route_limits
                 .and_then(|limits| limits.context_tokens),
-            Some(u64::from(crate::config::KIMI_CODE_K3_CONTEXT_WINDOW_TOKENS))
+            Some(u64::from(
+                codewhale_models::KIMI_CODE_K3_CONTEXT_WINDOW_TOKENS
+            ))
         );
     }
 
@@ -780,11 +799,11 @@ mod tests {
         let mut app = create_test_app();
         app.set_provider_identity_record(
             crate::config::Config::default()
-                .resolve_provider_identity(crate::config::ProviderKind::Zai.as_str())
+                .resolve_provider_identity(codewhale_config::ProviderKind::Zai.as_str())
                 .expect("captured fixture provider"),
         );
         app.model_ids_passthrough = false;
-        app.model = crate::config::DEFAULT_ZAI_MODEL.to_string();
+        app.model = codewhale_config::descriptors::defaults::DEFAULT_ZAI_MODEL.to_string();
         app.auto_model = false;
 
         let result = model(&mut app, Some("GLM-5.2"));
@@ -815,26 +834,29 @@ mod tests {
         let mut app = create_test_app();
         app.set_provider_identity_record(
             crate::config::Config::default()
-                .resolve_provider_identity(crate::config::ProviderKind::Zai.as_str())
+                .resolve_provider_identity(codewhale_config::ProviderKind::Zai.as_str())
                 .expect("captured fixture provider"),
         );
         app.model_ids_passthrough = false;
-        app.model = crate::config::ZAI_GLM_5_2_MODEL.to_string();
+        app.model = codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL.to_string();
         app.auto_model = false;
 
         let result = model(&mut app, Some("glm-5.3"));
 
         assert!(!result.is_error, "GLM-5.3 is valid on Z.ai: {result:?}");
-        assert_eq!(app.model, crate::config::ZAI_GLM_5_3_MODEL);
+        assert_eq!(
+            app.model,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_3_MODEL
+        );
         assert_eq!(
             app.provider_models.get("zai").map(String::as_str),
-            Some(crate::config::ZAI_GLM_5_3_MODEL)
+            Some(codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_3_MODEL)
         );
         assert_eq!(
             app.pending_route_save
                 .as_ref()
                 .map(|pending| pending.model.as_str()),
-            Some(crate::config::ZAI_GLM_5_3_MODEL)
+            Some(codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_3_MODEL)
         );
     }
 
@@ -849,18 +871,18 @@ mod tests {
 
         // Terminal A: Z.ai / GLM.
         let mut app_a = create_test_app();
-        app_a.api_provider = crate::config::ProviderKind::Zai;
+        app_a.api_provider = codewhale_config::ProviderKind::Zai;
         app_a.model_ids_passthrough = false;
-        app_a.model = crate::config::DEFAULT_ZAI_MODEL.to_string();
+        app_a.model = codewhale_config::descriptors::defaults::DEFAULT_ZAI_MODEL.to_string();
         app_a.auto_model = false;
         let result_a = model(&mut app_a, Some("GLM-5.2"));
         assert!(!result_a.is_error, "GLM-5.2 is valid on Z.ai");
-        assert_eq!(app_a.api_provider, crate::config::ProviderKind::Zai);
+        assert_eq!(app_a.api_provider, codewhale_config::ProviderKind::Zai);
         assert_eq!(app_a.model, "GLM-5.2");
 
         // Terminal B: DeepSeek / deepseek-v4-flash.
         let mut app_b = create_test_app();
-        app_b.api_provider = crate::config::ProviderKind::Deepseek;
+        app_b.api_provider = codewhale_config::ProviderKind::Deepseek;
         app_b.model_ids_passthrough = false;
         app_b.model = "deepseek-v4-pro".to_string();
         app_b.auto_model = false;
@@ -868,11 +890,11 @@ mod tests {
         assert!(!result_b.is_error, "deepseek-v4-flash is valid on DeepSeek");
 
         // B's route is a coherent DeepSeek route — never Z.ai + a DeepSeek model.
-        assert_eq!(app_b.api_provider, crate::config::ProviderKind::Deepseek);
+        assert_eq!(app_b.api_provider, codewhale_config::ProviderKind::Deepseek);
         assert_eq!(app_b.model, "deepseek-v4-flash");
 
         // A is untouched by B's selection — still Z.ai / GLM.
-        assert_eq!(app_a.api_provider, crate::config::ProviderKind::Zai);
+        assert_eq!(app_a.api_provider, codewhale_config::ProviderKind::Zai);
         assert_eq!(app_a.model, "GLM-5.2");
 
         // Shared settings: NOTHING was written by either `/model` — both
@@ -898,9 +920,9 @@ mod tests {
         // rejected locally with a precise diagnostic, before any network call.
         let _settings = SettingsPathGuard::new();
         let mut app = create_test_app();
-        app.api_provider = crate::config::ProviderKind::Zai;
+        app.api_provider = codewhale_config::ProviderKind::Zai;
         app.model_ids_passthrough = false;
-        app.model = crate::config::DEFAULT_ZAI_MODEL.to_string();
+        app.model = codewhale_config::descriptors::defaults::DEFAULT_ZAI_MODEL.to_string();
         app.auto_model = false;
         app.provider_models.clear();
 
@@ -911,8 +933,11 @@ mod tests {
         assert!(msg.contains("deepseek-v4-pro"), "names the model: {msg}");
         assert!(msg.contains("zai"), "names the provider: {msg}");
         // The session route is unchanged — still Z.ai / GLM.
-        assert_eq!(app.api_provider, crate::config::ProviderKind::Zai);
-        assert_eq!(app.model, crate::config::DEFAULT_ZAI_MODEL);
+        assert_eq!(app.api_provider, codewhale_config::ProviderKind::Zai);
+        assert_eq!(
+            app.model,
+            codewhale_config::descriptors::defaults::DEFAULT_ZAI_MODEL
+        );
     }
 
     #[test]
@@ -1026,7 +1051,7 @@ mod tests {
     fn test_model_change_accepts_custom_id_for_openai_compatible_provider() {
         let _settings = SettingsPathGuard::new();
         let mut app = create_test_app();
-        app.api_provider = crate::config::ProviderKind::Openai;
+        app.api_provider = codewhale_config::ProviderKind::Openai;
         app.model_ids_passthrough = true;
 
         let result = model(&mut app, Some("opencode-go/glm-5.1"));
@@ -1072,7 +1097,7 @@ mod tests {
     #[test]
     fn model_command_rejects_saved_model_from_other_provider() {
         let mut app = create_test_app();
-        app.api_provider = crate::config::ProviderKind::Deepseek;
+        app.api_provider = codewhale_config::ProviderKind::Deepseek;
         app.provider_models
             .insert("moonshot".to_string(), "kimi-k2.6".to_string());
 
@@ -1082,7 +1107,7 @@ mod tests {
         assert!(message.contains("Invalid model"));
         assert!(message.contains("active provider"));
         assert!(result.action.is_none());
-        assert_eq!(app.api_provider, crate::config::ProviderKind::Deepseek);
+        assert_eq!(app.api_provider, codewhale_config::ProviderKind::Deepseek);
         assert_eq!(app.model, "deepseek-v4-pro");
     }
 

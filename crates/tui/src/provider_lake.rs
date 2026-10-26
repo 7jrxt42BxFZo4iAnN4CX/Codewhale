@@ -24,9 +24,10 @@ use codewhale_config::route::{ProviderModelOffering, RouteResolver, bundled_offe
 
 use crate::codex_model_cache;
 use crate::config::{
-    Config, ProviderIdentity, ProviderKind, model_completion_names_for_provider,
-    opencode_go_model_id, provider_is_configured_for_active,
+    Config, ProviderIdentity, model_completion_names_for_provider, opencode_go_model_id,
+    provider_is_configured_for_active,
 };
+use codewhale_config::ProviderKind;
 
 static BUNDLED_SNAPSHOT: std::sync::OnceLock<SharedSnapshot> = std::sync::OnceLock::new();
 
@@ -2535,8 +2536,10 @@ pub fn provider_capability_with_wire(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{DEFAULT_TOGETHER_FLASH_MODEL, DEFAULT_TOGETHER_MODEL};
     use codewhale_config::catalog::CatalogSource;
+    use codewhale_config::descriptors::defaults::{
+        DEFAULT_TOGETHER_FLASH_MODEL, DEFAULT_TOGETHER_MODEL,
+    };
 
     #[test]
     fn wire_model_lookup_is_exact_first_and_never_guesses_between_case_variants() {
@@ -3512,11 +3515,13 @@ mod tests {
         let _live = lock_live_snapshot();
         clear_live_snapshot();
 
-        let mut offerings: Vec<_> = crate::config::opencode_go_models()
+        let mut offerings: Vec<_> = codewhale_config::opencode_go_models()
             .iter()
             .map(|model| CatalogOffering {
                 provider: "opencode_go".to_string(),
-                wire_model_id: if *model == crate::config::DEFAULT_OPENCODE_GO_MODEL {
+                wire_model_id: if *model
+                    == codewhale_config::descriptors::defaults::DEFAULT_OPENCODE_GO_MODEL
+                {
                     format!("opencode-go/{model}")
                 } else {
                     (*model).to_string()
@@ -3537,7 +3542,7 @@ mod tests {
             all_catalog_models_for_provider(ProviderKind::OpencodeGo)
                 .into_iter()
                 .collect();
-        let expected: std::collections::BTreeSet<_> = crate::config::opencode_go_models()
+        let expected: std::collections::BTreeSet<_> = codewhale_config::opencode_go_models()
             .iter()
             .map(|model| (*model).to_string())
             .collect();
@@ -3550,7 +3555,7 @@ mod tests {
         assert!(
             catalog_offering_for_model(
                 ProviderKind::OpencodeGo,
-                crate::config::DEFAULT_OPENCODE_GO_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_OPENCODE_GO_MODEL,
             )
             .is_some()
         );

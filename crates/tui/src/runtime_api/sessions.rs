@@ -663,7 +663,7 @@ pub(super) fn stamp_session_provider_from_thread(
         let key = config
             .provider
             .as_deref()
-            .unwrap_or(crate::config::ProviderKind::Deepseek.as_str());
+            .unwrap_or(codewhale_config::ProviderKind::Deepseek.as_str());
         config.resolve_provider_identity(key)?
     };
     metadata.set_model_provider_route(

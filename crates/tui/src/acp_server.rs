@@ -2,13 +2,14 @@
 //! History, provider requests, tools, approval and cancellation are Core facts.
 //! This module keeps only connection configuration, canonical bindings and
 //! JSON-RPC correlation. Secure cross-process attachment is not yet qualified.
-use crate::config::{Config, ProviderKind};
+use crate::config::Config;
 use crate::core::authority::{SandboxNetworkAccess, sandbox_policy_for_turn};
 #[cfg(test)]
 use crate::runtime_threads::RuntimeThreadManagerConfig;
 use crate::runtime_threads::{CreateThreadRequest, RuntimeThreadManager, UpdateThreadRequest};
 use anyhow::{Result, anyhow};
 use codewhale_config::AppMode;
+use codewhale_config::ProviderKind;
 use codewhale_execpolicy::ApprovalMode;
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};

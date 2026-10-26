@@ -37,7 +37,7 @@ pub(crate) fn session_cost_label(app: &App) -> String {
 /// for flat-priced routes, for other vendors, and while auto routing has not
 /// pinned a concrete model.
 pub(crate) fn billing_tier_label(app: &App, now: chrono::DateTime<chrono::Utc>) -> Option<String> {
-    use crate::config::ProviderKind;
+    use codewhale_config::ProviderKind;
     use codewhale_localization::{MessageId, tr};
     if app.auto_model || !matches!(app.api_provider, ProviderKind::Deepseek) {
         return None;
@@ -2600,7 +2600,7 @@ mod tests {
         use crate::reasoning_preference::ReasoningEffort;
 
         let mut app = app_with_context_percent(1);
-        app.api_provider = crate::config::ProviderKind::Openai;
+        app.api_provider = codewhale_config::ProviderKind::Openai;
         app.active_route_base_url = "https://api.openai.com/v1".to_string();
         app.model = "gpt-5.6".to_string();
         app.auto_model = false;
@@ -2733,7 +2733,7 @@ mod tests {
         use crate::tui::underwater::ShellTier;
 
         let mut app = app_with_context_percent(10);
-        app.set_provider_identity(crate::config::ProviderKind::Custom, "my-gateway");
+        app.set_provider_identity(codewhale_config::ProviderKind::Custom, "my-gateway");
         app.auto_model = false;
         app.active_route_base_url = "https://gateway.example/v1".to_string();
         app.model = "vendor-model-x".to_string();
@@ -2779,8 +2779,8 @@ mod tests {
     /// beside the cost; flat routes and other vendors show nothing.
     #[test]
     fn deepseek_tiered_routes_paint_the_billing_tier_beside_the_cost() {
-        use crate::config::ProviderKind;
         use chrono::TimeZone as _;
+        use codewhale_config::ProviderKind;
         let mut app = app_with_context_percent(10);
         app.auto_model = false;
         app.api_provider = ProviderKind::Deepseek;

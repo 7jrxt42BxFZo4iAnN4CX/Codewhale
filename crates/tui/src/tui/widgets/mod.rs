@@ -13,8 +13,6 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use crate::commands;
-#[cfg(test)]
-use crate::config::ProviderKind;
 use crate::core::authority::{RiskLevel, ToolCategory};
 #[cfg(test)]
 use crate::provider_lake::all_catalog_models_for_provider;
@@ -27,6 +25,8 @@ use crate::tui::ui_text::grapheme_display_width;
 #[cfg(test)]
 use crate::tui::ui_text::text_display_width;
 use crate::tui::underwater::ShellPhase;
+#[cfg(test)]
+use codewhale_config::ProviderKind;
 use codewhale_localization::{Locale, MessageId, tr};
 use codewhale_palette as palette;
 use codewhale_ratatui::{
@@ -3766,7 +3766,7 @@ mod tests {
         slash_completion_hints, test_native_ocean_caps, tool_run_summary_revision,
         wrap_input_lines, wrap_input_lines_for_mouse, wrap_text,
     };
-    use crate::config::{Config, ProviderKind};
+    use crate::config::Config;
     use crate::tui::active_cell::ActiveCell;
     use crate::tui::app::{
         App, ComposerDensity, QueuedMessage, TaskPanelEntry, TaskPanelEntryKind, ToolCollapseMode,
@@ -3776,6 +3776,7 @@ mod tests {
         ExecCell, ExecSource, GenericToolCell, HistoryCell, ToolCell, ToolRun, ToolStatus,
     };
     use crate::tui::scrolling::{TranscriptLineMeta, TranscriptScroll};
+    use codewhale_config::ProviderKind;
     use codewhale_localization::Locale;
     use codewhale_palette as palette;
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};

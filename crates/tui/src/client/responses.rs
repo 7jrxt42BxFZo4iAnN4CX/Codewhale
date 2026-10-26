@@ -10,9 +10,9 @@
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
 
-use crate::config::ProviderKind;
 use crate::llm_client::StreamEventBox;
 use crate::tools::schema_sanitize;
+use codewhale_config::ProviderKind;
 use codewhale_models::{
     ContentBlock, ContentBlockStart, Delta, MessageDelta, MessageRequest, MessageResponse,
     OpaqueReasoningState, StreamEvent, Tool, Usage,

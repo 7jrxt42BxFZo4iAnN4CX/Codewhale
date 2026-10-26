@@ -55,7 +55,7 @@
             "generated-secret",
             &extra,
             ProviderKind::Deepseek,
-            crate::config::DEFAULT_DEEPSEEK_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
         )
         .expect("headers");
 
@@ -85,7 +85,7 @@
             "sk-test",
             &HashMap::new(),
             ProviderKind::Deepseek,
-            crate::config::DEFAULT_DEEPSEEK_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
         );
 
         assert!(client.is_ok());
@@ -95,7 +95,7 @@
     fn client_new_rejects_provider_scoped_tls_skip_verify() {
         let mut providers = crate::config::ProvidersConfig::default();
         providers.openai.api_key = Some("sk-test".to_string());
-        providers.openai.base_url = Some(crate::config::DEFAULT_OPENAI_BASE_URL.to_string());
+        providers.openai.base_url = Some(codewhale_config::descriptors::defaults::DEFAULT_OPENAI_BASE_URL.to_string());
         providers.openai.insecure_skip_tls_verify = Some(true);
         let config = Config {
             provider: Some("openai".to_string()),
@@ -143,7 +143,7 @@
                 "tp-test",
                 &HashMap::new(),
                 ProviderKind::XiaomiMimo,
-                crate::config::DEFAULT_XIAOMI_MIMO_BASE_URL,
+                codewhale_config::descriptors::defaults::DEFAULT_XIAOMI_MIMO_BASE_URL,
             )
             .expect("headers");
 
@@ -206,7 +206,7 @@
             "sk-or-test",
             &extra,
             ProviderKind::Openrouter,
-            crate::config::DEFAULT_OPENROUTER_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_BASE_URL,
         )
         .expect("headers");
 
@@ -231,7 +231,7 @@
             "sf-cn-test",
             &extra,
             ProviderKind::SiliconflowCN,
-            crate::config::DEFAULT_SILICONFLOW_CN_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_SILICONFLOW_CN_BASE_URL,
         )
         .expect("headers");
 
@@ -393,7 +393,7 @@
             "ds-test",
             &extra,
             ProviderKind::DeepseekAnthropic,
-            crate::config::DEFAULT_DEEPSEEK_ANTHROPIC_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_ANTHROPIC_BASE_URL,
         )
         .expect("headers");
 
@@ -425,7 +425,7 @@
             "minimax-test",
             &HashMap::new(),
             ProviderKind::MinimaxAnthropic,
-            crate::config::DEFAULT_MINIMAX_ANTHROPIC_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_ANTHROPIC_BASE_URL,
         )
         .expect("headers");
 
@@ -454,7 +454,7 @@
             "om-test",
             &extra,
             ProviderKind::Openmodel,
-            crate::config::DEFAULT_OPENMODEL_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_OPENMODEL_BASE_URL,
         )
         .expect("headers");
 
@@ -637,7 +637,7 @@
             .await;
 
         let mut client = minimax_anthropic_client_with_base_url(
-            crate::config::DEFAULT_MINIMAX_ANTHROPIC_BASE_URL.to_string(),
+            codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_ANTHROPIC_BASE_URL.to_string(),
         );
         client.test_messages_transport_base_url = Some(format!("{}/anthropic", server.uri()));
         let response = client

@@ -2898,7 +2898,7 @@ mod tests {
         .unwrap();
         let route = crate::cost_status::EffectiveRouteEnvelope::capture(
             None,
-            crate::config::ProviderKind::Custom,
+            codewhale_config::ProviderKind::Custom,
             "test",
             "test-model",
             None,
@@ -3139,7 +3139,7 @@ mod tests {
     fn review_usage_metadata_reports_child_tokens_for_cost_accrual() {
         let route = crate::cost_status::EffectiveRouteEnvelope::capture(
             None,
-            crate::config::ProviderKind::Deepseek,
+            codewhale_config::ProviderKind::Deepseek,
             "deepseek",
             "deepseek-v4-flash",
             Some("https://api.deepseek.com/v1"),

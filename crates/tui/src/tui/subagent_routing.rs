@@ -1100,7 +1100,7 @@ mod tests {
     }
 
     fn test_route(
-        provider: crate::config::ProviderKind,
+        provider: codewhale_config::ProviderKind,
         model: &str,
     ) -> crate::cost_status::EffectiveRouteEnvelope {
         crate::cost_status::EffectiveRouteEnvelope::capture(
@@ -1354,7 +1354,7 @@ mod tests {
                 agent_id: "agent_route".to_string(),
                 source_id: "response-route".to_string(),
                 route: Box::new(test_route(
-                    crate::config::ProviderKind::Openrouter,
+                    codewhale_config::ProviderKind::Openrouter,
                     "vendor/model-real",
                 )),
                 usage: codewhale_models::Usage::default(),
@@ -1371,7 +1371,10 @@ mod tests {
     #[test]
     fn token_usage_accumulates_input_plus_output_across_child_turns() {
         let mut app = App::new(test_options(), &Config::default());
-        let route = test_route(crate::config::ProviderKind::Deepseek, "deepseek-v4-flash");
+        let route = test_route(
+            codewhale_config::ProviderKind::Deepseek,
+            "deepseek-v4-flash",
+        );
         handle_subagent_mailbox(
             &mut app,
             1,

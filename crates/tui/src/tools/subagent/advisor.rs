@@ -886,7 +886,9 @@ mod tests {
                 },
                 zai: ProviderConfig {
                     api_key: Some("zai-advisor-test-key".to_string()),
-                    model: Some(crate::config::DEFAULT_ZAI_MODEL.to_string()),
+                    model: Some(
+                        codewhale_config::descriptors::defaults::DEFAULT_ZAI_MODEL.to_string(),
+                    ),
                     ..ProviderConfig::default()
                 },
                 ..ProvidersConfig::default()
@@ -898,14 +900,17 @@ mod tests {
             &config,
             parent,
             "deepseek-chat",
-            crate::config::DEFAULT_ZAI_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_ZAI_MODEL,
         )
         .expect("cross-provider advisor route");
         let route = advisor.effective_route_envelope(&resolved_model, chrono::Utc::now());
 
-        assert_eq!(route.provider, crate::config::ProviderKind::Zai);
+        assert_eq!(route.provider, codewhale_config::ProviderKind::Zai);
         assert_eq!(route.provider_identity, "zai");
-        assert_eq!(route.model, crate::config::DEFAULT_ZAI_MODEL);
+        assert_eq!(
+            route.model,
+            codewhale_config::descriptors::defaults::DEFAULT_ZAI_MODEL
+        );
     }
 
     #[test]

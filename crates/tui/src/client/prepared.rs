@@ -29,7 +29,7 @@ use serde_json::Value;
 use codewhale_config::provider::WireFormat;
 use codewhale_runtime::hashing::canonical_json;
 
-use crate::config::ProviderKind;
+use codewhale_config::ProviderKind;
 
 /// The wire protocol a prepared request speaks.
 ///
@@ -1369,12 +1369,15 @@ mod dialect_seam_tests {
         let client = client("moonshot", |providers| {
             providers.moonshot = configured(
                 "sk-test-kimi",
-                Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL),
-                crate::config::KIMI_CODE_K3_MODEL,
+                Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL),
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             );
         });
         let prepared = client
-            .prepare_outbound_request(request(crate::config::KIMI_CODE_K3_MODEL), true)
+            .prepare_outbound_request(
+                request(codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL),
+                true,
+            )
             .expect("kimi code request prepares");
 
         assert_eq!(prepared.dialect, WireDialect::ChatCompletions);
@@ -1393,7 +1396,10 @@ mod dialect_seam_tests {
         );
 
         let reference = super::super::chat::build_chat_wire_body(
-            &preprocessed(&client, request(crate::config::KIMI_CODE_K3_MODEL)),
+            &preprocessed(
+                &client,
+                request(codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL),
+            ),
             client.api_provider(),
             client.base_url(),
             true,

@@ -14,7 +14,8 @@ use super::{
     PluginRegistry, activation::PluginActivationCapability,
     registry::verify_plugin_component_authority,
 };
-use crate::config::{Config, ProviderConfig, ProviderKind};
+use crate::config::{Config, ProviderConfig};
+use codewhale_config::ProviderKind;
 
 static STARTUP_REGISTRY: OnceLock<Arc<PluginRegistry>> = OnceLock::new();
 

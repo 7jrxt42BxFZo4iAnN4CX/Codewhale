@@ -16487,7 +16487,7 @@ fn provider_pin_matches_session(runtime: &SubAgentRuntime, provider_id: &str) ->
     // With no Config, only an ordinary captured built-in's exact or released
     // alias spelling is reusable. Named custom, root-only and legacy Cloud
     // provenance require its table receipt and cannot borrow transport identity.
-    if captured.provider == crate::config::ProviderKind::Custom
+    if captured.provider == codewhale_config::ProviderKind::Custom
         || captured.migrated_legacy_ollama_cloud_route
         || captured.persisted_id() != Some(captured.key.as_str())
     {
@@ -16797,7 +16797,7 @@ fn route_origin_from_receipt(receipt: &ChildRouteReceipt) -> Option<SpawnRouteOr
 /// failure there is reported against that route, not the one it left.
 pub(crate) struct ReroutedRequest {
     model: String,
-    provider: crate::config::ProviderKind,
+    provider: codewhale_config::ProviderKind,
     origin: Arc<SpawnRouteOrigin>,
 }
 
@@ -17535,10 +17535,10 @@ fn spawn_provider_ids_match(runtime: &SubAgentRuntime, requested: &str, provider
         // With no Config, only exact names and known built-in aliases are
         // comparable. A named custom provider's spelling is its identity.
         requested.trim() == provider.trim()
-            || crate::config::ProviderKind::parse(requested)
-                .filter(|provider| *provider != crate::config::ProviderKind::Custom)
+            || codewhale_config::ProviderKind::parse(requested)
+                .filter(|provider| *provider != codewhale_config::ProviderKind::Custom)
                 .is_some_and(|requested| {
-                    Some(requested) == crate::config::ProviderKind::parse(provider)
+                    Some(requested) == codewhale_config::ProviderKind::parse(provider)
                 })
     }
 }
@@ -17628,7 +17628,7 @@ fn normalize_bound_subagent_model(
 pub(crate) fn normalize_requested_subagent_model(
     value: &str,
     field: &str,
-    provider: crate::config::ProviderKind,
+    provider: codewhale_config::ProviderKind,
 ) -> Result<String, ToolError> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -17654,7 +17654,7 @@ pub(crate) fn normalize_requested_subagent_model(
     Ok(normalized)
 }
 
-fn provider_name_for_error(provider: crate::config::ProviderKind) -> &'static str {
+fn provider_name_for_error(provider: codewhale_config::ProviderKind) -> &'static str {
     // Reuse the canonical picker/status label so every provider is named
     // concretely (DeepSeek, Sakana, Zhipu, …) instead of collapsing the long
     // tail to "this provider", and so error copy stays in sync with the model
@@ -18082,7 +18082,7 @@ fn subagent_reasoning_effort_for_request(
             // emitting an off that is silently rewritten. Explicit thinking
             // passed by the caller already won via the arms above.
             let provider = runtime.client.api_provider();
-            let effort = if matches!(provider, crate::config::ProviderKind::OpenaiCodex) {
+            let effort = if matches!(provider, codewhale_config::ProviderKind::OpenaiCodex) {
                 ReasoningEffort::Low
             } else {
                 ReasoningEffort::Off
@@ -18938,7 +18938,7 @@ fn route_source_label(route: &ModelRoute) -> String {
 fn annotate_child_model_error(
     err: &str,
     model: &str,
-    provider: crate::config::ProviderKind,
+    provider: codewhale_config::ProviderKind,
     route: &ModelRoute,
 ) -> String {
     annotate_child_model_error_with_origin(err, model, provider, route, None)
@@ -18951,7 +18951,7 @@ fn annotate_child_model_error(
 fn annotate_child_model_error_with_origin(
     err: &str,
     model: &str,
-    provider: crate::config::ProviderKind,
+    provider: codewhale_config::ProviderKind,
     route: &ModelRoute,
     origin: Option<&SpawnRouteOrigin>,
 ) -> String {
@@ -19275,7 +19275,7 @@ fn configured_model_subagent_keeps_exact_id_and_negative_capability() {
     .with_legacy_root(Some("configured-model-local-fixture".into()), None);
     config
         .set_provider_base_url_override(
-            &config.test_identity_for_kind(crate::config::ProviderKind::Deepseek),
+            &config.test_identity_for_kind(codewhale_config::ProviderKind::Deepseek),
             Some("https://api.deepseek.com".into()),
         )
         .unwrap();
@@ -19353,7 +19353,7 @@ async fn configured_model_subagent_full_bind_preserves_task_profile_and_role_ids
         .with_legacy_root(Some("configured-model-local-fixture".into()), None);
         config
             .set_provider_base_url_override(
-                &config.test_identity_for_kind(crate::config::ProviderKind::Deepseek),
+                &config.test_identity_for_kind(codewhale_config::ProviderKind::Deepseek),
                 Some(base.into()),
             )
             .unwrap();
@@ -19417,7 +19417,7 @@ async fn configured_model_subagent_full_bind_preserves_task_profile_and_role_ids
         }
         config
             .set_provider_base_url_override(
-                &config.test_identity_for_kind(crate::config::ProviderKind::Deepseek),
+                &config.test_identity_for_kind(codewhale_config::ProviderKind::Deepseek),
                 Some("https://different.example.test/v1".into()),
             )
             .unwrap();
@@ -19433,8 +19433,9 @@ async fn configured_model_subagent_full_bind_preserves_task_profile_and_role_ids
 #[cfg(test)]
 mod declared_shortlist_tests {
     use super::*;
-    use crate::config::{Config, ProviderKind};
+    use crate::config::Config;
     use crate::fleet::members::{FleetModelChange, add_fleet_model};
+    use codewhale_config::ProviderKind;
 
     fn runtime_for(config: &Config, workspace: &std::path::Path, current: &str) -> SubAgentRuntime {
         let mut config = config.clone();

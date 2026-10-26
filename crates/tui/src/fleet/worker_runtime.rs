@@ -29,7 +29,7 @@ use super::profile::{
     AgentProfile, FleetDelegationHints, FleetLoadout, FleetProfile, FleetProfilePermissions,
     FleetSlot, ProfileOrigin, canonical_public_role_name,
 };
-use crate::config::{Config, ProviderKind};
+use crate::config::Config;
 use crate::route_runtime::resolve_route_candidate;
 use crate::tools::subagent::{AgentWorkerSpec, AgentWorkerToolProfile};
 use codewhale_agent_contract::role::FleetRole;
@@ -37,6 +37,7 @@ use codewhale_agent_contract::role::runtime_role_for_member;
 use codewhale_agent_contract::worker_profile::{
     ChildLaunchManifest, ModelRoute, ToolScope, WorkerRuntimeProfile,
 };
+use codewhale_config::ProviderKind;
 
 /// Reserved durable task metadata written after author input is validated.
 ///
@@ -4720,8 +4721,8 @@ mod tests {
 
     #[test]
     fn fleet_route_parity_uses_shared_router_candidates() {
-        use crate::config::ProviderKind;
         use crate::model_routing::{RouterCandidates, provider_router_candidates};
+        use codewhale_config::ProviderKind;
 
         // Fleet emits the SAME `ModelRoute` seam the sub-agent assignment path
         // consumes. `Fast` no longer re-prices the child onto a cheaper

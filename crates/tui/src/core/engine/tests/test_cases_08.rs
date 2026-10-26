@@ -1281,7 +1281,10 @@ async fn operate_conversation_reaches_provider_when_workers_are_disabled() {
         match event {
             Event::RouteDispatched { route, .. } => {
                 assert_eq!(route.provider, ProviderKind::Deepseek);
-                assert_eq!(route.model, crate::config::DEFAULT_TEXT_MODEL);
+                assert_eq!(
+                    route.model,
+                    codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL
+                );
                 assert!(!route.auto_model);
                 saw_operate_route = true;
             }

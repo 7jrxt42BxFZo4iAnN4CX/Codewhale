@@ -46,7 +46,7 @@ use codewhale_workflow::{
     router_call_plan, router_system_prompt, router_user_message,
 };
 
-use crate::config::{Config, ProviderKind};
+use crate::config::Config;
 use crate::llm_client::LlmClient;
 use crate::reasoning_preference::ReasoningEffort;
 use codewhale_agent_contract::role::{ChildAuthority, public_role_label};
@@ -55,6 +55,7 @@ use codewhale_agent_contract::role::{
     NETWORK_DENIAL_SENTINEL, NETWORK_TOOL_DENYLIST, RAW_SHELL_SENTINEL, is_posture_denial,
     session_shell_ceiling,
 };
+use codewhale_config::ProviderKind;
 use codewhale_models::Role;
 
 /// Where exact Fleet definitions and Reasoning Router profiles are looked up,
@@ -2732,8 +2733,8 @@ permissions = "read_only"
     fn glm_routes_report_an_enabled_disabled_provider_control() {
         let capability = reasoning_capability_for_route(
             ProviderKind::Zai,
-            crate::config::DEFAULT_ZAI_BASE_URL,
-            crate::config::ZAI_GLM_5_2_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL,
         );
 
         assert_eq!(
@@ -2757,7 +2758,7 @@ permissions = "read_only"
     fn a_route_that_varies_its_wire_value_reports_distinct_tiers() {
         let capability = reasoning_capability_for_route(
             ProviderKind::Deepseek,
-            crate::config::DEFAULT_DEEPSEEK_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
             "deepseek-v4-pro",
         );
         assert_eq!(capability.control, ProviderReasoningControl::Tiers);
@@ -2772,7 +2773,7 @@ permissions = "read_only"
     fn a_deepseek_route_reports_low_as_low_and_medium_as_high() {
         let capability = reasoning_capability_for_route(
             ProviderKind::Deepseek,
-            crate::config::DEFAULT_DEEPSEEK_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
             "deepseek-v4-pro",
         );
 
@@ -2825,7 +2826,7 @@ permissions = "read_only"
     fn a_route_that_collapses_low_onto_high_says_so_instead_of_reporting_low() {
         let capability = reasoning_capability_for_route(
             ProviderKind::Siliconflow,
-            crate::config::DEFAULT_SILICONFLOW_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_SILICONFLOW_BASE_URL,
             "deepseek-ai/DeepSeek-V4-Pro",
         );
 
@@ -2861,14 +2862,17 @@ permissions = "read_only"
         let route = preflight_route(
             "implementer",
             "zai",
-            crate::config::ZAI_GLM_5_2_MODEL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL,
             &config,
         )
         .expect("preflight");
 
         assert_eq!(route.member_id, "implementer");
         assert_eq!(route.provider_kind, "zai");
-        assert_eq!(route.wire_model, crate::config::ZAI_GLM_5_2_MODEL);
+        assert_eq!(
+            route.wire_model,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL
+        );
         assert!(!route.endpoint.host.is_empty());
         assert!(!route.endpoint.host.contains('/'));
         assert_eq!(route.credential, CredentialReadiness::Configured);
@@ -2926,7 +2930,7 @@ permissions = "read_only"
         let cloud_route = preflight_route(
             "cloud-worker",
             "ollama",
-            crate::config::DEFAULT_OLLAMA_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_MODEL,
             &cloud,
         )
         .expect("official Cloud route");
@@ -2951,7 +2955,7 @@ permissions = "read_only"
         let custom_route = preflight_route(
             "custom-worker",
             "ollama",
-            crate::config::DEFAULT_OLLAMA_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_MODEL,
             &custom_remote,
         )
         .expect("custom route still resolves structurally");
@@ -2980,7 +2984,10 @@ permissions = "read_only"
             providers: Some(crate::config::ProvidersConfig {
                 ollama: crate::config::ProviderConfig {
                     base_url: Some(codewhale_config::provider::OLLAMA_CLOUD_BASE_URL.to_string()),
-                    model: Some(crate::config::DEFAULT_OLLAMA_CLOUD_MODEL.to_string()),
+                    model: Some(
+                        codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_CLOUD_MODEL
+                            .to_string(),
+                    ),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -3000,7 +3007,7 @@ model = "{}"
 reasoning = "medium"
 permissions = "read_only"
 "#,
-            crate::config::DEFAULT_OLLAMA_CLOUD_MODEL
+            codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_CLOUD_MODEL
         ))
         .expect("legacy Cloud Fleet parses");
 
@@ -3039,7 +3046,7 @@ provider = "ollama"
 model = "{}"
 call_reasoning = "low"
 "#,
-            crate::config::DEFAULT_OLLAMA_CLOUD_MODEL
+            codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_CLOUD_MODEL
         ))
         .expect("legacy Cloud router profile parses");
         let captured =
@@ -3072,7 +3079,7 @@ call_reasoning = "low"
             assert_eq!(
                 route_reasoning_setting(
                     ProviderKind::Deepseek,
-                    crate::config::DEFAULT_DEEPSEEK_BASE_URL,
+                    codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
                     "deepseek-v4-pro",
                     tier,
                 ),
@@ -3397,7 +3404,13 @@ mod saved_fleet_tests {
         let saved = fleet(
             "My fleet",
             vec![
-                member("builder", Some(("zai", crate::config::ZAI_GLM_5_2_MODEL))),
+                member(
+                    "builder",
+                    Some((
+                        "zai",
+                        codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL,
+                    )),
+                ),
                 member("reviewer", None),
             ],
         );
@@ -3413,7 +3426,10 @@ mod saved_fleet_tests {
         let builder = exact.member("builder").expect("builder");
         assert_eq!(
             (builder.provider.as_str(), builder.model.as_str()),
-            ("zai", crate::config::ZAI_GLM_5_2_MODEL)
+            (
+                "zai",
+                codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL
+            )
         );
         // No pin and no operator: the member inherits the live session route
         // and tier, resolved now rather than left open.
@@ -3439,7 +3455,7 @@ mod saved_fleet_tests {
         let mut saved = fleet("reviewers", vec![member("auditor", None)]);
         saved.operator = Some(FleetOperator {
             provider: "zai".to_string(),
-            model: crate::config::ZAI_GLM_5_2_MODEL.to_string(),
+            model: codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL.to_string(),
             reasoning: Some("low".to_string()),
         });
         let path = save_fleet(&saved, FleetScope::Workspace, ws.path()).expect("save");
@@ -3449,7 +3465,10 @@ mod saved_fleet_tests {
         let (document, id) = load_fleet_document("reviewers", ws.path(), None).expect("loads");
         assert_eq!(id.origin, "folder");
         let auditor = document.exact().unwrap().member("auditor").unwrap();
-        assert_eq!(auditor.model, crate::config::ZAI_GLM_5_2_MODEL);
+        assert_eq!(
+            auditor.model,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL
+        );
         assert_eq!(auditor.reasoning.as_str(), "low");
     }
 
@@ -3506,7 +3525,10 @@ mod saved_fleet_tests {
         let home = tempfile::tempdir().expect("home");
         let _home = EnvVarGuard::set("CODEWHALE_HOME", home.path());
         let ws = tempfile::tempdir().expect("workspace");
-        let pin = Some(("zai", crate::config::ZAI_GLM_5_2_MODEL));
+        let pin = Some((
+            "zai",
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL,
+        ));
         let mut ultra = member("ultra", pin);
         ultra.reasoning = Some("ultra".to_string());
         let mut minimal = member("minimal", pin);
@@ -3516,7 +3538,7 @@ mod saved_fleet_tests {
         let mut saved = fleet("tiers", vec![ultra, minimal, blank]);
         saved.operator = Some(FleetOperator {
             provider: "zai".to_string(),
-            model: crate::config::ZAI_GLM_5_2_MODEL.to_string(),
+            model: codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL.to_string(),
             reasoning: Some("xhigh".to_string()),
         });
         save_fleet(&saved, FleetScope::Workspace, ws.path()).expect("save");
@@ -3550,7 +3572,13 @@ mod saved_fleet_tests {
         let home = tempfile::tempdir().expect("home");
         let _home = EnvVarGuard::set("CODEWHALE_HOME", home.path());
         let ws = tempfile::tempdir().expect("workspace");
-        let mut coach = member("coach", Some(("zai", crate::config::ZAI_GLM_5_2_MODEL)));
+        let mut coach = member(
+            "coach",
+            Some((
+                "zai",
+                codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL,
+            )),
+        );
         coach.instructions = Some("Always cite sources.".to_string());
         save_fleet(
             &fleet("coached", vec![coach]),
@@ -3580,7 +3608,13 @@ mod saved_fleet_tests {
         let mut saved = fleet(
             "release",
             vec![
-                member("builder", Some(("zai", crate::config::ZAI_GLM_5_2_MODEL))),
+                member(
+                    "builder",
+                    Some((
+                        "zai",
+                        codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL,
+                    )),
+                ),
                 member("reviewer", None),
             ],
         );
@@ -3605,7 +3639,10 @@ mod saved_fleet_tests {
         let builder = workflow
             .bind_member(Some("builder"), None, session_ceiling())
             .expect("bind builder");
-        assert_eq!(builder.route.wire_model, crate::config::ZAI_GLM_5_2_MODEL);
+        assert_eq!(
+            builder.route.wire_model,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL
+        );
 
         let reviewer = workflow
             .bind_member(Some("reviewer"), None, session_ceiling())

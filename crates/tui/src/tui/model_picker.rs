@@ -27,7 +27,7 @@ use codewhale_config::pricing::OfferingPricing;
 use crate::codex_model_cache::{
     self, CodexModelCacheFreshness, CodexModelMetadata, CodexModelRoster,
 };
-use crate::config::{Config, DEEPSEEK_ALIAS_REPLACEMENT, ProviderKind};
+use crate::config::Config;
 use crate::model_profile::{
     CapabilityOverride, SupportState, resolved_capability_profile_for_route_with_overrides,
     resolved_capability_profile_with_overrides,
@@ -44,6 +44,8 @@ use crate::tui::views::{
     render_underwater_surface,
 };
 use crate::utils::format_context_window;
+use codewhale_config::ProviderKind;
+use codewhale_config::catalog::reviewed::constants::DEEPSEEK_ALIAS_REPLACEMENT;
 use codewhale_localization::{Locale, MessageId, tr};
 use codewhale_palette as palette;
 
@@ -3781,7 +3783,9 @@ fn effective_picker_metadata_with_codex(
         .map(|tokens| tokens.min(u64::from(u32::MAX)) as u32);
     let preserves_unknown_limits = offering.is_some()
         || (provider == ProviderKind::Together
-            && id.eq_ignore_ascii_case(crate::config::TOGETHER_INKLING_MODEL));
+            && id.eq_ignore_ascii_case(
+                codewhale_config::catalog::reviewed::constants::TOGETHER_INKLING_MODEL,
+            ));
     let context_window = if context_override.is_some() {
         profile.context_window
     } else if provider == ProviderKind::OpenaiCodex {
@@ -4903,7 +4907,7 @@ fn route_picker_efforts(
     {
         return vec![ReasoningEffort::Auto];
     }
-    if matches!(provider, crate::config::ProviderKind::Deepseek) {
+    if matches!(provider, codewhale_config::ProviderKind::Deepseek) {
         return DEEPSEEK_PICKER_EFFORTS.to_vec();
     }
     DEFAULT_PICKER_EFFORTS.to_vec()
@@ -5052,7 +5056,7 @@ mod tests {
             distinct_effective_efforts(
                 vec![Auto, Off, Minimal, Low, Medium, High, XHigh, Ultra, Max],
                 ProviderKind::Deepseek,
-                crate::config::DEFAULT_DEEPSEEK_BASE_URL,
+                codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
                 "deepseek-v4.1-flash",
             ),
             vec![Auto, Off, Low, High, Max]
@@ -5062,7 +5066,7 @@ mod tests {
             distinct_effective_efforts(
                 vec![Auto, Medium, High, Max],
                 ProviderKind::Deepseek,
-                crate::config::DEFAULT_DEEPSEEK_BASE_URL,
+                codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
                 "deepseek-v4.1-flash",
             ),
             vec![Auto, High, Max]
@@ -6236,7 +6240,7 @@ mod tests {
         let model = provider_catalog_model_ids(
             ProviderKind::Openrouter,
             ProviderKind::Openrouter.as_str(),
-            crate::config::DEFAULT_OPENROUTER_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_BASE_URL,
         )
         .into_iter()
         .next()
@@ -6388,7 +6392,8 @@ model = "deepseek/deepseek-v4-flash"
                 .unwrap(),
         );
         app.model = "z-ai/glm-5.3".to_string();
-        app.active_route_base_url = crate::config::DEFAULT_OPENROUTER_BASE_URL.to_string();
+        app.active_route_base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_BASE_URL.to_string();
         (config, app, home, workspace)
     }
 

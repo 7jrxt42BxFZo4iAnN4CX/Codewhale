@@ -9,7 +9,7 @@ use anyhow::{Context, Result, bail};
 use reqwest::header::{HeaderName, HeaderValue};
 use serde_json::{Value, json};
 
-use crate::config::ProviderKind;
+use codewhale_config::ProviderKind;
 
 use super::{CodewhaleClient, api_url, responses_api_url};
 

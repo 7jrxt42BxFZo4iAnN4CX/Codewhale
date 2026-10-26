@@ -17,10 +17,11 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::config::{Config, ProviderKind};
+    use crate::config::Config;
     use crate::tui::app::TuiOptions;
     use crate::tui::history::HistoryCell;
     use codewhale_config::AppMode;
+    use codewhale_config::ProviderKind;
     use codewhale_models::{ContentBlock, Message};
 
     #[test]

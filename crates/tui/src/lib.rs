@@ -142,9 +142,7 @@ mod working_set;
 mod workspace_lease;
 mod workspace_trust;
 
-use crate::config::{
-    Config, DEFAULT_MAX_SUBAGENTS, DEFAULT_TEXT_MODEL, MAX_SUBAGENTS, initialize_cloud_facts,
-};
+use crate::config::{Config, DEFAULT_MAX_SUBAGENTS, MAX_SUBAGENTS, initialize_cloud_facts};
 use crate::eval::{EvalHarness, EvalHarnessConfig, ScenarioStepKind};
 use crate::llm_client::LlmClient;
 use crate::mcp::{
@@ -156,6 +154,7 @@ use crate::session_manager::create_saved_session;
 use crate::session_manager::{SessionManager, truncate_id};
 use crate::tui::app::ScreenMode;
 use crate::tui::history::{summarize_tool_args, summarize_tool_output};
+use codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL;
 use codewhale_models::Role;
 use codewhale_models::{ContentBlock, Message, SystemPrompt};
 use codewhale_runtime::child_env;
@@ -1037,14 +1036,14 @@ fn apply_exec_provider_override(config: &mut Config, provider_arg: &str) -> Resu
         config.provider = Some(provider_arg.to_string());
         return Ok(());
     }
-    if let Some(provider) = crate::config::ProviderKind::parse(provider_arg) {
+    if let Some(provider) = codewhale_config::ProviderKind::parse(provider_arg) {
         config.provider = Some(provider.as_str().to_string());
         return Ok(());
     }
     bail!(
         "Unrecognized --provider {provider_arg:?}. Known providers: {} \
          or a configured [providers.<name>] custom provider",
-        crate::config::ProviderKind::names_hint()
+        codewhale_config::ProviderKind::names_hint()
     );
 }
 
@@ -4511,13 +4510,13 @@ fn resolve_credential_diagnostic(config: &Config) -> CredentialDiagnostic {
     let provider = identity.provider;
     let base_url = config.base_url_for_route(&identity);
     let auth_mode = config.auth_mode_for_provider(&identity);
-    if crate::config::auth_mode_disables_api_key(auth_mode.as_deref()) {
+    if codewhale_config::auth_mode_disables_api_key(auth_mode.as_deref()) {
         return CredentialDiagnostic::new(
             ApiKeySource::NoAuth,
             CredentialAvailability::NotRequired,
         );
     }
-    if !crate::config::auth_mode_requires_api_key(auth_mode.as_deref())
+    if !codewhale_config::auth_mode_requires_api_key(auth_mode.as_deref())
         && (crate::config::provider_route_is_keyless_self_hosted(provider, &base_url)
             || crate::config::base_url_uses_local_host(&base_url))
     {
@@ -4527,7 +4526,7 @@ fn resolve_credential_diagnostic(config: &Config) -> CredentialDiagnostic {
         );
     }
     let custom_endpoint = config.provider_uses_custom_endpoint(&identity);
-    if !custom_endpoint && provider == crate::config::ProviderKind::OpenaiCodex {
+    if !custom_endpoint && provider == codewhale_config::ProviderKind::OpenaiCodex {
         return config
             .external_credential_consent_status(&identity)
             .filter(|status| status.route_state == "active")
@@ -4547,7 +4546,7 @@ fn resolve_credential_diagnostic(config: &Config) -> CredentialDiagnostic {
             );
     }
     if !custom_endpoint
-        && provider == crate::config::ProviderKind::Xai
+        && provider == codewhale_config::ProviderKind::Xai
         && auth_mode
             .as_deref()
             .is_some_and(crate::oauth::auth_mode_uses_xai_oauth)
@@ -4573,27 +4572,27 @@ fn resolve_credential_diagnostic(config: &Config) -> CredentialDiagnostic {
     let provider_config = config.provider_config();
     let provider_config_key_kind = provider_config
         .and_then(|entry| entry.api_key.as_deref())
-        .map(crate::config::classify_config_api_key_value);
+        .map(codewhale_config::classify_config_api_key_value);
     // DeepSeek-CN shares `[providers.deepseek]`'s key (the two identities
     // used to share the top-level `api_key`, #6394).
     let root_key_kind = (identity.key.as_str()
         == codewhale_config::descriptors::LEGACY_DEEPSEEK_CN.id)
         .then(|| {
             config
-                .builtin_provider_identity(crate::config::ProviderKind::Deepseek)
+                .builtin_provider_identity(codewhale_config::ProviderKind::Deepseek)
                 .ok()
         })
         .flatten()
         .and_then(|owner| config.provider_config_for(&owner))
         .and_then(|entry| entry.api_key.as_deref())
-        .map(crate::config::classify_config_api_key_value);
+        .map(codewhale_config::classify_config_api_key_value);
 
     if matches!(
         provider_config_key_kind,
-        Some(crate::config::ConfigApiKeyValueKind::Literal)
+        Some(codewhale_config::ConfigApiKeyValueKind::Literal)
     ) || matches!(
         root_key_kind,
-        Some(crate::config::ConfigApiKeyValueKind::Literal)
+        Some(codewhale_config::ConfigApiKeyValueKind::Literal)
     ) {
         CredentialDiagnostic::new(
             ApiKeySource::ConfigDeclared,
@@ -4616,10 +4615,10 @@ fn resolve_credential_diagnostic(config: &Config) -> CredentialDiagnostic {
         )
     } else if matches!(
         provider_config_key_kind,
-        Some(crate::config::ConfigApiKeyValueKind::SecretStoreSentinel)
+        Some(codewhale_config::ConfigApiKeyValueKind::SecretStoreSentinel)
     ) || matches!(
         root_key_kind,
-        Some(crate::config::ConfigApiKeyValueKind::SecretStoreSentinel)
+        Some(codewhale_config::ConfigApiKeyValueKind::SecretStoreSentinel)
     ) {
         if config.should_skip_secret_store_for_provider(&identity) {
             return CredentialDiagnostic::new(
@@ -4652,7 +4651,7 @@ fn resolve_api_key_source(config: &Config) -> ApiKeySource {
 }
 
 #[cfg(test)]
-fn provider_config_table_key(provider: crate::config::ProviderKind) -> String {
+fn provider_config_table_key(provider: codewhale_config::ProviderKind) -> String {
     format!(
         "providers.{}",
         codewhale_config::descriptors::compatibility_for_kind(provider).config_key
@@ -4904,7 +4903,7 @@ fn run_session_diagnostics(args: SessionDiagnosticsArgs) -> Result<()> {
 /// Live API checks are explicit. Local endpoints have a separate opt-in because
 /// an HTTP request can wake a desktop-managed daemon (notably Ollama.app).
 fn doctor_should_probe_api(
-    provider: crate::config::ProviderKind,
+    provider: codewhale_config::ProviderKind,
     base_url: &str,
     probes: crate::doctor::DoctorProbeRequest,
 ) -> bool {
@@ -4917,11 +4916,11 @@ fn doctor_should_probe_api(
 ///
 /// The retired Antigravity identity is a non-runnable tombstone kept only so
 /// legacy tables deserialize and clear; doctor never advertises it as a slot.
-fn doctor_api_key_providers() -> impl Iterator<Item = crate::config::ProviderKind> {
-    crate::config::ProviderKind::all()
+fn doctor_api_key_providers() -> impl Iterator<Item = codewhale_config::ProviderKind> {
+    codewhale_config::ProviderKind::all()
         .iter()
         .copied()
-        .filter(|provider| *provider != crate::config::ProviderKind::Antigravity)
+        .filter(|provider| *provider != codewhale_config::ProviderKind::Antigravity)
 }
 
 /// Doctor must never turn credential inspection into a refresh/write path.
@@ -4932,23 +4931,23 @@ fn doctor_should_probe_auth(config: &Config) -> bool {
         return false;
     };
     let provider = identity.provider;
-    if provider == crate::config::ProviderKind::OpenaiCodex
+    if provider == codewhale_config::ProviderKind::OpenaiCodex
         && !config.provider_uses_custom_endpoint(&identity)
     {
         return false;
     }
     let auth_mode = config.auth_mode_for_provider(&identity);
-    if provider == crate::config::ProviderKind::Xai
+    if provider == codewhale_config::ProviderKind::Xai
         && auth_mode
             .as_deref()
             .is_some_and(crate::oauth::auth_mode_uses_xai_oauth)
     {
         return false;
     }
-    !(provider == crate::config::ProviderKind::Moonshot
+    !(provider == codewhale_config::ProviderKind::Moonshot
         && auth_mode
             .as_deref()
-            .is_some_and(crate::config::auth_mode_uses_kimi_imported_token))
+            .is_some_and(codewhale_config::auth_mode_uses_kimi_imported_token))
 }
 
 /// Run system diagnostics
@@ -5183,8 +5182,8 @@ async fn run_doctor(
             .and_then(|identity| config.provider_config_for(identity));
         let config_declared = provider_config.is_some_and(|entry| {
             entry.api_key.as_deref().is_some_and(|key| {
-                crate::config::classify_config_api_key_value(key)
-                    == crate::config::ConfigApiKeyValueKind::Literal
+                codewhale_config::classify_config_api_key_value(key)
+                    == codewhale_config::ConfigApiKeyValueKind::Literal
             })
         });
         let declared_env = provider_config
@@ -5376,7 +5375,7 @@ async fn run_doctor(
                 let provider = identity
                     .as_ref()
                     .map(|identity| identity.provider)
-                    .unwrap_or(crate::config::ProviderKind::Deepseek);
+                    .unwrap_or(codewhale_config::ProviderKind::Deepseek);
                 if names_status("401") || error_msg.contains("Unauthorized") {
                     println!(
                         "    Invalid API key. Check `codewhale auth status`, {}, or config.toml",
@@ -6160,7 +6159,7 @@ fn doctor_env_key_label(source: &str) -> String {
 /// Where a rejected key might live, named without reading it. A route that
 /// binds `api_key_env` is named by that variable; otherwise the provider's
 /// first ambient variable.
-fn doctor_provider_key_place(provider: crate::config::ProviderKind) -> String {
+fn doctor_provider_key_place(provider: codewhale_config::ProviderKind) -> String {
     provider
         .provider()
         .env_vars()
@@ -7770,9 +7769,9 @@ fn doctor_external_credential_consent_statuses(
     config: &Config,
 ) -> Vec<codewhale_config::ExternalCredentialConsentStatus> {
     [
-        crate::config::ProviderKind::OpenaiCodex,
-        crate::config::ProviderKind::Xai,
-        crate::config::ProviderKind::Deepseek,
+        codewhale_config::ProviderKind::OpenaiCodex,
+        codewhale_config::ProviderKind::Xai,
+        codewhale_config::ProviderKind::Deepseek,
     ]
     .into_iter()
     .filter_map(|provider| {
@@ -8527,7 +8526,7 @@ fn doctor_provider_source(config: &Config) -> &'static str {
     }
 }
 
-fn doctor_wire_protocol(provider: crate::config::ProviderKind) -> &'static str {
+fn doctor_wire_protocol(provider: codewhale_config::ProviderKind) -> &'static str {
     let policy = provider.provider().wire_policy();
     match policy.fixed() {
         Some(codewhale_config::provider::WireFormat::ChatCompletions) => "chat_completions",
@@ -8537,7 +8536,7 @@ fn doctor_wire_protocol(provider: crate::config::ProviderKind) -> &'static str {
     }
 }
 
-fn doctor_base_url_class(provider: crate::config::ProviderKind, base_url: &str) -> &'static str {
+fn doctor_base_url_class(provider: codewhale_config::ProviderKind, base_url: &str) -> &'static str {
     let normalized = base_url.trim_end_matches('/').to_ascii_lowercase();
     if normalized.starts_with("http://localhost")
         || normalized.starts_with("http://127.0.0.1")
@@ -8562,25 +8561,25 @@ fn doctor_auth_scheme(config: &Config) -> &'static str {
         return "unavailable";
     };
     let provider = identity.provider;
-    if crate::config::auth_mode_disables_api_key(
+    if codewhale_config::auth_mode_disables_api_key(
         config.auth_mode_for_provider(&identity).as_deref(),
     ) {
         "none"
-    } else if provider == crate::config::ProviderKind::Anthropic {
+    } else if provider == codewhale_config::ProviderKind::Anthropic {
         "x-api-key"
-    } else if provider == crate::config::ProviderKind::XiaomiMimo
+    } else if provider == codewhale_config::ProviderKind::XiaomiMimo
         && doctor_xiaomi_mimo_base_url_uses_token_plan(&config.base_url_for_route(&identity))
     {
         "api-key"
-    } else if provider == crate::config::ProviderKind::XiaomiMimo {
+    } else if provider == codewhale_config::ProviderKind::XiaomiMimo {
         // The alternate MiMo scheme depends on a credential prefix. Ordinary
         // doctor does not read credentials merely to make this label precise.
         "unknown"
     } else if matches!(
         provider,
-        crate::config::ProviderKind::Sglang
-            | crate::config::ProviderKind::Vllm
-            | crate::config::ProviderKind::Ollama
+        codewhale_config::ProviderKind::Sglang
+            | codewhale_config::ProviderKind::Vllm
+            | codewhale_config::ProviderKind::Ollama
     ) {
         "optional_bearer"
     } else {
@@ -8877,7 +8876,7 @@ fn known_deepseek_base_url_kind(base_url: &str) -> Option<DeepSeekBaseUrlKind> {
 }
 
 fn recommended_strict_base_url(_config: &Config, _base_url: &str) -> &'static str {
-    crate::config::DEFAULT_DEEPSEEK_BASE_URL
+    codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL
 }
 
 fn doctor_timeout_recovery_lines(config: &Config) -> Vec<String> {
@@ -8898,7 +8897,7 @@ fn doctor_timeout_recovery_lines(config: &Config) -> Vec<String> {
         .ok()
         .map(|identity| identity.provider)
     {
-        Some(crate::config::ProviderKind::Deepseek)
+        Some(codewhale_config::ProviderKind::Deepseek)
             if target.base_url.contains("api.deepseek.com")
                 && !target.base_url.contains("api.deepseeki.com") =>
         {
@@ -8907,7 +8906,7 @@ fn doctor_timeout_recovery_lines(config: &Config) -> Vec<String> {
                     .to_string(),
             );
         }
-        Some(crate::config::ProviderKind::Deepseek) => {
+        Some(codewhale_config::ProviderKind::Deepseek) => {
             lines.push(
                 "If this is a custom DeepSeek-compatible endpoint, confirm it serves `/v1/models` and `/v1/chat/completions` over HTTPS."
                     .to_string(),
@@ -8943,11 +8942,11 @@ async fn run_models(config: &Config, args: ModelsArgs) -> Result<()> {
 
 async fn run_speech(config: &Config, args: SpeechArgs) -> Result<()> {
     use crate::client::{CodewhaleClient, SpeechSynthesisRequest};
-    use crate::config::ProviderKind;
     use crate::tools::speech::{
         DEFAULT_VOICE, SpeechPreparation, SpeechSurface, SpeechVoice, describe_speech_voice,
         encode_voice_clone_sample_data_uri, prepare_speech_format, prepare_speech_options,
     };
+    use codewhale_config::ProviderKind;
 
     let SpeechArgs {
         text,
@@ -9850,7 +9849,11 @@ async fn run_chatgpt_pkce_auth(config_path: Option<&Path>) -> Result<()> {
         "To switch ChatGPT accounts or workspaces, run `CODEWHALE_CHATGPT_NEW_ACCOUNT=1 codewhale auth chatgpt` in a shell and restart open Codewhale sessions. `/auth chatgpt` reauthorizes the selected account."
     );
     let mut selected = Config::load(config_path.map(Path::to_path_buf), None)?;
-    selected.provider = Some(config::ProviderKind::OpenaiCodex.as_str().to_string());
+    selected.provider = Some(
+        codewhale_config::ProviderKind::OpenaiCodex
+            .as_str()
+            .to_string(),
+    );
     match crate::codex_model_cache::update_from_chatgpt(&selected).await {
         Ok(roster) => println!(
             "{} ChatGPT models available. Use `codewhale models --provider openai-codex` to list them.",
@@ -13861,7 +13864,7 @@ fn config_for_cli_route(config: &Config, route: &CliAutoRoute) -> Result<Config>
         .scope_to_provider_identity(&route.provider)
         .map_err(anyhow::Error::msg)?;
     execution_config.set_provider_model_override(&route.provider, Some(route.model.clone()))?;
-    if route.provider.provider == crate::config::ProviderKind::Deepseek {
+    if route.provider.provider == codewhale_config::ProviderKind::Deepseek {
         execution_config.default_text_model = Some(route.model.clone());
     }
     Ok(execution_config)
@@ -13952,7 +13955,7 @@ async fn resolve_cli_exec_route(
 ) -> Result<CliAutoRoute> {
     let mut local_default = None;
     if let Ok(identity) = config.active_provider_identity()
-        && identity.provider == crate::config::ProviderKind::Ollama
+        && identity.provider == codewhale_config::ProviderKind::Ollama
     {
         crate::provider_lake::refresh_local_ollama_catalog(config, &identity).await;
         if crate::config::is_unresolved_local_ollama_model(model)
@@ -14002,7 +14005,7 @@ fn exec_stream_provider_route(
     identity: &crate::config::ProviderIdentity,
 ) -> (String, Option<String>) {
     let provider = identity.persisted_kind().to_string();
-    let provider_id = if identity.provider == crate::config::ProviderKind::Custom {
+    let provider_id = if identity.provider == codewhale_config::ProviderKind::Custom {
         identity.persisted_id().map(str::to_string)
     } else {
         None
@@ -15992,7 +15995,7 @@ mod doctor_setup_state_tests {
         assert_eq!(report["provider_model"]["provider"]["display"], "DeepSeek");
         assert_eq!(
             report["provider_model"]["model"]["resolved"],
-            crate::config::DEFAULT_TEXT_MODEL
+            codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL
         );
         assert_eq!(
             report["provider_model"]["auth"]["source"],
@@ -16094,7 +16097,7 @@ mod doctor_setup_state_tests {
         let codex_report = doctor_setup_report_json(&codex_config, &workspace);
         assert_eq!(
             codex_report["provider_model"]["provider"]["id"],
-            crate::config::ProviderKind::OpenaiCodex.as_str()
+            codewhale_config::ProviderKind::OpenaiCodex.as_str()
         );
         assert!(codex_report["provider_model"]["auth"]["credential_url"].is_null());
         assert_eq!(
@@ -16364,8 +16367,10 @@ mod doctor_setup_state_tests {
         );
         assert_eq!(provider_step(&report)["result"], "deepseek/deepseek-chat");
 
-        let unprobed_config = Config { ..config.clone() }
-            .with_legacy_root(Some(crate::config::API_KEYRING_SENTINEL.to_string()), None);
+        let unprobed_config = Config { ..config.clone() }.with_legacy_root(
+            Some(codewhale_config::API_KEYRING_SENTINEL.to_string()),
+            None,
+        );
         let unprobed_report = doctor_setup_report_json(&unprobed_config, &workspace);
         assert_eq!(unprobed_report["credential"]["ready"], false);
         assert_eq!(unprobed_report["credential"]["availability"], "not_probed");
@@ -16562,8 +16567,14 @@ mod doctor_endpoint_tests {
         let target = doctor_api_target(&config);
 
         assert_eq!(target.provider, "deepseek");
-        assert_eq!(target.base_url, crate::config::DEFAULT_DEEPSEEK_BASE_URL);
-        assert_eq!(target.model, crate::config::DEFAULT_TEXT_MODEL);
+        assert_eq!(
+            target.base_url,
+            codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL
+        );
+        assert_eq!(
+            target.model,
+            codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL
+        );
         assert_eq!(target.resolution, DoctorModelResolution::Resolved);
     }
 
@@ -16593,9 +16604,18 @@ mod doctor_endpoint_tests {
         let target = doctor_api_target(&config);
 
         assert_eq!(target.provider, "deepseek-cn");
-        assert_eq!(target.base_url, crate::config::DEFAULT_DEEPSEEKCN_BASE_URL);
-        assert_eq!(target.base_url, crate::config::DEFAULT_DEEPSEEK_BASE_URL);
-        assert_eq!(target.model, crate::config::DEFAULT_TEXT_MODEL);
+        assert_eq!(
+            target.base_url,
+            codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEKCN_BASE_URL
+        );
+        assert_eq!(
+            target.base_url,
+            codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL
+        );
+        assert_eq!(
+            target.model,
+            codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL
+        );
         assert_eq!(target.resolution, DoctorModelResolution::Resolved);
     }
 
@@ -16656,7 +16676,7 @@ mod doctor_endpoint_tests {
         assert!(!status.function_strict_sent);
         assert_eq!(
             status.recommended_base_url.as_deref(),
-            Some(crate::config::DEFAULT_DEEPSEEK_BASE_URL)
+            Some(codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL)
         );
         assert_eq!(
             doctor_strict_tool_mode_report_json(&status)["recommended_base_url"],
@@ -16782,7 +16802,7 @@ mod doctor_endpoint_tests {
         }
         .with_legacy_root(
             None,
-            Some(crate::config::DEFAULT_DEEPSEEK_BASE_URL.to_string()),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL.to_string()),
         );
         crate::config::normalize_model_config_for_test(&mut config);
         let report = provider_capability_report(&config);
@@ -16790,7 +16810,7 @@ mod doctor_endpoint_tests {
         assert!(report["alias_deprecation"].is_null());
         assert!(
             crate::provider_lake::provider_capability(
-                crate::config::ProviderKind::Deepseek,
+                codewhale_config::ProviderKind::Deepseek,
                 "deepseek-v4-pro"
             )
             .alias_deprecation
@@ -16854,9 +16874,11 @@ mod doctor_endpoint_tests {
     fn doctor_route_report_exposes_siliconflow_cn_provider_route() {
         let mut providers = crate::config::ProvidersConfig::default();
         providers.siliconflow_cn.api_key = Some("sf-cn-secret-value".to_string());
-        providers.siliconflow_cn.base_url =
-            Some(crate::config::DEFAULT_SILICONFLOW_CN_BASE_URL.to_string());
-        providers.siliconflow_cn.model = Some(crate::config::DEFAULT_SILICONFLOW_MODEL.to_string());
+        providers.siliconflow_cn.base_url = Some(
+            codewhale_config::descriptors::defaults::DEFAULT_SILICONFLOW_CN_BASE_URL.to_string(),
+        );
+        providers.siliconflow_cn.model =
+            Some(codewhale_config::descriptors::defaults::DEFAULT_SILICONFLOW_MODEL.to_string());
         let config = Config {
             provider: Some("siliconflow-CN".to_string()),
             providers: Some(providers),
@@ -16868,11 +16890,14 @@ mod doctor_endpoint_tests {
 
         assert_eq!(report["provider"], "siliconflow-CN");
         assert_eq!(report["provider_config_table"], "providers.siliconflow_cn");
-        assert_eq!(report["model"], crate::config::DEFAULT_SILICONFLOW_MODEL);
+        assert_eq!(
+            report["model"],
+            codewhale_config::descriptors::defaults::DEFAULT_SILICONFLOW_MODEL
+        );
         assert_eq!(
             report["base_url"]["redacted"],
             codewhale_config::structural_url_authority(
-                crate::config::DEFAULT_SILICONFLOW_CN_BASE_URL
+                codewhale_config::descriptors::defaults::DEFAULT_SILICONFLOW_CN_BASE_URL
             )
         );
         assert_eq!(report["base_url"]["class"], "default");
@@ -16888,8 +16913,14 @@ mod doctor_endpoint_tests {
             providers: Some(crate::config::ProvidersConfig {
                 moonshot: crate::config::ProviderConfig {
                     api_key: Some("kimi-plan-secret".to_string()),
-                    base_url: Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
-                    model: Some(crate::config::KIMI_CODE_K3_MODEL.to_string()),
+                    base_url: Some(
+                        codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL
+                            .to_string(),
+                    ),
+                    model: Some(
+                        codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL
+                            .to_string(),
+                    ),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -16915,8 +16946,14 @@ mod doctor_endpoint_tests {
             providers: Some(crate::config::ProvidersConfig {
                 moonshot: crate::config::ProviderConfig {
                     api_key: Some("kimi-plan-secret".to_string()),
-                    base_url: Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
-                    model: Some(crate::config::KIMI_CODE_K3_MODEL.to_string()),
+                    base_url: Some(
+                        codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL
+                            .to_string(),
+                    ),
+                    model: Some(
+                        codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL
+                            .to_string(),
+                    ),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -16926,7 +16963,10 @@ mod doctor_endpoint_tests {
 
         let report = provider_capability_report(&config);
 
-        assert_eq!(report["resolved_model"], crate::config::KIMI_CODE_K3_MODEL);
+        assert_eq!(
+            report["resolved_model"],
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL
+        );
         assert_eq!(report["context_window"], 262_144);
         assert_eq!(
             report["context_window_source"],
@@ -16942,8 +16982,14 @@ mod doctor_endpoint_tests {
             providers: Some(crate::config::ProvidersConfig {
                 moonshot: crate::config::ProviderConfig {
                     api_key: Some("kimi-plan-secret".to_string()),
-                    base_url: Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
-                    model: Some(crate::config::KIMI_CODE_K3_MODEL.to_string()),
+                    base_url: Some(
+                        codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL
+                            .to_string(),
+                    ),
+                    model: Some(
+                        codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL
+                            .to_string(),
+                    ),
                     context_window: Some(1_048_576),
                     ..Default::default()
                 },
@@ -16956,7 +17002,7 @@ mod doctor_endpoint_tests {
 
         assert_eq!(
             report["resolved_model"],
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             "the configured window must preserve Kimi Code's bare wire id"
         );
         assert_eq!(report["context_window"], 1_048_576);
@@ -16971,7 +17017,10 @@ mod doctor_endpoint_tests {
             providers: Some(crate::config::ProvidersConfig {
                 moonshot: crate::config::ProviderConfig {
                     api_key: Some("moonshot-secret".to_string()),
-                    base_url: Some(crate::config::DEFAULT_MOONSHOT_BASE_URL.to_string()),
+                    base_url: Some(
+                        codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL
+                            .to_string(),
+                    ),
                     model: Some("kimi-k3".to_string()),
                     ..Default::default()
                 },
@@ -18600,7 +18649,7 @@ mod project_config_tests {
             assert_eq!(
                 crate::route_runtime::resolve_runtime_route(
                     &explicit,
-                    crate::config::ProviderKind::Openai,
+                    codewhale_config::ProviderKind::Openai,
                     None
                 )
                 .unwrap()
@@ -19446,12 +19495,12 @@ mod doctor_live_probe_tests {
     #[test]
     fn local_provider_probe_requires_explicit_opt_in() {
         assert!(!doctor_should_probe_api(
-            crate::config::ProviderKind::Ollama,
+            codewhale_config::ProviderKind::Ollama,
             "http://127.0.0.1:11434/v1",
             crate::doctor::DoctorProbeRequest::default(),
         ));
         assert!(doctor_should_probe_api(
-            crate::config::ProviderKind::Ollama,
+            codewhale_config::ProviderKind::Ollama,
             "http://127.0.0.1:11434/v1",
             crate::doctor::DoctorProbeRequest {
                 probe_local: true,
@@ -19464,12 +19513,12 @@ mod doctor_live_probe_tests {
     fn ollama_cloud_probe_uses_hosted_opt_in_not_local_opt_in() {
         let cloud = codewhale_config::provider::OLLAMA_CLOUD_BASE_URL;
         assert!(!doctor_should_probe_api(
-            crate::config::ProviderKind::OllamaCloud,
+            codewhale_config::ProviderKind::OllamaCloud,
             cloud,
             crate::doctor::DoctorProbeRequest::default(),
         ));
         assert!(doctor_should_probe_api(
-            crate::config::ProviderKind::OllamaCloud,
+            codewhale_config::ProviderKind::OllamaCloud,
             cloud,
             crate::doctor::DoctorProbeRequest {
                 probe_api: true,
@@ -19477,7 +19526,7 @@ mod doctor_live_probe_tests {
             },
         ));
         assert!(!doctor_should_probe_api(
-            crate::config::ProviderKind::OllamaCloud,
+            codewhale_config::ProviderKind::OllamaCloud,
             cloud,
             crate::doctor::DoctorProbeRequest {
                 probe_local: true,
@@ -19489,7 +19538,7 @@ mod doctor_live_probe_tests {
     #[test]
     fn custom_loopback_probe_also_requires_explicit_opt_in() {
         assert!(!doctor_should_probe_api(
-            crate::config::ProviderKind::Custom,
+            codewhale_config::ProviderKind::Custom,
             "http://localhost:8000/v1",
             crate::doctor::DoctorProbeRequest::default(),
         ));
@@ -20383,7 +20432,7 @@ mod setup_helper_tests {
         let cloud = ollama_config(codewhale_config::provider::OLLAMA_CLOUD_BASE_URL);
         assert_eq!(
             cloud.active_provider_identity().unwrap().provider,
-            crate::config::ProviderKind::OllamaCloud
+            codewhale_config::ProviderKind::OllamaCloud
         );
         assert_eq!(
             resolve_api_key_source(&cloud),
@@ -20541,11 +20590,11 @@ mod setup_helper_tests {
     #[test]
     fn provider_status_helpers_use_provider_metadata() {
         assert_eq!(
-            provider_config_table_key(crate::config::ProviderKind::Anthropic),
+            provider_config_table_key(codewhale_config::ProviderKind::Anthropic),
             "providers.anthropic"
         );
         assert_eq!(
-            provider_config_table_key(crate::config::ProviderKind::SiliconflowCN),
+            provider_config_table_key(codewhale_config::ProviderKind::SiliconflowCN),
             "providers.siliconflow_cn"
         );
     }

@@ -1346,7 +1346,7 @@ pub(super) fn reject_inline_inference_while_runtime_chat_owns_run(
 pub(crate) fn apply_notification_update(
     app: &mut App,
     config: &mut Config,
-    update: crate::config::NotificationConfigUpdate,
+    update: codewhale_config::notifications::NotificationConfigUpdate,
 ) -> Result<()> {
     let mut notifications = config.notifications_config();
     let setting = update.setting();

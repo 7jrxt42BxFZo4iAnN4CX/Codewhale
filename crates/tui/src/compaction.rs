@@ -6,8 +6,8 @@ use std::fmt::Write;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::config::DEFAULT_TEXT_MODEL;
 use crate::core::model_client::ModelClient;
+use codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL;
 use codewhale_models::Role;
 use codewhale_models::{
     CacheControl, ContentBlock, Message, MessageRequest, SystemBlock, SystemPrompt, Tool, Usage,
@@ -3398,7 +3398,7 @@ mod tests {
         assert_eq!(
             request.max_tokens,
             crate::route_budget::effective_max_output_tokens_for_route(
-                crate::config::ProviderKind::Custom,
+                codewhale_config::ProviderKind::Custom,
                 "test-model",
                 None,
             )
@@ -3933,12 +3933,12 @@ mod tests {
         for (route_label, provider, model) in [
             (
                 "thinking-default route",
-                crate::config::ProviderKind::Deepseek,
+                codewhale_config::ProviderKind::Deepseek,
                 "deepseek-v4-flash",
             ),
             (
                 "fixed-sampling route",
-                crate::config::ProviderKind::Moonshot,
+                codewhale_config::ProviderKind::Moonshot,
                 "k3",
             ),
         ] {

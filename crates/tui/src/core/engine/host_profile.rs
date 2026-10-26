@@ -172,7 +172,7 @@ mod tests {
         engine.config.features.disable(Feature::Mcp);
         engine.host_profile = EngineHostProfile::Acp;
         let route = TurnRouteContext {
-            provider: crate::config::ProviderKind::Deepseek,
+            provider: codewhale_config::ProviderKind::Deepseek,
             model: DEFAULT_TEXT_MODEL.into(),
             capabilities: Default::default(),
             limits: None,

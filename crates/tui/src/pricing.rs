@@ -11,11 +11,12 @@ use codewhale_config::pricing::{
     PricingQuoteError, TokenClass, TokenUsage,
 };
 
+use crate::config::{DEEPSEEK_ALIAS_RETIREMENT_UTC, canonical_model_id_for_provider};
+use codewhale_config::ProviderKind;
 #[cfg(test)]
-use crate::config::DEFAULT_STEPFUN_MODEL;
-use crate::config::{
-    DEEPSEEK_ALIAS_RETIREMENT_UTC, DEFAULT_STEPFUN_BASE_URL, DEFAULT_STEPFUN_PLAN_BASE_URL,
-    ProviderKind, canonical_model_id_for_provider,
+use codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_MODEL;
+use codewhale_config::descriptors::defaults::{
+    DEFAULT_STEPFUN_BASE_URL, DEFAULT_STEPFUN_PLAN_BASE_URL,
 };
 use codewhale_config::pricing::CostCurrency;
 use codewhale_models::{Usage, has_date_snapshot_suffix};
@@ -2246,7 +2247,7 @@ fn reviewed_provider_live_route_is_metered(
                 && endpoint_fingerprint.is_some_and(|fingerprint| {
                     fingerprint
                         == codewhale_config::catalog::base_url_fingerprint(
-                            crate::config::DEFAULT_OPENROUTER_BASE_URL,
+                            codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_BASE_URL,
                         )
                 })
         }
@@ -2938,7 +2939,7 @@ mod tests {
             ),
             (
                 ProviderKind::Moonshot,
-                crate::config::DEFAULT_KIMI_CODE_BASE_URL,
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
                 MOONSHOT_KIMI_CODE_BILLING_SURFACE,
                 EndpointMetering::ExactSubscription,
             ),
@@ -2956,7 +2957,7 @@ mod tests {
             ),
             (
                 ProviderKind::XiaomiMimo,
-                crate::config::DEFAULT_XIAOMI_MIMO_BASE_URL,
+                codewhale_config::descriptors::defaults::DEFAULT_XIAOMI_MIMO_BASE_URL,
                 XIAOMI_TOKEN_PLAN_BILLING_SURFACE,
                 EndpointMetering::ExactSubscription,
             ),
@@ -3163,7 +3164,7 @@ mod tests {
         assert_eq!(
             billing_surface_for_route(
                 ProviderKind::Moonshot,
-                Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL)
+                Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL)
             ),
             Some(MOONSHOT_KIMI_CODE_BILLING_SURFACE)
         );
@@ -5463,7 +5464,7 @@ mod tests {
         let now = Utc::now();
         let fetched_at = u64::try_from(now.timestamp()).expect("timestamp");
         let fingerprint = codewhale_config::catalog::base_url_fingerprint(
-            crate::config::DEFAULT_FIREWORKS_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_FIREWORKS_BASE_URL,
         );
         crate::provider_lake::set_live_snapshot(
             codewhale_config::catalog::CatalogSnapshot {
@@ -5516,7 +5517,7 @@ mod tests {
             .expect("timestamp")
             .saturating_add(1);
         let fingerprint = codewhale_config::catalog::base_url_fingerprint(
-            crate::config::DEFAULT_FIREWORKS_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_FIREWORKS_BASE_URL,
         );
         crate::provider_lake::set_live_snapshot(
             codewhale_config::catalog::CatalogSnapshot {
@@ -5653,7 +5654,7 @@ mod tests {
         let now = Utc::now();
         let fetched_at = u64::try_from(now.timestamp()).expect("timestamp");
         let fingerprint = codewhale_config::catalog::base_url_fingerprint(
-            crate::config::DEFAULT_CONCENTRATE_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_CONCENTRATE_BASE_URL,
         );
         crate::provider_lake::set_live_snapshot(
             codewhale_config::catalog::CatalogSnapshot {
@@ -5681,7 +5682,7 @@ mod tests {
         let usage = million_input_usage();
         let surface = billing_surface_for_route(
             ProviderKind::Concentrate,
-            Some(crate::config::DEFAULT_CONCENTRATE_BASE_URL),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_CONCENTRATE_BASE_URL),
         );
         let scoped = audit_turn_cost_for_route_on_endpoint_at(
             ProviderKind::Concentrate,

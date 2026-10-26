@@ -8,12 +8,12 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde_json::{Value, json};
 
 use crate::client::CodewhaleClient;
-use crate::config::ProviderKind;
 use crate::config::VisionModelConfig;
 use crate::llm_client::{LlmError, RetryConfig, sanitize_http_error_body, with_retry};
 use crate::tools::spec::{
     ToolCapability, ToolContext, ToolError, ToolResult, ToolSpec, required_str,
 };
+use codewhale_config::ProviderKind;
 
 pub struct ImageAnalyzeTool {
     config: VisionModelConfig,

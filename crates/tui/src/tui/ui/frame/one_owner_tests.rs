@@ -697,8 +697,9 @@ fn statusline_full_frame_presets_preserve_transcript_composer_and_hitboxes() {
 /// missing coverage is evidence, independent of whether today's route is known.
 #[test]
 fn statusline_full_frame_custom_cost_preserves_evidence_and_width_shedding() {
-    use crate::config::{ChromeRowPreset, ProviderKind, StatusItem};
+    use crate::config::{ChromeRowPreset, StatusItem};
     use crate::route_billing::{BillingPresentation, UsageChip};
+    use codewhale_config::ProviderKind;
 
     for (width, height) in [(40, 12), (60, 16), (80, 24), (100, 32)] {
         let mut app = frame_app();

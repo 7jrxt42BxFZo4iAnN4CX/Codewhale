@@ -68,7 +68,7 @@ fn collect() -> Value {
         app.ui_locale = codewhale_localization::Locale::En;
         app.set_provider_identity_record(
             crate::config::Config::default()
-                .resolve_provider_identity(crate::config::ProviderKind::Deepseek.as_str())
+                .resolve_provider_identity(codewhale_config::ProviderKind::Deepseek.as_str())
                 .expect("captured fixture provider"),
         );
         samples.insert(command.to_string(), outcome(execute(command, &mut app)));
@@ -107,13 +107,13 @@ fn collect() -> Value {
         app.ui_locale = codewhale_localization::Locale::En;
         app.set_provider_identity_record(
             crate::config::Config::default()
-                .resolve_provider_identity(crate::config::ProviderKind::Deepseek.as_str())
+                .resolve_provider_identity(codewhale_config::ProviderKind::Deepseek.as_str())
                 .expect("captured fixture provider"),
         );
         match label {
             "balance_unsupported" => app.set_provider_identity_record(
                 crate::config::Config::default()
-                    .resolve_provider_identity(crate::config::ProviderKind::OpenaiCodex.as_str())
+                    .resolve_provider_identity(codewhale_config::ProviderKind::OpenaiCodex.as_str())
                     .expect("captured fixture provider"),
             ),
             "tokens_reported_telemetry" => {

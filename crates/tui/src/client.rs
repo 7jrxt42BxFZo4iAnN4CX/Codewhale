@@ -32,14 +32,14 @@ use codewhale_config::route::{
 use codewhale_config::{auth_mode_disables_api_key, is_upstream_auth_header};
 
 use crate::config::{
-    Config, ProviderIdentity, ProviderKind, RetryPolicy, validate_route,
-    wire_model_for_provider_route,
+    Config, ProviderIdentity, RetryPolicy, validate_route, wire_model_for_provider_route,
 };
 use crate::llm_client::{
     LlmClient, LlmError, OutboundWireObservation, RetryConfig as LlmRetryConfig,
     ToolWireMeasurement, extract_retry_after, observe_outbound_wire, retry_delay_from_error_body,
     sanitize_http_error_body, with_retry,
 };
+use codewhale_config::ProviderKind;
 #[cfg(test)]
 #[path = "client/catalog_tests.rs"]
 mod catalog_tests;
@@ -2496,7 +2496,7 @@ impl CodewhaleClient {
             api_key,
             extra_headers,
             ProviderKind::Deepseek,
-            crate::config::DEFAULT_DEEPSEEK_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
             WireFormat::ChatCompletions,
             false,
             AuthHeaderSurface::Inference,
@@ -4171,7 +4171,7 @@ impl CodewhaleClient {
     ) -> Result<SpeechSynthesisResponse> {
         let _inference = self.acquire_remote_control_inference_permit().await;
         let _permit = self.acquire_provider_request_permit().await;
-        if self.api_provider != crate::config::ProviderKind::XiaomiMimo {
+        if self.api_provider != codewhale_config::ProviderKind::XiaomiMimo {
             anyhow::bail!(
                 "speech synthesis requires provider 'xiaomi-mimo' (current: {})",
                 self.api_provider.as_str()
@@ -4681,7 +4681,7 @@ impl CodewhaleClient {
 /// customer's own `[providers.<name>]` table key when the route is custom.
 /// `ProviderKind::Custom` yields the literal `"custom"` and nothing else, and
 /// no model id is sent for any provider.
-pub(crate) fn record_provider_response(provider: crate::config::ProviderKind, status: u16) {
+pub(crate) fn record_provider_response(provider: codewhale_config::ProviderKind, status: u16) {
     let counters = codewhale_telemetry::session_counters();
     counters.record_provider(provider);
     if let Some(counter) = codewhale_telemetry::counters::http_status_counter(status) {
@@ -6943,7 +6943,8 @@ mod configured_model_client_tests {
 #[cfg(test)]
 mod openrouter_vendor_tests {
     use super::*;
-    use crate::config::{OPENROUTER_QWEN_3_6_FLASH_MODEL, ProviderConfig, ProvidersConfig};
+    use crate::config::{ProviderConfig, ProvidersConfig};
+    use codewhale_config::catalog::reviewed::constants::OPENROUTER_QWEN_3_6_FLASH_MODEL;
     use futures_util::StreamExt;
     use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
 

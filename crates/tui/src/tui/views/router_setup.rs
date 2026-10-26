@@ -36,7 +36,7 @@ use ratatui::{
 };
 
 use crate::client::system_one::DecisionRouterRoute;
-use crate::config::{AutoConfig, AutoRouterConfig, Config, ProviderKind};
+use crate::config::{AutoConfig, AutoRouterConfig, Config};
 use crate::model_inventory::ModelInventory;
 use crate::model_routing::{AutoRouteSelection, provider_router_candidates};
 use crate::tui::app::{App, StatusToastLevel};
@@ -46,6 +46,7 @@ use crate::tui::views::{
     ActionHint, CommandPaletteAction, ModalKind, ModalView, ViewAction, ViewEvent,
     centered_modal_area, render_modal_footer, render_modal_surface,
 };
+use codewhale_config::ProviderKind;
 use codewhale_localization::{Locale, MessageId, tr};
 use codewhale_palette as palette;
 

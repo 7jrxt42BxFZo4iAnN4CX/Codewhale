@@ -1060,11 +1060,11 @@ mod tests {
     fn kernel_failure_result_retains_child_usage_receipt() {
         let route = crate::cost_status::EffectiveRouteEnvelope::capture(
             None,
-            crate::config::ProviderKind::Deepseek,
-            crate::config::ProviderKind::Deepseek.as_str(),
+            codewhale_config::ProviderKind::Deepseek,
+            codewhale_config::ProviderKind::Deepseek.as_str(),
             "deepseek-v4-flash",
             Some(
-                crate::config::ProviderKind::Deepseek
+                codewhale_config::ProviderKind::Deepseek
                     .provider()
                     .default_base_url(),
             ),

@@ -540,7 +540,7 @@ pub(crate) fn is_keyless_ds4_route(config: &crate::config::Config) -> bool {
         .as_deref()
         .is_some_and(|provider| provider.eq_ignore_ascii_case("ds4"))
         && crate::config::base_url_uses_local_host(&config.active_route_base_url())
-        && crate::config::auth_mode_disables_api_key(
+        && codewhale_config::auth_mode_disables_api_key(
             config
                 .active_provider_identity()
                 .ok()

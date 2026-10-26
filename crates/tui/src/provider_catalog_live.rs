@@ -33,7 +33,8 @@ use codewhale_config::persistence::atomic_write_json;
 use codewhale_config::pricing::{Currency, OfferingPricing, PricingProvenance};
 use serde::{Deserialize, Serialize};
 
-use crate::config::{Config, ProviderKind};
+use crate::config::Config;
+use codewhale_config::ProviderKind;
 
 const CACHE_SCHEMA_VERSION: u32 = 2;
 const CACHE_FILE: &str = "provider-catalogs.json";
@@ -1545,7 +1546,9 @@ fn reviewed_provider_live_scope(
         ProviderKind::Openrouter => {
             provider_identity == ProviderKind::Openrouter.as_str()
                 && endpoint_fingerprint
-                    == base_url_fingerprint(crate::config::DEFAULT_OPENROUTER_BASE_URL)
+                    == base_url_fingerprint(
+                        codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_BASE_URL,
+                    )
         }
         ProviderKind::Custom => {
             endpoint_fingerprint
@@ -2048,8 +2051,9 @@ pub(crate) fn reset_cache_for_test() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{ProviderConfig, ProviderKind, ProvidersConfig};
+    use crate::config::{ProviderConfig, ProvidersConfig};
     use crate::test_support::{EnvVarGuard, lock_test_env};
+    use codewhale_config::ProviderKind;
     use codewhale_config::catalog::{CatalogOffering, CatalogSource};
 
     fn delta(provider: &str, fingerprint: &str, ids: &[&str]) -> ProviderCatalogDelta {
@@ -2554,7 +2558,7 @@ mod tests {
         );
         assert_eq!(
             crate::provider_lake::all_catalog_models_for_provider_identity(
-                crate::config::ProviderKind::Custom,
+                codewhale_config::ProviderKind::Custom,
                 Some("baseten"),
             ),
             vec!["old-endpoint-model".to_string()]
@@ -2565,7 +2569,7 @@ mod tests {
             0
         );
         let after_switch = crate::provider_lake::all_catalog_models_for_provider_identity(
-            crate::config::ProviderKind::Custom,
+            codewhale_config::ProviderKind::Custom,
             Some("baseten"),
         );
         assert!(
@@ -3009,7 +3013,7 @@ mod tests {
         crate::provider_lake::clear_live_snapshot();
         let now = chrono::Utc::now();
         let at = now.timestamp() as u64;
-        let base = crate::config::DEFAULT_OPENAI_BASE_URL;
+        let base = codewhale_config::descriptors::defaults::DEFAULT_OPENAI_BASE_URL;
         install_cloud_quote_fixture("quote-frozen", ProviderKind::Openai, 91, 1.0, at);
         let route = crate::cost_status::EffectiveRouteEnvelope::capture(
             None,
@@ -3091,7 +3095,7 @@ mod tests {
         reset_cache_for_test();
         crate::provider_lake::clear_live_snapshot();
         let at = now_unix();
-        let base = crate::config::DEFAULT_OPENAI_BASE_URL;
+        let base = codewhale_config::descriptors::defaults::DEFAULT_OPENAI_BASE_URL;
         install_cloud_quote_fixture("quote-binding", ProviderKind::Openai, 93, 1.0, at);
         let quote = fresh_dispatch_pricing_quote_at(
             ProviderKind::Openai,

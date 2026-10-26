@@ -6703,7 +6703,7 @@ pub(super) const REASONING_EFFORT_AUTO: &str = "auto";
 /// the user's wording. Non-`"auto"` values pass through unchanged.
 pub(super) fn resolve_auto_effort(
     reasoning_effort: Option<&str>,
-    provider: crate::config::ProviderKind,
+    provider: codewhale_config::ProviderKind,
     base_url: &str,
     wire_model: &str,
 ) -> Option<String> {
@@ -7744,8 +7744,8 @@ mod tests {
         assert_eq!(
             resolve_auto_effort(
                 Some("auto"),
-                crate::config::ProviderKind::Deepseek,
-                crate::config::DEFAULT_DEEPSEEK_BASE_URL,
+                codewhale_config::ProviderKind::Deepseek,
+                codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
                 "deepseek-v4-pro",
             ),
             Some("high".to_string()),
@@ -7757,9 +7757,9 @@ mod tests {
     fn resolve_auto_effort_selects_a_concrete_kimi_code_tier() {
         let resolved = resolve_auto_effort(
             Some("auto"),
-            crate::config::ProviderKind::Moonshot,
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::ProviderKind::Moonshot,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
         )
         .expect("Auto dispatch must select a concrete tier");
 
@@ -7770,9 +7770,9 @@ mod tests {
         assert_eq!(
             resolve_auto_effort(
                 None,
-                crate::config::ProviderKind::Moonshot,
-                crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-                crate::config::KIMI_CODE_K3_MODEL,
+                codewhale_config::ProviderKind::Moonshot,
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             ),
             None,
             "only an omitted reasoning setting leaves the provider default in control"

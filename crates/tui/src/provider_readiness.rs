@@ -6,8 +6,9 @@
 
 use std::borrow::Cow;
 
-use crate::config::{ProviderIdentity, ProviderKind};
+use crate::config::ProviderIdentity;
 use crate::error_taxonomy::{ErrorCategory, ErrorEnvelope};
+use codewhale_config::ProviderKind;
 use codewhale_config::route::{LogicalModelRef, RouteRequest, RouteResolver};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,7 +97,7 @@ pub(crate) fn auth_class_for_provider(
     {
         return ProviderAuthClass::OAuth;
     }
-    if crate::config::auth_mode_disables_api_key(auth_mode.as_deref()) {
+    if codewhale_config::auth_mode_disables_api_key(auth_mode.as_deref()) {
         return ProviderAuthClass::NoAuth;
     }
     let official_endpoint = !config.provider_uses_custom_endpoint(identity);
@@ -107,7 +108,7 @@ pub(crate) fn auth_class_for_provider(
         && official_endpoint
         && auth_mode
             .as_deref()
-            .is_some_and(crate::config::auth_mode_uses_kimi_imported_token)
+            .is_some_and(codewhale_config::auth_mode_uses_kimi_imported_token)
     {
         return ProviderAuthClass::ImportedToken;
     }
@@ -205,10 +206,10 @@ pub(crate) fn credential_state_for_provider(
             CredentialState::MissingLogin
         };
     }
-    if crate::config::auth_mode_disables_api_key(auth_mode.as_deref()) {
+    if codewhale_config::auth_mode_disables_api_key(auth_mode.as_deref()) {
         return CredentialState::NoAuth;
     }
-    let api_key_required = crate::config::auth_mode_requires_api_key(auth_mode.as_deref());
+    let api_key_required = codewhale_config::auth_mode_requires_api_key(auth_mode.as_deref());
     let official_endpoint = !config.provider_uses_custom_endpoint(identity);
 
     // A built-in provider can intentionally target a local OpenAI-compatible
@@ -258,8 +259,8 @@ pub(crate) fn credential_state_for_provider(
             || (config.selects_literal_custom_provider()
                 && crate::config::has_api_key_for(config, identity))
             || configured.api_key.as_deref().is_some_and(|value| {
-                crate::config::classify_config_api_key_value(value)
-                    == crate::config::ConfigApiKeyValueKind::Literal
+                codewhale_config::classify_config_api_key_value(value)
+                    == codewhale_config::ConfigApiKeyValueKind::Literal
             })
             || configured
                 .api_key_env
@@ -294,7 +295,7 @@ pub(crate) fn credential_state_for_provider(
         && official_endpoint
         && auth_mode
             .as_deref()
-            .is_some_and(crate::config::auth_mode_uses_kimi_imported_token);
+            .is_some_and(codewhale_config::auth_mode_uses_kimi_imported_token);
     if uses_kimi_imported_token {
         // Kimi remains API-key-only until Codewhale has its own registered
         // OAuth client identity. Never inspect Kimi CLI storage here.
@@ -390,8 +391,8 @@ fn explicit_provider_credential_present(
         || (config.config_credentials_are_bound_to_provider_endpoint(identity)
             && config.provider_config_for(identity).is_some_and(|entry| {
                 entry.api_key.as_deref().is_some_and(|value| {
-                    crate::config::classify_config_api_key_value(value)
-                        == crate::config::ConfigApiKeyValueKind::Literal
+                    codewhale_config::classify_config_api_key_value(value)
+                        == codewhale_config::ConfigApiKeyValueKind::Literal
                 }) || entry
                     .api_key_env
                     .as_deref()
@@ -1072,15 +1073,15 @@ mod tests {
             &crate::route_receipt::TurnRouteReceipt::for_test_fixture(
                 &config,
                 ProviderKind::OpenaiCodex,
-                crate::config::DEFAULT_OPENAI_CODEX_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL,
             ),
-            crate::config::DEFAULT_OPENAI_CODEX_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL,
         );
         assert_eq!(
             resolve_test_route(
                 &config,
                 ProviderKind::OpenaiCodex,
-                crate::config::DEFAULT_OPENAI_CODEX_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL,
                 CredentialState::ExternalConsent,
                 true,
                 &checks,
@@ -1121,7 +1122,7 @@ mod tests {
             resolve_test_route(
                 &config,
                 ProviderKind::OpenaiCodex,
-                crate::config::DEFAULT_OPENAI_CODEX_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL,
                 CredentialState::ExternalConsent,
                 true,
                 &checks,

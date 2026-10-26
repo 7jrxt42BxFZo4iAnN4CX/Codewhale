@@ -11,7 +11,7 @@ use std::cell::{Cell, RefCell};
 use std::fmt;
 use unicode_width::UnicodeWidthStr;
 
-use crate::config::{ApprovalPolicyControl, Config, ProviderKind};
+use crate::config::{ApprovalPolicyControl, Config};
 use crate::settings::Settings;
 use crate::tools::UserInputResponse;
 use crate::tools::subagent::{
@@ -25,6 +25,7 @@ use crate::tui::menu_style;
 use crate::tui::tideline::{SettingApplySemantics, SettingAuthority, SettingFact, UiSnapshot};
 use crate::tui::widgets::agent_card::AgentLifecycle;
 use codewhale_agent_contract::role::FleetRole;
+use codewhale_config::ProviderKind;
 use codewhale_localization::{
     Locale, MessageId, configured_locale_is_partial_pack, normalize_configured_locale, tr, tr_key,
 };
@@ -821,13 +822,13 @@ pub enum ViewEvent {
     /// Re-resolve readiness + rebuild catalog rows for the open model picker.
     ModelPickerRefresh,
     ModelPickerTogglePin {
-        provider: crate::config::ProviderKind,
+        provider: codewhale_config::ProviderKind,
         /// Exact named route for `Custom`; built-in providers leave this unset.
         provider_id: Option<String>,
         model: String,
     },
     ModelPickerMovePin {
-        provider: crate::config::ProviderKind,
+        provider: codewhale_config::ProviderKind,
         /// Exact named route for `Custom`; built-in providers leave this unset.
         provider_id: Option<String>,
         model: String,
@@ -836,7 +837,7 @@ pub enum ViewEvent {
     /// `⇧F` in the picker: add the row's exact route to the team (the
     /// selected saved team), or remove it when it is already there (design §10 F1).
     ModelPickerToggleFleet {
-        provider: crate::config::ProviderKind,
+        provider: codewhale_config::ProviderKind,
         /// Exact named route for `Custom`; built-in providers leave this unset.
         provider_id: Option<String>,
         model: String,
@@ -849,7 +850,7 @@ pub enum ViewEvent {
     },
     FleetProfileRoutePicked {
         editor_id: uuid::Uuid,
-        provider: crate::config::ProviderKind,
+        provider: codewhale_config::ProviderKind,
         provider_id: Option<String>,
         model: String,
         reasoning: Option<crate::reasoning_preference::ReasoningEffort>,
@@ -872,7 +873,7 @@ pub enum ViewEvent {
     FleetRoutePicked {
         target: crate::tui::views::fleet_detail::FleetRouteTarget,
         editor_id: uuid::Uuid,
-        provider: crate::config::ProviderKind,
+        provider: codewhale_config::ProviderKind,
         /// Exact named route for `Custom`; built-in providers leave this unset.
         provider_id: Option<String>,
         model: String,
@@ -953,14 +954,14 @@ pub enum ViewEvent {
     /// Emitted only after the picker showed owner, exact path, and the full
     /// read-only side-effect contract and the user explicitly confirmed it.
     ProviderPickerExternalConsentConfirmed {
-        provider: crate::config::ProviderKind,
+        provider: codewhale_config::ProviderKind,
         consent_provider: codewhale_config::ProviderKind,
         source: codewhale_config::ExternalCredentialSource,
         path: std::path::PathBuf,
     },
     /// One-step revocation from a provider row that currently has consent.
     ProviderPickerExternalConsentRevoked {
-        provider: crate::config::ProviderKind,
+        provider: codewhale_config::ProviderKind,
     },
     /// Emitted by the `/provider` picker (the `M` action) to jump straight to
     /// the `/model` picker pre-filtered to the highlighted provider (#3083).
@@ -7514,7 +7515,7 @@ mod tests {
             ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
         let mut app = App::new(options, &Config::default());
-        app.api_provider = crate::config::ProviderKind::Deepseek;
+        app.api_provider = codewhale_config::ProviderKind::Deepseek;
         app
     }
 
@@ -8307,7 +8308,7 @@ api_key_env = "ACME_API_KEY"
         .expect("custom provider config");
         let mut app = create_test_app();
         app.config_path = Some(config_path);
-        app.set_provider_identity(crate::config::ProviderKind::Custom, "acme_ai");
+        app.set_provider_identity(codewhale_config::ProviderKind::Custom, "acme_ai");
         let mut view = ConfigView::new_for_app(&app);
         view.focus_key("provider");
 
@@ -8361,8 +8362,8 @@ api_key_env = "ACME_API_KEY"
     fn config_view_zai_model_row_has_no_derived_rows() {
         let _guard = ConfigSettingsEnvGuard::new("");
         let mut app = create_test_app();
-        app.api_provider = crate::config::ProviderKind::Zai;
-        app.model = crate::config::ZAI_GLM_5_2_MODEL.to_string();
+        app.api_provider = codewhale_config::ProviderKind::Zai;
+        app.model = codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL.to_string();
 
         let view = ConfigView::new_for_app(&app);
         let active = view
@@ -8404,9 +8405,10 @@ api_key_env = "ACME_API_KEY"
         let mut app = create_test_app();
         app.config_path = Some(config_path.clone());
         // Live session route, exactly as a /provider switch would leave it.
-        app.api_provider = crate::config::ProviderKind::Zai;
+        app.api_provider = codewhale_config::ProviderKind::Zai;
         app.model = "GLM-5.3".to_string();
-        app.active_route_base_url = crate::config::DEFAULT_ZAI_BASE_URL.to_string();
+        app.active_route_base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL.to_string();
 
         let view = ConfigView::new_for_app(&app);
 
@@ -8439,7 +8441,10 @@ api_key_env = "ACME_API_KEY"
             .iter()
             .find(|row| row.key == "provider_url")
             .expect("endpoint row for the live Z.ai route");
-        assert_eq!(url_row.value, crate::config::DEFAULT_ZAI_BASE_URL);
+        assert_eq!(
+            url_row.value,
+            codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL
+        );
         assert!(!view.rows.iter().any(|row| row.key == "base_url"));
     }
 
@@ -8448,11 +8453,11 @@ api_key_env = "ACME_API_KEY"
         let _guard = ConfigSettingsEnvGuard::new("");
         let mut app = create_test_app();
         for provider in [
-            crate::config::ProviderKind::Zai,
-            crate::config::ProviderKind::Xai,
-            crate::config::ProviderKind::Openrouter,
-            crate::config::ProviderKind::Ollama,
-            crate::config::ProviderKind::Deepseek,
+            codewhale_config::ProviderKind::Zai,
+            codewhale_config::ProviderKind::Xai,
+            codewhale_config::ProviderKind::Openrouter,
+            codewhale_config::ProviderKind::Ollama,
+            codewhale_config::ProviderKind::Deepseek,
         ] {
             app.api_provider = provider;
             let view = ConfigView::new_for_app(&app);
@@ -8470,7 +8475,7 @@ api_key_env = "ACME_API_KEY"
         // the canonical config selection writer.
         let _guard = ConfigSettingsEnvGuard::new("default_model = \"deepseek-v4-pro\"\n");
         let mut app = create_test_app();
-        app.api_provider = crate::config::ProviderKind::Zai;
+        app.api_provider = codewhale_config::ProviderKind::Zai;
 
         let view = ConfigView::new_for_app(&app);
         assert!(
@@ -8493,7 +8498,7 @@ api_key_env = "ACME_API_KEY"
     fn config_view_settings_rows_land_in_truthful_sections() {
         let _guard = ConfigSettingsEnvGuard::new("default_model = \"deepseek-v4-pro\"\n");
         let mut app = create_test_app();
-        app.api_provider = crate::config::ProviderKind::Zai;
+        app.api_provider = codewhale_config::ProviderKind::Zai;
         let view = ConfigView::new_for_app(&app);
 
         let section_of = |key: &str| {
@@ -8708,8 +8713,9 @@ base_url = "https://api.xiaomimimo.com/v1"
         .unwrap();
 
         let mut app = create_test_app();
-        app.api_provider = crate::config::ProviderKind::XiaomiMimo;
-        app.active_route_base_url = crate::config::DEFAULT_XIAOMI_MIMO_BASE_URL.to_string();
+        app.api_provider = codewhale_config::ProviderKind::XiaomiMimo;
+        app.active_route_base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_XIAOMI_MIMO_BASE_URL.to_string();
         app.ui_locale = Locale::Es419;
         app.config_path = Some(config_path.clone());
         let mut view = ConfigView::new_for_app(&app);
@@ -8721,7 +8727,10 @@ base_url = "https://api.xiaomimimo.com/v1"
             .expect("provider_url row missing");
         // The endpoint row reflects the live route identity (the default when
         // nothing overrides it), not a config-file re-read, and is a receipt.
-        assert_eq!(row.value, crate::config::DEFAULT_XIAOMI_MIMO_BASE_URL);
+        assert_eq!(
+            row.value,
+            codewhale_config::descriptors::defaults::DEFAULT_XIAOMI_MIMO_BASE_URL
+        );
         assert!(!row.editable);
         assert!(!view.rows.iter().any(|row| row.key == "base_url"));
 
@@ -8938,14 +8947,14 @@ base_url = "https://api.xiaomimimo.com/v1"
         crate::tui::ui::apply_notification_update(
             &mut app,
             &mut config,
-            crate::config::NotificationConfigUpdate::Quiet(true),
+            codewhale_config::notifications::NotificationConfigUpdate::Quiet(true),
         )
         .unwrap();
         crate::tui::ui::apply_notification_update(
             &mut app,
             &mut config,
-            crate::config::NotificationConfigUpdate::Sound(Some(
-                crate::config::CompletionSound::Whale,
+            codewhale_config::notifications::NotificationConfigUpdate::Sound(Some(
+                codewhale_config::notifications::CompletionSound::Whale,
             )),
         )
         .unwrap();
@@ -9137,8 +9146,10 @@ base_url = "https://api.xiaomimimo.com/v1"
                 let temp = tempfile::tempdir().unwrap();
                 let path = temp.path().join("config.toml");
                 for sample in samples {
-                    let edit =
-                        crate::config::NotificationConfigUpdate::parse(setting, &sample).unwrap();
+                    let edit = codewhale_config::notifications::NotificationConfigUpdate::parse(
+                        setting, &sample,
+                    )
+                    .unwrap();
                     edit.persist(&path).unwrap();
                     let loaded = Config::load(Some(path.clone()), None)
                         .unwrap()
@@ -9451,7 +9462,10 @@ context_window = 131072
         let saved_identity = saved
             .active_provider_identity()
             .expect("saved admitted custom identity");
-        assert_eq!(saved_identity.provider, crate::config::ProviderKind::Custom);
+        assert_eq!(
+            saved_identity.provider,
+            codewhale_config::ProviderKind::Custom
+        );
         assert_eq!(saved_identity.key.as_str(), "custom-current");
         assert_eq!(
             saved.context_window_for_provider_config(&saved_identity),
@@ -9486,7 +9500,7 @@ context_window = 131072
             .expect("foreign admitted provider identity");
         assert_eq!(
             foreign_identity.provider,
-            crate::config::ProviderKind::Custom
+            codewhale_config::ProviderKind::Custom
         );
         assert_eq!(foreign_identity.provider, app.api_provider);
         assert_eq!(foreign_identity.key.as_str(), "custom-other");
@@ -9505,7 +9519,7 @@ context_window = 131072
     fn config_view_displays_saved_codex_reasoning_effort_label() {
         let _guard = ConfigSettingsEnvGuard::new("reasoning_effort = \"max\"\n");
         let mut app = create_test_app();
-        app.api_provider = crate::config::ProviderKind::OpenaiCodex;
+        app.api_provider = codewhale_config::ProviderKind::OpenaiCodex;
 
         let view = ConfigView::new_for_app(&app);
         let row = view

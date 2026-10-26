@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Removed the internal config re-export facade and its model-constant wrapper;
+  provider types, shared constants, credential helpers, and notification types
+  now come directly from their shared owners. Configuration and saved settings
+  keep their existing behavior.
+
 - Removed superseded home-directory and Fleet-role re-export shims, unused
   tool-context sandbox/MCP fields, and the redundant core tool-parser facade.
   Consumers now call their existing owners directly; tool denial rules, approval

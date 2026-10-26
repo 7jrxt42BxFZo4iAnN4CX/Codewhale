@@ -26,7 +26,10 @@ async fn interactive_thinking_only_drop_preserves_nothing_and_never_claims_it_di
             content: "solve the task".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(
+                &config,
+                codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL,
+            ),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,
@@ -261,7 +264,10 @@ async fn run_reasoning_only_turn_with_reprompts(
             content: "solve the task".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(
+                &config,
+                codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL,
+            ),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,

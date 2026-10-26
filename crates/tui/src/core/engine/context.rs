@@ -4,11 +4,11 @@
 //! engine session maintenance code. Keeping them here prevents the top-level
 //! engine module from accumulating unrelated context-policy details.
 
-use crate::config::ProviderKind;
 #[cfg(test)]
 pub(super) use crate::route_budget::effective_max_output_tokens;
 pub(super) use crate::route_budget::effective_max_output_tokens_for_route;
 use crate::tools::spec::ToolResult;
+use codewhale_config::ProviderKind;
 use codewhale_config::route::RouteLimits;
 use codewhale_models::SystemPrompt;
 use codewhale_runtime::context_budget::ContextBudget;

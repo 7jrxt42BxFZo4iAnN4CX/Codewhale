@@ -6,8 +6,9 @@ use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
 
-use crate::config::{BaseUrlEnvReceipt, Config, ProviderIdentity, ProviderKind};
+use crate::config::{BaseUrlEnvReceipt, Config, ProviderIdentity};
 use crate::config_persistence as persistence;
+use codewhale_config::ProviderKind;
 
 /// Whether a config key names a provider or model selection.
 pub fn is_route_key(key: &str) -> bool {
@@ -840,7 +841,7 @@ model = "Other-X"
         // A foreign active-route root must never become the DeepSeek default.
         assert_eq!(
             get(&path, "default_model")?.as_deref(),
-            Some(crate::config::DEFAULT_TEXT_MODEL)
+            Some(codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL)
         );
         unset(&path, "providers.zai.model")?;
         assert!(document(&path).get("model").is_none());

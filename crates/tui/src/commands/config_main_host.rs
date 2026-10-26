@@ -3,12 +3,11 @@
 use crate::commands::CommandResult;
 use crate::config::{
     Config, DEFAULT_STREAM_CHUNK_TIMEOUT_SECS, DEFAULT_SUBAGENT_API_TIMEOUT_SECS,
-    DEFAULT_SUBAGENT_HEARTBEAT_TIMEOUT_SECS, DEFAULT_XIAOMI_MIMO_BASE_URL,
-    MAX_STREAM_CHUNK_TIMEOUT_SECS, MAX_SUBAGENT_API_TIMEOUT_SECS,
-    MAX_SUBAGENT_HEARTBEAT_TIMEOUT_SECS, MAX_SUBAGENTS, MIN_STREAM_CHUNK_TIMEOUT_SECS,
-    MIN_SUBAGENT_API_TIMEOUT_SECS, MIN_SUBAGENT_HEARTBEAT_TIMEOUT_SECS, NotificationConfigUpdate,
-    NotificationSetting, NotificationsConfig, ProviderKind, SearchProvider, SearchProviderSource,
-    SubagentsConfig, XIAOMI_MIMO_PAY_AS_YOU_GO_BASE_URL, normalize_custom_model_id,
+    DEFAULT_SUBAGENT_HEARTBEAT_TIMEOUT_SECS, MAX_STREAM_CHUNK_TIMEOUT_SECS,
+    MAX_SUBAGENT_API_TIMEOUT_SECS, MAX_SUBAGENT_HEARTBEAT_TIMEOUT_SECS, MAX_SUBAGENTS,
+    MIN_STREAM_CHUNK_TIMEOUT_SECS, MIN_SUBAGENT_API_TIMEOUT_SECS,
+    MIN_SUBAGENT_HEARTBEAT_TIMEOUT_SECS, SearchProvider, SearchProviderSource, SubagentsConfig,
+    XIAOMI_MIMO_PAY_AS_YOU_GO_BASE_URL, normalize_custom_model_id,
     normalize_model_name_for_provider, validate_route,
 };
 use crate::config_persistence::{
@@ -22,6 +21,11 @@ use crate::tui::app::{App, AppAction, AppModeUi, SettingSelection, VimMode};
 use anyhow::Result;
 use codewhale_command_contract::config::{CommandWorkflowSummary, ConfigMessage, ConfigReply};
 use codewhale_config::AppMode;
+use codewhale_config::ProviderKind;
+use codewhale_config::descriptors::defaults::DEFAULT_XIAOMI_MIMO_BASE_URL;
+use codewhale_config::notifications::{
+    NotificationConfigUpdate, NotificationSetting, NotificationsConfig,
+};
 use codewhale_execpolicy::ApprovalMode;
 use codewhale_localization::{MessageId, resolve_locale, tr};
 use std::path::PathBuf;
@@ -1768,7 +1772,7 @@ pub fn set_config_value(app: &mut App, key: &str, value: &str, persist: bool) ->
                     value.to_ascii_lowercase().as_str(),
                     "none" | "default" | "(default)"
                 ) {
-                crate::config::DEFAULT_TEXT_MODEL
+                codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL
             } else {
                 value
             };
@@ -2893,11 +2897,11 @@ pub(crate) fn clear_legacy_sandbox_slot() -> Result<bool, String> {
 mod tests {
     use super::*;
     use crate::config::Config;
-    use crate::config::NotificationMethod;
     use crate::test_support::{EnvVarGuard, TestEnvLock, lock_test_env};
     use crate::tui::app::OnboardingState;
     use crate::tui::app::ScreenMode;
     use crate::tui::app::{App, TuiOptions};
+    use codewhale_config::notifications::NotificationMethod;
     use std::env;
 
     /// Invoke the portable `/logout` handler through a real capability envelope
@@ -3113,7 +3117,7 @@ mod tests {
         // not normalized through a provider selected in an interactive run.
         app.model = "test-model".to_string();
         app.auto_model = false;
-        app.api_provider = crate::config::ProviderKind::Deepseek;
+        app.api_provider = codewhale_config::ProviderKind::Deepseek;
         app.model_ids_passthrough = false;
         app
     }
@@ -3830,12 +3834,15 @@ mod tests {
     fn config_model_rejects_foreign_model_for_direct_provider() {
         let mut app = create_test_app();
         app.api_provider = ProviderKind::Zai;
-        app.model = crate::config::ZAI_GLM_5_2_MODEL.to_string();
+        app.model = codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL.to_string();
 
         let result = set_config_value(&mut app, "model", "deepseek-v4-pro", false);
 
         assert!(result.is_error);
-        assert_eq!(app.model, crate::config::ZAI_GLM_5_2_MODEL);
+        assert_eq!(
+            app.model,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL
+        );
         assert!(result.action.is_none());
         let message = result.message.as_deref().expect("rejection message");
         assert!(
@@ -3919,13 +3926,16 @@ mod tests {
         .expect("config");
         let mut app = create_test_app();
         app.api_provider = ProviderKind::Zai;
-        app.model = crate::config::ZAI_GLM_5_2_MODEL.to_string();
+        app.model = codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL.to_string();
         app.auto_model = false;
 
         let session_only = set_config_value(&mut app, "default_model", "deepseek-v4-flash", false);
 
         assert!(session_only.is_error);
-        assert_eq!(app.model, crate::config::ZAI_GLM_5_2_MODEL);
+        assert_eq!(
+            app.model,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL
+        );
         assert!(session_only.action.is_none());
         assert!(
             session_only
@@ -3937,7 +3947,10 @@ mod tests {
         let saved = set_config_value(&mut app, "default_model", "deepseek-v4-flash", true);
 
         assert!(!saved.is_error);
-        assert_eq!(app.model, crate::config::ZAI_GLM_5_2_MODEL);
+        assert_eq!(
+            app.model,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL
+        );
         assert!(saved.action.is_none());
         assert!(
             saved
@@ -4038,7 +4051,7 @@ mod tests {
 
         let mut app = create_test_app();
         app.api_provider = ProviderKind::Zai;
-        app.model = crate::config::ZAI_GLM_5_2_MODEL.to_string();
+        app.model = codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL.to_string();
         app.auto_model = false;
 
         let result = set_config_value(&mut app, "default_model", "my-llm", true);

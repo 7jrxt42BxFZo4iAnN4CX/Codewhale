@@ -15,9 +15,9 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
 
-#[cfg(test)]
-use crate::config::ProviderKind;
 use crate::tools::todo::TodoListSnapshot;
+#[cfg(test)]
+use codewhale_config::ProviderKind;
 use codewhale_models::Usage;
 
 use codewhale_agent_contract::role::FleetRole;

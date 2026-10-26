@@ -13,7 +13,8 @@ use codewhale_config::catalog::{
 };
 use serde::Deserialize;
 
-use crate::config::{Config, ProviderKind};
+use crate::config::Config;
+use codewhale_config::ProviderKind;
 
 const TAGS_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 

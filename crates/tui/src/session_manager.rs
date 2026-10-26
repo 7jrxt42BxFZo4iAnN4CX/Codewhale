@@ -8,7 +8,6 @@
 
 use crate::approval_log::{ApprovalReceipt, ApprovalReceiptStore, ApprovalReplay};
 use crate::artifacts::ArtifactRecord;
-use crate::config::ProviderKind;
 use crate::model_routing::AutoRouteReceipt;
 use crate::project_context::find_git_root;
 use crate::tools::goal::{GoalPauseReason, GoalSnapshot};
@@ -17,6 +16,7 @@ use crate::tools::todo::TodoListSnapshot;
 use crate::utils::write_atomic;
 use crate::work_graph::ReasoningEffortTier;
 use chrono::{DateTime, Utc};
+use codewhale_config::ProviderKind;
 use codewhale_core::ContextReference;
 #[cfg(test)]
 use codewhale_core::{ContextReferenceKind, ContextReferenceSource};

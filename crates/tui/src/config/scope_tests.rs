@@ -14,8 +14,9 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::config::{Config, ProviderKind};
+use crate::config::Config;
 use crate::provider_readiness::{ResolvedProviderReadiness, resolve_for_model};
+use codewhale_config::ProviderKind;
 
 struct HomeGuard {
     prev_home: Option<std::ffi::OsString>,

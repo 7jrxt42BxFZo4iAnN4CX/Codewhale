@@ -740,7 +740,7 @@ impl Engine {
             );
             super::context::context_does_not_fit_message(
                 self.config.terminal_chrome_enabled,
-                self.api_provider == crate::config::ProviderKind::Ollama,
+                self.api_provider == codewhale_config::ProviderKind::Ollama,
                 &self.session.model,
                 estimated_input,
                 input_budget,

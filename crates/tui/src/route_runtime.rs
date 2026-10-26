@@ -10,11 +10,12 @@ use serde::Serialize;
 use crate::client::CodewhaleClient;
 use crate::codex_model_cache::{CodexModelCacheFreshness, CodexModelRoster, model_roster_for};
 use crate::config::{
-    Config, KIMI_CODE_K3_CONTEXT_WINDOW_TOKENS, ProviderIdentity, ProviderKind,
-    is_exact_direct_moonshot_k3_route, is_exact_kimi_code_bare_k3_route,
+    Config, ProviderIdentity, is_exact_direct_moonshot_k3_route, is_exact_kimi_code_bare_k3_route,
     validate_kimi_code_api_model_id,
 };
+use codewhale_config::ProviderKind;
 use codewhale_models::DIRECT_KIMI_K3_MAX_OUTPUT_TOKENS;
+use codewhale_models::KIMI_CODE_K3_CONTEXT_WINDOW_TOKENS;
 
 /// Why a route is using its effective context-window value.  Keep this
 /// receipt separate from the numeric route limits so every consumer can state
@@ -1171,7 +1172,8 @@ fn set_model_for_route(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{DEFAULT_TEXT_MODEL, DEFAULT_ZAI_MODEL, ProviderConfig, ProvidersConfig};
+    use crate::config::{ProviderConfig, ProvidersConfig};
+    use codewhale_config::descriptors::defaults::{DEFAULT_TEXT_MODEL, DEFAULT_ZAI_MODEL};
 
     #[test]
     fn configured_model_limits_precede_provider_defaults() {
@@ -1539,7 +1541,7 @@ mod tests {
             serde_json::to_vec(&serde_json::json!({
                 "fetched_at": chrono::Utc::now(),
                 "models": [{
-                    "slug": crate::config::DEFAULT_OPENAI_CODEX_MODEL,
+                    "slug": codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL,
                     "priority": 1,
                     "context_window": 128000,
                     "supported_reasoning_levels": [{"effort": "high"}]
@@ -1551,7 +1553,7 @@ mod tests {
 
         let candidate = resolve_route_candidate(
             ProviderKind::OpenaiCodex,
-            Some(crate::config::DEFAULT_OPENAI_CODEX_MODEL),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL),
             None,
             None,
             None,
@@ -1565,7 +1567,7 @@ mod tests {
         assert_eq!(
             crate::route_budget::route_context_window_tokens(
                 ProviderKind::OpenaiCodex,
-                crate::config::DEFAULT_OPENAI_CODEX_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL,
                 Some(candidate.limits()),
             ),
             128_000
@@ -1589,7 +1591,7 @@ mod tests {
             &config,
             &[
                 "gpt-test-flagship",
-                crate::config::DEFAULT_OPENAI_CODEX_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL,
             ],
         )
         .expect("account roster");
@@ -1601,10 +1603,13 @@ mod tests {
         let explicit = resolve_runtime_route(
             &config,
             ProviderKind::OpenaiCodex,
-            Some(crate::config::DEFAULT_OPENAI_CODEX_MODEL),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL),
         )
         .expect("explicit codex route resolves");
-        assert_eq!(explicit.model, crate::config::DEFAULT_OPENAI_CODEX_MODEL);
+        assert_eq!(
+            explicit.model,
+            codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL
+        );
     }
 
     #[test]
@@ -1695,7 +1700,7 @@ mod tests {
             ProviderKind::Moonshot,
             Some("k3"),
             None,
-            Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
             None,
             None,
         )
@@ -1713,7 +1718,7 @@ mod tests {
         assert_eq!(
             crate::provider_lake::provider_capability(
                 ProviderKind::Moonshot,
-                crate::config::KIMI_CODE_K3_MODEL
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL
             )
             .context_window,
             262_144
@@ -1723,7 +1728,8 @@ mod tests {
 
     #[test]
     fn kimi_code_context_resolution_records_precedence_and_rejects_bad_metadata() {
-        let base = Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string());
+        let base =
+            Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string());
         let static_floor = resolve_route_candidate_with_context_metadata(
             ProviderKind::Moonshot,
             Some("k3"),
@@ -1800,7 +1806,7 @@ mod tests {
             ProviderKind::Moonshot,
             Some("k3"),
             None,
-            Some(crate::config::DEFAULT_MOONSHOT_BASE_URL.to_string()),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL.to_string()),
             None,
             None,
             Some(ProviderReportedKimiCodeContext {
@@ -1821,7 +1827,7 @@ mod tests {
             ProviderKind::Moonshot,
             Some("k3"),
             None,
-            Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
             Some(1_048_576),
             None,
         )
@@ -1829,7 +1835,7 @@ mod tests {
 
         assert_eq!(
             candidate.wire_model_id().as_str(),
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             "the 1M entitlement changes limits, never the provider wire id"
         );
         assert!(crate::config::is_exact_kimi_code_bare_k3_route(
@@ -1950,7 +1956,9 @@ mod tests {
                 ProviderKind::Moonshot,
                 selected,
                 saved,
-                Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
+                Some(
+                    codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string(),
+                ),
                 None,
                 None,
             )
@@ -1965,10 +1973,12 @@ mod tests {
 
     #[test]
     fn k3_route_rejects_cross_paired_model_ids_and_allows_canonical_pairs() {
-        use crate::config::{
-            DEFAULT_KIMI_CODE_BASE_URL, DEFAULT_MOONSHOT_BASE_URL, KIMI_CODE_K3_MODEL,
-            MOONSHOT_KIMI_K3_MODEL, moonshot_k3_route_display_name,
-            validate_kimi_code_api_model_id,
+        use crate::config::{moonshot_k3_route_display_name, validate_kimi_code_api_model_id};
+        use codewhale_config::catalog::reviewed::constants::{
+            KIMI_CODE_K3_MODEL, MOONSHOT_KIMI_K3_MODEL,
+        };
+        use codewhale_config::descriptors::defaults::{
+            DEFAULT_KIMI_CODE_BASE_URL, DEFAULT_MOONSHOT_BASE_URL,
         };
 
         // Canonical pairs succeed.
@@ -2052,12 +2062,13 @@ mod tests {
 
     #[test]
     fn kimi_code_k3_baseline_does_not_leak_to_other_moonshot_routes() {
-        let kimi_code_endpoint = Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string());
+        let kimi_code_endpoint =
+            Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string());
         let direct_moonshot = resolve_route_candidate(
             ProviderKind::Moonshot,
-            Some(crate::config::MOONSHOT_KIMI_K3_MODEL),
+            Some(codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL),
             None,
-            Some(crate::config::DEFAULT_MOONSHOT_BASE_URL.to_string()),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL.to_string()),
             None,
             None,
         )
@@ -2069,7 +2080,7 @@ mod tests {
             ProviderKind::Moonshot,
             Some("k3"),
             None,
-            Some(crate::config::DEFAULT_MOONSHOT_BASE_URL.to_string()),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL.to_string()),
             None,
             None,
         )
@@ -2081,7 +2092,7 @@ mod tests {
             ProviderKind::Moonshot,
             Some("moonshot-v1-128k"),
             None,
-            Some(crate::config::DEFAULT_MOONSHOT_BASE_URL.to_string()),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL.to_string()),
             None,
             None,
         )
@@ -2090,7 +2101,7 @@ mod tests {
 
         let kimi_code_default = resolve_route_candidate(
             ProviderKind::Moonshot,
-            Some(crate::config::DEFAULT_KIMI_CODE_MODEL),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_MODEL),
             None,
             kimi_code_endpoint,
             None,
@@ -2185,7 +2196,7 @@ mod tests {
         .expect("aggregator alias should resolve offline");
         assert_eq!(
             openrouter.wire_model_id().as_str(),
-            crate::config::DEFAULT_OPENROUTER_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_MODEL,
         );
 
         let vllm = resolve_unpinned_model_candidate(
@@ -2816,7 +2827,7 @@ mod tests {
         let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", &root);
         let mut config = Config::default();
         crate::oauth::install_test_chatgpt_registration(&mut config).expect("owned grant");
-        let model = crate::config::DEFAULT_OPENAI_CODEX_MODEL;
+        let model = codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL;
         crate::codex_model_cache::install_test_chatgpt_roster_with_metadata(
             &config,
             vec![crate::codex_model_cache::CodexModelMetadata {

@@ -550,7 +550,10 @@ async fn run_headless_turn_with_flaky_network(
             content: "solve the task".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(
+                &config,
+                codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL,
+            ),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,
@@ -902,7 +905,10 @@ async fn terminal_output_limit_followed_by_stream_error_is_charged_and_not_retri
             content: "solve the task".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(
+                &config,
+                codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL,
+            ),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,
@@ -996,7 +1002,10 @@ async fn error_frame_turn_events(turns: Vec<Vec<StreamEvent>>) -> (Vec<Event>, u
             content: "solve the task".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(
+                &config,
+                codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL,
+            ),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,
@@ -1202,7 +1211,10 @@ async fn midstream_error_frame_stops_the_stream_and_drops_trailing_deltas() {
             content: "solve the task".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(
+                &config,
+                codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL,
+            ),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,
@@ -1456,7 +1468,10 @@ async fn run_interactive_turn_with_flaky_network(
             content: "solve the task".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(
+                &config,
+                codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL,
+            ),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,
@@ -1672,7 +1687,7 @@ impl crate::core::model_client::ModelClient for TransportRetryModelClient {
         "custom"
     }
     fn model(&self) -> &str {
-        crate::config::DEFAULT_TEXT_MODEL
+        codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL
     }
     async fn create_message(
         &self,
@@ -1728,7 +1743,7 @@ async fn engine_transport_retry_receipts_and_counts_match_actual_scripted_attemp
             failures,
         });
         let config = Config {
-            notifications: Some(crate::config::NotificationsConfig {
+            notifications: Some(codewhale_config::notifications::NotificationsConfig {
                 quiet,
                 ..Default::default()
             }),

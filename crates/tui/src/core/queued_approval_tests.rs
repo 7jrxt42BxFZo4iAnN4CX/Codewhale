@@ -104,12 +104,12 @@ async fn approving_the_first_of_three_queued_calls_cancels_none_of_them() {
     let route = crate::route_runtime::resolve_runtime_route(
         &api_config,
         api_config.active_provider_identity().unwrap().provider,
-        Some(crate::config::DEFAULT_TEXT_MODEL),
+        Some(codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL),
     )
     .expect("resolve test route");
     let (engine, handle) = Engine::new(
         EngineConfig {
-            model: crate::config::DEFAULT_TEXT_MODEL.to_string(),
+            model: codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
             workspace: workspace.path().to_path_buf(),
             snapshots_enabled: false,
             subagents_enabled: false,
