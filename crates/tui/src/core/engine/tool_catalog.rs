@@ -1694,10 +1694,6 @@ pub(super) async fn execute_code_execution_tool(
     })
 }
 
-#[cfg(test)]
-#[path = "tool_catalog/tests.rs"]
-mod synthetic_name_tests;
-
 /// Prepare a complete active tool set for DeepSeek strict function-calling.
 ///
 /// Each tool is evaluated independently: compatible schemas are sanitized and
@@ -1716,3 +1712,7 @@ pub(crate) fn prepare_tools_for_strict_mode(tools: &mut [Tool]) -> bool {
     }
     all_strict
 }
+
+#[cfg(test)]
+#[path = "tool_catalog/tests.rs"]
+mod synthetic_name_tests;
