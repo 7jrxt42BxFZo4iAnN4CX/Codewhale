@@ -2,7 +2,7 @@
   "format": "codewhale.features.v1",
   "source": {
     "path": "docs/features.toml",
-    "sha256": "35709461f147148def39fbaf18b4ce8e7985a823549be2ee2cc016d18785429f"
+    "sha256": "ea640f30d580f72c2f98f643ebc523d3ddf0d87ac1cea2c19a0e31e1eb07ef46"
   },
   "features": [
     {
@@ -335,7 +335,7 @@
     {
       "id": "providers",
       "name": "Providers",
-      "summary": "Provider routes with endpoint-scoped facts, explicit limits, sourced price estimates and a disclosed OrcaRouter partner offer in the pickers.",
+      "summary": "Provider routes with scoped facts, limits, price estimates and a disclosed OrcaRouter offer in the pickers.",
       "status": "stable",
       "surfaces": {
         "tui": "stable",
