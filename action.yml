@@ -11,7 +11,7 @@ inputs:
     description: Exact model ID. Account mode requires provider/model from the account catalog.
     required: true
   github-token:
-    description: GitHub token with contents read and pull-requests write.
+    description: GitHub token with contents read and pull-requests read; legacy post:true also requires pull-requests write.
     default: ${{ github.token }}
   pr-number:
     description: PR number for workflow_dispatch; pull_request events use the event snapshot.
@@ -27,7 +27,7 @@ inputs:
     description: Model and publication deadline, in seconds (30–1200).
     default: '600'
   post:
-    description: Publish a COMMENT review; never approve or request changes.
+    description: Legacy direct COMMENT publication. Set false to export findings for a separate publisher job.
     default: 'true'
 outputs:
   outcome:
@@ -36,6 +36,9 @@ outputs:
   receipt:
     description: Absolute path to the sanitized JSON execution receipt (also written on failures).
     value: ${{ steps.review.outputs.receipt }}
+  findings:
+    description: Absolute path to validated findings JSON for a complete post:false review; contains repository-sensitive review text.
+    value: ${{ steps.review.outputs.findings }}
   pr-url:
     description: URL of the pull request, when resolved.
     value: ${{ steps.review.outputs.pr-url }}

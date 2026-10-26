@@ -808,3 +808,33 @@ status = "stable"
 since = "0.10.2"
 surfaces = { tui = "stable" }
 owner = "crates/tui/src/tui/herdr.rs"
+
+[[feature]]
+id = "github-action-review"
+name = "GitHub Action review"
+summary = "Review pull requests with the Engine and publish validated findings from a separate trusted job."
+status = "experimental"
+since = "unreleased"
+surfaces = { tui = "preview" }
+docs = "docs/GITHUB_ACTION.md"
+owner = "scripts/github-action/review.mjs"
+
+[[feature]]
+id = "telegram-agent"
+name = "Telegram agent bridge"
+summary = "Use an Engine from Telegram with durable prompt recovery, human-owned approvals and retained replies."
+status = "experimental"
+since = "unreleased"
+surfaces = { api = "preview" }
+docs = "integrations/telegram-bridge/README.md"
+owner = "integrations/telegram-bridge/src/index.mjs"
+
+[[feature]]
+id = "dingtalk-agent"
+name = "DingTalk agent bridge"
+summary = "Connect an internal DingTalk app to the same Engine with scoped identity and durable message recovery."
+status = "experimental"
+since = "unreleased"
+surfaces = { api = "preview" }
+docs = "integrations/dingtalk-bridge/README.md"
+owner = "integrations/dingtalk-bridge/src/index.mjs"

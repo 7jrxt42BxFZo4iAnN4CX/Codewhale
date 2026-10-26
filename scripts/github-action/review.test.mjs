@@ -12,9 +12,10 @@ const pr = { state: 'open', draft: false, base: { sha: BASE, repo: { full_name: 
 const event = { action: 'opened', number: 12, pull_request: pr };
 const defaults = { GITHUB_REPOSITORY: 'owner/repo', GITHUB_EVENT_NAME: 'pull_request',
   CW_VERSION: 'v0.10.0', CW_PROVIDER: 'codewhale', CW_MODEL: 'provider/model',
-  CW_ACTION_PATH: '/trusted/action', GH_TOKEN: 'github-secret', CODEWHALE_API_KEY: 'account-secret' };
+  CW_ACTION_PATH: '/trusted/action', GH_TOKEN: 'github-secret', CODEWHALE_API_KEY: 'account-secret',
+  GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1' };
 const completion = (override = {}) => ({ mode: 'review', success: true, complete: true,
-  pr: { head_sha: HEAD }, review: { issues: [] }, review_passes: 1, publication: 'posted',
+  pr: { head_sha: HEAD, number: 12, url: 'https://github.com/owner/repo/pull/12' }, review: { summary: 'No findings', issues: [], suggestions: [], overall_assessment: 'No findings' }, review_passes: 1, publication: 'posted',
   receipt: { coverage: { manifest: { head_sha: HEAD, base_sha: BASE, skipped_files: [] }, completed_passes: [{}] } },
   usage: { input_tokens: 10, output_tokens: 20 }, ...override });
 const output = data => ({ status: 0, stdout: JSON.stringify(data), stderr: '' });
@@ -144,4 +145,9 @@ test('findings are advisory and preview has no publication claim', t => {
   const preview = fixture(t, { env: { CW_POST: 'false' }, intercept: (_p, args) => args.includes('review') && output(completion({ publication: 'not_requested' })) });
   assert.equal(preview.exitCode, 0);
   assert.equal(preview.calls.find(c => c.args.includes('review')).args.includes('--post'), false);
+  const artifact = JSON.parse(readFileSync(preview.findingsPath, 'utf8'));
+  assert.equal(artifact.publication, 'not_requested');
+  assert.equal(artifact.head_sha, HEAD);
+  assert.deepEqual(artifact.review.issues, []);
+  assert.match(preview.outputs, /findings=.*findings\.json/);
 });

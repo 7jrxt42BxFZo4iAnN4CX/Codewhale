@@ -2,7 +2,7 @@
   "format": "codewhale.features.v1",
   "source": {
     "path": "docs/features.toml",
-    "sha256": "42d526ee838721c73b17e03178a6c61f16fd9b7748553bc12ffa2679451aae2c"
+    "sha256": "38885b15b57125002edb13f12c4f0a13772ddce9cf63c2d68c4b1001cd63b3dc"
   },
   "features": [
     {
@@ -1087,6 +1087,45 @@
       "flag": null,
       "docs": null,
       "registryLine": 804
+    },
+    {
+      "id": "github-action-review",
+      "name": "GitHub Action review",
+      "summary": "Review pull requests with the Engine and publish validated findings from a separate trusted job.",
+      "status": "experimental",
+      "surfaces": {
+        "tui": "preview"
+      },
+      "since": "unreleased",
+      "flag": null,
+      "docs": "docs/GITHUB_ACTION.md",
+      "registryLine": 813
+    },
+    {
+      "id": "telegram-agent",
+      "name": "Telegram agent bridge",
+      "summary": "Use an Engine from Telegram with durable prompt recovery, human-owned approvals and retained replies.",
+      "status": "experimental",
+      "surfaces": {
+        "api": "preview"
+      },
+      "since": "unreleased",
+      "flag": null,
+      "docs": "integrations/telegram-bridge/README.md",
+      "registryLine": 823
+    },
+    {
+      "id": "dingtalk-agent",
+      "name": "DingTalk agent bridge",
+      "summary": "Connect an internal DingTalk app to the same Engine with scoped identity and durable message recovery.",
+      "status": "experimental",
+      "surfaces": {
+        "api": "preview"
+      },
+      "since": "unreleased",
+      "flag": null,
+      "docs": "integrations/dingtalk-bridge/README.md",
+      "registryLine": 833
     }
   ]
 }
