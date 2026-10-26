@@ -2190,7 +2190,7 @@ impl CommandWorkspaceContext for WorkspaceAdapter<'_> {
     }
 
     fn effective_home_dir(&self) -> Option<PathBuf> {
-        crate::config::effective_home_dir()
+        codewhale_paths::user_home()
     }
 
     fn inspect_workspace_target(
@@ -3133,7 +3133,7 @@ impl CommandSkillGroupContext for SkillGroupAdapter<'_> {
         let target =
             portable_scope(scope).unwrap_or(crate::skills::mutation::SkillTargetScope::Global);
         let workspace = self.host.app.borrow().workspace.clone();
-        let home = crate::config::effective_home_dir();
+        let home = codewhale_paths::user_home();
         let (network, max_size, registry_url) = installer_settings();
         let outcome = run_async(async move {
             let ctx = MutationContext {
@@ -3163,7 +3163,7 @@ impl CommandSkillGroupContext for SkillGroupAdapter<'_> {
     ) -> Result<SkillMutationReceipt, String> {
         use crate::skills::mutation::{MutationContext, SkillMutationRequest};
         let workspace = self.host.app.borrow().workspace.clone();
-        let home = crate::config::effective_home_dir();
+        let home = codewhale_paths::user_home();
         let (network, max_size, registry_url) = installer_settings();
         let owned_name = name.to_string();
         let scope = portable_scope(scope);
@@ -3199,7 +3199,7 @@ impl CommandSkillGroupContext for SkillGroupAdapter<'_> {
     ) -> Result<SkillMutationReceipt, String> {
         use crate::skills::mutation::{MutationContext, SkillMutationRequest};
         let workspace = self.host.app.borrow().workspace.clone();
-        let home = crate::config::effective_home_dir();
+        let home = codewhale_paths::user_home();
         let (network, max_size, registry_url) = installer_settings();
         let ctx = MutationContext {
             workspace: &workspace,
@@ -3229,7 +3229,7 @@ impl CommandSkillGroupContext for SkillGroupAdapter<'_> {
     ) -> Result<SkillMutationReceipt, String> {
         use crate::skills::mutation::{MutationContext, SkillMutationRequest};
         let workspace = self.host.app.borrow().workspace.clone();
-        let home = crate::config::effective_home_dir();
+        let home = codewhale_paths::user_home();
         let (network, max_size, registry_url) = installer_settings();
         let ctx = MutationContext {
             workspace: &workspace,
@@ -3812,7 +3812,7 @@ fn scan_managed_plugins_portable(
 
     let home = match home_override {
         Some(home) => home.to_path_buf(),
-        None => crate::config::effective_home_dir().ok_or_else(|| {
+        None => codewhale_paths::user_home().ok_or_else(|| {
             tr(
                 codewhale_localization::Locale::En,
                 codewhale_localization::MessageId::PluginKimiHomeMissing,

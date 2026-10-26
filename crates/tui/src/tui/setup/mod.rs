@@ -575,7 +575,7 @@ impl SetupRuntimeFacts {
 
 fn setup_codewhale_home_dir() -> std::path::PathBuf {
     codewhale_config::codewhale_home().unwrap_or_else(|_| {
-        crate::config::effective_home_dir().map_or_else(
+        codewhale_paths::user_home().map_or_else(
             || std::path::PathBuf::from(".codewhale"),
             |home| home.join(".codewhale"),
         )

@@ -143,8 +143,7 @@ mod workspace_lease;
 mod workspace_trust;
 
 use crate::config::{
-    Config, DEFAULT_MAX_SUBAGENTS, DEFAULT_TEXT_MODEL, MAX_SUBAGENTS, effective_home_dir,
-    initialize_cloud_facts,
+    Config, DEFAULT_MAX_SUBAGENTS, DEFAULT_TEXT_MODEL, MAX_SUBAGENTS, initialize_cloud_facts,
 };
 use crate::eval::{EvalHarness, EvalHarnessConfig, ScenarioStepKind};
 use crate::llm_client::LlmClient;
@@ -4252,7 +4251,7 @@ fn resolve_cors_origins(config: &Config, flag_origins: &[String]) -> Vec<String>
 
 fn deepseek_home_dir() -> PathBuf {
     codewhale_config::codewhale_home().unwrap_or_else(|_| {
-        crate::config::effective_home_dir()
+        codewhale_paths::user_home()
             .map_or_else(|| PathBuf::from(".codewhale"), |h| h.join(".codewhale"))
     })
 }
@@ -13151,7 +13150,7 @@ fn merge_project_config_with_approval_baseline(
     // config file is also the global config file. Skip the merge to avoid
     // redundant processing and a misleading "project-scope config key
     // ignored" warning on every launch from ~.
-    if let Some(home) = effective_home_dir()
+    if let Some(home) = codewhale_paths::user_home()
         && let (Ok(w), Ok(h)) = (
             std::fs::canonicalize(workspace),
             std::fs::canonicalize(&home),

@@ -135,7 +135,7 @@ fn project_status(app: &App) -> ConfigStatusView {
         model: app.model_display_label(),
         reasoning: app.reasoning_effort_display_label(),
         workspace: app.workspace.clone(),
-        home: crate::config::effective_home_dir(),
+        home: codewhale_paths::user_home(),
         project_docs: ["AGENTS.md", "CLAUDE.md"]
             .into_iter()
             .filter(|name| app.workspace.join(name).is_file())

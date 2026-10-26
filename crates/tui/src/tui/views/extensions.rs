@@ -1135,7 +1135,7 @@ fn marketplace_model(app: &App, locale: Locale) -> ExtensionsTabModel {
 fn skills_model(app: &App, locale: Locale) -> ExtensionsTabModel {
     use crate::skills::audit::{ParserState, SkillAuditMode, scan_with_configured};
 
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     let audit = scan_with_configured(
         &app.workspace,
         home.as_deref(),

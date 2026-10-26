@@ -1381,7 +1381,7 @@ pub(crate) async fn handle_skill_mutation_requested(
     };
 
     let workspace = app.workspace.clone();
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     let cfg = crate::config::Config::load(None, None).unwrap_or_default();
     let network = cfg
         .network

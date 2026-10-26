@@ -614,7 +614,7 @@ fn load_dir_instructions(
 pub fn load_project_context_with_parents(workspace: &Path) -> ProjectContext {
     load_project_context_with_parents_cached_and_home(
         workspace,
-        crate::config::effective_home_dir().as_deref(),
+        codewhale_paths::user_home().as_deref(),
     )
 }
 

@@ -69,7 +69,7 @@ pub fn auth_file_path() -> PathBuf {
     let codex_home = std::env::var("CODEX_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
-            crate::config::effective_home_dir()
+            codewhale_paths::user_home()
                 .unwrap_or_else(|| PathBuf::from("."))
                 .join(".codex")
         });
@@ -4479,7 +4479,7 @@ pub fn grok_auth_file_path() -> PathBuf {
             return codewhale_config::resolve_external_credential_path(&path).unwrap_or(path);
         }
     }
-    let path = crate::config::effective_home_dir()
+    let path = codewhale_paths::user_home()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".grok")
         .join("auth.json");

@@ -98,7 +98,7 @@ fn reject_linked_workspace_state_path(path: &Path) -> Result<()> {
     else {
         return Ok(());
     };
-    if crate::config::effective_home_dir().is_some_and(|home| home == root) {
+    if codewhale_paths::user_home().is_some_and(|home| home == root) {
         return Ok(());
     }
     crate::fleet::files::reject_linked_path(root, path)

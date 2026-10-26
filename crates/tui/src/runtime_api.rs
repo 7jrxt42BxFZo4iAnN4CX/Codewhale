@@ -5675,7 +5675,7 @@ async fn install_skill_api(
 
     let (network, max_size, registry_url, configured_skills_dir) =
         mutation_context_settings(&state);
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     let workspace = state.workspace.clone();
 
     let receipt = crate::skills::mutation::execute(
@@ -5716,7 +5716,7 @@ async fn update_skill_api(
     let scope = parse_api_scope(req.scope.as_deref())?;
     let (network, max_size, registry_url, configured_skills_dir) =
         mutation_context_settings(&state);
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     let workspace = state.workspace.clone();
 
     let receipt = crate::skills::mutation::execute(
@@ -5763,7 +5763,7 @@ async fn uninstall_skill_api(
     let scope = parse_api_scope(query.scope.as_deref())?;
     let (network, max_size, registry_url, configured_skills_dir) =
         mutation_context_settings(&state);
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
 
     let receipt = crate::skills::mutation::execute_sync(
         SkillMutationRequest::RemoveByName {
@@ -5804,7 +5804,7 @@ async fn trust_skill_api(
     let scope = parse_api_scope(req.scope.as_deref())?;
     let (network, max_size, registry_url, configured_skills_dir) =
         mutation_context_settings(&state);
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
 
     let receipt = crate::skills::mutation::execute_sync(
         SkillMutationRequest::TrustByName {
@@ -5847,7 +5847,7 @@ async fn audit_skill_api(
     use crate::skills::roots::SkillRootKind;
 
     let scope_filter = parse_api_scope(query.scope.as_deref())?;
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     let configured_skills_dir = {
         let config = state.config.read();
         config.skills_dir.as_ref().map(PathBuf::from)

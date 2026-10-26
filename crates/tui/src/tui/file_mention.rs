@@ -762,7 +762,7 @@ const SCREENCAPTURE_TEMP_DIR_COMPACT: &str = "TemporaryItems";
 /// Stable per-session directory for stabilized screencapture files. Follows
 /// the same home-first convention as `clipboard.rs`'s clipboard-images dir.
 pub(crate) fn screenshot_stabilization_dir(workspace: &Path) -> PathBuf {
-    match crate::config::effective_home_dir() {
+    match codewhale_paths::user_home() {
         Some(home) => home.join(".codewhale").join("attachments"),
         None => workspace.join("attachments"),
     }

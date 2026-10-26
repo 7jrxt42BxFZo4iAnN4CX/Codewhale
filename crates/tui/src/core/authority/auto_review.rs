@@ -2023,7 +2023,7 @@ fn strictly_inside(workspace: Option<&std::path::Path>, target: &str) -> bool {
             &workspace
                 .canonicalize()
                 .unwrap_or_else(|_| workspace.to_path_buf()),
-            crate::config::effective_home_dir().as_deref(),
+            codewhale_paths::user_home().as_deref(),
         )
         .is_some()
     {
@@ -3093,7 +3093,7 @@ mod tests {
         }
         // Unsafe workspaces clear nothing by being "inside" them.
         assert!(destroyer_held(std::path::Path::new("/"), "rm -rf /usr"));
-        if let Some(home) = crate::config::effective_home_dir()
+        if let Some(home) = codewhale_paths::user_home()
             && let Some(existing) = std::fs::read_dir(&home).ok().and_then(|entries| {
                 entries
                     .flatten()

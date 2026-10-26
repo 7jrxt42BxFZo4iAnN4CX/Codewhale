@@ -646,7 +646,7 @@ pub struct ToolExecutionState {
     pub auto_approve: bool,
     /// Effective approval posture for this execution context. A turn stamps the
     /// posture it resolved here; a context built from the legacy bit alone
-    /// folds it with [`crate::core::authority::posture_from_auto_approve`].
+    /// folds it with [`codewhale_execpolicy::ApprovalMode::from_auto_approve`].
     /// Tools that create work of their own (a durable task) pin it, so the work
     /// inherits the authority the caller was granted rather than re-deriving
     /// one from a legacy bit.
@@ -860,7 +860,7 @@ impl ToolContext {
         // The bit stands for a posture, so fold it here rather than leaving the
         // two fields to disagree. A turn-level builder overwrites this with the
         // session's resolved posture, which is the authority that counts.
-        context.approval_mode = crate::core::authority::posture_from_auto_approve(auto_approve);
+        context.approval_mode = codewhale_execpolicy::ApprovalMode::from_auto_approve(auto_approve);
         context
     }
 
@@ -1495,7 +1495,7 @@ pub(crate) fn normalize_path(path: &Path) -> PathBuf {
 /// - `Ok(None)` if `raw` does not have an exact home prefix.
 /// - `Err(ToolError)` if `raw` has an exact home prefix but user home could not be determined.
 pub(crate) fn resolve_home_path(raw: &str) -> Result<Option<PathBuf>, ToolError> {
-    resolve_home_path_with(raw, crate::config::effective_home_dir)
+    resolve_home_path_with(raw, codewhale_paths::user_home)
 }
 
 pub(crate) fn resolve_home_path_with(

@@ -3338,7 +3338,7 @@ impl Config {
             }
         }
 
-        let workspace_is_home = effective_home_dir().is_some_and(|home| {
+        let workspace_is_home = codewhale_paths::user_home().is_some_and(|home| {
             let workspace = workspace
                 .canonicalize()
                 .unwrap_or_else(|_| workspace.to_path_buf());
@@ -3452,7 +3452,7 @@ impl Config {
             return ApprovalPolicyControl::Requirements;
         }
 
-        let workspace_is_home = effective_home_dir().is_some_and(|home| {
+        let workspace_is_home = codewhale_paths::user_home().is_some_and(|home| {
             let workspace = workspace
                 .canonicalize()
                 .unwrap_or_else(|_| workspace.to_path_buf());
@@ -3546,7 +3546,7 @@ impl Config {
         profile: Option<&str>,
         workspace: &Path,
     ) -> ShellAccessControl {
-        let workspace_is_home = effective_home_dir().is_some_and(|home| {
+        let workspace_is_home = codewhale_paths::user_home().is_some_and(|home| {
             let workspace = workspace
                 .canonicalize()
                 .unwrap_or_else(|_| workspace.to_path_buf());
@@ -6614,7 +6614,9 @@ impl Config {
         }
         let owned = match codewhale_home_dir().ok()? {
             Some(home) => home.join("skills"),
-            None => effective_home_dir()?.join(".codewhale").join("skills"),
+            None => codewhale_paths::user_home()?
+                .join(".codewhale")
+                .join("skills"),
         };
         (directory == owned).then_some(directory)
     }
@@ -7406,7 +7408,7 @@ impl Config {
                 if key == "default" {
                     key
                 } else {
-                    codewhale_agent_contract::role::migrate_legacy_role_token(&key)
+                    codewhale_protocol::fleet::migrate_legacy_role_token(&key)
                         .unwrap_or(&key)
                         .to_string()
                 }
@@ -7435,7 +7437,7 @@ impl Config {
             if raw == "default" {
                 raw
             } else {
-                codewhale_agent_contract::role::migrate_legacy_role_token(&raw)
+                codewhale_protocol::fleet::migrate_legacy_role_token(&raw)
                     .unwrap_or(&raw)
                     .to_string()
             }
@@ -7704,7 +7706,6 @@ fn root_deepseek_model_is_foreign_to_direct_provider(provider: ProviderKind, mod
 // entry points are re-exported so external `crate::config::`
 // callers resolve unchanged; the remaining helpers are imported privately for
 // the workspace-trust/config-load logic that stays in this file (#3311).
-mod home;
 mod paths;
 #[cfg(test)]
 pub(crate) use paths::clipboard_images_dir_for_home;
@@ -7714,9 +7715,7 @@ use paths::{
     default_skills_dir, env_config_path, expand_pathbuf, try_default_config_path,
     workspace_config_key,
 };
-pub(crate) use paths::{
-    clipboard_images_dir, effective_home_dir, expand_path, home_config_path, is_home_config_path,
-};
+pub(crate) use paths::{clipboard_images_dir, expand_path, home_config_path, is_home_config_path};
 
 /// Activate facts only at accepted inference runtime settings boundaries.
 /// Identical settings preserve the shared ticket; readers track its generation.
@@ -7764,7 +7763,7 @@ pub(crate) fn workspace_trust_config_candidate_paths() -> Vec<PathBuf> {
         }
     }
 
-    let Some(home) = effective_home_dir() else {
+    let Some(home) = codewhale_paths::user_home() else {
         return Vec::new();
     };
     vec![

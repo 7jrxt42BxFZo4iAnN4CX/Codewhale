@@ -3839,7 +3839,7 @@ use serde_json::json;
 /// The TOML execpolicy file lives in the user config home; the rule engine
 /// itself is `codewhale_execpolicy::toml_rules`.
 fn default_execpolicy_path() -> Option<std::path::PathBuf> {
-    crate::config::effective_home_dir().map(|home| home.join(".deepseek").join("execpolicy.toml"))
+    codewhale_paths::user_home().map(|home| home.join(".deepseek").join("execpolicy.toml"))
 }
 
 fn load_default_policy() -> anyhow::Result<Option<ExecPolicyConfig>> {

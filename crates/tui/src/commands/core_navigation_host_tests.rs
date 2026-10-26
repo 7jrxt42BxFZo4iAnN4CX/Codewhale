@@ -463,7 +463,7 @@ fn workspace_without_arg_shows_current_workspace() {
     assert!(msg.contains("Current workspace:"));
     assert!(msg.contains("/tmp/test-workspace"));
     assert!(result.action.is_none());
-    let home = crate::config::effective_home_dir().expect("hermetic home");
+    let home = codewhale_paths::user_home().expect("hermetic home");
     let result = workspace_switch(&mut app, Some("~"));
     assert!(
         matches!(result.action, Some(AppAction::SwitchWorkspace { workspace }) if workspace == home.canonicalize().unwrap_or(home.clone()))

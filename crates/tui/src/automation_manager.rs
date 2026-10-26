@@ -2299,7 +2299,7 @@ fn new_run_record(
 /// what that bit means.
 fn automation_posture(auto_approve: bool) -> String {
     codewhale_runtime::runtime_policy::approval_wire(
-        crate::core::authority::posture_from_auto_approve(auto_approve),
+        codewhale_execpolicy::ApprovalMode::from_auto_approve(auto_approve),
     )
     .to_string()
 }

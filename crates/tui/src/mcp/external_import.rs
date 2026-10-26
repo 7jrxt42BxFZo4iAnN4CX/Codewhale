@@ -592,7 +592,7 @@ impl<'a> ImportContext<'a> {
             workspace,
             mcp_path,
             plugins,
-            home: crate::config::effective_home_dir()
+            home: codewhale_paths::user_home()
                 .ok_or_else(|| anyhow::anyhow!("Home directory unavailable"))?,
             codewhale_home: codewhale_config::codewhale_home()?,
         })

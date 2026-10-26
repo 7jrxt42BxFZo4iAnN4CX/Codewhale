@@ -51,7 +51,7 @@ fn normalize(message: &str, temp: &TempDir) -> String {
             "\"<TEST_AUDIT_LOG>\"",
         );
     }
-    if let Some(home) = crate::config::effective_home_dir() {
+    if let Some(home) = codewhale_paths::user_home() {
         text = text.replace(home.to_str().unwrap(), "<TEST_HOME>");
     }
     // Catalog freshness depends on the bundled snapshot's age against the

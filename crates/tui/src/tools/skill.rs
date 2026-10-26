@@ -777,7 +777,7 @@ mod tests {
         );
 
         // Keep this test independent of the process-native home directory:
-        // `crate::config::effective_home_dir()` cannot be redirected reliably after process start
+        // `codewhale_paths::user_home()` cannot be redirected reliably after process start
         // on Windows. The injected-home discovery test in `skills::tests`
         // separately proves that ~/.codewhale/skills enters the default catalog.
         let context = ToolContext::new(&workspace).with_skills_config(

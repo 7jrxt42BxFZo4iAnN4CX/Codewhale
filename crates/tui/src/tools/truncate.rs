@@ -93,7 +93,7 @@ pub fn spillover_root() -> Option<PathBuf> {
         return Some(root);
     }
 
-    let home = crate::config::effective_home_dir()?;
+    let home = codewhale_paths::user_home()?;
     let primary = home.join(".codewhale").join(SPILLOVER_DIR_NAME);
     let legacy = home.join(".deepseek").join(SPILLOVER_DIR_NAME);
     if primary.exists() || !legacy.exists() {

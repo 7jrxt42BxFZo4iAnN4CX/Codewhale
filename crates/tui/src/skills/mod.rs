@@ -196,7 +196,7 @@ pub fn default_skills_dir() -> PathBuf {
                 .join("skills");
         }
     }
-    crate::config::effective_home_dir().map_or_else(
+    codewhale_paths::user_home().map_or_else(
         || unavailable_home_root().join("skills"),
         |p| p.join(".codewhale").join("skills"),
     )
@@ -224,7 +224,7 @@ pub fn agents_global_skills_dir() -> Option<PathBuf> {
             );
         }
     }
-    crate::config::effective_home_dir().map(|p| p.join(".agents").join("skills"))
+    codewhale_paths::user_home().map(|p| p.join(".agents").join("skills"))
 }
 
 // === Types ===
@@ -1169,7 +1169,7 @@ fn legacy_skill_name_segment(name: &str) -> String {
 /// installed (the system-prompt skills block is then suppressed).
 #[must_use]
 pub fn skills_directories_for_mode(workspace: &Path, mode: SkillDiscoveryMode) -> Vec<PathBuf> {
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     skills_directories_with_home_and_mode(workspace, home.as_deref(), mode)
 }
 
@@ -1242,7 +1242,7 @@ pub(crate) fn untrusted_project_skills_warning(
     configured_skills_dir: Option<&Path>,
     mode: SkillDiscoveryMode,
 ) -> Option<String> {
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     let skipped = roots::untrusted_project_skill_dirs(
         workspace,
         home.as_deref(),
@@ -1285,7 +1285,7 @@ pub fn skill_directories_for_workspace_and_dir(
     skills_dir: &Path,
     mode: SkillDiscoveryMode,
 ) -> Vec<PathBuf> {
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     let mut dirs = skills_directories_with_home_and_mode(workspace, home.as_deref(), mode);
     insert_configured_skills_dir(&mut dirs, workspace, home.as_deref(), skills_dir);
     dirs
@@ -1294,7 +1294,7 @@ pub fn skill_directories_for_workspace_and_dir(
 /// Whether a resolved or configured skills dir may load for `workspace`; see
 /// [`roots::skills_dir_allowed_by_workspace_trust`].
 pub(crate) fn skills_dir_allowed_by_workspace_trust(workspace: &Path, skills_dir: &Path) -> bool {
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     roots::skills_dir_allowed_by_workspace_trust(workspace, home.as_deref(), skills_dir)
 }
 
@@ -1679,7 +1679,7 @@ pub fn render_available_skills_context_for_workspace_and_dir_with_mode_and_plugi
         plugins,
     )
     .into_enabled();
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     let configured_skills_root = matches!(
         classify_configured_skills_dir(workspace, home.as_deref(), skills_dir).0,
         SkillRootKind::Configured
@@ -1721,7 +1721,7 @@ fn sanitize_prompt_path_text(
     {
         out = out.replace(ws, ".");
     }
-    if let Some(home) = crate::config::effective_home_dir()
+    if let Some(home) = codewhale_paths::user_home()
         && let Some(home_str) = home.to_str()
         && !home_str.is_empty()
     {
@@ -1802,7 +1802,7 @@ fn privacy_safe_skill_path(path: &Path, workspace: &Path) -> String {
     if let Ok(rel) = path.strip_prefix(workspace) {
         return prompt_display(rel);
     }
-    if let Some(home) = crate::config::effective_home_dir()
+    if let Some(home) = codewhale_paths::user_home()
         && let Ok(rel) = path.strip_prefix(&home)
     {
         return format!("~/{}", prompt_display(rel));

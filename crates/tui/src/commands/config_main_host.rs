@@ -2813,11 +2813,11 @@ pub(crate) fn trust_change_note(trusted: bool, save: bool) -> String {
 
 pub(crate) fn expand_tilde(raw: &str) -> String {
     if let Some(rest) = raw.strip_prefix("~/")
-        && let Some(home) = crate::config::effective_home_dir()
+        && let Some(home) = codewhale_paths::user_home()
     {
         return home.join(rest).to_string_lossy().into_owned();
     } else if raw == "~"
-        && let Some(home) = crate::config::effective_home_dir()
+        && let Some(home) = codewhale_paths::user_home()
     {
         return home.to_string_lossy().into_owned();
     }

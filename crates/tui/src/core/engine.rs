@@ -9291,7 +9291,7 @@ impl Engine {
 fn default_plugin_tools_dir() -> PathBuf {
     codewhale_config::codewhale_home()
         .unwrap_or_else(|_| {
-            crate::config::effective_home_dir()
+            codewhale_paths::user_home()
                 .map_or_else(|| PathBuf::from(".codewhale"), |h| h.join(".codewhale"))
         })
         .join("tools")

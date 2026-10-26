@@ -75,7 +75,7 @@ use crate::work_graph::{
 /// consumes. Existing `tools::subagent::FleetRole` paths keep resolving.
 pub use codewhale_agent_contract::role::FleetRole;
 use codewhale_agent_contract::role::{
-    FLEET_ROLE_SCHEMA_VALUES, VALID_ROLE_ALIASES, migrate_legacy_role_token, public_role_label,
+    FLEET_ROLE_SCHEMA_VALUES, VALID_ROLE_ALIASES, public_role_label,
 };
 use codewhale_agent_contract::worker_profile::{
     ChildLaunchManifest, ModelRoute, ShellPolicy, ToolScope, WorkerRuntimeProfile,
@@ -89,6 +89,7 @@ use codewhale_execpolicy::tool_rules::tool_denied;
 use codewhale_models::MessageResponse;
 use codewhale_models::{ContentBlock, Message, SystemPrompt, Tool, Usage};
 use codewhale_models::{is_output_limit_stop_reason, stop_reason_detail};
+use codewhale_protocol::fleet::migrate_legacy_role_token;
 use coord::{
     CoordinationClaimScope, CoordinationDetailMetrics, CoordinationHotPath, CoordinationLedger,
     DecisionRecord, DecisionStatus, PersistedWriteClaim, ReconciliationReceipt, WriteScopeClaim,

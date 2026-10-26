@@ -640,7 +640,7 @@ fn test_resolve_home_path_unknown_home_fails_explicitly_without_cwd_guessing() {
 fn test_tool_context_resolve_path_home_prefix_inside_workspace() {
     // The fixture lives inside the home, so the home must be the test's own.
     let _sealed = crate::test_support::SealedHome::new();
-    let real_home = crate::config::effective_home_dir().expect("test home must be available");
+    let real_home = codewhale_paths::user_home().expect("test home must be available");
     let home_temp = tempfile::Builder::new()
         .prefix("cw_spec_test_home_")
         .tempdir_in(&real_home)
@@ -681,7 +681,7 @@ fn test_tool_context_resolve_path_home_prefix_restricted_refusal() {
 fn test_tool_context_resolve_path_home_prefix_trusted_external_path() {
     // The fixture lives inside the home, so the home must be the test's own.
     let _sealed = crate::test_support::SealedHome::new();
-    let real_home = crate::config::effective_home_dir().expect("test home must be available");
+    let real_home = codewhale_paths::user_home().expect("test home must be available");
     let trusted_dir = tempfile::Builder::new()
         .prefix("cw_spec_trusted_home_")
         .tempdir_in(&real_home)
