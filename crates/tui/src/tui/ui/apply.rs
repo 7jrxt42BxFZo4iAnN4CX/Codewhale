@@ -3258,7 +3258,8 @@ pub(crate) fn apply_user_input_submission_result(app: &mut App, tool_id: &str, r
                 .filter(|(id, _)| id == tool_id)
                 .cloned()
             {
-                app.view_stack.push(UserInputView::new(id, request));
+                app.view_stack
+                    .push(UserInputView::new(id, request, app.ui_locale));
             }
             app.push_status_toast_record(
                 StatusToast::new(

@@ -2303,6 +2303,9 @@ pub(crate) fn key_to_session_message_id(key: &str) -> Option<MessageId> {
         "cmd_remote_env_unavailable" => MessageId::CmdRemoteEnvUnavailable,
         "cmd_remote_env_source_custody_policy" => MessageId::CmdRemoteEnvSourceCustodyPolicy,
         "cmd_remote_env_browser_label" => MessageId::CmdRemoteEnvBrowserLabel,
+        "cmd_color_set" => MessageId::CmdColorSet,
+        "cmd_color_reset" => MessageId::CmdColorReset,
+        "cmd_color_unknown" => MessageId::CmdColorUnknown,
         _ => return None,
     })
 }

@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Thanks @Statter.
 - Plan-to-Work handoff now names the seeded To-do item in a localized reminder
   to keep it on the list and complete it after the plan (#7068).
+- Localized question footers, approval and plan-handoff chrome, tool waiting
+  status, and /color receipts use the shared locale packs (#7071).
 
 - Clearing a conversation with no goal no longer shows a misleading "Goal cleared."
   receipt. Clearing an existing or configured goal still reports it (#7089).

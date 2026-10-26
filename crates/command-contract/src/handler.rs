@@ -48,9 +48,10 @@ impl CommandCapabilities {
     /// basic session capability.
     pub const SESSION_LIFECYCLE: Self = Self(1 << 13);
     /// Session-control host data (FEAT-024 D3), the next non-conflicting bit
-    /// after `SESSION_LIFECYCLE`. Required only by the six host-dependent
+    /// after `SESSION_LIFECYCLE`. Required only by the seven host-dependent
     /// control commands (`/relay`, `/rename`, `/resume`, `/rc`, `/remote-env`,
-    /// `/title`); `/remote-env` also declares `PRESENTATION`. Bit 14 fit the
+    /// `/title`, `/color`); `/remote-env` and `/color` also declare
+    /// `PRESENTATION`. Bit 14 fit the
     /// original `u16` backing without speculative widening in FEAT-023.
     pub const SESSION_CONTROL: Self = Self(1 << 14);
     /// Session-export host data (FEAT-025 D1), the next non-conflicting bit

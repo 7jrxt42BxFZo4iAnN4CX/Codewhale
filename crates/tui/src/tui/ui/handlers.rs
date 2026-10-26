@@ -1688,6 +1688,7 @@ fn reopen_plan_handoff(
     app.view_stack.push(UserInputView::new(
         plan.request_id.clone(),
         crate::tui::plan_handoff::request(app.ui_locale),
+        app.ui_locale,
     ));
     let notice = app
         .tr(MessageId::SessionSaveFailed)

@@ -3688,6 +3688,7 @@ pub(crate) async fn run_event_loop(
                                 app.view_stack.push(UserInputView::new(
                                     request_id,
                                     crate::tui::plan_handoff::request(app.ui_locale),
+                                    app.ui_locale,
                                 ));
                                 app.needs_redraw = true;
                             }
@@ -4408,7 +4409,8 @@ pub(crate) async fn run_event_loop(
                     EngineEvent::ApprovalWithdrawn { .. } => {}
                     EngineEvent::UserInputRequired { id, request } => {
                         app.pending_user_input_prompt = Some((id.clone(), request.clone()));
-                        app.view_stack.push(UserInputView::new(id.clone(), request));
+                        app.view_stack
+                            .push(UserInputView::new(id.clone(), request, app.ui_locale));
                         let payload = notifications::input_needed_payload(app.ui_locale);
                         if let Some((method, _, _)) = crate::tui::notifications::settings(config) {
                             let in_tmux = std::env::var("TMUX").is_ok_and(|v| !v.is_empty());

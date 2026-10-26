@@ -1092,7 +1092,7 @@ impl ExecCell {
             .interaction
             .as_deref()
             .or(Some(command_summary.as_str()));
-        let held_status = self.held_status();
+        let held_status = self.held_status(locale);
         let receipt = tool_receipt_label(
             crate::tui::widgets::tool_card::ToolFamily::Run,
             self.status,
@@ -1242,7 +1242,7 @@ impl ExecCell {
     ) -> Vec<Line<'static>> {
         let description = self.description_text();
         let (mut lines, headline_clipped) =
-            self.calm_header(description.as_deref(), width, low_motion);
+            self.calm_header(description.as_deref(), width, low_motion, locale);
         let multi_line_command = self.command.trim_end().lines().nth(1).is_some();
 
         if self.interaction.is_none() {
@@ -1342,9 +1342,10 @@ impl ExecCell {
         description: Option<&str>,
         width: u16,
         low_motion: bool,
+        locale: Locale,
     ) -> (Vec<Line<'static>>, bool) {
         let family = crate::tui::widgets::tool_card::ToolFamily::Run;
-        let held = self.held_status();
+        let held = self.held_status(locale);
         let mark = format!(
             "{} ",
             status_symbol(
@@ -1427,12 +1428,22 @@ impl ExecCell {
         }
     }
 
-    fn held_status(&self) -> Option<String> {
+    fn held_status(&self, locale: Locale) -> Option<String> {
         match (self.waiting, self.status) {
-            (Some(ExecWait::Approval), ToolStatus::Running) => {
-                Some("waiting for approval".to_string())
-            }
-            (Some(ExecWait::Queue), ToolStatus::Running) => Some("queued".to_string()),
+            (Some(ExecWait::Approval), ToolStatus::Running) => Some(
+                codewhale_localization::tr(
+                    locale,
+                    codewhale_localization::MessageId::ToolStatusWaitingForApproval,
+                )
+                .into_owned(),
+            ),
+            (Some(ExecWait::Queue), ToolStatus::Running) => Some(
+                codewhale_localization::tr(
+                    locale,
+                    codewhale_localization::MessageId::ToolStatusQueued,
+                )
+                .into_owned(),
+            ),
             _ => self
                 .stale_elapsed_since_output_ms
                 .map(stale_shell_status_label),

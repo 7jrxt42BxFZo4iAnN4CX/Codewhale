@@ -1850,6 +1850,7 @@ fn scroll_test_question_view() -> UserInputView {
                 multi_select: false,
             }],
         },
+        codewhale_localization::Locale::En,
     )
 }
 
@@ -16001,6 +16002,7 @@ fn turn_liveness_preserves_pending_user_input_beyond_tool_timeout() {
             crate::tools::user_input::UserInputRequest {
                 questions: Vec::new(),
             },
+            app.ui_locale,
         ));
         // A hidden modal is not an answer or a cancellation. Engine still
         // owns an indefinite wait; the UI must not manufacture a timeout.
@@ -16055,7 +16057,8 @@ fn install_pending_question(app: &mut App, id: &str) {
         questions: Vec::new(),
     };
     app.pending_user_input_prompt = Some((id.into(), request.clone()));
-    app.view_stack.push(UserInputView::new(id, request));
+    app.view_stack
+        .push(UserInputView::new(id, request, app.ui_locale));
     app.push_status_toast_record(
         StatusToast::new("Answer question", StatusToastLevel::Warning, None).for_action(id),
     );
