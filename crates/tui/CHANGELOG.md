@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   posture, strict tool schemas, home resolution, and legacy saved-role migration
   retain their behavior. The cleanup removes three dead-code suppressions and
   keeps the engine as the sole owner of human approval attestations.
+- Removed unused plan/journal accessors, an unused plan-status glyph helper,
+  and a cancellation case that no execution path issued. Active mailbox and
+  cancellation wiring stays in place; its stale unused-code suppressions are
+  removed. No supported command or feature is retired by this cleanup.
 
 - Local Ollama defaults now come from chat-capable tags, and `/provider ollama`
   refreshes the live catalog before switching. Exec and Runtime API defaults use

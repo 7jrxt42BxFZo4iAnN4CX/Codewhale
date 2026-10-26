@@ -688,9 +688,6 @@ impl Default for EngineConfig {
 /// Reason the active turn was cancelled. The token from `tokio_util`
 /// does not carry a cause, so the engine keeps a sibling latch for
 /// approval and user-input waits that need to explain cancellation.
-///
-/// `External`, `Preempted`, and `Internal` are reserved for the
-/// remaining direct cancellation paths tracked in #1541.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CancelReason {
     /// User-initiated cancel (Esc, `/cancel`, click cancel on modal).
@@ -698,11 +695,6 @@ pub enum CancelReason {
     /// External / runtime-API cancel (HTTP `DELETE /v1/threads/...`,
     /// task manager stop, parent agent cancel).
     External,
-    /// Cancel triggered when a new turn starts before the previous one
-    /// finished — e.g. plain Enter while busy after the queueing path
-    /// pre-empts the running turn.
-    #[expect(dead_code)]
-    Preempted,
     /// Engine internals tore down the turn (drop, channel close,
     /// shutdown). Rare — surfaced as an internal error.
     Internal,
@@ -715,7 +707,6 @@ impl CancelReason {
         match self {
             Self::User => "user cancelled the request",
             Self::External => "request cancelled by external caller",
-            Self::Preempted => "request was preempted by a new turn",
             Self::Internal => "engine torn down before approval resolved",
             Self::Stalled => "the turn stalled and was ended by the watchdog",
         }

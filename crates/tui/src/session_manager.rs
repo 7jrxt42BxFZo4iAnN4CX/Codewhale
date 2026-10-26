@@ -1293,13 +1293,6 @@ impl SavedSession {
         self.metadata.updated_at = Utc::now();
         Ok(())
     }
-    #[expect(dead_code)]
-    pub fn active_entries(&self) -> Vec<SessionEntry> {
-        self.journal
-            .as_ref()
-            .map(|j| j.root_to_leaf().into_iter().cloned().collect())
-            .unwrap_or_default()
-    }
     /// `created_at` of the active branch's message entries, in order — the
     /// stamps a resumed session hands back to the live message log so the
     /// next save preserves append times instead of rewriting them to resume

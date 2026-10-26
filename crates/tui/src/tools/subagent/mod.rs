@@ -3237,7 +3237,6 @@ impl SubAgentRuntime {
     /// stream. Pair with [`Self::with_cancel_token`] when the mailbox close
     /// token should match this runtime's cancellation token.
     #[must_use]
-    #[allow(dead_code)] // wired by #128 (in-transcript cards) when it lands.
     pub fn with_mailbox(mut self, mailbox: Mailbox) -> Self {
         self.mailbox = Some(mailbox);
         self
@@ -3263,7 +3262,6 @@ impl SubAgentRuntime {
     /// Replace the cancellation token (e.g. when the engine constructs the
     /// runtime alongside a mailbox bound to the same token).
     #[must_use]
-    #[allow(dead_code)] // wired by #128 alongside `with_mailbox`.
     pub fn with_cancel_token(mut self, token: CancellationToken) -> Self {
         self.context.cancel_token = Some(token.clone());
         self.cancel_token = token;
