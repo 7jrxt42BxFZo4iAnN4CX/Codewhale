@@ -279,7 +279,12 @@ async fn prose_work_seeds_preserves_other_work_and_queues_exact_text_once() {
     assert_eq!(app.queued_message_count(), 1);
     assert_eq!(
         app.queued_messages.front().unwrap().display,
-        format!("{}\n\n{text}", app.tr(MessageId::PlanHandoffProceed))
+        format!(
+            "{}\n\n{text}\n\n{}",
+            app.tr(MessageId::PlanHandoffProceed),
+            app.tr(MessageId::PlanHandoffTodoNote)
+                .replace("{title}", &todos.items[1].content)
+        )
     );
     assert!(matches!(
         engine.rx_op.try_recv(),
@@ -404,7 +409,12 @@ async fn refused_checkpoint_rolls_back_seed_and_retry_queues_once() {
         assert_eq!(app.queued_message_count(), 1);
         assert_eq!(
             app.queued_messages.front().unwrap().display,
-            format!("{}\n\n{text}", app.tr(MessageId::PlanHandoffProceed))
+            format!(
+                "{}\n\n{text}\n\n{}",
+                app.tr(MessageId::PlanHandoffProceed),
+                app.tr(MessageId::PlanHandoffTodoNote)
+                    .replace("{title}", &todos.items[0].content)
+            )
         );
     }
 }

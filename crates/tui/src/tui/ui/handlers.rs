@@ -1586,6 +1586,21 @@ fn plan_handoff_seed_title(plan: &crate::tui::plan_handoff::PendingPlanHandoff) 
         .to_string()
 }
 
+fn plan_handoff_proceed_message(
+    app: &App,
+    plan: &crate::tui::plan_handoff::PendingPlanHandoff,
+) -> String {
+    let message = format!("{}\n\n{}", app.tr(MessageId::PlanHandoffProceed), plan.text);
+    if plan.seeded_todo_id.is_none() {
+        return message;
+    }
+    format!(
+        "{message}\n\n{}",
+        app.tr(MessageId::PlanHandoffTodoNote)
+            .replace("{title}", &plan_handoff_seed_title(plan))
+    )
+}
+
 /// Stage one graph-owned item for a prose plan without replacing existing work.
 async fn seed_plan_handoff_todos(
     app: &App,
@@ -1753,10 +1768,7 @@ pub(crate) async fn apply_plan_handoff_with_checkpoint(
                 reopen_plan_handoff(app, &plan, &reason);
                 return Ok(());
             }
-            QueuedMessage::new(
-                format!("{}\n\n{}", app.tr(MessageId::PlanHandoffProceed), plan.text),
-                None,
-            )
+            QueuedMessage::new(plan_handoff_proceed_message(app, &plan), None)
         }
     };
     // Consume before ordinary composer admission. Its existing recovery owns

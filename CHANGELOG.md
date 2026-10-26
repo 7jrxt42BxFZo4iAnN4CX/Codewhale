@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Archived context markdown now uses the active theme's palette when rendered
   in the transcript, preventing unreadable dark text on dark backgrounds (#7043).
   Thanks @Statter.
+- Plan-to-Work handoff now names the seeded To-do item in a localized reminder
+  to keep it on the list and complete it after the plan (#7068).
 
 - Clearing a conversation with no goal no longer shows a misleading "Goal cleared."
   receipt. Clearing an existing or configured goal still reports it (#7089).

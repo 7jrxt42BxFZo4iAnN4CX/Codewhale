@@ -2572,6 +2572,7 @@
   "PlanHandoffKeepPlanning": "Продолжить планирование",
   "PlanHandoffKeepPlanningDetail": "Остаться в Plan. Ничего не меняется.",
   "PlanHandoffProceed": "Приступайте к плану.",
+  "PlanHandoffTodoNote": "Отслеживайте этот план через todo_write: оставьте в списке пункт \"{title}\" и отметьте его как выполненный, когда план будет завершён.",
   "PetAppearanceLegacy": "Питомец работает на старой версии. После обновления Codewhale перезапустите его, чтобы выбрать стиль кита и язык текста.",
   "PluginOAuthBrowser": "Нажмите Enter для входа через браузер или Esc для возврата. Ключ API не нужен.",
   "PluginOAuthReady": "{provider}: вход выполнен. Выберите модель.",
