@@ -511,7 +511,10 @@ fn rename_exclusive(
     exclusive_rename_outcome(renamed == 0)
 }
 
-#[cfg(all(unix, not(any(target_os = "linux", target_os = "android", target_vendor = "apple"))))]
+#[cfg(all(
+    unix,
+    not(any(target_os = "linux", target_os = "android", target_vendor = "apple"))
+))]
 fn rename_exclusive(_: libc::c_int, _: &std::ffi::CStr, _: &std::ffi::CStr) -> io::Result<bool> {
     Ok(false)
 }

@@ -492,7 +492,12 @@ pub(super) fn publish_snapshot(source: &Path, destination: &Path) -> io::Result<
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "android", windows)))]
+#[cfg(not(any(
+    target_os = "macos",
+    target_os = "linux",
+    target_os = "android",
+    windows
+)))]
 pub(super) fn publish_snapshot(_source: &Path, _destination: &Path) -> io::Result<()> {
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
