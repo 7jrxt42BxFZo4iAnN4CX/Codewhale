@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Clearing a conversation with no goal no longer shows a misleading "Goal cleared."
+  receipt. Clearing an existing or configured goal still reports it (#7089).
+  Thanks @Lstarsky0.
+
 - Removed the internal config re-export facade and its model-constant wrapper;
   provider types, shared constants, credential helpers, and notification types
   now come directly from their shared owners. Configuration and saved settings
