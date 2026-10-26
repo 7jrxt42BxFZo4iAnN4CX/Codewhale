@@ -1278,7 +1278,7 @@ fn restored_tool_results_obey_the_active_route_budget() {
     let output = "x".repeat(20_000);
     let recovery = format!(
         "{output}\n{}",
-        crate::tools::truncate::SPILLOVER_RECOVERY_HINT
+        codewhale_tools::names::SPILLOVER_RECOVERY_HINT
     );
     let request = MessageRequest {
         model: "trinity-mini".into(),

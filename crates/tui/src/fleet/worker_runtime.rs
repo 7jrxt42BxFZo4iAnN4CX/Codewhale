@@ -24,13 +24,15 @@ use codewhale_protocol::fleet::{
 use serde::{Deserialize, Serialize};
 
 use super::identity::{FleetSelectorError, resolve_member_in_profiles};
+use super::profile::FleetRole as FleetProfileRole;
 use super::profile::{
     AgentProfile, FleetDelegationHints, FleetLoadout, FleetProfile, FleetProfilePermissions,
-    FleetRole as FleetProfileRole, FleetSlot, ProfileOrigin, canonical_public_role_name,
+    FleetSlot, ProfileOrigin, canonical_public_role_name,
 };
 use crate::config::{Config, ProviderKind};
 use crate::route_runtime::resolve_route_candidate;
-use crate::tools::subagent::{AgentWorkerSpec, AgentWorkerToolProfile, FleetRole};
+use crate::tools::subagent::{AgentWorkerSpec, AgentWorkerToolProfile};
+use codewhale_agent_contract::role::FleetRole;
 use codewhale_agent_contract::role::runtime_role_for_member;
 use codewhale_agent_contract::worker_profile::{
     ChildLaunchManifest, ModelRoute, ToolScope, WorkerRuntimeProfile,
@@ -1637,8 +1639,8 @@ mod tests {
 
     #[test]
     fn read_only_roles_report_the_narrowed_shell_they_actually_run_under() {
-        use crate::tools::subagent::FleetRole;
         use codewhale_agent_contract::role;
+        use codewhale_agent_contract::role::FleetRole;
         use codewhale_agent_contract::worker_profile::ShellPolicy;
         let mut requested = WorkerRuntimeProfile {
             shell: ShellPolicy::Full,

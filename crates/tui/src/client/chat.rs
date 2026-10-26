@@ -2618,7 +2618,7 @@ fn compact_tool_result_for_wire(
     // recovery instruction. Truncating it again here would destroy that
     // recovery contract and falsely report that no session-owned artifact
     // was recorded, so pass it through untouched.
-    if content.contains(crate::tools::truncate::SPILLOVER_RECOVERY_HINT) {
+    if content.contains(codewhale_tools::names::SPILLOVER_RECOVERY_HINT) {
         return WireToolResult {
             content: content.to_string(),
             original_chars,

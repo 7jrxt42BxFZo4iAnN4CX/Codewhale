@@ -15,7 +15,7 @@ use crate::config::{ApprovalPolicyControl, Config, ProviderKind};
 use crate::settings::Settings;
 use crate::tools::UserInputResponse;
 use crate::tools::subagent::{
-    FleetRole, SubAgentAssignment, SubAgentResult, SubAgentStatus, localized_whale_display_names,
+    SubAgentAssignment, SubAgentResult, SubAgentStatus, localized_whale_display_names,
 };
 use crate::tui::app::App;
 use crate::tui::approval::{ElevationOption, ReviewDecision};
@@ -24,6 +24,7 @@ use crate::tui::history::{HistoryCell, SubAgentCell, summarize_tool_output};
 use crate::tui::menu_style;
 use crate::tui::tideline::{SettingApplySemantics, SettingAuthority, SettingFact, UiSnapshot};
 use crate::tui::widgets::agent_card::AgentLifecycle;
+use codewhale_agent_contract::role::FleetRole;
 use codewhale_localization::{
     Locale, MessageId, configured_locale_is_partial_pack, normalize_configured_locale, tr, tr_key,
 };
@@ -6877,11 +6878,12 @@ mod tests {
     };
     use crate::config::Config;
     use crate::settings::Settings;
-    use crate::tools::subagent::{FleetRole, SubAgentAssignment, SubAgentResult, SubAgentStatus};
+    use crate::tools::subagent::{SubAgentAssignment, SubAgentResult, SubAgentStatus};
     use crate::tui::app::{App, TuiOptions};
     use crate::tui::history::{HistoryCell, SubAgentCell};
     use crate::tui::views::{CommandPaletteAction, SubAgentsView};
     use crate::tui::widgets::agent_card::{AgentLifecycle, FanoutCard};
+    use codewhale_agent_contract::role::FleetRole;
     use codewhale_localization::{Locale, MessageId, tr, tr_key};
     use codewhale_palette as palette;
     use crossterm::event::{

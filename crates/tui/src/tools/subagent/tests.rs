@@ -19894,7 +19894,7 @@ fn subagent_tool_results_spill_to_disk_and_stay_bounded_inline() {
         assert!(!inline.contains(crate::tools::truncate::SPILLOVER_PREVIEW_HINT));
         assert!(inline.contains("of output omitted"));
         assert!(inline.contains("full output at"));
-        assert!(inline.contains(crate::tools::truncate::SPILLOVER_RECOVERY_HINT));
+        assert!(inline.contains(codewhale_tools::names::SPILLOVER_RECOVERY_HINT));
         assert!(inline.contains("\n…\n"));
         assert!(inline.contains(&crate::artifacts::format_artifact_relative_path(&path)));
         assert!(!inline.contains("Exact evidence retained"));
@@ -19928,7 +19928,7 @@ fn subagent_tool_results_spill_to_disk_and_stay_bounded_inline() {
         assert!(spilled.is_some());
         assert!(bounded_err.len() <= 42 * 1024);
         assert!(bounded_err.contains("of output omitted"));
-        assert!(bounded_err.contains(crate::tools::truncate::SPILLOVER_RECOVERY_HINT));
+        assert!(bounded_err.contains(codewhale_tools::names::SPILLOVER_RECOVERY_HINT));
         assert!(!bounded_err.contains("Exact evidence retained"));
         assert!(
             bounded_err.contains("retrieve_tool_result"),

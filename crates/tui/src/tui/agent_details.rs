@@ -545,11 +545,12 @@ mod tests {
 
     use crate::config::Config;
     use crate::tools::subagent::{
-        AgentWorkerStatus, ChildRouteReceipt, FleetRole, SubAgentAssignment, SubAgentNeedsInput,
+        AgentWorkerStatus, ChildRouteReceipt, SubAgentAssignment, SubAgentNeedsInput,
     };
     use crate::tui::app::{
         AgentCurrentActivity, AgentRecentAction, MAX_AGENT_RECENT_ACTIONS, TuiOptions,
     };
+    use codewhale_agent_contract::role::FleetRole;
 
     fn test_app(workspace: PathBuf) -> App {
         App::new(

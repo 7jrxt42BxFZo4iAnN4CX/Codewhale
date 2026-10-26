@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Removed superseded home-directory and Fleet-role re-export shims, unused
+  tool-context sandbox/MCP fields, and the redundant core tool-parser facade.
+  Consumers now call their existing owners directly; tool denial rules, approval
+  posture, strict tool schemas, home resolution, and legacy saved-role migration
+  retain their behavior. The cleanup removes three dead-code suppressions and
+  keeps the engine as the sole owner of human approval attestations.
+
 - Local Ollama defaults now come from chat-capable tags, and `/provider ollama`
   refreshes the live catalog before switching. Exec and Runtime API defaults use
   the same discovery path. Fresh context observations come from loaded models'

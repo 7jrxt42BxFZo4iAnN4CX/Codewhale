@@ -2606,7 +2606,7 @@ fn render_spillover_annotation(width: u16) -> Line<'static> {
 /// footer, or the legacy receipt header still present in older saved
 /// sessions. Live cards collapse to the expand affordance for all of them.
 fn is_truncated_output_preview(content: &str) -> bool {
-    content.contains(crate::tools::truncate::SPILLOVER_RECOVERY_HINT)
+    content.contains(codewhale_tools::names::SPILLOVER_RECOVERY_HINT)
         || content.contains(crate::tools::truncate::SPILLOVER_PREVIEW_HINT)
         || content.trim_start().starts_with("[Exact evidence retained")
 }

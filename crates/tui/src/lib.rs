@@ -14670,7 +14670,6 @@ async fn build_direct_workflow_tool(
         workspace.to_path_buf(),
         yolo,
         config.notes_path(),
-        config.mcp_config_path(),
         yolo,
     )
     .with_features(config.features())

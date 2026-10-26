@@ -87,8 +87,7 @@ mod tests {
 
     use crate::config::{Config, ProviderKind};
     use crate::tools::subagent::{
-        AgentWorkerStatus, FleetRole, MailboxMessage, SubAgentAssignment, SubAgentResult,
-        SubAgentStatus,
+        AgentWorkerStatus, MailboxMessage, SubAgentAssignment, SubAgentResult, SubAgentStatus,
     };
     use crate::tools::todo::TodoStatus;
     use crate::tui::app::{
@@ -104,6 +103,7 @@ mod tests {
         OperationBinding, OperationOwnerSnapshot, OwnerState, Provenance, WorkEdge, WorkEdgeId,
         WorkGraph, WorkGraphChange, WorkNode, WorkNodeId,
     };
+    use codewhale_agent_contract::role::FleetRole;
 
     const SESSION: &str = "work-surface-test";
 

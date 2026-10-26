@@ -52,11 +52,7 @@ use super::shell_output::{
     kill_outcome_note, output_phase_hint, summarize_output, truncate_with_meta,
 };
 use crate::sandbox::{
-    CommandSpec,
-    ExecEnv,
-    SandboxManager,
-    SandboxPolicy as ExecutionSandboxPolicy, // Rename to avoid conflict with spec::SandboxPolicy
-    SandboxType,
+    CommandSpec, ExecEnv, SandboxManager, SandboxPolicy as ExecutionSandboxPolicy, SandboxType,
 };
 use crate::tools::resource_admission::{
     CommandExpense, HeavyCommandPermit, MemoryPressure, acquire_heavy_command_permit,
@@ -5947,11 +5943,7 @@ impl ToolSpec for BashTool {
         if let Some(object) = policy_input.as_object_mut() {
             object.insert("action".into(), json!(action));
         }
-        crate::core::engine::tool_catalog::enforce_tool_denial(
-            context,
-            self.name(),
-            &policy_input,
-        )?;
+        crate::tools::execution_envelope::enforce_tool_denial(context, self.name(), &policy_input)?;
         if action == "interact" && context.shell_policy != ShellPolicy::Full {
             return Err(ToolError::permission_denied(
                 "Sending shell input requires full shell permission.",

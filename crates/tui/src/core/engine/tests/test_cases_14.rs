@@ -1588,7 +1588,7 @@ fn budgeted_read_result_is_not_truncated_a_second_time_by_the_context_compactor(
     // which is what proves the metadata (not the tool name) did the work.
     let unbudgeted = ToolResult::success(content.clone());
     let compacted = compact_tool_result_for_context("deepseek-v3.2-128k", "read", &unbudgeted);
-    assert!(compacted.contains(crate::tools::truncate::SPILLOVER_RECOVERY_HINT));
+    assert!(compacted.contains(codewhale_tools::names::SPILLOVER_RECOVERY_HINT));
     assert!(compacted.len() < content.len());
 
     // A result that overran its own declared budget is not exempt.
@@ -1596,7 +1596,7 @@ fn budgeted_read_result_is_not_truncated_a_second_time_by_the_context_compactor(
         "read_budget_bytes": 1_000
     }));
     let compacted_overrun = compact_tool_result_for_context("deepseek-v3.2-128k", "read", &overrun);
-    assert!(compacted_overrun.contains(crate::tools::truncate::SPILLOVER_RECOVERY_HINT));
+    assert!(compacted_overrun.contains(codewhale_tools::names::SPILLOVER_RECOVERY_HINT));
 }
 
 #[test]

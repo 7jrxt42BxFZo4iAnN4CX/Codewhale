@@ -2952,8 +2952,9 @@ async fn agent_runs_runtime_api_exposes_persisted_worker_receipts() -> Result<()
     use crate::tools::subagent::{
         AgentRunArtifactRef, AgentRunFollowUpTarget, AgentRunRecommendedAction,
         AgentRunTakeoverTarget, AgentRunUsage, AgentRunVerificationSummary, AgentWorkerEvent,
-        AgentWorkerRecord, AgentWorkerSpec, AgentWorkerStatus, AgentWorkerToolProfile, FleetRole,
+        AgentWorkerRecord, AgentWorkerSpec, AgentWorkerStatus, AgentWorkerToolProfile,
     };
+    use codewhale_agent_contract::role::FleetRole;
     use codewhale_agent_contract::worker_profile::{ModelRoute, ToolScope, WorkerRuntimeProfile};
     use std::collections::VecDeque;
 

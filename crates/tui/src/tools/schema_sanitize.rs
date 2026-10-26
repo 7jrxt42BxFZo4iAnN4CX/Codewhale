@@ -15,8 +15,6 @@ use std::collections::HashSet;
 
 use serde_json::{Map, Value};
 
-use codewhale_models::Tool;
-
 /// Sanitize a JSON Schema in-place for DeepSeek strict-tool compatibility.
 ///
 /// Applies a sequence of normalisations chosen to be semantics-preserving:
@@ -40,25 +38,6 @@ pub fn sanitize(schema: &mut Value) {
             sanitize(v);
         }
     }
-}
-
-/// Prepare a complete active tool set for DeepSeek strict function-calling.
-///
-/// Each tool is evaluated independently: compatible schemas are sanitized and
-/// marked strict, while incompatible schemas remain unchanged and non-strict.
-/// Returns `true` only when every tool in the set can use strict mode.
-pub fn prepare_tools_for_strict_mode(tools: &mut [Tool]) -> bool {
-    let mut all_strict = true;
-    for tool in tools {
-        if strict_schema_supported(&tool.input_schema) {
-            sanitize_for_strict(&mut tool.input_schema);
-            tool.strict = Some(true);
-        } else {
-            tool.strict = None;
-            all_strict = false;
-        }
-    }
-    all_strict
 }
 
 /// Sanitize a schema for DeepSeek strict function-calling.
@@ -123,7 +102,7 @@ pub fn sanitize_for_responses(schema: &mut Value) -> Option<String> {
     combine_constraint_notes(constraint_note, dependent_note)
 }
 
-fn strict_schema_supported(schema: &Value) -> bool {
+pub(crate) fn strict_schema_supported(schema: &Value) -> bool {
     let mut normalized = schema.clone();
     sanitize(&mut normalized);
     !has_strict_incompatible_composition(&normalized, true)
@@ -471,20 +450,6 @@ fn required_group_label(item: &Value) -> Option<String> {
 mod tests {
     use super::*;
     use serde_json::json;
-
-    fn test_tool(name: &str, input_schema: Value) -> Tool {
-        Tool {
-            tool_type: None,
-            name: name.to_string(),
-            description: name.to_string(),
-            input_schema,
-            allowed_callers: None,
-            defer_loading: None,
-            input_examples: None,
-            strict: None,
-            cache_control: None,
-        }
-    }
 
     #[test]
     fn collapses_nullable_anyof() {
@@ -837,139 +802,6 @@ mod tests {
         let score = &schema["properties"]["score"];
         assert_eq!(score["minimum"], 1);
         assert_eq!(score["maximum"], 5);
-    }
-
-    #[test]
-    fn strict_mode_applies_per_tool_in_mixed_catalog() {
-        let mut tools = vec![
-            test_tool(
-                "lookup",
-                json!({
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string"}
-                    },
-                    "required": []
-                }),
-            ),
-            test_tool(
-                "either",
-                json!({
-                    "type": "object",
-                    "properties": {
-                        "a": {"type": "string"},
-                        "b": {"type": "string"}
-                    },
-                    "anyOf": [
-                        {"required": ["a"]},
-                        {"required": ["b"]}
-                    ]
-                }),
-            ),
-            test_tool(
-                "nested",
-                json!({
-                    "type": "object",
-                    "properties": {
-                        "value": {
-                            "oneOf": [
-                                {"type": "string"},
-                                {"type": "integer"}
-                            ]
-                        }
-                    }
-                }),
-            ),
-        ];
-
-        assert!(!prepare_tools_for_strict_mode(&mut tools));
-        assert_eq!(tools[0].strict, Some(true));
-        assert_eq!(tools[0].input_schema["required"], json!(["query"]));
-        assert_eq!(tools[0].input_schema["additionalProperties"], false);
-        assert_eq!(tools[1].strict, None);
-        assert!(tools[1].input_schema.get("anyOf").is_some());
-        assert_eq!(tools[2].strict, None);
-        assert!(
-            tools[2].input_schema["properties"]["value"]
-                .get("oneOf")
-                .is_some()
-        );
-    }
-
-    #[test]
-    fn strict_mode_rejects_nested_unsupported_composition() {
-        let mut tools = vec![Tool {
-            tool_type: None,
-            name: "nested".to_string(),
-            description: "Nested oneOf".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "value": {
-                        "oneOf": [
-                            {"type": "string"},
-                            {"type": "integer"}
-                        ]
-                    }
-                }
-            }),
-            allowed_callers: None,
-            defer_loading: None,
-            input_examples: None,
-            strict: None,
-            cache_control: None,
-        }];
-
-        assert!(!prepare_tools_for_strict_mode(&mut tools));
-        assert_eq!(tools[0].strict, None);
-    }
-
-    #[test]
-    fn strict_mode_leaves_dependent_schema_tools_non_strict() {
-        let schema = json!({
-            "type": "object",
-            "properties": {
-                "action": {"type": "string"},
-                "message": {"type": "string"}
-            },
-            "dependentSchemas": {
-                "action": {
-                    "properties": {"message": {}},
-                    "required": ["message"]
-                }
-            }
-        });
-        let mut tools = vec![test_tool("agent", schema.clone())];
-
-        assert!(!prepare_tools_for_strict_mode(&mut tools));
-        assert_eq!(tools[0].strict, None);
-        assert_eq!(tools[0].input_schema, schema);
-    }
-
-    #[test]
-    fn strict_mode_marks_compatible_tools_strict() {
-        let mut tools = vec![Tool {
-            tool_type: None,
-            name: "lookup".to_string(),
-            description: "Lookup".to_string(),
-            input_schema: json!({
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string"}
-                },
-                "required": []
-            }),
-            allowed_callers: None,
-            defer_loading: None,
-            input_examples: None,
-            strict: None,
-            cache_control: None,
-        }];
-
-        assert!(prepare_tools_for_strict_mode(&mut tools));
-        assert_eq!(tools[0].strict, Some(true));
-        assert_eq!(tools[0].input_schema["required"], json!(["query"]));
-        assert_eq!(tools[0].input_schema["additionalProperties"], false);
     }
 
     #[test]

@@ -451,7 +451,7 @@
             // Children can inspect the shared goal, but only its owning
             // session can create it or change its completion state.
             .filter(|name| !matches!(*name, "create_goal" | "update_goal"))
-            .chain([crate::core::engine::tool_catalog::TOOL_SEARCH_NAME])
+            .chain([codewhale_tools::names::TOOL_SEARCH_NAME])
             .map(str::to_string)
             .collect();
         assert_eq!(source_names, expected_names);

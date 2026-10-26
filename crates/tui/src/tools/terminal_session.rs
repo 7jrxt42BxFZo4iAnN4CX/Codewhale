@@ -984,7 +984,7 @@ fn timeout_secs(input: &serde_json::Value, key: &str) -> Result<Duration, ToolEr
 }
 
 fn shell_allowed(context: &ToolContext, name: &str) -> Result<(), ToolError> {
-    crate::core::engine::tool_catalog::enforce_tool_denial(context, name, &json!({}))?;
+    crate::tools::execution_envelope::enforce_tool_denial(context, name, &json!({}))?;
     if matches!(name, "terminal/run" | "terminal/send" | "terminal/reset")
         && context.shell_policy != codewhale_agent_contract::worker_profile::ShellPolicy::Full
     {

@@ -753,7 +753,7 @@ impl ChildAuthority {
         }
         // Core's virtual search returns this child's filtered catalog; it is
         // not a registered process tool. Scope and deny checks still follow.
-        let evidence_tool = crate::core::engine::tool_catalog::is_tool_search_tool(name)
+        let evidence_tool = codewhale_tools::names::is_tool_search_tool(name)
             || crate::tools::registry::readonly_evidence_tool_name(name)
             || registry
                 .get(name)

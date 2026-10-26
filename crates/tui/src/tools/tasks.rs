@@ -382,7 +382,7 @@ impl ToolSpec for TasksTool {
     }
 
     async fn execute(&self, input: Value, context: &ToolContext) -> Result<ToolResult, ToolError> {
-        crate::core::engine::tool_catalog::enforce_tool_denial(
+        crate::tools::execution_envelope::enforce_tool_denial(
             context,
             self.name(),
             &json!({"action": self.resolve_action(&input)?}),
@@ -680,7 +680,7 @@ impl TasksTool {
         input: &Value,
         context: &ToolContext,
     ) -> Result<ToolResult, ToolError> {
-        crate::core::engine::tool_catalog::enforce_tool_denial(context, "task_gate_run", input)?;
+        crate::tools::execution_envelope::enforce_tool_denial(context, "task_gate_run", input)?;
         if context.shell_policy != codewhale_agent_contract::worker_profile::ShellPolicy::Full {
             return Err(ToolError::permission_denied(
                 "Gate commands require full shell permission.",
@@ -999,7 +999,7 @@ impl ToolSpec for TaskShellWaitTool {
     }
 
     async fn execute(&self, input: Value, context: &ToolContext) -> Result<ToolResult, ToolError> {
-        crate::core::engine::tool_catalog::enforce_tool_denial(context, self.name(), &input)?;
+        crate::tools::execution_envelope::enforce_tool_denial(context, self.name(), &input)?;
         // The shell cancel action lives on the hidden compatibility tool, which
         // no model catalog offers. Without this route a model that owns a stuck
         // background command can watch it but never stop it. The delegate

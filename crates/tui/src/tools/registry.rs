@@ -659,7 +659,7 @@ pub(crate) fn enforce_tool_authority(
     tool: &dyn ToolSpec,
     context: &ToolContext,
 ) -> Result<(), ToolError> {
-    crate::core::engine::tool_catalog::enforce_tool_denial(context, name, input)?;
+    crate::tools::execution_envelope::enforce_tool_denial(context, name, input)?;
     if let Some(mode) = context.acp_host {
         let canonical = super::canonical_action::canonical_action_alias(name, input);
         if matches!(name, "bash" | "Bash" | "exec_shell") || canonical.starts_with("exec_shell") {

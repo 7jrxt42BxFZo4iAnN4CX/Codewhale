@@ -1103,11 +1103,11 @@ impl Engine {
         }
         let mut normalized = input.clone();
         let match_kind = match name {
-            super::tool_catalog::LEGACY_TOOL_SEARCH_REGEX_NAME => "regex",
-            super::tool_catalog::LEGACY_TOOL_SEARCH_BM25_NAME => "bm25",
+            codewhale_tools::names::LEGACY_TOOL_SEARCH_REGEX_NAME => "regex",
+            codewhale_tools::names::LEGACY_TOOL_SEARCH_BM25_NAME => "bm25",
             _ => input.get("match").and_then(Value::as_str).unwrap_or("bm25"),
         };
-        if name != super::tool_catalog::TOOL_SEARCH_NAME {
+        if name != codewhale_tools::names::TOOL_SEARCH_NAME {
             normalized
                 .as_object_mut()
                 .ok_or_else(|| ToolError::invalid_input("tool search input must be an object"))?

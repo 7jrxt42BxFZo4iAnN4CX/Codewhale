@@ -82,7 +82,7 @@ async fn shell_denial_reaches_registry_and_direct_delegation_sinks() {
 
 #[test]
 fn shell_denial_keeps_the_existing_bounded_child_read_only_exception() {
-    use crate::core::engine::tool_catalog::enforce_tool_denial;
+    use crate::tools::execution_envelope::enforce_tool_denial;
     use codewhale_agent_contract::worker_profile::ShellPolicy;
     let tmp = tempdir().unwrap();
     let mut context = ToolContext::new(tmp.path()).with_shell_policy(ShellPolicy::ReadOnly);

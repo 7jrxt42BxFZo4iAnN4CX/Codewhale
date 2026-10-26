@@ -3,8 +3,9 @@ use super::*;
 use crate::agent_roster::{RosterState, build_agent_roster};
 use crate::tools::subagent::{
     AgentRunUsage, AgentWorkerEvent, AgentWorkerRecord, AgentWorkerSpec, AgentWorkerStatus,
-    AgentWorkerToolProfile, FleetRole,
+    AgentWorkerToolProfile,
 };
+use codewhale_agent_contract::role::FleetRole;
 use codewhale_agent_contract::worker_profile::WorkerRuntimeProfile;
 
 fn usage_none() -> AgentRunUsage {

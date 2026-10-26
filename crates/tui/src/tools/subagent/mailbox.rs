@@ -20,7 +20,7 @@ use crate::config::ProviderKind;
 use crate::tools::todo::TodoListSnapshot;
 use codewhale_models::Usage;
 
-use super::FleetRole;
+use codewhale_agent_contract::role::FleetRole;
 
 /// Stable, structured progress envelope shared across the sub-agent surface.
 ///

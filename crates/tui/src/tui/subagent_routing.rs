@@ -1080,10 +1080,11 @@ mod tests {
     use super::*;
     use crate::config::Config;
     use crate::task_manager::{TaskStatus, TaskSummary};
-    use crate::tools::subagent::{FleetRole, SubAgentAssignment};
+    use crate::tools::subagent::SubAgentAssignment;
     use crate::tui::app::{InitialInput, TuiOptions};
     use crate::tui::widgets::agent_card::AgentLifecycle;
     use chrono::Utc;
+    use codewhale_agent_contract::role::FleetRole;
     use std::path::PathBuf;
 
     fn test_options() -> TuiOptions {

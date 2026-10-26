@@ -34,7 +34,8 @@ use super::worker_runtime::{
 use crate::tools::spec::{
     ToolAuthorityEnvelope, ToolMutationAuthority, ToolShellAuthority, ToolVerificationAuthority,
 };
-use crate::tools::subagent::{AgentWorkerSpec, FleetRole};
+use crate::tools::subagent::AgentWorkerSpec;
+use codewhale_agent_contract::role::FleetRole;
 
 #[derive(Clone, Copy, Default)]
 struct WorkerExecRoute<'a> {
@@ -1081,9 +1082,9 @@ pub(crate) fn exec_stream_final_answer_excerpt(output: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use codewhale_config::FleetRole;
     use codewhale_config::{
-        FleetDelegationHints, FleetLoadout, FleetProfile, FleetProfilePermissions, FleetRole,
-        FleetSlot,
+        FleetDelegationHints, FleetLoadout, FleetProfile, FleetProfilePermissions, FleetSlot,
     };
     use codewhale_protocol::fleet::{
         FleetHostSpec, FleetTaskBudget, FleetTaskSpec, FleetTaskWorkerProfile, FleetWorkerSpec,
@@ -1361,7 +1362,7 @@ mod tests {
         let launch_spec = launch_spec(&task, tmp.path());
         assert_eq!(
             launch_spec.agent_type,
-            crate::tools::subagent::FleetRole::Consultant
+            codewhale_agent_contract::role::FleetRole::Consultant
         );
         // Counsel only: never writes the workspace, but may read the web.
         assert!(!launch_spec.runtime_profile.permissions.write);

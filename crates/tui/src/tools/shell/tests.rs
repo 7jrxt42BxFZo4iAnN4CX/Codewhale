@@ -5998,7 +5998,7 @@ async fn note_tool_refuses_symlinked_targets_that_leave_the_workspace() {
 
     let linked_file = workspace.path().join("notes.md");
     std::os::unix::fs::symlink(&rc, &linked_file).expect("symlink notes file");
-    let context = ToolContext::with_options(workspace.path(), false, &linked_file, "mcp.json");
+    let context = ToolContext::with_options(workspace.path(), false, &linked_file);
     let err = NoteTool
         .execute(json!({"content": "appended text"}), &context)
         .await
@@ -6007,12 +6007,8 @@ async fn note_tool_refuses_symlinked_targets_that_leave_the_workspace() {
 
     let linked_dir = workspace.path().join("notes");
     std::os::unix::fs::symlink(outside.path(), &linked_dir).expect("symlink notes dir");
-    let context = ToolContext::with_options(
-        workspace.path(),
-        false,
-        linked_dir.join("sub/notes.md"),
-        "mcp.json",
-    );
+    let context =
+        ToolContext::with_options(workspace.path(), false, linked_dir.join("sub/notes.md"));
     let err = NoteTool
         .execute(json!({"content": "appended text"}), &context)
         .await
@@ -6023,7 +6019,7 @@ async fn note_tool_refuses_symlinked_targets_that_leave_the_workspace() {
     assert!(!outside.path().join("sub").exists());
 
     let plain = workspace.path().join("docs/notes.md");
-    let context = ToolContext::with_options(workspace.path(), false, &plain, "mcp.json");
+    let context = ToolContext::with_options(workspace.path(), false, &plain);
     NoteTool
         .execute(json!({"content": "kept"}), &context)
         .await

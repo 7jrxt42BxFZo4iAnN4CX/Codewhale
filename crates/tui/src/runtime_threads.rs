@@ -18169,7 +18169,7 @@ impl RuntimeThreadManager {
                             }
                             // Tool discovery is engine plumbing, not work the
                             // user asked for: clients collapse it by default.
-                            if crate::core::engine::tool_catalog::is_tool_search_tool(&name) {
+                            if codewhale_tools::names::is_tool_search_tool(&name) {
                                 meta["visibility"] = json!(INTERNAL_ITEM_VISIBILITY);
                             }
                             meta

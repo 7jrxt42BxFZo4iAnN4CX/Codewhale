@@ -181,7 +181,7 @@ fn registry_sync_results_are_bounded_like_every_other_tool() {
 
     assert_ne!(context, raw);
     assert!(context.chars().count() <= budget);
-    assert!(context.contains(crate::tools::truncate::SPILLOVER_RECOVERY_HINT));
+    assert!(context.contains(codewhale_tools::names::SPILLOVER_RECOVERY_HINT));
 }
 
 #[test]

@@ -469,7 +469,7 @@ impl RlmTool {
         input: &Value,
         context: &ToolContext,
     ) -> Result<ToolResult, ToolError> {
-        crate::core::engine::tool_catalog::enforce_tool_denial(context, "rlm_eval", input)?;
+        crate::tools::execution_envelope::enforce_tool_denial(context, "rlm_eval", input)?;
         let name = required_non_empty_str(input, "name")?;
         let code = required_non_empty_str(input, "code").map_err(|_| {
             ToolError::invalid_input(
@@ -875,7 +875,7 @@ async fn load_source(
     let url = rlm_open_source_field(input, "url")
         .map(str::trim)
         .ok_or_else(|| ToolError::invalid_input("rlm_open: missing source"))?;
-    crate::core::engine::tool_catalog::enforce_tool_denial(context, "fetch_url", input)?;
+    crate::tools::execution_envelope::enforce_tool_denial(context, "fetch_url", input)?;
     let result = FetchUrlTool
         .execute(json!({"url": url, "format": "raw"}), context)
         .await?;

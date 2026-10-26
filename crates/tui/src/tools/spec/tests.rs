@@ -108,7 +108,7 @@ fn legacy_auto_approve_bit_folds_into_the_context_posture() {
         "a context with no authority runs under Ask"
     );
 
-    let yolo = ToolContext::with_auto_approve(".", false, "notes.md", "mcp.json", true);
+    let yolo = ToolContext::with_auto_approve(".", false, "notes.md", true);
     assert!(yolo.auto_approve);
     assert_eq!(
         yolo.approval_mode,
@@ -427,11 +427,10 @@ fn process_tool_authority_inherits_into_all_context_constructors() {
         })
         .expect("install process authority once in isolated child");
         let notes = tmp.path().join("notes.md");
-        let mcp = tmp.path().join("mcp.json");
         let contexts = [
             ToolContext::new(tmp.path().to_path_buf()),
-            ToolContext::with_options(tmp.path().to_path_buf(), false, notes.clone(), mcp.clone()),
-            ToolContext::with_auto_approve(tmp.path().to_path_buf(), false, notes, mcp, true),
+            ToolContext::with_options(tmp.path().to_path_buf(), false, notes.clone()),
+            ToolContext::with_auto_approve(tmp.path().to_path_buf(), false, notes, true),
         ];
         for context in contexts {
             let authority = context

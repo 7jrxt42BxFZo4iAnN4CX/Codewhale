@@ -36,7 +36,7 @@ pub(crate) const ONE_SHOT_DEFAULT_MAX_STEPS: u32 = 8;
 /// stays unconditional: there is no channel on which a one-shot CLI run
 /// could answer, so advertising the tool cannot work.
 pub(crate) fn exec_disallowed_tools(disallowed_tools: Option<Vec<String>>) -> Option<Vec<String>> {
-    use crate::core::engine::tool_catalog::REQUEST_USER_INPUT_NAME;
+    use codewhale_tools::names::REQUEST_USER_INPUT_NAME;
     let mut disallowed = disallowed_tools.unwrap_or_default();
     if !disallowed
         .iter()
@@ -510,7 +510,9 @@ pub(crate) async fn run_exec_agent(
         outer_network_access,
         outer_shell_authority,
     );
-    if crate::core::allowlist_is_native_file_and_shell_only(allowed_tools.as_deref()) {
+    if crate::core::engine::tool_catalog::allowlist_is_native_file_and_shell_only(
+        allowed_tools.as_deref(),
+    ) {
         engine_features.disable(codewhale_runtime::features::Feature::Mcp);
     }
     let engine_plugin_registry = if fleet_authority_active {
@@ -1677,10 +1679,10 @@ mod tests {
     use super::{ExecAgentEvents, exec_automation_services, exec_disallowed_tools};
 
     use crate::core::engine::mock_engine_handle;
-    use crate::core::engine::tool_catalog::REQUEST_USER_INPUT_NAME;
     use crate::core::events::{Event, TurnOutcomeStatus};
     use crate::core::ops::{Op, SubAgentSettlement};
     use codewhale_models::Usage;
+    use codewhale_tools::names::REQUEST_USER_INPUT_NAME;
     use std::time::{Duration, Instant};
 
     fn completed_parent(input_tokens: u32) -> Event {

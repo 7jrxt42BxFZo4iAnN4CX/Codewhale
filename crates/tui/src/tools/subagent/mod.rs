@@ -38,8 +38,7 @@ use crate::config::{MAX_SUBAGENTS, SubagentModelOverride};
 use crate::core::engine::ChildSurfaceProbe;
 #[cfg(test)]
 use crate::core::engine::tool_catalog::{
-    TOOL_SEARCH_NAME, apply_native_tool_deferral, ensure_advanced_tooling,
-    execute_tool_search_with_cache, is_tool_search_tool,
+    apply_native_tool_deferral, ensure_advanced_tooling, execute_tool_search_with_cache,
 };
 use crate::core::events::{AgentProgressEventMeta, Event};
 #[cfg(test)]
@@ -70,12 +69,8 @@ use crate::work_graph::{
     EvidenceKind, EvidenceRef, OperationIntent, OperationOwnerSnapshot, OwnerState,
     SharedWorkRuntime,
 };
-/// Compatibility re-export: the closed role set lives in
-/// [`codewhale_agent_contract::role`], the lightweight role surface every spawn path
-/// consumes. Existing `tools::subagent::FleetRole` paths keep resolving.
-pub use codewhale_agent_contract::role::FleetRole;
 use codewhale_agent_contract::role::{
-    FLEET_ROLE_SCHEMA_VALUES, VALID_ROLE_ALIASES, public_role_label,
+    FLEET_ROLE_SCHEMA_VALUES, FleetRole, VALID_ROLE_ALIASES, public_role_label,
 };
 use codewhale_agent_contract::worker_profile::{
     ChildLaunchManifest, ModelRoute, ShellPolicy, ToolScope, WorkerRuntimeProfile,
@@ -90,6 +85,8 @@ use codewhale_models::MessageResponse;
 use codewhale_models::{ContentBlock, Message, SystemPrompt, Tool, Usage};
 use codewhale_models::{is_output_limit_stop_reason, stop_reason_detail};
 use codewhale_protocol::fleet::migrate_legacy_role_token;
+#[cfg(test)]
+use codewhale_tools::names::{TOOL_SEARCH_NAME, is_tool_search_tool};
 use coord::{
     CoordinationClaimScope, CoordinationDetailMetrics, CoordinationHotPath, CoordinationLedger,
     DecisionRecord, DecisionStatus, PersistedWriteClaim, ReconciliationReceipt, WriteScopeClaim,

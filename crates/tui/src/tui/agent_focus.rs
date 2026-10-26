@@ -1019,7 +1019,7 @@ mod tests {
                 fork_context: false,
                 workspace: None,
                 git_branch: None,
-                agent_type: crate::tools::subagent::FleetRole::Scout,
+                agent_type: codewhale_agent_contract::role::FleetRole::Scout,
                 assignment: crate::tools::subagent::SubAgentAssignment {
                     native_preset: None,
                     objective: "look around".to_string(),
@@ -1097,7 +1097,7 @@ mod tests {
             fork_context: false,
             workspace: None,
             git_branch: None,
-            agent_type: crate::tools::subagent::FleetRole::Scout,
+            agent_type: codewhale_agent_contract::role::FleetRole::Scout,
             assignment: crate::tools::subagent::SubAgentAssignment {
                 native_preset: None,
                 objective: "audit the docs".to_string(),

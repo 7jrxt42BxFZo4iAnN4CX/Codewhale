@@ -33,6 +33,7 @@
 //! it exposes a calm expand affordance and the tool-details shortcut opens the
 //! full retained output.
 
+use codewhale_tools::names::SPILLOVER_RECOVERY_HINT;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -344,10 +345,6 @@ const HANDLE_ONLY_TAIL_BYTES: usize = 4 * 1024;
 /// the model cannot open the tool details view, so the model-facing footer
 /// carries the artifact path and a recovery instruction instead.
 pub const SPILLOVER_PREVIEW_HINT: &str = "view full output in the tool details view";
-
-/// Sentinel phrase the TUI matches on to recognise a current-format truncated
-/// preview. It must stay a literal substring of every footer variant.
-pub const SPILLOVER_RECOVERY_HINT: &str = "omitted range recovery:";
 
 /// Model-facing recovery instruction for a truncated tool result.
 ///

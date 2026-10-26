@@ -195,14 +195,6 @@ fn file_read_snapshot(path: &Path) -> Result<FileReadSnapshot, ToolError> {
     })
 }
 
-/// Sandbox policy for command execution.
-#[derive(Debug, Clone, Default)]
-pub enum SandboxPolicy {
-    /// No sandboxing (dangerous but sometimes needed)
-    #[default]
-    None,
-}
-
 /// Machine-readable mutation boundary for a headless worker process.
 ///
 /// Fleet serializes this envelope onto the exact `codewhale exec` argv. The
@@ -616,14 +608,8 @@ pub struct ToolExecutionState {
     pub(crate) tool_authority: Option<Arc<ToolAuthorityEnvelope>>,
     /// Whether to allow paths outside workspace
     pub trust_mode: bool,
-    /// Current sandbox policy
-    #[expect(dead_code)]
-    pub sandbox_policy: SandboxPolicy,
     /// Path for notes file
     pub notes_path: PathBuf,
-    /// MCP configuration path
-    #[expect(dead_code)]
-    pub mcp_config_path: PathBuf,
     /// Explicit skills directory used for model-visible skill discovery.
     pub skills_dir: Option<PathBuf>,
     /// Restrict skill discovery to CodeWhale-owned roots plus `skills_dir`.
@@ -762,7 +748,7 @@ impl ToolContext {
     /// boundary by itself.
     #[must_use]
     pub(crate) fn for_empty_registry() -> Self {
-        Self::with_options(PathBuf::new(), false, PathBuf::new(), PathBuf::new())
+        Self::with_options(PathBuf::new(), false, PathBuf::new())
     }
 
     /// Create a new `ToolContext` with default settings.
@@ -773,10 +759,7 @@ impl ToolContext {
         let notes_path = codewhale_config::resolve_project_state_dir(&workspace, "notes.md")
             .expect("hardcoded project notes state path is valid")
             .1;
-        let mcp_config_path = codewhale_config::resolve_project_state_dir(&workspace, "mcp.json")
-            .expect("hardcoded project MCP state path is valid")
-            .1;
-        Self::with_options(workspace, false, notes_path, mcp_config_path)
+        Self::with_options(workspace, false, notes_path)
     }
 
     /// Create a `ToolContext` with all settings specified.
@@ -784,7 +767,6 @@ impl ToolContext {
         workspace: impl Into<PathBuf>,
         trust_mode: bool,
         notes_path: impl Into<PathBuf>,
-        mcp_config_path: impl Into<PathBuf>,
     ) -> Self {
         let workspace = workspace.into();
         let shell_manager = new_shared_shell_manager(workspace.clone());
@@ -809,9 +791,7 @@ impl ToolContext {
                 origin_turn_id: None,
                 tool_authority,
                 trust_mode,
-                sandbox_policy: SandboxPolicy::None,
                 notes_path: notes_path.into(),
-                mcp_config_path: mcp_config_path.into(),
                 skills_dir: None,
                 skills_discovery_mode: crate::skills::SkillDiscoveryMode::Compatible,
                 plugin_registry: None,
@@ -852,10 +832,9 @@ impl ToolContext {
         workspace: impl Into<PathBuf>,
         trust_mode: bool,
         notes_path: impl Into<PathBuf>,
-        mcp_config_path: impl Into<PathBuf>,
         auto_approve: bool,
     ) -> Self {
-        let mut context = Self::with_options(workspace, trust_mode, notes_path, mcp_config_path);
+        let mut context = Self::with_options(workspace, trust_mode, notes_path);
         context.auto_approve = auto_approve;
         // The bit stands for a posture, so fold it here rather than leaving the
         // two fields to disagree. A turn-level builder overwrites this with the
