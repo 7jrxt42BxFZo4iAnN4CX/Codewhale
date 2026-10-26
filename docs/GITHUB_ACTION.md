@@ -17,14 +17,26 @@ Action. The original direct-review Action has been in release tags since
 both features. The Action ref and the exact released CLI `version` are separate
 pins. Adding these source files does not enable a workflow.
 
-## Setup with your own provider key
+## Account configuration
+
+Codewhale-hosted GitHub reviews use the provider and model configured in the
+Codewhale account, with any explicit saved repository override. OrcaRouter is
+an optional provider connection, not a review default. Missing usable account
+configuration requires setup; it does not select another provider.
+
+This standalone Action has explicit provider/model inputs. It does not fetch
+the hosted GitHub App settings automatically. Its account machine-key route
+is described below; optional BYOK setup is shown next.
+
+## Optional: use your own provider key
 
 Pick `orcarouter`, `deepseek`, `anthropic`, `openrouter`, `zai`, or `modelstudio-token-plan`,
 an exact model ID, and a released CLI tag. Store the matching provider key as
 an Actions secret. Pass only that provider's key to the analysis job. The
 Action never chooses a different credential after an authentication or payment
-failure. The example uses the recommended OrcaRouter connection; replace its
-provider and secret together when choosing another route.
+failure. The example illustrates an explicitly selected OrcaRouter connection;
+it does not set the Codewhale account default. Replace its provider and secret
+together when choosing another route.
 
 Create or connect your own [OrcaRouter account](https://www.orcarouter.ai/ref/ref_df843907ad10d887b867),
 then store its API key as `ORCAROUTER_API_KEY`. Codewhale earns a referral fee
