@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Archived context markdown now uses the active theme's palette when rendered
+  in the transcript, preventing unreadable dark text on dark backgrounds (#7043).
+  Thanks @Statter.
+
 - Clearing a conversation with no goal no longer shows a misleading "Goal cleared."
   receipt. Clearing an existing or configured goal still reports it (#7089).
   Thanks @Lstarsky0.

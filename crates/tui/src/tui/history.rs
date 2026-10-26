@@ -418,7 +418,11 @@ impl HistoryCell {
             HistoryCell::Tool(cell) => cell.lines_with_motion(width, false),
             HistoryCell::SubAgent(cell) => cell.lines(width),
             HistoryCell::Automation(cell) => cell.render(width),
-            HistoryCell::ArchivedContext { .. } => render_archived_context(self, width, false),
+            HistoryCell::ArchivedContext { .. } => render_archived_context(
+                self,
+                width,
+                crate::tui::markdown_render::detected_palette_mode(),
+            ),
         }
     }
 
@@ -568,7 +572,7 @@ impl HistoryCell {
             HistoryCell::SubAgent(cell) => cell.lines(width),
             HistoryCell::Automation(cell) => cell.render(width),
             HistoryCell::ArchivedContext { .. } => {
-                render_archived_context(self, width, options.low_motion)
+                render_archived_context(self, width, options.palette_mode)
             }
         };
         if matches!(self, HistoryCell::Tool(_)) {
@@ -728,7 +732,11 @@ impl HistoryCell {
             HistoryCell::Tool(cell) => cell.transcript_lines(width),
             HistoryCell::SubAgent(cell) => cell.lines(width),
             HistoryCell::Automation(cell) => cell.render(width),
-            HistoryCell::ArchivedContext { .. } => render_archived_context(self, width, true),
+            HistoryCell::ArchivedContext { .. } => render_archived_context(
+                self,
+                width,
+                crate::tui::markdown_render::detected_palette_mode(),
+            ),
         }
     }
 }
