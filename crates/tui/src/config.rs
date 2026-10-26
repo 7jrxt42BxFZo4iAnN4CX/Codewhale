@@ -63,11 +63,11 @@ pub const MAX_PROVIDER_REQUEST_CONCURRENCY: usize = 64;
 /// returns only hidden thinking without any answer text or tool call.
 pub const DEFAULT_REASONING_ONLY_REPROMPTS: u32 = 2;
 
-/// Nudge sent with a reasoning-only re-request once a bare retry has already
-/// come back answerless. Overridable with `[reasoning_only] reprompt_message`.
+/// Nudge sent with a recovery request after a bare clean-stop retry, or
+/// immediately on an opted-in output-limit retry. Configurable via `reprompt_message`.
 ///
-/// It is never written to the session: it rides one outbound request and is
-/// discarded, so the transcript never gains a message the user did not send.
+/// It rides one outbound request without joining session message history.
+/// A separate prepared-request receipt retains its exact text for inspection.
 pub const DEFAULT_REASONING_ONLY_REPROMPT_MESSAGE: &str =
     "Continue: give your answer, or make the next tool call.";
 
@@ -1165,16 +1165,17 @@ pub struct GoalConfig {
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
 #[serde(default)]
 pub struct ReasoningOnlyConfig {
+    pub on_output_limit: bool,
     /// Maximum number of automatic re-requests when the model returns only
     /// reasoning without any answer or tool call.
     /// Defaults to 2. Set to 0 to disable automatic recovery.
     pub max_reprompts: Option<u32>,
-    /// Nudge attached to a reasoning-only re-request after the first bare
-    /// retry has already come back answerless. Unset uses the built-in text.
+    /// Nudge attached after the first bare clean-stop retry, or immediately
+    /// for an opted-in output-limit retry. Unset uses the built-in text.
     ///
     /// The nudge rides a single outbound request and is never added to the
-    /// session, so it does not persist, does not appear in the transcript or
-    /// exports, and is not re-sent on later turns.
+    /// session or later model context. Its exact text is logged separately
+    /// as a prepared-request receipt for transcript inspection and exports.
     pub reprompt_message: Option<String>,
 }
 
@@ -2261,7 +2262,7 @@ pub struct Config {
 
     /// Reasoning-only recovery controls. When absent, the engine uses the
     /// built-in default (2 retries, no custom message). Configure with
-    /// `[reasoning_only] max_reprompts` and/or `[reasoning_only] reprompt_message`.
+    /// `[reasoning_only] max_reprompts`, `reprompt_message`, and `on_output_limit`.
     #[serde(default)]
     pub reasoning_only: Option<ReasoningOnlyConfig>,
 
@@ -6795,6 +6796,13 @@ impl Config {
             .and_then(|goal| goal.continuation_delay_seconds)
             .unwrap_or(0)
             .min(codewhale_runtime::goal_loop::MAX_GOAL_CONTINUATION_DELAY_SECONDS)
+    }
+
+    #[must_use]
+    pub fn reasoning_only_on_output_limit(&self) -> bool {
+        self.reasoning_only
+            .as_ref()
+            .is_some_and(|cfg| cfg.on_output_limit)
     }
 
     /// Maximum number of automatic re-requests when the model returns only

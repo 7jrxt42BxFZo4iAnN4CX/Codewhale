@@ -1,4 +1,9 @@
 {
+  "ReasoningOnlyRetryBody": "chỉ có suy luận {attempt}/{limit}; không có câu trả lời hay lệnh gọi công cụ; {action}",
+  "OutputLimitAnswerRetryBody": "giới hạn đầu ra {attempt}/{limit}; không có câu trả lời hay lệnh gọi công cụ; {action}",
+  "AnswerRetryActionBare": "đang yêu cầu trả lời lại",
+  "AnswerRetryActionNudge": "đang yêu cầu trả lời lại kèm lời nhắc",
+  "AnswerRetryCounter": "chỉ suy luận/giới hạn đầu ra",
   "OrcaRouterOfferRecommended": "OrcaRouter · Đề xuất",
   "OrcaRouterOfferAction": "Xem ưu đãi OrcaRouter trong /provider hoặc /model",
   "OrcaRouterOfferBody": "Nhận thêm 30% tín dụng DeepSeek V4.1 Flash khi nạp tiền với ưu đãi Codewhale × OrcaRouter. Xem điều kiện hiện hành trên trang ưu đãi.",

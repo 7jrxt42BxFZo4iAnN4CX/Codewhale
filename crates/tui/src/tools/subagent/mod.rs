@@ -499,7 +499,7 @@ const SUBAGENT_CHECKPOINT_MESSAGE_BUDGET_BYTES: usize = 256 * 1024;
 /// keeps a bounded tail plus the true `message_count` so inspection stays
 /// useful without pinning a whole unbounded transcript in RAM.
 const SUBAGENT_TRANSCRIPT_MESSAGE_BUDGET_BYTES: usize = 1024 * 1024;
-const SUBAGENT_TRANSCRIPT_ARTIFACT_SCHEMA_VERSION: u32 = 1;
+const SUBAGENT_TRANSCRIPT_ARTIFACT_SCHEMA_VERSION: u32 = 2;
 const SUBAGENT_TRANSCRIPT_ARTIFACT_DIR: &str = "subagent-transcripts";
 const SUBAGENT_STATE_SCHEMA_VERSION: u32 = 1;
 const SUBAGENT_STATE_FILE: &str = "subagents.v1.json";
@@ -10483,6 +10483,7 @@ struct SubAgentTranscriptArtifactWriter {
     relative_path: PathBuf,
     /// Message records in the artifact.
     persisted_messages: usize,
+    persisted_request_receipts: usize,
     /// Prefix of the current live history already in the artifact.
     synced_live_messages: usize,
 }
@@ -10508,6 +10509,7 @@ impl SubAgentTranscriptArtifactWriter {
             path,
             relative_path,
             persisted_messages: 0,
+            persisted_request_receipts: 0,
             synced_live_messages: 0,
         })
     }
@@ -10569,12 +10571,34 @@ impl SubAgentTranscriptArtifactWriter {
         Ok(())
     }
 
+    fn record_request_nudge(
+        &mut self,
+        turn_id: &str,
+        request_index: u32,
+        text: &str,
+    ) -> Result<()> {
+        let record = json!({
+            "kind": "request_nudge", "turn_id": turn_id, "request_index": request_index,
+            "after_message_count": self.persisted_messages,
+            "receipt_index": self.persisted_request_receipts, "text": text, "prepared": true,
+        });
+        append_private_subagent_transcript(
+            &self.state_root,
+            &self.path,
+            &json_line(&record)?,
+            true,
+        )?;
+        self.persisted_request_receipts += 1;
+        Ok(())
+    }
+
     fn metadata(&self, complete: bool) -> Value {
         json!({
             "kind": "subagent_transcript_jsonl",
             "schema_version": SUBAGENT_TRANSCRIPT_ARTIFACT_SCHEMA_VERSION,
             "relative_path": self.relative_path,
             "persisted_messages": self.persisted_messages,
+            "request_receipts": self.persisted_request_receipts,
             "complete": complete,
             "contains_session_content": true,
         })
@@ -10610,6 +10634,26 @@ pub fn load_subagent_transcript_artifact(
     state_root: &Path,
     agent_id: &str,
 ) -> Result<Vec<Message>> {
+    load_subagent_transcript_projection(state_root, agent_id, false).map(|view| view.messages)
+}
+
+pub(crate) struct SubAgentTranscriptDisplay {
+    pub(crate) messages: Vec<Message>,
+    pub(crate) conversation_count: usize,
+}
+
+pub(crate) fn load_subagent_transcript_display_artifact(
+    state_root: &Path,
+    agent_id: &str,
+) -> Result<SubAgentTranscriptDisplay> {
+    load_subagent_transcript_projection(state_root, agent_id, true)
+}
+
+fn load_subagent_transcript_projection(
+    state_root: &Path,
+    agent_id: &str,
+    display_receipts: bool,
+) -> Result<SubAgentTranscriptDisplay> {
     let state_root = normalize_subagent_workspace(state_root);
     let path = checked_subagent_transcript_artifact_path(&state_root, agent_id)?;
     let raw = read_subagent_state_file(&state_root, &path)?;
@@ -10618,42 +10662,86 @@ pub fn load_subagent_transcript_artifact(
         .next()
         .ok_or_else(|| anyhow!("sub-agent transcript artifact is empty"))?;
     let header: Value = serde_json::from_str(header_line)?;
+    let schema_version = header
+        .get("schema_version")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
     if header.get("kind").and_then(Value::as_str) != Some("subagent_transcript_header")
-        || header.get("schema_version").and_then(Value::as_u64)
-            != Some(u64::from(SUBAGENT_TRANSCRIPT_ARTIFACT_SCHEMA_VERSION))
+        || !(1..=u64::from(SUBAGENT_TRANSCRIPT_ARTIFACT_SCHEMA_VERSION)).contains(&schema_version)
         || header.get("agent_id").and_then(Value::as_str) != Some(agent_id)
     {
         return Err(anyhow!(
             "sub-agent transcript artifact header does not match agent {agent_id}"
         ));
     }
-
     let mut messages = Vec::new();
+    let mut conversation_count = 0;
+    let mut receipt_count = 0;
     for line in lines.filter(|line| !line.trim().is_empty()) {
         let record: Value = serde_json::from_str(line)?;
-        if record.get("kind").and_then(Value::as_str) != Some("message") {
-            return Err(anyhow!("unknown sub-agent transcript artifact record"));
+        match record.get("kind").and_then(Value::as_str) {
+            Some("request_nudge") if schema_version >= 2 => {
+                let text = record
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .filter(|text| !text.trim().is_empty())
+                    .ok_or_else(|| anyhow!("sub-agent request receipt has no nudge text"))?;
+                if record.get("prepared").and_then(Value::as_bool) != Some(true)
+                    || record
+                        .get("turn_id")
+                        .and_then(Value::as_str)
+                        .is_none_or(|id| id.trim().is_empty())
+                    || record
+                        .get("request_index")
+                        .and_then(Value::as_u64)
+                        .is_none_or(|index| index == 0 || index > u64::from(u32::MAX))
+                    || record.get("after_message_count").and_then(Value::as_u64)
+                        != Some(conversation_count as u64)
+                    || record.get("receipt_index").and_then(Value::as_u64) != Some(receipt_count)
+                {
+                    return Err(anyhow!(
+                        "sub-agent request receipt has invalid ownership or sequence"
+                    ));
+                }
+                receipt_count += 1;
+                if display_receipts {
+                    messages.push(Message {
+                        role: Role::System,
+                        content: vec![ContentBlock::Text {
+                            text: format!(
+                                "{}{text}",
+                                crate::core::events::REQUEST_NUDGE_RECEIPT_PREFIX
+                            ),
+                            cache_control: None,
+                        }],
+                    });
+                }
+            }
+            Some("message") => {
+                let index = record
+                    .get("index")
+                    .and_then(Value::as_u64)
+                    .and_then(|value| usize::try_from(value).ok())
+                    .ok_or_else(|| anyhow!("sub-agent transcript message is missing its index"))?;
+                if index != conversation_count {
+                    return Err(anyhow!(
+                        "sub-agent transcript message index {index} does not follow {conversation_count}"
+                    ));
+                }
+                let message =
+                    serde_json::from_value::<Message>(record.get("message").cloned().ok_or_else(
+                        || anyhow!("sub-agent transcript record is missing its message"),
+                    )?)?;
+                messages.push(message);
+                conversation_count += 1;
+            }
+            _ => return Err(anyhow!("unknown sub-agent transcript artifact record")),
         }
-        let index = record
-            .get("index")
-            .and_then(Value::as_u64)
-            .and_then(|value| usize::try_from(value).ok())
-            .ok_or_else(|| anyhow!("sub-agent transcript message is missing its index"))?;
-        if index != messages.len() {
-            return Err(anyhow!(
-                "sub-agent transcript message index {index} does not follow {}",
-                messages.len()
-            ));
-        }
-        let message = serde_json::from_value::<Message>(
-            record
-                .get("message")
-                .cloned()
-                .ok_or_else(|| anyhow!("sub-agent transcript record is missing its message"))?,
-        )?;
-        messages.push(message);
     }
-    Ok(messages)
+    Ok(SubAgentTranscriptDisplay {
+        messages,
+        conversation_count,
+    })
 }
 
 fn remove_subagent_transcript_artifact(state_root: &Path, agent_id: &str) -> Result<bool> {

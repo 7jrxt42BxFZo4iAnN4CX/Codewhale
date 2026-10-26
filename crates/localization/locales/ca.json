@@ -1,4 +1,9 @@
 {
+  "ReasoningOnlyRetryBody": "només raonament {attempt}/{limit}; sense resposta ni crida d’eina; {action}",
+  "OutputLimitAnswerRetryBody": "límit de sortida {attempt}/{limit}; sense resposta ni crida d’eina; {action}",
+  "AnswerRetryActionBare": "tornant a demanar la resposta",
+  "AnswerRetryActionNudge": "tornant a demanar la resposta amb un recordatori",
+  "AnswerRetryCounter": "només raonament/límit de sortida",
   "OrcaRouterOfferRecommended": "OrcaRouter · Recomanat",
   "OrcaRouterOfferAction": "Mostra l’oferta d’OrcaRouter a /provider o /model",
   "OrcaRouterOfferBody": "Aconsegueix un 30% de crèdit addicional per a DeepSeek V4.1 Flash en les recàrregues amb l’oferta Codewhale × OrcaRouter. Consulta les condicions vigents a la pàgina de l’oferta.",

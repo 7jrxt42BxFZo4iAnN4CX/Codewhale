@@ -636,15 +636,6 @@ impl Engine {
                 snapshot: tool_request_snapshot,
             })
             .await;
-        if let Some(nudge) = request_nudge {
-            // The "Continuing — " prefix classifies the receipt as
-            // internal: durable clients keep it, collapsed.
-            let _ = self
-                .send_event(Event::status(format!(
-                    "{REQUEST_NUDGE_RECEIPT_PREFIX}{nudge}"
-                )))
-                .await;
-        }
         if let Some(mut route) = turn.pending_route.take() {
             if let Some(billing) = route.billing.as_mut() {
                 // Freeze the exact provider-live row at CodeWhale's
@@ -676,6 +667,7 @@ impl Engine {
         }
 
         PhaseResult::Ready(PreparedModelStep {
+            request_nudge,
             prefix_check,
             request: stream_request,
             zero_tool_turn,
@@ -859,6 +851,7 @@ impl Engine {
             .send_event(Event::ToolRequestSnapshot { snapshot })
             .await;
         PhaseResult::Ready(PreparedModelStep {
+            request_nudge: None,
             prefix_check: json!({"outcome": "unavailable", "surface": "rlm"}),
             request,
             zero_tool_turn: true,

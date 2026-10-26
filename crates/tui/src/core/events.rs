@@ -16,6 +16,11 @@ use crate::tools::user_input::UserInputRequest;
 use codewhale_config::ProviderKind;
 use codewhale_models::{Message, SystemPrompt, Tool, Usage};
 
+/// Status receipt carried by the one request a reasoning-only / empty-stop
+/// nudge rides (C02-04). The nudge itself never joins the session.
+pub(crate) const REQUEST_NUDGE_RECEIPT_PREFIX: &str =
+    "Continuing — this retry carries a request-scoped nudge (not saved to the conversation): ";
+
 /// Provider correlation retained only for model-history reconstruction.
 /// Event ids remain host execution ids; this is not approval authority.
 #[derive(Debug, Clone, PartialEq)]

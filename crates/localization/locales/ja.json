@@ -1,4 +1,9 @@
 {
+  "ReasoningOnlyRetryBody": "推論のみ {attempt}/{limit}、回答もツール呼び出しもありません。{action}",
+  "OutputLimitAnswerRetryBody": "出力上限 {attempt}/{limit}、回答もツール呼び出しもありません。{action}",
+  "AnswerRetryActionBare": "回答を再要求します",
+  "AnswerRetryActionNudge": "補足指示を添えて回答を再要求します",
+  "AnswerRetryCounter": "推論のみ／出力上限",
   "OrcaRouterOfferRecommended": "OrcaRouter · おすすめ",
   "OrcaRouterOfferAction": "/provider または /model で OrcaRouter の特典を表示",
   "OrcaRouterOfferBody": "Codewhale × OrcaRouter の特典で、DeepSeek V4.1 Flash 向けチャージ額の30%が追加されます。最新の条件は特典ページでご確認ください。",

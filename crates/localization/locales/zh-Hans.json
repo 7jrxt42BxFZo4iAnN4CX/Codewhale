@@ -1,4 +1,9 @@
 {
+  "ReasoningOnlyRetryBody": "仅有推理 {attempt}/{limit}；没有回答或工具调用；{action}",
+  "OutputLimitAnswerRetryBody": "达到输出上限 {attempt}/{limit}；没有回答或工具调用；{action}",
+  "AnswerRetryActionBare": "重新请求回答",
+  "AnswerRetryActionNudge": "附带提示后重新请求回答",
+  "AnswerRetryCounter": "仅有推理/输出上限",
   "OrcaRouterOfferRecommended": "OrcaRouter · 推荐",
   "OrcaRouterOfferAction": "在 /provider 或 /model 中查看 OrcaRouter 优惠",
   "OrcaRouterOfferBody": "通过 Codewhale × OrcaRouter 优惠，充值可额外获得 30% 的 DeepSeek V4.1 Flash 额度。最新条款请查看优惠页面。",

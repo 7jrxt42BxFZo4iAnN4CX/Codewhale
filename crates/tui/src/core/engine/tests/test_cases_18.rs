@@ -474,7 +474,7 @@ async fn the_reasoning_only_nudge_rides_one_request_and_never_joins_the_session(
         .iter()
         .filter_map(|event| match event {
             Event::Status { message }
-                if message.starts_with(super::turn_loop::REQUEST_NUDGE_RECEIPT_PREFIX) =>
+                if message.starts_with(crate::core::events::REQUEST_NUDGE_RECEIPT_PREFIX) =>
             {
                 Some(message.as_str())
             }

@@ -63,6 +63,7 @@ enum PhaseResult<T> {
 }
 
 struct PreparedModelStep {
+    request_nudge: Option<String>,
     prefix_check: serde_json::Value,
     request: codewhale_models::MessageRequest,
     zero_tool_turn: bool,
@@ -730,11 +731,6 @@ fn incomplete_tool_result(reason: &str) -> ToolResult {
         })),
     }
 }
-
-/// Status receipt carried by the one request a reasoning-only / empty-stop
-/// nudge rides (C02-04). The nudge itself never joins the session.
-pub(super) const REQUEST_NUDGE_RECEIPT_PREFIX: &str =
-    "Continuing — this retry carries a request-scoped nudge (not saved to the conversation): ";
 
 /// The not-executed result for a call collected from a response whose stream
 /// failed before it completed (C02-05). Same shape as

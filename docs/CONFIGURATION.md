@@ -2909,36 +2909,53 @@ is persisted for the loop.
 
 ### Reasoning-only recovery (`[reasoning_only]`)
 
-When a reasoning model (thinking mode) finishes a response with only hidden
-reasoning and no answer text or tool call, the engine can automatically
-re-request the answer. Configure this behavior with the `[reasoning_only]`
-table:
+When a model finishes with only reasoning and no answer or tool call, Codewhale
+can request an answer again. A clean stop permits two retries by default:
+the first keeps the request unchanged, and later retries carry a request-scoped
+nudge. The default nudge is `Continue: give your answer, or make the next tool call.`
 
 ```toml
 [reasoning_only]
-# Maximum number of automatic re-requests. Default: 2.
-# Set to 0 to disable automatic recovery (fail immediately).
-max_reprompts = 10
-
-# Optional custom message sent to the model on each re-request.
-# When set, overrides the built-in default message.
-# When unset (or commented out), the engine uses:
-#   "So, what's up ? Keep running !"
-reprompt_message = "Allez, répond quelque chose !"
+max_reprompts = 2
+on_output_limit = false
 ```
 
-This only applies when the model returns a clean `stop` finish reason with
-only thinking content. An output-length stop (`length`/`max_tokens`) is never
-retried, and a persistently answerless model still fails honestly after the
-configured bound.
+Set `on_output_limit = true` to also retry `length`/`max_tokens` stops that
+produced no answer or tool call, including providers that did not stream their
+hidden reasoning. This option is off by default. Output-limit retries carry the
+nudge immediately and share the same `max_reprompts` allowance. Set
+`max_reprompts = 0` to disable both reasoning-only and output-limit recovery;
+transport and empty-stop recovery have their own existing limits.
 
-To disable the reprompt message entirely (silent retry), set it to an empty
-string:
+This applies to ordinary interactive, exec and Runtime API engines and Fleet
+workers. Workers use the captured parent configuration. RLM keeps its separate
+completion/FINAL/REPL stop protocol and does not use this option.
+
+Every retry is a fresh request and may repeat the model's reasoning. It does not
+carry hidden reasoning forward, raise output limits or bypass route, context,
+turn, cancellation or tool-admission controls. Each request can incur provider
+cost. Existing output-limit overrides still apply, and request preparation may
+reduce or refuse an allowance when input grows. Restart existing engines after
+changing these settings.
+
+The nudge appears in one outbound request without joining conversation history
+or later resumed model context. Retry status retains its stable protocol prefix
+and localizes its human text. Its receipt is visible in the transcript; Fleet
+also stores an owner-bound prepared-request receipt in its existing private
+artifact before dispatch. A prepared receipt does not claim a completed model
+call. Existing version-1 artifacts remain readable.
+
+To customize or disable the nudge:
 
 ```toml
 [reasoning_only]
-reprompt_message = ""
+reprompt_message = "Give your answer, or make the next tool call."
 ```
+
+An empty `reprompt_message = ""` disables the nudge, including on output-limit
+retries; the retry still counts against `max_reprompts` and uses the unchanged
+request. Configuration with recovery enabled does not guarantee the model will
+complete a long proof within its allowance.
 
 ### Notifications
 

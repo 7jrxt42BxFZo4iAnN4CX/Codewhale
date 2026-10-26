@@ -445,8 +445,9 @@ pub struct EngineConfig {
     /// reasoning without any answer or tool call. Defaults to 2.
     /// Resolved from `[reasoning_only] max_reprompts` in config.toml.
     pub reasoning_only_max_reprompts: u32,
-    /// Nudge carried by a reasoning-only re-request once a bare retry has
-    /// already come back answerless. `None` uses the built-in text; an empty
+    pub reasoning_only_on_output_limit: bool,
+    /// Nudge carried after a bare clean-stop retry or immediately on an
+    /// opted-in output-limit retry. `None` uses the built-in text; an empty
     /// string disables the nudge and keeps every retry a bare one.
     ///
     /// The nudge is attached to one outbound request and never added to the
@@ -635,6 +636,7 @@ impl Default for EngineConfig {
             goal_continuation_delay_seconds: 0,
             goal_enforce_token_budget: false,
             reasoning_only_max_reprompts: crate::config::DEFAULT_REASONING_ONLY_REPROMPTS,
+            reasoning_only_on_output_limit: false,
             // `None` means "use the built-in nudge". Storing the default text
             // here instead would make an operator's explicit empty string
             // indistinguishable from having set nothing.

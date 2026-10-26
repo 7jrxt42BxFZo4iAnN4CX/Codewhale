@@ -16684,6 +16684,7 @@ impl RuntimeThreadManager {
                 goal_continuation_delay_seconds: cfg.goal_continuation_delay_seconds(),
                 goal_enforce_token_budget: cfg.goal_enforce_token_budget(),
                 reasoning_only_max_reprompts: cfg.reasoning_only_max_reprompts(),
+                reasoning_only_on_output_limit: cfg.reasoning_only_on_output_limit(),
                 reasoning_only_reprompt_message: Some(
                     cfg.reasoning_only_reprompt_message().to_string(),
                 ),

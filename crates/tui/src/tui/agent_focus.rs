@@ -104,11 +104,11 @@ pub(crate) fn resolve_agent_transcript_messages(
     app: &App,
     agent_id: &str,
 ) -> (Vec<Message>, usize) {
-    if let Ok(messages) =
-        crate::tools::subagent::load_subagent_transcript_artifact(&app.workspace, agent_id)
-        && !messages.is_empty()
+    if let Ok(display) =
+        crate::tools::subagent::load_subagent_transcript_display_artifact(&app.workspace, agent_id)
+        && display.conversation_count > 0
     {
-        return (messages, 0);
+        return (display.messages, 0);
     }
     use crate::tools::handle::{HandleValue, VarHandle};
     let lookup = VarHandle {

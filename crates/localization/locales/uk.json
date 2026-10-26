@@ -1,4 +1,9 @@
 {
+  "ReasoningOnlyRetryBody": "лише міркування {attempt}/{limit}; немає відповіді чи виклику інструмента; {action}",
+  "OutputLimitAnswerRetryBody": "ліміт виводу {attempt}/{limit}; немає відповіді чи виклику інструмента; {action}",
+  "AnswerRetryActionBare": "повторно запитується відповідь",
+  "AnswerRetryActionNudge": "повторно запитується відповідь із підказкою",
+  "AnswerRetryCounter": "лише міркування/ліміт виводу",
   "OrcaRouterOfferRecommended": "OrcaRouter · Рекомендуємо",
   "OrcaRouterOfferAction": "Переглянути пропозицію OrcaRouter у /provider або /model",
   "OrcaRouterOfferBody": "Отримайте 30% додаткового кредиту для DeepSeek V4.1 Flash за поповнення з пропозицією Codewhale × OrcaRouter. Актуальні умови наведено на сторінці пропозиції.",

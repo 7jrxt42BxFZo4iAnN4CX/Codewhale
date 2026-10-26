@@ -1,4 +1,9 @@
 {
+  "ReasoningOnlyRetryBody": "僅有推理 {attempt}/{limit}；沒有回答或工具呼叫；{action}",
+  "OutputLimitAnswerRetryBody": "達到輸出上限 {attempt}/{limit}；沒有回答或工具呼叫；{action}",
+  "AnswerRetryActionBare": "重新請求回答",
+  "AnswerRetryActionNudge": "附加提示後重新請求回答",
+  "AnswerRetryCounter": "僅有推理/輸出上限",
   "OrcaRouterOfferRecommended": "OrcaRouter · 推薦",
   "OrcaRouterOfferAction": "在 /provider 或 /model 中查看 OrcaRouter 優惠",
   "OrcaRouterOfferBody": "透過 Codewhale × OrcaRouter 優惠，儲值可額外獲得 30% 的 DeepSeek V4.1 Flash 額度。最新條款請查看優惠頁面。",

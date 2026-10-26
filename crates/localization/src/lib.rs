@@ -120,6 +120,12 @@ impl Locale {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageId {
+    ReasoningOnlyRetryBody,
+    OutputLimitAnswerRetryBody,
+    AnswerRetryActionBare,
+    AnswerRetryActionNudge,
+    AnswerRetryCounter,
+
     OrcaRouterOfferRecommended,
     OrcaRouterOfferAction,
     OrcaRouterOfferBody,
@@ -2853,6 +2859,11 @@ pub enum MessageId {
 }
 
 pub const ALL_MESSAGE_IDS: &[MessageId] = &[
+    MessageId::ReasoningOnlyRetryBody,
+    MessageId::OutputLimitAnswerRetryBody,
+    MessageId::AnswerRetryActionBare,
+    MessageId::AnswerRetryActionNudge,
+    MessageId::AnswerRetryCounter,
     MessageId::OrcaRouterOfferRecommended,
     MessageId::OrcaRouterOfferAction,
     MessageId::OrcaRouterOfferBody,

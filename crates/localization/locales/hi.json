@@ -1,4 +1,9 @@
 {
+  "ReasoningOnlyRetryBody": "केवल तर्क {attempt}/{limit}; कोई उत्तर या टूल कॉल नहीं; {action}",
+  "OutputLimitAnswerRetryBody": "आउटपुट सीमा {attempt}/{limit}; कोई उत्तर या टूल कॉल नहीं; {action}",
+  "AnswerRetryActionBare": "उत्तर दोबारा माँगा जा रहा है",
+  "AnswerRetryActionNudge": "संकेत के साथ उत्तर दोबारा माँगा जा रहा है",
+  "AnswerRetryCounter": "केवल तर्क/आउटपुट सीमा",
   "OrcaRouterOfferRecommended": "OrcaRouter · सुझाया गया",
   "OrcaRouterOfferAction": "/provider या /model में OrcaRouter का ऑफ़र देखें",
   "OrcaRouterOfferBody": "Codewhale × OrcaRouter ऑफ़र के साथ टॉप-अप पर DeepSeek V4.1 Flash के लिए 30% अतिरिक्त क्रेडिट पाएँ। मौजूदा शर्तों के लिए ऑफ़र पेज देखें।",
