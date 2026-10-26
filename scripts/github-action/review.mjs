@@ -15,7 +15,7 @@ const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const MODEL = /^[A-Za-z0-9][A-Za-z0-9_./:@+-]{0,199}$/;
 const KEYS = {
   deepseek: 'DEEPSEEK_API_KEY', anthropic: 'ANTHROPIC_API_KEY',
-  openrouter: 'OPENROUTER_API_KEY', zai: 'ZAI_API_KEY',
+  openrouter: 'OPENROUTER_API_KEY', orcarouter: 'ORCAROUTER_API_KEY', zai: 'ZAI_API_KEY',
   'modelstudio-token-plan': 'MODELSTUDIO_API_KEY',
 };
 

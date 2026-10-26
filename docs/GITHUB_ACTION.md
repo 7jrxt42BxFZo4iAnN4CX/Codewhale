@@ -19,15 +19,25 @@ pins. Adding these source files does not enable a workflow.
 
 ## Setup with your own provider key
 
-Pick `deepseek`, `anthropic`, `openrouter`, `zai`, or `modelstudio-token-plan`,
+Pick `orcarouter`, `deepseek`, `anthropic`, `openrouter`, `zai`, or `modelstudio-token-plan`,
 an exact model ID, and a released CLI tag. Store the matching provider key as
 an Actions secret. Pass only that provider's key to the analysis job. The
 Action never chooses a different credential after an authentication or payment
-failure. The example uses DeepSeek; replace its provider and secret together
-when choosing another route.
+failure. The example uses the recommended OrcaRouter connection; replace its
+provider and secret together when choosing another route.
+
+Create or connect your own [OrcaRouter account](https://www.orcarouter.ai/ref/ref_df843907ad10d887b867),
+then store its API key as `ORCAROUTER_API_KEY`. Codewhale earns a referral fee
+from OrcaRouter. `orcarouter/free` is an available starting model when listed
+for your workspace; it still requires an API key. A direct no-key request on
+2026-10-26 returned HTTP 401. OrcaRouter's [free-route documentation](https://www.orcarouter.ai/models/orcarouter/free)
+describes zero-priced usage with request-rate limits. A limit or authentication
+failure does not authorize a paid fallback. GitHub runner compute has its own
+cost and limits.
 
 Set `CODEWHALE_REVIEW_VERSION` to an exact `vX.Y.Z` release and
-`CODEWHALE_REVIEW_MODEL` to the chosen provider's exact model ID. Replace both
+`CODEWHALE_REVIEW_MODEL` to the chosen provider's exact model ID (for example
+`orcarouter/free`). Replace both
 `REPLACE_WITH_REVIEWED_COMMIT_SHA` placeholders with the same reviewed Action
 commit containing the publisher. Pin third-party actions to reviewed commits
 under your repository's Actions policy.
@@ -64,12 +74,12 @@ jobs:
         id: review
         with:
           version: ${{ vars.CODEWHALE_REVIEW_VERSION }}
-          provider: deepseek
+          provider: orcarouter
           model: ${{ vars.CODEWHALE_REVIEW_MODEL }}
           pr-number: ${{ inputs.pr-number }}
           post: 'false'
         env:
-          DEEPSEEK_API_KEY: ${{ (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.DEEPSEEK_API_KEY || '' }}
+          ORCAROUTER_API_KEY: ${{ (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) && secrets.ORCAROUTER_API_KEY || '' }}
       - uses: actions/upload-artifact@v7
         if: steps.review.outputs.findings != ''
         with:

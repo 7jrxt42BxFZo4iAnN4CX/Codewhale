@@ -98,6 +98,7 @@ test('stale events and a head changed during fetch stop before inference', t => 
 test('bad config cannot fall back to a stale vendor key or contact another GitHub host', t => {
   for (const env of [
     { CODEWHALE_API_KEY: '', DEEPSEEK_API_KEY: 'stale' }, { CW_PROVIDER: 'deepseek', DEEPSEEK_API_KEY: 'stale' },
+    { CODEWHALE_API_KEY: '', CW_PROVIDER: 'orcarouter', CW_MODEL: 'orcarouter/free', DEEPSEEK_API_KEY: 'stale' },
     { CW_MODEL: 'guessed-model' }, { CW_MODEL: 'provider/model\n::error::injection' },
     { CW_VERSION: 'latest' }, { CW_MAX_PASSES: '65' }, { CW_MAX_CHARS: '8388609' },
     { CW_MAX_OUTPUT_TOKENS: '1000' }, { CW_TIMEOUT_SECONDS: '0' }, { CW_POST: 'maybe' },
@@ -109,6 +110,15 @@ test('bad config cannot fall back to a stale vendor key or contact another GitHu
     assert.equal(result.calls.length, 0);
   }
   assert.equal(settings({ ...defaults, CODEWHALE_API_KEY: '', CW_PROVIDER: 'deepseek', CW_MODEL: 'exact-model', DEEPSEEK_API_KEY: 'vendor' }).provider, 'deepseek');
+  const orca = fixture(t, { env: { CODEWHALE_API_KEY: '', CW_PROVIDER: 'orcarouter', CW_MODEL: 'orcarouter/free',
+    ORCAROUTER_API_KEY: 'orca-fixture-secret', DEEPSEEK_API_KEY: 'stale' } });
+  assert.equal(orca.exitCode, 0);
+  const review = orca.calls.find(call => call.args.includes('review'));
+  assert.equal(review.opts.env.ORCAROUTER_API_KEY, 'orca-fixture-secret');
+  assert.equal(review.opts.env.DEEPSEEK_API_KEY, undefined);
+  assert.equal(review.opts.env.CODEWHALE_API_KEY, undefined);
+  assert.equal(review.args[review.args.indexOf('--model') + 1], 'orcarouter/free');
+  assert.doesNotMatch(JSON.stringify(orca.saved) + orca.summary, /orca-fixture-secret/);
   assert.throws(() => target({ ...defaults, GITHUB_REPOSITORY: '../x' }, event));
 });
 
