@@ -296,7 +296,7 @@ owner = "crates/tui/src/sandbox"
 [[feature]]
 id = "providers"
 name = "Providers"
-summary = "Provider routes with endpoint-scoped model facts, explicit limits and sourced price estimates."
+summary = "Provider routes with endpoint-scoped facts, explicit limits, sourced price estimates and a disclosed OrcaRouter partner offer in the pickers."
 status = "stable"
 surfaces = { tui = "stable", api = "stable" }
 docs = "docs/PROVIDERS.md"

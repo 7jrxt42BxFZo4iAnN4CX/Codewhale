@@ -64,12 +64,85 @@ use codewhale_localization::{Locale, MessageId, tr};
 use codewhale_palette as palette;
 use serde_json::Value;
 use std::borrow::Cow;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::sync::OnceLock;
 
 use codewhale_config::descriptors::defaults::{
     DS4_BASE_URL, DS4_DEFAULT_MODEL, LM_STUDIO_BASE_URL,
 };
+
+pub(crate) const ORCAROUTER_OFFER_URL: &str =
+    "https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67";
+
+#[derive(Default)]
+pub(crate) struct ProviderOffer {
+    hitbox: RefCell<Option<Rect>>,
+    hovered: Cell<bool>,
+}
+
+impl ProviderOffer {
+    pub(crate) fn clear(&self) {
+        self.hitbox.replace(None);
+    }
+
+    fn open(locale: Locale) -> ViewAction {
+        ViewAction::Emit(ViewEvent::OpenTextPager {
+            title: tr(locale, MessageId::OrcaRouterOfferRecommended).into_owned(),
+            content: format!(
+                "{}\n\n{}\n\n{ORCAROUTER_OFFER_URL}",
+                tr(locale, MessageId::OrcaRouterOfferBody),
+                tr(locale, MessageId::OrcaRouterOfferDisclosure),
+            ),
+        })
+    }
+
+    pub(crate) fn key_action(locale: Locale, key: &KeyEvent) -> Option<ViewAction> {
+        crate::tui::shell_key_routing::binding(
+            crate::tui::shell_key_routing::ShellBindingId::ProviderOffer,
+        )
+        .matches(key)
+        .then(|| Self::open(locale))
+    }
+
+    pub(crate) fn mouse_action(&self, locale: Locale, mouse: MouseEvent) -> Option<ViewAction> {
+        let over = self
+            .hitbox
+            .borrow()
+            .is_some_and(|rect| rect.contains((mouse.column, mouse.row).into()));
+        if mouse.kind == MouseEventKind::Moved {
+            self.hovered.set(over);
+        }
+        (over && mouse.kind == MouseEventKind::Down(MouseButton::Left)).then(|| Self::open(locale))
+    }
+
+    pub(crate) fn render(&self, locale: Locale, area: Rect, buf: &mut Buffer) -> Rect {
+        self.clear();
+        if area.height < 4 || area.width < 20 {
+            return area;
+        }
+        let chord = crate::tui::shell_key_routing::display_chord(
+            crate::tui::shell_key_routing::binding(
+                crate::tui::shell_key_routing::ShellBindingId::ProviderOffer,
+            )
+            .footer_chord,
+        );
+        let label = crate::tui::ui_text::semantic_truncate(
+            &tr(locale, MessageId::OrcaRouterOfferRecommended),
+            usize::from(area.width)
+                .saturating_sub(unicode_width::UnicodeWidthStr::width(chord.as_ref()) + 3),
+        );
+        let row = Rect::new(area.x, area.y, area.width, 1);
+        self.hitbox.replace(Some(row));
+        Paragraph::new(format!("{label} · {chord}"))
+            .style(if self.hovered.get() {
+                menu_style::hovered_row_style()
+            } else {
+                Style::default().fg(palette::WHALE_ACTION).underlined()
+            })
+            .render(row, buf);
+        Rect::new(area.x, area.y + 1, area.width, area.height - 1)
+    }
+}
 
 const DS4_PROVIDER_ID: &str = "ds4";
 const LM_STUDIO_PROVIDER_ID: &str = "lm_studio";
@@ -247,6 +320,7 @@ pub struct ProviderPickerView {
     model_row_hitboxes: RefCell<Vec<(Rect, usize)>>,
     consent_row_hitboxes: RefCell<Vec<(Rect, usize)>>,
     choice_row_hitboxes: RefCell<Vec<(Rect, char)>>,
+    offer: ProviderOffer,
     detail_action_hitbox: RefCell<Option<Rect>>,
     catalog_action_hitbox: RefCell<Option<Rect>>,
     catalog_action_hovered: bool,
@@ -1992,6 +2066,7 @@ impl ProviderPickerView {
             model_row_hitboxes: RefCell::new(Vec::new()),
             consent_row_hitboxes: RefCell::new(Vec::new()),
             choice_row_hitboxes: RefCell::new(Vec::new()),
+            offer: ProviderOffer::default(),
             detail_action_hitbox: RefCell::new(None),
             catalog_action_hitbox: RefCell::new(None),
             catalog_action_hovered: false,
@@ -3071,6 +3146,7 @@ impl ProviderPickerView {
             )
         };
 
+        let content = self.offer.render(self.locale, content, buf);
         let filtered = self.filtered_rows();
         if filtered.is_empty() {
             if search_active {
@@ -3619,6 +3695,7 @@ impl ProviderPickerView {
                 ActionHint::new("Esc", self.tr(MessageId::SetupActionBack)),
             ],
         );
+        let content = self.offer.render(self.locale, content, buf);
         self.render_setup_choices(
             content,
             buf,
@@ -4694,6 +4771,13 @@ impl ModalView for ProviderPickerView {
         self.interacted = true;
         self.last_choice_mouse_selected = None;
         self.hovered_choice = None;
+        if matches!(self.stage, Stage::List | Stage::OrcarouterAuthChoice)
+            && let Some(action) = ProviderOffer::key_action(self.locale, &key)
+        {
+            self.last_list_mouse_selected = None;
+            self.last_model_mouse_selected = None;
+            return action;
+        }
         if self.stage == Stage::List
             && (key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT)
         {
@@ -5267,6 +5351,13 @@ impl ModalView for ProviderPickerView {
     }
 
     fn handle_mouse(&mut self, mouse: MouseEvent) -> ViewAction {
+        if let Some(action) = self.offer.mouse_action(self.locale, mouse) {
+            self.interacted = true;
+            self.last_choice_mouse_selected = None;
+            self.last_list_mouse_selected = None;
+            self.last_model_mouse_selected = None;
+            return action;
+        }
         if matches!(mouse.kind, MouseEventKind::Down(_)) {
             self.interacted = true;
         }
@@ -5390,6 +5481,7 @@ impl ModalView for ProviderPickerView {
     }
 
     fn render(&self, area: Rect, buf: &mut Buffer) {
+        self.offer.clear();
         self.choice_row_hitboxes.borrow_mut().clear();
         self.list_row_hitboxes.borrow_mut().clear();
         *self.catalog_action_hitbox.borrow_mut() = None;

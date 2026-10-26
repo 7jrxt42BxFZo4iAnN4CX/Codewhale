@@ -1,4 +1,8 @@
 {
+  "OrcaRouterOfferRecommended": "OrcaRouter · Recommended",
+  "OrcaRouterOfferAction": "View OrcaRouter offer in /provider or /model",
+  "OrcaRouterOfferBody": "Get a 30% top-up match for DeepSeek V4.1 Flash with the Codewhale × OrcaRouter offer. Check the offer page for current terms.",
+  "OrcaRouterOfferDisclosure": "Codewhale earns a referral fee from OrcaRouter.",
   "ShellWaitNoActive": "No shell wait is active.",
   "ShellWaitInteractive": "Interactive commands cannot continue in the background. Cancel the turn, or wait for completion.",
   "ShellWaitUnavailable": "This tool cannot continue in the background. Cancel the turn, or wait for completion.",

@@ -89,6 +89,7 @@ pub struct KeybindingEntry {
     pub section: KeybindingSection,
 }
 
+pub const PROVIDER_OFFER_CHORD: &str = "F7";
 pub const EXTERNAL_EDITOR_CHORD: &str = "Ctrl+Shift+O / F4";
 
 /// Canonical list of keybindings shown in the help overlay.
@@ -246,6 +247,11 @@ pub const KEYBINDINGS: &[KeybindingEntry] = &[
     KeybindingEntry {
         chord: "F2",
         description_id: codewhale_localization::MessageId::KbSettings,
+        section: KeybindingSection::Submission,
+    },
+    KeybindingEntry {
+        chord: PROVIDER_OFFER_CHORD,
+        description_id: codewhale_localization::MessageId::OrcaRouterOfferAction,
         section: KeybindingSection::Submission,
     },
     KeybindingEntry {

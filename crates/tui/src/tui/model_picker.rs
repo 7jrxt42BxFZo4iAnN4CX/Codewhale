@@ -38,6 +38,7 @@ use crate::reasoning_preference::ReasoningEffort;
 use crate::settings::PinnedModel;
 use crate::tui::app::{App, StatusToastLevel};
 use crate::tui::menu_style;
+use crate::tui::provider_picker::ProviderOffer;
 use crate::tui::views::fleet_detail::{FleetRouteSelection, FleetRouteTarget};
 use crate::tui::views::{
     ActionHint, ListDetailLayout, ModalKind, ModalView, ViewAction, ViewEvent, render_modal_footer,
@@ -264,6 +265,7 @@ pub struct ModelPickerView {
     sort: Option<ModelSort>,
     column_hitboxes: RefCell<Vec<(Rect, ModelSortColumn)>>,
     pane_hitboxes: RefCell<Vec<(Rect, Pane)>>,
+    offer: ProviderOffer,
     catalog_action_hitbox: RefCell<Option<Rect>>,
     catalog_action_hovered: bool,
     purpose: ModelPickerPurpose,
@@ -686,6 +688,7 @@ impl ModelPickerView {
             sort: None,
             column_hitboxes: RefCell::new(Vec::new()),
             pane_hitboxes: RefCell::new(Vec::new()),
+            offer: ProviderOffer::default(),
             catalog_action_hitbox: RefCell::new(None),
             catalog_action_hovered: false,
             purpose: ModelPickerPurpose::Session,
@@ -4239,6 +4242,9 @@ impl ModalView for ModelPickerView {
     fn handle_key(&mut self, key: KeyEvent) -> ViewAction {
         self.last_mouse_selected = None;
         self.hovered_row = None;
+        if let Some(action) = ProviderOffer::key_action(self.locale, &key) {
+            return action;
+        }
         self.notice = None;
         // Movement keys come from the shared vocabulary (#6290); the match
         // below owns only the picker's own verbs. The live filter means the
@@ -4393,6 +4399,11 @@ impl ModalView for ModelPickerView {
     }
 
     fn handle_mouse(&mut self, mouse: MouseEvent) -> ViewAction {
+        if let Some(action) = self.offer.mouse_action(self.locale, mouse) {
+            self.last_mouse_selected = None;
+            self.hovered_row = None;
+            return action;
+        }
         let over_catalog = self
             .catalog_action_hitbox
             .borrow()
@@ -4502,6 +4513,7 @@ impl ModalView for ModelPickerView {
 
 impl ModelPickerView {
     fn render_route(&self, area: Rect, buf: &mut Buffer) {
+        self.offer.clear();
         self.row_hitboxes.borrow_mut().clear();
         self.column_hitboxes.borrow_mut().clear();
         self.pane_hitboxes.borrow_mut().clear();
@@ -4637,6 +4649,7 @@ impl ModelPickerView {
             tr(self.locale, MessageId::PickerActionCancel),
         ));
         let content = render_modal_footer(inner, buf, &footer_hints);
+        let content = self.offer.render(self.locale, content, buf);
 
         let shell = ratatui::layout::Layout::default()
             .direction(ratatui::layout::Direction::Vertical)
@@ -5308,6 +5321,7 @@ mod tests {
             sort: None,
             column_hitboxes: RefCell::new(Vec::new()),
             pane_hitboxes: RefCell::new(Vec::new()),
+            offer: ProviderOffer::default(),
             catalog_action_hitbox: RefCell::new(None),
             catalog_action_hovered: false,
             purpose: ModelPickerPurpose::Session,

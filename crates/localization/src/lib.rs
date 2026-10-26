@@ -120,6 +120,11 @@ impl Locale {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageId {
+    OrcaRouterOfferRecommended,
+    OrcaRouterOfferAction,
+    OrcaRouterOfferBody,
+    OrcaRouterOfferDisclosure,
+
     MobileStreamReplayFailed,
     MobileStreamCatchUpFailed,
     MobileStreamRuntimeShutdown,
@@ -2848,6 +2853,10 @@ pub enum MessageId {
 }
 
 pub const ALL_MESSAGE_IDS: &[MessageId] = &[
+    MessageId::OrcaRouterOfferRecommended,
+    MessageId::OrcaRouterOfferAction,
+    MessageId::OrcaRouterOfferBody,
+    MessageId::OrcaRouterOfferDisclosure,
     MessageId::MobileStreamReplayFailed,
     MessageId::MobileStreamCatchUpFailed,
     MessageId::MobileStreamRuntimeShutdown,

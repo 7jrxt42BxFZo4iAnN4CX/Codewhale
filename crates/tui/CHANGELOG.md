@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **OrcaRouter recommendation:** `/provider` and `/model` offer a shared partner recommendation with the DeepSeek V4.1 Flash 30% top-up-match link, public referral disclosure and localized offer details. F7 or a click opens the existing pager while retaining the current route.
+
 - Long drafts now show a localized external-editor hint when the actual composer
   viewport clips their text. The hint uses the shared F4 binding and preserves
   queue, running-turn, history, and menu hints (#7049). Thanks @Lstarsky0.
