@@ -843,10 +843,8 @@ dependencies = [
 name = "codewhale-agent-contract"
 version = "0.10.2"
 dependencies = [
- "codewhale-config",
  "codewhale-execpolicy",
  "codewhale-protocol",
- "codewhale-workflow",
  "serde",
 ]
 
@@ -1018,6 +1016,7 @@ dependencies = [
  "codewhale-protocol",
  "regex",
  "serde",
+ "serde_json",
  "shlex 2.0.1",
  "toml 1.1.4+spec-1.1.0",
 ]
@@ -1527,6 +1526,7 @@ dependencies = [
 name = "codewhale-workflow"
 version = "0.10.2"
 dependencies = [
+ "codewhale-protocol",
  "serde",
  "serde_json",
  "sha2 0.11.1",

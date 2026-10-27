@@ -5902,7 +5902,7 @@ impl ToolSpec for BashTool {
         // `action` as absent and fell through to the branch that runs
         // arbitrary code: `Bash{action: 3, command: "…"}` executed the
         // command. Every sibling family refuses a non-string action
-        // (`canonical_action::required_action`), and `Bash` cannot be the
+        // (`codewhale_tools::required_action`), and `Bash` cannot be the
         // lenient one. `optional_str` is the type-strictness lane's extractor:
         // absent or `null` takes the documented `run` default, anything else
         // is a `type_mismatch` naming the field and the type it needed.

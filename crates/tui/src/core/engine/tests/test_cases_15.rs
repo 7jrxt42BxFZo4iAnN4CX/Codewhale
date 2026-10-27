@@ -31,7 +31,7 @@ fn subagent_results_are_summarized_before_parent_context_insertion() {
     assert!(context.contains("handle_read"));
     // #6747: the guidance names only callable tools (no hidden `File`) and
     // teaches the deferred `handle_read` activation path.
-    crate::tools::canonical_action::tests::assert_text_names_only_callable_tools(
+    crate::tools::canonical_action_tests::assert_text_names_only_callable_tools(
         "sub-agent summary guidance",
         &super::context::subagent_summary_guidance(),
     );

@@ -46,9 +46,6 @@ use crate::dependencies::{ExternalTool, Git};
 use crate::llm_client::LlmError;
 use crate::reasoning_preference::ReasoningEffort;
 use crate::request_tuning::RequestTuning;
-use crate::tools::canonical_action::{
-    CANONICAL_ACTION_ALIASES, canonical_action_alias, is_action_family,
-};
 use crate::tools::handle::VarHandle;
 #[cfg(test)]
 use crate::tools::plan::PlanState;
@@ -77,6 +74,9 @@ use codewhale_agent_contract::worker_profile::{
 use codewhale_config::AppMode;
 #[cfg(test)]
 use codewhale_execpolicy::ApprovalMode;
+use codewhale_execpolicy::canonical_action::{
+    CANONICAL_ACTION_ALIASES, canonical_action_alias, is_action_family,
+};
 use codewhale_execpolicy::tool_rules::tool_denied;
 #[cfg(test)]
 use codewhale_models::MessageResponse;
@@ -2281,7 +2281,7 @@ impl PersistedSubAgentState {
 }
 
 /// Default delegation depth representation. Explicit operator settings narrow it.
-pub const DEFAULT_MAX_SPAWN_DEPTH: u32 = codewhale_config::DEFAULT_SPAWN_DEPTH;
+pub const DEFAULT_MAX_SPAWN_DEPTH: u32 = codewhale_protocol::fleet::DEFAULT_SPAWN_DEPTH;
 
 /// Convert an explicit remaining-depth allowance without arithmetic overflow.
 fn clamp_child_max_spawn_depth(child_spawn_depth: u32, requested_max_depth: u32) -> u32 {
@@ -16686,8 +16686,8 @@ fn resolve_spawn_role(request: &mut SpawnRequest) -> Result<(), ToolError> {
 #[must_use]
 pub(crate) fn session_permission_ceiling(
     runtime: &SubAgentRuntime,
-) -> codewhale_workflow::PermissionCeiling {
-    codewhale_workflow::PermissionCeiling {
+) -> codewhale_protocol::fleet::PermissionCeiling {
+    codewhale_protocol::fleet::PermissionCeiling {
         write: runtime.worker_profile.permissions.write,
         network_tool: runtime.worker_profile.permissions.network
             && runtime.agent_tool_surface_options.web_search_enabled,
@@ -18884,7 +18884,7 @@ fn raw_mutation_target_paths(name: &str, input: &Value) -> Vec<String> {
         if let Some(object) = patch_input.as_object_mut() {
             object.remove("action");
         }
-        return crate::tools::apply_patch::preflight_apply_patch(&patch_input)
+        return codewhale_tools::patch_preflight::preflight_apply_patch(&patch_input)
             .map(|preflight| preflight.touched_files)
             .unwrap_or_default();
     }
@@ -18904,7 +18904,7 @@ fn mutation_paths(name: &str, input: &Value) -> Result<Vec<String>> {
         if let Some(object) = patch_input.as_object_mut() {
             object.remove("action");
         }
-        crate::tools::apply_patch::preflight_apply_patch(&patch_input)
+        codewhale_tools::patch_preflight::preflight_apply_patch(&patch_input)
             .map_err(|err| anyhow!(err.to_string()))?
             .touched_files
     } else if let Some(path) = input

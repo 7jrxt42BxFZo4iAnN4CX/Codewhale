@@ -213,7 +213,7 @@ pub(super) fn build_model_tool_catalog_with_surface(
 // A second Registry authority used to live here: it appended a "call
 // registry_sync before this tool" paragraph to a model-visible `exec_shell`
 // description. The model-visible shell tool is `bash` — `exec_shell` is only a
-// canonical *action* name (see `tools::canonical_action`) — so the hook never
+// canonical *action* name (see `codewhale_execpolicy::canonical_action`) — so the hook never
 // fired on a live catalog, and its own test pinned that it must not touch
 // `bash`. The Registry instruction in `Engine::new` is the single prompt
 // authority for this decision; a per-tool copy of it is not revived here.

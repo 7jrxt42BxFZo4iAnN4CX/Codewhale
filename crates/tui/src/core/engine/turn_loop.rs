@@ -19,11 +19,11 @@ use crate::runtime_handoff::{
     subagent_failure_runtime_message, waiting_for_subagents_runtime_message,
 };
 use crate::tool_inspection::TurnStopReason;
-use crate::tools::canonical_action::canonical_action_alias;
 use crate::tools::tool_call_budget::ToolCallBudget;
 #[cfg(test)]
 use anyhow::anyhow;
 use codewhale_core::request::{PrimaryTurnRequest, prepare_primary_turn_request};
+use codewhale_execpolicy::canonical_action::canonical_action_alias;
 use codewhale_models::Role;
 use codewhale_runtime::prompt_zones::PinnedPrefix;
 

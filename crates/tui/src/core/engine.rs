@@ -10038,7 +10038,7 @@ pub(crate) fn exec_shell_ask_rule_decision_for_policy(
     approval_mode: ApprovalMode,
 ) -> Option<ToolAskRuleDecision> {
     let policy_tool_name =
-        crate::tools::canonical_action::canonical_action_alias(tool_name, tool_input);
+        codewhale_execpolicy::canonical_action::canonical_action_alias(tool_name, tool_input);
     // Task tools that hand a command string to the shell answer to the same
     // shell deny and ask rules. Their own approval requirement stays: a shell
     // allow rule does not waive it.
@@ -10088,7 +10088,7 @@ pub(crate) fn file_tool_ask_rule_decision_for_policy(
     approval_mode: ApprovalMode,
 ) -> Option<ToolAskRuleDecision> {
     let policy_tool_name =
-        crate::tools::canonical_action::canonical_action_alias(tool_name, tool_input);
+        codewhale_execpolicy::canonical_action::canonical_action_alias(tool_name, tool_input);
     let paths = file_tool_permission_paths(policy_tool_name, tool_input)?;
     if paths.is_empty() {
         if matches!(policy_tool_name, "write_file" | "edit_file" | "apply_patch") {
@@ -10184,7 +10184,7 @@ fn tool_ask_rule_decision_for_context(
 /// here too; a rule keyed on `path` would otherwise never see that target.
 fn file_tool_permission_paths(tool_name: &str, input: &Value) -> Option<Vec<String>> {
     let path_arguments = || {
-        let mut paths: Vec<String> = crate::tools::file::path_argument_keys()
+        let mut paths: Vec<String> = codewhale_tools::param_alias::path_argument_keys()
             .filter_map(|key| string_field(input, key))
             .collect();
         paths.dedup();
@@ -10203,7 +10203,7 @@ fn file_tool_permission_paths(tool_name: &str, input: &Value) -> Option<Vec<Stri
             })
         }
         "apply_patch" => Some(apply_patch_permission_paths(
-            &crate::tools::file::with_canonical_path_argument(input),
+            &codewhale_tools::param_alias::with_canonical_path_argument(input),
         )),
         _ => None,
     }
@@ -10213,7 +10213,8 @@ fn file_tool_permission_paths(tool_name: &str, input: &Value) -> Option<Vec<Stri
 /// tools (`write_file` / `edit_file` / `apply_patch`), `None` for any other
 /// tool. Feeds the in-workspace write carve-out (#5185).
 pub(crate) fn file_write_tool_target_paths(tool_name: &str, input: &Value) -> Option<Vec<String>> {
-    let canonical = crate::tools::canonical_action::canonical_action_alias(tool_name, input);
+    let canonical =
+        codewhale_execpolicy::canonical_action::canonical_action_alias(tool_name, input);
     if !matches!(canonical, "write_file" | "edit_file" | "apply_patch") {
         return None;
     }
@@ -10230,7 +10231,7 @@ fn string_field(input: &Value, key: &str) -> Option<String> {
 }
 
 fn apply_patch_permission_paths(input: &Value) -> Vec<String> {
-    crate::tools::apply_patch::preflight_apply_patch(input)
+    codewhale_tools::patch_preflight::preflight_apply_patch(input)
         .map(|preflight| preflight.touched_files)
         .unwrap_or_default()
 }

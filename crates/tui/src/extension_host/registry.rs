@@ -313,7 +313,9 @@ fn core_special_case(name: &str) -> Option<&'static str> {
         {
             return Some("the approval cache keys it as a built-in tool family");
         }
-        if crate::tools::canonical_action::canonical_action_alias(spelling, &empty) != spelling {
+        if codewhale_execpolicy::canonical_action::canonical_action_alias(spelling, &empty)
+            != spelling
+        {
             return Some("it is an alias of a built-in tool");
         }
         if crate::tools::approval_summary::approval_summary(spelling, &empty, None)
@@ -338,7 +340,7 @@ impl OwnerRegistry {
             .chain(crate::core::engine::tool_catalog::DEFAULT_ACTIVE_NATIVE_TOOLS)
             .map(|name| name.to_ascii_lowercase())
             .collect();
-        for (family, _, alias) in crate::tools::canonical_action::CANONICAL_ACTION_ALIASES {
+        for (family, _, alias) in codewhale_execpolicy::canonical_action::CANONICAL_ACTION_ALIASES {
             native_names.insert(family.to_ascii_lowercase());
             native_names.insert(alias.to_ascii_lowercase());
         }

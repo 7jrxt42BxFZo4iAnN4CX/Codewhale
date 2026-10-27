@@ -14697,7 +14697,7 @@ async fn reload_config_reads_from_config_path_and_updates_in_memory_state() -> R
         .expect("subagents_max_depth should be a number");
     assert_eq!(
         initial_depth,
-        u64::from(codewhale_config::DEFAULT_SPAWN_DEPTH),
+        u64::from(codewhale_protocol::fleet::DEFAULT_SPAWN_DEPTH),
         "initial subagents_max_depth should be DEFAULT_SPAWN_DEPTH"
     );
 

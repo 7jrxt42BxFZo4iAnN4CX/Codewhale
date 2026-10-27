@@ -958,7 +958,8 @@ fn classify(step: &ToolStep, notes: &mut BTreeSet<String>) -> Classified {
     if let Some(files) = mutation_files(facts) {
         return Classified::Listed(ActionKind::FileChange { files });
     }
-    let semantic = crate::tools::canonical_action::canonical_action_alias(&step.name, &step.input);
+    let semantic =
+        codewhale_execpolicy::canonical_action::canonical_action_alias(&step.name, &step.input);
     match semantic {
         "write_file" | "edit_file" | "apply_patch" | "fim_edit" => {
             let files = files_from_input(semantic, &step.input, step.outcome);
@@ -1519,7 +1520,8 @@ const SHELL_TOOLS: [&str; 5] = [
 /// GitHub's reply, or a fetched page. Nothing in it is read as a fact about
 /// the call, not even JSON; only metadata Codewhale wrote is.
 fn result_is_outside_text(step: &ToolStep) -> bool {
-    let semantic = crate::tools::canonical_action::canonical_action_alias(&step.name, &step.input);
+    let semantic =
+        codewhale_execpolicy::canonical_action::canonical_action_alias(&step.name, &step.input);
     step.name.starts_with("mcp_")
         || semantic.starts_with("mcp_")
         || semantic.starts_with("github_")
@@ -1533,7 +1535,8 @@ fn result_is_outside_text(step: &ToolStep) -> bool {
 /// [`result_is_outside_text`], plus a program's own output (code tools) and a
 /// sub-agent's words. Their failure text never proves a refusal.
 fn failure_text_is_outside(step: &ToolStep) -> bool {
-    let semantic = crate::tools::canonical_action::canonical_action_alias(&step.name, &step.input);
+    let semantic =
+        codewhale_execpolicy::canonical_action::canonical_action_alias(&step.name, &step.input);
     result_is_outside_text(step)
         || matches!(
             semantic,
@@ -1602,7 +1605,7 @@ fn failure_evidence(step: &ToolStep) -> FailureEvidence {
     let first = first.strip_prefix("Error: ").unwrap_or(first);
     if first.starts_with("BLOCKED:") {
         let semantic =
-            crate::tools::canonical_action::canonical_action_alias(&step.name, &step.input);
+            codewhale_execpolicy::canonical_action::canonical_action_alias(&step.name, &step.input);
         return if SHELL_TOOLS.contains(&semantic) {
             FailureEvidence::Refused
         } else {

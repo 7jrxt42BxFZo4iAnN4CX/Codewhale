@@ -663,7 +663,7 @@ pub(crate) fn enforce_tool_authority(
 ) -> Result<(), ToolError> {
     crate::tools::execution_envelope::enforce_tool_denial(context, name, input)?;
     if let Some(mode) = context.acp_host {
-        let canonical = super::canonical_action::canonical_action_alias(name, input);
+        let canonical = codewhale_execpolicy::canonical_action::canonical_action_alias(name, input);
         if matches!(name, "bash" | "Bash" | "exec_shell") || canonical.starts_with("exec_shell") {
             let prepared = tool.prepare(input.clone(), context)?;
             if context.shell_policy == codewhale_agent_contract::worker_profile::ShellPolicy::None
@@ -793,7 +793,8 @@ pub(crate) fn enforce_tool_authority(
         if bounded_verifier {
             use crate::tools::execution_envelope::{VerificationBound, classify_verification};
 
-            let canonical = crate::tools::canonical_action::canonical_action_alias(name, input);
+            let canonical =
+                codewhale_execpolicy::canonical_action::canonical_action_alias(name, input);
             if matches!(
                 classify_verification(canonical, input),
                 Some(VerificationBound::Default | VerificationBound::Filter)
@@ -850,7 +851,7 @@ pub(crate) fn enforce_tool_authority(
 }
 
 fn authority_mutation_paths(name: &str, input: &Value) -> Result<Option<Vec<String>>, ToolError> {
-    let canonical = crate::tools::canonical_action::canonical_action_alias(name, input);
+    let canonical = codewhale_execpolicy::canonical_action::canonical_action_alias(name, input);
     let is_patch = canonical == "apply_patch"
         || (name == "File" && input.get("action").and_then(Value::as_str) == Some("patch"));
     if is_patch {
@@ -858,7 +859,7 @@ fn authority_mutation_paths(name: &str, input: &Value) -> Result<Option<Vec<Stri
         if let Some(object) = patch_input.as_object_mut() {
             object.remove("action");
         }
-        let paths = crate::tools::apply_patch::preflight_apply_patch(&patch_input)
+        let paths = codewhale_tools::patch_preflight::preflight_apply_patch(&patch_input)
             .map_err(|error| ToolError::invalid_input(error.to_string()))?
             .touched_files;
         return Ok(Some(paths));

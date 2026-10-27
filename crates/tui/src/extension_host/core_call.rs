@@ -140,11 +140,12 @@ const FORCED_PROMPT_NAMES: &[&str] = &[
 fn canonical(name: &str, input: &Value) -> String {
     // Preserve the family's registered spelling until its action is resolved.
     // Lowercasing `Git` first would hide `Git{action:"fetch"}` from policy.
-    let family = crate::tools::canonical_action::CANONICAL_ACTION_ALIASES
+    let family = codewhale_execpolicy::canonical_action::CANONICAL_ACTION_ALIASES
         .iter()
         .find(|(family, _, _)| family.eq_ignore_ascii_case(name))
         .map_or(name, |(family, _, _)| *family);
-    crate::tools::canonical_action::canonical_action_alias(family, input).to_ascii_lowercase()
+    codewhale_execpolicy::canonical_action::canonical_action_alias(family, input)
+        .to_ascii_lowercase()
 }
 
 fn is_extension_tool(specs: &[Arc<dyn ToolSpec>], name: &str) -> bool {

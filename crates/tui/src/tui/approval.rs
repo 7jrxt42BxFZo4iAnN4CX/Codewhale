@@ -30,8 +30,8 @@
 use crate::tools::approval_summary::{
     delegated_authority_fields, param_preview, truncate_string_value,
 };
-use crate::tools::canonical_action::canonical_action_alias;
 use codewhale_config::ToolAskRule;
+use codewhale_execpolicy::canonical_action::canonical_action_alias;
 use codewhale_localization::{Locale, MessageId, tr};
 #[cfg(test)]
 use codewhale_runtime::config::ApprovalDefaultSelection;

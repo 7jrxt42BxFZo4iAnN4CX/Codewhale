@@ -974,7 +974,7 @@ mod tests {
             .lines()
             .find(|line| line.contains("chars truncated"))
             .expect("truncation footer");
-        crate::tools::canonical_action::tests::assert_text_names_only_callable_tools(
+        crate::tools::canonical_action_tests::assert_text_names_only_callable_tools(
             "rlm preview footer",
             preview_footer,
         );

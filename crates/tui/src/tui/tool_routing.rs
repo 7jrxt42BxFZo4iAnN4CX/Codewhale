@@ -4,8 +4,6 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use crate::tools::ReviewOutput;
-use crate::tools::apply_patch::{NormalizedApplyPatchInput, normalize_apply_patch_input};
-use crate::tools::canonical_action::canonical_action_alias;
 use crate::tools::plan::PlanSnapshot;
 use crate::tools::spec::{ToolError, ToolResult};
 use crate::tui::active_cell::ActiveCell;
@@ -18,6 +16,8 @@ use crate::tui::history::{
 };
 use crate::tui::workspace_context;
 use codewhale_config::hooks::HookEvent;
+use codewhale_execpolicy::canonical_action::canonical_action_alias;
+use codewhale_tools::patch_preflight::{NormalizedApplyPatchInput, normalize_apply_patch_input};
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn handle_tool_call_started(

@@ -3,14 +3,13 @@
 //! These tools provide powerful code search capabilities within the workspace,
 //! similar to ripgrep/grep functionality.
 
-use super::file::{
-    PATH_ALIASES, SEARCH_CONTENT_ALIASES, SEARCH_CONTENT_PARAMS, apply_param_aliases,
-};
+use super::file::{SEARCH_CONTENT_ALIASES, SEARCH_CONTENT_PARAMS};
 use super::spec::{
     ToolCapability, ToolContext, ToolError, ToolResult, ToolSpec, optional_bool, optional_str,
     optional_u64, required_str,
 };
 use async_trait::async_trait;
+use codewhale_tools::param_alias::{PATH_ALIASES, apply_param_aliases};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};

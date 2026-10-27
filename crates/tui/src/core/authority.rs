@@ -13,11 +13,11 @@ pub use risk::{RiskLevel, classify_risk};
 use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
 
-use crate::tools::canonical_action::canonical_action_alias;
 use crate::tools::spec::{ApprovalRequirement, normalize_path};
 use codewhale_agent_contract::worker_profile::ShellPolicy;
 use codewhale_config::AppMode;
 use codewhale_execpolicy::ApprovalMode;
+use codewhale_execpolicy::canonical_action::canonical_action_alias;
 use codewhale_sandbox::SandboxPolicy;
 use serde_json::Value;
 

@@ -21134,8 +21134,8 @@ async fn child_work_state_publishes_only_real_changes_from_its_own_list() {
 fn an_exact_member_with_tools_false_gets_no_model_tools_at_all() {
     let tmp = tempdir().expect("tempdir");
     let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
-        codewhale_workflow::PermissionCeiling::ROUTER,
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::ROUTER,
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     assert_eq!(authority.allowed_tools.as_deref(), Some(&[] as &[String]));
 
@@ -21172,8 +21172,8 @@ fn an_exact_member_with_tools_false_gets_no_model_tools_at_all() {
 async fn an_exact_member_without_a_network_tool_really_loses_the_network_surface() {
     let tmp = tempdir().expect("tempdir");
     let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
-        codewhale_workflow::PermissionCeiling::preset("read_write").expect("preset"),
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("read_write").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     assert!(authority.ceiling.tools);
     assert!(!authority.ceiling.network_tool);
@@ -21352,11 +21352,11 @@ async fn read_only_web_evidence_keeps_the_parent_approval_gate() {
 #[tokio::test]
 async fn a_read_only_inspection_member_gets_only_bounded_web_search() {
     let tmp = tempdir().expect("tempdir");
-    let parent = codewhale_workflow::PermissionCeiling {
+    let parent = codewhale_protocol::fleet::PermissionCeiling {
         write: true,
         network_tool: false,
-        shell: codewhale_workflow::ShellCeiling::Full,
-        delegation_depth: codewhale_config::DEFAULT_SPAWN_DEPTH,
+        shell: codewhale_protocol::fleet::ShellCeiling::Full,
+        delegation_depth: codewhale_protocol::fleet::DEFAULT_SPAWN_DEPTH,
         tools: true,
     };
     let authority =
@@ -21427,7 +21427,7 @@ async fn a_read_only_inspection_member_gets_only_bounded_web_search() {
     // A Runtime builder under a full parent keeps the whole family.
     let full_authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "builder",
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     assert!(full_authority.ceiling.network_tool);
     assert!(full_authority.disallowed_tools.is_empty());
@@ -21469,8 +21469,8 @@ async fn a_read_only_inspection_member_gets_only_bounded_web_search() {
 fn the_unified_rlm_action_cannot_bypass_a_denied_alias() {
     let tmp = tempdir().expect("tempdir");
     let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
-        codewhale_workflow::PermissionCeiling::preset("read_write").expect("preset"),
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("read_write").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     assert!(!authority.ceiling.network_tool);
 
@@ -21713,15 +21713,15 @@ fn a_shell_capable_read_only_member_keeps_test_selection_arguments() {
 #[tokio::test]
 async fn a_parent_read_only_session_narrows_a_full_exact_member_in_the_child_registry() {
     let tmp = tempdir().expect("tempdir");
-    let session = codewhale_workflow::PermissionCeiling {
+    let session = codewhale_protocol::fleet::PermissionCeiling {
         write: false,
         network_tool: false,
-        shell: codewhale_workflow::ShellCeiling::ReadOnly,
+        shell: codewhale_protocol::fleet::ShellCeiling::ReadOnly,
         delegation_depth: 0,
         tools: true,
     };
     let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
         session,
     );
     assert!(!authority.ceiling.write);
@@ -21805,7 +21805,7 @@ fn the_session_ceiling_reflects_the_live_parent_posture() {
     no_shell.allow_shell = false;
     assert_ne!(
         super::session_permission_ceiling(&no_shell).shell,
-        codewhale_workflow::ShellCeiling::Full
+        codewhale_protocol::fleet::ShellCeiling::Full
     );
 }
 
@@ -21830,7 +21830,7 @@ fn read_only_with_shell_registry() -> (tempfile::TempDir, ChildCoreProbe) {
     let tmp = tempdir().expect("tempdir");
     let authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "verifier",
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     assert!(
         !authority.ceiling.write,
@@ -21838,7 +21838,7 @@ fn read_only_with_shell_registry() -> (tempfile::TempDir, ChildCoreProbe) {
     );
     assert_eq!(
         authority.ceiling.shell,
-        codewhale_workflow::ShellCeiling::Full,
+        codewhale_protocol::fleet::ShellCeiling::Full,
         "…that nonetheless kept `shell = full` so it can run checks"
     );
 
@@ -22130,7 +22130,7 @@ fn a_write_capable_member_keeps_every_execution_gate() {
     let tmp = tempdir().expect("tempdir");
     let authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "builder",
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     assert!(authority.ceiling.write);
 
@@ -22168,7 +22168,7 @@ fn a_write_capable_member_keeps_every_execution_gate() {
 /// canonical name is simply a second spelling that nothing checks.
 #[test]
 fn the_durable_work_families_resolve_their_actions_through_the_policy_seam() {
-    use crate::tools::canonical_action::canonical_action_alias;
+    use codewhale_execpolicy::canonical_action::canonical_action_alias;
 
     for (family, action, alias) in [
         ("tasks", "gate_run", "task_gate_run"),
@@ -22205,8 +22205,8 @@ fn the_durable_work_families_resolve_their_actions_through_the_policy_seam() {
 #[test]
 fn posture_denials_survive_a_child_that_declines_to_inherit() {
     let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
-        codewhale_workflow::PermissionCeiling::preset("read_write").expect("preset"),
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("read_write").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     assert!(!authority.ceiling.network_tool);
 
@@ -22257,7 +22257,7 @@ fn posture_denials_survive_a_child_that_declines_to_inherit() {
 /// proves nothing.
 #[test]
 fn the_authority_fingerprint_distinguishes_every_envelope_it_names() {
-    let session = codewhale_workflow::PermissionCeiling::preset("full").expect("preset");
+    let session = codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset");
     let fingerprint = |role: &str| {
         codewhale_agent_contract::role::ChildAuthority::from_runtime_role(role, session)
             .fingerprint()
@@ -22286,7 +22286,7 @@ fn the_authority_fingerprint_distinguishes_every_envelope_it_names() {
     // parent is a different envelope.
     let narrow = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "builder",
-        codewhale_workflow::PermissionCeiling::preset("read_only").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("read_only").expect("preset"),
     );
     assert_ne!(narrow.fingerprint(), fingerprint("builder"));
 }
@@ -22298,7 +22298,7 @@ fn the_authority_fingerprint_distinguishes_every_envelope_it_names() {
 fn the_spawn_boundary_fails_closed_on_a_missing_or_mismatched_authority() {
     let authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "verifier",
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     let fingerprint = authority.fingerprint();
 
@@ -22360,7 +22360,7 @@ fn the_spawn_boundary_fails_closed_on_a_missing_or_mismatched_authority() {
 fn the_launched_authority_is_the_one_the_spawn_boundary_accepts() {
     let authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "auditor",
-        codewhale_workflow::PermissionCeiling::preset("analyst").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("analyst").expect("preset"),
     );
     // A free-form Fleet identity is undeclared, so it now fails closed to the
     // read-only `explore` posture rather than inheriting write-capable
@@ -22382,7 +22382,7 @@ fn the_launched_authority_is_the_one_the_spawn_boundary_accepts() {
     // A different member's envelope must not satisfy it.
     let other = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "builder",
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     assert!(
         verify_fleet_authority_input(&other.fingerprint(), &input).is_err(),

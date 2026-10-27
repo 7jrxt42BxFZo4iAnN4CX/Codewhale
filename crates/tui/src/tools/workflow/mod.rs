@@ -1873,7 +1873,7 @@ fn apply_named_fleet_to_task_request(
 /// [`route_admitted_exact_task`].
 fn bind_exact_fleet_task_request(
     operation: &crate::fleet::exact::ExactFleetWorkflow,
-    session: codewhale_workflow::PermissionCeiling,
+    session: codewhale_protocol::fleet::PermissionCeiling,
     request: &mut TaskRequest,
 ) -> Result<crate::fleet::exact::ExactMemberBinding, DriverError> {
     let fleet = operation.snapshot().fleet().qualified();
@@ -6934,12 +6934,12 @@ permissions = "read_only"
         }
     }
 
-    fn exact_session() -> codewhale_workflow::PermissionCeiling {
-        codewhale_workflow::PermissionCeiling {
+    fn exact_session() -> codewhale_protocol::fleet::PermissionCeiling {
+        codewhale_protocol::fleet::PermissionCeiling {
             write: true,
             network_tool: true,
-            shell: codewhale_workflow::ShellCeiling::Full,
-            delegation_depth: codewhale_config::DEFAULT_SPAWN_DEPTH,
+            shell: codewhale_protocol::fleet::ShellCeiling::Full,
+            delegation_depth: codewhale_protocol::fleet::DEFAULT_SPAWN_DEPTH,
             tools: true,
         }
     }
@@ -6995,7 +6995,7 @@ permissions = "read_only"
         assert_eq!(request.write_authority.as_deref(), Some("workspace_write"));
         assert_eq!(
             request.max_depth,
-            Some(codewhale_config::DEFAULT_SPAWN_DEPTH)
+            Some(codewhale_protocol::fleet::DEFAULT_SPAWN_DEPTH)
         );
         assert!(request.thinking.is_none(), "reasoning is not decided yet");
 
@@ -7527,10 +7527,10 @@ permissions = "read_only"
     #[test]
     fn a_read_only_session_narrows_a_write_capable_exact_member() {
         let operation = exact_workflow(EXACT_GLM_FLEET);
-        let session = codewhale_workflow::PermissionCeiling {
+        let session = codewhale_protocol::fleet::PermissionCeiling {
             write: false,
             network_tool: false,
-            shell: codewhale_workflow::ShellCeiling::ReadOnly,
+            shell: codewhale_protocol::fleet::ShellCeiling::ReadOnly,
             delegation_depth: 0,
             tools: true,
         };

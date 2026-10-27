@@ -33,17 +33,18 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use codewhale_protocol::fleet::PermissionCeiling;
 #[cfg(test)]
-use codewhale_workflow::ShellCeiling;
+use codewhale_protocol::fleet::ShellCeiling;
 use codewhale_workflow::{
     CapturedReasoningRouter, CredentialReadiness, EffectiveReasoning, EndpointIdentity,
     FleetDocument, FleetRouterRef, FleetSearchRoot, FleetSnapshot, FleetSnapshotMember,
-    FleetTaskReceipt, NamedFleetError, PermissionCeiling, PreflightError, PreflightedRoute,
-    ProviderReasoningControl, QualifiedFleetId, ReasoningCapability, ReasoningRouterProfile,
-    ReasoningTier, ResolvedReasoning, RoutePreflight, RouterAvailability, RouterCallInput,
-    RouterCallPlan, RouterIdentity, RoutingDisclosure, bounded_routing_payload,
-    captured_legacy_inline_router, parse_router_decision, resolve_exact_member_reasoning,
-    router_call_plan, router_system_prompt, router_user_message,
+    FleetTaskReceipt, NamedFleetError, PreflightError, PreflightedRoute, ProviderReasoningControl,
+    QualifiedFleetId, ReasoningCapability, ReasoningRouterProfile, ReasoningTier,
+    ResolvedReasoning, RoutePreflight, RouterAvailability, RouterCallInput, RouterCallPlan,
+    RouterIdentity, RoutingDisclosure, bounded_routing_payload, captured_legacy_inline_router,
+    parse_router_decision, resolve_exact_member_reasoning, router_call_plan, router_system_prompt,
+    router_user_message,
 };
 
 use crate::llm_client::LlmClient;
@@ -1927,7 +1928,7 @@ permissions = "read_only"
             write: true,
             network_tool: true,
             shell: ShellCeiling::Full,
-            delegation_depth: codewhale_config::DEFAULT_SPAWN_DEPTH,
+            delegation_depth: codewhale_protocol::fleet::DEFAULT_SPAWN_DEPTH,
             tools: true,
         }
     }
@@ -3407,8 +3408,8 @@ mod saved_fleet_tests {
         PermissionCeiling {
             write: true,
             network_tool: true,
-            shell: codewhale_workflow::ShellCeiling::Full,
-            delegation_depth: codewhale_config::DEFAULT_SPAWN_DEPTH,
+            shell: codewhale_protocol::fleet::ShellCeiling::Full,
+            delegation_depth: codewhale_protocol::fleet::DEFAULT_SPAWN_DEPTH,
             tools: true,
         }
     }
