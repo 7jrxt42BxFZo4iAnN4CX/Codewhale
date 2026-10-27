@@ -12247,7 +12247,7 @@ async fn run_mcp_command(
             }
             let added_server = McpServerConfig {
                 command,
-                args: *args,
+                args,
                 env: std::collections::HashMap::new(),
                 cwd: None,
                 url,
