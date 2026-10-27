@@ -808,8 +808,7 @@ fn production_methods_follow_their_tier_rows_and_reserved_families_stay_builtin_
         for tier in HostTier::ALL {
             let parsed = parse_host_message(frame.clone(), tier).unwrap();
             assert_eq!(parsed.to_value(), frame);
-            let HostMessage::Request { request, .. } = parsed
-            else {
+            let HostMessage::Request { request, .. } = parsed else {
                 panic!("wrong question variant")
             };
             let HostRequest::UserQuestion(params) = *request else {
