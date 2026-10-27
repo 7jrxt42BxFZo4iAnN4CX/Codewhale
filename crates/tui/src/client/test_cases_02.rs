@@ -435,7 +435,7 @@
             parameters["properties"]["query"].get("nullable").is_none(),
             "{parameters}"
         );
-        crate::tools::schema_sanitize::validate_mfjs_parameters(parameters).unwrap();
+        codewhale_models::schema_sanitize::validate_mfjs_parameters(parameters).unwrap();
     }
 
     async fn assert_kimi_code_captures_exact_general_child_catalog() {
@@ -463,7 +463,7 @@
         // production errors remain fixed and non-secret.
         for tool in &tools {
             let mut parameters = tool.input_schema.clone();
-            crate::tools::schema_sanitize::sanitize_for_kimi_parameters(&mut parameters)
+            codewhale_models::schema_sanitize::sanitize_for_kimi_parameters(&mut parameters)
                 .unwrap_or_else(|error| panic!("General child tool {}: {error}", tool.name));
         }
 
@@ -504,7 +504,7 @@
                     tool["function"]["name"]
                 );
             }
-            crate::tools::schema_sanitize::validate_mfjs_parameters(parameters).unwrap();
+            codewhale_models::schema_sanitize::validate_mfjs_parameters(parameters).unwrap();
         }
     }
 

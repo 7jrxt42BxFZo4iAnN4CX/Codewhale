@@ -27,7 +27,7 @@ pub(super) const MAX_CONTEXT_RECOVERY_ATTEMPTS: u8 = 2;
 const TOOL_RESULT_METADATA_SUMMARY_CHARS: usize = 320;
 
 #[cfg(test)]
-pub(super) use crate::compaction::COMPACTION_SUMMARY_MARKER;
+pub(super) use codewhale_models::turn_classify::COMPACTION_SUMMARY_MARKER;
 
 /// What the model sees of one tool result (#6508).
 #[derive(Debug, Clone, PartialEq, Eq)]

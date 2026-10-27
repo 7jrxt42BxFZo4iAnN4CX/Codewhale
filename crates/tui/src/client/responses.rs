@@ -11,8 +11,8 @@ use anyhow::{Context, Result};
 use serde_json::{Value, json};
 
 use crate::llm_client::StreamEventBox;
-use crate::tools::schema_sanitize;
 use codewhale_config::ProviderKind;
+use codewhale_models::schema_sanitize;
 use codewhale_models::{
     ContentBlock, ContentBlockStart, Delta, MessageDelta, MessageRequest, MessageResponse,
     OpaqueReasoningState, StreamEvent, Tool, Usage,
@@ -790,7 +790,7 @@ impl CodewhaleClient {
 
 pub(super) fn responses_tool_output(content: &str, content_blocks: Option<&[Value]>) -> Value {
     let (image, omitted) = crate::image_attach::provider_tool_result_image_refs(content_blocks);
-    let content = crate::image_attach::tool_result_text_with_omission(content, omitted);
+    let content = codewhale_models::image_window::tool_result_text_with_omission(content, omitted);
     let Some((mime_type, data)) = image else {
         return json!(content);
     };

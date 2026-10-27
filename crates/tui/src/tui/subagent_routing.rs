@@ -715,7 +715,7 @@ fn record_agent_current_activity(app: &mut App, message: &MailboxMessage) {
         meta.received_tokens = Some(meta.received_tokens.unwrap_or(0).saturating_add(turn_total));
         meta.resolved_provider = Some(route.provider.as_str().to_string());
         meta.resolved_model = Some(bound_agent_activity_text(
-            &crate::cost_status::sanitize_persisted_route_label(&route.model),
+            &codewhale_runtime::safe_label::sanitize_persisted_route_label(&route.model),
         ))
         .filter(|model| !model.trim().is_empty());
         return;

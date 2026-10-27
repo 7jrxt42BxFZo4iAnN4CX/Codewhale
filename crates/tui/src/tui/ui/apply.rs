@@ -16,8 +16,9 @@ use super::*;
 /// later usage envelope may confirm or replace it with the provider's
 /// effective route while also adding provider and token facts.
 pub(crate) fn record_agent_spawned_route(app: &mut App, agent_id: &str, model: &str) {
-    let model =
-        bound_agent_activity_text(&crate::cost_status::sanitize_persisted_route_label(model));
+    let model = bound_agent_activity_text(
+        &codewhale_runtime::safe_label::sanitize_persisted_route_label(model),
+    );
     app.agent_progress_meta
         .entry(agent_id.to_string())
         .or_default()

@@ -587,7 +587,8 @@ impl Engine {
             }
         }
         if let Some(cap) = image_cap {
-            let window = crate::image_attach::cap_request_images(&mut request.messages, cap);
+            let window =
+                codewhale_models::image_window::cap_request_images(&mut request.messages, cap);
             self.note_request_image_window(image_provider, window).await;
         }
         let request_input = crate::compaction::estimate_request_input_tokens(

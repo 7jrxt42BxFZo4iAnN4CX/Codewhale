@@ -9688,7 +9688,7 @@ XML unless the user explicitly asks to debug sub-agent internals.\n\n\
                 matches!(block, ContentBlock::Text { text, .. } if text == "Fix the resume regression")
             })
     }));
-    let restored = crate::runtime_handoff::restored_subagent_checkpoint_display(
+    let restored = codewhale_models::turn_classify::restored_subagent_checkpoint_display(
         app.api_messages.last().expect("restored handoff"),
     )
     .expect("projected handoff");
@@ -14387,8 +14387,8 @@ async fn reserved_dispatch_waits_for_ui_acceptance_before_engine_op() {
         matches!(history_cells_from_message(&stored).as_slice(), [HistoryCell::System { content }] if content.contains(&command_message.display))
     );
     assert!(matches!(
-        crate::runtime_handoff::classify_user_turn_prompt(&stored),
-        crate::runtime_handoff::UserTurnPromptKind::NotPrompt
+        codewhale_models::turn_classify::classify_user_turn_prompt(&stored),
+        codewhale_models::turn_classify::UserTurnPromptKind::NotPrompt
     ));
     assert!(
         dispatch_composer_message(
@@ -16006,7 +16006,7 @@ fn turn_liveness_keeps_max_duration_exec_shell_wait_alive_with_heartbeat() {
 fn stall_heartbeat(
     phase: crate::core::engine::turn_heartbeat::TurnPhase,
     bound: Option<Duration>,
-    stall: Option<crate::core::engine::turn_heartbeat::StallReport>,
+    stall: Option<codewhale_runtime::stall_report::StallReport>,
 ) -> crate::core::engine::turn_heartbeat::HeartbeatSnapshot {
     crate::core::engine::turn_heartbeat::HeartbeatSnapshot {
         phase,
@@ -16016,8 +16016,8 @@ fn stall_heartbeat(
     }
 }
 
-fn stall_report(phase: &str) -> crate::core::engine::turn_heartbeat::StallReport {
-    crate::core::engine::turn_heartbeat::StallReport {
+fn stall_report(phase: &str) -> codewhale_runtime::stall_report::StallReport {
+    codewhale_runtime::stall_report::StallReport {
         source: "engine",
         phase: phase.to_string(),
         detail: Some("mock / model".to_string()),
@@ -16141,7 +16141,8 @@ fn stall_engine_report_shows_phase_and_held_queue() {
 /// live regardless of elapsed time while they report progress.
 #[test]
 fn stall_prior_session_subagent_is_suspect_but_long_running_child_is_live() {
-    use crate::core::engine::turn_heartbeat::{TurnPhase, set_test_stall_record_dir};
+    use crate::core::engine::turn_heartbeat::TurnPhase;
+    use codewhale_runtime::stall_report::set_test_stall_record_dir;
     let dir = tempfile::tempdir().expect("tempdir");
     set_test_stall_record_dir(Some(dir.path().to_path_buf()));
 
@@ -16267,7 +16268,7 @@ fn stall_recovery_hands_held_queued_message_back_to_composer() {
 /// a stall record.
 #[tokio::test]
 async fn stall_dispatch_task_overrun_reports_and_restores_message() {
-    use crate::core::engine::turn_heartbeat::set_test_stall_record_dir;
+    use codewhale_runtime::stall_report::set_test_stall_record_dir;
     let dir = tempfile::tempdir().expect("tempdir");
     set_test_stall_record_dir(Some(dir.path().to_path_buf()));
     let mut app = create_test_app();
@@ -24785,7 +24786,7 @@ fn auto_route_receipt_survives_session_snapshot_and_restore() {
     assert_eq!(saved.receipt, receipt);
     assert_eq!(
         saved.effective_reasoning_effort,
-        Some(crate::work_graph::ReasoningEffortTier::High)
+        Some(codewhale_models::reasoning_effort_tier::ReasoningEffortTier::High)
     );
 
     let mut restored_app = create_test_app();

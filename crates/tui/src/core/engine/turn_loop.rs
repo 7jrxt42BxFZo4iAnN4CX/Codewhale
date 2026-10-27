@@ -4694,8 +4694,8 @@ impl Engine {
                             codewhale_runtime::logging::warn(&envelope.message);
                             // #6184: every silent provider wait leaves a
                             // `crashes/` stall record, not only a toast.
-                            super::turn_heartbeat::report_stall(
-                                &super::turn_heartbeat::StallReport {
+                            codewhale_runtime::stall_report::report_stall(
+                                &codewhale_runtime::stall_report::StallReport {
                                     source: "engine",
                                     phase: "while waiting for the next stream event".to_string(),
                                     detail: Some(format!(
@@ -4773,8 +4773,9 @@ impl Engine {
                             &format!("{e:#}").to_lowercase(),
                         )
                     {
-                        let sent =
-                            crate::image_attach::count_request_images(&stream_request.messages);
+                        let sent = codewhale_models::image_window::count_request_images(
+                            &stream_request.messages,
+                        );
                         let model = self.session.model.clone();
                         if self.learn_image_cap(&model, sent, rejection).is_some() {
                             terminal_stream_error = true;
@@ -5397,8 +5398,9 @@ impl Engine {
                         && let Some(rejection) =
                             crate::llm_client::image_count_rejection(&message.to_lowercase())
                     {
-                        let sent =
-                            crate::image_attach::count_request_images(&stream_request.messages);
+                        let sent = codewhale_models::image_window::count_request_images(
+                            &stream_request.messages,
+                        );
                         let model = self.session.model.clone();
                         if self.learn_image_cap(&model, sent, rejection).is_some() {
                             terminal_stream_error = true;

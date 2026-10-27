@@ -150,8 +150,8 @@ pub(crate) fn session_receipt(
                 .iter()
                 .take(outcome.after_message_count)
                 .filter(|message| {
-                    crate::runtime_handoff::classify_user_turn_prompt(message)
-                        != crate::runtime_handoff::UserTurnPromptKind::NotPrompt
+                    codewhale_models::turn_classify::classify_user_turn_prompt(message)
+                        != codewhale_models::turn_classify::UserTurnPromptKind::NotPrompt
                 })
                 .count();
             (
@@ -458,7 +458,7 @@ pub(crate) fn run_receipts_command(
 
 /// Tool calls in transcript order, plus each turn's posture. A turn starts at
 /// a real user prompt, by the same rule edit-last-turn and titles use
-/// ([`crate::runtime_handoff::classify_user_turn_prompt`]); runtime-injected
+/// ([`codewhale_models::turn_classify::classify_user_turn_prompt`]); runtime-injected
 /// messages and tool results do not start one.
 /// Each turn's prompt text (the user's words, without the `<turn_meta>`
 /// block) comes back too: it labels the turn's workspace snapshots.
@@ -490,8 +490,8 @@ fn steps_from_messages(messages: &[Message]) -> (Vec<ToolStep>, Vec<TurnPosture>
     let mut turn_prompts: Vec<TurnPrompt> = Vec::new();
     let mut turn = 0usize;
     for message in messages {
-        if crate::runtime_handoff::classify_user_turn_prompt(message)
-            != crate::runtime_handoff::UserTurnPromptKind::NotPrompt
+        if codewhale_models::turn_classify::classify_user_turn_prompt(message)
+            != codewhale_models::turn_classify::UserTurnPromptKind::NotPrompt
         {
             turn += 1;
             turn_postures.push((turn.to_string(), turn_meta_posture(message)));
@@ -554,7 +554,8 @@ fn steps_from_messages(messages: &[Message]) -> (Vec<ToolStep>, Vec<TurnPosture>
 /// The prompt a user message carries: its text blocks, less the
 /// `<turn_meta>` block the engine appends.
 pub(crate) fn prompt_text(message: &Message) -> Option<String> {
-    let meta_index = crate::runtime_handoff::turn_metadata_text(message).map(|(index, _)| index);
+    let meta_index =
+        codewhale_models::turn_classify::turn_metadata_text(message).map(|(index, _)| index);
     message
         .content
         .iter()
@@ -706,7 +707,7 @@ fn workspace_relative(path: &str, workspace: Option<&str>) -> String {
 /// The posture line the engine writes into a prompt's `<turn_meta>` block
 /// ([`crate::core::engine::PERMISSION_POSTURE_LINE`]).
 fn turn_meta_posture(message: &Message) -> Option<&'static str> {
-    let (_, meta) = crate::runtime_handoff::turn_metadata_text(message)?;
+    let (_, meta) = codewhale_models::turn_classify::turn_metadata_text(message)?;
     meta.lines().find_map(|line| {
         line.trim()
             .strip_prefix(crate::core::engine::PERMISSION_POSTURE_LINE)

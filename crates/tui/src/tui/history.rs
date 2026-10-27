@@ -748,7 +748,9 @@ pub fn history_cells_from_message(msg: &Message) -> Vec<HistoryCell> {
     if crate::runtime_handoff::is_operate_contract_message(msg) {
         return Vec::new();
     }
-    if let Some(display) = crate::runtime_handoff::restored_subagent_checkpoint_display(msg) {
+    if let Some(display) =
+        codewhale_models::turn_classify::restored_subagent_checkpoint_display(msg)
+    {
         return vec![HistoryCell::System {
             content: display.to_string(),
         }];
@@ -778,7 +780,7 @@ pub fn history_cells_from_message(msg: &Message) -> Vec<HistoryCell> {
     }
 
     let mut cells = Vec::new();
-    let runtime_owned = crate::runtime_handoff::is_runtime_owned_user_message(msg);
+    let runtime_owned = codewhale_models::turn_classify::is_runtime_owned_user_message(msg);
 
     for (block_index, block) in msg.content.iter().enumerate() {
         match block {

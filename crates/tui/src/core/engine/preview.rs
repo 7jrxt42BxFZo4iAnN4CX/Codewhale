@@ -594,7 +594,7 @@ impl Engine {
             &model,
         );
         if let Some(cap) = image_cap {
-            crate::image_attach::cap_request_images(&mut request.messages, cap);
+            codewhale_models::image_window::cap_request_images(&mut request.messages, cap);
         }
 
         let prepared = match route.client.prepare_outbound_request(request, true) {

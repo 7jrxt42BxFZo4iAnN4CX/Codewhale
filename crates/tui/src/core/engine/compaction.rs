@@ -235,9 +235,9 @@ impl Engine {
             &prepared.config.model,
         );
         if let Some(cap) = prepared.image_cap {
-            crate::image_attach::cap_request_images(&mut messages, cap);
+            codewhale_models::image_window::cap_request_images(&mut messages, cap);
         }
-        let sent = crate::image_attach::count_request_images(&messages);
+        let sent = codewhale_models::image_window::count_request_images(&messages);
         self.learn_image_cap(&prepared.config.model, sent, rejection)
     }
 

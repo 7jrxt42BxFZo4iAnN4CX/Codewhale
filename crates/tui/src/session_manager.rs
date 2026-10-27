@@ -13,12 +13,12 @@ use crate::project_context::find_git_root;
 use crate::tools::goal::{GoalPauseReason, GoalSnapshot};
 use crate::tools::plan::PlanSnapshot;
 use crate::tools::todo::TodoListSnapshot;
-use crate::work_graph::ReasoningEffortTier;
 use chrono::{DateTime, Utc};
 use codewhale_config::ProviderKind;
 use codewhale_core::ContextReference;
 #[cfg(test)]
 use codewhale_core::{ContextReferenceKind, ContextReferenceSource};
+use codewhale_models::reasoning_effort_tier::ReasoningEffortTier;
 use codewhale_models::{ContentBlock, Message, SystemPrompt};
 use codewhale_runtime::session_tree::{SessionEntry, SessionImportContainer, SessionJournal};
 use codewhale_util::utils::write_atomic;
@@ -5148,8 +5148,8 @@ fn recovered_legacy_title(
     array_complete: bool,
 ) -> Option<String> {
     let stale = messages.iter().any(|message| {
-        crate::runtime_handoff::classify_user_turn_prompt(message)
-            == crate::runtime_handoff::UserTurnPromptKind::NotPrompt
+        codewhale_models::turn_classify::classify_user_turn_prompt(message)
+            == codewhale_models::turn_classify::UserTurnPromptKind::NotPrompt
             && message.content.iter().any(|block| match block {
                 ContentBlock::Text { text, .. } => {
                     truncate_title(text, 50) == stored
@@ -5296,8 +5296,8 @@ pub(crate) fn conversation_title_prompt(messages: &[Message]) -> Option<&str> {
     messages
         .iter()
         .find(|message| {
-            crate::runtime_handoff::classify_user_turn_prompt(message)
-                != crate::runtime_handoff::UserTurnPromptKind::NotPrompt
+            codewhale_models::turn_classify::classify_user_turn_prompt(message)
+                != codewhale_models::turn_classify::UserTurnPromptKind::NotPrompt
         })
         .and_then(|m| {
             m.content.iter().find_map(|block| match block {

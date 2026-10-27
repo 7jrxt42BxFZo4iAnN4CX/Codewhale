@@ -49,6 +49,7 @@ use codewhale_models::{
     ContentBlock, Message, MessageRequest, MessageResponse, SystemPrompt, Usage,
 };
 use codewhale_runtime::logging;
+use codewhale_secrets::sanitize::redact_url_for_display;
 
 /// Every provider request that can feed the interactive TUI's attached CWC run
 /// takes a shared permit at this lowest common dispatch seam. Runtime Chat holds
@@ -1272,15 +1273,6 @@ fn validate_base_url_security(base_url: &str, provider_allows_insecure_http: boo
     anyhow::bail!(
         "Refusing base URL '{display_base_url}': only HTTPS (or explicitly allowed HTTP) URLs are supported.",
     )
-}
-
-/// Mask credentials in a URL for display.
-///
-/// Delegates to the single shared implementation in
-/// [`codewhale_secrets::sanitize`] (FEAT-025 D4) so command sanitization and
-/// client diagnostics cannot drift.
-pub(crate) fn redact_url_for_display(url: &str) -> String {
-    codewhale_secrets::sanitize::redact_url_for_display(url)
 }
 
 pub(super) fn versioned_base_url(base_url: &str) -> String {
@@ -3013,12 +3005,12 @@ impl CodewhaleClient {
         if original_bytes <= prepared::REQUEST_BODY_BYTE_TRIGGER {
             return Ok(prepared);
         }
-        let total = crate::image_attach::count_request_images(&request.messages);
+        let total = codewhale_models::image_window::count_request_images(&request.messages);
         if total == 0 {
             return Ok(prepared);
         }
         let mut candidate = request.clone();
-        crate::image_attach::cap_request_images_with_notes(
+        codewhale_models::image_window::cap_request_images_with_notes(
             &mut candidate.messages,
             0,
             prepared::REQUEST_BODY_IMAGE_NOTE,
@@ -3032,7 +3024,7 @@ impl CodewhaleClient {
             while retained + 1 < rejected {
                 let keep = retained + (rejected - retained) / 2;
                 let mut candidate = request.clone();
-                crate::image_attach::cap_request_images_with_notes(
+                codewhale_models::image_window::cap_request_images_with_notes(
                     &mut candidate.messages,
                     keep,
                     prepared::REQUEST_BODY_IMAGE_NOTE,
@@ -3049,10 +3041,11 @@ impl CodewhaleClient {
                 }
             }
         }
-        let chunk_retained = total - crate::image_attach::images_to_elide(total, retained);
+        let chunk_retained =
+            total - codewhale_models::image_window::images_to_elide(total, retained);
         if chunk_retained < retained {
             let mut candidate = request.clone();
-            crate::image_attach::cap_request_images_with_notes(
+            codewhale_models::image_window::cap_request_images_with_notes(
                 &mut candidate.messages,
                 chunk_retained,
                 prepared::REQUEST_BODY_IMAGE_NOTE,
@@ -4863,7 +4856,7 @@ impl CodewhaleClient {
         {
             return Ok(None);
         }
-        let window = crate::image_attach::cap_request_images_with_notes(
+        let window = codewhale_models::image_window::cap_request_images_with_notes(
             &mut request.messages,
             0,
             prepared::REQUEST_BODY_413_IMAGE_NOTE,
@@ -5041,7 +5034,7 @@ impl LlmClient for CodewhaleClient {
             let omitted_tool_count = prepared.omitted_tool_names.len();
             (
                 prepared.endpoint.provider_display.clone(),
-                crate::core::events::bounded_tool_projection_warning_names(
+                codewhale_models::tool_projection::bounded_tool_projection_warning_names(
                     &prepared.omitted_tool_names,
                 ),
                 omitted_tool_count,

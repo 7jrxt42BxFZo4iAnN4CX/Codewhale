@@ -65,8 +65,8 @@ pub mod rlm;
 pub mod run_tool;
 pub mod runtime_mcp;
 mod rust_format;
-pub mod schema_canonicalize;
-pub mod schema_sanitize;
+#[cfg(test)]
+mod schema_sanitize_apply_patch_tests;
 pub mod search;
 pub mod send_later;
 pub mod session;

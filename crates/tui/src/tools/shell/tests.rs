@@ -5059,7 +5059,7 @@ fn bash_schema_declares_what_each_action_requires() {
 #[test]
 fn bash_required_groups_survive_a_provider_that_drops_root_composition() {
     let mut schema = BashTool::new("Bash").input_schema();
-    let note = crate::tools::schema_sanitize::sanitize_for_responses(&mut schema)
+    let note = codewhale_models::schema_sanitize::sanitize_for_responses(&mut schema)
         .expect("dropped required groups must be restated for the model");
 
     assert!(note.contains("At least one"), "{note}");

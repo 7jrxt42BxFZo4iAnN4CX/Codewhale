@@ -25,7 +25,7 @@ async fn trust_warning_is_internal_and_tracks_current_state() {
     assert!(crate::runtime_handoff::is_internal_runtime_handoff(
         &warning
     ));
-    assert!(crate::runtime_handoff::is_runtime_owned_user_message(
+    assert!(codewhale_models::turn_classify::is_runtime_owned_user_message(
         &warning
     ));
     // The transcript side (no history cell for it) is pinned in
@@ -52,7 +52,7 @@ async fn trust_warning_is_internal_and_tracks_current_state() {
     assert!(!crate::runtime_handoff::is_internal_runtime_handoff(
         &quoted
     ));
-    assert!(!crate::runtime_handoff::is_runtime_owned_user_message(
+    assert!(!codewhale_models::turn_classify::is_runtime_owned_user_message(
         &quoted
     ));
     engine.session.add_message(prompt.clone());

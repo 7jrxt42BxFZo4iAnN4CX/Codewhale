@@ -129,7 +129,7 @@ pub fn pinned_anchors_text(workspace: Option<&std::path::Path>) -> Option<String
 
 fn is_plain_user_text(post_provenance: bool, message: &Message) -> bool {
     !is_compaction_checkpoint_message_in_era(message, post_provenance)
-        && !crate::runtime_handoff::is_runtime_owned_user_message(message)
+        && !codewhale_models::turn_classify::is_runtime_owned_user_message(message)
         && user_text_of(message).is_some()
 }
 
@@ -598,9 +598,9 @@ pub(super) fn build_replacement_history(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compaction::{
+    use crate::compaction::compaction_checkpoint_message;
+    use codewhale_models::turn_classify::{
         COMPACTION_SUMMARY_MARKER, LEGACY_V2_COMPACTION_SUMMARY_MARKER,
-        compaction_checkpoint_message,
     };
     use codewhale_models::{ContentBlock, Role};
     use serde_json::json;

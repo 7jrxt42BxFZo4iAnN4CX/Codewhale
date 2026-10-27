@@ -192,8 +192,8 @@ pub(in crate::commands) fn undo_conversation_for_engine(app: &mut App) -> DebugC
     let mut sync = session_sync_payload(app);
     if let Some(index) = sync.messages.iter().rposition(|message| {
         !matches!(
-            crate::runtime_handoff::classify_user_turn_prompt(message),
-            crate::runtime_handoff::UserTurnPromptKind::NotPrompt
+            codewhale_models::turn_classify::classify_user_turn_prompt(message),
+            codewhale_models::turn_classify::UserTurnPromptKind::NotPrompt
         )
     }) {
         sync.messages.truncate(index);
@@ -229,13 +229,13 @@ fn request_prompts(app: &App) -> Vec<Option<String>> {
         .iter()
         .filter(|message| {
             !matches!(
-                crate::runtime_handoff::classify_user_turn_prompt(message),
-                crate::runtime_handoff::UserTurnPromptKind::NotPrompt
+                codewhale_models::turn_classify::classify_user_turn_prompt(message),
+                codewhale_models::turn_classify::UserTurnPromptKind::NotPrompt
             )
         })
         .map(|message| {
-            let meta_index =
-                crate::runtime_handoff::turn_metadata_text(message).map(|(index, _)| index);
+            let meta_index = codewhale_models::turn_classify::turn_metadata_text(message)
+                .map(|(index, _)| index);
             let mut content = message
                 .content
                 .iter()

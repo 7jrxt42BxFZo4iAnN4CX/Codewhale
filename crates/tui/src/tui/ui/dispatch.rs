@@ -873,8 +873,8 @@ where
             )
         }
         Err(_elapsed) => {
-            crate::core::engine::turn_heartbeat::report_stall(
-                &crate::core::engine::turn_heartbeat::StallReport {
+            codewhale_runtime::stall_report::report_stall(
+                &codewhale_runtime::stall_report::StallReport {
                     source: "ui",
                     phase: "while dispatching the message (route planning / engine admission)"
                         .to_string(),

@@ -10560,7 +10560,9 @@ impl SubAgentTranscriptArtifactWriter {
         self.sync_messages(replaced, false)?;
         let checkpoints = replacement
             .iter()
-            .filter(|message| crate::compaction::is_wire_compaction_checkpoint_message(message))
+            .filter(|message| {
+                codewhale_models::turn_classify::is_wire_compaction_checkpoint_message(message)
+            })
             .cloned()
             .collect::<Vec<_>>();
         self.append_messages(&checkpoints, false)?;

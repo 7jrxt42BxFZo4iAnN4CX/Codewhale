@@ -1702,8 +1702,8 @@ pub(super) async fn execute_code_execution_tool(
 pub(crate) fn prepare_tools_for_strict_mode(tools: &mut [Tool]) -> bool {
     let mut all_strict = true;
     for tool in tools {
-        if crate::tools::schema_sanitize::strict_schema_supported(&tool.input_schema) {
-            crate::tools::schema_sanitize::sanitize_for_strict(&mut tool.input_schema);
+        if codewhale_models::schema_sanitize::strict_schema_supported(&tool.input_schema) {
+            codewhale_models::schema_sanitize::sanitize_for_strict(&mut tool.input_schema);
             tool.strict = Some(true);
         } else {
             tool.strict = None;

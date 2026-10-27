@@ -337,7 +337,9 @@ impl Engine {
                     && is_image_input_rejection_message(&message)
                     && self.active_route_capabilities.image_input != CapabilityState::Unsupported
                     && !progress.image_rejection_recovered
-                    && crate::image_attach::count_request_images(&stream_request.messages) > 0
+                    && codewhale_models::image_window::count_request_images(
+                        &stream_request.messages,
+                    ) > 0
                 {
                     return self.resend_without_images(progress).await;
                 }
@@ -1270,7 +1272,7 @@ impl Engine {
         rejection: crate::llm_client::ImageCountRejection,
         error: &anyhow::Error,
     ) -> Option<PhaseResult<AcceptedModelStep>> {
-        let sent = crate::image_attach::count_request_images(&request.messages);
+        let sent = codewhale_models::image_window::count_request_images(&request.messages);
         let model = self.session.model.clone();
         let cap = self.learn_image_cap(&model, sent, rejection)?;
         if cap == 0 {

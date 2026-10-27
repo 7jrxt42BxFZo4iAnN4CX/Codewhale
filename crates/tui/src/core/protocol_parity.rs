@@ -174,7 +174,7 @@ fn billing_to_wire(billing: &RouteBillingEnvelope) -> wire::RouteBillingEnvelope
         openrouter_vendor: billing
             .openrouter_vendor
             .as_deref()
-            .map(crate::cost_status::sanitize_persisted_route_label),
+            .map(codewhale_runtime::safe_label::sanitize_persisted_route_label),
         billing_surface: billing.billing_surface.clone(),
         endpoint_fingerprint: billing.endpoint_fingerprint.clone(),
         provider_live_pricing: billing
@@ -301,7 +301,7 @@ fn mcp_snapshot_to_wire(snapshot: &McpManagerSnapshot) -> wire::McpManagerSnapsh
 /// `EventMsg::McpSessionBoot`, which every SSE and stream-JSON consumer
 /// receives and any frame-retaining log keeps.
 ///
-/// URLs reuse the existing masking in `client::redact_url_for_display`. Stdio
+/// URLs reuse the existing masking in `codewhale_secrets::sanitize::redact_url_for_display`. Stdio
 /// keeps the program name and elides the arguments, because a secret there can
 /// be positional and is not reliably recognizable by key.
 fn redacted_command_or_url(raw: &str) -> String {
@@ -315,7 +315,7 @@ fn redacted_command_or_url(raw: &str) -> String {
     // mentions a URL — `docker run -e TOKEN=… img --url https://…` — would
     // reach the wire with its positional secret intact.
     if !trimmed.is_empty() && !trimmed.contains(char::is_whitespace) && trimmed.contains("://") {
-        return crate::client::redact_url_for_display(trimmed);
+        return codewhale_secrets::sanitize::redact_url_for_display(trimmed);
     }
     if let Some((program, rest)) = trimmed.split_once(char::is_whitespace)
         && !rest.trim().is_empty()

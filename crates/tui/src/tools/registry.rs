@@ -18,12 +18,12 @@ use crate::client::CodewhaleClient;
 use crate::tools::goal::SharedGoalState;
 use codewhale_models::Tool;
 
-use super::schema_canonicalize;
-use super::schema_sanitize;
 use super::spec::{
     ApprovalRequirement, RichToolResult, ToolCapability, ToolContext, ToolError, ToolResult,
     ToolResultContentBlock, ToolSpec,
 };
+use codewhale_models::schema_canonicalize;
+use codewhale_models::schema_sanitize;
 
 // === Types ===
 

@@ -22512,7 +22512,7 @@ fn a_compaction_checkpoint_is_not_a_kept_prompt() {
         format!("{} the work so far", crate::compaction::SUMMARY_HEADER),
     ));
     assert!(
-        crate::compaction::is_wire_compaction_checkpoint_message(&checkpoint),
+        codewhale_models::turn_classify::is_wire_compaction_checkpoint_message(&checkpoint),
         "the fixture is the engine's own checkpoint message"
     );
     let messages = vec![user("first"), checkpoint, user("undo me")];

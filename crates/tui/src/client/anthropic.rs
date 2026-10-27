@@ -29,8 +29,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::llm_client::StreamEventBox;
-use crate::tools::schema_sanitize;
 use codewhale_config::ProviderKind;
+use codewhale_models::schema_sanitize;
 use codewhale_models::{ContentBlock, MessageRequest, MessageResponse, StreamEvent, Usage};
 use codewhale_runtime::config::wire_model_for_provider_route;
 use codewhale_runtime::logging;
@@ -814,13 +814,13 @@ pub(super) fn message_to_anthropic(message: &codewhale_models::Message) -> Optio
 /// confusing failure this whole path exists to avoid, so the data URL is taken
 /// back apart into `{"type":"base64", media_type, data}`.
 fn anthropic_image_block(url: &str) -> Value {
-    if let Some((media_type, data)) = crate::image_attach::parse_data_url(url) {
+    if let Some((media_type, data)) = codewhale_models::image_window::parse_data_url(url) {
         return json!({
             "type": "image",
             "source": { "type": "base64", "media_type": media_type, "data": data },
         });
     }
-    if crate::image_attach::is_remote_image_url(url) {
+    if codewhale_models::image_window::is_remote_image_url(url) {
         return json!({
             "type": "image",
             "source": { "type": "url", "url": url },
@@ -841,7 +841,7 @@ pub(super) fn anthropic_tool_result_content(
     content_blocks: Option<&[Value]>,
 ) -> Value {
     let (image, omitted) = crate::image_attach::provider_tool_result_image_refs(content_blocks);
-    let content = crate::image_attach::tool_result_text_with_omission(content, omitted);
+    let content = codewhale_models::image_window::tool_result_text_with_omission(content, omitted);
     let Some((mime_type, data)) = image else {
         return json!(content);
     };
@@ -2761,9 +2761,7 @@ mod tests {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         let dir = tempfile::tempdir().expect("tempdir");
-        crate::core::engine::turn_heartbeat::set_test_stall_record_dir(Some(
-            dir.path().to_path_buf(),
-        ));
+        codewhale_runtime::stall_report::set_test_stall_record_dir(Some(dir.path().to_path_buf()));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind");
@@ -2815,7 +2813,7 @@ mod tests {
         assert_eq!(records.len(), 1, "{records:?}");
         assert!(records[0].contains("first byte"), "{}", records[0]);
         server.abort();
-        crate::core::engine::turn_heartbeat::set_test_stall_record_dir(None);
+        codewhale_runtime::stall_report::set_test_stall_record_dir(None);
     }
 
     #[tokio::test]

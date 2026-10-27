@@ -534,7 +534,7 @@ where
 {
     value
         .as_deref()
-        .map(crate::cost_status::sanitize_persisted_route_label)
+        .map(codewhale_runtime::safe_label::sanitize_persisted_route_label)
         .serialize(serializer)
 }
 
@@ -980,7 +980,7 @@ fn projected_user_text(message: &Message) -> Option<String> {
     // the settled history that carries the checkpoint, so leaving it in took
     // the cut away from the fork itself: `/undo`, retry and fork-again each
     // refused with "cannot identify an exact saved-history boundary".
-    if crate::compaction::is_wire_compaction_checkpoint_message(message) {
+    if codewhale_models::turn_classify::is_wire_compaction_checkpoint_message(message) {
         return None;
     }
     let text = message
@@ -6066,7 +6066,7 @@ fn runtime_usage_bucket_key(
             .map_or(turn.created_at, |route| route.dispatched_at)
             .format("%Y-%m-%d")
             .to_string(),
-        UsageGroupBy::Model => crate::cost_status::sanitize_persisted_route_label(
+        UsageGroupBy::Model => codewhale_runtime::safe_label::sanitize_persisted_route_label(
             route
                 .map(|route| route.model.as_str())
                 .or_else(|| {
@@ -6076,7 +6076,7 @@ fn runtime_usage_bucket_key(
                 })
                 .unwrap_or(&thread.model),
         ),
-        UsageGroupBy::Provider => crate::cost_status::sanitize_persisted_route_label(
+        UsageGroupBy::Provider => codewhale_runtime::safe_label::sanitize_persisted_route_label(
             route
                 .map(|route| {
                     if route.provider_identity.trim().is_empty() {
@@ -16374,14 +16374,14 @@ impl RuntimeThreadManager {
             effective_provider: Some(provider_identity.persisted_kind().to_string()),
             effective_provider_id: provider_identity
                 .persisted_id()
-                .map(crate::cost_status::sanitize_persisted_route_label),
+                .map(codewhale_runtime::safe_label::sanitize_persisted_route_label),
             effective_openrouter_vendor: None,
             effective_billing_surface: None,
             effective_endpoint_fingerprint: None,
             effective_provider_live_pricing: None,
             effective_billing_mode: None,
             effective_dispatched_at: None,
-            effective_model: Some(crate::cost_status::sanitize_persisted_route_label(&model)),
+            effective_model: Some(codewhale_runtime::safe_label::sanitize_persisted_route_label(&model)),
             routed_usage: Vec::new(),
             routed_usage_drop_records: Vec::new(),
             routed_usage_source_ids: Vec::new(),
@@ -16912,16 +16912,16 @@ impl RuntimeThreadManager {
             effective_provider: Some(route_identity.persisted_kind().to_string()),
             effective_provider_id: route_identity
                 .persisted_id()
-                .map(crate::cost_status::sanitize_persisted_route_label),
+                .map(codewhale_runtime::safe_label::sanitize_persisted_route_label),
             effective_openrouter_vendor: None,
             effective_billing_surface: None,
             effective_endpoint_fingerprint: None,
             effective_provider_live_pricing: None,
             effective_billing_mode: None,
             effective_dispatched_at: None,
-            effective_model: Some(crate::cost_status::sanitize_persisted_route_label(
-                &route_model,
-            )),
+            effective_model: Some(
+                codewhale_runtime::safe_label::sanitize_persisted_route_label(&route_model),
+            ),
             routed_usage: Vec::new(),
             routed_usage_drop_records: Vec::new(),
             routed_usage_source_ids: Vec::new(),

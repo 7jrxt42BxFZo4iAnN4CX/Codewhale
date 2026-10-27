@@ -969,7 +969,7 @@ pub(crate) fn compaction_checkpoint_for_restore(
         // with a stripped system prompt. Only the existing structural
         // validator can authorize a history block as that checkpoint.
         messages.iter().rev().find_map(|message| {
-            if !crate::compaction::is_wire_compaction_checkpoint_message(message) {
+            if !codewhale_models::turn_classify::is_wire_compaction_checkpoint_message(message) {
                 return None;
             }
             match &message.content[0] {
@@ -1869,7 +1869,7 @@ impl Engine {
     pub(super) async fn note_request_image_window(
         &mut self,
         provider: String,
-        window: crate::image_attach::ImageWindow,
+        window: codewhale_models::image_window::ImageWindow,
     ) {
         let model = self.session.model.clone();
         let current = (window.elided > 0)

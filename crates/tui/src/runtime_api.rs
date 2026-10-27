@@ -11338,7 +11338,7 @@ fn provider_default_model_for_api(
 }
 
 pub(crate) fn runtime_chat_model_id_is_safe(value: &str) -> bool {
-    let sanitized = crate::cost_status::sanitize_persisted_route_label(value);
+    let sanitized = codewhale_runtime::safe_label::sanitize_persisted_route_label(value);
     value == value.trim()
         && !value.is_empty()
         && value.len() <= 256
@@ -11372,7 +11372,7 @@ fn runtime_chat_model_id_looks_like_host_port(value: &str) -> bool {
 }
 
 pub(crate) fn runtime_chat_route_id_is_safe(value: &str) -> bool {
-    let sanitized = crate::cost_status::sanitize_persisted_route_label(value);
+    let sanitized = codewhale_runtime::safe_label::sanitize_persisted_route_label(value);
     value == value.trim()
         && !value.is_empty()
         && value.len() <= 128

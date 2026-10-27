@@ -16,6 +16,7 @@
 //! - [`BoundedVec`] / [`BoundedSet`] are small deterministic FIFO containers
 //!   (oldest entry evicted first); no hashing, so iteration order is stable.
 
+use codewhale_models::reasoning_effort_tier::ReasoningEffortTier;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use codewhale_config::ProviderKind;
@@ -43,30 +44,6 @@ pub const SEEN_KEYS_CAP: usize = 1024;
 /// the snapshot (#6842). They are a derived index — the calls and their output
 /// live in the session transcript — so older ones are evicted, not archived.
 pub const ENDED_OPERATION_CAP: usize = 256;
-
-/// Canonical reasoning-effort tiers recorded as configuration facts. This is
-/// deliberately an enum rather than free-form text so Work Graph activity can
-/// never become a side channel for model reasoning.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ReasoningEffortTier {
-    Off,
-    Minimal,
-    Low,
-    Medium,
-    High,
-    #[serde(rename = "xhigh")]
-    XHigh,
-    Ultra,
-    Auto,
-    Max,
-    /// Thinking is enabled, but the provider route exposes no supported
-    /// effort tiers. This is an effective receipt, never a requested setting.
-    ThinkingEnabledGranularityUnavailable,
-    /// The configured route exposes no verified reasoning-control contract.
-    /// This is an effective receipt, never a requested setting.
-    Unavailable,
-}
 
 /// Bounded, receipt-only activity attached to the session graph.
 #[derive(Debug, Clone, PartialEq, Eq)]

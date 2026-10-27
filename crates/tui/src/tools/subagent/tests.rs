@@ -6438,7 +6438,7 @@ fn agent_tool_role_schema_is_a_closed_canonical_enum() {
 
 #[test]
 fn provider_schema_sanitizers_preserve_the_closed_fleet_role_enum() {
-    use crate::tools::schema_sanitize;
+    use codewhale_models::schema_sanitize;
 
     let tmp = tempdir().expect("tempdir");
     let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 1);
@@ -6601,7 +6601,7 @@ fn agent_tool_schema_bounds_fields_by_explicit_action() {
     // actual contract both before and after the generic provider sanitizer;
     // required-only `not` branches used to be pruned into an impossible schema.
     let mut generic = agent_schema.clone();
-    crate::tools::schema_sanitize::sanitize(&mut generic);
+    codewhale_models::schema_sanitize::sanitize(&mut generic);
     for (provider, schema) in [("canonical", agent_schema), ("generic", generic)] {
         let validator = draft_2020_validator(&schema);
         for target in [
@@ -6644,7 +6644,7 @@ fn agent_tool_schema_bounds_fields_by_explicit_action() {
 
 #[test]
 fn agent_tool_schema_rejects_empty_input_across_provider_forms() {
-    use crate::tools::schema_sanitize;
+    use codewhale_models::schema_sanitize;
 
     let tmp = tempdir().expect("tempdir");
     let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 1);
@@ -19322,7 +19322,7 @@ async fn compacting_child_chat_client(
                         }));
                     } else if summaries.load(Ordering::SeqCst) > 0 {
                         saw_checkpoint.store(
-                            wire.contains(crate::compaction::COMPACTION_SUMMARY_MARKER),
+                            wire.contains(codewhale_models::turn_classify::COMPACTION_SUMMARY_MARKER),
                             Ordering::SeqCst,
                         );
                         json!({ "role": "assistant", "content": "done after compaction" })
@@ -19483,7 +19483,7 @@ async fn worker_compacts_past_its_context_window_and_keeps_working() {
         load_subagent_transcript_artifact(&state_root, &agent_id).expect("transcript loads");
     let checkpoint_at = transcript
         .iter()
-        .position(crate::compaction::is_wire_compaction_checkpoint_message)
+        .position(codewhale_models::turn_classify::is_wire_compaction_checkpoint_message)
         .expect("checkpoint recorded");
     assert!(checkpoint_at >= 7, "replaced history kept before it");
     assert!(

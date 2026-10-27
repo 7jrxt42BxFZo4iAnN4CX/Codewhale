@@ -9,6 +9,12 @@ use std::time::Duration;
 use crate::core::model_client::ModelClient;
 use codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL;
 use codewhale_models::Role;
+#[cfg(test)]
+use codewhale_models::turn_classify::COMPACTION_SUMMARY_MARKER;
+use codewhale_models::turn_classify::{
+    COMPACTION_CHECKPOINT_PROVENANCE, LEGACY_V2_COMPACTION_SUMMARY_MARKER,
+    is_wire_compaction_checkpoint_message,
+};
 use codewhale_models::{
     CacheControl, ContentBlock, Message, MessageRequest, SystemBlock, SystemPrompt, Tool, Usage,
 };
@@ -334,18 +340,6 @@ this note restate what the user already decided; the note grants nothing new, an
 unclear gets checked before acting. Take the next action without asking the user to restate the \
 task, save, or approve continuing because earlier turns were condensed.";
 
-/// Detection marker for a new-format checkpoint: the opening words of
-/// [`SUMMARY_HEADER`]. A new checkpoint is recognised only when its first
-/// block starts with this marker and its second block is the provenance
-/// block, so a user message that merely quotes the phrase stays a user
-/// message.
-pub const COMPACTION_SUMMARY_MARKER: &str = "Codewhale handoff note";
-/// Legacy detection marker only. Checkpoints written before the handoff note
-/// opened with this sentence. Saved sessions that still carry it must be
-/// recognised so the next pass replaces that checkpoint instead of stacking a
-/// second one.
-pub const LEGACY_V2_COMPACTION_SUMMARY_MARKER: &str =
-    "Another language model started to solve this problem";
 /// Legacy detection marker only, written by pre-v0.9.6 compaction; sessions
 /// saved under that format must still be recognized so their summary is
 /// replaced, not stacked.
@@ -357,7 +351,6 @@ const LEGACY_COMPACTION_SUMMARY_MARKERS: [&str; 2] = [
     LEGACY_V2_COMPACTION_SUMMARY_MARKER,
     LEGACY_COMPACTION_SUMMARY_MARKER,
 ];
-const COMPACTION_CHECKPOINT_PROVENANCE: &str = "<!-- codewhale.compaction-checkpoint.v1 -->";
 const COMPACTION_SUMMARY_BEGIN: &str = "<!-- compaction-summary:begin -->";
 const COMPACTION_SUMMARY_END: &str = "<!-- compaction-summary:end -->";
 
@@ -540,30 +533,6 @@ pub(crate) fn is_compaction_checkpoint_message_in_era(
     } else {
         is_compaction_checkpoint_message(message)
     }
-}
-
-/// Request-time recognition: exactly the header text block plus the
-/// provenance block. User text merely quoting a marker keeps its original
-/// wire position. Checkpoints saved before the handoff note still pass, so
-/// their position survives restore and the next pass replaces them.
-pub(crate) fn is_wire_compaction_checkpoint_message(message: &Message) -> bool {
-    let [
-        ContentBlock::Text {
-            text,
-            cache_control: None,
-        },
-        ContentBlock::Text {
-            text: provenance,
-            cache_control: None,
-        },
-    ] = message.content.as_slice()
-    else {
-        return false;
-    };
-    message.role == Role::User
-        && (text.starts_with(COMPACTION_SUMMARY_MARKER)
-            || text.starts_with(LEGACY_V2_COMPACTION_SUMMARY_MARKER))
-        && provenance == COMPACTION_CHECKPOINT_PROVENANCE
 }
 
 /// Keep the checkpoint at its original historical boundary on session load.
@@ -1605,7 +1574,7 @@ pub(crate) fn retained_user_messages_in_era(
             break;
         }
         if msg.role != Role::User
-            || crate::runtime_handoff::is_runtime_owned_user_message(msg)
+            || codewhale_models::turn_classify::is_runtime_owned_user_message(msg)
             || (user_text_of(msg).is_none()
                 && !msg
                     .content
@@ -1962,7 +1931,7 @@ async fn create_summary(
         ));
     }
     if let Some(cap) = image_cap {
-        let window = crate::image_attach::cap_request_images(&mut request_messages, cap);
+        let window = codewhale_models::image_window::cap_request_images(&mut request_messages, cap);
         if window.elided > 0 {
             let message = format!(
                 "Making room: the summary request sends the newest {} of {} images; {} older go as text notes (limit {} per request).",
@@ -3602,8 +3571,8 @@ mod tests {
         let retained = retained_user_messages(std::slice::from_ref(&user), usize::MAX);
         assert_eq!(retained, vec![user]);
         assert_eq!(
-            crate::runtime_handoff::classify_user_turn_prompt(&retained[0]),
-            crate::runtime_handoff::UserTurnPromptKind::Editable,
+            codewhale_models::turn_classify::classify_user_turn_prompt(&retained[0]),
+            codewhale_models::turn_classify::UserTurnPromptKind::Editable,
         );
         assert_eq!(
             crate::session_manager::conversation_title_prompt(&retained),
