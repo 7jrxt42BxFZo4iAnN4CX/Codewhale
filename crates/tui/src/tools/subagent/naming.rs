@@ -554,7 +554,7 @@ pub(crate) fn subagent_result_display_name(result: &super::SubAgentResult) -> St
 #[cfg(test)]
 mod display_name_tests {
     use super::*;
-    use crate::tools::subagent::FleetRole;
+    use codewhale_agent_contract::role::FleetRole;
 
     #[test]
     fn one_name_precedence_never_falls_to_the_agent_id() {

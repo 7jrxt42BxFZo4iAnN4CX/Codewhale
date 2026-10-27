@@ -17,17 +17,15 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use serde_json::{Value, json};
 
-use crate::repl::PythonRuntime;
 use crate::rlm::RlmBridge;
 use crate::rlm::bridge::wait_for_deadline;
-use crate::rlm::session::{
-    ContextMeta, OutputFeedback, RlmSession, derive_session_name, write_context_file,
-};
+use crate::rlm::session::{ContextMeta, OutputFeedback, RlmSession, derive_session_name};
 use crate::tools::fetch_url::FetchUrlTool;
 use crate::tools::handle::VarHandle;
 use crate::tools::spec::{
     ApprovalRequirement, ToolCapability, ToolContext, ToolError, ToolResult, ToolSpec,
 };
+use codewhale_repl::PythonRuntime;
 
 /// Registered name of the persistent RLM session tool.
 pub(crate) const RLM_TOOL_NAME: &str = "rlm";
@@ -420,7 +418,7 @@ impl RlmTool {
                 }
             }
 
-            let context_path = write_context_file(&body).map_err(|e| {
+            let context_path = codewhale_repl::write_context_file(&body).map_err(|e| {
                 ToolError::execution_failed(format!("rlm_open: failed to stage context: {e}"))
             })?;
             let context_path = tempfile::TempPath::try_from_path(context_path).map_err(|e| {
@@ -469,7 +467,7 @@ impl RlmTool {
         input: &Value,
         context: &ToolContext,
     ) -> Result<ToolResult, ToolError> {
-        crate::core::engine::tool_catalog::enforce_tool_denial(context, "rlm_eval", input)?;
+        crate::tools::execution_envelope::enforce_tool_denial(context, "rlm_eval", input)?;
         let name = required_non_empty_str(input, "name")?;
         let code = required_non_empty_str(input, "code").map_err(|_| {
             ToolError::invalid_input(
@@ -875,7 +873,7 @@ async fn load_source(
     let url = rlm_open_source_field(input, "url")
         .map(str::trim)
         .ok_or_else(|| ToolError::invalid_input("rlm_open: missing source"))?;
-    crate::core::engine::tool_catalog::enforce_tool_denial(context, "fetch_url", input)?;
+    crate::tools::execution_envelope::enforce_tool_denial(context, "fetch_url", input)?;
     let result = FetchUrlTool
         .execute(json!({"url": url, "format": "raw"}), context)
         .await?;
@@ -974,7 +972,7 @@ mod tests {
             .lines()
             .find(|line| line.contains("chars truncated"))
             .expect("truncation footer");
-        crate::tools::canonical_action::tests::assert_text_names_only_callable_tools(
+        crate::tools::canonical_action_tests::assert_text_names_only_callable_tools(
             "rlm preview footer",
             preview_footer,
         );
@@ -1060,11 +1058,11 @@ mod tests {
     fn kernel_failure_result_retains_child_usage_receipt() {
         let route = crate::cost_status::EffectiveRouteEnvelope::capture(
             None,
-            crate::config::ProviderKind::Deepseek,
-            crate::config::ProviderKind::Deepseek.as_str(),
+            codewhale_config::ProviderKind::Deepseek,
+            codewhale_config::ProviderKind::Deepseek.as_str(),
             "deepseek-v4-flash",
             Some(
-                crate::config::ProviderKind::Deepseek
+                codewhale_config::ProviderKind::Deepseek
                     .provider()
                     .default_base_url(),
             ),

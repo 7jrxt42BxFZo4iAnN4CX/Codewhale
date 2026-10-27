@@ -53,7 +53,7 @@ fn default_history_path() -> Option<PathBuf> {
             .flatten()
             .map(|home| home.join(HISTORY_FILE_NAME));
     }
-    history_path_with_home(crate::config::effective_home_dir())
+    history_path_with_home(codewhale_paths::user_home())
 }
 
 /// Resolve the composer-history file under `home`, preferring the CodeWhale
@@ -326,7 +326,7 @@ fn write_history_atomic(path: &Path, payload: &[u8]) -> std::io::Result<()> {
         .chain(std::iter::once(None))
         .enumerate()
     {
-        match crate::utils::write_atomic(path, payload) {
+        match codewhale_util::utils::write_atomic(path, payload) {
             Ok(()) => return Ok(()),
             Err(err) if delay.is_some() => {
                 tracing::debug!(
@@ -361,7 +361,7 @@ mod tests {
 
     /// Tests use the path-injecting `*_from` / `*_to` helpers so they
     /// don't have to mutate `HOME` (which is not honored by
-    /// `crate::config::effective_home_dir()` on Windows — it reads `USERPROFILE` /
+    /// `codewhale_paths::user_home()` on Windows — it reads `USERPROFILE` /
     /// `SHGetKnownFolderPath` instead). This makes the suite portable
     /// across all three CI runners without per-platform env juggling.
     fn temp_history_path() -> (tempfile::TempDir, PathBuf) {

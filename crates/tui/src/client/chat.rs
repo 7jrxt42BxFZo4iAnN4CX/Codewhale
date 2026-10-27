@@ -14,15 +14,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::time::timeout as tokio_timeout;
 
-use crate::config::{
-    TOGETHER_INKLING_MODEL, is_exact_direct_moonshot_k3_route, is_exact_kimi_code_k3_route,
-    is_exact_zai_chat_route, is_exact_zai_forced_thinking_route, is_exact_zai_tiered_effort_route,
+use codewhale_config::catalog::reviewed::constants::TOGETHER_INKLING_MODEL;
+use codewhale_runtime::config::{
+    is_exact_direct_moonshot_k3_route, is_exact_kimi_code_k3_route, is_exact_zai_chat_route,
+    is_exact_zai_forced_thinking_route, is_exact_zai_tiered_effort_route,
     is_kimi_code_membership_model, minimax_m3_route_uses_max_completion_tokens,
     moonshot_base_url_is_exact_kimi_code, wire_model_for_provider_route,
 };
 
-use crate::config::ProviderKind;
 use crate::llm_client::StreamEventBox;
+use codewhale_config::ProviderKind;
 use codewhale_models::{
     ContentBlock, ContentBlockStart, Delta, Message, MessageDelta, MessageRequest, MessageResponse,
     StreamEvent, SystemPrompt, Tool, ToolCaller, Usage, is_openai_gpt_56_api_model,
@@ -30,15 +31,16 @@ use codewhale_models::{
 };
 use codewhale_runtime::logging;
 
+use super::CodewhaleClient;
 use super::prepared::WireDialect;
+use super::reasoning_effort::apply_reasoning_effort;
 use super::role_placement::{RolePlacement, role_placement};
-use super::wire::{extract_sse_data_value, flush_sse_line, push_sse_event_data, take_sse_line};
-use super::{
-    CodewhaleClient, ERROR_BODY_MAX_BYTES, SSE_BACKPRESSURE_HIGH_WATERMARK,
-    SSE_BACKPRESSURE_SLEEP_MS, SSE_MAX_LINES_PER_CHUNK, acquire_stream_buffer,
-    apply_reasoning_effort, bounded_error_text, from_api_tool_name, parse_usage,
-    release_stream_buffer, system_to_instructions, to_api_tool_name,
+use super::wire::{
+    ERROR_BODY_MAX_BYTES, SSE_BACKPRESSURE_HIGH_WATERMARK, SSE_BACKPRESSURE_SLEEP_MS,
+    SSE_MAX_LINES_PER_CHUNK, acquire_stream_buffer, bounded_error_text, from_api_tool_name,
+    parse_usage, release_stream_buffer, system_to_instructions, to_api_tool_name,
 };
+use super::wire::{extract_sse_data_value, flush_sse_line, push_sse_event_data, take_sse_line};
 use codewhale_config::route::RouteLimits;
 use codewhale_models::Role;
 
@@ -278,7 +280,7 @@ fn apply_zai_route_reasoning_controls(
             return;
         }
     }
-    if !crate::config::is_exact_known_zai_reasoning_route(provider, base_url, model) {
+    if !codewhale_runtime::config::is_exact_known_zai_reasoning_route(provider, base_url, model) {
         if let Some(object) = body.as_object_mut() {
             object.remove("thinking");
         }
@@ -356,7 +358,7 @@ fn apply_minimax_route_reasoning_controls(
         object.remove("reasoning_split");
         object.remove("thinking");
     }
-    if !crate::config::is_exact_minimax_m3_route(provider, base_url, model) {
+    if !codewhale_runtime::config::is_exact_minimax_m3_route(provider, base_url, model) {
         return;
     }
 
@@ -1109,7 +1111,7 @@ fn sanitize_moonshot_chat_tools(chat_tools: &mut Vec<Value>) -> Vec<String> {
         let Some(parameters) = function.get_mut("parameters") else {
             return true;
         };
-        match crate::tools::schema_sanitize::sanitize_for_kimi_parameters(parameters) {
+        match codewhale_models::schema_sanitize::sanitize_for_kimi_parameters(parameters) {
             Ok(note) => {
                 if let Some(note) = note {
                     let description = function
@@ -1228,12 +1230,12 @@ pub(crate) fn build_chat_wire_body(
         // Flatten root composition, preserve valid nested anyOf, and drop
         // only the tools whose parameters cannot pass MFJS validation so one
         // incompatible tool never sinks the whole request.
-        if matches!(provider, crate::config::ProviderKind::Moonshot) {
+        if matches!(provider, codewhale_config::ProviderKind::Moonshot) {
             omitted_tool_names = sanitize_moonshot_chat_tools(&mut chat_tools);
         }
         // xAI rejects a parameters root that is not a plain object schema
         // (e.g. apply_patch's root `oneOf` required-groups) with a 400.
-        if matches!(provider, crate::config::ProviderKind::Xai) {
+        if matches!(provider, codewhale_config::ProviderKind::Xai) {
             for t in &mut chat_tools {
                 let Some(function) = t
                     .as_object_mut()
@@ -1243,7 +1245,7 @@ pub(crate) fn build_chat_wire_body(
                     continue;
                 };
                 let note = function.get_mut("parameters").and_then(|parameters| {
-                    crate::tools::schema_sanitize::sanitize_for_xai_parameters(parameters)
+                    codewhale_models::schema_sanitize::sanitize_for_xai_parameters(parameters)
                 });
                 if let Some(note) = note
                     && let Some(description) = function
@@ -1268,7 +1270,7 @@ pub(crate) fn build_chat_wire_body(
         && let Some(mapped) = map_tool_choice_for_chat(choice)
         && should_send_tool_choice_for_chat(provider, request.reasoning_effort.as_deref(), &mapped)
     {
-        if matches!(provider, crate::config::ProviderKind::Moonshot)
+        if matches!(provider, codewhale_config::ProviderKind::Moonshot)
             && let Some(name) = mapped.pointer("/function/name").and_then(Value::as_str)
             && omitted_tool_names.iter().any(|omitted| omitted == name)
         {
@@ -1408,34 +1410,30 @@ impl CodewhaleClient {
 
     pub(super) async fn handle_chat_completion_stream(
         &self,
-        prepared: super::PreparedOutboundRequest,
+        prepared: &super::PreparedOutboundRequest,
     ) -> Result<StreamEventBox> {
         // Try true SSE streaming via chat completions (widely supported).
         // Body and endpoint both come from the shared prepared-request seam,
         // so a preview or a non-stream call can never diverge from the
         // streamed request.
-        let super::PreparedOutboundRequest {
-            body,
-            wire_model: model,
-            replay_input_tokens,
-            endpoint,
-            ..
-        } = prepared;
-        let url = endpoint.url;
+        let body = &prepared.body;
+        let model = prepared.wire_model.clone();
+        let replay_input_tokens = prepared.replay_input_tokens;
+        let url = &prepared.endpoint.url;
 
-        let (response, stream_idle_timeout) =
-            match self.open_chat_stream_response(&url, &body).await {
-                Ok(opened) => opened,
-                Err(error) => {
-                    // If DeepSeek rejected for missing reasoning_content despite the
-                    // sanitizer, dump the offending indices so we can diagnose where
-                    // they came from on the next failure.
-                    if format!("{error:#}").contains("reasoning_content") {
-                        log_thinking_mode_violations(&body);
-                    }
-                    return Err(error);
+        let (response, stream_idle_timeout) = match self.open_chat_stream_response(url, body).await
+        {
+            Ok(opened) => opened,
+            Err(error) => {
+                // If DeepSeek rejected for missing reasoning_content despite the
+                // sanitizer, dump the offending indices so we can diagnose where
+                // they came from on the next failure.
+                if format!("{error:#}").contains("reasoning_content") {
+                    log_thinking_mode_violations(&body);
                 }
-            };
+                return Err(error);
+            }
+        };
 
         let status = response.status();
         crate::client::record_provider_response(self.api_provider, status.as_u16());
@@ -2618,7 +2616,7 @@ fn compact_tool_result_for_wire(
     // recovery instruction. Truncating it again here would destroy that
     // recovery contract and falsely report that no session-owned artifact
     // was recorded, so pass it through untouched.
-    if content.contains(crate::tools::truncate::SPILLOVER_RECOVERY_HINT) {
+    if content.contains(codewhale_tools::names::SPILLOVER_RECOVERY_HINT) {
         return WireToolResult {
             content: content.to_string(),
             original_chars,
@@ -2765,7 +2763,7 @@ fn build_chat_messages_with_reasoning(
         .rev()
         .find_map(|(index, message)| {
             (index > 0
-                && crate::compaction::is_wire_compaction_checkpoint_message(message)
+                && codewhale_models::turn_classify::is_wire_compaction_checkpoint_message(message)
                 && messages[index - 1]
                     .content
                     .iter()
@@ -2776,8 +2774,8 @@ fn build_chat_messages_with_reasoning(
         messages[..summary_index]
             .iter()
             .rposition(|message| {
-                crate::runtime_handoff::classify_user_turn_prompt(message)
-                    != crate::runtime_handoff::UserTurnPromptKind::NotPrompt
+                codewhale_models::turn_classify::classify_user_turn_prompt(message)
+                    != codewhale_models::turn_classify::UserTurnPromptKind::NotPrompt
             })
             .or_else(|| {
                 messages[..summary_index]
@@ -3002,7 +3000,9 @@ fn build_chat_messages_with_reasoning(
                 }
                 if (Some(message_index) == summary_index
                     || Some(message_index) == summary_target
-                    || crate::compaction::is_wire_compaction_checkpoint_message(message)
+                    || codewhale_models::turn_classify::is_wire_compaction_checkpoint_message(
+                        message,
+                    )
                     || crate::runtime_handoff::is_agent_topology_checkpoint(message)
                     || crate::runtime_handoff::is_restored_agent_topology_checkpoint(message))
                     && let Some(previous) = out.last_mut()
@@ -3047,7 +3047,9 @@ fn build_chat_messages_with_reasoning(
                             Some(&content_blocks),
                         );
                         let content =
-                            crate::image_attach::tool_result_text_with_omission(&content, omitted);
+                            codewhale_models::image_window::tool_result_text_with_omission(
+                                &content, omitted,
+                            );
                         let wire_result = compact_tool_result_for_wire(
                             &tool_info.tool_name,
                             &tool_info.input,
@@ -4660,7 +4662,7 @@ mod stream_diagnostics_tests {
 #[cfg(test)]
 mod arcee_waf_message_encoding_tests {
     use super::build_chat_messages_for_request_and_provider;
-    use crate::config::ProviderKind;
+    use codewhale_config::ProviderKind;
     use codewhale_models::{MessageRequest, SystemPrompt};
     use serde_json::Value;
 
@@ -4740,9 +4742,11 @@ mod minimax_reasoning_replay_tests {
         build_chat_messages_for_request_and_provider,
         build_chat_messages_for_request_and_provider_and_route,
     };
-    use crate::config::{
+    use codewhale_config::ProviderKind;
+    use codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL;
+    use codewhale_config::descriptors::defaults::{
         DEFAULT_KIMI_CODE_BASE_URL, DEFAULT_MINIMAX_MODEL, DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL,
-        DEFAULT_MOONSHOT_BASE_URL, KIMI_CODE_K3_MODEL, ProviderKind,
+        DEFAULT_MOONSHOT_BASE_URL,
     };
     use codewhale_models::Role;
     use codewhale_models::{ContentBlock, Message, MessageRequest};
@@ -5011,7 +5015,7 @@ mod alias_thinking_detection_tests {
         should_replay_reasoning_content_for_provider,
         should_replay_reasoning_content_for_provider_on_route,
     };
-    use crate::config::ProviderKind;
+    use codewhale_config::ProviderKind;
     use serde_json::json;
 
     #[test]
@@ -5134,7 +5138,8 @@ mod alias_thinking_detection_tests {
 
     #[test]
     fn modelstudio_hybrid_routes_send_documented_thinking_controls() {
-        let base_url = crate::config::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL;
+        let base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL;
         for (effort, enabled) in [
             (None, true),
             (Some("low"), true),
@@ -5160,7 +5165,8 @@ mod alias_thinking_detection_tests {
 
     #[test]
     fn modelstudio_deepseek_v4_maps_effort_to_documented_values() {
-        let base_url = crate::config::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL;
+        let base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL;
         for (requested, expected) in [("low", "high"), ("high", "high"), ("xhigh", "max")] {
             let mut body = json!({});
             apply_route_reasoning_controls(
@@ -5207,8 +5213,8 @@ mod alias_thinking_detection_tests {
             ProviderKind::ModelstudioCodingPlanAnthropic,
         ] {
             for base_url in [
-                crate::config::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL,
-                crate::config::MODELSTUDIO_TOKEN_PLAN_ANTHROPIC_BASE_URL,
+                codewhale_config::descriptors::defaults::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL,
+                codewhale_config::descriptors::defaults::MODELSTUDIO_TOKEN_PLAN_ANTHROPIC_BASE_URL,
             ] {
                 let mut body = json!({ "enable_thinking": true });
                 apply_route_reasoning_controls(
@@ -5225,7 +5231,8 @@ mod alias_thinking_detection_tests {
 
     #[test]
     fn modelstudio_qwen38_route_streams_reasoning_without_replaying_history() {
-        let base_url = crate::config::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL;
+        let base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL;
         for model in ["qwen3.8-max", "qwen3.8-max-preview"] {
             // qwen3.8 is thinking-only. Effort selection must never hide its
             // separate reasoning stream, including the stale `off` state
@@ -5279,7 +5286,8 @@ mod alias_thinking_detection_tests {
 
     #[test]
     fn modelstudio_hybrid_route_classifies_reasoning_and_replays_history() {
-        let base_url = crate::config::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL;
+        let base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL;
         assert_eq!(
             reasoning_stream_style_for_route(
                 ProviderKind::ModelstudioTokenPlan,
@@ -5310,7 +5318,8 @@ mod alias_thinking_detection_tests {
         // someone with a key confirms DashScope accepts `reasoning_content` in
         // input messages. deepseek-v4* is unaffected — it replays through
         // `requires_reasoning_content` on every provider.
-        let base_url = crate::config::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL;
+        let base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL;
         for model in ["glm-5.2", "deepseek-v3.2", "deepseek-v3.1"] {
             assert!(
                 !should_replay_reasoning_content_for_provider_on_route(
@@ -5336,7 +5345,8 @@ mod alias_thinking_detection_tests {
         // the primary provider id, so the chat client receives
         // ModelstudioTokenPlan with the Coding Plan URL. Direct configuration
         // also retains the legacy ModelstudioCodingPlan identity.
-        let base_url = crate::config::DEFAULT_MODELSTUDIO_CODING_PLAN_BASE_URL;
+        let base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_MODELSTUDIO_CODING_PLAN_BASE_URL;
         for provider in [
             ProviderKind::ModelstudioTokenPlan,
             ProviderKind::ModelstudioCodingPlan,
@@ -5422,7 +5432,8 @@ mod alias_thinking_detection_tests {
         // `reasoning_content` on exact Model Studio routes. The generic
         // `-thinking`/`reasoner` heuristics prove nothing about DashScope's
         // request dialect.
-        let base_url = crate::config::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL;
+        let base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL;
         for model in [
             "foo-thinking",
             "foo-reasoner",
@@ -5462,7 +5473,8 @@ mod alias_thinking_detection_tests {
         // (and its documented snapshots) among the `preserve_thinking`
         // models. Keep positive coverage so any future narrowing of the
         // preserve list has to remove it deliberately.
-        let base_url = crate::config::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL;
+        let base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL;
         for model in ["qwen3.6-flash", "qwen3.6-flash-2026-04-16"] {
             assert!(should_replay_reasoning_content_for_provider_on_route(
                 ProviderKind::ModelstudioTokenPlan,
@@ -5522,7 +5534,8 @@ mod alias_thinking_detection_tests {
         // NOTE: unlike the qwen3.8 pair, this classification is asserted by
         // PR #5233 rather than corroborated by models_dev.bundled.json, which
         // lists kimi-k2.7-code with `reasoning: true` and no `always_on`.
-        let base_url = crate::config::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL;
+        let base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL;
         for model in [
             "kimi-k2.7-code",
             "kimi/kimi-k2.7-code",
@@ -5607,20 +5620,20 @@ mod alias_thinking_detection_tests {
 
     #[test]
     fn bare_k3_reasoning_semantics_are_scoped_to_exact_kimi_code_route() {
-        let kimi_code = crate::config::DEFAULT_KIMI_CODE_BASE_URL;
-        let direct_moonshot = crate::config::DEFAULT_MOONSHOT_BASE_URL;
+        let kimi_code = codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL;
+        let direct_moonshot = codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL;
 
         assert!(should_replay_reasoning_content_for_provider_on_route(
             ProviderKind::Moonshot,
             kimi_code,
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             Some("high"),
         ));
         assert_eq!(
             reasoning_stream_style_for_route(
                 ProviderKind::Moonshot,
                 kimi_code,
-                crate::config::KIMI_CODE_K3_MODEL,
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
                 None,
             ),
             ReasoningStreamStyle::SeparateField
@@ -5629,7 +5642,7 @@ mod alias_thinking_detection_tests {
         assert!(!should_replay_reasoning_content_for_provider_on_route(
             ProviderKind::Moonshot,
             direct_moonshot,
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             Some("high"),
         ));
         // Display is not replay: a reasoning field that arrives on the
@@ -5639,7 +5652,7 @@ mod alias_thinking_detection_tests {
             reasoning_stream_style_for_route(
                 ProviderKind::Moonshot,
                 direct_moonshot,
-                crate::config::KIMI_CODE_K3_MODEL,
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
                 None,
             ),
             ReasoningStreamStyle::SeparateField
@@ -5648,7 +5661,7 @@ mod alias_thinking_detection_tests {
             should_replay_reasoning_content_for_provider_on_route(
                 ProviderKind::Moonshot,
                 kimi_code,
-                crate::config::KIMI_CODE_K3_MODEL,
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
                 Some("off"),
             ),
             "exact membership K3 stays always-thinking even for a stale raw Off caller"
@@ -5657,8 +5670,8 @@ mod alias_thinking_detection_tests {
 
     #[test]
     fn direct_moonshot_k3_is_always_thinking_and_replays_reasoning() {
-        let direct = crate::config::DEFAULT_MOONSHOT_BASE_URL;
-        let model = crate::config::MOONSHOT_KIMI_K3_MODEL;
+        let direct = codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL;
+        let model = codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL;
 
         for effort in [Some("off"), Some("low"), Some("high"), Some("max"), None] {
             assert!(should_replay_reasoning_content_for_provider_on_route(
@@ -5755,8 +5768,8 @@ mod alias_thinking_detection_tests {
         // Both catalog rows document low/medium/high/xhigh; reasoning cannot
         // be disabled, so `off` is the documented default `high`.
         for model in [
-            crate::config::XAI_GROK_4_7_MODEL,
-            crate::config::XAI_GROK_4_6_MODEL,
+            codewhale_config::catalog::reviewed::constants::XAI_GROK_4_7_MODEL,
+            codewhale_config::catalog::reviewed::constants::XAI_GROK_4_6_MODEL,
         ] {
             for (requested, expected) in [
                 ("off", "high"),
@@ -5770,7 +5783,7 @@ mod alias_thinking_detection_tests {
                 apply_route_reasoning_controls(
                     &mut body,
                     ProviderKind::Xai,
-                    crate::config::DEFAULT_XAI_BASE_URL,
+                    codewhale_config::descriptors::defaults::DEFAULT_XAI_BASE_URL,
                     model,
                     Some(requested),
                 );
@@ -5784,12 +5797,15 @@ mod alias_thinking_detection_tests {
 
         // A row without a documented effort option (grok-4.3) and an id the
         // catalog does not know send nothing.
-        for model in [crate::config::XAI_GROK_4_3_MODEL, "grok-9-unknown"] {
+        for model in [
+            codewhale_config::catalog::reviewed::constants::XAI_GROK_4_3_MODEL,
+            "grok-9-unknown",
+        ] {
             let mut body = json!({});
             apply_route_reasoning_controls(
                 &mut body,
                 ProviderKind::Xai,
-                crate::config::DEFAULT_XAI_BASE_URL,
+                codewhale_config::descriptors::defaults::DEFAULT_XAI_BASE_URL,
                 model,
                 Some("medium"),
             );
@@ -5800,8 +5816,8 @@ mod alias_thinking_detection_tests {
         apply_route_reasoning_controls(
             &mut provider_default,
             ProviderKind::Xai,
-            crate::config::DEFAULT_XAI_BASE_URL,
-            crate::config::XAI_GROK_4_6_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_XAI_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::XAI_GROK_4_6_MODEL,
             Some("auto"),
         );
         assert_eq!(provider_default, json!({}));
@@ -5811,7 +5827,7 @@ mod alias_thinking_detection_tests {
             &mut custom,
             ProviderKind::Xai,
             "https://gateway.example/v1",
-            crate::config::XAI_GROK_4_6_MODEL,
+            codewhale_config::catalog::reviewed::constants::XAI_GROK_4_6_MODEL,
             Some("medium"),
         );
         assert_eq!(custom, json!({}));
@@ -5831,8 +5847,8 @@ mod alias_thinking_detection_tests {
             apply_route_reasoning_controls(
                 &mut body,
                 ProviderKind::Xai,
-                crate::config::DEFAULT_XAI_BASE_URL,
-                crate::config::XAI_GROK_4_5_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_XAI_BASE_URL,
+                codewhale_config::catalog::reviewed::constants::XAI_GROK_4_5_MODEL,
                 Some(requested),
             );
             assert_eq!(body, json!({ "reasoning_effort": expected }), "{requested}");
@@ -5908,8 +5924,8 @@ mod alias_thinking_detection_tests {
             apply_kimi_code_k3_reasoning_effort(
                 &mut body,
                 ProviderKind::Moonshot,
-                crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-                crate::config::KIMI_CODE_K3_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
                 Some(requested),
             );
 
@@ -5928,15 +5944,15 @@ mod alias_thinking_detection_tests {
         apply_kimi_code_k3_reasoning_effort(
             &mut body,
             ProviderKind::Moonshot,
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-            crate::config::KIMI_CODE_K3_256K_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_256K_MODEL,
             Some("max"),
         );
         apply_kimi_code_fixed_sampling(
             &mut body,
             ProviderKind::Moonshot,
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-            crate::config::KIMI_CODE_K3_256K_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_256K_MODEL,
         );
 
         assert_eq!(
@@ -5953,17 +5969,17 @@ mod alias_thinking_detection_tests {
         for (provider, base_url, model) in [
             (
                 ProviderKind::Moonshot,
-                crate::config::DEFAULT_MOONSHOT_BASE_URL,
-                crate::config::KIMI_CODE_K3_256K_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL,
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_256K_MODEL,
             ),
             (
                 ProviderKind::Openrouter,
-                crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-                crate::config::KIMI_CODE_K3_256K_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_256K_MODEL,
             ),
             (
                 ProviderKind::Moonshot,
-                crate::config::DEFAULT_KIMI_CODE_BASE_URL,
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
                 "k3-256k-preview",
             ),
         ] {
@@ -5986,14 +6002,14 @@ mod alias_thinking_detection_tests {
             ("max", "max"),
         ] {
             let mut body = json!({
-                "model": crate::config::MOONSHOT_KIMI_K3_MODEL,
+                "model": codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL,
                 "thinking": { "type": "disabled" },
             });
             apply_route_reasoning_controls(
                 &mut body,
                 ProviderKind::Moonshot,
-                crate::config::DEFAULT_MOONSHOT_BASE_URL,
-                crate::config::MOONSHOT_KIMI_K3_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL,
+                codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL,
                 Some(requested),
             );
 
@@ -6005,8 +6021,8 @@ mod alias_thinking_detection_tests {
         apply_route_reasoning_controls(
             &mut provider_default,
             ProviderKind::Moonshot,
-            crate::config::DEFAULT_MOONSHOT_BASE_URL,
-            crate::config::MOONSHOT_KIMI_K3_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL,
             Some("auto"),
         );
         assert!(provider_default.get("thinking").is_none());
@@ -6023,15 +6039,15 @@ mod alias_thinking_detection_tests {
         apply_provider_token_limit(
             &mut direct,
             ProviderKind::Moonshot,
-            crate::config::DEFAULT_MOONSHOT_BASE_URL,
-            crate::config::MOONSHOT_KIMI_K3_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL,
             64,
         );
         apply_direct_moonshot_k3_fixed_sampling(
             &mut direct,
             ProviderKind::Moonshot,
-            crate::config::DEFAULT_MOONSHOT_BASE_URL,
-            crate::config::MOONSHOT_KIMI_K3_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL,
         );
         assert_eq!(direct["max_completion_tokens"], json!(64));
         assert!(direct.get("max_tokens").is_none());
@@ -6047,14 +6063,14 @@ mod alias_thinking_detection_tests {
             &mut neighbor,
             ProviderKind::Moonshot,
             "https://proxy.example/v1",
-            crate::config::MOONSHOT_KIMI_K3_MODEL,
+            codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL,
             64,
         );
         apply_direct_moonshot_k3_fixed_sampling(
             &mut neighbor,
             ProviderKind::Moonshot,
             "https://proxy.example/v1",
-            crate::config::MOONSHOT_KIMI_K3_MODEL,
+            codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL,
         );
         assert_eq!(neighbor["max_tokens"], json!(64));
         assert!(neighbor.get("max_completion_tokens").is_none());
@@ -6068,8 +6084,8 @@ mod alias_thinking_detection_tests {
         apply_route_reasoning_controls(
             &mut membership,
             ProviderKind::Moonshot,
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             Some("max"),
         );
         assert_eq!(
@@ -6080,16 +6096,16 @@ mod alias_thinking_detection_tests {
 
         for (base_url, model) in [
             (
-                crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-                crate::config::MOONSHOT_KIMI_K3_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+                codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL,
             ),
             (
-                crate::config::DEFAULT_MOONSHOT_BASE_URL,
-                crate::config::KIMI_CODE_K3_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL,
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             ),
             (
                 "https://proxy.example/v1",
-                crate::config::MOONSHOT_KIMI_K3_MODEL,
+                codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL,
             ),
         ] {
             let mut neighbor = json!({});
@@ -6113,12 +6129,18 @@ mod alias_thinking_detection_tests {
     #[test]
     fn kimi_code_k3_effort_override_never_leaks_to_neighbor_routes() {
         for (base_url, model) in [
-            (crate::config::DEFAULT_KIMI_CODE_BASE_URL, "kimi-k3"),
             (
-                crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-                crate::config::DEFAULT_KIMI_CODE_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+                "kimi-k3",
             ),
-            (crate::config::DEFAULT_MOONSHOT_BASE_URL, "k3"),
+            (
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_MODEL,
+            ),
+            (
+                codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL,
+                "k3",
+            ),
         ] {
             let mut body = json!({ "thinking": { "type": "enabled" } });
             apply_kimi_code_k3_reasoning_effort(
@@ -6346,13 +6368,13 @@ mod alias_thinking_detection_tests {
 
     #[test]
     fn zai_tiered_effort_applies_to_glm_5_2_and_glm_5_3_but_not_5_1() {
-        let zai = crate::config::DEFAULT_ZAI_BASE_URL;
+        let zai = codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL;
         // GLM-5.3 and GLM-5.3-Flash inherit GLM-5.2's reasoning_options
         // (effort high/max), so they must take the same tiered wire path.
         for model in [
-            crate::config::ZAI_GLM_5_2_MODEL,
-            crate::config::ZAI_GLM_5_3_MODEL,
-            crate::config::ZAI_GLM_5_3_FLASH_MODEL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_3_MODEL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_3_FLASH_MODEL,
         ] {
             let mut body = json!({});
             apply_route_reasoning_controls(&mut body, ProviderKind::Zai, zai, model, Some("max"));
@@ -6365,8 +6387,8 @@ mod alias_thinking_detection_tests {
 
         // GLM-5.1 and GLM-5-Turbo keep only the generic thinking control.
         for model in [
-            crate::config::ZAI_GLM_5_1_MODEL,
-            crate::config::ZAI_GLM_5_TURBO_MODEL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_1_MODEL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_TURBO_MODEL,
         ] {
             let mut body = json!({});
             apply_route_reasoning_controls(&mut body, ProviderKind::Zai, zai, model, Some("max"));
@@ -6383,7 +6405,7 @@ mod alias_thinking_detection_tests {
             &mut body,
             ProviderKind::Zai,
             "https://gateway.example.com/v1",
-            crate::config::ZAI_GLM_5_3_MODEL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_3_MODEL,
             Some("max"),
         );
         assert!(body.get("reasoning_effort").is_none());
@@ -6398,12 +6420,12 @@ mod alias_thinking_detection_tests {
         // `enabled` + `reasoning_effort: "low"`. Both hosts of the first-party
         // open platform — api.z.ai and open.bigmodel.cn — get the rewrite.
         for zai in [
-            crate::config::DEFAULT_ZAI_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL,
             "https://open.bigmodel.cn/api/paas/v4",
         ] {
             for model in [
-                crate::config::ZAI_GLM_5_3_MODEL,
-                crate::config::ZAI_GLM_5_3_FLASH_MODEL,
+                codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_3_MODEL,
+                codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_3_FLASH_MODEL,
             ] {
                 let mut body = json!({});
                 apply_route_reasoning_controls(
@@ -6492,7 +6514,7 @@ mod alias_thinking_detection_tests {
                 &mut body,
                 ProviderKind::Zai,
                 zai,
-                crate::config::ZAI_GLM_5_2_MODEL,
+                codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL,
                 Some("off"),
             );
             assert_eq!(body["thinking"]["type"], json!("disabled"));
@@ -6514,7 +6536,7 @@ mod alias_thinking_detection_tests {
                 &mut body,
                 ProviderKind::Zai,
                 neighboring_route,
-                crate::config::ZAI_GLM_5_3_MODEL,
+                codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_3_MODEL,
                 Some("max"),
             );
             assert!(
@@ -6731,8 +6753,8 @@ mod image_block_wire_tests {
     fn quoted_compaction_marker_does_not_reorder_user_wire_messages() {
         // The current marker, and the legacy one older sessions still carry.
         for marker in [
-            crate::compaction::COMPACTION_SUMMARY_MARKER,
-            crate::compaction::LEGACY_V2_COMPACTION_SUMMARY_MARKER,
+            codewhale_models::turn_classify::COMPACTION_SUMMARY_MARKER,
+            codewhale_models::turn_classify::LEGACY_V2_COMPACTION_SUMMARY_MARKER,
         ] {
             let quote = format!("Please explain: {marker}");
             let messages: Vec<Message> = serde_json::from_value(serde_json::json!([
@@ -7478,7 +7500,7 @@ mod mistral_reasoning_tests {
         apply_mistral_route_reasoning_controls(
             &mut body,
             ProviderKind::Mistral,
-            crate::config::DEFAULT_MISTRAL_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_MISTRAL_BASE_URL,
             "mistral-medium-latest",
             Some("high"),
         );
@@ -7488,7 +7510,7 @@ mod mistral_reasoning_tests {
         apply_mistral_route_reasoning_controls(
             &mut body,
             ProviderKind::Mistral,
-            crate::config::DEFAULT_MISTRAL_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_MISTRAL_BASE_URL,
             "mistral-code-latest",
             Some("high"),
         );
@@ -7501,7 +7523,7 @@ mod mistral_reasoning_tests {
         apply_mistral_route_reasoning_controls(
             &mut body,
             ProviderKind::Mistral,
-            crate::config::DEFAULT_MISTRAL_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_MISTRAL_BASE_URL,
             "mistral-medium-latest",
             Some("low"),
         );
@@ -7515,7 +7537,7 @@ mod mistral_reasoning_tests {
         apply_mistral_route_reasoning_controls(
             &mut body,
             ProviderKind::Deepseek,
-            crate::config::DEFAULT_MISTRAL_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_MISTRAL_BASE_URL,
             "deepseek-v4-pro",
             Some("high"),
         );
@@ -7540,7 +7562,7 @@ mod mistral_reasoning_tests {
         apply_mistral_route_reasoning_controls(
             &mut native,
             ProviderKind::Mistral,
-            crate::config::DEFAULT_MISTRAL_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_MISTRAL_BASE_URL,
             "magistral-small-latest",
             Some("off"),
         );
@@ -7572,12 +7594,12 @@ mod mistral_reasoning_tests {
         }
         assert!(!is_exact_mistral_chat_route(
             ProviderKind::Openai,
-            crate::config::DEFAULT_MISTRAL_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_MISTRAL_BASE_URL,
         ));
         assert_eq!(
             reasoning_stream_style_for_route(
                 ProviderKind::Mistral,
-                crate::config::DEFAULT_MISTRAL_BASE_URL,
+                codewhale_config::descriptors::defaults::DEFAULT_MISTRAL_BASE_URL,
                 "mistral-medium-latest",
                 None,
             ),
@@ -7689,7 +7711,7 @@ mod mistral_reasoning_tests {
         let exact = build_chat_messages_for_request_and_provider_and_route(
             &request,
             ProviderKind::Mistral,
-            crate::config::DEFAULT_MISTRAL_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_MISTRAL_BASE_URL,
         );
         let assistant = &exact[0];
         assert!(assistant.get("reasoning_content").is_none());
@@ -7709,7 +7731,7 @@ mod mistral_reasoning_tests {
             (ProviderKind::Mistral, "https://gateway.example.test/v1"),
             (
                 ProviderKind::Openai,
-                crate::config::DEFAULT_MISTRAL_BASE_URL,
+                codewhale_config::descriptors::defaults::DEFAULT_MISTRAL_BASE_URL,
             ),
         ] {
             let neighbor = build_chat_messages_for_request_and_provider_and_route(
@@ -7730,7 +7752,7 @@ mod mistral_reasoning_tests {
         let wire = build_chat_wire_body(
             &request,
             ProviderKind::Mistral,
-            crate::config::DEFAULT_MISTRAL_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_MISTRAL_BASE_URL,
             true,
             None,
         )
@@ -7762,7 +7784,7 @@ mod mistral_reasoning_tests {
         let mistral = parse_chat_message_for_route(
             &payload,
             ProviderKind::Mistral,
-            crate::config::DEFAULT_MISTRAL_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_MISTRAL_BASE_URL,
         )
         .expect("Mistral payload parses");
         assert!(matches!(
@@ -7807,7 +7829,9 @@ mod google_thought_signature_tests {
     use super::*;
 
     // ── Google thought signatures (#v0.9.8 Google backend) ──────────────
-    use crate::config::{DEFAULT_GOOGLE_BASE_URL, DEFAULT_OPENAI_BASE_URL};
+    use codewhale_config::descriptors::defaults::{
+        DEFAULT_GOOGLE_BASE_URL, DEFAULT_OPENAI_BASE_URL,
+    };
 
     /// One signed tool turn. `paired` false is the restart shape: the process
     /// died between the tool call and its result, so the terminal
@@ -7915,18 +7939,22 @@ mod google_thought_signature_tests {
                     .mount(&server)
                     .await;
 
-                let mut client = CodewhaleClient::new(&crate::config::Config {
-                    provider: Some("openai".to_string()),
-                    providers: Some(crate::config::ProvidersConfig {
-                        openai: crate::config::ProviderConfig {
+                let mut client = CodewhaleClient::new(&{
+                    let __cw_config_init_0_0 = Some("openai".to_string());
+                    let __cw_config_init_0_1 = Some(codewhale_runtime::config::ProvidersConfig {
+                        openai: codewhale_runtime::config::ProviderConfig {
                             api_key: Some("gateway-test-key".to_string()),
                             base_url: Some(format!("{}/v1", server.uri())),
                             model: Some("gemini-3.1-pro-preview".to_string()),
-                            ..crate::config::ProviderConfig::default()
+                            ..codewhale_runtime::config::ProviderConfig::default()
                         },
-                        ..crate::config::ProvidersConfig::default()
-                    }),
-                    ..crate::config::Config::default()
+                        ..codewhale_runtime::config::ProvidersConfig::default()
+                    });
+                    let mut __cw_config_init_0_value: codewhale_runtime::config::Config =
+                        codewhale_runtime::config::Config::default();
+                    __cw_config_init_0_value.provider = __cw_config_init_0_0;
+                    __cw_config_init_0_value.providers = __cw_config_init_0_1;
+                    __cw_config_init_0_value
                 })
                 .expect("gateway client");
                 client.isolated_request_state = true;

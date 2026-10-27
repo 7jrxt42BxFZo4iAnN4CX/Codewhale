@@ -181,7 +181,7 @@ fn registry_sync_results_are_bounded_like_every_other_tool() {
 
     assert_ne!(context, raw);
     assert!(context.chars().count() <= budget);
-    assert!(context.contains(crate::tools::truncate::SPILLOVER_RECOVERY_HINT));
+    assert!(context.contains(codewhale_tools::names::SPILLOVER_RECOVERY_HINT));
 }
 
 #[test]
@@ -455,7 +455,7 @@ async fn measure_production_mode_tool_catalogs() -> serde_json::Value {
     // cross-platform built-in profile. Pin host capabilities because Windows
     // system-directory lookup can find interpreters outside PATH. Keep the
     // nonexistent PATH root for the canonical shell spelling below.
-    let _host_tools = crate::dependencies::pin_recorded_host_tools(Vec::new());
+    let _host_tools = codewhale_dependencies::pin_recorded_host_tools(Vec::new());
     let _path = EnvVarGuard::set("PATH", tmp.path().join("no-host-interpreters"));
     // Shell syntax is part of the tool schema. A bare name plus the empty
     // PATH resolves to the same `bash` spelling on Unix and Windows without
@@ -466,9 +466,11 @@ async fn measure_production_mode_tool_catalogs() -> serde_json::Value {
     // this profile.
     let _ocr = EnvVarGuard::set("CODEWHALE_LOCAL_OCR_UNAVAILABLE", "1");
 
-    let api_config = Config {
-        default_text_model: Some(DEFAULT_TEXT_MODEL.to_string()),
-        ..Config::default()
+    let api_config = {
+        let __cw_config_init_0_0 = Some(DEFAULT_TEXT_MODEL.to_string());
+        let mut __cw_config_init_0_value: Config = Config::default();
+        __cw_config_init_0_value.default_text_model = __cw_config_init_0_0;
+        __cw_config_init_0_value
     }
     .with_legacy_root(Some("local-runtime-contract-fixture".to_string()), None);
     let mut mode_metrics = serde_json::Map::new();
@@ -532,7 +534,7 @@ async fn measure_production_mode_tool_catalogs() -> serde_json::Value {
 
     serde_json::json!({
         "surface_profile": "production-default-builtins-no-mcp-no-host-interpreters-bash-v2",
-        "execution_shell": crate::shell_dispatcher::global_dispatcher().kind().binary(),
+        "execution_shell": codewhale_sandbox::shell_dispatcher::global_dispatcher().kind().binary(),
         "modes": mode_metrics,
     })
 }
@@ -1285,13 +1287,11 @@ async fn deferred_tool_first_use_does_not_emit_a_retry_status() {
         .mount(&server)
         .await;
 
-    let api_config = Config {
-        ..Config::default()
-    }
-    .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
+    let api_config =
+        Config::default().with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
     let (engine, handle) = Engine::new(
         EngineConfig {
-            model: crate::config::DEFAULT_TEXT_MODEL.to_string(),
+            model: codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
             workspace: workspace.path().to_path_buf(),
             snapshots_enabled: false,
             subagents_enabled: false,
@@ -1308,7 +1308,10 @@ async fn deferred_tool_first_use_does_not_emit_a_retry_status() {
             content: "Map this project".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&api_config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(
+                &api_config,
+                codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL,
+            ),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,

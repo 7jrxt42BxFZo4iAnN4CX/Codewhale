@@ -77,15 +77,15 @@ enum PagerSource {
 
 /// The display rows of one page and the column width they were wrapped to.
 #[derive(Debug, Clone, Default)]
-struct PagerRows {
+pub(super) struct PagerRows {
     /// `None` until the page is first laid out.
     width: Option<usize>,
     plain: Vec<String>,
     /// Styled rows of a styled-line page; text pages paint `plain`.
-    styled: Vec<Line<'static>>,
+    pub(super) styled: Vec<Line<'static>>,
     /// The source line each row was wrapped from, so a re-wrap can keep the
     /// same line at the top of the view.
-    origin: Vec<usize>,
+    pub(super) origin: Vec<usize>,
 }
 
 impl PagerRows {
@@ -103,7 +103,7 @@ impl PagerRows {
         rows
     }
 
-    fn wrap_lines(lines: &[Line<'static>], width: usize) -> Self {
+    pub(super) fn wrap_lines(lines: &[Line<'static>], width: usize) -> Self {
         let mut rows = Self {
             width: Some(width),
             ..Self::default()
@@ -176,13 +176,18 @@ impl PagerPage {
         *self.rows.borrow_mut() = match &self.source {
             PagerSource::Text(source) => PagerRows::wrap_text(source, width),
             PagerSource::Lines(lines) => PagerRows::wrap_lines(lines, width),
-            PagerSource::Diff(diff) => PagerRows::wrap_lines(
-                &crate::tui::diff_render::render_diff(
+            PagerSource::Diff(diff) => {
+                let rendered = crate::tui::diff_render::render_diff_bounded(
                     diff,
                     u16::try_from(width).unwrap_or(u16::MAX),
-                ),
-                width,
-            ),
+                    usize::MAX,
+                );
+                let mut rows = PagerRows::wrap_lines(&rendered.lines, width);
+                for origin in &mut rows.origin {
+                    *origin = rendered.origins[*origin];
+                }
+                rows
+            }
         };
         true
     }

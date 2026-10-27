@@ -106,9 +106,18 @@ impl super::Engine {
             TurnOutcomeStatus::Failed => ("Retry stopped", "turn failed"),
             TurnOutcomeStatus::Interrupted => ("Retry interrupted", "turn interrupted"),
         };
+        let reasoning_kind = if self.config.reasoning_only_on_output_limit {
+            codewhale_localization::tr(
+                codewhale_localization::resolve_locale(&self.config.locale_tag),
+                codewhale_localization::MessageId::AnswerRetryCounter,
+            )
+            .into_owned()
+        } else {
+            "reasoning-only".to_string()
+        };
         for (kind, retries, limit) in [
             (
-                "reasoning-only",
+                reasoning_kind.as_str(),
                 diagnostics.reasoning_only_reprompts,
                 self.config.reasoning_only_max_reprompts,
             ),

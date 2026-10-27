@@ -13,8 +13,6 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use crate::commands;
-#[cfg(test)]
-use crate::config::ProviderKind;
 use crate::core::authority::{RiskLevel, ToolCategory};
 #[cfg(test)]
 use crate::provider_lake::all_catalog_models_for_provider;
@@ -27,6 +25,8 @@ use crate::tui::ui_text::grapheme_display_width;
 #[cfg(test)]
 use crate::tui::ui_text::text_display_width;
 use crate::tui::underwater::ShellPhase;
+#[cfg(test)]
+use codewhale_config::ProviderKind;
 use codewhale_localization::{Locale, MessageId, tr};
 use codewhale_palette as palette;
 use codewhale_ratatui::{
@@ -1261,7 +1261,7 @@ impl<'a> ComposerWidget<'a> {
     }
     /// Project host semantics, menu filtering and styles; the kit owns every
     /// row, source index, caret, viewport and pointer rectangle below them.
-    fn frame(&self) -> codewhale_ratatui::NativeComposerFrame<'_> {
+    fn frame(&self, clipped: bool) -> codewhale_ratatui::NativeComposerFrame<'_> {
         use codewhale_ratatui::{
             NativeComposerFrame, NativeComposerMenu, NativeComposerMenuItem, NativeComposerStyles,
         };
@@ -1298,7 +1298,7 @@ impl<'a> ComposerWidget<'a> {
                 Style::default().fg(self.app.ui_theme.text_hint),
             ))
         } else if !input.trim().is_empty() {
-            composer_submit_hint(self.app).map(|hint| {
+            composer_submit_hint(self.app, clipped).map(|hint| {
                 Line::styled(format!(" {} ", hint.text), Style::default().fg(hint.color))
             })
         } else {
@@ -1431,7 +1431,7 @@ impl<'a> ComposerWidget<'a> {
             quiet_hint: if input.trim().is_empty() {
                 None
             } else {
-                composer_submit_hint(self.app).map(|hint| {
+                composer_submit_hint(self.app, clipped).map(|hint| {
                     Line::styled(format!(" {} ", hint.text), Style::default().fg(hint.color))
                 })
             },
@@ -1450,9 +1450,18 @@ impl<'a> ComposerWidget<'a> {
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn plan(&self, area: Rect) -> codewhale_ratatui::NativeComposerPlan {
-        self.frame().plan(area)
+        let frame = self.frame(false);
+        let plan = frame.plan(area);
+        if plan.source_rows.len() > plan.input_rows_budget
+            && frame.hint.is_none()
+            && frame.quiet_hint.is_none()
+            && composer_submit_hint(self.app, true).is_some()
+        {
+            self.frame(true).plan(area)
+        } else {
+            plan
+        }
     }
 
     /// Publish pointer targets from the same plan that actually painted.
@@ -1461,7 +1470,8 @@ impl<'a> ComposerWidget<'a> {
         area: Rect,
         buf: &mut Buffer,
     ) -> codewhale_ratatui::NativeComposerPlan {
-        let plan = self.frame().render(area, buf);
+        let plan = self.plan(area.intersection(buf.area));
+        plan.paint(buf);
         *self.app.viewport.last_slash_menu_hitboxes.borrow_mut() = plan.menu_rects.clone();
         for (rect, label) in &plan.truncated {
             crate::tui::hover_layer::register_rect(
@@ -1480,7 +1490,7 @@ impl Renderable for ComposerWidget<'_> {
         self.render_plan(area, buf);
     }
     fn desired_height(&self, width: u16) -> u16 {
-        self.frame().desired_height(width, self.max_height)
+        self.frame(false).desired_height(width, self.max_height)
     }
     #[cfg(test)]
     fn cursor_pos(&self, area: Rect) -> Option<(u16, u16)> {
@@ -1746,7 +1756,8 @@ impl<'a> ApprovalWidget<'a> {
                     } else {
                         Cow::Borrowed("  ")
                     };
-                    let truncated = crate::utils::truncate_with_ellipsis(sline, max_width, "...");
+                    let truncated =
+                        codewhale_util::utils::truncate_with_ellipsis(sline, max_width, "...");
                     body.push(Line::from(vec![
                         Span::raw("  "),
                         Span::styled(
@@ -2103,7 +2114,7 @@ fn push_params_detail_line(
     let params_str = request.params_display();
     let params_width = card_width.saturating_sub(14) as usize;
     let params_truncated =
-        crate::utils::truncate_with_ellipsis(&params_str, params_width.max(20), "...");
+        codewhale_util::utils::truncate_with_ellipsis(&params_str, params_width.max(20), "...");
     lines.push(Line::from(vec![
         Span::raw("  "),
         Span::styled(
@@ -2531,7 +2542,7 @@ impl Renderable for ElevationWidget<'_> {
             Some(command) => Line::from(vec![
                 Span::raw(tr(self.locale, MessageId::ElevationFieldCmd)),
                 Span::styled(
-                    crate::utils::truncate_with_ellipsis(command, 45, "..."),
+                    codewhale_util::utils::truncate_with_ellipsis(command, 45, "..."),
                     Style::default().fg(palette::TEXT_MUTED),
                 ),
             ]),
@@ -2969,14 +2980,25 @@ pub(crate) struct ComposerSubmitHint {
     pub color: Color,
 }
 
-pub(crate) fn composer_submit_hint(app: &App) -> Option<ComposerSubmitHint> {
+pub(crate) fn composer_submit_hint(app: &App, clipped: bool) -> Option<ComposerSubmitHint> {
     use crate::tui::app::{ComposerSubmitAction, ComposerSubmitChord, SubmitDisposition};
 
     let queue_count = app.queued_message_count();
     let (text, color) = match app.decide_composer_submit(ComposerSubmitChord::Enter) {
         ComposerSubmitAction::Submit(SubmitDisposition::Immediate) => {
             if queue_count == 0 {
-                return None;
+                return (clipped && app.oversized_paste_full_text.is_none()).then(|| {
+                    let binding = crate::tui::shell_key_routing::binding(
+                        crate::tui::shell_key_routing::ShellBindingId::ExternalEditor,
+                    );
+                    ComposerSubmitHint {
+                        text: app.tr(MessageId::ComposerHintLongDraft).replace(
+                            "{shortcut}",
+                            &crate::tui::shell_key_routing::display_chord(binding.footer_chord),
+                        ),
+                        color: app.ui_theme.text_hint,
+                    }
+                });
             }
             (
                 app.tr(MessageId::ComposerHintSendWithQueue)
@@ -3766,7 +3788,6 @@ mod tests {
         slash_completion_hints, test_native_ocean_caps, tool_run_summary_revision,
         wrap_input_lines, wrap_input_lines_for_mouse, wrap_text,
     };
-    use crate::config::{Config, ProviderKind};
     use crate::tui::active_cell::ActiveCell;
     use crate::tui::app::{
         App, ComposerDensity, QueuedMessage, TaskPanelEntry, TaskPanelEntryKind, ToolCollapseMode,
@@ -3776,8 +3797,10 @@ mod tests {
         ExecCell, ExecSource, GenericToolCell, HistoryCell, ToolCell, ToolRun, ToolStatus,
     };
     use crate::tui::scrolling::{TranscriptLineMeta, TranscriptScroll};
+    use codewhale_config::ProviderKind;
     use codewhale_localization::Locale;
     use codewhale_palette as palette;
+    use codewhale_runtime::config::Config;
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
     use ratatui::{
         buffer::Buffer,
@@ -5999,10 +6022,10 @@ mod tests {
         let mut app = create_test_app();
         app.input = "keep going".to_string();
         app.cursor_position = app.input.chars().count();
-        assert!(composer_submit_hint(&app).is_none());
+        assert!(composer_submit_hint(&app, false).is_none());
 
         app.is_loading = true;
-        let hint = composer_submit_hint(&app).expect("busy draft should name Enter");
+        let hint = composer_submit_hint(&app, false).expect("busy draft should name Enter");
         assert_eq!(hint.text, "↵ send after this turn");
         assert!(
             !hint.text.to_ascii_lowercase().contains("steer"),
@@ -6011,7 +6034,7 @@ mod tests {
         );
 
         app.queue_message(QueuedMessage::new("first".to_string(), None));
-        let hint = composer_submit_hint(&app).expect("queued count should stay visible");
+        let hint = composer_submit_hint(&app, false).expect("queued count should stay visible");
         assert_eq!(hint.text, "↵ send after this turn (2 waiting)");
     }
 

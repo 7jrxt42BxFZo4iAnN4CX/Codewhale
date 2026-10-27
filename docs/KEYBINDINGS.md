@@ -85,10 +85,11 @@ Markdown source, whole cells joined with blank lines (see the Transcript
 section below), with `tui.selection_copy_markdown = false` restoring rendered
 text. Empty or oversized HTML falls back to plain text.
 
-Set `composer_multiline_mode = true` to swap the portable `Enter` and
-`Shift-Enter` behaviors: `Enter` inserts a newline and `Shift-Enter` sends.
-`Alt-Enter`, `Ctrl-J`, and supported `Ctrl-Enter` / `Cmd-Enter` behavior stays
-unchanged.
+Set `composer_multiline_mode = true` for `Enter` to insert a newline and
+`Alt-Enter` to send. `Shift-Enter` also sends when the terminal reports it
+distinctly; legacy terminals may report it as plain `Enter`. `Ctrl-J` always
+inserts a newline. Supported `Ctrl-Enter` / `Cmd-Enter` behavior stays unchanged.
+With multiline mode off, `Alt-Enter` and supported `Shift-Enter` insert newlines.
 
 ### Selection semantics
 
@@ -235,6 +236,15 @@ panel and placement. `Alt-!`/`Alt-@`/`Alt-#`/`Alt-$` switch panels.
 | `↑` / `↓` / `Ctrl+P` / `Ctrl+N`| Move selection                                     |
 | `Enter` / `Tab`                | Run / complete the highlighted command             |
 | `Esc`                          | Dismiss palette                                     |
+
+## Provider and model pickers
+
+| Chord | Action |
+|---|---|
+| `F7` | View the OrcaRouter partner offer in `/provider` or `/model`, keeping the current selection |
+
+Click the OrcaRouter recommendation for the same offer. Its pager includes the
+redemption URL and referral disclosure. On Apple keyboards, hold Fn if needed.
 
 ## Session Picker (`Ctrl-R` or `/sessions`)
 

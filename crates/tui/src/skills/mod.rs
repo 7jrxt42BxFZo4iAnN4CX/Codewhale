@@ -4,25 +4,13 @@ pub mod audit;
 /// Provider-free contract tests for the bundled starter pack (#4698).
 #[cfg(test)]
 mod catalog_matrix;
-mod frontmatter;
-pub(crate) use frontmatter::parse_frontmatter;
-use frontmatter::{SkillValidationMode, parse_frontmatter_bool, validate_skill_frontmatter};
-pub mod install;
+use codewhale_skill_install::frontmatter::{
+    SkillValidationMode, parse_frontmatter, parse_frontmatter_bool, validate_skill_frontmatter,
+};
 pub mod mutation;
-mod package_digest;
 pub mod recommend;
 pub mod roots;
 mod system;
-// Re-exports kept for documentation parity and downstream consumers; the
-// binary itself imports directly from `skills::install`. `#[allow(...)]`
-// silences the dead-code warning that fires because no `bin` source path
-// references these names through `skills::*`.
-#[allow(unused_imports)]
-pub use install::{
-    DEFAULT_MAX_SIZE_BYTES, DEFAULT_REGISTRY_URL, INSTALLED_FROM_MARKER, InstallOutcome,
-    InstallSource, InstalledSkill, RegistryDocument, RegistryEntry, RegistryFetchResult,
-    SkillSyncOutcome, SyncResult, UpdateResult, default_cache_skills_dir,
-};
 #[allow(unused_imports)]
 pub use roots::{
     CompatibleHarness, SkillRootAccess, SkillRootCatalog, SkillRootDescriptor, SkillRootId,
@@ -196,7 +184,7 @@ pub fn default_skills_dir() -> PathBuf {
                 .join("skills");
         }
     }
-    crate::config::effective_home_dir().map_or_else(
+    codewhale_paths::user_home().map_or_else(
         || unavailable_home_root().join("skills"),
         |p| p.join(".codewhale").join("skills"),
     )
@@ -224,7 +212,7 @@ pub fn agents_global_skills_dir() -> Option<PathBuf> {
             );
         }
     }
-    crate::config::effective_home_dir().map(|p| p.join(".agents").join("skills"))
+    codewhale_paths::user_home().map(|p| p.join(".agents").join("skills"))
 }
 
 // === Types ===
@@ -244,7 +232,7 @@ pub enum SkillDiscoveryMode {
 
 impl SkillDiscoveryMode {
     #[must_use]
-    pub fn from_config(config: &crate::config::SkillsConfig) -> Self {
+    pub fn from_config(config: &codewhale_runtime::config::SkillsConfig) -> Self {
         if config.scan_codewhale_only() {
             Self::CodeWhaleOnly
         } else if config.flat_workspace_root() {
@@ -364,36 +352,43 @@ impl SkillProvenance {
         workspace: &Path,
         plugins: Option<&crate::plugins::PluginRegistry>,
     ) -> Result<(), String> {
+        if self.authority().workspace != workspace {
+            return Err("plugin skill belongs to a different workspace".to_string());
+        }
+        let authority = if let Some(plugins) = plugins {
+            let current = plugins.authority_for(self.authority().plugin_id.as_str())
+                .ok_or_else(|| "Plugin skill has no current trusted discovery authority; reload and select the skill again".to_string())?;
+            let mut receipt = self.authority().clone();
+            receipt.managed_policy_source = current.managed_policy_source.clone();
+            if receipt != current {
+                return Err("Plugin skill receipt no longer matches its trusted discovery authority; reload and select the skill again".to_string());
+            }
+            current
+        } else {
+            self.authority().clone()
+        };
         if let Self::NativeRoot(source) = self {
             crate::extension_host::manager().shared.check_selection(
                 source.registration.selection,
                 plugins,
-                source.authority.plugin_id.as_str(),
-                &source.authority.content_hash,
+                authority.plugin_id.as_str(),
+                &authority.content_hash,
                 source.registration.scope.as_ref(),
             )?;
         }
-        self.verify_current(workspace)
+        match self {
+            Self::Plugin(_) => crate::plugins::registry::verify_plugin_component_authority(
+                &authority,
+                crate::plugins::activation::PluginActivationCapability::Skills,
+            ),
+            Self::NativeRoot(source) => {
+                crate::extension_host::skills::verify_native_skill(&authority, &source.registration)
+            }
+        }
     }
     #[cfg(test)]
     pub(crate) fn verify(&self, workspace: &Path) -> Result<(), String> {
         self.verify_for(workspace, None)
-    }
-    fn verify_current(&self, workspace: &Path) -> Result<(), String> {
-        let authority = self.authority();
-        if authority.workspace != workspace {
-            return Err("plugin skill belongs to a different workspace".to_string());
-        }
-        match self {
-            Self::Plugin(authority) => crate::plugins::registry::verify_plugin_component_authority(
-                authority,
-                crate::plugins::activation::PluginActivationCapability::Skills,
-            ),
-            Self::NativeRoot(source) => crate::extension_host::skills::verify_native_skill(
-                &source.authority,
-                &source.registration,
-            ),
-        }
     }
 }
 
@@ -585,7 +580,7 @@ impl SkillRegistry {
         let mut registry = Self::default();
         let mut watched = WatchedPaths::default();
         if let Some(workspace) = confine_to
-            && let Err(error) = crate::fleet::files::reject_linked_path(workspace, dir)
+            && let Err(error) = codewhale_util::files::reject_linked_path(workspace, dir)
         {
             registry.push_warning(format!(
                 "{error}: workspace skills must stay inside the workspace."
@@ -705,7 +700,7 @@ impl SkillRegistry {
                     } else {
                         fs::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf())
                     };
-                    crate::fs_confined::read_to_string(&root, &skill_path)
+                    codewhale_util::fs_confined::read_to_string(&root, &skill_path)
                 }
                 None => match fs::metadata(&skill_path) {
                     Ok(meta) if !meta.is_file() => Err(std::io::Error::new(
@@ -1169,7 +1164,7 @@ fn legacy_skill_name_segment(name: &str) -> String {
 /// installed (the system-prompt skills block is then suppressed).
 #[must_use]
 pub fn skills_directories_for_mode(workspace: &Path, mode: SkillDiscoveryMode) -> Vec<PathBuf> {
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     skills_directories_with_home_and_mode(workspace, home.as_deref(), mode)
 }
 
@@ -1242,7 +1237,7 @@ pub(crate) fn untrusted_project_skills_warning(
     configured_skills_dir: Option<&Path>,
     mode: SkillDiscoveryMode,
 ) -> Option<String> {
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     let skipped = roots::untrusted_project_skill_dirs(
         workspace,
         home.as_deref(),
@@ -1285,7 +1280,7 @@ pub fn skill_directories_for_workspace_and_dir(
     skills_dir: &Path,
     mode: SkillDiscoveryMode,
 ) -> Vec<PathBuf> {
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     let mut dirs = skills_directories_with_home_and_mode(workspace, home.as_deref(), mode);
     insert_configured_skills_dir(&mut dirs, workspace, home.as_deref(), skills_dir);
     dirs
@@ -1294,7 +1289,7 @@ pub fn skill_directories_for_workspace_and_dir(
 /// Whether a resolved or configured skills dir may load for `workspace`; see
 /// [`roots::skills_dir_allowed_by_workspace_trust`].
 pub(crate) fn skills_dir_allowed_by_workspace_trust(workspace: &Path, skills_dir: &Path) -> bool {
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     roots::skills_dir_allowed_by_workspace_trust(workspace, home.as_deref(), skills_dir)
 }
 
@@ -1495,15 +1490,15 @@ fn merge_active_plugin_skills(
     registry: &mut SkillRegistry,
     plugins: &crate::plugins::PluginRegistry,
 ) {
-    let Some(state_path) = plugins.state_path().map(Path::to_path_buf) else {
+    if plugins.state_path().is_none() {
         return;
-    };
+    }
     let plugins = plugins
         .list()
         .into_iter()
         .filter_map(|plugin| {
-            plugin
-                .authority(state_path.clone(), plugins.workspace().to_path_buf())
+            plugins
+                .authority_for(plugin.id.as_str())
                 .map(|authority| (plugin.clone(), authority))
         })
         .collect::<Vec<_>>();
@@ -1679,7 +1674,7 @@ pub fn render_available_skills_context_for_workspace_and_dir_with_mode_and_plugi
         plugins,
     )
     .into_enabled();
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     let configured_skills_root = matches!(
         classify_configured_skills_dir(workspace, home.as_deref(), skills_dir).0,
         SkillRootKind::Configured
@@ -1721,7 +1716,7 @@ fn sanitize_prompt_path_text(
     {
         out = out.replace(ws, ".");
     }
-    if let Some(home) = crate::config::effective_home_dir()
+    if let Some(home) = codewhale_paths::user_home()
         && let Some(home_str) = home.to_str()
         && !home_str.is_empty()
     {
@@ -1802,7 +1797,7 @@ fn privacy_safe_skill_path(path: &Path, workspace: &Path) -> String {
     if let Ok(rel) = path.strip_prefix(workspace) {
         return prompt_display(rel);
     }
-    if let Some(home) = crate::config::effective_home_dir()
+    if let Some(home) = codewhale_paths::user_home()
         && let Ok(rel) = path.strip_prefix(&home)
     {
         return format!("~/{}", prompt_display(rel));

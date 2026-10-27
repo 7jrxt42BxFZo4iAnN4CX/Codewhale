@@ -4,13 +4,13 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use tempfile::tempdir;
 
-use crate::config::ToolOverride;
 use crate::tools::ToolRegistryBuilder;
 use crate::tools::shell::BashTool;
 use crate::tools::spec::{
     ApprovalRequirement, ToolAuthorityEnvelope, ToolCapability, ToolContext, ToolError,
     ToolMutationAuthority, ToolResult, ToolSpec, required_str,
 };
+use codewhale_runtime::config::ToolOverride;
 
 use super::{
     MCP_IMAGE_TEXT_PLACEHOLDER, ToolRegistry, enforce_tool_authority,
@@ -82,7 +82,7 @@ async fn shell_denial_reaches_registry_and_direct_delegation_sinks() {
 
 #[test]
 fn shell_denial_keeps_the_existing_bounded_child_read_only_exception() {
-    use crate::core::engine::tool_catalog::enforce_tool_denial;
+    use crate::tools::execution_envelope::enforce_tool_denial;
     use codewhale_agent_contract::worker_profile::ShellPolicy;
     let tmp = tempdir().unwrap();
     let mut context = ToolContext::new(tmp.path()).with_shell_policy(ShellPolicy::ReadOnly);
@@ -2309,7 +2309,7 @@ fn runtime_surface_hardening_plugin_collisions_preserve_registered_tools() {
     let builtins = std::collections::HashSet::from(["File".to_string()]);
     let overrides = std::collections::HashMap::from([(
         "custom-reader".to_string(),
-        crate::config::ToolOverride::Command {
+        codewhale_runtime::config::ToolOverride::Command {
             command: "my-reader".to_string(),
             args: None,
         },

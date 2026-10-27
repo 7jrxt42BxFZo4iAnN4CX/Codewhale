@@ -364,7 +364,7 @@ pub(crate) fn handle_composer_mouse(app: &mut App, mouse: MouseEvent) -> bool {
                 let action =
                     app.decide_composer_submit(crate::tui::app::ComposerSubmitChord::Enter);
                 if !matches!(action, crate::tui::app::ComposerSubmitAction::Noop)
-                    && (app.composer_enter_would_submit()
+                    && (app.composer_enter_would_submit(true)
                         || matches!(action, crate::tui::app::ComposerSubmitAction::SendQueuedNow))
                 {
                     app.pending_composer_submit = Some(crate::tui::app::ComposerSubmitChord::Enter);
@@ -1006,15 +1006,15 @@ pub(crate) fn resolve_agent_transcript_text(app: &App, agent_id: &str) -> Option
     // failed/stale append must fall back to the explicit omission banner. With
     // no process-local handle (for example after restart), the validated
     // artifact remains the durable source of truth.
-    if let Ok(messages) =
-        crate::tools::subagent::load_subagent_transcript_artifact(&app.workspace, agent_id)
+    if let Ok(display) =
+        crate::tools::subagent::load_subagent_transcript_display_artifact(&app.workspace, agent_id)
     {
         let matches_resident_count = payload.as_ref().is_none_or(|resident| {
             resident
                 .get("message_count")
                 .and_then(serde_json::Value::as_u64)
                 .and_then(|count| usize::try_from(count).ok())
-                == Some(messages.len())
+                == Some(display.conversation_count)
                 && resident
                     .get("complete_transcript_artifact")
                     .and_then(|artifact| artifact.get("complete"))
@@ -1022,7 +1022,7 @@ pub(crate) fn resolve_agent_transcript_text(app: &App, agent_id: &str) -> Option
                     .unwrap_or(true)
         });
         if matches_resident_count {
-            let text = agent_messages_text(&messages);
+            let text = agent_messages_text(&display.messages);
             if !text.trim().is_empty() {
                 return Some(text);
             }
@@ -2375,7 +2375,6 @@ mod tests {
         agent_transcript_text, build_context_menu_entries, handle_composer_mouse,
         handle_mouse_event, sidebar_click_action,
     };
-    use crate::config::Config;
     use crate::tui::app::{
         App, SidebarHoverRow, SidebarHoverSection, SidebarRowAction, TuiOptions,
     };
@@ -2386,6 +2385,7 @@ mod tests {
     use crate::tui::views::{ContextMenuAction, ModalKind, ViewEvent};
     use codewhale_models::Role;
     use codewhale_models::{ContentBlock, Message};
+    use codewhale_runtime::config::Config;
     use crossterm::event::{
         KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
     };

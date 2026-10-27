@@ -64,7 +64,7 @@ impl ChildAccountingProjection {
                     route,
                     reason,
                 ),
-                None => crate::cost_status::report_missing_usage_for_interactive_origin(
+                None => crate::usage_persistence::report_missing_usage_for_interactive_origin(
                     self.origin.cost_scope,
                     &self.origin.session_id,
                     &self.owner,
@@ -753,7 +753,7 @@ impl ChildAuthority {
         }
         // Core's virtual search returns this child's filtered catalog; it is
         // not a registered process tool. Scope and deny checks still follow.
-        let evidence_tool = crate::core::engine::tool_catalog::is_tool_search_tool(name)
+        let evidence_tool = codewhale_tools::names::is_tool_search_tool(name)
             || crate::tools::registry::readonly_evidence_tool_name(name)
             || registry
                 .get(name)
@@ -991,7 +991,7 @@ pub(crate) struct ChildJob {
     pub(crate) deadline: Option<Instant>,
     pub(crate) fork_context: bool,
     parking: Option<Arc<std::sync::atomic::AtomicBool>>,
-    artifact: tokio::sync::Mutex<Option<SubAgentTranscriptArtifactWriter>>,
+    artifact: Arc<tokio::sync::Mutex<Option<SubAgentTranscriptArtifactWriter>>>,
     scheduler: tokio::runtime::Handle,
     pub(crate) requests: std::sync::atomic::AtomicU32,
     logical_steps: std::sync::atomic::AtomicU32,
@@ -1023,7 +1023,7 @@ impl ChildJob {
             deadline,
             fork_context,
             parking,
-            artifact: tokio::sync::Mutex::new(Some(artifact)),
+            artifact: Arc::new(tokio::sync::Mutex::new(Some(artifact))),
             scheduler: tokio::runtime::Handle::try_current()
                 .map_err(|_| anyhow!("child admission requires the existing Engine scheduler"))?,
             requests: std::sync::atomic::AtomicU32::new(0),
@@ -1065,8 +1065,53 @@ impl ChildJob {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = model.to_owned();
     }
+    pub(crate) async fn record_request_nudge(
+        &self,
+        turn_id: &str,
+        request_index: u32,
+        text: &str,
+        cancel: &CancellationToken,
+    ) -> Result<()> {
+        let deadline = self
+            .deadline
+            .map(tokio::time::Instant::from_std)
+            .into_iter()
+            .chain(self.authority.runtime.context.turn_deadline)
+            .chain(Some(
+                tokio::time::Instant::now() + self.authority.runtime.tool_timeout,
+            ))
+            .min()
+            .expect("captured tool timeout bounds receipt persistence");
+        let artifact = self.artifact.clone();
+        let acquire = tokio::time::timeout_at(deadline, artifact.lock_owned());
+        let mut artifact = tokio::select! {
+            biased;
+            () = cancel.cancelled() => return Err(anyhow!("child request receipt cancelled")),
+            () = self.authority.runtime.cancel_token.cancelled() => return Err(anyhow!("child request receipt cancelled")),
+            result = acquire => result.map_err(|_| anyhow!("child request receipt deadline elapsed"))?,
+        };
+        let turn_id = turn_id.to_string();
+        let text = text.to_string();
+        let persist = tokio::task::spawn_blocking(move || {
+            artifact
+                .as_mut()
+                .ok_or_else(|| anyhow!("child transcript writer is unavailable"))?
+                .record_request_nudge(&turn_id, request_index, &text)
+        });
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => Err(anyhow!("child request receipt cancelled")),
+            () = self.authority.runtime.cancel_token.cancelled() => Err(anyhow!("child request receipt cancelled")),
+            result = tokio::time::timeout_at(deadline, persist) => result
+                .map_err(|_| anyhow!("child request receipt deadline elapsed"))?
+                .map_err(|error| anyhow!("child receipt writer failed: {error}"))?,
+        }
+    }
+
     pub(crate) async fn project(&self, messages: &[Message], steps: u32) -> Result<()> {
-        let mut artifact = self.artifact.lock().await;
+        let mut artifact = self.artifact.try_lock().map_err(|_| {
+            anyhow!("child transcript writer is still busy; checkpoint not advanced")
+        })?;
         if let Some(writer) = artifact.as_mut() {
             writer.sync_messages(messages, true)?;
         }
@@ -1583,6 +1628,9 @@ pub(super) async fn run_child_agent(
         subagent_api_timeout: runtime.step_api_timeout,
         auto_review_policy: runtime.auto_review_policy.as_ref().clone(),
         tools_always_load: allowed_tools.iter().flatten().cloned().collect(),
+        reasoning_only_max_reprompts: api.reasoning_only_max_reprompts(),
+        reasoning_only_on_output_limit: api.reasoning_only_on_output_limit(),
+        reasoning_only_reprompt_message: Some(api.reasoning_only_reprompt_message().to_string()),
         locale_tag: runtime.locale_tag.clone(),
         ..Default::default()
     };
@@ -1635,6 +1683,60 @@ pub(crate) async fn forward_child_gate_observation(
     } else {
         // Available capacity can still carry the final observation after
         // cancellation. A full/closed host cannot keep the actor alive.
+        let _ = tx.try_send(event);
+    }
+}
+
+async fn forward_child_request_receipt(
+    runtime: &SubAgentRuntime,
+    owner: &str,
+    message: String,
+    cancel: &CancellationToken,
+    deadline: Option<tokio::time::Instant>,
+) {
+    let deadline = deadline
+        .into_iter()
+        .chain(runtime.context.turn_deadline)
+        .chain(Some(tokio::time::Instant::now() + runtime.tool_timeout))
+        .min()
+        .expect("captured tool timeout bounds receipt delivery");
+    let activity = AgentProgressEventMeta::new(AgentWorkerStatus::Running);
+    let manager = tokio::select! {
+        biased;
+        () = runtime.cancel_token.cancelled() => None,
+        () = cancel.cancelled() => None,
+        result = tokio::time::timeout_at(deadline, runtime.manager.write()) => result.ok(),
+    };
+    if let Some(mut manager) = manager {
+        manager.touch(owner);
+        manager.record_worker_event(
+            owner,
+            activity.worker_status,
+            Some(message.clone()),
+            activity.step,
+            activity.tool_name.clone(),
+        );
+    }
+    let Some(tx) = runtime.event_tx.as_ref() else {
+        return;
+    };
+    let event = Event::AgentProgress {
+        owner_session_id: runtime.context.state_namespace.clone(),
+        id: owner.to_string(),
+        status: message,
+        activity,
+        parent_run_id: runtime.parent_agent_id.clone(),
+        spawn_depth: runtime.spawn_depth,
+    };
+    let permit = tokio::select! {
+        biased;
+        () = runtime.cancel_token.cancelled() => None,
+        () = cancel.cancelled() => None,
+        result = tokio::time::timeout_at(deadline, tx.reserve()) => result.ok().and_then(Result::ok),
+    };
+    if let Some(permit) = permit {
+        permit.send(event);
+    } else {
         let _ = tx.try_send(event);
     }
 }
@@ -1798,6 +1900,11 @@ pub(crate) async fn drive_child_actor(
                         record_agent_progress(&runtime, &agent_id, AgentProgressEventMeta::new(AgentWorkerStatus::RunningTool).with_tool(name.clone()),
                             format!("{label} {}", if result.is_ok() { "done" } else { "failed" }));
                     }
+                    Event::Status { message, .. }
+                        if message.starts_with(crate::core::events::REQUEST_NUDGE_RECEIPT_PREFIX) => {
+                        forward_child_request_receipt(&runtime, &agent_id, message.clone(),
+                            &handle.captured_turn_cancel(), job.deadline.map(Into::into)).await;
+                    }
                     Event::Status { message, .. } => record_agent_progress(&runtime, &agent_id,
                         AgentProgressEventMeta::new(AgentWorkerStatus::Running), message.clone()),
                     _ => {} // Session is projected by Core; aggregate usage is never rebilled here.
@@ -1832,6 +1939,17 @@ pub(crate) async fn drive_child_actor(
             if let Some(tx) = &runtime.event_tx {
                 let _ = tx.try_send(event);
             }
+        } else if let Event::Status { message, .. } = &event
+            && message.starts_with(crate::core::events::REQUEST_NUDGE_RECEIPT_PREFIX)
+        {
+            forward_child_request_receipt(
+                &runtime,
+                &agent_id,
+                message.clone(),
+                &handle.captured_turn_cancel(),
+                job.deadline.map(Into::into),
+            )
+            .await;
         } else if matches!(event, Event::ToolGateDecision { .. }) {
             forward_child_gate_observation(
                 &runtime,
@@ -2147,7 +2265,7 @@ mod owner_origin_tests {
             let mut held = manager.write().await;
             for lexical in [&original, &selected] {
                 let (canonical, file) =
-                    crate::runtime_api::open_workspace_directory(lexical).unwrap();
+                    codewhale_util::workspace_dir::open_workspace_directory(lexical).unwrap();
                 held.admit_coordination_workspace(lexical.clone(), canonical, Arc::new(file))
                     .unwrap();
             }

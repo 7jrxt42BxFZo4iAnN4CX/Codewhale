@@ -17,6 +17,14 @@ pub enum ApprovalMode {
 }
 
 impl ApprovalMode {
+    pub fn from_auto_approve(auto_approve: bool) -> Self {
+        if auto_approve {
+            Self::Bypass
+        } else {
+            Self::Suggest
+        }
+    }
+
     /// Shift+Tab permission cycle order (#0.8.68 M2).
     pub const PERMISSION_CYCLE: [Self; 3] = [Self::Suggest, Self::Auto, Self::Bypass];
 

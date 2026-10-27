@@ -295,7 +295,7 @@ pub fn get_command_info(name: &str) -> Option<&'static CommandInfo> {
 pub fn execute_with_config(
     cmd: &str,
     app: &mut App,
-    config: &crate::config::Config,
+    config: &codewhale_runtime::config::Config,
 ) -> CommandResult {
     execute_in_context(cmd, app, Some(config))
 }
@@ -309,7 +309,7 @@ pub fn execute(cmd: &str, app: &mut App) -> CommandResult {
 fn execute_in_context(
     cmd: &str,
     app: &mut App,
-    config: Option<&crate::config::Config>,
+    config: Option<&codewhale_runtime::config::Config>,
 ) -> CommandResult {
     // Keep the command's raw remainder available for commands whose payload is
     // byte-sensitive. Most slash commands intentionally receive a normalized
@@ -525,12 +525,13 @@ fn suggest_command_names(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, ProviderKind};
     use crate::tools::plan::{PlanItemArg, StepStatus, UpdatePlanArgs};
     use crate::tools::todo::TodoStatus;
     use crate::tui::app::{App, AppAction, TuiOptions};
     use crate::tui::work_surface::{RailPanel, WorkSurfacePlacement};
+    use codewhale_config::ProviderKind;
     use codewhale_localization::{Locale, MessageId};
+    use codewhale_runtime::config::Config;
     use std::path::{Path, PathBuf};
     use tempfile::tempdir;
 
@@ -3190,15 +3191,16 @@ mod tests {
 
     // ---------------------------------------------------------------------
     // FEAT-024: session control entries register through the portable bridge
-    // (D3/D6) — six declare SESSION_CONTROL only; `/remote-env` declares
-    // control plus presentation; export/structcopy have independent authority.
+    // (D3/D6) — five declare SESSION_CONTROL only; `/remote-env` and `/color`
+    // declare control plus presentation; export/structcopy have independent
+    // authority.
     // ---------------------------------------------------------------------
 
     #[test]
     fn feat024_control_entries_register_through_portable_bridge() {
         use codewhale_command_contract::handler::{CommandCapabilities, CommandHandler};
 
-        for name in ["relay", "rename", "resume", "rc", "title", "color"] {
+        for name in ["relay", "rename", "resume", "rc", "title"] {
             assert!(
                 registry().has_contextual_handler(name),
                 "/{name} must register through the portable bridge"
@@ -3217,19 +3219,25 @@ mod tests {
                 "/{name} declares control authority only"
             );
         }
-        let handler = registry()
-            .get("remote-env")
-            .expect("entry")
-            .contextual_handler()
-            .expect("remote-env handler");
-        let CommandHandler::Contextual { capabilities, .. } = handler else {
-            panic!("/remote-env must be contextual");
-        };
-        assert_eq!(
-            capabilities,
-            CommandCapabilities::SESSION_CONTROL.union(CommandCapabilities::PRESENTATION),
-            "/remote-env declares control plus presentation only"
-        );
+        for name in ["remote-env", "color"] {
+            assert!(
+                registry().has_contextual_handler(name),
+                "/{name} must register through the portable bridge"
+            );
+            let handler = registry()
+                .get(name)
+                .expect("entry")
+                .contextual_handler()
+                .expect("contextual handler");
+            let CommandHandler::Contextual { capabilities, .. } = handler else {
+                panic!("/{name} must be contextual");
+            };
+            assert_eq!(
+                capabilities,
+                CommandCapabilities::SESSION_CONTROL.union(CommandCapabilities::PRESENTATION),
+                "/{name} declares control plus presentation only"
+            );
+        }
         // FEAT-026 also registers structcopy through its own narrow boundary.
         assert!(
             registry().has_contextual_handler("structcopy"),

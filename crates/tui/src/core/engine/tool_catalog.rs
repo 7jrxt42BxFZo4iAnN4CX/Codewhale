@@ -5,6 +5,11 @@
 //! tool suggestions, and the small set of built-in advanced tools that are not
 //! registered by the normal runtime tool registry.
 
+use crate::tools::execution_envelope::tool_call_denied;
+use codewhale_tools::names::{
+    LEGACY_TOOL_SEARCH_BM25_NAME, LEGACY_TOOL_SEARCH_REGEX_NAME, TOOL_SEARCH_NAME,
+    is_tool_search_tool,
+};
 use std::collections::HashSet;
 use std::path::Path;
 use std::time::Duration;
@@ -22,31 +27,18 @@ use codewhale_execpolicy::tool_rules::{tool_denied, tool_matches_any_rule};
 use codewhale_models::Tool;
 
 use crate::core::session::ToolActivationCache;
-use crate::dependencies::ExternalTool;
+use codewhale_dependencies::ExternalTool;
 use codewhale_runtime::features::{Feature, Features};
 use codewhale_runtime::regex_cache::compile_user_regex;
-
-pub(crate) const MULTI_TOOL_PARALLEL_NAME: &str = "multi_tool_use.parallel";
-pub(crate) const REQUEST_USER_INPUT_NAME: &str = "request_user_input";
 pub(crate) const CODE_EXECUTION_TOOL_NAME: &str = "code_execution";
 const CODE_EXECUTION_TOOL_TYPE: &str = "code_execution_20250825";
 const CODE_EXECUTION_DESCRIPTION: &str = "Execute Python code with the local Python interpreter using this call's execution policy and return stdout/stderr/return_code as JSON.";
 pub(super) use crate::tools::codemode::EXECUTE_TOOLS_TOOL_NAME;
 pub(super) use crate::tools::js_execution::JS_EXECUTION_TOOL_NAME;
-pub(crate) const TOOL_SEARCH_NAME: &str = "tool_search";
 const TOOL_RESULT_RETRIEVAL_NAME: &str = "retrieve_tool_result";
 const TOOL_SEARCH_TYPE: &str = "tool_search_20251119";
-pub(super) const LEGACY_TOOL_SEARCH_REGEX_NAME: &str = "tool_search_tool_regex";
-pub(super) const LEGACY_TOOL_SEARCH_BM25_NAME: &str = "tool_search_tool_bm25";
 const TOOL_SEARCH_DEFAULT_MAX_RESULTS: usize = 8;
 const TOOL_SEARCH_MAX_RESULTS_LIMIT: usize = 8;
-
-pub(crate) fn is_tool_search_tool(name: &str) -> bool {
-    matches!(
-        name,
-        TOOL_SEARCH_NAME | LEGACY_TOOL_SEARCH_REGEX_NAME | LEGACY_TOOL_SEARCH_BM25_NAME
-    )
-}
 
 // Crate-visible so the hook gate tests the real eager names instead of a copy.
 #[rustfmt::skip]
@@ -221,7 +213,7 @@ pub(super) fn build_model_tool_catalog_with_surface(
 // A second Registry authority used to live here: it appended a "call
 // registry_sync before this tool" paragraph to a model-visible `exec_shell`
 // description. The model-visible shell tool is `bash` — `exec_shell` is only a
-// canonical *action* name (see `tools::canonical_action`) — so the hook never
+// canonical *action* name (see `codewhale_execpolicy::canonical_action`) — so the hook never
 // fired on a live catalog, and its own test pinned that it must not touch
 // `bash`. The Registry instruction in `Engine::new` is the single prompt
 // authority for this decision; a per-tool copy of it is not revived here.
@@ -287,7 +279,7 @@ pub(crate) enum ToolMode {
 
 /// Resolve the turn's tool mode: model hint first, `[features] code_mode`
 /// second, [`ToolMode::Direct`] otherwise. The engine passes `None` for the
-/// hint until per-model metadata is wired (model_registry follow-up).
+/// hint until per-model metadata is wired.
 pub(crate) fn requested_tool_mode(model_hint: Option<ToolMode>, features: &Features) -> ToolMode {
     model_hint.unwrap_or_else(|| {
         if features.enabled(Feature::CodeMode) {
@@ -310,11 +302,11 @@ pub(crate) fn ensure_advanced_tooling(
     // `python3` isn't on PATH — the model treated the tool as reliable
     // once it appeared in the catalog. We now probe at catalog-build
     // time and only advertise when an interpreter resolves. See
-    // `crate::dependencies::resolve_python_interpreter` for the probe.
+    // `codewhale_dependencies::resolve_python_interpreter` for the probe.
     if mode != AppMode::Plan
         && !catalog.iter().any(|t| t.name == CODE_EXECUTION_TOOL_NAME)
-        && crate::dependencies::host_tool_available(CODE_EXECUTION_TOOL_NAME, || {
-            crate::dependencies::resolve_python_interpreter().is_some()
+        && codewhale_dependencies::host_tool_available(CODE_EXECUTION_TOOL_NAME, || {
+            codewhale_dependencies::resolve_python_interpreter().is_some()
         })
     {
         catalog.push(Tool {
@@ -355,8 +347,8 @@ pub(crate) fn ensure_advanced_tooling(
     // the tool only when `resolve_node()` succeeds.
     if mode != AppMode::Plan
         && !catalog.iter().any(|t| t.name == JS_EXECUTION_TOOL_NAME)
-        && crate::dependencies::host_tool_available(JS_EXECUTION_TOOL_NAME, || {
-            crate::dependencies::resolve_node().is_some()
+        && codewhale_dependencies::host_tool_available(JS_EXECUTION_TOOL_NAME, || {
+            codewhale_dependencies::resolve_node().is_some()
         })
     {
         let mut tool = crate::tools::js_execution::js_execution_tool_definition();
@@ -662,46 +654,6 @@ fn retrieval_available_beside_an_allowlist(
         && allowed_tools.is_some_and(|rules| !rules.is_empty())
 }
 
-pub(crate) fn tool_call_denied(rules: Option<&[String]>, name: &str, input: &Value) -> bool {
-    use crate::tools::canonical_action::canonical_action_alias;
-    use crate::tools::execution_envelope::{VerificationBound, classify_verification};
-
-    let action = canonical_action_alias(name, input);
-    tool_denied(rules, name)
-        || tool_denied(rules, action)
-        || (action == "rlm_open"
-            && input
-                .get("url")
-                .and_then(Value::as_str)
-                .is_some_and(|url| !url.trim().is_empty())
-            && tool_denied(rules, "fetch_url"))
-        || (matches!(
-            classify_verification(action, input),
-            Some(VerificationBound::Unbounded)
-        ) && rules.is_some_and(|rules| tool_matches_any_rule(rules, "Bash")))
-}
-
-/// Repeat the command ceiling at native dispatch and direct delegation sinks.
-/// The existing child evidence exception is limited to the canonical lowercase
-/// tool, a child-owned context, and the same strict read-only grammar enforced
-/// by Bash itself. It never admits a session, stdin, or background command.
-pub(crate) fn enforce_tool_denial(
-    context: &crate::tools::spec::ToolContext,
-    name: &str,
-    input: &Value,
-) -> Result<(), ToolError> {
-    let bounded_child_read = name == "bash"
-        && context.owner_agent_id.is_some()
-        && context.shell_policy == codewhale_agent_contract::worker_profile::ShellPolicy::ReadOnly
-        && crate::tools::shell::agent_readonly_bash_input(input);
-    if !bounded_child_read && tool_call_denied(Some(&context.disallowed_tools), name, input) {
-        return Err(ToolError::permission_denied(format!(
-            "Tool '{name}' or its execution dependency is in the disallowed-tools list"
-        )));
-    }
-    Ok(())
-}
-
 /// Whether an explicit tool allowlist is provably limited to the native file
 /// and shell primitives. Unknown names and wildcards remain conservative
 /// because a configured MCP server may own them.
@@ -743,7 +695,7 @@ pub(crate) fn active_tools_for_request(
     }
     let mut tools = active_tools_for_step(catalog, active);
     if strict_tool_mode {
-        crate::tools::schema_sanitize::prepare_tools_for_strict_mode(&mut tools);
+        prepare_tools_for_strict_mode(&mut tools);
     }
     Some(tools)
 }
@@ -809,7 +761,7 @@ pub(crate) fn measure_deferred_tools(
                 .filter(|name| {
                     wire.omitted_tool_names
                         .iter()
-                        .any(|omitted| crate::client::from_api_tool_name(omitted) == **name)
+                        .any(|omitted| crate::client::wire::from_api_tool_name(omitted) == **name)
                 })
                 .cloned()
                 .collect()
@@ -1700,10 +1652,10 @@ pub(super) async fn execute_code_execution_tool(
     context: &ToolContext,
 ) -> Result<ToolResult, ToolError> {
     let code = required_str(input, "code")?;
-    let interpreter = crate::dependencies::Python::resolve().ok_or_else(|| {
+    let interpreter = codewhale_dependencies::Python::resolve().ok_or_else(|| {
         ToolError::execution_failed("code_execution: Python interpreter became unavailable")
     })?;
-    let (program, mut args) = crate::dependencies::split_interpreter_spec(&interpreter);
+    let (program, mut args) = codewhale_dependencies::split_interpreter_spec(&interpreter);
     args.push("-".to_string());
     let budget = Duration::from_secs(120);
     let mut cmd =
@@ -1740,6 +1692,25 @@ pub(super) async fn execute_code_execution_tool(
         success,
         metadata: Some(payload),
     })
+}
+
+/// Prepare a complete active tool set for DeepSeek strict function-calling.
+///
+/// Each tool is evaluated independently: compatible schemas are sanitized and
+/// marked strict, while incompatible schemas remain unchanged and non-strict.
+/// Returns `true` only when every tool in the set can use strict mode.
+pub(crate) fn prepare_tools_for_strict_mode(tools: &mut [Tool]) -> bool {
+    let mut all_strict = true;
+    for tool in tools {
+        if codewhale_models::schema_sanitize::strict_schema_supported(&tool.input_schema) {
+            codewhale_models::schema_sanitize::sanitize_for_strict(&mut tool.input_schema);
+            tool.strict = Some(true);
+        } else {
+            tool.strict = None;
+            all_strict = false;
+        }
+    }
+    all_strict
 }
 
 #[cfg(test)]

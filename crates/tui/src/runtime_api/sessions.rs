@@ -634,7 +634,7 @@ pub(super) async fn create_session_from_thread(
 }
 
 pub(super) fn stamp_session_provider_from_thread(
-    config: &crate::config::Config,
+    config: &codewhale_runtime::config::Config,
     detail: &ThreadDetail,
     metadata: &mut crate::session_manager::SessionMetadata,
 ) -> Result<(), String> {
@@ -663,7 +663,7 @@ pub(super) fn stamp_session_provider_from_thread(
         let key = config
             .provider
             .as_deref()
-            .unwrap_or(crate::config::ProviderKind::Deepseek.as_str());
+            .unwrap_or(codewhale_config::ProviderKind::Deepseek.as_str());
         config.resolve_provider_identity(key)?
     };
     metadata.set_model_provider_route(
@@ -1420,7 +1420,7 @@ pub(super) fn resolve_session_artifact(
             }
             ArtifactAuthority::TurnRef { path, .. } => {
                 let relative = PathBuf::from(path);
-                if relative.is_absolute() || !crate::fleet::files::path_is_confined(&relative) {
+                if relative.is_absolute() || !codewhale_util::files::path_is_confined(&relative) {
                     return Err(ApiError::forbidden(
                         "artifact reference is not confined to its session",
                     ));
@@ -1488,7 +1488,7 @@ fn saved_session_summary(
     };
     let record = record.ok_or_else(|| ApiError::not_found("artifact not found"))?;
     if record.storage_path.is_absolute()
-        || !crate::fleet::files::path_is_confined(&record.storage_path)
+        || !codewhale_util::files::path_is_confined(&record.storage_path)
         || (!record.session_id.is_empty() && record.session_id != id)
     {
         return Err(ApiError::forbidden(

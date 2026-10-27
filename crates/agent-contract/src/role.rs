@@ -20,8 +20,8 @@
 //! ledger / executor / worker_runtime / roster / profile / identity /
 //! members, and nothing from tools.
 
-use codewhale_protocol::fleet::FleetEffectivePermissions;
-use codewhale_workflow::{PermissionCeiling, ShellCeiling};
+use codewhale_protocol::fleet::{FleetEffectivePermissions, migrate_legacy_role_token};
+use codewhale_protocol::fleet::{PermissionCeiling, ShellCeiling};
 
 use crate::worker_profile::{ShellPolicy, ToolScope, WorkerRuntimeProfile};
 
@@ -116,26 +116,6 @@ impl<'de> serde::Deserialize<'de> for FleetRole {
         let raw = String::deserialize(deserializer)?;
         Self::parse(&raw)
             .ok_or_else(|| serde::de::Error::unknown_variant(&raw, &FLEET_ROLE_SCHEMA_VALUES))
-    }
-}
-
-/// Explicit boundary migration for pre-Fleet serialized role tokens.
-///
-/// Call this only at load / parse edges. Runtime code must use Fleet role
-/// names via [`FleetRole::as_str`]. Returns `None` for tokens that are
-/// already canonical or unknown — callers should prefer [`FleetRole::parse`]
-/// for full acceptance (canonical + legacy).
-#[must_use]
-pub fn migrate_legacy_role_token(token: &str) -> Option<&'static str> {
-    match token.trim().to_ascii_lowercase().as_str() {
-        "worker" | "general-purpose" | "general_purpose" | "default" => Some("general"),
-        "scout" | "exploration" | "explorer" => Some("explore"),
-        "plan" | "planning" | "awaiter" => Some("planner"),
-        "review" | "code-review" | "code_review" => Some("reviewer"),
-        "builder" | "implementer" | "implementation" => Some("implement"),
-        "verifier" | "verify" | "verification" | "validator" | "tester" => Some("test"),
-        "consultant" | "oracle" => Some("advisor"),
-        _ => None,
     }
 }
 
@@ -288,7 +268,7 @@ pub const NETWORK_TOOL_DENYLIST: &[&str] = &[
     // contract was considered and rejected: `rlm_open` chooses its source from
     // *input fields* (`file_path` / `content` / `url` / `session_object`), not
     // from the action name, and the action-policy seam
-    // (`crate::tools::canonical_action`) resolves names, not field shapes —
+    // (`codewhale_execpolicy::canonical_action`) resolves names, not field shapes —
     // it cannot prove a source is local before execution. So this fails closed.
     // A network-denied member loses `rlm` loading and evaluation entirely,
     // including the purely local `file_path` form, and keeps only the bounded

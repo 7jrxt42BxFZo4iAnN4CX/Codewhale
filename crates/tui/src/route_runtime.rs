@@ -8,13 +8,15 @@ use codewhale_config::route::{
 use serde::Serialize;
 
 use crate::client::CodewhaleClient;
-use crate::codex_model_cache::{CodexModelCacheFreshness, CodexModelRoster, model_roster_for};
-use crate::config::{
-    Config, KIMI_CODE_K3_CONTEXT_WINDOW_TOKENS, ProviderIdentity, ProviderKind,
-    is_exact_direct_moonshot_k3_route, is_exact_kimi_code_bare_k3_route,
+use crate::codex_model_cache::model_roster_for;
+use codewhale_config::ProviderKind;
+use codewhale_models::DIRECT_KIMI_K3_MAX_OUTPUT_TOKENS;
+use codewhale_models::KIMI_CODE_K3_CONTEXT_WINDOW_TOKENS;
+use codewhale_runtime::codex_model_roster::{CodexModelCacheFreshness, CodexModelRoster};
+use codewhale_runtime::config::{
+    Config, ProviderIdentity, is_exact_direct_moonshot_k3_route, is_exact_kimi_code_bare_k3_route,
     validate_kimi_code_api_model_id,
 };
-use codewhale_models::DIRECT_KIMI_K3_MAX_OUTPUT_TOKENS;
 
 /// Why a route is using its effective context-window value.  Keep this
 /// receipt separate from the numeric route limits so every consumer can state
@@ -113,6 +115,17 @@ impl ContextWindowSource {
 pub(crate) struct ContextWindowResolution {
     pub(crate) tokens: u32,
     pub(crate) source: ContextWindowSource,
+}
+
+impl ContextWindowResolution {
+    pub(crate) fn instruction_budget_tokens(self) -> Option<usize> {
+        (self.tokens > 0
+            && !matches!(
+                self.source,
+                ContextWindowSource::Fallback | ContextWindowSource::NameSuffixHint
+            ))
+        .then_some(self.tokens as usize)
+    }
 }
 
 /// Resolve the effective context window for a host holding no fully resolved
@@ -1069,7 +1082,7 @@ pub(crate) fn resolve_runtime_route_for_identity(
         let needs_local_default = provider == ProviderKind::Ollama
             && model_selector.or(saved_provider_model).is_none_or(|model| {
                 model.trim().eq_ignore_ascii_case("auto")
-                    || crate::config::is_unresolved_local_ollama_model(model)
+                    || codewhale_runtime::config::is_unresolved_local_ollama_model(model)
             });
         if needs_local_default && !catalog.endpoint_catalog_authoritative {
             return Err(
@@ -1119,7 +1132,9 @@ pub(crate) fn resolve_runtime_route_for_identity(
     };
     let candidate = resolution.candidate;
     let model = candidate.wire_model_id().as_str().to_string();
-    if provider == ProviderKind::Ollama && crate::config::is_unresolved_local_ollama_model(&model) {
+    if provider == ProviderKind::Ollama
+        && codewhale_runtime::config::is_unresolved_local_ollama_model(&model)
+    {
         return Err("Local Ollama did not report an executable default model.".to_string());
     }
     set_model_for_route(&mut route_config, &identity, &model)?;
@@ -1171,7 +1186,8 @@ fn set_model_for_route(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{DEFAULT_TEXT_MODEL, DEFAULT_ZAI_MODEL, ProviderConfig, ProvidersConfig};
+    use codewhale_config::descriptors::defaults::{DEFAULT_TEXT_MODEL, DEFAULT_ZAI_MODEL};
+    use codewhale_runtime::config::{ProviderConfig, ProvidersConfig};
 
     #[test]
     fn configured_model_limits_precede_provider_defaults() {
@@ -1539,7 +1555,7 @@ mod tests {
             serde_json::to_vec(&serde_json::json!({
                 "fetched_at": chrono::Utc::now(),
                 "models": [{
-                    "slug": crate::config::DEFAULT_OPENAI_CODEX_MODEL,
+                    "slug": codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL,
                     "priority": 1,
                     "context_window": 128000,
                     "supported_reasoning_levels": [{"effort": "high"}]
@@ -1551,7 +1567,7 @@ mod tests {
 
         let candidate = resolve_route_candidate(
             ProviderKind::OpenaiCodex,
-            Some(crate::config::DEFAULT_OPENAI_CODEX_MODEL),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL),
             None,
             None,
             None,
@@ -1565,7 +1581,7 @@ mod tests {
         assert_eq!(
             crate::route_budget::route_context_window_tokens(
                 ProviderKind::OpenaiCodex,
-                crate::config::DEFAULT_OPENAI_CODEX_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL,
                 Some(candidate.limits()),
             ),
             128_000
@@ -1583,13 +1599,14 @@ mod tests {
             .canonicalize()
             .expect("canonical Codewhale home");
         let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", &home_path);
-        let mut config = crate::config::Config::default();
-        crate::oauth::install_test_chatgpt_registration(&mut config).expect("owned grant");
-        crate::codex_model_cache::install_test_chatgpt_roster(
+        let mut config = codewhale_runtime::config::Config::default();
+        codewhale_runtime::oauth::install_test_chatgpt_registration(&mut config)
+            .expect("owned grant");
+        codewhale_runtime::codex_model_roster::install_test_chatgpt_roster(
             &config,
             &[
                 "gpt-test-flagship",
-                crate::config::DEFAULT_OPENAI_CODEX_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL,
             ],
         )
         .expect("account roster");
@@ -1601,10 +1618,13 @@ mod tests {
         let explicit = resolve_runtime_route(
             &config,
             ProviderKind::OpenaiCodex,
-            Some(crate::config::DEFAULT_OPENAI_CODEX_MODEL),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL),
         )
         .expect("explicit codex route resolves");
-        assert_eq!(explicit.model, crate::config::DEFAULT_OPENAI_CODEX_MODEL);
+        assert_eq!(
+            explicit.model,
+            codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL
+        );
     }
 
     #[test]
@@ -1695,7 +1715,7 @@ mod tests {
             ProviderKind::Moonshot,
             Some("k3"),
             None,
-            Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
             None,
             None,
         )
@@ -1713,7 +1733,7 @@ mod tests {
         assert_eq!(
             crate::provider_lake::provider_capability(
                 ProviderKind::Moonshot,
-                crate::config::KIMI_CODE_K3_MODEL
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL
             )
             .context_window,
             262_144
@@ -1723,7 +1743,8 @@ mod tests {
 
     #[test]
     fn kimi_code_context_resolution_records_precedence_and_rejects_bad_metadata() {
-        let base = Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string());
+        let base =
+            Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string());
         let static_floor = resolve_route_candidate_with_context_metadata(
             ProviderKind::Moonshot,
             Some("k3"),
@@ -1800,7 +1821,7 @@ mod tests {
             ProviderKind::Moonshot,
             Some("k3"),
             None,
-            Some(crate::config::DEFAULT_MOONSHOT_BASE_URL.to_string()),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL.to_string()),
             None,
             None,
             Some(ProviderReportedKimiCodeContext {
@@ -1821,7 +1842,7 @@ mod tests {
             ProviderKind::Moonshot,
             Some("k3"),
             None,
-            Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
             Some(1_048_576),
             None,
         )
@@ -1829,10 +1850,10 @@ mod tests {
 
         assert_eq!(
             candidate.wire_model_id().as_str(),
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             "the 1M entitlement changes limits, never the provider wire id"
         );
-        assert!(crate::config::is_exact_kimi_code_bare_k3_route(
+        assert!(codewhale_runtime::config::is_exact_kimi_code_bare_k3_route(
             ProviderKind::Moonshot,
             &candidate.endpoint().base_url,
             candidate.wire_model_id().as_str(),
@@ -1950,7 +1971,9 @@ mod tests {
                 ProviderKind::Moonshot,
                 selected,
                 saved,
-                Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
+                Some(
+                    codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string(),
+                ),
                 None,
                 None,
             )
@@ -1965,10 +1988,14 @@ mod tests {
 
     #[test]
     fn k3_route_rejects_cross_paired_model_ids_and_allows_canonical_pairs() {
-        use crate::config::{
-            DEFAULT_KIMI_CODE_BASE_URL, DEFAULT_MOONSHOT_BASE_URL, KIMI_CODE_K3_MODEL,
-            MOONSHOT_KIMI_K3_MODEL, moonshot_k3_route_display_name,
-            validate_kimi_code_api_model_id,
+        use codewhale_config::catalog::reviewed::constants::{
+            KIMI_CODE_K3_MODEL, MOONSHOT_KIMI_K3_MODEL,
+        };
+        use codewhale_config::descriptors::defaults::{
+            DEFAULT_KIMI_CODE_BASE_URL, DEFAULT_MOONSHOT_BASE_URL,
+        };
+        use codewhale_runtime::config::{
+            moonshot_k3_route_display_name, validate_kimi_code_api_model_id,
         };
 
         // Canonical pairs succeed.
@@ -2052,12 +2079,13 @@ mod tests {
 
     #[test]
     fn kimi_code_k3_baseline_does_not_leak_to_other_moonshot_routes() {
-        let kimi_code_endpoint = Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string());
+        let kimi_code_endpoint =
+            Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string());
         let direct_moonshot = resolve_route_candidate(
             ProviderKind::Moonshot,
-            Some(crate::config::MOONSHOT_KIMI_K3_MODEL),
+            Some(codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL),
             None,
-            Some(crate::config::DEFAULT_MOONSHOT_BASE_URL.to_string()),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL.to_string()),
             None,
             None,
         )
@@ -2069,7 +2097,7 @@ mod tests {
             ProviderKind::Moonshot,
             Some("k3"),
             None,
-            Some(crate::config::DEFAULT_MOONSHOT_BASE_URL.to_string()),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL.to_string()),
             None,
             None,
         )
@@ -2081,7 +2109,7 @@ mod tests {
             ProviderKind::Moonshot,
             Some("moonshot-v1-128k"),
             None,
-            Some(crate::config::DEFAULT_MOONSHOT_BASE_URL.to_string()),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL.to_string()),
             None,
             None,
         )
@@ -2090,7 +2118,7 @@ mod tests {
 
         let kimi_code_default = resolve_route_candidate(
             ProviderKind::Moonshot,
-            Some(crate::config::DEFAULT_KIMI_CODE_MODEL),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_MODEL),
             None,
             kimi_code_endpoint,
             None,
@@ -2102,16 +2130,19 @@ mod tests {
 
     #[test]
     fn runtime_route_without_model_uses_target_provider_default() {
-        let config = Config {
-            provider: Some("openrouter".to_string()),
-            providers: Some(ProvidersConfig {
+        let config = {
+            let __cw_config_init_0_0 = Some("openrouter".to_string());
+            let __cw_config_init_0_1 = Some(ProvidersConfig {
                 openrouter: ProviderConfig {
                     model: Some("deepseek/deepseek-v4-pro".to_string()),
                     ..Default::default()
                 },
                 ..Default::default()
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_0_value: Config = Default::default();
+            __cw_config_init_0_value.provider = __cw_config_init_0_0;
+            __cw_config_init_0_value.providers = __cw_config_init_0_1;
+            __cw_config_init_0_value
         };
 
         let route = resolve_runtime_route(&config, ProviderKind::Zai, None)
@@ -2139,16 +2170,19 @@ mod tests {
 
     #[test]
     fn runtime_route_rejects_foreign_direct_model_before_config_snapshot() {
-        let config = Config {
-            provider: Some("deepseek".to_string()),
-            providers: Some(ProvidersConfig {
+        let config = {
+            let __cw_config_init_1_0 = Some("deepseek".to_string());
+            let __cw_config_init_1_1 = Some(ProvidersConfig {
                 deepseek: ProviderConfig {
                     model: Some(DEFAULT_TEXT_MODEL.to_string()),
                     ..Default::default()
                 },
                 ..Default::default()
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_1_value: Config = Default::default();
+            __cw_config_init_1_value.provider = __cw_config_init_1_0;
+            __cw_config_init_1_value.providers = __cw_config_init_1_1;
+            __cw_config_init_1_value
         };
 
         let err = resolve_runtime_route(&config, ProviderKind::Zai, Some("deepseek-v4-pro"))
@@ -2185,7 +2219,7 @@ mod tests {
         .expect("aggregator alias should resolve offline");
         assert_eq!(
             openrouter.wire_model_id().as_str(),
-            crate::config::DEFAULT_OPENROUTER_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_MODEL,
         );
 
         let vllm = resolve_unpinned_model_candidate(
@@ -2283,17 +2317,20 @@ mod tests {
 
         let base_url = "https://synthetic.openrouter.invalid/api/v1";
         let model = "synthetic/live-only-openrouter-model";
-        let config = Config {
-            provider: Some("openrouter".to_string()),
-            providers: Some(ProvidersConfig {
+        let config = {
+            let __cw_config_init_2_0 = Some("openrouter".to_string());
+            let __cw_config_init_2_1 = Some(ProvidersConfig {
                 openrouter: ProviderConfig {
                     base_url: Some(base_url.to_string()),
                     model: Some(model.to_string()),
                     ..Default::default()
                 },
                 ..Default::default()
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_2_value: Config = Default::default();
+            __cw_config_init_2_value.provider = __cw_config_init_2_0;
+            __cw_config_init_2_value.providers = __cw_config_init_2_1;
+            __cw_config_init_2_value
         };
         let fingerprint = codewhale_config::catalog::base_url_fingerprint(base_url);
         crate::provider_catalog_live::record_success(ProviderCatalogDelta {
@@ -2339,9 +2376,11 @@ mod tests {
         let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", home.path());
         crate::provider_catalog_live::reset_cache_for_test();
         crate::provider_lake::clear_live_snapshot();
-        let config = Config {
-            provider: Some("deepseek".into()),
-            ..Default::default()
+        let config = {
+            let __cw_config_init_3_0 = Some("deepseek".into());
+            let mut __cw_config_init_3_value: Config = Default::default();
+            __cw_config_init_3_value.provider = __cw_config_init_3_0;
+            __cw_config_init_3_value
         };
         let model = "unlisted-future-direct-model";
         let before = resolve_runtime_route(&config, ProviderKind::Deepseek, Some(model)).unwrap();
@@ -2400,9 +2439,11 @@ mod tests {
             let identity = provider.as_str();
             let endpoint = format!("https://{identity}.catalog.invalid/v1");
             let model = "synthetic-live-model";
-            let mut config = Config {
-                provider: Some(identity.into()),
-                ..Default::default()
+            let mut config = {
+                let __cw_config_init_4_0 = Some(identity.into());
+                let mut __cw_config_init_4_value: Config = Default::default();
+                __cw_config_init_4_value.provider = __cw_config_init_4_0;
+                __cw_config_init_4_value
             };
             config
                 .provider_config_for_mut(&config.test_identity_for_kind(provider))
@@ -2469,9 +2510,11 @@ mod tests {
         crate::provider_catalog_live::reset_cache_for_test();
         crate::provider_lake::clear_live_snapshot();
         let endpoint = "http://localhost:11451/v1";
-        let mut config = Config {
-            provider: Some("ollama".into()),
-            ..Default::default()
+        let mut config = {
+            let __cw_config_init_5_0 = Some("ollama".into());
+            let mut __cw_config_init_5_value: Config = Default::default();
+            __cw_config_init_5_value.provider = __cw_config_init_5_0;
+            __cw_config_init_5_value
         };
         config
             .provider_config_for_mut(&config.test_identity_for_kind(ProviderKind::Ollama))
@@ -2587,13 +2630,17 @@ mod tests {
                 ..Default::default()
             },
         );
-        let config = Config {
-            provider: Some(codewhale_config::catalog::BASETEN_PROVIDER_ID.to_string()),
-            providers: Some(ProvidersConfig {
+        let config = {
+            let __cw_config_init_6_0 =
+                Some(codewhale_config::catalog::BASETEN_PROVIDER_ID.to_string());
+            let __cw_config_init_6_1 = Some(ProvidersConfig {
                 custom,
                 ..Default::default()
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_6_value: Config = Default::default();
+            __cw_config_init_6_value.provider = __cw_config_init_6_0;
+            __cw_config_init_6_value.providers = __cw_config_init_6_1;
+            __cw_config_init_6_value
         };
         crate::provider_catalog_live::record_success(ProviderCatalogDelta {
             provider: codewhale_config::catalog::BASETEN_PROVIDER_ID.to_string(),
@@ -2627,13 +2674,16 @@ mod tests {
                 ..Default::default()
             },
         );
-        let alias_config = Config {
-            provider: Some(alias_identity.to_string()),
-            providers: Some(ProvidersConfig {
+        let alias_config = {
+            let __cw_config_init_7_0 = Some(alias_identity.to_string());
+            let __cw_config_init_7_1 = Some(ProvidersConfig {
                 custom: alias_custom,
                 ..Default::default()
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_7_value: Config = Default::default();
+            __cw_config_init_7_value.provider = __cw_config_init_7_0;
+            __cw_config_init_7_value.providers = __cw_config_init_7_1;
+            __cw_config_init_7_value
         };
         crate::provider_catalog_live::record_success(ProviderCatalogDelta {
             provider: alias_identity.to_string(),
@@ -2681,13 +2731,16 @@ mod tests {
                 ..Default::default()
             },
         );
-        Config {
-            provider: Some("my_thing".to_string()),
-            providers: Some(ProvidersConfig {
+        {
+            let __cw_config_init_8_0 = Some("my_thing".to_string());
+            let __cw_config_init_8_1 = Some(ProvidersConfig {
                 custom,
                 ..Default::default()
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_8_value: Config = Default::default();
+            __cw_config_init_8_value.provider = __cw_config_init_8_0;
+            __cw_config_init_8_value.providers = __cw_config_init_8_1;
+            __cw_config_init_8_value
         }
     }
 
@@ -2732,13 +2785,16 @@ mod tests {
                 ..Default::default()
             },
         );
-        let config = Config {
-            provider: Some("dashscope".to_string()),
-            providers: Some(ProvidersConfig {
+        let config = {
+            let __cw_config_init_9_0 = Some("dashscope".to_string());
+            let __cw_config_init_9_1 = Some(ProvidersConfig {
                 custom,
                 ..Default::default()
-            }),
-            ..Config::default()
+            });
+            let mut __cw_config_init_9_value: Config = Config::default();
+            __cw_config_init_9_value.provider = __cw_config_init_9_0;
+            __cw_config_init_9_value.providers = __cw_config_init_9_1;
+            __cw_config_init_9_value
         };
 
         let route = resolve_runtime_route(&config, ProviderKind::Custom, None)
@@ -2815,11 +2871,12 @@ mod tests {
         let root = home.path().canonicalize().expect("canonical owned home");
         let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", &root);
         let mut config = Config::default();
-        crate::oauth::install_test_chatgpt_registration(&mut config).expect("owned grant");
-        let model = crate::config::DEFAULT_OPENAI_CODEX_MODEL;
-        crate::codex_model_cache::install_test_chatgpt_roster_with_metadata(
+        codewhale_runtime::oauth::install_test_chatgpt_registration(&mut config)
+            .expect("owned grant");
+        let model = codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL;
+        codewhale_runtime::codex_model_roster::install_test_chatgpt_roster_with_metadata(
             &config,
-            vec![crate::codex_model_cache::CodexModelMetadata {
+            vec![codewhale_runtime::codex_model_roster::CodexModelMetadata {
                 id: model.into(),
                 display_name: None,
                 context_window: Some(272_000),

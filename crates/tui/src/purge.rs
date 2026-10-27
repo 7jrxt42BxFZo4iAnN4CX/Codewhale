@@ -10,9 +10,9 @@ use regex::Regex;
 use std::fmt::Write;
 use tokio::sync::mpsc::Sender;
 
-use crate::config::ProviderKind;
 use crate::core::events::Event;
 use crate::llm_client::LlmClient;
+use codewhale_config::ProviderKind;
 use codewhale_models::Role;
 use codewhale_models::{ContentBlock, Message, MessageRequest, Tool};
 use codewhale_runtime::fast_hash::{FastHashMap, FastHashSet};
@@ -737,7 +737,7 @@ pub async fn run_purge(
             .unwrap_or_default(),
         response.id
     );
-    crate::cost_status::report_effective_route_for_interactive_origin(
+    crate::usage_persistence::report_effective_route_for_interactive_origin(
         cost_scope,
         session_id,
         &source_id,
