@@ -16,8 +16,6 @@ export const home: HomeDict = {
   latestRelease: "Последний релиз {tag}",
   releaseUnavailable: "Статус релиза недоступен",
   proofContributors: "Участников: {count}",
-  proofTools: "Встроенных инструментов: {count}",
-  proofProviders: "Маршрутов провайдеров: {count}",
   currentSource: "Исходники",
   sourceCandidate: "Не выпущено",
   publishedRelease: "выпущено",

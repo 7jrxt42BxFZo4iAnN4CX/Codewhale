@@ -172,7 +172,7 @@
   box-shadow: 0 1px 0 var(--line), 0 32px 64px -32px rgb(10 30 51 / 0.5);
 }
 
-/* Release, licence and counts read from facts, never typed into copy. */
+/* Release, licence and the contributor count read from facts, never typed into copy. */
 .home-proof {
   display: flex;
   flex-wrap: wrap;

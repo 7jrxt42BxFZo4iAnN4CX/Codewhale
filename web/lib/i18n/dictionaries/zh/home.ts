@@ -16,8 +16,6 @@ export const home: HomeDict = {
   latestRelease: "最新发布 {tag}",
   releaseUnavailable: "发布状态暂不可用",
   proofContributors: "{count} 位贡献者",
-  proofTools: "{count} 个内置工具",
-  proofProviders: "{count} 条服务商路由",
   currentSource: "源码",
   sourceCandidate: "未发布",
   publishedRelease: "已发布",

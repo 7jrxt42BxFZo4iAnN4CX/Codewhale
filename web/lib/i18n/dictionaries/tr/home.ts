@@ -16,8 +16,6 @@ export const home: HomeDict = {
   latestRelease: "En yeni sürüm {tag}",
   releaseUnavailable: "Sürüm durumu kullanılamıyor",
   proofContributors: "{count} katkıda bulunan",
-  proofTools: "{count} yerleşik araç",
-  proofProviders: "{count} sağlayıcı rotası",
   currentSource: "Kaynak",
   sourceCandidate: "Yayımlanmadı",
   publishedRelease: "yayımlandı",

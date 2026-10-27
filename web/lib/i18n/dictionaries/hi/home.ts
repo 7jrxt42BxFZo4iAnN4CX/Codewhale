@@ -16,8 +16,6 @@ export const home: HomeDict = {
   latestRelease: "नवीनतम रिलीज़ {tag}",
   releaseUnavailable: "रिलीज़ स्थिति उपलब्ध नहीं",
   proofContributors: "{count} योगदानकर्ता",
-  proofTools: "{count} अंतर्निहित टूल",
-  proofProviders: "{count} प्रदाता रूट",
   currentSource: "सोर्स",
   sourceCandidate: "अप्रकाशित",
   publishedRelease: "प्रकाशित",

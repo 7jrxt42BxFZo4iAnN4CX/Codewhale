@@ -131,11 +131,9 @@ export default async function HomePage({ params }: { params: Promise<{ locale: s
             ? fill(d.latestRelease, { tag: publishedRelease.tag })
             : d.releaseUnavailable}
         </Status>
-        {!sourceIsPublished && <span>{`${d.sourceCandidate} v${sourceVersion}`}</span>}
+        <span>{`${sourceIsPublished ? d.currentSource : d.sourceCandidate} v${sourceVersion}`}</span>
         <span>{facts.license ?? "MIT"}</span>
         <span>{fill(d.proofContributors, { count: facts.contributorCount })}</span>
-        {facts.toolCount ? <span>{fill(d.proofTools, { count: facts.toolCount })}</span> : null}
-        {facts.providers.length > 0 && <span>{fill(d.proofProviders, { count: facts.providers.length })}</span>}
       </div>
 
       {/* PAPER — models, connections, and the getting-started path. */}

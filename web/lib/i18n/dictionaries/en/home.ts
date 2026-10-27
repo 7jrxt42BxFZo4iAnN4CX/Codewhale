@@ -18,8 +18,6 @@ export const home: HomeDict = {
   latestRelease: "Latest release {tag}",
   releaseUnavailable: "Release status unavailable",
   proofContributors: "{count} contributors",
-  proofTools: "{count} built-in tools",
-  proofProviders: "{count} provider routes",
   currentSource: "Source",
   sourceCandidate: "Unreleased",
   publishedRelease: "released",

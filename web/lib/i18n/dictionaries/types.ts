@@ -163,8 +163,6 @@ export interface HomeDict {
   latestRelease: string;
   releaseUnavailable: string;
   proofContributors: string;
-  proofTools: string;
-  proofProviders: string;
   /** "Source" / "Unreleased" — prepended to `v{version}`. */
   currentSource: string;
   sourceCandidate: string;

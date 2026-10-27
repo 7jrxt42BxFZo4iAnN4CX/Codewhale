@@ -16,8 +16,6 @@ export const home: HomeDict = {
   latestRelease: "Rilis terbaru {tag}",
   releaseUnavailable: "Status rilis tidak tersedia",
   proofContributors: "{count} kontributor",
-  proofTools: "{count} alat bawaan",
-  proofProviders: "{count} rute penyedia",
   currentSource: "Sumber",
   sourceCandidate: "Belum dirilis",
   publishedRelease: "dirilis",

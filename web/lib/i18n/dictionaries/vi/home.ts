@@ -16,8 +16,6 @@ export const home: HomeDict = {
   latestRelease: "Bản phát hành mới nhất {tag}",
   releaseUnavailable: "Không có trạng thái phát hành",
   proofContributors: "{count} người đóng góp",
-  proofTools: "{count} công cụ tích hợp",
-  proofProviders: "{count} tuyến nhà cung cấp",
   currentSource: "Mã nguồn",
   sourceCandidate: "Chưa phát hành",
   publishedRelease: "đã phát hành",

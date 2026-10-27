@@ -16,8 +16,6 @@ export const home: HomeDict = {
   latestRelease: "أحدث إصدار {tag}",
   releaseUnavailable: "حالة الإصدار غير متاحة",
   proofContributors: "{count} مساهمًا",
-  proofTools: "{count} أداة مدمجة",
-  proofProviders: "{count} مسار مزوّد",
   currentSource: "المصدر",
   sourceCandidate: "غير منشور",
   publishedRelease: "منشور",

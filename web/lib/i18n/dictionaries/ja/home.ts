@@ -16,8 +16,6 @@ export const home: HomeDict = {
   latestRelease: "最新リリース {tag}",
   releaseUnavailable: "リリース情報を取得できません",
   proofContributors: "コントリビューター {count} 人",
-  proofTools: "組み込みツール {count} 個",
-  proofProviders: "プロバイダールート {count} 件",
   currentSource: "ソース",
   sourceCandidate: "未リリース",
   publishedRelease: "リリース済み",
