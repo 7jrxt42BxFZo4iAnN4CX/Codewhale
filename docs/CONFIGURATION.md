@@ -3447,6 +3447,12 @@ restart. Its `[extension_host]` table (`runtime`, `node`, `bun`) and what the
 host's sandbox does on each platform are in
 [Writing an extension tool](EXTENSIONS.md).
 
+`[extension_host] mcp_backend` (user config only) chooses the MCP client
+independently of the `extension_host` flag: `"host"` (default) uses the official
+MCP SDK behind the Rust broker; `"rust"` keeps the previous Rust client for one
+release. A host refusal never falls back to Rust. See
+[MCP connection lifecycle](MCP.md#connection-lifecycle).
+
 Every flag has a row in [`docs/features.toml`](features.toml), the feature
 registry; a test fails when a flag and its row disagree.
 
