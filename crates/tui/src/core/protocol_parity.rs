@@ -1103,7 +1103,7 @@ pub fn event_to_protocol(event: &Event, ids: &ProtocolIds) -> wire::EventMsg {
 pub fn op_to_protocol(op: &Op) -> wire_op::Op {
     match op {
         Op::Review { turn, request } => wire_op::Op::Review {
-            turn: turn_spec_to_wire(turn),
+            turn: Box::new(turn_spec_to_wire(turn)),
             request: request.clone(),
         },
         Op::SendMessage(spec) => wire_op::Op::SendMessage(turn_spec_to_wire(spec)),
