@@ -47,6 +47,7 @@ export const UNRELEASED_CONTRIBUTORS: string[] = [
   "@gaord",
   "@SparkofSpike",
   "@Aboysky",
+  "@ddlw",
 ];
 
 /**

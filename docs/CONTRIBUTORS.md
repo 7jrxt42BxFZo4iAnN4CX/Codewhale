@@ -44,6 +44,7 @@ changelog or release notes, and this contributor record.
 
 **Contributions**
 
+- **[ddlw](https://github.com/ddlw)** — repaired clippy, rustfmt, extension-host imports and Windows DSH receipt bytes on main for the 0.10.3 batch ([#7108](https://github.com/codewhale-hq/Codewhale/pull/7108), [#7109](https://github.com/codewhale-hq/Codewhale/pull/7109)).
 - **[Boyce / Aboysky](https://github.com/Aboysky)** — refreshed the README translation source stamps ([#7104](https://github.com/codewhale-hq/Codewhale/pull/7104)).
 - **[7jrxt42BxFZo4iAnN4CX](https://github.com/7jrxt42BxFZo4iAnN4CX)** — per-scope instruction budgets with visible truncation ([#7086](https://github.com/codewhale-hq/Codewhale/pull/7086)).
 - **[Lstarsky0](https://github.com/Lstarsky0)** — `/diff` pager resize, goal-clear wording and unpriced `/status` cost ([#7087](https://github.com/codewhale-hq/Codewhale/pull/7087), [#7089](https://github.com/codewhale-hq/Codewhale/pull/7089), [#7090](https://github.com/codewhale-hq/Codewhale/pull/7090)).
