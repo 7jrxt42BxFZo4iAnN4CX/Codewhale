@@ -182,6 +182,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on macOS with release builds: an approval wait went from 29 to 12 timer
   wakeups per second, a background job from 32 to 16 and an idle composer
   from 25 to 11 (#6728).
+- Saving a session no longer copies every message body: journal entries
+  share their content, so the snapshot taken on each update copies ids and
+  pointers. Resuming a session compares a leftover crash checkpoint against
+  the saved document's metadata instead of parsing the whole document first,
+  so `--resume` and attach read the document once (#6842).
 - `write` over an existing file now says when it kept that file's CRLF or LF
   line endings, so the agent no longer reports a line-ending conversion that
   did not happen (#7070).
