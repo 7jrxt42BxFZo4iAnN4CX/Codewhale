@@ -873,7 +873,7 @@ pub fn parse_host_message(value: Value, tier: HostTier) -> Result<HostMessage, P
         },
         ("user-questions/ask", Some(id)) => HostMessage::Request {
             id,
-            request: HostRequest::UserQuestion(params(&method, p)?),
+            request: Box::new(HostRequest::UserQuestion(params(&method, p)?)),
         },
         ("session/checkpoint", Some(id)) => HostMessage::Request {
             id,
