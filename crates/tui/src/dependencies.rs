@@ -70,7 +70,17 @@ pub fn probe_executable_with_flag(spec: &str, version_flag: &str) -> bool {
     };
     let mut cmd = version_probe_command(program);
     cmd.args(parts).arg(version_flag);
-    matches!(probe_output(&mut cmd, false, VERSION_PROBE_TIMEOUT), Ok(output) if output.status.success())
+    probe_found(&mut cmd)
+}
+
+/// A probe that launched and was still running at its deadline found an
+/// installed tool that is slow under load; only a failed launch or a failing
+/// exit means the tool is absent.
+fn probe_found(command: &mut Command) -> bool {
+    match probe_output(command, false, VERSION_PROBE_TIMEOUT) {
+        Ok(output) => output.status.success(),
+        Err(error) => error.kind() == std::io::ErrorKind::TimedOut,
+    }
 }
 
 /// Probe a single executable and capture its version banner in one spawn.
@@ -244,8 +254,7 @@ fn resolve_executable_path(spec: &str, version_flag: &str) -> Option<String> {
         let mut cmd = version_probe_command(&candidate);
         cmd.args(&args).arg(version_flag);
 
-        if matches!(probe_output(&mut cmd, false, VERSION_PROBE_TIMEOUT), Ok(output) if output.status.success())
-        {
+        if probe_found(&mut cmd) {
             return Some(candidate.to_string_lossy().into_owned());
         }
     }
