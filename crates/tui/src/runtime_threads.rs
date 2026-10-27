@@ -5946,6 +5946,9 @@ enum RuntimeTurnInputSource {
         continuation_index: u32,
         expected_goal: Box<codewhale_protocol::ThreadGoal>,
     },
+    Scheduled {
+        task_id: String,
+    },
 }
 
 impl RuntimeTurnInputSource {
@@ -5956,7 +5959,9 @@ impl RuntimeTurnInputSource {
             }
             Self::ExtensionCommand { .. } => crate::core::ops::UserInputProvenance::Runtime,
             Self::AgentMail { .. } => crate::core::ops::UserInputProvenance::AgentMail,
-            Self::GoalContinuation { .. } => crate::core::ops::UserInputProvenance::Runtime,
+            Self::GoalContinuation { .. } | Self::Scheduled { .. } => {
+                crate::core::ops::UserInputProvenance::Runtime
+            }
         }
     }
 
@@ -5964,15 +5969,16 @@ impl RuntimeTurnInputSource {
         match self {
             Self::ExternalUser | Self::Review(_) | Self::ExtensionCommand { .. } => None,
             Self::AgentMail { message_id, .. } => Some(message_id),
-            Self::GoalContinuation { .. } => None,
+            Self::GoalContinuation { .. } | Self::Scheduled { .. } => None,
         }
     }
 
     fn item_detail(&self, prompt: &str) -> Option<String> {
         match self {
-            Self::ExternalUser | Self::Review(_) | Self::ExtensionCommand { .. } => {
-                Some(prompt.to_string())
-            }
+            Self::ExternalUser
+            | Self::Review(_)
+            | Self::ExtensionCommand { .. }
+            | Self::Scheduled { .. } => Some(prompt.to_string()),
             // The provider projection contains runtime-only framing. Persist
             // the bounded canonical mail summary instead, so history and app
             // clients never mistake that projection for typed user input.
@@ -6021,6 +6027,10 @@ impl RuntimeTurnInputSource {
             } => Some(json!({
                 "input_provenance": "goal_continuation",
                 "goal_continuation_index": continuation_index,
+            })),
+            Self::Scheduled { task_id } => Some(json!({
+                "input_provenance": "scheduled",
+                "task_id": task_id,
             })),
         }
     }
@@ -8980,6 +8990,68 @@ impl RuntimeThreadManager {
         automations: crate::automation_manager::SharedAutomationManager,
     ) {
         *self.automations.lock() = Some(automations);
+    }
+
+    pub(crate) fn thread_event_sink(&self) -> crate::automation_manager::ThreadEventSink {
+        let manager = self.clone();
+        crate::automation_manager::ThreadEventSink(Arc::new(move |thread_id, event, payload| {
+            let Ok(handle) = tokio::runtime::Handle::try_current() else {
+                tracing::warn!(thread_id, event, "no runtime to publish thread event");
+                return;
+            };
+            let manager = manager.clone();
+            handle.spawn(async move {
+                if let Err(error) = manager
+                    .append_and_broadcast_event(&thread_id, None, None, event, payload)
+                    .await
+                {
+                    tracing::warn!(thread_id, event, %error, "thread event was not recorded");
+                }
+            });
+        }))
+    }
+
+    pub(crate) async fn start_scheduled_turn(
+        &self,
+        thread_id: &str,
+        prompt: &str,
+        task_id: &str,
+    ) -> Result<Option<TurnRecord>> {
+        let thread = self.get_thread(thread_id).await?;
+        if thread.archived {
+            bail!("thread {thread_id} is archived");
+        }
+        if self
+            .active
+            .lock()
+            .await
+            .engines
+            .get(thread_id)
+            .and_then(|state| state.active_turn.as_ref())
+            .is_some()
+        {
+            return Ok(None);
+        }
+        let request = StartTurnRequest {
+            prompt: prompt.to_string(),
+            ..Default::default()
+        };
+        match self
+            .start_turn_with_source(
+                thread_id,
+                request,
+                RuntimeTurnInputSource::Scheduled {
+                    task_id: task_id.to_string(),
+                },
+                None,
+                false,
+            )
+            .await
+        {
+            Ok((turn, _replayed)) => Ok(Some(turn)),
+            Err(error) if error.to_string().contains("already has an active") => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 
     /// Mints an approval identifier that no provider can predict or collide

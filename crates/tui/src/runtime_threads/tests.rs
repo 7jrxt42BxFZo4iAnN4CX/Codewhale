@@ -22540,6 +22540,7 @@ mod adoption_refusal {
         let binding = opened_binding(&fixture, "pinned", &scope)?;
         let automations = AutomationManager::open(fixture.root.path().join("automations"))?;
         let created = automations.create_automation(CreateAutomationRequest {
+            destination_thread_id: None,
             name: "scope fixture".into(),
             prompt: "local fixture only".into(),
             rrule: "FREQ=HOURLY;INTERVAL=1".into(),

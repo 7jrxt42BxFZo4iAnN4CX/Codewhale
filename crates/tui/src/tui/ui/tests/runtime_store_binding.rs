@@ -196,6 +196,7 @@ fn runtime_store_binding_survives_launch_snapshot_and_resume() -> anyhow::Result
             let mut automations = AutomationManager::open(root.path().join("automations"))?;
             automations.bind_task_manager(&tasks)?;
             let automation = automations.create_automation(CreateAutomationRequest {
+                destination_thread_id: None,
                 name: "resumed ownership fixture".into(),
                 prompt: "local fixture only".into(),
                 rrule: "FREQ=HOURLY;INTERVAL=1".into(),
@@ -833,6 +834,7 @@ fn adoptable_empty_store_refuses_a_scope_pinned_automation() -> anyhow::Result<(
 
     let automations = AutomationManager::open(root.path().join("automations"))?;
     let created = automations.create_automation(CreateAutomationRequest {
+        destination_thread_id: None,
         name: "scope fixture".into(),
         prompt: "local fixture only".into(),
         rrule: "FREQ=HOURLY;INTERVAL=1".into(),

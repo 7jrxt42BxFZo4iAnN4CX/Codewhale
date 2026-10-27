@@ -51,7 +51,8 @@ use crate::dependencies::ExternalTool;
 
 use crate::automation_manager::{
     AutomationManager, AutomationRecord, AutomationRunRecord, AutomationSchedulerConfig,
-    CreateAutomationRequest, SharedAutomationManager, UpdateAutomationRequest, spawn_scheduler,
+    CreateAutomationRequest, CreateDelayedTriggerRequest, DelayedTriggerRecord,
+    DelayedTriggerStatus, SharedAutomationManager, UpdateAutomationRequest, spawn_scheduler,
 };
 use crate::fleet::executor::{FleetExecutor, configured_codewhale_binary};
 use crate::fleet::ledger::{
@@ -1992,6 +1993,7 @@ pub async fn run_http_server(
     let _task_shutdown = task_manager.shutdown_guard();
     let mut automation_service = AutomationManager::default_location()?;
     automation_service.bind_task_manager(&task_manager)?;
+    automation_service.set_thread_event_sink(runtime_threads.thread_event_sink());
     let automations = Arc::new(Mutex::new(automation_service));
     runtime_threads.attach_automation_manager(automations.clone());
     let scheduler_cancel = CancellationToken::new();
@@ -2984,6 +2986,8 @@ pub fn build_router(state: RuntimeApiState) -> Router {
         .route("/v1/automations/{id}/pause", post(pause_automation))
         .route("/v1/automations/{id}/resume", post(resume_automation))
         .route("/v1/automations/{id}/runs", get(list_automation_runs))
+        .route("/v1/triggers", get(list_triggers).post(create_trigger))
+        .route("/v1/triggers/{id}", get(get_trigger).delete(cancel_trigger))
         .route(
             "/v1/operate",
             get(get_operate).post(start_operate).patch(patch_operate),
@@ -7432,11 +7436,167 @@ where
     Ok(respond(ok_status, body, false))
 }
 
+async fn require_destination_thread(
+    state: &RuntimeApiState,
+    thread_id: Option<&str>,
+) -> Result<(), ApiError> {
+    let Some(thread_id) = thread_id.map(str::trim).filter(|id| !id.is_empty()) else {
+        return Ok(());
+    };
+    let thread = state
+        .runtime_threads
+        .get_thread(thread_id)
+        .await
+        .map_err(map_thread_err)?;
+    if thread.archived {
+        return Err(ApiError::conflict(format!(
+            "Destination thread {thread_id} is archived"
+        )));
+    }
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+struct TriggerListQuery {
+    #[serde(default)]
+    thread_id: Option<String>,
+    #[serde(default)]
+    status: Option<DelayedTriggerStatus>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CreateTriggerApiRequest {
+    message: String,
+    #[serde(default)]
+    fire_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    delay_minutes: Option<u32>,
+    #[serde(default)]
+    thread_id: Option<String>,
+    #[serde(default)]
+    workspace: Option<PathBuf>,
+    #[serde(default)]
+    owner_session_id: Option<String>,
+}
+
+async fn list_triggers(
+    State(state): State<RuntimeApiState>,
+    Query(query): Query<TriggerListQuery>,
+) -> Result<Json<Vec<DelayedTriggerRecord>>, ApiError> {
+    let mut triggers = state
+        .automations
+        .lock()
+        .await
+        .list_triggers(query.status, None)
+        .map_err(|e| ApiError::internal(format!("Failed to list triggers: {e}")))?;
+    if let Some(thread_id) = query.thread_id.as_deref() {
+        triggers.retain(|trigger| trigger.destination_thread_id.as_deref() == Some(thread_id));
+    }
+    triggers.truncate(query.limit.unwrap_or(50).clamp(1, 200));
+    Ok(Json(triggers))
+}
+
+async fn get_trigger(
+    State(state): State<RuntimeApiState>,
+    Path(id): Path<String>,
+) -> Result<Json<DelayedTriggerRecord>, ApiError> {
+    let trigger = state
+        .automations
+        .lock()
+        .await
+        .get_trigger(&id)
+        .map_err(map_trigger_err)?;
+    Ok(Json(trigger))
+}
+
+async fn create_trigger(
+    State(state): State<RuntimeApiState>,
+    headers: HeaderMap,
+    Json(req): Json<CreateTriggerApiRequest>,
+) -> Result<Response, ApiError> {
+    let fire_at = match (req.fire_at, req.delay_minutes) {
+        (Some(fire_at), None) => fire_at,
+        (None, Some(minutes)) if minutes >= 1 => {
+            chrono::Utc::now() + chrono::Duration::minutes(i64::from(minutes))
+        }
+        (None, Some(_)) => return Err(ApiError::bad_request("delay_minutes must be >= 1")),
+        _ => {
+            return Err(ApiError::bad_request(
+                "exactly one of fire_at or delay_minutes is required",
+            ));
+        }
+    };
+    let destination = req
+        .thread_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string);
+    require_destination_thread(&state, destination.as_deref()).await?;
+    let owner_session_id = req
+        .owner_session_id
+        .clone()
+        .or_else(|| destination.clone())
+        .ok_or_else(|| {
+            ApiError::bad_request("a trigger without thread_id needs owner_session_id")
+        })?;
+    if state.automations.lock().await.execution_scope().is_none() {
+        return Err(ApiError::conflict(
+            "This Runtime has no automation execution owner",
+        ));
+    }
+    let create = CreateDelayedTriggerRequest {
+        fire_at,
+        message: req.message.clone(),
+        workspace: req.workspace.clone(),
+        owner_session_id: Some(owner_session_id),
+        parent_trigger_id: None,
+        destination_thread_id: destination,
+    };
+    automation_mutation(
+        &state,
+        &headers,
+        "POST /v1/triggers",
+        &req,
+        StatusCode::CREATED,
+        |e| ApiError::bad_request(e.to_string()),
+        async { state.automations.lock().await.create_trigger(create) },
+    )
+    .await
+}
+
+async fn cancel_trigger(
+    State(state): State<RuntimeApiState>,
+    Path(id): Path<String>,
+) -> Result<Json<DelayedTriggerRecord>, ApiError> {
+    let trigger = state
+        .automations
+        .lock()
+        .await
+        .cancel_trigger(&id)
+        .map_err(map_trigger_err)?;
+    Ok(Json(trigger))
+}
+
+fn map_trigger_err(err: anyhow::Error) -> ApiError {
+    let message = format!("{err:#}");
+    if message.contains("not found") {
+        ApiError::not_found(message)
+    } else if message.contains("cannot be canceled") {
+        ApiError::conflict(message)
+    } else {
+        ApiError::bad_request(message)
+    }
+}
+
 async fn create_automation(
     State(state): State<RuntimeApiState>,
     headers: HeaderMap,
     Json(req): Json<CreateAutomationRequest>,
 ) -> Result<Response, ApiError> {
+    require_destination_thread(&state, req.destination_thread_id.as_deref()).await?;
     automation_mutation(
         &state,
         &headers,
@@ -7471,6 +7631,7 @@ async fn update_automation(
     headers: HeaderMap,
     Json(mut req): Json<UpdateAutomationRequest>,
 ) -> Result<Response, ApiError> {
+    require_destination_thread(&state, req.destination_thread_id.as_deref()).await?;
     req.expected_revision = req.expected_revision.or(query.expected_revision);
     automation_mutation(
         &state,

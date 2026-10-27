@@ -2788,6 +2788,7 @@ async fn apply_command_result_inner(
                     .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
                 app.current_session_id = Some(owner_session_id.clone());
                 let request = NewTaskRequest {
+                    destination_thread_id: None,
                     prompt: prompt.clone(),
                     name: None,
                     model: Some(app.model.clone()),

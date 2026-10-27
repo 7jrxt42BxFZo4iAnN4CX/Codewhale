@@ -525,6 +525,7 @@ impl TasksTool {
             optional_bool_opt(input, "auto_approve")?,
         );
         let req = NewTaskRequest {
+            destination_thread_id: None,
             prompt: prompt.clone(),
             name: optional_str(input, "name")?.map(ToString::to_string),
             model: optional_str(input, "model")?.map(ToString::to_string),

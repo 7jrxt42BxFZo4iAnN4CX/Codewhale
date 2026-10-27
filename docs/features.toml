@@ -377,6 +377,16 @@ docs = "docs/CONFIGURATION.md#goal-loop-goal"
 owner = "crates/tui/src/tools/goal.rs"
 
 [[feature]]
+id = "thread-scheduled-turns"
+name = "Reminders into the same thread"
+summary = "send_later, automations and /v1/triggers can deliver a scheduled message as a new turn in an existing thread."
+status = "experimental"
+surfaces = { api = "preview" }
+since = "unreleased"
+docs = "docs/RUNTIME_API.md"
+owner = "crates/tui/src/automation_manager.rs"
+
+[[feature]]
 id = "todos"
 name = "Todo list"
 summary = "The agent keeps a visible todo list for multi-step work."
