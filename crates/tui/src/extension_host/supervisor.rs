@@ -1556,6 +1556,7 @@ pub(crate) struct HostProcess {
     /// How the cap is enforced for this process, settled at the handshake.
     memory: Arc<std::sync::OnceLock<MemoryEnforcement>>,
     pub sandbox: HostSandbox,
+    #[cfg_attr(windows, expect(dead_code))]
     native_snapshot_roots: Vec<PathBuf>,
     tree: Arc<codewhale_runtime::process_tree::ProcessTree>,
     #[cfg(windows)]
