@@ -358,19 +358,20 @@ enum DefaultSection {
     Pinned,
     Recent,
     ProviderDefault,
+    Roster,
 }
 
 /// Most rows the default view's recent section shows.
 const RECENT_ROW_LIMIT: usize = 8;
 
-/// Most rows one custom relay's own roster contributes to the default view.
+/// Most rows the current route's roster, or one custom relay's roster,
+/// contributes to the default view.
 ///
-/// A relay has no bundled snapshot to browse: its roster exists only in the
-/// listing that route itself answered. Hiding all of it but the configured
-/// default is what made `/model` show one row for a route the provider panel
-/// had just listed a dozen for. The bound keeps a gateway fronting a thousand
-/// models from taking the view over.
-const CUSTOM_ROSTER_ROWS_IN_DEFAULT_VIEW: usize = 20;
+/// Hiding all of a route's roster but the configured default is what made
+/// `/model` show one row for a route the provider panel had just listed a
+/// dozen for. The bound keeps a gateway fronting a thousand models from taking
+/// the view over.
+const ROUTE_ROSTER_ROWS_IN_DEFAULT_VIEW: usize = 20;
 
 /// A fresh live roster for the row's exact route omits its id. Only a fresh
 /// roster may say so: a stale one lags the provider (and would condemn ids it
@@ -2453,28 +2454,44 @@ fn assign_default_sections(
             row.default_rank = Some((DefaultSection::ProviderDefault, usize::MAX));
         }
     }
-    // A custom relay's roster is the reason the route was configured, and the
-    // default view used to hide every one of its rows but the provider default
-    // -- the panel listed the route's dozen models and `/model` showed one.
-    // Surface the route's own live rows, bounded per route so a large gateway
-    // cannot take the view over.
+    // The current route's roster and a custom relay's roster are what the
+    // user came to choose from, and the default view used to hide every row
+    // but the provider default -- the panel listed a dozen models and `/model`
+    // showed one. Surface each such route's own rows, bounded per route so a
+    // large gateway cannot take the view over: newest first for a built-in
+    // provider, the relay's own listing order for a custom relay.
+    let current_identity = current.map(|(identity, _)| identity);
+    let mut roster: Vec<usize> = rows
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| {
+            row.default_rank.is_none()
+                && row.not_listed.is_none()
+                && !model_is_non_language(row)
+                && row_provider_identity(row).is_some_and(|identity| {
+                    current_identity == Some(identity)
+                        || (row.provider == Some(ProviderKind::Custom)
+                            && matches!(row.metadata.source, Some(CatalogSource::Live { .. })))
+                })
+        })
+        .map(|(index, _)| index)
+        .collect();
+    roster.sort_by_cached_key(|&index| {
+        let row = &rows[index];
+        (row.provider != Some(ProviderKind::Custom))
+            .then(|| std::cmp::Reverse(model_version_key(&row.id)))
+    });
     let mut shown_per_route: BTreeMap<String, usize> = BTreeMap::new();
-    for row in rows.iter_mut() {
-        if row.default_rank.is_some()
-            || row.provider != Some(ProviderKind::Custom)
-            || !matches!(row.metadata.source, Some(CatalogSource::Live { .. }))
-        {
-            continue;
-        }
-        let Some(identity) = row_provider_identity(row).map(str::to_string) else {
+    for index in roster {
+        let Some(identity) = row_provider_identity(&rows[index]).map(str::to_string) else {
             continue;
         };
         let shown = shown_per_route.entry(identity).or_default();
-        if *shown >= CUSTOM_ROSTER_ROWS_IN_DEFAULT_VIEW {
+        if *shown >= ROUTE_ROSTER_ROWS_IN_DEFAULT_VIEW {
             continue;
         }
         *shown += 1;
-        row.default_rank = Some((DefaultSection::ProviderDefault, usize::MAX));
+        rows[index].default_rank = Some((DefaultSection::Roster, usize::MAX));
     }
 }
 
@@ -3035,10 +3052,17 @@ fn model_row_matches_query(
         return true;
     }
     let normalized_query = normalize_picker_search_text(&query);
+    let compact = |text: &str| {
+        text.chars()
+            .filter(char::is_ascii_alphanumeric)
+            .collect::<String>()
+    };
+    let compact_query = compact(&query);
     let matches = |candidate: &str| {
         let candidate = candidate.to_ascii_lowercase();
         candidate.contains(&query)
             || normalize_picker_search_text(&candidate).contains(&normalized_query)
+            || (!compact_query.is_empty() && compact(&candidate).contains(&compact_query))
     };
     let provider_matches = row.provider.is_some_and(|provider| {
         row.provider_identity.as_deref().is_some_and(matches)
@@ -4320,16 +4344,16 @@ impl ModalView for ModelPickerView {
             {
                 self.explain_unselectable_selection()
             }
-            // ⇧P / ⇧F act on the highlighted row, searching or not: a search
-            // is how a model is found, and the verbs used to become query
-            // text the moment one was typed (#6500). The filter ignores case,
-            // so only a custom id being typed (no catalog row highlighted)
-            // still receives the capital letter. Some terminals report the
+            // ⇧P / ⇧F act on the highlighted row while no search is typed;
+            // while searching they are query text, so `Step-5-Preview` types
+            // its `P` instead of pinning a row. Ctrl+P / Ctrl+F act on the
+            // highlighted row either way, so a model found by search can still
+            // be pinned or added to Fleet (#6500). Some terminals report the
             // chord as lowercase + SHIFT, hence `eq_ignore_ascii_case`.
             KeyCode::Char(ch)
-                if key.modifiers == KeyModifiers::SHIFT
-                    && ch.eq_ignore_ascii_case(&'p')
-                    && (self.query.is_empty() || self.highlighted_route().is_some()) =>
+                if ch.eq_ignore_ascii_case(&'p')
+                    && ((key.modifiers == KeyModifiers::SHIFT && self.query.is_empty())
+                        || key.modifiers == KeyModifiers::CONTROL) =>
             {
                 let Some((provider, provider_id, model)) = self.highlighted_route() else {
                     return ViewAction::None;
@@ -4341,10 +4365,10 @@ impl ModalView for ModelPickerView {
                 })
             }
             KeyCode::Char(ch)
-                if key.modifiers == KeyModifiers::SHIFT
-                    && ch.eq_ignore_ascii_case(&'f')
+                if ch.eq_ignore_ascii_case(&'f')
                     && self.purpose == ModelPickerPurpose::Session
-                    && (self.query.is_empty() || self.highlighted_route().is_some()) =>
+                    && ((key.modifiers == KeyModifiers::SHIFT && self.query.is_empty())
+                        || key.modifiers == KeyModifiers::CONTROL) =>
             {
                 let Some((provider, provider_id, model)) = self.highlighted_route() else {
                     return ViewAction::None;
@@ -4635,17 +4659,23 @@ impl ModelPickerView {
         }
         // Keep compact route modals focused on the core browse/apply actions;
         // wider shells have room to disclose the pin action too.
-        // ⇧P / ⇧F act only on a highlighted catalog route; without one
-        // (typing a custom id) they are query text, so they are not offered.
+        // Pin and Fleet act only on a highlighted catalog route. While a
+        // search is typed the shifted letters are query text, so the Ctrl
+        // chords are advertised instead.
         if inner.width >= 72 && inner.height >= 16 && self.highlighted_route().is_some() {
+            let (fleet_key, pin_key) = if searching {
+                ("Ctrl+F", "Ctrl+P")
+            } else {
+                ("⇧F", "⇧P")
+            };
             if self.purpose == ModelPickerPurpose::Session {
                 footer_hints.push(ActionHint::new(
-                    "⇧F",
+                    fleet_key,
                     tr(self.locale, MessageId::PickerActionFleet),
                 ));
             }
             footer_hints.push(ActionHint::new(
-                "⇧P",
+                pin_key,
                 tr(self.locale, MessageId::PickerActionPin),
             ));
         }
@@ -6450,7 +6480,7 @@ model = "deepseek/deepseek-v4-flash"
             },
             ..Default::default()
         };
-        let roster: Vec<_> = (0..CUSTOM_ROSTER_ROWS_IN_DEFAULT_VIEW + 5)
+        let roster: Vec<_> = (0..ROUTE_ROSTER_ROWS_IN_DEFAULT_VIEW + 5)
             .map(|index| offering(&format!("relay-{index}")))
             .collect();
         crate::provider_catalog_live::record_success_if_current(
@@ -6478,7 +6508,7 @@ model = "deepseek/deepseek-v4-flash"
             .collect();
         assert_eq!(
             visible.len(),
-            CUSTOM_ROSTER_ROWS_IN_DEFAULT_VIEW,
+            ROUTE_ROSTER_ROWS_IN_DEFAULT_VIEW,
             "the relay's own roster shows in the default view, bounded per route: {visible:?}"
         );
         assert!(
@@ -6799,10 +6829,12 @@ api_key = "fixture-xai-key"
                         "at most one default per provider: {rows:#?}"
                     );
                 }
-                // The active provider's roster stays one search away.
                 assert!(
-                    !rows.iter().any(|(_, id, _)| id == "deepseek-v4-pro"),
-                    "{rows:#?}"
+                    rows.iter()
+                        .any(|(identity, id, section)| identity == "deepseek"
+                            && id == "deepseek-v4-pro"
+                            && *section == Some(DefaultSection::Roster)),
+                    "the active provider's roster is listed: {rows:#?}"
                 );
 
                 picker.update_query("GLM-5.2".to_string());
