@@ -165,6 +165,7 @@ pub(crate) struct HostLaunch {
     /// build pins ([`tier::BUILTIN_MODULES`]), which the host bundle embedded
     /// from the same build must agree with ([`check_hello_identity`]).
     pub builtin_modules: &'static [BuiltinModule],
+    #[cfg(not(windows))]
     pub native_snapshot_roots: Vec<PathBuf>,
     /// Exact verified Native LPAC plan; Builtin retains its labelled exception.
     #[cfg(windows)]
@@ -551,7 +552,6 @@ pub(crate) fn plan_launch(
             memory_cap,
             memory: MemoryEnforcement::JobObject,
             builtin_modules: tier::BUILTIN_MODULES,
-            native_snapshot_roots: Vec::new(),
             windows: Some(sandbox),
         });
     }
@@ -570,7 +570,10 @@ pub(crate) fn plan_launch(
         &snapshot_roots,
     );
     let mut launch = host_launch(tier, runtime, args, data, memory_cap, wrapped)?;
-    launch.native_snapshot_roots = snapshot_roots;
+    #[cfg(not(windows))]
+    {
+        launch.native_snapshot_roots = snapshot_roots;
+    }
     Ok(launch)
 }
 
@@ -1095,6 +1098,7 @@ fn host_launch(
         memory_cap,
         memory: MemoryEnforcement::planned(runtime.kind),
         builtin_modules: tier::BUILTIN_MODULES,
+        #[cfg(not(windows))]
         native_snapshot_roots: Vec::new(),
         #[cfg(windows)]
         windows: None,
@@ -1556,6 +1560,7 @@ pub(crate) struct HostProcess {
     /// How the cap is enforced for this process, settled at the handshake.
     memory: Arc<std::sync::OnceLock<MemoryEnforcement>>,
     pub sandbox: HostSandbox,
+    #[cfg(not(windows))]
     native_snapshot_roots: Vec<PathBuf>,
     tree: Arc<codewhale_runtime::process_tree::ProcessTree>,
     #[cfg(windows)]
@@ -1940,6 +1945,7 @@ impl HostProcess {
             memory_cap: launch.memory_cap,
             memory,
             sandbox: launch.sandbox.clone(),
+            #[cfg(not(windows))]
             native_snapshot_roots: launch.native_snapshot_roots.clone(),
             tree,
             #[cfg(windows)]
