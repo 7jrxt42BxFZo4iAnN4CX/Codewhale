@@ -98,6 +98,7 @@ const ALL_ACTIONS: &[&str] = &[
     "pr_attempt_list",
     "pr_attempt_read",
     "pr_attempt_preflight",
+    "suggest",
 ];
 
 impl TasksTool {
@@ -166,7 +167,7 @@ impl TasksTool {
     }
 
     fn action_requires_approval(action: &str) -> bool {
-        !Self::action_is_read(action)
+        !Self::action_is_read(action) && action != "suggest"
     }
 }
 
@@ -211,7 +212,7 @@ impl ToolSpec for TasksTool {
                 "Inspect durable tasks and their PR attempts. Actions: \"list\", \"read\", \"pr_attempt_list\", \"pr_attempt_read\"."
             }
             _ => {
-                "Manage durable background tasks through TaskManager. Durable tasks are restart-aware executable work, distinct from sub-agents. Actions: \"create\" (enqueue; approval), \"list\", \"read\", \"cancel\" (approval), \"gate_run\" (run an approved verification gate command and return structured evidence; approval), \"pr_attempt_record\" (approval), \"pr_attempt_list\", \"pr_attempt_read\", \"pr_attempt_preflight\" (approval). Run long shell work with the shell tool (background=true to detach immediately; a foreground command still running after 30s moves to the background by itself)."
+                "Manage durable background tasks through TaskManager. Durable tasks are restart-aware executable work, distinct from sub-agents. Actions: \"create\" (enqueue; approval), \"list\", \"read\", \"cancel\" (approval), \"gate_run\" (run an approved verification gate command and return structured evidence; approval), \"pr_attempt_record\" (approval), \"pr_attempt_list\", \"pr_attempt_read\", \"pr_attempt_preflight\" (approval), \"suggest\" (offer the person a task as a card they can Start or Hide; starts nothing — never create it yourself after suggesting). Run long shell work with the shell tool (background=true to detach immediately; a foreground command still running after 30s moves to the background by itself)."
             }
         }
     }
@@ -233,11 +234,11 @@ impl ToolSpec for TasksTool {
         if !self.read_only {
             properties.insert(
                 "prompt".to_string(),
-                json!({ "type": "string", "description": "Work prompt for the durable task (action=create)." }),
+                json!({ "type": "string", "description": "Work prompt for the durable task (action=create), or the prompt Start would send (action=suggest)." }),
             );
             properties.insert(
                 "name".to_string(),
-                json!({ "type": "string", "description": "Short run name shown in queues; omit to derive from the prompt. (action=create)" }),
+                json!({ "type": "string", "description": "Short run name shown in queues; omit to derive from the prompt. (action=create; for action=suggest, the card's title)" }),
             );
             properties.insert(
                 "model_provider".to_string(),
@@ -397,11 +398,28 @@ impl ToolSpec for TasksTool {
             "pr_attempt_list" => self.execute_pr_attempt_list(&input, context).await,
             "pr_attempt_read" => self.execute_pr_attempt_read(&input, context).await,
             "pr_attempt_preflight" => self.execute_pr_attempt_preflight(&input, context).await,
+            "suggest" => execute_suggest(&input),
             action => Err(ToolError::invalid_input(format!(
                 "tasks: invalid action `{action}`"
             ))),
         }
     }
+}
+
+fn execute_suggest(input: &Value) -> Result<ToolResult, ToolError> {
+    let prompt = required_str(input, "prompt")?.trim();
+    let title = optional_str(input, "name")?
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or(prompt);
+    if prompt.is_empty() {
+        return Err(ToolError::invalid_input("tasks: suggest needs a prompt"));
+    }
+    ToolResult::json(&json!({
+        "summary": format!("Suggested to the person: {title}. Nothing was started; they choose Start or Hide."),
+        "suggestion": { "title": title, "prompt": prompt },
+    }))
+    .map_err(|e| ToolError::execution_failed(e.to_string()))
 }
 
 fn dangerous_gate_block(safety: &SafetyAnalysis) -> Option<ToolResult> {

@@ -387,6 +387,15 @@ docs = "docs/RUNTIME_API.md"
 owner = "crates/tui/src/automation_manager.rs"
 
 [[feature]]
+id = "task-suggestions"
+name = "Suggested tasks"
+summary = "The tasks tool's suggest action offers the person a task as a Start/Hide card; it starts nothing and needs no approval."
+status = "experimental"
+surfaces = { desktop = "preview" }
+since = "unreleased"
+owner = "crates/tui/src/tools/tasks.rs"
+
+[[feature]]
 id = "todos"
 name = "Todo list"
 summary = "The agent keeps a visible todo list for multi-step work."

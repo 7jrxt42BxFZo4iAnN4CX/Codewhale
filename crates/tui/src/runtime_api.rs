@@ -1075,6 +1075,8 @@ struct ThreadSummary {
     pending_attention_count: usize,
     last_read_item_id: Option<String>,
     unread: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent_thread_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3663,6 +3665,7 @@ async fn list_threads_summary(
             pending_attention_count,
             last_read_item_id,
             unread,
+            parent_thread_id: thread.parent_thread_id,
         });
     }
 

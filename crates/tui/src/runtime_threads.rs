@@ -815,6 +815,8 @@ pub struct ThreadRecord {
     pub system_prompt: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_thread_id: Option<String>,
     /// User-set title for the thread. When `None`, consumers fall back to a
     /// derived title (typically the latest turn's input summary). Added in
     /// v0.8.10 (#562); old runtime records simply have no `title` and behave
@@ -11675,6 +11677,7 @@ impl RuntimeThreadManager {
             archived: req.archived,
             system_prompt: req.system_prompt,
             task_id: req.task_id,
+            parent_thread_id: None,
             title: None,
             session_id: None,
             saved_session_checkpoint: None,
@@ -13812,6 +13815,7 @@ impl RuntimeThreadManager {
         forked.latest_turn_id = None;
         forked.archived = false;
         forked.last_read = None;
+        forked.parent_thread_id = Some(source.id.clone());
 
         let source_turns = self.store.list_turns_for_thread(&source.id)?;
         // One read for every turn's items — see `prepared_items_for_turns`: a
@@ -14322,6 +14326,7 @@ impl RuntimeThreadManager {
         forked.latest_turn_id = None;
         forked.archived = false;
         forked.last_read = None;
+        forked.parent_thread_id = Some(source.id.clone());
 
         // The fork keeps only the prefix it was cut at, in a document of its
         // own — see `bind_fork_to_own_session`.
