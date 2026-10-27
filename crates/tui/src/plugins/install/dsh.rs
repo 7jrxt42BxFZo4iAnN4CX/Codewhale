@@ -547,7 +547,7 @@ fn load_bundle(package: &Package) -> Result<LoadedBundle> {
         .is_some_and(|client| !matches!(client, Value::Null))
     {
         notes.push(
-            "package declares `dsh.client`; the client UI half has no Codewhale equivalent and was not converted"
+            "package declares `dsh.client`; its UI half was not converted and stays off until Codewhale has a renderer that can keep plugin UI off the network (WebKit restrictions do not stop WebRTC)"
                 .to_string(),
         );
     }

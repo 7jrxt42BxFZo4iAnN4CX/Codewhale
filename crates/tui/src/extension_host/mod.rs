@@ -545,6 +545,7 @@ struct AttachmentState {
     selection: composition_scope::CompositionSelection,
     revision: u64,
     selection_cancel: CancellationToken,
+    settled: Option<composition_scope::SelectionRevision>,
     session_id: Option<String>,
     agent_id: Option<String>,
 }
@@ -1717,6 +1718,7 @@ impl ExtensionHostManager {
                     selection: composition_scope::CompositionSelection::default(),
                     revision: 1,
                     selection_cancel: CancellationToken::new(),
+                    settled: None,
                     session_id: None,
                     agent_id: None,
                 },
@@ -2143,6 +2145,16 @@ impl ExtensionHostManager {
         } else {
             Ok(())
         };
+        for state in shared
+            .attachments
+            .lock()
+            .expect("attachments lock")
+            .values_mut()
+        {
+            if state.selection.revision == state.plugins.caller_selection() {
+                state.settled = state.selection.revision;
+            }
+        }
         match (plugins, builtin) {
             (Err(error), Err(other)) => {
                 shared.diagnostic(other);
@@ -3336,6 +3348,32 @@ impl HostAttachment {
     /// Reconcile the host against every attachment, without waiting.
     pub fn sync_in_background(&self) {
         self.manager.reconcile_in_background();
+    }
+
+    pub fn selection_settled(&self) -> bool {
+        self.manager
+            .shared
+            .attachments
+            .lock()
+            .expect("attachments lock")
+            .get(&self.id)
+            .is_some_and(|state| {
+                state.settled.is_some() && state.settled == state.plugins.caller_selection()
+            })
+    }
+
+    pub async fn sync_within(&self, limit: Duration) {
+        if tokio::runtime::Handle::try_current().is_err() {
+            return;
+        }
+        let manager = Arc::clone(&self.manager);
+        let policy = activation::extension_host_policy_enabled();
+        let task = tokio::spawn(async move {
+            if let Err(error) = manager.reconcile_with_policy(policy).await {
+                manager.shared.diagnostic(error);
+            }
+        });
+        let _ = tokio::time::timeout(limit, task).await;
     }
 
     /// Add this engine's live extension tools to `tool_registry`.

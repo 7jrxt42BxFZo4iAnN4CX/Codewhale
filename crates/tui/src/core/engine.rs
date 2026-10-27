@@ -103,6 +103,7 @@ const SUBAGENT_COMPLETION_CHANNEL_CAPACITY: usize = 256;
 /// tolerated by design (`let _ =`), and the terminal `Finished` waits for a
 /// slot instead of being dropped.
 const MCP_BOOT_CHANNEL_CAPACITY: usize = 64;
+const EXTENSION_FIRST_SYNC_WAIT: Duration = Duration::from_secs(10);
 const GOAL_CONTINUATION_FAILURE_DETAIL_MAX_BYTES: usize = 512;
 const PLAN_SHELL_NETWORK_DENIED_HINT: &str = "Shell command blocked: in Plan mode shell commands run in a read-only sandbox with no writes and no network access. The user can change modes with /mode.";
 
@@ -2169,8 +2170,9 @@ impl Engine {
             .as_ref()
             .filter(|registry| registry.workspace() == config.workspace)
             .cloned();
-        // Experimental extension host: start in the background, never on the
-        // first-prompt path. Its tools join at the next turn's rebuild. Only
+        // Experimental extension host: start in the background here. The
+        // first turn's tool build waits briefly for this snapshot to activate
+        // so reviewed plugin tools are present on turn one. Only
         // an engine with its own plugin snapshot attaches; the empty fallback
         // below would desire nothing and must not affect other engines.
         let extension_host = match host.as_mut() {
@@ -6187,7 +6189,11 @@ impl Engine {
             attachment
                 .manager()
                 .note_native_names(tool_registry.names());
-            attachment.sync_in_background();
+            if attachment.selection_settled() {
+                attachment.sync_in_background();
+            } else {
+                attachment.sync_within(EXTENSION_FIRST_SYNC_WAIT).await;
+            }
         }
         let (mut plugin_tool_names, refused_overrides) =
             configure_plugin_tools(&mut tool_registry, self.config.tools.as_ref());
