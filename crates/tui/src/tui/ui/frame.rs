@@ -952,6 +952,7 @@ pub(crate) fn build_engine_config(app: &App, config: &Config) -> EngineConfig {
         .max_subagents
         .clamp(1, codewhale_runtime::config::MAX_SUBAGENTS);
     EngineConfig {
+        user_input_responder: true,
         session_checkpoint_backend: Some(crate::core::events::SessionCheckpointProjection::Exact),
         model: app.model.clone(),
         active_route_limits: app.active_route_limits,

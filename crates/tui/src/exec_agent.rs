@@ -836,6 +836,7 @@ pub(crate) async fn run_exec_agent(
             &execution_config,
         ),
         user_input_timeout: execution_config.user_input_timeout(),
+        user_input_responder: false,
         goal_max_steps: None,
         tools: if fleet_authority_active {
             None
