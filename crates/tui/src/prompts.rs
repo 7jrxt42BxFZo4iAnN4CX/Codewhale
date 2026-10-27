@@ -1556,6 +1556,15 @@ pub(crate) fn measure_static_prefix(system: Option<&SystemPrompt>, tools: &[Tool
 
 const GUARD_PASSES_PER_SCOPE: usize = 2;
 
+type GuardInstructionResult = Result<
+    (
+        Option<SystemPrompt>,
+        Option<crate::project_context::InstructionAssembly>,
+        Vec<crate::project_context::InstructionNotice>,
+    ),
+    crate::project_context::InstructionRefusal,
+>;
+
 fn replace_installed_instruction_block(
     prompt: &mut Option<SystemPrompt>,
     raw: &crate::project_context::ProjectContext,
@@ -1598,14 +1607,7 @@ pub(crate) fn guard_instruction_prefix(
     mut assembly: Option<crate::project_context::InstructionAssembly>,
     budgets: crate::project_context::InstructionBudgets,
     tools: &[Tool],
-) -> Result<
-    (
-        Option<SystemPrompt>,
-        Option<crate::project_context::InstructionAssembly>,
-        Vec<crate::project_context::InstructionNotice>,
-    ),
-    crate::project_context::InstructionRefusal,
-> {
+) -> GuardInstructionResult {
     use crate::project_context::{
         InstructionAction, InstructionBudgetPolicy, InstructionLimit, InstructionNotice,
         InstructionRefusal, InstructionScope,

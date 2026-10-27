@@ -20231,7 +20231,7 @@ fn restart_rebuild_restores_tool_call_identity_from_persisted_items() -> Result<
     let turn = manager.store.load_turn(&checkpoint_turn.id)?;
     let items = manager.prepared_items_for_turns(std::slice::from_ref(&turn))?;
     assert_eq!(
-        manager.history_from_records(&[turn.clone()], &items)?,
+        manager.history_from_records(std::slice::from_ref(&turn), &items)?,
         expected
     );
     first.metadata.as_mut().unwrap()["tool_input"] = json!(r#"{"path":"changed"}"#);

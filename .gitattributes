@@ -63,6 +63,7 @@ crates/tui/extension-host/dist/** text eol=lf
 # Reviewed extension-host fixtures carry exact source SHA-256 receipts.
 # A Windows checkout must not rewrite their admitted source closure to CRLF.
 crates/tui/tests/fixtures/extension_host/** text eol=lf
+crates/tui/extension-host/src/dsh/dsh-message-compat.js text eol=lf
 
 # Rustfmt writes LF; keep Rust sources stable across Windows/Linux/macOS.
 *.rs text eol=lf
