@@ -1347,6 +1347,38 @@ fn unanswered_call_result(
     }
 }
 
+/// The status a turn's terminal outcome gives an item that never reached one
+/// of its own.
+///
+/// The single mapping every repair path uses: the monitor that closes what it
+/// holds at the end of a turn, and the projection that closes what an earlier
+/// build left behind. A completed turn's leftovers were part of a delivered
+/// answer, so they close as `Completed`; an interrupt gives `Interrupted`; a
+/// failure gives `Failed`.
+fn terminal_item_status(turn_status: RuntimeTurnStatus) -> TurnItemLifecycleStatus {
+    match turn_status {
+        RuntimeTurnStatus::Completed => TurnItemLifecycleStatus::Completed,
+        RuntimeTurnStatus::Interrupted | RuntimeTurnStatus::Canceled => {
+            TurnItemLifecycleStatus::Interrupted
+        }
+        RuntimeTurnStatus::Queued | RuntimeTurnStatus::InProgress | RuntimeTurnStatus::Failed => {
+            TurnItemLifecycleStatus::Failed
+        }
+    }
+}
+
+/// The event that publishes `status` as an item's terminal state.
+fn item_terminal_event(status: TurnItemLifecycleStatus) -> &'static str {
+    match status {
+        TurnItemLifecycleStatus::Interrupted => "item.interrupted",
+        TurnItemLifecycleStatus::Canceled => "item.canceled",
+        TurnItemLifecycleStatus::Failed => "item.failed",
+        TurnItemLifecycleStatus::Queued
+        | TurnItemLifecycleStatus::InProgress
+        | TurnItemLifecycleStatus::Completed => "item.completed",
+    }
+}
+
 fn thread_execution_state_matches(left: &ThreadRecord, right: &ThreadRecord) -> bool {
     left.schema_version == right.schema_version
         && left.id == right.id
@@ -10856,6 +10888,47 @@ impl RuntimeThreadManager {
         Ok(())
     }
 
+    /// Close a streaming item that something other than its own completion
+    /// frame has ended, and publish it as terminal.
+    ///
+    /// Two boundaries mean "the segment above is over": a new thinking block
+    /// starting, and a tool call starting. The engine already reads the first
+    /// that way — `ContentBlockStart::Thinking` parks a block that never saw
+    /// its stop frame (`flush_thinking_block`), and a stream retry after
+    /// system sleep or a mid-stream network drop discards the fragment without
+    /// ever emitting `ThinkingComplete` — but the projection used to drop the
+    /// pointer without closing the item. That left an `in_progress` row
+    /// inside a turn that went on to complete, and
+    /// `thread_detail_has_live_work` then refused every later session save for
+    /// the thread.
+    ///
+    /// The slot is taken first: an event that arrives without a fresh start
+    /// cannot append to a closed segment.
+    async fn close_streaming_item(
+        &self,
+        thread_id: &str,
+        turn_id: &str,
+        slot: &mut Option<TurnItemRecord>,
+        status: TurnItemLifecycleStatus,
+    ) -> Result<()> {
+        let Some(mut item) = slot.take() else {
+            return Ok(());
+        };
+        item.status = status;
+        item.summary = summarize_text(item.detail.as_deref().unwrap_or_default(), SUMMARY_LIMIT);
+        item.ended_at = Some(Utc::now());
+        self.save_streaming_item(&item).await?;
+        self.emit_event(
+            thread_id,
+            Some(turn_id),
+            Some(&item.id),
+            item_terminal_event(status),
+            json!({ "item": item }),
+        )
+        .await?;
+        Ok(())
+    }
+
     #[cfg(test)]
     pub(crate) async fn emit_event_for_test(
         &self,
@@ -12761,6 +12834,87 @@ impl RuntimeThreadManager {
         Ok(())
     }
 
+    /// Close the items a terminal turn still lists as live, in the snapshot the
+    /// caller already holds.
+    ///
+    /// A stream retry — system sleep, a mid-stream network drop — discards a
+    /// reasoning or message fragment without emitting its completion frame,
+    /// and builds before the boundary closes dropped the superseded pointer
+    /// without closing the record. The turn itself went on to complete, so no
+    /// restart recovery touches it, and nothing else in the transcript path
+    /// can: the row reads `in_progress` inside a finished turn forever.
+    ///
+    /// Called from [`Self::get_thread_detail`], where the items are already in
+    /// memory — the repair therefore costs no extra I/O and happens once per
+    /// affected thread, the first time somebody opens it. A live turn is left
+    /// alone: its monitor owns those records and is still writing them.
+    ///
+    /// No event is emitted. Appending one here would land after the snapshot's
+    /// `latest_seq` and so be invisible to a client resuming from it; a client
+    /// that reloads reads the repaired record, which is what this changes.
+    async fn repair_terminal_turn_items(
+        &self,
+        thread_id: &str,
+        turns: &[TurnRecord],
+        items: Vec<TurnItemRecord>,
+    ) -> Result<Vec<TurnItemRecord>> {
+        let mut terminal: HashMap<&str, (TurnItemLifecycleStatus, DateTime<Utc>)> = HashMap::new();
+        for turn in turns {
+            if matches!(
+                turn.status,
+                RuntimeTurnStatus::Completed
+                    | RuntimeTurnStatus::Failed
+                    | RuntimeTurnStatus::Interrupted
+                    | RuntimeTurnStatus::Canceled
+            ) {
+                terminal.insert(
+                    turn.id.as_str(),
+                    (
+                        terminal_item_status(turn.status),
+                        turn.ended_at.unwrap_or_else(Utc::now),
+                    ),
+                );
+            }
+        }
+        if terminal.is_empty() {
+            return Ok(items);
+        }
+        let mut items = items;
+        let mut repaired: Vec<TurnItemRecord> = Vec::new();
+        for item in &mut items {
+            if !matches!(
+                item.status,
+                TurnItemLifecycleStatus::Queued | TurnItemLifecycleStatus::InProgress
+            ) {
+                continue;
+            }
+            let Some((status, ended_at)) = terminal.get(item.turn_id.as_str()).copied() else {
+                continue;
+            };
+            item.status = status;
+            item.summary =
+                summarize_text(item.detail.as_deref().unwrap_or_default(), SUMMARY_LIMIT);
+            item.ended_at = Some(ended_at);
+            repaired.push(item.clone());
+        }
+        if repaired.is_empty() {
+            return Ok(items);
+        }
+        tracing::info!(
+            thread_id,
+            items = repaired.len(),
+            "closed items a terminal turn was still listing as live"
+        );
+        let store = self.store.clone();
+        tokio::task::spawn_blocking(move || {
+            let records: Vec<&TurnItemRecord> = repaired.iter().collect();
+            store.save_items_batch(&records)
+        })
+        .await
+        .context("Terminal item repair persistence task failed")??;
+        Ok(items)
+    }
+
     pub async fn get_thread_detail(&self, id: &str) -> Result<ThreadDetail> {
         self.flush_recovery_receipts_for_thread(id).await?;
         // Hold the per-thread projection boundary from cursor capture through
@@ -12810,6 +12964,12 @@ impl RuntimeThreadManager {
         })
         .await
         .context("Runtime thread projection task failed")??;
+        // The projection also repairs what an earlier process left behind — a
+        // terminal turn still listing a live item. Doing it here costs nothing
+        // extra (the items are already in memory) and touches only the threads
+        // somebody opens, instead of making every launch read every item in
+        // every store to find the few that need it.
+        let items = self.repair_terminal_turn_items(id, &turns, items).await?;
         let (pending_approvals, pending_user_inputs) = self.pending_requests_for_thread(id);
         let pending_dynamic_tool_calls = self.pending_dynamic_tool_calls_for_thread(id);
         Ok(ThreadDetail {
@@ -17977,6 +18137,19 @@ impl RuntimeThreadManager {
                     }
                 }
                 EngineEvent::MessageStarted { .. } => {
+                    // A new assistant text block starts a new item below, and
+                    // nothing can append to the previous one any more (its
+                    // `ContentBlockStop` was what let this block start). Older
+                    // builds overwrote the pointer, so a message whose stop
+                    // frame was lost to a stream retry stayed `in_progress`
+                    // forever in a turn that completed.
+                    self.close_streaming_item(
+                        &thread_id,
+                        &turn_id,
+                        &mut current_message_item,
+                        TurnItemLifecycleStatus::Completed,
+                    )
+                    .await?;
                     let item_id = runtime_record_id("item");
                     let item = TurnItemRecord {
                         schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -18055,6 +18228,21 @@ impl RuntimeThreadManager {
                     }
                 }
                 EngineEvent::ThinkingStarted { .. } => {
+                    // The engine parks a thinking block that never saw its stop
+                    // frame the moment the next one begins
+                    // (`ContentBlockStart::Thinking` → `flush_thinking_block`).
+                    // A stream retry — system sleep, a mid-stream network drop
+                    // — is exactly that case: it discards the fragment and
+                    // re-issues the request without a `ThinkingComplete`. Close
+                    // the superseded item here too, or it stays `in_progress`
+                    // inside a turn that goes on to complete.
+                    self.close_streaming_item(
+                        &thread_id,
+                        &turn_id,
+                        &mut current_reasoning_item,
+                        TurnItemLifecycleStatus::Completed,
+                    )
+                    .await?;
                     let item_id = runtime_record_id("item");
                     let item = TurnItemRecord {
                         schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -18135,6 +18323,17 @@ impl RuntimeThreadManager {
                     input,
                     model_call,
                 } => {
+                    // Reasoning ends where the tool call it produced begins:
+                    // a thinking block cannot run across a tool call, so any
+                    // segment still open here lost its stop frame to a retried
+                    // stream and would otherwise never close.
+                    self.close_streaming_item(
+                        &thread_id,
+                        &turn_id,
+                        &mut current_reasoning_item,
+                        TurnItemLifecycleStatus::Completed,
+                    )
+                    .await?;
                     let item_id = runtime_record_id("item");
                     tool_items.insert(id.clone(), item_id.clone());
                     let kind = tool_kind_for_name(&name);
@@ -19613,61 +19812,16 @@ impl RuntimeThreadManager {
             turn_status = RuntimeTurnStatus::Interrupted;
         }
 
-        if let Some(mut item) = current_message_item.take() {
-            item.status = match turn_status {
-                RuntimeTurnStatus::Completed => TurnItemLifecycleStatus::Completed,
-                RuntimeTurnStatus::Interrupted | RuntimeTurnStatus::Canceled => {
-                    TurnItemLifecycleStatus::Interrupted
-                }
-                RuntimeTurnStatus::Queued
-                | RuntimeTurnStatus::InProgress
-                | RuntimeTurnStatus::Failed => TurnItemLifecycleStatus::Failed,
-            };
-            item.summary =
-                summarize_text(item.detail.as_deref().unwrap_or_default(), SUMMARY_LIMIT);
-            item.ended_at = Some(Utc::now());
-            self.save_streaming_item(&item).await?;
-            self.emit_event(
-                &thread_id,
-                Some(&turn_id),
-                Some(&item.id),
-                match item.status {
-                    TurnItemLifecycleStatus::Interrupted => "item.interrupted",
-                    TurnItemLifecycleStatus::Failed => "item.failed",
-                    _ => "item.completed",
-                },
-                json!({ "item": item }),
-            )
+        let item_status = terminal_item_status(turn_status);
+        self.close_streaming_item(&thread_id, &turn_id, &mut current_message_item, item_status)
             .await?;
-        }
-
-        if let Some(mut item) = current_reasoning_item.take() {
-            item.status = match turn_status {
-                RuntimeTurnStatus::Completed => TurnItemLifecycleStatus::Completed,
-                RuntimeTurnStatus::Interrupted | RuntimeTurnStatus::Canceled => {
-                    TurnItemLifecycleStatus::Interrupted
-                }
-                RuntimeTurnStatus::Queued
-                | RuntimeTurnStatus::InProgress
-                | RuntimeTurnStatus::Failed => TurnItemLifecycleStatus::Failed,
-            };
-            item.summary =
-                summarize_text(item.detail.as_deref().unwrap_or_default(), SUMMARY_LIMIT);
-            item.ended_at = Some(Utc::now());
-            self.save_streaming_item(&item).await?;
-            self.emit_event(
-                &thread_id,
-                Some(&turn_id),
-                Some(&item.id),
-                match item.status {
-                    TurnItemLifecycleStatus::Interrupted => "item.interrupted",
-                    TurnItemLifecycleStatus::Failed => "item.failed",
-                    _ => "item.completed",
-                },
-                json!({ "item": item }),
-            )
-            .await?;
-        }
+        self.close_streaming_item(
+            &thread_id,
+            &turn_id,
+            &mut current_reasoning_item,
+            item_status,
+        )
+        .await?;
 
         if turn_status == RuntimeTurnStatus::Completed && !saw_engine_activity {
             turn_status = RuntimeTurnStatus::Failed;
@@ -19746,7 +19900,7 @@ impl RuntimeThreadManager {
         // settle above. Read the latest turn only now and commit its terminal
         // fields under the same mutation lock, so no stale snapshot can
         // overwrite that successfully persisted receipt.
-        let turn = {
+        let (turn, swept_items) = {
             let _turn_mutation = self.store.turn_mutation.lock();
             let mut turn = self.store.load_turn(&turn_id)?;
             turn.status = turn_status;
@@ -19782,9 +19936,32 @@ impl RuntimeThreadManager {
             // monitor, since diffing them is git work.
             let initial = self.initial_turn_workspace(&thread_id, &turn.workspace_snapshots);
             self.set_turn_artifacts(&mut turn, None, initial);
+            // Every item reaches its terminal state before the parent turn is
+            // written. The segment closes above only cover what this monitor
+            // still held in memory; a tool call, a compaction, or a reasoning
+            // segment whose completion frame the engine never sent (a stream
+            // retry discards the fragment without one) is reachable only
+            // through the turn's item list. Normalizing them here is the
+            // mechanism that keeps a terminal turn free of `in_progress` rows,
+            // whichever event branch forgets to close one: otherwise
+            // `thread_detail_has_live_work` reads the thread as permanently
+            // busy and refuses every later session save.
+            let swept_items = self.settle_turn_items(&turn, turn_status, ended_at)?;
             self.store.save_turn(&turn)?;
-            turn
+            (turn, swept_items)
         };
+        // Published after the record guard is released: `emit_event` awaits,
+        // and the turn mutation lock is a std mutex.
+        for item in swept_items {
+            self.emit_event(
+                &thread_id,
+                Some(&turn_id),
+                Some(&item.id),
+                item_terminal_event(item.status),
+                json!({ "item": item }),
+            )
+            .await?;
+        }
         {
             let _thread_mutation = self.store.thread_mutation.lock();
             let mut thread = self.store.load_thread(&thread_id)?;
@@ -19850,6 +20027,57 @@ impl RuntimeThreadManager {
             .filter_map(|item_id| self.store.load_item(item_id).ok())
             .flat_map(|item| item.artifacts)
             .collect()
+    }
+
+    /// Bring every item this turn still lists as live to the turn's own
+    /// terminal status, and return the ones that were closed.
+    ///
+    /// The turn's item list is the only complete view of what it produced: a
+    /// tool call whose result never arrived, a compaction the stream died
+    /// under, and a reasoning or message segment superseded by a retried
+    /// stream all outlive the monitor's `current_*` pointers. A turn that ends
+    /// while any of them still reads `queued`/`in_progress` is a turn every
+    /// reader treats as unfinished — `thread_detail_has_live_work` refuses to
+    /// save a session for it, `receipts` reports a step still running, and
+    /// `call-changes` answers `pending` forever.
+    ///
+    /// An item record that cannot be read is left alone and logged: the sweep
+    /// repairs what it can see and must never fail the turn's own completion.
+    fn settle_turn_items(
+        &self,
+        turn: &TurnRecord,
+        turn_status: RuntimeTurnStatus,
+        ended_at: DateTime<Utc>,
+    ) -> Result<Vec<TurnItemRecord>> {
+        let status = terminal_item_status(turn_status);
+        let mut settled = Vec::new();
+        for item_id in &turn.item_ids {
+            let mut item = match self.store.load_item(item_id) {
+                Ok(item) => item,
+                Err(error) => {
+                    tracing::warn!(
+                        turn_id = %turn.id,
+                        item_id = %item_id,
+                        %error,
+                        "turn settlement could not read an item; leaving it as recorded"
+                    );
+                    continue;
+                }
+            };
+            if !matches!(
+                item.status,
+                TurnItemLifecycleStatus::Queued | TurnItemLifecycleStatus::InProgress
+            ) {
+                continue;
+            }
+            item.status = status;
+            item.summary =
+                summarize_text(item.detail.as_deref().unwrap_or_default(), SUMMARY_LIMIT);
+            item.ended_at = Some(ended_at);
+            self.store.save_item(&item)?;
+            settled.push(item);
+        }
+        Ok(settled)
     }
 
     /// Recompute a turn's aggregate through the one merge function.

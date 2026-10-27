@@ -24794,6 +24794,87 @@ mod thread_snapshot_ownership {
         std::env::temp_dir().join(format!("codewhale-6621-{name}-{}", Uuid::new_v4()))
     }
 
+    /// A session save must not be refused because a finished turn still lists
+    /// an item as running.
+    ///
+    /// A stream retry — system sleep, a mid-stream network drop — discards a
+    /// reasoning fragment without emitting its completion frame, and builds
+    /// before the boundary close left the superseded record `in_progress`
+    /// inside a turn that went on to complete. The save guard used to scan
+    /// items, so one such row refused every later save with a 409 naming an
+    /// "active turn" that did not exist, and the thread's session file stopped
+    /// updating while the conversation kept going.
+    #[tokio::test]
+    async fn session_save_accepts_a_completed_turn_with_a_stale_live_item() -> Result<()> {
+        let _env = lock_test_env();
+        let root = test_root("stale-item");
+        let _home = EnvVarGuard::set("CODEWHALE_HOME", root.join("home"));
+        let Some(fx) = fixture(&root, TestServerOverrides::default()).await? else {
+            return Ok(());
+        };
+        let thread_id = fx.create_thread().await?;
+        fx.write_turn(&thread_id, &[]).await?;
+        let store = fx.threads.test_store();
+        let settled = store
+            .list_turns_for_thread(&thread_id)?
+            .into_iter()
+            .find(|turn| turn.status == RuntimeTurnStatus::Completed)
+            .context("the completed turn")?;
+
+        // One of the turn's own records is left live, exactly as an older
+        // build left a superseded reasoning segment.
+        let item_id = settled
+            .item_ids
+            .first()
+            .context("the turn recorded no items")?
+            .clone();
+        let mut item = store.load_item(&item_id)?;
+        item.status = crate::runtime_threads::TurnItemLifecycleStatus::InProgress;
+        item.ended_at = None;
+        store.save_item(&item)?;
+
+        // The guard reads the turn, not its items: with the turn live the
+        // thread is busy, and the same live item under a finished turn is not.
+        let mut live = settled.clone();
+        live.status = RuntimeTurnStatus::InProgress;
+        live.ended_at = None;
+        store.save_turn(&live)?;
+        let detail = fx.threads.get_thread_detail(&thread_id).await?;
+        assert!(
+            crate::runtime_api::sessions::thread_detail_has_live_work(&detail),
+            "a live turn is live work"
+        );
+        let mut finished = detail.clone();
+        for turn in &mut finished.turns {
+            turn.status = RuntimeTurnStatus::Completed;
+        }
+        assert!(
+            finished.items.iter().any(|item| {
+                item.id == item_id
+                    && item.status == crate::runtime_threads::TurnItemLifecycleStatus::InProgress
+            }),
+            "precondition: the snapshot still carries the live item"
+        );
+        assert!(
+            !crate::runtime_api::sessions::thread_detail_has_live_work(&finished),
+            "an item cannot outvote the turn it belongs to"
+        );
+
+        // And the symptom the user saw: the save goes through.
+        store.save_turn(&settled)?;
+        let response = fx
+            .client
+            .put(fx.url("/v1/sessions"))
+            .json(&json!({ "thread_id": thread_id }))
+            .send()
+            .await?;
+        let status = response.status();
+        let body: Value = response.json().await?;
+        assert_eq!(status, StatusCode::OK, "{body:#}");
+        assert!(body["session_id"].as_str().is_some(), "{body:#}");
+        Ok(())
+    }
+
     /// The issue's reproduction: a fresh HTTP thread writes a new file and
     /// overwrites an existing one (two writes, one turn), and patch-undo
     /// restores both — the new file deleted, the old one back to its exact
