@@ -21,7 +21,8 @@
 
 use std::fmt;
 
-use crate::config::{ProviderIdentity, ProviderKind};
+use crate::config::ProviderIdentity;
+use codewhale_config::ProviderKind;
 use codewhale_config::credentials::CredentialGeneration;
 
 /// Endpoint identity for a string that is not a parseable URL.

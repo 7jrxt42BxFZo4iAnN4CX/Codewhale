@@ -222,7 +222,9 @@ async fn verify_next_user_turn_after_loss(failure: Failure) {
     let workspace = tempdir().unwrap();
     let config = Config {
         provider: Some("custom".to_string()),
-        default_text_model: Some(crate::config::DEFAULT_TEXT_MODEL.to_string()),
+        default_text_model: Some(
+            codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
+        ),
         ..Config::default()
     }
     .with_legacy_root(

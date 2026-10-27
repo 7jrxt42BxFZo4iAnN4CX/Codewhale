@@ -1381,7 +1381,7 @@ pub(crate) async fn handle_skill_mutation_requested(
     };
 
     let workspace = app.workspace.clone();
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     let cfg = crate::config::Config::load(None, None).unwrap_or_default();
     let network = cfg
         .network
@@ -1586,6 +1586,21 @@ fn plan_handoff_seed_title(plan: &crate::tui::plan_handoff::PendingPlanHandoff) 
         .to_string()
 }
 
+fn plan_handoff_proceed_message(
+    app: &App,
+    plan: &crate::tui::plan_handoff::PendingPlanHandoff,
+) -> String {
+    let message = format!("{}\n\n{}", app.tr(MessageId::PlanHandoffProceed), plan.text);
+    if plan.seeded_todo_id.is_none() {
+        return message;
+    }
+    format!(
+        "{message}\n\n{}",
+        app.tr(MessageId::PlanHandoffTodoNote)
+            .replace("{title}", &plan_handoff_seed_title(plan))
+    )
+}
+
 /// Stage one graph-owned item for a prose plan without replacing existing work.
 async fn seed_plan_handoff_todos(
     app: &App,
@@ -1673,6 +1688,7 @@ fn reopen_plan_handoff(
     app.view_stack.push(UserInputView::new(
         plan.request_id.clone(),
         crate::tui::plan_handoff::request(app.ui_locale),
+        app.ui_locale,
     ));
     let notice = app
         .tr(MessageId::SessionSaveFailed)
@@ -1753,10 +1769,7 @@ pub(crate) async fn apply_plan_handoff_with_checkpoint(
                 reopen_plan_handoff(app, &plan, &reason);
                 return Ok(());
             }
-            QueuedMessage::new(
-                format!("{}\n\n{}", app.tr(MessageId::PlanHandoffProceed), plan.text),
-                None,
-            )
+            QueuedMessage::new(plan_handoff_proceed_message(app, &plan), None)
         }
     };
     // Consume before ordinary composer admission. Its existing recovery owns

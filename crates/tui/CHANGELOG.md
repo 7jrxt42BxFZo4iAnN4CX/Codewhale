@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **GitHub Action reviews:** analysis can export a structured Engine review for a separate trusted publisher job. The publisher checks the current PR revision and line anchors, deduplicates its findings, and keeps uncertain or preexisting claims out of inline comments.
+- **Telegram recovery:** prompts and their initiating identity are durable before the polling cursor advances. Restart recovery reuses the original Engine operation, questions preserve human ownership, and uncertain final replies remain available through `/status` without an automatic resend.
+- **DingTalk bridge:** an optional internal-app Stream adapter reuses the same Engine, shared admission and approval helpers. Tenant/staff allowlists, durable acceptance before acknowledgement and retained uncertain deliveries protect recovery. Managed account linking is separate from this advanced self-hosted bridge.
+
+- **Answerless output-limit recovery:** opt into `[reasoning_only] on_output_limit = true` to request an answer again after a length stop with no answer or tool call, including hidden reasoning and ordinary Fleet workers. Retries share `max_reprompts`, retain existing output and control limits, and record request-scoped nudge receipts without adding them to resumed conversation context. RLM keeps its existing stop protocol. Thanks [@M-Maciej](https://github.com/M-Maciej) for the long-proof Fleet report. (#6990)
+
+- **Linux hardening tests:** the NoNewPrivs child matrices now respect a parent that already holds the irreversible flag, keeping the full assertions on unpinned hosts and checking the kernel ratchet on pinned hosts. Thanks [@asto18089](https://github.com/asto18089) for diagnosing the hardened-container failure. (#7021)
+
+- **OrcaRouter recommendation:** `/provider` and `/model` offer a shared partner recommendation with the DeepSeek V4.1 Flash 30% top-up-match link, public referral disclosure and localized offer details. F7 or a click opens the existing pager while retaining the current route.
+
+- Long drafts now show a localized external-editor hint when the actual composer
+  viewport clips their text. The hint uses the shared F4 binding and preserves
+  queue, running-turn, history, and menu hints (#7049). Thanks @Lstarsky0.
+- Archived context markdown now uses the active theme's palette when rendered
+  in the transcript, preventing unreadable dark text on dark backgrounds (#7043).
+  Thanks @Statter.
+- Plan-to-Work handoff now names the seeded To-do item in a localized reminder
+  to keep it on the list and complete it after the plan (#7068).
+- Localized question footers, approval and plan-handoff chrome, tool waiting
+  status, and /color receipts use the shared locale packs (#7071).
+
+- Clearing a conversation with no goal no longer shows a misleading "Goal cleared."
+  receipt. Clearing an existing or configured goal still reports it (#7089).
+  Thanks @Lstarsky0.
+
+- Removed the internal config re-export facade and its model-constant wrapper;
+  provider types, shared constants, credential helpers, and notification types
+  now come directly from their shared owners. Configuration and saved settings
+  keep their existing behavior.
+
+- Removed superseded home-directory and Fleet-role re-export shims, unused
+  tool-context sandbox/MCP fields, and the redundant core tool-parser facade.
+  Consumers now call their existing owners directly; tool denial rules, approval
+  posture, strict tool schemas, home resolution, and legacy saved-role migration
+  retain their behavior. The cleanup removes three dead-code suppressions and
+  keeps the engine as the sole owner of human approval attestations.
+- Removed unused plan/journal accessors, an unused plan-status glyph helper,
+  and a cancellation case that no execution path issued. Active mailbox and
+  cancellation wiring stays in place; its stale unused-code suppressions are
+  removed. No supported command or feature is retired by this cleanup.
+
 - Standing instructions are budgeted per scope (`global` and `project`) in
   estimated tokens instead of one 48 KiB byte ceiling shared by everything, and
   every trim, skip, and refusal is reported — as a system cell at session start,
@@ -58,11 +99,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged (#6436, #7082).
 - `codewhale review` no longer accepts leaked tool-call markup as a review: a
   pass whose reply is a DeepSeek DSML (or other) tool-call wrapper outside code
-  now fails as incomplete, with no tally and nothing posted (#7072). A Low-risk
-  review on a reasoning model caps its reasoning at low so the 4,000-token
-  allowance leaves room for the review, and an exhausted pass now reports the
-  allowance and reserve actually sent and says "cut off" when visible text came
-  back (#7067).
+  now fails as incomplete, with no tally and nothing posted (#7072). A review on a
+  reasoning model now raises its tier output allowance to 8,192 tokens (a
+  Low-risk review used to get 4,000, which a reasoning pass could spend entirely
+  on thinking), the `review` tool bounds its reasoning level to leave room for
+  the review, and an exhausted pass reports the allowance and reserve actually
+  sent and says "cut off" when visible text came back (#7067).
 - `--full-access` is now the documented flag for Full Access (`--yolo` stays an
   alias), and `serve` accepts it after the subcommand: `codewhale serve --acp
   --yolo` used to fail with "unexpected argument". `serve --acp` also writes one
@@ -93,7 +135,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `/balance` and the balance status chip work on the default DeepSeek route
   again. The balance request now goes to the DeepSeek API root instead of the
   `/beta` inference path, which failed with "Could not fetch DeepSeek account
-  balance" (#7055).
+  balance". A failed balance request now names its reason, such as HTTP 401
+  Unauthorized (#7055).
 - An `AGENTS.md` or global instruction file over 100 KiB is no longer
   skipped (which could let a sibling file load in its place): Codewhale loads
   its first 100 KiB, ends it with a marker giving the bytes omitted, and names

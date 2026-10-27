@@ -88,7 +88,7 @@ pub(crate) fn bounded_review_reasoning_effort(
         // Half the allowance must survive as text.
         _ => 2,
     };
-    if reserve_percent > 0 && allowance <= 8_192 {
+    if reserve_percent > 0 && allowance <= super::review_triage::REASONING_ROUTE_MIN_OUTPUT_TOKENS {
         ceiling = ceiling.min(2);
     }
     reasoning_effort_from_rank(reasoning_effort_rank(requested).min(ceiling))
@@ -1574,7 +1574,29 @@ impl ToolSpec for ReviewTool {
             _ => super::review_core::repository_tool_workspace(&context.workspace, None),
         };
         let triage = super::review_triage::triage_review(&review_diff);
-        let budget = super::review_triage::budget_for(&triage);
+        let reserve_percent =
+            crate::route_budget::review_visible_text_reserve_percent(&route.model);
+        let budget =
+            super::review_triage::budget_for(&triage).with_reasoning_floor(reserve_percent);
+        let allowance = client
+            .effective_max_output_tokens(&route.model)
+            .min(budget.max_output_tokens);
+        let reasoning_effort =
+            (codewhale_models::model_reasoning_capability(&route.model) == Some(true)).then(|| {
+                bounded_review_reasoning_effort(
+                    crate::reasoning_preference::ReasoningEffort::Max,
+                    reserve_percent,
+                    allowance,
+                )
+                .normalize_for_route_identity(
+                    client.api_provider(),
+                    client.admitted_provider_identity().key.as_str(),
+                    client.base_url(),
+                    &route.model,
+                )
+                .as_setting()
+                .to_string()
+            });
         let mut usage = Usage::default();
         let mut accumulator = plan.as_ref().map(PrReviewAccumulator::new);
         let mut single_output = None;
@@ -1590,11 +1612,8 @@ impl ToolSpec for ReviewTool {
             let mut request = super::review_core::ReviewCoreRequest::new(&review_diff, prompt);
             request.workspace = tool_workspace.clone();
             request.budget = budget.tool_budget();
-            request.max_output_tokens = Some(
-                client
-                    .effective_max_output_tokens(&route.model)
-                    .min(budget.max_output_tokens),
-            );
+            request.max_output_tokens = Some(allowance);
+            request.reasoning_effort = reasoning_effort.clone();
             let result =
                 match super::review_core::run_review_core(&client, &self.model, request).await {
                     Ok(result) => result,
@@ -1633,10 +1652,11 @@ impl ToolSpec for ReviewTool {
                     &route,
                     &usage,
                     format!(
-                        "Review pass {}/{} response incomplete: provider stop reason `{}`; the partial review was not accepted.",
+                        "Review pass {}/{} response incomplete: provider stop reason `{}`; the pass {}. The partial review was not accepted.",
                         index + 1,
                         plan.as_ref().map_or(1, |plan| plan.passes.len()),
-                        codewhale_models::stop_reason_detail(result.stop_reason.as_deref())
+                        codewhale_models::stop_reason_detail(result.stop_reason.as_deref()),
+                        exhausted_pass_clause(&result.usage)
                     ),
                 ));
             }
@@ -1729,17 +1749,30 @@ impl ToolSpec for ReviewTool {
     }
 }
 
-/// Accept one non-PR review reply (#6561 D03-m4). Prose that ignores the
-/// JSON contract is still a review (see [`ReviewOutput::from_str`]), but an
-/// empty reply, or JSON that carries no summary, issue, suggestion or
-/// assessment (`{}`, an unrelated object), used to become an empty
-/// successful review that read as clean.
 pub(crate) fn leaked_tool_call_message(pass: usize, passes: usize) -> String {
     format!(
         "Review pass {pass}/{passes} returned tool-call markup instead of a review: the model tried to call tools this pass did not offer. This is not a review result, and the response was not accepted or posted."
     )
 }
 
+pub(crate) fn exhausted_pass_clause(usage: &Usage) -> String {
+    let visible_tokens = usage
+        .output_tokens
+        .saturating_sub(usage.reasoning_tokens.unwrap_or(0));
+    if visible_tokens > 0 {
+        format!(
+            "was cut off before the review finished ({visible_tokens} visible tokens came back)"
+        )
+    } else {
+        "produced no review text".to_string()
+    }
+}
+
+/// Accept one non-PR review reply (#6561 D03-m4). Prose that ignores the
+/// JSON contract is still a review (see [`ReviewOutput::from_str`]), but an
+/// empty reply, or JSON that carries no summary, issue, suggestion or
+/// assessment (`{}`, an unrelated object), used to become an empty
+/// successful review that read as clean.
 fn accept_single_review(response_text: &str) -> Result<ReviewOutput, String> {
     let output = ReviewOutput::from_str(response_text);
     if response_text.trim().is_empty()
@@ -2865,7 +2898,7 @@ mod tests {
         .unwrap();
         let route = crate::cost_status::EffectiveRouteEnvelope::capture(
             None,
-            crate::config::ProviderKind::Custom,
+            codewhale_config::ProviderKind::Custom,
             "test",
             "test-model",
             None,
@@ -3106,7 +3139,7 @@ mod tests {
     fn review_usage_metadata_reports_child_tokens_for_cost_accrual() {
         let route = crate::cost_status::EffectiveRouteEnvelope::capture(
             None,
-            crate::config::ProviderKind::Deepseek,
+            codewhale_config::ProviderKind::Deepseek,
             "deepseek",
             "deepseek-v4-flash",
             Some("https://api.deepseek.com/v1"),

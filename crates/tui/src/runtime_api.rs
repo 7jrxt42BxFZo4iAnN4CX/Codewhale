@@ -53,9 +53,7 @@ use crate::automation_manager::{
     AutomationManager, AutomationRecord, AutomationRunRecord, AutomationSchedulerConfig,
     CreateAutomationRequest, SharedAutomationManager, UpdateAutomationRequest, spawn_scheduler,
 };
-#[cfg(test)]
-use crate::config::DEFAULT_TEXT_MODEL;
-use crate::config::{Config, ProviderKind, normalize_model_name_for_provider, validate_route};
+use crate::config::{Config, normalize_model_name_for_provider, validate_route};
 use crate::fleet::executor::{FleetExecutor, configured_codewhale_binary};
 use crate::fleet::ledger::{
     FleetEventReplayError, FleetLedgerState, FleetTaskLedgerStatus, fleet_ledger_path,
@@ -75,6 +73,9 @@ use crate::runtime_threads::{
     SharedRuntimeThreadManager, StartTurnRequest, SteerTurnRequest, ThreadDetail, ThreadListFilter,
     ThreadRecord, TurnRecord, UpdateThreadRequest, UsageGroupBy, UsageTotals,
 };
+use codewhale_config::ProviderKind;
+#[cfg(test)]
+use codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL;
 // `TurnItemKind` is read only by the summary tests now that the route builds
 // its rows from `ThreadListFacts` instead of walking item records here.
 #[cfg(test)]
@@ -5675,7 +5676,7 @@ async fn install_skill_api(
 
     let (network, max_size, registry_url, configured_skills_dir) =
         mutation_context_settings(&state);
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     let workspace = state.workspace.clone();
 
     let receipt = crate::skills::mutation::execute(
@@ -5716,7 +5717,7 @@ async fn update_skill_api(
     let scope = parse_api_scope(req.scope.as_deref())?;
     let (network, max_size, registry_url, configured_skills_dir) =
         mutation_context_settings(&state);
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     let workspace = state.workspace.clone();
 
     let receipt = crate::skills::mutation::execute(
@@ -5763,7 +5764,7 @@ async fn uninstall_skill_api(
     let scope = parse_api_scope(query.scope.as_deref())?;
     let (network, max_size, registry_url, configured_skills_dir) =
         mutation_context_settings(&state);
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
 
     let receipt = crate::skills::mutation::execute_sync(
         SkillMutationRequest::RemoveByName {
@@ -5804,7 +5805,7 @@ async fn trust_skill_api(
     let scope = parse_api_scope(req.scope.as_deref())?;
     let (network, max_size, registry_url, configured_skills_dir) =
         mutation_context_settings(&state);
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
 
     let receipt = crate::skills::mutation::execute_sync(
         SkillMutationRequest::TrustByName {
@@ -5847,7 +5848,7 @@ async fn audit_skill_api(
     use crate::skills::roots::SkillRootKind;
 
     let scope_filter = parse_api_scope(query.scope.as_deref())?;
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     let configured_skills_dir = {
         let config = state.config.read();
         config.skills_dir.as_ref().map(PathBuf::from)

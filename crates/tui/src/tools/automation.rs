@@ -299,7 +299,7 @@ impl ToolSpec for AutomationTool {
     }
 
     async fn execute(&self, input: Value, context: &ToolContext) -> Result<ToolResult, ToolError> {
-        crate::core::engine::tool_catalog::enforce_tool_denial(
+        crate::tools::execution_envelope::enforce_tool_denial(
             context,
             self.name(),
             &json!({"action": self.resolve_action(&input)?}),

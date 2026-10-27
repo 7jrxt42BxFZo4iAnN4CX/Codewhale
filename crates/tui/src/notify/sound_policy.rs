@@ -3,8 +3,8 @@
 //! one cue and preserves per-category repeat history across settings updates.
 
 use super::payload::NotificationKind;
-use crate::config::{CompletionSound, NotificationsConfig};
 pub use codewhale_config::notifications::NotificationEvent as SoundEvent;
+use codewhale_config::notifications::{CompletionSound, NotificationsConfig};
 use std::path::PathBuf;
 use std::sync::{OnceLock, RwLock};
 
@@ -207,7 +207,7 @@ pub fn configure(policy: EventSoundPolicy) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::EventSoundConfig;
+    use codewhale_config::notifications::EventSoundConfig;
 
     #[test]
     fn canonical_whale_controls_all_six_categories_over_legacy_controls() {

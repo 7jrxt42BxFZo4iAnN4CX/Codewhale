@@ -71,8 +71,8 @@ fn effort_activity(
         requested: ReasoningEffortTier::Low,
         effective: ReasoningEffortTier::High,
         provider_kind: Some(
-            crate::config::ProviderKind::parse(&provider)
-                .unwrap_or(crate::config::ProviderKind::Custom),
+            codewhale_config::ProviderKind::parse(&provider)
+                .unwrap_or(codewhale_config::ProviderKind::Custom),
         ),
         provider,
         endpoint_identity: Some("https://example.invalid/v1".to_string()),
@@ -773,10 +773,15 @@ fn effective_only_reasoning_states_cannot_be_requested() {
                 event: WorkActivityEvent::ReasoningEffortChanged {
                     requested,
                     effective: requested,
-                    provider_kind: Some(crate::config::ProviderKind::Zai),
+                    provider_kind: Some(codewhale_config::ProviderKind::Zai),
                     provider: "zai".to_string(),
-                    endpoint_identity: Some(crate::config::DEFAULT_ZAI_BASE_URL.to_string()),
-                    model: Some(crate::config::ZAI_GLM_5_2_MODEL.to_string()),
+                    endpoint_identity: Some(
+                        codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL.to_string(),
+                    ),
+                    model: Some(
+                        codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL
+                            .to_string(),
+                    ),
                     ts: 10,
                     operation: None,
                 },
@@ -868,10 +873,12 @@ fn legacy_reasoning_activity_missing_provider_kind_downgrades_effective_truth() 
     let activity = WorkActivityEvent::ReasoningEffortChanged {
         requested: ReasoningEffortTier::Max,
         effective: ReasoningEffortTier::Max,
-        provider_kind: Some(crate::config::ProviderKind::Openai),
+        provider_kind: Some(codewhale_config::ProviderKind::Openai),
         provider: "openai".to_string(),
-        endpoint_identity: Some(crate::config::DEFAULT_OPENAI_BASE_URL.to_string()),
-        model: Some(crate::config::DEFAULT_OPENAI_MODEL.to_string()),
+        endpoint_identity: Some(
+            codewhale_config::descriptors::defaults::DEFAULT_OPENAI_BASE_URL.to_string(),
+        ),
+        model: Some(codewhale_config::descriptors::defaults::DEFAULT_OPENAI_MODEL.to_string()),
         ts: 10,
         operation: None,
     };
@@ -907,7 +914,7 @@ fn restored_custom_builtin_slug_collisions_cannot_forge_concrete_tiers() {
             .push_bounded(WorkActivityEvent::ReasoningEffortChanged {
                 requested: ReasoningEffortTier::Max,
                 effective: ReasoningEffortTier::Max,
-                provider_kind: Some(crate::config::ProviderKind::Custom),
+                provider_kind: Some(codewhale_config::ProviderKind::Custom),
                 provider: provider.to_string(),
                 endpoint_identity: Some("https://gateway.example/v1".to_string()),
                 model: Some("vendor-model-x".to_string()),
@@ -930,7 +937,7 @@ fn restored_custom_builtin_slug_collisions_cannot_forge_concrete_tiers() {
             .push_bounded(WorkActivityEvent::ReasoningEffortChanged {
                 requested: ReasoningEffortTier::Max,
                 effective: ReasoningEffortTier::Unavailable,
-                provider_kind: Some(crate::config::ProviderKind::Custom),
+                provider_kind: Some(codewhale_config::ProviderKind::Custom),
                 provider: provider.to_string(),
                 endpoint_identity: Some("https://gateway.example/v1".to_string()),
                 model: Some("vendor-model-x".to_string()),
@@ -953,10 +960,12 @@ fn restored_genuine_openai_preserves_known_tier_with_exact_provenance() {
         .push_bounded(WorkActivityEvent::ReasoningEffortChanged {
             requested: ReasoningEffortTier::Max,
             effective: ReasoningEffortTier::Max,
-            provider_kind: Some(crate::config::ProviderKind::Openai),
+            provider_kind: Some(codewhale_config::ProviderKind::Openai),
             provider: "openai".to_string(),
-            endpoint_identity: Some(crate::config::DEFAULT_OPENAI_BASE_URL.to_string()),
-            model: Some(crate::config::DEFAULT_OPENAI_MODEL.to_string()),
+            endpoint_identity: Some(
+                codewhale_config::descriptors::defaults::DEFAULT_OPENAI_BASE_URL.to_string(),
+            ),
+            model: Some(codewhale_config::descriptors::defaults::DEFAULT_OPENAI_MODEL.to_string()),
             ts: 10,
             operation: None,
         });
@@ -975,10 +984,12 @@ fn restored_builtin_kind_rejects_mismatched_exact_identity() {
         .push_bounded(WorkActivityEvent::ReasoningEffortChanged {
             requested: ReasoningEffortTier::Max,
             effective: ReasoningEffortTier::Max,
-            provider_kind: Some(crate::config::ProviderKind::Openai),
+            provider_kind: Some(codewhale_config::ProviderKind::Openai),
             provider: "zai".to_string(),
-            endpoint_identity: Some(crate::config::DEFAULT_OPENAI_BASE_URL.to_string()),
-            model: Some(crate::config::DEFAULT_OPENAI_MODEL.to_string()),
+            endpoint_identity: Some(
+                codewhale_config::descriptors::defaults::DEFAULT_OPENAI_BASE_URL.to_string(),
+            ),
+            model: Some(codewhale_config::descriptors::defaults::DEFAULT_OPENAI_MODEL.to_string()),
             ts: 10,
             operation: None,
         });
@@ -1000,10 +1011,12 @@ fn restored_zai_gateway_cannot_forge_effective_max() {
         .push_bounded(WorkActivityEvent::ReasoningEffortChanged {
             requested: ReasoningEffortTier::Max,
             effective: ReasoningEffortTier::Max,
-            provider_kind: Some(crate::config::ProviderKind::Zai),
+            provider_kind: Some(codewhale_config::ProviderKind::Zai),
             provider: "zai".to_string(),
             endpoint_identity: Some("https://gateway.example/v1".to_string()),
-            model: Some(crate::config::ZAI_GLM_5_2_MODEL.to_string()),
+            model: Some(
+                codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL.to_string(),
+            ),
             ts: 10,
             operation: None,
         });
@@ -1023,11 +1036,11 @@ fn restored_zai_gateway_cannot_forge_effective_max() {
 fn restored_zai_toggle_only_and_unknown_models_enforce_effective_truth() {
     for (model, truthful_effective) in [
         (
-            crate::config::ZAI_GLM_5_1_MODEL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_1_MODEL,
             ReasoningEffortTier::ThinkingEnabledGranularityUnavailable,
         ),
         (
-            crate::config::ZAI_GLM_5_TURBO_MODEL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_TURBO_MODEL,
             ReasoningEffortTier::ThinkingEnabledGranularityUnavailable,
         ),
         ("glm-future-unknown", ReasoningEffortTier::Unavailable),
@@ -1038,9 +1051,11 @@ fn restored_zai_toggle_only_and_unknown_models_enforce_effective_truth() {
             .push_bounded(WorkActivityEvent::ReasoningEffortChanged {
                 requested: ReasoningEffortTier::Max,
                 effective: ReasoningEffortTier::Max,
-                provider_kind: Some(crate::config::ProviderKind::Zai),
+                provider_kind: Some(codewhale_config::ProviderKind::Zai),
                 provider: "zai".to_string(),
-                endpoint_identity: Some(crate::config::DEFAULT_ZAI_BASE_URL.to_string()),
+                endpoint_identity: Some(
+                    codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL.to_string(),
+                ),
                 model: Some(model.to_string()),
                 ts: 10,
                 operation: None,
@@ -1053,9 +1068,11 @@ fn restored_zai_toggle_only_and_unknown_models_enforce_effective_truth() {
             .push_bounded(WorkActivityEvent::ReasoningEffortChanged {
                 requested: ReasoningEffortTier::Max,
                 effective: truthful_effective,
-                provider_kind: Some(crate::config::ProviderKind::Zai),
+                provider_kind: Some(codewhale_config::ProviderKind::Zai),
                 provider: "zai".to_string(),
-                endpoint_identity: Some(crate::config::DEFAULT_ZAI_BASE_URL.to_string()),
+                endpoint_identity: Some(
+                    codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL.to_string(),
+                ),
                 model: Some(model.to_string()),
                 ts: 10,
                 operation: None,
@@ -1075,7 +1092,7 @@ fn restored_zai_forced_thinking_models_cannot_claim_effective_off() {
             WorkActivityEvent::ReasoningEffortChanged {
                 requested: ReasoningEffortTier::Off,
                 effective,
-                provider_kind: Some(crate::config::ProviderKind::Zai),
+                provider_kind: Some(codewhale_config::ProviderKind::Zai),
                 provider: "zai".to_string(),
                 endpoint_identity: Some(endpoint.to_string()),
                 model: Some(model.to_string()),
@@ -1084,12 +1101,12 @@ fn restored_zai_forced_thinking_models_cannot_claim_effective_off() {
             }
         };
     for endpoint in [
-        crate::config::DEFAULT_ZAI_BASE_URL,
+        codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL,
         "https://open.bigmodel.cn/api/paas/v4",
     ] {
         for model in [
-            crate::config::ZAI_GLM_5_3_MODEL,
-            crate::config::ZAI_GLM_5_3_FLASH_MODEL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_3_MODEL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_3_FLASH_MODEL,
         ] {
             let mut forged = seeded().into_snapshot();
             forged
@@ -1109,7 +1126,7 @@ fn restored_zai_forced_thinking_models_cannot_claim_effective_off() {
         let mut glm_5_2 = seeded().into_snapshot();
         glm_5_2.activities.push_bounded(zai_activity(
             endpoint,
-            crate::config::ZAI_GLM_5_2_MODEL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL,
             ReasoningEffortTier::Off,
         ));
         validate(&glm_5_2).expect("GLM-5.2 still honours the disabled toggle");
@@ -1124,7 +1141,7 @@ fn restored_named_gateway_cannot_forge_effective_max() {
         .push_bounded(WorkActivityEvent::ReasoningEffortChanged {
             requested: ReasoningEffortTier::Max,
             effective: ReasoningEffortTier::Max,
-            provider_kind: Some(crate::config::ProviderKind::Custom),
+            provider_kind: Some(codewhale_config::ProviderKind::Custom),
             provider: "my-gateway".to_string(),
             endpoint_identity: Some("https://gateway.example/v1".to_string()),
             model: Some("vendor-model-x".to_string()),
@@ -1151,7 +1168,7 @@ fn restored_named_gateway_accepts_truthful_effective_unavailable() {
         .push_bounded(WorkActivityEvent::ReasoningEffortChanged {
             requested: ReasoningEffortTier::Max,
             effective: ReasoningEffortTier::Unavailable,
-            provider_kind: Some(crate::config::ProviderKind::Custom),
+            provider_kind: Some(codewhale_config::ProviderKind::Custom),
             provider: "my-gateway".to_string(),
             endpoint_identity: Some("https://gateway.example/v1".to_string()),
             model: Some("vendor-model-x".to_string()),

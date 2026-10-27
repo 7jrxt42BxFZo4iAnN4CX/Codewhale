@@ -18,10 +18,11 @@
 //! later routing.
 
 use crate::compaction::CompactionConfig;
-use crate::config::{Config, ProviderIdentity, ProviderKind};
+use crate::config::{Config, ProviderIdentity};
 use crate::reasoning_preference::ReasoningEffort;
 use crate::route_runtime::{ResolvedRuntimeRoute, resolve_runtime_route_for_identity};
 use codewhale_config::AppMode;
+use codewhale_config::ProviderKind;
 
 /// Everything the shared turn-route planner needs.
 ///
@@ -322,7 +323,7 @@ pub(crate) async fn plan_turn_route(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::DEFAULT_TEXT_MODEL;
+    use codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL;
 
     fn deepseek_identity() -> ProviderIdentity {
         crate::config::Config::default()

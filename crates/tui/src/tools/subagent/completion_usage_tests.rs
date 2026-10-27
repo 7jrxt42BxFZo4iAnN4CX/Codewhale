@@ -528,7 +528,7 @@ fn worker_unknown_usage_promotes_exact_route_once_and_survives_serialization() {
     let id = child(&mut manager, "late-exact", None, None);
     let route = crate::cost_status::EffectiveRouteEnvelope::capture(
         None,
-        crate::config::ProviderKind::Deepseek,
+        codewhale_config::ProviderKind::Deepseek,
         "deepseek",
         "deepseek-v4-flash",
         Some("https://api.deepseek.com/v1"),
@@ -575,7 +575,7 @@ fn worker_missing_overflow_and_legacy_gap_remain_after_exact_promotions() {
     manager.mark_worker_unreported_usage(&id);
     let route = crate::cost_status::EffectiveRouteEnvelope::capture(
         None,
-        crate::config::ProviderKind::Deepseek,
+        codewhale_config::ProviderKind::Deepseek,
         "deepseek",
         "deepseek-v4-flash",
         Some("https://api.deepseek.com/v1"),

@@ -6,12 +6,13 @@ use anyhow::Result;
 use codewhale_config::AppMode;
 
 use crate::commands::{self, CommandInfo, CommandResult};
-use crate::config::{Config, ProviderIdentity, ProviderKind};
+use crate::config::{Config, ProviderIdentity};
 use crate::provider_lake::models_for_provider;
 use crate::tui::app::{App, AppAction};
 use crate::tui::command_palette::{
     CommandPaletteView, build_entries_with_plugins as build_command_palette_entries,
 };
+use codewhale_config::ProviderKind;
 use codewhale_localization::{Locale, MessageId, tr};
 
 pub const HOTBAR_COMPACT_LABEL_MAX_WIDTH: usize = 7;
@@ -1466,10 +1467,11 @@ mod tests {
     use std::collections::{BTreeSet, HashMap};
     use std::path::PathBuf;
 
-    use crate::config::{Config, ProviderKind};
+    use crate::config::Config;
     use crate::reasoning_preference::ReasoningEffort;
     use crate::tui::app::TuiOptions;
     use crate::tui::views::ModalKind;
+    use codewhale_config::ProviderKind;
 
     use super::*;
 

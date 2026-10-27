@@ -552,8 +552,8 @@ mod tests {
     /// field entirely must not change the cost by a single cent.
     #[test]
     fn reasoning_parser_fixtures_never_exceed_or_add_to_billable_output() {
-        use crate::config::ProviderKind;
         use crate::pricing::{calculate_turn_cost_estimate_for_provider, token_usage_for_pricing};
+        use codewhale_config::ProviderKind;
 
         // (label, provider, model, payload)
         let fixtures: [(&str, ProviderKind, &str, serde_json::Value); 3] = [

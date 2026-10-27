@@ -579,7 +579,7 @@ fn a_resumed_child_names_its_saved_route_source() {
     let message = annotate_child_model_error_with_origin(
         &subagent_failure_message(&refusal),
         "fixture-pin-model",
-        crate::config::ProviderKind::Deepseek,
+        codewhale_config::ProviderKind::Deepseek,
         &ModelRoute::Fixed("fixture-pin-model".into()),
         Some(&origin),
     );
@@ -596,7 +596,7 @@ fn a_resumed_child_names_its_saved_route_source() {
     let message = annotate_child_model_error(
         &subagent_failure_message(&refusal),
         "fixture-pin-model",
-        crate::config::ProviderKind::Deepseek,
+        codewhale_config::ProviderKind::Deepseek,
         &ModelRoute::Fixed("fixture-pin-model".into()),
     );
     assert!(

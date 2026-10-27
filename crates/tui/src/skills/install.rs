@@ -154,8 +154,7 @@ async fn guarded_get(
 /// skills and can be blown away without losing anything irreplaceable.
 /// A missing home has no cache destination; callers must refuse the sync.
 pub fn default_cache_skills_dir() -> Option<PathBuf> {
-    crate::config::effective_home_dir()
-        .map(|home| home.join(".codewhale").join("cache").join("skills"))
+    codewhale_paths::user_home().map(|home| home.join(".codewhale").join("cache").join("skills"))
 }
 
 /// Default registry. Falls back to a community-curated `index.json` hosted on

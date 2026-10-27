@@ -274,7 +274,7 @@ mod tests {
         InteractionRegistry, InteractionTarget, InteractionTargetId, SettingApplySemantics,
         SettingAuthority, SettingFact, UiSnapshot,
     };
-    use crate::config::ProviderKind;
+    use codewhale_config::ProviderKind;
     use ratatui::layout::Rect;
 
     fn target(area: Rect, used_tokens: u32) -> InteractionTarget {

@@ -16,8 +16,8 @@
 use codewhale_config::catalog::CatalogSource;
 use codewhale_config::route::{CapabilityState, RouteCapabilities, RouteLimits};
 
-use crate::config::ProviderKind;
 use crate::utils::format_context_window;
+use codewhale_config::ProviderKind;
 use codewhale_config::catalog::reviewed::IntrinsicModel;
 
 /// Resolved capability badges for one Fleet route.

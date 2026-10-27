@@ -33,6 +33,7 @@
 //! it exposes a calm expand affordance and the tool-details shortcut opens the
 //! full retained output.
 
+use codewhale_tools::names::SPILLOVER_RECOVERY_HINT;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -93,7 +94,7 @@ pub fn spillover_root() -> Option<PathBuf> {
         return Some(root);
     }
 
-    let home = crate::config::effective_home_dir()?;
+    let home = codewhale_paths::user_home()?;
     let primary = home.join(".codewhale").join(SPILLOVER_DIR_NAME);
     let legacy = home.join(".deepseek").join(SPILLOVER_DIR_NAME);
     if primary.exists() || !legacy.exists() {
@@ -344,10 +345,6 @@ const HANDLE_ONLY_TAIL_BYTES: usize = 4 * 1024;
 /// the model cannot open the tool details view, so the model-facing footer
 /// carries the artifact path and a recovery instruction instead.
 pub const SPILLOVER_PREVIEW_HINT: &str = "view full output in the tool details view";
-
-/// Sentinel phrase the TUI matches on to recognise a current-format truncated
-/// preview. It must stay a literal substring of every footer variant.
-pub const SPILLOVER_RECOVERY_HINT: &str = "omitted range recovery:";
 
 /// Model-facing recovery instruction for a truncated tool result.
 ///
@@ -1250,7 +1247,7 @@ mod tests {
         let _guard = setup();
         let home = tempdir().unwrap();
         with_test_home(home.path(), || {
-            let provider = crate::config::ProviderKind::Deepseek;
+            let provider = codewhale_config::ProviderKind::Deepseek;
             let model = "deepseek-v3.2-128k";
             let budget =
                 crate::route_budget::route_inline_char_budget_for_route(provider, model, None);

@@ -467,7 +467,7 @@ async fn dropping_an_actual_dispatched_core_call_keeps_unknown_usage_without_ret
             at: chrono::DateTime<chrono::Utc>,
         ) -> crate::cost_status::EffectiveRouteEnvelope {
             crate::cost_status::EffectiveRouteEnvelope::capture_observed(
-                crate::config::ProviderKind::Custom,
+                codewhale_config::ProviderKind::Custom,
                 "rlm-fixture",
                 model,
                 Some("http://127.0.0.1:9/v1"),

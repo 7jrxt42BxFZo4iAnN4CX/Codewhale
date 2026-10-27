@@ -640,11 +640,11 @@ pub(crate) fn offerings_from_json_for_test(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::ProviderKind;
     use crate::provider_lake::{
         all_catalog_models_for_provider, clear_live_snapshot, lock_live_snapshot,
     };
     use crate::test_support::{EnvVarGuard, lock_test_env};
+    use codewhale_config::ProviderKind;
     use codewhale_config::catalog::CatalogSource;
 
     const FIXTURE: &str = r#"{

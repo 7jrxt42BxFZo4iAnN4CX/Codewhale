@@ -27,7 +27,7 @@ use tokio_util::sync::CancellationToken;
 use crate::approval_log::ApprovalReceiptStore;
 use crate::client::CodewhaleClient;
 use crate::compaction::{CompactionConfig, PreparedCompactionEnvelope, compact_messages_safe};
-use crate::config::{Config, DEFAULT_MAX_SUBAGENTS, DEFAULT_TEXT_MODEL, ProviderKind};
+use crate::config::{Config, DEFAULT_MAX_SUBAGENTS};
 use crate::core::model_client::SharedModelClient;
 use crate::error_taxonomy::{ErrorCategory, ErrorEnvelope, ErrorSeverity, StreamError};
 use crate::mcp::{McpConfig, McpPool, McpSupervisorUpdate};
@@ -51,18 +51,21 @@ use crate::tools::spec::{
     RuntimeToolServices, SharedFileReadTracker, new_shared_file_read_tracker,
 };
 use crate::tools::subagent::{
-    FleetRole, ForegroundChildRegistry, Mailbox, MailboxMessage, SharedSubAgentManager,
-    SubAgentCompletion, SubAgentExecutionLimits, SubAgentForkContext, SubAgentManager,
-    SubAgentResult, SubAgentRuntime, SubAgentStatus, TerminalEventDelivery,
-    agent_worker_owner_snapshot, new_shared_subagent_manager_with_state_root_and_timeout,
+    ForegroundChildRegistry, Mailbox, MailboxMessage, SharedSubAgentManager, SubAgentCompletion,
+    SubAgentExecutionLimits, SubAgentForkContext, SubAgentManager, SubAgentResult, SubAgentRuntime,
+    SubAgentStatus, TerminalEventDelivery, agent_worker_owner_snapshot,
+    new_shared_subagent_manager_with_state_root_and_timeout,
 };
 use crate::tools::todo::{SharedTodoList, new_shared_todo_list};
 use crate::tools::user_input::{UserInputRequest, UserInputResponse};
 use crate::tools::{ToolContext, ToolRegistryBuilder};
 use crate::utils::spawn_supervised;
 use crate::working_set::WorkingSet;
+use codewhale_agent_contract::role::FleetRole;
 use codewhale_agent_contract::worker_profile::WorkerRuntimeProfile;
 use codewhale_config::AppMode;
+use codewhale_config::ProviderKind;
+use codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL;
 use codewhale_execpolicy::ApprovalMode;
 #[cfg(test)]
 use codewhale_models::ToolCaller;
@@ -84,8 +87,8 @@ use super::ops::{
     USER_SHELL_TOOL_ID_PREFIX, UserInputProvenance,
 };
 use super::session::Session;
-use super::tool_parser;
 use super::turn::{TurnContext, format_snapshot_label, post_turn_snapshot};
+use codewhale_core::tool_parser;
 use codewhale_models::Role;
 
 const ENGINE_OP_CHANNEL_CAPACITY: usize = 32;
@@ -442,8 +445,9 @@ pub struct EngineConfig {
     /// reasoning without any answer or tool call. Defaults to 2.
     /// Resolved from `[reasoning_only] max_reprompts` in config.toml.
     pub reasoning_only_max_reprompts: u32,
-    /// Nudge carried by a reasoning-only re-request once a bare retry has
-    /// already come back answerless. `None` uses the built-in text; an empty
+    pub reasoning_only_on_output_limit: bool,
+    /// Nudge carried after a bare clean-stop retry or immediately on an
+    /// opted-in output-limit retry. `None` uses the built-in text; an empty
     /// string disables the nudge and keeps every retry a bare one.
     ///
     /// The nudge is attached to one outbound request and never added to the
@@ -632,6 +636,7 @@ impl Default for EngineConfig {
             goal_continuation_delay_seconds: 0,
             goal_enforce_token_budget: false,
             reasoning_only_max_reprompts: crate::config::DEFAULT_REASONING_ONLY_REPROMPTS,
+            reasoning_only_on_output_limit: false,
             // `None` means "use the built-in nudge". Storing the default text
             // here instead would make an operator's explicit empty string
             // indistinguishable from having set nothing.
@@ -687,9 +692,6 @@ impl Default for EngineConfig {
 /// Reason the active turn was cancelled. The token from `tokio_util`
 /// does not carry a cause, so the engine keeps a sibling latch for
 /// approval and user-input waits that need to explain cancellation.
-///
-/// `External`, `Preempted`, and `Internal` are reserved for the
-/// remaining direct cancellation paths tracked in #1541.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CancelReason {
     /// User-initiated cancel (Esc, `/cancel`, click cancel on modal).
@@ -697,11 +699,6 @@ pub enum CancelReason {
     /// External / runtime-API cancel (HTTP `DELETE /v1/threads/...`,
     /// task manager stop, parent agent cancel).
     External,
-    /// Cancel triggered when a new turn starts before the previous one
-    /// finished — e.g. plain Enter while busy after the queueing path
-    /// pre-empts the running turn.
-    #[expect(dead_code)]
-    Preempted,
     /// Engine internals tore down the turn (drop, channel close,
     /// shutdown). Rare — surfaced as an internal error.
     Internal,
@@ -714,7 +711,6 @@ impl CancelReason {
         match self {
             Self::User => "user cancelled the request",
             Self::External => "request cancelled by external caller",
-            Self::Preempted => "request was preempted by a new turn",
             Self::Internal => "engine torn down before approval resolved",
             Self::Stalled => "the turn stalled and was ended by the watchdog",
         }
@@ -5658,12 +5654,13 @@ impl Engine {
         if clear || status != GoalStatus::Active {
             self.cancel_scheduled_goal_continuation(true).await;
         }
-        let was_active = self
+        let (was_active, had_objective) = self
             .config
             .goal_state
             .lock()
-            .map(|state| state.is_active())
-            .unwrap_or(false);
+            .map(|state| (state.is_active(), state.objective().is_some()))
+            .unwrap_or((false, false));
+        let had_goal = had_objective || self.config.goal_objective.is_some();
         let snapshot = match self.config.goal_state.lock() {
             Ok(mut state) => {
                 if clear {
@@ -5723,9 +5720,11 @@ impl Engine {
                 GoalStatus::Blocked => "blocked",
             }
         };
-        let _ = self
-            .send_event(Event::status(format!("Goal {label}.")))
-            .await;
+        if !clear || had_goal {
+            let _ = self
+                .send_event(Event::status(format!("Goal {label}.")))
+                .await;
+        }
 
         // Resuming an objective-bearing goal restarts the runtime's own
         // steering loop — the kickoff is a continuation turn, never a raw
@@ -6219,7 +6218,7 @@ impl Engine {
             self.config.disallowed_tools.clone(),
             self.config.max_tool_calls,
             // Model metadata wins once wired; today the hint is always None
-            // and the [features] flags decide (model_registry follow-up).
+            // and the [features] flags decide.
             tool_catalog::requested_tool_mode(None, &self.config.features),
         );
         if let Some(child) = self.child_host.as_ref() {
@@ -7718,7 +7717,6 @@ impl Engine {
             self.session.workspace.clone(),
             authority.trust_mode,
             self.session.notes_path.clone(),
-            self.session.mcp_config_path.clone(),
             authority.auto_approve,
         )
         .with_state_namespace(self.session.id.clone())
@@ -9487,7 +9485,7 @@ impl Engine {
 fn default_plugin_tools_dir() -> PathBuf {
     codewhale_config::codewhale_home()
         .unwrap_or_else(|_| {
-            crate::config::effective_home_dir()
+            codewhale_paths::user_home()
                 .map_or_else(|| PathBuf::from(".codewhale"), |h| h.join(".codewhale"))
         })
         .join("tools")
@@ -10620,17 +10618,16 @@ use self::streaming::{
     sleep_gap_detected, stream_read_error_user_message,
 };
 use self::tool_catalog::{
-    CODE_EXECUTION_TOOL_NAME, EXECUTE_TOOLS_TOOL_NAME, JS_EXECUTION_TOOL_NAME,
-    REQUEST_USER_INPUT_NAME, ToolSurfacePolicy, active_tools_for_request,
-    build_model_tool_catalog_with_surface, default_synthetic_catalog_tool_names,
-    execute_code_execution_tool, is_tool_search_tool, maybe_hydrate_requested_deferred_tool,
-    missing_tool_error_message,
+    CODE_EXECUTION_TOOL_NAME, EXECUTE_TOOLS_TOOL_NAME, JS_EXECUTION_TOOL_NAME, ToolSurfacePolicy,
+    active_tools_for_request, build_model_tool_catalog_with_surface,
+    default_synthetic_catalog_tool_names, execute_code_execution_tool,
+    maybe_hydrate_requested_deferred_tool, missing_tool_error_message,
 };
 #[cfg(test)]
 use self::tool_catalog::{
-    TOOL_SEARCH_NAME, active_tools_for_step, build_model_tool_catalog, ensure_advanced_tooling,
-    execute_tool_search, initial_active_tools, preflight_requested_deferred_tool,
-    should_default_defer_tool, tool_allowed, tool_catalog_consistency_issues,
+    active_tools_for_step, build_model_tool_catalog, ensure_advanced_tooling, execute_tool_search,
+    initial_active_tools, preflight_requested_deferred_tool, should_default_defer_tool,
+    tool_allowed, tool_catalog_consistency_issues,
 };
 pub(crate) use self::tool_execution::emit_tool_audit;
 use self::tool_preparation::{prepare_tool_call, reprepare_tool_call_after_hook};
@@ -10639,6 +10636,9 @@ use crate::tools::js_execution::execute_js_execution_tool;
 use codewhale_runtime::turn_budget::{
     DEFAULT_STREAM_MAX_ERRORS, DEFAULT_STREAM_MAX_RESUMES, DEFAULT_STREAM_MAX_TRANSPARENT_RETRIES,
 };
+#[cfg(test)]
+use codewhale_tools::names::TOOL_SEARCH_NAME;
+use codewhale_tools::names::{REQUEST_USER_INPUT_NAME, is_tool_search_tool};
 
 #[cfg(test)]
 pub(crate) mod tests;

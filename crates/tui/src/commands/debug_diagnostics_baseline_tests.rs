@@ -17,8 +17,8 @@ use crate::commands::debug_diagnostics_test_support::{
     DiagnosticsHarness, SealedHome, assert_fixture, normalize_cache_ages,
 };
 use crate::commands::{CommandResult, execute};
-use crate::config::ProviderKind;
 use crate::tui::app::{AppAction, TurnCacheRecord};
+use codewhale_config::ProviderKind;
 use codewhale_models::{ContentBlock, Message, Role, SystemPrompt};
 
 fn render(result: &CommandResult) -> String {

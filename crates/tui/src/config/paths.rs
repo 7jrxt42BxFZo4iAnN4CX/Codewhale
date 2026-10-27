@@ -4,7 +4,7 @@
 //! only on `std`, `codewhale-paths`, and `shellexpand` plus one another, so they
 //! form a clean leaf. `config.rs` pulls them back in (`use paths::{...}`) for the
 //! workspace-trust and config-loading logic that stays there, and re-exports
-//! the two `pub(crate)` entry points (`effective_home_dir`, `expand_path`) so
+//! the `pub(crate)` entry point (`expand_path`) so
 //! external `crate::config::` callers resolve unchanged (#3311).
 //!
 //! Visibility note: helpers that were file-private `fn` in `config.rs` are
@@ -12,11 +12,6 @@
 //! re-exported publicly, so the crate's external surface is unchanged.
 
 use std::path::{Path, PathBuf};
-
-/// Re-exported so `config::effective_home_dir` and every `use paths::{...}`
-/// caller resolve unchanged. It lives in `home.rs` because this module is not
-/// includable from an integration test binary — see that file's header.
-pub(crate) use super::home::effective_home_dir;
 
 pub(crate) fn default_config_path() -> anyhow::Result<PathBuf> {
     try_default_config_path()
@@ -113,7 +108,7 @@ fn home_config_path_from_environment() -> Option<PathBuf> {
         }
     }
 
-    effective_home_dir().map(|home| {
+    codewhale_paths::user_home().map(|home| {
         let primary = home.join(".codewhale").join("config.toml");
         if primary.exists() {
             return primary;
@@ -165,7 +160,7 @@ pub(crate) fn default_managed_config_path() -> Option<PathBuf> {
     }
     #[cfg(not(unix))]
     {
-        effective_home_dir().map(|home| {
+        codewhale_paths::user_home().map(|home| {
             let primary = home.join(".codewhale").join("managed_config.toml");
             if primary.exists() {
                 return primary;
@@ -182,7 +177,7 @@ pub(crate) fn default_requirements_path() -> Option<PathBuf> {
     }
     #[cfg(not(unix))]
     {
-        effective_home_dir().map(|home| {
+        codewhale_paths::user_home().map(|home| {
             let primary = home.join(".codewhale").join("requirements.toml");
             if primary.exists() {
                 return primary;
@@ -195,7 +190,7 @@ pub(crate) fn default_requirements_path() -> Option<PathBuf> {
 pub(crate) fn expand_path(path: &str) -> PathBuf {
     if let Some(stripped) = path.strip_prefix('~')
         && (stripped.is_empty() || stripped.starts_with('/') || stripped.starts_with('\\'))
-        && let Some(mut home) = effective_home_dir()
+        && let Some(mut home) = codewhale_paths::user_home()
     {
         let suffix = stripped.trim_start_matches(['/', '\\']);
         if !suffix.is_empty() {
@@ -249,7 +244,7 @@ fn default_user_state_path_from_environment(name: &str) -> Option<PathBuf> {
             return None;
         }
     }
-    effective_home_dir().map(|home| {
+    codewhale_paths::user_home().map(|home| {
         let primary = home.join(".codewhale").join(name);
         if primary.exists() {
             return primary;
@@ -267,7 +262,7 @@ fn default_user_state_path_from_environment(name: &str) -> Option<PathBuf> {
 /// matches the location described in user-facing docs; falls back to
 /// `<workspace>/clipboard-images/` if the home dir is unavailable.
 pub(crate) fn clipboard_images_dir(workspace: &Path) -> PathBuf {
-    let home = super::effective_home_dir();
+    let home = codewhale_paths::user_home();
     clipboard_images_dir_for_home(workspace, home.as_deref())
 }
 

@@ -12,8 +12,9 @@
 //!   was supplied by the provider;
 //! - unknown stays unknown — never `$0.00` and never an estimate-as-spend.
 
-use crate::config::{Config, ProviderConfig, ProviderIdentity, ProviderKind};
+use crate::config::{Config, ProviderConfig, ProviderIdentity};
 use crate::pricing::{UnpricedReason, format_cost_amount};
+use codewhale_config::ProviderKind;
 use codewhale_config::pricing::CostCurrency;
 use codewhale_localization::{Locale, MessageId, tr};
 
@@ -1103,8 +1104,8 @@ fn csdn_credential_product(provider_config: Option<&ProviderConfig>) -> Credenti
         .and_then(|entry| entry.model.as_deref())
         .map(str::trim)
         .filter(|model| !model.is_empty())
-        .unwrap_or(crate::config::DEFAULT_CSDN_MODEL);
-    if model.eq_ignore_ascii_case(crate::config::DEFAULT_CSDN_MODEL) {
+        .unwrap_or(codewhale_config::descriptors::defaults::DEFAULT_CSDN_MODEL);
+    if model.eq_ignore_ascii_case(codewhale_config::descriptors::defaults::DEFAULT_CSDN_MODEL) {
         CredentialProduct::Plan
     } else {
         CredentialProduct::PayAsYouGo
@@ -1129,8 +1130,8 @@ fn visible_minimax_credential_is_plan_shaped(
     if let Some(key) = provider_config
         .and_then(|config| config.api_key.as_deref())
         .filter(|key| {
-            crate::config::classify_config_api_key_value(key)
-                == crate::config::ConfigApiKeyValueKind::Literal
+            codewhale_config::classify_config_api_key_value(key)
+                == codewhale_config::ConfigApiKeyValueKind::Literal
         })
         .map(str::trim)
     {
@@ -1203,8 +1204,8 @@ fn xiaomi_is_explicit_pay_as_you_go(config: Option<&ProviderConfig>) -> bool {
         );
     }
     if let Some(api_key) = config.api_key.as_deref().filter(|key| {
-        crate::config::classify_config_api_key_value(key)
-            == crate::config::ConfigApiKeyValueKind::Literal
+        codewhale_config::classify_config_api_key_value(key)
+            == codewhale_config::ConfigApiKeyValueKind::Literal
     }) {
         return !api_key.trim_start().starts_with("tp-");
     }
@@ -1256,7 +1257,7 @@ mod tests {
         );
         assert_eq!(
             config.base_url_for_route(&config.test_identity_for_kind(ProviderKind::Moonshot)),
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL
         );
 
         let billing = for_route(
@@ -1272,7 +1273,7 @@ mod tests {
         let chip = usage_chip(
             billing,
             ProviderKind::Moonshot,
-            crate::config::DEFAULT_KIMI_CODE_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_MODEL,
             12.34,
             CostCurrency::Usd,
             None,
@@ -1910,7 +1911,7 @@ mod tests {
         let payg_chip = usage_chip(
             payg_billing,
             ProviderKind::Stepfun,
-            crate::config::DEFAULT_STEPFUN_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_MODEL,
             0.42,
             CostCurrency::Usd,
             None,
@@ -1938,7 +1939,7 @@ mod tests {
         let plan_chip = usage_chip(
             plan_billing,
             ProviderKind::Stepfun,
-            crate::config::DEFAULT_STEPFUN_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_MODEL,
             0.42,
             CostCurrency::Usd,
             None,
@@ -2213,7 +2214,7 @@ mod tests {
 
         let audit = crate::pricing::audit_turn_cost_for_route(
             ProviderKind::OllamaCloud,
-            crate::config::DEFAULT_OLLAMA_CLOUD_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_CLOUD_MODEL,
             Some(crate::pricing::UNCLASSIFIED_BILLING_SURFACE),
             &Usage {
                 input_tokens: 1_000,
@@ -2564,7 +2565,7 @@ model = "fixture-model"
                 &config,
                 DispatchedRoute {
                     provider: ProviderKind::Stepfun,
-                    base_url: crate::config::DEFAULT_STEPFUN_BASE_URL,
+                    base_url: codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_BASE_URL,
                 },
             ),
             BillingPresentation::Metered
@@ -2885,7 +2886,7 @@ model = "fixture-model"
             );
             // The legacy keyring placeholder is not a credential and carries
             // no product prefix.
-            for sentinel in [crate::config::API_KEYRING_SENTINEL, "  __KEYRING__  "] {
+            for sentinel in [codewhale_config::API_KEYRING_SENTINEL, "  __KEYRING__  "] {
                 let sentinel = config_with(
                     provider,
                     ProviderConfig {

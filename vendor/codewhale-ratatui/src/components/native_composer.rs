@@ -617,7 +617,7 @@ impl NativeComposerFrame<'_> {
     }
 }
 impl NativeComposerPlan {
-    fn paint(&self, buf: &mut Buffer) {
+    pub fn paint(&self, buf: &mut Buffer) {
         if self.area.is_empty() {
             return;
         }

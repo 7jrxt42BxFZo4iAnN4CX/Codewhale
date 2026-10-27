@@ -3727,6 +3727,7 @@ pub(crate) async fn run_event_loop(
                                 app.view_stack.push(UserInputView::new(
                                     request_id,
                                     crate::tui::plan_handoff::request(app.ui_locale),
+                                    app.ui_locale,
                                 ));
                                 app.needs_redraw = true;
                             }
@@ -4447,7 +4448,8 @@ pub(crate) async fn run_event_loop(
                     EngineEvent::ApprovalWithdrawn { .. } => {}
                     EngineEvent::UserInputRequired { id, request } => {
                         app.pending_user_input_prompt = Some((id.clone(), request.clone()));
-                        app.view_stack.push(UserInputView::new(id.clone(), request));
+                        app.view_stack
+                            .push(UserInputView::new(id.clone(), request, app.ui_locale));
                         let payload = notifications::input_needed_payload(app.ui_locale);
                         if let Some((method, _, _)) = crate::tui::notifications::settings(config) {
                             let in_tmux = std::env::var("TMUX").is_ok_and(|v| !v.is_empty());
@@ -7247,7 +7249,11 @@ pub(crate) async fn run_event_loop(
                     app.move_cursor_end();
                 }
                 _ if handle_composer_alt_word_motion_key(app, key) => {}
-                _ if key_shortcuts::is_external_editor_shortcut(&key) => {
+                _ if crate::tui::shell_key_routing::binding(
+                    crate::tui::shell_key_routing::ShellBindingId::ExternalEditor,
+                )
+                .matches(&key) =>
+                {
                     // Ctrl+Shift+O (or F4 on terminals that cannot report the
                     // shifted chord): spawn $EDITOR on the composer contents
                     // (#91). Plain Ctrl+O belongs exclusively to the Turn
@@ -8198,12 +8204,12 @@ mod session_boot_event_tests {
 
     fn translation_test_route() -> crate::cost_status::EffectiveRouteEnvelope {
         crate::cost_status::EffectiveRouteEnvelope {
-            provider: crate::config::ProviderKind::Deepseek,
+            provider: codewhale_config::ProviderKind::Deepseek,
             provider_identity: "deepseek".to_string(),
             model: "deepseek-chat".to_string(),
             openrouter_vendor: None,
             billing_surface: crate::pricing::billing_surface_for_route(
-                crate::config::ProviderKind::Deepseek,
+                codewhale_config::ProviderKind::Deepseek,
                 Some("https://api.deepseek.com/v1"),
             )
             .map(str::to_string),

@@ -13,9 +13,6 @@ mod binary;
 // `crate::config`, `crate::shell_dispatcher`, etc. resolve when the same
 // files are compiled as `crate::integration::<test>::<module>`.
 
-#[path = "../../src/config/home.rs"]
-#[allow(dead_code)]
-mod config;
 #[path = "../../src/eval.rs"]
 mod eval;
 #[path = "../../src/skills/frontmatter.rs"]

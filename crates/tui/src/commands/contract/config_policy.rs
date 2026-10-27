@@ -135,7 +135,7 @@ fn project_status(app: &App) -> ConfigStatusView {
         model: app.model_display_label(),
         reasoning: app.reasoning_effort_display_label(),
         workspace: app.workspace.clone(),
-        home: crate::config::effective_home_dir(),
+        home: codewhale_paths::user_home(),
         project_docs: ["AGENTS.md", "CLAUDE.md"]
             .into_iter()
             .filter(|name| app.workspace.join(name).is_file())
@@ -186,6 +186,19 @@ fn project_status(app: &App) -> ConfigStatusView {
         cache_miss_tokens: app.session.displayed_total_cache_miss_tokens(),
         cost: app.session_cost_for_currency(app.cost_currency),
         currency: to_command_currency(app.cost_display_currency(app.cost_currency)),
+        cost_label: match app.cumulative_usage_chip() {
+            chip @ crate::route_billing::UsageChip::PricedSubtotal { .. } => {
+                crate::route_billing::format_usage_chip(&chip, app.ui_locale)
+            }
+            crate::route_billing::UsageChip::Unknown(_) => Some(
+                codewhale_localization::tr(
+                    app.ui_locale,
+                    codewhale_localization::MessageId::CmdCostUnknownValue,
+                )
+                .into_owned(),
+            ),
+            _ => None,
+        },
         metrics,
         ascii_safe: crate::tui::color_compat::ascii_safe_enabled(),
         tool_outputs: outputs,

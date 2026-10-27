@@ -5899,7 +5899,7 @@ mod tests {
 
         let output = crate::tools::spec::ToolResult::json(&response).expect("json");
         let context = crate::core::engine::compact_tool_result_for_route(
-            crate::config::ProviderKind::Deepseek,
+            codewhale_config::ProviderKind::Deepseek,
             "deepseek-v3.2-128k",
             None,
             "web_search",

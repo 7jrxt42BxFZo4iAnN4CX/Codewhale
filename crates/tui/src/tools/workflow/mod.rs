@@ -3240,7 +3240,7 @@ fn read_workflow_source_path(
         // alongside the workspace: `~/.codewhale/workflows/*.workflow.js`
         // definitions surface as slash commands and must launch from any
         // workspace without trust_mode.
-        let home_store = crate::config::effective_home_dir()
+        let home_store = codewhale_paths::user_home()
             .map(|home| home.join(".codewhale").join("workflows"))
             .and_then(|dir| dir.canonicalize().ok());
         let inside_home_store = home_store

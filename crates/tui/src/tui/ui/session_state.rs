@@ -1203,7 +1203,8 @@ pub(crate) fn mirror_saved_api_key_in_config(
         .provider_config_for_mut(&auth_owner)
         .map_err(|error| error.to_string())?;
     if pin_kimi_code_base_url {
-        entry.base_url = Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string());
+        entry.base_url =
+            Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string());
     }
     entry.auth_mode = Some("api_key".to_string());
     entry.api_key = Some(api_key);

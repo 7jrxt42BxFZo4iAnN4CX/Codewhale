@@ -415,7 +415,7 @@ pub(crate) fn cross_provider_model_routes(
     };
     let mut routes = Vec::new();
     for identity in config.provider_identities() {
-        if identity.provider == crate::config::ProviderKind::Antigravity
+        if identity.provider == codewhale_config::ProviderKind::Antigravity
             || !crate::config::provider_is_configured_for_active(config, &identity, active)
         {
             continue;
@@ -495,7 +495,7 @@ pub(super) fn route_matches_query(
 }
 
 pub(super) fn provider_display_label(provider_id: &str) -> String {
-    crate::config::ProviderKind::parse(provider_id)
+    codewhale_config::ProviderKind::parse(provider_id)
         .filter(|provider| provider.as_str() == provider_id)
         .map(|provider| provider.provider().display_name().to_string())
         .unwrap_or_else(|| provider_id.to_string())
@@ -1759,7 +1759,8 @@ impl FleetSetupView {
                         // only this exact provider/model. Hand off to the host
                         // so rendering stays I/O-free.
                         if let Some((provider_id, model)) = self.model_routes.get(idx)
-                            && let Some(provider) = crate::config::ProviderKind::parse(provider_id)
+                            && let Some(provider) =
+                                codewhale_config::ProviderKind::parse(provider_id)
                             && crate::tui::provider_picker::external_consent_target_for_provider(
                                 provider,
                             )
@@ -4613,7 +4614,7 @@ approval_required = true
 
         let routes = cross_provider_model_routes(
             &config,
-            Some(&(config).test_identity_for_kind(crate::config::ProviderKind::Openrouter)),
+            Some(&(config).test_identity_for_kind(codewhale_config::ProviderKind::Openrouter)),
             &crate::provider_readiness::ProviderReadinessSnapshot::default(),
         );
 
@@ -4660,7 +4661,7 @@ approval_required = true
         };
         let routes = cross_provider_model_routes(
             &config,
-            Some(&(config).test_identity_for_kind(crate::config::ProviderKind::Custom)),
+            Some(&(config).test_identity_for_kind(codewhale_config::ProviderKind::Custom)),
             &crate::provider_readiness::ProviderReadinessSnapshot::default(),
         );
         assert!(
@@ -4712,7 +4713,7 @@ approval_required = true
 
         let routes = cross_provider_model_routes(
             &config,
-            Some(&(config).test_identity_for_kind(crate::config::ProviderKind::Custom)),
+            Some(&(config).test_identity_for_kind(codewhale_config::ProviderKind::Custom)),
             &crate::provider_readiness::ProviderReadinessSnapshot::default(),
         );
 
@@ -5118,7 +5119,7 @@ approval_required = true
 
         let routes = cross_provider_model_routes(
             &config,
-            Some(&(config).test_identity_for_kind(crate::config::ProviderKind::Moonshot)),
+            Some(&(config).test_identity_for_kind(codewhale_config::ProviderKind::Moonshot)),
             &crate::provider_readiness::ProviderReadinessSnapshot::default(),
         );
 
@@ -5159,7 +5160,7 @@ approval_required = true
 
         let routes = cross_provider_model_routes(
             &config,
-            Some(&(config).test_identity_for_kind(crate::config::ProviderKind::Moonshot)),
+            Some(&(config).test_identity_for_kind(codewhale_config::ProviderKind::Moonshot)),
             &crate::provider_readiness::ProviderReadinessSnapshot::default(),
         );
 

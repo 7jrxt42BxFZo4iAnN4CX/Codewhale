@@ -271,7 +271,7 @@ async fn anthropic_after_id_completes_both_public_consumers_with_frozen_headers(
 async fn unpaginated_rosters_stay_single_request_and_unknown_continuation_refuses() {
     for go in [false, true] {
         let server = MockServer::start().await;
-        let id = crate::config::opencode_go_models()[0];
+        let id = codewhale_config::opencode_go_models()[0];
         mount_models_json(&server, 200, json!({"data":[{"id":id}]})).await;
         let mut client = if go {
             opencode_go_client_for(&server)

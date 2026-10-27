@@ -4028,7 +4028,9 @@ mod tests {
         let zai = Config {
             provider: Some("zai".to_string()),
             // Exercise provider-aware rejection of a stale DeepSeek root default.
-            default_text_model: Some(crate::config::DEFAULT_TEXT_MODEL.to_string()),
+            default_text_model: Some(
+                codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
+            ),
             ..Config::default()
         };
 
@@ -4050,7 +4052,11 @@ mod tests {
 
         vec![
             ("deepseek", deepseek, "deepseek-v4-flash"),
-            ("zai", zai, crate::config::DEFAULT_ZAI_MODEL),
+            (
+                "zai",
+                zai,
+                codewhale_config::descriptors::defaults::DEFAULT_ZAI_MODEL,
+            ),
             ("custom", custom, "acme-coder"),
         ]
     }

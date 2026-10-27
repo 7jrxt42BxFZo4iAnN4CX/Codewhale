@@ -11,9 +11,10 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde_json::Value;
 use tracing::debug;
 
-use crate::config::{Config, ProviderKind};
+use crate::config::Config;
 use crate::core::events::TurnRoute;
 use crate::route_receipt::{TurnRouteReceipt, endpoint_identity};
+use codewhale_config::ProviderKind;
 
 /// The exact route authority a turn was launched against.
 ///
@@ -1370,7 +1371,7 @@ mod tests {
         let resolved = crate::route_runtime::resolve_runtime_route_for_identity(
             config,
             &identity,
-            Some(crate::config::DEFAULT_TEXT_MODEL),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL),
         )
         .expect("test config must resolve the deepseek route");
         let model = resolved.model.clone();
@@ -1391,7 +1392,8 @@ mod tests {
                 billing_mode: crate::cost_status::RouteBillingMode::Unknown,
                 dispatched_at: chrono::Utc::now(),
             }),
-            base_url: crate::config::DEFAULT_DEEPSEEK_BASE_URL.to_string(),
+            base_url: codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL
+                .to_string(),
             billing_product: crate::route_billing::RouteProduct::Unproven,
         }
     }

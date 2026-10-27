@@ -402,7 +402,7 @@ impl WorkRuntime {
         session_id: Option<&str>,
         requested: ReasoningEffortTier,
         effective: ReasoningEffortTier,
-        provider_kind: crate::config::ProviderKind,
+        provider_kind: codewhale_config::ProviderKind,
         provider: &str,
         endpoint_identity: Option<&str>,
         model: Option<&str>,
@@ -1594,9 +1594,9 @@ mod tests {
                 Some("session"),
                 ReasoningEffortTier::Low,
                 ReasoningEffortTier::High,
-                crate::config::ProviderKind::Moonshot,
+                codewhale_config::ProviderKind::Moonshot,
                 "moonshot",
-                Some(crate::config::DEFAULT_MOONSHOT_BASE_URL),
+                Some(codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL),
                 Some("kimi-k2.5"),
             ),
             Ok(Some(node_id.clone()))
@@ -1618,9 +1618,11 @@ mod tests {
             WorkActivityEvent::ReasoningEffortChanged {
                 requested: ReasoningEffortTier::Low,
                 effective: ReasoningEffortTier::High,
-                provider_kind: Some(crate::config::ProviderKind::Moonshot),
+                provider_kind: Some(codewhale_config::ProviderKind::Moonshot),
                 provider: "moonshot".to_string(),
-                endpoint_identity: Some(crate::config::DEFAULT_MOONSHOT_BASE_URL.to_string()),
+                endpoint_identity: Some(
+                    codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL.to_string()
+                ),
                 model: Some("kimi-k2.5".to_string()),
                 ts,
                 operation: Some(node_id.clone()),

@@ -484,7 +484,6 @@ where
     Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone)]
 #[serde(tag = "type")]
 /// Streaming event types for SSE responses.
@@ -522,7 +521,6 @@ pub enum StreamEvent {
     Error { error: serde_json::Value },
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone)]
 #[serde(tag = "type")]
 /// Content block types used in streaming starts.
@@ -590,7 +588,6 @@ pub enum Delta {
     ReasoningStateDelta { state: OpaqueReasoningState },
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize, Clone)]
 /// Delta payload for message-level updates.
 pub struct MessageDelta {

@@ -8,13 +8,18 @@ use std::{path::PathBuf, sync::Arc};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
-use crate::config::ProviderKind;
 use crate::error_taxonomy::ErrorEnvelope;
 use crate::tools::goal::GoalSnapshot;
 use crate::tools::spec::{ToolError, ToolResult};
 use crate::tools::subagent::{AgentWorkerStatus, CoordinationDetailProjection, SubAgentResult};
 use crate::tools::user_input::UserInputRequest;
+use codewhale_config::ProviderKind;
 use codewhale_models::{Message, SystemPrompt, Tool, Usage};
+
+/// Status receipt carried by the one request a reasoning-only / empty-stop
+/// nudge rides (C02-04). The nudge itself never joins the session.
+pub(crate) const REQUEST_NUDGE_RECEIPT_PREFIX: &str =
+    "Continuing — this retry carries a request-scoped nudge (not saved to the conversation): ";
 
 /// Provider correlation retained only for model-history reconstruction.
 /// Event ids remain host execution ids; this is not approval authority.

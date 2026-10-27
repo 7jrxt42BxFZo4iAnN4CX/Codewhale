@@ -119,8 +119,8 @@ const PROHIBITED_NESTED: &[&str] = &[
     // Recursive RLM rounds are admitted by the turn loop serving the direct
     // `rlm` call; a program has no such server for a nested one.
     "rlm",
-    crate::core::engine::tool_catalog::REQUEST_USER_INPUT_NAME,
-    crate::core::engine::tool_catalog::MULTI_TOOL_PARALLEL_NAME,
+    codewhale_tools::names::REQUEST_USER_INPUT_NAME,
+    codewhale_tools::names::MULTI_TOOL_PARALLEL_NAME,
 ];
 
 /// Model-facing definition. `defer_loading` is decided by the catalog
@@ -403,7 +403,7 @@ impl NestedCallGate {
 pub(crate) fn refusal_before_gate(name: &str, input: &Value, gated: bool) -> Option<String> {
     let lower = name.to_ascii_lowercase();
     if PROHIBITED_NESTED.contains(&lower.as_str())
-        || (!gated && crate::core::engine::tool_catalog::is_tool_search_tool(&lower))
+        || (!gated && codewhale_tools::names::is_tool_search_tool(&lower))
     {
         return Some(format!(
             "`{name}` is not available inside execute_tools programs; call it directly (use workflow/task() for fan-out)"

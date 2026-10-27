@@ -119,7 +119,7 @@ pub(crate) async fn consult_reviewer(
             None,
         );
     }
-    let deepseek = client.provider_name() == crate::config::ProviderKind::Deepseek.as_str();
+    let deepseek = client.provider_name() == codewhale_config::ProviderKind::Deepseek.as_str();
     let reasoning_effort = deepseek.then(|| "low".to_string());
     let temperature = reasoning_effort.is_none().then_some(0.0);
     let request = MessageRequest {

@@ -5,10 +5,10 @@ use tempfile::TempDir;
 
 #[test]
 fn doctor_api_key_rows_never_name_the_retired_antigravity_slot() {
-    let rows: Vec<crate::config::ProviderKind> = doctor_api_key_providers().collect();
-    assert!(!rows.contains(&crate::config::ProviderKind::Antigravity));
-    assert!(rows.contains(&crate::config::ProviderKind::Deepseek));
-    assert!(rows.contains(&crate::config::ProviderKind::Google));
+    let rows: Vec<codewhale_config::ProviderKind> = doctor_api_key_providers().collect();
+    assert!(!rows.contains(&codewhale_config::ProviderKind::Antigravity));
+    assert!(rows.contains(&codewhale_config::ProviderKind::Deepseek));
+    assert!(rows.contains(&codewhale_config::ProviderKind::Google));
     assert!(
         rows.iter()
             .all(|provider| provider.as_str() != "antigravity")
@@ -286,7 +286,7 @@ fn doctor_mcp_reports_redact_url_argv_and_env_values() {
 #[test]
 fn doctor_provider_json_redacts_every_credential_url_to_its_authority() {
     for row in codewhale_config::descriptors::provider_compatibility() {
-        if row.kind == crate::config::ProviderKind::Antigravity {
+        if row.kind == codewhale_config::ProviderKind::Antigravity {
             continue;
         }
         let provider = row.id;
@@ -402,12 +402,12 @@ fn explicit_doctor_api_probes_may_load_workspace_dotenv_credentials() {
 #[test]
 fn hosted_provider_does_not_probe_without_explicit_opt_in() {
     assert!(!doctor_should_probe_api(
-        crate::config::ProviderKind::Deepseek,
+        codewhale_config::ProviderKind::Deepseek,
         "https://api.deepseek.com/beta",
         crate::doctor::DoctorProbeRequest::default(),
     ));
     assert!(doctor_should_probe_api(
-        crate::config::ProviderKind::Deepseek,
+        codewhale_config::ProviderKind::Deepseek,
         "https://api.deepseek.com/beta",
         crate::doctor::DoctorProbeRequest {
             probe_api: true,
@@ -572,7 +572,10 @@ fn credential_diagnostic_treats_sentinel_as_unprobed_store_not_config() {
     let config = Config {
         ..Config::default()
     }
-    .with_legacy_root(Some(crate::config::API_KEYRING_SENTINEL.to_string()), None);
+    .with_legacy_root(
+        Some(codewhale_config::API_KEYRING_SENTINEL.to_string()),
+        None,
+    );
 
     assert_eq!(
         resolve_credential_diagnostic(&config),
@@ -584,7 +587,7 @@ fn credential_diagnostic_treats_sentinel_as_unprobed_store_not_config() {
     assert!(!doctor_has_credentials_or_local_runtime(&config));
     assert!(!codewhale_home.join("secrets/secrets.json").exists());
 
-    for sentinel in [crate::config::API_KEYRING_SENTINEL, "  __KEYRING__  "] {
+    for sentinel in [codewhale_config::API_KEYRING_SENTINEL, "  __KEYRING__  "] {
         let mut providers = crate::config::ProvidersConfig::default();
         providers.openai.api_key = Some(sentinel.to_string());
         let official = Config {
@@ -611,7 +614,7 @@ fn unavailable_sentinel_routes_stay_distinct_from_unknown_and_unprobed() {
     let _home =
         crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", temp.path().join("codewhale-home"));
 
-    for sentinel in [crate::config::API_KEYRING_SENTINEL, "  __KEYRING__  "] {
+    for sentinel in [codewhale_config::API_KEYRING_SENTINEL, "  __KEYRING__  "] {
         let mut custom = std::collections::HashMap::new();
         custom.insert(
             "sentinel-route".to_string(),
@@ -660,7 +663,7 @@ fn unavailable_sentinel_routes_stay_distinct_from_unknown_and_unprobed() {
 
     let mut providers = crate::config::ProvidersConfig::default();
     providers.openrouter.base_url = Some("https://gateway.example.test/v1".to_string());
-    providers.openrouter.api_key = Some(crate::config::API_KEYRING_SENTINEL.to_string());
+    providers.openrouter.api_key = Some(codewhale_config::API_KEYRING_SENTINEL.to_string());
     let custom_endpoint = Config {
         provider: Some("openrouter".to_string()),
         providers: Some(providers),
@@ -716,7 +719,7 @@ fn sentinel_placeholders_never_become_attemptable_routes_or_metered_evidence() {
     let _xiaomi_key = crate::test_support::EnvVarGuard::remove("XIAOMI_API_KEY");
     let _mimo_key_alias = crate::test_support::EnvVarGuard::remove("MIMO_API_KEY");
 
-    for sentinel in [crate::config::API_KEYRING_SENTINEL, "  __KEYRING__  "] {
+    for sentinel in [codewhale_config::API_KEYRING_SENTINEL, "  __KEYRING__  "] {
         let named_custom = Config {
             provider: Some("sentinel-route".to_string()),
             providers: Some(crate::config::ProvidersConfig {
@@ -737,13 +740,13 @@ fn sentinel_placeholders_never_become_attemptable_routes_or_metered_evidence() {
         assert_eq!(
             crate::provider_readiness::credential_state_for_provider(
                 &named_custom,
-                &(named_custom).test_identity_for_kind(crate::config::ProviderKind::Custom),
+                &(named_custom).test_identity_for_kind(codewhale_config::ProviderKind::Custom),
             ),
             crate::provider_readiness::CredentialState::MissingKey
         );
         let readiness = crate::provider_readiness::resolve_for_model(
             &named_custom,
-            &(named_custom).test_identity_for_kind(crate::config::ProviderKind::Custom),
+            &(named_custom).test_identity_for_kind(codewhale_config::ProviderKind::Custom),
             "sentinel-model",
             &crate::provider_readiness::ProviderReadinessSnapshot::default(),
         );
@@ -757,7 +760,7 @@ fn sentinel_placeholders_never_become_attemptable_routes_or_metered_evidence() {
                 .unwrap()
                 .candidates
                 .iter()
-                .all(|candidate| candidate.provider != crate::config::ProviderKind::Custom)
+                .all(|candidate| candidate.provider != codewhale_config::ProviderKind::Custom)
         );
 
         let xai = Config {
@@ -774,7 +777,7 @@ fn sentinel_placeholders_never_become_attemptable_routes_or_metered_evidence() {
         assert_eq!(
             crate::provider_readiness::credential_state_for_provider(
                 &xai,
-                &(xai).test_identity_for_kind(crate::config::ProviderKind::Xai),
+                &(xai).test_identity_for_kind(codewhale_config::ProviderKind::Xai),
             ),
             crate::provider_readiness::CredentialState::MissingKey
         );
@@ -788,7 +791,7 @@ fn sentinel_placeholders_never_become_attemptable_routes_or_metered_evidence() {
         assert_eq!(
             crate::route_billing::for_route(
                 &xiaomi,
-                &(xiaomi).test_identity_for_kind(crate::config::ProviderKind::XiaomiMimo)
+                &(xiaomi).test_identity_for_kind(codewhale_config::ProviderKind::XiaomiMimo)
             ),
             crate::route_billing::BillingPresentation::Subscription("MiMo token plan")
         );
@@ -797,7 +800,7 @@ fn sentinel_placeholders_never_become_attemptable_routes_or_metered_evidence() {
 
 #[test]
 fn sentinel_diagnostic_yields_to_route_bound_env_or_auth_declaration() {
-    for sentinel in [crate::config::API_KEYRING_SENTINEL, "  __KEYRING__  "] {
+    for sentinel in [codewhale_config::API_KEYRING_SENTINEL, "  __KEYRING__  "] {
         let mut providers = crate::config::ProvidersConfig::default();
         providers.openai.api_key = Some(sentinel.to_string());
         providers.openai.api_key_env = Some("OFFICIAL_SENTINEL_ROUTE_KEY".to_string());

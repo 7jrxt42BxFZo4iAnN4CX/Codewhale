@@ -25,7 +25,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use crate::config::{Config, ProviderKind};
+use crate::config::Config;
+use codewhale_config::ProviderKind;
 
 /// OAuth token payload stored in `auth.json`.
 #[derive(Debug, Clone, Deserialize)]
@@ -69,7 +70,7 @@ pub fn auth_file_path() -> PathBuf {
     let codex_home = std::env::var("CODEX_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| {
-            crate::config::effective_home_dir()
+            codewhale_paths::user_home()
                 .unwrap_or_else(|| PathBuf::from("."))
                 .join(".codex")
         });
@@ -826,7 +827,7 @@ pub fn activate_orcarouter_credential(
 ) -> Result<crate::config::SavedCredential> {
     let route_config = Config::load(config_path.map(Path::to_path_buf), None)?;
     let identity = route_config
-        .builtin_provider_identity(crate::config::ProviderKind::Orcarouter)
+        .builtin_provider_identity(codewhale_config::ProviderKind::Orcarouter)
         .map_err(anyhow::Error::msg)?;
     // Audit only the adapter, never the key: `api_key` or `pkce`. Both
     // adapters reach this seam and nothing downstream distinguishes them.
@@ -2782,11 +2783,11 @@ pub(crate) fn official_chatgpt_registration(config: &Config) -> Result<ChatgptRe
 impl OAuthProvider {
     /// The engine provider this OAuth row belongs to.
     #[must_use]
-    pub fn api(self) -> crate::config::ProviderKind {
+    pub fn api(self) -> codewhale_config::ProviderKind {
         match self {
-            OAuthProvider::Xai => crate::config::ProviderKind::Xai,
-            OAuthProvider::Chatgpt => crate::config::ProviderKind::OpenaiCodex,
-            OAuthProvider::Claude => crate::config::ProviderKind::Anthropic,
+            OAuthProvider::Xai => codewhale_config::ProviderKind::Xai,
+            OAuthProvider::Chatgpt => codewhale_config::ProviderKind::OpenaiCodex,
+            OAuthProvider::Claude => codewhale_config::ProviderKind::Anthropic,
         }
     }
 
@@ -3677,8 +3678,8 @@ pub fn get_xai_credentials(config: &Config) -> Result<OwnedOAuthCredentials> {
         .active_provider_identity()
         .map_err(anyhow::Error::msg)?;
     anyhow::ensure!(
-        identity.provider == crate::config::ProviderKind::Xai
-            && identity.key.as_str() == crate::config::ProviderKind::Xai.as_str()
+        identity.provider == codewhale_config::ProviderKind::Xai
+            && identity.key.as_str() == codewhale_config::ProviderKind::Xai.as_str()
             && config
                 .provider_config_for(&identity)
                 .and_then(|entry| entry.auth_mode.as_deref())
@@ -4479,7 +4480,7 @@ pub fn grok_auth_file_path() -> PathBuf {
             return codewhale_config::resolve_external_credential_path(&path).unwrap_or(path);
         }
     }
-    let path = crate::config::effective_home_dir()
+    let path = codewhale_paths::user_home()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".grok")
         .join("auth.json");
@@ -4971,7 +4972,7 @@ pub(crate) fn install_test_chatgpt_registration_for(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::ProviderKind;
+    use codewhale_config::ProviderKind;
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;

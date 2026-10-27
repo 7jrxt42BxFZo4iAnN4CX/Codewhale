@@ -8,7 +8,7 @@ use uuid::Uuid;
 use crate::dependencies::{ExternalTool, Git};
 use crate::tools::spec::ToolError;
 
-use super::FleetRole;
+use codewhale_agent_contract::role::FleetRole;
 
 const SUBAGENT_WORKTREE_ROOT_DIR: &str = ".codewhale-worktrees";
 

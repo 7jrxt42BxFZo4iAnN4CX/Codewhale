@@ -20,7 +20,7 @@
 //! ledger / executor / worker_runtime / roster / profile / identity /
 //! members, and nothing from tools.
 
-use codewhale_protocol::fleet::FleetEffectivePermissions;
+use codewhale_protocol::fleet::{FleetEffectivePermissions, migrate_legacy_role_token};
 use codewhale_workflow::{PermissionCeiling, ShellCeiling};
 
 use crate::worker_profile::{ShellPolicy, ToolScope, WorkerRuntimeProfile};
@@ -116,26 +116,6 @@ impl<'de> serde::Deserialize<'de> for FleetRole {
         let raw = String::deserialize(deserializer)?;
         Self::parse(&raw)
             .ok_or_else(|| serde::de::Error::unknown_variant(&raw, &FLEET_ROLE_SCHEMA_VALUES))
-    }
-}
-
-/// Explicit boundary migration for pre-Fleet serialized role tokens.
-///
-/// Call this only at load / parse edges. Runtime code must use Fleet role
-/// names via [`FleetRole::as_str`]. Returns `None` for tokens that are
-/// already canonical or unknown — callers should prefer [`FleetRole::parse`]
-/// for full acceptance (canonical + legacy).
-#[must_use]
-pub fn migrate_legacy_role_token(token: &str) -> Option<&'static str> {
-    match token.trim().to_ascii_lowercase().as_str() {
-        "worker" | "general-purpose" | "general_purpose" | "default" => Some("general"),
-        "scout" | "exploration" | "explorer" => Some("explore"),
-        "plan" | "planning" | "awaiter" => Some("planner"),
-        "review" | "code-review" | "code_review" => Some("reviewer"),
-        "builder" | "implementer" | "implementation" => Some("implement"),
-        "verifier" | "verify" | "verification" | "validator" | "tester" => Some("test"),
-        "consultant" | "oracle" => Some("advisor"),
-        _ => None,
     }
 }
 

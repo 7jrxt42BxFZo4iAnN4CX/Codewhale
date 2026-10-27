@@ -7,8 +7,8 @@
 //! overrides, live hints, and auth readiness without scattering provider/model
 //! string checks through prompt, tool, and Fleet code.
 
-use crate::config::ProviderKind;
 use crate::provider_lake::{RequestPayloadMode, provider_capability};
+use codewhale_config::ProviderKind;
 pub use codewhale_config::catalog::reviewed::ModelFamily as ModelProvider;
 use codewhale_config::route::{RouteCapabilities, RouteLimits};
 

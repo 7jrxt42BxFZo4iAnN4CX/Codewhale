@@ -368,7 +368,7 @@ impl SetupRuntimeFacts {
             crate::provider_readiness::ResolvedProviderReadiness::SavedLastCheckFailed { .. }
         ) {
             format!("{}; retry or open /provider", readiness.label())
-        } else if app.api_provider == crate::config::ProviderKind::OpenaiCodex {
+        } else if app.api_provider == codewhale_config::ProviderKind::OpenaiCodex {
             format!(
                 "{}; Sign in with ChatGPT via `codewhale auth chatgpt` or /provider setup openai-codex (subscription billing). Codex CLI import remains an explicit alternative.",
                 readiness.label()
@@ -575,7 +575,7 @@ impl SetupRuntimeFacts {
 
 fn setup_codewhale_home_dir() -> std::path::PathBuf {
     codewhale_config::codewhale_home().unwrap_or_else(|_| {
-        crate::config::effective_home_dir().map_or_else(
+        codewhale_paths::user_home().map_or_else(
             || std::path::PathBuf::from(".codewhale"),
             |home| home.join(".codewhale"),
         )

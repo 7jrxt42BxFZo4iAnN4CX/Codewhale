@@ -401,7 +401,7 @@ impl McpServer {
 }
 
 fn default_config_path() -> Option<PathBuf> {
-    crate::config::effective_home_dir().map(|home| home.join(".deepseek").join("mcp_server.toml"))
+    codewhale_paths::user_home().map(|home| home.join(".deepseek").join("mcp_server.toml"))
 }
 
 /// Read-only by default: writing or executing tools must be named in the

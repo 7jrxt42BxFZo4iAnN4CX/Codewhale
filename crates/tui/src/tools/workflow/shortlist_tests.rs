@@ -2,11 +2,12 @@
 
 use super::*;
 use crate::client::CodewhaleClient;
-use crate::config::{Config, ProviderKind};
+use crate::config::Config;
 use crate::fleet::exact::{ExactFleetWorkflow, StaticFleetRouter};
 use crate::fleet::members::add_fleet_model;
 use crate::fleet::store::{FleetFile, FleetScope, save_fleet, set_selected};
 use crate::tools::subagent::new_shared_subagent_manager;
+use codewhale_config::ProviderKind;
 use codewhale_workflow::{FleetDocument, QualifiedFleetId};
 use std::sync::atomic::AtomicUsize;
 use std::time::Duration;

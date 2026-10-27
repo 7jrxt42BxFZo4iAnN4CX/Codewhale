@@ -78,7 +78,7 @@ async fn auto_review_asks_the_user_and_returns_the_answer() {
     .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
     let (engine, handle) = Engine::new(
         EngineConfig {
-            model: crate::config::DEFAULT_TEXT_MODEL.to_string(),
+            model: codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
             workspace: workspace.path().to_path_buf(),
             snapshots_enabled: false,
             subagents_enabled: false,
@@ -95,7 +95,7 @@ async fn auto_review_asks_the_user_and_returns_the_answer() {
             content: "continue autonomously".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&api_config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(&api_config, codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,
@@ -251,7 +251,7 @@ async fn full_access_permission_allow_runs_background_destructive_shell_without_
     }
     .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
     let engine_config = EngineConfig {
-        model: crate::config::DEFAULT_TEXT_MODEL.to_string(),
+        model: codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
         workspace: workspace.path().to_path_buf(),
         snapshots_enabled: false,
         subagents_enabled: false,
@@ -281,7 +281,7 @@ async fn full_access_permission_allow_runs_background_destructive_shell_without_
             content: "please run a background shell".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&api_config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(&api_config, codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,
@@ -416,7 +416,7 @@ async fn yolo_mode_does_not_prompt_for_background_shell() {
     .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
     let (engine, handle) = Engine::new(
         EngineConfig {
-            model: crate::config::DEFAULT_TEXT_MODEL.to_string(),
+            model: codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
             workspace: workspace.path().to_path_buf(),
             snapshots_enabled: false,
             subagents_enabled: false,
@@ -433,7 +433,7 @@ async fn yolo_mode_does_not_prompt_for_background_shell() {
             content: "please run a background shell".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&api_config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(&api_config, codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,
@@ -556,7 +556,7 @@ async fn yolo_mode_executes_publish_like_shell_without_prompt() {
     .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
     let (engine, handle) = Engine::new(
         EngineConfig {
-            model: crate::config::DEFAULT_TEXT_MODEL.to_string(),
+            model: codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
             workspace: workspace.path().to_path_buf(),
             snapshots_enabled: false,
             subagents_enabled: false,
@@ -573,7 +573,7 @@ async fn yolo_mode_executes_publish_like_shell_without_prompt() {
             content: "please publish this crate".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&api_config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(&api_config, codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,
@@ -700,7 +700,7 @@ async fn yolo_mode_does_not_prompt_for_mcp_action() {
     .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
     let (engine, handle) = Engine::new(
         EngineConfig {
-            model: crate::config::DEFAULT_TEXT_MODEL.to_string(),
+            model: codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
             workspace: workspace.path().to_path_buf(),
             snapshots_enabled: false,
             subagents_enabled: false,
@@ -717,7 +717,7 @@ async fn yolo_mode_does_not_prompt_for_mcp_action() {
             content: "please open the PR".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&api_config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(&api_config, codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,

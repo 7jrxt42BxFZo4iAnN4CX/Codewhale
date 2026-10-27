@@ -23,12 +23,6 @@ use tiny_http::{Method, Response, Server};
 // `install.rs` references `crate::network_policy` and `super::package_digest`
 // (sibling under `skills::`), so both are pulled in alongside `install`.
 
-// Both `network_policy` and `install` resolve the home directory through
-// `crate::config::effective_home_dir()` (#4757). `config/home.rs` is a leaf
-// over `std`/`codewhale-paths` with no `crate::` references, so including it
-// here gives this binary the real implementation; naming it `config` matches
-// how those two files address it in the lib.
-
 use crate::install::{InstallOutcome, InstallSource, UpdateResult};
 use crate::network_policy::{DecisionToml, NetworkPolicy};
 

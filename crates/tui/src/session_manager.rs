@@ -8,7 +8,6 @@
 
 use crate::approval_log::{ApprovalReceipt, ApprovalReceiptStore, ApprovalReplay};
 use crate::artifacts::ArtifactRecord;
-use crate::config::ProviderKind;
 use crate::model_routing::AutoRouteReceipt;
 use crate::project_context::find_git_root;
 use crate::tools::goal::{GoalPauseReason, GoalSnapshot};
@@ -17,6 +16,7 @@ use crate::tools::todo::TodoListSnapshot;
 use crate::utils::write_atomic;
 use crate::work_graph::ReasoningEffortTier;
 use chrono::{DateTime, Utc};
+use codewhale_config::ProviderKind;
 use codewhale_core::ContextReference;
 #[cfg(test)]
 use codewhale_core::{ContextReferenceKind, ContextReferenceSource};
@@ -1274,17 +1274,6 @@ impl SavedSession {
         self.leaf_id = journal.leaf_id.clone();
         self.journal = Some(journal);
     }
-    #[expect(dead_code)]
-    pub fn journal_append_message(&mut self, message: Message) -> String {
-        self.ensure_journal();
-        let journal = self.journal.as_mut().expect("journal ensured");
-        let id = journal.append_message(message.clone());
-        self.leaf_id = journal.leaf_id.clone();
-        self.messages = journal.to_messages();
-        self.metadata.message_count = self.messages.len();
-        self.metadata.updated_at = Utc::now();
-        id
-    }
     pub fn journal_branch_to(&mut self, entry_id: &str) -> Result<(), String> {
         self.ensure_journal();
         let journal = self.journal.as_mut().expect("journal ensured");
@@ -1303,13 +1292,6 @@ impl SavedSession {
         self.metadata.message_count = self.messages.len();
         self.metadata.updated_at = Utc::now();
         Ok(())
-    }
-    #[expect(dead_code)]
-    pub fn active_entries(&self) -> Vec<SessionEntry> {
-        self.journal
-            .as_ref()
-            .map(|j| j.root_to_leaf().into_iter().cloned().collect())
-            .unwrap_or_default()
     }
     /// `created_at` of the active branch's message entries, in order — the
     /// stamps a resumed session hands back to the live message log so the

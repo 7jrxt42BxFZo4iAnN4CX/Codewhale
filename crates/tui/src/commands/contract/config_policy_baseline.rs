@@ -1,8 +1,9 @@
 //! Public-host observations captured before FEAT-027 production migration.
 //! Fixtures stay outside the portable command closure.
 use crate::commands::{CommandResult, execute};
-use crate::config::{Config, ProviderKind};
+use crate::config::Config;
 use crate::tui::app::{App, AppAction, TuiOptions};
+use codewhale_config::ProviderKind;
 use codewhale_localization::Locale;
 use serde_json::{Value, json};
 use std::fs;
@@ -51,7 +52,7 @@ fn normalize(message: &str, temp: &TempDir) -> String {
             "\"<TEST_AUDIT_LOG>\"",
         );
     }
-    if let Some(home) = crate::config::effective_home_dir() {
+    if let Some(home) = codewhale_paths::user_home() {
         text = text.replace(home.to_str().unwrap(), "<TEST_HOME>");
     }
     // Catalog freshness depends on the bundled snapshot's age against the

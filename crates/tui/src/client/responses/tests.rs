@@ -788,7 +788,9 @@ async fn codex_selected_effort_reaches_preview_wire_and_restored_receipt_unchang
             effective: selected.into(),
             provider_kind: Some(ProviderKind::OpenaiCodex),
             provider: "openai-codex".to_string(),
-            endpoint_identity: Some(crate::config::DEFAULT_OPENAI_CODEX_BASE_URL.to_string()),
+            endpoint_identity: Some(
+                codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_BASE_URL.to_string(),
+            ),
             model: Some("gpt-6-astra".to_string()),
             ts: 1,
             operation: None,
@@ -1442,8 +1444,8 @@ fn parse_responses_usage_keeps_old_shape_with_cache_write_fallback() {
 /// `output_tokens_details.reasoning_tokens` a subset of it.
 #[test]
 fn responses_usage_reaches_pricing_conversion_without_double_billing_reasoning() {
-    use crate::config::ProviderKind;
     use crate::pricing::{calculate_turn_cost_estimate_for_provider, token_usage_for_pricing};
+    use codewhale_config::ProviderKind;
 
     let usage = parse_responses_usage(&json!({
         "input_tokens": 10_000,

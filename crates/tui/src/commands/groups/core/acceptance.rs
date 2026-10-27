@@ -4,10 +4,11 @@ use cucumber::{World as _, given, then, when, writer::Stats as _};
 use tempfile::TempDir;
 
 use crate::commands::{self, CommandResult};
-use crate::config::{Config, ProviderKind};
+use crate::config::Config;
 use crate::test_support::{EnvVarGuard, lock_test_env};
 use crate::tui::app::{App, TuiOptions};
 use crate::tui::history::HistoryCell;
+use codewhale_config::ProviderKind;
 
 const FEATURE_NAME: &str = "Core command visible surfaces";
 const FEATURE_PATH: &str = concat!(

@@ -14,7 +14,7 @@ use std::path::Path;
 /// Build the import plan from the host's home/workspace; `None` when nothing
 /// was found.
 pub(in crate::commands) fn build_plan(app: &mut App) -> Option<CommandClaudePlan> {
-    let home = crate::config::effective_home_dir().unwrap_or_else(|| std::path::PathBuf::from("."));
+    let home = codewhale_paths::user_home().unwrap_or_else(|| std::path::PathBuf::from("."));
     let (sources, claude, settings) = crate::import_claude::read_sources(&home);
 
     // MCP candidates come from the same discovery the `/mcp import` consent
@@ -85,7 +85,7 @@ pub(in crate::commands) fn apply_plan(
         match codewhale_config::codewhale_home() {
             Ok(home) => {
                 let destination = home.join("instructions.md");
-                let source = crate::config::effective_home_dir()
+                let source = codewhale_paths::user_home()
                     .unwrap_or_else(|| std::path::PathBuf::from("."))
                     .join(".claude")
                     .join("CLAUDE.md");

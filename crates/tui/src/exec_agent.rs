@@ -36,7 +36,7 @@ pub(crate) const ONE_SHOT_DEFAULT_MAX_STEPS: u32 = 8;
 /// stays unconditional: there is no channel on which a one-shot CLI run
 /// could answer, so advertising the tool cannot work.
 pub(crate) fn exec_disallowed_tools(disallowed_tools: Option<Vec<String>>) -> Option<Vec<String>> {
-    use crate::core::engine::tool_catalog::REQUEST_USER_INPUT_NAME;
+    use codewhale_tools::names::REQUEST_USER_INPUT_NAME;
     let mut disallowed = disallowed_tools.unwrap_or_default();
     if !disallowed
         .iter()
@@ -517,7 +517,9 @@ pub(crate) async fn run_exec_agent(
         outer_network_access,
         outer_shell_authority,
     );
-    if crate::core::allowlist_is_native_file_and_shell_only(allowed_tools.as_deref()) {
+    if crate::core::engine::tool_catalog::allowlist_is_native_file_and_shell_only(
+        allowed_tools.as_deref(),
+    ) {
         engine_features.disable(codewhale_runtime::features::Feature::Mcp);
     }
     let engine_plugin_registry = if fleet_authority_active {
@@ -666,7 +668,7 @@ pub(crate) async fn run_exec_agent(
             read_only_roots: execution_config.bwrap_ro_roots.clone(),
             device_roots: execution_config.bwrap_dev_roots.clone(),
         },
-        read_denylist: execution_config.read_denylist(),
+        read_denylist: crate::sandbox::read_guard::ReadDenylist::from_config(&execution_config),
         memory_enabled: execution_config.memory_enabled(),
         memory_path: execution_config.memory_path(),
         speech_output_dir: execution_config.speech_output_dir(),
@@ -679,6 +681,7 @@ pub(crate) async fn run_exec_agent(
         goal_continuation_delay_seconds: execution_config.goal_continuation_delay_seconds(),
         goal_enforce_token_budget: execution_config.goal_enforce_token_budget(),
         reasoning_only_max_reprompts: execution_config.reasoning_only_max_reprompts(),
+        reasoning_only_on_output_limit: execution_config.reasoning_only_on_output_limit(),
         reasoning_only_reprompt_message: Some(
             execution_config
                 .reasoning_only_reprompt_message()
@@ -1722,10 +1725,10 @@ mod tests {
     use super::{ExecAgentEvents, exec_automation_services, exec_disallowed_tools};
 
     use crate::core::engine::mock_engine_handle;
-    use crate::core::engine::tool_catalog::REQUEST_USER_INPUT_NAME;
     use crate::core::events::{Event, TurnOutcomeStatus};
     use crate::core::ops::{Op, SubAgentSettlement};
     use codewhale_models::Usage;
+    use codewhale_tools::names::REQUEST_USER_INPUT_NAME;
     use std::time::{Duration, Instant};
 
     fn completed_parent(input_tokens: u32) -> Event {

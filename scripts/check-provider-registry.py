@@ -262,7 +262,7 @@ def report_tombstone_runtime_contract(
         )
 
     if "for provider in doctor_api_key_providers()" not in tui_lib_rs or (
-        "*provider != crate::config::ProviderKind::Antigravity" not in tui_lib_rs
+        "*provider != codewhale_config::ProviderKind::Antigravity" not in tui_lib_rs
     ):
         errors.append(
             "`codewhale doctor` API Keys rows must iterate doctor_api_key_providers() "

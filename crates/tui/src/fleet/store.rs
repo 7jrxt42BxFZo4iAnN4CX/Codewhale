@@ -28,7 +28,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::config::ProviderKind;
+use codewhale_config::ProviderKind;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

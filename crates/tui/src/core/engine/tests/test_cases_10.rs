@@ -181,7 +181,7 @@ fn registry_sync_results_are_bounded_like_every_other_tool() {
 
     assert_ne!(context, raw);
     assert!(context.chars().count() <= budget);
-    assert!(context.contains(crate::tools::truncate::SPILLOVER_RECOVERY_HINT));
+    assert!(context.contains(codewhale_tools::names::SPILLOVER_RECOVERY_HINT));
 }
 
 #[test]
@@ -1291,7 +1291,7 @@ async fn deferred_tool_first_use_does_not_emit_a_retry_status() {
     .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
     let (engine, handle) = Engine::new(
         EngineConfig {
-            model: crate::config::DEFAULT_TEXT_MODEL.to_string(),
+            model: codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
             workspace: workspace.path().to_path_buf(),
             snapshots_enabled: false,
             subagents_enabled: false,
@@ -1308,7 +1308,10 @@ async fn deferred_tool_first_use_does_not_emit_a_retry_status() {
             content: "Map this project".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&api_config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(
+                &api_config,
+                codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL,
+            ),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,

@@ -24,17 +24,20 @@ use codewhale_protocol::fleet::{
 use serde::{Deserialize, Serialize};
 
 use super::identity::{FleetSelectorError, resolve_member_in_profiles};
+use super::profile::FleetRole as FleetProfileRole;
 use super::profile::{
     AgentProfile, FleetDelegationHints, FleetLoadout, FleetProfile, FleetProfilePermissions,
-    FleetRole as FleetProfileRole, FleetSlot, ProfileOrigin, canonical_public_role_name,
+    FleetSlot, ProfileOrigin, canonical_public_role_name,
 };
-use crate::config::{Config, ProviderKind};
+use crate::config::Config;
 use crate::route_runtime::resolve_route_candidate;
-use crate::tools::subagent::{AgentWorkerSpec, AgentWorkerToolProfile, FleetRole};
+use crate::tools::subagent::{AgentWorkerSpec, AgentWorkerToolProfile};
+use codewhale_agent_contract::role::FleetRole;
 use codewhale_agent_contract::role::runtime_role_for_member;
 use codewhale_agent_contract::worker_profile::{
     ChildLaunchManifest, ModelRoute, ToolScope, WorkerRuntimeProfile,
 };
+use codewhale_config::ProviderKind;
 
 /// Reserved durable task metadata written after author input is validated.
 ///
@@ -1237,28 +1240,6 @@ pub(crate) fn explicit_fleet_provider_id(agent_profile: Option<&AgentProfile>) -
         .map(str::to_string)
 }
 
-/// The built-in provider a resolved agent profile EXPLICITLY pins, if any (#4093).
-///
-/// This returns `None` (never the DeepSeek default) when no profile names a
-/// provider, so call sites can leave `--provider` off the worker argv and
-/// preserve today's behavior for profile-less / provider-less workers (they
-/// resolve their provider from their own session default). EPIC #2608: never
-/// inferred from `model`.
-///
-/// `pub(crate)` so the interactive-TUI in-process spawn path
-/// (`tools::subagent`) resolves the pinned provider from the SAME
-/// explicit-only source as the headless `codewhale exec` launch route (#4193),
-/// instead of re-deriving it and risking a second, divergent policy. User-named
-/// custom providers intentionally return `None` here; launch paths that can
-/// carry strings should use [`explicit_fleet_provider_id`].
-pub(crate) fn explicit_fleet_provider(
-    agent_profile: Option<&AgentProfile>,
-) -> Option<ProviderKind> {
-    explicit_fleet_provider_id(agent_profile)
-        .as_deref()
-        .and_then(ProviderKind::parse)
-}
-
 pub(crate) fn effective_fleet_reasoning_effort(
     agent_profile: Option<&AgentProfile>,
 ) -> Option<String> {
@@ -1659,8 +1640,8 @@ mod tests {
 
     #[test]
     fn read_only_roles_report_the_narrowed_shell_they_actually_run_under() {
-        use crate::tools::subagent::FleetRole;
         use codewhale_agent_contract::role;
+        use codewhale_agent_contract::role::FleetRole;
         use codewhale_agent_contract::worker_profile::ShellPolicy;
         let mut requested = WorkerRuntimeProfile {
             shell: ShellPolicy::Full,
@@ -4740,8 +4721,8 @@ mod tests {
 
     #[test]
     fn fleet_route_parity_uses_shared_router_candidates() {
-        use crate::config::ProviderKind;
         use crate::model_routing::{RouterCandidates, provider_router_candidates};
+        use codewhale_config::ProviderKind;
 
         // Fleet emits the SAME `ModelRoute` seam the sub-agent assignment path
         // consumes. `Fast` no longer re-prices the child onto a cheaper

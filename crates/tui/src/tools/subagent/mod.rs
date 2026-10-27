@@ -38,8 +38,7 @@ use crate::config::{MAX_SUBAGENTS, SubagentModelOverride};
 use crate::core::engine::ChildSurfaceProbe;
 #[cfg(test)]
 use crate::core::engine::tool_catalog::{
-    TOOL_SEARCH_NAME, apply_native_tool_deferral, ensure_advanced_tooling,
-    execute_tool_search_with_cache, is_tool_search_tool,
+    apply_native_tool_deferral, ensure_advanced_tooling, execute_tool_search_with_cache,
 };
 use crate::core::events::{AgentProgressEventMeta, Event};
 #[cfg(test)]
@@ -70,12 +69,8 @@ use crate::work_graph::{
     EvidenceKind, EvidenceRef, OperationIntent, OperationOwnerSnapshot, OwnerState,
     SharedWorkRuntime,
 };
-/// Compatibility re-export: the closed role set lives in
-/// [`codewhale_agent_contract::role`], the lightweight role surface every spawn path
-/// consumes. Existing `tools::subagent::FleetRole` paths keep resolving.
-pub use codewhale_agent_contract::role::FleetRole;
 use codewhale_agent_contract::role::{
-    FLEET_ROLE_SCHEMA_VALUES, VALID_ROLE_ALIASES, migrate_legacy_role_token, public_role_label,
+    FLEET_ROLE_SCHEMA_VALUES, FleetRole, VALID_ROLE_ALIASES, public_role_label,
 };
 use codewhale_agent_contract::worker_profile::{
     ChildLaunchManifest, ModelRoute, ShellPolicy, ToolScope, WorkerRuntimeProfile,
@@ -89,6 +84,9 @@ use codewhale_execpolicy::tool_rules::tool_denied;
 use codewhale_models::MessageResponse;
 use codewhale_models::{ContentBlock, Message, SystemPrompt, Tool, Usage};
 use codewhale_models::{is_output_limit_stop_reason, stop_reason_detail};
+use codewhale_protocol::fleet::migrate_legacy_role_token;
+#[cfg(test)]
+use codewhale_tools::names::{TOOL_SEARCH_NAME, is_tool_search_tool};
 use coord::{
     CoordinationClaimScope, CoordinationDetailMetrics, CoordinationHotPath, CoordinationLedger,
     DecisionRecord, DecisionStatus, PersistedWriteClaim, ReconciliationReceipt, WriteScopeClaim,
@@ -501,7 +499,7 @@ const SUBAGENT_CHECKPOINT_MESSAGE_BUDGET_BYTES: usize = 256 * 1024;
 /// keeps a bounded tail plus the true `message_count` so inspection stays
 /// useful without pinning a whole unbounded transcript in RAM.
 const SUBAGENT_TRANSCRIPT_MESSAGE_BUDGET_BYTES: usize = 1024 * 1024;
-const SUBAGENT_TRANSCRIPT_ARTIFACT_SCHEMA_VERSION: u32 = 1;
+const SUBAGENT_TRANSCRIPT_ARTIFACT_SCHEMA_VERSION: u32 = 2;
 const SUBAGENT_TRANSCRIPT_ARTIFACT_DIR: &str = "subagent-transcripts";
 const SUBAGENT_STATE_SCHEMA_VERSION: u32 = 1;
 const SUBAGENT_STATE_FILE: &str = "subagents.v1.json";
@@ -3239,7 +3237,6 @@ impl SubAgentRuntime {
     /// stream. Pair with [`Self::with_cancel_token`] when the mailbox close
     /// token should match this runtime's cancellation token.
     #[must_use]
-    #[allow(dead_code)] // wired by #128 (in-transcript cards) when it lands.
     pub fn with_mailbox(mut self, mailbox: Mailbox) -> Self {
         self.mailbox = Some(mailbox);
         self
@@ -3265,7 +3262,6 @@ impl SubAgentRuntime {
     /// Replace the cancellation token (e.g. when the engine constructs the
     /// runtime alongside a mailbox bound to the same token).
     #[must_use]
-    #[allow(dead_code)] // wired by #128 alongside `with_mailbox`.
     pub fn with_cancel_token(mut self, token: CancellationToken) -> Self {
         self.context.cancel_token = Some(token.clone());
         self.cancel_token = token;
@@ -10487,6 +10483,7 @@ struct SubAgentTranscriptArtifactWriter {
     relative_path: PathBuf,
     /// Message records in the artifact.
     persisted_messages: usize,
+    persisted_request_receipts: usize,
     /// Prefix of the current live history already in the artifact.
     synced_live_messages: usize,
 }
@@ -10512,6 +10509,7 @@ impl SubAgentTranscriptArtifactWriter {
             path,
             relative_path,
             persisted_messages: 0,
+            persisted_request_receipts: 0,
             synced_live_messages: 0,
         })
     }
@@ -10573,12 +10571,34 @@ impl SubAgentTranscriptArtifactWriter {
         Ok(())
     }
 
+    fn record_request_nudge(
+        &mut self,
+        turn_id: &str,
+        request_index: u32,
+        text: &str,
+    ) -> Result<()> {
+        let record = json!({
+            "kind": "request_nudge", "turn_id": turn_id, "request_index": request_index,
+            "after_message_count": self.persisted_messages,
+            "receipt_index": self.persisted_request_receipts, "text": text, "prepared": true,
+        });
+        append_private_subagent_transcript(
+            &self.state_root,
+            &self.path,
+            &json_line(&record)?,
+            true,
+        )?;
+        self.persisted_request_receipts += 1;
+        Ok(())
+    }
+
     fn metadata(&self, complete: bool) -> Value {
         json!({
             "kind": "subagent_transcript_jsonl",
             "schema_version": SUBAGENT_TRANSCRIPT_ARTIFACT_SCHEMA_VERSION,
             "relative_path": self.relative_path,
             "persisted_messages": self.persisted_messages,
+            "request_receipts": self.persisted_request_receipts,
             "complete": complete,
             "contains_session_content": true,
         })
@@ -10614,6 +10634,26 @@ pub fn load_subagent_transcript_artifact(
     state_root: &Path,
     agent_id: &str,
 ) -> Result<Vec<Message>> {
+    load_subagent_transcript_projection(state_root, agent_id, false).map(|view| view.messages)
+}
+
+pub(crate) struct SubAgentTranscriptDisplay {
+    pub(crate) messages: Vec<Message>,
+    pub(crate) conversation_count: usize,
+}
+
+pub(crate) fn load_subagent_transcript_display_artifact(
+    state_root: &Path,
+    agent_id: &str,
+) -> Result<SubAgentTranscriptDisplay> {
+    load_subagent_transcript_projection(state_root, agent_id, true)
+}
+
+fn load_subagent_transcript_projection(
+    state_root: &Path,
+    agent_id: &str,
+    display_receipts: bool,
+) -> Result<SubAgentTranscriptDisplay> {
     let state_root = normalize_subagent_workspace(state_root);
     let path = checked_subagent_transcript_artifact_path(&state_root, agent_id)?;
     let raw = read_subagent_state_file(&state_root, &path)?;
@@ -10622,42 +10662,86 @@ pub fn load_subagent_transcript_artifact(
         .next()
         .ok_or_else(|| anyhow!("sub-agent transcript artifact is empty"))?;
     let header: Value = serde_json::from_str(header_line)?;
+    let schema_version = header
+        .get("schema_version")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
     if header.get("kind").and_then(Value::as_str) != Some("subagent_transcript_header")
-        || header.get("schema_version").and_then(Value::as_u64)
-            != Some(u64::from(SUBAGENT_TRANSCRIPT_ARTIFACT_SCHEMA_VERSION))
+        || !(1..=u64::from(SUBAGENT_TRANSCRIPT_ARTIFACT_SCHEMA_VERSION)).contains(&schema_version)
         || header.get("agent_id").and_then(Value::as_str) != Some(agent_id)
     {
         return Err(anyhow!(
             "sub-agent transcript artifact header does not match agent {agent_id}"
         ));
     }
-
     let mut messages = Vec::new();
+    let mut conversation_count = 0;
+    let mut receipt_count = 0;
     for line in lines.filter(|line| !line.trim().is_empty()) {
         let record: Value = serde_json::from_str(line)?;
-        if record.get("kind").and_then(Value::as_str) != Some("message") {
-            return Err(anyhow!("unknown sub-agent transcript artifact record"));
+        match record.get("kind").and_then(Value::as_str) {
+            Some("request_nudge") if schema_version >= 2 => {
+                let text = record
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .filter(|text| !text.trim().is_empty())
+                    .ok_or_else(|| anyhow!("sub-agent request receipt has no nudge text"))?;
+                if record.get("prepared").and_then(Value::as_bool) != Some(true)
+                    || record
+                        .get("turn_id")
+                        .and_then(Value::as_str)
+                        .is_none_or(|id| id.trim().is_empty())
+                    || record
+                        .get("request_index")
+                        .and_then(Value::as_u64)
+                        .is_none_or(|index| index == 0 || index > u64::from(u32::MAX))
+                    || record.get("after_message_count").and_then(Value::as_u64)
+                        != Some(conversation_count as u64)
+                    || record.get("receipt_index").and_then(Value::as_u64) != Some(receipt_count)
+                {
+                    return Err(anyhow!(
+                        "sub-agent request receipt has invalid ownership or sequence"
+                    ));
+                }
+                receipt_count += 1;
+                if display_receipts {
+                    messages.push(Message {
+                        role: Role::System,
+                        content: vec![ContentBlock::Text {
+                            text: format!(
+                                "{}{text}",
+                                crate::core::events::REQUEST_NUDGE_RECEIPT_PREFIX
+                            ),
+                            cache_control: None,
+                        }],
+                    });
+                }
+            }
+            Some("message") => {
+                let index = record
+                    .get("index")
+                    .and_then(Value::as_u64)
+                    .and_then(|value| usize::try_from(value).ok())
+                    .ok_or_else(|| anyhow!("sub-agent transcript message is missing its index"))?;
+                if index != conversation_count {
+                    return Err(anyhow!(
+                        "sub-agent transcript message index {index} does not follow {conversation_count}"
+                    ));
+                }
+                let message =
+                    serde_json::from_value::<Message>(record.get("message").cloned().ok_or_else(
+                        || anyhow!("sub-agent transcript record is missing its message"),
+                    )?)?;
+                messages.push(message);
+                conversation_count += 1;
+            }
+            _ => return Err(anyhow!("unknown sub-agent transcript artifact record")),
         }
-        let index = record
-            .get("index")
-            .and_then(Value::as_u64)
-            .and_then(|value| usize::try_from(value).ok())
-            .ok_or_else(|| anyhow!("sub-agent transcript message is missing its index"))?;
-        if index != messages.len() {
-            return Err(anyhow!(
-                "sub-agent transcript message index {index} does not follow {}",
-                messages.len()
-            ));
-        }
-        let message = serde_json::from_value::<Message>(
-            record
-                .get("message")
-                .cloned()
-                .ok_or_else(|| anyhow!("sub-agent transcript record is missing its message"))?,
-        )?;
-        messages.push(message);
     }
-    Ok(messages)
+    Ok(SubAgentTranscriptDisplay {
+        messages,
+        conversation_count,
+    })
 }
 
 fn remove_subagent_transcript_artifact(state_root: &Path, agent_id: &str) -> Result<bool> {
@@ -16491,7 +16575,7 @@ fn provider_pin_matches_session(runtime: &SubAgentRuntime, provider_id: &str) ->
     // With no Config, only an ordinary captured built-in's exact or released
     // alias spelling is reusable. Named custom, root-only and legacy Cloud
     // provenance require its table receipt and cannot borrow transport identity.
-    if captured.provider == crate::config::ProviderKind::Custom
+    if captured.provider == codewhale_config::ProviderKind::Custom
         || captured.migrated_legacy_ollama_cloud_route
         || captured.persisted_id() != Some(captured.key.as_str())
     {
@@ -16801,7 +16885,7 @@ fn route_origin_from_receipt(receipt: &ChildRouteReceipt) -> Option<SpawnRouteOr
 /// failure there is reported against that route, not the one it left.
 pub(crate) struct ReroutedRequest {
     model: String,
-    provider: crate::config::ProviderKind,
+    provider: codewhale_config::ProviderKind,
     origin: Arc<SpawnRouteOrigin>,
 }
 
@@ -17539,10 +17623,10 @@ fn spawn_provider_ids_match(runtime: &SubAgentRuntime, requested: &str, provider
         // With no Config, only exact names and known built-in aliases are
         // comparable. A named custom provider's spelling is its identity.
         requested.trim() == provider.trim()
-            || crate::config::ProviderKind::parse(requested)
-                .filter(|provider| *provider != crate::config::ProviderKind::Custom)
+            || codewhale_config::ProviderKind::parse(requested)
+                .filter(|provider| *provider != codewhale_config::ProviderKind::Custom)
                 .is_some_and(|requested| {
-                    Some(requested) == crate::config::ProviderKind::parse(provider)
+                    Some(requested) == codewhale_config::ProviderKind::parse(provider)
                 })
     }
 }
@@ -17632,7 +17716,7 @@ fn normalize_bound_subagent_model(
 pub(crate) fn normalize_requested_subagent_model(
     value: &str,
     field: &str,
-    provider: crate::config::ProviderKind,
+    provider: codewhale_config::ProviderKind,
 ) -> Result<String, ToolError> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -17658,7 +17742,7 @@ pub(crate) fn normalize_requested_subagent_model(
     Ok(normalized)
 }
 
-fn provider_name_for_error(provider: crate::config::ProviderKind) -> &'static str {
+fn provider_name_for_error(provider: codewhale_config::ProviderKind) -> &'static str {
     // Reuse the canonical picker/status label so every provider is named
     // concretely (DeepSeek, Sakana, Zhipu, …) instead of collapsing the long
     // tail to "this provider", and so error copy stays in sync with the model
@@ -18086,7 +18170,7 @@ fn subagent_reasoning_effort_for_request(
             // emitting an off that is silently rewritten. Explicit thinking
             // passed by the caller already won via the arms above.
             let provider = runtime.client.api_provider();
-            let effort = if matches!(provider, crate::config::ProviderKind::OpenaiCodex) {
+            let effort = if matches!(provider, codewhale_config::ProviderKind::OpenaiCodex) {
                 ReasoningEffort::Low
             } else {
                 ReasoningEffort::Off
@@ -18942,7 +19026,7 @@ fn route_source_label(route: &ModelRoute) -> String {
 fn annotate_child_model_error(
     err: &str,
     model: &str,
-    provider: crate::config::ProviderKind,
+    provider: codewhale_config::ProviderKind,
     route: &ModelRoute,
 ) -> String {
     annotate_child_model_error_with_origin(err, model, provider, route, None)
@@ -18955,7 +19039,7 @@ fn annotate_child_model_error(
 fn annotate_child_model_error_with_origin(
     err: &str,
     model: &str,
-    provider: crate::config::ProviderKind,
+    provider: codewhale_config::ProviderKind,
     route: &ModelRoute,
     origin: Option<&SpawnRouteOrigin>,
 ) -> String {
@@ -19279,7 +19363,7 @@ fn configured_model_subagent_keeps_exact_id_and_negative_capability() {
     .with_legacy_root(Some("configured-model-local-fixture".into()), None);
     config
         .set_provider_base_url_override(
-            &config.test_identity_for_kind(crate::config::ProviderKind::Deepseek),
+            &config.test_identity_for_kind(codewhale_config::ProviderKind::Deepseek),
             Some("https://api.deepseek.com".into()),
         )
         .unwrap();
@@ -19357,7 +19441,7 @@ async fn configured_model_subagent_full_bind_preserves_task_profile_and_role_ids
         .with_legacy_root(Some("configured-model-local-fixture".into()), None);
         config
             .set_provider_base_url_override(
-                &config.test_identity_for_kind(crate::config::ProviderKind::Deepseek),
+                &config.test_identity_for_kind(codewhale_config::ProviderKind::Deepseek),
                 Some(base.into()),
             )
             .unwrap();
@@ -19421,7 +19505,7 @@ async fn configured_model_subagent_full_bind_preserves_task_profile_and_role_ids
         }
         config
             .set_provider_base_url_override(
-                &config.test_identity_for_kind(crate::config::ProviderKind::Deepseek),
+                &config.test_identity_for_kind(codewhale_config::ProviderKind::Deepseek),
                 Some("https://different.example.test/v1".into()),
             )
             .unwrap();
@@ -19437,8 +19521,9 @@ async fn configured_model_subagent_full_bind_preserves_task_profile_and_role_ids
 #[cfg(test)]
 mod declared_shortlist_tests {
     use super::*;
-    use crate::config::{Config, ProviderKind};
+    use crate::config::Config;
     use crate::fleet::members::{FleetModelChange, add_fleet_model};
+    use codewhale_config::ProviderKind;
 
     fn runtime_for(config: &Config, workspace: &std::path::Path, current: &str) -> SubAgentRuntime {
         let mut config = config.clone();

@@ -12,6 +12,7 @@ impl Engine {
         prepared: PreparedModelStep,
     ) -> PhaseResult<AcceptedModelStep> {
         let PreparedModelStep {
+            request_nudge,
             prefix_check,
             request: stream_request,
             zero_tool_turn,
@@ -29,6 +30,52 @@ impl Engine {
             }
             if job.authority.runtime.cancel_token.is_cancelled() {
                 return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
+            }
+        }
+        if let Some(nudge) = request_nudge {
+            if let Some(job) = child_job.as_ref()
+                && let Err(error) = job
+                    .record_request_nudge(
+                        &turn.id,
+                        turn.stop_diagnostics
+                            .model_requests_started
+                            .saturating_add(1),
+                        &nudge,
+                        &self.cancel_token,
+                    )
+                    .await
+            {
+                if self.cancel_token.is_cancelled()
+                    || job.authority.runtime.cancel_token.is_cancelled()
+                {
+                    return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
+                }
+                return PhaseResult::Return((
+                    TurnOutcomeStatus::Failed,
+                    Some(format!(
+                        "child request receipt failed before dispatch: {error:#}"
+                    )),
+                ));
+            }
+            if self.cancel_token.is_cancelled() {
+                return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
+            }
+            if let Err(error) = self
+                .send_event(Event::status(format!(
+                    "{}{nudge}",
+                    crate::core::events::REQUEST_NUDGE_RECEIPT_PREFIX
+                )))
+                .await
+            {
+                if self.cancel_token.is_cancelled() {
+                    return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
+                }
+                return PhaseResult::Return((
+                    TurnOutcomeStatus::Failed,
+                    Some(format!(
+                        "request nudge receipt could not be delivered before dispatch: {error:?}"
+                    )),
+                ));
             }
         }
         // Session metrics: the model call is measured from this dispatch
@@ -512,6 +559,9 @@ impl Engine {
                 )
             };
             if !terminal_stream_error
+                && stop_reason
+                    .as_deref()
+                    .is_none_or(|reason| reason.trim().is_empty())
                 && let Some(recovery) = self.recover_child_request(progress, &error).await
             {
                 return recovery;
@@ -549,7 +599,20 @@ impl Engine {
             return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
         }
 
-        if is_incomplete_stop_reason(stop_reason.as_deref()) {
+        let retry_empty_child_output = self.child_host.is_some()
+            && self.config.reasoning_only_on_output_limit
+            && is_output_limit_stop_reason(stop_reason.as_deref())
+            && current_text_visible.trim().is_empty()
+            && stream_errors == 0
+            && progress.reasoning_only_reprompts < self.config.reasoning_only_max_reprompts
+            && should_fail_no_sendable_content(
+                tool_uses.is_empty(),
+                progress.turn_error.is_none(),
+                self.cancel_token.is_cancelled(),
+                !pending_steers.is_empty(),
+                false,
+            );
+        if is_incomplete_stop_reason(stop_reason.as_deref()) && !retry_empty_child_output {
             let reason = stop_reason_detail(stop_reason.as_deref());
             if self.child_host.is_none()
                 && is_output_limit_stop_reason(stop_reason.as_deref())
@@ -982,11 +1045,10 @@ impl Engine {
         // DeepSeek chat API rejects assistant messages that contain only
         // Keep thinking for UI stream events, but persist only sendable
         // assistant turns in the conversation state.
-        let has_sendable_assistant_content = content_blocks.iter().any(|block| {
-            matches!(
-                block,
-                ContentBlock::Text { .. } | ContentBlock::ToolUse { .. }
-            )
+        let has_sendable_assistant_content = content_blocks.iter().any(|block| match block {
+            ContentBlock::Text { text, .. } => !text.trim().is_empty(),
+            ContentBlock::ToolUse { .. } => true,
+            _ => false,
         });
         let has_provider_reasoning = content_blocks.iter().any(|block| {
             matches!(

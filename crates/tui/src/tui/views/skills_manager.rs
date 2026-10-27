@@ -156,7 +156,7 @@ impl SkillsManagerView {
             ManagerMode::Compatible => ManagerMode::OwnedOnly,
         };
         let focus = self.selected_skill().map(|s| s.id.clone());
-        let home = crate::config::effective_home_dir();
+        let home = codewhale_paths::user_home();
         let snap = if self.mode == ManagerMode::OwnedOnly {
             expand_owned_scan_to_compatible(
                 &app.workspace,
@@ -518,7 +518,7 @@ impl SkillsManagerView {
 fn scan_snapshot(app: &App, mode: ManagerMode) -> SkillAuditSnapshot {
     scan_with_configured(
         &app.workspace,
-        crate::config::effective_home_dir().as_deref(),
+        codewhale_paths::user_home().as_deref(),
         Some(&app.skills_dir),
         mode.audit_mode(),
         None,

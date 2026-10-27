@@ -491,7 +491,7 @@ fn subagent_mailbox_keeps_lifecycle_events_reliable() {
     ));
 
     assert!(!subagent_mailbox_message_is_best_effort(
-        &MailboxMessage::started("agent_a", crate::tools::subagent::FleetRole::Scout)
+        &MailboxMessage::started("agent_a", codewhale_agent_contract::role::FleetRole::Scout)
     ));
     assert!(!subagent_mailbox_message_is_best_effort(
         &MailboxMessage::Completed {
@@ -579,7 +579,8 @@ fn subagent_mailbox_samples_best_effort_events_per_agent() {
 
 #[test]
 fn subagent_mailbox_never_samples_lifecycle_or_usage_events() {
-    use crate::tools::subagent::{FleetRole, MailboxMessage};
+    use crate::tools::subagent::MailboxMessage;
+    use codewhale_agent_contract::role::FleetRole;
     use codewhale_models::Usage;
 
     let mut last_sent_at = HashMap::new();
@@ -751,7 +752,7 @@ fn shell_denial_preserves_task_reads_and_bounded_verification_actions() {
 
 #[test]
 fn shell_denial_applies_to_new_durable_execution_without_hiding_management() {
-    use super::tool_catalog::tool_call_denied;
+    use crate::tools::execution_envelope::tool_call_denied;
     let rules = vec!["Bash".to_string()];
     for (family, actions) in [
         ("tasks", vec!["create", "gate_run"]),

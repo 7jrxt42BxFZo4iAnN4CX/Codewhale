@@ -972,11 +972,11 @@ pub fn workspace_relative(value: &str, workspace: &Path) -> String {
 /// resolve correctly across processes.
 #[must_use]
 pub fn display_path(path: &Path) -> String {
-    display_path_with_home(path, crate::config::effective_home_dir().as_deref())
+    display_path_with_home(path, codewhale_paths::user_home().as_deref())
 }
 
 /// Like [`display_path`] but takes an explicit home directory instead of
-/// reading `$HOME` / `crate::config::effective_home_dir()`.  Used in tests and anywhere the
+/// reading `$HOME` / `codewhale_paths::user_home()`.  Used in tests and anywhere the
 /// caller already has the home path available.
 ///
 /// The home-relative suffix is rejoined with the platform separator
@@ -1754,7 +1754,7 @@ mod spawn_supervised_tests {
     /// A spawned task that panics does not propagate the panic to the
     /// parent task — `spawn_supervised` catches it. Verified in isolation
     /// from the on-disk crash-dump path so the test is portable across
-    /// macOS / Linux / Windows (where `crate::config::effective_home_dir()` reads
+    /// macOS / Linux / Windows (where `codewhale_paths::user_home()` reads
     /// `USERPROFILE`, not `HOME`, so env-mutation tricks don't redirect
     /// the dump on Windows).
     #[tokio::test]

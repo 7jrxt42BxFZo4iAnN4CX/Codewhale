@@ -35,9 +35,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Widget, Wrap},
 };
 
-use crate::config::{
-    Config, ProviderIdentity, ProviderKind, base_url_uses_local_host, provider_is_configured,
-};
+use crate::config::{Config, ProviderIdentity, base_url_uses_local_host, provider_is_configured};
 use crate::core::ops::ProviderRuntimeStatus;
 use crate::model_profile::{
     SupportState, resolved_capability_profile, resolved_capability_profile_for_route,
@@ -55,6 +53,7 @@ use crate::tui::views::{
     ActionHint, EmptyState, ListDetailLayout, ModalKind, ModalView, ViewAction, ViewEvent,
     centered_modal_area, render_modal_footer, render_modal_surface, render_underwater_surface,
 };
+use codewhale_config::ProviderKind;
 use codewhale_config::catalog::{CatalogOffering, CatalogSnapshot};
 use codewhale_config::descriptors::{
     ProviderDescriptor, bundled_provider_descriptors, provider_descriptor,
@@ -65,12 +64,85 @@ use codewhale_localization::{Locale, MessageId, tr};
 use codewhale_palette as palette;
 use serde_json::Value;
 use std::borrow::Cow;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::sync::OnceLock;
 
 use codewhale_config::descriptors::defaults::{
     DS4_BASE_URL, DS4_DEFAULT_MODEL, LM_STUDIO_BASE_URL,
 };
+
+pub(crate) const ORCAROUTER_OFFER_URL: &str =
+    "https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67";
+
+#[derive(Default)]
+pub(crate) struct ProviderOffer {
+    hitbox: RefCell<Option<Rect>>,
+    hovered: Cell<bool>,
+}
+
+impl ProviderOffer {
+    pub(crate) fn clear(&self) {
+        self.hitbox.replace(None);
+    }
+
+    fn open(locale: Locale) -> ViewAction {
+        ViewAction::Emit(ViewEvent::OpenTextPager {
+            title: tr(locale, MessageId::OrcaRouterOfferRecommended).into_owned(),
+            content: format!(
+                "{}\n\n{}\n\n{ORCAROUTER_OFFER_URL}",
+                tr(locale, MessageId::OrcaRouterOfferBody),
+                tr(locale, MessageId::OrcaRouterOfferDisclosure),
+            ),
+        })
+    }
+
+    pub(crate) fn key_action(locale: Locale, key: &KeyEvent) -> Option<ViewAction> {
+        crate::tui::shell_key_routing::binding(
+            crate::tui::shell_key_routing::ShellBindingId::ProviderOffer,
+        )
+        .matches(key)
+        .then(|| Self::open(locale))
+    }
+
+    pub(crate) fn mouse_action(&self, locale: Locale, mouse: MouseEvent) -> Option<ViewAction> {
+        let over = self
+            .hitbox
+            .borrow()
+            .is_some_and(|rect| rect.contains((mouse.column, mouse.row).into()));
+        if mouse.kind == MouseEventKind::Moved {
+            self.hovered.set(over);
+        }
+        (over && mouse.kind == MouseEventKind::Down(MouseButton::Left)).then(|| Self::open(locale))
+    }
+
+    pub(crate) fn render(&self, locale: Locale, area: Rect, buf: &mut Buffer) -> Rect {
+        self.clear();
+        if area.height < 4 || area.width < 20 {
+            return area;
+        }
+        let chord = crate::tui::shell_key_routing::display_chord(
+            crate::tui::shell_key_routing::binding(
+                crate::tui::shell_key_routing::ShellBindingId::ProviderOffer,
+            )
+            .footer_chord,
+        );
+        let label = crate::tui::ui_text::semantic_truncate(
+            &tr(locale, MessageId::OrcaRouterOfferRecommended),
+            usize::from(area.width)
+                .saturating_sub(unicode_width::UnicodeWidthStr::width(chord.as_ref()) + 3),
+        );
+        let row = Rect::new(area.x, area.y, area.width, 1);
+        self.hitbox.replace(Some(row));
+        Paragraph::new(format!("{label} · {chord}"))
+            .style(if self.hovered.get() {
+                menu_style::hovered_row_style()
+            } else {
+                Style::default().fg(palette::WHALE_ACTION).underlined()
+            })
+            .render(row, buf);
+        Rect::new(area.x, area.y + 1, area.width, area.height - 1)
+    }
+}
 
 const DS4_PROVIDER_ID: &str = "ds4";
 const LM_STUDIO_PROVIDER_ID: &str = "lm_studio";
@@ -147,8 +219,10 @@ enum StepfunBillingRoute {
 impl StepfunBillingRoute {
     fn base_url(self) -> &'static str {
         match self {
-            Self::PayAsYouGo => crate::config::DEFAULT_STEPFUN_BASE_URL,
-            Self::StepPlan => crate::config::DEFAULT_STEPFUN_PLAN_BASE_URL,
+            Self::PayAsYouGo => codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_BASE_URL,
+            Self::StepPlan => {
+                codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_PLAN_BASE_URL
+            }
         }
     }
 }
@@ -246,6 +320,7 @@ pub struct ProviderPickerView {
     model_row_hitboxes: RefCell<Vec<(Rect, usize)>>,
     consent_row_hitboxes: RefCell<Vec<(Rect, usize)>>,
     choice_row_hitboxes: RefCell<Vec<(Rect, char)>>,
+    offer: ProviderOffer,
     detail_action_hitbox: RefCell<Option<Rect>>,
     catalog_action_hitbox: RefCell<Option<Rect>>,
     catalog_action_hovered: bool,
@@ -686,7 +761,9 @@ impl ProviderDashboardRow {
         let uses_kimi_imported_token = provider == ProviderKind::Moonshot
             && configured.is_some_and(crate::config::provider_config_uses_kimi_imported_token);
         let configured_base_url = configured_base_url.or_else(|| {
-            uses_kimi_imported_token.then(|| crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string())
+            uses_kimi_imported_token.then(|| {
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string()
+            })
         });
         let explicitly_configured_model = configured
             .and_then(|entry| entry.model.as_deref())
@@ -695,7 +772,9 @@ impl ProviderDashboardRow {
             .map(str::to_string);
         let has_configured_model = explicitly_configured_model.is_some();
         let configured_model = explicitly_configured_model.or_else(|| {
-            uses_kimi_imported_token.then(|| crate::config::DEFAULT_KIMI_CODE_MODEL.to_string())
+            uses_kimi_imported_token.then(|| {
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_MODEL.to_string()
+            })
         });
         let model_origin = ProviderModelOrigin::for_provider(provider, has_configured_model);
         // One sourced resolution per row: the picker must be able to say WHERE
@@ -729,8 +808,8 @@ impl ProviderDashboardRow {
         };
         let credential_state = credential_state_for_provider(config, &identity);
         let auth_mode = config.auth_mode_for_provider(&identity);
-        let no_auth = crate::config::auth_mode_disables_api_key(auth_mode.as_deref());
-        let api_key_required = crate::config::auth_mode_requires_api_key(auth_mode.as_deref());
+        let no_auth = codewhale_config::auth_mode_disables_api_key(auth_mode.as_deref());
+        let api_key_required = codewhale_config::auth_mode_requires_api_key(auth_mode.as_deref());
         let official_endpoint = !config.provider_uses_custom_endpoint(&identity);
         let auth_base_url = config.base_url_for_route(&identity);
         let xai_oauth_ready = provider == ProviderKind::Xai
@@ -1555,8 +1634,8 @@ fn has_explicit_credential(
         .any(|var| std::env::var(var).is_ok_and(|value| !value.trim().is_empty()))
         || configured.is_some_and(|entry| {
             entry.api_key.as_deref().is_some_and(|value| {
-                crate::config::classify_config_api_key_value(value)
-                    == crate::config::ConfigApiKeyValueKind::Literal
+                codewhale_config::classify_config_api_key_value(value)
+                    == codewhale_config::ConfigApiKeyValueKind::Literal
             })
         })
 }
@@ -1567,8 +1646,8 @@ fn custom_provider_has_auth(configured: Option<&crate::config::ProviderConfig>) 
     }
     configured.is_some_and(|entry| {
         entry.api_key.as_deref().is_some_and(|value| {
-            crate::config::classify_config_api_key_value(value)
-                == crate::config::ConfigApiKeyValueKind::Literal
+            codewhale_config::classify_config_api_key_value(value)
+                == codewhale_config::ConfigApiKeyValueKind::Literal
         }) || entry
             .api_key_env
             .as_deref()
@@ -1583,7 +1662,7 @@ fn custom_provider_auth_is_optional(configured: Option<&crate::config::ProviderC
         entry
             .auth_mode
             .as_deref()
-            .is_some_and(|mode| crate::config::auth_mode_disables_api_key(Some(mode)))
+            .is_some_and(|mode| codewhale_config::auth_mode_disables_api_key(Some(mode)))
             || entry
                 .base_url
                 .as_deref()
@@ -1987,6 +2066,7 @@ impl ProviderPickerView {
             model_row_hitboxes: RefCell::new(Vec::new()),
             consent_row_hitboxes: RefCell::new(Vec::new()),
             choice_row_hitboxes: RefCell::new(Vec::new()),
+            offer: ProviderOffer::default(),
             detail_action_hitbox: RefCell::new(None),
             catalog_action_hitbox: RefCell::new(None),
             catalog_action_hovered: false,
@@ -3066,6 +3146,7 @@ impl ProviderPickerView {
             )
         };
 
+        let content = self.offer.render(self.locale, content, buf);
         let filtered = self.filtered_rows();
         if filtered.is_empty() {
             if search_active {
@@ -3614,6 +3695,7 @@ impl ProviderPickerView {
                 ActionHint::new("Esc", self.tr(MessageId::SetupActionBack)),
             ],
         );
+        let content = self.offer.render(self.locale, content, buf);
         self.render_setup_choices(
             content,
             buf,
@@ -3751,13 +3833,13 @@ impl ProviderPickerView {
                     Line::from(Span::styled(
                         self.tr(MessageId::KimiCodePlanApiKeyHint).replace(
                             "{console}",
-                            crate::config::KIMI_CODE_MEMBERSHIP_PLAN_CONSOLE_URL,
+                            codewhale_config::descriptors::defaults::KIMI_CODE_MEMBERSHIP_PLAN_CONSOLE_URL,
                         ),
                         Style::default().fg(palette::TEXT_MUTED),
                     )),
                     Line::from(Span::styled(
                         self.tr(MessageId::KimiCodePlanRouteHint)
-                            .replace("{route}", crate::config::DEFAULT_KIMI_CODE_BASE_URL),
+                            .replace("{route}", codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL),
                         Style::default().fg(palette::TEXT_MUTED),
                     )),
                     Line::from(Span::styled(
@@ -4689,6 +4771,13 @@ impl ModalView for ProviderPickerView {
         self.interacted = true;
         self.last_choice_mouse_selected = None;
         self.hovered_choice = None;
+        if matches!(self.stage, Stage::List | Stage::OrcarouterAuthChoice)
+            && let Some(action) = ProviderOffer::key_action(self.locale, &key)
+        {
+            self.last_list_mouse_selected = None;
+            self.last_model_mouse_selected = None;
+            return action;
+        }
         if self.stage == Stage::List
             && (key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT)
         {
@@ -5262,6 +5351,13 @@ impl ModalView for ProviderPickerView {
     }
 
     fn handle_mouse(&mut self, mouse: MouseEvent) -> ViewAction {
+        if let Some(action) = self.offer.mouse_action(self.locale, mouse) {
+            self.interacted = true;
+            self.last_choice_mouse_selected = None;
+            self.last_list_mouse_selected = None;
+            self.last_model_mouse_selected = None;
+            return action;
+        }
         if matches!(mouse.kind, MouseEventKind::Down(_)) {
             self.interacted = true;
         }
@@ -5385,6 +5481,7 @@ impl ModalView for ProviderPickerView {
     }
 
     fn render(&self, area: Rect, buf: &mut Buffer) {
+        self.offer.clear();
         self.choice_row_hitboxes.borrow_mut().clear();
         self.list_row_hitboxes.borrow_mut().clear();
         *self.catalog_action_hitbox.borrow_mut() = None;
@@ -6438,8 +6535,14 @@ mod tests {
             provider: Some("moonshot".to_string()),
             providers: Some(crate::config::ProvidersConfig {
                 moonshot: crate::config::ProviderConfig {
-                    base_url: Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
-                    model: Some(crate::config::KIMI_CODE_K3_MODEL.to_string()),
+                    base_url: Some(
+                        codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL
+                            .to_string(),
+                    ),
+                    model: Some(
+                        codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL
+                            .to_string(),
+                    ),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -6465,8 +6568,14 @@ mod tests {
             provider: Some("moonshot".to_string()),
             providers: Some(crate::config::ProvidersConfig {
                 moonshot: crate::config::ProviderConfig {
-                    base_url: Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
-                    model: Some(crate::config::KIMI_CODE_K3_MODEL.to_string()),
+                    base_url: Some(
+                        codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL
+                            .to_string(),
+                    ),
+                    model: Some(
+                        codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL
+                            .to_string(),
+                    ),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -6486,7 +6595,7 @@ mod tests {
             config
                 .provider_config_for(&config.test_identity_for_kind(ProviderKind::Moonshot))
                 .and_then(|entry| entry.base_url.as_deref()),
-            Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL)
+            Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL)
         );
     }
 
@@ -6496,8 +6605,14 @@ mod tests {
             provider: Some("moonshot".to_string()),
             providers: Some(crate::config::ProvidersConfig {
                 moonshot: crate::config::ProviderConfig {
-                    base_url: Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
-                    model: Some(crate::config::KIMI_CODE_K3_MODEL.to_string()),
+                    base_url: Some(
+                        codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL
+                            .to_string(),
+                    ),
+                    model: Some(
+                        codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL
+                            .to_string(),
+                    ),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -6530,7 +6645,8 @@ mod tests {
             .as_mut()
             .expect("providers")
             .moonshot
-            .base_url = Some(crate::config::DEFAULT_MOONSHOT_BASE_URL.to_string());
+            .base_url =
+            Some(codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL.to_string());
         let generic = ProviderPickerView::new_for_model_pick_after_validation(
             ProviderKind::Moonshot,
             &(config).test_identity_for_kind(ProviderKind::Moonshot),
@@ -7016,8 +7132,14 @@ mod tests {
             providers: Some(crate::config::ProvidersConfig {
                 moonshot: crate::config::ProviderConfig {
                     api_key: Some("kimi-code-key".to_string()),
-                    base_url: Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
-                    model: Some(crate::config::KIMI_CODE_K3_MODEL.to_string()),
+                    base_url: Some(
+                        codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL
+                            .to_string(),
+                    ),
+                    model: Some(
+                        codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL
+                            .to_string(),
+                    ),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -7032,7 +7154,7 @@ mod tests {
 
         assert_eq!(
             row.default_route.wire_model,
-            crate::config::KIMI_CODE_K3_MODEL
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL
         );
         assert_eq!(row.reasoning.support, ProviderReasoningSupport::Supported);
         assert_eq!(
@@ -7065,7 +7187,8 @@ mod tests {
             .as_mut()
             .expect("providers")
             .moonshot
-            .base_url = Some(crate::config::DEFAULT_MOONSHOT_BASE_URL.to_string());
+            .base_url =
+            Some(codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL.to_string());
         let direct_row = ProviderDashboardRow::from_config(
             ProviderKind::Moonshot,
             ProviderKind::Moonshot,
@@ -7506,7 +7629,7 @@ mod tests {
                 kind: Some("openai-compatible".to_string()),
                 base_url: Some("https://api.example.com/v1".to_string()),
                 model: Some("vendor/custom-model-v1".to_string()),
-                api_key: Some(crate::config::API_KEYRING_SENTINEL.to_string()),
+                api_key: Some(codewhale_config::API_KEYRING_SENTINEL.to_string()),
                 api_key_env: Some("EXAMPLE_API_KEY".to_string()),
                 ..Default::default()
             },
@@ -7928,7 +8051,10 @@ mod tests {
         assert_eq!(row.auth_status, ProviderAuthStatus::Missing);
         assert_eq!(row.readiness, ResolvedProviderReadiness::MissingKey);
         assert_eq!(row.supported_protocols, vec!["anthropic".to_string()]);
-        assert_eq!(row.base_url, crate::config::DEFAULT_OPENMODEL_BASE_URL);
+        assert_eq!(
+            row.base_url,
+            codewhale_config::descriptors::defaults::DEFAULT_OPENMODEL_BASE_URL
+        );
         assert_eq!(row.default_route.logical_model, "deepseek-v4-flash");
         assert_eq!(row.default_route.wire_model, "deepseek-v4-flash");
         assert!(
@@ -9089,8 +9215,14 @@ mod tests {
         let config = Config {
             providers: Some(crate::config::ProvidersConfig {
                 moonshot: crate::config::ProviderConfig {
-                    base_url: Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
-                    model: Some(crate::config::KIMI_CODE_K3_MODEL.to_string()),
+                    base_url: Some(
+                        codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL
+                            .to_string(),
+                    ),
+                    model: Some(
+                        codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL
+                            .to_string(),
+                    ),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -9128,7 +9260,10 @@ mod tests {
                 model,
                 ..
             }) => {
-                assert_eq!(model, crate::config::KIMI_CODE_K3_MODEL);
+                assert_eq!(
+                    model,
+                    codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL
+                );
                 assert_eq!(context_window, Some(1_048_576));
             }
             other => panic!("expected Kimi Code setup confirmation, got {other:?}"),
@@ -9202,8 +9337,11 @@ mod tests {
         for (w, h) in [(80u16, 24u16), (120u16, 32u16)] {
             let rendered = render_text(&picker, w, h);
             assert!(
-                rendered.contains(crate::config::DEFAULT_STEPFUN_BASE_URL)
-                    && rendered.contains(crate::config::DEFAULT_STEPFUN_PLAN_BASE_URL),
+                rendered
+                    .contains(codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_BASE_URL)
+                    && rendered.contains(
+                        codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_PLAN_BASE_URL
+                    ),
                 "{w}x{h} must show both StepFun endpoints:\n{rendered}"
             );
             for (idx, line) in rendered.lines().enumerate() {
@@ -9225,7 +9363,7 @@ mod tests {
         assert_eq!(picker.stage, Stage::KeyEntry);
         assert_eq!(
             picker.pending_base_url.as_deref(),
-            Some(crate::config::DEFAULT_STEPFUN_PLAN_BASE_URL)
+            Some(codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_PLAN_BASE_URL)
         );
     }
 
@@ -9255,7 +9393,7 @@ mod tests {
                 assert_eq!(api_key, "step-plan-key");
                 assert_eq!(
                     base_url.as_deref(),
-                    Some(crate::config::DEFAULT_STEPFUN_PLAN_BASE_URL)
+                    Some(codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_PLAN_BASE_URL)
                 );
             }
             other => panic!("expected ProviderPickerApiKeySubmitted, got {other:?}"),
@@ -9273,7 +9411,9 @@ mod tests {
             &config,
             None,
             "step-plan-key".to_string(),
-            Some(crate::config::DEFAULT_STEPFUN_PLAN_BASE_URL.to_string()),
+            Some(
+                codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_PLAN_BASE_URL.to_string(),
+            ),
         )
         .expect("StepFun has a picker row");
 
@@ -9291,7 +9431,7 @@ mod tests {
                 assert_eq!(provider, ProviderKind::Stepfun);
                 assert_eq!(
                     base_url.as_deref(),
-                    Some(crate::config::DEFAULT_STEPFUN_PLAN_BASE_URL)
+                    Some(codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_PLAN_BASE_URL)
                 );
                 assert_eq!(context_window, None);
             }
@@ -9330,7 +9470,9 @@ mod tests {
     /// than defaulting the user back onto pay-as-you-go.
     #[test]
     fn stepfun_plan_route_reopens_preselected() {
-        let config = stepfun_config(Some(crate::config::DEFAULT_STEPFUN_PLAN_BASE_URL));
+        let config = stepfun_config(Some(
+            codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_PLAN_BASE_URL,
+        ));
         let mut picker = ProviderPickerView::new(ProviderKind::Deepseek, &config);
         move_to_provider(&mut picker, ProviderKind::Stepfun);
         picker.handle_key(key(KeyCode::Char('r')));
@@ -10098,7 +10240,7 @@ mod tests {
             xai_oauth_status(Some(&fallback_key), false),
             Some(ProviderAuthStatus::Configured)
         );
-        for sentinel in [crate::config::API_KEYRING_SENTINEL, "  __KEYRING__  "] {
+        for sentinel in [codewhale_config::API_KEYRING_SENTINEL, "  __KEYRING__  "] {
             let placeholder = crate::config::ProviderConfig {
                 auth_mode: Some("oauth".to_string()),
                 api_key: Some(sentinel.to_string()),
@@ -10576,10 +10718,13 @@ mod tests {
             ProviderAuthStatus::ImportedTokenUnavailable
         );
         assert_eq!(row.credential_state, CredentialState::MissingKey);
-        assert_eq!(row.base_url, crate::config::DEFAULT_KIMI_CODE_BASE_URL);
+        assert_eq!(
+            row.base_url,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL
+        );
         assert_eq!(
             row.default_route.logical_model,
-            crate::config::DEFAULT_KIMI_CODE_MODEL
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_MODEL
         );
         // Slice D: the Kimi key guidance travels on messages, not on a
         // provider-level meter.

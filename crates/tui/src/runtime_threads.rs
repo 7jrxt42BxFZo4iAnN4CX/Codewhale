@@ -28,9 +28,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::compaction::CompactionConfig;
-#[cfg(test)]
-use crate::config::DEFAULT_TEXT_MODEL;
-use crate::config::{Config, MAX_SUBAGENTS, ProviderIdentity, ProviderKind};
+use crate::config::{Config, MAX_SUBAGENTS, ProviderIdentity};
 use crate::core::engine::handle::SteerOutcome;
 use crate::core::engine::{
     EngineConfig, EngineHandle, spawn_engine_with_authoritative_route_config,
@@ -55,6 +53,9 @@ use crate::tools::subagent::{
 use crate::tools::todo::new_shared_todo_list;
 #[cfg(test)]
 use codewhale_config::AppMode;
+use codewhale_config::ProviderKind;
+#[cfg(test)]
+use codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL;
 use codewhale_execpolicy::ApprovalMode;
 use codewhale_models::Role;
 use codewhale_models::{ContentBlock, Message, SystemPrompt, ToolCallKey, ToolCaller, Usage};
@@ -16668,7 +16669,7 @@ impl RuntimeThreadManager {
                     read_only_roots: cfg.bwrap_ro_roots.clone(),
                     device_roots: cfg.bwrap_dev_roots.clone(),
                 },
-                read_denylist: cfg.read_denylist(),
+                read_denylist: crate::sandbox::read_guard::ReadDenylist::from_config(&cfg),
                 memory_enabled: !isolated_chat && cfg.memory_enabled(),
                 memory_path: cfg.memory_path(),
                 speech_output_dir: cfg.speech_output_dir(),
@@ -16683,6 +16684,7 @@ impl RuntimeThreadManager {
                 goal_continuation_delay_seconds: cfg.goal_continuation_delay_seconds(),
                 goal_enforce_token_budget: cfg.goal_enforce_token_budget(),
                 reasoning_only_max_reprompts: cfg.reasoning_only_max_reprompts(),
+                reasoning_only_on_output_limit: cfg.reasoning_only_on_output_limit(),
                 reasoning_only_reprompt_message: Some(
                     cfg.reasoning_only_reprompt_message().to_string(),
                 ),
@@ -17038,7 +17040,7 @@ impl RuntimeThreadManager {
                     read_only_roots: cfg.bwrap_ro_roots.clone(),
                     device_roots: cfg.bwrap_dev_roots.clone(),
                 },
-                cfg.effective_sandbox_denied_read_paths(),
+                crate::sandbox::read_guard::ReadDenylist::from_config(&cfg).subtree_paths(),
             )
         };
         let mut active = self.active.lock().await;
@@ -18169,7 +18171,7 @@ impl RuntimeThreadManager {
                             }
                             // Tool discovery is engine plumbing, not work the
                             // user asked for: clients collapse it by default.
-                            if crate::core::engine::tool_catalog::is_tool_search_tool(&name) {
+                            if codewhale_tools::names::is_tool_search_tool(&name) {
                                 meta["visibility"] = json!(INTERNAL_ITEM_VISIBILITY);
                             }
                             meta

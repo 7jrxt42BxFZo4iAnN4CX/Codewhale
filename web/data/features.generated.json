@@ -2,7 +2,7 @@
   "format": "codewhale.features.v1",
   "source": {
     "path": "docs/features.toml",
-    "sha256": "3d8f93a9ff28fb245b1794a1bebc800d39c353b8efee1cf06eed925cc60fba45"
+    "sha256": "38885b15b57125002edb13f12c4f0a13772ddce9cf63c2d68c4b1001cd63b3dc"
   },
   "features": [
     {
@@ -335,7 +335,7 @@
     {
       "id": "providers",
       "name": "Providers",
-      "summary": "Provider routes with endpoint-scoped model facts, explicit limits and sourced price estimates.",
+      "summary": "Provider routes with scoped facts, limits, price estimates and a disclosed OrcaRouter offer in the pickers.",
       "status": "stable",
       "surfaces": {
         "tui": "stable",
@@ -360,6 +360,20 @@
       "registryLine": 306
     },
     {
+      "id": "output-limit-answer-recovery",
+      "name": "Answerless output-limit recovery",
+      "summary": "Opt-in bounded answer retries after an output-limit stop, including Fleet, with request-scoped nudge receipts.",
+      "status": "flagged",
+      "surfaces": {
+        "tui": "preview",
+        "api": "preview"
+      },
+      "since": "unreleased",
+      "flag": null,
+      "docs": "docs/CONFIGURATION.md#reasoning-only-recovery-reasoning_only",
+      "registryLine": 315
+    },
+    {
       "id": "fleet",
       "name": "Fleet",
       "summary": "Runs and supervises groups of worker agents with receipts and a pre-spend check.",
@@ -371,7 +385,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/FLEET.md",
-      "registryLine": 315
+      "registryLine": 325
     },
     {
       "id": "environment-placement",
@@ -385,7 +399,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/ENVIRONMENTS.md#environment-aware-fleet-placement-preview",
-      "registryLine": 324
+      "registryLine": 334
     },
     {
       "id": "workflows",
@@ -398,7 +412,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/WORKFLOW_AUTHORING.md",
-      "registryLine": 333
+      "registryLine": 343
     },
     {
       "id": "automatic-workflows",
@@ -411,7 +425,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/AUTOMATIC_WORKFLOWS.md",
-      "registryLine": 342
+      "registryLine": 352
     },
     {
       "id": "goals",
@@ -425,7 +439,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/CONFIGURATION.md#goal-loop-goal",
-      "registryLine": 351
+      "registryLine": 361
     },
     {
       "id": "todos",
@@ -439,7 +453,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/TOOL_SURFACE.md",
-      "registryLine": 360
+      "registryLine": 370
     },
     {
       "id": "composer-queue-steer",
@@ -453,7 +467,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/KEYBINDINGS.md",
-      "registryLine": 369
+      "registryLine": 379
     },
     {
       "id": "receipts",
@@ -467,7 +481,7 @@
       "since": "0.10.1",
       "flag": null,
       "docs": "docs/RECEIPTS.md",
-      "registryLine": 378
+      "registryLine": 388
     },
     {
       "id": "preview-request",
@@ -480,7 +494,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/PREVIEW_REQUEST.md",
-      "registryLine": 388
+      "registryLine": 398
     },
     {
       "id": "read-media",
@@ -493,7 +507,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/READ_MEDIA.md",
-      "registryLine": 397
+      "registryLine": 407
     },
     {
       "id": "memory",
@@ -507,7 +521,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/MEMORY.md",
-      "registryLine": 406
+      "registryLine": 416
     },
     {
       "id": "skills",
@@ -521,7 +535,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/SKILLS.md",
-      "registryLine": 417
+      "registryLine": 427
     },
     {
       "id": "plugins",
@@ -535,7 +549,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/PLUGINS.md",
-      "registryLine": 426
+      "registryLine": 436
     },
     {
       "id": "computer-use",
@@ -549,7 +563,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/PLUGIN_BUNDLES.md",
-      "registryLine": 435
+      "registryLine": 445
     },
     {
       "id": "script-tools",
@@ -562,7 +576,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/CONFIGURATION.md#script-tools-and-overrides",
-      "registryLine": 444
+      "registryLine": 454
     },
     {
       "id": "claude-plugin-compat",
@@ -575,7 +589,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/CLAUDE_PLUGIN_COMPAT.md",
-      "registryLine": 453
+      "registryLine": 463
     },
     {
       "id": "claude-settings-import",
@@ -588,7 +602,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 462
+      "registryLine": 472
     },
     {
       "id": "hooks",
@@ -602,7 +616,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/HOOKS.md",
-      "registryLine": 470
+      "registryLine": 480
     },
     {
       "id": "lsp",
@@ -616,7 +630,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/LSP_PHP_CUSTOM.md",
-      "registryLine": 479
+      "registryLine": 489
     },
     {
       "id": "runtime-api",
@@ -629,7 +643,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/RUNTIME_API.md",
-      "registryLine": 488
+      "registryLine": 498
     },
     {
       "id": "compatibility-tool-free-turns",
@@ -642,7 +656,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": "docs/RUNTIME_API.md#compatibility-execution-limits",
-      "registryLine": 497
+      "registryLine": 507
     },
     {
       "id": "runtime-provider-keys",
@@ -655,7 +669,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": "docs/RUNTIME_API.md#put-v1providersidkey--write-only-credential",
-      "registryLine": 507
+      "registryLine": 517
     },
     {
       "id": "headless-exec",
@@ -668,7 +682,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/RUNTIME_API.md",
-      "registryLine": 517
+      "registryLine": 527
     },
     {
       "id": "github-review",
@@ -681,7 +695,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/GITHUB_APP.md",
-      "registryLine": 526
+      "registryLine": 536
     },
     {
       "id": "web-client",
@@ -694,7 +708,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/WEB.md",
-      "registryLine": 537
+      "registryLine": 547
     },
     {
       "id": "keybindings",
@@ -707,7 +721,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/KEYBINDINGS.md",
-      "registryLine": 546
+      "registryLine": 556
     },
     {
       "id": "settings",
@@ -721,7 +735,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/CONFIGURATION.md",
-      "registryLine": 555
+      "registryLine": 565
     },
     {
       "id": "whats-new-notice",
@@ -734,7 +748,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": "docs/CONFIGURATION.md#whats-new-after-an-update",
-      "registryLine": 564
+      "registryLine": 574
     },
     {
       "id": "themes",
@@ -747,7 +761,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/schemas/user-theme.schema.json",
-      "registryLine": 574
+      "registryLine": 584
     },
     {
       "id": "chat-color",
@@ -760,7 +774,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": "docs/GUIDE.md",
-      "registryLine": 583
+      "registryLine": 593
     },
     {
       "id": "localization",
@@ -773,7 +787,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/LOCALIZATION.md",
-      "registryLine": 593
+      "registryLine": 603
     },
     {
       "id": "voice",
@@ -787,7 +801,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 602
+      "registryLine": 612
     },
     {
       "id": "pet",
@@ -801,7 +815,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/PET_MODE.md",
-      "registryLine": 610
+      "registryLine": 620
     },
     {
       "id": "overview",
@@ -814,7 +828,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/PROVIDERS.md",
-      "registryLine": 619
+      "registryLine": 629
     },
     {
       "id": "account-login",
@@ -827,7 +841,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 628
+      "registryLine": 638
     },
     {
       "id": "account-computer-files",
@@ -840,7 +854,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": null,
-      "registryLine": 636
+      "registryLine": 646
     },
     {
       "id": "context-anchors",
@@ -853,7 +867,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 645
+      "registryLine": 655
     },
     {
       "id": "window-pin",
@@ -866,7 +880,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 653
+      "registryLine": 663
     },
     {
       "id": "structured-copy",
@@ -879,7 +893,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 661
+      "registryLine": 671
     },
     {
       "id": "live-thinking",
@@ -892,7 +906,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 669
+      "registryLine": 679
     },
     {
       "id": "workbar",
@@ -905,7 +919,7 @@
       "since": null,
       "flag": null,
       "docs": null,
-      "registryLine": 677
+      "registryLine": 687
     },
     {
       "id": "terminal-dock",
@@ -918,7 +932,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": null,
-      "registryLine": 685
+      "registryLine": 695
     },
     {
       "id": "telemetry",
@@ -931,7 +945,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/TELEMETRY.md",
-      "registryLine": 696
+      "registryLine": 706
     },
     {
       "id": "docker",
@@ -944,7 +958,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/DOCKER.md",
-      "registryLine": 705
+      "registryLine": 715
     },
     {
       "id": "termux",
@@ -957,7 +971,7 @@
       "since": null,
       "flag": null,
       "docs": "docs/TERMUX.md",
-      "registryLine": 714
+      "registryLine": 724
     },
     {
       "id": "chatgpt-plan-sign-in",
@@ -972,7 +986,7 @@
       "since": "0.10.1",
       "flag": null,
       "docs": "docs/PROVIDERS.md#sign-in-with-chatgpt",
-      "registryLine": 723
+      "registryLine": 733
     },
     {
       "id": "claude-plan-sign-in",
@@ -987,7 +1001,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": "docs/PROVIDERS.md#sign-in-with-claude",
-      "registryLine": 733
+      "registryLine": 743
     },
     {
       "id": "plugin-oauth-providers",
@@ -1002,7 +1016,7 @@
       "since": "0.10.1",
       "flag": null,
       "docs": "docs/PLUGIN_PROVIDERS.md",
-      "registryLine": 743
+      "registryLine": 753
     },
     {
       "id": "orcarouter-sign-in",
@@ -1017,7 +1031,7 @@
       "since": "0.10.1",
       "flag": null,
       "docs": "docs/PROVIDERS.md",
-      "registryLine": 753
+      "registryLine": 763
     },
     {
       "id": "merch-interest",
@@ -1032,7 +1046,7 @@
       "since": "unreleased",
       "flag": null,
       "docs": "web/lib/merch/README.md",
-      "registryLine": 764
+      "registryLine": 774
     },
     {
       "id": "profile-constitution",
@@ -1046,7 +1060,7 @@
       "since": "0.10.1",
       "flag": null,
       "docs": "docs/RUNTIME_API.md#profile-constitution",
-      "registryLine": 774
+      "registryLine": 784
     },
     {
       "id": "plugin-shell-install",
@@ -1059,7 +1073,7 @@
       "since": "0.10.2",
       "flag": null,
       "docs": "docs/PLUGINS.md",
-      "registryLine": 784
+      "registryLine": 794
     },
     {
       "id": "herdr-agent-state",
@@ -1072,7 +1086,46 @@
       "since": "0.10.2",
       "flag": null,
       "docs": null,
-      "registryLine": 794
+      "registryLine": 804
+    },
+    {
+      "id": "github-action-review",
+      "name": "GitHub Action review",
+      "summary": "Review pull requests with the Engine and publish validated findings from a separate trusted job.",
+      "status": "experimental",
+      "surfaces": {
+        "tui": "preview"
+      },
+      "since": "unreleased",
+      "flag": null,
+      "docs": "docs/GITHUB_ACTION.md",
+      "registryLine": 813
+    },
+    {
+      "id": "telegram-agent",
+      "name": "Telegram agent bridge",
+      "summary": "Use an Engine from Telegram with durable prompt recovery, human-owned approvals and retained replies.",
+      "status": "experimental",
+      "surfaces": {
+        "api": "preview"
+      },
+      "since": "unreleased",
+      "flag": null,
+      "docs": "integrations/telegram-bridge/README.md",
+      "registryLine": 823
+    },
+    {
+      "id": "dingtalk-agent",
+      "name": "DingTalk agent bridge",
+      "summary": "Connect an internal DingTalk app to the same Engine with scoped identity and durable message recovery.",
+      "status": "experimental",
+      "surfaces": {
+        "api": "preview"
+      },
+      "since": "unreleased",
+      "flag": null,
+      "docs": "integrations/dingtalk-bridge/README.md",
+      "registryLine": 833
     }
   ]
 }

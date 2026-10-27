@@ -4,10 +4,10 @@
 //! allowing the UI to remain responsive while the engine processes requests.
 
 use crate::compaction::CompactionConfig;
-use crate::config::ProviderKind;
 use crate::route_runtime::ResolvedRuntimeRoute;
 use crate::tools::goal::GoalStatus;
 use codewhale_config::AppMode;
+use codewhale_config::ProviderKind;
 use codewhale_execpolicy::ApprovalMode;
 use codewhale_models::{Message, SystemPrompt};
 use codewhale_protocol::runtime::DynamicToolSpec;

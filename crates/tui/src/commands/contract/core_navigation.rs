@@ -127,8 +127,11 @@ impl CommandNavigationContext for NavigationAdapter<'_> {
                     }
                 })
                 .collect(),
-            kimi_route: crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_owned(),
-            kimi_console: crate::config::KIMI_CODE_MEMBERSHIP_PLAN_CONSOLE_URL.to_owned(),
+            kimi_route: codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL
+                .to_owned(),
+            kimi_console:
+                codewhale_config::descriptors::defaults::KIMI_CODE_MEMBERSHIP_PLAN_CONSOLE_URL
+                    .to_owned(),
         }
     }
 }

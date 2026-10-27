@@ -27,7 +27,7 @@ use codewhale_config::pricing::OfferingPricing;
 use crate::codex_model_cache::{
     self, CodexModelCacheFreshness, CodexModelMetadata, CodexModelRoster,
 };
-use crate::config::{Config, DEEPSEEK_ALIAS_REPLACEMENT, ProviderKind};
+use crate::config::Config;
 use crate::model_profile::{
     CapabilityOverride, SupportState, resolved_capability_profile_for_route_with_overrides,
     resolved_capability_profile_with_overrides,
@@ -38,12 +38,15 @@ use crate::reasoning_preference::ReasoningEffort;
 use crate::settings::PinnedModel;
 use crate::tui::app::{App, StatusToastLevel};
 use crate::tui::menu_style;
+use crate::tui::provider_picker::ProviderOffer;
 use crate::tui::views::fleet_detail::{FleetRouteSelection, FleetRouteTarget};
 use crate::tui::views::{
     ActionHint, ListDetailLayout, ModalKind, ModalView, ViewAction, ViewEvent, render_modal_footer,
     render_underwater_surface,
 };
 use crate::utils::format_context_window;
+use codewhale_config::ProviderKind;
+use codewhale_config::catalog::reviewed::constants::DEEPSEEK_ALIAS_REPLACEMENT;
 use codewhale_localization::{Locale, MessageId, tr};
 use codewhale_palette as palette;
 
@@ -262,6 +265,7 @@ pub struct ModelPickerView {
     sort: Option<ModelSort>,
     column_hitboxes: RefCell<Vec<(Rect, ModelSortColumn)>>,
     pane_hitboxes: RefCell<Vec<(Rect, Pane)>>,
+    offer: ProviderOffer,
     catalog_action_hitbox: RefCell<Option<Rect>>,
     catalog_action_hovered: bool,
     purpose: ModelPickerPurpose,
@@ -684,6 +688,7 @@ impl ModelPickerView {
             sort: None,
             column_hitboxes: RefCell::new(Vec::new()),
             pane_hitboxes: RefCell::new(Vec::new()),
+            offer: ProviderOffer::default(),
             catalog_action_hitbox: RefCell::new(None),
             catalog_action_hovered: false,
             purpose: ModelPickerPurpose::Session,
@@ -3781,7 +3786,9 @@ fn effective_picker_metadata_with_codex(
         .map(|tokens| tokens.min(u64::from(u32::MAX)) as u32);
     let preserves_unknown_limits = offering.is_some()
         || (provider == ProviderKind::Together
-            && id.eq_ignore_ascii_case(crate::config::TOGETHER_INKLING_MODEL));
+            && id.eq_ignore_ascii_case(
+                codewhale_config::catalog::reviewed::constants::TOGETHER_INKLING_MODEL,
+            ));
     let context_window = if context_override.is_some() {
         profile.context_window
     } else if provider == ProviderKind::OpenaiCodex {
@@ -4235,6 +4242,9 @@ impl ModalView for ModelPickerView {
     fn handle_key(&mut self, key: KeyEvent) -> ViewAction {
         self.last_mouse_selected = None;
         self.hovered_row = None;
+        if let Some(action) = ProviderOffer::key_action(self.locale, &key) {
+            return action;
+        }
         self.notice = None;
         // Movement keys come from the shared vocabulary (#6290); the match
         // below owns only the picker's own verbs. The live filter means the
@@ -4389,6 +4399,11 @@ impl ModalView for ModelPickerView {
     }
 
     fn handle_mouse(&mut self, mouse: MouseEvent) -> ViewAction {
+        if let Some(action) = self.offer.mouse_action(self.locale, mouse) {
+            self.last_mouse_selected = None;
+            self.hovered_row = None;
+            return action;
+        }
         let over_catalog = self
             .catalog_action_hitbox
             .borrow()
@@ -4498,6 +4513,7 @@ impl ModalView for ModelPickerView {
 
 impl ModelPickerView {
     fn render_route(&self, area: Rect, buf: &mut Buffer) {
+        self.offer.clear();
         self.row_hitboxes.borrow_mut().clear();
         self.column_hitboxes.borrow_mut().clear();
         self.pane_hitboxes.borrow_mut().clear();
@@ -4633,6 +4649,7 @@ impl ModelPickerView {
             tr(self.locale, MessageId::PickerActionCancel),
         ));
         let content = render_modal_footer(inner, buf, &footer_hints);
+        let content = self.offer.render(self.locale, content, buf);
 
         let shell = ratatui::layout::Layout::default()
             .direction(ratatui::layout::Direction::Vertical)
@@ -4903,7 +4920,7 @@ fn route_picker_efforts(
     {
         return vec![ReasoningEffort::Auto];
     }
-    if matches!(provider, crate::config::ProviderKind::Deepseek) {
+    if matches!(provider, codewhale_config::ProviderKind::Deepseek) {
         return DEEPSEEK_PICKER_EFFORTS.to_vec();
     }
     DEFAULT_PICKER_EFFORTS.to_vec()
@@ -5052,7 +5069,7 @@ mod tests {
             distinct_effective_efforts(
                 vec![Auto, Off, Minimal, Low, Medium, High, XHigh, Ultra, Max],
                 ProviderKind::Deepseek,
-                crate::config::DEFAULT_DEEPSEEK_BASE_URL,
+                codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
                 "deepseek-v4.1-flash",
             ),
             vec![Auto, Off, Low, High, Max]
@@ -5062,7 +5079,7 @@ mod tests {
             distinct_effective_efforts(
                 vec![Auto, Medium, High, Max],
                 ProviderKind::Deepseek,
-                crate::config::DEFAULT_DEEPSEEK_BASE_URL,
+                codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
                 "deepseek-v4.1-flash",
             ),
             vec![Auto, High, Max]
@@ -5304,6 +5321,7 @@ mod tests {
             sort: None,
             column_hitboxes: RefCell::new(Vec::new()),
             pane_hitboxes: RefCell::new(Vec::new()),
+            offer: ProviderOffer::default(),
             catalog_action_hitbox: RefCell::new(None),
             catalog_action_hovered: false,
             purpose: ModelPickerPurpose::Session,
@@ -6236,7 +6254,7 @@ mod tests {
         let model = provider_catalog_model_ids(
             ProviderKind::Openrouter,
             ProviderKind::Openrouter.as_str(),
-            crate::config::DEFAULT_OPENROUTER_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_BASE_URL,
         )
         .into_iter()
         .next()
@@ -6388,7 +6406,8 @@ model = "deepseek/deepseek-v4-flash"
                 .unwrap(),
         );
         app.model = "z-ai/glm-5.3".to_string();
-        app.active_route_base_url = crate::config::DEFAULT_OPENROUTER_BASE_URL.to_string();
+        app.active_route_base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_BASE_URL.to_string();
         (config, app, home, workspace)
     }
 

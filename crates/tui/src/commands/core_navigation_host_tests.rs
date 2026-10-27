@@ -29,7 +29,7 @@ fn create_test_app() -> App {
     };
     let mut app = App::new(options, &Config::default());
     app.ui_locale = codewhale_localization::Locale::En;
-    app.api_provider = crate::config::ProviderKind::Deepseek;
+    app.api_provider = codewhale_config::ProviderKind::Deepseek;
     app.model = "deepseek-v4-pro".to_string();
     app.auto_model = false;
     app.model_ids_passthrough = false;
@@ -463,7 +463,7 @@ fn workspace_without_arg_shows_current_workspace() {
     assert!(msg.contains("Current workspace:"));
     assert!(msg.contains("/tmp/test-workspace"));
     assert!(result.action.is_none());
-    let home = crate::config::effective_home_dir().expect("hermetic home");
+    let home = codewhale_paths::user_home().expect("hermetic home");
     let result = workspace_switch(&mut app, Some("~"));
     assert!(
         matches!(result.action, Some(AppAction::SwitchWorkspace { workspace }) if workspace == home.canonicalize().unwrap_or(home.clone()))

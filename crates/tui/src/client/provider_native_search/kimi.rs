@@ -9,10 +9,9 @@ use super::{
     ProviderNativeSearchClient, ProviderNativeSearchRequest, ProviderNativeSearchResponse,
     citation_from_url, citations_from_text, finish_reason_is_length, joined_answer, push_citation,
 };
-use crate::{
-    client::api_url,
-    config::{MOONSHOT_KIMI_K3_MODEL, moonshot_base_url_is_exact_kimi_code},
-};
+use crate::client::api_url;
+use crate::config::moonshot_base_url_is_exact_kimi_code;
+use codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL;
 
 const MAX_NATIVE_SEARCH_ROUNDS: usize = 4;
 const MAX_NATIVE_SEARCH_TOOL_CALLS: usize = 8;

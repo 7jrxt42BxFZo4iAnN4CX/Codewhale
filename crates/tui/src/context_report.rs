@@ -354,7 +354,7 @@ pub fn build_headless_context_report(config: &Config, workspace: &Path) -> Promp
     let identity = config.active_provider_identity().ok();
     let provider = identity
         .as_ref()
-        .map_or(crate::config::ProviderKind::Custom, |identity| {
+        .map_or(codewhale_config::ProviderKind::Custom, |identity| {
             identity.provider
         });
     let provider_identity = identity
@@ -975,8 +975,9 @@ mod pressure_fixture_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, ProviderKind};
+    use crate::config::Config;
     use crate::route_runtime::{ContextWindowResolution, ContextWindowSource};
+    use codewhale_config::ProviderKind;
     use codewhale_config::route::RouteLimits;
     use codewhale_models::Role;
     use codewhale_models::Tool;
@@ -1123,8 +1124,14 @@ mod tests {
             providers: Some(crate::config::ProvidersConfig {
                 moonshot: crate::config::ProviderConfig {
                     api_key: Some("test-kimi-key".to_string()),
-                    base_url: Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
-                    model: Some(crate::config::KIMI_CODE_K3_MODEL.to_string()),
+                    base_url: Some(
+                        codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL
+                            .to_string(),
+                    ),
+                    model: Some(
+                        codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL
+                            .to_string(),
+                    ),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -1150,8 +1157,14 @@ mod tests {
             providers: Some(crate::config::ProvidersConfig {
                 moonshot: crate::config::ProviderConfig {
                     api_key: Some("test-kimi-key".to_string()),
-                    base_url: Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
-                    model: Some(crate::config::KIMI_CODE_K3_MODEL.to_string()),
+                    base_url: Some(
+                        codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL
+                            .to_string(),
+                    ),
+                    model: Some(
+                        codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL
+                            .to_string(),
+                    ),
                     context_window: Some(1_048_576),
                     ..Default::default()
                 },

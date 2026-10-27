@@ -517,7 +517,7 @@ async fn operate_model_shell_uses_normal_approval_and_workspace_sandbox() {
     .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
     let (engine, handle) = Engine::new(
         EngineConfig {
-            model: crate::config::DEFAULT_TEXT_MODEL.to_string(),
+            model: codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
             workspace: workspace.path().to_path_buf(),
             snapshots_enabled: false,
             subagents_enabled: false,
@@ -543,7 +543,7 @@ async fn operate_model_shell_uses_normal_approval_and_workspace_sandbox() {
             content: "Write the requested local fixture to the workspace".to_string(),
             images: Vec::new(),
             mode: AppMode::Operate,
-            route: resolved_route_for_test(&api_config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(&api_config, codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: Some("write the requested local fixture".to_string()),
@@ -683,7 +683,7 @@ async fn posture_change_during_approval_wait(
     .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
     let (engine, handle) = Engine::new(
         EngineConfig {
-            model: crate::config::DEFAULT_TEXT_MODEL.to_string(),
+            model: codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
             workspace: workspace.path().to_path_buf(),
             snapshots_enabled: false,
             subagents_enabled: false,
@@ -700,7 +700,7 @@ async fn posture_change_during_approval_wait(
             content: "Record the approval fixture in the workspace".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&api_config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(&api_config, codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,
@@ -898,7 +898,7 @@ async fn full_access_subagent_handoff_keeps_model_shell_free_of_approval_prompts
     .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
     let (engine, handle) = Engine::new(
         EngineConfig {
-            model: crate::config::DEFAULT_TEXT_MODEL.to_string(),
+            model: codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
             workspace: workspace.path().to_path_buf(),
             snapshots_enabled: false,
             subagents_enabled: false,
@@ -916,7 +916,7 @@ async fn full_access_subagent_handoff_keeps_model_shell_free_of_approval_prompts
             content: "continue from the completed child".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&api_config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(&api_config, codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,
@@ -1056,7 +1056,7 @@ async fn assert_full_access_model_tool_batch_is_blocked(
             content: "exercise the Full Access execution boundary".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&api_config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(&api_config, codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,
@@ -1265,7 +1265,7 @@ async fn assert_full_access_model_tool_batch_runs(
             content: "exercise the Full Access auto-approval boundary".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&api_config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(&api_config, codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: None,
@@ -1359,7 +1359,7 @@ async fn full_access_auto_approves_non_bypassable_registered_tools() {
         format!("{python} -c \"__import__('pathlib').Path('{marker_literal}').write_text('ran')\"");
     let rlm_probe = format!("__import__('pathlib').Path('{marker_literal}').write_text('ran')");
     let engine_config = EngineConfig {
-        model: crate::config::DEFAULT_TEXT_MODEL.to_string(),
+        model: codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
         workspace: workspace.path().to_path_buf(),
         mcp_config_path: workspace.path().join("mcp.json"),
         snapshots_enabled: false,
@@ -1409,7 +1409,7 @@ async fn full_access_permission_allow_cannot_bypass_repo_law() {
     let allow_rule = codewhale_execpolicy::ToolAskRule::file_path("write_file", "CHANGELOG.md")
         .into_exact_workspace_allow(workspace.path().to_string_lossy().into_owned());
     let engine_config = EngineConfig {
-        model: crate::config::DEFAULT_TEXT_MODEL.to_string(),
+        model: codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
         workspace: workspace.path().to_path_buf(),
         snapshots_enabled: false,
         subagents_enabled: false,
@@ -1465,7 +1465,7 @@ async fn full_access_file_rules_block_alias_and_parent_paths_without_mutation() 
         })
         .collect();
     let engine_config = EngineConfig {
-        model: crate::config::DEFAULT_TEXT_MODEL.to_string(),
+        model: codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
         workspace: workspace.path().to_path_buf(),
         snapshots_enabled: false,
         subagents_enabled: false,

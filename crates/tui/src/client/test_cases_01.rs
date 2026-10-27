@@ -7,10 +7,9 @@
         tool_to_chat_for_base_url,
     };
     use crate::client::responses::build_responses_body;
-    use crate::config::{
-        DEFAULT_CONCENTRATE_BASE_URL, DEFAULT_CONCENTRATE_MODEL, DEFAULT_EDENAI_MODEL,
-        DEFAULT_TELECOMJS_MODEL, OPENROUTER_QWEN_3_6_FLASH_MODEL, ProviderConfig, ProvidersConfig,
-    };
+    use crate::config::{ProviderConfig, ProvidersConfig};
+    use codewhale_config::descriptors::defaults::{DEFAULT_CONCENTRATE_BASE_URL, DEFAULT_CONCENTRATE_MODEL, DEFAULT_EDENAI_MODEL, DEFAULT_TELECOMJS_MODEL};
+    use codewhale_config::catalog::reviewed::constants::OPENROUTER_QWEN_3_6_FLASH_MODEL;
     use crate::tools::apply_patch::ApplyPatchTool;
     use crate::tools::spec::ToolSpec;
     use crate::tools::{ToolContext, ToolRegistryBuilder};
@@ -513,7 +512,7 @@
             providers: Some(ProvidersConfig {
                 ollama_cloud: ProviderConfig {
                     api_key: Some("ollama-cloud-request-boundary-key".to_string()),
-                    base_url: Some(crate::config::DEFAULT_OLLAMA_CLOUD_BASE_URL.to_string()),
+                    base_url: Some(codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_CLOUD_BASE_URL.to_string()),
                     model: Some("gpt-oss:120b".to_string()),
                     ..ProviderConfig::default()
                 },
@@ -524,7 +523,7 @@
         .expect("Ollama Cloud request-boundary client");
         assert_eq!(
             client.base_url,
-            crate::config::DEFAULT_OLLAMA_CLOUD_BASE_URL
+            codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_CLOUD_BASE_URL
         );
         client.test_chat_transport_base_url = Some(transport_base_url);
         client
@@ -1633,8 +1632,8 @@
         // their OpenAI-compatible Chat Completions endpoints — but the fields
         // are model-specific, not provider-wide.
         for base_url in [
-            crate::config::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL,
-            crate::config::DEFAULT_MODELSTUDIO_CODING_PLAN_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_MODELSTUDIO_TOKEN_PLAN_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_MODELSTUDIO_CODING_PLAN_BASE_URL,
         ] {
             // The default model, qwen3.8-max, is thinking-only: the bundled
             // catalog records it as `thinking: always_on`, and
@@ -1645,7 +1644,7 @@
             for effort in [None, Some("off"), Some("high"), Some("max")] {
                 let (path, body) = capture_modelstudio_chat_request(
                     base_url,
-                    crate::config::DEFAULT_MODELSTUDIO_TOKEN_PLAN_MODEL,
+                    codewhale_config::descriptors::defaults::DEFAULT_MODELSTUDIO_TOKEN_PLAN_MODEL,
                     effort,
                     streaming,
                 )

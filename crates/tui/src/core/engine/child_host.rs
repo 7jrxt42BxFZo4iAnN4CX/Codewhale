@@ -709,7 +709,7 @@ impl Engine {
                 .is_ok();
         surface.catalog.retain(|tool| {
             surface.registry.contains(&tool.name)
-                || (discoverable && tool_catalog::is_tool_search_tool(&tool.name))
+                || (discoverable && codewhale_tools::names::is_tool_search_tool(&tool.name))
                 || (code_mode && tool.name == tool_catalog::EXECUTE_TOOLS_TOOL_NAME)
         });
         surface

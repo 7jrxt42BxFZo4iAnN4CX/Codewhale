@@ -1,5 +1,5 @@
 use super::*;
-use crate::config::{Config, ProviderConfig, ProviderKind, ProvidersConfig};
+use crate::config::{Config, ProviderConfig, ProvidersConfig};
 use crate::settings::Settings;
 use crate::test_support::{EnvVarGuard, lock_test_env};
 use crate::tools::plan::{PlanItemArg, StepStatus, UpdatePlanArgs};
@@ -7,6 +7,7 @@ use crate::tools::todo::TodoStatus;
 use crate::tui::clipboard::{ClipboardHandler, PastedImage};
 use crate::tui::history::{GenericToolCell, HistoryCell, ToolCell, ToolStatus};
 use crate::tui::motion::MotionMode;
+use codewhale_config::ProviderKind;
 use codewhale_models::Usage;
 
 fn test_options(yolo: bool) -> TuiOptions {
@@ -413,8 +414,9 @@ fn fixed_auto_reasoning_label_preserves_untiered_effective_receipt() {
     let mut app = App::new(test_options(false), &Config::default());
     app.api_provider = ProviderKind::Zai;
     app.auto_model = false;
-    app.model = crate::config::ZAI_GLM_5_TURBO_MODEL.to_string();
-    app.active_route_base_url = crate::config::DEFAULT_ZAI_BASE_URL.to_string();
+    app.model = codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_TURBO_MODEL.to_string();
+    app.active_route_base_url =
+        codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL.to_string();
     app.reasoning_effort = ReasoningEffort::Auto;
     app.last_effective_reasoning_effort =
         Some(EffectiveReasoningEffort::ThinkingEnabledGranularityUnavailable);
@@ -430,7 +432,7 @@ fn cache_replay_keeps_untiered_reasoning_enabled() {
     let mut app = App::new(test_options(false), &Config::default());
     app.api_provider = ProviderKind::Zai;
     app.auto_model = false;
-    app.model = crate::config::ZAI_GLM_5_TURBO_MODEL.to_string();
+    app.model = codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_TURBO_MODEL.to_string();
     app.reasoning_effort = ReasoningEffort::Auto;
     app.last_effective_reasoning_effort =
         Some(EffectiveReasoningEffort::ThinkingEnabledGranularityUnavailable);
@@ -439,20 +441,20 @@ fn cache_replay_keeps_untiered_reasoning_enabled() {
         app.reasoning_effort_api_value_for_replay(
             ProviderKind::Zai,
             ProviderKind::Zai.as_str(),
-            crate::config::DEFAULT_ZAI_BASE_URL,
-            crate::config::ZAI_GLM_5_TURBO_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_TURBO_MODEL,
         ),
         Some("high")
     );
 
     app.api_provider = ProviderKind::Minimax;
-    app.model = crate::config::DEFAULT_MINIMAX_MODEL.to_string();
+    app.model = codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_MODEL.to_string();
     assert_eq!(
         app.reasoning_effort_api_value_for_replay(
             ProviderKind::Minimax,
             ProviderKind::Minimax.as_str(),
-            crate::config::DEFAULT_MINIMAX_BASE_URL,
-            crate::config::DEFAULT_MINIMAX_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_MODEL,
         ),
         Some("high")
     );
@@ -462,8 +464,8 @@ fn cache_replay_keeps_untiered_reasoning_enabled() {
         app.reasoning_effort_api_value_for_replay(
             ProviderKind::Zai,
             ProviderKind::Zai.as_str(),
-            crate::config::DEFAULT_ZAI_BASE_URL,
-            crate::config::ZAI_GLM_5_TURBO_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_TURBO_MODEL,
         ),
         None
     );
@@ -481,8 +483,8 @@ fn cache_replay_normalizes_reasoning_against_the_concrete_auto_route() {
         app.reasoning_effort_api_value_for_replay(
             ProviderKind::OpenaiCodex,
             ProviderKind::OpenaiCodex.as_str(),
-            crate::config::DEFAULT_OPENAI_CODEX_BASE_URL,
-            crate::config::DEFAULT_OPENAI_CODEX_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL,
         ),
         Some("low"),
         "Codex must apply its Off-to-Low floor even when DeepSeek is configured"
@@ -493,8 +495,8 @@ fn cache_replay_normalizes_reasoning_against_the_concrete_auto_route() {
         app.reasoning_effort_api_value_for_replay(
             ProviderKind::Moonshot,
             ProviderKind::Moonshot.as_str(),
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
         ),
         Some("medium"),
         "Kimi Code K3 must retain its exact-route Medium tier"
@@ -508,12 +510,16 @@ fn cache_replay_target_uses_the_last_completed_auto_route() {
     app.auto_model = true;
     app.last_effective_provider = Some(ProviderKind::OpenaiCodex);
     app.last_effective_provider_identity = Some(ProviderKind::OpenaiCodex.as_str().to_string());
-    app.last_effective_model = Some(crate::config::DEFAULT_OPENAI_CODEX_MODEL.to_string());
-    app.session.last_base_url = Some(crate::config::DEFAULT_OPENAI_CODEX_BASE_URL.to_string());
+    app.last_effective_model =
+        Some(codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL.to_string());
+    app.session.last_base_url =
+        Some(codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_BASE_URL.to_string());
     app.push_turn_cache_record(TurnCacheRecord {
         provider: Some(ProviderKind::OpenaiCodex),
         provider_identity: Some(ProviderKind::OpenaiCodex.as_str().to_string()),
-        model: Some(crate::config::DEFAULT_OPENAI_CODEX_MODEL.to_string()),
+        model: Some(
+            codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL.to_string(),
+        ),
         auto_model: true,
         input_tokens: 1,
         output_tokens: 1,
@@ -536,10 +542,13 @@ fn cache_replay_target_uses_the_last_completed_auto_route() {
         target.provider_id.as_deref(),
         Some(ProviderKind::OpenaiCodex.as_str())
     );
-    assert_eq!(target.model, crate::config::DEFAULT_OPENAI_CODEX_MODEL);
+    assert_eq!(
+        target.model,
+        codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL
+    );
     assert_eq!(
         target.base_url.as_deref(),
-        Some(crate::config::DEFAULT_OPENAI_CODEX_BASE_URL)
+        Some(codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_BASE_URL)
     );
 
     // A restored Auto session has no turn ring or raw endpoint. Once warmup
@@ -549,8 +558,9 @@ fn cache_replay_target_uses_the_last_completed_auto_route() {
     app.session.last_base_url = None;
     app.session.last_warmup_key = Some(CacheWarmupKey {
         provider: ProviderKind::OpenaiCodex.as_str().to_string(),
-        model: crate::config::DEFAULT_OPENAI_CODEX_MODEL.to_string(),
-        base_url: crate::config::DEFAULT_OPENAI_CODEX_BASE_URL.to_string(),
+        model: codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL.to_string(),
+        base_url: codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_BASE_URL
+            .to_string(),
         static_prefix_hash: "static".to_string(),
         tool_catalog_hash: "tools".to_string(),
         project_pack_hash: "project".to_string(),
@@ -560,7 +570,7 @@ fn cache_replay_target_uses_the_last_completed_auto_route() {
         app.cache_replay_target()
             .and_then(|target| target.base_url)
             .as_deref(),
-        Some(crate::config::DEFAULT_OPENAI_CODEX_BASE_URL)
+        Some(codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_BASE_URL)
     );
 }
 
@@ -574,11 +584,12 @@ fn auto_reasoning_change_invalidates_the_previous_route_and_receipt() {
     app.reasoning_effort_preference = Some(ReasoningEffort::Low);
     app.last_effective_provider = Some(ProviderKind::OpenaiCodex);
     app.last_effective_provider_identity = Some(ProviderKind::OpenaiCodex.as_str().to_string());
-    app.last_effective_model = Some(crate::config::DEFAULT_OPENAI_CODEX_MODEL.to_string());
+    app.last_effective_model =
+        Some(codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL.to_string());
     app.last_auto_route_receipt = Some(crate::model_routing::AutoRouteReceipt {
         tier: crate::model_routing::AutoRouteTier::Strong,
         pair: crate::model_routing::AutoRoutePair {
-            strong: crate::config::DEFAULT_OPENAI_CODEX_MODEL.to_string(),
+            strong: codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL.to_string(),
             fast: None,
         },
         scope: crate::model_routing::AutoRouteScope::ResolvedProvider,
@@ -733,8 +744,9 @@ fn glm_5_turbo_records_enabled_with_granularity_unavailable() {
             .expect("captured fixture provider"),
     );
     app.auto_model = false;
-    app.active_route_base_url = crate::config::DEFAULT_ZAI_BASE_URL.to_string();
-    app.model = crate::config::ZAI_GLM_5_TURBO_MODEL.to_string();
+    app.active_route_base_url =
+        codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL.to_string();
+    app.model = codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_TURBO_MODEL.to_string();
     app.reasoning_effort = ReasoningEffort::High;
 
     app.cycle_effort();
@@ -786,8 +798,9 @@ fn glm_5_1_records_enabled_with_granularity_unavailable() {
             .expect("captured fixture provider"),
     );
     app.auto_model = false;
-    app.active_route_base_url = crate::config::DEFAULT_ZAI_BASE_URL.to_string();
-    app.model = crate::config::ZAI_GLM_5_1_MODEL.to_string();
+    app.active_route_base_url =
+        codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL.to_string();
+    app.model = codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_1_MODEL.to_string();
     app.reasoning_effort = ReasoningEffort::High;
 
     app.cycle_effort();
@@ -822,7 +835,8 @@ fn unknown_model_on_exact_zai_endpoint_records_effective_unavailable() {
             .expect("captured fixture provider"),
     );
     app.auto_model = false;
-    app.active_route_base_url = crate::config::DEFAULT_ZAI_BASE_URL.to_string();
+    app.active_route_base_url =
+        codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL.to_string();
     app.model = "glm-future-unknown".to_string();
     app.reasoning_effort = ReasoningEffort::High;
 
@@ -859,7 +873,7 @@ fn compatible_zai_gateway_records_effective_unavailable() {
     );
     app.auto_model = false;
     app.active_route_base_url = "https://gateway.example/v1".to_string();
-    app.model = crate::config::ZAI_GLM_5_2_MODEL.to_string();
+    app.model = codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL.to_string();
     app.reasoning_effort = ReasoningEffort::High;
 
     app.cycle_effort();
@@ -915,8 +929,9 @@ fn minimax_m3_high_and_max_receipts_do_not_claim_tier_granularity() {
                 .expect("captured fixture provider"),
         );
         app.auto_model = false;
-        app.active_route_base_url = crate::config::DEFAULT_MINIMAX_BASE_URL.to_string();
-        app.model = crate::config::DEFAULT_MINIMAX_MODEL.to_string();
+        app.active_route_base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_BASE_URL.to_string();
+        app.model = codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_MODEL.to_string();
         app.reasoning_effort = previous;
 
         app.cycle_effort();
@@ -950,9 +965,12 @@ fn minimax_m3_high_and_max_receipts_do_not_claim_tier_granularity() {
         );
         assert_eq!(
             endpoint_identity.as_deref(),
-            Some(crate::config::DEFAULT_MINIMAX_BASE_URL)
+            Some(codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_BASE_URL)
         );
-        assert_eq!(model.as_deref(), Some(crate::config::DEFAULT_MINIMAX_MODEL));
+        assert_eq!(
+            model.as_deref(),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_MODEL)
+        );
     }
 }
 
@@ -969,8 +987,9 @@ fn minimax_anthropic_m3_high_and_max_receipts_match_adaptive_wire_truth() {
                 .expect("captured fixture provider"),
         );
         app.auto_model = false;
-        app.active_route_base_url = crate::config::DEFAULT_MINIMAX_ANTHROPIC_BASE_URL.to_string();
-        app.model = crate::config::DEFAULT_MINIMAX_MODEL.to_string();
+        app.active_route_base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_ANTHROPIC_BASE_URL.to_string();
+        app.model = codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_MODEL.to_string();
         app.reasoning_effort = previous;
 
         app.cycle_effort();
@@ -1008,9 +1027,12 @@ fn minimax_anthropic_m3_high_and_max_receipts_match_adaptive_wire_truth() {
         assert_eq!(provider, "minimax-anthropic");
         assert_eq!(
             endpoint_identity.as_deref(),
-            Some(crate::config::DEFAULT_MINIMAX_ANTHROPIC_BASE_URL)
+            Some(codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_ANTHROPIC_BASE_URL)
         );
-        assert_eq!(model.as_deref(), Some(crate::config::DEFAULT_MINIMAX_MODEL));
+        assert_eq!(
+            model.as_deref(),
+            Some(codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_MODEL)
+        );
     }
 }
 
@@ -1117,7 +1139,7 @@ fn zai_gateway_off_and_high_receipts_remain_unavailable() {
         );
         app.auto_model = false;
         app.active_route_base_url = "https://gateway.example/v1".to_string();
-        app.model = crate::config::ZAI_GLM_5_2_MODEL.to_string();
+        app.model = codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL.to_string();
         app.reasoning_effort = previous;
 
         app.cycle_effort();
@@ -1143,8 +1165,9 @@ fn kimi_code_high_and_max_work_receipts_preserve_exact_tiers() {
                 .expect("captured fixture provider"),
         );
         app.auto_model = false;
-        app.active_route_base_url = crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string();
-        app.model = crate::config::KIMI_CODE_K3_MODEL.to_string();
+        app.active_route_base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string();
+        app.model = codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL.to_string();
         app.reasoning_effort = previous;
 
         app.cycle_effort();
@@ -1169,9 +1192,12 @@ fn kimi_code_high_and_max_work_receipts_preserve_exact_tiers() {
         assert_eq!(effective, requested.into());
         assert_eq!(
             endpoint_identity.as_deref(),
-            Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL)
+            Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL)
         );
-        assert_eq!(model.as_deref(), Some(crate::config::KIMI_CODE_K3_MODEL));
+        assert_eq!(
+            model.as_deref(),
+            Some(codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL)
+        );
     }
 }
 
@@ -1179,7 +1205,8 @@ fn kimi_code_high_and_max_work_receipts_preserve_exact_tiers() {
 fn active_turn_zai_receipt_overrides_all_mutable_parallel_route_metadata() {
     let mut app = App::new(test_options(false), &Config::default());
     app.api_provider = ProviderKind::Deepseek;
-    app.active_route_base_url = crate::config::DEFAULT_DEEPSEEK_BASE_URL.to_string();
+    app.active_route_base_url =
+        codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL.to_string();
     app.model = "deepseek-chat".to_string();
     app.reasoning_effort = ReasoningEffort::High;
     app.active_turn = Some(ActiveTurnMetadata {
@@ -1193,8 +1220,8 @@ fn active_turn_zai_receipt_overrides_all_mutable_parallel_route_metadata() {
             receipt: Some(crate::route_receipt::TurnRouteReceipt::new(
                 ProviderKind::Zai,
                 "zai",
-                crate::config::ZAI_GLM_5_TURBO_MODEL,
-                crate::config::DEFAULT_ZAI_BASE_URL,
+                codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_TURBO_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL,
                 "test-secret-never-persisted",
             )),
             billing: Some(crate::core::events::RouteBillingEnvelope {
@@ -1205,7 +1232,7 @@ fn active_turn_zai_receipt_overrides_all_mutable_parallel_route_metadata() {
                 billing_mode: crate::cost_status::RouteBillingMode::Unknown,
                 dispatched_at: chrono::Utc::now(),
             }),
-            base_url: crate::config::DEFAULT_ZAI_BASE_URL.to_string(),
+            base_url: codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL.to_string(),
             billing_product: crate::route_billing::RouteProduct::Unproven,
         }),
         auto_route_receipt: None,
@@ -1240,9 +1267,12 @@ fn active_turn_zai_receipt_overrides_all_mutable_parallel_route_metadata() {
     assert_eq!(provider, "zai");
     assert_eq!(
         endpoint_identity.as_deref(),
-        Some(crate::config::DEFAULT_ZAI_BASE_URL)
+        Some(codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL)
     );
-    assert_eq!(model.as_deref(), Some(crate::config::ZAI_GLM_5_TURBO_MODEL));
+    assert_eq!(
+        model.as_deref(),
+        Some(codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_TURBO_MODEL)
+    );
 }
 
 #[test]
@@ -1253,7 +1283,7 @@ fn pending_zai_route_without_endpoint_receipt_is_effective_unavailable() {
     app.reasoning_effort = ReasoningEffort::Max;
     app.pending_turn_route = Some((
         ProviderKind::Zai,
-        crate::config::ZAI_GLM_5_2_MODEL.to_string(),
+        codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL.to_string(),
         true,
     ));
 
@@ -1272,12 +1302,14 @@ fn reasoning_effort_scenario() {
         app.api_provider = ProviderKind::Moonshot;
         app.auto_model = false;
         app.reasoning_effort = ReasoningEffort::Low;
-        app.active_route_base_url = crate::config::DEFAULT_MOONSHOT_BASE_URL.to_string();
+        app.active_route_base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL.to_string();
         app.model = "kimi-k2.5".to_string();
 
         assert_eq!(app.reasoning_effort_display_label(), "low→high");
 
-        app.active_route_base_url = crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string();
+        app.active_route_base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string();
         app.model = "k3".to_string();
         assert_eq!(app.reasoning_effort_display_label(), "low");
 
@@ -1325,8 +1357,8 @@ fn reasoning_effort_scenario() {
 
 #[test]
 fn ollama_cloud_normal_turns_preserve_the_documented_reasoning_ladder() {
-    let base_url = crate::config::DEFAULT_OLLAMA_CLOUD_BASE_URL;
-    let model = crate::config::DEFAULT_OLLAMA_CLOUD_MODEL;
+    let base_url = codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_CLOUD_BASE_URL;
+    let model = codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_CLOUD_MODEL;
     for effort in [
         ReasoningEffort::Off,
         ReasoningEffort::Low,
@@ -1392,8 +1424,8 @@ fn reasoning_effort_uses_one_strict_alias_table_and_legacy_fallback() {
 
 #[test]
 fn reasoning_effort_normalizes_each_exact_k3_route_without_neighbor_leakage() {
-    let kimi_base = crate::config::DEFAULT_KIMI_CODE_BASE_URL;
-    let moonshot_base = crate::config::DEFAULT_MOONSHOT_BASE_URL;
+    let kimi_base = codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL;
+    let moonshot_base = codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL;
     assert_eq!(
         ReasoningEffort::Off.normalize_for_route(ProviderKind::Moonshot, kimi_base, "k3"),
         ReasoningEffort::Low,
@@ -1429,7 +1461,7 @@ fn reasoning_effort_normalizes_each_exact_k3_route_without_neighbor_leakage() {
         ReasoningEffort::Off.normalize_for_route(
             ProviderKind::Moonshot,
             moonshot_base,
-            crate::config::MOONSHOT_KIMI_K3_MODEL,
+            codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL,
         ),
         ReasoningEffort::Low,
         "direct K3 is always-thinking, so off becomes its lowest supported tier"
@@ -1438,7 +1470,7 @@ fn reasoning_effort_normalizes_each_exact_k3_route_without_neighbor_leakage() {
         ReasoningEffort::Low.normalize_for_route(
             ProviderKind::Moonshot,
             moonshot_base,
-            crate::config::MOONSHOT_KIMI_K3_MODEL,
+            codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL,
         ),
         ReasoningEffort::Low
     );
@@ -1446,7 +1478,7 @@ fn reasoning_effort_normalizes_each_exact_k3_route_without_neighbor_leakage() {
         ReasoningEffort::Medium.normalize_for_route(
             ProviderKind::Moonshot,
             moonshot_base,
-            crate::config::MOONSHOT_KIMI_K3_MODEL,
+            codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL,
         ),
         ReasoningEffort::High
     );
@@ -1454,7 +1486,7 @@ fn reasoning_effort_normalizes_each_exact_k3_route_without_neighbor_leakage() {
         ReasoningEffort::Off.normalize_for_route(
             ProviderKind::Moonshot,
             "https://proxy.example/v1",
-            crate::config::MOONSHOT_KIMI_K3_MODEL,
+            codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL,
         ),
         ReasoningEffort::Off,
         "a neighboring gateway must not inherit direct-platform always-thinking semantics"
@@ -1469,7 +1501,7 @@ fn picker_uses_scenario() {
         let labels: Vec<&str> = crate::tui::model_picker::picker_efforts_for_route(
             ProviderKind::Xai,
             ProviderKind::Xai.provider().default_base_url(),
-            crate::config::XAI_GROK_4_6_MODEL,
+            codewhale_config::catalog::reviewed::constants::XAI_GROK_4_6_MODEL,
             false,
         )
         .iter()
@@ -1482,7 +1514,7 @@ fn picker_uses_scenario() {
         let labels: Vec<&str> = crate::tui::model_picker::picker_efforts_for_route(
             ProviderKind::Xai,
             ProviderKind::Xai.provider().default_base_url(),
-            crate::config::XAI_GROK_4_5_MODEL,
+            codewhale_config::catalog::reviewed::constants::XAI_GROK_4_5_MODEL,
             false,
         )
         .iter()
@@ -1494,8 +1526,8 @@ fn picker_uses_scenario() {
 
 #[test]
 fn reasoning_effort_preserves_grok_46_ladder_only_on_exact_xai_route() {
-    let xai = crate::config::DEFAULT_XAI_BASE_URL;
-    let model = crate::config::XAI_GROK_4_6_MODEL;
+    let xai = codewhale_config::descriptors::defaults::DEFAULT_XAI_BASE_URL;
+    let model = codewhale_config::catalog::reviewed::constants::XAI_GROK_4_6_MODEL;
     for (requested, expected) in [
         (ReasoningEffort::Off, ReasoningEffort::High),
         (ReasoningEffort::Low, ReasoningEffort::Low),
@@ -1541,8 +1573,12 @@ fn xai_grok_46_startup_config() -> Config {
         providers: Some(ProvidersConfig {
             xai: ProviderConfig {
                 api_key: Some("xai-startup-test-key".to_string()),
-                base_url: Some(crate::config::DEFAULT_XAI_BASE_URL.to_string()),
-                model: Some(crate::config::XAI_GROK_4_6_MODEL.to_string()),
+                base_url: Some(
+                    codewhale_config::descriptors::defaults::DEFAULT_XAI_BASE_URL.to_string(),
+                ),
+                model: Some(
+                    codewhale_config::catalog::reviewed::constants::XAI_GROK_4_6_MODEL.to_string(),
+                ),
                 ..ProviderConfig::default()
             },
             ..ProvidersConfig::default()
@@ -1553,7 +1589,7 @@ fn xai_grok_46_startup_config() -> Config {
 
 fn xai_grok_46_startup_app(config: &Config) -> App {
     let mut options = test_options(false);
-    options.model = crate::config::XAI_GROK_4_6_MODEL.to_string();
+    options.model = codewhale_config::catalog::reviewed::constants::XAI_GROK_4_6_MODEL.to_string();
     App::new(options, config)
 }
 
@@ -1570,10 +1606,13 @@ fn app_new_scenario() {
         let app = xai_grok_46_startup_app(&config);
 
         assert_eq!(app.api_provider, ProviderKind::Xai);
-        assert_eq!(app.model, crate::config::XAI_GROK_4_6_MODEL);
+        assert_eq!(
+            app.model,
+            codewhale_config::catalog::reviewed::constants::XAI_GROK_4_6_MODEL
+        );
         assert_eq!(
             app.active_route_base_url,
-            crate::config::DEFAULT_XAI_BASE_URL
+            codewhale_config::descriptors::defaults::DEFAULT_XAI_BASE_URL
         );
         assert_eq!(app.reasoning_effort, ReasoningEffort::High);
         assert_eq!(app.reasoning_effort_display_label(), "high");
@@ -1709,8 +1748,9 @@ fn cycle_effort_scenario() {
                 .expect("captured fixture provider"),
         );
         app.auto_model = false;
-        app.active_route_base_url = crate::config::DEFAULT_XAI_BASE_URL.to_string();
-        app.model = crate::config::XAI_GROK_4_6_MODEL.to_string();
+        app.active_route_base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_XAI_BASE_URL.to_string();
+        app.model = codewhale_config::catalog::reviewed::constants::XAI_GROK_4_6_MODEL.to_string();
         app.reasoning_effort = ReasoningEffort::High;
 
         let expected = [
@@ -1734,8 +1774,9 @@ fn cycle_effort_scenario() {
                 .expect("captured fixture provider"),
         );
         app.auto_model = false;
-        app.active_route_base_url = crate::config::DEFAULT_XAI_BASE_URL.to_string();
-        app.model = crate::config::XAI_GROK_4_5_MODEL.to_string();
+        app.active_route_base_url =
+            codewhale_config::descriptors::defaults::DEFAULT_XAI_BASE_URL.to_string();
+        app.model = codewhale_config::catalog::reviewed::constants::XAI_GROK_4_5_MODEL.to_string();
         app.reasoning_effort = ReasoningEffort::High;
 
         app.cycle_effort();
@@ -1816,7 +1857,9 @@ fn app_new_normalizes_saved_codex_reasoning_effort() {
         provider: Some("openai-codex".to_string()),
         providers: Some(ProvidersConfig {
             openai_codex: ProviderConfig {
-                model: Some(crate::config::DEFAULT_OPENAI_CODEX_MODEL.to_string()),
+                model: Some(
+                    codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL.to_string(),
+                ),
                 ..ProviderConfig::default()
             },
             ..ProvidersConfig::default()
@@ -1866,8 +1909,13 @@ fn app_new_exposes_direct_moonshot_k3_off_as_effective_low() {
         providers: Some(ProvidersConfig {
             moonshot: ProviderConfig {
                 api_key: Some("moonshot-startup-test-key".to_string()),
-                base_url: Some(crate::config::DEFAULT_MOONSHOT_BASE_URL.to_string()),
-                model: Some(crate::config::MOONSHOT_KIMI_K3_MODEL.to_string()),
+                base_url: Some(
+                    codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL.to_string(),
+                ),
+                model: Some(
+                    codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL
+                        .to_string(),
+                ),
                 ..ProviderConfig::default()
             },
             ..ProvidersConfig::default()
@@ -1876,14 +1924,18 @@ fn app_new_exposes_direct_moonshot_k3_off_as_effective_low() {
     };
 
     let mut options = test_options(false);
-    options.model = crate::config::MOONSHOT_KIMI_K3_MODEL.to_string();
+    options.model =
+        codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL.to_string();
     let app = App::new(options, &config);
 
     assert_eq!(app.api_provider, ProviderKind::Moonshot);
-    assert_eq!(app.model, crate::config::MOONSHOT_KIMI_K3_MODEL);
+    assert_eq!(
+        app.model,
+        codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL
+    );
     assert_eq!(
         app.active_route_base_url,
-        crate::config::DEFAULT_MOONSHOT_BASE_URL
+        codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL
     );
     assert_eq!(app.reasoning_effort, ReasoningEffort::Low);
     assert_eq!(app.reasoning_effort_display_label(), "low");
@@ -1904,7 +1956,9 @@ fn codex_startup_threads_fresh_roster_context_into_active_route_limits() {
         provider: Some("openai-codex".to_string()),
         providers: Some(ProvidersConfig {
             openai_codex: ProviderConfig {
-                model: Some(crate::config::DEFAULT_OPENAI_CODEX_MODEL.to_string()),
+                model: Some(
+                    codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL.to_string(),
+                ),
                 ..ProviderConfig::default()
             },
             ..ProvidersConfig::default()
@@ -1917,7 +1971,7 @@ fn codex_startup_threads_fresh_roster_context_into_active_route_limits() {
     crate::codex_model_cache::install_test_chatgpt_roster_with_metadata(
         &config,
         vec![crate::codex_model_cache::CodexModelMetadata {
-            id: crate::config::DEFAULT_OPENAI_CODEX_MODEL.to_string(),
+            id: codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL.to_string(),
             display_name: None,
             context_window: Some(128_000),
             reasoning: Some(true),
@@ -1927,7 +1981,7 @@ fn codex_startup_threads_fresh_roster_context_into_active_route_limits() {
     .expect("account-scoped roster");
 
     let mut options = test_options(false);
-    options.model = crate::config::DEFAULT_OPENAI_CODEX_MODEL.to_string();
+    options.model = codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL.to_string();
     let app = App::new(options, &config);
 
     assert_eq!(app.api_provider, ProviderKind::OpenaiCodex);
@@ -6991,8 +7045,9 @@ async fn fixed_route_thinking_cycle_persists_raw_preference() {
             .expect("captured fixture provider"),
     );
     app.auto_model = false;
-    app.active_route_base_url = crate::config::DEFAULT_MOONSHOT_BASE_URL.to_string();
-    app.model = crate::config::MOONSHOT_KIMI_K3_MODEL.to_string();
+    app.active_route_base_url =
+        codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL.to_string();
+    app.model = codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL.to_string();
     app.reasoning_effort = ReasoningEffort::Max;
 
     app.apply_reasoning_effort_cycle();
@@ -7869,23 +7924,23 @@ fn every_ctrl_t_press_changes_the_effective_thinking_tier() {
     for (provider, base_url, model) in [
         (
             ProviderKind::Deepseek,
-            crate::config::DEFAULT_DEEPSEEK_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
             "deepseek-v4.1-flash",
         ),
         (
             ProviderKind::Deepseek,
-            crate::config::DEFAULT_DEEPSEEK_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
             "deepseek-v4.1",
         ),
         (
             ProviderKind::Moonshot,
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
         ),
         (
             ProviderKind::Xai,
-            crate::config::DEFAULT_XAI_BASE_URL,
-            crate::config::XAI_GROK_4_6_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_XAI_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::XAI_GROK_4_6_MODEL,
         ),
     ] {
         assert_every_ctrl_t_press_changes_the_effective_tier(provider, base_url, model);
@@ -7921,7 +7976,7 @@ fn ctrl_t_skips_catalog_rungs_that_resolve_to_an_offered_tier() {
                 ),
                 offering(
                     ProviderKind::Zai,
-                    crate::config::ZAI_GLM_5_2_MODEL,
+                    codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL,
                     &["off", "low", "medium", "high", "max"],
                 ),
             ],
@@ -7931,13 +7986,13 @@ fn ctrl_t_skips_catalog_rungs_that_resolve_to_an_offered_tier() {
 
     let deepseek = assert_every_ctrl_t_press_changes_the_effective_tier(
         ProviderKind::Deepseek,
-        crate::config::DEFAULT_DEEPSEEK_BASE_URL,
+        codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
         "deepseek-v4.1-flash",
     );
     let zai = assert_every_ctrl_t_press_changes_the_effective_tier(
         ProviderKind::Zai,
-        crate::config::DEFAULT_ZAI_BASE_URL,
-        crate::config::ZAI_GLM_5_2_MODEL,
+        codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL,
+        codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL,
     );
     crate::provider_lake::clear_live_snapshot();
 
@@ -7953,7 +8008,8 @@ fn ctrl_t_moves_past_a_persisted_alias_the_ladder_dropped() {
     let mut app = App::new(test_options(false), &Config::default());
     app.api_provider = ProviderKind::Deepseek;
     app.auto_model = false;
-    app.active_route_base_url = crate::config::DEFAULT_DEEPSEEK_BASE_URL.to_string();
+    app.active_route_base_url =
+        codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL.to_string();
     app.model = "deepseek-v4.1-flash".to_string();
     app.reasoning_effort = ReasoningEffort::Medium;
 

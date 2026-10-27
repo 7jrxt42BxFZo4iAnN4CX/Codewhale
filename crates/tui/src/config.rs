@@ -1,5 +1,6 @@
 //! Configuration loading and defaults for codewhale.
 
+use codewhale_config::opencode_go_models;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -36,15 +37,24 @@ mod subagent_limits;
 pub use subagent_limits::*;
 use subagent_limits::{resolve_subagent_api_timeout_secs, resolve_subagent_heartbeat_timeout_secs};
 
-// Provider model-name and base-URL constants live in the `models` leaf module
-// and are re-exported below so every `crate::config::<CONST>` path is unchanged
-// (#3311).
-mod models;
-pub use models::*;
+pub const XIAOMI_MIMO_PAY_AS_YOU_GO_BASE_URL: &str = "https://api.xiaomimimo.com/v1";
+pub const XIAOMI_MIMO_TOKEN_PLAN_CN_BASE_URL: &str = "https://token-plan-cn.xiaomimimo.com/v1";
+pub const XIAOMI_MIMO_TOKEN_PLAN_SGP_BASE_URL: &str = DEFAULT_XIAOMI_MIMO_BASE_URL;
+pub const XIAOMI_MIMO_TOKEN_PLAN_AMS_BASE_URL: &str = "https://token-plan-ams.xiaomimimo.com/v1";
+pub const KIMI_CODE_MEMBERSHIP_PLAN_CONSOLE_URL: &str =
+    codewhale_config::provider::KIMI_CODE_MEMBERSHIP_PLAN_CONSOLE_URL;
+/// True when `model` is the pre-refresh local-Ollama placeholder, not a tag.
+#[must_use]
+pub fn is_unresolved_local_ollama_model(model: &str) -> bool {
+    model.trim().eq_ignore_ascii_case(DEFAULT_OLLAMA_MODEL)
+}
+/// Conservative offline floor for an OAuth model absent from a fresh Codex
+/// roster. Fresh account-scoped cache metadata overrides this in route_runtime.
+pub const OPENAI_CODEX_EFFECTIVE_CONTEXT_WINDOW_TOKENS: u32 = 128_000;
 
 #[cfg(test)]
-pub(crate) use codewhale_config::API_KEYRING_SENTINEL;
-pub(crate) use codewhale_config::{ConfigApiKeyValueKind, classify_config_api_key_value};
+use codewhale_config::API_KEYRING_SENTINEL;
+use codewhale_config::{ConfigApiKeyValueKind, classify_config_api_key_value};
 
 pub const DEFAULT_ZAI_PROVIDER_MAX_CONCURRENCY: usize = 3;
 pub const MAX_PROVIDER_REQUEST_CONCURRENCY: usize = 64;
@@ -53,11 +63,11 @@ pub const MAX_PROVIDER_REQUEST_CONCURRENCY: usize = 64;
 /// returns only hidden thinking without any answer text or tool call.
 pub const DEFAULT_REASONING_ONLY_REPROMPTS: u32 = 2;
 
-/// Nudge sent with a reasoning-only re-request once a bare retry has already
-/// come back answerless. Overridable with `[reasoning_only] reprompt_message`.
+/// Nudge sent with a recovery request after a bare clean-stop retry, or
+/// immediately on an opted-in output-limit retry. Configurable via `reprompt_message`.
 ///
-/// It is never written to the session: it rides one outbound request and is
-/// discarded, so the transcript never gains a message the user did not send.
+/// It rides one outbound request without joining session message history.
+/// A separate prepared-request receipt retains its exact text for inspection.
 pub const DEFAULT_REASONING_ONLY_REPROMPT_MESSAGE: &str =
     "Continue: give your answer, or make the next tool call.";
 
@@ -68,7 +78,9 @@ pub fn default_stop_words() -> Vec<String> {
         .collect()
 }
 
-pub use codewhale_config::ProviderKind;
+use codewhale_config::ProviderKind;
+use codewhale_config::catalog::reviewed::constants::*;
+use codewhale_config::descriptors::defaults::*;
 use codewhale_config::descriptors::{compatibility_for_id, compatibility_for_selector};
 use codewhale_config::route::ProviderId;
 
@@ -163,7 +175,7 @@ fn normalize_subagent_provider_key(value: &str) -> String {
 
 pub const DEEPSEEK_ALIAS_RETIREMENT_DATE: &str = "2026-07-24";
 pub const DEEPSEEK_ALIAS_RETIREMENT_UTC: &str = "2026-07-24T15:59:00Z";
-pub use codewhale_config::catalog::reviewed::constants::DEEPSEEK_ALIAS_REPLACEMENT;
+use codewhale_config::catalog::reviewed::constants::DEEPSEEK_ALIAS_REPLACEMENT;
 
 /// Upstream retirement metadata for a model alias that remains compatible.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -968,12 +980,13 @@ impl ChromeRowPreset {
 }
 
 #[cfg(test)]
-pub use codewhale_config::notifications::{EventSoundConfig, NotificationEventsConfig};
+use codewhale_config::notifications::{EventSoundConfig, NotificationEventsConfig};
 
-pub use codewhale_config::notifications::{
-    CompletionSound, NotificationCondition, NotificationConfigUpdate, NotificationMethod,
-    NotificationSetting, NotificationsConfig, SubagentCompletionNotification,
+#[cfg(test)]
+use codewhale_config::notifications::{
+    CompletionSound, NotificationConfigUpdate, NotificationMethod,
 };
+use codewhale_config::notifications::{NotificationCondition, NotificationsConfig};
 
 fn default_snapshots_enabled() -> bool {
     true
@@ -1152,16 +1165,17 @@ pub struct GoalConfig {
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
 #[serde(default)]
 pub struct ReasoningOnlyConfig {
+    pub on_output_limit: bool,
     /// Maximum number of automatic re-requests when the model returns only
     /// reasoning without any answer or tool call.
     /// Defaults to 2. Set to 0 to disable automatic recovery.
     pub max_reprompts: Option<u32>,
-    /// Nudge attached to a reasoning-only re-request after the first bare
-    /// retry has already come back answerless. Unset uses the built-in text.
+    /// Nudge attached after the first bare clean-stop retry, or immediately
+    /// for an opted-in output-limit retry. Unset uses the built-in text.
     ///
     /// The nudge rides a single outbound request and is never added to the
-    /// session, so it does not persist, does not appear in the transcript or
-    /// exports, and is not re-sent on later turns.
+    /// session or later model context. Its exact text is logged separately
+    /// as a prepared-request receipt for transcript inspection and exports.
     pub reprompt_message: Option<String>,
 }
 
@@ -2255,7 +2269,7 @@ pub struct Config {
 
     /// Reasoning-only recovery controls. When absent, the engine uses the
     /// built-in default (2 retries, no custom message). Configure with
-    /// `[reasoning_only] max_reprompts` and/or `[reasoning_only] reprompt_message`.
+    /// `[reasoning_only] max_reprompts`, `reprompt_message`, and `on_output_limit`.
     #[serde(default)]
     pub reasoning_only: Option<ReasoningOnlyConfig>,
 
@@ -3246,31 +3260,6 @@ pub(crate) fn approval_policy_baseline_from_permission_posture(
 // === Config Loading ===
 
 impl Config {
-    /// The read deny-list in force for this config (S1).
-    ///
-    /// Unions the built-in credential-store defaults (unless
-    /// `sandbox_read_denylist_defaults = false`) with
-    /// `sandbox_denied_read_paths`, minus `sandbox_read_denylist_exempt`.
-    /// Feeds both the in-process file-reading tools and the OS sandbox
-    /// wrappers. A `read_file` call refuses every rule; a shell `cat` refuses
-    /// only the rules scoped to the process, which excludes a tool's own auth
-    /// config.
-    #[must_use]
-    pub fn read_denylist(&self) -> crate::sandbox::read_guard::ReadDenylist {
-        crate::sandbox::read_guard::ReadDenylist::build(
-            self.sandbox_read_denylist_defaults.unwrap_or(true),
-            &self.sandbox_denied_read_paths,
-            &self.sandbox_read_denylist_exempt,
-        )
-    }
-
-    /// Every path the OS sandbox wrappers should deny reads under — the
-    /// deny-list's subtree rules, home-expanded and normalized.
-    #[must_use]
-    pub fn effective_sandbox_denied_read_paths(&self) -> Vec<std::path::PathBuf> {
-        self.read_denylist().subtree_paths()
-    }
-
     /// Whether Linux shell commands prefer bubblewrap confinement.
     ///
     /// On by default: an unset `prefer_bwrap` means sandboxed commands use
@@ -3370,7 +3359,7 @@ impl Config {
             }
         }
 
-        let workspace_is_home = effective_home_dir().is_some_and(|home| {
+        let workspace_is_home = codewhale_paths::user_home().is_some_and(|home| {
             let workspace = workspace
                 .canonicalize()
                 .unwrap_or_else(|_| workspace.to_path_buf());
@@ -3484,7 +3473,7 @@ impl Config {
             return ApprovalPolicyControl::Requirements;
         }
 
-        let workspace_is_home = effective_home_dir().is_some_and(|home| {
+        let workspace_is_home = codewhale_paths::user_home().is_some_and(|home| {
             let workspace = workspace
                 .canonicalize()
                 .unwrap_or_else(|_| workspace.to_path_buf());
@@ -3578,7 +3567,7 @@ impl Config {
         profile: Option<&str>,
         workspace: &Path,
     ) -> ShellAccessControl {
-        let workspace_is_home = effective_home_dir().is_some_and(|home| {
+        let workspace_is_home = codewhale_paths::user_home().is_some_and(|home| {
             let workspace = workspace
                 .canonicalize()
                 .unwrap_or_else(|_| workspace.to_path_buf());
@@ -6646,7 +6635,9 @@ impl Config {
         }
         let owned = match codewhale_home_dir().ok()? {
             Some(home) => home.join("skills"),
-            None => effective_home_dir()?.join(".codewhale").join("skills"),
+            None => codewhale_paths::user_home()?
+                .join(".codewhale")
+                .join("skills"),
         };
         (directory == owned).then_some(directory)
     }
@@ -6812,6 +6803,13 @@ impl Config {
             .and_then(|goal| goal.continuation_delay_seconds)
             .unwrap_or(0)
             .min(codewhale_runtime::goal_loop::MAX_GOAL_CONTINUATION_DELAY_SECONDS)
+    }
+
+    #[must_use]
+    pub fn reasoning_only_on_output_limit(&self) -> bool {
+        self.reasoning_only
+            .as_ref()
+            .is_some_and(|cfg| cfg.on_output_limit)
     }
 
     /// Maximum number of automatic re-requests when the model returns only
@@ -7438,7 +7436,7 @@ impl Config {
                 if key == "default" {
                     key
                 } else {
-                    codewhale_agent_contract::role::migrate_legacy_role_token(&key)
+                    codewhale_protocol::fleet::migrate_legacy_role_token(&key)
                         .unwrap_or(&key)
                         .to_string()
                 }
@@ -7467,7 +7465,7 @@ impl Config {
             if raw == "default" {
                 raw
             } else {
-                codewhale_agent_contract::role::migrate_legacy_role_token(&raw)
+                codewhale_protocol::fleet::migrate_legacy_role_token(&raw)
                     .unwrap_or(&raw)
                     .to_string()
             }
@@ -7736,7 +7734,6 @@ fn root_deepseek_model_is_foreign_to_direct_provider(provider: ProviderKind, mod
 // entry points are re-exported so external `crate::config::`
 // callers resolve unchanged; the remaining helpers are imported privately for
 // the workspace-trust/config-load logic that stays in this file (#3311).
-mod home;
 mod paths;
 #[cfg(test)]
 pub(crate) use paths::clipboard_images_dir_for_home;
@@ -7746,9 +7743,7 @@ use paths::{
     default_skills_dir, env_config_path, expand_pathbuf, try_default_config_path,
     workspace_config_key,
 };
-pub(crate) use paths::{
-    clipboard_images_dir, effective_home_dir, expand_path, home_config_path, is_home_config_path,
-};
+pub(crate) use paths::{clipboard_images_dir, expand_path, home_config_path, is_home_config_path};
 
 /// Activate facts only at accepted inference runtime settings boundaries.
 /// Identical settings preserve the shared ticket; readers track its generation.
@@ -7796,7 +7791,7 @@ pub(crate) fn workspace_trust_config_candidate_paths() -> Vec<PathBuf> {
         }
     }
 
-    let Some(home) = effective_home_dir() else {
+    let Some(home) = codewhale_paths::user_home() else {
         return Vec::new();
     };
     vec![
@@ -9841,7 +9836,7 @@ pub(crate) fn provider_config_uses_kimi_imported_token(config: &ProviderConfig) 
         .is_some_and(auth_mode_uses_kimi_imported_token)
 }
 
-pub(crate) use codewhale_config::{
+use codewhale_config::{
     auth_mode_disables_api_key, auth_mode_requires_api_key, auth_mode_uses_kimi_imported_token,
 };
 
@@ -10833,14 +10828,14 @@ fn apply_requirements(config: &mut Config) -> Result<()> {
     }
     if !requirements.allowed_sandbox_modes.is_empty() {
         // At config load there is no live turn mode yet. Check the Agent
-        // baseline with the engine's resolver; Plan can narrow it later.
+        // baseline that the engine's resolver derives from the same approval
+        // posture; Plan can narrow it later.
         // Explicit settings retain their existing allow-list check.
         let mode = config
             .sandbox_mode
             .as_deref()
             .map(str::to_ascii_lowercase)
             .unwrap_or_else(|| {
-                use crate::core::authority::{SandboxNetworkAccess, sandbox_policy_for_turn};
                 use codewhale_execpolicy::ApprovalMode;
 
                 // Sandbox requirements lock approval posture at startup,
@@ -10850,15 +10845,7 @@ fn apply_requirements(config: &mut Config) -> Result<()> {
                     .as_deref()
                     .and_then(ApprovalMode::from_config_value)
                     .unwrap_or_default();
-                sandbox_policy_for_turn(
-                    codewhale_config::AppMode::Agent,
-                    approval,
-                    None,
-                    Path::new("."),
-                    SandboxNetworkAccess::from_config(config.sandbox_network_access),
-                )
-                .config_value()
-                .to_string()
+                approval.agent_baseline_sandbox_mode().to_string()
             });
         if !requirements
             .allowed_sandbox_modes

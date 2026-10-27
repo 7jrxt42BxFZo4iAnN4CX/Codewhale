@@ -1,8 +1,8 @@
 use codewhale_config::route::RouteLimits;
 
-use crate::config::ProviderKind;
 use crate::provider_lake::provider_capability;
 use crate::reasoning_preference::ReasoningEffort;
+use codewhale_config::ProviderKind;
 use codewhale_models::{DEFAULT_COMPACTION_TOKEN_THRESHOLD, context_window_for_model};
 use codewhale_runtime::context_budget::ContextBudget;
 

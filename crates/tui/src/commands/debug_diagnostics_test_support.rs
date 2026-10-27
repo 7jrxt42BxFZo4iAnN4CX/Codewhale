@@ -17,8 +17,8 @@ use std::sync::OnceLock;
 use regex::Regex;
 use tempfile::TempDir;
 
-use crate::config::ProviderKind;
 use crate::tui::app::{App, TuiOptions};
+use codewhale_config::ProviderKind;
 
 /// The shared home seal, re-exported so the diagnostics suites keep one import
 /// path. Take it first in any test whose output depends on the user's state

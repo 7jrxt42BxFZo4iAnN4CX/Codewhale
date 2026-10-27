@@ -167,18 +167,6 @@ pub struct ResolvedPluginComponents {
     pub native: Vec<PathBuf>,
 }
 
-impl ResolvedPluginComponents {
-    pub fn all_paths(&self) -> impl Iterator<Item = &PathBuf> {
-        self.skills
-            .iter()
-            .chain(&self.commands)
-            .chain(&self.agents)
-            .chain(&self.hooks)
-            .chain(&self.lsp)
-            .chain(&self.native)
-    }
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PluginInventory {

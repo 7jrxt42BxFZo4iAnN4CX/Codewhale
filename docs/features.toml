@@ -296,7 +296,7 @@ owner = "crates/tui/src/sandbox"
 [[feature]]
 id = "providers"
 name = "Providers"
-summary = "Provider routes with endpoint-scoped model facts, explicit limits and sourced price estimates."
+summary = "Provider routes with scoped facts, limits, price estimates and a disclosed OrcaRouter offer in the pickers."
 status = "stable"
 surfaces = { tui = "stable", api = "stable" }
 docs = "docs/PROVIDERS.md"
@@ -310,6 +310,16 @@ status = "stable"
 surfaces = { tui = "stable" }
 docs = "docs/CONFIGURATION.md#auto-model-routing-auto-autorouter"
 owner = "crates/tui/src/model_routing.rs"
+
+[[feature]]
+id = "output-limit-answer-recovery"
+name = "Answerless output-limit recovery"
+summary = "Opt-in bounded answer retries after an output-limit stop, including Fleet, with request-scoped nudge receipts."
+status = "flagged"
+surfaces = { tui = "preview", api = "preview" }
+since = "unreleased"
+docs = "docs/CONFIGURATION.md#reasoning-only-recovery-reasoning_only"
+owner = "crates/tui/src/core/engine/turn_loop/continuation.rs"
 
 [[feature]]
 id = "fleet"
@@ -798,3 +808,33 @@ status = "stable"
 since = "0.10.2"
 surfaces = { tui = "stable" }
 owner = "crates/tui/src/tui/herdr.rs"
+
+[[feature]]
+id = "github-action-review"
+name = "GitHub Action review"
+summary = "Review pull requests with the Engine and publish validated findings from a separate trusted job."
+status = "experimental"
+since = "unreleased"
+surfaces = { tui = "preview" }
+docs = "docs/GITHUB_ACTION.md"
+owner = "scripts/github-action/review.mjs"
+
+[[feature]]
+id = "telegram-agent"
+name = "Telegram agent bridge"
+summary = "Use an Engine from Telegram with durable prompt recovery, human-owned approvals and retained replies."
+status = "experimental"
+since = "unreleased"
+surfaces = { api = "preview" }
+docs = "integrations/telegram-bridge/README.md"
+owner = "integrations/telegram-bridge/src/index.mjs"
+
+[[feature]]
+id = "dingtalk-agent"
+name = "DingTalk agent bridge"
+summary = "Connect an internal DingTalk app to the same Engine with scoped identity and durable message recovery."
+status = "experimental"
+since = "unreleased"
+surfaces = { api = "preview" }
+docs = "integrations/dingtalk-bridge/README.md"
+owner = "integrations/dingtalk-bridge/src/index.mjs"

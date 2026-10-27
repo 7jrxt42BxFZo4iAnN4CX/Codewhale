@@ -939,7 +939,7 @@ pub(super) async fn workspace_instructions(
     State(state): State<RuntimeApiState>,
 ) -> Result<Json<WorkspaceInstructionsResponse>, ApiError> {
     let workspace = state.workspace.clone();
-    let home = crate::config::effective_home_dir();
+    let home = codewhale_paths::user_home();
     let configured = state.config.read().instructions_paths();
     // Budgets are resolved per route window; this route has no model context
     // window of its own, so it reports what the loader would use when the

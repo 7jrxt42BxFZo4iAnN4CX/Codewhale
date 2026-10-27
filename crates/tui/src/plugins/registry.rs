@@ -422,21 +422,6 @@ impl PluginRegistry {
             .collect()
     }
 
-    /// Compatibility name retained for the MCP adapter. Unlike the old
-    /// registry this returns only trusted, active bundles.
-    #[must_use]
-    pub fn list_enabled(&self) -> Vec<&LoadedPlugin> {
-        self.active_plugins()
-    }
-
-    #[must_use]
-    pub fn enabled_plugins(&self) -> Vec<&LoadedPlugin> {
-        self.list()
-            .into_iter()
-            .filter(|plugin| plugin.enabled)
-            .collect()
-    }
-
     #[must_use]
     pub fn is_enabled(&self, selector: &str) -> bool {
         self.get(selector).is_some_and(|plugin| plugin.enabled)

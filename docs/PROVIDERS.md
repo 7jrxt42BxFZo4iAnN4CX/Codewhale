@@ -11,6 +11,15 @@ Codewhale codebase. It is intentionally conservative: shipped entries are
 limited to provider IDs, config keys, auth paths, base URLs, model resolution,
 and capability metadata that the code already knows about.
 
+The `/provider` and `/model` pickers recommend OrcaRouter as a partner option.
+Click the recommendation or press F7 to view the Codewhale × OrcaRouter offer:
+a **30% top-up match for DeepSeek V4.1 Flash**. The pager includes the
+[redemption link](https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67)
+and can copy its text. Codewhale earns a referral fee from OrcaRouter.
+Current eligibility and terms are owned by the linked offer page. Viewing it
+preserves the current provider, model and credentials; redemption happens on
+OrcaRouter's site.
+
 DeepSeek remains the default provider, but every entry in `ProviderKind::ALL`
 is a first-class selectable provider route. `ALL` is the catalog/picker
 surface — one identity per vendor. Dual-wire dialect kinds (`*Anthropic`, e.g.

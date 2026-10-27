@@ -1063,9 +1063,10 @@ fn compact_action_id(action_id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, ProviderKind};
+    use crate::config::Config;
     use crate::tui::app::TuiOptions;
     use crate::tui::hotbar::HotbarActionRegistry;
+    use codewhale_config::ProviderKind;
     use codewhale_localization::{Locale, MessageId, tr};
     use crossterm::event::KeyModifiers;
     use std::path::PathBuf;

@@ -1315,7 +1315,10 @@ impl codewhale_runtime::host_terminal::HostTerminal for TuiHostTerminal {
         crate::tui::notifications::set_terminal_focused(focused);
     }
 
-    fn apply_notification_settings(&self, config: &crate::config::NotificationsConfig) {
+    fn apply_notification_settings(
+        &self,
+        config: &codewhale_config::notifications::NotificationsConfig,
+    ) {
         let _ = crate::tui::notifications::apply_settings(config);
     }
 

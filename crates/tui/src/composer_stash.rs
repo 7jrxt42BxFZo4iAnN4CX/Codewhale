@@ -70,7 +70,7 @@ pub struct StashedDraft {
 }
 
 fn default_stash_path() -> Option<PathBuf> {
-    crate::config::effective_home_dir().map(|home| {
+    codewhale_paths::user_home().map(|home| {
         let primary = home.join(".codewhale").join(STASH_FILE_NAME);
         let legacy = home.join(".deepseek").join(STASH_FILE_NAME);
         if primary.exists() || !legacy.exists() {

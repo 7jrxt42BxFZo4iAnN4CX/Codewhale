@@ -12,10 +12,7 @@ use super::task_projection::{
     shell_exec_live_update,
 };
 use super::*;
-use crate::config::{
-    Config, DEFAULT_OPENROUTER_MODEL, DEFAULT_TEXT_MODEL, DEFAULT_ZAI_MODEL, ProviderConfig,
-    ProviderKind, ProvidersConfig,
-};
+use crate::config::{Config, ProviderConfig, ProvidersConfig};
 use crate::core::engine::mock_engine_handle;
 use crate::core::ops::TurnSpec;
 use crate::reasoning_preference::ReasoningEffort;
@@ -40,6 +37,10 @@ use crate::tui::ui_text::{line_to_plain, truncate_line_to_width};
 use crate::tui::views::ConfigView;
 use crate::tui::views::{HelpView, ModalView, ViewAction};
 use crate::working_set::Workspace;
+use codewhale_config::ProviderKind;
+use codewhale_config::descriptors::defaults::{
+    DEFAULT_OPENROUTER_MODEL, DEFAULT_TEXT_MODEL, DEFAULT_ZAI_MODEL,
+};
 use crossterm::event::{KeyEvent, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
     Terminal,
@@ -923,6 +924,8 @@ fn shell_binding_probe(id: ShellBindingId) -> KeyEvent {
         ShellBindingId::ContextInspector => KeyEvent::new(KeyCode::Char('c'), KeyModifiers::ALT),
         ShellBindingId::ProviderRoute => KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE),
         ShellBindingId::Help => KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE),
+        ShellBindingId::ExternalEditor => KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE),
+        ShellBindingId::ProviderOffer => KeyEvent::new(KeyCode::F(7), KeyModifiers::NONE),
         ShellBindingId::Settings => KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE),
         ShellBindingId::ModeCycle => KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
         ShellBindingId::PermissionCycle => KeyEvent::new(KeyCode::BackTab, KeyModifiers::NONE),
@@ -1192,7 +1195,7 @@ fn launch_help_uses_the_same_toggle_and_shortcut_ordering_as_the_live_shell() {
 #[test]
 fn ctrl_t_key_event_reaches_reasoning_effort_cycle() {
     let mut app = create_test_app();
-    app.api_provider = crate::config::ProviderKind::Deepseek;
+    app.api_provider = codewhale_config::ProviderKind::Deepseek;
     app.auto_model = false;
     app.reasoning_effort = ReasoningEffort::Off;
 
@@ -1848,6 +1851,7 @@ fn scroll_test_question_view() -> UserInputView {
                 multi_select: false,
             }],
         },
+        codewhale_localization::Locale::En,
     )
 }
 
@@ -11452,7 +11456,10 @@ async fn provider_switch_from_mimo_to_openrouter_without_key_fails_before_dispat
             &mut engine.handle,
             &mut config,
             captured_fixture_identity,
-            Some(crate::config::OPENROUTER_NEMOTRON_3_ULTRA_MODEL.to_string()),
+            Some(
+                codewhale_config::catalog::reviewed::constants::OPENROUTER_NEMOTRON_3_ULTRA_MODEL
+                    .to_string(),
+            ),
         )
     }
     .await;
@@ -11674,7 +11681,7 @@ async fn xai_api_key_confirmation_saves_only_the_selected_xai_slot() {
         &mut config,
         identity,
         "violet-otter-key".to_string(),
-        crate::config::DEFAULT_XAI_MODEL.to_string(),
+        codewhale_config::descriptors::defaults::DEFAULT_XAI_MODEL.to_string(),
         None,
         None,
     )
@@ -11894,24 +11901,33 @@ fn first_run_ollama_choice_survives_restart_from_canonical_config() {
     // Recreate its successful live-route result here so this regression stays
     // centered on the missing onboarding completion write and restart load.
     app.set_provider_identity(ProviderKind::Ollama, ProviderKind::Ollama.as_str());
-    app.set_model_selection(crate::config::DEFAULT_OLLAMA_MODEL.to_string());
+    app.set_model_selection(
+        codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_MODEL.to_string(),
+    );
     app.note_session_route_change(
         ProviderKind::Ollama.as_str(),
-        crate::config::DEFAULT_OLLAMA_MODEL,
+        codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_MODEL,
     );
     record_provider_model_setup_progress(&mut app, &config);
     assert_eq!(app.api_provider, ProviderKind::Ollama);
-    assert_eq!(app.model, crate::config::DEFAULT_OLLAMA_MODEL);
+    assert_eq!(
+        app.model,
+        codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_MODEL
+    );
 
     complete_provider_picker_onboarding(&mut app, ProviderKind::Ollama);
 
-    let saved = assert_saved_startup_route("ollama", "ollama", crate::config::DEFAULT_OLLAMA_MODEL);
+    let saved = assert_saved_startup_route(
+        "ollama",
+        "ollama",
+        codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_MODEL,
+    );
     assert!(app.pending_route_save.is_none());
     assert!(
         app.status_message.as_deref().is_some_and(|message| {
             message.contains(&format!(
                 "Remembered ollama/{}",
-                crate::config::DEFAULT_OLLAMA_MODEL
+                codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_MODEL
             ))
         }),
         "onboarding must truthfully receipt the durable startup route: {:?}",
@@ -11965,10 +11981,16 @@ fn first_run_ollama_choice_survives_restart_from_canonical_config() {
         model: restart_config.default_model(),
         ..create_test_options()
     };
-    assert_eq!(options.model, crate::config::DEFAULT_OLLAMA_MODEL);
+    assert_eq!(
+        options.model,
+        codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_MODEL
+    );
     let restarted = Box::new(App::new(options, &restart_config));
     assert_eq!(restarted.api_provider, ProviderKind::Ollama);
-    assert_eq!(restarted.model, crate::config::DEFAULT_OLLAMA_MODEL);
+    assert_eq!(
+        restarted.model,
+        codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_MODEL
+    );
     assert_ne!(
         restarted.onboarding,
         OnboardingState::Provider,
@@ -11996,10 +12018,12 @@ fn failed_first_run_route_persistence_keeps_provider_setup_active() {
     app.onboarding = OnboardingState::Provider;
     app.onboarding_needs_api_key = true;
     app.set_provider_identity(ProviderKind::Ollama, ProviderKind::Ollama.as_str());
-    app.set_model_selection(crate::config::DEFAULT_OLLAMA_MODEL.to_string());
+    app.set_model_selection(
+        codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_MODEL.to_string(),
+    );
     app.note_session_route_change(
         ProviderKind::Ollama.as_str(),
-        crate::config::DEFAULT_OLLAMA_MODEL,
+        codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_MODEL,
     );
 
     complete_provider_picker_onboarding(&mut app, ProviderKind::Ollama);
@@ -12282,7 +12306,9 @@ async fn provider_switch_to_openai_codex_normalizes_deepseek_off_effort() {
         default_text_model: Some(DEFAULT_TEXT_MODEL.to_string()),
         providers: Some(ProvidersConfig {
             openai_codex: ProviderConfig {
-                model: Some(crate::config::DEFAULT_OPENAI_CODEX_MODEL.to_string()),
+                model: Some(
+                    codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL.to_string(),
+                ),
                 ..Default::default()
             },
             ..Default::default()
@@ -12293,7 +12319,7 @@ async fn provider_switch_to_openai_codex_normalizes_deepseek_off_effort() {
     crate::oauth::install_test_chatgpt_registration(&mut config).unwrap();
     crate::codex_model_cache::install_test_chatgpt_roster(
         &config,
-        &[crate::config::DEFAULT_OPENAI_CODEX_MODEL],
+        &[codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL],
     )
     .unwrap();
     {
@@ -12309,7 +12335,10 @@ async fn provider_switch_to_openai_codex_normalizes_deepseek_off_effort() {
     .await;
 
     assert_eq!(app.api_provider, ProviderKind::OpenaiCodex);
-    assert_eq!(app.model, crate::config::DEFAULT_OPENAI_CODEX_MODEL);
+    assert_eq!(
+        app.model,
+        codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL
+    );
     assert_eq!(app.reasoning_effort, ReasoningEffort::Low);
     assert_eq!(app.reasoning_effort_preference, Some(ReasoningEffort::Off));
     assert_eq!(app.reasoning_effort_display_label(), "low");
@@ -12413,7 +12442,11 @@ async fn auto_dispatch_keeps_last_and_pending_receipts_aligned() {
         app.pending_turn_route
             .as_ref()
             .map(|(provider, model, auto)| (*provider, model.as_str(), *auto)),
-        Some((ProviderKind::Zai, crate::config::DEFAULT_ZAI_MODEL, true,))
+        Some((
+            ProviderKind::Zai,
+            codewhale_config::descriptors::defaults::DEFAULT_ZAI_MODEL,
+            true,
+        ))
     );
     assert_eq!(
         app.last_auto_route_receipt, app.pending_auto_route_receipt,
@@ -15970,6 +16003,7 @@ fn turn_liveness_preserves_pending_user_input_beyond_tool_timeout() {
             crate::tools::user_input::UserInputRequest {
                 questions: Vec::new(),
             },
+            app.ui_locale,
         ));
         // A hidden modal is not an answer or a cancellation. Engine still
         // owns an indefinite wait; the UI must not manufacture a timeout.
@@ -16024,7 +16058,8 @@ fn install_pending_question(app: &mut App, id: &str) {
         questions: Vec::new(),
     };
     app.pending_user_input_prompt = Some((id.into(), request.clone()));
-    app.view_stack.push(UserInputView::new(id, request));
+    app.view_stack
+        .push(UserInputView::new(id, request, app.ui_locale));
     app.push_status_toast_record(
         StatusToast::new("Answer question", StatusToastLevel::Warning, None).for_action(id),
     );
@@ -16982,7 +17017,7 @@ fn make_subagent(
         fork_context: false,
         workspace: None,
         git_branch: None,
-        agent_type: crate::tools::subagent::FleetRole::Worker,
+        agent_type: codewhale_agent_contract::role::FleetRole::Worker,
         assignment: crate::tools::subagent::SubAgentAssignment {
             native_preset: None,
             objective: format!("objective-{id}"),
@@ -19553,11 +19588,11 @@ fn visible_slash_menu_starts_with_six_tasks_and_still_lists_the_rest() {
 #[test]
 fn visible_slash_model_completions_are_provider_scoped() {
     let mut app = create_test_app();
-    app.api_provider = crate::config::ProviderKind::Together;
-    app.model = crate::config::DEFAULT_TOGETHER_MODEL.to_string();
+    app.api_provider = codewhale_config::ProviderKind::Together;
+    app.model = codewhale_config::descriptors::defaults::DEFAULT_TOGETHER_MODEL.to_string();
     app.provider_models.insert(
         "openrouter".to_string(),
-        crate::config::DEFAULT_OPENROUTER_MODEL.to_string(),
+        codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_MODEL.to_string(),
     );
     app.input = "/model deep".to_string();
     app.cursor_position = app.input.chars().count();
@@ -19569,7 +19604,10 @@ fn visible_slash_model_completions_are_provider_scoped() {
         .collect::<Vec<_>>();
 
     assert!(names.contains(&"/model deepseek-ai/DeepSeek-V4-Pro"));
-    let openrouter_completion = format!("/model {}", crate::config::DEFAULT_OPENROUTER_MODEL);
+    let openrouter_completion = format!(
+        "/model {}",
+        codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_MODEL
+    );
     assert!(
         !names.contains(&openrouter_completion.as_str()),
         "OpenRouter saved rows must not appear as bare Together /model completions"
@@ -21362,19 +21400,23 @@ fn external_grant_reuse_completes_provider_onboarding() {
     app.offline_mode = true;
     app.trust_mode = true;
     app.set_provider_identity(ProviderKind::Xai, ProviderKind::Xai.as_str());
-    app.set_model_selection(crate::config::DEFAULT_XAI_MODEL.to_string());
+    app.set_model_selection(codewhale_config::descriptors::defaults::DEFAULT_XAI_MODEL.to_string());
 
-    complete_provider_picker_onboarding(&mut app, crate::config::ProviderKind::Xai);
+    complete_provider_picker_onboarding(&mut app, codewhale_config::ProviderKind::Xai);
 
     assert_ne!(
         app.onboarding,
         OnboardingState::Provider,
         "a satisfied provider must not return to the provider step"
     );
-    assert_eq!(app.onboarding_provider, crate::config::ProviderKind::Xai);
+    assert_eq!(app.onboarding_provider, codewhale_config::ProviderKind::Xai);
     assert!(!app.onboarding_needs_api_key);
     assert!(!app.offline_mode);
-    assert_saved_startup_route("xai", "xai", crate::config::DEFAULT_XAI_MODEL);
+    assert_saved_startup_route(
+        "xai",
+        "xai",
+        codewhale_config::descriptors::defaults::DEFAULT_XAI_MODEL,
+    );
 }
 
 #[test]
@@ -22908,13 +22950,14 @@ fn legacy_child_usage_metadata_fails_closed_without_parent_route_fallback() {
                 openrouter_vendor: None,
                 billing_surface: Some(crate::pricing::FIRST_PARTY_PAYG_BILLING_SURFACE.to_string()),
                 endpoint_fingerprint: crate::cost_status::endpoint_fingerprint(
-                    crate::config::DEFAULT_DEEPSEEK_BASE_URL,
+                    codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
                 ),
                 provider_live_pricing: None,
                 billing_mode: crate::cost_status::RouteBillingMode::Metered,
                 dispatched_at: chrono::Utc::now(),
             }),
-            base_url: crate::config::DEFAULT_DEEPSEEK_BASE_URL.to_string(),
+            base_url: codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL
+                .to_string(),
             billing_product: crate::route_billing::RouteProduct::Unproven,
         }),
         auto_route_receipt: None,
@@ -22970,7 +23013,7 @@ fn child_usage_metadata_carries_cache_write_and_reasoning_end_to_end() {
     // The shared producer emits every class.
     let priced_route = crate::cost_status::EffectiveRouteEnvelope {
         openrouter_vendor: None,
-        provider: crate::config::ProviderKind::Anthropic,
+        provider: codewhale_config::ProviderKind::Anthropic,
         provider_identity: "anthropic-api".to_string(),
         model: "claude-haiku-4-5".to_string(),
         billing_surface: Some(crate::pricing::FIRST_PARTY_PAYG_BILLING_SURFACE.to_string()),
@@ -23000,7 +23043,7 @@ fn child_usage_metadata_carries_cache_write_and_reasoning_end_to_end() {
     // The parent deliberately stays DeepSeek: only the frozen child envelope
     // may control this price.
     let mut priced_app = create_test_app();
-    priced_app.api_provider = crate::config::ProviderKind::Deepseek;
+    priced_app.api_provider = codewhale_config::ProviderKind::Deepseek;
     priced_app.billing_presentation = crate::route_billing::BillingPresentation::Metered;
     let mut metadata = serde_json::json!({});
     crate::cost_status::attach_child_usage_metadata(&mut metadata, &priced_route, &child_usage);
@@ -23026,11 +23069,11 @@ fn child_usage_metadata_carries_cache_write_and_reasoning_end_to_end() {
     // closed and name the class, rather than pricing "completely" at 0 for the
     // write tokens.
     let mut unpriced_app = create_test_app();
-    unpriced_app.api_provider = crate::config::ProviderKind::Deepseek;
+    unpriced_app.api_provider = codewhale_config::ProviderKind::Deepseek;
     unpriced_app.billing_presentation = crate::route_billing::BillingPresentation::Metered;
     let unpriced_route = crate::cost_status::EffectiveRouteEnvelope {
         openrouter_vendor: None,
-        provider: crate::config::ProviderKind::Moonshot,
+        provider: codewhale_config::ProviderKind::Moonshot,
         provider_identity: "moonshot-api".to_string(),
         model: "kimi-k2.7-code".to_string(),
         billing_surface: Some(crate::pricing::FIRST_PARTY_PAYG_BILLING_SURFACE.to_string()),
@@ -23059,7 +23102,7 @@ fn child_usage_metadata_carries_cache_write_and_reasoning_end_to_end() {
     // A child reporting more reasoning than output is contradicting the subset
     // invariant; the figure is discarded rather than inflating billable output.
     let mut pathological = create_test_app();
-    pathological.api_provider = crate::config::ProviderKind::Deepseek;
+    pathological.api_provider = codewhale_config::ProviderKind::Deepseek;
     pathological.billing_presentation = crate::route_billing::BillingPresentation::Metered;
     let mut metadata = serde_json::json!({});
     crate::cost_status::attach_child_usage_metadata(
@@ -23076,7 +23119,7 @@ fn child_usage_metadata_carries_cache_write_and_reasoning_end_to_end() {
     handle_tool_call_complete(&mut pathological, "rlm-2", "rlm", &result);
     // Cost is that of 1000 input / 100 output, with no reasoning surcharge.
     let sane = crate::pricing::calculate_turn_cost_estimate_for_provider(
-        crate::config::ProviderKind::Deepseek,
+        codewhale_config::ProviderKind::Deepseek,
         "deepseek-v4-flash",
         &codewhale_models::Usage {
             input_tokens: 1_000,
@@ -23316,7 +23359,7 @@ fn picker_rename_of_inactive_session_does_not_touch_active_metadata() {
 #[test]
 fn codex_tool_child_usage_does_not_inherit_public_api_pricing() {
     let mut app = create_test_app();
-    app.api_provider = crate::config::ProviderKind::OpenaiCodex;
+    app.api_provider = codewhale_config::ProviderKind::OpenaiCodex;
     app.billing_presentation =
         crate::route_billing::BillingPresentation::Subscription("Codex OAuth quota");
     let result = Ok(crate::tools::spec::ToolResult::success("ok").with_metadata(
@@ -24194,7 +24237,7 @@ fn session_restore_rebuilds_fresh_codex_route_limits() {
     crate::codex_model_cache::install_test_chatgpt_roster_with_metadata(
         &config,
         vec![crate::codex_model_cache::CodexModelMetadata {
-            id: crate::config::DEFAULT_OPENAI_CODEX_MODEL.into(),
+            id: codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL.into(),
             display_name: None,
             context_window: Some(272_000),
             reasoning: Some(true),
@@ -24204,7 +24247,8 @@ fn session_restore_rebuilds_fresh_codex_route_limits() {
     .unwrap();
     let mut session = saved_session_with_messages(vec![text_message("user", "resume ChatGPT")]);
     session.metadata.model_provider = ProviderKind::OpenaiCodex.as_str().to_string();
-    session.metadata.model = crate::config::DEFAULT_OPENAI_CODEX_MODEL.to_string();
+    session.metadata.model =
+        codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL.to_string();
 
     apply_loaded_session(&mut app, &mut config, &session).expect("restore session");
 
@@ -24301,8 +24345,10 @@ fn auto_route_receipt_survives_session_snapshot_and_restore() {
     let receipt = crate::model_routing::AutoRouteReceipt {
         tier: crate::model_routing::AutoRouteTier::Strong,
         pair: crate::model_routing::AutoRoutePair {
-            strong: crate::config::ZAI_GLM_5_2_MODEL.to_string(),
-            fast: Some(crate::config::ZAI_GLM_5_TURBO_MODEL.to_string()),
+            strong: codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL.to_string(),
+            fast: Some(
+                codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_TURBO_MODEL.to_string(),
+            ),
         },
         scope: crate::model_routing::AutoRouteScope::ResolvedProvider,
         data_path: crate::model_routing::AutoRouteDataPath::LocalHeuristic,
@@ -24316,7 +24362,8 @@ fn auto_route_receipt_survives_session_snapshot_and_restore() {
     app.set_model_selection("auto".to_string());
     app.last_effective_provider = Some(ProviderKind::Zai);
     app.last_effective_provider_identity = Some("zai".to_string());
-    app.last_effective_model = Some(crate::config::ZAI_GLM_5_2_MODEL.to_string());
+    app.last_effective_model =
+        Some(codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL.to_string());
     app.last_auto_route_receipt = Some(receipt.clone());
     app.last_effective_reasoning_effort =
         Some(EffectiveReasoningEffort::Tier(ReasoningEffort::High));
@@ -24347,7 +24394,10 @@ fn auto_route_receipt_survives_session_snapshot_and_restore() {
         .expect("persisted Auto route");
     assert_eq!(saved.provider, ProviderKind::Zai);
     assert_eq!(saved.provider_identity, "zai");
-    assert_eq!(saved.model, crate::config::ZAI_GLM_5_2_MODEL);
+    assert_eq!(
+        saved.model,
+        codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL
+    );
     assert_eq!(saved.receipt, receipt);
     assert_eq!(
         saved.effective_reasoning_effort,
@@ -24369,7 +24419,7 @@ fn auto_route_receipt_survives_session_snapshot_and_restore() {
     );
     assert_eq!(
         restored_app.last_effective_model.as_deref(),
-        Some(crate::config::ZAI_GLM_5_2_MODEL)
+        Some(codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL)
     );
     assert_eq!(restored_app.last_auto_route_receipt, Some(receipt));
     assert_eq!(
@@ -28668,7 +28718,7 @@ fn env_only_auth_failure_reopens_provider_onboarding() {
     use crate::error_taxonomy::ErrorEnvelope;
     let mut app = create_test_app();
     app.ui_locale = codewhale_localization::Locale::Ja;
-    app.api_provider = crate::config::ProviderKind::Anthropic;
+    app.api_provider = codewhale_config::ProviderKind::Anthropic;
     app.config_path = Some(std::path::PathBuf::from("/tmp/codewhale-phase2.toml"));
     app.api_key_env_only = true;
     app.onboarding = crate::tui::app::OnboardingState::None;
@@ -29597,19 +29647,22 @@ fn end_at_newline_stays_at_line_end() {
 fn notification_settings_tui_always_keeps_configured_method_no_threshold() {
     let config = Config {
         tui: Some(crate::config::TuiConfig {
-            notification_condition: Some(crate::config::NotificationCondition::Always),
+            notification_condition: Some(
+                codewhale_config::notifications::NotificationCondition::Always,
+            ),
             ..Default::default()
         }),
-        notifications: Some(crate::config::NotificationsConfig {
-            method: crate::config::NotificationMethod::Bel,
+        notifications: Some(codewhale_config::notifications::NotificationsConfig {
+            method: codewhale_config::notifications::NotificationMethod::Bel,
             threshold_secs: 120,
-            completion_sound: crate::config::CompletionSound::Beep,
+            completion_sound: codewhale_config::notifications::CompletionSound::Beep,
             sound_file: None,
             include_summary: true,
-            subagent_completion: crate::config::SubagentCompletionNotification::default(),
-            event_sound: crate::config::EventSoundConfig::default(),
+            subagent_completion:
+                codewhale_config::notifications::SubagentCompletionNotification::default(),
+            event_sound: codewhale_config::notifications::EventSoundConfig::default(),
             quiet: false,
-            events: crate::config::NotificationEventsConfig::default(),
+            events: codewhale_config::notifications::NotificationEventsConfig::default(),
             sound: None,
             condition: None,
         }),
@@ -29628,7 +29681,9 @@ fn notification_settings_tui_always_keeps_configured_method_no_threshold() {
 fn notification_settings_tui_never_disables_notifications() {
     let config = Config {
         tui: Some(crate::config::TuiConfig {
-            notification_condition: Some(crate::config::NotificationCondition::Never),
+            notification_condition: Some(
+                codewhale_config::notifications::NotificationCondition::Never,
+            ),
             ..Default::default()
         }),
         ..Config::default()
@@ -29640,16 +29695,17 @@ fn notification_settings_tui_never_disables_notifications() {
 #[test]
 fn notification_settings_no_tui_override_uses_notifications_block() {
     let config = Config {
-        notifications: Some(crate::config::NotificationsConfig {
-            method: crate::config::NotificationMethod::Osc9,
+        notifications: Some(codewhale_config::notifications::NotificationsConfig {
+            method: codewhale_config::notifications::NotificationMethod::Osc9,
             threshold_secs: 45,
-            completion_sound: crate::config::CompletionSound::Beep,
+            completion_sound: codewhale_config::notifications::CompletionSound::Beep,
             sound_file: None,
             include_summary: false,
-            subagent_completion: crate::config::SubagentCompletionNotification::default(),
-            event_sound: crate::config::EventSoundConfig::default(),
+            subagent_completion:
+                codewhale_config::notifications::SubagentCompletionNotification::default(),
+            event_sound: codewhale_config::notifications::EventSoundConfig::default(),
             quiet: false,
-            events: crate::config::NotificationEventsConfig::default(),
+            events: codewhale_config::notifications::NotificationEventsConfig::default(),
             sound: None,
             condition: None,
         }),
@@ -33057,7 +33113,7 @@ fn notification_live_delta_updates_current_config_projection_and_queries_atomica
     assert!(!config.notifications_config().events.approval_needed);
     assert_eq!(
         config.notifications_config().sound,
-        Some(crate::config::CompletionSound::Whale)
+        Some(codewhale_config::notifications::CompletionSound::Whale)
     );
     assert_eq!(app.notification_settings, config.notifications_config());
     let before = app.notification_settings.clone();
@@ -33065,7 +33121,7 @@ fn notification_live_delta_updates_current_config_projection_and_queries_atomica
         apply_notification_update(
             &mut app,
             &mut config,
-            crate::config::NotificationConfigUpdate::ThresholdSecs(u64::MAX)
+            codewhale_config::notifications::NotificationConfigUpdate::ThresholdSecs(u64::MAX)
         )
         .is_err()
     );
@@ -33091,7 +33147,7 @@ fn notification_invalid_live_delta_uses_selected_locale_and_keeps_policy() {
         let error = apply_notification_update(
             &mut app,
             &mut config,
-            crate::config::NotificationConfigUpdate::ThresholdSecs(u64::MAX),
+            codewhale_config::notifications::NotificationConfigUpdate::ThresholdSecs(u64::MAX),
         )
         .unwrap_err();
         let expected = tr(locale, MessageId::ConfigCommandInvalidValue)
@@ -34268,7 +34324,7 @@ fn engine_retry_status_receipts_survive_footer_overwrite_in_the_existing_transcr
 fn engine_retry_receipt_projection_keeps_quiet_history_without_internal_status_rows() {
     let _home = SettingsHomeGuard::new();
     let config = Config {
-        notifications: Some(crate::config::NotificationsConfig {
+        notifications: Some(codewhale_config::notifications::NotificationsConfig {
             quiet: true,
             ..Default::default()
         }),

@@ -5342,7 +5342,10 @@ async fn create_thread_scenario() -> Result<()> {
             .await?;
 
         assert_eq!(thread.model_provider.as_deref(), Some("zai"));
-        assert_eq!(thread.model, crate::config::DEFAULT_ZAI_MODEL);
+        assert_eq!(
+            thread.model,
+            codewhale_config::descriptors::defaults::DEFAULT_ZAI_MODEL
+        );
     }
     // from create_thread_defaults_auto_approve_to_false
     {
@@ -10020,8 +10023,9 @@ async fn completed_turn_without_engine_output_fails() -> Result<()> {
 async fn worker_lifecycle_receipts_preserve_owner_outcome_and_durable_replay() -> Result<()> {
     use crate::core::events::AgentProgressEventMeta;
     use crate::tools::subagent::{
-        AgentWorkerSpec, AgentWorkerStatus, AgentWorkerToolProfile, FleetRole, SubAgentManager,
+        AgentWorkerSpec, AgentWorkerStatus, AgentWorkerToolProfile, SubAgentManager,
     };
+    use codewhale_agent_contract::role::FleetRole;
     use codewhale_agent_contract::worker_profile::WorkerRuntimeProfile;
 
     let runtime_dir = test_runtime_dir();
@@ -20801,9 +20805,8 @@ fn output_cap_wire_requires_positive_integer_and_preserves_legacy_absence() -> R
 /// the rest clear on ack.
 #[tokio::test]
 async fn notices_raise_from_engine_events_and_clear_on_settle_or_ack() -> Result<()> {
-    use crate::tools::subagent::{
-        AgentWorkerSpec, AgentWorkerToolProfile, FleetRole, SubAgentManager,
-    };
+    use crate::tools::subagent::{AgentWorkerSpec, AgentWorkerToolProfile, SubAgentManager};
+    use codewhale_agent_contract::role::FleetRole;
     use codewhale_agent_contract::worker_profile::WorkerRuntimeProfile;
 
     let manager = test_manager(test_runtime_dir())?;

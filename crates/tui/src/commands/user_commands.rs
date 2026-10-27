@@ -46,12 +46,12 @@ use super::CommandResult;
 
 /// Path to the global user commands directory: `~/.codewhale/commands/`.
 fn global_commands_dir() -> PathBuf {
-    let home = crate::config::effective_home_dir().unwrap_or_else(|| PathBuf::from("~"));
+    let home = codewhale_paths::user_home().unwrap_or_else(|| PathBuf::from("~"));
     home.join(".codewhale").join("commands")
 }
 
 fn legacy_global_commands_dir() -> PathBuf {
-    let home = crate::config::effective_home_dir().unwrap_or_else(|| PathBuf::from("~"));
+    let home = codewhale_paths::user_home().unwrap_or_else(|| PathBuf::from("~"));
     home.join(".deepseek").join("commands")
 }
 
@@ -87,7 +87,7 @@ pub(crate) fn commands_dirs(workspace: Option<&Path>) -> Vec<PathBuf> {
 /// Whether `path` came from the user's own global command or workflow store,
 /// as opposed to a workspace (repository) directory.
 pub(crate) fn is_user_global_command_source(path: &Path) -> bool {
-    let home = crate::config::effective_home_dir().unwrap_or_else(|| PathBuf::from("~"));
+    let home = codewhale_paths::user_home().unwrap_or_else(|| PathBuf::from("~"));
     [
         global_commands_dir(),
         legacy_global_commands_dir(),
@@ -106,7 +106,7 @@ pub(crate) fn workflow_dirs(workspace: Option<&Path>) -> Vec<PathBuf> {
     if let Some(ws) = trusted_workspace(workspace) {
         dirs.push(ws.join(".codewhale").join("workflows"));
     }
-    let home = crate::config::effective_home_dir().unwrap_or_else(|| PathBuf::from("~"));
+    let home = codewhale_paths::user_home().unwrap_or_else(|| PathBuf::from("~"));
     dirs.push(home.join(".codewhale").join("workflows"));
     dirs
 }
@@ -506,7 +506,7 @@ mod tests {
             "workspace version",
         );
         // Global version — simulate by putting it in a "global" temp dir.
-        // Paths resolve via effective_home_dir (HOME/USERPROFILE-aware). We test the
+        // Paths resolve via codewhale_paths::user_home (HOME/USERPROFILE-aware). We test the
         // first-match-wins semantics by putting the same name in both
         // workspace-scanned dirs. The first dir in precedence order wins.
         write_command(

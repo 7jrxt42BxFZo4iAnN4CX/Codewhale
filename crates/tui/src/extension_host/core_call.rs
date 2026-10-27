@@ -177,7 +177,7 @@ pub(crate) fn refusal(specs: &[Arc<dyn ToolSpec>], name: &str, input: &Value) ->
     }
     let family = |candidate: &str| {
         REFUSED_NAMES.contains(&candidate)
-            || crate::core::engine::tool_catalog::is_tool_search_tool(candidate)
+            || codewhale_tools::names::is_tool_search_tool(candidate)
             || candidate.starts_with("automation_")
     };
     if family(&lower) || family(&resolved) {

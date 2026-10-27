@@ -1,19 +1,19 @@
 
     async fn assert_zai_request_truth(streaming: bool) {
         for base_url in [
-            crate::config::DEFAULT_ZAI_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_ZAI_BASE_URL,
             "https://api.z.ai/api/paas/v4",
         ] {
             let (high_path, high) = capture_zai_chat_request(
                 base_url,
-                crate::config::ZAI_GLM_5_2_MODEL,
+                codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL,
                 Some("high"),
                 streaming,
             )
             .await;
             let (max_path, max) = capture_zai_chat_request(
                 base_url,
-                crate::config::ZAI_GLM_5_2_MODEL,
+                codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL,
                 Some("max"),
                 streaming,
             )
@@ -28,7 +28,7 @@
                     json!({"type": "enabled", "clear_thinking": false}),
                     "{base_url}: {body}"
                 );
-                assert_eq!(body["model"], crate::config::ZAI_GLM_5_2_MODEL);
+                assert_eq!(body["model"], codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL);
             }
             let mut high_without_effort = high.clone();
             let mut max_without_effort = max.clone();
@@ -43,8 +43,8 @@
             assert_eq!(high_without_effort, max_without_effort);
 
             for model in [
-                crate::config::ZAI_GLM_5_1_MODEL,
-                crate::config::ZAI_GLM_5_TURBO_MODEL,
+                codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_1_MODEL,
+                codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_TURBO_MODEL,
             ] {
                 for requested in ["high", "max"] {
                     let (_, toggle_only) =
@@ -69,7 +69,7 @@
 
         let (_, gateway) = capture_zai_chat_request(
             "https://gateway.example/v1",
-            crate::config::ZAI_GLM_5_2_MODEL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL,
             Some("max"),
             streaming,
         )
@@ -79,7 +79,7 @@
 
         let (_, gateway_turbo) = capture_zai_chat_request(
             "https://gateway.example/v1",
-            crate::config::ZAI_GLM_5_TURBO_MODEL,
+            codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_TURBO_MODEL,
             Some("max"),
             streaming,
         )
@@ -93,7 +93,7 @@
 
     async fn assert_minimax_request_truth(streaming: bool) {
         for base_url in [
-            crate::config::DEFAULT_MINIMAX_BASE_URL,
+            codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_BASE_URL,
             "https://api.minimaxi.com/v1",
         ] {
             for (effort, expected_thinking) in [
@@ -103,7 +103,7 @@
             ] {
                 let (_, body) = capture_minimax_chat_request(
                     base_url,
-                    crate::config::DEFAULT_MINIMAX_MODEL,
+                    codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_MODEL,
                     Some(effort),
                     streaming,
                 )
@@ -125,10 +125,10 @@
         }
 
         for (base_url, model) in [
-            (crate::config::DEFAULT_MINIMAX_BASE_URL, "MiniMax-M2"),
+            (codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_BASE_URL, "MiniMax-M2"),
             (
                 "https://gateway.example/v1",
-                crate::config::DEFAULT_MINIMAX_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_MODEL,
             ),
         ] {
             for effort in ["off", "high", "max"] {
@@ -157,8 +157,8 @@
     async fn assert_k3_request_json_route_boundaries(streaming: bool) {
         for (requested, expected) in [("off", "low"), ("high", "high"), ("max", "max")] {
             let body = capture_moonshot_chat_request(
-                crate::config::DEFAULT_MOONSHOT_BASE_URL,
-                crate::config::MOONSHOT_KIMI_K3_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL,
+                codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL,
                 Some(requested),
                 streaming,
             )
@@ -180,8 +180,8 @@
             ("max", Some(json!({"type": "enabled", "effort": "max"}))),
         ] {
             let membership = capture_moonshot_chat_request(
-                crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-                crate::config::KIMI_CODE_K3_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
                 Some(requested),
                 streaming,
             )
@@ -204,8 +204,8 @@
         }
 
         let provider_default = capture_moonshot_chat_request(
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             None,
             streaming,
         )
@@ -218,7 +218,7 @@
 
         let neighbor = capture_moonshot_chat_request(
             "https://proxy.example/v1",
-            crate::config::MOONSHOT_KIMI_K3_MODEL,
+            codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL,
             Some("max"),
             streaming,
         )
@@ -240,7 +240,7 @@
     }
 
     async fn assert_kimi_code_raw_off_replays_tool_history(streaming: bool) {
-        let mut request = k3_request_fixture(crate::config::KIMI_CODE_K3_MODEL, Some("off"), streaming);
+        let mut request = k3_request_fixture(codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL, Some("off"), streaming);
         request.messages = vec![
             Message {
                 role: Role::Assistant,
@@ -274,8 +274,8 @@
         ];
 
         let body = capture_moonshot_chat_request_body(
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             request,
         )
         .await;
@@ -301,12 +301,12 @@
     }
 
     async fn assert_kimi_code_apply_patch_schema_is_mfjs_compatible(streaming: bool) {
-        let mut request = k3_request_fixture(crate::config::KIMI_CODE_K3_MODEL, Some("low"), streaming);
+        let mut request = k3_request_fixture(codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL, Some("low"), streaming);
         request.tools = Some(vec![apply_patch_request_tool()]);
 
         let body = capture_moonshot_chat_request_body(
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             request,
         )
         .await;
@@ -334,7 +334,7 @@
     // body and the request still sends, so one bad MCP server cannot sink
     // every Moonshot-routed turn.
     async fn assert_kimi_code_invalid_root_ref_drops_only_that_tool(streaming: bool) {
-        let mut request = k3_request_fixture(crate::config::KIMI_CODE_K3_MODEL, Some("low"), streaming);
+        let mut request = k3_request_fixture(codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL, Some("low"), streaming);
         let mut tool = test_tool("private_schema_tool");
         tool.input_schema = json!({
             "$ref": "#/$defs/private-root-name-3158",
@@ -344,8 +344,8 @@
         request.tool_choice = Some(json!("auto"));
 
         let body = capture_moonshot_chat_request_body(
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             request,
         )
         .await;
@@ -364,7 +364,7 @@
     }
 
     async fn assert_kimi_code_untyped_default_drops_only_that_tool(streaming: bool) {
-        let mut request = k3_request_fixture(crate::config::KIMI_CODE_K3_MODEL, Some("low"), streaming);
+        let mut request = k3_request_fixture(codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL, Some("low"), streaming);
         let mut tool = test_tool("private_default_tool");
         tool.input_schema = json!({
             "type": "object",
@@ -377,8 +377,8 @@
         request.tools = Some(vec![tool]);
 
         let body = capture_moonshot_chat_request_body(
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             request,
         )
         .await;
@@ -408,11 +408,11 @@
         );
         assert_eq!(tool.input_schema["properties"]["mode"]["const"], "fast");
 
-        let mut request = k3_request_fixture(crate::config::KIMI_CODE_K3_MODEL, Some("low"), true);
+        let mut request = k3_request_fixture(codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL, Some("low"), true);
         request.tools = Some(vec![tool]);
         let body = capture_moonshot_chat_request_body(
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             request,
         )
         .await;
@@ -451,7 +451,7 @@
             // Children can inspect the shared goal, but only its owning
             // session can create it or change its completion state.
             .filter(|name| !matches!(*name, "create_goal" | "update_goal"))
-            .chain([crate::core::engine::tool_catalog::TOOL_SEARCH_NAME])
+            .chain([codewhale_tools::names::TOOL_SEARCH_NAME])
             .map(str::to_string)
             .collect();
         assert_eq!(source_names, expected_names);
@@ -467,11 +467,11 @@
                 .unwrap_or_else(|error| panic!("General child tool {}: {error}", tool.name));
         }
 
-        let mut request = k3_request_fixture(crate::config::KIMI_CODE_K3_MODEL, Some("low"), false);
+        let mut request = k3_request_fixture(codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL, Some("low"), false);
         request.tools = Some(tools);
         let body = capture_moonshot_chat_request_body(
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             request,
         )
         .await;
@@ -552,7 +552,7 @@
             request.temperature = Some(0.3);
             request.top_p = Some(0.8);
             let body = capture_moonshot_chat_request_body(
-                crate::config::DEFAULT_KIMI_CODE_BASE_URL,
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
                 model,
                 request,
             )
@@ -571,43 +571,43 @@
     #[tokio::test]
     async fn selected_moonshot_k3_model_is_the_model_on_the_wire() {
         let platform = capture_moonshot_chat_request(
-            crate::config::DEFAULT_MOONSHOT_BASE_URL,
-            crate::config::MOONSHOT_KIMI_K3_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL,
             Some("high"),
             false,
         )
         .await;
         assert_eq!(
             platform["model"],
-            json!(crate::config::MOONSHOT_KIMI_K3_MODEL),
+            json!(codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL),
             "the direct platform route must send the id the user named: {platform}"
         );
         assert_ne!(
             platform["model"],
-            json!(crate::config::DEFAULT_MOONSHOT_MODEL),
+            json!(codewhale_config::descriptors::defaults::DEFAULT_MOONSHOT_MODEL),
             "an explicit selection is never replaced by the provider default: {platform}"
         );
         assert_ne!(
             platform["model"],
-            json!(crate::config::KIMI_CODE_K3_MODEL),
+            json!(codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL),
             "the coding-plan id must not leak onto the platform route: {platform}"
         );
 
         let membership = capture_moonshot_chat_request(
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             Some("high"),
             false,
         )
         .await;
         assert_eq!(
             membership["model"],
-            json!(crate::config::KIMI_CODE_K3_MODEL),
+            json!(codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL),
             "the Kimi Code membership route must send bare `k3`: {membership}"
         );
         assert_ne!(
             membership["model"],
-            json!(crate::config::MOONSHOT_KIMI_K3_MODEL),
+            json!(codewhale_config::catalog::reviewed::constants::MOONSHOT_KIMI_K3_MODEL),
             "the platform id must not leak onto the coding-plan route: {membership}"
         );
     }
@@ -674,7 +674,7 @@
     async fn moonshot_drops_only_incompatible_tool() {
         for streaming in [false, true] {
             let mut request =
-                k3_request_fixture(crate::config::KIMI_CODE_K3_MODEL, Some("low"), streaming);
+                k3_request_fixture(codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL, Some("low"), streaming);
             let good = test_tool("compatible_lookup");
             let mut bad = test_tool("mcp_pattern_tool");
             bad.input_schema = json!({
@@ -687,8 +687,8 @@
             request.tool_choice = Some(json!("auto"));
 
             let body = capture_moonshot_chat_request_body(
-                crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-                crate::config::KIMI_CODE_K3_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
                 request,
             )
             .await;
@@ -718,12 +718,12 @@
         for streaming in [false, true] {
             let server = MockServer::start().await;
             let client = moonshot_request_boundary_client(
-                crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-                crate::config::KIMI_CODE_K3_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
                 server.uri(),
             );
             let mut request =
-                k3_request_fixture(crate::config::KIMI_CODE_K3_MODEL, Some("low"), streaming);
+                k3_request_fixture(codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL, Some("low"), streaming);
             let good = test_tool("compatible_lookup");
             let mut bad = test_tool("mcp_pattern_tool");
             bad.input_schema = json!({
@@ -787,11 +787,11 @@
             .mount(&server)
             .await;
         let client = moonshot_request_boundary_client(
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             server.uri(),
         );
-        let mut request = k3_request_fixture(crate::config::KIMI_CODE_K3_MODEL, Some("low"), true);
+        let mut request = k3_request_fixture(codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL, Some("low"), true);
         let good = test_tool("compatible_lookup");
         let mut bad = test_tool("mcp_pattern_tool");
         bad.input_schema = json!({

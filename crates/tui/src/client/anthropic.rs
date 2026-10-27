@@ -28,9 +28,10 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::config::{ProviderKind, wire_model_for_provider_route};
+use crate::config::wire_model_for_provider_route;
 use crate::llm_client::StreamEventBox;
 use crate::tools::schema_sanitize;
+use codewhale_config::ProviderKind;
 use codewhale_models::{ContentBlock, MessageRequest, MessageResponse, StreamEvent, Usage};
 use codewhale_runtime::logging;
 
@@ -1363,7 +1364,9 @@ mod tests {
     }
 
     fn minimax_test_client() -> CodewhaleClient {
-        minimax_test_client_for(crate::config::DEFAULT_MINIMAX_ANTHROPIC_BASE_URL)
+        minimax_test_client_for(
+            codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_ANTHROPIC_BASE_URL,
+        )
     }
 
     fn minimax_test_client_for(base_url: &str) -> CodewhaleClient {
@@ -1734,7 +1737,9 @@ mod tests {
 
     #[test]
     fn deepseek_messages_body_retires_aliases_and_keeps_thinking_control() {
-        let client = deepseek_test_client(crate::config::DEFAULT_DEEPSEEK_ANTHROPIC_BASE_URL);
+        let client = deepseek_test_client(
+            codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_ANTHROPIC_BASE_URL,
+        );
 
         let chat = client.build_anthropic_body(
             &request_with("deepseek-chat", Some("off"), None, None),
@@ -1742,7 +1747,7 @@ mod tests {
         );
         assert_eq!(
             chat.get("model").and_then(Value::as_str),
-            Some(crate::config::DEEPSEEK_ALIAS_REPLACEMENT)
+            Some(codewhale_config::catalog::reviewed::constants::DEEPSEEK_ALIAS_REPLACEMENT)
         );
         assert_eq!(
             chat.pointer("/thinking/type").and_then(Value::as_str),
@@ -1755,7 +1760,7 @@ mod tests {
         );
         assert_eq!(
             reasoner.get("model").and_then(Value::as_str),
-            Some(crate::config::DEEPSEEK_ALIAS_REPLACEMENT)
+            Some(codewhale_config::catalog::reviewed::constants::DEEPSEEK_ALIAS_REPLACEMENT)
         );
         assert_eq!(
             reasoner.pointer("/thinking/type").and_then(Value::as_str),
@@ -1812,7 +1817,7 @@ mod tests {
 
             assert_eq!(
                 body.get("model").and_then(Value::as_str),
-                Some(crate::config::DEEPSEEK_ALIAS_REPLACEMENT),
+                Some(codewhale_config::catalog::reviewed::constants::DEEPSEEK_ALIAS_REPLACEMENT),
                 "{alias}: {body}"
             );
             assert_eq!(config.reasoning_effort(), Some(expected_effort));
@@ -1869,10 +1874,10 @@ mod tests {
         for (base_url, model) in [
             (
                 "https://gateway.example/anthropic",
-                crate::config::DEFAULT_MINIMAX_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_MODEL,
             ),
             (
-                crate::config::DEFAULT_MINIMAX_ANTHROPIC_BASE_URL,
+                codewhale_config::descriptors::defaults::DEFAULT_MINIMAX_ANTHROPIC_BASE_URL,
                 "MiniMax-M2",
             ),
         ] {

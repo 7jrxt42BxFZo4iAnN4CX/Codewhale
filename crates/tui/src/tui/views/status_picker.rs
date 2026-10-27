@@ -23,12 +23,13 @@ use ratatui::{
     widgets::{Block, Borders, Padding, Paragraph, Widget},
 };
 
-use crate::config::{ProviderKind, StatusItem};
+use crate::config::StatusItem;
 use crate::tui::menu_style;
 use crate::tui::views::{
     ActionHint, ModalKind, ModalView, ViewAction, ViewEvent, action_footer_lines,
     centered_modal_area, render_modal_footer, render_modal_surface, render_panel_scroll_rail,
 };
+use codewhale_config::ProviderKind;
 use codewhale_localization::{Locale, MessageId, tr};
 use codewhale_palette as palette;
 use unicode_width::UnicodeWidthStr;

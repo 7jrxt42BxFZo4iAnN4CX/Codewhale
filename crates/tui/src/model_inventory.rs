@@ -8,11 +8,11 @@ use serde::Serialize;
 
 use crate::client::system_one::DecisionRouterRoute;
 use crate::config::{
-    AutoRouterKind, Config, ProviderIdentity, ProviderKind, has_api_key_for,
-    normalize_model_name_for_provider,
+    AutoRouterKind, Config, ProviderIdentity, has_api_key_for, normalize_model_name_for_provider,
 };
 use crate::provider_lake::models_for_provider;
 use crate::provider_lake::provider_capability;
+use codewhale_config::ProviderKind;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -743,8 +743,8 @@ fn auth_source_for_provider(
             return Some(ModelAuthSource::Env);
         }
         return (configured.api_key.as_deref().is_some_and(|value| {
-            crate::config::classify_config_api_key_value(value)
-                == crate::config::ConfigApiKeyValueKind::Literal
+            codewhale_config::classify_config_api_key_value(value)
+                == codewhale_config::ConfigApiKeyValueKind::Literal
         }) || crate::config::explicit_cli_api_key_override().is_some())
         .then_some(ModelAuthSource::Config);
     }
@@ -825,7 +825,10 @@ mod tests {
         assert!(!inventory.router_available);
         assert!(
             inventory
-                .candidate(ProviderKind::Zai.as_str(), crate::config::ZAI_GLM_5_2_MODEL)
+                .candidate(
+                    ProviderKind::Zai.as_str(),
+                    codewhale_config::catalog::reviewed::constants::ZAI_GLM_5_2_MODEL
+                )
                 .is_some()
         );
         assert!(
@@ -880,7 +883,7 @@ mod tests {
         let candidate = inventory
             .candidate(
                 ProviderKind::OllamaCloud.as_str(),
-                crate::config::DEFAULT_OLLAMA_CLOUD_MODEL,
+                codewhale_config::descriptors::defaults::DEFAULT_OLLAMA_CLOUD_MODEL,
             )
             .expect("authenticated Ollama Cloud candidate");
         assert_eq!(candidate.auth_source, ModelAuthSource::Config);
@@ -944,8 +947,14 @@ mod tests {
             providers: Some(crate::config::ProvidersConfig {
                 moonshot: crate::config::ProviderConfig {
                     api_key: Some("test-kimi-key".to_string()),
-                    base_url: Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string()),
-                    model: Some(crate::config::KIMI_CODE_K3_MODEL.to_string()),
+                    base_url: Some(
+                        codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL
+                            .to_string(),
+                    ),
+                    model: Some(
+                        codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL
+                            .to_string(),
+                    ),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -957,7 +966,7 @@ mod tests {
         let candidate = inventory
             .candidate(
                 ProviderKind::Moonshot.as_str(),
-                crate::config::KIMI_CODE_K3_MODEL,
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             )
             .expect("configured Kimi Code K3 route");
 

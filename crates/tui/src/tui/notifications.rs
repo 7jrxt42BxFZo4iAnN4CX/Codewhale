@@ -743,7 +743,7 @@ pub fn settings(config: &crate::config::Config) -> Option<(Method, Duration, boo
 /// Install the process-wide method, gate, sound policy and attention
 /// condition from `[notifications]`; returns the resolved projection.
 pub(crate) fn apply_settings(
-    notif: &crate::config::NotificationsConfig,
+    notif: &codewhale_config::notifications::NotificationsConfig,
 ) -> Option<(Method, Duration, bool)> {
     // Install the category/quiet gate (#5041) so `notify_done` honors
     // `[notifications].quiet` and `[notifications.events]`.
@@ -757,15 +757,15 @@ pub(crate) fn apply_settings(
 
     let condition = notif
         .condition
-        .unwrap_or(crate::config::NotificationCondition::Unfocused);
+        .unwrap_or(codewhale_config::notifications::NotificationCondition::Unfocused);
     match condition {
-        crate::config::NotificationCondition::Always => {
+        codewhale_config::notifications::NotificationCondition::Always => {
             install_attention_condition(AttentionCondition::Always);
         }
-        crate::config::NotificationCondition::Unfocused => {
+        codewhale_config::notifications::NotificationCondition::Unfocused => {
             install_attention_condition(AttentionCondition::Unfocused);
         }
-        crate::config::NotificationCondition::Never => {
+        codewhale_config::notifications::NotificationCondition::Never => {
             install_attention_condition(AttentionCondition::Never);
         }
     }
@@ -2280,9 +2280,11 @@ mod tideline_tests;
 #[cfg(test)]
 mod unified_audio_tests {
     use super::*;
-    use crate::config::{CompletionSound, NotificationConfigUpdate, NotificationsConfig};
     use crate::notify::audio::AudioOutcome;
     use crate::notify::sound_policy::{self, EventSoundPolicy, SoundCue, SoundDecision};
+    use codewhale_config::notifications::{
+        CompletionSound, NotificationConfigUpdate, NotificationsConfig,
+    };
 
     fn payloads() -> [NotificationPayload; 6] {
         [

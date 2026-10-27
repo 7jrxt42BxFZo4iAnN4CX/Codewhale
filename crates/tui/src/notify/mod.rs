@@ -21,7 +21,9 @@ pub mod sound_policy;
 
 use std::time::Duration;
 
-use crate::config::{NotificationCondition, NotificationMethod, NotificationsConfig};
+use codewhale_config::notifications::{
+    NotificationCondition, NotificationMethod, NotificationsConfig,
+};
 use payload::NotificationKind;
 
 /// Notification delivery method.

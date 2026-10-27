@@ -63,6 +63,7 @@ enum PhaseResult<T> {
 }
 
 struct PreparedModelStep {
+    request_nudge: Option<String>,
     prefix_check: serde_json::Value,
     request: codewhale_models::MessageRequest,
     zero_tool_turn: bool,
@@ -731,11 +732,6 @@ fn incomplete_tool_result(reason: &str) -> ToolResult {
     }
 }
 
-/// Status receipt carried by the one request a reasoning-only / empty-stop
-/// nudge rides (C02-04). The nudge itself never joins the session.
-pub(super) const REQUEST_NUDGE_RECEIPT_PREFIX: &str =
-    "Continuing — this retry carries a request-scoped nudge (not saved to the conversation): ";
-
 /// The not-executed result for a call collected from a response whose stream
 /// failed before it completed (C02-05). Same shape as
 /// [`incomplete_tool_result`]: nothing started, so nothing needs undoing.
@@ -1103,11 +1099,11 @@ impl Engine {
         }
         let mut normalized = input.clone();
         let match_kind = match name {
-            super::tool_catalog::LEGACY_TOOL_SEARCH_REGEX_NAME => "regex",
-            super::tool_catalog::LEGACY_TOOL_SEARCH_BM25_NAME => "bm25",
+            codewhale_tools::names::LEGACY_TOOL_SEARCH_REGEX_NAME => "regex",
+            codewhale_tools::names::LEGACY_TOOL_SEARCH_BM25_NAME => "bm25",
             _ => input.get("match").and_then(Value::as_str).unwrap_or("bm25"),
         };
-        if name != super::tool_catalog::TOOL_SEARCH_NAME {
+        if name != codewhale_tools::names::TOOL_SEARCH_NAME {
             normalized
                 .as_object_mut()
                 .ok_or_else(|| ToolError::invalid_input("tool search input must be an object"))?
@@ -6703,7 +6699,7 @@ pub(super) const REASONING_EFFORT_AUTO: &str = "auto";
 /// the user's wording. Non-`"auto"` values pass through unchanged.
 pub(super) fn resolve_auto_effort(
     reasoning_effort: Option<&str>,
-    provider: crate::config::ProviderKind,
+    provider: codewhale_config::ProviderKind,
     base_url: &str,
     wire_model: &str,
 ) -> Option<String> {
@@ -7744,8 +7740,8 @@ mod tests {
         assert_eq!(
             resolve_auto_effort(
                 Some("auto"),
-                crate::config::ProviderKind::Deepseek,
-                crate::config::DEFAULT_DEEPSEEK_BASE_URL,
+                codewhale_config::ProviderKind::Deepseek,
+                codewhale_config::descriptors::defaults::DEFAULT_DEEPSEEK_BASE_URL,
                 "deepseek-v4-pro",
             ),
             Some("high".to_string()),
@@ -7757,9 +7753,9 @@ mod tests {
     fn resolve_auto_effort_selects_a_concrete_kimi_code_tier() {
         let resolved = resolve_auto_effort(
             Some("auto"),
-            crate::config::ProviderKind::Moonshot,
-            crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-            crate::config::KIMI_CODE_K3_MODEL,
+            codewhale_config::ProviderKind::Moonshot,
+            codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+            codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
         )
         .expect("Auto dispatch must select a concrete tier");
 
@@ -7770,9 +7766,9 @@ mod tests {
         assert_eq!(
             resolve_auto_effort(
                 None,
-                crate::config::ProviderKind::Moonshot,
-                crate::config::DEFAULT_KIMI_CODE_BASE_URL,
-                crate::config::KIMI_CODE_K3_MODEL,
+                codewhale_config::ProviderKind::Moonshot,
+                codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL,
+                codewhale_config::catalog::reviewed::constants::KIMI_CODE_K3_MODEL,
             ),
             None,
             "only an omitted reasoning setting leaves the provider default in control"

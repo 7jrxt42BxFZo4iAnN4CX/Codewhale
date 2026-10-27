@@ -1601,7 +1601,8 @@ fn has_non_authoritative_turn_provenance(message: &Message) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::subagent::{FleetRole, SubAgentAssignment};
+    use crate::tools::subagent::SubAgentAssignment;
+    use codewhale_agent_contract::role::FleetRole;
 
     #[test]
     fn shell_completion_event_names_retrieve_tool_result() {

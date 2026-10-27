@@ -20,8 +20,9 @@ use super::dispatch::{
     mcp_tool_approval_description, mcp_tool_is_parallel_safe, mcp_tool_is_read_only,
 };
 use super::tool_catalog::{
-    CODE_EXECUTION_TOOL_NAME, EXECUTE_TOOLS_TOOL_NAME, JS_EXECUTION_TOOL_NAME, is_tool_search_tool,
+    CODE_EXECUTION_TOOL_NAME, EXECUTE_TOOLS_TOOL_NAME, JS_EXECUTION_TOOL_NAME,
 };
+use codewhale_tools::names::is_tool_search_tool;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct PreparedToolPolicy {

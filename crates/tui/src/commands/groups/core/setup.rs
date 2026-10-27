@@ -1,9 +1,9 @@
 //! `/setup` command. `/setup fleet` opens the fleet readiness step.
 
 use crate::commands::traits::{CommandInfo, RegisterCommand};
-#[cfg(test)]
-use crate::config::ProviderKind;
 use crate::tui::app::{App, AppAction};
+#[cfg(test)]
+use codewhale_config::ProviderKind;
 use codewhale_localization::MessageId;
 
 use super::CommandResult;

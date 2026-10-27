@@ -302,7 +302,7 @@ fn one_pressure_number_across_mid_turn_compaction_and_route_switch() {
             .expect("write fixture");
 
         let default_config = Config::default();
-        let route_a = resolve(&default_config, crate::config::DEFAULT_TEXT_MODEL);
+        let route_a = resolve(&default_config, codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL);
         let private_config = private_route_config();
         let route_b = resolve(&private_config, PRIVATE_MODEL);
         assert_ne!(
