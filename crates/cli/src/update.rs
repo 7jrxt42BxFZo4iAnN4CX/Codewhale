@@ -29,7 +29,7 @@ use std::time::Duration;
 use crate::hashing::sha256_hex;
 
 mod compiled_host;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub(crate) mod uninstall;
 
 const GITHUB_LATEST_RELEASE_PAGE_URL: &str =
@@ -209,6 +209,8 @@ pub fn run_update(beta: bool, check_only: bool, proxy_arg: Option<String>) -> Re
     // compatibility path can change, then the identity is checked just in time.
     #[cfg(unix)]
     let mut command_receipt = uninstall::CommandReceipt::capture(&current_exe)?;
+    #[cfg(windows)]
+    let had_receipt = uninstall::CommandReceipt::capture(&current_exe)?.is_some();
     let mut host_update = compiled_host::prepare(
         &download,
         latest_tag,
@@ -231,12 +233,24 @@ pub fn run_update(beta: bool, check_only: bool, proxy_arg: Option<String>) -> Re
         .as_mut()
         .map(|receipt| receipt.renew(&bytes))
         .transpose();
+    #[cfg(windows)]
+    let receipt_renewal = if had_receipt {
+        uninstall::CommandReceipt::capture_accepting(&current_exe, Some(&sha256_hex(&bytes)))
+            .and_then(|receipt| {
+                receipt
+                    .context("command ownership receipt disappeared during update")?
+                    .renew(&bytes)
+            })
+            .map(Some)
+    } else {
+        Ok(None)
+    };
     if let Err(error) = replaced {
         if let Some(host) = &mut host_update {
             host.rollback()
                 .context("compiled-host rollback failed; retained backup path is reported below")?;
         }
-        #[cfg(unix)]
+        #[cfg(any(unix, windows))]
         if let Err(renewal) = receipt_renewal {
             return Err(error.context(format!(
                 "command ownership receipt could not be renewed after partial update: {renewal:#}"
@@ -244,7 +258,7 @@ pub fn run_update(beta: bool, check_only: bool, proxy_arg: Option<String>) -> Re
         }
         return Err(error);
     }
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     receipt_renewal.context("binaries updated, but command ownership receipt renewal failed; preserved receipt/recovery paths require attention")?;
     if let Some(host) = &host_update {
         println!(

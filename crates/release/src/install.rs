@@ -18,7 +18,8 @@ use std::process::{Command, Stdio};
 
 /// Environment variable that overrides install-method detection.
 ///
-/// Accepts `npm`, `homebrew` (or `brew`), `cargo`, `omarchy`, and `binary`.
+/// Accepts `npm`, `homebrew` (or `brew`), `cargo`, `omarchy`, `scoop`,
+/// `winget`, and `binary`.
 /// Anything else is ignored and detection falls back to automatic detection.
 /// Packagers who relocate the binary somewhere the heuristics cannot read —
 /// and users debugging a wrong guess — set this. Recognized managed paths
@@ -51,6 +52,10 @@ pub enum InstallMethod {
     Cargo,
     /// An AUR/pacman package installed on Omarchy.
     Omarchy,
+    /// Scoop — a binary under a `scoop/apps` prefix.
+    Scoop,
+    /// A WinGet portable package under `Microsoft/WinGet/Packages`.
+    WinGet,
     /// A release binary the user placed on disk themselves. The default, and
     /// the only case where in-place self-update is correct.
     Binary,
@@ -133,6 +138,17 @@ impl InstallMethod {
         if has("cellar") || has(".linuxbrew") || has("linuxbrew") {
             return Self::Homebrew;
         }
+        let pair = |first: &str, second: &str| {
+            components
+                .windows(2)
+                .any(|pair| pair[0] == first && pair[1] == second)
+        };
+        if pair("scoop", "apps") {
+            return Self::Scoop;
+        }
+        if pair("winget", "packages") || pair("winget", "links") {
+            return Self::WinGet;
+        }
         // `.cargo/bin/codewhale` — require the pair so an unrelated `bin`
         // directory does not read as a Cargo install.
         if components
@@ -150,6 +166,8 @@ impl InstallMethod {
             "homebrew" | "brew" => Some(Self::Homebrew),
             "cargo" => Some(Self::Cargo),
             "omarchy" => Some(Self::Omarchy),
+            "scoop" => Some(Self::Scoop),
+            "winget" => Some(Self::WinGet),
             "binary" | "release" => Some(Self::Binary),
             _ => None,
         }
@@ -168,6 +186,8 @@ impl InstallMethod {
             Self::Homebrew => "brew upgrade codewhale",
             Self::Cargo => "cargo install codewhale-cli --locked --force",
             Self::Omarchy => "omarchy update",
+            Self::Scoop => "scoop update codewhale",
+            Self::WinGet => "winget upgrade --id HunterBown.CodeWhale",
             Self::Binary => "codewhale update",
         }
     }
@@ -183,6 +203,8 @@ impl InstallMethod {
             Self::Omarchy => {
                 "pacman -Qo <the executable path>, then remove that package with your package manager"
             }
+            Self::Scoop => "scoop uninstall codewhale",
+            Self::WinGet => "winget uninstall --id HunterBown.CodeWhale",
             Self::Binary => "codewhale uninstall --yes",
         }
     }
@@ -204,6 +226,8 @@ impl InstallMethod {
             Self::Homebrew => "Homebrew",
             Self::Cargo => "cargo",
             Self::Omarchy => "Omarchy",
+            Self::Scoop => "Scoop",
+            Self::WinGet => "WinGet",
             Self::Binary => "release binary",
         }
     }

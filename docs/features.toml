@@ -38,8 +38,8 @@
 
 [[feature]]
 id = "unix-uninstall"
-name = "Receipt-owned Unix uninstall"
-summary = "Preview or remove this receipt-owned Unix release installation while preserving user data and other installations."
+name = "Receipt-owned uninstall"
+summary = "Remove a receipt-owned release install or print its package manager's command; data kept unless --purge-data."
 status = "experimental"
 surfaces = { tui = "preview" }
 since = "unreleased"

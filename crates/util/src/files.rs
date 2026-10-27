@@ -936,8 +936,7 @@ pub fn rename_windows_opened(
         }
         // SAFETY: converts the returned NTSTATUS without dereferencing.
         let error = io::Error::from_raw_os_error(unsafe { RtlNtStatusToDosError(result) as i32 });
-        let Some(backoff) = codewhale_util::utils::windows_publish_retry_delay(&error, attempt)
-        else {
+        let Some(backoff) = crate::utils::windows_publish_retry_delay(&error, attempt) else {
             return Err(error);
         };
         std::thread::sleep(backoff);
