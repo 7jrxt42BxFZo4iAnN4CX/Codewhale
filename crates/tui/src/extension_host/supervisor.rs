@@ -569,11 +569,12 @@ pub(crate) fn plan_launch(
         bundle,
         &snapshot_roots,
     );
-    let mut launch = host_launch(tier, runtime, args, data, memory_cap, wrapped)?;
+    let launch = host_launch(tier, runtime, args, data, memory_cap, wrapped)?;
     #[cfg(not(windows))]
-    {
-        launch.native_snapshot_roots = snapshot_roots;
-    }
+    let launch = HostLaunch {
+        native_snapshot_roots: snapshot_roots,
+        ..launch
+    };
     Ok(launch)
 }
 
