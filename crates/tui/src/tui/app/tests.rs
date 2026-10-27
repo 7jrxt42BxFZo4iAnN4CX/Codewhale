@@ -645,17 +645,18 @@ fn auto_reasoning_change_invalidates_the_previous_route_and_receipt() {
 }
 
 #[test]
-fn mode_and_thinking_are_locked_while_a_turn_is_running() {
-    // #2982: while a turn is in flight, user-initiated mode/thinking changes
-    // are refused with a concise message instead of shifting the surface the
-    // engine is acting on.
+fn thinking_is_locked_but_mode_moves_while_a_turn_is_running() {
     let mut app = App::new(test_options(false), &Config::default());
     app.mode = AppMode::Agent;
     app.reasoning_effort = ReasoningEffort::Max;
     app.is_loading = true;
 
-    app.cycle_mode();
-    assert_eq!(app.mode, AppMode::Agent, "mode must not change while busy");
+    let before_effort = app.reasoning_effort;
+    app.cycle_effort();
+    assert_eq!(
+        app.reasoning_effort, before_effort,
+        "thinking must not change while busy"
+    );
     assert!(
         app.status_message
             .as_deref()
@@ -665,17 +666,8 @@ fn mode_and_thinking_are_locked_while_a_turn_is_running() {
         app.status_message
     );
 
-    let before_effort = app.reasoning_effort;
-    app.cycle_effort();
-    assert_eq!(
-        app.reasoning_effort, before_effort,
-        "thinking must not change while busy"
-    );
-
-    // Once the turn finishes, the same gesture works again.
-    app.is_loading = false;
     app.cycle_mode();
-    assert_ne!(app.mode, AppMode::Agent, "mode should change when idle");
+    assert_ne!(app.mode, AppMode::Agent, "mode changes mid-turn");
 }
 
 #[test]
@@ -4157,7 +4149,7 @@ fn plan_permission_cycle_moves_the_baseline_and_leaves_plan_read_only() {
 }
 
 #[test]
-fn busy_permission_cycle_changes_neither_runtime_nor_persistence() {
+fn busy_permission_cycle_moves_the_live_posture() {
     let _env_lock = lock_test_env();
     let tmp = tempfile::tempdir().expect("tempdir");
     let config_path = tmp.path().join("config.toml");
@@ -4168,12 +4160,10 @@ fn busy_permission_cycle_changes_neither_runtime_nor_persistence() {
     let before = app.approval_mode;
     app.is_loading = true;
 
-    assert!(!app.cycle_approval_posture());
-    assert_eq!(app.approval_mode, before);
-    assert_eq!(app.mode_prefs.agent_approval_mode, before);
-    assert!(!tmp.path().join("settings.toml").exists());
+    assert!(app.cycle_approval_posture());
+    assert_ne!(app.mode_prefs.agent_approval_mode, before);
     assert!(
-        app.status_message
+        !app.status_message
             .as_deref()
             .is_some_and(|message| message.contains("locked"))
     );
@@ -6928,7 +6918,7 @@ fn reselecting_restored_live_mode_updates_the_startup_default() {
 }
 
 #[test]
-fn mode_change_refused_while_a_turn_runs_persists_nothing() {
+fn mode_change_while_a_turn_runs_is_live_and_persisted() {
     let _lock = lock_test_env();
     let tmp = tempfile::TempDir::new().expect("tempdir");
     let _env = sealed_settings_home(tmp.path());
@@ -6938,12 +6928,13 @@ fn mode_change_refused_while_a_turn_runs_persists_nothing() {
     app.select_mode(AppMode::Plan);
     app.is_loading = true;
     app.cycle_mode();
+    app.startup_defaults.flush();
 
-    assert_eq!(app.mode, AppMode::Plan, "#2982 lock still holds");
+    assert_eq!(app.mode, AppMode::Plan.next());
     assert_eq!(
         Settings::load().expect("reload").default_mode,
-        "plan",
-        "a refused change must not be persisted"
+        app.mode.as_setting(),
+        "a mid-turn change is a real selection"
     );
 }
 
@@ -7394,7 +7385,7 @@ fn mode_cycling_in_an_unsealed_test_writes_nothing() {
 // hotbar. `/set` and `/config <key> <value>` reached the same live route through
 // a different door, and both are reachable mid-turn: the composer accepts
 // Shift+Enter and the slash menu while `is_loading`. So during a running turn a
-// slash command could swap the model, thinking level, mode, or provider out from
+// slash command could swap the model, thinking level, or provider out from
 // under the engine *and* persist it. The refusal now sits in one place, above
 // every disk write and every `App` mutation.
 
@@ -7438,7 +7429,6 @@ fn slash_config_and_set_refuse_every_live_route_key_while_a_turn_runs() {
             ("default_model", "deepseek-v4-pro"),
             ("reasoning_effort", "high"),
             ("effort", "high"),
-            ("mode", "operate"),
             ("provider", "openai"),
         ] {
             let result = crate::commands::set_config_value(&mut app, key, value, persist);
@@ -7637,15 +7627,15 @@ fn mode_selection_reports_refusal_change_and_persisted_same_distinctly() {
     );
 
     app.is_loading = true;
-    assert_eq!(app.select_mode(AppMode::Plan), SettingSelection::Refused);
+    assert_eq!(app.select_mode(AppMode::Plan), SettingSelection::Changed);
     assert!(!SettingSelection::Refused.accepted());
-    assert_eq!(app.mode, AppMode::Operate, "a refusal changes nothing");
+    assert_eq!(app.mode, AppMode::Plan, "mode is not turn-locked");
 }
 
-/// Every accepted same-live selection shows a saved receipt, and a refusal
-/// shows the lock message instead — the two must not read the same.
+/// Every accepted same-live selection shows a saved receipt, and a mid-turn
+/// switch reads as a switch — the two must not read the same.
 #[test]
-fn slash_mode_distinguishes_a_saved_startup_default_from_a_refusal() {
+fn slash_mode_distinguishes_a_saved_startup_default_from_a_switch() {
     let _lock = lock_test_env();
     let tmp = tempfile::TempDir::new().expect("tempdir");
     let _env = sealed_settings_home(tmp.path());
@@ -7671,14 +7661,13 @@ fn slash_mode_distinguishes_a_saved_startup_default_from_a_refusal() {
         "operate"
     );
 
-    // Mid-turn the same command must be refused, and say so.
     app.is_loading = true;
-    let refusal = crate::commands::switch_mode(&mut app, AppMode::Plan);
+    let switched = crate::commands::switch_mode(&mut app, AppMode::Plan);
     assert!(
-        refusal.contains("locked while a turn is running"),
-        "a refusal must not read like a save, got {refusal:?}"
+        switched.starts_with("Switched to"),
+        "mode is not turn-locked, got {switched:?}"
     );
-    assert_ne!(refusal, receipt);
+    assert_ne!(switched, receipt);
 }
 
 /// The hotbar mode rows share the receipt: dispatching a row for the live mode

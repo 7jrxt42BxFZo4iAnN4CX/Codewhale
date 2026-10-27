@@ -1656,18 +1656,16 @@ fn subagents_runtime_action(
 ///
 /// `default_mode` is deliberately absent: it is a restart default that
 /// `set_config_value` explicitly does *not* apply to the live session, so
-/// refusing it would lock a key that cannot affect the turn.
+/// refusing it would lock a key that cannot affect the turn. `mode` and the
+/// approval keys are absent too: the engine applies a posture change at its
+/// next step boundary in the running turn.
 fn live_route_setting_subject(key: &str) -> Option<MessageId> {
     match key {
-        "mode" => Some(MessageId::SettingSubjectMode),
         // `default_model` is not merely a startup default: for the DeepSeek
         // routes `set_config_value` installs it as the live model.
         "model" | "default_model" => Some(MessageId::SettingSubjectModel),
         "reasoning_effort" | "effort" => Some(MessageId::SettingSubjectThinking),
         "provider" => Some(MessageId::SettingSubjectProvider),
-        "approval_mode" | "approval_policy" | "approval" => {
-            Some(MessageId::SettingSubjectPermissions)
-        }
         _ => None,
     }
 }
@@ -3433,52 +3431,36 @@ mod tests {
     }
 
     /// The refusal list is the contract for #2982 on the slash surfaces. Keep
-    /// restart-only `default_mode` out of it: `set_config_value` deliberately
-    /// does not apply that key to the live session.
+    /// restart-only `default_mode` out of it, and mode and permissions, which
+    /// the engine applies at its next step boundary mid-turn.
     #[test]
     fn live_route_key_list_covers_every_route_mutating_alias() {
         for key in [
-            "mode",
             "model",
             "default_model",
             "reasoning_effort",
             "effort",
             "provider",
-            "approval_mode",
-            "approval_policy",
-            "approval",
         ] {
             assert!(
                 live_route_setting_subject(key).is_some(),
                 "{key} mutates the active route and must be locked mid-turn"
             );
         }
-        for key in ["default_mode", "theme", "calm_mode", "rail_panel"] {
+        for key in [
+            "default_mode",
+            "mode",
+            "approval_mode",
+            "approval_policy",
+            "approval",
+            "theme",
+            "calm_mode",
+            "rail_panel",
+        ] {
             assert!(
                 live_route_setting_subject(key).is_none(),
                 "{key} does not mutate the active route and must stay settable"
             );
-        }
-    }
-
-    #[test]
-    fn approval_aliases_are_inert_while_a_turn_is_running() {
-        let mut app = create_test_app();
-        app.approval_mode = ApprovalMode::Suggest;
-        app.is_loading = true;
-
-        for key in ["approval_mode", "approval_policy", "approval"] {
-            let result = set_config_value(&mut app, key, "never", false);
-            assert!(result.is_error, "{key} must be refused mid-turn");
-            assert!(
-                result
-                    .message
-                    .as_deref()
-                    .is_some_and(|message| message.contains("locked while a turn is running")),
-                "unexpected refusal for {key}: {:?}",
-                result.message
-            );
-            assert_eq!(app.approval_mode, ApprovalMode::Suggest);
         }
     }
 

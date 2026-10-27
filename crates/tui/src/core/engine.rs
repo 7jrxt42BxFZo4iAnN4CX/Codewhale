@@ -7101,23 +7101,7 @@ impl Engine {
                 });
             }
 
-            self.record_mode_notice(mode);
-
-            // The Operate contract (docs/MODES.md) precedes the first Operate
-            // prompt. KV-cache effect: append-only history, one user-role runtime
-            // message; it is derived from the session log rather than a flag so a
-            // cleared, restored, or compacted session gets it again exactly once
-            // and every later Operate turn does not repeat it.
-            if mode == AppMode::Operate
-                && !self
-                    .session
-                    .messages
-                    .iter()
-                    .any(crate::runtime_handoff::is_current_operate_contract_message)
-            {
-                self.session
-                    .add_message(crate::runtime_handoff::operate_contract_runtime_message());
-            }
+            self.record_mode_context(mode);
 
             self.session
                 .working_set
@@ -9139,6 +9123,33 @@ impl Engine {
     /// new one is appended whenever the mode differs from the latest. Restored
     /// Operate contracts also require a current notice after leaving Operate.
     /// Child and RLM hosts get none: their mode is fixed by their parent.
+    /// Record the mode notice and, on entering Operate, the Operate contract
+    /// (docs/MODES.md), which precedes the first Operate prompt. KV-cache
+    /// effect: append-only history, user-role runtime messages; derived from
+    /// the session log rather than a flag so a cleared, restored, or compacted
+    /// session gets the contract again exactly once and every later Operate
+    /// step does not repeat it. Runs at turn start and before every model
+    /// request, so a mode switched mid-turn reaches the next request. Known
+    /// limitation: a response already streaming is not restarted for a mode
+    /// change; it finishes under the notice it was sent with, and its tool
+    /// calls are planned under the new posture. Returns whether anything was
+    /// appended.
+    fn record_mode_context(&mut self, mode: AppMode) -> bool {
+        let before = self.session.messages.len();
+        self.record_mode_notice(mode);
+        if mode == AppMode::Operate
+            && !self
+                .session
+                .messages
+                .iter()
+                .any(crate::runtime_handoff::is_current_operate_contract_message)
+        {
+            self.session
+                .add_message(crate::runtime_handoff::operate_contract_runtime_message());
+        }
+        self.session.messages.len() != before
+    }
+
     fn record_mode_notice(&mut self, mode: AppMode) {
         if self.child_host.is_some() || self.rlm_host.is_some() {
             return;

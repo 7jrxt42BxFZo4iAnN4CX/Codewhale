@@ -627,7 +627,7 @@ pub(crate) fn reasoning_effort_receipt_for_route(
     .unwrap_or(EffectiveReasoningEffort::Tier(tier))
 }
 
-pub(crate) async fn sync_mode_update(app: &App, engine_handle: &EngineHandle) {
+pub(crate) async fn sync_mode_update(app: &mut App, engine_handle: &EngineHandle) {
     // #6150: non-blocking send on the input path. ChangeMode is safe to drop
     // on a full channel — `try_send` still publishes the live authority
     // snapshot, which the drain applies before the next queued op.
@@ -639,6 +639,17 @@ pub(crate) async fn sync_mode_update(app: &App, engine_handle: &EngineHandle) {
         approval_mode: app.approval_mode,
         configured_sandbox_mode: app.configured_sandbox_mode.clone(),
     });
+    if app.is_loading {
+        app.push_status_toast(
+            format!(
+                "{} · {} — applies at the agent's next step in this turn",
+                crate::tui::app::AppModeUi::display_name_localized(app.mode, app.ui_locale),
+                app.effective_permission_label(),
+            ),
+            StatusToastLevel::Info,
+            Some(6_000),
+        );
+    }
 }
 
 /// Apply a `/provider` switch by resolving a complete route candidate before

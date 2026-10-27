@@ -3485,9 +3485,6 @@ impl App {
     /// permission surface and refuses here; otherwise this behaves like
     /// [`Self::select_mode`] and persists the mode actually installed (Act).
     pub fn select_yolo_compat(&mut self) -> SettingSelection {
-        if self.reject_setting_change_while_busy(MessageId::SettingSubjectMode) {
-            return SettingSelection::Refused;
-        }
         if self.approval_policy_locked() {
             self.push_status_toast(
                 "Permissions are controlled by config or managed requirements".to_string(),
@@ -3562,8 +3559,8 @@ impl App {
     /// What is persisted is `self.mode` — the mode `set_mode` actually
     /// installed — not the requested enum.
     ///
-    /// The outcome is typed, not a bool, because three things can happen and
-    /// only one of them means "nothing was saved":
+    /// The outcome is typed, not a bool, so callers can tell a live change
+    /// from a selection that only saved the startup default:
     ///
     /// - [`SettingSelection::Changed`] — live mode moved *and* the startup
     ///   default was queued.
@@ -3571,19 +3568,12 @@ impl App {
     ///   requested one, but the startup default was still queued. This is a
     ///   real, reportable action: after a session restore the live mode and the
     ///   startup default routinely disagree.
-    /// - [`SettingSelection::Refused`] — the #2982 turn lock rejected it and
-    ///   nothing was written anywhere.
     ///
-    /// A bool collapsed the last two, so every caller (slash `/mode`, the
-    /// Alt+A/P/Y shortcuts, the hotbar mode rows) reported a refusal and a
-    /// successful same-mode save identically — as "already in that mode", with
-    /// no receipt for the write that did happen.
+    /// Mode is not turn-locked: a change during a running turn is sent to the
+    /// engine, which applies it at its next step boundary in that turn.
     ///
     /// [`StartupDefaultsWriter`]: crate::tui::startup_defaults::StartupDefaultsWriter
     pub fn select_mode(&mut self, mode: AppMode) -> SettingSelection {
-        if self.reject_setting_change_while_busy(MessageId::SettingSubjectMode) {
-            return SettingSelection::Refused;
-        }
         let changed = self.set_mode(mode);
         // Persist an explicit selection even when it matches the live mode.
         // A restored session can be Operate while the startup default remains
@@ -3695,11 +3685,12 @@ impl App {
         );
     }
 
-    /// Whether mode/thinking selection is locked because a turn is in flight.
+    /// Whether a route setting is locked because a turn is in flight.
     ///
-    /// While `is_loading`, the model/permission surface the engine is acting on
-    /// must not shift underneath it, so user-initiated mode and thinking changes
-    /// are refused (#2982). Returns true (and posts a concise status message) if
+    /// While `is_loading`, the model, provider and thinking the engine is
+    /// acting on must not shift underneath it, so those changes are refused
+    /// (#2982). Mode and permissions are not locked: the engine applies them
+    /// at its next step boundary in the same turn. Returns true (and posts a concise status message) if
     /// the change should be rejected — the caller leaves the selection unchanged
     /// so the chip "twitches" back instead of moving.
     ///
@@ -3991,9 +3982,6 @@ impl App {
     }
 
     fn next_approval_posture(&mut self, allow_root_policy: bool) -> Option<ApprovalMode> {
-        if self.reject_setting_change_while_busy(MessageId::SettingSubjectPermissions) {
-            return None;
-        }
         // Plan used to refuse the change outright, which welded the two axes
         // together on the keyboard: Tab cycles the mode, Shift+Tab cycles the
         // posture, and in Plan the second key silently did nothing. They are
@@ -4104,9 +4092,6 @@ impl App {
     /// landing on it; Plan stays read-only and only the Act baseline moves.
     /// Shared by `/auto` and the Plan hand-off.
     pub fn apply_agent_posture(&mut self, next: ApprovalMode) -> Result<(), String> {
-        if self.reject_setting_change_while_busy(MessageId::SettingSubjectPermissions) {
-            return Err(self.setting_locked_message(MessageId::SettingSubjectPermissions));
-        }
         if self.approval_policy_locked() {
             return Err("Permissions are controlled by config or managed requirements".to_string());
         }

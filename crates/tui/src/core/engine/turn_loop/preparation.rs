@@ -59,6 +59,9 @@ impl Engine {
             }
             progress.mode = self.current_mode;
         }
+        if self.record_mode_context(self.current_mode) {
+            self.emit_session_updated().await;
+        }
 
         let mut accepted_steer = false;
         while let Some(pending) = self.next_turn_steer() {
