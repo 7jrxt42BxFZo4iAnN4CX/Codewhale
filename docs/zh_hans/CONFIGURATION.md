@@ -29,7 +29,10 @@ Codewhale 有多个指令层级（instruction surfaces）。它们刻意保持�
 - **内置全局宪章(Bundled global Constitution)**——编译进二进制的基础规则。它是每个会话的默认底线。
 - **用户全局宪章(User-global constitution)**——常规引导式设置的产物。用 `/constitution` 或 `/setup` 管理；Codewhale 把结构化数据存放在 `$CODEWHALE_HOME/constitution.json`(默认 `~/.codewhale/constitution.json`)，并渲染成独立的 `<codewhale_user_constitution>` 散文块（prose block）。它可以表达偏好和停止条件，但不会改变运行时审批策略、沙箱、shell、网络、信任或 MCP 权限。
 - **仓库本地宪章(Repo-local constitution)**——可选的 `.codewhale/constitution.json` 项目策略，见下文。
-- **`AGENTS.md`**——跨智能体**项目指令**(散文)。这是"智能体应如何在这个仓库工作"的规范文件。运行 `/init` 生成一份。为其他工具编写的指令文件(`CLAUDE.md`、`.claude/instructions.md`、`.cursorrules`、`.github/copilot-instructions.md` 等)只有在你通过顶层配置项 `project_instruction_imports` 选择导入时才会被读取，例如 `["claude"]`、`["cursor"]` 或 `["all"]`(见 `config.example.toml`)；发现未加载的此类文件时，Codewhale 会给出提示。
+- **`AGENTS.md`**——跨智能体**项目指令**(散文)。这是"智能体应如何在这个仓库工作"的规范文件。运行 `/init` 生成一份。为其他工具编写的指令文件(`CLAUDE.md`、`.claude/instructions.md`、`.cursorrules`、`.github/copilot-instructions.md` 等)默认不读取；通过顶层配置项 `project_instruction_imports` 选择导入，例如 `["claude"]`、`["cursor"]` 或 `["all"]`(见 `config.example.toml`)；发现未加载的此类文件时，Codewhale 会给出提示。**例外(`#6526`)**：某目录没有 `AGENTS.md`(也没有 Codewhale 自己的 `instructions.md`)时，默认回退读取该目录的 `CLAUDE.md`；`claude_fallback = false` 可关闭。
+
+> **说明(2026-10-25)**：指令预算表 `[instruction_budget]`(#6526)——按 `global` / `project` 两个作用域分别用**估算 token** 设上限，并在会话开始时报告每一次裁剪、跳过和拒绝——尚未翻译到本文档。权威说明见英文版 `docs/CONFIGURATION.md` 的 “Instruction budget” 一节；`config.example.toml` 里有完整示例。
+> The `[instruction_budget]` section (per-scope token budgets with a trim/skip/refuse notice) is not translated yet; see the English `docs/CONFIGURATION.md`.
 - **记忆与交接(Memory and handoffs)**——被召回的状态。有用，但权威低于宪章和项目指令。
 
 ### 管理用户全局宪章(`/setup` 和 `/constitution`)

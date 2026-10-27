@@ -188,6 +188,12 @@ impl Engine {
             &progress.active_tool_names,
             strict_tool_mode,
         );
+        // #6526: the instruction-budget notice reaches the model once, as a
+        // logged synthetic message, and the static-prefix guard runs once with
+        // the real tool catalog — the only place where the prefix and the tool
+        // schemas are known together.
+        self.apply_instruction_budget_notices(active_tools.as_deref().unwrap_or_default())
+            .await;
         match self
             .run_auto_compaction(
                 client.as_ref(),

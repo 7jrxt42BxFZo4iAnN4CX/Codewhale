@@ -282,6 +282,7 @@ pub fn build_context_report(app: &App) -> PromptSourceMap {
         app.mode,
         Some(app.plugin_registry.as_ref()),
         Some(context_window.tokens),
+        &[],
     );
     add_app_runtime_entries(&mut builder, app);
     builder.finish(
@@ -395,6 +396,7 @@ pub fn build_headless_context_report(config: &Config, workspace: &Path) -> Promp
         AppMode::Agent,
         None,
         Some(context_window.tokens),
+        &config.instructions_paths(),
     );
     let memory_path = config.memory_path();
     let memory_enabled = config.memory_enabled();
@@ -463,6 +465,7 @@ fn base_source_entries(
     mode: AppMode,
     plugin_registry: Option<&crate::plugins::PluginRegistry>,
     context_window_tokens: Option<u32>,
+    configured_instruction_paths: &[std::path::PathBuf],
 ) -> ReportBuilder {
     let mut builder = ReportBuilder::new();
 
@@ -507,18 +510,48 @@ fn base_source_entries(
         ));
     }
 
-    if let Some(content) = project_context.instructions.as_deref() {
-        // Same helper as ProjectContext::as_system_block, so the report's
-        // source token derives from the same label the prompt shows. (The
-        // entry below still displays the absolute source path for operators;
-        // only the prompt label is relativized.)
+    // #6526: assemble once, so the source row counts the content the prompt
+    // keeps, and the budget/loss rows below carry no token cost of their own.
+    // Counting the raw text here and the retained text again there would
+    // include discarded content and inflate the total even without a trim.
+    let instruction_assembly = crate::project_context::active_instruction_budgets(
+        context_window_tokens.map(|tokens| tokens as usize),
+        Some(model),
+    )
+    .ok()
+    .map(|budgets| {
+        let mut instructions = crate::project_context::load_project_context_with_parents(workspace);
+        let configured: Vec<crate::prompts::InstructionSource> = configured_instruction_paths
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect();
+        crate::project_context::assemble_instruction_block(&mut instructions, &configured, &budgets)
+    });
+
+    if let Some(block) = instruction_assembly
+        .as_ref()
+        .and_then(|assembly| assembly.block.as_deref())
+    {
+        builder.push(SourceEntry::text(
+            SourceKind::ProjectContext,
+            "Project instructions",
+            project_context
+                .source_path
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            ActivationReason::FilePresent,
+            block,
+            CountingConfidence::High,
+            Some(5),
+        ));
+    } else if let Some(content) = project_context.instructions.as_deref() {
         let source = crate::project_context::project_instructions_source_label(
             project_context.source_path.as_deref(),
         );
         let mut block = format!(
             "<project_instructions source=\"{source}\">\n{content}\n</project_instructions>"
         );
-        // Include rules in the report when present
         if let Some(rules) = &project_context.rules_block {
             block.push('\n');
             block.push_str(rules);
@@ -536,7 +569,6 @@ fn base_source_entries(
             Some(5),
         ));
     } else if let Some(rules) = &project_context.rules_block {
-        // Rules exist without main instructions
         builder.push(SourceEntry::text(
             SourceKind::ProjectContext,
             "Project rules",
@@ -557,6 +589,39 @@ fn base_source_entries(
             "no project context block available",
         ));
     }
+
+    if let Some(assembly) = instruction_assembly.as_ref() {
+        builder.push(SourceEntry::diagnostic(
+            SourceKind::ProjectContext,
+            "Instruction budget",
+            None::<String>,
+            ActivationReason::ConfigEnabled,
+            format!(
+                "global {} / {} estimated tokens; project {} / {} estimated tokens; policy {}; usable window {} tokens; static-prefix guard {} tokens",
+                assembly.global_tokens,
+                assembly.budgets.global_tokens,
+                assembly.project_tokens,
+                assembly.budgets.project_tokens,
+                assembly.budgets.policy.as_str(),
+                assembly.budgets.usable_window_tokens,
+                assembly.budgets.static_guard_tokens,
+            ),
+            0,
+            Some(5),
+        ));
+        for notice in assembly.notices.iter().filter(|notice| notice.is_loss()) {
+            builder.push(SourceEntry::diagnostic(
+                SourceKind::ProjectContextWarning,
+                format!("Instruction source: {}", notice.label()),
+                notice.path.as_ref().map(|path| path.display().to_string()),
+                ActivationReason::RuntimeState,
+                notice.to_string(),
+                0,
+                Some(5),
+            ));
+        }
+    }
+
     if !project_context.warnings.is_empty() {
         let warnings = project_context.warnings.join("\n");
         let estimated_tokens = estimate_text_tokens_conservative(&warnings);
@@ -1015,6 +1080,40 @@ mod tests {
         let json = context_report_json(&report);
         assert!(json.contains("\"repo_constitution\""));
         assert!(json.contains("branch_policy appears stale"));
+    }
+
+    #[test]
+    fn context_report_shows_actions_and_budgets() {
+        let tmp = tempdir().expect("workspace");
+        std::fs::write(tmp.path().join("AGENTS.md"), "T".repeat(20_000)).expect("write agents");
+        crate::project_context::with_test_instruction_budget_config(
+            crate::project_context::InstructionBudgetConfig {
+                project_budget_tokens: Some(50),
+                ..Default::default()
+            },
+            || {
+                let report = build_headless_context_report(&Config::default(), tmp.path());
+                assert!(
+                    report
+                        .entries
+                        .iter()
+                        .any(|entry| entry.label == "Instruction budget"),
+                    "the resolved per-scope budgets are a source-map row: {:?}",
+                    report.entries
+                );
+                assert!(
+                    report.entries.iter().any(|entry| {
+                        entry.label.starts_with("Instruction source:")
+                            && entry
+                                .truncation_reason
+                                .as_deref()
+                                .is_some_and(|reason| reason.contains("scope_budget"))
+                    }),
+                    "each loss names its action and limit kind: {:?}",
+                    report.entries
+                );
+            },
+        );
     }
 
     #[test]

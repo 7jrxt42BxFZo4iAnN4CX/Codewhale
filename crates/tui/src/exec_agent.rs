@@ -438,6 +438,13 @@ pub(crate) async fn run_exec_agent(
         );
     let active_route_limits =
         crate::route_budget::known_route_limits(validated_route.candidate.limits());
+    // The startup instruction notice budgets against the window this route will
+    // actually use; the 128k default exists for callers that have no route.
+    let instruction_budget_window = crate::route_budget::route_context_window_tokens(
+        effective_provider,
+        &effective_model,
+        active_route_limits,
+    ) as usize;
     let max_subagents = if max_subagents
         == config.max_subagents_for_provider(
             &config
@@ -738,6 +745,44 @@ pub(crate) async fn run_exec_agent(
         && turn_sandbox_policy.should_sandbox()
     {
         eprintln!("warning: {sandbox_posture} — shell commands will run unrestricted");
+    }
+
+    // #6526: headless runs report standing-instruction losses on stderr, the
+    // same content the interactive start puts in a system cell. The check
+    // covers every source the engine budgets, including the
+    // `--append-system-prompt` entry, and runs on a blocking worker: it walks
+    // directories and reads files.
+    let mut configured_sources: Vec<crate::prompts::InstructionSource> = execution_config
+        .instructions_paths()
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    if let Some(extra) = append_system_prompt.as_ref() {
+        configured_sources.push(crate::prompts::InstructionSource::Inline {
+            name: "cli:append-system-prompt".to_string(),
+            content: extra.clone(),
+        });
+    }
+    let notice_workspace = workspace.clone();
+    let notice_model = effective_model.clone();
+    let notice = tokio::task::spawn_blocking(move || {
+        crate::project_context::startup_instruction_notice(
+            &notice_workspace,
+            &configured_sources,
+            Some(instruction_budget_window),
+            Some(&notice_model),
+        )
+    })
+    .await;
+    match notice {
+        Ok(Ok(Some(notice))) => {
+            if output_format == ExecOutputFormat::Text && !json_output {
+                eprintln!("{notice}");
+            }
+        }
+        Ok(Ok(None)) => {}
+        Ok(Err(error)) => anyhow::bail!(error),
+        Err(error) => anyhow::bail!("instruction check did not complete: {error}"),
     }
 
     let resuming_session = resume_session.is_some();

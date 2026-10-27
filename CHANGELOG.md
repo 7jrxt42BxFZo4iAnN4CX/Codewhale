@@ -48,6 +48,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cancellation wiring stays in place; its stale unused-code suppressions are
   removed. No supported command or feature is retired by this cleanup.
 
+- Standing instructions are budgeted per scope (`global` and `project`) in
+  estimated tokens instead of one 48 KiB byte ceiling shared by everything, and
+  every trim, skip, and refusal is reported — as a system cell at session start,
+  on stderr in `exec`, to the model as a runtime-provenance message, and per
+  source in `/context report`. `AGENTS.md` still wins; a directory without one
+  now falls back to its `CLAUDE.md` (`claude_fallback = false` opts out).
+  Configured `instructions = [...]` entries are charged to the global scope.
+  New `[instruction_budget]` table (user config only) with per-scope token
+  budgets, percentages of the usable window, `file_max_bytes`, `policy`, the
+  static-prefix guard, and `claude_fallback` (#6526).
 - Local Ollama defaults now come from chat-capable tags, and `/provider ollama`
   refreshes the live catalog before switching. Exec and Runtime API defaults use
   the same discovery path. Fresh context observations come from loaded models'

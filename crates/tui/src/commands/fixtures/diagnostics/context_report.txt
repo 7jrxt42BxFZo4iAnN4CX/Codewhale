@@ -12,6 +12,7 @@ Manage standing law: /constitution (status/preview), /constitution repo (repo-lo
 Sources:
 - Constitution: Bundled constitution, language policy, and output policy [bundled in this codewhale-tui build (BASE_PROMPT, compiled in)] - 1803 tokens (High, tier 1)
 - ProjectContext: Project instructions - 160 tokens (High, tier 5)
+- ProjectContext: Instruction budget - 0 tokens (High, tier 5) - global 0 / 100000 estimated tokens; project 139 / 100000 estimated tokens; policy trim; usable window 516000 tokens; static-prefix guard 412800 tokens
 - ProjectContextPack: Project context pack [<workspace>] - 0 tokens (High, tier 5) - disabled; project_map provides this information on demand
 - SkillsBlock: Available skills [<skills>] - 0 tokens (High, tier 5) - no skills discovered
 - ContextManagement: WORK runtime mode - 0 tokens (High, tier 3) - mode enforced by runtime policy and the live tool catalog; no prompt doctrine

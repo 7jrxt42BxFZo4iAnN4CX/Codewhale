@@ -2093,6 +2093,13 @@ pub struct Config {
     /// `cline`, `windsurf`, `gemini`, `copilot`, `muse`, or `all`.
     #[serde(default, alias = "projectInstructionImports")]
     pub project_instruction_imports: Vec<String>,
+    /// Per-scope standing-instruction budgets (#6526).
+    ///
+    /// User config only, like `instructions`: the project-scope overlay
+    /// cannot set it, so a cloned repository cannot shrink the user's global
+    /// budget or force `policy = "refuse"`.
+    #[serde(default, alias = "instructionBudget")]
+    pub instruction_budget: Option<crate::project_context::InstructionBudgetConfig>,
     /// `telemetry` as written to the config file, before environment and
     /// default resolution. Kept so doctor and config displays can state the
     /// *resolved* consent with its source (default | env | config) instead of
@@ -10087,6 +10094,10 @@ fn merge_config(base: Config, override_cfg: Config) -> Config {
         // replace the instruction array. Project-scope config is filtered in
         // main.rs and cannot set instruction paths.
         instructions: override_cfg.instructions.or(base.instructions),
+        // #6526: the instruction-budget table is user authority for the same
+        // reason `instructions` is — a workspace does not get to decide how
+        // much of the user's context its own files may claim.
+        instruction_budget: override_cfg.instruction_budget.or(base.instruction_budget),
         stop_words: override_cfg.stop_words.or(base.stop_words),
         allow_shell: override_cfg.allow_shell.or(base.allow_shell),
         prompt_suggestion: override_cfg.prompt_suggestion.or(base.prompt_suggestion),

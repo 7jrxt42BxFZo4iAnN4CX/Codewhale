@@ -32,6 +32,16 @@ message:
         "truncation_reason": null
       },
       {
+        "source_kind": "project_context",
+        "label": "Instruction budget",
+        "source_path": null,
+        "activation_reason": "config_enabled",
+        "estimated_tokens": 0,
+        "counting_confidence": "high",
+        "authority_tier": 5,
+        "truncation_reason": "global 0 / 100000 estimated tokens; project 139 / 100000 estimated tokens; policy trim; usable window 516000 tokens; static-prefix guard 412800 tokens"
+      },
+      {
         "source_kind": "project_context_pack",
         "label": "Project context pack",
         "source_path": "<workspace>",
