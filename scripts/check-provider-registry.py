@@ -219,9 +219,14 @@ def report_tui_catalog_contract(tui_config_rs: str) -> list[str]:
             errors.append(f"retired provider enum consumer: {path.relative_to(ROOT)}")
         if re.search(r"KIND_LOOKUP|FROM_KIND_LOOKUP|ProviderKind::from_kind\(", source):
             errors.append(f"retired provider ordinal bridge: {path.relative_to(ROOT)}")
-    for signature in ("pub fn active_provider_identity", "pub fn provider_identities", "pub fn resolve_provider_selection_identity", "pub fn verify_provider_identity"):
-        if signature not in tui_config_rs:
-            errors.append(f"missing canonical config identity boundary: {signature}")
+    for function_name in (
+        "active_provider_identity",
+        "provider_identities",
+        "resolve_provider_selection_identity",
+        "verify_provider_identity",
+    ):
+        if not re.search(rf"\bpub(?:\(crate\))?\s+fn\s+{function_name}\b", tui_config_rs):
+            errors.append(f"missing canonical config identity boundary: {function_name}")
     descriptor_source = read(ROOT / "crates/config/src/descriptors.rs")
     if "PROVIDER_COMPATIBILITY" not in descriptor_source or "pub fn compatibility_for_selector" not in descriptor_source:
         errors.append("released presentation identities must use the existing generated descriptor owner")
