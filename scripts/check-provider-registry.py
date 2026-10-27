@@ -219,7 +219,7 @@ def report_tui_catalog_contract(tui_config_rs: str) -> list[str]:
             errors.append(f"retired provider enum consumer: {path.relative_to(ROOT)}")
         if re.search(r"KIND_LOOKUP|FROM_KIND_LOOKUP|ProviderKind::from_kind\(", source):
             errors.append(f"retired provider ordinal bridge: {path.relative_to(ROOT)}")
-    for signature in ("pub(crate) fn active_provider_identity", "pub(crate) fn provider_identities", "pub(crate) fn resolve_provider_selection_identity", "pub(crate) fn verify_provider_identity"):
+    for signature in ("pub fn active_provider_identity", "pub fn provider_identities", "pub fn resolve_provider_selection_identity", "pub fn verify_provider_identity"):
         if signature not in tui_config_rs:
             errors.append(f"missing canonical config identity boundary: {signature}")
     descriptor_source = read(ROOT / "crates/config/src/descriptors.rs")
