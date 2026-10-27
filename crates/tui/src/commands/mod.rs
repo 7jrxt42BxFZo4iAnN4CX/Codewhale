@@ -295,7 +295,7 @@ pub fn get_command_info(name: &str) -> Option<&'static CommandInfo> {
 pub fn execute_with_config(
     cmd: &str,
     app: &mut App,
-    config: &crate::config::Config,
+    config: &codewhale_runtime::config::Config,
 ) -> CommandResult {
     execute_in_context(cmd, app, Some(config))
 }
@@ -309,7 +309,7 @@ pub fn execute(cmd: &str, app: &mut App) -> CommandResult {
 fn execute_in_context(
     cmd: &str,
     app: &mut App,
-    config: Option<&crate::config::Config>,
+    config: Option<&codewhale_runtime::config::Config>,
 ) -> CommandResult {
     // Keep the command's raw remainder available for commands whose payload is
     // byte-sensitive. Most slash commands intentionally receive a normalized
@@ -463,67 +463,6 @@ pub fn switch_mode(app: &mut App, mode: AppMode) -> String {
     config_main_host::switch_mode(app, mode)
 }
 
-fn edit_distance(a: &str, b: &str) -> usize {
-    if a == b {
-        return 0;
-    }
-    if a.is_empty() {
-        return b.chars().count();
-    }
-    if b.is_empty() {
-        return a.chars().count();
-    }
-
-    let b_chars: Vec<char> = b.chars().collect();
-    let mut previous: Vec<usize> = (0..=b_chars.len()).collect();
-    let mut current = vec![0usize; b_chars.len() + 1];
-
-    for (i, a_ch) in a.chars().enumerate() {
-        current[0] = i + 1;
-        for (j, b_ch) in b_chars.iter().enumerate() {
-            let cost = if a_ch == *b_ch { 0 } else { 1 };
-            let delete = previous[j + 1] + 1;
-            let insert = current[j] + 1;
-            let substitute = previous[j] + cost;
-            current[j + 1] = delete.min(insert).min(substitute);
-        }
-        std::mem::swap(&mut previous, &mut current);
-    }
-
-    previous[b_chars.len()]
-}
-
-pub(crate) fn best_suggestion_score<'a>(
-    query: &str,
-    candidates: impl IntoIterator<Item = &'a str>,
-) -> Option<(u8, usize)> {
-    let mut best: Option<(u8, usize)> = None;
-    for candidate in candidates {
-        let prefix_match = candidate.starts_with(query) || query.starts_with(candidate);
-        let contains_match = candidate.contains(query) || query.contains(candidate);
-        let distance = edit_distance(candidate, query);
-        let close_typo = distance <= 2;
-        if !(prefix_match || contains_match || close_typo) {
-            continue;
-        }
-
-        let rank = if prefix_match {
-            0
-        } else if contains_match {
-            1
-        } else {
-            2
-        };
-
-        match best {
-            Some((best_rank, best_distance))
-                if rank > best_rank || (rank == best_rank && distance >= best_distance) => {}
-            _ => best = Some((rank, distance)),
-        }
-    }
-    best
-}
-
 fn suggest_command_names(
     input: &str,
     limit: usize,
@@ -549,7 +488,9 @@ fn suggest_command_names(
                 .copied()
                 .filter(|alias| user_commands.get(alias).is_none()),
         );
-        if let Some((rank, distance)) = best_suggestion_score(&query, candidates) {
+        if let Some((rank, distance)) =
+            codewhale_config::suggest::best_suggestion_score(&query, candidates)
+        {
             scored.push((rank, distance, command.name.to_string()));
         }
     }
@@ -562,7 +503,9 @@ fn suggest_command_names(
                     .is_some_and(|resolved| resolved.name == command.name)
             }),
         );
-        if let Some((rank, distance)) = best_suggestion_score(&query, candidates) {
+        if let Some((rank, distance)) =
+            codewhale_config::suggest::best_suggestion_score(&query, candidates)
+        {
             scored.push((rank, distance, command.name.clone()));
         }
     }
@@ -582,12 +525,13 @@ fn suggest_command_names(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, ProviderKind};
     use crate::tools::plan::{PlanItemArg, StepStatus, UpdatePlanArgs};
     use crate::tools::todo::TodoStatus;
     use crate::tui::app::{App, AppAction, TuiOptions};
     use crate::tui::work_surface::{RailPanel, WorkSurfacePlacement};
+    use codewhale_config::ProviderKind;
     use codewhale_localization::{Locale, MessageId};
+    use codewhale_runtime::config::Config;
     use std::path::{Path, PathBuf};
     use tempfile::tempdir;
 
@@ -3247,15 +3191,16 @@ mod tests {
 
     // ---------------------------------------------------------------------
     // FEAT-024: session control entries register through the portable bridge
-    // (D3/D6) — six declare SESSION_CONTROL only; `/remote-env` declares
-    // control plus presentation; export/structcopy have independent authority.
+    // (D3/D6) — five declare SESSION_CONTROL only; `/remote-env` and `/color`
+    // declare control plus presentation; export/structcopy have independent
+    // authority.
     // ---------------------------------------------------------------------
 
     #[test]
     fn feat024_control_entries_register_through_portable_bridge() {
         use codewhale_command_contract::handler::{CommandCapabilities, CommandHandler};
 
-        for name in ["relay", "rename", "resume", "rc", "title", "color"] {
+        for name in ["relay", "rename", "resume", "rc", "title"] {
             assert!(
                 registry().has_contextual_handler(name),
                 "/{name} must register through the portable bridge"
@@ -3274,19 +3219,25 @@ mod tests {
                 "/{name} declares control authority only"
             );
         }
-        let handler = registry()
-            .get("remote-env")
-            .expect("entry")
-            .contextual_handler()
-            .expect("remote-env handler");
-        let CommandHandler::Contextual { capabilities, .. } = handler else {
-            panic!("/remote-env must be contextual");
-        };
-        assert_eq!(
-            capabilities,
-            CommandCapabilities::SESSION_CONTROL.union(CommandCapabilities::PRESENTATION),
-            "/remote-env declares control plus presentation only"
-        );
+        for name in ["remote-env", "color"] {
+            assert!(
+                registry().has_contextual_handler(name),
+                "/{name} must register through the portable bridge"
+            );
+            let handler = registry()
+                .get(name)
+                .expect("entry")
+                .contextual_handler()
+                .expect("contextual handler");
+            let CommandHandler::Contextual { capabilities, .. } = handler else {
+                panic!("/{name} must be contextual");
+            };
+            assert_eq!(
+                capabilities,
+                CommandCapabilities::SESSION_CONTROL.union(CommandCapabilities::PRESENTATION),
+                "/{name} declares control plus presentation only"
+            );
+        }
         // FEAT-026 also registers structcopy through its own narrow boundary.
         assert!(
             registry().has_contextual_handler("structcopy"),

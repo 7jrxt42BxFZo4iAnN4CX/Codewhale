@@ -127,8 +127,11 @@ impl CommandNavigationContext for NavigationAdapter<'_> {
                     }
                 })
                 .collect(),
-            kimi_route: crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_owned(),
-            kimi_console: crate::config::KIMI_CODE_MEMBERSHIP_PLAN_CONSOLE_URL.to_owned(),
+            kimi_route: codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL
+                .to_owned(),
+            kimi_console:
+                codewhale_config::descriptors::defaults::KIMI_CODE_MEMBERSHIP_PLAN_CONSOLE_URL
+                    .to_owned(),
         }
     }
 }
@@ -170,7 +173,7 @@ pub(super) fn anchors_path(workspace: &std::path::Path) -> std::path::PathBuf {
 }
 
 pub(super) fn read_anchor_document(workspace: &std::path::Path) -> Result<Option<String>, String> {
-    match crate::fs_confined::read_to_string(workspace, &anchors_path(workspace)) {
+    match codewhale_util::fs_confined::read_to_string(workspace, &anchors_path(workspace)) {
         Ok(content) => Ok(Some(content)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error.to_string()),
@@ -184,7 +187,7 @@ pub(super) fn append_anchor_bytes(
     use codewhale_command_contract::navigation::AnchorWriteError;
     use std::io::Write;
     let path = anchors_path(workspace);
-    let mut file = crate::fs_confined::open_append(workspace, &path)
+    let mut file = codewhale_util::fs_confined::open_append(workspace, &path)
         .map_err(|error| AnchorWriteError::Open(error.to_string()))?;
     for bytes in parts {
         file.write_all(bytes)
@@ -197,7 +200,7 @@ pub(super) fn replace_anchor_document(
     workspace: &std::path::Path,
     bytes: &[u8],
 ) -> Result<(), String> {
-    crate::fs_confined::write(workspace, &anchors_path(workspace), bytes)
+    codewhale_util::fs_confined::write(workspace, &anchors_path(workspace), bytes)
         .map_err(|error| error.to_string())
 }
 

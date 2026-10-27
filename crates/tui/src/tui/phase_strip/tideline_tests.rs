@@ -467,7 +467,7 @@ fn completed_subagent(id: &str) -> crate::tools::subagent::SubAgentResult {
         fork_context: false,
         workspace: None,
         git_branch: None,
-        agent_type: crate::tools::subagent::FleetRole::Worker,
+        agent_type: codewhale_agent_contract::role::FleetRole::Worker,
         assignment: crate::tools::subagent::SubAgentAssignment {
             native_preset: None,
             objective: format!("objective-{id}"),
@@ -672,6 +672,7 @@ fn clock_distinguishes_working_from_waiting_on_something() {
     app.pending_user_input_prompt = Some((
         "tool-call-1".to_string(),
         crate::tools::user_input::UserInputRequest {
+            require_typed_answers: false,
             questions: Vec::new(),
         },
     ));

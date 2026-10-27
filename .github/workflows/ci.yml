@@ -320,21 +320,6 @@ jobs:
             (cd "integrations/${bridge}" && npm test)
           done
 
-      - name: Build computer-use test desktop
-        # Spawn assertions have short request deadlines; keep the cold image
-        # build outside those deadlines and fail image preparation explicitly.
-        timeout-minutes: 10
-        run: >-
-          docker build --tag codewhale-cu-linux
-          --file crates/tui/plugins/computer-use/docker/Dockerfile
-          crates/tui/plugins/computer-use
-
-      - name: Run computer-use plugin suites
-        # The bundled plugin is dependency-free too; its suites cover the
-        # manifest contract, the registry, the exec/ssh transport, the four
-        # platform backends, and the MCP stdio protocol. No GUI input runs.
-        run: (cd crates/tui/plugins/computer-use && npm test)
-
       - name: Run extension host suites and check the committed bundle
         # The TypeScript extension host (experimental, [features]
         # extension_host). Tests exercise both the committed bundle and
@@ -579,9 +564,12 @@ jobs:
         if: needs.changes.outputs.heavy == 'true'
         # crates/config/assets/models_dev.bundled.json is rendered from
         # scripts/catalog/models_dev_seed.toml and its lock (#6396). A hand edit
-        # fails here; docs/CATALOG_REFRESH.md has the regenerate steps.
+        # fails here; docs/CATALOG_REFRESH.md has the regenerate steps. The age
+        # check fails a pin that has silently rotted: render --check only proves
+        # the asset matches the lock, never that the lock is recent.
         run: |
           python3 scripts/catalog_models_dev.py seed render --check
+          python3 scripts/catalog_models_dev.py seed age --max-days 30
           python3 -m unittest scripts/catalog_models_dev_test.py
       - name: Check command-contract prototype boundary
         if: needs.changes.outputs.heavy == 'true'

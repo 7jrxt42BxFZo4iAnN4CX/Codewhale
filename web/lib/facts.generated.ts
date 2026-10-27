@@ -38,12 +38,13 @@ export interface RepoFacts {
 }
 
 export const FACTS: RepoFacts = {
-  "generatedAt": "2026-10-22T23:40:37.238Z",
+  "generatedAt": "2026-10-26T12:11:28.928Z",
   "sourceRevision": null,
   "sourceCommittedAt": null,
   "version": "0.10.2",
   "crates": [
     "agent",
+    "agent-contract",
     "app-server",
     "build-support",
     "cli",
@@ -59,11 +60,14 @@ export const FACTS: RepoFacts = {
     "mcp",
     "memory",
     "models",
+    "net",
+    "notify",
     "palette",
     "paths",
     "protocol",
     "release",
     "runtime",
+    "sandbox",
     "sanitize",
     "secrets",
     "state",
@@ -1065,9 +1069,9 @@ export const FACTS: RepoFacts = {
   "contributorCount": 393,
   "license": "MIT",
   "latestPublishedRelease": {
-    "tag": "v0.10.1",
-    "version": "0.10.1",
-    "publishedAt": "2026-10-08T01:47:44Z",
-    "url": "https://github.com/codewhale-hq/CodeWhale/releases/tag/v0.10.1"
+    "tag": "v0.10.2",
+    "version": "0.10.2",
+    "publishedAt": "2026-10-24T17:31:14Z",
+    "url": "https://github.com/codewhale-hq/CodeWhale/releases/tag/v0.10.2"
   }
 };

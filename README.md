@@ -29,6 +29,14 @@ and the web and MCP calls it made.
 
 </div>
 
+<p align="center">
+  <a href="https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67" rel="sponsored">
+    <img src="web/public/codewhale-x-orcarouter.webp" alt="Codewhale × OrcaRouter — +30% DeepSeek v4.1 Flash usage" width="760">
+  </a>
+</p>
+
+[View the Codewhale × OrcaRouter offer](https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67). Codewhale earns a referral fee from OrcaRouter.
+
 ## Install
 
 macOS and Linux:
@@ -80,7 +88,7 @@ Fix the failing tests and explain what changed.
 Read-only commands run straight away. For any other shell command Codewhale
 asks first: `y` runs it once, `a` allows commands like it for the rest of the
 conversation, `n` refuses. `/undo` takes back your last request and its file
-changes (in 0.10.1, run `/trust on` first). `/help` lists commands and keys.
+changes. `/help` lists commands and keys.
 
 For scripts and CI, `codewhale exec` runs one task without the interface. By
 default, `--auto` uses Full Access: tools run without asking, shell commands
@@ -143,8 +151,8 @@ ChatGPT plan instead of an API key (experimental). See
 
 `/receipts`, or `codewhale receipts --last` after you quit, lists the files
 changed, commands run, web and MCP calls, agents started, approvals and who
-gave them, and failures. `/undo` takes back your last request; in 0.10.1 it
-needs `/trust on` for files and steps back one tool call at a time. `/restore`
+gave them, and failures. `/undo` takes back your last request and the files it
+changed, in one step and without trust mode. `/restore`
 rolls the whole workspace back to an earlier snapshot; because that overwrites
 later edits, it needs `/trust on` or Full Access. See [Receipts](docs/RECEIPTS.md).
 
@@ -183,10 +191,10 @@ Connect [MCP servers](docs/MCP.md), add [skills](docs/SKILLS.md) and
 [plugins](docs/PLUGINS.md), and run [hooks](docs/HOOKS.md) on session and tool
 events. Code mode (experimental, on by default) lets the model write one
 `execute_tools` program that calls several MCP and plugin tools; each call
-still meets your approval rules and keeps its receipt. The bundled Computer
+still meets your approval rules and keeps its receipt. The independently installed Computer
 Use plugin (experimental, macOS only) can observe
 and operate other apps. It stays off until you review its access and enable it
-([guide](crates/tui/plugins/computer-use/README.md)).
+([guide](https://github.com/codewhale-hq/codewhale-cu-plugin)).
 
 ## Ways to run it
 

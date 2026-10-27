@@ -9,7 +9,6 @@ use serde_json::{Value, json};
 use tokio::process::Command;
 use uuid::Uuid;
 
-use crate::dependencies::ExternalTool;
 use crate::task_manager::{
     NewTaskRequest, TaskArtifactRef, TaskAttemptRecord, TaskCancelDisposition, TaskGateRecord,
     TaskRecord,
@@ -23,6 +22,7 @@ use crate::work_graph::{
     CancelOutcome, OperationIntent, OperationObservation, OperationOwnerSnapshot, OwnerState,
     task_owner_snapshot,
 };
+use codewhale_dependencies::ExternalTool;
 use codewhale_execpolicy::command_safety::{SafetyAnalysis, SafetyLevel, analyze_command};
 
 const MAX_SUMMARY_CHARS: usize = 900;
@@ -98,6 +98,7 @@ const ALL_ACTIONS: &[&str] = &[
     "pr_attempt_list",
     "pr_attempt_read",
     "pr_attempt_preflight",
+    "suggest",
 ];
 
 impl TasksTool {
@@ -166,7 +167,7 @@ impl TasksTool {
     }
 
     fn action_requires_approval(action: &str) -> bool {
-        !Self::action_is_read(action)
+        !Self::action_is_read(action) && action != "suggest"
     }
 }
 
@@ -211,7 +212,7 @@ impl ToolSpec for TasksTool {
                 "Inspect durable tasks and their PR attempts. Actions: \"list\", \"read\", \"pr_attempt_list\", \"pr_attempt_read\"."
             }
             _ => {
-                "Manage durable background tasks through TaskManager. Durable tasks are restart-aware executable work, distinct from sub-agents. Actions: \"create\" (enqueue; approval), \"list\", \"read\", \"cancel\" (approval), \"gate_run\" (run an approved verification gate command and return structured evidence; approval), \"pr_attempt_record\" (approval), \"pr_attempt_list\", \"pr_attempt_read\", \"pr_attempt_preflight\" (approval). Run long shell work with the shell tool (background=true to detach immediately; a foreground command still running after 30s moves to the background by itself)."
+                "Manage durable background tasks through TaskManager. Durable tasks are restart-aware executable work, distinct from sub-agents. Actions: \"create\" (enqueue; approval), \"list\", \"read\", \"cancel\" (approval), \"gate_run\" (run an approved verification gate command and return structured evidence; approval), \"pr_attempt_record\" (approval), \"pr_attempt_list\", \"pr_attempt_read\", \"pr_attempt_preflight\" (approval), \"suggest\" (offer the person a task as a card they can Start or Hide; starts nothing — never create it yourself after suggesting). Run long shell work with the shell tool (background=true to detach immediately; a foreground command still running after 30s moves to the background by itself)."
             }
         }
     }
@@ -233,11 +234,11 @@ impl ToolSpec for TasksTool {
         if !self.read_only {
             properties.insert(
                 "prompt".to_string(),
-                json!({ "type": "string", "description": "Work prompt for the durable task (action=create)." }),
+                json!({ "type": "string", "description": "Work prompt for the durable task (action=create), or the prompt Start would send (action=suggest)." }),
             );
             properties.insert(
                 "name".to_string(),
-                json!({ "type": "string", "description": "Short run name shown in queues; omit to derive from the prompt. (action=create)" }),
+                json!({ "type": "string", "description": "Short run name shown in queues; omit to derive from the prompt. (action=create; for action=suggest, the card's title)" }),
             );
             properties.insert(
                 "model_provider".to_string(),
@@ -382,7 +383,7 @@ impl ToolSpec for TasksTool {
     }
 
     async fn execute(&self, input: Value, context: &ToolContext) -> Result<ToolResult, ToolError> {
-        crate::core::engine::tool_catalog::enforce_tool_denial(
+        crate::tools::execution_envelope::enforce_tool_denial(
             context,
             self.name(),
             &json!({"action": self.resolve_action(&input)?}),
@@ -397,11 +398,28 @@ impl ToolSpec for TasksTool {
             "pr_attempt_list" => self.execute_pr_attempt_list(&input, context).await,
             "pr_attempt_read" => self.execute_pr_attempt_read(&input, context).await,
             "pr_attempt_preflight" => self.execute_pr_attempt_preflight(&input, context).await,
+            "suggest" => execute_suggest(&input),
             action => Err(ToolError::invalid_input(format!(
                 "tasks: invalid action `{action}`"
             ))),
         }
     }
+}
+
+fn execute_suggest(input: &Value) -> Result<ToolResult, ToolError> {
+    let prompt = required_str(input, "prompt")?.trim();
+    let title = optional_str(input, "name")?
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or(prompt);
+    if prompt.is_empty() {
+        return Err(ToolError::invalid_input("tasks: suggest needs a prompt"));
+    }
+    ToolResult::json(&json!({
+        "summary": format!("Suggested to the person: {title}. Nothing was started; they choose Start or Hide."),
+        "suggestion": { "title": title, "prompt": prompt },
+    }))
+    .map_err(|e| ToolError::execution_failed(e.to_string()))
 }
 
 fn dangerous_gate_block(safety: &SafetyAnalysis) -> Option<ToolResult> {
@@ -525,6 +543,7 @@ impl TasksTool {
             optional_bool_opt(input, "auto_approve")?,
         );
         let req = NewTaskRequest {
+            destination_thread_id: None,
             prompt: prompt.clone(),
             name: optional_str(input, "name")?.map(ToString::to_string),
             model: optional_str(input, "model")?.map(ToString::to_string),
@@ -540,7 +559,7 @@ impl TasksTool {
             // and a task started from a session must not run under authority
             // that session was never granted.
             permission_posture: Some(
-                crate::runtime_policy::approval_wire(context.approval_mode).to_string(),
+                codewhale_runtime::runtime_policy::approval_wire(context.approval_mode).to_string(),
             ),
             owner_session_id: Some(context.state_namespace.clone()),
         };
@@ -680,8 +699,8 @@ impl TasksTool {
         input: &Value,
         context: &ToolContext,
     ) -> Result<ToolResult, ToolError> {
-        crate::core::engine::tool_catalog::enforce_tool_denial(context, "task_gate_run", input)?;
-        if context.shell_policy != crate::worker_profile::ShellPolicy::Full {
+        crate::tools::execution_envelope::enforce_tool_denial(context, "task_gate_run", input)?;
+        if context.shell_policy != codewhale_agent_contract::worker_profile::ShellPolicy::Full {
             return Err(ToolError::permission_denied(
                 "Gate commands require full shell permission.",
             ));
@@ -708,7 +727,7 @@ impl TasksTool {
         // Contained: when the timeout elapses the gate's whole process tree
         // is killed, instead of leaving it running behind a "timeout" result,
         // and what it wrote until then still reaches the log.
-        let output = crate::process_tree::contained_output_until(
+        let output = codewhale_runtime::process_tree::contained_output_until(
             &mut cmd,
             tokio::time::sleep(std::time::Duration::from_millis(timeout_ms)),
         )
@@ -917,7 +936,7 @@ impl TasksTool {
         let patch_path = manager.artifact_absolute_path(patch_ref);
         let workspace = context.workspace.clone();
         let out = tokio::task::spawn_blocking(move || {
-            crate::dependencies::Git::command()
+            codewhale_dependencies::Git::command()
                 .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "git not found"))?
                 .args(["apply", "--check"])
                 .arg(&patch_path)
@@ -999,7 +1018,7 @@ impl ToolSpec for TaskShellWaitTool {
     }
 
     async fn execute(&self, input: Value, context: &ToolContext) -> Result<ToolResult, ToolError> {
-        crate::core::engine::tool_catalog::enforce_tool_denial(context, self.name(), &input)?;
+        crate::tools::execution_envelope::enforce_tool_denial(context, self.name(), &input)?;
         // The shell cancel action lives on the hidden compatibility tool, which
         // no model catalog offers. Without this route a model that owns a stuck
         // background command can watch it but never stop it. The delegate
@@ -1270,7 +1289,7 @@ fn task_id_schema() -> Value {
 /// The working-tree patch and changed paths an attempt records, read without
 /// running repository-configured diff drivers or filters.
 async fn attempt_diff(workspace: &Path) -> Result<(String, Vec<String>), ToolError> {
-    let review = crate::dependencies::Git::REVIEW_DIFF_ARGS;
+    let review = codewhale_dependencies::Git::REVIEW_DIFF_ARGS;
     let diff = git_output(
         workspace,
         &[&["diff", "--binary", "--no-color"][..], &review[..]].concat(),
@@ -1294,7 +1313,7 @@ async fn git_output(workspace: &Path, args: &[&str]) -> Result<String, ToolError
     // Reads repository content, so repository-configured filters, fsmonitor
     // and hooks stay off.
     let out = tokio::task::spawn_blocking(move || {
-        crate::dependencies::Git::review_command(&cwd)
+        codewhale_dependencies::Git::review_command(&cwd)
             .map_err(|e| std::io::Error::other(format!("{e:#}")))?
             .args(&args_owned)
             .output()
@@ -1410,7 +1429,7 @@ mod tests {
         let textconv = script("textconv.sh", "cat \"$1\"\n");
         let repo = tmp.path();
         let git = |args: &[&str]| {
-            let status = crate::dependencies::Git::status(args, repo).expect("git should spawn");
+            let status = codewhale_dependencies::Git::status(args, repo).expect("git should spawn");
             assert!(status.success(), "git {args:?} failed");
         };
         git(&["init", "-q"]);
@@ -1804,7 +1823,7 @@ mod tests {
 
         let mut context = ToolContext::new(workspace.path());
         context.approval_mode = codewhale_execpolicy::ApprovalMode::Auto;
-        context.shell_policy = crate::worker_profile::ShellPolicy::None;
+        context.shell_policy = codewhale_agent_contract::worker_profile::ShellPolicy::None;
         context.runtime.task_manager = Some(manager.clone());
 
         TasksTool::new("tasks")
@@ -1839,7 +1858,7 @@ mod tests {
         let turn = crate::task_manager::ExecutionTask::from(&created).turn_request();
         assert_eq!(turn.permission_posture.as_deref(), Some("auto_review"));
         assert_eq!(turn.auto_approve, None);
-        let policy = crate::runtime_policy::RuntimePolicyProjection::from_request(
+        let policy = codewhale_runtime::runtime_policy::RuntimePolicyProjection::from_request(
             turn.mode.as_deref().expect("mode"),
             turn.permission_posture.as_deref(),
             turn.auto_approve,
@@ -1865,7 +1884,7 @@ mod tests {
     async fn timed_out_gate_run_kills_the_gate_process_tree() {
         let workspace = tempfile::tempdir().expect("workspace");
         let context = ToolContext::new(workspace.path())
-            .with_shell_policy(crate::worker_profile::ShellPolicy::Full);
+            .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::Full);
         let result = TasksTool::new("tasks")
             .execute(
                 json!({
@@ -1886,12 +1905,15 @@ mod tests {
             "{}",
             result.content
         );
-        let child = crate::process_tree::read_pid_file(
+        let child = codewhale_runtime::process_tree::read_pid_file(
             &workspace.path().join("gate-child.pid"),
             std::time::Duration::from_secs(5),
         );
         assert!(
-            crate::process_tree::wait_for_pid_exit(child, std::time::Duration::from_secs(5)),
+            codewhale_runtime::process_tree::wait_for_pid_exit(
+                child,
+                std::time::Duration::from_secs(5)
+            ),
             "the timed-out gate's process is still running"
         );
     }
@@ -1914,7 +1936,7 @@ mod tests {
         let tmp = crate::test_support::sandbox_visible_tempdir();
         let written = tmp.path().join("written-by-gate.txt");
         let mut context = ToolContext::new(tmp.path());
-        context.elevated_sandbox_policy = Some(crate::sandbox::SandboxPolicy::read_only());
+        context.elevated_sandbox_policy = Some(codewhale_sandbox::SandboxPolicy::read_only());
         let command = format!(
             "printf ran; printf x > '{}' 2>/dev/null; true",
             written.display()

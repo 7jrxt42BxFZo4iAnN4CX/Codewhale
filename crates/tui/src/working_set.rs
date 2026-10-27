@@ -6,10 +6,10 @@
 //! - a compact working-set summary block for the system prompt
 //! - pinned message indices that compaction should preserve
 
-use crate::workspace_discovery::{
+use codewhale_models::{ContentBlock, Message};
+use codewhale_runtime::workspace_discovery::{
     DISCOVERY_ALWAYS_DIRS, path_is_excluded_from_discovery, should_skip_unignored_discovery_entry,
 };
-use codewhale_models::{ContentBlock, Message};
 use ignore::WalkBuilder;
 use regex::Regex;
 use serde::{Deserialize, Serialize};

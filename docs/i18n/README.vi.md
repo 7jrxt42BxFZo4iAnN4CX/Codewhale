@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:7e0946fcaecd -->
+<!-- source: README.md sha256:1e61f10f7706 -->
 <div align="center">
 
 <picture>
@@ -29,6 +29,14 @@ các lệnh nó đã chạy, cùng các lệnh gọi web và MCP nó đã thực
 <sub>Một bản dựng phát triển 0.10.2 với mô hình thử nghiệm chạy theo kịch bản, ở chế độ Full Access trong một không gian làm việc dùng một lần. Thao tác chỉnh sửa, ba bài kiểm thử và lượt đánh giá của tác nhân phụ đều chạy thật.</sub>
 
 </div>
+
+<p align="center">
+  <a href="https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67" rel="sponsored">
+    <img src="../../web/public/codewhale-x-orcarouter.webp" alt="Codewhale × OrcaRouter — thêm 30% dung lượng sử dụng DeepSeek v4.1 Flash" width="760">
+  </a>
+</p>
+
+[Xem ưu đãi Codewhale × OrcaRouter](https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67). Codewhale nhận phí giới thiệu từ OrcaRouter.
 
 ## Cài đặt
 
@@ -83,7 +91,7 @@ Fix the failing tests and explain what changed.
 Các lệnh chỉ đọc chạy ngay. Với mọi lệnh shell khác, Codewhale hỏi trước: `y`
 chạy lệnh một lần, `a` cho phép các lệnh tương tự trong phần còn lại của cuộc
 trò chuyện, `n` từ chối. `/undo` hoàn tác yêu cầu gần nhất của bạn cùng các thay
-đổi tệp của nó (ở 0.10.1, hãy chạy `/trust on` trước). `/help` liệt kê các lệnh
+đổi tệp của nó. `/help` liệt kê các lệnh
 và phím tắt.
 
 Với script và CI, `codewhale exec` chạy một tác vụ mà không cần giao diện. Theo
@@ -150,9 +158,7 @@ phép bạn dùng gói ChatGPT thay cho khóa API (thử nghiệm). Xem
 
 `/receipts`, hoặc `codewhale receipts --last` sau khi bạn thoát, liệt kê các tệp
 đã thay đổi, các lệnh đã chạy, các lệnh gọi web và MCP, các tác nhân đã khởi
-chạy, các phê duyệt và người đã phê duyệt, cùng các lần thất bại. `/undo` hoàn
-tác yêu cầu gần nhất của bạn; ở 0.10.1, nó cần `/trust on` để hoàn tác tệp và lùi
-lại từng lệnh gọi công cụ một. `/restore` đưa toàn bộ không gian làm việc về một
+chạy, các phê duyệt và người đã phê duyệt, cùng các lần thất bại. `/undo` hoàn tác yêu cầu gần nhất của bạn và những tệp mà yêu cầu đó đã thay đổi trong một bước, không cần chế độ tin cậy. `/restore` đưa toàn bộ không gian làm việc về một
 snapshot trước đó; vì thao tác này ghi đè các chỉnh sửa sau đó, nó cần
 `/trust on` hoặc Full Access. Xem [Biên nhận](../RECEIPTS.md).
 
@@ -191,10 +197,10 @@ Kết nối [máy chủ MCP](../MCP.md), thêm [skill](../SKILLS.md) và
 công cụ. Chế độ code (thử nghiệm, bật theo mặc định) cho phép mô hình viết một
 chương trình `execute_tools` gọi nhiều công cụ MCP và plugin; mỗi lệnh gọi vẫn
 tuân theo quy tắc phê duyệt của bạn và vẫn có biên nhận riêng. Plugin Computer
-Use đi kèm (thử nghiệm, chỉ có trên macOS) có thể quan
+Use được cài đặt riêng (thử nghiệm, chỉ có trên macOS) có thể quan
 sát và điều khiển các ứng dụng khác. Plugin này luôn tắt cho đến khi bạn xem lại
 quyền truy cập của nó và bật nó lên
-([hướng dẫn](../../crates/tui/plugins/computer-use/README.md)).
+([hướng dẫn](https://github.com/codewhale-hq/codewhale-cu-plugin)).
 
 ## Các cách chạy
 

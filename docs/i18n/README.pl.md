@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:7e0946fcaecd -->
+<!-- source: README.md sha256:1e61f10f7706 -->
 <div align="center">
 
 <picture>
@@ -30,6 +30,14 @@ oraz wywołań internetowych i MCP, które wykonał.
 <sub>Wersja rozwojowa 0.10.2 ze skryptowanym modelem testowym, z uprawnieniem Full Access, w jednorazowym obszarze roboczym. Edycja, trzy testy i przegląd wykonany przez subagenta odbyły się naprawdę.</sub>
 
 </div>
+
+<p align="center">
+  <a href="https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67" rel="sponsored">
+    <img src="../../web/public/codewhale-x-orcarouter.webp" alt="Codewhale × OrcaRouter — o 30% więcej korzystania z DeepSeek v4.1 Flash" width="760">
+  </a>
+</p>
+
+[Zobacz ofertę Codewhale × OrcaRouter](https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67). Codewhale otrzymuje prowizję za polecenia od OrcaRouter.
 
 ## Instalacja
 
@@ -84,8 +92,7 @@ Fix the failing tests and explain what changed.
 Polecenia tylko do odczytu uruchamiają się od razu. Przed każdym innym
 poleceniem powłoki Codewhale najpierw pyta: `y` uruchamia je jednorazowo, `a`
 zezwala na podobne polecenia do końca rozmowy, `n` odmawia. `/undo` cofa Twoje
-ostatnie zlecenie i zmiany, które wprowadziło w plikach (w 0.10.1 najpierw
-uruchom `/trust on`). `/help` wyświetla polecenia i skróty klawiszowe.
+ostatnie zlecenie i zmiany, które wprowadziło w plikach. `/help` wyświetla polecenia i skróty klawiszowe.
 
 W skryptach i CI `codewhale exec` wykonuje jedno zadanie bez interfejsu.
 Domyślnie `--auto` używa Full Access: narzędzia działają bez pytania, polecenia
@@ -155,8 +162,7 @@ Zobacz [Dostawcy](../PROVIDERS.md).
 `/receipts` (albo `codewhale receipts --last` po wyjściu z programu) wyświetla
 listę zmienionych plików, uruchomionych poleceń, wywołań internetowych i MCP,
 uruchomionych agentów, zatwierdzeń wraz z tym, kto ich udzielił, oraz
-niepowodzeń. `/undo` cofa Twoje ostatnie zlecenie; w 0.10.1 wymaga
-`/trust on` dla plików i cofa po jednym wywołaniu narzędzia naraz. `/restore`
+niepowodzeń. `/undo` cofa Twoje ostatnie zlecenie i zmienione przez nie pliki w jednym kroku, bez trybu zaufania. `/restore`
 przywraca cały obszar roboczy do wcześniejszej migawki; ponieważ nadpisuje to
 późniejsze zmiany, wymaga `/trust on` lub Full Access. Zobacz
 [Pokwitowania](../RECEIPTS.md).
@@ -198,10 +204,10 @@ Podłączaj [serwery MCP](../MCP.md), dodawaj [umiejętności](../SKILLS.md) i
 zdarzeniach sesji i narzędzi. Code mode (eksperymentalny, domyślnie włączony)
 pozwala modelowi napisać jeden program `execute_tools`, który wywołuje kilka
 narzędzi MCP i wtyczek; każde wywołanie nadal podlega Twoim regułom
-zatwierdzania i ma własne pokwitowanie. Dołączona wtyczka Computer Use
+zatwierdzania i ma własne pokwitowanie. Osobno instalowana wtyczka Computer Use
 (eksperymentalna, tylko macOS) potrafi obserwować i obsługiwać inne aplikacje.
 Pozostaje wyłączona, dopóki nie sprawdzisz jej dostępu i jej nie włączysz
-([przewodnik](../../crates/tui/plugins/computer-use/README.md)).
+([przewodnik](https://github.com/codewhale-hq/codewhale-cu-plugin)).
 
 ## Sposoby uruchamiania
 

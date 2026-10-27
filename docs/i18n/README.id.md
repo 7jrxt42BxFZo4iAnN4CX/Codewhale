@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:7e0946fcaecd -->
+<!-- source: README.md sha256:1e61f10f7706 -->
 <div align="center">
 
 <picture>
@@ -30,6 +30,14 @@ yang dilakukannya.
 <sub>Build pengembangan 0.10.2 dengan model uji yang berjalan sesuai skrip, dalam Akses penuh di dalam workspace sekali pakai. Edit, tiga pengujian, dan tinjauan sub-agen benar-benar dijalankan.</sub>
 
 </div>
+
+<p align="center">
+  <a href="https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67" rel="sponsored">
+    <img src="../../web/public/codewhale-x-orcarouter.webp" alt="Codewhale × OrcaRouter — tambahan 30% penggunaan DeepSeek v4.1 Flash" width="760">
+  </a>
+</p>
+
+[Lihat penawaran Codewhale × OrcaRouter](https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67). Codewhale menerima komisi rujukan dari OrcaRouter.
 
 ## Instalasi
 
@@ -84,8 +92,7 @@ Fix the failing tests and explain what changed.
 Perintah baca-saja langsung dijalankan. Untuk perintah shell lainnya, Codewhale
 bertanya lebih dulu: `y` menjalankannya sekali, `a` mengizinkan perintah serupa
 selama sisa percakapan, `n` menolaknya. `/undo` membatalkan permintaan terakhir
-Anda beserta perubahan berkasnya (di 0.10.1, jalankan `/trust on` terlebih
-dahulu). `/help` menampilkan daftar perintah dan tombol.
+Anda beserta perubahan berkasnya. `/help` menampilkan daftar perintah dan tombol.
 
 Untuk skrip dan CI, `codewhale exec` menjalankan satu tugas tanpa antarmuka.
 Secara default, `--auto` memakai Akses penuh: alat berjalan tanpa bertanya,
@@ -154,9 +161,7 @@ kunci API (eksperimental). Lihat [Penyedia](../PROVIDERS.md).
 
 `/receipts`, atau `codewhale receipts --last` setelah Anda keluar, mencantumkan
 berkas yang diubah, perintah yang dijalankan, panggilan web dan MCP, agen yang
-dimulai, persetujuan beserta siapa yang memberikannya, dan kegagalan. `/undo`
-membatalkan permintaan terakhir Anda; di 0.10.1, perintah ini memerlukan
-`/trust on` untuk berkas dan mundur satu panggilan alat setiap kali. `/restore`
+dimulai, persetujuan beserta siapa yang memberikannya, dan kegagalan. `/undo` membatalkan permintaan terakhir Anda beserta berkas yang diubahnya, dalam satu langkah dan tanpa mode kepercayaan. `/restore`
 mengembalikan seluruh workspace
 ke snapshot sebelumnya; karena itu menimpa edit yang lebih baru, perintah ini
 memerlukan `/trust on` atau Akses penuh. Lihat [Receipt](../RECEIPTS.md).
@@ -197,10 +202,10 @@ Hubungkan [server MCP](../MCP.md), tambahkan [skill](../SKILLS.md) dan
 dan alat. Mode kode (eksperimental, aktif secara default) memungkinkan model
 menulis satu program `execute_tools` yang memanggil beberapa alat MCP dan
 plugin; setiap panggilan tetap tunduk pada aturan persetujuan Anda dan tetap
-memiliki receipt-nya. Plugin Computer Use bawaan (eksperimental, hanya macOS) dapat
+memiliki receipt-nya. Plugin Computer Use yang dipasang terpisah (eksperimental, hanya macOS) dapat
 mengamati dan mengoperasikan aplikasi lain. Plugin ini tetap nonaktif sampai
 Anda meninjau aksesnya dan mengaktifkannya
-([panduan](../../crates/tui/plugins/computer-use/README.md)).
+([panduan](https://github.com/codewhale-hq/codewhale-cu-plugin)).
 
 ## Cara menjalankannya
 

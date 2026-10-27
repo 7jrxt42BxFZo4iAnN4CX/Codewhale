@@ -1,9 +1,9 @@
 use crate::commands::CommandResult;
-use crate::config::Config;
 use crate::tui::app::{App, AppAction, TuiOptions};
 use crate::tui::views::ModalKind;
 use codewhale_config::AppMode;
 use codewhale_localization::Locale;
+use codewhale_runtime::config::Config;
 use std::path::PathBuf;
 use tempfile::tempdir;
 
@@ -29,7 +29,7 @@ fn create_test_app() -> App {
     };
     let mut app = App::new(options, &Config::default());
     app.ui_locale = codewhale_localization::Locale::En;
-    app.api_provider = crate::config::ProviderKind::Deepseek;
+    app.api_provider = codewhale_config::ProviderKind::Deepseek;
     app.model = "deepseek-v4-pro".to_string();
     app.auto_model = false;
     app.model_ids_passthrough = false;
@@ -463,7 +463,7 @@ fn workspace_without_arg_shows_current_workspace() {
     assert!(msg.contains("Current workspace:"));
     assert!(msg.contains("/tmp/test-workspace"));
     assert!(result.action.is_none());
-    let home = crate::config::effective_home_dir().expect("hermetic home");
+    let home = codewhale_paths::user_home().expect("hermetic home");
     let result = workspace_switch(&mut app, Some("~"));
     assert!(
         matches!(result.action, Some(AppAction::SwitchWorkspace { workspace }) if workspace == home.canonicalize().unwrap_or(home.clone()))
@@ -525,8 +525,8 @@ fn workspace_rejects_file_path() {
 #[cfg(test)]
 mod anchor {
     use crate::commands::CommandResult;
-    use crate::config::Config;
     use crate::tui::app::{App, TuiOptions};
+    use codewhale_runtime::config::Config;
     use tempfile::TempDir;
 
     fn anchor(app: &mut App, arg: Option<&str>) -> CommandResult {

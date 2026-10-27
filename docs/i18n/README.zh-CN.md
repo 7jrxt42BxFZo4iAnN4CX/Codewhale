@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:7e0946fcaecd -->
+<!-- source: README.md sha256:1e61f10f7706 -->
 <div align="center">
 
 <picture>
@@ -27,6 +27,14 @@
 <sub>一个使用脚本化测试模型的 0.10.2 开发版本，在一次性工作区中以“完全访问”权限运行。其中的编辑、三个测试和一次子智能体审查都是真实运行的。</sub>
 
 </div>
+
+<p align="center">
+  <a href="https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67" rel="sponsored">
+    <img src="../../web/public/codewhale-x-orcarouter.webp" alt="Codewhale × OrcaRouter：DeepSeek v4.1 Flash 用量增加 30%" width="760">
+  </a>
+</p>
+
+[查看 Codewhale × OrcaRouter 优惠](https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67). Codewhale 会从 OrcaRouter 获得推荐佣金。
 
 ## 安装
 
@@ -73,7 +81,7 @@ Fix the failing tests and explain what changed.
 
 只读命令会直接运行。其他任何 shell 命令，Codewhale 都会先询问：`y` 运行这一次，
 `a` 在本次对话接下来的时间里允许类似的命令，`n` 拒绝。`/undo` 会撤销你的上一个请求及其
-文件改动（在 0.10.1 中，需先运行 `/trust on`）。`/help` 列出命令和按键。
+文件改动。`/help` 列出命令和按键。
 
 在脚本和 CI 中，`codewhale exec` 不启动界面，只运行一个任务。默认情况下，`--auto` 使用
 “完全访问”权限：工具不经询问就运行，shell 命令不受 Codewhale 沙箱限制，信任模式允许
@@ -130,8 +138,7 @@ OpenRouter 和 xAI。任何兼容 OpenAI 的端点都可以使用，通过 Ollam
 ### 回执与撤销
 
 `/receipts`（退出后可用 `codewhale receipts --last`）会列出修改过的文件、运行过的命令、
-Web 和 MCP 调用、启动过的智能体、审批及审批人，以及失败记录。`/undo` 撤销你的上一个请求；
-在 0.10.1 中，撤销文件改动需要 `/trust on`，而且每次只回退一个工具调用。`/restore` 把整个工作区回滚到更早的快照；由于这会覆盖之后的编辑，它需要 `/trust on`
+Web 和 MCP 调用、启动过的智能体、审批及审批人，以及失败记录。`/undo` 一步撤销你的上一个请求及其修改的文件，无需信任模式。`/restore` 把整个工作区回滚到更早的快照；由于这会覆盖之后的编辑，它需要 `/trust on`
 或“完全访问”权限。参见[回执](../RECEIPTS.md)。
 
 可使用工具的 exec 运行无论采用哪种输出格式都会保存，因此在 `exec --auto` 之后，
@@ -162,9 +169,9 @@ Codewhale 会自动读取 `AGENTS.md`。为其他工具编写的指令文件，�
 连接 [MCP 服务器](../MCP.md)，添加[技能](../SKILLS.md)和[插件](../PLUGINS.md)，
 并在会话和工具事件上运行[钩子](../HOOKS.md)。代码模式（Code mode，实验性，默认开启）
 让模型编写一个 `execute_tools` 程序来调用多个 MCP 和插件工具；每次调用仍要遵守你的审批规则，
-并保留各自的回执。内置的 Computer Use 插件（实验性，
+并保留各自的回执。独立安装的 Computer Use 插件（实验性，
 仅限 macOS）可以观察和操作其他应用。在你审阅其访问权限并启用之前，它保持关闭
-（[指南](../../crates/tui/plugins/computer-use/README.md)）。
+（[指南](https://github.com/codewhale-hq/codewhale-cu-plugin)）。
 
 ## 运行方式
 

@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:7e0946fcaecd -->
+<!-- source: README.md sha256:1e61f10f7706 -->
 <div align="center">
 
 <picture>
@@ -30,6 +30,14 @@ MCP que hizo.
 <sub>Una compilación de desarrollo de 0.10.2 con un modelo de prueba con guion, en Full Access dentro de un espacio de trabajo desechable. La edición, tres pruebas y una revisión de un sub-agente se ejecutaron de verdad.</sub>
 
 </div>
+
+<p align="center">
+  <a href="https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67" rel="sponsored">
+    <img src="../../web/public/codewhale-x-orcarouter.webp" alt="Codewhale × OrcaRouter — 30% más de uso de DeepSeek v4.1 Flash" width="760">
+  </a>
+</p>
+
+[Ver la oferta de Codewhale × OrcaRouter](https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67). Codewhale recibe una comisión por referidos de OrcaRouter.
 
 ## Instalación
 
@@ -83,8 +91,7 @@ Fix the failing tests and explain what changed.
 Los comandos de solo lectura se ejecutan de inmediato. Para cualquier otro
 comando de shell, Codewhale pregunta primero: `y` lo ejecuta una vez, `a`
 permite comandos similares durante el resto de la conversación y `n` lo
-rechaza. `/undo` deshace tu última solicitud y sus cambios en archivos (en
-0.10.1, ejecuta primero `/trust on`). `/help` muestra los comandos y las teclas.
+rechaza. `/undo` deshace tu última solicitud y sus cambios en archivos. `/help` muestra los comandos y las teclas.
 
 Para scripts y CI, `codewhale exec` ejecuta una tarea sin la interfaz. Por
 defecto, `--auto` usa Full Access: las herramientas se ejecutan sin preguntar,
@@ -151,9 +158,7 @@ plan de ChatGPT en lugar de una clave API (experimental). Consulta
 
 `/receipts`, o `codewhale receipts --last` después de salir, enumera los
 archivos modificados, los comandos ejecutados, las llamadas web y MCP, los
-agentes iniciados, las aprobaciones y quién las dio, y los fallos. `/undo`
-deshace tu última solicitud; en 0.10.1 necesita `/trust on` para los archivos y
-retrocede una llamada de herramienta a la vez. `/restore` regresa todo el
+agentes iniciados, las aprobaciones y quién las dio, y los fallos. `/undo` deshace tu última solicitud y los archivos que modificó, en un solo paso y sin el modo de confianza. `/restore` regresa todo el
 espacio de trabajo a una instantánea anterior; como eso sobrescribe las
 ediciones posteriores, requiere `/trust on` o Full Access. Consulta
 [Recibos](../RECEIPTS.md).
@@ -195,10 +200,10 @@ Conecta [servidores MCP](../MCP.md), agrega [skills](../SKILLS.md) y
 sesión y de herramientas. Code mode (experimental, activado de forma
 predeterminada) permite que el modelo escriba un solo programa `execute_tools`
 que llama a varias herramientas de MCP y de plugins; cada llamada sigue sujeta a
-tus reglas de aprobación y conserva su recibo. El plugin Computer Use incluido
+tus reglas de aprobación y conserva su recibo. El plugin Computer Use instalado por separado
 (experimental, solo macOS) puede observar y operar otras aplicaciones. Permanece desactivado hasta
 que revises su acceso y lo habilites
-([guía](../../crates/tui/plugins/computer-use/README.md)).
+([guía](https://github.com/codewhale-hq/codewhale-cu-plugin)).
 
 ## Formas de ejecutarlo
 

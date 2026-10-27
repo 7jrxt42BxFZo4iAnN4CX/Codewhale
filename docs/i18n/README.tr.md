@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:7e0946fcaecd -->
+<!-- source: README.md sha256:1e61f10f7706 -->
 <div align="center">
 
 <picture>
@@ -30,6 +30,14 @@ okur, dosyaları düzenler ve komutları çalıştırır. 40'tan fazla yerleşik
 <sub>Betikli bir test modeliyle, atılabilir bir çalışma alanında Full Access ile çalışan bir 0.10.2 geliştirme derlemesi. Düzenleme, üç test ve bir alt ajan incelemesi gerçekten çalıştı.</sub>
 
 </div>
+
+<p align="center">
+  <a href="https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67" rel="sponsored">
+    <img src="../../web/public/codewhale-x-orcarouter.webp" alt="Codewhale × OrcaRouter — %30 daha fazla DeepSeek v4.1 Flash kullanımı" width="760">
+  </a>
+</p>
+
+[Codewhale × OrcaRouter teklifini görüntüleyin](https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67). Codewhale, OrcaRouter’dan yönlendirme komisyonu alır.
 
 ## Kurulum
 
@@ -84,7 +92,7 @@ Fix the failing tests and explain what changed.
 Salt okunur komutlar hemen çalışır. Diğer her kabuk komutu için Codewhale önce
 sorar: `y` komutu bir kez çalıştırır, `a` konuşmanın geri kalanında benzer
 komutlara izin verir, `n` reddeder. `/undo` son isteğinizi ve onun dosya
-değişikliklerini geri alır (0.10.1'de önce `/trust on` çalıştırın). `/help`
+değişikliklerini geri alır. `/help`
 komutları ve tuşları listeler.
 
 Betikler ve CI için `codewhale exec`, tek bir görevi arayüz olmadan çalıştırır.
@@ -150,9 +158,7 @@ hangi modeli kullandığını, ne kadara mal olduğunu ve ne kadar sürdüğün�
 
 `/receipts` (veya çıktıktan sonra `codewhale receipts --last`), değiştirilen
 dosyaları, çalıştırılan komutları, web ve MCP çağrılarını, başlatılan ajanları,
-onayları ve bunları kimin verdiğini ve hataları listeler. `/undo` son isteğinizi
-geri alır; 0.10.1'de dosyalar için `/trust on` gerektirir ve her seferinde bir araç
-çağrısı geri gider. `/restore` tüm çalışma alanını daha önceki bir anlık görüntüye geri
+onayları ve bunları kimin verdiğini ve hataları listeler. `/undo` son isteğinizi ve değiştirdiği dosyaları tek adımda, güven modu olmadan geri alır. `/restore` tüm çalışma alanını daha önceki bir anlık görüntüye geri
 döndürür; bu, sonraki düzenlemelerin üzerine yazdığı için `/trust on` veya Full
 Access gerektirir. Bkz. [Makbuzlar](../RECEIPTS.md).
 
@@ -192,10 +198,10 @@ veya LSP sunucusu gerektiren eklentileri reddeder
 [kancalar](../HOOKS.md) çalıştırın. Code mode (deneysel, varsayılan olarak açık),
 modelin birkaç MCP ve eklenti aracını çağıran tek bir `execute_tools` programı
 yazmasını sağlar; her çağrı yine onay kurallarınızdan geçer ve makbuzunu korur.
-Birlikte gelen Computer Use eklentisi
+Ayrı olarak yüklenen Computer Use eklentisi
 (deneysel, yalnızca macOS) diğer uygulamaları gözlemleyip kullanabilir. Siz
 erişimini gözden geçirip etkinleştirene kadar kapalı kalır
-([kılavuz](../../crates/tui/plugins/computer-use/README.md)).
+([kılavuz](https://github.com/codewhale-hq/codewhale-cu-plugin)).
 
 ## Çalıştırma yolları
 

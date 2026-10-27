@@ -1,4 +1,4 @@
-<!-- source: README.md sha256:7e0946fcaecd -->
+<!-- source: README.md sha256:1e61f10f7706 -->
 <div align="center">
 
 <picture>
@@ -29,6 +29,14 @@ MCP 호출을 보여 줍니다.
 <sub>스크립트로 동작하는 테스트 모델을 쓴 0.10.2 개발 빌드를 버려도 되는 작업 공간에서 전체 접근 권한으로 실행한 화면입니다. 편집, 테스트 세 개, 하위 에이전트 리뷰는 실제로 실행되었습니다.</sub>
 
 </div>
+
+<p align="center">
+  <a href="https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67" rel="sponsored">
+    <img src="../../web/public/codewhale-x-orcarouter.webp" alt="Codewhale × OrcaRouter — DeepSeek v4.1 Flash 사용량 30% 추가" width="760">
+  </a>
+</p>
+
+[Codewhale × OrcaRouter 혜택 보기](https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67). Codewhale은 OrcaRouter에서 추천 수수료를 받습니다.
 
 ## 설치
 
@@ -81,8 +89,7 @@ Fix the failing tests and explain what changed.
 
 읽기 전용 명령은 바로 실행됩니다. 그 밖의 셸 명령은 Codewhale이 먼저 묻습니다.
 `y`는 한 번만 실행하고, `a`는 남은 대화 동안 같은 종류의 명령을 허용하며,
-`n`은 거부합니다. `/undo`는 마지막 요청과 그 요청의 파일 변경을 되돌립니다
-(0.10.1에서는 먼저 `/trust on`을 실행하세요). 명령과 단축키 목록은 `/help`에서
+`n`은 거부합니다. `/undo`는 마지막 요청과 그 요청의 파일 변경을 되돌립니다. 명령과 단축키 목록은 `/help`에서
 볼 수 있습니다.
 
 스크립트와 CI용으로는 인터페이스 없이 작업 하나를 실행하는 `codewhale exec`
@@ -149,8 +156,7 @@ ChatGPT 요금제를 사용할 수 있습니다(실험적). [제공업체](../PR
 
 `/receipts`(종료한 뒤에는 `codewhale receipts --last`)는 변경된 파일, 실행된
 명령, 웹 및 MCP 호출, 시작된 에이전트, 승인 내역과 승인한 주체, 실패를 보여
-줍니다. `/undo`는 마지막 요청을 되돌립니다. 0.10.1에서는 파일을 되돌리려면
-`/trust on`이 필요하고, 도구 호출을 한 번에 하나씩 되돌립니다. `/restore`는 작업 공간 전체를 이전
+줍니다. `/undo`는 마지막 요청과 그 요청이 변경한 파일을 신뢰 모드 없이 한 번에 되돌립니다. `/restore`는 작업 공간 전체를 이전
 스냅샷으로 되돌리는데, 이후의 편집을 덮어쓰기 때문에 `/trust on` 또는 전체
 접근 권한이 필요합니다. [영수증](../RECEIPTS.md)을 참고하세요.
 
@@ -188,10 +194,10 @@ Codewhale은 따로 설정하지 않아도 `AGENTS.md`를 읽습니다. `CLAUDE.
 [훅](../HOOKS.md)을 실행할 수 있습니다. 코드 모드(실험적, 기본으로 켜짐)에서는
 모델이 여러 MCP 및 플러그인 도구를 호출하는 `execute_tools` 프로그램 하나를
 작성할 수 있으며, 각 호출은 여전히 승인 규칙을 따르고 영수증에 남습니다. 기본
-포함된 Computer Use
+별도로 설치하는 Computer Use
 플러그인(실험적, macOS 전용)은 다른 앱을 관찰하고 조작할 수 있습니다. 접근
 범위를 검토하고 활성화하기 전까지는 꺼져 있습니다
-([안내서](../../crates/tui/plugins/computer-use/README.md)).
+([안내서](https://github.com/codewhale-hq/codewhale-cu-plugin)).
 
 ## 실행 방법
 
