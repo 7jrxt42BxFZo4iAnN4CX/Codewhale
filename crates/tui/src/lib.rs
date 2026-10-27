@@ -1552,6 +1552,48 @@ fn validate_serve_mode_selection(
     Ok(http_selected)
 }
 
+#[derive(Args, Debug, Clone)]
+struct McpAddArgs {
+    /// Server name
+    name: String,
+    /// Command to launch stdio server
+    #[arg(long, conflicts_with = "url")]
+    command: Option<String>,
+    /// URL for streamable HTTP/SSE server
+    #[arg(long, conflicts_with = "command")]
+    url: Option<String>,
+    /// Explicit URL transport override. Use "sse" for legacy SSE endpoints.
+    #[arg(long, requires = "url")]
+    transport: Option<String>,
+    /// Environment variable containing a bearer token for URL-based servers
+    #[arg(long, requires = "url")]
+    bearer_token_env_var: Option<String>,
+    /// Pre-registered OAuth client ID, bound to --oauth-issuer
+    #[arg(long, requires_all = ["url", "oauth_issuer"])]
+    oauth_client_id: Option<String>,
+    #[arg(
+        long,
+        requires = "url",
+        help = "Exact authorization issuer bound to this OAuth client"
+    )]
+    oauth_issuer: Option<String>,
+    #[arg(
+        long,
+        requires = "url",
+        help = "HTTPS URL of a hosted OAuth client metadata document"
+    )]
+    oauth_client_metadata_url: Option<String>,
+    /// Exact OAuth resource pin checked against server discovery
+    #[arg(long, requires = "url")]
+    oauth_resource: Option<String>,
+    /// OAuth scope to request during login. Repeat or comma-separate.
+    #[arg(long = "scope", requires = "url", value_delimiter = ',')]
+    scopes: Vec<String>,
+    /// Arguments for command-based servers
+    #[arg(long = "arg", allow_hyphen_values = true)]
+    args: Vec<String>,
+}
+
 #[derive(Subcommand, Debug, Clone)]
 enum McpCommand {
     /// List configured MCP servers
@@ -1576,46 +1618,7 @@ enum McpCommand {
         server: Option<String>,
     },
     /// Add an MCP server entry
-    Add {
-        /// Server name
-        name: String,
-        /// Command to launch stdio server
-        #[arg(long, conflicts_with = "url")]
-        command: Option<String>,
-        /// URL for streamable HTTP/SSE server
-        #[arg(long, conflicts_with = "command")]
-        url: Option<String>,
-        /// Explicit URL transport override. Use "sse" for legacy SSE endpoints.
-        #[arg(long, requires = "url")]
-        transport: Option<String>,
-        /// Environment variable containing a bearer token for URL-based servers
-        #[arg(long, requires = "url")]
-        bearer_token_env_var: Option<String>,
-        /// Pre-registered OAuth client ID, bound to --oauth-issuer
-        #[arg(long, requires_all = ["url", "oauth_issuer"])]
-        oauth_client_id: Option<String>,
-        #[arg(
-            long,
-            requires = "url",
-            help = "Exact authorization issuer bound to this OAuth client"
-        )]
-        oauth_issuer: Option<String>,
-        #[arg(
-            long,
-            requires = "url",
-            help = "HTTPS URL of a hosted OAuth client metadata document"
-        )]
-        oauth_client_metadata_url: Option<String>,
-        /// Exact OAuth resource pin checked against server discovery
-        #[arg(long, requires = "url")]
-        oauth_resource: Option<String>,
-        /// OAuth scope to request during login. Repeat or comma-separate.
-        #[arg(long = "scope", requires = "url", value_delimiter = ',')]
-        scopes: Vec<String>,
-        /// Arguments for command-based servers
-        #[arg(long = "arg", allow_hyphen_values = true)]
-        args: Box<Vec<String>>,
-    },
+    Add(Box<McpAddArgs>),
     /// Authenticate to a URL-based MCP server using OAuth
     Login {
         /// Server name
@@ -12220,19 +12223,20 @@ async fn run_mcp_command(
             }
             Ok(())
         }
-        McpCommand::Add {
-            name,
-            command,
-            url,
-            transport,
-            bearer_token_env_var,
-            oauth_client_id,
-            oauth_issuer,
-            oauth_client_metadata_url,
-            oauth_resource,
-            scopes,
-            args,
-        } => {
+        McpCommand::Add(args) => {
+            let McpAddArgs {
+                name,
+                command,
+                url,
+                transport,
+                bearer_token_env_var,
+                oauth_client_id,
+                oauth_issuer,
+                oauth_client_metadata_url,
+                oauth_resource,
+                scopes,
+                args,
+            } = *args;
             if command.is_none() && url.is_none() {
                 bail!("Provide either --command or --url for `mcp add`.");
             }
@@ -20930,10 +20934,10 @@ mod mcp_add_arg_tests {
         let Some(Commands::Mcp { command }) = cli.command else {
             panic!("expected mcp command");
         };
-        let McpCommand::Add { args, .. } = command else {
+        let McpCommand::Add(args) = command else {
             panic!("expected mcp add subcommand");
         };
-        assert_eq!(args, vec!["-y".to_string()]);
+        assert_eq!(args.args, vec!["-y".to_string()]);
     }
 }
 
