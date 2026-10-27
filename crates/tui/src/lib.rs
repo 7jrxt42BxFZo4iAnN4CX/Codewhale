@@ -1614,7 +1614,7 @@ enum McpCommand {
         scopes: Vec<String>,
         /// Arguments for command-based servers
         #[arg(long = "arg", allow_hyphen_values = true)]
-        args: Vec<String>,
+        args: Box<Vec<String>>,
     },
     /// Authenticate to a URL-based MCP server using OAuth
     Login {
@@ -12243,7 +12243,7 @@ async fn run_mcp_command(
             }
             let added_server = McpServerConfig {
                 command,
-                args,
+                args: *args,
                 env: std::collections::HashMap::new(),
                 cwd: None,
                 url,

@@ -1429,7 +1429,7 @@ impl CodewhaleClient {
                 // sanitizer, dump the offending indices so we can diagnose where
                 // they came from on the next failure.
                 if format!("{error:#}").contains("reasoning_content") {
-                    log_thinking_mode_violations(&body);
+                    log_thinking_mode_violations(body);
                 }
                 return Err(error);
             }

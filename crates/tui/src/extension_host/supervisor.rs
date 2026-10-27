@@ -810,15 +810,15 @@ fn native_readable_paths(
             return Err("Native writable data overlaps a runtime or package read grant".into());
         }
         canonical.push(resolved);
-        if path.is_file() {
-            if let (Some(parent), Some(name)) = (path.parent(), path.file_name()) {
-                canonical.push(
-                    parent
-                        .canonicalize()
-                        .map_err(|error| error.to_string())?
-                        .join(name),
-                );
-            }
+        if path.is_file()
+            && let (Some(parent), Some(name)) = (path.parent(), path.file_name())
+        {
+            canonical.push(
+                parent
+                    .canonicalize()
+                    .map_err(|error| error.to_string())?
+                    .join(name),
+            );
         }
     }
     paths.extend(canonical);
@@ -1731,7 +1731,7 @@ impl HostProcess {
                 if !snapshot_roots.iter().any(|grant| canonical.starts_with(grant) && canonical != *grant) {
                     return Err("Native snapshot store was not granted to this host; restart Codewhale to admit this store".into());
                 }
-                let current = native_snapshot_roots(&[authority.state_path.clone()])?;
+                let current = native_snapshot_roots(std::slice::from_ref(&authority.state_path))?;
                 if !current.iter().any(|grant| snapshot_roots.contains(grant) && canonical.starts_with(grant)) {
                     return Err("Native snapshot store changed after host launch".into());
                 }
@@ -2395,7 +2395,7 @@ impl Reader {
                 };
                 let _ = call.tx.send(result);
             }
-            HostMessage::Request { id, request } => self.start_host_request(id, request)?,
+            HostMessage::Request { id, request } => self.start_host_request(id, *request)?,
             HostMessage::Notification(notification) => match notification {
                 HostNotification::Hello(hello) => {
                     if let Some(tx) = self.handshake.lock().expect("handshake lock").hello.take() {
@@ -3011,7 +3011,7 @@ mod tests {
     fn request(rig: &Rig, id: u64, plugin: &str) -> Result<(), String> {
         rig.reader.handle(HostMessage::Request {
             id,
-            request: register_request(plugin),
+            request: Box::new(register_request(plugin)),
         })
     }
 
@@ -3059,10 +3059,10 @@ mod tests {
         rig.reader
             .handle(HostMessage::Request {
                 id: 6,
-                request: HostRequest::Unregister(protocol::UnregisterParams {
+                request: Box::new(HostRequest::Unregister(protocol::UnregisterParams {
                     owner: owner("p"),
                     handle: 9,
-                }),
+                })),
             })
             .unwrap();
         assert_eq!(

@@ -3802,7 +3802,7 @@ impl Engine {
                                 controls.active = control.clone();
                                 control
                             };
-                            Box::pin(self.handle_message_operation(turn, Some(request))).await;
+                            Box::pin(self.handle_message_operation(*turn, Some(request))).await;
                         }
                         Op::SendMessage(spec) => {
                             self.admitted_turn_control = {

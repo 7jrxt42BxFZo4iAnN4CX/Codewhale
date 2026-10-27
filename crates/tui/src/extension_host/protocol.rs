@@ -782,7 +782,7 @@ pub enum HostNotification {
 pub enum HostMessage {
     Request {
         id: u64,
-        request: HostRequest,
+        request: Box<HostRequest>,
     },
     Notification(HostNotification),
     Response {
@@ -864,12 +864,12 @@ pub fn parse_host_message(value: Value, tier: HostTier) -> Result<HostMessage, P
                 .map_err(|reason| perr(format!("{method}: {reason}")))?;
             HostMessage::Request {
                 id,
-                request: HostRequest::Register(register),
+                request: Box::new(HostRequest::Register(register)),
             }
         }
         ("registry/unregister", Some(id)) => HostMessage::Request {
             id,
-            request: HostRequest::Unregister(params(&method, p)?),
+            request: Box::new(HostRequest::Unregister(params(&method, p)?)),
         },
         ("user-questions/ask", Some(id)) => HostMessage::Request {
             id,
@@ -877,51 +877,51 @@ pub fn parse_host_message(value: Value, tier: HostTier) -> Result<HostMessage, P
         },
         ("session/checkpoint", Some(id)) => HostMessage::Request {
             id,
-            request: HostRequest::SessionCheckpoint(params(&method, p)?),
+            request: Box::new(HostRequest::SessionCheckpoint(params(&method, p)?)),
         },
         ("core/call", Some(id)) => HostMessage::Request {
             id,
-            request: HostRequest::CoreCall(params(&method, p)?),
+            request: Box::new(HostRequest::CoreCall(params(&method, p)?)),
         },
         ("net/start", Some(id)) => HostMessage::Request {
             id,
-            request: HostRequest::NetStart(params(&method, p)?),
+            request: Box::new(HostRequest::NetStart(params(&method, p)?)),
         },
         ("net/fetch", Some(id)) => HostMessage::Request {
             id,
-            request: HostRequest::NetFetch(params(&method, p)?),
+            request: Box::new(HostRequest::NetFetch(params(&method, p)?)),
         },
         ("net/read", Some(id)) => HostMessage::Request {
             id,
-            request: HostRequest::NetRead(params(&method, p)?),
+            request: Box::new(HostRequest::NetRead(params(&method, p)?)),
         },
         ("net/release", Some(id)) => HostMessage::Request {
             id,
-            request: HostRequest::NetRelease(params(&method, p)?),
+            request: Box::new(HostRequest::NetRelease(params(&method, p)?)),
         },
         ("net/close", Some(id)) => HostMessage::Request {
             id,
-            request: HostRequest::NetClose(params(&method, p)?),
+            request: Box::new(HostRequest::NetClose(params(&method, p)?)),
         },
         ("proc/close", Some(id)) => HostMessage::Request {
             id,
-            request: HostRequest::ProcClose(params(&method, p)?),
+            request: Box::new(HostRequest::ProcClose(params(&method, p)?)),
         },
         ("proc/write", Some(id)) => HostMessage::Request {
             id,
-            request: HostRequest::ProcWrite(params(&method, p)?),
+            request: Box::new(HostRequest::ProcWrite(params(&method, p)?)),
         },
         ("proc/read", Some(id)) => HostMessage::Request {
             id,
-            request: HostRequest::ProcRead(params(&method, p)?),
+            request: Box::new(HostRequest::ProcRead(params(&method, p)?)),
         },
         ("exec/redeem", Some(id)) => HostMessage::Request {
             id,
-            request: HostRequest::ExecutionRedeem(params(&method, p)?),
+            request: Box::new(HostRequest::ExecutionRedeem(params(&method, p)?)),
         },
         ("proc/launch", Some(id)) => HostMessage::Request {
             id,
-            request: HostRequest::ProcLaunch(params(&method, p)?),
+            request: Box::new(HostRequest::ProcLaunch(params(&method, p)?)),
         },
         ("host/hello", None) => {
             let hello: HelloParams = params(&method, p)?;
@@ -974,7 +974,7 @@ impl HostMessage {
     #[must_use]
     pub fn to_value(&self) -> Value {
         match self {
-            Self::Request { id, request } => match request {
+            Self::Request { id, request } => match request.as_ref() {
                 HostRequest::Register(p) => request_value(*id, "registry/register", to_value(p)),
                 HostRequest::Unregister(p) => {
                     request_value(*id, "registry/unregister", to_value(p))

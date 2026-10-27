@@ -653,7 +653,7 @@ condition = { type = "exit_code", code = 1 }
             problem.event.is_none(),
             "the override is not one hook's problem: {problem:?}"
         );
-        assert!(problem_summary(&problem).contains("`[hooks]` setting"));
+        assert!(problem_summary(problem).contains("`[hooks]` setting"));
 
         // Even unvalidated, the accessors refuse the value rather than hand a
         // zero budget to the executor.
