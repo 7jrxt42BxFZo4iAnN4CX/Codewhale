@@ -1076,7 +1076,7 @@ pub(crate) fn build_engine_config(app: &App, config: &Config) -> EngineConfig {
         reasoning_only_reprompt_message: Some(config.reasoning_only_reprompt_message().to_string()),
         locale_tag: app.ui_locale.tag().to_string(),
         workshop: {
-            crate::tools::large_output_router::install_active_workshop(config.workshop.as_ref());
+            codewhale_runtime::active_workshop::install_active_workshop(config.workshop.as_ref());
             config.workshop.clone()
         },
         search_provider: config.search_provider(),

@@ -1245,7 +1245,7 @@ impl SubAgentAccountingOrigin {
         route: &crate::cost_status::EffectiveRouteEnvelope,
         usage: &Usage,
     ) {
-        crate::cost_status::report_effective_route_for_interactive_origin(
+        crate::usage_persistence::report_effective_route_for_interactive_origin(
             self.cost_scope,
             &self.session_id,
             agent_id,
@@ -19116,7 +19116,7 @@ fn annotate_child_model_error_with_origin(
 const SUBAGENT_SUMMARY_CHAR_BUDGET: usize = 12_000;
 
 fn subagent_summary_char_budget() -> usize {
-    crate::tools::large_output_router::active_tool_result_max_bytes()
+    codewhale_runtime::active_workshop::active_tool_result_max_bytes()
         .map(|bytes| bytes.clamp(SUBAGENT_SUMMARY_CHAR_BUDGET, 2 * 1024 * 1024))
         .unwrap_or(SUBAGENT_SUMMARY_CHAR_BUDGET)
 }

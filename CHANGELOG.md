@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Crate split S24a (internal):** the workshop byte-budget slot moves to `codewhale-runtime`, `AutoRouteDecisionEvidence` to `codewhale-models`, and cost-status session persistence to a tui `usage_persistence` module, so billing no longer reaches the session manager or model routing. No behavior change. (CW-6129)
+- **Nested and deletable threads (Runtime API):** a fork (including a backtrack fork) records `parent_thread_id`, `POST /v1/threads` accepts one, and `GET /v1/threads/summary` returns it so clients can nest child conversations. `DELETE /v1/threads/{id}` removes an idle thread with its turns, items, events and goal, and its saved session unless another thread shares it or a terminal holds it open; a running thread answers 409.
+- **Hunk actions in Review (Runtime API):** `POST /v1/git/stage`, `/v1/git/unstage` and `/v1/git/discard` take `hunks` (the `@@ … @@` headers from `GET /v1/diff`) with one path and apply only those hunks through `git apply`, honouring the same `expect` preconditions as whole-path writes. A hunk that no longer exists answers `409 git_state_changed` with `stale_hunks`, and nothing is written unless git accepts the whole patch.
 - **Provider pre-cuts B (internal):** client wire helpers, reasoning-effort mapping and the Ollama catalog parsers move into their own client modules, and test-only provider gates use the shared test-isolation predicate. No behavior change. (CW-6129)
 - **`codewhale-dependencies`, `codewhale-snapshot`, `codewhale-lsp`, `codewhale-repl` crates:** external-tool resolution, workspace snapshots, the language-server client and the Python REPL runtime moved out of `codewhale-tui` into their own crates; `write_context_file` now lives in `codewhale-repl`. No behavior change. (CW-6129)
 - **`codewhale-skill-install` crate:** the community-skill installer, package content digest and `SKILL.md` frontmatter reader move out of `codewhale-tui` into a new crate; the install SSRF guard and timeouts are unchanged in production builds. (CW-6129)
@@ -171,6 +174,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   seconds without input or engine events, as it already did in an idle
   session, instead of starting about a dozen git processes every 2 seconds for
   as long as the job lives (#6728).
+- An idle session wakes less often. While an approval, elevation or question
+  prompt waits on you, while a background job runs, or while only a
+  once-a-second label ticks, the event loop now relaxes to its 250 ms quiet
+  poll instead of polling every 24 to 48 ms; animations and the prompt's
+  timeout still wake it on their own deadlines. The terminal input thread
+  polls every 200 ms instead of 50 ms after 5 seconds without input. Measured
+  on macOS with release builds: an approval wait went from 29 to 12 timer
+  wakeups per second, a background job from 32 to 16 and an idle composer
+  from 25 to 11 (#6728).
+- Saving a session no longer copies every message body: journal entries
+  share their content, so the snapshot taken on each update copies ids and
+  pointers. Resuming a session compares a leftover crash checkpoint against
+  the saved document's metadata instead of parsing the whole document first,
+  so `--resume` and attach read the document once (#6842).
 - `write` over an existing file now says when it kept that file's CRLF or LF
   line endings, so the agent no longer reports a line-ending conversion that
   did not happen (#7070).

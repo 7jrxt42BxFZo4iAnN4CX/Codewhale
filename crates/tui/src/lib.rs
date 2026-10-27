@@ -35,6 +35,7 @@ mod conformance;
 mod context_report;
 mod core;
 mod cost_status;
+mod usage_persistence;
 /// Guarded installation I/O reusing Engine's confined file primitives.
 pub mod delivery_files;
 mod doctor;
@@ -10030,8 +10031,11 @@ async fn prepare_mounted_session(
         // later attach would then discard the checkpoint as stale. Then
         // capture the complete document and separate local goal.
         let _source_lease = manager.reserve_session_for_external_write(&id)?;
-        manager.promote_interrupted_checkpoint(&id);
+        let stale_checkpoint = manager.promote_interrupted_checkpoint(&id);
         let saved = manager.load_session_snapshot_bounded(&id, MAX_CANONICAL_HISTORY_BYTES)?;
+        if stale_checkpoint {
+            let _ = manager.clear_session_checkpoint(&id);
+        }
         // Project grants were captured for this launch before awaiting. The
         // existing restore changes App workspace, so it cannot silently apply
         // that snapshot to a different saved project. Match the same physical/

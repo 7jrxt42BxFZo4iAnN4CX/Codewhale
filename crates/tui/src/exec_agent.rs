@@ -814,7 +814,7 @@ pub(crate) async fn run_exec_agent(
             .tag()
             .to_string(),
         workshop: {
-            crate::tools::large_output_router::install_active_workshop(config.workshop.as_ref());
+            codewhale_runtime::active_workshop::install_active_workshop(config.workshop.as_ref());
             config.workshop.clone()
         },
         search_provider: execution_config.search_provider(),
