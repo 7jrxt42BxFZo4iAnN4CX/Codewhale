@@ -687,6 +687,7 @@ impl AutomationEditor {
             manager.update_automation(&original.id, request)
         } else {
             manager.create_automation(CreateAutomationRequest {
+                destination_thread_id: None,
                 name: self.name.value.clone(),
                 prompt: self.prompt.value.clone(),
                 rrule,

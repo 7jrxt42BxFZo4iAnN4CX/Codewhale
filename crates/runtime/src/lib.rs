@@ -12,6 +12,7 @@
 
 pub use codewhale_command_contract::elapsed;
 
+pub mod active_workshop;
 pub mod audit;
 pub mod browser;
 pub mod child_env;
@@ -42,6 +43,7 @@ pub mod safe_label;
 pub mod session_tree;
 pub mod skill_state;
 pub mod sleep_guard;
+pub mod stall_report;
 pub mod startup_trace;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;

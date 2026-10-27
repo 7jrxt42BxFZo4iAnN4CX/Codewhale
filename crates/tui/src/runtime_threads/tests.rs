@@ -2464,6 +2464,7 @@ fn sample_thread(thread_id: &str) -> ThreadRecord {
         archived: false,
         system_prompt: None,
         task_id: None,
+        parent_thread_id: None,
         title: None,
         session_id: None,
         saved_session_checkpoint: None,
@@ -2474,6 +2475,7 @@ fn sample_thread(thread_id: &str) -> ThreadRecord {
 fn sample_turn(thread_id: &str, turn_id: &str, status: RuntimeTurnStatus) -> TurnRecord {
     let now = Utc::now();
     TurnRecord {
+        prefix_checkpoint: None,
         decision_receipts: Vec::new(),
         max_output_tokens: None,
         schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -6912,7 +6914,7 @@ fn store_load_scenario() {
         let store = RuntimeThreadStore::open(dir.clone()).expect("open store");
 
         let mut turn = sample_turn("thr_t", "trn_future", RuntimeTurnStatus::InProgress);
-        turn.schema_version = MAX_SUPPORTED_RUNTIME_SCHEMA_VERSION + 1;
+        turn.schema_version = PREFIX_CHECKPOINT_RUNTIME_SCHEMA_VERSION + 1;
 
         let path = store.turns_dir.join(format!("{}.json", turn.id));
         std::fs::create_dir_all(path.parent().unwrap()).expect("mkdirs");
@@ -9088,6 +9090,7 @@ async fn terminal_settlement_preserves_late_sink_receipts_during_pending_request
             id: "input_late_settlement".to_string(),
             turn_id: turn.id.clone(),
             request: crate::tools::user_input::UserInputRequest {
+                require_typed_answers: false,
                 questions: Vec::new(),
             },
         },
@@ -13255,7 +13258,13 @@ async fn user_input_snapshot_survives_reload_and_clears_after_submission() -> Re
         .send(EngineEvent::UserInputRequired {
             id: "input_reload".to_string(),
             request: crate::tools::user_input::UserInputRequest {
+                require_typed_answers: true,
                 questions: vec![crate::tools::user_input::UserInputQuestion {
+                    detail: Some("Review this plan".into()),
+                    intent: Some(crate::tools::user_input::UserInputIntent::PlanReview {
+                        approve: "Yes".into(),
+                        call_id: Some("plan-call".into()),
+                    }),
                     header: "Continue".to_string(),
                     id: "continue".to_string(),
                     question: "Continue with the check?".to_string(),
@@ -13296,12 +13305,54 @@ async fn user_input_snapshot_survives_reload_and_clears_after_submission() -> Re
         "Continue with the check?"
     );
 
+    assert!(detail.pending_user_inputs[0].request.require_typed_answers);
+    assert_eq!(
+        detail.pending_user_inputs[0].request.questions[0]
+            .detail
+            .as_deref(),
+        Some("Review this plan")
+    );
+    let events_before = manager.events_since(&thread.id, None)?.len();
+    for answer in [
+        json!({"id":"continue","label":"Yes","value":"Yes"}),
+        json!({"kind":"choice","id":"continue","label":"Yes","value":"forged"}),
+        json!({"kind":"custom","id":"continue","label":"","value":"forbidden custom"}),
+        json!({"kind":"skipped","id":"continue","label":"Yes","value":""}),
+        json!({"kind":"choice","id":"other-question","label":"Yes","value":"Yes"}),
+    ] {
+        let response = serde_json::from_value(json!({"answers":[answer]}))?;
+        assert!(
+            manager
+                .submit_user_input(&thread.id, "input_reload", response)
+                .await
+                .is_err()
+        );
+        assert_eq!(manager.events_since(&thread.id, None)?.len(), events_before);
+        assert!(
+            !manager
+                .pending_user_inputs
+                .lock()
+                .get(&(thread.id.clone(), "input_reload".into()))
+                .unwrap()
+                .settling
+        );
+    }
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(25),
+            harness.recv_user_input_submission()
+        )
+        .await
+        .is_err()
+    );
+
     let (submitted, delivered) = tokio::join!(
         manager.submit_user_input(
             &thread.id,
             "input_reload",
             crate::tools::user_input::UserInputResponse {
                 answers: vec![crate::tools::user_input::UserInputAnswer {
+                    kind: Some(crate::tools::user_input::UserInputAnswerKind::Choice),
                     id: "continue".to_string(),
                     label: "Yes".to_string(),
                     value: "Yes".to_string(),
@@ -13332,6 +13383,13 @@ async fn user_input_snapshot_survives_reload_and_clears_after_submission() -> Re
 
     harness
         .tx_event
+        .send(EngineEvent::UserInputClosed {
+            id: "input_reload".into(),
+            outcome: crate::core::events::UserInputClosedOutcome::Answered,
+        })
+        .await?;
+    harness
+        .tx_event
         .send(EngineEvent::TurnComplete {
             turn_id: None,
             submission_id: None,
@@ -13345,6 +13403,15 @@ async fn user_input_snapshot_survives_reload_and_clears_after_submission() -> Re
             base_url: None,
         })
         .await?;
+    wait_for_terminal_turn(&manager, &turn.id).await?;
+    assert_eq!(
+        manager
+            .events_since(&thread.id, None)?
+            .iter()
+            .filter(|event| event.event == "user_input.answered")
+            .count(),
+        1
+    );
     Ok(())
 }
 
@@ -13361,6 +13428,7 @@ async fn unknown_user_input_id_is_not_delivered_to_engine() -> Result<()> {
             "input_missing",
             crate::tools::user_input::UserInputResponse {
                 answers: vec![crate::tools::user_input::UserInputAnswer {
+                    kind: None,
                     id: "choice".to_string(),
                     label: "Missing".to_string(),
                     value: "must-not-enter-engine-mailbox".to_string(),
@@ -13384,15 +13452,68 @@ async fn unknown_user_input_id_is_not_delivered_to_engine() -> Result<()> {
             "user_input.answered" | "user_input.canceled"
         )
     }));
+    manager.register_pending_user_input_for_thread_for_test(&thread.id, "idle-question");
+    harness
+        .tx_event
+        .send(EngineEvent::UserInputClosed {
+            id: "idle-question".into(),
+            outcome: crate::core::events::UserInputClosedOutcome::Unavailable,
+        })
+        .await?;
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !manager.pending_requests_for_thread(&thread.id).1.is_empty() {
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .context("idle event pump did not close the question")?;
+    assert!(
+        !manager
+            .submit_user_input(
+                &thread.id,
+                "idle-question",
+                crate::tools::user_input::UserInputResponse {
+                    answers: Vec::new()
+                }
+            )
+            .await?
+    );
+    assert!(
+        manager
+            .events_since(&thread.id, None)?
+            .iter()
+            .any(|event| event.event == "user_input.canceled"
+                && event.payload["outcome"] == "unavailable")
+    );
     Ok(())
 }
 
 #[tokio::test]
 async fn user_input_tool_timeout_and_cancel_clear_snapshot_before_turn_end() -> Result<()> {
-    for error in [
-        crate::tools::spec::ToolError::Timeout { seconds: 1 },
-        crate::tools::spec::ToolError::cancelled("turn canceled"),
+    for (error, closed) in [
+        (crate::tools::spec::ToolError::Timeout { seconds: 1 }, None),
+        (
+            crate::tools::spec::ToolError::cancelled("turn canceled"),
+            None,
+        ),
+        (
+            crate::tools::spec::ToolError::Timeout { seconds: 1 },
+            Some(crate::core::events::UserInputClosedOutcome::TimedOut),
+        ),
+        (
+            crate::tools::spec::ToolError::cancelled("turn canceled"),
+            Some(crate::core::events::UserInputClosedOutcome::Cancelled),
+        ),
+        (
+            crate::tools::spec::ToolError::cancelled("unavailable"),
+            Some(crate::core::events::UserInputClosedOutcome::Unavailable),
+        ),
     ] {
+        let input_id = if closed.is_some() {
+            "nested-question"
+        } else {
+            "input-timeout"
+        };
         let manager = test_manager(test_runtime_dir())?;
         let thread = manager
             .create_thread(CreateThreadRequest::default())
@@ -13423,8 +13544,9 @@ async fn user_input_tool_timeout_and_cancel_clear_snapshot_before_turn_end() -> 
         harness
             .tx_event
             .send(EngineEvent::UserInputRequired {
-                id: "input-timeout".into(),
+                id: input_id.into(),
                 request: crate::tools::user_input::UserInputRequest {
+                    require_typed_answers: false,
                     questions: Vec::new(),
                 },
             })
@@ -13446,15 +13568,25 @@ async fn user_input_tool_timeout_and_cancel_clear_snapshot_before_turn_end() -> 
         .await
         .context("question was not registered")??;
 
-        harness
-            .tx_event
-            .send(EngineEvent::ToolCallComplete {
-                id: "input-timeout".into(),
-                model_call: None,
-                name: "request_user_input".into(),
-                result: Err(error),
-            })
-            .await?;
+        if let Some(outcome) = closed {
+            harness
+                .tx_event
+                .send(EngineEvent::UserInputClosed {
+                    id: input_id.into(),
+                    outcome,
+                })
+                .await?;
+        } else {
+            harness
+                .tx_event
+                .send(EngineEvent::ToolCallComplete {
+                    id: "input-timeout".into(),
+                    model_call: None,
+                    name: "request_user_input".into(),
+                    result: Err(error),
+                })
+                .await?;
+        }
         tokio::time::timeout(TURN_SETTLEMENT_DEADLOCK_TIMEOUT, async {
             loop {
                 let detail = manager.get_thread_detail(&thread.id).await?;
@@ -13464,8 +13596,14 @@ async fn user_input_tool_timeout_and_cancel_clear_snapshot_before_turn_end() -> 
                         event.event == "user_input.canceled"
                             && event.turn_id.as_deref() == Some(turn.id.as_str())
                             && event.payload.get("input_id").and_then(Value::as_str)
-                                == Some("input-timeout")
-                            && event.payload.get("terminal").and_then(Value::as_bool) == Some(false)
+                                == Some(input_id)
+                            && if let Some(outcome) = closed {
+                                event.payload.get("outcome")
+                                    == Some(&serde_json::to_value(outcome).unwrap())
+                            } else {
+                                event.payload.get("terminal").and_then(Value::as_bool)
+                                    == Some(false)
+                            }
                     })
                 {
                     assert!(!events.iter().any(|event| event.event == "turn.completed"));
@@ -13484,7 +13622,7 @@ async fn user_input_tool_timeout_and_cancel_clear_snapshot_before_turn_end() -> 
             !manager
                 .submit_user_input(
                     &thread.id,
-                    "input-timeout",
+                    input_id,
                     crate::tools::user_input::UserInputResponse {
                         answers: Vec::new()
                     },
@@ -13538,6 +13676,7 @@ async fn user_input_tool_settlement_preserves_other_request_ids_turns_and_retrya
                 id: id.into(),
                 turn_id: turn_id.into(),
                 request: crate::tools::user_input::UserInputRequest {
+                    require_typed_answers: false,
                     questions: Vec::new(),
                 },
             },
@@ -13549,7 +13688,12 @@ async fn user_input_tool_settlement_preserves_other_request_ids_turns_and_retrya
         .settle_user_input_for_completed_tool(&thread.id, "turn-question", "outer-call")
         .await?;
     manager
-        .settle_user_input_for_completed_tool(&thread.id, "turn-old", "inner-question")
+        .user_input_settlement(&thread.id)
+        .close(
+            "inner-question",
+            Some("turn-old"),
+            crate::core::events::UserInputClosedOutcome::Cancelled,
+        )
         .await?;
     assert_eq!(manager.pending_requests_for_thread(&thread.id).1.len(), 2);
     assert!(
@@ -13561,21 +13705,36 @@ async fn user_input_tool_settlement_preserves_other_request_ids_turns_and_retrya
 
     let fault = EventAppendFaultGuard::arm(&thread.id, EventAppendTestFault::AfterSync);
     let error = manager
-        .settle_user_input_for_completed_tool(&thread.id, "turn-question", "inner-question")
+        .user_input_settlement(&thread.id)
+        .close(
+            "inner-question",
+            Some("turn-question"),
+            crate::core::events::UserInputClosedOutcome::Cancelled,
+        )
         .await
         .expect_err("injected append failure must retain the request");
     drop(fault);
     assert!(format!("{error:#}").contains("rolled back"));
     assert_eq!(manager.pending_requests_for_thread(&thread.id).1.len(), 2);
     manager
-        .settle_user_input_for_completed_tool(&thread.id, "turn-question", "inner-question")
+        .user_input_settlement(&thread.id)
+        .close(
+            "inner-question",
+            Some("turn-question"),
+            crate::core::events::UserInputClosedOutcome::Cancelled,
+        )
         .await?;
     let pending = manager.pending_requests_for_thread(&thread.id).1;
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].id, "new-question");
     // Duplicate completion is idempotent and never manufactures a receipt.
     manager
-        .settle_user_input_for_completed_tool(&thread.id, "turn-question", "inner-question")
+        .user_input_settlement(&thread.id)
+        .close(
+            "inner-question",
+            Some("turn-question"),
+            crate::core::events::UserInputClosedOutcome::Cancelled,
+        )
         .await?;
     assert_eq!(
         manager
@@ -13602,12 +13761,14 @@ async fn user_input_tool_settlement_waits_for_answer_receipt_and_recovers_failed
                 id: "input-race".into(),
                 turn_id: "turn-race".into(),
                 request: crate::tools::user_input::UserInputRequest {
+                    require_typed_answers: false,
                     questions: Vec::new(),
                 },
             },
         );
-        let PendingUserInputClaim::Claimed(request) =
-            manager.claim_pending_user_input(&thread.id, "input-race", None)
+        let PendingUserInputClaim::Claimed(request) = manager
+            .user_input_settlement(&thread.id)
+            .claim_pending_user_input(&thread.id, "input-race", None, None)?
         else {
             bail!("answer did not own the request");
         };
@@ -13622,6 +13783,7 @@ async fn user_input_tool_settlement_waits_for_answer_receipt_and_recovers_failed
         );
         if answered {
             manager
+                .user_input_settlement(&thread.id)
                 .settle_claimed_user_input(
                     &thread.id,
                     None,
@@ -13636,7 +13798,9 @@ async fn user_input_tool_settlement_waits_for_answer_receipt_and_recovers_failed
         } else {
             // The API worker restores its claim after a retryable append
             // error. The already-completed waiter still needs retirement.
-            manager.restore_pending_user_input_claim(&thread.id, &request);
+            manager
+                .user_input_settlement(&thread.id)
+                .restore_pending_user_input_claim(&thread.id, &request);
         }
         tokio::time::timeout(Duration::from_secs(2), &mut settlement)
             .await
@@ -13675,6 +13839,7 @@ async fn user_input_rejected_answer_or_cancel_restores_exact_question_for_retry(
                 id: "input-rejected".into(),
                 turn_id: "turn-rejected".into(),
                 request: crate::tools::user_input::UserInputRequest {
+                    require_typed_answers: false,
                     questions: Vec::new(),
                 },
             },
@@ -13739,6 +13904,7 @@ async fn user_input_terminal_tool_result_does_not_resurrect_rejected_inflight_an
             id: "input-expired-race".into(),
             turn_id: "turn-expired-race".into(),
             request: crate::tools::user_input::UserInputRequest {
+                require_typed_answers: false,
                 questions: Vec::new(),
             },
         },
@@ -13815,12 +13981,23 @@ async fn user_input_receipt_append_failure_restores_request_without_delivery() -
             id: "input_retry".to_string(),
             turn_id: "turn_retry".to_string(),
             request: crate::tools::user_input::UserInputRequest {
-                questions: Vec::new(),
+                require_typed_answers: false,
+                questions: vec![crate::tools::user_input::UserInputQuestion {
+                    detail: None,
+                    intent: None,
+                    header: "Choice".into(),
+                    id: "choice".into(),
+                    question: "Continue?".into(),
+                    options: Vec::new(),
+                    allow_free_text: true,
+                    multi_select: false,
+                }],
             },
         },
     );
     let response = || crate::tools::user_input::UserInputResponse {
         answers: vec![crate::tools::user_input::UserInputAnswer {
+            kind: None,
             id: "choice".to_string(),
             label: "Retry".to_string(),
             value: SECRET.to_string(),
@@ -13886,7 +14063,17 @@ async fn user_input_settlement_outlives_canceled_api_future() -> Result<()> {
             id: "input_detached".to_string(),
             turn_id: "turn_detached".to_string(),
             request: crate::tools::user_input::UserInputRequest {
-                questions: Vec::new(),
+                require_typed_answers: false,
+                questions: vec![crate::tools::user_input::UserInputQuestion {
+                    detail: None,
+                    intent: None,
+                    header: "Choice".into(),
+                    id: "choice".into(),
+                    question: "Continue?".into(),
+                    options: Vec::new(),
+                    allow_free_text: true,
+                    multi_select: false,
+                }],
             },
         },
     );
@@ -13901,6 +14088,7 @@ async fn user_input_settlement_outlives_canceled_api_future() -> Result<()> {
                 "input_detached",
                 crate::tools::user_input::UserInputResponse {
                     answers: vec![crate::tools::user_input::UserInputAnswer {
+                        kind: None,
                         id: "choice".to_string(),
                         label: "Continue".to_string(),
                         value: SECRET.to_string(),
@@ -13979,6 +14167,7 @@ async fn terminal_user_input_cancellation_is_durable_before_engine_delivery() ->
             id: "input_terminal_order".to_string(),
             turn_id: "turn_terminal_order".to_string(),
             request: crate::tools::user_input::UserInputRequest {
+                require_typed_answers: false,
                 questions: Vec::new(),
             },
         },
@@ -14538,7 +14727,10 @@ async fn terminal_turn_cancels_pending_user_input_and_clears_snapshot() -> Resul
         .send(EngineEvent::UserInputRequired {
             id: "input_terminal".to_string(),
             request: crate::tools::user_input::UserInputRequest {
+                require_typed_answers: false,
                 questions: vec![crate::tools::user_input::UserInputQuestion {
+                    detail: None,
+                    intent: None,
                     header: "Continue".to_string(),
                     id: "continue".to_string(),
                     question: "Continue?".to_string(),
@@ -14641,7 +14833,10 @@ async fn interrupted_turn_cancels_pending_user_input_and_clears_snapshot() -> Re
         .send(EngineEvent::UserInputRequired {
             id: "input_interrupt".to_string(),
             request: crate::tools::user_input::UserInputRequest {
+                require_typed_answers: false,
                 questions: vec![crate::tools::user_input::UserInputQuestion {
+                    detail: None,
+                    intent: None,
                     header: "Continue".to_string(),
                     id: "continue".to_string(),
                     question: "Continue?".to_string(),
@@ -16077,6 +16272,45 @@ async fn engine_withdrawal_retires_approval_and_unblocks_queued_events() -> Resu
     };
     harness.tx_event.send(request("ext-1.1")).await?;
     let withdrawn_id = await_approval_identity(&manager, &thread.id, "ext-1.1").await?;
+
+    harness.tx_event.send(EngineEvent::UserInputRequired {
+        id: "nested-during-approval".into(),
+        request: serde_json::from_value(json!({"require_typed_answers":true,"questions":[{"id":"note","question":"Any note?","allow_free_text":true}]}))?,
+    }).await?;
+    harness
+        .tx_event
+        .send(EngineEvent::UserInputClosed {
+            id: "nested-during-approval".into(),
+            outcome: crate::core::events::UserInputClosedOutcome::TimedOut,
+        })
+        .await?;
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if manager.events_since(&thread.id, None)?.iter().any(|event| {
+                event.event == "user_input.canceled"
+                    && event.payload["input_id"] == "nested-during-approval"
+            }) {
+                return Ok::<_, anyhow::Error>(());
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .context("closure parked behind an unrelated approval")??;
+    let waiting = manager.get_thread_detail(&thread.id).await?;
+    assert!(waiting.pending_user_inputs.is_empty());
+    assert_eq!(waiting.pending_approvals.len(), 1);
+    assert!(
+        !manager
+            .submit_user_input(
+                &thread.id,
+                "nested-during-approval",
+                crate::tools::user_input::UserInputResponse {
+                    answers: Vec::new()
+                }
+            )
+            .await?
+    );
 
     // An unrelated event ahead of withdrawal must not park the event pump.
     harness
@@ -18323,7 +18557,10 @@ async fn failed_turn_cancels_pending_user_input_and_clears_snapshot() -> Result<
         .send(EngineEvent::UserInputRequired {
             id: "input_failed_turn".to_string(),
             request: crate::tools::user_input::UserInputRequest {
+                require_typed_answers: false,
                 questions: vec![crate::tools::user_input::UserInputQuestion {
+                    detail: None,
+                    intent: None,
                     header: "Continue".to_string(),
                     id: "continue".to_string(),
                     question: "Continue?".to_string(),
@@ -18438,6 +18675,8 @@ async fn compaction_lifecycle_emits_item_events_with_compaction_counts() -> Resu
     let harness = install_mock_engine(&manager, &thread.id).await;
     let mut rx_op = harness.rx_op;
     let tx_event = harness.tx_event;
+    let checkpoint_thread = thread.id.clone();
+    let checkpoint_workspace = thread.workspace.clone();
     tokio::spawn(async move {
         let mut op_count = 0usize;
         let mut snapshots = 0usize;
@@ -18464,6 +18703,61 @@ async fn compaction_lifecycle_emits_item_events_with_compaction_counts() -> Resu
                             submission_id: None,
                         })
                         .await;
+                    for (agent_id, withdrawn, accepted) in [
+                        (Some("child".to_string()), false, false),
+                        (None, true, false),
+                        (None, false, true),
+                        (None, false, true),
+                    ] {
+                        let messages: Vec<Message> = serde_json::from_value(json!([
+                            {"role":"user","content":[{"type":"text","text":"auto checkpoint prefix"}]}
+                        ])).unwrap();
+                        let snapshot = Arc::new(crate::core::ops::SessionSnapshot {
+                            session_id: checkpoint_thread.clone(),
+                            messages: messages.clone(),
+                            total_tokens: 0,
+                            model: String::new(),
+                            model_provider: String::new(),
+                            model_provider_id: None,
+                            workspace: checkpoint_workspace.clone(),
+                            system_prompt: None,
+                            instruction_assembly: None,
+                            mode: "agent".into(),
+                        });
+                        let (reply, received) = oneshot::channel();
+                        let withdraw = CancellationToken::new();
+                        if withdrawn {
+                            withdraw.cancel();
+                        }
+                        let request = crate::core::events::SessionCheckpointRequest::new(
+                            crate::core::events::SessionCheckpointCaller {
+                                session_id: checkpoint_thread.clone(), agent_id, turn_id: "engine_turn_auto".into(),
+                                call_id: "mock_checkpoint_call".into(), workspace: checkpoint_workspace.clone(),
+                            }, snapshot, session_messages_sha256(&messages).unwrap(),
+                            crate::core::events::SessionCheckpointProjection::RuntimeReceiptRedacted, withdraw, reply,
+                        );
+                        tx_event
+                            .send(EngineEvent::SessionUpdated {
+                                checkpoint: Some(request),
+                                session_id: checkpoint_thread.clone(),
+                                messages: Arc::new(messages),
+                                system_prompt: None,
+                                instruction_assembly: None,
+                                model: String::new(),
+                                workspace: checkpoint_workspace.clone(),
+                            })
+                            .await
+                            .unwrap();
+                        let outcome = tokio::time::timeout(Duration::from_secs(5), received)
+                            .await
+                            .expect("checkpoint must not call back into the Engine mailbox")
+                            .expect("checkpoint writer must settle its sender");
+                        if accepted {
+                            assert!(matches!(outcome, Ok(true)));
+                        } else {
+                            assert!(outcome.is_err());
+                        }
+                    }
                     let _ = tx_event
                         .send(EngineEvent::CompactionStarted {
                             id: "auto_compact_1".to_string(),
@@ -18627,6 +18921,13 @@ async fn compaction_lifecycle_emits_item_events_with_compaction_counts() -> Resu
     // Each compacting turn stores the history the engine settled on; a
     // reload restores the newest one instead of replaying the turns it
     // replaced, and the thread record carries no summary of its own.
+    assert!(
+        manager
+            .store
+            .list_turns_for_thread(&thread.id)?
+            .iter()
+            .any(|turn| turn.prefix_checkpoint.is_some())
+    );
     let record = manager.get_thread(&thread.id).await?;
     assert_eq!(record.system_prompt, None);
     let restored = manager.restore_thread_messages(&record)?;
@@ -18671,6 +18972,7 @@ fn opening_manager_recovers_stale_queued_and_in_progress_work() -> Result<()> {
         archived: false,
         system_prompt: None,
         task_id: None,
+        parent_thread_id: None,
         title: None,
         session_id: None,
         saved_session_checkpoint: None,
@@ -18725,6 +19027,7 @@ fn opening_manager_recovers_stale_queued_and_in_progress_work() -> Result<()> {
     manager.store.save_item(&queued_item)?;
 
     manager.store.save_turn(&TurnRecord {
+        prefix_checkpoint: None,
         decision_receipts: Vec::new(),
         max_output_tokens: None,
         schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -18765,6 +19068,7 @@ fn opening_manager_recovers_stale_queued_and_in_progress_work() -> Result<()> {
         workspace_snapshots: Vec::new(),
     })?;
     manager.store.save_turn(&TurnRecord {
+        prefix_checkpoint: None,
         decision_receipts: Vec::new(),
         max_output_tokens: None,
         schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -18963,6 +19267,7 @@ fn seed_turns_with_user_messages(
             ended_at: Some(created_at),
         })?;
         manager.store.save_turn(&TurnRecord {
+            prefix_checkpoint: None,
             decision_receipts: Vec::new(),
             max_output_tokens: None,
             schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -19720,6 +20025,7 @@ fn restart_rebuild_restores_tool_call_identity_from_persisted_items() -> Result<
     manager.store.save_item(&user_item)?;
     manager.store.save_item(&call_item)?;
     manager.store.save_turn(&TurnRecord {
+        prefix_checkpoint: None,
         decision_receipts: Vec::new(),
         max_output_tokens: None,
         schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -19792,6 +20098,186 @@ fn restart_rebuild_restores_tool_call_identity_from_persisted_items() -> Result<
         other => panic!("expected restored tool result, got {other:?}"),
     }
 
+    let mut checkpoint_turn = sample_turn(&thread.id, "turn_prefix", RuntimeTurnStatus::InProgress);
+    checkpoint_turn.schema_version = PREFIX_CHECKPOINT_RUNTIME_SCHEMA_VERSION;
+    checkpoint_turn.max_output_tokens = std::num::NonZeroU32::new(1500);
+    let mut checkpoint_user = user_item.clone();
+    checkpoint_user.id = "item_prefix_user".into();
+    checkpoint_user.turn_id = checkpoint_turn.id.clone();
+    checkpoint_user.detail = Some("checkpoint input".into());
+    checkpoint_user.summary = "checkpoint input".into();
+    let mut first = call_item.clone();
+    first.id = "item_prefix_first".into();
+    first.turn_id = checkpoint_turn.id.clone();
+    first.status = TurnItemLifecycleStatus::InProgress;
+    first.detail = Some(r#"{"path":"first","token":"fixture-secret"}"#.into());
+    first.metadata = Some(
+        json!({"tool_use_id":"execution_first", "execution_id":"execution_first",
+        "provider_tool_use_id":"provider_first", "tool_name":"read", "tool_input":r#"{"path":"first","token":"fixture-secret"}"#}),
+    );
+    let mut closed = first.clone();
+    closed.id = "item_prefix_closed".into();
+    closed.status = TurnItemLifecycleStatus::Completed;
+    closed.detail = Some("raw durable result".into());
+    closed.metadata = Some(
+        json!({"tool_use_id":"execution_closed", "execution_id":"execution_closed",
+        "provider_tool_use_id":"provider_closed", "tool_name":"read", "tool_input":r#"{"path":"closed"}"#,
+        "tool_result_for":"execution_closed"}),
+    );
+    checkpoint_turn.item_ids = vec![
+        checkpoint_user.id.clone(),
+        closed.id.clone(),
+        first.id.clone(),
+    ];
+    manager.store.save_item(&checkpoint_user)?;
+    manager.store.save_item(&closed)?;
+    manager.store.save_item(&first)?;
+    let mut prefix = messages.clone();
+    prefix.extend(serde_json::from_value::<Vec<Message>>(json!([
+        {"role":"user", "content":[{"type":"text","text":"<turn_meta>canonical</turn_meta>checkpoint input"}]},
+        {"role":"assistant", "content":[{"type":"tool_use","execution_id":"execution_closed","id":"provider_closed","name":"read","input":{"path":"closed"}}]},
+        {"role":"user", "content":[{"type":"tool_result","execution_id":"execution_closed","tool_use_id":"provider_closed","content":"compacted result\n[hook context] retained canonical detail"}]},
+        {"role":"assistant", "content":[
+            {"type":"thinking","thinking":"canonical thought","signature":"retained-signature"},
+            {"type":"tool_use","execution_id":"execution_first","id":"provider_first","name":"read","input":{"path":"first","token":"fixture-secret"}},
+            {"type":"tool_use","execution_id":"execution_second","id":"provider_second","name":"read","input":{"path":"second"}}
+        ]}
+    ]))?);
+    let source_sha256 = session_messages_sha256(&prefix)?;
+    let tool_declarations = checkpoint_tool_declarations(&prefix)?;
+    for message in &mut prefix {
+        crate::core::engine::redact_tool_blocks(message, |text| {
+            text.replace("fixture-secret", "[REDACTED]")
+        });
+    }
+    let reference = manager.store.save_settled_history(&prefix)?;
+    checkpoint_turn.prefix_checkpoint = Some(RuntimePrefixCheckpoint {
+        checkpoint_id: "checkpoint_fixture".into(),
+        session_id: thread.id.clone(),
+        agent_id: None,
+        runtime_turn_id: checkpoint_turn.id.clone(),
+        engine_turn_id: "engine_prefix".into(),
+        call_id: "invocation_prefix".into(),
+        owner_id: manager.store.owner_id.clone(),
+        source_sha256,
+        persisted_sha256: reference["sha256"].as_str().unwrap().into(),
+        messages_len: prefix.len(),
+        projection: "runtime_receipt_redacted".into(),
+        item_ids: checkpoint_turn.item_ids.clone(),
+        tool_declarations,
+        pending_items: Vec::new(),
+        covered_items: HashMap::from([
+            (
+                checkpoint_user.id.clone(),
+                checkpoint_item_digest(&checkpoint_user)?,
+            ),
+            (closed.id.clone(), checkpoint_item_digest(&closed)?),
+        ]),
+    });
+    manager.store.save_turn(&checkpoint_turn)?;
+    assert!(
+        serde_json::to_value(&checkpoint_turn)?
+            .get("prefix_checkpoint")
+            .is_none()
+    );
+    assert!(
+        manager
+            .store
+            .load_turn(&checkpoint_turn.id)?
+            .prefix_checkpoint
+            .is_some()
+    );
+    assert_eq!(manager.restore_thread_messages(&thread)?, prefix);
+    checkpoint_turn.prefix_checkpoint.as_mut().unwrap().owner_id = "foreign_owner".into();
+    manager.store.save_turn(&checkpoint_turn)?;
+    assert!(manager.restore_thread_messages(&thread).is_err());
+    checkpoint_turn.prefix_checkpoint.as_mut().unwrap().owner_id = manager.store.owner_id.clone();
+    manager.store.save_turn(&checkpoint_turn)?;
+
+    first.status = TurnItemLifecycleStatus::Completed;
+    first.detail = Some("first result".into());
+    first.metadata.as_mut().unwrap()["tool_result_for"] = json!("execution_first");
+    manager.store.save_item(&first)?;
+    let mut second = first.clone();
+    second.id = "item_prefix_second".into();
+    second.status = TurnItemLifecycleStatus::Interrupted;
+    second.detail = Some(r#"{"path":"second"}"#.into());
+    second.metadata = Some(
+        json!({"tool_use_id":"execution_second", "execution_id":"execution_second",
+        "provider_tool_use_id":"provider_second", "tool_name":"read", "tool_input":r#"{"path":"second"}"#}),
+    );
+    let mut later = checkpoint_user.clone();
+    later.id = "item_prefix_later".into();
+    later.kind = TurnItemKind::AgentMessage;
+    later.detail = Some("later assistant".into());
+    later.summary = "later assistant".into();
+    manager.store.save_item(&second)?;
+    manager.store.save_item(&later)?;
+    checkpoint_turn
+        .item_ids
+        .extend([second.id.clone(), later.id.clone()]);
+    checkpoint_turn.status = RuntimeTurnStatus::Interrupted;
+    manager.store.save_turn(&checkpoint_turn)?;
+    let mut expected = prefix.clone();
+    expected.extend(serde_json::from_value::<Vec<Message>>(json!([
+        {"role":"user","content":[
+            {"type":"tool_result","execution_id":"execution_first","tool_use_id":"provider_first","content":"first result"},
+            {"type":"tool_result","execution_id":"execution_second","tool_use_id":"provider_second",
+                "content":codewhale_runtime::tool_history_repair::CRASH_REPAIR_CONTENT,"is_error":true}
+        ]},
+        {"role":"assistant","content":[{"type":"text","text":"later assistant"}]}
+    ]))?);
+    assert_eq!(manager.restore_thread_messages(&thread)?, expected);
+    let turn = manager.store.load_turn(&checkpoint_turn.id)?;
+    let items = manager.prepared_items_for_turns(std::slice::from_ref(&turn))?;
+    assert_eq!(
+        manager.history_from_records(&[turn.clone()], &items)?,
+        expected
+    );
+    first.metadata.as_mut().unwrap()["tool_input"] = json!(r#"{"path":"changed"}"#);
+    manager.store.save_item(&first)?;
+    assert!(manager.restore_thread_messages(&thread).is_err());
+    first.metadata.as_mut().unwrap()["tool_input"] =
+        json!(r#"{"path":"first","token":"fixture-secret"}"#);
+    manager.store.save_item(&first)?;
+    let history_path = manager
+        .store
+        .settled_history_path(reference["sha256"].as_str().unwrap())?;
+    fs::write(&history_path, b"corrupt")?;
+    assert!(manager.restore_thread_messages(&thread).is_err());
+    manager.store.save_settled_history(&prefix)?;
+    fs::remove_file(manager.store.item_path(&checkpoint_user.id)?)?;
+    assert!(manager.restore_thread_messages(&thread).is_err());
+    manager.store.save_item(&checkpoint_user)?;
+    fs::remove_file(manager.store.item_path(&second.id)?)?;
+    checkpoint_turn.item_ids.retain(|id| id != &second.id);
+    manager.store.save_turn(&checkpoint_turn)?;
+    assert_eq!(manager.restore_thread_messages(&thread)?, expected);
+    drop(manager);
+    let manager = test_manager(dir.clone())?;
+    assert_eq!(manager.restore_thread_messages(&thread)?, expected);
+
+    let mut compacted = sample_turn(
+        &thread.id,
+        "turn_after_prefix",
+        RuntimeTurnStatus::Completed,
+    );
+    compacted.created_at = checkpoint_turn.created_at + chrono::Duration::seconds(1);
+    let compacted_history: Vec<Message> = serde_json::from_value(json!([
+        {"role":"user","content":[{"type":"text","text":"newer canonical compaction"}]}
+    ]))?;
+    let compacted_reference = manager.store.save_settled_history(&compacted_history)?;
+    let mut compaction_item = later.clone();
+    compaction_item.id = "item_after_prefix_compaction".into();
+    compaction_item.turn_id = compacted.id.clone();
+    compaction_item.kind = TurnItemKind::ContextCompaction;
+    compaction_item.metadata = Some(json!({"settled_history":compacted_reference}));
+    compacted.item_ids = vec![compaction_item.id.clone()];
+    manager.store.save_item(&compaction_item)?;
+    manager.store.save_turn(&compacted)?;
+    fs::write(&history_path, b"superseded old prefix")?;
+    assert_eq!(manager.restore_thread_messages(&thread)?, compacted_history);
+
     let _ = std::fs::remove_dir_all(dir);
     Ok(())
 }
@@ -19827,6 +20313,7 @@ fn restart_rebuild_keeps_in_flight_tool_call_identity() -> Result<()> {
     };
     manager.store.save_item(&call_item)?;
     manager.store.save_turn(&TurnRecord {
+        prefix_checkpoint: None,
         decision_receipts: Vec::new(),
         max_output_tokens: None,
         schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -19929,6 +20416,7 @@ fn restart_rebuild_skips_steers_the_engine_never_delivered() -> Result<()> {
     manager.store.save_item(&dropped)?;
     manager.store.save_item(&pending)?;
     manager.store.save_turn(&TurnRecord {
+        prefix_checkpoint: None,
         decision_receipts: Vec::new(),
         max_output_tokens: None,
         schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -20032,6 +20520,7 @@ fn restart_rebuild_skips_legacy_tool_items_without_identity() -> Result<()> {
     manager.store.save_item(&user_item)?;
     manager.store.save_item(&legacy_tool_item)?;
     manager.store.save_turn(&TurnRecord {
+        prefix_checkpoint: None,
         decision_receipts: Vec::new(),
         max_output_tokens: None,
         schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -22288,6 +22777,7 @@ mod adoption_refusal {
         let binding = opened_binding(&fixture, "pinned", &scope)?;
         let automations = AutomationManager::open(fixture.root.path().join("automations"))?;
         let created = automations.create_automation(CreateAutomationRequest {
+            destination_thread_id: None,
             name: "scope fixture".into(),
             prompt: "local fixture only".into(),
             rrule: "FREQ=HOURLY;INTERVAL=1".into(),
@@ -22512,7 +23002,7 @@ fn a_compaction_checkpoint_is_not_a_kept_prompt() {
         format!("{} the work so far", crate::compaction::SUMMARY_HEADER),
     ));
     assert!(
-        crate::compaction::is_wire_compaction_checkpoint_message(&checkpoint),
+        codewhale_models::turn_classify::is_wire_compaction_checkpoint_message(&checkpoint),
         "the fixture is the engine's own checkpoint message"
     );
     let messages = vec![user("first"), checkpoint, user("undo me")];
@@ -23132,10 +23622,10 @@ async fn workspace_turn_fixture() -> Result<WorkspaceTurnFixture> {
 /// Runtime engine tags it (the thread's own id, #6621).
 fn fixture_restore_point(
     fixture: &WorkspaceTurnFixture,
-    kind: crate::snapshot::WorkspaceSnapshotKind,
+    kind: codewhale_snapshot::WorkspaceSnapshotKind,
     label: &str,
     tool_call_id: Option<&str>,
-) -> Result<crate::snapshot::WorkspaceSnapshotRef> {
+) -> Result<codewhale_snapshot::WorkspaceSnapshotRef> {
     let (taken, _) = crate::core::turn::restore_point_snapshot(
         &fixture.workspace,
         label,
@@ -23144,7 +23634,7 @@ fn fixture_restore_point(
         None,
     )
     .ok_or_else(|| anyhow!("snapshot {label} failed"))?;
-    Ok(crate::snapshot::WorkspaceSnapshotRef::new(
+    Ok(codewhale_snapshot::WorkspaceSnapshotRef::new(
         kind,
         &taken,
         &fixture.thread.id,
@@ -23170,8 +23660,8 @@ enum ScriptedSnapshots {
 async fn run_workspace_turn(
     fixture: &WorkspaceTurnFixture,
     scripted: ScriptedSnapshots,
-) -> Result<(TurnRecord, Vec<crate::snapshot::WorkspaceSnapshotRef>)> {
-    use crate::snapshot::WorkspaceSnapshotKind;
+) -> Result<(TurnRecord, Vec<codewhale_snapshot::WorkspaceSnapshotRef>)> {
+    use codewhale_snapshot::WorkspaceSnapshotKind;
     let manager = &fixture.manager;
     let mut harness = install_mock_engine(manager, &fixture.thread.id).await;
     let turn = manager

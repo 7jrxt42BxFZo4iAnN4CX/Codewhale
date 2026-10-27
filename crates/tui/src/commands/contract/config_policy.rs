@@ -96,7 +96,7 @@ fn project_status(app: &App) -> ConfigStatusView {
         &app.api_messages,
         app.system_prompt.as_ref(),
     )
-    .max(crate::utils::estimate_message_chars(&app.api_messages) / 4);
+    .max(codewhale_util::utils::estimate_message_chars(&app.api_messages) / 4);
     let context_source = match app.active_context_window_source {
         crate::route_runtime::ContextWindowSource::Configured => StatusContextSource::Configured,
         crate::route_runtime::ContextWindowSource::UserDeclared => {

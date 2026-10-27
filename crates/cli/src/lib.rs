@@ -465,13 +465,20 @@ The command prints the completion script to stdout; redirect it to a path your s
         after_help = "GitHub Releases is the default source. Supported mirrors are explicit overrides or manifest-failure fallbacks. Checksums are required; older releases never replace a newer build.\n\nThe command prints the executable it will update. If you have multiple installs, run the intended binary by its full path.\n\nNew macOS/Linux install: curl -fsSL https://codewhale.net/install.sh | sh\nInstallation and PATH help: https://github.com/codewhale-hq/CodeWhale/blob/main/docs/INSTALL.md"
     )]
     Update(UpdateArgs),
-    #[command(about = "Remove receipt-owned Unix release commands; preserve all user data")]
+    #[command(
+        about = "Remove this receipt-owned release install, or print its package manager's removal command; user data is kept unless --purge-data"
+    )]
     Uninstall {
         #[arg(
             long,
             help = "Remove the preflighted files; without this flag, print the plan"
         )]
         yes: bool,
+        #[arg(
+            long,
+            help = "Also delete Codewhale's own data directory (config, secrets file, sessions); previewed unless --yes"
+        )]
+        purge_data: bool,
     },
     /// Export the route catalog (`providers export --json`).
     Providers(ProvidersArgs),
@@ -2290,14 +2297,14 @@ fn run() -> Result<()> {
             || matches!(cli.command.as_ref(), Some(Commands::AppServer(args)) if args.http),
         "An inherited Runtime listener requires serve --http or app-server --http"
     );
-    if let Some(Commands::Uninstall { yes }) = cli.command.as_ref() {
-        #[cfg(all(unix, not(target_env = "ohos")))]
-        return update::uninstall::run(*yes);
-        #[cfg(any(not(unix), target_env = "ohos"))]
+    if let Some(Commands::Uninstall { yes, purge_data }) = cli.command.as_ref() {
+        #[cfg(any(all(unix, not(target_env = "ohos")), windows))]
+        return update::uninstall::run(*yes, *purge_data);
+        #[cfg(not(any(all(unix, not(target_env = "ohos")), windows)))]
         {
-            let _ = yes;
+            let _ = (yes, purge_data);
             bail!(
-                "Automatic uninstall is currently supported only for receipt-owned macOS/Linux release installs. Use the installer or package manager that owns this copy; user data is preserved."
+                "Automatic uninstall is supported for receipt-owned macOS, Linux and Windows release installs. Use the installer or package manager that owns this copy; user data is preserved."
             );
         }
     }

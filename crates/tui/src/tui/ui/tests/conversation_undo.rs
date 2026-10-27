@@ -10,8 +10,8 @@ fn prompts(messages: &[Message]) -> Vec<String> {
         .iter()
         .filter(|message| {
             matches!(
-                crate::runtime_handoff::classify_user_turn_prompt(message),
-                crate::runtime_handoff::UserTurnPromptKind::Editable
+                codewhale_models::turn_classify::classify_user_turn_prompt(message),
+                codewhale_models::turn_classify::UserTurnPromptKind::Editable
             )
         })
         .flat_map(|message| &message.content)

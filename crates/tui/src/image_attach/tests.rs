@@ -1,5 +1,6 @@
 use super::*;
 use codewhale_models::Role;
+use codewhale_models::image_window::is_remote_image_url;
 
 /// A 1x1 PNG, as bytes rather than a fixture file so the encoding tests
 /// have no filesystem dependency.

@@ -28,10 +28,10 @@ use tracing::debug;
 use crate::client::CodewhaleClient;
 use crate::core::events::Event;
 use crate::llm_client::LlmClient;
-use crate::utils::truncate_with_ellipsis;
 use codewhale_models::Role;
 use codewhale_models::{ContentBlock, Message, MessageRequest, SystemPrompt};
 use codewhale_runtime::config::Config;
+use codewhale_util::utils::truncate_with_ellipsis;
 
 /// Maximum tokens the advisor may generate. Kept short so the note stays
 /// concise and does not compete with the parent turn's billing budget.

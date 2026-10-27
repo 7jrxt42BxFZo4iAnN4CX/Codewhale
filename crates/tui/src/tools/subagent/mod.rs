@@ -42,13 +42,9 @@ use crate::core::engine::tool_catalog::{
 use crate::core::events::{AgentProgressEventMeta, Event};
 #[cfg(test)]
 use crate::core::session::ToolActivationCache;
-use crate::dependencies::{ExternalTool, Git};
 use crate::llm_client::LlmError;
 use crate::reasoning_preference::ReasoningEffort;
 use crate::request_tuning::RequestTuning;
-use crate::tools::canonical_action::{
-    CANONICAL_ACTION_ALIASES, canonical_action_alias, is_action_family,
-};
 use crate::tools::handle::VarHandle;
 #[cfg(test)]
 use crate::tools::plan::PlanState;
@@ -63,7 +59,6 @@ use crate::tools::spec::{
 use crate::tools::todo::SharedTodoList;
 #[cfg(test)]
 use crate::tools::todo::TodoList;
-use crate::utils::spawn_supervised;
 use crate::work_graph::{
     EvidenceKind, EvidenceRef, OperationIntent, OperationOwnerSnapshot, OwnerState,
     SharedWorkRuntime,
@@ -76,8 +71,12 @@ use codewhale_agent_contract::worker_profile::{
     narrow_model_steps, narrow_optional_limit,
 };
 use codewhale_config::AppMode;
+use codewhale_dependencies::{ExternalTool, Git};
 #[cfg(test)]
 use codewhale_execpolicy::ApprovalMode;
+use codewhale_execpolicy::canonical_action::{
+    CANONICAL_ACTION_ALIASES, canonical_action_alias, is_action_family,
+};
 use codewhale_execpolicy::tool_rules::tool_denied;
 #[cfg(test)]
 use codewhale_models::MessageResponse;
@@ -87,6 +86,7 @@ use codewhale_protocol::fleet::migrate_legacy_role_token;
 use codewhale_runtime::config::{MAX_SUBAGENTS, SubagentModelOverride};
 #[cfg(test)]
 use codewhale_tools::names::{TOOL_SEARCH_NAME, is_tool_search_tool};
+use codewhale_util::utils::spawn_supervised;
 use coord::{
     CoordinationClaimScope, CoordinationDetailMetrics, CoordinationHotPath, CoordinationLedger,
     DecisionRecord, DecisionStatus, PersistedWriteClaim, ReconciliationReceipt, WriteScopeClaim,
@@ -1245,7 +1245,7 @@ impl SubAgentAccountingOrigin {
         route: &crate::cost_status::EffectiveRouteEnvelope,
         usage: &Usage,
     ) {
-        crate::cost_status::report_effective_route_for_interactive_origin(
+        crate::usage_persistence::report_effective_route_for_interactive_origin(
             self.cost_scope,
             &self.session_id,
             agent_id,
@@ -2281,7 +2281,7 @@ impl PersistedSubAgentState {
 }
 
 /// Default delegation depth representation. Explicit operator settings narrow it.
-pub const DEFAULT_MAX_SPAWN_DEPTH: u32 = codewhale_config::DEFAULT_SPAWN_DEPTH;
+pub const DEFAULT_MAX_SPAWN_DEPTH: u32 = codewhale_protocol::fleet::DEFAULT_SPAWN_DEPTH;
 
 /// Convert an explicit remaining-depth allowance without arithmetic overflow.
 fn clamp_child_max_spawn_depth(child_spawn_depth: u32, requested_max_depth: u32) -> u32 {
@@ -3871,10 +3871,11 @@ struct AdmittedCoordinationRoot {
 
 impl AdmittedCoordinationRoot {
     fn validate(&self) -> Result<(), String> {
-        let (canonical, current) = crate::runtime_api::open_workspace_directory(&self.lexical)
-            .map_err(|error| error.to_string())?;
+        let (canonical, current) =
+            codewhale_util::workspace_dir::open_workspace_directory(&self.lexical)
+                .map_err(|error| error.to_string())?;
         if canonical != self.receipt.canonical_root
-            || !crate::fleet::files::same_file(&self.directory, &current)
+            || !codewhale_util::files::same_file(&self.directory, &current)
                 .map_err(|error| error.to_string())?
         {
             return Err("coordination workspace identity changed".into());
@@ -4455,7 +4456,7 @@ impl SubAgentManager {
     ) -> Result<(), String> {
         if let Some(existing) = self.admitted_coordination_roots.get(&lexical) {
             if existing.receipt.canonical_root != canonical_root
-                || !crate::fleet::files::same_file(&existing.directory, &directory)
+                || !codewhale_util::files::same_file(&existing.directory, &directory)
                     .map_err(|error| error.to_string())?
             {
                 return Err("coordination workspace identity changed".into());
@@ -4473,7 +4474,7 @@ impl SubAgentManager {
         };
         #[cfg(windows)]
         let (platform, volume, index) = {
-            let identity = crate::plugins::windows_file_identity(&directory)
+            let identity = codewhale_util::path_identity::windows_file_identity(&directory)
                 .map_err(|error| error.to_string())?;
             ("windows", u64::from(identity.volume), identity.index)
         };
@@ -10559,7 +10560,9 @@ impl SubAgentTranscriptArtifactWriter {
         self.sync_messages(replaced, false)?;
         let checkpoints = replacement
             .iter()
-            .filter(|message| crate::compaction::is_wire_compaction_checkpoint_message(message))
+            .filter(|message| {
+                codewhale_models::turn_classify::is_wire_compaction_checkpoint_message(message)
+            })
             .cloned()
             .collect::<Vec<_>>();
         self.append_messages(&checkpoints, false)?;
@@ -10852,7 +10855,7 @@ fn effective_state_root(state_root: &Path, state_path: &Path) -> PathBuf {
     // Windows junctions are reparse points without the symlink tag, so the
     // shared predicate is required here; `FileType::is_symlink` alone would
     // miss exactly the case this exists for.
-    if !crate::plugins::metadata_is_link_or_reparse(&metadata) {
+    if !codewhale_util::path_identity::metadata_is_link_or_reparse(&metadata) {
         return state_root.to_path_buf();
     }
     match resolve_path_for_containment(&linked) {
@@ -11269,7 +11272,7 @@ fn write_json_atomic(state_root: &Path, path: &Path, value: &PersistedSubAgentSt
     {
         return Ok(());
     }
-    crate::utils::write_atomic(path, payload.as_bytes())?;
+    codewhale_util::utils::write_atomic(path, payload.as_bytes())?;
     published.insert(path.to_path_buf(), value.snapshot_sequence);
     Ok(())
 }
@@ -13799,7 +13802,7 @@ async fn supervise_subagent_task_body(
     let Err(panic) = panicked else {
         return;
     };
-    let message = crate::utils::panic_message(&*panic);
+    let message = codewhale_util::utils::panic_message(&*panic);
     let mut result = match manager_handle.read().await.get_result(&agent_id) {
         Ok(result) => result,
         Err(err) => {
@@ -15061,7 +15064,7 @@ fn bound_subagent_tool_result(
 /// budgets. Exact JSON size via serde; unserializable messages (should not
 /// happen) count as 1 KiB so they still consume budget.
 fn approximate_message_bytes(message: &Message) -> usize {
-    let mut counter = crate::utils::CountingWriter::new();
+    let mut counter = codewhale_util::utils::CountingWriter::new();
     serde_json::to_writer(&mut counter, message).map_or(1024, |()| counter.count())
 }
 
@@ -16685,8 +16688,8 @@ fn resolve_spawn_role(request: &mut SpawnRequest) -> Result<(), ToolError> {
 #[must_use]
 pub(crate) fn session_permission_ceiling(
     runtime: &SubAgentRuntime,
-) -> codewhale_workflow::PermissionCeiling {
-    codewhale_workflow::PermissionCeiling {
+) -> codewhale_protocol::fleet::PermissionCeiling {
+    codewhale_protocol::fleet::PermissionCeiling {
         write: runtime.worker_profile.permissions.write,
         network_tool: runtime.worker_profile.permissions.network
             && runtime.agent_tool_surface_options.web_search_enabled,
@@ -18883,7 +18886,7 @@ fn raw_mutation_target_paths(name: &str, input: &Value) -> Vec<String> {
         if let Some(object) = patch_input.as_object_mut() {
             object.remove("action");
         }
-        return crate::tools::apply_patch::preflight_apply_patch(&patch_input)
+        return codewhale_tools::patch_preflight::preflight_apply_patch(&patch_input)
             .map(|preflight| preflight.touched_files)
             .unwrap_or_default();
     }
@@ -18903,7 +18906,7 @@ fn mutation_paths(name: &str, input: &Value) -> Result<Vec<String>> {
         if let Some(object) = patch_input.as_object_mut() {
             object.remove("action");
         }
-        crate::tools::apply_patch::preflight_apply_patch(&patch_input)
+        codewhale_tools::patch_preflight::preflight_apply_patch(&patch_input)
             .map_err(|err| anyhow!(err.to_string()))?
             .touched_files
     } else if let Some(path) = input
@@ -19113,7 +19116,7 @@ fn annotate_child_model_error_with_origin(
 const SUBAGENT_SUMMARY_CHAR_BUDGET: usize = 12_000;
 
 fn subagent_summary_char_budget() -> usize {
-    crate::tools::large_output_router::active_tool_result_max_bytes()
+    codewhale_runtime::active_workshop::active_tool_result_max_bytes()
         .map(|bytes| bytes.clamp(SUBAGENT_SUMMARY_CHAR_BUDGET, 2 * 1024 * 1024))
         .unwrap_or(SUBAGENT_SUMMARY_CHAR_BUDGET)
 }
@@ -19859,7 +19862,8 @@ mod owner_scoped_coordination_tests {
     use super::*;
 
     fn admit(manager: &mut SubAgentManager, lexical: &Path) {
-        let (canonical, file) = crate::runtime_api::open_workspace_directory(lexical).unwrap();
+        let (canonical, file) =
+            codewhale_util::workspace_dir::open_workspace_directory(lexical).unwrap();
         manager
             .admit_coordination_workspace(lexical.to_path_buf(), canonical, Arc::new(file))
             .unwrap();
@@ -20029,7 +20033,8 @@ mod captured_worker_origin_tests {
         (temporary, original, selected, execution)
     }
     fn admit(manager: &mut SubAgentManager, workspace: &Path) {
-        let (canonical, file) = crate::runtime_api::open_workspace_directory(workspace).unwrap();
+        let (canonical, file) =
+            codewhale_util::workspace_dir::open_workspace_directory(workspace).unwrap();
         manager
             .admit_coordination_workspace(workspace.to_path_buf(), canonical, Arc::new(file))
             .unwrap();

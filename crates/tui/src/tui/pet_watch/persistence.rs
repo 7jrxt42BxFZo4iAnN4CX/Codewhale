@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 #[cfg(test)]
 use crate::artifacts::open_session_relative;
 use crate::artifacts::write_session_relative_immutable;
-use crate::fleet::files::{WorkspaceFile, same_file};
+use codewhale_util::files::{WorkspaceFile, same_file};
 
 const MAX_BYTES: usize = 8 * 1024 * 1024;
 pub(super) const MAX_EXPORT_BYTES: usize = 64 * 1024 * 1024;

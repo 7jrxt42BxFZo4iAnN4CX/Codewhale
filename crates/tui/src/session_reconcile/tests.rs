@@ -474,7 +474,7 @@ fn reconcile_is_bounded_and_single_flight() {
         .write(true)
         .open(fx.dir().join(RECONCILE_LOCK_FILE))
         .unwrap();
-    assert!(crate::runtime_threads::try_lock_file_exclusive(&lock).unwrap());
+    assert!(codewhale_util::lock::try_lock_file_exclusive(&lock).unwrap());
     let skipped = fx.run();
     assert!(skipped.skipped_concurrent);
 }

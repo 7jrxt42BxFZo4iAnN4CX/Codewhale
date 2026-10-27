@@ -57,9 +57,7 @@ async fn extension_prompt_changes_and_retirement_are_recorded_without_rewriting_
         display.contains(&block),
         "the entire admitted snapshot reaches the model"
     );
-    assert!(crate::runtime_handoff::is_runtime_owned_user_message(
-        recorded
-    ));
+    assert!(codewhale_models::turn_classify::is_runtime_owned_user_message(recorded));
     assert!(
         engine
             .refresh_pinned_header_for_turn(&context)

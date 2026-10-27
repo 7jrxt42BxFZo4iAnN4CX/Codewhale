@@ -196,7 +196,7 @@ impl ToolActionKind {
 /// action=delete classifies like the old `automation_delete`).
 fn action_qualified_tool_name(tool_name: &str, params: &Value) -> String {
     let semantic_tool_name =
-        crate::tools::canonical_action::canonical_action_alias(tool_name, params);
+        codewhale_execpolicy::canonical_action::canonical_action_alias(tool_name, params);
     match semantic_tool_name.to_ascii_lowercase().as_str() {
         "automation" | "tasks" | "github" | "rlm" => {
             match params.get("action").and_then(Value::as_str) {
@@ -545,7 +545,7 @@ impl<'a> AutoReviewContext<'a> {
             approval_mode,
             workspace_trusted,
             outbound_web_request: matches!(
-                crate::tools::canonical_action::canonical_action_alias(name, params),
+                codewhale_execpolicy::canonical_action::canonical_action_alias(name, params),
                 "web_search" | "fetch_url" | "web_run" | "web.run"
             ),
             write_targets_bounded: workspace
@@ -903,8 +903,9 @@ fn deterministic_fallback(
 fn file_write_target_paths(tool_name: &str, input: &Value) -> Option<Vec<String>> {
     // Judge the path the tool will write: it folds `file_path`/`filePath`
     // onto `path` before executing.
-    let input = &*crate::tools::file::with_canonical_path_argument(input);
-    let canonical = crate::tools::canonical_action::canonical_action_alias(tool_name, input);
+    let input = &*codewhale_tools::param_alias::with_canonical_path_argument(input);
+    let canonical =
+        codewhale_execpolicy::canonical_action::canonical_action_alias(tool_name, input);
     Some(match canonical {
         "write_file" | "edit_file" => vec![
             input
@@ -915,7 +916,7 @@ fn file_write_target_paths(tool_name: &str, input: &Value) -> Option<Vec<String>
                 .map(str::to_string)?,
         ],
         "apply_patch" => {
-            crate::tools::apply_patch::preflight_apply_patch(input)
+            codewhale_tools::patch_preflight::preflight_apply_patch(input)
                 .ok()?
                 .touched_files
         }
@@ -939,7 +940,7 @@ fn file_write_delete_paths(
     input: &Value,
     workspace: Option<&std::path::Path>,
 ) -> Vec<String> {
-    let input = &*crate::tools::file::with_canonical_path_argument(input);
+    let input = &*codewhale_tools::param_alias::with_canonical_path_argument(input);
     let empties_existing = |entry: &Value| -> Option<String> {
         let path = entry
             .get("path")
@@ -955,9 +956,9 @@ fn file_write_delete_paths(
             workspace.is_some_and(|workspace| workspace.join(path).symlink_metadata().is_ok());
         (empty && exists).then(|| path.to_string())
     };
-    match crate::tools::canonical_action::canonical_action_alias(tool_name, input) {
+    match codewhale_execpolicy::canonical_action::canonical_action_alias(tool_name, input) {
         "apply_patch" => {
-            let mut paths = crate::tools::apply_patch::preflight_apply_patch(input)
+            let mut paths = codewhale_tools::patch_preflight::preflight_apply_patch(input)
                 .map(|preflight| preflight.deletes)
                 .unwrap_or_default();
             let entries = ["replace", "changes"]
@@ -987,7 +988,7 @@ fn file_write_delete_paths(
 /// silently allowed.
 fn paths_git_cannot_restore(workspace: &std::path::Path, paths: &[String]) -> Vec<String> {
     let run = |args: &[&str]| -> Option<bool> {
-        let mut command = crate::dependencies::Git::review_command(workspace).ok()?;
+        let mut command = codewhale_dependencies::Git::review_command(workspace).ok()?;
         // Paths are file names, never patterns: `notes[1].txt` must not match
         // a tracked `notes1.txt`, nor `:(glob)*` every tracked file.
         command
@@ -1137,8 +1138,10 @@ pub(crate) fn build_reviewer_context(
     let tool = redact_model_bound_secrets(ctx.tool_name.as_ref());
     let hold_reason = redact_model_bound_secrets(held_reason);
     let credentials_masked = input != *tool_input || tool != ctx.tool_name.as_ref();
-    if crate::tools::canonical_action::canonical_action_alias(ctx.tool_name.as_ref(), tool_input)
-        == "exec_shell"
+    if codewhale_execpolicy::canonical_action::canonical_action_alias(
+        ctx.tool_name.as_ref(),
+        tool_input,
+    ) == "exec_shell"
         && let Some(fields) = input.as_object_mut()
     {
         fields.remove("description");
@@ -1261,7 +1264,7 @@ fn execution_texts<'a>(tool_name: &str, params: &'a Value) -> Vec<(ExecutionInpu
             .and_then(Value::as_str)
             .map(|stdin| (ExecutionInput::Stdin, Cow::Borrowed(stdin)))
     };
-    match crate::tools::canonical_action::canonical_action_alias(tool_name, params) {
+    match codewhale_execpolicy::canonical_action::canonical_action_alias(tool_name, params) {
         "exec_shell" | "task_shell_start" => command().into_iter().chain(stdin()).collect(),
         "task_gate_run" => command().into_iter().collect(),
         "exec_shell_interact" | "exec_interact" => stdin().into_iter().collect(),
@@ -2019,7 +2022,7 @@ fn strictly_inside(workspace: Option<&std::path::Path>, target: &str) -> bool {
         return false;
     };
     if target.contains(['*', '?', '[', ']', '{', '}', '~', '$'])
-        || crate::snapshot::repo::unsafe_workspace_snapshot_reason(
+        || codewhale_snapshot::repo::unsafe_workspace_snapshot_reason(
             &workspace
                 .canonicalize()
                 .unwrap_or_else(|_| workspace.to_path_buf()),

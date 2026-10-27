@@ -545,6 +545,7 @@ struct AttachmentState {
     selection: composition_scope::CompositionSelection,
     revision: u64,
     selection_cancel: CancellationToken,
+    settled: Option<composition_scope::SelectionRevision>,
     session_id: Option<String>,
     agent_id: Option<String>,
 }
@@ -604,7 +605,7 @@ struct RuntimePin {
     /// or removal mid-session changes nothing until the next process; a
     /// binary replaced at the pinned path is refused at the handshake). With
     /// the one-line summary of why it was chosen, for `/plugin`.
-    pinned: Option<(crate::dependencies::HostRuntime, String)>,
+    pinned: Option<(codewhale_dependencies::HostRuntime, String)>,
     /// `runtime = "auto"` only: a Bun host failed to launch or handshake
     /// before anything was pinned, so every later launch this session
     /// resolves Node.
@@ -618,7 +619,7 @@ struct RuntimePin {
 fn prepare_launch(
     options: &ExtensionHostOptions,
     tier: HostTier,
-    pinned: Option<(crate::dependencies::HostRuntime, String)>,
+    pinned: Option<(codewhale_dependencies::HostRuntime, String)>,
     bun_failed: bool,
     snapshot_state_paths: &[PathBuf],
 ) -> Result<(supervisor::HostLaunch, Option<String>), String> {
@@ -630,10 +631,11 @@ fn prepare_launch(
             } else {
                 options.runtime
             };
-            let mut resolution = crate::dependencies::resolve_extension_host_runtime(
+            let mut resolution = codewhale_dependencies::resolve_extension_host_runtime(
                 choice,
                 options.node_override.as_deref(),
                 options.bun_override.as_deref(),
+                crate::extension_host::bundle_sha256(),
             );
             // Report the configured choice, not the Node-only fallback.
             resolution.choice = options.runtime;
@@ -674,7 +676,7 @@ fn host_root(options: &ExtensionHostOptions) -> Result<PathBuf, String> {
 /// Blocking; creates the host's data dir and probes bubblewrap on Linux.
 pub(crate) fn planned_sandbox(
     options: &ExtensionHostOptions,
-    runtime: &crate::dependencies::HostRuntime,
+    runtime: &codewhale_dependencies::HostRuntime,
     tier: HostTier,
 ) -> Result<supervisor::HostSandbox, String> {
     supervisor::planned_sandbox(tier, runtime, &host_root(options)?)
@@ -940,6 +942,42 @@ impl HostEvents for Events {
                 shared
                     .execution_broker
                     .serve(&shared, self.generation, params, cx)
+                    .await
+            }
+            protocol::HostRequest::UserQuestion(params) => {
+                let shared = self
+                    .shared
+                    .upgrade()
+                    .ok_or_else(|| refuse("extension host manager is gone"))?;
+                if shared
+                    .tier_runtime(self.tier)
+                    .host_generation
+                    .load(Ordering::SeqCst)
+                    != self.generation
+                {
+                    return Err(refuse("stale host generation"));
+                }
+                shared
+                    .core_calls
+                    .serve_question(&shared, self.tier, self.generation, params, cx)
+                    .await
+            }
+            protocol::HostRequest::SessionCheckpoint(params) => {
+                let shared = self
+                    .shared
+                    .upgrade()
+                    .ok_or_else(|| refuse("extension host manager is gone"))?;
+                if shared
+                    .tier_runtime(self.tier)
+                    .host_generation
+                    .load(Ordering::SeqCst)
+                    != self.generation
+                {
+                    return Err(refuse("stale host generation"));
+                }
+                shared
+                    .core_calls
+                    .serve_checkpoint(&shared, self.tier, self.generation, params, cx)
                     .await
             }
             protocol::HostRequest::CoreCall(params) => {
@@ -1717,6 +1755,7 @@ impl ExtensionHostManager {
                     selection: composition_scope::CompositionSelection::default(),
                     revision: 1,
                     selection_cancel: CancellationToken::new(),
+                    settled: None,
                     session_id: None,
                     agent_id: None,
                 },
@@ -2143,6 +2182,16 @@ impl ExtensionHostManager {
         } else {
             Ok(())
         };
+        for state in shared
+            .attachments
+            .lock()
+            .expect("attachments lock")
+            .values_mut()
+        {
+            if state.selection.revision == state.plugins.caller_selection() {
+                state.settled = state.selection.revision;
+            }
+        }
         match (plugins, builtin) {
             (Err(error), Err(other)) => {
                 shared.diagnostic(other);
@@ -2700,7 +2749,7 @@ impl ExtensionHostManager {
                 };
             if shared.options.runtime
                 != codewhale_config::extension_host::ExtensionHostRuntime::Auto
-                || launch.runtime.kind != crate::dependencies::HostRuntimeKind::Bun
+                || launch.runtime.kind != codewhale_dependencies::HostRuntimeKind::Bun
                 || summary.is_none()
             {
                 break Err(reason);
@@ -3336,6 +3385,32 @@ impl HostAttachment {
     /// Reconcile the host against every attachment, without waiting.
     pub fn sync_in_background(&self) {
         self.manager.reconcile_in_background();
+    }
+
+    pub fn selection_settled(&self) -> bool {
+        self.manager
+            .shared
+            .attachments
+            .lock()
+            .expect("attachments lock")
+            .get(&self.id)
+            .is_some_and(|state| {
+                state.settled.is_some() && state.settled == state.plugins.caller_selection()
+            })
+    }
+
+    pub async fn sync_within(&self, limit: Duration) {
+        if tokio::runtime::Handle::try_current().is_err() {
+            return;
+        }
+        let manager = Arc::clone(&self.manager);
+        let policy = activation::extension_host_policy_enabled();
+        let task = tokio::spawn(async move {
+            if let Err(error) = manager.reconcile_with_policy(policy).await {
+                manager.shared.diagnostic(error);
+            }
+        });
+        let _ = tokio::time::timeout(limit, task).await;
     }
 
     /// Add this engine's live extension tools to `tool_registry`.

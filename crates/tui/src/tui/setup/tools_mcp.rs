@@ -13,9 +13,9 @@ use crate::mcp::{
 };
 use crate::tui::app::App;
 use crate::tui::hotbar::actions::HotbarActionCategory;
-use crate::utils::display_path;
 use codewhale_localization::{Locale, MessageId, tr};
 use codewhale_runtime::config::Config;
+use codewhale_util::utils::display_path;
 
 /// Per-surface readiness vocabulary shared with setup summaries and doctor-like
 /// copy. These never block first-run; they only describe optional power tools.

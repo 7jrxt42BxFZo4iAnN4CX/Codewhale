@@ -957,7 +957,7 @@ fn osc52_sequence(text: &str) -> Result<String> {
 fn clipboard_image_target(
     dir: &Path,
     file_name: &str,
-) -> Result<crate::fleet::files::WorkspaceFile> {
+) -> Result<codewhale_util::files::WorkspaceFile> {
     let root = dir.parent().context("clipboard-images dir has no parent")?;
     let name = dir
         .file_name()
@@ -970,9 +970,9 @@ fn clipboard_image_target(
     let state_root = codewhale_paths::user_home()
         .is_some_and(|home| root == home.join(codewhale_paths::CODEWHALE_APP_DIR));
     let open = if state_root {
-        crate::fleet::files::WorkspaceFile::open_resolved_root
+        codewhale_util::files::WorkspaceFile::open_resolved_root
     } else {
-        crate::fleet::files::WorkspaceFile::open
+        codewhale_util::files::WorkspaceFile::open
     };
     open(root, &relative, true)
         .context("open clipboard-images destination (links are not followed)")

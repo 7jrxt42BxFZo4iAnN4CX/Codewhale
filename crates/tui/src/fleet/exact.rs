@@ -33,17 +33,18 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use codewhale_protocol::fleet::PermissionCeiling;
 #[cfg(test)]
-use codewhale_workflow::ShellCeiling;
+use codewhale_protocol::fleet::ShellCeiling;
 use codewhale_workflow::{
     CapturedReasoningRouter, CredentialReadiness, EffectiveReasoning, EndpointIdentity,
     FleetDocument, FleetRouterRef, FleetSearchRoot, FleetSnapshot, FleetSnapshotMember,
-    FleetTaskReceipt, NamedFleetError, PermissionCeiling, PreflightError, PreflightedRoute,
-    ProviderReasoningControl, QualifiedFleetId, ReasoningCapability, ReasoningRouterProfile,
-    ReasoningTier, ResolvedReasoning, RoutePreflight, RouterAvailability, RouterCallInput,
-    RouterCallPlan, RouterIdentity, RoutingDisclosure, bounded_routing_payload,
-    captured_legacy_inline_router, parse_router_decision, resolve_exact_member_reasoning,
-    router_call_plan, router_system_prompt, router_user_message,
+    FleetTaskReceipt, NamedFleetError, PreflightError, PreflightedRoute, ProviderReasoningControl,
+    QualifiedFleetId, ReasoningCapability, ReasoningRouterProfile, ReasoningTier,
+    ResolvedReasoning, RoutePreflight, RouterAvailability, RouterCallInput, RouterCallPlan,
+    RouterIdentity, RoutingDisclosure, bounded_routing_payload, captured_legacy_inline_router,
+    parse_router_decision, resolve_exact_member_reasoning, router_call_plan, router_system_prompt,
+    router_user_message,
 };
 
 use crate::llm_client::LlmClient;
@@ -373,7 +374,7 @@ pub(crate) fn reasoning_capability_for_route(
     let body_for = |effort: ReasoningEffort| -> String {
         let mut body = serde_json::json!({});
         let value = effort.api_value_for_route(provider, base_url, wire_model);
-        crate::client::apply_reasoning_effort(&mut body, value, provider);
+        crate::client::reasoning_effort::apply_reasoning_effort(&mut body, value, provider);
         // `reasoning_split` is a transport concern the client sets for every
         // tier; it carries no reasoning depth, so it must not make tiers look
         // distinct or make a no-control route look controllable.
@@ -1927,7 +1928,7 @@ permissions = "read_only"
             write: true,
             network_tool: true,
             shell: ShellCeiling::Full,
-            delegation_depth: codewhale_config::DEFAULT_SPAWN_DEPTH,
+            delegation_depth: codewhale_protocol::fleet::DEFAULT_SPAWN_DEPTH,
             tools: true,
         }
     }
@@ -3407,8 +3408,8 @@ mod saved_fleet_tests {
         PermissionCeiling {
             write: true,
             network_tool: true,
-            shell: codewhale_workflow::ShellCeiling::Full,
-            delegation_depth: codewhale_config::DEFAULT_SPAWN_DEPTH,
+            shell: codewhale_protocol::fleet::ShellCeiling::Full,
+            delegation_depth: codewhale_protocol::fleet::DEFAULT_SPAWN_DEPTH,
             tools: true,
         }
     }

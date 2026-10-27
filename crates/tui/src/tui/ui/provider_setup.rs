@@ -115,7 +115,7 @@ impl RuntimePresetFileSnapshot {
 
     fn restore(&self) -> Result<()> {
         match &self.contents {
-            Some(contents) => crate::utils::write_atomic(&self.path, contents)
+            Some(contents) => codewhale_util::utils::write_atomic(&self.path, contents)
                 .with_context(|| format!("failed to restore {}", self.path.display())),
             None => match std::fs::remove_file(&self.path) {
                 Ok(()) => Ok(()),

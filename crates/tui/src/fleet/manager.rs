@@ -849,7 +849,7 @@ impl FleetManager {
             tokio::task::spawn_blocking(move || -> Result<std::fs::File> {
                 // Created and opened through the pinned no-follow handle, so a
                 // linked `.codewhale` or lock name is refused, not followed.
-                super::files::WorkspaceFile::open(&workspace, &relative, true)
+                codewhale_util::files::WorkspaceFile::open(&workspace, &relative, true)
                     .and_then(|file| file.open_update(true, false))
                     .with_context(|| format!("opening Fleet manager lock {}", path.display()))
             })
@@ -2551,7 +2551,11 @@ fn receipt_summary(receipt: &FleetReceipt) -> String {
         // summary is a one-line status surface.
         summary.push_str(&format!(
             " notes={}",
-            crate::utils::truncate_with_ellipsis(notes, RECEIPT_SUMMARY_NOTES_BYTES, "...")
+            codewhale_util::utils::truncate_with_ellipsis(
+                notes,
+                RECEIPT_SUMMARY_NOTES_BYTES,
+                "..."
+            )
         ));
     }
     summary
@@ -2907,7 +2911,7 @@ mod tests {
             let mut owner = coordination.try_write().unwrap();
             for workspace in [&original, &selected] {
                 let (canonical, held) =
-                    crate::runtime_api::open_workspace_directory(workspace).unwrap();
+                    codewhale_util::workspace_dir::open_workspace_directory(workspace).unwrap();
                 owner
                     .admit_coordination_workspace(
                         workspace.clone(),

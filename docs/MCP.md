@@ -652,6 +652,53 @@ in-session discovery or explicit tool selection. In the TUI,
 `/mcp retry <name>` connects through the current session's pool;
 `/mcp reload` re-reads its MCP configuration.
 
+### Catalog freshness
+
+A server's tools, resources, resource templates, prompts and skills are kept
+on its own live connection, so they are never shared between servers,
+credentials, sessions or reconnects. Every reconnect, login and config reload
+discovers them again, and allow/deny rules and approvals are checked on each
+call rather than cached with the catalog. Within one connection the catalog is
+revalidated in place, on the five-second supervision sweep, when either:
+
+- a list page carried `ttlMs` and the earliest of those TTLs (capped at 24
+  hours) has passed, or
+- the server sent `notifications/tools/list_changed`,
+  `notifications/resources/list_changed` or
+  `notifications/prompts/list_changed`.
+
+A list without `ttlMs` stays valid until one of those events. Because nothing
+is shared beyond the connection, `cacheScope: "public"` and `"private"` are
+both held to the stricter private rule. Pagination, item and byte bounds are
+the same as at connect, and ordering stays sorted. When revalidation changes
+the catalog, a tool call resolved against the previous catalog is refused with
+"retry the call", a removed tool can no longer run, and the next model request
+carries the new tool list. When revalidation fails, the connection is retired
+and ordinary reconnect supervision takes over; the stale catalog is not served.
+
+Known limits: the Rust backend reads list-change notices only while it waits
+for a reply, so an idle stdio server's notice is acted on after its next
+request. The 2026-07-28 `subscriptions/listen` stream and `resources/subscribe`
+are not opened; modern servers are kept fresh through their required `ttlMs`.
+
+### Skills from MCP servers
+
+A server that advertises the published Skills extension
+(`capabilities.extensions["io.modelcontextprotocol/skills"]`) has its
+`skills/list` read with the rest of its catalog, under the same bounds and
+freshness rules. An entry is kept only when its `SKILL.md` URI is listed among
+its own resources, its frontmatter has a name and description, every file sits
+beneath the skill's root without `.`/`..`, `%`, `?` or `#` segments, every
+digest is `sha256:` plus 64 lowercase hex characters, and it stays within 512
+files and 16 MiB. `"dynamic"` skills cannot be verified and are skipped.
+
+Kept skills appear in `list_mcp_resources` with a `skill` field naming their
+files. Listing a skill never loads or activates it. Reading one of its files
+with `read_mcp_resource` checks that the server returned exactly that URI with
+the listed size and digest; a mismatch is refused and nothing is loaded. MCP
+skills are not yet merged into the native skill catalog, `/skills` or skill
+activation.
+
 ## Server Fields
 
 Per-server settings:

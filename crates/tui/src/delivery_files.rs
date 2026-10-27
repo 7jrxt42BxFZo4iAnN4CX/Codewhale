@@ -11,7 +11,7 @@ use std::time::SystemTime;
 
 use sha2::{Digest, Sha256};
 
-use crate::fleet::files::{WorkspaceFile, same_file};
+use codewhale_util::files::{WorkspaceFile, same_file};
 
 #[derive(Debug, PartialEq, Eq)]
 struct Version {
@@ -35,7 +35,7 @@ fn version(file: &File) -> io::Result<Version> {
     }
     #[cfg(windows)]
     {
-        let identity = crate::plugins::windows_file_identity(file)?;
+        let identity = codewhale_util::path_identity::windows_file_identity(file)?;
         if identity.links != 1 || identity.attributes & 0x0000_0400 != 0 {
             return Err(invalid("delivery file is linked or a reparse point"));
         }
@@ -203,6 +203,7 @@ impl GuardedFile {
         self.verify_owned()?;
         let directory = tempfile::Builder::new()
             .prefix(".codewhale-uninstall-")
+            .permissions(std::os::unix::fs::PermissionsExt::from_mode(0o700))
             .tempdir_in(&self.directory)?
             .keep();
         let destination = WorkspaceFile::open_delivery(&directory, Path::new(&self.name))?;
@@ -247,6 +248,26 @@ impl GuardedFile {
             );
         }
         Ok(())
+    }
+
+    #[cfg(windows)]
+    pub fn verify_owned(&mut self) -> io::Result<()> {
+        self.verify()
+    }
+
+    #[cfg(windows)]
+    pub fn remove_checked(&mut self, unlinked: &mut bool) -> io::Result<()> {
+        *unlinked = false;
+        self.verify()?;
+        self.move_to_vacant(&Self::recovery_name())?;
+        *unlinked = true;
+        codewhale_config::private_directory::mark_windows_file_handle_for_deletion(&self.file)
+            .map_err(|error| {
+                io::Error::other(format!(
+                    "{error:#}; retired entry retained at {}",
+                    self.directory.join(&self.name).display()
+                ))
+            })
     }
 
     pub fn recovery_name() -> String {

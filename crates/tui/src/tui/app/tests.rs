@@ -639,7 +639,7 @@ fn auto_reasoning_change_invalidates_the_previous_route_and_receipt() {
         .expect("effort activity");
     assert_eq!(
         effective,
-        crate::work_graph::ReasoningEffortTier::Medium,
+        codewhale_models::reasoning_effort_tier::ReasoningEffortTier::Medium,
         "the activity receipt must not reuse the previous turn's effective tier"
     );
 }
@@ -712,8 +712,14 @@ fn cycle_effort_updates_effort_status_and_compaction() {
             operation,
             ..
         } => {
-            assert_eq!(*requested, crate::work_graph::ReasoningEffortTier::Low);
-            assert_eq!(*effective, crate::work_graph::ReasoningEffortTier::Low);
+            assert_eq!(
+                *requested,
+                codewhale_models::reasoning_effort_tier::ReasoningEffortTier::Low
+            );
+            assert_eq!(
+                *effective,
+                codewhale_models::reasoning_effort_tier::ReasoningEffortTier::Low
+            );
             assert_eq!(*provider_kind, Some(ProviderKind::Deepseek));
             assert_eq!(provider, "deepseek");
             assert!(operation.is_none());
@@ -769,10 +775,13 @@ fn glm_5_turbo_records_enabled_with_granularity_unavailable() {
         provider,
         ..
     } = &activity;
-    assert_eq!(*requested, crate::work_graph::ReasoningEffortTier::Max);
+    assert_eq!(
+        *requested,
+        codewhale_models::reasoning_effort_tier::ReasoningEffortTier::Max
+    );
     assert_eq!(
         *effective,
-        crate::work_graph::ReasoningEffortTier::ThinkingEnabledGranularityUnavailable
+        codewhale_models::reasoning_effort_tier::ReasoningEffortTier::ThinkingEnabledGranularityUnavailable
     );
     assert_eq!(provider, "zai");
     assert_eq!(
@@ -814,7 +823,7 @@ fn glm_5_1_records_enabled_with_granularity_unavailable() {
         .expect("effort activity");
     assert_eq!(
         effective,
-        crate::work_graph::ReasoningEffortTier::ThinkingEnabledGranularityUnavailable
+        codewhale_models::reasoning_effort_tier::ReasoningEffortTier::ThinkingEnabledGranularityUnavailable
     );
 }
 
@@ -851,7 +860,7 @@ fn unknown_model_on_exact_zai_endpoint_records_effective_unavailable() {
         .expect("effort activity");
     assert_eq!(
         effective,
-        crate::work_graph::ReasoningEffortTier::Unavailable
+        codewhale_models::reasoning_effort_tier::ReasoningEffortTier::Unavailable
     );
 }
 
@@ -896,10 +905,13 @@ fn compatible_zai_gateway_records_effective_unavailable() {
         provider,
         ..
     } = &activity;
-    assert_eq!(*requested, crate::work_graph::ReasoningEffortTier::Max);
+    assert_eq!(
+        *requested,
+        codewhale_models::reasoning_effort_tier::ReasoningEffortTier::Max
+    );
     assert_eq!(
         *effective,
-        crate::work_graph::ReasoningEffortTier::Unavailable
+        codewhale_models::reasoning_effort_tier::ReasoningEffortTier::Unavailable
     );
     assert_eq!(provider, "zai");
     assert_eq!(
@@ -950,9 +962,9 @@ fn minimax_m3_high_and_max_receipts_do_not_claim_tier_granularity() {
         assert_eq!(
             effective,
             if requested == ReasoningEffort::Auto {
-                crate::work_graph::ReasoningEffortTier::Auto
+                codewhale_models::reasoning_effort_tier::ReasoningEffortTier::Auto
             } else {
-                crate::work_graph::ReasoningEffortTier::Off
+                codewhale_models::reasoning_effort_tier::ReasoningEffortTier::Off
             }
         );
         assert_eq!(
@@ -1010,9 +1022,9 @@ fn minimax_anthropic_m3_high_and_max_receipts_match_adaptive_wire_truth() {
         assert_eq!(
             effective,
             if requested == ReasoningEffort::Auto {
-                crate::work_graph::ReasoningEffortTier::Auto
+                codewhale_models::reasoning_effort_tier::ReasoningEffortTier::Auto
             } else {
-                crate::work_graph::ReasoningEffortTier::Off
+                codewhale_models::reasoning_effort_tier::ReasoningEffortTier::Off
             }
         );
         assert_eq!(provider_kind, Some(ProviderKind::MinimaxAnthropic));
@@ -1065,7 +1077,7 @@ fn named_custom_route_displays_and_persists_effective_unavailable() {
     } = activity;
     assert_eq!(
         effective,
-        crate::work_graph::ReasoningEffortTier::Unavailable
+        codewhale_models::reasoning_effort_tier::ReasoningEffortTier::Unavailable
     );
     assert_eq!(provider_kind, Some(ProviderKind::Custom));
     assert_eq!(provider, "my-gateway");
@@ -1110,7 +1122,7 @@ fn custom_routes_named_with_builtin_slugs_retain_custom_kind_and_fail_closed() {
         } = activity;
         assert_eq!(
             effective,
-            crate::work_graph::ReasoningEffortTier::Unavailable
+            codewhale_models::reasoning_effort_tier::ReasoningEffortTier::Unavailable
         );
         assert_eq!(provider_kind, Some(ProviderKind::Custom));
         assert_eq!(provider, identity);

@@ -61,6 +61,9 @@
   "crates/memory/src/main.rs": {
     "std_fs": 1
   },
+  "crates/net/src/import_claude.rs": {
+    "std_fs": 2
+  },
   "crates/release/src/check.rs": {
     "std_fs": 4
   },
@@ -180,7 +183,7 @@
   "crates/tui/src/delivery_files.rs": {
     "path_canonicalize": 2
   },
-  "crates/tui/src/dependencies.rs": {
+  "crates/dependencies/src/lib.rs": {
     "std_fs": 2
   },
   "crates/tui/src/doctor_fix.rs": {
@@ -197,11 +200,6 @@
   },
   "crates/tui/src/fleet/executor.rs": {
     "std_fs": 1
-  },
-  "crates/tui/src/fleet/files.rs": {
-    "path_canonicalize": 2,
-    "std_fs": 5,
-    "thread_sleep": 1
   },
   "crates/tui/src/fleet/host.rs": {
     "std_fs": 1,
@@ -231,9 +229,6 @@
   },
   "crates/tui/src/image_attach.rs": {
     "std_fs": 6
-  },
-  "crates/net/src/import_claude.rs": {
-    "std_fs": 2
   },
   "crates/tui/src/integrations/dsh/bundle.rs": {
     "std_fs": 12
@@ -306,10 +301,10 @@
   "crates/tui/src/remote_setup/bundle.rs": {
     "std_fs": 2
   },
-  "crates/tui/src/repl/runtime.rs": {
+  "crates/repl/src/runtime.rs": {
     "std_fs": 1
   },
-  "crates/tui/src/rlm/session.rs": {
+  "crates/repl/src/lib.rs": {
     "std_fs": 2
   },
   "crates/tui/src/runtime_api.rs": {
@@ -345,11 +340,11 @@
   "crates/tui/src/session_secret_scrub.rs": {
     "std_fs": 8
   },
-  "crates/tui/src/snapshot/paths.rs": {
+  "crates/snapshot/src/paths.rs": {
     "path_canonicalize": 1,
     "std_fs": 1
   },
-  "crates/tui/src/snapshot/repo.rs": {
+  "crates/snapshot/src/repo.rs": {
     "path_canonicalize": 4,
     "std_fs": 18,
     "thread_sleep": 1
@@ -502,9 +497,6 @@
   "crates/tui/src/tui/worktree_manager.rs": {
     "path_canonicalize": 2
   },
-  "crates/tui/src/utils.rs": {
-    "std_fs": 7
-  },
   "crates/tui/src/vision/tools.rs": {
     "path_canonicalize": 2
   },
@@ -521,6 +513,18 @@
   "crates/tui/src/workspace_trust.rs": {
     "path_canonicalize": 1,
     "std_fs": 2
+  },
+  "crates/util/src/files.rs": {
+    "path_canonicalize": 2,
+    "std_fs": 5,
+    "thread_sleep": 1
+  },
+  "crates/util/src/utils.rs": {
+    "std_fs": 7
+  },
+  "crates/util/src/workspace_dir.rs": {
+    "path_canonicalize": 2,
+    "std_fs": 1
   },
   "crates/workflow/src/gates.rs": {
     "std_fs": 3

@@ -1278,6 +1278,7 @@ pub(crate) fn upsert_keepalive(
         let (identity, model, ready) = keepalive_route(config, current.as_ref(), selection)?;
         readiness = (model.clone(), ready);
         let mut record = current.unwrap_or_else(|| AutomationRecord {
+            destination_thread_id: None,
             schema_version: crate::automation_manager::CURRENT_AUTOMATION_SCHEMA_VERSION,
             execution_scope: Some(scope.to_string()),
             id: OPERATE_KEEPALIVE_ID.to_string(),

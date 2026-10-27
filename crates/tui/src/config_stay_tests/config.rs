@@ -4256,14 +4256,15 @@ mod released_provider_serde {
         model: String,
         receipt: crate::model_routing::AutoRouteReceipt,
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        effective_reasoning_effort: Option<crate::work_graph::ReasoningEffortTier>,
+        effective_reasoning_effort:
+            Option<codewhale_models::reasoning_effort_tier::ReasoningEffortTier>,
     }
     #[derive(Serialize)]
     #[serde(tag = "kind", rename_all = "snake_case")]
     enum LegacyActivity {
         ReasoningEffortChanged {
-            requested: crate::work_graph::ReasoningEffortTier,
-            effective: crate::work_graph::ReasoningEffortTier,
+            requested: codewhale_models::reasoning_effort_tier::ReasoningEffortTier,
+            effective: codewhale_models::reasoning_effort_tier::ReasoningEffortTier,
             #[serde(default, skip_serializing_if = "Option::is_none")]
             provider_kind: Option<ApiProvider>,
             provider: String,
@@ -4456,8 +4457,9 @@ mod released_provider_serde {
             AutoRouteDataPath, AutoRouteHeuristicReason, AutoRoutePair, AutoRouteReason,
             AutoRouteReceipt, AutoRouteScope, AutoRouteTier,
         };
-        use crate::work_graph::{ReasoningEffortTier, WorkActivityEvent};
+        use crate::work_graph::WorkActivityEvent;
         use codewhale_config::pricing::{Currency, PricingProvenance};
+        use codewhale_models::reasoning_effort_tier::ReasoningEffortTier;
         let receipt = AutoRouteReceipt {
             tier: AutoRouteTier::Selected,
             pair: AutoRoutePair {
@@ -4615,7 +4617,8 @@ mod released_provider_serde {
 
     #[test]
     fn released_provider_wrappers_do_not_infer_brand_authority_from_custom_names() {
-        use crate::work_graph::{ReasoningEffortTier, WorkActivityEvent};
+        use crate::work_graph::WorkActivityEvent;
+        use codewhale_models::reasoning_effort_tier::ReasoningEffortTier;
         for id in ["openai", "CustomA", "customa"] {
             let event = WorkActivityEvent::ReasoningEffortChanged {
                 requested: ReasoningEffortTier::High,

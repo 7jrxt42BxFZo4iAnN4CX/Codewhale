@@ -1228,7 +1228,7 @@ fn readonly_argv_is_shell_free_and_disables_git_helpers() {
 #[cfg(unix)]
 #[tokio::test]
 async fn readonly_git_reads_run_no_clean_filter_or_textconv() {
-    use crate::dependencies::ExternalTool as _;
+    use codewhale_dependencies::ExternalTool as _;
     use std::os::unix::fs::PermissionsExt as _;
     let workspace = tempdir().expect("workspace");
     let outside = tempdir().expect("outside");
@@ -1238,7 +1238,7 @@ async fn readonly_git_reads_run_no_clean_filter_or_textconv() {
     let helper = helper.display().to_string();
     let repo = workspace.path();
     let git = |args: &[&str]| {
-        let status = crate::dependencies::Git::status(args, repo).expect("git should spawn");
+        let status = codewhale_dependencies::Git::status(args, repo).expect("git should spawn");
         assert!(status.success(), "git {args:?} failed");
     };
     git(&["init", "-q"]);
@@ -5059,7 +5059,7 @@ fn bash_schema_declares_what_each_action_requires() {
 #[test]
 fn bash_required_groups_survive_a_provider_that_drops_root_composition() {
     let mut schema = BashTool::new("Bash").input_schema();
-    let note = crate::tools::schema_sanitize::sanitize_for_responses(&mut schema)
+    let note = codewhale_models::schema_sanitize::sanitize_for_responses(&mut schema)
         .expect("dropped required groups must be restated for the model");
 
     assert!(note.contains("At least one"), "{note}");

@@ -1840,7 +1840,7 @@ fn persist_state(path: &Path, state: &RelayState) -> Result<()> {
         bail!("injected Runtime Chat state persistence failure");
     }
     let body = serde_json::to_vec(state).context("encode Runtime Chat binding state")?;
-    crate::utils::write_atomic(path, &body).context("persist Runtime Chat binding state")
+    codewhale_util::utils::write_atomic(path, &body).context("persist Runtime Chat binding state")
 }
 
 fn validate_relay_id(value: &str, label: &str) -> Result<()> {

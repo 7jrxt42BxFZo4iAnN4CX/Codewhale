@@ -864,8 +864,8 @@ where
     match outcome {
         Ok(Ok(apply)) => apply,
         Ok(Err(panic)) => {
-            let detail = crate::utils::panic_message(&*panic);
-            crate::utils::record_caught_panic("user-dispatch", &detail);
+            let detail = codewhale_util::utils::panic_message(&*panic);
+            codewhale_util::utils::record_caught_panic("user-dispatch", &detail);
             build_dispatch_error_closure(
                 fallback,
                 recovery,
@@ -873,8 +873,8 @@ where
             )
         }
         Err(_elapsed) => {
-            crate::core::engine::turn_heartbeat::report_stall(
-                &crate::core::engine::turn_heartbeat::StallReport {
+            codewhale_runtime::stall_report::report_stall(
+                &codewhale_runtime::stall_report::StallReport {
                     source: "ui",
                     phase: "while dispatching the message (route planning / engine admission)"
                         .to_string(),

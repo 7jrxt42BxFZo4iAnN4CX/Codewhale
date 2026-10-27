@@ -103,7 +103,8 @@ pub(super) fn publish_snapshot(source: &Path, destination: &Path) -> io::Result<
             Ok(()) => return Ok(()),
             Err(_) => io::Error::last_os_error(),
         };
-        let Some(backoff) = crate::utils::windows_publish_retry_delay(&error, attempt) else {
+        let Some(backoff) = codewhale_util::utils::windows_publish_retry_delay(&error, attempt)
+        else {
             return Err(error);
         };
         std::thread::sleep(backoff);

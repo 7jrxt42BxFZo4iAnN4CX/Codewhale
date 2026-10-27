@@ -55,7 +55,7 @@ async fn sync_session_projects_persisted_subagent_handoff_for_headless_restore()
         |block| matches!(block, ContentBlock::Text { text, .. } if text == "Keep the original task")
     ));
     let restored =
-        crate::runtime_handoff::restored_subagent_checkpoint_display(&snapshot.messages[1])
+        codewhale_models::turn_classify::restored_subagent_checkpoint_display(&snapshot.messages[1])
             .expect("projected headless checkpoint");
     assert!(restored.contains("agent_headless"));
     assert!(restored.contains("Checkpoint: engine restore is covered."));

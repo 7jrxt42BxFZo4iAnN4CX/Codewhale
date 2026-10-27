@@ -538,7 +538,8 @@ impl AcpServer {
             };
             if let Some(kind) = kind
                 && !crate::runtime_handoff::is_internal_runtime_handoff(message)
-                && crate::runtime_handoff::restored_subagent_checkpoint_display(message).is_none()
+                && codewhale_models::turn_classify::restored_subagent_checkpoint_display(message)
+                    .is_none()
             {
                 let mut chunks = Vec::<String>::new();
                 let mut coalesce = false;

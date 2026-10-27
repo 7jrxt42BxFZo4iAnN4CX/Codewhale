@@ -37,7 +37,6 @@ use crate::route_runtime::resolve_runtime_route;
 use crate::route_runtime::{
     ResolvedRuntimeRoute, ValidatedRuntimeRoute, resolve_runtime_route_for_identity,
 };
-use crate::snapshot::{WorkspaceSnapshotKind, WorkspaceSnapshotRef};
 use crate::tools::goal::{
     GoalPauseReason, GoalSnapshot, GoalStatus, SharedGoalState, new_shared_goal_state,
 };
@@ -58,7 +57,6 @@ use crate::tools::subagent::{
 use crate::tools::todo::{SharedTodoList, new_shared_todo_list};
 use crate::tools::user_input::{UserInputRequest, UserInputResponse};
 use crate::tools::{ToolContext, ToolRegistryBuilder};
-use crate::utils::spawn_supervised;
 use crate::working_set::WorkingSet;
 use codewhale_agent_contract::role::FleetRole;
 use codewhale_agent_contract::worker_profile::WorkerRuntimeProfile;
@@ -75,6 +73,8 @@ use codewhale_models::{
 };
 use codewhale_runtime::config::{Config, DEFAULT_MAX_SUBAGENTS};
 use codewhale_runtime::features::{Feature, Features};
+use codewhale_snapshot::{WorkspaceSnapshotKind, WorkspaceSnapshotRef};
+use codewhale_util::utils::spawn_supervised;
 
 #[cfg(test)]
 use super::authority::agent_approval_mode_for_turn;
@@ -103,6 +103,7 @@ const SUBAGENT_COMPLETION_CHANNEL_CAPACITY: usize = 256;
 /// tolerated by design (`let _ =`), and the terminal `Finished` waits for a
 /// slot instead of being dropped.
 const MCP_BOOT_CHANNEL_CAPACITY: usize = 64;
+const EXTENSION_FIRST_SYNC_WAIT: Duration = Duration::from_secs(10);
 const GOAL_CONTINUATION_FAILURE_DETAIL_MAX_BYTES: usize = 512;
 const PLAN_SHELL_NETWORK_DENIED_HINT: &str = "Shell command blocked: in Plan mode shell commands run in a read-only sandbox with no writes and no network access. The user can change modes with /mode.";
 
@@ -404,7 +405,7 @@ pub struct EngineConfig {
     pub record_restore_points: bool,
     /// Post-edit LSP diagnostics injection (#136). When `None`, the engine
     /// constructs a disabled manager so the field is always present.
-    pub lsp_config: Option<crate::lsp::LspConfig>,
+    pub lsp_config: Option<codewhale_lsp::LspConfig>,
     /// Durable runtime services exposed to model-visible tools.
     pub runtime_services: RuntimeToolServices,
     /// Per-role/type sub-agent model overrides already resolved from config.
@@ -538,6 +539,7 @@ pub struct EngineConfig {
     /// or `Some(Duration::ZERO)` waits until the person answers or cancels.
     /// A positive duration is one absolute deadline for that wait.
     pub user_input_timeout: Option<Duration>,
+    pub user_input_responder: bool,
     /// Per-turn step allowance while a goal is active (#5994). Hosts opt in
     /// with their resolved `[goal] max_steps`; `None` keeps the ordinary
     /// `max_steps` ceiling for goal turns too — which is what exec/worker
@@ -572,6 +574,7 @@ pub struct EngineConfig {
     /// Interactive TUI sessions enable this; headless and machine-readable
     /// hosts disable it so stdout remains protocol-clean.
     pub terminal_chrome_enabled: bool,
+    pub session_checkpoint_backend: Option<crate::core::events::SessionCheckpointProjection>,
     /// Resolved advisor watcher configuration (#3982). Off by default.
     /// Updated live by `Op::SetAdvisorEnabled`.
     pub advisor_config: crate::tools::subagent::AdvisorConfig,
@@ -669,6 +672,7 @@ impl Default for EngineConfig {
             tools_always_load: HashSet::new(),
             user_input_limits: crate::tools::user_input::UserInputLimits::default(),
             user_input_timeout: None,
+            user_input_responder: false,
             goal_max_steps: None,
             // Mirrors `Config::prefers_bwrap`: on unless explicitly opted out.
             prefer_bwrap: true,
@@ -685,6 +689,7 @@ impl Default for EngineConfig {
             workspace_follow_symlinks: false,
             exec_policy_engine: codewhale_execpolicy::ExecPolicyEngine::new(Vec::new(), Vec::new()),
             terminal_chrome_enabled: true,
+            session_checkpoint_backend: None,
             advisor_config: crate::tools::subagent::AdvisorConfig::disabled(),
         }
     }
@@ -968,7 +973,7 @@ pub(crate) fn compaction_checkpoint_for_restore(
         // with a stripped system prompt. Only the existing structural
         // validator can authorize a history block as that checkpoint.
         messages.iter().rev().find_map(|message| {
-            if !crate::compaction::is_wire_compaction_checkpoint_message(message) {
+            if !codewhale_models::turn_classify::is_wire_compaction_checkpoint_message(message) {
                 return None;
             }
             match &message.content[0] {
@@ -1026,7 +1031,7 @@ pub struct Engine {
     /// One lazy, session-scoped working kernel for inline `repl` blocks.
     /// Its context is refreshed before each run, while user-created Python
     /// state stays alive across model turns.
-    repl_kernel: Option<crate::repl::PythonRuntime>,
+    repl_kernel: Option<codewhale_repl::PythonRuntime>,
     subagent_manager: SharedSubAgentManager,
     subagent_execution_limits: Option<SubAgentExecutionLimits>,
     /// The deterministic Auto-Review policy shared with every child runtime
@@ -1151,11 +1156,11 @@ pub struct Engine {
     /// next receipt's `changed_paths` is computed against. `None` before a
     /// turn's first snapshot and after one failed, so a span that cannot be
     /// accounted for is reported as unknown rather than folded into the next.
-    restore_point_since: Option<crate::snapshot::SnapshotId>,
+    restore_point_since: Option<codewhale_snapshot::SnapshotId>,
     /// Post-edit LSP diagnostics injection (#136). Populated unconditionally
     /// — when LSP is disabled in config, this is an inert manager that
     /// always returns `None` from `diagnostics_for`.
-    lsp_manager: Arc<crate::lsp::LspManager>,
+    lsp_manager: Arc<codewhale_lsp::LspManager>,
     /// External sandbox backend (#516). When `Some`, exec_shell routes commands
     /// through this instead of spawning a local process.
     sandbox_backend: Option<std::sync::Arc<dyn codewhale_sandbox::backend::SandboxBackend>>,
@@ -1168,7 +1173,7 @@ pub struct Engine {
     no_new_privs_active: Option<bool>,
     /// Diagnostics collected during the current step's tool calls. Drained
     /// and forwarded as a synthetic user message before the next API call.
-    pending_lsp_blocks: Vec<crate::lsp::DiagnosticBlock>,
+    pending_lsp_blocks: Vec<codewhale_lsp::DiagnosticBlock>,
     /// Current operating mode. Updated on `ChangeMode` and `SendMessage`.
     current_mode: AppMode,
     /// R1: cumulative wall-clock budget for the turn currently running.
@@ -1868,7 +1873,7 @@ impl Engine {
     pub(super) async fn note_request_image_window(
         &mut self,
         provider: String,
-        window: crate::image_attach::ImageWindow,
+        window: codewhale_models::image_window::ImageWindow,
     ) {
         let model = self.session.model.clone();
         let current = (window.elided > 0)
@@ -2169,8 +2174,9 @@ impl Engine {
             .as_ref()
             .filter(|registry| registry.workspace() == config.workspace)
             .cloned();
-        // Experimental extension host: start in the background, never on the
-        // first-prompt path. Its tools join at the next turn's rebuild. Only
+        // Experimental extension host: start in the background here. The
+        // first turn's tool build waits briefly for this snapshot to activate
+        // so reviewed plugin tools are present on turn one. Only
         // an engine with its own plugin snapshot attaches; the empty fallback
         // below would desire nothing and must not affect other engines.
         let extension_host = match host.as_mut() {
@@ -2458,8 +2464,8 @@ impl Engine {
                 host.context().file_read_tracker.clone()
             });
         let lsp_manager = Arc::new(match config.lsp_config.clone() {
-            Some(cfg) => crate::lsp::LspManager::new(cfg, config.workspace.clone()),
-            None => crate::lsp::LspManager::disabled(),
+            Some(cfg) => codewhale_lsp::LspManager::new(cfg, config.workspace.clone()),
+            None => codewhale_lsp::LspManager::disabled(),
         });
 
         // External sandbox backend (#516). Logged but non-fatal: if the
@@ -2941,9 +2947,9 @@ impl Engine {
     /// snapshot [`Self::post_turn_snapshot_after_complete`] takes. Called
     /// before `TurnComplete`, so a `/undo` the user types as soon as the
     /// turn ends waits for that snapshot instead of racing it (#6644).
-    fn reserve_post_turn_snapshot(&self) -> Option<crate::snapshot::PendingPostTurnSnapshot> {
+    fn reserve_post_turn_snapshot(&self) -> Option<codewhale_snapshot::PendingPostTurnSnapshot> {
         (self.config.snapshots_enabled && !self.config.record_restore_points)
-            .then(crate::snapshot::PendingPostTurnSnapshot::reserve)
+            .then(codewhale_snapshot::PendingPostTurnSnapshot::reserve)
     }
 
     /// Take the post-turn snapshot reserved by
@@ -2955,7 +2961,7 @@ impl Engine {
         &self,
         task: &'static str,
         prompt: String,
-        pending: Option<crate::snapshot::PendingPostTurnSnapshot>,
+        pending: Option<codewhale_snapshot::PendingPostTurnSnapshot>,
     ) {
         let Some(pending) = pending else {
             return;
@@ -2964,7 +2970,7 @@ impl Engine {
         let post_seq = self.turn_counter;
         let post_cap = self.config.snapshots_max_workspace_bytes;
         let post_sid = self.session.id.clone();
-        crate::utils::spawn_blocking_supervised(task, move || {
+        codewhale_util::utils::spawn_blocking_supervised(task, move || {
             post_turn_snapshot(
                 &post_workspace,
                 post_seq,
@@ -3394,7 +3400,7 @@ impl Engine {
             || codewhale_config::persistence::redact_secrets(detail),
             |client| client.redact_model_bound_text(detail),
         );
-        Some(crate::utils::truncate_with_ellipsis(
+        Some(codewhale_util::utils::truncate_with_ellipsis(
             &detail,
             GOAL_CONTINUATION_FAILURE_DETAIL_MAX_BYTES,
             "…",
@@ -4744,6 +4750,7 @@ impl Engine {
         }
         let _ = self
             .send_event(Event::SessionUpdated {
+                checkpoint: None,
                 session_id: self.session.id.clone(),
                 messages: self.session.messages.snapshot(),
                 system_prompt: self.session.system_prompt.clone(),
@@ -6187,7 +6194,11 @@ impl Engine {
             attachment
                 .manager()
                 .note_native_names(tool_registry.names());
-            attachment.sync_in_background();
+            if attachment.selection_settled() {
+                attachment.sync_in_background();
+            } else {
+                attachment.sync_within(EXTENSION_FIRST_SYNC_WAIT).await;
+            }
         }
         let (mut plugin_tool_names, refused_overrides) =
             configure_plugin_tools(&mut tool_registry, self.config.tools.as_ref());
@@ -6969,7 +6980,7 @@ impl Engine {
             && self.config.compaction.runtime_cost_owner.is_none()
         {
             let owner = format!("interactive:{}:{}", self.session.id, turn.id);
-            crate::cost_status::register_persistent_interactive_runtime_usage_sink(
+            crate::usage_persistence::register_persistent_interactive_runtime_usage_sink(
                 &owner,
                 crate::cost_status::scope_token(),
                 &self.session.id,
@@ -7238,8 +7249,8 @@ impl Engine {
         let (mut status, error) = match turn_result {
             Ok(outcome) => outcome,
             Err(panic) => {
-                let detail = crate::utils::panic_message(&*panic);
-                crate::utils::record_caught_panic("engine-event-loop", &detail);
+                let detail = codewhale_util::utils::panic_message(&*panic);
+                codewhale_util::utils::record_caught_panic("engine-event-loop", &detail);
                 (
                     TurnOutcomeStatus::Failed,
                     Some(format!(
@@ -7407,7 +7418,7 @@ impl Engine {
             let advisor_tx = self.tx_event.clone();
             let advisor_turn_id = turn.id.clone();
 
-            crate::utils::spawn_supervised(
+            codewhale_util::utils::spawn_supervised(
                 "advisor-watcher",
                 std::panic::Location::caller(),
                 async move {
@@ -10032,7 +10043,7 @@ pub(crate) fn exec_shell_ask_rule_decision_for_policy(
     approval_mode: ApprovalMode,
 ) -> Option<ToolAskRuleDecision> {
     let policy_tool_name =
-        crate::tools::canonical_action::canonical_action_alias(tool_name, tool_input);
+        codewhale_execpolicy::canonical_action::canonical_action_alias(tool_name, tool_input);
     // Task tools that hand a command string to the shell answer to the same
     // shell deny and ask rules. Their own approval requirement stays: a shell
     // allow rule does not waive it.
@@ -10082,7 +10093,7 @@ pub(crate) fn file_tool_ask_rule_decision_for_policy(
     approval_mode: ApprovalMode,
 ) -> Option<ToolAskRuleDecision> {
     let policy_tool_name =
-        crate::tools::canonical_action::canonical_action_alias(tool_name, tool_input);
+        codewhale_execpolicy::canonical_action::canonical_action_alias(tool_name, tool_input);
     let paths = file_tool_permission_paths(policy_tool_name, tool_input)?;
     if paths.is_empty() {
         if matches!(policy_tool_name, "write_file" | "edit_file" | "apply_patch") {
@@ -10178,7 +10189,7 @@ fn tool_ask_rule_decision_for_context(
 /// here too; a rule keyed on `path` would otherwise never see that target.
 fn file_tool_permission_paths(tool_name: &str, input: &Value) -> Option<Vec<String>> {
     let path_arguments = || {
-        let mut paths: Vec<String> = crate::tools::file::path_argument_keys()
+        let mut paths: Vec<String> = codewhale_tools::param_alias::path_argument_keys()
             .filter_map(|key| string_field(input, key))
             .collect();
         paths.dedup();
@@ -10197,7 +10208,7 @@ fn file_tool_permission_paths(tool_name: &str, input: &Value) -> Option<Vec<Stri
             })
         }
         "apply_patch" => Some(apply_patch_permission_paths(
-            &crate::tools::file::with_canonical_path_argument(input),
+            &codewhale_tools::param_alias::with_canonical_path_argument(input),
         )),
         _ => None,
     }
@@ -10207,7 +10218,8 @@ fn file_tool_permission_paths(tool_name: &str, input: &Value) -> Option<Vec<Stri
 /// tools (`write_file` / `edit_file` / `apply_patch`), `None` for any other
 /// tool. Feeds the in-workspace write carve-out (#5185).
 pub(crate) fn file_write_tool_target_paths(tool_name: &str, input: &Value) -> Option<Vec<String>> {
-    let canonical = crate::tools::canonical_action::canonical_action_alias(tool_name, input);
+    let canonical =
+        codewhale_execpolicy::canonical_action::canonical_action_alias(tool_name, input);
     if !matches!(canonical, "write_file" | "edit_file" | "apply_patch") {
         return None;
     }
@@ -10224,7 +10236,7 @@ fn string_field(input: &Value, key: &str) -> Option<String> {
 }
 
 fn apply_patch_permission_paths(input: &Value) -> Vec<String> {
-    crate::tools::apply_patch::preflight_apply_patch(input)
+    codewhale_tools::patch_preflight::preflight_apply_patch(input)
         .map(|preflight| preflight.touched_files)
         .unwrap_or_default()
 }

@@ -47,11 +47,12 @@ mod constitution;
 mod notification_delivery;
 
 #[cfg(test)]
-use crate::dependencies::ExternalTool;
+use codewhale_dependencies::ExternalTool;
 
 use crate::automation_manager::{
     AutomationManager, AutomationRecord, AutomationRunRecord, AutomationSchedulerConfig,
-    CreateAutomationRequest, SharedAutomationManager, UpdateAutomationRequest, spawn_scheduler,
+    CreateAutomationRequest, CreateDelayedTriggerRequest, DelayedTriggerRecord,
+    DelayedTriggerStatus, SharedAutomationManager, UpdateAutomationRequest, spawn_scheduler,
 };
 use crate::fleet::executor::{FleetExecutor, configured_codewhale_binary};
 use crate::fleet::ledger::{
@@ -246,7 +247,7 @@ struct RuntimeWorkspaceScope {
     directory: Arc<std::fs::File>,
     mcp: Mutex<Option<(u64, Arc<Mutex<McpPool>>)>>,
     mcp_policy: parking_lot::Mutex<Value>,
-    lsp: std::sync::OnceLock<Arc<crate::lsp::LspManager>>,
+    lsp: std::sync::OnceLock<Arc<codewhale_lsp::LspManager>>,
     owner: SharedRuntimeThreadManager,
     cleanup_runtime: tokio::runtime::Handle,
     /// The workspace drive lease held for this scope's lifetime: at most one
@@ -256,41 +257,13 @@ struct RuntimeWorkspaceScope {
     _drive_lease: Option<crate::workspace_lease::SharedWorkspaceDriveLease>,
 }
 
-pub(crate) fn open_workspace_directory(workspace: &FsPath) -> Result<(PathBuf, std::fs::File)> {
-    let canonical = workspace
-        .canonicalize()
-        .context("workspace is unavailable")?;
-    let mut options = std::fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt as _;
-        options.custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC);
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt as _;
-        options.custom_flags(0x0200_0000 | 0x0020_0000); // BACKUP_SEMANTICS, OPEN_REPARSE_POINT
-    }
-    let directory = options.open(&canonical)?;
-    let metadata = directory.metadata()?;
-    anyhow::ensure!(
-        metadata.is_dir() && !crate::plugins::metadata_is_link_or_reparse(&metadata),
-        "workspace is not an ordinary directory"
-    );
-    anyhow::ensure!(
-        workspace.canonicalize()? == canonical,
-        "selected workspace changed"
-    );
-    Ok((canonical, directory))
-}
-
 impl RuntimeWorkspaceScope {
     fn validate_sync(&self) -> Result<()> {
-        let (canonical, directory) = open_workspace_directory(&self.lexical)?;
+        let (canonical, directory) =
+            codewhale_util::workspace_dir::open_workspace_directory(&self.lexical)?;
         anyhow::ensure!(
             canonical == self.canonical
-                && crate::fleet::files::same_file(&self.directory, &directory)?,
+                && codewhale_util::files::same_file(&self.directory, &directory)?,
             "selected workspace identity changed"
         );
         Ok(())
@@ -394,13 +367,14 @@ impl RuntimeWorkspaceScopes {
     async fn admit(self: &Arc<Self>, lexical: PathBuf) -> Result<Arc<RuntimeWorkspaceScope>> {
         let owner = self.clone();
         codewhale_app_server::daemon_socket::owner_work(move || {
-            let (canonical, directory) = open_workspace_directory(&lexical)?;
+            let (canonical, directory) =
+                codewhale_util::workspace_dir::open_workspace_directory(&lexical)?;
             let directory = Arc::new(directory);
             let mut scopes = owner.scopes.lock();
             if let Some(scope) = scopes.get(&lexical) {
                 anyhow::ensure!(
                     canonical == scope.canonical
-                        && crate::fleet::files::same_file(&scope.directory, &directory)?,
+                        && codewhale_util::files::same_file(&scope.directory, &directory)?,
                     "selected workspace identity changed"
                 );
                 return Ok(scope.clone());
@@ -1101,6 +1075,8 @@ struct ThreadSummary {
     pending_attention_count: usize,
     last_read_item_id: Option<String>,
     unread: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent_thread_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1300,14 +1276,7 @@ struct DecideApprovalResponse {
 
 #[derive(Debug, Deserialize)]
 struct SubmitUserInputBody {
-    answers: Vec<UserInputAnswerBody>,
-}
-
-#[derive(Debug, Deserialize)]
-struct UserInputAnswerBody {
-    id: String,
-    label: String,
-    value: String,
+    answers: Vec<crate::tools::user_input::UserInputAnswer>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1681,7 +1650,7 @@ fn replay_flag_is_absent(replayed: &bool) -> bool {
 }
 
 fn install_runtime_server_workshop_budgets(config: &Config) -> codewhale_config::WorkshopConfig {
-    crate::tools::large_output_router::install_active_workshop(config.workshop.as_ref())
+    codewhale_runtime::active_workshop::install_active_workshop(config.workshop.as_ref())
 }
 
 #[cfg(test)]
@@ -2019,6 +1988,7 @@ pub async fn run_http_server(
     let _task_shutdown = task_manager.shutdown_guard();
     let mut automation_service = AutomationManager::default_location()?;
     automation_service.bind_task_manager(&task_manager)?;
+    automation_service.set_thread_event_sink(runtime_threads.thread_event_sink());
     let automations = Arc::new(Mutex::new(automation_service));
     runtime_threads.attach_automation_manager(automations.clone());
     let scheduler_cancel = CancellationToken::new();
@@ -2897,7 +2867,7 @@ pub fn build_router(state: RuntimeApiState) -> Router {
         )
         .route(
             "/v1/user-input/{thread_id}/{input_id}",
-            post(submit_user_input),
+            post(submit_user_input).delete(cancel_user_input_request),
         )
         .route("/v1/tasks", get(list_tasks).post(create_task))
         .route("/v1/tasks/{id}", get(get_task))
@@ -3011,6 +2981,8 @@ pub fn build_router(state: RuntimeApiState) -> Router {
         .route("/v1/automations/{id}/pause", post(pause_automation))
         .route("/v1/automations/{id}/resume", post(resume_automation))
         .route("/v1/automations/{id}/runs", get(list_automation_runs))
+        .route("/v1/triggers", get(list_triggers).post(create_trigger))
+        .route("/v1/triggers/{id}", get(get_trigger).delete(cancel_trigger))
         .route(
             "/v1/operate",
             get(get_operate).post(start_operate).patch(patch_operate),
@@ -3693,6 +3665,7 @@ async fn list_threads_summary(
             pending_attention_count,
             last_read_item_id,
             unread,
+            parent_thread_id: thread.parent_thread_id,
         });
     }
 
@@ -5738,7 +5711,7 @@ fn mutation_context_settings(
     String,
     Option<PathBuf>,
 ) {
-    use crate::skills::install::{DEFAULT_MAX_SIZE_BYTES, DEFAULT_REGISTRY_URL};
+    use codewhale_skill_install::install::{DEFAULT_MAX_SIZE_BYTES, DEFAULT_REGISTRY_URL};
     let config = state.config.read();
     let network = config
         .network
@@ -5837,8 +5810,8 @@ async fn install_skill_api(
     State(state): State<RuntimeApiState>,
     Json(req): Json<InstallSkillRequest>,
 ) -> Result<(StatusCode, Json<SkillMutationReceiptResponse>), ApiError> {
-    use crate::skills::install::InstallSource;
     use crate::skills::mutation::{MutationContext, SkillMutationRequest, SkillTargetScope};
+    use codewhale_skill_install::install::InstallSource;
 
     let source = InstallSource::parse(&req.source)
         .map_err(|err| ApiError::bad_request(format!("invalid install source: {err}")))?;
@@ -6322,20 +6295,33 @@ async fn submit_user_input(
     Path((thread_id, input_id)): Path<(String, String)>,
     Json(req): Json<SubmitUserInputBody>,
 ) -> Result<Json<SubmitUserInputResponse>, ApiError> {
-    use crate::tools::user_input::{UserInputAnswer, UserInputResponse};
-    let answers: Vec<UserInputAnswer> = req
-        .answers
-        .into_iter()
-        .map(|a| UserInputAnswer {
-            id: a.id,
-            label: a.label,
-            value: a.value,
-        })
-        .collect();
-    let response = UserInputResponse { answers };
+    let response = crate::tools::user_input::UserInputResponse {
+        answers: req.answers,
+    };
     let delivered = state
         .runtime_threads
         .submit_user_input(&thread_id, &input_id, response)
+        .await
+        .map_err(map_thread_err)?;
+    if !delivered {
+        return Err(ApiError::not_found(format!(
+            "no pending user-input request with id '{input_id}'"
+        )));
+    }
+    Ok(Json(SubmitUserInputResponse {
+        ok: true,
+        input_id,
+        delivered,
+    }))
+}
+
+async fn cancel_user_input_request(
+    State(state): State<RuntimeApiState>,
+    Path((thread_id, input_id)): Path<(String, String)>,
+) -> Result<Json<SubmitUserInputResponse>, ApiError> {
+    let delivered = state
+        .runtime_threads
+        .cancel_user_input(&thread_id, &input_id)
         .await
         .map_err(map_thread_err)?;
     if !delivered {
@@ -7459,11 +7445,167 @@ where
     Ok(respond(ok_status, body, false))
 }
 
+async fn require_destination_thread(
+    state: &RuntimeApiState,
+    thread_id: Option<&str>,
+) -> Result<(), ApiError> {
+    let Some(thread_id) = thread_id.map(str::trim).filter(|id| !id.is_empty()) else {
+        return Ok(());
+    };
+    let thread = state
+        .runtime_threads
+        .get_thread(thread_id)
+        .await
+        .map_err(map_thread_err)?;
+    if thread.archived {
+        return Err(ApiError::conflict(format!(
+            "Destination thread {thread_id} is archived"
+        )));
+    }
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+struct TriggerListQuery {
+    #[serde(default)]
+    thread_id: Option<String>,
+    #[serde(default)]
+    status: Option<DelayedTriggerStatus>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CreateTriggerApiRequest {
+    message: String,
+    #[serde(default)]
+    fire_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    delay_minutes: Option<u32>,
+    #[serde(default)]
+    thread_id: Option<String>,
+    #[serde(default)]
+    workspace: Option<PathBuf>,
+    #[serde(default)]
+    owner_session_id: Option<String>,
+}
+
+async fn list_triggers(
+    State(state): State<RuntimeApiState>,
+    Query(query): Query<TriggerListQuery>,
+) -> Result<Json<Vec<DelayedTriggerRecord>>, ApiError> {
+    let mut triggers = state
+        .automations
+        .lock()
+        .await
+        .list_triggers(query.status, None)
+        .map_err(|e| ApiError::internal(format!("Failed to list triggers: {e}")))?;
+    if let Some(thread_id) = query.thread_id.as_deref() {
+        triggers.retain(|trigger| trigger.destination_thread_id.as_deref() == Some(thread_id));
+    }
+    triggers.truncate(query.limit.unwrap_or(50).clamp(1, 200));
+    Ok(Json(triggers))
+}
+
+async fn get_trigger(
+    State(state): State<RuntimeApiState>,
+    Path(id): Path<String>,
+) -> Result<Json<DelayedTriggerRecord>, ApiError> {
+    let trigger = state
+        .automations
+        .lock()
+        .await
+        .get_trigger(&id)
+        .map_err(map_trigger_err)?;
+    Ok(Json(trigger))
+}
+
+async fn create_trigger(
+    State(state): State<RuntimeApiState>,
+    headers: HeaderMap,
+    Json(req): Json<CreateTriggerApiRequest>,
+) -> Result<Response, ApiError> {
+    let fire_at = match (req.fire_at, req.delay_minutes) {
+        (Some(fire_at), None) => fire_at,
+        (None, Some(minutes)) if minutes >= 1 => {
+            chrono::Utc::now() + chrono::Duration::minutes(i64::from(minutes))
+        }
+        (None, Some(_)) => return Err(ApiError::bad_request("delay_minutes must be >= 1")),
+        _ => {
+            return Err(ApiError::bad_request(
+                "exactly one of fire_at or delay_minutes is required",
+            ));
+        }
+    };
+    let destination = req
+        .thread_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string);
+    require_destination_thread(&state, destination.as_deref()).await?;
+    let owner_session_id = req
+        .owner_session_id
+        .clone()
+        .or_else(|| destination.clone())
+        .ok_or_else(|| {
+            ApiError::bad_request("a trigger without thread_id needs owner_session_id")
+        })?;
+    if state.automations.lock().await.execution_scope().is_none() {
+        return Err(ApiError::conflict(
+            "This Runtime has no automation execution owner",
+        ));
+    }
+    let create = CreateDelayedTriggerRequest {
+        fire_at,
+        message: req.message.clone(),
+        workspace: req.workspace.clone(),
+        owner_session_id: Some(owner_session_id),
+        parent_trigger_id: None,
+        destination_thread_id: destination,
+    };
+    automation_mutation(
+        &state,
+        &headers,
+        "POST /v1/triggers",
+        &req,
+        StatusCode::CREATED,
+        |e| ApiError::bad_request(e.to_string()),
+        async { state.automations.lock().await.create_trigger(create) },
+    )
+    .await
+}
+
+async fn cancel_trigger(
+    State(state): State<RuntimeApiState>,
+    Path(id): Path<String>,
+) -> Result<Json<DelayedTriggerRecord>, ApiError> {
+    let trigger = state
+        .automations
+        .lock()
+        .await
+        .cancel_trigger(&id)
+        .map_err(map_trigger_err)?;
+    Ok(Json(trigger))
+}
+
+fn map_trigger_err(err: anyhow::Error) -> ApiError {
+    let message = format!("{err:#}");
+    if message.contains("not found") {
+        ApiError::not_found(message)
+    } else if message.contains("cannot be canceled") {
+        ApiError::conflict(message)
+    } else {
+        ApiError::bad_request(message)
+    }
+}
+
 async fn create_automation(
     State(state): State<RuntimeApiState>,
     headers: HeaderMap,
     Json(req): Json<CreateAutomationRequest>,
 ) -> Result<Response, ApiError> {
+    require_destination_thread(&state, req.destination_thread_id.as_deref()).await?;
     automation_mutation(
         &state,
         &headers,
@@ -7498,6 +7640,7 @@ async fn update_automation(
     headers: HeaderMap,
     Json(mut req): Json<UpdateAutomationRequest>,
 ) -> Result<Response, ApiError> {
+    require_destination_thread(&state, req.destination_thread_id.as_deref()).await?;
     req.expected_revision = req.expected_revision.or(query.expected_revision);
     automation_mutation(
         &state,
@@ -8236,8 +8379,8 @@ const PATCH_UNDO_WORKSPACE_UNAVAILABLE: &str = "workspace_unavailable";
 /// the snapshot store still holds.
 struct UndoSegment {
     turn_id: String,
-    pre: crate::snapshot::SnapshotId,
-    post: crate::snapshot::SnapshotId,
+    pre: codewhale_snapshot::SnapshotId,
+    post: codewhale_snapshot::SnapshotId,
     pre_label: String,
     /// Paths that changed in the window only while one of the turn's own
     /// tool calls was running: the turn's changes.
@@ -8255,9 +8398,9 @@ struct UndoSegment {
 /// turn and is skipped. `None` means a window the engine never closed (the
 /// turn died before its post-turn snapshot) or no window at all.
 fn turn_snapshot_windows(
-    snapshots: &[crate::snapshot::WorkspaceSnapshotRef],
+    snapshots: &[codewhale_snapshot::WorkspaceSnapshotRef],
 ) -> Option<Vec<std::ops::RangeInclusive<usize>>> {
-    use crate::snapshot::WorkspaceSnapshotKind;
+    use codewhale_snapshot::WorkspaceSnapshotKind;
     let mut windows = Vec::new();
     let mut open = None;
     for (index, snapshot) in snapshots.iter().enumerate() {
@@ -8308,7 +8451,7 @@ fn declared_write_path(workspace: &FsPath, raw: &str) -> Option<PathBuf> {
         .components()
         .filter(|component| !matches!(component, Component::CurDir))
         .collect();
-    crate::snapshot::workspace_relative_path(workspace, rel.to_str()?)
+    codewhale_snapshot::workspace_relative_path(workspace, rel.to_str()?)
 }
 
 /// Who could have changed the workspace in the span after one receipt.
@@ -8329,7 +8472,7 @@ enum SpanWriter {
 fn attribute_window(
     workspace: &FsPath,
     turn_id: &str,
-    receipts: &[crate::snapshot::WorkspaceSnapshotRef],
+    receipts: &[codewhale_snapshot::WorkspaceSnapshotRef],
 ) -> Result<
     (
         std::collections::BTreeSet<PathBuf>,
@@ -8337,7 +8480,7 @@ fn attribute_window(
     ),
     ApiError,
 > {
-    use crate::snapshot::WorkspaceSnapshotKind;
+    use codewhale_snapshot::WorkspaceSnapshotKind;
     let mut owned = std::collections::BTreeSet::new();
     let mut foreign = std::collections::BTreeSet::new();
     // Undeclared calls whose `post_tool` receipt is still ahead: everything
@@ -8517,7 +8660,7 @@ fn patch_undo_workspace_files(
 
     // Every repository failure is operational and aborts: "nothing to
     // restore" cannot be proven while Git is unavailable.
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(workspace).map_err(|e| {
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(workspace).map_err(|e| {
         ApiError::internal(format!(
             "Snapshot repo unavailable; conversation preserved: {e}"
         ))
@@ -8528,8 +8671,8 @@ fn patch_undo_workspace_files(
         .list(usize::MAX)
         .map_err(|e| ApiError::internal(format!("Failed to list snapshots: {e}")))?;
     let resolve = |turn_id: &str,
-                   receipt: &crate::snapshot::WorkspaceSnapshotRef|
-     -> Result<(crate::snapshot::SnapshotId, String), ApiError> {
+                   receipt: &codewhale_snapshot::WorkspaceSnapshotRef|
+     -> Result<(codewhale_snapshot::SnapshotId, String), ApiError> {
         listed
             .iter()
             .find(|snapshot| receipt.matches(snapshot))
@@ -8611,7 +8754,10 @@ fn patch_undo_workspace_files(
     // path -> (content to restore, content the dropped turns left)
     let mut plan: std::collections::BTreeMap<
         PathBuf,
-        (crate::snapshot::SnapshotId, crate::snapshot::SnapshotId),
+        (
+            codewhale_snapshot::SnapshotId,
+            codewhale_snapshot::SnapshotId,
+        ),
     > = std::collections::BTreeMap::new();
     for segment in &segments {
         let changed = repo
@@ -8714,7 +8860,7 @@ fn patch_undo_workspace_files(
         .with_code(PATCH_UNDO_UNTRUSTED));
     }
 
-    let restore_plan: Vec<(PathBuf, crate::snapshot::SnapshotId)> = to_restore
+    let restore_plan: Vec<(PathBuf, codewhale_snapshot::SnapshotId)> = to_restore
         .iter()
         .map(|(path, before, _)| (path.clone(), before.clone()))
         .collect();
@@ -8852,7 +8998,7 @@ async fn revert_thread_file(
 }
 
 fn snapshot_id_is_well_formed(id: &str) -> bool {
-    crate::snapshot::SnapshotId::is_well_formed(id)
+    codewhale_snapshot::SnapshotId::is_well_formed(id)
 }
 
 fn expected_hash_is_well_formed(hash: &str) -> bool {
@@ -8867,7 +9013,7 @@ fn expected_hash_is_well_formed(hash: &str) -> bool {
 
 fn revert_file_from_snapshot(
     workspace: &FsPath,
-    owned: &[crate::snapshot::WorkspaceSnapshotRef],
+    owned: &[codewhale_snapshot::WorkspaceSnapshotRef],
     req: &RevertThreadFileRequest,
 ) -> Result<RevertThreadFileResponse, ApiError> {
     // Every caller-supplied path passes through this one gate. It accepts a
@@ -8875,20 +9021,21 @@ fn revert_file_from_snapshot(
     // rejects everything else (`..`, empty, or outside the work tree). The
     // name is used literally: brackets, spaces and glob characters are part
     // of the filename, never a pattern.
-    let rel = crate::snapshot::workspace_relative_path(workspace, &req.path).ok_or_else(|| {
-        ApiError::bad_request(format!(
-            "path must name a regular file inside the thread workspace {}; got '{}'",
-            workspace.display(),
-            req.path
-        ))
-    })?;
+    let rel =
+        codewhale_snapshot::workspace_relative_path(workspace, &req.path).ok_or_else(|| {
+            ApiError::bad_request(format!(
+                "path must name a regular file inside the thread workspace {}; got '{}'",
+                workspace.display(),
+                req.path
+            ))
+        })?;
     if !workspace.is_dir() {
         return Err(ApiError::conflict(format!(
             "Workspace directory {} is not available; mount or restore it before restoring files.",
             workspace.display()
         )));
     }
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(workspace)
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(workspace)
         .map_err(|e| ApiError::internal(format!("Snapshot repo unavailable: {e}")))?;
     repo.validate_restore_file(&rel)
         .map_err(map_file_restore_err)?;
@@ -8902,13 +9049,13 @@ fn revert_file_from_snapshot(
     // `tree_id` its turn record holds (a prune rewrites commit ids but keeps
     // trees). A foreign, unrecorded or pruned id is a conflict the client
     // resolves by refreshing its change record.
-    let restore_points: Vec<&crate::snapshot::WorkspaceSnapshotRef> = owned
+    let restore_points: Vec<&codewhale_snapshot::WorkspaceSnapshotRef> = owned
         .iter()
         .filter(|receipt| {
             matches!(
                 receipt.kind,
-                crate::snapshot::WorkspaceSnapshotKind::Tool
-                    | crate::snapshot::WorkspaceSnapshotKind::PreTurn
+                codewhale_snapshot::WorkspaceSnapshotKind::Tool
+                    | codewhale_snapshot::WorkspaceSnapshotKind::PreTurn
             )
         })
         .collect();
@@ -10497,6 +10644,7 @@ fn map_compat_stream_event(event: &crate::runtime_threads::RuntimeEventRecord) -
                     "thread_id": event.thread_id,
                     "turn_id": event.turn_id,
                     "status": status,
+                    "outcome": payload.get("outcome"),
                     "terminal": payload.get("terminal").and_then(Value::as_bool).unwrap_or(false),
                 }),
             ))
@@ -10811,9 +10959,9 @@ async fn restore_snapshot(
 }
 
 fn restore_snapshot_for_workspace(workspace: &FsPath, id: &str) -> Result<(), ApiError> {
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(workspace)
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(workspace)
         .map_err(|e| ApiError::internal(format!("Snapshot repo init failed: {e}")))?;
-    let snapshot_id = crate::snapshot::SnapshotId::parse(id)
+    let snapshot_id = codewhale_snapshot::SnapshotId::parse(id)
         .map_err(|e| ApiError::bad_request(format!("Invalid snapshot id: {e}")))?;
     repo.restore(&snapshot_id)
         .map_err(|e| ApiError::internal(format!("Snapshot restore failed: {e}")))
@@ -10834,7 +10982,7 @@ fn snapshot_entries_for_workspace(
             )));
         }
     };
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(workspace)
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(workspace)
         .map_err(|e| ApiError::internal(format!("Snapshot repo unavailable: {e}")))?;
     let snapshots = repo
         .list(limit)
@@ -11365,7 +11513,7 @@ fn provider_default_model_for_api(
 }
 
 pub(crate) fn runtime_chat_model_id_is_safe(value: &str) -> bool {
-    let sanitized = crate::cost_status::sanitize_persisted_route_label(value);
+    let sanitized = codewhale_runtime::safe_label::sanitize_persisted_route_label(value);
     value == value.trim()
         && !value.is_empty()
         && value.len() <= 256
@@ -11399,7 +11547,7 @@ fn runtime_chat_model_id_looks_like_host_port(value: &str) -> bool {
 }
 
 pub(crate) fn runtime_chat_route_id_is_safe(value: &str) -> bool {
-    let sanitized = crate::cost_status::sanitize_persisted_route_label(value);
+    let sanitized = codewhale_runtime::safe_label::sanitize_persisted_route_label(value);
     value == value.trim()
         && !value.is_empty()
         && value.len() <= 128

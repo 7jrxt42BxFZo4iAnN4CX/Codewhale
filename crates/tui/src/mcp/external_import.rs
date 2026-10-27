@@ -399,7 +399,7 @@ pub fn persist_decisions(
         if rendered.len() as u64 > super::MAX_MCP_CONFIG_BYTES {
             anyhow::bail!("MCP consent history exceeds size limit");
         }
-        crate::utils::write_atomic(path, &rendered)?;
+        codewhale_util::utils::write_atomic(path, &rendered)?;
         Ok(())
     })
 }

@@ -15,7 +15,7 @@ use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use tempfile::NamedTempFile;
 use wait_timeout::ChildExt;
 
-use crate::dependencies::ExternalTool;
+use codewhale_dependencies::ExternalTool;
 
 mod acp_server;
 pub mod agent_roster;
@@ -35,16 +35,15 @@ mod conformance;
 mod context_report;
 mod core;
 mod cost_status;
+mod usage_persistence;
 /// Guarded installation I/O reusing Engine's confined file primitives.
 pub mod delivery_files;
-mod dependencies;
 mod doctor;
 mod doctor_fix;
 mod error_taxonomy;
 mod eval;
 mod extension_host;
 mod fleet;
-mod fs_confined;
 mod git_status;
 mod keybinding_table;
 use crate::fleet::executor::exec_stream_final_answer_excerpt;
@@ -53,7 +52,6 @@ mod image_attach;
 mod integrations;
 mod llm_client;
 mod local_ollama;
-mod lsp;
 mod mcp;
 mod mcp_server;
 mod model_inventory;
@@ -77,7 +75,6 @@ pub mod reasoning_preference;
 mod receipts;
 mod remote_control;
 mod remote_setup;
-pub mod repl;
 mod repo_law;
 mod request_manifest;
 mod request_tuning;
@@ -112,7 +109,6 @@ mod session_reconcile;
 mod session_resume;
 mod session_secret_scrub;
 mod skills;
-mod snapshot;
 mod superfast;
 mod task_manager;
 mod telemetry_notice;
@@ -127,7 +123,6 @@ mod tui;
 /// The terminal and external renderers share this implementation.
 pub use tui::ambient_life::pet_sim as pet;
 mod turn_route_plan;
-mod utils;
 mod vision;
 mod voice;
 pub mod whats_new;
@@ -4332,7 +4327,10 @@ fn run_setup(
         "Codewhale Setup".truecolor(aqua_r, aqua_g, aqua_b).bold()
     );
     println!("{}", "==============".truecolor(sky_r, sky_g, sky_b));
-    println!("Workspace: {}", crate::utils::display_path(workspace));
+    println!(
+        "Workspace: {}",
+        codewhale_util::utils::display_path(workspace)
+    );
 
     if run_mcp {
         let mcp_path = config.mcp_config_path();
@@ -4377,12 +4375,12 @@ fn run_setup(
         if args.local {
             println!(
                 "    Project skills dir (loads after workspace trust): {}",
-                crate::utils::display_path(&skills_dir)
+                codewhale_util::utils::display_path(&skills_dir)
             );
         } else {
             println!(
                 "    Skills dir: {}",
-                crate::utils::display_path(&skills_dir)
+                codewhale_util::utils::display_path(&skills_dir)
             );
         }
         println!("    Next: run the TUI and use `/skills` then `/skill getting-started`.");
@@ -4393,7 +4391,10 @@ fn run_setup(
         let (dir, readme_status, example_status) = init_tools_dir(&tools_dir, args.force)?;
         report_write_status("Tools README", &dir.join("README.md"), readme_status);
         report_write_status("Example tool", &dir.join("example.sh"), example_status);
-        println!("    Tools dir: {}", crate::utils::display_path(&dir));
+        println!(
+            "    Tools dir: {}",
+            codewhale_util::utils::display_path(&dir)
+        );
         println!("    Next: drop scripts here; surface them via skills/MCP when ready.");
     }
 
@@ -4406,7 +4407,7 @@ fn run_setup(
         report_write_status("Example plugin skill", &skill_path, skill_status);
         println!(
             "    Plugins dir: {}",
-            crate::utils::display_path(&plugins_dir)
+            codewhale_util::utils::display_path(&plugins_dir)
         );
         println!("    Next: run `/plugin validate`, review `example`, then trust and enable it.");
     }
@@ -4767,7 +4768,7 @@ fn run_setup_status(
     println!(
         "  · skills: {} at {}",
         skills_count_for(&skills_dir),
-        crate::utils::display_path(&skills_dir)
+        codewhale_util::utils::display_path(&skills_dir)
     );
 
     let tools_dir = default_tools_dir();
@@ -4783,7 +4784,7 @@ fn run_setup_status(
         } else {
             0
         },
-        crate::utils::display_path(&tools_dir)
+        codewhale_util::utils::display_path(&tools_dir)
     );
 
     let plugins_dir = default_plugins_dir();
@@ -4799,7 +4800,7 @@ fn run_setup_status(
         } else {
             0
         },
-        crate::utils::display_path(&plugins_dir)
+        codewhale_util::utils::display_path(&plugins_dir)
     );
 
     let sandbox =
@@ -4881,7 +4882,7 @@ fn run_session_diagnostics(args: SessionDiagnosticsArgs) -> Result<()> {
     let contents = std::fs::read_to_string(&args.path).with_context(|| {
         format!(
             "read session diagnostic JSONL from {}",
-            crate::utils::display_path(&args.path)
+            codewhale_util::utils::display_path(&args.path)
         )
     })?;
     let summary = crate::session_diagnostics::analyze_session_failure_jsonl(&contents);
@@ -5045,7 +5046,7 @@ async fn run_doctor(
         println!(
             "  {} config.toml found at {}",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(config_path)
+            codewhale_util::utils::display_path(config_path)
         );
         // Secret hygiene: name the keys, never the values. Plain-text config
         // is not a secret store.
@@ -5081,16 +5082,19 @@ async fn run_doctor(
         println!(
             "  {} config.toml not found at {} (using defaults/env)",
             "!".truecolor(sky_r, sky_g, sky_b),
-            crate::utils::display_path(config_path)
+            codewhale_util::utils::display_path(config_path)
         );
     }
-    println!("  workspace: {}", crate::utils::display_path(workspace));
+    println!(
+        "  workspace: {}",
+        codewhale_util::utils::display_path(workspace)
+    );
     println!("  {}", doctor_search_provider_line(config));
 
     println!();
     println!("{}", "Resolved User Paths (read-only):".bold());
     for (label, path) in doctor_paths.entries() {
-        println!("  · {label}: {}", crate::utils::display_path(path));
+        println!("  · {label}: {}", codewhale_util::utils::display_path(path));
     }
 
     let secret_backend = codewhale_secrets::diagnose_secret_backend();
@@ -5121,18 +5125,21 @@ async fn run_doctor(
     } else {
         &code_home
     };
-    println!("  active: {}", crate::utils::display_path(active_root));
+    println!(
+        "  active: {}",
+        codewhale_util::utils::display_path(active_root)
+    );
     if active_root != &code_home {
         println!(
             "  note: legacy {} found; start Codewhale once to trigger safe migration where available.",
-            crate::utils::display_path(&legacy_home)
+            codewhale_util::utils::display_path(&legacy_home)
         );
     }
     if legacy_home.exists() && code_home.exists() {
         println!(
             "  dual roots: {} (primary) + {} (legacy)",
-            crate::utils::display_path(&code_home),
-            crate::utils::display_path(&legacy_home)
+            codewhale_util::utils::display_path(&code_home),
+            codewhale_util::utils::display_path(&legacy_home)
         );
     }
     let legacy_state_report = doctor_legacy_state_report(&code_home, &legacy_home);
@@ -5459,26 +5466,26 @@ async fn run_doctor(
         println!(
             "  {} MCP config found at {}",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&mcp_config_path)
+            codewhale_util::utils::display_path(&mcp_config_path)
         );
     } else {
         println!(
             "  {} MCP config not found at {}",
             "·".dimmed(),
-            crate::utils::display_path(&mcp_config_path)
+            codewhale_util::utils::display_path(&mcp_config_path)
         );
     }
     if project_mcp_config_path.exists() {
         println!(
             "  {} Project MCP config found at {}",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&project_mcp_config_path)
+            codewhale_util::utils::display_path(&project_mcp_config_path)
         );
     } else {
         println!(
             "  {} Project MCP config not found at {}",
             "·".dimmed(),
-            crate::utils::display_path(&project_mcp_config_path)
+            codewhale_util::utils::display_path(&project_mcp_config_path)
         );
     }
 
@@ -5618,14 +5625,14 @@ async fn run_doctor(
         println!(
             "  {} local skills dir found at {} ({} items)",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&local_skills_dir),
+            codewhale_util::utils::display_path(&local_skills_dir),
             describe_dir(&local_skills_dir)
         );
     } else {
         println!(
             "  {} local skills dir not found at {}",
             "·".dimmed(),
-            crate::utils::display_path(&local_skills_dir)
+            codewhale_util::utils::display_path(&local_skills_dir)
         );
     }
 
@@ -5633,14 +5640,14 @@ async fn run_doctor(
         println!(
             "  {} .agents skills dir found at {} ({} items)",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&agents_skills_dir),
+            codewhale_util::utils::display_path(&agents_skills_dir),
             describe_dir(&agents_skills_dir)
         );
     } else {
         println!(
             "  {} .agents skills dir not found at {}",
             "·".dimmed(),
-            crate::utils::display_path(&agents_skills_dir)
+            codewhale_util::utils::display_path(&agents_skills_dir)
         );
     }
 
@@ -5649,14 +5656,14 @@ async fn run_doctor(
             println!(
                 "  {} global .agents skills dir found at {} ({} items)",
                 "✓".truecolor(aqua_r, aqua_g, aqua_b),
-                crate::utils::display_path(agents_global_skills_dir),
+                codewhale_util::utils::display_path(agents_global_skills_dir),
                 describe_dir(agents_global_skills_dir)
             );
         } else {
             println!(
                 "  {} global .agents skills dir not found at {}",
                 "·".dimmed(),
-                crate::utils::display_path(agents_global_skills_dir)
+                codewhale_util::utils::display_path(agents_global_skills_dir)
             );
         }
     }
@@ -5665,14 +5672,14 @@ async fn run_doctor(
         println!(
             "  {} global skills dir found at {} ({} items)",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&global_skills_dir),
+            codewhale_util::utils::display_path(&global_skills_dir),
             describe_dir(&global_skills_dir)
         );
     } else {
         println!(
             "  {} global skills dir not found at {}",
             "·".dimmed(),
-            crate::utils::display_path(&global_skills_dir)
+            codewhale_util::utils::display_path(&global_skills_dir)
         );
     }
 
@@ -5683,7 +5690,7 @@ async fn run_doctor(
         println!(
             "  {} .opencode skills dir found at {} ({} items)",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&opencode_skills_dir),
+            codewhale_util::utils::display_path(&opencode_skills_dir),
             describe_dir(&opencode_skills_dir)
         );
     }
@@ -5691,7 +5698,7 @@ async fn run_doctor(
         println!(
             "  {} .claude skills dir found at {} ({} items)",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&claude_skills_dir),
+            codewhale_util::utils::display_path(&claude_skills_dir),
             describe_dir(&claude_skills_dir)
         );
     }
@@ -5699,7 +5706,7 @@ async fn run_doctor(
     println!(
         "  {} selected skills dir: {}",
         "·".dimmed(),
-        crate::utils::display_path(&selected_skills_dir)
+        codewhale_util::utils::display_path(&selected_skills_dir)
     );
     let unrecognized_system_skills = crate::skills::unrecognized_system_skills(&global_skills_dir);
     if !unrecognized_system_skills.is_empty() {
@@ -5707,7 +5714,7 @@ async fn run_doctor(
             "  {} {} bundled skill(s) in {} are customized or from an unknown generation and are never refreshed: {}",
             "!".truecolor(sky_r, sky_g, sky_b),
             unrecognized_system_skills.len(),
-            crate::utils::display_path(&global_skills_dir),
+            codewhale_util::utils::display_path(&global_skills_dir),
             unrecognized_system_skills.join(", ")
         );
     }
@@ -5731,14 +5738,14 @@ async fn run_doctor(
         println!(
             "  {} tools dir found at {} ({} items)",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&tools_dir),
+            codewhale_util::utils::display_path(&tools_dir),
             count
         );
     } else {
         println!(
             "  {} tools dir not found at {}",
             "·".dimmed(),
-            crate::utils::display_path(&tools_dir)
+            codewhale_util::utils::display_path(&tools_dir)
         );
         println!("    Run `codewhale setup --tools` to scaffold a starter dir.");
     }
@@ -5752,14 +5759,14 @@ async fn run_doctor(
         println!(
             "  {} plugins dir found at {} ({} items)",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&plugins_dir),
+            codewhale_util::utils::display_path(&plugins_dir),
             count
         );
     } else {
         println!(
             "  {} plugins dir not found at {}",
             "·".dimmed(),
-            crate::utils::display_path(&plugins_dir)
+            codewhale_util::utils::display_path(&plugins_dir)
         );
         println!("    Run `codewhale setup --plugins` to scaffold a starter dir.");
     }
@@ -5777,7 +5784,7 @@ async fn run_doctor(
             println!(
                 "  {} tool-output spillover at {} ({} file{})",
                 "✓".truecolor(aqua_r, aqua_g, aqua_b),
-                crate::utils::display_path(&spillover_root),
+                codewhale_util::utils::display_path(&spillover_root),
                 count,
                 if count == 1 { "" } else { "s" }
             );
@@ -5785,7 +5792,7 @@ async fn run_doctor(
             println!(
                 "  {} tool-output spillover dir not yet created at {}",
                 "·".dimmed(),
-                crate::utils::display_path(&spillover_root)
+                codewhale_util::utils::display_path(&spillover_root)
             );
         }
     }
@@ -5795,13 +5802,13 @@ async fn run_doctor(
             println!(
                 "  {} composer stash was not inspected at {}: {error}",
                 "!".truecolor(sky_r, sky_g, sky_b),
-                crate::utils::display_path(stash_path),
+                codewhale_util::utils::display_path(stash_path),
             );
         } else if stash.present {
             println!(
                 "  {} composer stash at {} ({} parked draft{})",
                 "✓".truecolor(aqua_r, aqua_g, aqua_b),
-                crate::utils::display_path(stash_path),
+                codewhale_util::utils::display_path(stash_path),
                 stash.count,
                 if stash.count == 1 { "" } else { "s" }
             );
@@ -5825,7 +5832,7 @@ async fn run_doctor(
     println!();
     println!("{}", "Tool Dependencies:".bold());
 
-    match crate::dependencies::resolve_python_interpreter() {
+    match codewhale_dependencies::resolve_python_interpreter() {
         Some(name) => println!(
             "  {} Python: {} → code_execution tool registered",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
@@ -5835,7 +5842,7 @@ async fn run_doctor(
             println!(
                 "  {} Python: not found (tried {:?})",
                 "✗".truecolor(red_r, red_g, red_b),
-                crate::dependencies::PYTHON_CANDIDATES,
+                codewhale_dependencies::PYTHON_CANDIDATES,
             );
             println!("    code_execution tool is NOT advertised to the model on this install.");
             println!("    Install Python 3 and ensure one of those names is on PATH:");
@@ -5854,7 +5861,7 @@ async fn run_doctor(
         }
     }
 
-    match crate::dependencies::resolve_node() {
+    match codewhale_dependencies::resolve_node() {
         Some(_) => println!(
             "  {} Node.js: present → js_execution tool registered",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
@@ -5901,10 +5908,11 @@ async fn run_doctor(
             crate::extension_host::tier::HostTier::Plugin
         };
         let resolution = tokio::task::spawn_blocking(move || {
-            let resolution = crate::dependencies::resolve_extension_host_runtime(
+            let resolution = codewhale_dependencies::resolve_extension_host_runtime(
                 options.runtime,
                 options.node_override.as_deref(),
                 options.bun_override.as_deref(),
+                crate::extension_host::bundle_sha256(),
             );
             let sandbox = resolution
                 .selected
@@ -5964,7 +5972,7 @@ async fn run_doctor(
         }
     }
 
-    match crate::dependencies::resolve_pandoc() {
+    match codewhale_dependencies::resolve_pandoc() {
         Some(_) => println!(
             "  {} pandoc: present → pandoc_convert tool registered",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
@@ -5987,7 +5995,7 @@ async fn run_doctor(
         }
     }
 
-    match crate::dependencies::resolve_tesseract() {
+    match codewhale_dependencies::resolve_tesseract() {
         Some(_) => {
             if cfg!(target_os = "macos") {
                 println!(
@@ -6032,7 +6040,7 @@ async fn run_doctor(
     // PDF text extraction is an optional integration. Codewhale itself stays
     // a single required executable; file and web tools report a typed
     // failed `binary_unavailable` result when Poppler is not installed.
-    match crate::dependencies::resolve_pdftotext() {
+    match codewhale_dependencies::resolve_pdftotext() {
         Some(_) => println!(
             "  {} pdftotext: available → PDF text extraction enabled",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
@@ -6698,7 +6706,7 @@ fn doctor_session_recovery_report(
             report.status = DoctorSessionRecoveryStatus::ScanFailed;
             report.error = Some(format!(
                 "could not inspect legacy session filenames at {}: {err}",
-                crate::utils::display_path(&report.legacy_sessions_path)
+                codewhale_util::utils::display_path(&report.legacy_sessions_path)
             ));
             return report;
         }
@@ -6711,7 +6719,7 @@ fn doctor_session_recovery_report(
                 report.status = DoctorSessionRecoveryStatus::ScanFailed;
                 report.error = Some(format!(
                     "could not inspect an entry under {}: {err}",
-                    crate::utils::display_path(&report.legacy_sessions_path)
+                    codewhale_util::utils::display_path(&report.legacy_sessions_path)
                 ));
                 return report;
             }
@@ -6722,7 +6730,7 @@ fn doctor_session_recovery_report(
                 report.status = DoctorSessionRecoveryStatus::ScanFailed;
                 report.error = Some(format!(
                     "could not inspect legacy session entry metadata under {}: {err}",
-                    crate::utils::display_path(&report.legacy_sessions_path)
+                    codewhale_util::utils::display_path(&report.legacy_sessions_path)
                 ));
                 return report;
             }
@@ -6747,7 +6755,7 @@ fn doctor_session_recovery_report(
                 };
                 report.error = Some(format!(
                     "could not inspect destination session metadata at {}: {shape}",
-                    crate::utils::display_path(&destination_path)
+                    codewhale_util::utils::display_path(&destination_path)
                 ));
                 return report;
             }
@@ -6766,7 +6774,7 @@ fn doctor_session_recovery_report(
                 report.status = DoctorSessionRecoveryStatus::ScanFailed;
                 report.error = Some(format!(
                     "could not inspect destination metadata at {}: {err}",
-                    crate::utils::display_path(&destination_path)
+                    codewhale_util::utils::display_path(&destination_path)
                 ));
                 return report;
             }
@@ -6799,20 +6807,20 @@ fn doctor_session_directory_is_safe(path: &Path, label: &str) -> std::result::Re
         Err(error) => {
             return Err(format!(
                 "could not inspect {label} at {}: {error}",
-                crate::utils::display_path(path)
+                codewhale_util::utils::display_path(path)
             ));
         }
     };
     if metadata.file_type().is_symlink() {
         return Err(format!(
             "could not inspect {label} at {}: path is a symlink",
-            crate::utils::display_path(path)
+            codewhale_util::utils::display_path(path)
         ));
     }
     if !metadata.file_type().is_dir() {
         return Err(format!(
             "could not inspect {label} at {}: path is not a directory",
-            crate::utils::display_path(path)
+            codewhale_util::utils::display_path(path)
         ));
     }
     Ok(true)
@@ -6878,16 +6886,16 @@ fn print_doctor_legacy_state_report(
                     println!(
                         "    {} {} exists but {} is missing",
                         "!".truecolor(warn_rgb.0, warn_rgb.1, warn_rgb.2),
-                        crate::utils::display_path(&entry.legacy_path),
-                        crate::utils::display_path(&entry.primary_path),
+                        codewhale_util::utils::display_path(&entry.legacy_path),
+                        codewhale_util::utils::display_path(&entry.primary_path),
                     );
                 }
                 DoctorLegacyStateStatus::Both => {
                     println!(
                         "    {} {} exists alongside primary {}; legacy data may still need review",
                         "!".truecolor(warn_rgb.0, warn_rgb.1, warn_rgb.2),
-                        crate::utils::display_path(&entry.legacy_path),
-                        crate::utils::display_path(&entry.primary_path),
+                        codewhale_util::utils::display_path(&entry.legacy_path),
+                        codewhale_util::utils::display_path(&entry.primary_path),
                     );
                 }
                 DoctorLegacyStateStatus::PrimaryOnly | DoctorLegacyStateStatus::Absent => {}
@@ -6929,7 +6937,7 @@ fn print_doctor_session_recovery_report(
                 "  {} legacy sessions: all {} filename(s) have regular-file counterparts under {}; descriptor contents were not compared and legacy originals remain preserved",
                 "✓".truecolor(ok_rgb.0, ok_rgb.1, ok_rgb.2),
                 report.legacy_session_file_count,
-                crate::utils::display_path(&report.primary_sessions_path),
+                codewhale_util::utils::display_path(&report.primary_sessions_path),
             );
         }
         DoctorSessionRecoveryStatus::MigrationPending
@@ -6943,7 +6951,7 @@ fn print_doctor_session_recovery_report(
                 "  {} legacy sessions: {label}; {} recoverable file(s) are absent from {}",
                 "!".truecolor(warn_rgb.0, warn_rgb.1, warn_rgb.2),
                 report.recoverable_file_count,
-                crate::utils::display_path(&report.primary_sessions_path),
+                codewhale_util::utils::display_path(&report.primary_sessions_path),
             );
             for entry in report
                 .recoverable
@@ -6953,8 +6961,8 @@ fn print_doctor_session_recovery_report(
                 println!(
                     "    {} {} -> {}",
                     "·".dimmed(),
-                    crate::utils::display_path(&entry.source_path),
-                    crate::utils::display_path(&entry.destination_path),
+                    codewhale_util::utils::display_path(&entry.source_path),
+                    codewhale_util::utils::display_path(&entry.destination_path),
                 );
             }
             if report.recoverable_file_count > DOCTOR_SESSION_RECOVERY_HUMAN_SAMPLE_LIMIT {
@@ -6966,8 +6974,8 @@ fn print_doctor_session_recovery_report(
             println!("    Safe recovery:");
             println!(
                 "      1. Back up {} and {} (if present).",
-                crate::utils::display_path(&report.legacy_sessions_path),
-                crate::utils::display_path(&report.primary_sessions_path),
+                codewhale_util::utils::display_path(&report.legacy_sessions_path),
+                codewhale_util::utils::display_path(&report.primary_sessions_path),
             );
             println!(
                 "      2. Close other Codewhale processes, then run `codewhale sessions`; migration adds only missing files, never overwrites primary files, and leaves legacy originals in place."
@@ -7734,7 +7742,7 @@ fn doctor_dsh_integration_lines(config: &Config, workspace: &Path) -> Vec<String
                 crate::integrations::dsh::status_line(&report),
                 format!(
                     "owned files: {} (overlay {})",
-                    crate::utils::display_path(&report.paths_root),
+                    codewhale_util::utils::display_path(&report.paths_root),
                     if report.overlay_present {
                         "present"
                     } else {
@@ -8497,7 +8505,7 @@ fn doctor_route_report(config: &Config) -> serde_json::Value {
         "base_url": {
             "redacted": redacted_base_url,
             "class": doctor_base_url_class(provider, &target.base_url),
-            "fingerprint": crate::utils::redacted_identifier_for_log(&target.base_url),
+            "fingerprint": codewhale_util::utils::redacted_identifier_for_log(&target.base_url),
         },
         "auth": {
             "scheme": doctor_auth_scheme(config),
@@ -9201,10 +9209,10 @@ fn rustc_version() -> String {
     // `RustC::available()` resolves the tool once, capturing the `--version`
     // banner as a side effect of the probe; reuse it instead of launching a
     // second rustc process (each launch loads libLLVM).
-    if !crate::dependencies::RustC::available() {
+    if !codewhale_dependencies::RustC::available() {
         return "not installed (only needed to build from source)".to_string();
     }
-    crate::dependencies::rustc_version_banner().unwrap_or_else(|| "unknown".to_string())
+    codewhale_dependencies::rustc_version_banner().unwrap_or_else(|| "unknown".to_string())
 }
 
 /// List saved sessions
@@ -10020,8 +10028,11 @@ async fn prepare_mounted_session(
         // later attach would then discard the checkpoint as stale. Then
         // capture the complete document and separate local goal.
         let _source_lease = manager.reserve_session_for_external_write(&id)?;
-        manager.promote_interrupted_checkpoint(&id);
+        let stale_checkpoint = manager.promote_interrupted_checkpoint(&id);
         let saved = manager.load_session_snapshot_bounded(&id, MAX_CANONICAL_HISTORY_BYTES)?;
+        if stale_checkpoint {
+            let _ = manager.clear_session_checkpoint(&id);
+        }
         // Project grants were captured for this launch before awaiting. The
         // existing restore changes App workspace, so it cannot silently apply
         // that snapshot to a different saved project. Match the same physical/
@@ -10516,15 +10527,15 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
     // text, so the review request has to keep room for the review itself.
     let review_reserve_percent =
         crate::route_budget::review_visible_text_reserve_percent(&request_route.model);
-    let review_budget = crate::tools::review_triage::budget_for(&review_triage)
-        .with_reasoning_floor(review_reserve_percent)
-        .with_money_cap(
-            args.money_cap_usd,
-            review_rates.map(|rates| (rates.input_usd_per_million, rates.output_usd_per_million)),
-        );
-    let review_allowance = client
-        .effective_max_output_tokens(&request_route.model)
-        .min(review_budget.max_output_tokens);
+    let review_budget = crate::tools::review_triage::budget_for(
+        &review_triage,
+        client.effective_max_output_tokens(&request_route.model),
+    )
+    .with_money_cap(
+        args.money_cap_usd,
+        review_rates.map(|rates| (rates.input_usd_per_million, rates.output_usd_per_million)),
+    );
+    let review_allowance = review_budget.max_output_tokens;
     let review_reserve_tokens = crate::route_budget::review_visible_text_reserve_tokens(
         &request_route.model,
         review_allowance,
@@ -11208,7 +11219,7 @@ fn run_gh_pr_diff(number: u32, repo: Option<&str>, view: &GhPullRequest) -> Resu
 }
 
 fn run_gh_pr_checkout(number: u32, repo: Option<&str>) -> Result<()> {
-    let mut cmd = crate::dependencies::Gh::command()
+    let mut cmd = codewhale_dependencies::Gh::command()
         .ok_or_else(|| anyhow::anyhow!("gh not found on PATH"))?;
     cmd.arg("pr").arg("checkout").arg(number.to_string());
     if let Some(r) = repo {
@@ -11228,7 +11239,7 @@ fn run_gh_pr_checkout(number: u32, repo: Option<&str>) -> Result<()> {
 /// belongs to. `gh api` needs an explicit repository path, unlike `gh pr`
 /// which infers it from the working directory.
 fn run_gh_repo_name() -> Result<String> {
-    let mut cmd = crate::dependencies::Gh::command()
+    let mut cmd = codewhale_dependencies::Gh::command()
         .ok_or_else(|| anyhow::anyhow!("gh not found on PATH"))?;
     cmd.arg("repo")
         .arg("view")
@@ -11626,7 +11637,7 @@ fn run_gh_post_pr_review(
     if !comments.is_empty() {
         payload["comments"] = serde_json::json!(comments);
     }
-    let mut cmd = crate::dependencies::Gh::command()
+    let mut cmd = codewhale_dependencies::Gh::command()
         .ok_or_else(|| anyhow::anyhow!("gh not found on PATH"))?;
     cmd.arg("api")
         .arg("--method")
@@ -11766,11 +11777,11 @@ fn collect_diff(
             pr_view.context("PR snapshot is required")?,
         )?
     } else {
-        let mut cmd = crate::dependencies::Git::review_command(workspace)?;
+        let mut cmd = codewhale_dependencies::Git::review_command(workspace)?;
         // Review repository content without executing its diff drivers.
         cmd.current_dir(workspace)
             .arg("diff")
-            .args(crate::dependencies::Git::REVIEW_DIFF_ARGS);
+            .args(codewhale_dependencies::Git::REVIEW_DIFF_ARGS);
         if args.staged {
             cmd.arg("--cached");
         }
@@ -11804,7 +11815,7 @@ fn collect_base_commit_messages(
     path: Option<&std::path::Path>,
     workspace: &std::path::Path,
 ) -> Result<String> {
-    let mut cmd = crate::dependencies::Git::review_command(workspace)?;
+    let mut cmd = codewhale_dependencies::Git::review_command(workspace)?;
     cmd.current_dir(workspace)
         .args([
             "log",
@@ -11844,7 +11855,7 @@ fn collect_base_commit_messages(
 /// becomes that one line; any other failure (dubious ownership, permissions,
 /// a corrupt repository) keeps git's stderr, which names the fix.
 fn ensure_review_workspace_is_git_repo(workspace: &std::path::Path) -> Result<()> {
-    let output = crate::dependencies::Git::review_command(workspace)?
+    let output = codewhale_dependencies::Git::review_command(workspace)?
         .current_dir(workspace)
         .args(["rev-parse", "--is-inside-work-tree"])
         .output()
@@ -11925,7 +11936,7 @@ fn run_apply(args: ApplyArgs) -> Result<()> {
     tmp.write_all(patch.as_bytes())?;
     let tmp_path = tmp.path().to_path_buf();
 
-    let output = crate::dependencies::Git::command()
+    let output = codewhale_dependencies::Git::command()
         .ok_or_else(|| anyhow::anyhow!("git not found on PATH"))?
         .arg("apply")
         .arg("--whitespace=nowarn")
@@ -15004,7 +15015,7 @@ fn exec_resumed_session_line(session_id: &str) -> String {
 }
 
 fn exec_stream_session_ref(session_id: &str) -> String {
-    crate::utils::redacted_identifier_for_log(session_id)
+    codewhale_util::utils::redacted_identifier_for_log(session_id)
 }
 
 /// Resume hint for the terminal `metadata` receipt. `metadata` carries only
@@ -15032,7 +15043,7 @@ fn exec_stream_final_answer_text(
     }
     let turn_start = messages.iter().rposition(|message| {
         message.role == Role::User
-            && !crate::runtime_handoff::is_runtime_owned_user_message(message)
+            && !codewhale_models::turn_classify::is_runtime_owned_user_message(message)
             && !message
                 .content
                 .iter()
@@ -15071,19 +15082,12 @@ fn persist_exec_session(
     session_id: Option<&str>,
     total_tokens: u64,
     turn_failure: Option<&str>,
-    session_manager: Option<&SessionManager>,
+    manager: &SessionManager,
     image_request_receipts: &[serde_json::Value],
+    checkpoint: Option<&crate::core::events::SessionCheckpointRequest>,
 ) -> Result<String> {
-    let default_manager;
-    let manager = if let Some(manager) = session_manager {
-        manager
-    } else {
-        default_manager = SessionManager::default_location()
-            .context("could not open session manager for save")?;
-        &default_manager
-    };
     let mut saved = if let Some(id) = session_id.filter(|id| !id.trim().is_empty()) {
-        match manager.load_session(id) {
+        match manager.load_session_snapshot(id) {
             Ok(existing) => session_manager::update_session(
                 existing,
                 messages,
@@ -15137,6 +15141,16 @@ fn persist_exec_session(
                 journal.leaf_id.clone_from(&leaf);
             }
         }
+    }
+    saved.make_storage_compatible();
+    if let Some(checkpoint) = checkpoint {
+        checkpoint
+            .validate_prefix(
+                &saved.metadata.id,
+                &saved.metadata.workspace,
+                &saved.messages,
+            )
+            .map_err(anyhow::Error::msg)?;
     }
     let id = saved.metadata.id.clone();
     manager

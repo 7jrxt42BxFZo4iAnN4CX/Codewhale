@@ -550,7 +550,8 @@ impl RuntimeEventJournal {
             "runs": runs,
         }))
         .map_err(|_| JOURNAL_SETUP_ERROR.to_string())?;
-        crate::utils::write_atomic(&self.path, &body).map_err(|_| JOURNAL_SETUP_ERROR.to_string())
+        codewhale_util::utils::write_atomic(&self.path, &body)
+            .map_err(|_| JOURNAL_SETUP_ERROR.to_string())
     }
 
     fn remove(&self) {
@@ -615,7 +616,7 @@ impl RuntimeEventJournal {
             "lease": lease,
         }))
         .map_err(|_| JOURNAL_SETUP_ERROR.to_string())?;
-        crate::utils::write_atomic(&self.active_index_path, &index)
+        codewhale_util::utils::write_atomic(&self.active_index_path, &index)
             .map_err(|_| JOURNAL_SETUP_ERROR.to_string())
     }
 
@@ -3220,7 +3221,7 @@ fn bounded_remote_error_message(error: &str) -> String {
     if message.is_empty() {
         return "The local model turn failed.".to_string();
     }
-    crate::utils::truncate_with_ellipsis(message, MAX_REMOTE_ERROR_MESSAGE_BYTES, "…")
+    codewhale_util::utils::truncate_with_ellipsis(message, MAX_REMOTE_ERROR_MESSAGE_BYTES, "…")
 }
 
 fn command_fingerprint(command: &RemoteCommand) -> String {
@@ -8141,7 +8142,7 @@ mod tests {
             "2026-08-08T12:00:00Z".to_string(),
             json!({ "turn": { "status": "completed" } }),
         );
-        crate::utils::write_atomic(
+        codewhale_util::utils::write_atomic(
             &journal_a.legacy_path,
             &serde_json::to_vec(&json!({
                 "schemaVersion": 1,
@@ -8175,9 +8176,12 @@ mod tests {
     fn corrupt_v2_quarantine_never_moves_an_unrelated_legacy_journal() {
         let dir = tempfile::tempdir().expect("journal tempdir");
         let journal = RuntimeEventJournal::open(dir.path(), "target_b", "session_shared").unwrap();
-        crate::utils::write_atomic(&journal.legacy_path, b"legacy target A recovery material")
-            .unwrap();
-        crate::utils::write_atomic(&journal.path, b"{not-json").unwrap();
+        codewhale_util::utils::write_atomic(
+            &journal.legacy_path,
+            b"legacy target A recovery material",
+        )
+        .unwrap();
+        codewhale_util::utils::write_atomic(&journal.path, b"{not-json").unwrap();
         assert_eq!(journal.load().unwrap_err(), JOURNAL_UNTRUSTED_ERROR);
         journal.quarantine_current();
         assert!(journal.legacy_path.exists());

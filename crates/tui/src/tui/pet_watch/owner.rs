@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::{appearance::Appearance, persistence::Store};
-use crate::fleet::files::{WorkspaceFile, same_file};
+use codewhale_util::files::{WorkspaceFile, same_file};
 
 const LEASE: Duration = Duration::from_secs(2);
 const OWNER_IDLE_EXIT: Duration = Duration::from_secs(600);

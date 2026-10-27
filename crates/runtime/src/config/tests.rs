@@ -2761,7 +2761,7 @@ fn subagents_enabled_reports_disable_precedence() {
 fn subagent_max_spawn_depth_defaults_allows_zero_and_preserves_owner_choice() {
     assert_eq!(
         Config::default().subagent_max_spawn_depth(),
-        codewhale_config::DEFAULT_SPAWN_DEPTH
+        codewhale_protocol::fleet::DEFAULT_SPAWN_DEPTH
     );
 
     let disabled = Config {

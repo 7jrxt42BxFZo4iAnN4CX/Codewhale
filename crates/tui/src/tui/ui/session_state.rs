@@ -219,21 +219,19 @@ fn record_ui_stall(app: &App, phase: &str, since_progress: Duration, bound: Dura
             suspects.join(", ")
         )
     });
-    crate::core::engine::turn_heartbeat::report_stall(
-        &crate::core::engine::turn_heartbeat::StallReport {
-            source: "ui",
-            phase: phase.to_string(),
-            detail,
-            turn_id: app.runtime_turn_id.clone(),
-            provider_request: app
-                .active_turn
-                .as_ref()
-                .and_then(|turn| turn.route.as_ref())
-                .map(|route| format!("{} / {}", route.provider_identity, route.model)),
-            since_progress,
-            bound: Some(bound),
-        },
-    );
+    codewhale_runtime::stall_report::report_stall(&codewhale_runtime::stall_report::StallReport {
+        source: "ui",
+        phase: phase.to_string(),
+        detail,
+        turn_id: app.runtime_turn_id.clone(),
+        provider_request: app
+            .active_turn
+            .as_ref()
+            .and_then(|turn| turn.route.as_ref())
+            .map(|route| format!("{} / {}", route.provider_identity, route.model)),
+        since_progress,
+        bound: Some(bound),
+    });
 }
 
 /// The UI watchdog, supervised by the engine heartbeat (#6184). Suspect

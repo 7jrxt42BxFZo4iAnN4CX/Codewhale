@@ -41,10 +41,10 @@ fn reviewed_bytes(
         .get(relative)
         .ok_or("avatar file is outside reviewed inventory")?;
     let path = review.canonical_root.join(relative);
-    crate::fleet::files::reject_linked_path(&review.canonical_root, &path)
+    codewhale_util::files::reject_linked_path(&review.canonical_root, &path)
         .map_err(|e| e.to_string())?;
-    let file =
-        crate::fs_confined::open_read(&review.canonical_root, &path).map_err(|e| e.to_string())?;
+    let file = codewhale_util::fs_confined::open_read(&review.canonical_root, &path)
+        .map_err(|e| e.to_string())?;
     if !file.metadata().map_err(|e| e.to_string())?.is_file() {
         return Err("avatar asset is not a regular file".into());
     }

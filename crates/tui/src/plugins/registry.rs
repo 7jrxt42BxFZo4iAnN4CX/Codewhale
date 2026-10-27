@@ -11,11 +11,11 @@ use super::managed_policy::{
     ManagedPluginPolicy, ManagedPolicyOutcome, load_managed_policy, resolve_managed_policy_path,
 };
 use super::manifest::PluginInventory;
-use super::path_identity::metadata_is_link_or_reparse;
-#[cfg(windows)]
-use super::path_identity::windows_file_identity;
 use super::types::{LoadedPlugin, PluginDiagnostic, PluginDiagnosticLevel, PluginTrustStatus};
 use codewhale_config::{PluginAuthority, PluginId};
+use codewhale_util::path_identity::metadata_is_link_or_reparse;
+#[cfg(windows)]
+use codewhale_util::path_identity::windows_file_identity;
 
 pub(crate) mod gc;
 
@@ -160,7 +160,7 @@ impl PluginRegistry {
         if let Some(problem) = super::runtime::native_entry_problem(&source.path, true) {
             return Err(problem.into());
         }
-        let file = super::manifest::open_bundle_file(&source.path)
+        let file = codewhale_util::bundle_file::open_bundle_file(&source.path)
             .map_err(|_| "Native preset cannot be opened")?;
         let mut bytes = Vec::new();
         file.take(64 * 1024 * 1024 + 1)
@@ -1001,7 +1001,7 @@ fn persist_plugin_state(mut temporary: tempfile::TempPath, path: &Path) -> Resul
         // MoveFileExW reports an HRESULT; the shared classifier reads the
         // Win32 code it wraps.
         let backoff = WIN32_ERROR::from_error(&error).and_then(|code| {
-            crate::utils::windows_publish_retry_delay(
+            codewhale_util::utils::windows_publish_retry_delay(
                 &std::io::Error::from_raw_os_error(code.0 as i32),
                 attempt,
             )
@@ -1628,7 +1628,7 @@ fn copy_bundle_tree_bounded(
             if budget.files > 4_096 {
                 return Err("Plugin content exceeded the staging file limit".to_string());
             }
-            let mut source_file = super::manifest::open_bundle_file(&source_path)
+            let mut source_file = codewhale_util::bundle_file::open_bundle_file(&source_path)
                 .map_err(|e| format!("failed to open plugin file without following links: {e}"))?;
             #[cfg(windows)]
             ensure_windows_registry_path_still_opened(&source_path, &source_file)?;
@@ -1710,7 +1710,7 @@ fn ensure_windows_registry_path_still_opened(path: &Path, opened: &fs::File) -> 
     } else {
         return Err("Plugin path changed into an unsupported object during staging".to_string());
     };
-    let current = super::manifest::open_bundle_identity_probe(path, expect_directory)
+    let current = codewhale_util::bundle_file::open_bundle_identity_probe(path, expect_directory)
         .map_err(|e| format!("failed to reopen staged source path safely: {e}"))?;
     let opened = windows_file_identity(opened)
         .map_err(|e| format!("failed to identify retained plugin handle: {e}"))?;

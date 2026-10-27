@@ -2425,7 +2425,7 @@ impl ShellManager {
         let args = exec_env.args();
 
         let mut cmd = Command::new(program);
-        crate::utils::suppress_console_window(&mut cmd);
+        codewhale_util::utils::suppress_console_window(&mut cmd);
         push_shell_args(&mut cmd, program, args);
         cmd.current_dir(working_dir)
             .stdout(Stdio::piped())
@@ -2580,7 +2580,7 @@ impl ShellManager {
         let args = exec_env.args();
 
         let mut cmd = Command::new(program);
-        crate::utils::suppress_console_window(&mut cmd);
+        codewhale_util::utils::suppress_console_window(&mut cmd);
         push_shell_args(&mut cmd, program, args);
         cmd.current_dir(working_dir)
             .stdin(Stdio::inherit())
@@ -2780,7 +2780,7 @@ impl ShellManager {
             }
         } else if persist_pending {
             let mut cmd = Command::new(program);
-            crate::utils::suppress_console_window(&mut cmd);
+            codewhale_util::utils::suppress_console_window(&mut cmd);
             push_shell_args(&mut cmd, program, args);
             cmd.current_dir(working_dir)
                 .stdin(Stdio::null())
@@ -2803,7 +2803,7 @@ impl ShellManager {
             (ShellChild::Process(child), None, None, None)
         } else {
             let mut cmd = Command::new(program);
-            crate::utils::suppress_console_window(&mut cmd);
+            codewhale_util::utils::suppress_console_window(&mut cmd);
             push_shell_args(&mut cmd, program, args);
             cmd.current_dir(working_dir).stdin(Stdio::piped());
             let combined_reader = if small_contract_mode {
@@ -4304,7 +4304,7 @@ pub(crate) fn sandboxed_runner_command(
             .map_err(|error| ToolError::permission_denied(error.to_string()))?;
     }
     let mut cmd = tokio::process::Command::new(exec_env.program());
-    crate::utils::suppress_tokio_console_window(&mut cmd);
+    codewhale_util::utils::suppress_tokio_console_window(&mut cmd);
     cmd.args(exec_env.args())
         .current_dir(&exec_env.cwd)
         .stdout(std::process::Stdio::piped())
@@ -4600,14 +4600,14 @@ fn hardened_readonly_argv(command: &str) -> Result<(String, Vec<String>)> {
                 let at = subcommand_index + 1;
                 argv.splice(
                     at..at,
-                    crate::dependencies::Git::REVIEW_DIFF_ARGS.map(String::from),
+                    codewhale_dependencies::Git::REVIEW_DIFF_ARGS.map(String::from),
                 );
             }
             "log" | "show" => {
                 let at = subcommand_index + 1;
                 argv.splice(
                     at..at,
-                    crate::dependencies::Git::REVIEW_DIFF_ARGS
+                    codewhale_dependencies::Git::REVIEW_DIFF_ARGS
                         .into_iter()
                         .chain(["--no-show-signature"])
                         .map(String::from),
@@ -5902,7 +5902,7 @@ impl ToolSpec for BashTool {
         // `action` as absent and fell through to the branch that runs
         // arbitrary code: `Bash{action: 3, command: "…"}` executed the
         // command. Every sibling family refuses a non-string action
-        // (`canonical_action::required_action`), and `Bash` cannot be the
+        // (`codewhale_tools::required_action`), and `Bash` cannot be the
         // lenient one. `optional_str` is the type-strictness lane's extractor:
         // absent or `null` takes the documented `run` default, anything else
         // is a `type_mismatch` naming the field and the type it needed.
@@ -6248,7 +6248,7 @@ impl ToolSpec for BashTool {
             let overrides = tokio::task::spawn_blocking(move || {
                 let mut overrides = std::collections::BTreeSet::new();
                 for dir in git_dirs {
-                    overrides.extend(crate::dependencies::Git::review_filter_overrides(&dir)?);
+                    overrides.extend(codewhale_dependencies::Git::review_filter_overrides(&dir)?);
                 }
                 anyhow::Ok(overrides)
             })
@@ -7607,7 +7607,7 @@ impl ToolSpec for NoteTool {
             let workspace = context.workspace.clone();
             let notes_path = context.notes_path.clone();
             let file = tokio::task::spawn_blocking(move || {
-                crate::fs_confined::open_append(&workspace, &notes_path)
+                codewhale_util::fs_confined::open_append(&workspace, &notes_path)
             })
             .await
             .map_err(|e| ToolError::execution_failed(format!("Failed to open notes file: {e}")))?

@@ -35,6 +35,8 @@ const SUPPORTED_METHODS: &[&str] = &[
     "tools/call",
     "resources/read",
     "prompts/get",
+    "skills/list",
+    "skills/get",
 ];
 
 #[derive(Clone)]
@@ -67,6 +69,7 @@ struct Session {
     decision_key: Mutex<Option<[u8; 32]>>,
     protocol_version: Mutex<Option<String>>,
     legacy_allowed: std::sync::atomic::AtomicBool,
+    list_changed: std::sync::atomic::AtomicBool,
     launched: Mutex<bool>,
     launch_ticket: Mutex<Option<Ticket>>,
     http: Option<http::HttpSession>,
@@ -125,6 +128,14 @@ impl Session {
     fn observe(&self, frame: &Value) -> Result<()> {
         if frame.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
             bail!("invalid MCP server frame");
+        }
+        if frame.get("id").is_none()
+            && frame["method"]
+                .as_str()
+                .is_some_and(crate::mcp::is_mcp_list_changed_method)
+        {
+            self.list_changed
+                .store(true, std::sync::atomic::Ordering::SeqCst);
         }
         if let Some(id) = frame.get("id") {
             let id = wire_id(id)?;
@@ -787,6 +798,7 @@ impl SdkTransport {
             legacy_allowed: std::sync::atomic::AtomicBool::new(
                 crate::mcp::is_legacy_sse_transport(config),
             ),
+            list_changed: std::sync::atomic::AtomicBool::new(false),
             launched: Mutex::new(false),
             launch_ticket: Mutex::new(None),
             http: client.map(|client| {
@@ -1197,6 +1209,11 @@ impl crate::mcp::McpTransport for SdkTransport {
     }
     fn probe_dead(&self) -> bool {
         self.session.cancel.is_cancelled() || self.host.has_exited() || self.host.is_retiring()
+    }
+    fn take_list_changed(&self) -> bool {
+        self.session
+            .list_changed
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
     }
     async fn shutdown(&mut self) {
         if let Some(session) = self

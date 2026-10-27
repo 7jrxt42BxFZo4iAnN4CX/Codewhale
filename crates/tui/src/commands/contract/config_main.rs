@@ -165,7 +165,7 @@ impl CommandConfigContext for ConfigAdapter<'_> {
     }
 
     fn display_path(&self, path: &std::path::Path) -> String {
-        crate::utils::display_path(path).to_string()
+        codewhale_util::utils::display_path(path).to_string()
     }
 }
 

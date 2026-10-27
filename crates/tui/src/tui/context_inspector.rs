@@ -150,7 +150,7 @@ pub fn build_context_inspector_text(app: &App, locale: Locale) -> String {
         out,
         "{}: {}",
         tr(locale, MessageId::CtxInspWorkspace),
-        crate::utils::display_path(&app.workspace)
+        codewhale_util::utils::display_path(&app.workspace)
     );
     if let Some(session_id) = app.current_session_id.as_deref() {
         let _ = writeln!(
@@ -802,7 +802,7 @@ impl ContextInspectorView {
         self.max = max;
         self.percent = percent;
         self.model = app.model_display_label();
-        self.workspace = crate::utils::display_path(&app.workspace);
+        self.workspace = codewhale_util::utils::display_path(&app.workspace);
         self.threshold = app.auto_compact_threshold_percent;
         self.locale = app.ui_locale;
         let max_f = f64::from(max.max(1));

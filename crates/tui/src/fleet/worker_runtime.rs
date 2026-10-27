@@ -2258,10 +2258,10 @@ mod tests {
     /// one of them into write-capable `custom`.
     #[test]
     fn the_two_fleet_drivers_agree_on_every_member_role_alias() {
-        let session = codewhale_workflow::PermissionCeiling {
+        let session = codewhale_protocol::fleet::PermissionCeiling {
             write: true,
             network_tool: true,
-            shell: codewhale_workflow::ShellCeiling::Full,
+            shell: codewhale_protocol::fleet::ShellCeiling::Full,
             delegation_depth: 2,
             tools: true,
         };
@@ -4587,7 +4587,10 @@ mod tests {
         .expect("worker spec with empty profiles");
 
         assert_eq!(spec.spawn_depth, 0);
-        assert_eq!(spec.max_spawn_depth, codewhale_config::DEFAULT_SPAWN_DEPTH);
+        assert_eq!(
+            spec.max_spawn_depth,
+            codewhale_protocol::fleet::DEFAULT_SPAWN_DEPTH
+        );
         assert_eq!(spec.max_spawn_depth, u32::MAX);
 
         let hardened = apply_exec_hardening(spec, &codewhale_config::FleetExecConfig::default());

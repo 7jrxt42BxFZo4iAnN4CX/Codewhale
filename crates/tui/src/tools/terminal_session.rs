@@ -266,7 +266,7 @@ fn load_durable(path: &Path) -> Option<DurableTerminalRecord> {
 fn persist_durable(path: &Path, record: &DurableTerminalRecord) -> Result<(), String> {
     let payload = serde_json::to_vec_pretty(record)
         .map_err(|error| format!("failed to encode terminal session state: {error}"))?;
-    crate::utils::write_atomic(path, &payload)
+    codewhale_util::utils::write_atomic(path, &payload)
         .map_err(|error| format!("failed to persist terminal session state: {error}"))
 }
 

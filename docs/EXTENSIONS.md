@@ -217,9 +217,25 @@ Tool and command invocations also expose frozen `sessionId`, `agentId` and
 `originTurnId` strings when Rust supplies them for that particular call. Tool invocations
 with an authoritative session and workspace also expose frozen `exec.agent.id`
 and `exec.agent.session.header.cwd`; root identity uses the session id and a
-child uses its supplied agent id. This is an inert read-only projection, not a
-general agent handle or session persistence service. Retaining it grants no
-operations after the invocation ends.
+child uses its supplied agent id. The projection has no methods and retaining it
+grants no operations after the invocation ends.
+
+An entry injecting `sessions` can call `ctx.sessions.flush(exec.agent.session)`
+while its directly invoked root tool holds an Engine checkpoint ticket. The
+argument must be that invocation's exact session object. The Engine captures
+its committed prefix and waits for the owning Runtime, terminal, or exec store
+to acknowledge persistence. Runtime retains its existing receipt-secret
+redaction policy; success describes that persisted projection. It does not
+include the running tool's future result or the plugin's separate journal.
+Runtime recovery retains later tool results without replaying the tool.
+Checkpoint-bearing Runtime turns require schema version 5; older readers
+refuse them rather than silently reconstructing incomplete history.
+
+`false` is reserved for a deliberately ephemeral host with no persistence
+backend. Missing authority, foreign or expired handles, child checkpoints,
+superseded writes, storage failure, cancellation and unavailable consumers
+reject. Cancellation can race a disk write, so a rejected call does not prove
+nothing was written. Other `sessions` methods remain unsupported.
 
 ## MCP definitions
 

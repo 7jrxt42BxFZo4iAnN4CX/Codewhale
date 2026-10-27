@@ -4,25 +4,13 @@ pub mod audit;
 /// Provider-free contract tests for the bundled starter pack (#4698).
 #[cfg(test)]
 mod catalog_matrix;
-mod frontmatter;
-pub(crate) use frontmatter::parse_frontmatter;
-use frontmatter::{SkillValidationMode, parse_frontmatter_bool, validate_skill_frontmatter};
-pub mod install;
+use codewhale_skill_install::frontmatter::{
+    SkillValidationMode, parse_frontmatter, parse_frontmatter_bool, validate_skill_frontmatter,
+};
 pub mod mutation;
-mod package_digest;
 pub mod recommend;
 pub mod roots;
 mod system;
-// Re-exports kept for documentation parity and downstream consumers; the
-// binary itself imports directly from `skills::install`. `#[allow(...)]`
-// silences the dead-code warning that fires because no `bin` source path
-// references these names through `skills::*`.
-#[allow(unused_imports)]
-pub use install::{
-    DEFAULT_MAX_SIZE_BYTES, DEFAULT_REGISTRY_URL, INSTALLED_FROM_MARKER, InstallOutcome,
-    InstallSource, InstalledSkill, RegistryDocument, RegistryEntry, RegistryFetchResult,
-    SkillSyncOutcome, SyncResult, UpdateResult, default_cache_skills_dir,
-};
 #[allow(unused_imports)]
 pub use roots::{
     CompatibleHarness, SkillRootAccess, SkillRootCatalog, SkillRootDescriptor, SkillRootId,
@@ -592,7 +580,7 @@ impl SkillRegistry {
         let mut registry = Self::default();
         let mut watched = WatchedPaths::default();
         if let Some(workspace) = confine_to
-            && let Err(error) = crate::fleet::files::reject_linked_path(workspace, dir)
+            && let Err(error) = codewhale_util::files::reject_linked_path(workspace, dir)
         {
             registry.push_warning(format!(
                 "{error}: workspace skills must stay inside the workspace."
@@ -712,7 +700,7 @@ impl SkillRegistry {
                     } else {
                         fs::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf())
                     };
-                    crate::fs_confined::read_to_string(&root, &skill_path)
+                    codewhale_util::fs_confined::read_to_string(&root, &skill_path)
                 }
                 None => match fs::metadata(&skill_path) {
                     Ok(meta) if !meta.is_file() => Err(std::io::Error::new(

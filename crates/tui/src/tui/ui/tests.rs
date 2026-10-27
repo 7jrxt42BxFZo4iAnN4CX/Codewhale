@@ -1837,7 +1837,10 @@ fn scroll_test_question_view() -> UserInputView {
     UserInputView::new(
         "question-scroll",
         UserInputRequest {
+                require_typed_answers: false,
             questions: vec![UserInputQuestion {
+                detail: None,
+                intent: None,
                 header: "Choose".into(),
                 id: "choice".into(),
                 question: "Review the transcript before choosing a path.".into(),
@@ -9688,7 +9691,7 @@ XML unless the user explicitly asks to debug sub-agent internals.\n\n\
                 matches!(block, ContentBlock::Text { text, .. } if text == "Fix the resume regression")
             })
     }));
-    let restored = crate::runtime_handoff::restored_subagent_checkpoint_display(
+    let restored = codewhale_models::turn_classify::restored_subagent_checkpoint_display(
         app.api_messages.last().expect("restored handoff"),
     )
     .expect("projected handoff");
@@ -13973,6 +13976,7 @@ async fn a_steer_settles_even_though_the_engine_stored_it_trimmed() {
         &mut app,
         &Config::default(),
         EngineEvent::SessionUpdated {
+            checkpoint: None,
             session_id: session,
             messages: std::sync::Arc::new(vec![
                 text_message("user", "original request"),
@@ -14051,6 +14055,7 @@ async fn steer_becomes_the_newest_transcript_entry_only_when_the_engine_records_
         &mut app,
         &Config::default(),
         EngineEvent::SessionUpdated {
+            checkpoint: None,
             session_id: session,
             messages: std::sync::Arc::new(vec![
                 text_message("user", "original request"),
@@ -14387,8 +14392,8 @@ async fn reserved_dispatch_waits_for_ui_acceptance_before_engine_op() {
         matches!(history_cells_from_message(&stored).as_slice(), [HistoryCell::System { content }] if content.contains(&command_message.display))
     );
     assert!(matches!(
-        crate::runtime_handoff::classify_user_turn_prompt(&stored),
-        crate::runtime_handoff::UserTurnPromptKind::NotPrompt
+        codewhale_models::turn_classify::classify_user_turn_prompt(&stored),
+        codewhale_models::turn_classify::UserTurnPromptKind::NotPrompt
     ));
     assert!(
         dispatch_composer_message(
@@ -16006,7 +16011,7 @@ fn turn_liveness_keeps_max_duration_exec_shell_wait_alive_with_heartbeat() {
 fn stall_heartbeat(
     phase: crate::core::engine::turn_heartbeat::TurnPhase,
     bound: Option<Duration>,
-    stall: Option<crate::core::engine::turn_heartbeat::StallReport>,
+    stall: Option<codewhale_runtime::stall_report::StallReport>,
 ) -> crate::core::engine::turn_heartbeat::HeartbeatSnapshot {
     crate::core::engine::turn_heartbeat::HeartbeatSnapshot {
         phase,
@@ -16016,8 +16021,8 @@ fn stall_heartbeat(
     }
 }
 
-fn stall_report(phase: &str) -> crate::core::engine::turn_heartbeat::StallReport {
-    crate::core::engine::turn_heartbeat::StallReport {
+fn stall_report(phase: &str) -> codewhale_runtime::stall_report::StallReport {
+    codewhale_runtime::stall_report::StallReport {
         source: "engine",
         phase: phase.to_string(),
         detail: Some("mock / model".to_string()),
@@ -16141,7 +16146,8 @@ fn stall_engine_report_shows_phase_and_held_queue() {
 /// live regardless of elapsed time while they report progress.
 #[test]
 fn stall_prior_session_subagent_is_suspect_but_long_running_child_is_live() {
-    use crate::core::engine::turn_heartbeat::{TurnPhase, set_test_stall_record_dir};
+    use crate::core::engine::turn_heartbeat::TurnPhase;
+    use codewhale_runtime::stall_report::set_test_stall_record_dir;
     let dir = tempfile::tempdir().expect("tempdir");
     set_test_stall_record_dir(Some(dir.path().to_path_buf()));
 
@@ -16267,7 +16273,7 @@ fn stall_recovery_hands_held_queued_message_back_to_composer() {
 /// a stall record.
 #[tokio::test]
 async fn stall_dispatch_task_overrun_reports_and_restores_message() {
-    use crate::core::engine::turn_heartbeat::set_test_stall_record_dir;
+    use codewhale_runtime::stall_report::set_test_stall_record_dir;
     let dir = tempfile::tempdir().expect("tempdir");
     set_test_stall_record_dir(Some(dir.path().to_path_buf()));
     let mut app = create_test_app();
@@ -16357,12 +16363,14 @@ fn turn_liveness_preserves_pending_user_input_beyond_tool_timeout() {
         app.pending_user_input_prompt = Some((
             "question-1".into(),
             crate::tools::user_input::UserInputRequest {
+                require_typed_answers: false,
                 questions: Vec::new(),
             },
         ));
         app.view_stack.push(UserInputView::new(
             "question-1",
             crate::tools::user_input::UserInputRequest {
+                require_typed_answers: false,
                 questions: Vec::new(),
             },
             app.ui_locale,
@@ -16417,6 +16425,7 @@ fn turn_liveness_preserves_pending_user_input_beyond_tool_timeout() {
 
 fn install_pending_question(app: &mut App, id: &str) {
     let request = crate::tools::user_input::UserInputRequest {
+        require_typed_answers: false,
         questions: Vec::new(),
     };
     app.pending_user_input_prompt = Some((id.into(), request.clone()));
@@ -16477,6 +16486,13 @@ fn user_input_completion_preserves_newer_question_and_dispatch() {
     // Neither a previous request nor a wrapping call's different id owns it.
     observe_human_request_settlement(&mut app, &completion("input-old"));
     observe_human_request_settlement(&mut app, &completion("outer-call"));
+    observe_human_request_settlement(
+        &mut app,
+        &EngineEvent::UserInputClosed {
+            id: "input-old".into(),
+            outcome: crate::core::events::UserInputClosedOutcome::Cancelled,
+        },
+    );
     apply_user_input_submission_result(&mut app, "input-old", Ok(()));
     assert_eq!(app.turn_last_activity_at, Some(activity));
     assert_eq!(
@@ -16504,6 +16520,16 @@ fn user_input_completion_preserves_newer_question_and_dispatch() {
     assert!(app.pending_user_input_prompt.is_some());
     assert!(app.view_stack.contains_kind(ModalKind::UserInput));
     assert_eq!(app.status_toasts.len(), 1);
+    observe_human_request_settlement(
+        &mut app,
+        &EngineEvent::UserInputClosed {
+            id: "input-new".into(),
+            outcome: crate::core::events::UserInputClosedOutcome::Answered,
+        },
+    );
+    assert!(app.pending_user_input_prompt.is_none());
+    assert!(!app.view_stack.contains_kind(ModalKind::UserInput));
+    assert_eq!(app.turn_last_activity_at, Some(activity));
 }
 
 #[test]
@@ -17798,7 +17824,7 @@ fn active_deleted_origin_mailbox_usage_does_not_accrue_or_restore_the_session() 
     app.current_session_metadata = Some(session.metadata.clone());
     let origin_scope = crate::cost_status::scope_token();
     let owner = "interactive:active-deleted-origin:origin-turn";
-    crate::cost_status::register_persistent_interactive_runtime_usage_sink_for_test(
+    crate::usage_persistence::register_persistent_interactive_runtime_usage_sink_for_test(
         owner,
         origin_scope,
         &session.metadata.id,
@@ -19103,6 +19129,7 @@ fn local_cancel_marks_late_stream_events_for_suppression() {
     ));
     assert!(suppress_engine_event_after_local_cancel(
         &EngineEvent::SessionUpdated {
+            checkpoint: None,
             session_id: "session".to_string(),
             messages: std::sync::Arc::new(Vec::new()),
             system_prompt: None,
@@ -24785,7 +24812,7 @@ fn auto_route_receipt_survives_session_snapshot_and_restore() {
     assert_eq!(saved.receipt, receipt);
     assert_eq!(
         saved.effective_reasoning_effort,
-        Some(crate::work_graph::ReasoningEffortTier::High)
+        Some(codewhale_models::reasoning_effort_tier::ReasoningEffortTier::High)
     );
 
     let mut restored_app = create_test_app();
@@ -26621,7 +26648,7 @@ fn turn_inspector_timeline_numbers_semantic_entries_and_checkpoint_actions() {
     let workspace = tmp.path().join("workspace");
     std::fs::create_dir_all(&workspace).expect("workspace");
     std::fs::write(workspace.join("src.rs"), "fn main() {}\n").expect("source");
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace).expect("snapshot repo");
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&workspace).expect("snapshot repo");
     repo.snapshot("pre-turn:12: Fix timeline")
         .expect("pre-turn snapshot");
 
@@ -28433,6 +28460,7 @@ async fn stale_parent_approval_is_resolved_unavailable_not_dropped() {
     let question = EngineEvent::UserInputRequired {
         id: "stale-question".to_string(),
         request: crate::tools::user_input::UserInputRequest {
+            require_typed_answers: false,
             questions: Vec::new(),
         },
     };
@@ -30775,7 +30803,7 @@ mod work_sidebar_projection_tests {
 
         // The runtime helper should step back to the start of the char
         // and append the ellipsis without panicking.
-        let truncated = crate::utils::truncate_with_ellipsis(&summary, 60, "…");
+        let truncated = codewhale_util::utils::truncate_with_ellipsis(&summary, 60, "…");
         assert_eq!(truncated, format!("{prefix}…"));
     }
 
@@ -33492,6 +33520,7 @@ fn stale_session_projection_cannot_rewind_a_host_launch() {
         &mut app,
         &Config::default(),
         EngineEvent::SessionUpdated {
+            checkpoint: None,
             session_id: previous,
             messages: std::sync::Arc::new(vec![text_message("user", "stale transcript")]),
             system_prompt: Some(SystemPrompt::Text("stale prompt".into())),
@@ -33514,10 +33543,96 @@ fn stale_session_projection_cannot_rewind_a_host_launch() {
     assert_eq!(app.input, "typing remains responsive");
     assert_eq!(app.history.len(), history_length);
     assert_eq!(app.status_toasts.len(), notice_count);
+    app.runtime_turn_id = Some("checkpoint-turn".into());
+    app.is_loading = true;
+    for invalid in ["session", "turn", "workspace", "child", "withdrawn"] {
+        let snapshot = std::sync::Arc::new(crate::core::ops::SessionSnapshot {
+            session_id: if invalid == "session" {
+                "stale-session".into()
+            } else {
+                current.clone()
+            },
+            messages: vec![text_message("user", "must not replace the transcript")],
+            total_tokens: 0,
+            model: model.clone(),
+            model_provider: "fixture".into(),
+            model_provider_id: None,
+            workspace: if invalid == "workspace" {
+                PathBuf::from("/must-not-be-adopted")
+            } else {
+                workspace.clone()
+            },
+            system_prompt: None,
+            instruction_assembly: None,
+            mode: "agent".into(),
+        });
+        let (reply, mut answer) = tokio::sync::oneshot::channel();
+        let request = crate::core::events::SessionCheckpointRequest::new(
+            crate::core::events::SessionCheckpointCaller {
+                session_id: snapshot.session_id.clone(),
+                agent_id: (invalid == "child").then(|| "child".into()),
+                turn_id: if invalid == "turn" {
+                    "wrong-turn".into()
+                } else {
+                    "checkpoint-turn".into()
+                },
+                call_id: "checkpoint-call".into(),
+                workspace: snapshot.workspace.clone(),
+            },
+            snapshot.clone(),
+            crate::core::events::SessionCheckpointRequest::prefix_hash(&snapshot.messages).unwrap(),
+            crate::core::events::SessionCheckpointProjection::Exact,
+            tokio_util::sync::CancellationToken::new(),
+            reply,
+        );
+        if invalid == "withdrawn" {
+            request.withdraw.cancel();
+        }
+        assert!(
+            !super::event_loop::apply_engine_session_projection(
+                &mut app,
+                &Config::default(),
+                EngineEvent::SessionUpdated {
+                    checkpoint: Some(request),
+                    session_id: snapshot.session_id.clone(),
+                    messages: std::sync::Arc::new(snapshot.messages.clone()),
+                    system_prompt: None,
+                    instruction_assembly: None,
+                    model: snapshot.model.clone(),
+                    workspace: snapshot.workspace.clone(),
+                },
+            ),
+            "{invalid}"
+        );
+        assert!(
+            answer
+                .try_recv()
+                .expect("explicit checkpoint refusal")
+                .is_err(),
+            "{invalid}"
+        );
+        assert_eq!(app.current_session_id.as_deref(), Some(current.as_str()));
+        assert_eq!(
+            *app.api_messages,
+            vec![text_message("user", "current host transcript")]
+        );
+        assert_eq!(
+            app.system_prompt,
+            Some(SystemPrompt::Text("current prompt".into()))
+        );
+        assert_eq!(app.workspace, workspace);
+        assert_eq!(app.model, model);
+        assert_eq!(app.input, "typing remains responsive");
+        assert_eq!(app.history.len(), history_length);
+        assert_eq!(app.status_toasts.len(), notice_count);
+    }
+    app.runtime_turn_id = None;
+    app.is_loading = false;
     assert!(super::event_loop::apply_engine_session_projection(
         &mut app,
         &Config::default(),
         EngineEvent::SessionUpdated {
+            checkpoint: None,
             session_id: current.clone(),
             messages: std::sync::Arc::new(vec![
                 text_message("user", "expected engine transcript",)
@@ -33668,6 +33783,7 @@ fn notification_input_failure_keeps_the_request_and_success_retires_only_its_act
     app.pending_user_input_prompt = Some((
         "input-a".into(),
         crate::tools::user_input::UserInputRequest {
+            require_typed_answers: false,
             questions: Vec::new(),
         },
     ));
@@ -33717,6 +33833,7 @@ fn notification_input_result_never_reopens_or_clears_a_different_pending_questio
     app.pending_user_input_prompt = Some((
         "input-b".into(),
         crate::tools::user_input::UserInputRequest {
+            require_typed_answers: false,
             questions: Vec::new(),
         },
     ));

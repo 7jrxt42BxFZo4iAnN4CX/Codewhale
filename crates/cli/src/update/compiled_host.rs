@@ -265,7 +265,7 @@ impl Prepared {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub(super) fn owned_for_uninstall(directory: &Path, target: &str) -> Result<Vec<GuardedFile>> {
     let Some(mut receipt) = GuardedFile::open_bounded(directory, RECEIPT, 64 * 1024)? else {
         return Ok(Vec::new());
@@ -278,8 +278,9 @@ pub(super) fn owned_for_uninstall(directory: &Path, target: &str) -> Result<Vec<
         .find(|host| host.target == target)
         .context("installed compiled-host receipt has no matching target")?;
     let mut files = Vec::new();
+    let host_name = format!("codewhale-extension-host{}", std::env::consts::EXE_SUFFIX);
     for (name, expected) in [
-        ("codewhale-extension-host", host.sha256.as_str()),
+        (host_name.as_str(), host.sha256.as_str()),
         (
             "codewhale-extension-host.LICENSES.txt",
             host.notices_sha256.as_str(),

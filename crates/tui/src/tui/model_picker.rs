@@ -40,7 +40,6 @@ use crate::tui::views::{
     ActionHint, ListDetailLayout, ModalKind, ModalView, ViewAction, ViewEvent, render_modal_footer,
     render_underwater_surface,
 };
-use crate::utils::format_context_window;
 use codewhale_config::ProviderKind;
 use codewhale_config::catalog::reviewed::constants::DEEPSEEK_ALIAS_REPLACEMENT;
 use codewhale_localization::{Locale, MessageId, tr};
@@ -50,6 +49,7 @@ use codewhale_runtime::codex_model_roster::{
 };
 use codewhale_runtime::config::Config;
 use codewhale_runtime::settings::PinnedModel;
+use codewhale_util::utils::format_context_window;
 
 /// Thinking-effort rows shown for DeepSeek-style providers, in the order
 /// DeepSeek behaviorally distinguishes them.

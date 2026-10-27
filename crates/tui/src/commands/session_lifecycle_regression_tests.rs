@@ -150,7 +150,7 @@ fn save_preserves_latest_auto_route_receipt() {
     assert_eq!(route.receipt, receipt);
     assert_eq!(
         route.effective_reasoning_effort,
-        Some(crate::work_graph::ReasoningEffortTier::ThinkingEnabledGranularityUnavailable)
+        Some(codewhale_models::reasoning_effort_tier::ReasoningEffortTier::ThinkingEnabledGranularityUnavailable)
     );
 }
 

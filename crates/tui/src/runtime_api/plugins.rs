@@ -416,6 +416,9 @@ async fn run_plugin_mutation(
             if error
                 .downcast_ref::<crate::plugins::install::PluginNameConflict>()
                 .is_some()
+                || error
+                    .downcast_ref::<crate::plugins::install::PluginContentMismatch>()
+                    .is_some()
             {
                 ApiError::conflict(format!("plugin mutation failed: {error:#}"))
             } else {

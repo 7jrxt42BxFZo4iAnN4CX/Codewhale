@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::fleet::files::WorkspaceFile;
 use codewhale_sandbox::SandboxPolicy;
+use codewhale_util::files::WorkspaceFile;
 
 const APPROVAL_LOG_FILE: &str = "approval_receipts.jsonl";
 const APPROVAL_LOCK_FILE: &str = "approval_receipts.lock";

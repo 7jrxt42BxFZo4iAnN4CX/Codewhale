@@ -171,6 +171,8 @@ pub const METHODS: &[MethodSpec] = &[
     row(Direction::HostToCore, "registry/register", true),
     row(Direction::HostToCore, "registry/unregister", true),
     row(Direction::HostToCore, "core/call", true),
+    row(Direction::HostToCore, "session/checkpoint", true),
+    row(Direction::HostToCore, "user-questions/ask", true),
     MethodSpec {
         tiers: &[HostTier::Builtin],
         ..row(Direction::HostToCore, "proc/launch", true)
@@ -528,6 +530,23 @@ pub struct CoreCallParams {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
+pub struct SessionCheckpointParams {
+    pub owner: OwnerRef,
+    pub ticket: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct UserQuestionParams {
+    pub owner: OwnerRef,
+    pub ticket: String,
+    pub questions: Vec<crate::tools::user_input::UserInputQuestion>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct FaultedParams {
     pub owner: OwnerRef,
     pub error: String,
@@ -711,6 +730,8 @@ pub enum HostRequest {
     Register(RegisterParams),
     Unregister(UnregisterParams),
     CoreCall(CoreCallParams),
+    SessionCheckpoint(SessionCheckpointParams),
+    UserQuestion(UserQuestionParams),
     ExecutionRedeem(ExecutionRedeemParams),
     ProcClose(ProcSessionParams),
     NetStart(ProcLaunchParams),
@@ -731,6 +752,8 @@ impl HostRequest {
             Self::Register(params) => &params.owner.plugin_id,
             Self::Unregister(params) => &params.owner.plugin_id,
             Self::CoreCall(params) => &params.owner.plugin_id,
+            Self::SessionCheckpoint(params) => &params.owner.plugin_id,
+            Self::UserQuestion(params) => &params.owner.plugin_id,
             Self::ExecutionRedeem(params) => &params.owner.plugin_id,
             Self::ProcClose(params) => &params.owner.plugin_id,
             Self::NetClose(params) => &params.owner.plugin_id,
@@ -848,6 +871,14 @@ pub fn parse_host_message(value: Value, tier: HostTier) -> Result<HostMessage, P
             id,
             request: HostRequest::Unregister(params(&method, p)?),
         },
+        ("user-questions/ask", Some(id)) => HostMessage::Request {
+            id,
+            request: HostRequest::UserQuestion(params(&method, p)?),
+        },
+        ("session/checkpoint", Some(id)) => HostMessage::Request {
+            id,
+            request: HostRequest::SessionCheckpoint(params(&method, p)?),
+        },
         ("core/call", Some(id)) => HostMessage::Request {
             id,
             request: HostRequest::CoreCall(params(&method, p)?),
@@ -950,6 +981,12 @@ impl HostMessage {
                 }
                 HostRequest::ExecutionRedeem(p) => request_value(*id, "exec/redeem", to_value(p)),
                 HostRequest::CoreCall(p) => request_value(*id, "core/call", to_value(p)),
+                HostRequest::UserQuestion(p) => {
+                    request_value(*id, "user-questions/ask", to_value(p))
+                }
+                HostRequest::SessionCheckpoint(p) => {
+                    request_value(*id, "session/checkpoint", to_value(p))
+                }
                 HostRequest::ProcClose(p) => request_value(*id, "proc/close", to_value(p)),
                 HostRequest::NetStart(p) => request_value(*id, "net/start", to_value(p)),
                 HostRequest::NetFetch(p) => request_value(*id, "net/fetch", to_value(p)),
@@ -1048,6 +1085,10 @@ pub struct ToolCallParams {
     /// then has no way to ask the core for anything.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ticket: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint_ticket: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub question_ticket: Option<String>,
     /// Per-invocation identity; never cached at activation or by the host root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,

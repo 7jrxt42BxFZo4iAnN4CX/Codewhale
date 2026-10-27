@@ -174,7 +174,7 @@ fn billing_to_wire(billing: &RouteBillingEnvelope) -> wire::RouteBillingEnvelope
         openrouter_vendor: billing
             .openrouter_vendor
             .as_deref()
-            .map(crate::cost_status::sanitize_persisted_route_label),
+            .map(codewhale_runtime::safe_label::sanitize_persisted_route_label),
         billing_surface: billing.billing_surface.clone(),
         endpoint_fingerprint: billing.endpoint_fingerprint.clone(),
         provider_live_pricing: billing
@@ -301,7 +301,7 @@ fn mcp_snapshot_to_wire(snapshot: &McpManagerSnapshot) -> wire::McpManagerSnapsh
 /// `EventMsg::McpSessionBoot`, which every SSE and stream-JSON consumer
 /// receives and any frame-retaining log keeps.
 ///
-/// URLs reuse the existing masking in `client::redact_url_for_display`. Stdio
+/// URLs reuse the existing masking in `codewhale_secrets::sanitize::redact_url_for_display`. Stdio
 /// keeps the program name and elides the arguments, because a secret there can
 /// be positional and is not reliably recognizable by key.
 fn redacted_command_or_url(raw: &str) -> String {
@@ -315,7 +315,7 @@ fn redacted_command_or_url(raw: &str) -> String {
     // mentions a URL — `docker run -e TOKEN=… img --url https://…` — would
     // reach the wire with its positional secret intact.
     if !trimmed.is_empty() && !trimmed.contains(char::is_whitespace) && trimmed.contains("://") {
-        return crate::client::redact_url_for_display(trimmed);
+        return codewhale_secrets::sanitize::redact_url_for_display(trimmed);
     }
     if let Some((program, rest)) = trimmed.split_once(char::is_whitespace)
         && !rest.trim().is_empty()
@@ -345,6 +345,7 @@ fn roster_row_to_wire(row: &AgentRosterRow) -> wire::AgentRosterRow {
 
 fn user_input_to_wire(request: &UserInputRequest) -> wire::UserInputRequest {
     wire::UserInputRequest {
+        require_typed_answers: request.require_typed_answers,
         questions: request
             .questions
             .iter()
@@ -352,6 +353,15 @@ fn user_input_to_wire(request: &UserInputRequest) -> wire::UserInputRequest {
                 header: question.header.clone(),
                 id: question.id.clone(),
                 question: question.question.clone(),
+                detail: question.detail.clone(),
+                intent: question.intent.as_ref().map(|intent| match intent {
+                    crate::tools::user_input::UserInputIntent::PlanReview { approve, call_id } => {
+                        codewhale_protocol::UserInputIntentEvent::PlanReview {
+                            approve: approve.clone(),
+                            call_id: call_id.clone(),
+                        }
+                    }
+                }),
                 options: question
                     .options
                     .iter()
@@ -963,7 +973,27 @@ pub fn event_to_protocol(event: &Event, ids: &ProtocolIds) -> wire::EventMsg {
             id: id.clone(),
             request: user_input_to_wire(request),
         },
+        Event::UserInputClosed { id, outcome } => wire::EventMsg::UserInputClosed {
+            thread_id,
+            session_id,
+            id: id.clone(),
+            outcome: match outcome {
+                crate::core::events::UserInputClosedOutcome::Answered => {
+                    wire::UserInputClosedOutcome::Answered
+                }
+                crate::core::events::UserInputClosedOutcome::Cancelled => {
+                    wire::UserInputClosedOutcome::Cancelled
+                }
+                crate::core::events::UserInputClosedOutcome::TimedOut => {
+                    wire::UserInputClosedOutcome::TimedOut
+                }
+                crate::core::events::UserInputClosedOutcome::Unavailable => {
+                    wire::UserInputClosedOutcome::Unavailable
+                }
+            },
+        },
         Event::SessionUpdated {
+            checkpoint: _,
             session_id: engine_session_id,
             messages,
             system_prompt,
@@ -1566,8 +1596,8 @@ mod tests {
                 base_url: Some("https://example.invalid".into()),
             },
             Event::WorkspaceSnapshotTaken {
-                snapshot: crate::snapshot::WorkspaceSnapshotRef {
-                    kind: crate::snapshot::WorkspaceSnapshotKind::Tool,
+                snapshot: codewhale_snapshot::WorkspaceSnapshotRef {
+                    kind: codewhale_snapshot::WorkspaceSnapshotKind::Tool,
                     snapshot_id: "a".repeat(40),
                     tree_id: "b".repeat(40),
                     session_id: "thr_1".into(),

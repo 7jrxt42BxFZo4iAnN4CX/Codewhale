@@ -152,7 +152,7 @@ pub(crate) const BUILTIN_MODULES: &[BuiltinModule] = &[
     },
     BuiltinModule {
         id: "mcp",
-        source_sha256: "a176634ff596dc99ad6e3ee388939231d65d6998253839a1e9ebf3a350d2fb76",
+        source_sha256: "50516f554ba8786b3282c8f576a11e86df189ac7fd226176a5d1b618042246ea",
         tools: &[],
     },
 ];

@@ -338,9 +338,10 @@ impl ProviderLivePricingQuote {
     ) -> Option<Self> {
         let provider_identity = provider_identity.trim();
         let wire_model = wire_model.trim();
-        if crate::cost_status::sanitize_persisted_route_label(provider_identity)
+        if codewhale_runtime::safe_label::sanitize_persisted_route_label(provider_identity)
             != provider_identity
-            || crate::cost_status::sanitize_persisted_route_label(wire_model) != wire_model
+            || codewhale_runtime::safe_label::sanitize_persisted_route_label(wire_model)
+                != wire_model
         {
             return None;
         }
@@ -408,9 +409,10 @@ impl ProviderLivePricingQuote {
         let provider_identity = provider_identity.trim();
         let wire_model = wire_model.trim();
         if self.provider != provider
-            || crate::cost_status::sanitize_persisted_route_label(&self.provider_identity)
-                != self.provider_identity
-            || crate::cost_status::sanitize_persisted_route_label(&self.wire_model)
+            || codewhale_runtime::safe_label::sanitize_persisted_route_label(
+                &self.provider_identity,
+            ) != self.provider_identity
+            || codewhale_runtime::safe_label::sanitize_persisted_route_label(&self.wire_model)
                 != self.wire_model
             || self.endpoint_fingerprint.len() != 64
             || !self

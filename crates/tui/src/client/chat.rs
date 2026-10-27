@@ -31,15 +31,16 @@ use codewhale_models::{
 };
 use codewhale_runtime::logging;
 
+use super::CodewhaleClient;
 use super::prepared::WireDialect;
+use super::reasoning_effort::apply_reasoning_effort;
 use super::role_placement::{RolePlacement, role_placement};
-use super::wire::{extract_sse_data_value, flush_sse_line, push_sse_event_data, take_sse_line};
-use super::{
-    CodewhaleClient, ERROR_BODY_MAX_BYTES, SSE_BACKPRESSURE_HIGH_WATERMARK,
-    SSE_BACKPRESSURE_SLEEP_MS, SSE_MAX_LINES_PER_CHUNK, acquire_stream_buffer,
-    apply_reasoning_effort, bounded_error_text, from_api_tool_name, parse_usage,
-    release_stream_buffer, system_to_instructions, to_api_tool_name,
+use super::wire::{
+    ERROR_BODY_MAX_BYTES, SSE_BACKPRESSURE_HIGH_WATERMARK, SSE_BACKPRESSURE_SLEEP_MS,
+    SSE_MAX_LINES_PER_CHUNK, acquire_stream_buffer, bounded_error_text, from_api_tool_name,
+    parse_usage, release_stream_buffer, system_to_instructions, to_api_tool_name,
 };
+use super::wire::{extract_sse_data_value, flush_sse_line, push_sse_event_data, take_sse_line};
 use codewhale_config::route::RouteLimits;
 use codewhale_models::Role;
 
@@ -1110,7 +1111,7 @@ fn sanitize_moonshot_chat_tools(chat_tools: &mut Vec<Value>) -> Vec<String> {
         let Some(parameters) = function.get_mut("parameters") else {
             return true;
         };
-        match crate::tools::schema_sanitize::sanitize_for_kimi_parameters(parameters) {
+        match codewhale_models::schema_sanitize::sanitize_for_kimi_parameters(parameters) {
             Ok(note) => {
                 if let Some(note) = note {
                     let description = function
@@ -1244,7 +1245,7 @@ pub(crate) fn build_chat_wire_body(
                     continue;
                 };
                 let note = function.get_mut("parameters").and_then(|parameters| {
-                    crate::tools::schema_sanitize::sanitize_for_xai_parameters(parameters)
+                    codewhale_models::schema_sanitize::sanitize_for_xai_parameters(parameters)
                 });
                 if let Some(note) = note
                     && let Some(description) = function
@@ -2762,7 +2763,7 @@ fn build_chat_messages_with_reasoning(
         .rev()
         .find_map(|(index, message)| {
             (index > 0
-                && crate::compaction::is_wire_compaction_checkpoint_message(message)
+                && codewhale_models::turn_classify::is_wire_compaction_checkpoint_message(message)
                 && messages[index - 1]
                     .content
                     .iter()
@@ -2773,8 +2774,8 @@ fn build_chat_messages_with_reasoning(
         messages[..summary_index]
             .iter()
             .rposition(|message| {
-                crate::runtime_handoff::classify_user_turn_prompt(message)
-                    != crate::runtime_handoff::UserTurnPromptKind::NotPrompt
+                codewhale_models::turn_classify::classify_user_turn_prompt(message)
+                    != codewhale_models::turn_classify::UserTurnPromptKind::NotPrompt
             })
             .or_else(|| {
                 messages[..summary_index]
@@ -2999,7 +3000,9 @@ fn build_chat_messages_with_reasoning(
                 }
                 if (Some(message_index) == summary_index
                     || Some(message_index) == summary_target
-                    || crate::compaction::is_wire_compaction_checkpoint_message(message)
+                    || codewhale_models::turn_classify::is_wire_compaction_checkpoint_message(
+                        message,
+                    )
                     || crate::runtime_handoff::is_agent_topology_checkpoint(message)
                     || crate::runtime_handoff::is_restored_agent_topology_checkpoint(message))
                     && let Some(previous) = out.last_mut()
@@ -3044,7 +3047,9 @@ fn build_chat_messages_with_reasoning(
                             Some(&content_blocks),
                         );
                         let content =
-                            crate::image_attach::tool_result_text_with_omission(&content, omitted);
+                            codewhale_models::image_window::tool_result_text_with_omission(
+                                &content, omitted,
+                            );
                         let wire_result = compact_tool_result_for_wire(
                             &tool_info.tool_name,
                             &tool_info.input,
@@ -6748,8 +6753,8 @@ mod image_block_wire_tests {
     fn quoted_compaction_marker_does_not_reorder_user_wire_messages() {
         // The current marker, and the legacy one older sessions still carry.
         for marker in [
-            crate::compaction::COMPACTION_SUMMARY_MARKER,
-            crate::compaction::LEGACY_V2_COMPACTION_SUMMARY_MARKER,
+            codewhale_models::turn_classify::COMPACTION_SUMMARY_MARKER,
+            codewhale_models::turn_classify::LEGACY_V2_COMPACTION_SUMMARY_MARKER,
         ] {
             let quote = format!("Please explain: {marker}");
             let messages: Vec<Message> = serde_json::from_value(serde_json::json!([

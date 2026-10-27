@@ -1922,9 +1922,6 @@ pub struct FleetConfigToml {
     pub exec: FleetExecConfig,
 }
 
-/// Runtime delegation has no default product depth limit. Explicit owner
-/// values still restrict child authority; zero disables delegation.
-pub const DEFAULT_SPAWN_DEPTH: u32 = u32::MAX;
 pub const DEFAULT_STREAM_CHUNK_TIMEOUT_SECS: u64 = 900;
 pub const MIN_STREAM_CHUNK_TIMEOUT_SECS: u64 = 1;
 pub const MAX_STREAM_CHUNK_TIMEOUT_SECS: u64 = 3600;
@@ -2001,7 +1998,7 @@ pub struct FleetExecConfig {
     #[serde(default = "default_fleet_max_turns")]
     pub max_turns: u32,
     /// Recursive child-agent budget for headless fleet workers.
-    /// Defaults to [`DEFAULT_SPAWN_DEPTH`], with no product depth cap.
+    /// Defaults to [`codewhale_protocol::fleet::DEFAULT_SPAWN_DEPTH`], with no product depth cap.
     /// Set zero to block child delegation while preserving the root worker.
     #[serde(default = "default_fleet_max_spawn_depth")]
     pub max_spawn_depth: u32,
@@ -2026,7 +2023,7 @@ fn default_fleet_max_turns() -> u32 {
 }
 
 fn default_fleet_max_spawn_depth() -> u32 {
-    DEFAULT_SPAWN_DEPTH
+    codewhale_protocol::fleet::DEFAULT_SPAWN_DEPTH
 }
 
 fn default_fleet_output_format() -> String {

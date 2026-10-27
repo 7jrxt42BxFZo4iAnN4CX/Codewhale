@@ -4,8 +4,8 @@
 //! tools can resolve and normalize reasoning effort without depending on
 //! presentation types.
 
-use crate::work_graph::ReasoningEffortTier;
 use codewhale_config::ProviderKind;
+use codewhale_models::reasoning_effort_tier::ReasoningEffortTier;
 
 /// Reasoning-effort tier, mirrored across DeepSeek and Codex effort pickers.
 ///

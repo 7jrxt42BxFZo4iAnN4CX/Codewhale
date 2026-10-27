@@ -16,8 +16,9 @@ use super::*;
 /// later usage envelope may confirm or replace it with the provider's
 /// effective route while also adding provider and token facts.
 pub(crate) fn record_agent_spawned_route(app: &mut App, agent_id: &str, model: &str) {
-    let model =
-        bound_agent_activity_text(&crate::cost_status::sanitize_persisted_route_label(model));
+    let model = bound_agent_activity_text(
+        &codewhale_runtime::safe_label::sanitize_persisted_route_label(model),
+    );
     app.agent_progress_meta
         .entry(agent_id.to_string())
         .or_default()
@@ -2787,6 +2788,7 @@ async fn apply_command_result_inner(
                     .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
                 app.current_session_id = Some(owner_session_id.clone());
                 let request = NewTaskRequest {
+                    destination_thread_id: None,
                     prompt: prompt.clone(),
                     name: None,
                     model: Some(app.model.clone()),
@@ -3031,7 +3033,7 @@ fn edit_project_hooks_from_tui(terminal: &mut AppTerminal, app: &mut App, config
     let path = app.workspace.join(".codewhale").join("hooks.toml");
     // A link in `.codewhale` or at hooks.toml is never created through, and the
     // editor is not pointed at one: the file must really live in the workspace.
-    if let Err(error) = crate::fleet::files::reject_linked_path(&app.workspace, &path) {
+    if let Err(error) = codewhale_util::files::reject_linked_path(&app.workspace, &path) {
         app.push_status_toast(
             format!("Could not use {}: {error}", path.display()),
             StatusToastLevel::Warning,
@@ -3040,7 +3042,7 @@ fn edit_project_hooks_from_tui(terminal: &mut AppTerminal, app: &mut App, config
         return;
     }
     if !path.exists()
-        && let Err(error) = crate::fs_confined::write(
+        && let Err(error) = codewhale_util::fs_confined::write(
             &app.workspace,
             &path,
             crate::hooks::PROJECT_HOOKS_TEMPLATE.as_bytes(),
@@ -3236,6 +3238,9 @@ pub(crate) fn settle_pending_human_requests(app: &mut App) {
 /// completion cannot settle a different, inner request id.
 pub(crate) fn observe_human_request_settlement(app: &mut App, event: &EngineEvent) {
     match event {
+        EngineEvent::UserInputClosed { id, .. } => {
+            settle_user_input_request(app, id);
+        }
         EngineEvent::ToolCallComplete { id, .. } => {
             settle_user_input_request(app, id);
             crate::tui::pending_requests::retire(app, id);
@@ -3718,7 +3723,7 @@ fn sanitize_probe_status(reason: &str, api_key: &str) -> String {
     if !secret.is_empty() {
         text = text.replace(secret, "***");
     }
-    crate::utils::truncate_with_ellipsis(text.trim(), 120, "…")
+    codewhale_util::utils::truncate_with_ellipsis(text.trim(), 120, "…")
 }
 
 pub(crate) async fn apply_provider_picker_test_connection_with_verifier(

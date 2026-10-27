@@ -6,7 +6,6 @@ use std::time::Instant;
 use codewhale_localization::{Locale, MessageId, tr};
 use ratatui::layout::Rect;
 
-use crate::tools::canonical_action::canonical_action_alias;
 use crate::tools::subagent::{AgentWorkerStatus, SubAgentResult, SubAgentStatus};
 use crate::tui::app::{
     AgentCurrentActivityStatus, AgentProgressMeta, App, SidebarRowAction, TaskPanelEntry,
@@ -21,6 +20,7 @@ use crate::work_graph::{
     AcceptanceRequirement, EdgeKind, EvidenceKind, EvidenceKindTag, NodeKind, NodeState,
     OperationBinding, OwnerState, Provenance, WorkGraphSnapshot, WorkNode,
 };
+use codewhale_execpolicy::canonical_action::canonical_action_alias;
 use codewhale_runtime::settings::InlineDiffMode;
 
 /// Persisted Ocean work-surface placement. Bottom is deliberately absent: the
@@ -2486,7 +2486,7 @@ fn activity_target(
     kind: FileActivityKind,
 ) -> Option<String> {
     if tool_name == "apply_patch"
-        && let Ok(preflight) = crate::tools::apply_patch::preflight_apply_patch(input)
+        && let Ok(preflight) = codewhale_tools::patch_preflight::preflight_apply_patch(input)
     {
         let targets = preflight
             .touched_files

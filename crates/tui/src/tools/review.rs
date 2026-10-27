@@ -11,9 +11,9 @@ use serde_json::{Value, json};
 
 use crate::client::CodewhaleClient;
 #[cfg(test)]
-use crate::dependencies::ExternalTool;
-use crate::utils::truncate_with_ellipsis;
+use codewhale_dependencies::ExternalTool;
 use codewhale_models::Usage;
+use codewhale_util::utils::truncate_with_ellipsis;
 
 use super::spec::{
     ApprovalRequirement, ToolCapability, ToolContext, ToolError, ToolResult, ToolSpec,
@@ -1576,11 +1576,11 @@ impl ToolSpec for ReviewTool {
         let triage = super::review_triage::triage_review(&review_diff);
         let reserve_percent =
             crate::route_budget::review_visible_text_reserve_percent(&route.model);
-        let budget =
-            super::review_triage::budget_for(&triage).with_reasoning_floor(reserve_percent);
-        let allowance = client
-            .effective_max_output_tokens(&route.model)
-            .min(budget.max_output_tokens);
+        let budget = super::review_triage::budget_for(
+            &triage,
+            client.effective_max_output_tokens(&route.model),
+        );
+        let allowance = budget.max_output_tokens;
         let reasoning_effort =
             (codewhale_models::model_reasoning_capability(&route.model) == Some(true)).then(|| {
                 bounded_review_reasoning_effort(
@@ -1932,7 +1932,7 @@ async fn resolve_diff_target(
     };
 
     let mut args = vec!["diff".to_string()];
-    args.extend(crate::dependencies::Git::REVIEW_DIFF_ARGS.map(String::from));
+    args.extend(codewhale_dependencies::Git::REVIEW_DIFF_ARGS.map(String::from));
     if staged {
         args.push("--cached".to_string());
         if let Some(base_commit) = base_commit {
@@ -1988,7 +1988,7 @@ async fn run_review_git(
 ) -> Result<std::process::Output, ToolError> {
     let workspace = workspace.to_path_buf();
     tokio::task::spawn_blocking(move || {
-        let mut cmd = crate::dependencies::Git::review_command(&workspace)
+        let mut cmd = codewhale_dependencies::Git::review_command(&workspace)
             .map_err(|e| ToolError::execution_failed(e.to_string()))?;
         cmd.args(args).output().map_err(|e| {
             ToolError::execution_failed(format!("Failed to {operation} with git: {e}"))
@@ -2965,7 +2965,7 @@ mod tests {
     }
 
     fn fixture_git(workspace: &Path, args: &[&str]) -> std::process::Output {
-        let mut command = crate::dependencies::Git::command().expect("git test dependency");
+        let mut command = codewhale_dependencies::Git::command().expect("git test dependency");
         let output = command
             .args(args)
             .current_dir(workspace)
