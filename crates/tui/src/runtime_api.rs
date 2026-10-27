@@ -5715,7 +5715,7 @@ fn mutation_context_settings(
     String,
     Option<PathBuf>,
 ) {
-    use crate::skills::install::{DEFAULT_MAX_SIZE_BYTES, DEFAULT_REGISTRY_URL};
+    use codewhale_skill_install::install::{DEFAULT_MAX_SIZE_BYTES, DEFAULT_REGISTRY_URL};
     let config = state.config.read();
     let network = config
         .network
@@ -5814,8 +5814,8 @@ async fn install_skill_api(
     State(state): State<RuntimeApiState>,
     Json(req): Json<InstallSkillRequest>,
 ) -> Result<(StatusCode, Json<SkillMutationReceiptResponse>), ApiError> {
-    use crate::skills::install::InstallSource;
     use crate::skills::mutation::{MutationContext, SkillMutationRequest, SkillTargetScope};
+    use codewhale_skill_install::install::InstallSource;
 
     let source = InstallSource::parse(&req.source)
         .map_err(|err| ApiError::bad_request(format!("invalid install source: {err}")))?;

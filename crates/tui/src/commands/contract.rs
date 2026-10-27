@@ -2813,21 +2813,27 @@ fn installer_settings() -> (NetworkPolicy, u64, String) {
     let skills_cfg = cfg.skills.as_ref();
     let max_size = skills_cfg
         .and_then(|s| s.max_install_size_bytes)
-        .unwrap_or(crate::skills::install::DEFAULT_MAX_SIZE_BYTES);
+        .unwrap_or(codewhale_skill_install::install::DEFAULT_MAX_SIZE_BYTES);
     let registry_url = skills_cfg
         .and_then(|s| s.registry_url.clone())
-        .unwrap_or_else(|| crate::skills::install::DEFAULT_REGISTRY_URL.to_string());
+        .unwrap_or_else(|| codewhale_skill_install::install::DEFAULT_REGISTRY_URL.to_string());
     (network, max_size, registry_url)
 }
 
 /// Resolve the cache destination before loading settings or entering the network bridge.
 fn sync_registry_to_cache(cache_dir: Option<PathBuf>) -> Result<SkillSyncOutcome, String> {
-    use crate::skills::install::{SkillSyncOutcome as TuiSyncOutcome, SyncResult};
+    use codewhale_skill_install::install::{SkillSyncOutcome as TuiSyncOutcome, SyncResult};
     let cache_dir =
         cache_dir.ok_or_else(|| "global skill mutations require a home directory".to_string())?;
     let (network, max_size, registry_url) = installer_settings();
     let result = run_async(async move {
-        crate::skills::install::sync_registry(&network, &registry_url, &cache_dir, max_size).await
+        codewhale_skill_install::install::sync_registry(
+            &network,
+            &registry_url,
+            &cache_dir,
+            max_size,
+        )
+        .await
     });
     match result {
         Ok(SyncResult::RegistryDenied(host)) => Ok(SkillSyncOutcome::RegistryDenied(host)),
@@ -3012,7 +3018,7 @@ fn portable_scope(
 
 /// Map a curated registry document to portable entries.
 fn portable_registry_entries(
-    doc: &crate::skills::install::RegistryDocument,
+    doc: &codewhale_skill_install::install::RegistryDocument,
 ) -> Vec<RemoteSkillEntry> {
     doc.skills
         .iter()
@@ -3129,7 +3135,7 @@ impl CommandSkillGroupContext for SkillGroupAdapter<'_> {
         spec: &str,
     ) -> Result<SkillMutationReceipt, String> {
         use crate::skills::mutation::{MutationContext, SkillMutationRequest};
-        let source = match crate::skills::install::InstallSource::parse(spec) {
+        let source = match codewhale_skill_install::install::InstallSource::parse(spec) {
             Ok(source) => source,
             Err(err) => return Err(format!("Invalid install source: {err}")),
         };
@@ -3258,18 +3264,18 @@ impl CommandSkillGroupContext for SkillGroupAdapter<'_> {
     fn fetch_remote_registry(&mut self) -> Result<RemoteRegistryOutcome, String> {
         let (network, _max_size, registry_url) = installer_settings();
         let registry = run_async(async move {
-            crate::skills::install::fetch_registry(&network, &registry_url).await
+            codewhale_skill_install::install::fetch_registry(&network, &registry_url).await
         });
         match registry {
-            Ok(crate::skills::install::RegistryFetchResult::Loaded(doc)) => {
+            Ok(codewhale_skill_install::install::RegistryFetchResult::Loaded(doc)) => {
                 Ok(RemoteRegistryOutcome::Loaded {
                     entries: portable_registry_entries(&doc),
                 })
             }
-            Ok(crate::skills::install::RegistryFetchResult::NeedsApproval(host)) => {
+            Ok(codewhale_skill_install::install::RegistryFetchResult::NeedsApproval(host)) => {
                 Ok(RemoteRegistryOutcome::NeedsApproval(host))
             }
-            Ok(crate::skills::install::RegistryFetchResult::Denied(host)) => {
+            Ok(codewhale_skill_install::install::RegistryFetchResult::Denied(host)) => {
                 Ok(RemoteRegistryOutcome::Denied(host))
             }
             Err(err) => Err(format_registry_error("Failed to fetch registry", &err)),
@@ -3279,10 +3285,10 @@ impl CommandSkillGroupContext for SkillGroupAdapter<'_> {
     fn recommend_skills(&mut self, task: &str) -> Result<Vec<SkillRecommendation>, String> {
         let (network, _max_size, registry_url) = installer_settings();
         let registry = run_async(async move {
-            crate::skills::install::fetch_registry(&network, &registry_url).await
+            codewhale_skill_install::install::fetch_registry(&network, &registry_url).await
         });
         match registry {
-            Ok(crate::skills::install::RegistryFetchResult::Loaded(doc)) => {
+            Ok(codewhale_skill_install::install::RegistryFetchResult::Loaded(doc)) => {
                 let recommendations =
                     crate::skills::recommend::recommend_remote_skills(task, &doc, 3);
                 Ok(recommendations
@@ -3294,10 +3300,10 @@ impl CommandSkillGroupContext for SkillGroupAdapter<'_> {
                     })
                     .collect())
             }
-            Ok(crate::skills::install::RegistryFetchResult::NeedsApproval(host)) => {
+            Ok(codewhale_skill_install::install::RegistryFetchResult::NeedsApproval(host)) => {
                 Err(needs_approval_message(&host))
             }
-            Ok(crate::skills::install::RegistryFetchResult::Denied(host)) => {
+            Ok(codewhale_skill_install::install::RegistryFetchResult::Denied(host)) => {
                 Err(network_denied_message(&host))
             }
             Err(err) => Err(format_registry_error("Failed to fetch registry", &err)),
@@ -3305,7 +3311,7 @@ impl CommandSkillGroupContext for SkillGroupAdapter<'_> {
     }
 
     fn sync_registry(&mut self) -> Result<SkillSyncOutcome, String> {
-        sync_registry_to_cache(crate::skills::install::default_cache_skills_dir())
+        sync_registry_to_cache(codewhale_skill_install::install::default_cache_skills_dir())
     }
 
     fn run_review(&mut self) -> Result<ReviewOutcome, String> {

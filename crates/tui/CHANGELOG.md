@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Provider pre-cuts B (internal):** client wire helpers, reasoning-effort mapping and the Ollama catalog parsers move into their own client modules, and test-only provider gates use the shared test-isolation predicate. No behavior change. (CW-6129)
+- **`codewhale-dependencies`, `codewhale-snapshot`, `codewhale-lsp`, `codewhale-repl` crates:** external-tool resolution, workspace snapshots, the language-server client and the Python REPL runtime moved out of `codewhale-tui` into their own crates; `write_context_file` now lives in `codewhale-repl`. No behavior change. (CW-6129)
+- **`codewhale-skill-install` crate:** the community-skill installer, package content digest and `SKILL.md` frontmatter reader move out of `codewhale-tui` into a new crate; the install SSRF guard and timeouts are unchanged in production builds. (CW-6129)
 - **`codewhale-util` crate:** shared utilities, confined workspace file access, link and file-identity checks, bundle file readers, the `.git` name rule and the owner file lock move out of `codewhale-tui` into a new crate; no behavior change. (CW-6129)
 - **Crate-split contract hygiene:** the `canonical_action` policy table now lives in `codewhale-execpolicy`, `required_action`, the file path-alias folding and the `apply_patch` preflight parser in `codewhale-tools`, and `DEFAULT_SPAWN_DEPTH`, `PermissionCeiling` and `ShellCeiling` in `codewhale_protocol::fleet`, so `codewhale-agent-contract` no longer depends on `codewhale-config` or `codewhale-workflow`. Approval and authority behavior is unchanged. (CW-6129)
 - **Provider pre-cuts (internal):** schema sanitizing, prompt-turn classification, image-window capping, tool-projection warning names and the reasoning-effort tier moved into `codewhale-models`; stall records and route-label sanitizing moved into `codewhale-runtime`. No behavior change. (CW-6129)
