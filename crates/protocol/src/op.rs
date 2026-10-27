@@ -208,7 +208,7 @@ pub struct ReviewOperation {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Op {
     Review {
-        turn: TurnSpec,
+        turn: Box<TurnSpec>,
         request: ReviewOperation,
     },
     /// Drive one model turn: `role=user` content plus the resolved route
@@ -629,7 +629,7 @@ mod tests {
         };
         vec![
             Op::Review {
-                turn,
+                turn: Box::new(turn),
                 request: ReviewOperation {
                     version: 1,
                     repository: "owner/repo".into(),

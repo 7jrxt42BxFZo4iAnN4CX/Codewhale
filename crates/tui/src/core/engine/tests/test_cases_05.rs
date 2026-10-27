@@ -1152,7 +1152,7 @@ async fn user_steer_during_parent_answer_still_gets_a_reply_with_healthy_childre
         .expect("steering must preempt an indefinitely silent request");
         assert_eq!(status, TurnOutcomeStatus::Completed, "{phase}: {error:?}");
         assert_eq!(client.calls.load(Ordering::SeqCst), 3, "{phase}");
-        let requests = client.requests.lock().unwrap();
+        let requests = client.requests.lock().unwrap().clone();
         assert!(requests[1].messages.iter().any(|message| message.content.iter().any(|block| {
             matches!(block, ContentBlock::Text { text, .. } if text.contains("Also read state.txt and include its evidence."))
         })), "{phase}");
@@ -1179,7 +1179,6 @@ async fn user_steer_during_parent_answer_still_gets_a_reply_with_healthy_childre
             requests[0].system, requests[1].system,
             "{phase}: pinned system prefix changed"
         );
-        drop(requests);
         let mut events = handle.rx_event.write().await;
         let events = std::iter::from_fn(|| events.try_recv().ok()).collect::<Vec<_>>();
         assert!(events.iter().all(|event| !matches!(event, Event::ToolCallStarted { model_call: Some(call), .. } if call.provider_id == "call-must-not-run")), "{phase}");

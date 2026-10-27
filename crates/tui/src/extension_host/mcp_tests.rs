@@ -91,7 +91,7 @@ fn request(
     };
     let frame = json!({"jsonrpc":"2.0","id":id,"method":"proc/write","params":params});
     match parse_host_message(frame, HostTier::Builtin).unwrap() {
-        HostMessage::Request { request, .. } => request,
+        HostMessage::Request { request, .. } => *request,
         _ => panic!("decoded process write must be a request"),
     }
 }
