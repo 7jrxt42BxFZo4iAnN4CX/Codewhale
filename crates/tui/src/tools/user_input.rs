@@ -245,17 +245,16 @@ impl UserInputRequest {
                     ));
                 }
             }
-            if let Some(UserInputIntent::PlanReview { approve, .. }) = &question.intent {
-                if !labels.contains(approve)
+            if let Some(UserInputIntent::PlanReview { approve, .. }) = &question.intent
+                && (!labels.contains(approve)
                     || question
                         .detail
                         .as_ref()
-                        .is_none_or(|detail| detail.trim().is_empty())
-                {
-                    return Err(ToolError::invalid_input(
-                        "Plan review requires detail and an offered approve choice",
-                    ));
-                }
+                        .is_none_or(|detail| detail.trim().is_empty()))
+            {
+                return Err(ToolError::invalid_input(
+                    "Plan review requires detail and an offered approve choice",
+                ));
             }
         }
         Ok(())
