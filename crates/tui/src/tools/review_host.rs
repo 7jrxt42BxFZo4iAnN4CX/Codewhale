@@ -163,7 +163,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let manager = std::sync::Arc::new(crate::extension_host::ExtensionHostManager::new(
             crate::extension_host::ExtensionHostOptions {
-                runtime: crate::config::ExtensionHostRuntime::Node,
+                runtime: codewhale_config::extension_host::ExtensionHostRuntime::Node,
                 node_override: Some(node),
                 root: Some(root.path().join("host")),
                 ..Default::default()

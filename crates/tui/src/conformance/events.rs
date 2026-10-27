@@ -38,12 +38,12 @@ use codewhale_protocol::ids::{SessionId, ThreadId};
 use super::golden::{self, Failures, Masker, Sandbox};
 use super::stream_json;
 use crate::compaction::CompactionConfig;
-use crate::config::Config;
 use crate::core::engine::{Engine, EngineConfig};
 use crate::core::events::Event;
 use crate::core::ops::{Op, TurnSpec, UserInputProvenance};
 use crate::core::protocol_parity::{ProtocolIds, event_to_protocol};
 use crate::llm_client::{LlmClient, StreamEventBox};
+use codewhale_runtime::config::Config;
 
 const FAMILY: &str = "events";
 pub(super) const PREFIX_OWNED_BY_PROMPT_FAMILY: &str = "<pinned by the prompt family>";
@@ -328,8 +328,10 @@ fn run_scripted_turn_with_deadline(
 /// what the Engine does on that platform rather than which machine ran it.
 /// A case without them fails loud instead of silently probing the host. The
 /// label for each platform is owned and tested by `sandbox::policy`.
-fn recorded_platform(case: &Value) -> (crate::sandbox::policy::SandboxEnforcement, Option<bool>) {
-    use crate::sandbox::policy::SandboxEnforcement;
+fn recorded_platform(
+    case: &Value,
+) -> (codewhale_sandbox::policy::SandboxEnforcement, Option<bool>) {
+    use codewhale_sandbox::policy::SandboxEnforcement;
     let platform = case
         .get("recorded_platform")
         .expect("scripted conformance case must declare `recorded_platform`");

@@ -75,9 +75,7 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use super::ManagerShared;
-use super::protocol::{
-    ContentBlockWire, CoreCallParams, OwnerRef, RpcErrorWire, ToolResultWire, error_code,
-};
+use super::protocol::{ContentBlockWire, CoreCallParams, RpcErrorWire, ToolResultWire, error_code};
 use super::supervisor::HostRequestContext;
 use super::ticket::{Grant, Presented, Ticket, TicketKind};
 use super::tier::HostTier;
@@ -86,6 +84,7 @@ use crate::tools::codemode::{
     CodemodeInvoker, ExtensionCaller, NestedCallGate, NestedDecision, NestedFailure, PauseClock,
 };
 use crate::tools::spec::{ToolCapability, ToolContext, ToolSpec};
+use codewhale_config::OwnerRef;
 
 /// The protocol method an invocation ticket is good for.
 pub(crate) const METHOD: &str = "core/call";
@@ -250,7 +249,7 @@ pub(crate) struct Invocation {
     tier: HostTier,
     host_generation: u64,
     owner: OwnerRef,
-    scope: Option<super::protocol::EntryRef>,
+    scope: Option<codewhale_config::EntryRef>,
     plugins: Option<Arc<crate::plugins::PluginRegistry>>,
     content_hash: String,
     calls: CodemodeInvoker,
@@ -304,7 +303,7 @@ impl CoreCalls {
         expected: &ExtensionCaller,
         context: &ToolContext,
         gate: &NestedCallGate,
-        scope: Option<super::protocol::EntryRef>,
+        scope: Option<codewhale_config::EntryRef>,
         content_hash: String,
     ) -> Option<InvocationGuard> {
         let (caller, specs) = gate.extension()?;
@@ -383,7 +382,7 @@ impl CoreCalls {
         self.revoke_where(|invocation| invocation.owner.plugin_id == plugin_id);
     }
 
-    pub(crate) fn revoke_scope(&self, plugin_id: &str, scope: &super::protocol::EntryRef) {
+    pub(crate) fn revoke_scope(&self, plugin_id: &str, scope: &codewhale_config::EntryRef) {
         self.revoke_where(|invocation| {
             invocation.owner.plugin_id == plugin_id && invocation.scope.as_ref() == Some(scope)
         });

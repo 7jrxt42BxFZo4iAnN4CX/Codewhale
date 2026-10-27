@@ -28,7 +28,6 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::compaction::CompactionConfig;
-use crate::config::{Config, MAX_SUBAGENTS, ProviderIdentity};
 use crate::core::engine::handle::SteerOutcome;
 use crate::core::engine::{
     EngineConfig, EngineHandle, spawn_engine_with_authoritative_route_config,
@@ -71,6 +70,7 @@ use codewhale_protocol::runtime::{
     DynamicToolCallContent, DynamicToolCallParams, DynamicToolCallResult, DynamicToolSpec,
     TurnEnvironmentParams,
 };
+use codewhale_runtime::config::{Config, MAX_SUBAGENTS, ProviderIdentity};
 use codewhale_runtime::runtime_policy::RuntimePolicyProjection;
 
 const EVENT_CHANNEL_CAPACITY: usize = 1024;
@@ -680,7 +680,8 @@ fn fire_runtime_tool_completion_hooks(
     input: Option<&serde_json::Value>,
     result: &std::result::Result<crate::tools::spec::ToolResult, crate::tools::spec::ToolError>,
 ) {
-    use crate::hooks::{HookContext, HookEvent};
+    use crate::hooks::HookContext;
+    use codewhale_config::hooks::HookEvent;
     let wants_after = hooks.has_hooks_for_event(HookEvent::ToolCallAfter);
     let wants_error = hooks.has_hooks_for_event(HookEvent::OnError);
     if !wants_after && !wants_error {
@@ -4382,6 +4383,33 @@ impl RuntimeThreadStore {
         })
     }
 
+    fn extension_command_events(
+        &self,
+        thread_id: &str,
+        fingerprint: &str,
+    ) -> Result<(Option<Value>, Option<Value>, bool)> {
+        let mut started = None;
+        let mut finished = None;
+        let mut cancelled = false;
+        self.for_each_event(thread_id, |event| {
+            if event
+                .payload
+                .get("operation_fingerprint")
+                .and_then(Value::as_str)
+                == Some(fingerprint)
+            {
+                match event.event.as_str() {
+                    "extension_command_started" => started = Some(event.payload),
+                    "extension_command_completed" => finished = Some(event.payload),
+                    "extension_command_cancelled" => cancelled = true,
+                    _ => {}
+                }
+            }
+            Ok(())
+        })?;
+        Ok((started, finished, cancelled))
+    }
+
     pub fn events_since(
         &self,
         thread_id: &str,
@@ -5165,6 +5193,54 @@ pub struct UpdateThreadRequest {
     pub model_provider_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RuntimeCommandRequest {
+    pub name: String,
+    pub args: String,
+    pub registration_id: String,
+    pub operation_key: String,
+    pub expected_workspace: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct RuntimeCommandResult {
+    #[serde(default)]
+    pub operation_key: String,
+    pub name: String,
+    pub origin: String,
+    pub status: String,
+    pub text: String,
+    pub extension: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub turn: Option<TurnRecord>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thread: Option<ThreadRecord>,
+    pub idempotent_replay: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RuntimeCommandReceipt {
+    pub id: String,
+    pub created_at: DateTime<Utc>,
+    pub name: String,
+    pub origin: String,
+    pub status: String,
+    pub text: String,
+    pub extension: Value,
+}
+
+struct RuntimeCommandGuard {
+    pending: Arc<parking_lot::Mutex<HashMap<(String, String), CancellationToken>>>,
+    key: (String, String),
+}
+
+impl Drop for RuntimeCommandGuard {
+    fn drop(&mut self) {
+        self.pending.lock().remove(&self.key);
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StartTurnRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -5435,6 +5511,12 @@ fn runtime_turn_request_fingerprint(
 #[derive(Debug, Clone)]
 enum RuntimeTurnInputSource {
     ExternalUser,
+    Review(codewhale_protocol::op::ReviewOperation),
+    ExtensionCommand {
+        reference: crate::extension_host::command::ExtensionCommandRef,
+        operation_fingerprint: String,
+        cancel: CancellationToken,
+    },
     AgentMail {
         message_id: String,
         persisted_summary: String,
@@ -5452,7 +5534,10 @@ enum RuntimeTurnInputSource {
 impl RuntimeTurnInputSource {
     fn provenance(&self) -> crate::core::ops::UserInputProvenance {
         match self {
-            Self::ExternalUser => crate::core::ops::UserInputProvenance::ExternalUser,
+            Self::ExternalUser | Self::Review(_) => {
+                crate::core::ops::UserInputProvenance::ExternalUser
+            }
+            Self::ExtensionCommand { .. } => crate::core::ops::UserInputProvenance::Runtime,
             Self::AgentMail { .. } => crate::core::ops::UserInputProvenance::AgentMail,
             Self::GoalContinuation { .. } => crate::core::ops::UserInputProvenance::Runtime,
         }
@@ -5460,7 +5545,7 @@ impl RuntimeTurnInputSource {
 
     fn mail_message_id(&self) -> Option<&str> {
         match self {
-            Self::ExternalUser => None,
+            Self::ExternalUser | Self::Review(_) | Self::ExtensionCommand { .. } => None,
             Self::AgentMail { message_id, .. } => Some(message_id),
             Self::GoalContinuation { .. } => None,
         }
@@ -5468,7 +5553,9 @@ impl RuntimeTurnInputSource {
 
     fn item_detail(&self, prompt: &str) -> Option<String> {
         match self {
-            Self::ExternalUser => Some(prompt.to_string()),
+            Self::ExternalUser | Self::Review(_) | Self::ExtensionCommand { .. } => {
+                Some(prompt.to_string())
+            }
             // The provider projection contains runtime-only framing. Persist
             // the bounded canonical mail summary instead, so history and app
             // clients never mistake that projection for typed user input.
@@ -5494,6 +5581,20 @@ impl RuntimeTurnInputSource {
     fn item_metadata(&self) -> Option<Value> {
         match self {
             Self::ExternalUser => None,
+            Self::ExtensionCommand {
+                reference,
+                operation_fingerprint,
+                ..
+            } => Some(json!({
+                "input_provenance": "extension_command",
+                "extension": reference.receipt(),
+                "command_operation": operation_fingerprint,
+            })),
+            Self::Review(request) => Some(json!({
+                "input_provenance": "structured_review",
+                "review_request": request,
+                "review_system_prompt": crate::tools::review_core::review_system_prompt(),
+            })),
             Self::AgentMail { message_id, .. } => Some(json!({
                 "input_provenance": "agent_mail",
                 "agent_mail_message_id": message_id,
@@ -5524,6 +5625,8 @@ pub struct ThreadDetail {
     pub thread: ThreadRecord,
     pub turns: Vec<TurnRecord>,
     pub items: Vec<TurnItemRecord>,
+    #[serde(default)]
+    pub command_receipts: Vec<RuntimeCommandReceipt>,
     pub latest_seq: u64,
     /// Approval prompts that are still waiting for a decision. These are part
     /// of the canonical snapshot so clients can recover attention UI after a
@@ -6312,6 +6415,7 @@ struct ActiveTurnState {
 #[derive(Debug, Clone, Copy)]
 enum ClaimedTurnKind {
     Message {
+        structured_review: bool,
         narrowing: crate::core::engine::TurnNarrowing,
     },
     Compaction,
@@ -6874,6 +6978,7 @@ pub struct RuntimeThreadManager {
     grants: crate::core::authority::grants::GrantStore,
     pending_user_inputs: Arc<parking_lot::Mutex<HashMap<(String, String), PendingUserInputEntry>>>,
     pending_dynamic_tools: Arc<parking_lot::Mutex<HashMap<String, PendingDynamicToolEntry>>>,
+    pending_commands: Arc<parking_lot::Mutex<HashMap<(String, String), CancellationToken>>>,
     recovery_receipts: Arc<parking_lot::Mutex<HashMap<String, Vec<RecoveredTurnReceipt>>>>,
     notices: Arc<parking_lot::Mutex<HashMap<String, Vec<ActiveNotice>>>>,
     recovery_flush: Arc<Mutex<()>>,
@@ -7865,7 +7970,7 @@ impl RuntimeThreadManager {
         workspace: &Path,
         plugins: Option<&crate::plugins::PluginRegistry>,
     ) -> crate::hooks::HookExecutor {
-        let hooks = crate::hooks::HooksConfig::load_with_project_and_plugins(
+        let hooks = crate::hooks::config::load_with_project_and_plugins(
             config.hooks_config(),
             workspace,
             plugins,
@@ -7873,7 +7978,7 @@ impl RuntimeThreadManager {
         self.hook_base
             .get_or_init(|| {
                 crate::hooks::HookExecutor::new(
-                    crate::hooks::HooksConfig::default(),
+                    codewhale_config::hooks::HooksConfig::default(),
                     workspace.to_path_buf(),
                 )
             })
@@ -7935,7 +8040,7 @@ impl RuntimeThreadManager {
                     Ok(identity)
                         if identity.provider == provider_identity.provider
                             && identity.key == provider_identity.key
-                            && identity.exact_id == provider_identity.exact_id =>
+                            && identity.persisted_id() == provider_identity.persisted_id() =>
                     {
                         resolve_runtime_thread_route_for_identity(config, &identity, Some(&model))
                     }
@@ -8045,7 +8150,7 @@ impl RuntimeThreadManager {
         let workshop_activation = crate::tools::large_output_router::install_active_workshop(
             new_config.workshop.as_ref(),
         );
-        crate::config::initialize_cloud_facts(&new_config);
+        codewhale_runtime::config::initialize_cloud_facts(&new_config);
         crate::provider_catalog_live::maybe_load_persisted_cache_for_config(&new_config);
         let workflow_table = new_config.workflow_config();
         {
@@ -8054,7 +8159,7 @@ impl RuntimeThreadManager {
         }
         crate::tools::workflow::set_session_workflow_config(&self.workspace, workflow_table);
 
-        let settings = crate::settings::Settings::load().unwrap_or_default();
+        let settings = codewhale_runtime::settings::Settings::load().unwrap_or_default();
         let stream_chunk_timeout_secs = self.read_config().stream_chunk_timeout_secs();
         for (thread_id, engine, route, active_turn_id) in validated {
             let provider = route.identity.provider;
@@ -8065,7 +8170,7 @@ impl RuntimeThreadManager {
                 &route.model,
                 route_limits,
                 settings.auto_compact,
-                crate::settings::Settings::auto_compact_explicitly_configured(),
+                codewhale_runtime::settings::Settings::auto_compact_explicitly_configured(),
                 settings.auto_compact_threshold_percent,
             );
             engine_compaction.runtime_cost_owner = active_turn_id;
@@ -8085,7 +8190,7 @@ impl RuntimeThreadManager {
                     enabled: route_config.subagents_enabled_for_provider(&route.identity),
                     max_subagents: route_config
                         .max_subagents_for_provider(&route.identity)
-                        .clamp(1, crate::config::MAX_SUBAGENTS),
+                        .clamp(1, codewhale_runtime::config::MAX_SUBAGENTS),
                     launch_concurrency: route_config
                         .launch_concurrency_for_provider(&route.identity),
                     max_spawn_depth: route_config
@@ -8294,7 +8399,7 @@ impl RuntimeThreadManager {
             binding.validate_existing_store()?;
         }
         let store = RuntimeThreadStore::open(manager_cfg.data_dir.clone())?;
-        crate::config::initialize_cloud_facts(&config);
+        codewhale_runtime::config::initialize_cloud_facts(&config);
         let (event_tx, _event_rx) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         let grants = crate::core::authority::grants::GrantStore::open(&manager_cfg.data_dir);
         if let Some(reason) = grants.degraded_reason() {
@@ -8331,6 +8436,7 @@ impl RuntimeThreadManager {
             grants,
             pending_user_inputs: Arc::new(parking_lot::Mutex::new(HashMap::new())),
             pending_dynamic_tools: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+            pending_commands: Arc::new(parking_lot::Mutex::new(HashMap::new())),
             recovery_receipts: Arc::new(parking_lot::Mutex::new(HashMap::new())),
             notices: Arc::new(parking_lot::Mutex::new(HashMap::new())),
             recovery_flush: Arc::new(Mutex::new(())),
@@ -12793,7 +12899,7 @@ impl RuntimeThreadManager {
         // projection lock held by this snapshot.
         let store = self.store.clone();
         let snapshot_thread_id = id.to_string();
-        let (thread, turns, items) = tokio::task::spawn_blocking(move || {
+        let (thread, turns, items, command_receipts) = tokio::task::spawn_blocking(move || {
             let thread = store
                 .load_thread(&snapshot_thread_id)
                 .with_context(|| format!("Thread not found: {snapshot_thread_id}"))?;
@@ -12806,7 +12912,34 @@ impl RuntimeThreadManager {
                     items.append(&mut turn_items);
                 }
             }
-            Ok::<_, anyhow::Error>((thread, turns, items))
+            let mut command_receipts = VecDeque::new();
+            store.for_each_event(&snapshot_thread_id, |event| {
+                if event.seq <= latest_seq && event.event == "extension_command_completed" {
+                    let result: RuntimeCommandResult =
+                        serde_json::from_value(event.payload["result"].clone())
+                            .context("command receipt is invalid")?;
+                    if result.turn.is_none() {
+                        let fingerprint = event.payload["operation_fingerprint"]
+                            .as_str()
+                            .context("command receipt identity is absent")?;
+                        validate_sha256_fingerprint(fingerprint, "command receipt identity")?;
+                        if command_receipts.len() == 100 {
+                            command_receipts.pop_front();
+                        }
+                        command_receipts.push_back(RuntimeCommandReceipt {
+                            id: format!("command_{fingerprint}"),
+                            created_at: event.timestamp,
+                            name: result.name,
+                            origin: result.origin,
+                            status: result.status,
+                            text: result.text,
+                            extension: result.extension,
+                        });
+                    }
+                }
+                Ok(())
+            })?;
+            Ok::<_, anyhow::Error>((thread, turns, items, command_receipts.into_iter().collect()))
         })
         .await
         .context("Runtime thread projection task failed")??;
@@ -12816,6 +12949,7 @@ impl RuntimeThreadManager {
             thread,
             turns,
             items,
+            command_receipts,
             latest_seq,
             pending_approvals,
             pending_user_inputs,
@@ -14612,6 +14746,36 @@ impl RuntimeThreadManager {
         Ok(Some(turn))
     }
 
+    fn lookup_extension_command_turn(
+        &self,
+        thread_id: &str,
+        fingerprint: &str,
+        extension: &Value,
+    ) -> Result<Option<TurnRecord>> {
+        anyhow::ensure!(extension.is_object(), "command receipt identity is absent");
+        let Some(turn) =
+            self.lookup_turn_operation(thread_id, &format!("extension-command-{fingerprint}"))?
+        else {
+            return Ok(None);
+        };
+        let item_id = turn
+            .item_ids
+            .first()
+            .context("Command turn receipt has no input item")?;
+        let item = self.store.load_item(item_id)?;
+        anyhow::ensure!(
+            item.turn_id == turn.id,
+            "Command turn input belongs to another turn"
+        );
+        let owned = item.kind == TurnItemKind::UserMessage
+            && item.metadata.as_ref().is_some_and(|metadata| {
+                metadata["input_provenance"] == "extension_command"
+                    && metadata["command_operation"].as_str() == Some(fingerprint)
+                    && &metadata["extension"] == extension
+            });
+        Ok(owned.then_some(turn))
+    }
+
     fn cleanup_unaccepted_turn_records(
         &self,
         turn_id: &str,
@@ -14964,9 +15128,16 @@ impl RuntimeThreadManager {
             turn_id.clone(),
             engine.clone(),
             match kind {
-                ClaimedTurnKind::Message { narrowing } => narrowing,
+                ClaimedTurnKind::Message { narrowing, .. } => narrowing,
                 ClaimedTurnKind::Compaction => crate::core::engine::TurnNarrowing::Inherit,
             },
+            matches!(
+                kind,
+                ClaimedTurnKind::Message {
+                    structured_review: true,
+                    ..
+                }
+            ),
         ))
         .catch_unwind()
         .await;
@@ -15171,6 +15342,561 @@ impl RuntimeThreadManager {
         settle_rx
     }
 
+    pub(crate) async fn start_review_turn(
+        &self,
+        thread_id: &str,
+        req: crate::runtime_api::review::StartReviewRequest,
+    ) -> Result<(TurnRecord, bool)> {
+        self.start_review_turn_inner(thread_id, req, None).await
+    }
+
+    pub(crate) async fn start_review_turn_with_reserved_id(
+        &self,
+        thread_id: &str,
+        req: crate::runtime_api::review::StartReviewRequest,
+        reserved_turn_id: &str,
+    ) -> Result<TurnRecord> {
+        validated_record_id(reserved_turn_id, "reserved turn id")?;
+        let (turn, _) = self
+            .start_review_turn_inner(thread_id, req, Some(reserved_turn_id))
+            .await?;
+        anyhow::ensure!(
+            turn.id == reserved_turn_id,
+            "reserved Runtime review id does not match the operation binding"
+        );
+        Ok(turn)
+    }
+
+    async fn start_review_turn_inner(
+        &self,
+        thread_id: &str,
+        req: crate::runtime_api::review::StartReviewRequest,
+        reserved_turn_id: Option<&str>,
+    ) -> Result<(TurnRecord, bool)> {
+        crate::core::engine::review::validate(&req.review)?;
+        anyhow::ensure!(
+            (256..=8192).contains(&req.max_output_tokens.get()),
+            "review maxOutputTokens must be 256..8192"
+        );
+        anyhow::ensure!(
+            !req.model.is_empty()
+                && req.model.trim() == req.model
+                && !req.model.eq_ignore_ascii_case("auto"),
+            "review requires an exact model"
+        );
+        let prompt = crate::core::engine::review::user_message(&req.review);
+        let summary = format!(
+            "Review {}#{} at {}",
+            req.review.repository, req.review.pr_number, req.review.head_sha
+        );
+        let request = StartTurnRequest {
+            account_model_owner: req.account_model_owner,
+            profile_constitution: None,
+            expected_workspace: None,
+            max_output_tokens: Some(req.max_output_tokens),
+            prompt,
+            images: Vec::new(),
+            operation_key: Some(req.operation_key),
+            input_summary: Some(summary),
+            model: Some(req.model),
+            reasoning_effort: req.reasoning_effort,
+            allowed_tools: Some(Vec::new()),
+            mode: Some("act".to_string()),
+            permission_posture: Some("ask".to_string()),
+            allow_shell: Some(false),
+            trust_mode: Some(false),
+            auto_approve: Some(false),
+            dynamic_tools: Vec::new(),
+            environment_id: None,
+            model_provider: req.model_provider,
+            model_provider_id: req.model_provider_id,
+        };
+        self.start_turn_with_source(
+            thread_id,
+            request,
+            RuntimeTurnInputSource::Review(req.review),
+            reserved_turn_id,
+            false,
+        )
+        .await
+    }
+
+    pub(crate) async fn extension_commands(
+        &self,
+        thread_id: &str,
+    ) -> Result<Vec<crate::extension_host::command::ExtensionCommandEntry>> {
+        let _admission = self.config_admission.read().await;
+        let thread = self.get_thread(thread_id).await?;
+        if !crate::plugins::activation::extension_host_policy_enabled() {
+            return Ok(Vec::new());
+        }
+        self.ensure_engine_loaded(&thread).await?;
+        crate::extension_host::manager()
+            .reconcile()
+            .await
+            .map_err(anyhow::Error::msg)?;
+        let Some(plugins) =
+            crate::extension_host::caller_view(&thread.workspace, Some(thread_id), None)
+        else {
+            return Ok(Vec::new());
+        };
+        Ok(crate::extension_host::live_commands_for_plugins(&plugins))
+    }
+
+    pub(crate) async fn run_extension_command(
+        &self,
+        thread_id: &str,
+        request: RuntimeCommandRequest,
+    ) -> Result<RuntimeCommandResult> {
+        let manager = self.clone();
+        let thread_id = thread_id.to_string();
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let worker = tokio::spawn(async move {
+            use futures_util::FutureExt;
+            let result = std::panic::AssertUnwindSafe(
+                manager.run_extension_command_inner(&thread_id, request),
+            )
+            .catch_unwind()
+            .await
+            .unwrap_or_else(|_| {
+                Err(anyhow!(
+                    "Command lifecycle stopped; use the receipt lookup before retrying"
+                ))
+            });
+            let _ = sender.send(result);
+        });
+        self.track_receipt_worker(worker);
+        receiver.await.context("command lifecycle worker stopped")?
+    }
+
+    pub(crate) async fn extension_command_status(
+        &self,
+        thread_id: &str,
+        operation_key: &str,
+    ) -> Result<Option<Value>> {
+        self.get_thread(thread_id).await?;
+        let fingerprint =
+            runtime_turn_operation_key_fingerprint(&self.store.owner_id, thread_id, operation_key)?;
+        let emit_order = self.event_emit.lock().await;
+        let manager = self.clone();
+        let lookup_thread = thread_id.to_string();
+        let (started, finished, cancelled, recovered) = tokio::task::spawn_blocking(move || {
+            manager.store.with_turn_operation_claim(Some(&fingerprint), || {
+                let (started, mut finished, cancelled) = manager.store.extension_command_events(&lookup_thread, &fingerprint)?;
+                let live = manager.pending_commands.lock().contains_key(&(lookup_thread.clone(), fingerprint.clone()));
+                let recovered = if finished.is_none() && !live && let Some(started) = &started {
+                    let extension = started.get("extension").cloned().context("command receipt identity is absent")?;
+                    let turn = manager.lookup_extension_command_turn(&lookup_thread, &fingerprint, &extension)?;
+                    let result = RuntimeCommandResult {
+                        operation_key: String::new(),
+                        name: started.get("name").and_then(Value::as_str).context("command receipt name is absent")?.to_string(),
+                        origin: extension.get("origin").and_then(Value::as_str).context("command receipt origin is absent")?.to_string(),
+                        status: "failed".to_string(),
+                        text: if turn.is_some() {
+                            "Command execution ended without a recorded result. Its effects are uncertain; its admitted turn was recovered. The command callback was not rerun."
+                        } else {
+                            "Command execution ended without a recorded result. Its effects are uncertain. The command callback was not rerun."
+                        }.to_string(),
+                        extension,
+                        thread: turn.as_ref().map(|_| manager.store.load_thread(&lookup_thread)).transpose()?,
+                        turn,
+                        idempotent_replay: false,
+                    };
+                    let record = manager.store.append_event_transaction(
+                        lookup_thread.clone(), result.turn.as_ref().map(|turn| turn.id.clone()), None,
+                        "extension_command_completed".to_string(), json!({"operation_fingerprint": fingerprint, "result": result}),
+                        EVENT_TRANSACTION_LOCK_TIMEOUT,
+                    )?;
+                    finished = Some(record.payload.clone());
+                    Some(record)
+                } else { None };
+                Ok::<_, anyhow::Error>((started, finished, cancelled, recovered))
+            })
+        })
+        .await
+        .context("command receipt lookup failed")??;
+        if let Some(event) = recovered {
+            let _ = self.event_tx.send(event);
+        }
+        drop(emit_order);
+        if let Some(finished) = finished {
+            let mut result: RuntimeCommandResult =
+                serde_json::from_value(finished["result"].clone())
+                    .context("command receipt is invalid")?;
+            result.operation_key = operation_key.to_string();
+            result.idempotent_replay = true;
+            return Ok(Some(serde_json::to_value(result)?));
+        }
+        if started.is_some() {
+            return Ok(Some(
+                json!({ "status": "pending", "operation_key": operation_key }),
+            ));
+        }
+        Ok(cancelled.then(|| json!({ "status": "cancelled", "operation_key": operation_key,
+            "name": "", "origin": "", "text": "Command cancelled before admission", "extension": null,
+            "idempotent_replay": true })))
+    }
+
+    pub(crate) async fn cancel_extension_command(
+        &self,
+        thread_id: &str,
+        operation_key: &str,
+    ) -> Result<bool> {
+        self.get_thread(thread_id).await?;
+        let fingerprint =
+            runtime_turn_operation_key_fingerprint(&self.store.owner_id, thread_id, operation_key)?;
+        let _emit_order = self.event_emit.lock().await;
+        if let Some(cancel) = self
+            .pending_commands
+            .lock()
+            .get(&(thread_id.to_string(), fingerprint.clone()))
+        {
+            cancel.cancel();
+        }
+        let store = self.store.clone();
+        let cancel_thread = thread_id.to_string();
+        let cancel_fingerprint = fingerprint.clone();
+        let (event, extension) = tokio::task::spawn_blocking(move || {
+            store.with_turn_operation_claim(Some(&cancel_fingerprint), || {
+                let (started, finished, cancelled) =
+                    store.extension_command_events(&cancel_thread, &cancel_fingerprint)?;
+                let extension = started.and_then(|started| started.get("extension").cloned());
+                if finished.is_some() || cancelled {
+                    return Ok((None, extension));
+                }
+                store
+                    .append_event_transaction(
+                        cancel_thread.clone(),
+                        None,
+                        None,
+                        "extension_command_cancelled".to_string(),
+                        json!({ "operation_fingerprint": cancel_fingerprint }),
+                        EVENT_TRANSACTION_LOCK_TIMEOUT,
+                    )
+                    .map(|event| (Some(event), extension))
+            })
+        })
+        .await
+        .context("command cancellation worker failed")??;
+        if let Some(event) = event {
+            let _ = self.event_tx.send(event);
+        }
+        drop(_emit_order);
+        let _ = self
+            .extension_command_status(thread_id, operation_key)
+            .await?;
+        let turn_id = if let Some(extension) = extension {
+            let manager = self.clone();
+            let lookup_thread = thread_id.to_string();
+            tokio::task::spawn_blocking(move || {
+                manager.lookup_extension_command_turn(&lookup_thread, &fingerprint, &extension)
+            })
+            .await
+            .context("Command cancellation turn lookup worker failed")??
+            .map(|turn| turn.id)
+        } else {
+            None
+        };
+        if let Some(turn_id) = turn_id {
+            let active = self
+                .active
+                .lock()
+                .await
+                .engines
+                .get(thread_id)
+                .and_then(|state| state.active_turn.as_ref())
+                .is_some_and(|turn| turn.turn_id == turn_id);
+            if active {
+                match self.interrupt_turn(thread_id, &turn_id).await {
+                    Ok(_) => {}
+                    Err(error)
+                        if error.to_string().contains("No active turn")
+                            || error.to_string().contains("is not active") => {}
+                    Err(error) => return Err(error),
+                }
+            }
+        }
+        Ok(true)
+    }
+
+    async fn run_extension_command_inner(
+        &self,
+        thread_id: &str,
+        request: RuntimeCommandRequest,
+    ) -> Result<RuntimeCommandResult> {
+        validate_runtime_turn_operation_key(&request.operation_key)?;
+        anyhow::ensure!(
+            !request.name.is_empty()
+                && request.name.len() <= 64
+                && request.name.bytes().all(|byte| byte.is_ascii_lowercase()
+                    || byte.is_ascii_digit()
+                    || b"_-".contains(&byte)),
+            "invalid command name"
+        );
+        anyhow::ensure!(
+            request.args.len() <= crate::extension_host::command::MAX_PROMPT_BYTES,
+            "command arguments exceed the byte limit"
+        );
+        validate_sha256_fingerprint(&request.registration_id, "command registration_id")?;
+        let fingerprint = runtime_turn_operation_key_fingerprint(
+            &self.store.owner_id,
+            thread_id,
+            &request.operation_key,
+        )?;
+        let request_fingerprint = codewhale_runtime::hashing::sha256_hex(
+            codewhale_runtime::hashing::canonical_json(&json!({
+                "name": request.name, "args": request.args, "registration_id": request.registration_id,
+                "expected_workspace": request.expected_workspace,
+            })),
+        );
+        let admission = self.config_admission.read().await;
+        self.ensure_accepting_execution()?;
+        let thread = self.get_thread(thread_id).await?;
+        let store = self.store.clone();
+        let lookup_thread = thread_id.to_string();
+        let lookup_fingerprint = fingerprint.clone();
+        let (started, finished, cancelled) = tokio::task::spawn_blocking(move || {
+            store.extension_command_events(&lookup_thread, &lookup_fingerprint)
+        })
+        .await
+        .context("command receipt lookup failed")??;
+        if let Some(started) = started {
+            anyhow::ensure!(
+                started.get("request_fingerprint").and_then(Value::as_str)
+                    == Some(request_fingerprint.as_str()),
+                "Command operation key already belongs to a different request"
+            );
+            if let Some(finished) = finished {
+                let mut result: RuntimeCommandResult =
+                    serde_json::from_value(finished["result"].clone())
+                        .context("command receipt is invalid")?;
+                result.operation_key = request.operation_key;
+                result.idempotent_replay = true;
+                return Ok(result);
+            }
+            bail!(
+                "Command operation is pending or its outcome is uncertain; it will not be executed again"
+            );
+        }
+        anyhow::ensure!(
+            !cancelled,
+            "Command operation was cancelled before admission"
+        );
+        anyhow::ensure!(
+            thread.workspace == request.expected_workspace,
+            "Command workspace changed; select the command again"
+        );
+        anyhow::ensure!(
+            !thread.archived,
+            "Cannot run a command in an archived thread"
+        );
+        let catalog = crate::command_catalog::installed()
+            .ok_or_else(|| anyhow!("Command registration is stale; command catalog unavailable"))?;
+        let command_name = request.name.clone();
+        let command_workspace = thread.workspace.clone();
+        let shadowed = tokio::task::spawn_blocking(move || {
+            catalog.answers_to(&command_name)
+                || catalog
+                    .user_commands(&command_workspace)
+                    .iter()
+                    .filter(|command| !command.extension)
+                    .any(|command| {
+                        command.name == command_name || command.aliases.contains(&command_name)
+                    })
+        })
+        .await
+        .context("command catalog lookup failed")?;
+        anyhow::ensure!(
+            !shadowed,
+            "Command registration is stale; another command owns this spelling"
+        );
+        self.ensure_engine_loaded(&thread).await?;
+        crate::extension_host::manager()
+            .reconcile()
+            .await
+            .map_err(anyhow::Error::msg)?;
+        let plugins = crate::extension_host::caller_view(&thread.workspace, Some(thread_id), None)
+            .ok_or_else(|| anyhow!("Command registration is stale; select the command again"))?;
+        let entries = crate::extension_host::live_commands_for_plugins(&plugins);
+        let entry = entries
+            .into_iter()
+            .find(|entry| {
+                entry.registration.name == request.name
+                    && entry.reference().registration_id(thread_id) == request.registration_id
+            })
+            .ok_or_else(|| anyhow!("Command registration is stale; select the command again"))?;
+        let reference = entry.reference();
+        crate::extension_host::command::validate_reference(&reference, thread_id)
+            .await
+            .map_err(anyhow::Error::msg)?;
+        let cancel = self.cancel_token.child_token();
+        let key = (thread_id.to_string(), fingerprint.clone());
+        {
+            let active = self.active.lock().await;
+            anyhow::ensure!(
+                active
+                    .engines
+                    .get(thread_id)
+                    .is_some_and(|state| state.active_turn.is_none()),
+                "Thread already has an active turn"
+            );
+            let mut pending = self.pending_commands.lock();
+            anyhow::ensure!(
+                !pending.keys().any(|(id, _)| id == thread_id),
+                "Thread already has an active command"
+            );
+            pending.insert(key.clone(), cancel.clone());
+        }
+        let _pending = RuntimeCommandGuard {
+            pending: Arc::clone(&self.pending_commands),
+            key,
+        };
+        let emit_order = self.event_emit.lock().await;
+        let store = self.store.clone();
+        let start_thread = thread_id.to_string();
+        let start_fingerprint = fingerprint.clone();
+        let start_workspace = request.expected_workspace.clone();
+        let started_payload = json!({ "operation_fingerprint": fingerprint, "request_fingerprint": request_fingerprint,
+            "name": request.name, "args": request.args, "extension": reference.receipt() });
+        let started = tokio::task::spawn_blocking(move || {
+            store.with_turn_operation_claim(Some(&start_fingerprint), || {
+                let (started, _, cancelled) = store.extension_command_events(&start_thread, &start_fingerprint)?;
+                anyhow::ensure!(!cancelled, "Command operation was cancelled before admission");
+                anyhow::ensure!(started.is_none(), "Command operation is pending or its outcome is uncertain; it will not be executed again");
+                let _thread_mutation = store.thread_mutation.lock();
+                let current_thread = store.load_thread(&start_thread)?;
+                anyhow::ensure!(current_thread.workspace == start_workspace, "Command workspace changed; select the command again");
+                anyhow::ensure!(!current_thread.archived, "Cannot run a command in an archived thread");
+                store.append_event_transaction(start_thread.clone(), None, None, "extension_command_started".to_string(),
+                    started_payload, EVENT_TRANSACTION_LOCK_TIMEOUT)
+            })
+        }).await.context("command admission worker failed").and_then(|result| result);
+        match started {
+            Ok(event) => {
+                let _ = self.event_tx.send(event);
+            }
+            Err(error) => return Err(error),
+        }
+        drop(emit_order);
+        let outcome = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => Err("Command cancelled".to_string()),
+            outcome = crate::extension_host::run_command_for_plugins(&reference, &request.args, Some(thread_id), &plugins) => outcome,
+        };
+        drop(admission);
+        let mut result = RuntimeCommandResult {
+            operation_key: String::new(),
+            name: request.name,
+            origin: reference.origin.clone(),
+            status: "completed".to_string(),
+            text: String::new(),
+            extension: reference.receipt(),
+            turn: None,
+            thread: None,
+            idempotent_replay: false,
+        };
+        match outcome {
+            Ok(crate::extension_host::command::CommandOutcome::Show { text }) => result.text = text,
+            Ok(crate::extension_host::command::CommandOutcome::Submit { prompt, note }) => {
+                result.text = note.unwrap_or_default();
+                if cancel.is_cancelled() {
+                    result.status = "cancelled".to_string();
+                    result.text = "Command cancelled before submitting a turn".to_string();
+                } else {
+                    let submitted = self
+                        .start_turn_with_source(
+                            thread_id,
+                            StartTurnRequest {
+                                prompt,
+                                expected_workspace: Some(request.expected_workspace),
+                                operation_key: Some(format!("extension-command-{fingerprint}")),
+                                input_summary: Some(format!(
+                                    "/{} ({})",
+                                    result.name, reference.origin
+                                )),
+                                ..StartTurnRequest::default()
+                            },
+                            RuntimeTurnInputSource::ExtensionCommand {
+                                reference,
+                                operation_fingerprint: fingerprint.clone(),
+                                cancel: cancel.clone(),
+                            },
+                            None,
+                            false,
+                        )
+                        .await;
+                    match submitted {
+                        Ok((turn, _)) => {
+                            if cancel.is_cancelled() {
+                                self.cancel_extension_command(thread_id, &request.operation_key)
+                                    .await?;
+                            }
+                            result.turn = Some(turn);
+                            result.thread = self.get_thread(thread_id).await.ok();
+                        }
+                        Err(error) => {
+                            let manager = self.clone();
+                            let lookup_thread = thread_id.to_string();
+                            let lookup_fingerprint = fingerprint.clone();
+                            let lookup_extension = result.extension.clone();
+                            let turn = tokio::task::spawn_blocking(move || {
+                                manager.lookup_extension_command_turn(&lookup_thread, &lookup_fingerprint, &lookup_extension)
+                            })
+                            .await
+                            .context("Command turn acknowledgement is uncertain; receipt lookup worker failed")?
+                            .context("Command turn acknowledgement is uncertain; use the receipt lookup before retrying")?;
+                            result.status = if cancel.is_cancelled() {
+                                "cancelled"
+                            } else {
+                                "failed"
+                            }
+                            .to_string();
+                            result.text = if let Some(turn) = turn {
+                                if cancel.is_cancelled() {
+                                    self.cancel_extension_command(
+                                        thread_id,
+                                        &request.operation_key,
+                                    )
+                                    .await?;
+                                }
+                                result.thread = Some(self.get_thread(thread_id).await?);
+                                result.turn = Some(turn);
+                                format!(
+                                    "Command completed, but turn acknowledgement is uncertain. Its admitted turn was recovered; the command callback was not rerun: {error}"
+                                )
+                            } else {
+                                format!(
+                                    "Command completed, but no admitted turn was recovered: {error}"
+                                )
+                            };
+                        }
+                    }
+                }
+            }
+            Err(error) => {
+                result.status = if cancel.is_cancelled() {
+                    "cancelled"
+                } else {
+                    "failed"
+                }
+                .to_string();
+                result.text = error;
+            }
+        }
+        let settled = self
+            .emit_event(
+                thread_id,
+                result.turn.as_ref().map(|turn| turn.id.as_str()),
+                None,
+                "extension_command_completed",
+                json!({ "operation_fingerprint": fingerprint, "result": result }),
+            )
+            .await;
+        settled?;
+        result.operation_key = request.operation_key;
+        Ok(result)
+    }
+
     pub async fn start_turn(&self, thread_id: &str, req: StartTurnRequest) -> Result<TurnRecord> {
         self.start_turn_inner(thread_id, req, None).await
     }
@@ -15320,12 +16046,28 @@ impl RuntimeThreadManager {
         // dispatch can carry its predecessor's URL, key, model, or policy.
         let _config_admission = self.config_admission.read().await;
         self.ensure_accepting_execution()?;
+        {
+            let pending = self.pending_commands.lock();
+            let permitted = match &input_source {
+                RuntimeTurnInputSource::ExtensionCommand { operation_fingerprint, .. } => Some(operation_fingerprint.as_str()),
+                _ => None,
+            };
+            anyhow::ensure!(!pending.keys().any(|(id, fingerprint)| id == thread_id && Some(fingerprint.as_str()) != permitted), "Thread already has an active command");
+        }
+        if let RuntimeTurnInputSource::ExtensionCommand { reference, cancel, .. } = &input_source {
+            anyhow::ensure!(!cancel.is_cancelled(), "Command cancelled before submitting a turn");
+            crate::extension_host::command::validate_reference(reference, thread_id).await.map_err(anyhow::Error::msg)?;
+        }
         if let RuntimeTurnInputSource::GoalContinuation { expected_goal, .. } = &input_source {
             anyhow::ensure!(
                 expected_goal.status == codewhale_protocol::ThreadGoalStatus::Active
                     && self.store.load_goal(thread_id)?.as_ref() == Some(expected_goal.as_ref()),
                 "Goal changed before its automatic turn could start"
             );
+        }
+        if matches!(&input_source, RuntimeTurnInputSource::Review(_)) {
+            anyhow::ensure!(!narrowing.is_acp(), "structured review is unavailable in an ACP turn");
+            anyhow::ensure!(self.store.load_goal(thread_id)?.is_none(), "structured review requires a thread without a goal");
         }
         let image_blocks = if stored_image_bytes {
             crate::image_attach::prepare_stored_images(&req.images)?
@@ -15479,7 +16221,21 @@ impl RuntimeThreadManager {
                     "account_model_owner": owner,
                 })).as_bytes())
             } else { request_fingerprint };
+            let request_fingerprint = if let RuntimeTurnInputSource::Review(review) = &input_source {
+                codewhale_runtime::hashing::sha256_hex(serde_json::to_vec(&(
+                    "codewhale.runtime.review-turn.v1",
+                    request_fingerprint,
+                    crate::core::engine::review::fingerprint(review)?,
+                ))?)
+            } else { request_fingerprint };
             let request_fingerprint=narrowing.request_fingerprint(request_fingerprint);
+            let request_fingerprint = if matches!(&input_source, RuntimeTurnInputSource::ExtensionCommand { .. }) {
+                codewhale_runtime::hashing::sha256_hex(codewhale_runtime::hashing::canonical_json(&json!({
+                    "domain": "codewhale:extension-command-turn:v1",
+                    "historical_fingerprint": request_fingerprint,
+                    "input_metadata": input_source.item_metadata(),
+                })).as_bytes())
+            } else { request_fingerprint };
             self.prepare_runtime_turn_operation(
                 thread_id,
                 Some(operation_key),
@@ -15652,14 +16408,14 @@ impl RuntimeThreadManager {
                 reasoning_effort.as_deref(),
             ))
         });
-        let settings = crate::settings::Settings::load().unwrap_or_default();
+        let settings = codewhale_runtime::settings::Settings::load().unwrap_or_default();
         let mut compaction = runtime_compaction_config(
             &route.config,
             provider,
             &model,
             route_limits,
             settings.auto_compact,
-            crate::settings::Settings::auto_compact_explicitly_configured(),
+            codewhale_runtime::settings::Settings::auto_compact_explicitly_configured(),
             settings.auto_compact_threshold_percent,
         );
         let now = Utc::now();
@@ -15783,7 +16539,7 @@ impl RuntimeThreadManager {
             .engines
             .get(thread_id)
             .and_then(|state| state.hook_executor.clone());
-        let op = Op::SendMessage (TurnSpec {
+        let spec = TurnSpec {
             profile_constitution: req.profile_constitution,
             max_output_tokens,
             content: prompt,
@@ -15806,13 +16562,17 @@ impl RuntimeThreadManager {
             dynamic_tools: req.dynamic_tools,
             // The turn op re-installs the executor into the engine, so it
             // must carry the thread's own, never `None`.
-            hook_executor: if narrowing.is_acp() { None } else { turn_hook_executor },
+            hook_executor: if narrowing.is_acp() || matches!(&input_source, RuntimeTurnInputSource::Review(_)) { None } else { turn_hook_executor },
             approval_mode: policy.permission,
             verbosity,
             provenance: input_source.provenance(),
             // Durable-runtime submissions carry no host correlation token.
             submission_id: None,
-        });
+        };
+        let op = match &input_source {
+            RuntimeTurnInputSource::Review(request) => Op::Review { turn: spec, request: request.clone() },
+            _ => Op::SendMessage(spec),
+        };
 
         // Reserve mailbox capacity before claiming or persisting anything.
         // If the caller is cancelled while capacity is unavailable, no
@@ -15824,6 +16584,10 @@ impl RuntimeThreadManager {
             .await
             .map_err(|_| anyhow!("Failed to start turn: engine operation channel closed"))?;
 
+        if let RuntimeTurnInputSource::ExtensionCommand { reference, cancel, .. } = &input_source {
+            anyhow::ensure!(!cancel.is_cancelled(), "Command cancelled before submitting a turn");
+            crate::extension_host::command::validate_reference(reference, thread_id).await.map_err(anyhow::Error::msg)?;
+        }
         let acceptance_rx = {
             // Lock order is active -> thread_mutation. Neither guard crosses
             // an await, and spawning the owned lifecycle task is synchronous.
@@ -15831,6 +16595,18 @@ impl RuntimeThreadManager {
             // Runtime process sharing this store cannot pass the replay check
             // or persist a competing turn for the same operation key.
             let mut active = self.active.lock().await;
+            if let RuntimeTurnInputSource::ExtensionCommand { reference, cancel, .. } = &input_source {
+                anyhow::ensure!(!cancel.is_cancelled(), "Command cancelled before submitting a turn");
+                crate::extension_host::command::validate_selected_registration(reference, thread_id).map_err(anyhow::Error::msg)?;
+            }
+            {
+                let pending = self.pending_commands.lock();
+                let permitted = match &input_source {
+                    RuntimeTurnInputSource::ExtensionCommand { operation_fingerprint, .. } => Some(operation_fingerprint.as_str()),
+                    _ => None,
+                };
+                anyhow::ensure!(!pending.keys().any(|(id, fingerprint)| id == thread_id && Some(fingerprint.as_str()) != permitted), "Thread already has an active command");
+            }
             let mut operation_claim = operation
                 .as_ref()
                 .map(|operation| {
@@ -15945,7 +16721,10 @@ impl RuntimeThreadManager {
                 turn.clone(),
                 Some(user_item),
                 engine.clone(),
-                ClaimedTurnKind::Message { narrowing },
+                ClaimedTurnKind::Message {
+                    narrowing,
+                    structured_review: matches!(&input_source, RuntimeTurnInputSource::Review(_)),
+                },
             )
         };
 
@@ -16161,14 +16940,14 @@ impl RuntimeThreadManager {
         let route_identity = route.identity.clone();
         let route_model = route.model.clone();
         let route_limits = known_route_limits(route.candidate.limits());
-        let settings = crate::settings::Settings::load().unwrap_or_default();
+        let settings = codewhale_runtime::settings::Settings::load().unwrap_or_default();
         let mut compaction = runtime_compaction_config(
             &route.config,
             route_provider,
             &route_model,
             route_limits,
             settings.auto_compact,
-            crate::settings::Settings::auto_compact_explicitly_configured(),
+            codewhale_runtime::settings::Settings::auto_compact_explicitly_configured(),
             settings.auto_compact_threshold_percent,
         );
 
@@ -16446,14 +17225,14 @@ impl RuntimeThreadManager {
 
             // Resolve the provider-route-aware auto-compaction default unless the
             // user persisted an explicit preference.
-            let settings = crate::settings::Settings::load().unwrap_or_default();
+            let settings = codewhale_runtime::settings::Settings::load().unwrap_or_default();
             let compaction = runtime_compaction_config(
                 &cfg,
                 provider,
                 &route_model,
                 route_limits,
                 settings.auto_compact,
-                crate::settings::Settings::auto_compact_explicitly_configured(),
+                codewhale_runtime::settings::Settings::auto_compact_explicitly_configured(),
                 settings.auto_compact_threshold_percent,
             );
             let network_policy =
@@ -16461,8 +17240,8 @@ impl RuntimeThreadManager {
                     .then(|| cfg.network.clone())
                     .flatten()
                     .map(|toml_cfg| {
-                        crate::network_policy::NetworkPolicyDecider::with_default_audit(
-                            crate::network_policy::NetworkPolicy::from(toml_cfg),
+                        codewhale_net::network_policy::NetworkPolicyDecider::with_default_audit(
+                            codewhale_net::network_policy::NetworkPolicy::from(toml_cfg),
                         )
                     });
             let lsp_config = (!isolated_chat)
@@ -16665,11 +17444,11 @@ impl RuntimeThreadManager {
                     cfg.subagent_heartbeat_timeout_secs_for_provider(&route_identity),
                 ),
                 prefer_bwrap: cfg.prefers_bwrap(),
-                bwrap_extensions: crate::sandbox::BwrapMountExtensions {
+                bwrap_extensions: codewhale_sandbox::BwrapMountExtensions {
                     read_only_roots: cfg.bwrap_ro_roots.clone(),
                     device_roots: cfg.bwrap_dev_roots.clone(),
                 },
-                read_denylist: crate::sandbox::read_guard::ReadDenylist::from_config(&cfg),
+                read_denylist: codewhale_sandbox::read_guard::ReadDenylist::from_config(&cfg),
                 memory_enabled: !isolated_chat && cfg.memory_enabled(),
                 memory_path: cfg.memory_path(),
                 speech_output_dir: cfg.speech_output_dir(),
@@ -16808,7 +17587,17 @@ impl RuntimeThreadManager {
                 continue;
             }
 
-            let evicted = enforce_lru_capacity(&mut active, self.manager_cfg.max_active_threads);
+            let pending_commands = self
+                .pending_commands
+                .lock()
+                .keys()
+                .map(|(thread_id, _)| thread_id.clone())
+                .collect();
+            let evicted = enforce_lru_capacity(
+                &mut active,
+                self.manager_cfg.max_active_threads,
+                &pending_commands,
+            );
             active.engines.insert(
                 thread.id.clone(),
                 ActiveThreadState {
@@ -17036,11 +17825,11 @@ impl RuntimeThreadManager {
             let cfg = self.read_config();
             (
                 cfg.prefers_bwrap(),
-                crate::sandbox::BwrapMountExtensions {
+                codewhale_sandbox::BwrapMountExtensions {
                     read_only_roots: cfg.bwrap_ro_roots.clone(),
                     device_roots: cfg.bwrap_dev_roots.clone(),
                 },
-                crate::sandbox::read_guard::ReadDenylist::from_config(&cfg).subtree_paths(),
+                codewhale_sandbox::read_guard::ReadDenylist::from_config(&cfg).subtree_paths(),
             )
         };
         let mut active = self.active.lock().await;
@@ -17088,7 +17877,7 @@ impl RuntimeThreadManager {
         config_path: Option<&Path>,
         config_profile: Option<&str>,
     ) -> Result<()> {
-        use crate::config::ShellAccessControl;
+        use codewhale_runtime::config::ShellAccessControl;
         let config = self.read_config().clone();
         let workspace = workspace.to_path_buf();
         let config_path = config_path.map(Path::to_path_buf);
@@ -17125,7 +17914,7 @@ impl RuntimeThreadManager {
     pub(crate) async fn thread_job_sandbox_policy(
         &self,
         thread: &ThreadRecord,
-    ) -> crate::sandbox::SandboxPolicy {
+    ) -> codewhale_sandbox::SandboxPolicy {
         let policy = RuntimePolicyProjection::from_persisted(
             &thread.mode,
             thread.permission_posture.as_deref(),
@@ -17753,6 +18542,7 @@ impl RuntimeThreadManager {
         turn_id: String,
         engine: EngineHandle,
         narrowing: crate::core::engine::TurnNarrowing,
+        structured_review: bool,
     ) -> Result<()> {
         let mut current_message_item: Option<TurnItemRecord> = None;
         let mut current_reasoning_item: Option<TurnItemRecord> = None;
@@ -17805,7 +18595,11 @@ impl RuntimeThreadManager {
         };
         // Lifecycle scripts belong to the original ordinary admission; a
         // narrowed ACP request cannot run an existing Native hook graph.
-        let thread_hooks = if admitted_acp { None } else { thread_hooks };
+        let thread_hooks = if admitted_acp || structured_review {
+            None
+        } else {
+            thread_hooks
+        };
         // Runtime receipts always mask credentials, including when verbatim
         // model-bound tool output was explicitly enabled. Resolve the active
         // thread's key off the runtime and reuse the client's exact-value list.
@@ -19245,7 +20039,7 @@ impl RuntimeThreadManager {
                             let _ = engine
                                 .retry_tool_with_policy_by(
                                     tool_id,
-                                    crate::sandbox::SandboxPolicy::DangerFullAccess,
+                                    codewhale_sandbox::SandboxPolicy::DangerFullAccess,
                                     crate::approval_log::ApprovalDecider::Posture,
                                 )
                                 .await;
@@ -19415,6 +20209,30 @@ impl RuntimeThreadManager {
                     .await?;
                 }
                 EngineEvent::ProviderRequestReceipt { receipt } => {
+                    if receipt["outcome"] == "steered"
+                        || receipt["outcome"] == "steered_before_stream"
+                    {
+                        for mut item in [current_message_item.take(), current_reasoning_item.take()]
+                            .into_iter()
+                            .flatten()
+                        {
+                            item.status = TurnItemLifecycleStatus::Interrupted;
+                            item.summary = summarize_text(
+                                item.detail.as_deref().unwrap_or_default(),
+                                SUMMARY_LIMIT,
+                            );
+                            item.ended_at = Some(Utc::now());
+                            self.save_streaming_item(&item).await?;
+                            self.emit_event(
+                                &thread_id,
+                                Some(&turn_id),
+                                Some(&item.id),
+                                "item.interrupted",
+                                json!({ "item": item }),
+                            )
+                            .await?;
+                        }
+                    }
                     self.emit_event(
                         &thread_id,
                         Some(&turn_id),
@@ -20564,6 +21382,7 @@ fn touch_lru(lru: &mut VecDeque<String>, thread_id: &str) {
 fn enforce_lru_capacity(
     active: &mut ActiveThreads,
     max_active_threads: usize,
+    pending_commands: &HashSet<String>,
 ) -> Vec<EngineHandle> {
     let mut evicted = Vec::new();
     if max_active_threads == 0 || active.engines.len() < max_active_threads {
@@ -20577,7 +21396,8 @@ fn enforce_lru_capacity(
             let live_children = manager.try_read().map_or(true, |manager| {
                 manager.live_count_for_session(thread_id) > 0
             });
-            if state.active_turn.is_some() || live_children {
+            if state.active_turn.is_some() || live_children || pending_commands.contains(thread_id)
+            {
                 Some(thread_id.clone())
             } else {
                 None

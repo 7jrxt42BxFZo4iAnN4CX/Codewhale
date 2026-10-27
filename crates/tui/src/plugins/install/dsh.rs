@@ -1635,14 +1635,7 @@ fn stdio_files(root: &Path, name: &str, output: &mut OutputFiles) -> Result<()> 
 /// A native plugin name from the package name: its last path segment,
 /// lowercased, with other characters replaced by single hyphens.
 fn host_hook_bridge(name: &str) -> bool {
-    matches!(
-        name,
-        "@deepseek-ai/dsh-hooks-claude-code"
-            | "@deepseek-ai/dsh-hooks-codex"
-            | "@deepseek-ai/dsh-persona"
-            | DSH_MCP_CLIENT
-            | DSH_SKILL_FILESYSTEM
-    )
+    crate::plugins::activation::dsh_row_bridge(name)
 }
 
 /// Closed relative modules and exact contained ESM package exports. Missing

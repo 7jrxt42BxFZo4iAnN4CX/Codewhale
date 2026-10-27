@@ -434,17 +434,10 @@ pub(crate) async fn run_exec_agent(
     let trust_mode = auto_approve
         && matches!(
             turn_sandbox_policy,
-            crate::sandbox::SandboxPolicy::DangerFullAccess
+            codewhale_sandbox::SandboxPolicy::DangerFullAccess
         );
     let active_route_limits =
         crate::route_budget::known_route_limits(validated_route.candidate.limits());
-    // The startup instruction notice budgets against the window this route will
-    // actually use; the 128k default exists for callers that have no route.
-    let instruction_budget_window = crate::route_budget::route_context_window_tokens(
-        effective_provider,
-        &effective_model,
-        active_route_limits,
-    ) as usize;
     let max_subagents = if max_subagents
         == config.max_subagents_for_provider(
             &config
@@ -471,16 +464,17 @@ pub(crate) async fn run_exec_agent(
         cli_reasoning_effort_value_for_prompt(&execution_config, &effective_model, effort)
     });
 
-    let settings = crate::settings::Settings::load().unwrap_or_default();
-    let auto_compact_enabled = if crate::settings::Settings::auto_compact_explicitly_configured() {
-        settings.auto_compact
-    } else {
-        crate::route_budget::auto_compact_default_for_route(
-            effective_provider,
-            &effective_model,
-            active_route_limits,
-        )
-    };
+    let settings = codewhale_runtime::settings::Settings::load().unwrap_or_default();
+    let auto_compact_enabled =
+        if codewhale_runtime::settings::Settings::auto_compact_explicitly_configured() {
+            settings.auto_compact
+        } else {
+            crate::route_budget::auto_compact_default_for_route(
+                effective_provider,
+                &effective_model,
+                active_route_limits,
+            )
+        };
     let compaction = CompactionConfig {
         enabled: auto_compact_enabled,
         model: effective_model.clone(),
@@ -536,7 +530,7 @@ pub(crate) async fn run_exec_agent(
     // tool runtime services. Fleet workers never opt in: the narrowed
     // authority envelope does not carry the operator's hook set into a child.
     let exec_hook_executor = (exec_hooks_enabled && !fleet_authority_active).then(|| {
-        let hooks_config = crate::hooks::HooksConfig::load_with_project_and_plugins(
+        let hooks_config = crate::hooks::config::load_with_project_and_plugins(
             execution_config.hooks_config(),
             &workspace,
             Some(engine_plugin_registry.as_ref()),
@@ -664,11 +658,11 @@ pub(crate) async fn run_exec_agent(
             execution_config.subagent_heartbeat_timeout_secs_for_provider(&effective_identity),
         ),
         prefer_bwrap: execution_config.prefers_bwrap(),
-        bwrap_extensions: crate::sandbox::BwrapMountExtensions {
+        bwrap_extensions: codewhale_sandbox::BwrapMountExtensions {
             read_only_roots: execution_config.bwrap_ro_roots.clone(),
             device_roots: execution_config.bwrap_dev_roots.clone(),
         },
-        read_denylist: crate::sandbox::read_guard::ReadDenylist::from_config(&execution_config),
+        read_denylist: codewhale_sandbox::read_guard::ReadDenylist::from_config(&execution_config),
         memory_enabled: execution_config.memory_enabled(),
         memory_path: execution_config.memory_path(),
         speech_output_dir: execution_config.speech_output_dir(),
@@ -741,48 +735,10 @@ pub(crate) async fn run_exec_agent(
     // is never silent. Uses the enforcement pinned by `Engine::new`.
     let sandbox_enforcement = engine_handle.sandbox_enforcement;
     let sandbox_posture = turn_sandbox_policy.posture_label_with_enforcement(sandbox_enforcement);
-    if sandbox_enforcement == crate::sandbox::policy::SandboxEnforcement::Unavailable
+    if sandbox_enforcement == codewhale_sandbox::policy::SandboxEnforcement::Unavailable
         && turn_sandbox_policy.should_sandbox()
     {
         eprintln!("warning: {sandbox_posture} — shell commands will run unrestricted");
-    }
-
-    // #6526: headless runs report standing-instruction losses on stderr, the
-    // same content the interactive start puts in a system cell. The check
-    // covers every source the engine budgets, including the
-    // `--append-system-prompt` entry, and runs on a blocking worker: it walks
-    // directories and reads files.
-    let mut configured_sources: Vec<crate::prompts::InstructionSource> = execution_config
-        .instructions_paths()
-        .into_iter()
-        .map(Into::into)
-        .collect();
-    if let Some(extra) = append_system_prompt.as_ref() {
-        configured_sources.push(crate::prompts::InstructionSource::Inline {
-            name: "cli:append-system-prompt".to_string(),
-            content: extra.clone(),
-        });
-    }
-    let notice_workspace = workspace.clone();
-    let notice_model = effective_model.clone();
-    let notice = tokio::task::spawn_blocking(move || {
-        crate::project_context::startup_instruction_notice(
-            &notice_workspace,
-            &configured_sources,
-            Some(instruction_budget_window),
-            Some(&notice_model),
-        )
-    })
-    .await;
-    match notice {
-        Ok(Ok(Some(notice))) => {
-            if output_format == ExecOutputFormat::Text && !json_output {
-                eprintln!("{notice}");
-            }
-        }
-        Ok(Ok(None)) => {}
-        Ok(Err(error)) => anyhow::bail!(error),
-        Err(error) => anyhow::bail!("instruction check did not complete: {error}"),
     }
 
     let resuming_session = resume_session.is_some();
@@ -907,6 +863,7 @@ pub(crate) async fn run_exec_agent(
 
     let mut should_persist_session =
         !one_shot || resuming_session || output_format == ExecOutputFormat::StreamJson;
+    let mut image_request_receipts = Vec::new();
     let mut latest_session_id = loaded_session_id;
     let mut latest_messages: Arc<Vec<Message>> = Arc::new(Vec::new());
     let mut latest_system_prompt: Option<SystemPrompt> = None;
@@ -1190,7 +1147,7 @@ pub(crate) async fn run_exec_agent(
                 ..
             } => {
                 if can_elevate_sandbox {
-                    let policy = crate::sandbox::SandboxPolicy::DangerFullAccess;
+                    let policy = codewhale_sandbox::SandboxPolicy::DangerFullAccess;
                     let _ = engine_handle
                         .retry_tool_with_policy_by(
                             tool_id,
@@ -1251,6 +1208,18 @@ pub(crate) async fn run_exec_agent(
                 }
             }
             Event::ProviderRequestReceipt { receipt } => {
+                if receipt
+                    .get("wire_observations")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|observations| {
+                        observations
+                            .iter()
+                            .any(|observation| observation.get("image_projection").is_some())
+                    })
+                {
+                    should_persist_session = true;
+                    image_request_receipts.push(receipt.clone());
+                }
                 if output_format == ExecOutputFormat::StreamJson {
                     emit_exec_stream_event(&ExecStreamEvent::ProviderRequestReceipt { receipt })?;
                 }
@@ -1386,6 +1355,7 @@ pub(crate) async fn run_exec_agent(
                                 .as_str()
                             })),
                         fleet_capture.as_ref().map(|(_, manager)| manager),
+                        &image_request_receipts,
                     ) {
                         Ok(id) => {
                             if output_format == ExecOutputFormat::Text && !json_output {
@@ -1565,6 +1535,7 @@ pub(crate) async fn run_exec_agent(
                 session_id,
                 messages,
                 system_prompt,
+                instruction_assembly: _,
                 model,
                 workspace,
             } => {
@@ -1699,7 +1670,9 @@ pub(crate) async fn run_exec_agent(
 }
 
 fn exec_retry_status(message: &str) -> Option<ExecStreamEvent> {
-    crate::core::events::is_retry_status_receipt(message).then(|| ExecStreamEvent::Status {
+    (crate::core::events::is_retry_status_receipt(message)
+        || crate::core::events::is_request_image_status_receipt(message))
+    .then(|| ExecStreamEvent::Status {
         message: message.to_string(),
     })
 }
@@ -2055,8 +2028,10 @@ mod tests {
             "Retry recovery: transport request recovered after 1 retries",
             "Retry exhaustion: stream-resume stopped after 2 retries; stream interrupted",
             "Retry stopped: transparent stream completion was not observed",
+            "Image request budget: omitted 4 older image-bearing blocks; retained 12 newest blocks.",
+            "HTTP 413 recovery: retrying once without image attachments.",
         ] {
-            let event = super::exec_retry_status(message).expect("retry-only projection");
+            let event = super::exec_retry_status(message).expect("request receipt projection");
             let value = crate::exec_stream_value(&event).unwrap();
             assert_eq!(value["type"], "status");
             assert_eq!(value["message"], message);

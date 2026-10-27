@@ -36,7 +36,7 @@ pub(crate) fn review(input: &Value) -> Result<Value, String> {
         Some((runtime, _)) => runtime,
         None => {
             let choice = if bun_failed {
-                crate::config::ExtensionHostRuntime::Node
+                codewhale_config::extension_host::ExtensionHostRuntime::Node
             } else {
                 options.runtime
             };
@@ -55,6 +55,7 @@ pub(crate) fn review(input: &Value) -> Result<Value, String> {
         &bundle,
         &root,
         options.supervision.memory_cap,
+        &[],
     )?;
     // A bounded process runner, not another Engine or session runtime.
     tokio::runtime::Builder::new_current_thread()

@@ -14,12 +14,12 @@ mod recovery {
     use crate::llm_client::mock::{MockLlmClient, canned};
 
     fn config() -> Config {
-        let mut config = Config {
-            provider: Some("recovery-fixture".into()),
-            providers: Some(crate::config::ProvidersConfig {
+        let mut config = {
+            let __cw_config_init_0_0 = Some("recovery-fixture".into());
+            let __cw_config_init_0_1 = Some(codewhale_runtime::config::ProvidersConfig {
                 custom: HashMap::from([(
                     "recovery-fixture".into(),
-                    crate::config::ProviderConfig {
+                    codewhale_runtime::config::ProviderConfig {
                         kind: Some("openai-compatible".into()),
                         base_url: Some("http://127.0.0.1:18181/v1".into()),
                         model: Some("fixture-model".into()),
@@ -28,8 +28,11 @@ mod recovery {
                     },
                 )]),
                 ..Default::default()
-            }),
-            ..Config::default()
+            });
+            let mut __cw_config_init_0_value: Config = Config::default();
+            __cw_config_init_0_value.provider = __cw_config_init_0_0;
+            __cw_config_init_0_value.providers = __cw_config_init_0_1;
+            __cw_config_init_0_value
         };
         config.set_feature("mcp", false).unwrap();
         config.set_feature("subagents", false).unwrap();
@@ -2022,10 +2025,13 @@ mod recovery {
         assert!(manager.store.list_turns_for_thread(&auto.id)?.is_empty());
         assert!(!manager.active.lock().await.engines.contains_key(&auto.id));
         let codex = RuntimeThreadManager::open(
-            Config {
-                provider: Some("openai-codex".into()),
-                default_text_model: Some("gpt-5.5".into()),
-                ..Config::default()
+            {
+                let __cw_config_init_1_0 = Some("openai-codex".into());
+                let __cw_config_init_1_1 = Some("gpt-5.5".into());
+                let mut __cw_config_init_1_value: Config = Config::default();
+                __cw_config_init_1_value.provider = __cw_config_init_1_0;
+                __cw_config_init_1_value.default_text_model = __cw_config_init_1_1;
+                __cw_config_init_1_value
             },
             dir.path().into(),
             test_manager_config(dir.path().join("codex")),
@@ -2735,9 +2741,11 @@ fn legacy_turn_record_has_no_invented_route_provenance() {
 #[tokio::test]
 async fn explicit_local_thread_model_does_not_require_an_unrelated_default_catalog() -> Result<()> {
     let root = tempfile::tempdir()?;
-    let config = Config {
-        provider: Some("ollama".into()),
-        ..Config::default()
+    let config = {
+        let __cw_config_init_2_0 = Some("ollama".into());
+        let mut __cw_config_init_2_value: Config = Config::default();
+        __cw_config_init_2_value.provider = __cw_config_init_2_0;
+        __cw_config_init_2_value
     }
     .with_legacy_root(None, Some("http://127.0.0.1:11497/v1".into()));
     let manager = RuntimeThreadManager::open(
@@ -2773,20 +2781,23 @@ async fn named_custom_thread_identity_round_trips_and_fails_closed_when_removed(
     let mut custom = std::collections::HashMap::new();
     custom.insert(
         "lm-studio".to_string(),
-        crate::config::ProviderConfig {
+        codewhale_runtime::config::ProviderConfig {
             kind: Some("openai-compatible".to_string()),
             base_url: Some("http://127.0.0.1:1234/v1".to_string()),
             model: Some("local-default".to_string()),
-            ..crate::config::ProviderConfig::default()
+            ..codewhale_runtime::config::ProviderConfig::default()
         },
     );
-    let config = Config {
-        provider: Some("lm-studio".to_string()),
-        providers: Some(crate::config::ProvidersConfig {
+    let config = {
+        let __cw_config_init_3_0 = Some("lm-studio".to_string());
+        let __cw_config_init_3_1 = Some(codewhale_runtime::config::ProvidersConfig {
             custom,
-            ..crate::config::ProvidersConfig::default()
-        }),
-        ..Config::default()
+            ..codewhale_runtime::config::ProvidersConfig::default()
+        });
+        let mut __cw_config_init_3_value: Config = Config::default();
+        __cw_config_init_3_value.provider = __cw_config_init_3_0;
+        __cw_config_init_3_value.providers = __cw_config_init_3_1;
+        __cw_config_init_3_value
     };
     let manager = RuntimeThreadManager::open(
         config.clone(),
@@ -2841,10 +2852,13 @@ async fn named_custom_thread_identity_round_trips_and_fails_closed_when_removed(
 
 #[test]
 fn legacy_literal_custom_thread_resumes_on_the_migrated_table() -> Result<()> {
-    let config = Config {
-        provider: Some("custom".to_string()),
-        default_text_model: Some("legacy-default-model".to_string()),
-        ..Config::default()
+    let config = {
+        let __cw_config_init_4_0 = Some("custom".to_string());
+        let __cw_config_init_4_1 = Some("legacy-default-model".to_string());
+        let mut __cw_config_init_4_value: Config = Config::default();
+        __cw_config_init_4_value.provider = __cw_config_init_4_0;
+        __cw_config_init_4_value.default_text_model = __cw_config_init_4_1;
+        __cw_config_init_4_value
     }
     .with_legacy_root(None, Some("http://127.0.0.1:18180/v1".to_string()));
     let manager = RuntimeThreadManager::open(
@@ -2871,13 +2885,10 @@ fn legacy_literal_custom_thread_resumes_on_the_migrated_table() -> Result<()> {
             .config
             .resolve_provider_identity("custom")
             .map_err(anyhow::Error::msg)?,
-        crate::config::ProviderIdentity {
-            provider: ProviderKind::Custom,
-            key: "custom".into(),
-            exact_id: Some("custom".into()),
-            migrated_legacy_ollama_cloud_route: false,
-            legacy_root_custom_generation: None,
-        }
+        codewhale_runtime::config::ProviderIdentity::test_exact_identity(
+            ProviderKind::Custom,
+            "custom",
+        )
     );
     let repeated = manager.resolved_route_for_thread(&route.config, &restored)?;
     assert_eq!(repeated.identity.key.as_str(), "custom");
@@ -2891,20 +2902,23 @@ fn legacy_literal_custom_thread_resumes_on_the_migrated_table() -> Result<()> {
         let mut custom = std::collections::HashMap::new();
         custom.insert(
             "lm-studio".to_string(),
-            crate::config::ProviderConfig {
+            codewhale_runtime::config::ProviderConfig {
                 kind: Some("openai-compatible".to_string()),
                 base_url: Some("http://127.0.0.1:18181/v1".to_string()),
                 model: Some("named-model".to_string()),
-                ..crate::config::ProviderConfig::default()
+                ..codewhale_runtime::config::ProviderConfig::default()
             },
         );
-        Config {
-            provider: Some("lm-studio".to_string()),
-            providers: Some(crate::config::ProvidersConfig {
+        {
+            let __cw_config_init_6_0 = Some("lm-studio".to_string());
+            let __cw_config_init_6_1 = Some(codewhale_runtime::config::ProvidersConfig {
                 custom,
-                ..crate::config::ProvidersConfig::default()
-            }),
-            ..Config::default()
+                ..codewhale_runtime::config::ProvidersConfig::default()
+            });
+            let mut __cw_config_init_6_value: Config = Config::default();
+            __cw_config_init_6_value.provider = __cw_config_init_6_0;
+            __cw_config_init_6_value.providers = __cw_config_init_6_1;
+            __cw_config_init_6_value
         }
     };
     let error = manager
@@ -2919,10 +2933,13 @@ fn legacy_literal_custom_thread_resumes_on_the_migrated_table() -> Result<()> {
 
 #[tokio::test]
 async fn captured_legacy_root_thread_and_turn_keep_absent_id_provenance() -> Result<()> {
-    let config = Config {
-        provider: Some("custom".to_string()),
-        default_text_model: Some("legacy-root-model".to_string()),
-        ..Config::default()
+    let config = {
+        let __cw_config_init_7_0 = Some("custom".to_string());
+        let __cw_config_init_7_1 = Some("legacy-root-model".to_string());
+        let mut __cw_config_init_7_value: Config = Config::default();
+        __cw_config_init_7_value.provider = __cw_config_init_7_0;
+        __cw_config_init_7_value.default_text_model = __cw_config_init_7_1;
+        __cw_config_init_7_value
     }
     .with_legacy_root(None, Some("http://127.0.0.1:18180/v1".to_string()));
     let manager = RuntimeThreadManager::open(
@@ -2969,9 +2986,11 @@ async fn captured_legacy_root_thread_and_turn_keep_absent_id_provenance() -> Res
 #[tokio::test]
 async fn runtime_turn_reasoning_and_tool_defaults_follow_explicit_precedence() -> Result<()> {
     let manager = RuntimeThreadManager::open(
-        Config {
-            reasoning_effort: Some("high".to_string()),
-            ..Config::default()
+        {
+            let __cw_config_init_8_0 = Some("high".to_string());
+            let mut __cw_config_init_8_value: Config = Config::default();
+            __cw_config_init_8_value.reasoning_effort = __cw_config_init_8_0;
+            __cw_config_init_8_value
         },
         PathBuf::from("."),
         test_manager_config(test_runtime_dir()),
@@ -3307,7 +3326,7 @@ async fn real_turn_client_preflight_failure_writes_no_in_progress_record() -> Re
     let mut custom = std::collections::HashMap::new();
     custom.insert(
         "preflight-failure".to_string(),
-        crate::config::ProviderConfig {
+        codewhale_runtime::config::ProviderConfig {
             kind: Some("openai-compatible".to_string()),
             base_url: Some("https://preflight.invalid/v1".to_string()),
             model: Some("preflight-model".to_string()),
@@ -3315,18 +3334,21 @@ async fn real_turn_client_preflight_failure_writes_no_in_progress_record() -> Re
             // Client construction rejects this independently of ambient auth,
             // keeping the async regression hermetic without a global env lock.
             insecure_skip_tls_verify: Some(true),
-            ..crate::config::ProviderConfig::default()
+            ..codewhale_runtime::config::ProviderConfig::default()
         },
     );
     let workspace = tempfile::tempdir()?;
     let manager = RuntimeThreadManager::open(
-        Config {
-            provider: Some("preflight-failure".to_string()),
-            providers: Some(crate::config::ProvidersConfig {
+        {
+            let __cw_config_init_9_0 = Some("preflight-failure".to_string());
+            let __cw_config_init_9_1 = Some(codewhale_runtime::config::ProvidersConfig {
                 custom,
-                ..crate::config::ProvidersConfig::default()
-            }),
-            ..Config::default()
+                ..codewhale_runtime::config::ProvidersConfig::default()
+            });
+            let mut __cw_config_init_9_value: Config = Config::default();
+            __cw_config_init_9_value.provider = __cw_config_init_9_0;
+            __cw_config_init_9_value.providers = __cw_config_init_9_1;
+            __cw_config_init_9_value
         },
         workspace.path().to_path_buf(),
         test_manager_config(test_runtime_dir()),
@@ -4455,21 +4477,25 @@ fn idless_custom_thread_refuses_conflicting_root_and_exact_table() -> Result<()>
     let mut custom = std::collections::HashMap::new();
     custom.insert(
         "custom".to_string(),
-        crate::config::ProviderConfig {
+        codewhale_runtime::config::ProviderConfig {
             kind: Some("openai-compatible".to_string()),
             base_url: Some("http://127.0.0.1:18182/v1".to_string()),
             model: Some("table-model".to_string()),
-            ..crate::config::ProviderConfig::default()
+            ..codewhale_runtime::config::ProviderConfig::default()
         },
     );
-    let config = Config {
-        provider: Some("custom".to_string()),
-        default_text_model: Some("legacy-root-model".to_string()),
-        providers: Some(crate::config::ProvidersConfig {
+    let config = {
+        let __cw_config_init_10_0 = Some("custom".to_string());
+        let __cw_config_init_10_1 = Some("legacy-root-model".to_string());
+        let __cw_config_init_10_2 = Some(codewhale_runtime::config::ProvidersConfig {
             custom,
-            ..crate::config::ProvidersConfig::default()
-        }),
-        ..Config::default()
+            ..codewhale_runtime::config::ProvidersConfig::default()
+        });
+        let mut __cw_config_init_10_value: Config = Config::default();
+        __cw_config_init_10_value.provider = __cw_config_init_10_0;
+        __cw_config_init_10_value.default_text_model = __cw_config_init_10_1;
+        __cw_config_init_10_value.providers = __cw_config_init_10_2;
+        __cw_config_init_10_value
     }
     .with_legacy_root(None, Some("http://127.0.0.1:18181/v1".to_string()));
     let manager = RuntimeThreadManager::open(
@@ -4496,10 +4522,13 @@ fn idless_custom_thread_refuses_conflicting_root_and_exact_table() -> Result<()>
         exact.config.active_route_base_url(),
         "http://127.0.0.1:18182/v1"
     );
-    let root_only = Config {
-        provider: Some("custom".to_string()),
-        default_text_model: Some("legacy-root-model".to_string()),
-        ..Config::default()
+    let root_only = {
+        let __cw_config_init_11_0 = Some("custom".to_string());
+        let __cw_config_init_11_1 = Some("legacy-root-model".to_string());
+        let mut __cw_config_init_11_value: Config = Config::default();
+        __cw_config_init_11_value.provider = __cw_config_init_11_0;
+        __cw_config_init_11_value.default_text_model = __cw_config_init_11_1;
+        __cw_config_init_11_value
     }
     .with_legacy_root(None, Some("http://127.0.0.1:18181/v1".to_string()));
     // A top-level-only literal route became the table, so the exact thread
@@ -4517,21 +4546,25 @@ async fn empty_imported_custom_id_fails_closed_when_root_and_table_coexist() -> 
     let mut custom = std::collections::HashMap::new();
     custom.insert(
         "custom".to_string(),
-        crate::config::ProviderConfig {
+        codewhale_runtime::config::ProviderConfig {
             kind: Some("openai-compatible".to_string()),
             base_url: Some("http://127.0.0.1:18182/v1".to_string()),
             model: Some("table-model".to_string()),
-            ..crate::config::ProviderConfig::default()
+            ..codewhale_runtime::config::ProviderConfig::default()
         },
     );
-    let config = Config {
-        provider: Some("custom".to_string()),
-        default_text_model: Some("legacy-root-model".to_string()),
-        providers: Some(crate::config::ProvidersConfig {
+    let config = {
+        let __cw_config_init_12_0 = Some("custom".to_string());
+        let __cw_config_init_12_1 = Some("legacy-root-model".to_string());
+        let __cw_config_init_12_2 = Some(codewhale_runtime::config::ProvidersConfig {
             custom,
-            ..crate::config::ProvidersConfig::default()
-        }),
-        ..Config::default()
+            ..codewhale_runtime::config::ProvidersConfig::default()
+        });
+        let mut __cw_config_init_12_value: Config = Config::default();
+        __cw_config_init_12_value.provider = __cw_config_init_12_0;
+        __cw_config_init_12_value.default_text_model = __cw_config_init_12_1;
+        __cw_config_init_12_value.providers = __cw_config_init_12_2;
+        __cw_config_init_12_value
     }
     .with_legacy_root(None, Some("http://127.0.0.1:18181/v1".to_string()));
     let manager = RuntimeThreadManager::open(
@@ -4572,20 +4605,23 @@ async fn thread_records_and_create_requests_preserve_provider_kind_id_pairing() 
     let mut custom = std::collections::HashMap::new();
     custom.insert(
         "openai".to_string(),
-        crate::config::ProviderConfig {
+        codewhale_runtime::config::ProviderConfig {
             kind: Some("openai-compatible".to_string()),
             base_url: Some("http://127.0.0.1:18183/v1".to_string()),
             model: Some("custom-openai-model".to_string()),
-            ..crate::config::ProviderConfig::default()
+            ..codewhale_runtime::config::ProviderConfig::default()
         },
     );
-    let config = Config {
-        provider: Some("openai".to_string()),
-        providers: Some(crate::config::ProvidersConfig {
+    let config = {
+        let __cw_config_init_13_0 = Some("openai".to_string());
+        let __cw_config_init_13_1 = Some(codewhale_runtime::config::ProvidersConfig {
             custom,
-            ..crate::config::ProvidersConfig::default()
-        }),
-        ..Config::default()
+            ..codewhale_runtime::config::ProvidersConfig::default()
+        });
+        let mut __cw_config_init_13_value: Config = Config::default();
+        __cw_config_init_13_value.provider = __cw_config_init_13_0;
+        __cw_config_init_13_value.providers = __cw_config_init_13_1;
+        __cw_config_init_13_value
     };
     let manager = RuntimeThreadManager::open(
         config.clone(),
@@ -4680,21 +4716,24 @@ async fn config_reload_updates_next_turn_route_without_mutating_engine_route() -
     let mut custom = std::collections::HashMap::new();
     custom.insert(
         "lm-studio".to_string(),
-        crate::config::ProviderConfig {
+        codewhale_runtime::config::ProviderConfig {
             kind: Some("openai-compatible".to_string()),
             base_url: Some("http://127.0.0.1:18181/v1".to_string()),
             model: Some("local-model".to_string()),
             api_key: Some("old-local-test-key".to_string()),
-            ..crate::config::ProviderConfig::default()
+            ..codewhale_runtime::config::ProviderConfig::default()
         },
     );
-    let config = Config {
-        provider: Some("lm-studio".to_string()),
-        providers: Some(crate::config::ProvidersConfig {
+    let config = {
+        let __cw_config_init_14_0 = Some("lm-studio".to_string());
+        let __cw_config_init_14_1 = Some(codewhale_runtime::config::ProvidersConfig {
             custom,
-            ..crate::config::ProvidersConfig::default()
-        }),
-        ..Config::default()
+            ..codewhale_runtime::config::ProvidersConfig::default()
+        });
+        let mut __cw_config_init_14_value: Config = Config::default();
+        __cw_config_init_14_value.provider = __cw_config_init_14_0;
+        __cw_config_init_14_value.providers = __cw_config_init_14_1;
+        __cw_config_init_14_value
     };
     let manager = RuntimeThreadManager::open(
         config.clone(),
@@ -4779,23 +4818,26 @@ async fn config_reload_updates_next_turn_route_without_mutating_engine_route() -
 
 #[tokio::test]
 async fn queued_reload_is_a_hard_boundary_for_a_concurrent_turn_start() -> Result<()> {
-    let provider = |base_url: &str, key: &str| crate::config::ProviderConfig {
+    let provider = |base_url: &str, key: &str| codewhale_runtime::config::ProviderConfig {
         kind: Some("openai-compatible".to_string()),
         base_url: Some(base_url.to_string()),
         model: Some("local-model".to_string()),
         api_key: Some(key.to_string()),
-        ..crate::config::ProviderConfig::default()
+        ..codewhale_runtime::config::ProviderConfig::default()
     };
-    let config = Config {
-        provider: Some("lm-studio".to_string()),
-        providers: Some(crate::config::ProvidersConfig {
+    let config = {
+        let __cw_config_init_15_0 = Some("lm-studio".to_string());
+        let __cw_config_init_15_1 = Some(codewhale_runtime::config::ProvidersConfig {
             custom: std::collections::HashMap::from([(
                 "lm-studio".to_string(),
                 provider("http://127.0.0.1:18181/v1", "old-local-test-key"),
             )]),
-            ..crate::config::ProvidersConfig::default()
-        }),
-        ..Config::default()
+            ..codewhale_runtime::config::ProvidersConfig::default()
+        });
+        let mut __cw_config_init_15_value: Config = Config::default();
+        __cw_config_init_15_value.provider = __cw_config_init_15_0;
+        __cw_config_init_15_value.providers = __cw_config_init_15_1;
+        __cw_config_init_15_value
     };
     let manager = RuntimeThreadManager::open(
         config.clone(),
@@ -4876,23 +4918,26 @@ async fn queued_reload_is_a_hard_boundary_for_a_concurrent_turn_start() -> Resul
 
 #[tokio::test]
 async fn queued_reload_is_a_hard_boundary_for_concurrent_compaction() -> Result<()> {
-    let provider = |base_url: &str, key: &str| crate::config::ProviderConfig {
+    let provider = |base_url: &str, key: &str| codewhale_runtime::config::ProviderConfig {
         kind: Some("openai-compatible".to_string()),
         base_url: Some(base_url.to_string()),
         model: Some("local-model".to_string()),
         api_key: Some(key.to_string()),
-        ..crate::config::ProviderConfig::default()
+        ..codewhale_runtime::config::ProviderConfig::default()
     };
-    let config = Config {
-        provider: Some("lm-studio".to_string()),
-        providers: Some(crate::config::ProvidersConfig {
+    let config = {
+        let __cw_config_init_16_0 = Some("lm-studio".to_string());
+        let __cw_config_init_16_1 = Some(codewhale_runtime::config::ProvidersConfig {
             custom: std::collections::HashMap::from([(
                 "lm-studio".to_string(),
                 provider("http://127.0.0.1:18181/v1", "old-local-test-key"),
             )]),
-            ..crate::config::ProvidersConfig::default()
-        }),
-        ..Config::default()
+            ..codewhale_runtime::config::ProvidersConfig::default()
+        });
+        let mut __cw_config_init_16_value: Config = Config::default();
+        __cw_config_init_16_value.provider = __cw_config_init_16_0;
+        __cw_config_init_16_value.providers = __cw_config_init_16_1;
+        __cw_config_init_16_value
     };
     let manager = RuntimeThreadManager::open(
         config.clone(),
@@ -4971,21 +5016,24 @@ async fn config_sync_reports_removed_named_custom_route_and_keeps_mailbox_clean(
     let mut custom = std::collections::HashMap::new();
     custom.insert(
         "lm-studio".to_string(),
-        crate::config::ProviderConfig {
+        codewhale_runtime::config::ProviderConfig {
             kind: Some("openai-compatible".to_string()),
             base_url: Some("http://127.0.0.1:18181/v1".to_string()),
             model: Some("local-model".to_string()),
             api_key: Some("local-test-key".to_string()),
-            ..crate::config::ProviderConfig::default()
+            ..codewhale_runtime::config::ProviderConfig::default()
         },
     );
-    let config = Config {
-        provider: Some("lm-studio".to_string()),
-        providers: Some(crate::config::ProvidersConfig {
+    let config = {
+        let __cw_config_init_17_0 = Some("lm-studio".to_string());
+        let __cw_config_init_17_1 = Some(codewhale_runtime::config::ProvidersConfig {
             custom,
-            ..crate::config::ProvidersConfig::default()
-        }),
-        ..Config::default()
+            ..codewhale_runtime::config::ProvidersConfig::default()
+        });
+        let mut __cw_config_init_17_value: Config = Config::default();
+        __cw_config_init_17_value.provider = __cw_config_init_17_0;
+        __cw_config_init_17_value.providers = __cw_config_init_17_1;
+        __cw_config_init_17_value
     };
     let manager = RuntimeThreadManager::open(
         config,
@@ -5022,7 +5070,7 @@ async fn create_thread_uses_requested_named_custom_provider_default_model() -> R
     ] {
         custom.insert(
             name.to_string(),
-            crate::config::ProviderConfig {
+            codewhale_runtime::config::ProviderConfig {
                 kind: Some("openai-compatible".to_string()),
                 base_url: Some(base_url.to_string()),
                 model: Some(model.to_string()),
@@ -5030,13 +5078,16 @@ async fn create_thread_uses_requested_named_custom_provider_default_model() -> R
             },
         );
     }
-    let config = Config {
-        provider: Some("custom-b".to_string()),
-        providers: Some(crate::config::ProvidersConfig {
+    let config = {
+        let __cw_config_init_18_0 = Some("custom-b".to_string());
+        let __cw_config_init_18_1 = Some(codewhale_runtime::config::ProvidersConfig {
             custom,
             ..Default::default()
-        }),
-        ..Default::default()
+        });
+        let mut __cw_config_init_18_value: Config = Default::default();
+        __cw_config_init_18_value.provider = __cw_config_init_18_0;
+        __cw_config_init_18_value.providers = __cw_config_init_18_1;
+        __cw_config_init_18_value
     };
     let manager = RuntimeThreadManager::open(
         config.clone(),
@@ -5071,7 +5122,7 @@ fn two_custom_route_config() -> Config {
     ] {
         custom.insert(
             name.to_string(),
-            crate::config::ProviderConfig {
+            codewhale_runtime::config::ProviderConfig {
                 kind: Some("openai-compatible".to_string()),
                 base_url: Some(base_url.to_string()),
                 model: Some(model.to_string()),
@@ -5079,13 +5130,16 @@ fn two_custom_route_config() -> Config {
             },
         );
     }
-    Config {
-        provider: Some("custom-a".to_string()),
-        providers: Some(crate::config::ProvidersConfig {
+    {
+        let __cw_config_init_19_0 = Some("custom-a".to_string());
+        let __cw_config_init_19_1 = Some(codewhale_runtime::config::ProvidersConfig {
             custom,
             ..Default::default()
-        }),
-        ..Default::default()
+        });
+        let mut __cw_config_init_19_value: Config = Default::default();
+        __cw_config_init_19_value.provider = __cw_config_init_19_0;
+        __cw_config_init_19_value.providers = __cw_config_init_19_1;
+        __cw_config_init_19_value
     }
 }
 
@@ -5323,10 +5377,13 @@ async fn create_thread_scenario() -> Result<()> {
     // Scenario consolidation of: create_thread_uses_requested_non_current_builtin_default_model, create_thread_defaults_auto_approve_to_false
     // from create_thread_uses_requested_non_current_builtin_default_model
     {
-        let config = Config {
-            provider: Some("openrouter".to_string()),
-            default_text_model: Some(DEFAULT_TEXT_MODEL.to_string()),
-            ..Default::default()
+        let config = {
+            let __cw_config_init_20_0 = Some("openrouter".to_string());
+            let __cw_config_init_20_1 = Some(DEFAULT_TEXT_MODEL.to_string());
+            let mut __cw_config_init_20_value: Config = Default::default();
+            __cw_config_init_20_value.provider = __cw_config_init_20_0;
+            __cw_config_init_20_value.default_text_model = __cw_config_init_20_1;
+            __cw_config_init_20_value
         };
         let manager = RuntimeThreadManager::open(
             config,
@@ -5379,7 +5436,7 @@ async fn simultaneous_named_custom_auto_threads_keep_exact_routes() -> Result<()
     ] {
         custom.insert(
             name.to_string(),
-            crate::config::ProviderConfig {
+            codewhale_runtime::config::ProviderConfig {
                 kind: Some("openai-compatible".to_string()),
                 base_url: Some(base_url.to_string()),
                 model: Some(model.to_string()),
@@ -5388,13 +5445,16 @@ async fn simultaneous_named_custom_auto_threads_keep_exact_routes() -> Result<()
         );
     }
     let manager = RuntimeThreadManager::open(
-        Config {
-            provider: Some("custom-b".to_string()),
-            providers: Some(crate::config::ProvidersConfig {
+        {
+            let __cw_config_init_21_0 = Some("custom-b".to_string());
+            let __cw_config_init_21_1 = Some(codewhale_runtime::config::ProvidersConfig {
                 custom,
                 ..Default::default()
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_21_value: Config = Default::default();
+            __cw_config_init_21_value.provider = __cw_config_init_21_0;
+            __cw_config_init_21_value.providers = __cw_config_init_21_1;
+            __cw_config_init_21_value
         },
         PathBuf::from("."),
         test_manager_config(test_runtime_dir()),
@@ -8080,6 +8140,7 @@ fn store_rejects_path_like_record_ids() {
 #[test]
 fn enforce_lru_capacity_does_not_loop_when_all_threads_are_active() {
     let mut active = ActiveThreads::default();
+    let mut pending_commands = HashSet::new();
     let harness_a = mock_engine_handle();
     let harness_b = mock_engine_handle();
 
@@ -8095,13 +8156,10 @@ fn enforce_lru_capacity_does_not_loop_when_all_threads_are_active() {
                 interrupt_requested: false,
                 compaction_id: None,
             }),
-            route_identity: crate::config::ProviderIdentity {
-                provider: ProviderKind::Deepseek,
-                key: "deepseek".into(),
-                exact_id: Some("deepseek".into()),
-                migrated_legacy_ollama_cloud_route: false,
-                legacy_root_custom_generation: None,
-            },
+            route_identity: codewhale_runtime::config::ProviderIdentity::test_exact_identity(
+                ProviderKind::Deepseek,
+                "deepseek",
+            ),
             route_model: DEFAULT_TEXT_MODEL.to_string(),
             hook_executor: None,
             client_preflight_required: false,
@@ -8119,13 +8177,10 @@ fn enforce_lru_capacity_does_not_loop_when_all_threads_are_active() {
                 interrupt_requested: false,
                 compaction_id: None,
             }),
-            route_identity: crate::config::ProviderIdentity {
-                provider: ProviderKind::Deepseek,
-                key: "deepseek".into(),
-                exact_id: Some("deepseek".into()),
-                migrated_legacy_ollama_cloud_route: false,
-                legacy_root_custom_generation: None,
-            },
+            route_identity: codewhale_runtime::config::ProviderIdentity::test_exact_identity(
+                ProviderKind::Deepseek,
+                "deepseek",
+            ),
             route_model: DEFAULT_TEXT_MODEL.to_string(),
             hook_executor: None,
             client_preflight_required: false,
@@ -8134,7 +8189,7 @@ fn enforce_lru_capacity_does_not_loop_when_all_threads_are_active() {
     active.lru.push_back("thr_a".to_string());
     active.lru.push_back("thr_b".to_string());
 
-    let evicted = enforce_lru_capacity(&mut active, 2);
+    let evicted = enforce_lru_capacity(&mut active, 2, &pending_commands);
     assert!(evicted.is_empty(), "no idle threads should be evicted");
     assert_eq!(active.engines.len(), 2);
     assert_eq!(active.lru.len(), 2);
@@ -8146,12 +8201,16 @@ fn enforce_lru_capacity_does_not_loop_when_all_threads_are_active() {
         workers.assign_test_session_owner(&child, "thr_a");
         child
     };
-    assert!(enforce_lru_capacity(&mut active, 2).is_empty());
+    assert!(enforce_lru_capacity(&mut active, 2, &pending_commands).is_empty());
     let _ = authority
         .try_write()
         .unwrap()
         .cancel_agent_for_session("thr_a", &child);
-    let evicted = enforce_lru_capacity(&mut active, 2);
+    pending_commands.insert("thr_a".to_string());
+    assert!(enforce_lru_capacity(&mut active, 2, &pending_commands).is_empty());
+    assert!(active.engines.contains_key("thr_a"));
+    pending_commands.clear();
+    let evicted = enforce_lru_capacity(&mut active, 2, &pending_commands);
     assert_eq!(evicted.len(), 1);
     assert!(!active.engines.contains_key("thr_a"));
     assert!(active.engines.contains_key("thr_b"));
@@ -11171,7 +11230,7 @@ async fn compact_thread_receipt_keeps_exact_named_custom_identity() -> Result<()
     let mut custom = std::collections::HashMap::new();
     custom.insert(
         "lm-studio".to_string(),
-        crate::config::ProviderConfig {
+        codewhale_runtime::config::ProviderConfig {
             kind: Some("openai-compatible".to_string()),
             base_url: Some("http://127.0.0.1:1234/v1".to_string()),
             model: Some("local-code-model".to_string()),
@@ -11179,13 +11238,16 @@ async fn compact_thread_receipt_keeps_exact_named_custom_identity() -> Result<()
         },
     );
     let manager = RuntimeThreadManager::open(
-        Config {
-            provider: Some("lm-studio".to_string()),
-            providers: Some(crate::config::ProvidersConfig {
+        {
+            let __cw_config_init_24_0 = Some("lm-studio".to_string());
+            let __cw_config_init_24_1 = Some(codewhale_runtime::config::ProvidersConfig {
                 custom,
                 ..Default::default()
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_24_value: Config = Default::default();
+            __cw_config_init_24_value.provider = __cw_config_init_24_0;
+            __cw_config_init_24_value.providers = __cw_config_init_24_1;
+            __cw_config_init_24_value
         },
         PathBuf::from("."),
         test_manager_config(test_runtime_dir()),
@@ -11217,11 +11279,11 @@ async fn compact_thread_with_real_engine_reaches_terminal_status() -> Result<()>
     // itself, and two exclusive holders of it cannot both start.
     let workspace = tempfile::tempdir()?;
     let manager = RuntimeThreadManager::open(
-        Config {
+        {
             // This test intentionally crosses the real-engine boundary. Give
             // client preflight a hermetic credential and closed-loopback URL;
             // the assertion permits the resulting terminal failure.
-            ..Config::default()
+            Config::default()
         }
         .with_legacy_root(
             Some("runtime-thread-test-key".to_string()),
@@ -11508,14 +11570,16 @@ async fn wait_for_terminal_turn_count(
 
 #[tokio::test]
 async fn host_goal_loop_kickoff_arms_one_continuation_and_parks_at_engine_cap() -> Result<()> {
-    let config = Config {
-        goal: Some(crate::config::GoalConfig {
+    let config = {
+        let __cw_config_init_26_0 = Some(codewhale_runtime::config::GoalConfig {
             max_continuations: Some(2),
             continuation_delay_seconds: None,
             max_steps: None,
             enforce_token_budget: None,
-        }),
-        ..Config::default()
+        });
+        let mut __cw_config_init_26_value: Config = Config::default();
+        __cw_config_init_26_value.goal = __cw_config_init_26_0;
+        __cw_config_init_26_value
     };
     let manager = RuntimeThreadManager::open(
         config,
@@ -11947,14 +12011,16 @@ async fn model_created_goal_persists_through_adopted_revision() -> Result<()> {
     // adopt its revision, so settlement accrues usage and the next admission
     // restores the goal instead of clearing it.
     let manager = RuntimeThreadManager::open(
-        Config {
-            goal: Some(crate::config::GoalConfig {
+        {
+            let __cw_config_init_27_0 = Some(codewhale_runtime::config::GoalConfig {
                 max_continuations: None,
                 continuation_delay_seconds: Some(3600),
                 max_steps: None,
                 enforce_token_budget: None,
-            }),
-            ..Config::default()
+            });
+            let mut __cw_config_init_27_value: Config = Config::default();
+            __cw_config_init_27_value.goal = __cw_config_init_27_0;
+            __cw_config_init_27_value
         },
         PathBuf::from("."),
         test_manager_config(test_runtime_dir()),
@@ -18345,6 +18411,7 @@ fn answer_session_snapshot(
             model_provider_id: None,
             workspace: PathBuf::new(),
             system_prompt: None,
+            instruction_assembly: None,
             mode: String::new(),
         });
     }
@@ -20184,11 +20251,15 @@ mod runtime_image_inputs {
     use crate::llm_client::mock::{MockLlmClient, canned};
 
     fn config() -> Config {
-        let mut config = Config {
-            provider: Some("deepseek".into()),
-            default_text_model: Some("deepseek-v4-flash-vision-exp".into()),
-            runtime_chat_isolated: true,
-            ..Config::default()
+        let mut config = {
+            let __cw_config_init_28_0 = Some("deepseek".into());
+            let __cw_config_init_28_1 = Some("deepseek-v4-flash-vision-exp".into());
+            let __cw_config_init_28_2 = true;
+            let mut __cw_config_init_28_value: Config = Config::default();
+            __cw_config_init_28_value.provider = __cw_config_init_28_0;
+            __cw_config_init_28_value.default_text_model = __cw_config_init_28_1;
+            __cw_config_init_28_value.runtime_chat_isolated = __cw_config_init_28_2;
+            __cw_config_init_28_value
         }
         .with_legacy_root(Some("synthetic-image-fixture-key".into()), None);
         config
@@ -22735,12 +22806,14 @@ fn runtime_approvals_wait_indefinitely_unless_approval_timeout_is_set() -> Resul
     let manager = test_manager(test_runtime_dir())?;
     assert_eq!(manager.approval_decision_timeout(), None);
 
-    let mut config = Config {
-        tools: Some(crate::config::ToolsConfig {
+    let mut config = {
+        let __cw_config_init_29_0 = Some(codewhale_runtime::config::ToolsConfig {
             user_input_timeout_seconds: Some(300),
             ..Default::default()
-        }),
-        ..Config::default()
+        });
+        let mut __cw_config_init_29_value: Config = Config::default();
+        __cw_config_init_29_value.tools = __cw_config_init_29_0;
+        __cw_config_init_29_value
     };
     let manager = RuntimeThreadManager::open(
         config.clone(),
@@ -22753,7 +22826,7 @@ fn runtime_approvals_wait_indefinitely_unless_approval_timeout_is_set() -> Resul
         "the question clock does not bound approvals"
     );
 
-    config.approval = Some(crate::config::ApprovalConfig {
+    config.approval = Some(codewhale_runtime::config::ApprovalConfig {
         timeout_seconds: Some(45),
         ..Default::default()
     });
@@ -22774,7 +22847,7 @@ fn runtime_approvals_wait_indefinitely_unless_approval_timeout_is_set() -> Resul
 #[cfg(unix)]
 #[tokio::test]
 async fn runtime_tool_completion_fires_after_and_error_hooks() -> Result<()> {
-    use crate::hooks::{Hook, HookEvent, HooksConfig};
+    use codewhale_config::hooks::{Hook, HookEvent, HooksConfig};
     let dir = tempfile::tempdir()?;
     let log = dir.path().join("hooks.log");
     let append = |label: &str| {
@@ -22784,16 +22857,18 @@ async fn runtime_tool_completion_fires_after_and_error_hooks() -> Result<()> {
         )
     };
     let manager = test_manager(test_runtime_dir())?;
-    let config = Config {
-        hooks: Some(HooksConfig {
+    let config = {
+        let __cw_config_init_30_0 = Some(HooksConfig {
             hooks: vec![
                 Hook::new(HookEvent::ToolCallAfter, &append("after")),
                 Hook::new(HookEvent::OnError, &append("error")),
             ],
             enabled: true,
             ..HooksConfig::default()
-        }),
-        ..Config::default()
+        });
+        let mut __cw_config_init_30_value: Config = Config::default();
+        __cw_config_init_30_value.hooks = __cw_config_init_30_0;
+        __cw_config_init_30_value
     };
     let hooks = manager.hook_executor_for_workspace(&config, dir.path(), None);
     fire_runtime_tool_completion_hooks(
@@ -23395,7 +23470,7 @@ async fn a_turn_without_its_snapshot_pair_keeps_the_item_aggregate_with_a_reason
         Some(receipts[0].tree_id.as_str())
     );
 
-    fixture.manager.config.write().snapshots = Some(crate::config::SnapshotsConfig {
+    fixture.manager.config.write().snapshots = Some(codewhale_runtime::config::SnapshotsConfig {
         enabled: false,
         ..Default::default()
     });
@@ -23472,8 +23547,8 @@ async fn a_pending_turn_workspace_is_reconciled_on_restart() -> Result<()> {
 #[cfg(unix)]
 #[tokio::test]
 async fn runtime_shell_completion_delivers_exit_code_and_status_to_hooks() -> Result<()> {
-    use crate::hooks::{Hook, HookEvent, HooksConfig};
     use crate::tools::spec::ToolSpec;
+    use codewhale_config::hooks::{Hook, HookEvent, HooksConfig};
     let dir = tempfile::tempdir()?;
     let after_log = dir.path().join("after.log");
     let error_log = dir.path().join("error.log");
@@ -23484,16 +23559,18 @@ async fn runtime_shell_completion_delivers_exit_code_and_status_to_hooks() -> Re
         )
     };
     let manager = test_manager(test_runtime_dir())?;
-    let config = Config {
-        hooks: Some(HooksConfig {
+    let config = {
+        let __cw_config_init_31_0 = Some(HooksConfig {
             hooks: vec![
                 Hook::new(HookEvent::ToolCallAfter, &script(&after_log)),
                 Hook::new(HookEvent::OnError, &script(&error_log)),
             ],
             enabled: true,
             ..HooksConfig::default()
-        }),
-        ..Config::default()
+        });
+        let mut __cw_config_init_31_value: Config = Config::default();
+        __cw_config_init_31_value.hooks = __cw_config_init_31_0;
+        __cw_config_init_31_value
     };
     let hooks = manager.hook_executor_for_workspace(&config, dir.path(), None);
     let context = crate::tools::spec::ToolContext::new(dir.path());

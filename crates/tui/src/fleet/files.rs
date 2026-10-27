@@ -350,7 +350,13 @@ impl WorkspaceFile {
             }
             file.write_all(bytes)?;
             file.sync_all()?;
-            if !replace && rename_exclusive(self.directory.as_raw_fd(), &temporary, &self.filename)?
+            if !replace
+                && rename_exclusive(
+                    self.directory.as_raw_fd(),
+                    &temporary,
+                    self.directory.as_raw_fd(),
+                    &self.filename,
+                )?
             {
                 return Ok(true);
             }
@@ -400,26 +406,71 @@ impl WorkspaceFile {
         self.open_file()
     }
 
-    pub(crate) fn move_opened_to_sibling(
-        &self,
-        _file: &File,
-        destination: &Self,
-    ) -> io::Result<()> {
-        use std::os::fd::AsRawFd;
+    pub(crate) fn move_opened_to_sibling(&self, file: &File, destination: &Self) -> io::Result<()> {
         if !same_file(&self.directory, &destination.directory)? {
             return Err(invalid_path());
         }
         // Retirement must be one no-clobber rename. The link/unlink fallback
         // used by immutable publication is not a conditional move of an old entry.
+        self.move_opened_to_directory(file, destination)
+    }
+
+    pub(crate) fn verify_delivery_owner(&self, file: &File) -> io::Result<()> {
+        use std::os::unix::fs::MetadataExt;
+        let owner = codewhale_config::private_directory::PrivateDirectory::current_user_id();
+        let parent = self.directory.metadata()?;
+        let entry = file.metadata()?;
+        if parent.uid() != owner
+            || parent.mode() & 0o022 != 0
+            || entry.uid() != owner
+            || entry.mode() & 0o022 != 0
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "delivery file and retained parent must be owned by the current user and not writable by group or others",
+            ));
+        }
+        if !same_file(file, &self.identity_probe()?)? {
+            return Err(invalid_path());
+        }
+        Ok(())
+    }
+
+    pub(crate) fn move_opened_to_directory(
+        &self,
+        file: &File,
+        destination: &Self,
+    ) -> io::Result<()> {
+        use std::os::fd::AsRawFd;
+        if !same_file(file, &self.identity_probe()?)? {
+            return Err(invalid_path());
+        }
         if !rename_exclusive(
             self.directory.as_raw_fd(),
             &self.filename,
+            destination.directory.as_raw_fd(),
             &destination.filename,
         )? {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
                 "exclusive retirement is unavailable",
             ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn unlink_opened(&self, file: &File) -> io::Result<()> {
+        use std::os::fd::AsRawFd;
+        use std::os::unix::fs::MetadataExt;
+        let parent = self.directory.metadata()?;
+        if parent.mode() & 0o077 != 0
+            || parent.uid() != unsafe { libc::geteuid() }
+            || !same_file(file, &self.identity_probe()?)?
+        {
+            return Err(invalid_path());
+        }
+        if unsafe { libc::unlinkat(self.directory.as_raw_fd(), self.filename.as_ptr(), 0) } != 0 {
+            return Err(io::Error::last_os_error());
         }
         Ok(())
     }
@@ -476,15 +527,16 @@ impl WorkspaceFile {
 fn rename_exclusive(
     directory: libc::c_int,
     from: &std::ffi::CStr,
+    destination: libc::c_int,
     to: &std::ffi::CStr,
 ) -> io::Result<bool> {
-    // SAFETY: both basenames are anchored to the same open parent.
+    // SAFETY: both basenames are anchored to their retained open parents.
     let renamed = unsafe {
         libc::syscall(
             libc::SYS_renameat2,
             directory,
             from.as_ptr(),
-            directory,
+            destination,
             to.as_ptr(),
             libc::RENAME_NOREPLACE,
         )
@@ -496,14 +548,15 @@ fn rename_exclusive(
 fn rename_exclusive(
     directory: libc::c_int,
     from: &std::ffi::CStr,
+    destination: libc::c_int,
     to: &std::ffi::CStr,
 ) -> io::Result<bool> {
-    // SAFETY: both basenames are anchored to the same open parent.
+    // SAFETY: both basenames are anchored to their retained open parents.
     let renamed = unsafe {
         libc::renameatx_np(
             directory,
             from.as_ptr(),
-            directory,
+            destination,
             to.as_ptr(),
             libc::RENAME_EXCL,
         )
@@ -512,7 +565,12 @@ fn rename_exclusive(
 }
 
 #[cfg(all(unix, not(any(target_os = "linux", target_vendor = "apple"))))]
-fn rename_exclusive(_: libc::c_int, _: &std::ffi::CStr, _: &std::ffi::CStr) -> io::Result<bool> {
+fn rename_exclusive(
+    _: libc::c_int,
+    _: &std::ffi::CStr,
+    _: libc::c_int,
+    _: &std::ffi::CStr,
+) -> io::Result<bool> {
     Ok(false)
 }
 

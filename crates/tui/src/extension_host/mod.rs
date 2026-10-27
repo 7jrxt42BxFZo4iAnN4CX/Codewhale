@@ -158,8 +158,8 @@ use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use self::protocol::{
-    ActivateParams, ActivateResult, CoreRequest, DeactivateParams, DeactivateResult, EntryRef,
-    OwnerRef, RegisterKind, RegisterResult,
+    ActivateParams, ActivateResult, CoreRequest, DeactivateParams, DeactivateResult, RegisterKind,
+    RegisterResult,
 };
 use self::registry::{CommandRegistration, OwnerRegistry, OwnerState, ToolRegistration};
 use self::supervisor::{HostEvents, HostProcess, HostRequestContext};
@@ -167,6 +167,7 @@ use self::tier::{BuiltinModule, HostTier};
 use crate::plugins::PluginRegistry;
 use crate::plugins::activation::{self, PluginActivationCapability};
 use codewhale_config::PluginAuthority;
+use codewhale_config::{EntryRef, OwnerRef};
 
 /// The host bundle, embedded so every distribution channel carries it.
 const BUNDLE: &[u8] = include_bytes!("../../extension-host/dist/codewhale-extension-host.mjs");
@@ -274,7 +275,7 @@ fn materialize_file(dir: &Path, file_name: &str, bytes: &[u8]) -> Result<PathBuf
 pub struct ExtensionHostOptions {
     /// `[extension_host] runtime`: `node` (the default), `bun`, or `auto`
     /// (Bun first).
-    pub runtime: crate::config::ExtensionHostRuntime,
+    pub runtime: codewhale_config::extension_host::ExtensionHostRuntime,
     /// `[extension_host] node`: tried before every `node` on `PATH`.
     pub node_override: Option<PathBuf>,
     /// `[extension_host] bun`: tried before every `bun` on `PATH`.
@@ -311,7 +312,9 @@ pub struct SupervisionOptions {
 impl ExtensionHostOptions {
     /// Options for the `[extension_host]` table (paths `~`-expanded).
     #[must_use]
-    pub fn from_config(table: Option<&crate::config::ExtensionHostConfig>) -> Self {
+    pub fn from_config(
+        table: Option<&codewhale_config::extension_host::ExtensionHostConfig>,
+    ) -> Self {
         let expand = |path: Option<&String>| {
             path.map(|path| PathBuf::from(shellexpand::tilde(path).as_ref()))
         };
@@ -617,12 +620,13 @@ fn prepare_launch(
     tier: HostTier,
     pinned: Option<(crate::dependencies::HostRuntime, String)>,
     bun_failed: bool,
+    snapshot_state_paths: &[PathBuf],
 ) -> Result<(supervisor::HostLaunch, Option<String>), String> {
     let (runtime, summary) = match pinned {
         Some((runtime, _)) => (runtime, None),
         None => {
             let choice = if bun_failed {
-                crate::config::ExtensionHostRuntime::Node
+                codewhale_config::extension_host::ExtensionHostRuntime::Node
             } else {
                 options.runtime
             };
@@ -652,6 +656,7 @@ fn prepare_launch(
         &bundle,
         &root,
         options.supervision.memory_cap,
+        snapshot_state_paths,
     )?;
     Ok((launch, summary))
 }
@@ -1582,7 +1587,7 @@ impl ExtensionHostManager {
     /// reconcile: a plugin whose settings changed is re-activated.
     pub fn set_plugin_settings(
         &self,
-        settings: &BTreeMap<String, crate::config::PluginSettings>,
+        settings: &BTreeMap<String, codewhale_config::extension_host::PluginSettings>,
         source: Option<PathBuf>,
     ) {
         self.shared
@@ -1605,8 +1610,10 @@ impl ExtensionHostManager {
             return;
         };
         let read_path = path.clone();
-        match tokio::task::spawn_blocking(move || crate::config::read_plugin_settings(&read_path))
-            .await
+        match tokio::task::spawn_blocking(move || {
+            codewhale_runtime::config::read_plugin_settings(&read_path)
+        })
+        .await
         {
             Ok(Ok(settings)) => self
                 .shared
@@ -2150,20 +2157,20 @@ impl ExtensionHostManager {
     /// starts tier 0. This uses the same manager, supervision and owner registry.
     async fn ensure_mcp_builtin(
         &self,
-    ) -> Result<(Arc<HostProcess>, protocol::OwnerRef, u64), String> {
+    ) -> Result<(Arc<HostProcess>, codewhale_config::OwnerRef, u64), String> {
         self.ensure_demand_builtin("host:mcp", activation::extension_host_policy_enabled())
             .await
     }
     /// Pure Core adapters demand the same pinned harness without enabling Native plugins.
     async fn ensure_stock_builtin(
         &self,
-    ) -> Result<(Arc<HostProcess>, protocol::OwnerRef, u64), String> {
+    ) -> Result<(Arc<HostProcess>, codewhale_config::OwnerRef, u64), String> {
         self.ensure_demand_builtin("host:harness", activation::extension_host_policy_enabled())
             .await
     }
     async fn ensure_harness_builtin(
         &self,
-    ) -> Result<(Arc<HostProcess>, protocol::OwnerRef, u64), String> {
+    ) -> Result<(Arc<HostProcess>, codewhale_config::OwnerRef, u64), String> {
         let native_policy = activation::extension_host_policy_enabled();
         if !native_policy {
             return Err(
@@ -2178,7 +2185,7 @@ impl ExtensionHostManager {
         &self,
         owner_id: &str,
         native_policy: bool,
-    ) -> Result<(Arc<HostProcess>, protocol::OwnerRef, u64), String> {
+    ) -> Result<(Arc<HostProcess>, codewhale_config::OwnerRef, u64), String> {
         let _serial = self.shared.sync_lock.lock().await;
         let root = host_root(&self.shared.options)?;
         materialize_bundle(&root)?;
@@ -2421,10 +2428,9 @@ impl ExtensionHostManager {
                 shared.deactivate_entry(host, &owner, Some(scope)).await;
             }
         }
-        #[cfg(windows)]
         if want.tier == HostTier::Plugin {
             let admission = match want.authority.clone() {
-                Some(authority) => host.admit_windows_root(authority).await,
+                Some(authority) => host.admit_native_root(authority).await,
                 None => Err("Native owner has no reviewed bundle authority".into()),
             };
             if let Err(reason) = admission {
@@ -2436,7 +2442,7 @@ impl ExtensionHostManager {
                 shared.plugin_diagnostic(
                     plugin_id,
                     format!(
-                        "extension `{}` failed Windows admission: {reason}",
+                        "extension `{}` failed Native admission: {reason}",
                         want.name
                     ),
                 );
@@ -2653,6 +2659,17 @@ impl ExtensionHostManager {
         let spawned = loop {
             runtime.spawn_attempts.fetch_add(1, Ordering::SeqCst);
             let options = shared.options.clone();
+            let snapshot_state_paths: Vec<_> = if tier == HostTier::Plugin {
+                shared
+                    .attachments
+                    .lock()
+                    .expect("attachments lock")
+                    .values()
+                    .filter_map(|state| state.plugins.state_path().map(Path::to_path_buf))
+                    .collect()
+            } else {
+                Vec::new()
+            };
             let (pinned, bun_failed) = {
                 let runtime = shared.runtime.lock().expect("runtime lock");
                 (runtime.pinned.clone(), runtime.bun_failed)
@@ -2662,7 +2679,7 @@ impl ExtensionHostManager {
             let prepared = tokio::task::spawn_blocking(move || {
                 #[cfg(test)]
                 let _env_scope = crate::test_support::join_env_scope(env_scope);
-                prepare_launch(&options, tier, pinned, bun_failed)
+                prepare_launch(&options, tier, pinned, bun_failed, &snapshot_state_paths)
             })
             .await
             .map_err(|error| format!("extension host preparation failed: {error}"))
@@ -2681,7 +2698,8 @@ impl ExtensionHostManager {
                     Ok(host) => break Ok((host, summary)),
                     Err(reason) => reason,
                 };
-            if shared.options.runtime != crate::config::ExtensionHostRuntime::Auto
+            if shared.options.runtime
+                != codewhale_config::extension_host::ExtensionHostRuntime::Auto
                 || launch.runtime.kind != crate::dependencies::HostRuntimeKind::Bun
                 || summary.is_none()
             {
@@ -2956,7 +2974,7 @@ pub fn plugins_changed(plugins: Arc<PluginRegistry>) {
 /// options are `configure`). `source` is the config file `/plugin reload`
 /// re-reads them from. No-op with the flag off.
 pub fn install_plugin_settings(
-    settings: Option<&BTreeMap<String, crate::config::PluginSettings>>,
+    settings: Option<&BTreeMap<String, codewhale_config::extension_host::PluginSettings>>,
     source: Option<PathBuf>,
 ) {
     if activation::extension_host_policy_enabled() {
@@ -3557,7 +3575,7 @@ impl Drop for TestManagerGuard {
 }
 
 impl ExtensionHostManager {
-    pub(crate) fn has_shell_hooks(&self, event: crate::hooks::HookEvent) -> bool {
+    pub(crate) fn has_shell_hooks(&self, event: codewhale_config::hooks::HookEvent) -> bool {
         activation::extension_host_policy_enabled()
             && self
                 .shared
@@ -3571,8 +3589,8 @@ impl ExtensionHostManager {
     pub(crate) fn shell_hooks(
         &self,
         caller: &crate::hooks::HookCaller,
-        event: crate::hooks::HookEvent,
-    ) -> Vec<crate::hooks::Hook> {
+        event: codewhale_config::hooks::HookEvent,
+    ) -> Vec<codewhale_config::hooks::Hook> {
         if !activation::extension_host_policy_enabled() {
             return Vec::new();
         }

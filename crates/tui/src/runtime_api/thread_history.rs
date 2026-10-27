@@ -1924,7 +1924,7 @@ fn append_offered_history(
 
 fn decode_history_overrides(
     value: &serde_json::Value,
-    config: &crate::config::Config,
+    config: &codewhale_runtime::config::Config,
     workspace: &Path,
 ) -> Result<Option<crate::runtime_threads::UpdateThreadRequest>> {
     if value.is_null() {
@@ -2122,7 +2122,7 @@ mod graph_tests {
 
     #[test]
     fn history_override_conflicts_refuse_every_insert_and_preserve_full_access_posture() {
-        let config = crate::config::Config::default();
+        let config = codewhale_runtime::config::Config::default();
         let workspace = std::path::PathBuf::from("/checked-workspace");
         for value in [
             serde_json::json!({"config":{"model":"first"},"model":"second"}),

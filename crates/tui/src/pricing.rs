@@ -11,7 +11,6 @@ use codewhale_config::pricing::{
     PricingQuoteError, TokenClass, TokenUsage,
 };
 
-use crate::config::{DEEPSEEK_ALIAS_RETIREMENT_UTC, canonical_model_id_for_provider};
 use codewhale_config::ProviderKind;
 #[cfg(test)]
 use codewhale_config::descriptors::defaults::DEFAULT_STEPFUN_MODEL;
@@ -20,6 +19,7 @@ use codewhale_config::descriptors::defaults::{
 };
 use codewhale_config::pricing::CostCurrency;
 use codewhale_models::{Usage, has_date_snapshot_suffix};
+use codewhale_runtime::config::{DEEPSEEK_ALIAS_RETIREMENT_UTC, canonical_model_id_for_provider};
 
 /// Cost estimate in displayable currencies.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -2951,7 +2951,7 @@ mod tests {
             ),
             (
                 ProviderKind::XiaomiMimo,
-                crate::config::XIAOMI_MIMO_PAY_AS_YOU_GO_BASE_URL,
+                codewhale_runtime::config::XIAOMI_MIMO_PAY_AS_YOU_GO_BASE_URL,
                 XIAOMI_PAYG_BILLING_SURFACE,
                 EndpointMetering::Money,
             ),

@@ -873,10 +873,17 @@ codewhale auth clear --provider deepseek
 
 | Installed with | Remove with |
 |---|---|
-| installer (§2) or manual (§3) | `rm ~/.local/bin/codewhale ~/.local/bin/codew` (or your `CODEWHALE_INSTALL_DIR`) |
+| current Unix installer (§2) | Run the intended executable by its full path with `uninstall` to inspect the plan, then `uninstall --yes` to remove it. |
+| old unreceipted installer or manual (§3) | Inspect the exact command paths and provenance before removing them manually; automatic uninstall preserves them. |
 | npm | `npm uninstall -g codewhale` |
 | Cargo | `cargo uninstall codewhale-cli` |
 | Homebrew | `brew uninstall codewhale && brew untap Hmbown/deepseek-tui` (also removes its node dependency) |
+
+The Unix installers write `.codewhale-install.sha256` beside the commands. Uninstall accepts only existing regular, single-link files whose bytes match that receipt. Receipts, selected files and their retained parent directory must belong to the current user and must not be writable by group or others. Optional compiled-host files use their existing release receipt. All selected files pass preflight before any removal; the executing command is removed last. Modified files, symlinks, ambiguous receipts, shared writable directories, legacy unreceipted installs and unrelated files are preserved. No recursive directory removal is performed. A failed removal reports which entries were unlinked, any remaining recovery paths, and any durability failure. If the command receipt was unlinked while the executable remains, recovery republishes it only to a vacant receipt name.
+
+The command runs before configuration, credential migration and telemetry, so malformed config does not block it. It preserves data, credentials, workspaces, shell profiles, completions and services. Package-managed copies get removal guidance; custom Cargo roots with local Cargo metadata are recognized. Other command copies still on PATH are listed without running them. Refresh the shell command cache with `hash -r` and inspect the remaining entries.
+
+Successful self-update renews an existing command receipt; it does not claim ownership of old unreceipted copies or unknown siblings. Windows direct/PowerShell, NSIS, WinGet and Scoop removal remain pending platform qualification. This Unix command does not remove a remote-setup service or a desktop application.
 
 ### Step 3: remove data. No uninstaller does this for you.
 

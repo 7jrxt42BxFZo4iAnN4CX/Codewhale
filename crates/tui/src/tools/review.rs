@@ -2269,18 +2269,22 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let base = format!("http://{}/v1", listener.local_addr().unwrap());
-        let client = CodewhaleClient::new(&crate::config::Config {
-            provider: Some("moonshot".into()),
-            providers: Some(crate::config::ProvidersConfig {
-                moonshot: crate::config::ProviderConfig {
+        let client = CodewhaleClient::new(&{
+            let __cw_config_init_0_0 = Some("moonshot".into());
+            let __cw_config_init_0_1 = Some(codewhale_runtime::config::ProvidersConfig {
+                moonshot: codewhale_runtime::config::ProviderConfig {
                     api_key: Some("local-fixture-key".into()),
                     base_url: Some(base),
                     model: Some("kimi-k2.5".into()),
                     ..Default::default()
                 },
                 ..Default::default()
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_0_value: codewhale_runtime::config::Config =
+                Default::default();
+            __cw_config_init_0_value.provider = __cw_config_init_0_0;
+            __cw_config_init_0_value.providers = __cw_config_init_0_1;
+            __cw_config_init_0_value
         })
         .unwrap();
         let tool = ReviewTool::new(Some(client), "kimi-k2.5".into());

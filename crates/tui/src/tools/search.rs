@@ -623,7 +623,7 @@ fn visit_files_recursive(
             // make `search` useless. The skip is logged; a directed
             // `read_file`/`read`/`read_media` on the same path still returns an
             // explicit refusal rather than an empty result.
-            if let Err(denial) = crate::sandbox::read_guard::active().check(&path) {
+            if let Err(denial) = codewhale_sandbox::read_guard::active().check(&path) {
                 tracing::debug!(
                     target: "codewhale::sandbox::read_guard",
                     requested = %denial.requested.display(),

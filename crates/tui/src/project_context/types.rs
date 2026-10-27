@@ -41,6 +41,18 @@ impl ProjectContextError {
             Self::Metadata { .. } | Self::Read { .. } => super::budget::InstructionLimit::None,
         }
     }
+
+    pub(crate) fn detail(&self) -> Option<super::budget::InstructionDetail> {
+        match self {
+            Self::TooLarge { max, .. } => Some(super::budget::InstructionDetail::OverFileCeiling {
+                max_bytes: *max as u64,
+            }),
+            Self::Empty { .. } => None,
+            Self::Metadata { source, .. } | Self::Read { source, .. } => {
+                Some(super::budget::InstructionDetail::unreadable(source))
+            }
+        }
+    }
 }
 
 /// Result of loading project context

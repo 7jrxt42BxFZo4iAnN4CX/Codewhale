@@ -10,7 +10,7 @@ use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use crate::network_policy::NetworkPolicy;
+use codewhale_net::network_policy::NetworkPolicy;
 
 use super::audit::{
     AuditedSkill, AuditedSkillId, DigestState, SkillActionKind, SkillAuditMode, SkillSourceKind,
@@ -999,7 +999,7 @@ fn trust_skill(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::network_policy::NetworkPolicy;
+    use codewhale_net::network_policy::NetworkPolicy;
     use tempfile::TempDir;
 
     fn write_skill(dir: &Path, name: &str, body: &str) {

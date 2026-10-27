@@ -38,7 +38,10 @@ release_crates=(
   # Depends on config, core, memory and models; the published tui depends on
   # it, so it publishes after those and before tui.
   codewhale-runtime
+  codewhale-net
+  codewhale-notify
   codewhale-app-server
+  codewhale-sandbox
   codewhale-tui
   codewhale-cli
 )

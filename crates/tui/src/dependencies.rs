@@ -589,7 +589,7 @@ impl HostRuntime {
 /// runtime was not probed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostRuntimeResolution {
-    pub choice: crate::config::ExtensionHostRuntime,
+    pub choice: codewhale_config::extension_host::ExtensionHostRuntime,
     pub selected: Option<HostRuntime>,
     pub bun: Option<NodeResolution>,
     pub node: Option<NodeResolution>,
@@ -656,13 +656,13 @@ impl HostRuntimeResolution {
         }
         let (bun, node) = (HostRuntimeKind::Bun.floor(), HostRuntimeKind::Node.floor());
         let wanted = match self.choice {
-            crate::config::ExtensionHostRuntime::Auto => {
+            codewhale_config::extension_host::ExtensionHostRuntime::Auto => {
                 format!("Bun {bun} or Node.js {node} (set `[extension_host] bun` or `node`)")
             }
-            crate::config::ExtensionHostRuntime::Bun => {
+            codewhale_config::extension_host::ExtensionHostRuntime::Bun => {
                 format!("Bun {bun} (`runtime = \"bun\"`; set `[extension_host] bun`)")
             }
-            crate::config::ExtensionHostRuntime::Node => {
+            codewhale_config::extension_host::ExtensionHostRuntime::Node => {
                 format!("Node.js {node} (set `[extension_host] node`)")
             }
         };
@@ -890,7 +890,7 @@ fn resolve_runtime(kind: HostRuntimeKind, override_path: Option<&Path>) -> NodeR
 /// why Bun was passed over. Blocking: call from `spawn_blocking`.
 #[must_use]
 pub fn resolve_extension_host_runtime(
-    choice: crate::config::ExtensionHostRuntime,
+    choice: codewhale_config::extension_host::ExtensionHostRuntime,
     node_override: Option<&Path>,
     bun_override: Option<&Path>,
 ) -> HostRuntimeResolution {
@@ -902,11 +902,11 @@ pub fn resolve_extension_host_runtime(
 }
 
 fn select_host_runtime(
-    choice: crate::config::ExtensionHostRuntime,
+    choice: codewhale_config::extension_host::ExtensionHostRuntime,
     probe_bun: impl FnOnce() -> NodeResolution,
     probe_node: impl FnOnce() -> NodeResolution,
 ) -> HostRuntimeResolution {
-    use crate::config::ExtensionHostRuntime as Choice;
+    use codewhale_config::extension_host::ExtensionHostRuntime as Choice;
     let mut resolution = HostRuntimeResolution {
         choice,
         selected: None,
@@ -1689,7 +1689,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn host_runtime_auto_prefers_bun_and_explicit_choices_never_fall_back() {
-        use crate::config::ExtensionHostRuntime as Choice;
+        use codewhale_config::extension_host::ExtensionHostRuntime as Choice;
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let script = |name: &str, body: &str| {
@@ -1798,7 +1798,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn untrusted_search_candidates_are_skipped_and_a_failing_override_is_final() {
-        use crate::config::ExtensionHostRuntime as Choice;
+        use codewhale_config::extension_host::ExtensionHostRuntime as Choice;
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let script = |name: &str, body: &str| {

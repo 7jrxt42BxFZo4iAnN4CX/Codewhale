@@ -3,7 +3,7 @@
 //! Pulls user-authored skills from GitHub or direct tarball URLs, validates them
 //! against a path-traversal- and size-bounded extractor, and writes them into
 //! `<skills_dir>/<name>/`. No backend service, no auto-execution: every install
-//! is gated by the per-domain [`crate::network_policy::NetworkPolicy`] and
+//! is gated by the per-domain [`codewhale_net::network_policy::NetworkPolicy`] and
 //! validation rejects any tarball entry that escapes the destination directory.
 //!
 //! Public surface:
@@ -48,10 +48,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use crate::network_policy::{Decision, NetworkPolicy, NetworkPolicyDecider, host_from_url};
-use crate::tools::web::guard::{
+use codewhale_net::guard::{
     DnsPin, fetch_target_host, guarded_reqwest_client_builder, validate_fetch_destination,
 };
+use codewhale_net::network_policy::{Decision, NetworkPolicy, NetworkPolicyDecider, host_from_url};
 
 const MAX_INSTALL_REDIRECTS: usize = 5;
 
@@ -109,7 +109,7 @@ async fn guarded_get(
         let proxy = if initial_pin.is_some() {
             None
         } else {
-            crate::mcp::configured_mcp_proxy(&current, false, |key| std::env::var(key))?
+            codewhale_net::proxy::configured_mcp_proxy(&current, false, |key| std::env::var(key))?
         };
         let pin = match initial_pin.take() {
             Some(pin) => pin,

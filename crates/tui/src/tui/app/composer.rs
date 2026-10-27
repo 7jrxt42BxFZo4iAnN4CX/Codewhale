@@ -1831,9 +1831,19 @@ impl App {
         Some(input)
     }
 
-    /// Put a message that was never sent back in the composer as it was
-    /// first sent, skill and all, so Enter sends the same request again.
+    /// Restore unsent user input to the composer; keep command-generated prompts
+    /// as receipts that require invoking their original command again.
     pub fn restore_unsent_message(&mut self, message: QueuedMessage) {
+        if let Some((command, _)) = message.extension_command.as_ref() {
+            self.add_message(crate::tui::history::HistoryCell::System {
+                content: format!(
+                    "{} command prompt was not submitted. Run the command again to retry.\n{}",
+                    command.origin, message.display
+                ),
+            });
+            self.needs_redraw = true;
+            return;
+        }
         self.input = message.display;
         self.resync_command_line_claim();
         self.cursor_position = char_count(&self.input);
@@ -1907,7 +1917,7 @@ impl App {
         true
     }
 
-    /// Composer-Enter dispatch. Returns `Some(input)` when the press should
+    /// Composer dispatch with paste protection for bare Enter. Returns `Some(input)` when the press should
     /// fire a submit; `None` when Enter was absorbed (paste-burst Enter
     /// suppression — see #1073).
     ///
@@ -1932,8 +1942,8 @@ impl App {
     ///
     /// Outside both cases the call falls through to [`Self::submit_input`]
     /// unchanged so normal Enter-to-send behaviour is preserved.
-    pub fn handle_composer_enter(&mut self) -> Option<String> {
-        if self.use_paste_burst_detection {
+    pub fn handle_composer_enter(&mut self, protect_paste: bool) -> Option<String> {
+        if protect_paste && self.use_paste_burst_detection {
             let now = Instant::now();
             if self
                 .paste_burst
@@ -1957,8 +1967,9 @@ impl App {
     /// same two predicates `handle_composer_enter` acts on — the burst
     /// window and the trimmed-empty buffer — without mutating anything.
     #[must_use]
-    pub fn composer_enter_would_submit(&self) -> bool {
-        if self.use_paste_burst_detection
+    pub fn composer_enter_would_submit(&self, protect_paste: bool) -> bool {
+        if protect_paste
+            && self.use_paste_burst_detection
             && self
                 .paste_burst
                 .newline_should_insert_instead_of_submit(Instant::now())

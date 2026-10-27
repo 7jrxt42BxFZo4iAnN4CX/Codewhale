@@ -32,6 +32,8 @@ import {
 } from './protocol.ts'
 import { RpcError, type RpcPeer } from './rpc.ts'
 import { explainImportError } from './dsh/resolve-hooks.ts'
+import compatibility from './dsh/compatibility.json' with { type: 'json' }
+import { assertSupportedJsonSchema, validateJsonSchemaValue, ToolOutputError } from './dsh/dsh-tools-compat.js'
 import { isJson } from './json.ts'
 import { makeCoreApi } from './shims/core.ts'
 import { OwnedRegistrations } from './shims/owned.ts'
@@ -47,7 +49,6 @@ import {
   commandSpec,
   defineCommandsService,
   makeInvocation,
-  normalizeResult,
   type LocalCommand,
   type NormalizedCommand,
 } from './shims/commands.ts'
@@ -61,31 +62,10 @@ export const OWNER = Symbol.for('codewhale.extension-host.owner')
  * provided by the host root as shims and are refused to plugins for the same
  * reason.
  */
-export const REFUSED_SERVICES = new Set(['shellHooks',
-  'loader', // one host-owned composition loader; plugins may not replace it
-  'approval',
-  'agents',
-  'subagents',
-  'sessions',
-  'llm',
-  'sandboxPolicy',
-  'credentials',
-  'fs',
-  'subprocess',
-  'systemPrompt',
-  'runtimeLoop', // the one Rust Engine owns scheduling and execution
-  'tools',
-  'commands',
-  'prompt',
-  'storage',
-  'skills',
-  'avatars',
-  'mcp',
-  'logger',
-])
+export const REFUSED_SERVICES = new Set(compatibility.refused_services)
 
 /** Services the root provides; `inject` of anything else fails activation. */
-const PROVIDED_SERVICES = new Set(['tools', 'commands', 'prompt', 'storage', 'skills', 'avatars', 'mcp', 'logger', 'events', 'reflect', 'registry'])
+const PROVIDED_SERVICES = new Set(compatibility.provided_services)
 
 const ACTIVATE_DEADLINE_MS = 5_000
 const DISPOSE_DEADLINE_MS = 2_000
@@ -251,10 +231,13 @@ export class HostRoot {
       }
 
       /** DSH `ctx.tools.register(defineTool(...))`: returns an idempotent disposer. */
-      register(definition: any) {
+      register(definition: any, options?: unknown) {
         const ctx: any = this.ctx
         const owner: OwnerRecord | undefined = ctx[OWNER]
         if (!owner) throw new Error('tools.register called outside an extension owner')
+        if (options !== undefined && (!options || typeof options !== 'object' || Array.isArray(options) || Reflect.ownKeys(options).length !== 0)) {
+          throw new TypeError('tools.register options are unsupported by the Codewhale DSH 0.2.1-rc.2 definition adapter')
+        }
         validateDefinition(definition)
         return ctx.effect(() => host.addTool(owner, definition), `tools.register(${JSON.stringify(definition.name)})`)
       }
@@ -565,7 +548,11 @@ export class HostRoot {
     // this plugin's own directory. Both are read-only strings.
     // `core` exists only when the core gave this call a ticket (`exec.core` in shims/core.ts).
     const core = ticket === undefined ? {} : { core: makeCoreApi(this.rpc, local.owner.ref, ticket, signal) }
-    const exec = Object.freeze({ signal, callId, args: input, ...callContext(local.owner, workspace, identity), ...core })
+    const agent = workspace && identity?.session_id ? Object.freeze({
+      id: identity.agent_id ?? identity.session_id,
+      session: Object.freeze({ header: Object.freeze({ cwd: workspace }) }),
+    }) : undefined
+    const exec = Object.freeze({ signal, callId, args: input, ...callContext(local.owner, workspace, identity), ...core, ...(agent === undefined ? {} : { agent }) })
     const run = ownerStorage.run(local.owner, async () => {
       const value = await definition.execute(input, exec)
       return renderResult(definition, input, value)
@@ -580,11 +567,20 @@ export class HostRoot {
       throw new RpcError(ErrorCode.NotAvailable, `command handle ${handle} is not live`)
     }
     const { definition } = local
+    const call = makeInvocation(definition.name, rawInput, commandId, signal, callContext(local.owner, workspace, identity))
     const run = ownerStorage.run(local.owner, async () => {
-      const value = await definition.handler(makeInvocation(rawInput, commandId, signal, callContext(local.owner, workspace, identity)))
-      return normalizeResult(definition.name, value)
+      try {
+        const value = await definition.handler(call.invocation)
+        return call.complete(value)
+      } finally {
+        call.close()
+      }
     })
-    return Promise.race([run, abortedBy(signal)])
+    try {
+      return await Promise.race([run, abortedBy(signal)])
+    } finally {
+      call.close()
+    }
   }
 
   async evaluateHook(params: HookEvaluateParams, signal: AbortSignal): Promise<HookVerdictWire> {
@@ -633,15 +629,21 @@ function abortedBy(signal: AbortSignal): Promise<never> {
 
 function renderResult(definition: any, input: unknown, value: unknown): ToolResultWire {
   let blocks: unknown = undefined
-  if (typeof definition.output?.render === 'function') {
+  if (definition.output !== undefined) {
+    if (!isJson(value)) throw new ToolOutputError(definition.name, ['value must be lossless JSON'])
+    const violations = validateJsonSchemaValue(definition.output.schema, value)
+    if (violations.length > 0) throw new ToolOutputError(definition.name, violations)
     blocks = definition.output.render(input, value)
+    if (!Array.isArray(blocks)) throw new ToolOutputError(definition.name, ['output.render must return an array of content blocks'])
   }
   const content: ContentBlockWire[] = []
   if (Array.isArray(blocks)) {
     for (const block of blocks) {
-      if (block && typeof block === 'object' && (block as any).type === 'text' && typeof (block as any).text === 'string') {
-        content.push({ type: 'text', text: (block as any).text })
+      if (!block || typeof block !== 'object' || (block as any).type !== 'text' || typeof (block as any).text !== 'string') {
+        throw new ToolOutputError(definition.name, ['output.render returned an unsupported content block; this host accepts text blocks only'])
       }
+      if (Reflect.ownKeys(block).some(key => key !== 'type' && key !== 'text')) throw new ToolOutputError(definition.name, ['output.render returned unsupported text-block fields'])
+      content.push({ type: 'text', text: (block as any).text })
     }
   } else {
     content.push({ type: 'text', text: typeof value === 'string' ? value : safeStringify(value) })
@@ -666,6 +668,16 @@ function validateDefinition(definition: any) {
   if (definition.parameters !== undefined && (typeof definition.parameters !== 'object' || definition.parameters === null)) {
     throw new TypeError(`tool \`${definition.name}\` parameters must be a JSON schema object`)
   }
+  if (definition.output !== undefined) {
+    if (!definition.output || typeof definition.output !== 'object' || typeof definition.output.render !== 'function') {
+      throw new TypeError(`tool \`${definition.name}\` output must declare a schema and render function`)
+    }
+    assertSupportedJsonSchema(definition.output.schema)
+  }
+  for (const field of ['projectContent', 'finalizeContent', 'timeoutMs']) {
+    if (definition[field] !== undefined) throw new TypeError(`tool \`${definition.name}\` requires unsupported DSH execution field \`${field}\``)
+  }
+  if (definition.deferLoading === true) throw new TypeError(`tool \`${definition.name}\` requires unsupported DSH deferred loading`)
 }
 
 function pickPlugin(module: any): any {

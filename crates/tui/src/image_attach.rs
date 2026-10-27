@@ -296,43 +296,37 @@ pub struct PreparedToolImage {
 #[must_use]
 pub fn prepare_tool_image_bytes(bytes: &[u8], mime_type: &str) -> PreparedToolImage {
     let mime_type = mime_type.split(';').next().unwrap_or(mime_type).trim();
-    // A Retina screenshot is routinely over the inline limit as PNG. Fit it
-    // on the attach-time ladder instead of omitting it, so `read` on a
-    // screenshot behaves like dropping the same file into the composer.
-    if bytes.len() > MAX_IMAGE_BYTES
+    let budget = crate::tools::read_media::READ_IMAGE_BYTE_BUDGET;
+    if bytes.len() <= crate::tools::read_media::MAX_SOURCE_IMAGE_BYTES
         && sniff_media_type(bytes) == Some(mime_type)
-        && let Ok(fitted) = fit_image_bytes(bytes, Path::new("image"))
+        && decode_and_guard_image(bytes).is_ok()
+        && let Ok(fitted) = fit_image_bytes(bytes, Path::new("image"), budget)
         && let Some((fitted_mime, payload)) = parse_data_url(&fitted.data_url)
     {
+        let note = if fitted.source_bytes == bytes.len() && fitted_mime == mime_type {
+            format!("Read image file [{mime_type}]")
+        } else {
+            format!(
+                "Read image file [{mime_type}] (re-encoded from {} to a {} {fitted_mime} within the {} default delivery budget)",
+                human_bytes(bytes.len()),
+                human_bytes(fitted.source_bytes),
+                human_bytes(budget),
+            )
+        };
         return PreparedToolImage {
             block: Some(codewhale_tools::ToolResultContentBlock::Image {
                 mime_type: fitted_mime.to_string(),
                 data: payload.to_string(),
             }),
-            note: format!(
-                "Read image file [{mime_type}] (downscaled from {} to a {} {fitted_mime} to fit the inline image limit)",
-                human_bytes(bytes.len()),
-                human_bytes(fitted.source_bytes),
-            ),
-        };
-    }
-    let valid = bytes.len() <= MAX_IMAGE_BYTES
-        && sniff_media_type(bytes) == Some(mime_type)
-        && decode_and_guard_image(bytes).is_ok();
-    if !valid {
-        return PreparedToolImage {
-            block: None,
-            note: format!(
-                "Read image file [{mime_type}]\n[Image omitted: unsupported, invalid, or above the 5 MiB inline limit.]"
-            ),
+            note,
         };
     }
     PreparedToolImage {
-        block: Some(codewhale_tools::ToolResultContentBlock::Image {
-            mime_type: mime_type.to_string(),
-            data: STANDARD.encode(bytes),
-        }),
-        note: format!("Read image file [{mime_type}]"),
+        block: None,
+        note: format!(
+            "Read image file [{mime_type}]\n[Image omitted: unsupported, invalid, above the source limit, or unable to fit the {} default delivery budget. Use read_media with a crop or higher detail if needed.]",
+            human_bytes(budget),
+        ),
     }
 }
 
@@ -593,19 +587,21 @@ pub fn attach_image_from_path(path: &Path) -> Result<AttachedImage, ImageAttachE
             limit: source_limit,
         });
     }
-    fit_image_bytes(&bytes, path)
+    fit_image_bytes(&bytes, path, MAX_IMAGE_BYTES)
 }
 
-/// The size/edge policy of [`attach_image_from_path`] over bytes already in
-/// memory, shared with the `read` tool so both deliver the same image.
-fn fit_image_bytes(bytes: &[u8], path: &Path) -> Result<AttachedImage, ImageAttachError> {
+fn fit_image_bytes(
+    bytes: &[u8],
+    path: &Path,
+    byte_budget: usize,
+) -> Result<AttachedImage, ImageAttachError> {
     let display = path.display().to_string();
     let oversized_edge = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .ok()
         .and_then(|reader| reader.into_dimensions().ok())
         .is_some_and(|(width, height)| width.max(height) > ATTACH_MAX_EDGE_PX);
-    if bytes.len() <= MAX_IMAGE_BYTES && !oversized_edge {
+    if bytes.len() <= byte_budget && !oversized_edge {
         return encode_image_bytes(bytes, &display);
     }
     if sniff_media_type(bytes).is_none() {
@@ -618,7 +614,7 @@ fn fit_image_bytes(bytes: &[u8], path: &Path) -> Result<AttachedImage, ImageAtta
     let (image, _, _) =
         decode_and_guard_image(bytes).map_err(|error| unreadable(error.to_string()))?;
     let (encoded, _) =
-        crate::tools::read_media::fit_and_encode(&image, ATTACH_MAX_EDGE_PX, MAX_IMAGE_BYTES, path)
+        crate::tools::read_media::fit_and_encode(&image, ATTACH_MAX_EDGE_PX, byte_budget, path)
             .map_err(|error| unreadable(error.to_string()))?;
     encode_image_bytes(&encoded, &display)
 }
@@ -1053,7 +1049,24 @@ pub(crate) fn cap_request_images(
     cap: usize,
 ) -> ImageWindow {
     let total = count_request_images(messages);
-    let elided = images_to_elide(total, cap);
+    let mut window = cap_request_images_with_notes(
+        messages,
+        total - images_to_elide(total, cap),
+        ELIDED_IMAGE_NOTE,
+        ELIDED_TOOL_IMAGE_NOTE,
+    );
+    window.cap = cap;
+    window
+}
+
+pub(crate) fn cap_request_images_with_notes(
+    messages: &mut [codewhale_models::Message],
+    cap: usize,
+    image_note: &str,
+    tool_note: &str,
+) -> ImageWindow {
+    let total = count_request_images(messages);
+    let elided = total.saturating_sub(cap);
     let mut remaining = elided;
     for block in messages.iter_mut().flat_map(|message| &mut message.content) {
         if remaining == 0 {
@@ -1065,7 +1078,7 @@ pub(crate) fn cap_request_images(
         match block {
             ContentBlock::ImageUrl { .. } => {
                 *block = ContentBlock::Text {
-                    text: ELIDED_IMAGE_NOTE.to_string(),
+                    text: image_note.to_string(),
                     cache_control: None,
                 };
             }
@@ -1074,8 +1087,15 @@ pub(crate) fn cap_request_images(
                 content_blocks,
                 ..
             } => {
-                *content_blocks = None;
-                *content = format!("{content}\n{ELIDED_TOOL_IMAGE_NOTE}");
+                if let Some(blocks) = content_blocks.as_mut() {
+                    blocks.retain(|value| {
+                        value.get("type").and_then(serde_json::Value::as_str) != Some("image")
+                    });
+                    if blocks.is_empty() {
+                        *content_blocks = None;
+                    }
+                }
+                *content = format!("{content}\n{tool_note}");
             }
             _ => continue,
         }

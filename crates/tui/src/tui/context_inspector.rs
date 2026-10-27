@@ -1026,8 +1026,8 @@ impl ModalView for ContextInspectorView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use codewhale_models::Role;
+    use codewhale_runtime::config::Config;
 
     #[test]
     fn short_tool_id_never_panics_on_multibyte() {

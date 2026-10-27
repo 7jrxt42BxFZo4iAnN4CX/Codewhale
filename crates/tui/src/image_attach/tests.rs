@@ -1041,9 +1041,9 @@ fn read_downscales_an_oversized_screenshot_instead_of_omitting_it() {
         .block
         .expect("oversized screenshot is still delivered");
     let bytes = STANDARD.decode(data).expect("base64");
-    assert!(bytes.len() <= MAX_IMAGE_BYTES);
+    assert!(bytes.len() <= crate::tools::read_media::READ_IMAGE_BYTE_BUDGET);
     assert_eq!(sniff_media_type(&bytes), Some(mime_type.as_str()));
-    assert!(prepared.note.contains("downscaled"), "{}", prepared.note);
+    assert!(prepared.note.contains("re-encoded"), "{}", prepared.note);
 }
 
 #[cfg(not(windows))]

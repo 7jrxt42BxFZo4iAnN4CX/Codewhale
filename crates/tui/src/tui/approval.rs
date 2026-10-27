@@ -27,22 +27,22 @@
 //! happen *before* the view is constructed (see `tui/ui.rs`); this
 //! module always assumes the user is being asked.
 
-#[cfg(test)]
-use crate::config::ApprovalDefaultSelection;
 use crate::tools::approval_summary::{
     delegated_authority_fields, param_preview, truncate_string_value,
 };
 use crate::tools::canonical_action::canonical_action_alias;
 use codewhale_config::ToolAskRule;
 use codewhale_localization::{Locale, MessageId, tr};
+#[cfg(test)]
+use codewhale_runtime::config::ApprovalDefaultSelection;
 use serde_json::Value;
 use std::path::Path;
 use std::path::PathBuf;
 
 #[cfg(test)]
-use crate::sandbox::SandboxPolicy;
-#[cfg(test)]
 use crate::tui::views::{ModalView, ViewAction, ViewEvent};
+#[cfg(test)]
+use codewhale_sandbox::SandboxPolicy;
 #[cfg(test)]
 use crossterm::event::KeyEvent;
 

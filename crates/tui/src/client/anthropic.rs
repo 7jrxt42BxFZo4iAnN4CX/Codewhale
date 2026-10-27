@@ -28,11 +28,11 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::config::wire_model_for_provider_route;
 use crate::llm_client::StreamEventBox;
 use crate::tools::schema_sanitize;
 use codewhale_config::ProviderKind;
 use codewhale_models::{ContentBlock, MessageRequest, MessageResponse, StreamEvent, Usage};
+use codewhale_runtime::config::wire_model_for_provider_route;
 use codewhale_runtime::logging;
 
 use super::CodewhaleClient;
@@ -138,7 +138,7 @@ impl CodewhaleClient {
             .and_then(|facts| facts.reasoning)
             .unwrap_or_else(|| codewhale_models::model_supports_reasoning(&model));
         let is_minimax_provider = self.api_provider == ProviderKind::MinimaxAnthropic;
-        let is_minimax = crate::config::is_exact_minimax_anthropic_m3_route(
+        let is_minimax = codewhale_runtime::config::is_exact_minimax_anthropic_m3_route(
             self.api_provider,
             &self.base_url,
             &model,
@@ -1348,17 +1348,21 @@ mod tests {
 
     fn anthropic_test_client(base_url: Option<&str>) -> CodewhaleClient {
         let _ = rustls::crypto::ring::default_provider().install_default();
-        let config = crate::config::Config {
-            provider: Some("anthropic".to_string()),
-            providers: Some(crate::config::ProvidersConfig {
-                anthropic: crate::config::ProviderConfig {
+        let config = {
+            let __cw_config_init_0_0 = Some("anthropic".to_string());
+            let __cw_config_init_0_1 = Some(codewhale_runtime::config::ProvidersConfig {
+                anthropic: codewhale_runtime::config::ProviderConfig {
                     api_key: Some("test-key".to_string()),
                     base_url: base_url.map(str::to_string),
                     ..Default::default()
                 },
                 ..Default::default()
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_0_value: codewhale_runtime::config::Config =
+                Default::default();
+            __cw_config_init_0_value.provider = __cw_config_init_0_0;
+            __cw_config_init_0_value.providers = __cw_config_init_0_1;
+            __cw_config_init_0_value
         };
         CodewhaleClient::new(&config).expect("anthropic client constructs")
     }
@@ -1371,53 +1375,65 @@ mod tests {
 
     fn minimax_test_client_for(base_url: &str) -> CodewhaleClient {
         let _ = rustls::crypto::ring::default_provider().install_default();
-        let config = crate::config::Config {
-            provider: Some("minimax-anthropic".to_string()),
-            providers: Some(crate::config::ProvidersConfig {
-                minimax_anthropic: crate::config::ProviderConfig {
+        let config = {
+            let __cw_config_init_1_0 = Some("minimax-anthropic".to_string());
+            let __cw_config_init_1_1 = Some(codewhale_runtime::config::ProvidersConfig {
+                minimax_anthropic: codewhale_runtime::config::ProviderConfig {
                     api_key: Some("test-key".to_string()),
                     base_url: Some(base_url.to_string()),
                     ..Default::default()
                 },
                 ..Default::default()
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_1_value: codewhale_runtime::config::Config =
+                Default::default();
+            __cw_config_init_1_value.provider = __cw_config_init_1_0;
+            __cw_config_init_1_value.providers = __cw_config_init_1_1;
+            __cw_config_init_1_value
         };
         CodewhaleClient::new(&config).expect("MiniMax Messages client constructs")
     }
 
     fn deepseek_test_client(base_url: &str) -> CodewhaleClient {
         let _ = rustls::crypto::ring::default_provider().install_default();
-        let config = crate::config::Config {
-            provider: Some("deepseek-anthropic".to_string()),
-            providers: Some(crate::config::ProvidersConfig {
-                deepseek_anthropic: crate::config::ProviderConfig {
+        let config = {
+            let __cw_config_init_2_0 = Some("deepseek-anthropic".to_string());
+            let __cw_config_init_2_1 = Some(codewhale_runtime::config::ProvidersConfig {
+                deepseek_anthropic: codewhale_runtime::config::ProviderConfig {
                     api_key: Some("test-key".to_string()),
                     base_url: Some(base_url.to_string()),
                     ..Default::default()
                 },
                 ..Default::default()
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_2_value: codewhale_runtime::config::Config =
+                Default::default();
+            __cw_config_init_2_value.provider = __cw_config_init_2_0;
+            __cw_config_init_2_value.providers = __cw_config_init_2_1;
+            __cw_config_init_2_value
         };
         CodewhaleClient::new(&config).expect("DeepSeek Messages client constructs")
     }
 
     fn modelstudio_test_client(base_url: &str) -> CodewhaleClient {
         let _ = rustls::crypto::ring::default_provider().install_default();
-        let config = crate::config::Config {
-            provider: Some("modelstudio-token-plan-anthropic".to_string()),
-            providers: Some(crate::config::ProvidersConfig {
+        let config = {
+            let __cw_config_init_3_0 = Some("modelstudio-token-plan-anthropic".to_string());
+            let __cw_config_init_3_1 = Some(codewhale_runtime::config::ProvidersConfig {
                 // Durable secret-store keys share a family slot, but a literal
                 // config key belongs to the selected route's own table.
-                modelstudio_token_plan_anthropic: crate::config::ProviderConfig {
+                modelstudio_token_plan_anthropic: codewhale_runtime::config::ProviderConfig {
                     api_key: Some("test-key".to_string()),
                     base_url: Some(base_url.to_string()),
                     ..Default::default()
                 },
                 ..Default::default()
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_3_value: codewhale_runtime::config::Config =
+                Default::default();
+            __cw_config_init_3_value.provider = __cw_config_init_3_0;
+            __cw_config_init_3_value.providers = __cw_config_init_3_1;
+            __cw_config_init_3_value
         };
         CodewhaleClient::new(&config).expect("Model Studio Messages client constructs")
     }
@@ -1790,24 +1806,28 @@ mod tests {
             ("deepseek-chat", "off", "disabled"),
             ("deepseek-reasoner", "high", "adaptive"),
         ] {
-            let mut config = crate::config::Config {
-                provider: Some("deepseek-anthropic".to_string()),
-                providers: Some(crate::config::ProvidersConfig {
-                    deepseek_anthropic: crate::config::ProviderConfig {
+            let mut config = {
+                let __cw_config_init_4_0 = Some("deepseek-anthropic".to_string());
+                let __cw_config_init_4_1 = Some(codewhale_runtime::config::ProvidersConfig {
+                    deepseek_anthropic: codewhale_runtime::config::ProviderConfig {
                         api_key: Some("test-key".to_string()),
                         model: Some(alias.to_string()),
                         ..Default::default()
                     },
                     ..Default::default()
-                }),
-                ..Default::default()
+                });
+                let mut __cw_config_init_4_value: codewhale_runtime::config::Config =
+                    Default::default();
+                __cw_config_init_4_value.provider = __cw_config_init_4_0;
+                __cw_config_init_4_value.providers = __cw_config_init_4_1;
+                __cw_config_init_4_value
             };
             assert!(
                 config.reasoning_effort().is_none(),
                 "fixture must omit effort"
             );
 
-            crate::config::normalize_model_config_for_test(&mut config);
+            codewhale_runtime::config::normalize_model_config_for_test(&mut config);
             let client = CodewhaleClient::new(&config).expect("DeepSeek Messages client");
             let model = config.default_model();
             let body = client.build_anthropic_body(

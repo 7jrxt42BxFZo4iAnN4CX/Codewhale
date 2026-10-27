@@ -10,7 +10,6 @@
 //! Keeping every layer's text in one module makes prompt tuning a
 //! single-file operation.
 
-use crate::project_context::load_project_context_with_parents;
 use codewhale_config::AppMode;
 use codewhale_models::{SystemBlock, SystemPrompt, Tool};
 use std::path::{Path, PathBuf};
@@ -379,7 +378,7 @@ fn environment_host_facts() -> (String, String) {
     }
     (
         std::env::consts::OS.to_string(),
-        crate::shell_dispatcher::global_dispatcher()
+        codewhale_sandbox::shell_dispatcher::global_dispatcher()
             .kind()
             .binary()
             .to_string(),
@@ -1252,7 +1251,11 @@ pub(crate) fn system_prompt_with_instruction_assembly_for_host(
     instructions: Option<&[InstructionSource]>,
     session_context: PromptSessionContext<'_>,
     prompt_host: PromptHost,
-    guard_trim: Option<crate::project_context::InstructionGuardTrim>,
+    instruction_input: Option<(
+        &crate::project_context::ProjectContext,
+        &crate::project_context::InstructionSettings,
+        crate::project_context::InstructionBudgets,
+    )>,
 ) -> (SystemPrompt, crate::project_context::InstructionAssembly) {
     // One base prompt for every host (AGENTS.md: `BASE_PROMPT` is the sole
     // base prompt). Headless still skips interactive ceremony layers below —
@@ -1269,34 +1272,33 @@ pub(crate) fn system_prompt_with_instruction_assembly_for_host(
         &default_layers,
     );
 
-    // Load project context from workspace, then charge it against the
-    // per-scope budgets. The cache keeps raw segments; trimming happens here,
-    // per request, so a window change never invalidates the file cache and a
-    // content change never reuses trimmed text.
-    let mut project_context = load_project_context_with_parents(workspace);
-    let window_tokens = session_context
-        .context_window_override
-        .map(|window| usize::try_from(window).unwrap_or(usize::MAX));
-    let mut budgets = match crate::project_context::active_instruction_budgets(
-        window_tokens,
-        Some(session_context.model_id),
-    ) {
-        Ok(budgets) => budgets,
-        Err(error) => {
-            // Validation runs when the table is installed, so reaching this
-            // branch means a budget was resolved before config was applied.
-            tracing::error!(target: "project_context", %error, "invalid instruction budget");
-            crate::project_context::InstructionBudgets::defaults_for(window_tokens)
-        }
-    };
-    if let Some(trim) = guard_trim {
-        budgets = budgets.with_scope_ceiling(trim.scope, trim.tokens);
-    }
-    let assembly = crate::project_context::assemble_instruction_block(
-        &mut project_context,
-        instructions.unwrap_or(&[]),
-        &budgets,
+    let default_settings = crate::project_context::InstructionSettings::default();
+    let settings = instruction_input
+        .as_ref()
+        .map_or(&default_settings, |input| input.1);
+    let raw_context = instruction_input.as_ref().map_or_else(
+        || {
+            crate::project_context::capture_instruction_context(
+                workspace,
+                instructions.unwrap_or_default(),
+                settings,
+            )
+        },
+        |input| input.0.clone(),
     );
+    let mut project_context = raw_context;
+    let budgets = instruction_input.map_or_else(
+        || {
+            crate::project_context::InstructionBudgets::defaults_for(
+                session_context
+                    .context_window_override
+                    .map(|window| window as usize),
+            )
+        },
+        |input| input.2,
+    );
+    let mut assembly =
+        crate::project_context::assemble_instruction_block(&mut project_context, &[], &budgets);
 
     // 0. Locale-native reinforcement preamble (#1118 follow-up). When the
     // user's UI locale is non-English we prepend a short native-script
@@ -1314,15 +1316,21 @@ pub(crate) fn system_prompt_with_instruction_assembly_for_host(
     // overview when no context file exists, so the fallback should usually be
     // available without writing project-local files.
     let mut full_prompt = if let Some(project_block) = assembly.block.as_deref() {
+        let start = composed.trim().len();
+        assembly.prompt_range = Some(start..start + 2 + project_block.len());
         format!("{}\n\n{project_block}", composed.trim())
     } else {
         // Extremely unlikely: context generation failed (e.g. filesystem error).
         // Use the shared constitution alone rather than panic.
         tracing::warn!("No project context available and auto-generation failed");
-        composed
+        composed.trim().to_string()
     };
 
     if let Some(preamble) = preamble {
+        if let Some(range) = assembly.prompt_range.as_mut() {
+            range.start += preamble.len() + 2;
+            range.end += preamble.len() + 2;
+        }
         full_prompt = format!("{preamble}\n\n{full_prompt}");
     }
 
@@ -1450,7 +1458,17 @@ pub(crate) fn system_prompt_with_instruction_assembly_for_host(
     // instruction authority now: the assembly reads and charges them, and they
     // render inside the project-instructions block instead of as a separate
     // world-state fragment. Exactly one owner, one charge.
-    let permissions_body: Option<String> = None;
+    let runtime_sections: Vec<_> = instructions
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|source| match source {
+            InstructionSource::Inline { name, content } if name.starts_with("runtime:") => Some(
+                format!("<instructions source=\"{name}\">\n{content}\n</instructions>"),
+            ),
+            _ => None,
+        })
+        .collect();
+    let permissions_body = (!runtime_sections.is_empty()).then(|| runtime_sections.join("\n\n"));
 
     // Route fragment: verbosity / translation posture (the model id was
     // removed by the turn-meta diet — it is telemetry the model cannot act on).
@@ -1472,10 +1490,13 @@ pub(crate) fn system_prompt_with_instruction_assembly_for_host(
     // `.cursorrules`, `.clinerules`, `.windsurf/rules/*`, `.gemini/*`,
     // `.github/copilot-instructions.md` etc., beyond the canonical
     // `AGENTS.md` already in the constitution prefix.
-    if let Some(fragment) = codewhale_core::fragments::load_selected_project_instruction_fragment(
-        workspace,
-        &crate::project_context::active_fragment_candidates(),
-    ) {
+    if let Some(fragment) =
+        codewhale_core::fragments::load_selected_project_instruction_fragment_with_reader(
+            workspace,
+            &crate::project_context::fragment_candidates_for(&settings.imports),
+            |path| crate::fs_confined::open_read(workspace, path),
+        )
+    {
         // `BoundedFragment` already enforces `MAX_FRAGMENT_BYTES` (10K-token
         // ceiling) and per-fragment caps; WorldState's `with_*` also clamps.
         world_state = world_state.with_project_instructions(fragment.content);
@@ -1507,23 +1528,19 @@ pub(crate) fn system_prompt_with_instruction_assembly_for_host(
     (SystemPrompt::Blocks(blocks), assembly)
 }
 
-/// Estimated tokens of the **stable** prefix: the constitution block — base
-/// prompt, instructions, skills index, execution profile — plus the tool
-/// schemas the request carries.
-///
-/// Volatile world-state blocks (environment, memory, goals, relay) are
-/// excluded on purpose: they drift mid-session, are not part of the pinned
-/// KV-cache prefix, and carry their own budgets. Only the first block plus the
-/// tool catalog is what the static-prefix guard protects.
+/// Estimated tokens of the request prefix before any conversation: every
+/// system block — so inline authority appended after the constitution counts
+/// — plus the tool schemas the request carries.
 #[must_use]
 pub(crate) fn measure_static_prefix(system: Option<&SystemPrompt>, tools: &[Tool]) -> usize {
     let text_tokens = match system {
         Some(SystemPrompt::Text(text)) => {
             crate::compaction::estimate_text_tokens_conservative(text)
         }
-        Some(SystemPrompt::Blocks(blocks)) => blocks.first().map_or(0, |block| {
-            crate::compaction::estimate_text_tokens_conservative(&block.text)
-        }),
+        Some(SystemPrompt::Blocks(blocks)) => blocks
+            .iter()
+            .map(|block| crate::compaction::estimate_text_tokens_conservative(&block.text))
+            .sum(),
         None => 0,
     };
     let tool_tokens: usize = tools
@@ -1535,6 +1552,155 @@ pub(crate) fn measure_static_prefix(system: Option<&SystemPrompt>, tools: &[Tool
         })
         .sum();
     text_tokens.saturating_add(tool_tokens)
+}
+
+const GUARD_PASSES_PER_SCOPE: usize = 2;
+
+fn replace_installed_instruction_block(
+    prompt: &mut Option<SystemPrompt>,
+    raw: &crate::project_context::ProjectContext,
+    installed: &crate::project_context::InstructionAssembly,
+    budgets: &crate::project_context::InstructionBudgets,
+) -> Result<
+    Option<crate::project_context::InstructionAssembly>,
+    crate::project_context::InstructionRefusal,
+> {
+    let Some(range) = installed.prompt_range.clone() else {
+        return Ok(None);
+    };
+    let text = match prompt.as_mut() {
+        Some(SystemPrompt::Text(text)) => text,
+        Some(SystemPrompt::Blocks(blocks)) => match blocks.first_mut() {
+            Some(block) => &mut block.text,
+            None => return Ok(None),
+        },
+        None => return Ok(None),
+    };
+    let owned = |block: Option<&str>| {
+        block
+            .filter(|block| !block.is_empty())
+            .map_or_else(String::new, |block| format!("\n\n{block}"))
+    };
+    if text.get(range.clone()) != Some(owned(installed.block.as_deref()).as_str()) {
+        return Err(crate::project_context::InstructionRefusal::ReceiptMismatch);
+    }
+    let mut candidate = raw.clone();
+    let mut next = crate::project_context::assemble_instruction_block(&mut candidate, &[], budgets);
+    let replacement = owned(next.block.as_deref());
+    text.replace_range(range.clone(), &replacement);
+    next.prompt_range = Some(range.start..range.start + replacement.len());
+    Ok(Some(next))
+}
+
+pub(crate) fn guard_instruction_prefix(
+    mut prompt: Option<SystemPrompt>,
+    raw: Option<&crate::project_context::ProjectContext>,
+    mut assembly: Option<crate::project_context::InstructionAssembly>,
+    budgets: crate::project_context::InstructionBudgets,
+    tools: &[Tool],
+) -> Result<
+    (
+        Option<SystemPrompt>,
+        Option<crate::project_context::InstructionAssembly>,
+        Vec<crate::project_context::InstructionNotice>,
+    ),
+    crate::project_context::InstructionRefusal,
+> {
+    use crate::project_context::{
+        InstructionAction, InstructionBudgetPolicy, InstructionLimit, InstructionNotice,
+        InstructionRefusal, InstructionScope,
+    };
+    if let Some(assembly) = assembly.as_mut() {
+        assembly
+            .notices
+            .retain(|notice| notice.limit != InstructionLimit::StaticGuard);
+    }
+    let refuse = budgets.policy == InstructionBudgetPolicy::Refuse;
+    if let Some((raw, installed)) = raw.zip(assembly.as_ref())
+        && installed.budgets != budgets
+        && let Some(next) =
+            replace_installed_instruction_block(&mut prompt, raw, installed, &budgets)?
+    {
+        assembly = Some(next);
+    }
+    if refuse
+        && let Some(loss) = assembly.as_ref().and_then(|assembly| {
+            assembly.notices.iter().find(|notice| {
+                notice.is_loss()
+                    && matches!(
+                        notice.limit,
+                        InstructionLimit::ScopeBudget
+                            | InstructionLimit::RulesBudget
+                            | InstructionLimit::FileContent
+                    )
+            })
+        })
+    {
+        let mut refused = loss.clone();
+        refused.action = InstructionAction::Refused;
+        return Err(InstructionRefusal::Loss(refused));
+    }
+    let Some(guard) = budgets.static_guard_tokens else {
+        return Ok((prompt, assembly, Vec::new()));
+    };
+    let mut measured = measure_static_prefix(prompt.as_ref(), tools);
+    if measured <= guard {
+        return Ok((prompt, assembly, Vec::new()));
+    }
+    if refuse {
+        return Err(InstructionRefusal::OverGuard { measured, guard });
+    }
+    let mut guard_notices: Vec<InstructionNotice> = Vec::new();
+    if let (Some(raw), Some(first)) = (raw, assembly.as_ref()) {
+        let mut effective = first.budgets;
+        let mut order = [
+            (InstructionScope::Global, first.global_tokens),
+            (InstructionScope::Project, first.project_tokens),
+        ];
+        order.sort_by_key(|&(_, retained)| std::cmp::Reverse(retained));
+        'scopes: for (scope, initial) in order {
+            let mut retained = initial;
+            for _ in 0..GUARD_PASSES_PER_SCOPE {
+                if measured <= guard || retained == 0 {
+                    break;
+                }
+                effective =
+                    effective.with_scope_ceiling(scope, retained.saturating_sub(measured - guard));
+                let Some(installed) = assembly.as_ref() else {
+                    break 'scopes;
+                };
+                let Some(next) =
+                    replace_installed_instruction_block(&mut prompt, raw, installed, &effective)?
+                else {
+                    break 'scopes;
+                };
+                retained = match scope {
+                    InstructionScope::Global => next.global_tokens,
+                    InstructionScope::Project => next.project_tokens,
+                };
+                assembly = Some(next);
+                measured = measure_static_prefix(prompt.as_ref(), tools);
+            }
+            if retained < initial {
+                guard_notices.push(InstructionNotice::static_guard(
+                    scope,
+                    initial - retained,
+                    false,
+                ));
+            }
+        }
+    }
+    if measured > guard {
+        guard_notices.push(InstructionNotice::static_guard(
+            InstructionScope::Global,
+            measured - guard,
+            true,
+        ));
+    }
+    if let Some(assembly) = assembly.as_mut() {
+        assembly.notices.append(&mut guard_notices);
+    }
+    Ok((prompt, assembly, guard_notices))
 }
 
 /// Flatten a system prompt to joined text (tests + debug inspectors).
@@ -3891,7 +4057,7 @@ mod tests {
     }
 
     #[test]
-    fn stable_prefix_guard_ignores_memory_growth() {
+    fn prefix_guard_includes_memory_growth() {
         let stable = SystemBlock {
             block_type: "text".to_string(),
             text: "stable prefix".to_string(),
@@ -3906,10 +4072,9 @@ mod tests {
                 cache_control: None,
             },
         ]);
-        assert_eq!(
-            super::measure_static_prefix(Some(&one_block), &[]),
-            super::measure_static_prefix(Some(&with_volatile), &[]),
-            "volatile world-state blocks are not part of the guarded prefix"
+        assert!(
+            super::measure_static_prefix(Some(&with_volatile), &[])
+                > super::measure_static_prefix(Some(&one_block), &[])
         );
     }
 
@@ -3982,8 +4147,9 @@ mod tests {
             "configured instructions file body must appear in the prompt"
         );
         assert!(
-            prompt.contains(&extra.display().to_string()),
-            "instructions block must annotate its source path"
+            prompt.contains("source=\"extra-instructions.md\"")
+                && !prompt.contains(&extra.display().to_string()),
+            "instructions block must name its source without the host root"
         );
     }
 

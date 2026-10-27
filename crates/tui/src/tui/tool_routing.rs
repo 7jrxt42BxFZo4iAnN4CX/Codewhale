@@ -3,7 +3,6 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use crate::hooks::HookEvent;
 use crate::tools::ReviewOutput;
 use crate::tools::apply_patch::{NormalizedApplyPatchInput, normalize_apply_patch_input};
 use crate::tools::canonical_action::canonical_action_alias;
@@ -18,6 +17,7 @@ use crate::tui::history::{
     summarize_tool_output,
 };
 use crate::tui::workspace_context;
+use codewhale_config::hooks::HookEvent;
 
 #[allow(clippy::too_many_lines)]
 pub(super) fn handle_tool_call_started(
@@ -698,7 +698,7 @@ fn fire_tool_completion_hooks(
     let wants_after = app.hooks.has_hooks_for_event(HookEvent::ToolCallAfter);
     let wants_error = app
         .hooks
-        .has_hooks_for_event(crate::hooks::HookEvent::OnError);
+        .has_hooks_for_event(codewhale_config::hooks::HookEvent::OnError);
     if !wants_after && !wants_error {
         // Fast path: skip the result clone and HookContext allocation when
         // the user has configured neither event.
@@ -735,7 +735,7 @@ fn fire_tool_completion_hooks(
     }
 
     if let Some(context) = error_context
-        && let Err(error) = app.submit_hooks(crate::hooks::HookEvent::OnError, context)
+        && let Err(error) = app.submit_hooks(codewhale_config::hooks::HookEvent::OnError, context)
     {
         app.surface_observer_hook_submission_failure(error);
     }
@@ -2505,7 +2505,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn ignored_tool_calls_still_fire_after_and_error_hooks_once() {
-        use crate::hooks::{Hook, HookEvent, HookExecutor, HooksConfig};
+        use crate::hooks::HookExecutor;
+        use codewhale_config::hooks::{Hook, HookEvent, HooksConfig};
 
         let dir = tempfile::tempdir().expect("tempdir");
         let after_log = dir.path().join("after.log");
@@ -2569,8 +2570,9 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn bash_completion_hooks_get_exit_code_and_status_for_failures() {
-        use crate::hooks::{Hook, HookEvent, HookExecutor, HooksConfig};
+        use crate::hooks::HookExecutor;
         use crate::tools::spec::{ToolContext, ToolSpec};
+        use codewhale_config::hooks::{Hook, HookEvent, HooksConfig};
 
         let dir = tempfile::tempdir().expect("tempdir");
         let after_log = dir.path().join("after.log");
@@ -2875,7 +2877,7 @@ mod tests {
     fn oldest_tool_outputs_are_released_once_the_budget_is_exceeded() {
         let mut app = crate::tui::app::App::new(
             crate::tui::test_support::test_tui_options(std::path::PathBuf::from(".")),
-            &crate::config::Config::default(),
+            &codewhale_runtime::config::Config::default(),
         );
         // 200 records x 64 KiB = 12.8 MiB, well past the 8 MiB budget.
         let record_count = 200usize;

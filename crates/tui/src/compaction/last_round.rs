@@ -112,7 +112,7 @@ pub fn inspect_compaction_keep(messages: &[Message]) -> CompactionKeep {
 #[must_use]
 pub fn pinned_anchors_text(workspace: Option<&std::path::Path>) -> Option<String> {
     let workspace = workspace?;
-    if !crate::config::is_workspace_trusted(workspace) {
+    if !codewhale_runtime::config::is_workspace_trusted(workspace) {
         return None;
     }
     let primary = workspace.join(".codewhale").join("anchors.md");
@@ -663,8 +663,10 @@ mod tests {
         assert_eq!(pinned_anchors_text(None), None);
         assert_eq!(pinned_anchors_text(Some(workspace.path())), None);
 
-        crate::config::save_workspace_trust(workspace.path()).unwrap();
-        assert!(crate::config::is_workspace_trusted(workspace.path()));
+        codewhale_runtime::config::save_workspace_trust(workspace.path()).unwrap();
+        assert!(codewhale_runtime::config::is_workspace_trusted(
+            workspace.path()
+        ));
         assert_eq!(
             pinned_anchors_text(Some(workspace.path())).as_deref(),
             Some("legacy anchor")
@@ -692,8 +694,10 @@ mod tests {
             for linked_directory in [false, true] {
                 let workspace = tempfile::tempdir().unwrap();
                 let outside = tempfile::tempdir().unwrap();
-                crate::config::save_workspace_trust(workspace.path()).unwrap();
-                assert!(crate::config::is_workspace_trusted(workspace.path()));
+                codewhale_runtime::config::save_workspace_trust(workspace.path()).unwrap();
+                assert!(codewhale_runtime::config::is_workspace_trusted(
+                    workspace.path()
+                ));
                 let target = outside.path().join("anchors.md");
                 std::fs::write(&target, "separate anchor").unwrap();
                 let parent = workspace.path().join(directory);

@@ -2315,7 +2315,7 @@ pub(super) async fn delayed_chat_client(
     CodewhaleClient,
     Arc<AtomicUsize>,
     Arc<std::sync::Mutex<Vec<Value>>>,
-    crate::config::Config,
+    codewhale_runtime::config::Config,
 ) {
     let calls = Arc::new(AtomicUsize::new(0));
     let bodies = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -2371,10 +2371,7 @@ pub(super) async fn delayed_chat_client(
         let _ = axum::serve(listener, app).await;
     });
 
-    let config = crate::config::Config {
-        ..crate::config::Config::default()
-    }
-    .with_legacy_root(
+    let config = codewhale_runtime::config::Config::default().with_legacy_root(
         Some("test-key".to_string()),
         Some(format!("http://{addr}/v1")),
     );
@@ -2928,7 +2925,11 @@ const HANG_GUARD: Duration = Duration::from_secs(30);
 async fn always_delayed_chat_client(
     delay: Duration,
     response_text: &str,
-) -> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+) -> (
+    CodewhaleClient,
+    Arc<AtomicUsize>,
+    codewhale_runtime::config::Config,
+) {
     let calls = Arc::new(AtomicUsize::new(0));
     let response_text = response_text.to_string();
     let app = Router::new().route(
@@ -2974,10 +2975,7 @@ async fn always_delayed_chat_client(
         let _ = axum::serve(listener, app).await;
     });
 
-    let config = crate::config::Config {
-        ..crate::config::Config::default()
-    }
-    .with_legacy_root(
+    let config = codewhale_runtime::config::Config::default().with_legacy_root(
         Some("test-key".to_string()),
         Some(format!("http://{addr}/v1")),
     );
@@ -3047,7 +3045,11 @@ async fn tool_free_subagent_omits_chat_tools_and_tool_choice() {
 
 async fn transient_header_timeout_then_success_chat_client(
     response_text: &str,
-) -> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+) -> (
+    CodewhaleClient,
+    Arc<AtomicUsize>,
+    codewhale_runtime::config::Config,
+) {
     let calls = Arc::new(AtomicUsize::new(0));
     let response_text = response_text.to_string();
     let app = Router::new().route(
@@ -3101,10 +3103,7 @@ async fn transient_header_timeout_then_success_chat_client(
         let _ = axum::serve(listener, app).await;
     });
 
-    let config = crate::config::Config {
-        ..crate::config::Config::default()
-    }
-    .with_legacy_root(
+    let config = codewhale_runtime::config::Config::default().with_legacy_root(
         Some("test-key".to_string()),
         Some(format!("http://{addr}/v1")),
     );
@@ -3112,8 +3111,11 @@ async fn transient_header_timeout_then_success_chat_client(
     (client, calls, config)
 }
 
-async fn always_rate_limited_chat_client()
--> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+async fn always_rate_limited_chat_client() -> (
+    CodewhaleClient,
+    Arc<AtomicUsize>,
+    codewhale_runtime::config::Config,
+) {
     let calls = Arc::new(AtomicUsize::new(0));
     let app = Router::new().route(
         "/{*path}",
@@ -3146,8 +3148,8 @@ async fn always_rate_limited_chat_client()
         let _ = axum::serve(listener, app).await;
     });
 
-    let config = crate::config::Config {
-        retry: Some(crate::config::RetryConfig {
+    let config = {
+        let __cw_config_init_3_0 = Some(codewhale_runtime::config::RetryConfig {
             enabled: Some(false),
             max_retries: Some(0),
             initial_delay: Some(0.0),
@@ -3156,8 +3158,11 @@ async fn always_rate_limited_chat_client()
             jitter: None,
             jitter_factor: None,
             respect_retry_after: None,
-        }),
-        ..crate::config::Config::default()
+        });
+        let mut __cw_config_init_3_value: codewhale_runtime::config::Config =
+            codewhale_runtime::config::Config::default();
+        __cw_config_init_3_value.retry = __cw_config_init_3_0;
+        __cw_config_init_3_value
     }
     .with_legacy_root(
         Some("test-key".to_string()),
@@ -3167,8 +3172,11 @@ async fn always_rate_limited_chat_client()
     (client, calls, config)
 }
 
-async fn always_invalid_request_chat_client()
--> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+async fn always_invalid_request_chat_client() -> (
+    CodewhaleClient,
+    Arc<AtomicUsize>,
+    codewhale_runtime::config::Config,
+) {
     let calls = Arc::new(AtomicUsize::new(0));
     let app = Router::new().route(
         "/{*path}",
@@ -3202,8 +3210,8 @@ async fn always_invalid_request_chat_client()
         let _ = axum::serve(listener, app).await;
     });
 
-    let config = crate::config::Config {
-        retry: Some(crate::config::RetryConfig {
+    let config = {
+        let __cw_config_init_4_0 = Some(codewhale_runtime::config::RetryConfig {
             enabled: Some(false),
             max_retries: Some(0),
             initial_delay: Some(0.0),
@@ -3212,8 +3220,11 @@ async fn always_invalid_request_chat_client()
             jitter: None,
             jitter_factor: None,
             respect_retry_after: None,
-        }),
-        ..crate::config::Config::default()
+        });
+        let mut __cw_config_init_4_value: codewhale_runtime::config::Config =
+            codewhale_runtime::config::Config::default();
+        __cw_config_init_4_value.retry = __cw_config_init_4_0;
+        __cw_config_init_4_value
     }
     .with_legacy_root(
         Some("test-key".to_string()),
@@ -4787,7 +4798,7 @@ async fn manual_config_role_pin_refuses_task_model_and_strength_before_binding()
     let mut runtime = stub_runtime();
     runtime.model = "deepseek-v4-pro".into();
     Arc::make_mut(runtime.api_config.as_mut().unwrap()).subagents = Some(
-        toml::from_str::<crate::config::SubagentsConfig>(
+        toml::from_str::<codewhale_runtime::config::SubagentsConfig>(
             "[roles.review]\nmodel = 'deepseek-v4-flash'\n",
         )
         .unwrap(),
@@ -4827,7 +4838,7 @@ async fn manual_config_role_pin_refuses_task_model_and_strength_before_binding()
 async fn manual_role_pin_accepts_only_its_exact_qualified_provider_selector() {
     let mut runtime = stub_runtime();
     Arc::make_mut(runtime.api_config.as_mut().unwrap()).subagents = Some(
-        toml::from_str::<crate::config::SubagentsConfig>(
+        toml::from_str::<codewhale_runtime::config::SubagentsConfig>(
             "[roles.reviewer]\nmodel = 'deepseek/deepseek-v4-flash'\n",
         )
         .unwrap(),
@@ -4868,7 +4879,7 @@ async fn structured_role_pin_rejects_incomplete_auto_and_unknown_provider_pairs(
         let original_model = runtime.model.clone();
         let original_endpoint = runtime.client.base_url().to_string();
         Arc::make_mut(runtime.api_config.as_mut().unwrap()).subagents = Some(
-            toml::from_str::<crate::config::SubagentsConfig>(&format!(
+            toml::from_str::<codewhale_runtime::config::SubagentsConfig>(&format!(
                 "[roles.reviewer]\nmodel = '{value}'\n",
             ))
             .unwrap(),
@@ -4973,13 +4984,13 @@ fn credentialless_xai_runtime() -> SubAgentRuntime {
 #[tokio::test]
 async fn manual_role_pin_keeps_case_distinct_custom_provider_identity() {
     let mut runtime = stub_runtime();
-    let config = crate::config::Config {
-        provider: Some("TeamA".into()),
-        providers: Some(crate::config::ProvidersConfig {
+    let config = {
+        let __cw_config_init_5_0 = Some("TeamA".into());
+        let __cw_config_init_5_1 = Some(codewhale_runtime::config::ProvidersConfig {
             custom: HashMap::from([
                 (
                     "TeamA".into(),
-                    crate::config::ProviderConfig {
+                    codewhale_runtime::config::ProviderConfig {
                         kind: Some("openai-compatible".into()),
                         base_url: Some("http://127.0.0.1:1/v1".into()),
                         api_key: Some("fixture-upper-key".into()),
@@ -4989,7 +5000,7 @@ async fn manual_role_pin_keeps_case_distinct_custom_provider_identity() {
                 ),
                 (
                     "teama".into(),
-                    crate::config::ProviderConfig {
+                    codewhale_runtime::config::ProviderConfig {
                         kind: Some("openai-compatible".into()),
                         base_url: Some("http://127.0.0.1:2/v1".into()),
                         api_key: Some("fixture-lower-key".into()),
@@ -4999,14 +5010,18 @@ async fn manual_role_pin_keeps_case_distinct_custom_provider_identity() {
                 ),
             ]),
             ..Default::default()
-        }),
-        subagents: Some(
-            toml::from_str::<crate::config::SubagentsConfig>(
+        });
+        let __cw_config_init_5_2 = Some(
+            toml::from_str::<codewhale_runtime::config::SubagentsConfig>(
                 "[roles.reviewer]\nmodel = 'TeamA/model-x'\n",
             )
             .unwrap(),
-        ),
-        ..Default::default()
+        );
+        let mut __cw_config_init_5_value: codewhale_runtime::config::Config = Default::default();
+        __cw_config_init_5_value.provider = __cw_config_init_5_0;
+        __cw_config_init_5_value.providers = __cw_config_init_5_1;
+        __cw_config_init_5_value.subagents = __cw_config_init_5_2;
+        __cw_config_init_5_value
     };
     assert_ne!(
         config.resolve_provider_pin_identity("TeamA").unwrap().key,
@@ -5035,22 +5050,26 @@ async fn manual_role_pin_keeps_case_distinct_custom_provider_identity() {
 #[tokio::test]
 async fn foreign_manual_role_pin_is_not_downgraded_to_an_implicit_default() {
     let mut runtime = stub_runtime();
-    let config = crate::config::Config {
-        provider: Some("moonshot".into()),
-        providers: Some(crate::config::ProvidersConfig {
-            moonshot: crate::config::ProviderConfig {
+    let config = {
+        let __cw_config_init_6_0 = Some("moonshot".into());
+        let __cw_config_init_6_1 = Some(codewhale_runtime::config::ProvidersConfig {
+            moonshot: codewhale_runtime::config::ProviderConfig {
                 api_key: Some("fixture-key".into()),
                 ..Default::default()
             },
             ..Default::default()
-        }),
-        subagents: Some(
-            toml::from_str::<crate::config::SubagentsConfig>(
+        });
+        let __cw_config_init_6_2 = Some(
+            toml::from_str::<codewhale_runtime::config::SubagentsConfig>(
                 "[roles.reviewer]\nmodel = 'deepseek-v4-flash'\n",
             )
             .unwrap(),
-        ),
-        ..Default::default()
+        );
+        let mut __cw_config_init_6_value: codewhale_runtime::config::Config = Default::default();
+        __cw_config_init_6_value.provider = __cw_config_init_6_0;
+        __cw_config_init_6_value.providers = __cw_config_init_6_1;
+        __cw_config_init_6_value.subagents = __cw_config_init_6_2;
+        __cw_config_init_6_value
     };
     runtime.client = CodewhaleClient::new(&config).unwrap();
     runtime.api_config = Some(Arc::new(config));
@@ -5073,18 +5092,18 @@ async fn foreign_manual_role_pin_is_not_downgraded_to_an_implicit_default() {
 async fn structured_custom_pin_refuses_named_provider_migration_but_accepts_literal_custom() {
     let pin = || {
         Some(
-            toml::from_str::<crate::config::SubagentsConfig>(
+            toml::from_str::<codewhale_runtime::config::SubagentsConfig>(
                 "[roles.reviewer]\nmodel = 'custom/model-x'\n",
             )
             .unwrap(),
         )
     };
-    let named = crate::config::Config {
-        provider: Some("TeamA".into()),
-        providers: Some(crate::config::ProvidersConfig {
+    let named = {
+        let __cw_config_init_7_0 = Some("TeamA".into());
+        let __cw_config_init_7_1 = Some(codewhale_runtime::config::ProvidersConfig {
             custom: HashMap::from([(
                 "TeamA".into(),
-                crate::config::ProviderConfig {
+                codewhale_runtime::config::ProviderConfig {
                     kind: Some("openai-compatible".into()),
                     base_url: Some("http://127.0.0.1:1/v1".into()),
                     api_key: Some("fixture-named-key".into()),
@@ -5093,9 +5112,13 @@ async fn structured_custom_pin_refuses_named_provider_migration_but_accepts_lite
                 },
             )]),
             ..Default::default()
-        }),
-        subagents: pin(),
-        ..Default::default()
+        });
+        let __cw_config_init_7_2 = pin();
+        let mut __cw_config_init_7_value: codewhale_runtime::config::Config = Default::default();
+        __cw_config_init_7_value.provider = __cw_config_init_7_0;
+        __cw_config_init_7_value.providers = __cw_config_init_7_1;
+        __cw_config_init_7_value.subagents = __cw_config_init_7_2;
+        __cw_config_init_7_value
     };
     assert_eq!(
         named
@@ -5106,11 +5129,15 @@ async fn structured_custom_pin_refuses_named_provider_migration_but_accepts_lite
         "TeamA",
         "historical session migration remains available and is the exact rejected pin shape"
     );
-    let literal = crate::config::Config {
-        provider: Some("custom".into()),
-        default_text_model: Some("model-x".into()),
-        subagents: pin(),
-        ..Default::default()
+    let literal = {
+        let __cw_config_init_8_0 = Some("custom".into());
+        let __cw_config_init_8_1 = Some("model-x".into());
+        let __cw_config_init_8_2 = pin();
+        let mut __cw_config_init_8_value: codewhale_runtime::config::Config = Default::default();
+        __cw_config_init_8_value.provider = __cw_config_init_8_0;
+        __cw_config_init_8_value.default_text_model = __cw_config_init_8_1;
+        __cw_config_init_8_value.subagents = __cw_config_init_8_2;
+        __cw_config_init_8_value
     }
     .with_legacy_root(
         Some("fixture-literal-key".into()),
@@ -5176,7 +5203,7 @@ fn saved_role_ambiguity_fails_unless_a_higher_priority_pin_selects_the_route() {
     );
 
     Arc::make_mut(runtime.api_config.as_mut().unwrap()).subagents = Some(
-        toml::from_str::<crate::config::SubagentsConfig>(
+        toml::from_str::<codewhale_runtime::config::SubagentsConfig>(
             "[roles.reviewer]\nmodel = 'deepseek-v4-pro'\n",
         )
         .unwrap(),
@@ -5390,7 +5417,7 @@ fn spawn_route_sources_refresh_removes_stale_pins_and_overlays_live_config() {
 
     let config = runtime.api_config.clone().expect("stub config");
     let mut live = (*config).clone();
-    live.subagents = Some(crate::config::SubagentsConfig {
+    live.subagents = Some(codewhale_runtime::config::SubagentsConfig {
         worker_model: Some("live-config-model".to_string()),
         ..Default::default()
     });
@@ -15609,10 +15636,8 @@ pub(crate) fn stub_runtime() -> SubAgentRuntime {
     // A real session always carries its config; spawn-time protocol
     // rebinding (#5042) needs it to rebuild the client for model-aware
     // routes such as deepseek-v4-flash.
-    let stub_config = crate::config::Config {
-        ..crate::config::Config::default()
-    }
-    .with_legacy_root(Some("test-key".to_string()), None);
+    let stub_config = codewhale_runtime::config::Config::default()
+        .with_legacy_root(Some("test-key".to_string()), None);
     let accounting_origin = SubAgentAccountingOrigin::capture(&context);
     SubAgentRuntime {
         client: stub_client(),
@@ -15890,24 +15915,26 @@ fn stub_runtime_for_provider(provider: &str) -> SubAgentRuntime {
     runtime
 }
 
-fn stub_client_for_provider(provider: &str) -> (CodewhaleClient, crate::config::Config) {
+fn stub_client_for_provider(
+    provider: &str,
+) -> (CodewhaleClient, codewhale_runtime::config::Config) {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let mut providers = crate::config::ProvidersConfig::default();
+    let mut providers = codewhale_runtime::config::ProvidersConfig::default();
     match provider {
         "moonshot" => {
-            providers.moonshot = crate::config::ProviderConfig {
+            providers.moonshot = codewhale_runtime::config::ProviderConfig {
                 api_key: Some("test-key".to_string()),
                 ..Default::default()
             };
         }
         "openrouter" => {
-            providers.openrouter = crate::config::ProviderConfig {
+            providers.openrouter = codewhale_runtime::config::ProviderConfig {
                 api_key: Some("test-key".to_string()),
                 ..Default::default()
             };
         }
         "zai" => {
-            providers.zai = crate::config::ProviderConfig {
+            providers.zai = codewhale_runtime::config::ProviderConfig {
                 api_key: Some("test-key".to_string()),
                 ..Default::default()
             };
@@ -15915,7 +15942,7 @@ fn stub_client_for_provider(provider: &str) -> (CodewhaleClient, crate::config::
         // OpenAI Codex (ChatGPT backend). Exercises the faster-lane reasoning
         // rule: GPT-5.5 children stay on GPT-5.5 and resolve Low reasoning.
         "openai-codex" => {
-            providers.openai_codex = crate::config::ProviderConfig {
+            providers.openai_codex = codewhale_runtime::config::ProviderConfig {
                 api_key: Some("test-key".to_string()),
                 ..Default::default()
             };
@@ -15925,21 +15952,25 @@ fn stub_client_for_provider(provider: &str) -> (CodewhaleClient, crate::config::
             providers.ollama.model = Some("fixture-local:tag".to_string());
         }
         "sakana" => {
-            providers.sakana = crate::config::ProviderConfig {
+            providers.sakana = codewhale_runtime::config::ProviderConfig {
                 api_key: Some("test-key".to_string()),
                 ..Default::default()
             };
         }
         other => panic!("extend stub_client_for_provider for provider {other}"),
     }
-    let mut config = crate::config::Config {
-        provider: Some(provider.to_string()),
-        providers: Some(providers),
-        ..crate::config::Config::default()
+    let mut config = {
+        let __cw_config_init_10_0 = Some(provider.to_string());
+        let __cw_config_init_10_1 = Some(providers);
+        let mut __cw_config_init_10_value: codewhale_runtime::config::Config =
+            codewhale_runtime::config::Config::default();
+        __cw_config_init_10_value.provider = __cw_config_init_10_0;
+        __cw_config_init_10_value.providers = __cw_config_init_10_1;
+        __cw_config_init_10_value
     }
     .with_legacy_root(Some("test-key".to_string()), None);
     if provider == "openai-codex" {
-        crate::oauth::install_test_chatgpt_registration(&mut config)
+        codewhale_runtime::oauth::install_test_chatgpt_registration(&mut config)
             .expect("owned official ChatGPT fixture grant");
     }
     (
@@ -15950,10 +15981,8 @@ fn stub_client_for_provider(provider: &str) -> (CodewhaleClient, crate::config::
 
 fn stub_client() -> CodewhaleClient {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let config = crate::config::Config {
-        ..crate::config::Config::default()
-    }
-    .with_legacy_root(Some("test-key".to_string()), None);
+    let config = codewhale_runtime::config::Config::default()
+        .with_legacy_root(Some("test-key".to_string()), None);
     CodewhaleClient::new(&config).expect("stub client should construct")
 }
 
@@ -15967,23 +15996,27 @@ fn stub_client() -> CodewhaleClient {
 /// exactly as the engine wires it via `with_api_config`.
 fn cross_provider_runtime() -> SubAgentRuntime {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let providers = crate::config::ProvidersConfig {
-        deepseek: crate::config::ProviderConfig {
+    let providers = codewhale_runtime::config::ProvidersConfig {
+        deepseek: codewhale_runtime::config::ProviderConfig {
             api_key: Some("session-key".to_string()),
             base_url: Some("https://session-provider.example.com/v1".to_string()),
             ..Default::default()
         },
-        zai: crate::config::ProviderConfig {
+        zai: codewhale_runtime::config::ProviderConfig {
             api_key: Some("pinned-key".to_string()),
             base_url: Some("https://pinned-provider.example.com/v1".to_string()),
             ..Default::default()
         },
-        ..crate::config::ProvidersConfig::default()
+        ..codewhale_runtime::config::ProvidersConfig::default()
     };
-    let config = crate::config::Config {
-        provider: Some("deepseek".to_string()),
-        providers: Some(providers),
-        ..crate::config::Config::default()
+    let config = {
+        let __cw_config_init_12_0 = Some("deepseek".to_string());
+        let __cw_config_init_12_1 = Some(providers);
+        let mut __cw_config_init_12_value: codewhale_runtime::config::Config =
+            codewhale_runtime::config::Config::default();
+        __cw_config_init_12_value.provider = __cw_config_init_12_0;
+        __cw_config_init_12_value.providers = __cw_config_init_12_1;
+        __cw_config_init_12_value
     };
     let client = CodewhaleClient::new(&config).expect("session client builds");
     let mut runtime = stub_runtime().with_api_config(config);
@@ -17036,8 +17069,11 @@ async fn cancellation_wins_task_race_but_still_fans_in_exactly_once() {
 
 /// Call 1 answers with a tool call (so the child banks a real step);
 /// every later call fails with a non-retryable 400.
-async fn tool_call_then_invalid_request_chat_client()
--> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+async fn tool_call_then_invalid_request_chat_client() -> (
+    CodewhaleClient,
+    Arc<AtomicUsize>,
+    codewhale_runtime::config::Config,
+) {
     let calls = Arc::new(AtomicUsize::new(0));
     let app = Router::new().route(
         "/{*path}",
@@ -17101,8 +17137,8 @@ async fn tool_call_then_invalid_request_chat_client()
         axum::serve(listener, app).await.ok();
     });
 
-    let config = crate::config::Config {
-        retry: Some(crate::config::RetryConfig {
+    let config = {
+        let __cw_config_init_13_0 = Some(codewhale_runtime::config::RetryConfig {
             enabled: Some(false),
             max_retries: Some(0),
             initial_delay: Some(0.0),
@@ -17111,8 +17147,11 @@ async fn tool_call_then_invalid_request_chat_client()
             jitter: None,
             jitter_factor: None,
             respect_retry_after: None,
-        }),
-        ..crate::config::Config::default()
+        });
+        let mut __cw_config_init_13_value: codewhale_runtime::config::Config =
+            codewhale_runtime::config::Config::default();
+        __cw_config_init_13_value.retry = __cw_config_init_13_0;
+        __cw_config_init_13_value
     }
     .with_legacy_root(
         Some("test-key".to_string()),
@@ -17299,8 +17338,11 @@ async fn fatal_provider_failure_mid_run_parks_a_continuable_checkpoint() {
 /// Six responses re-issuing the same role-denied call, then a text report —
 /// the exact stall #6015 guards: three denied rounds trigger the strategy
 /// switch, three held rounds the report-only response.
-async fn denied_call_then_report_chat_client()
--> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+async fn denied_call_then_report_chat_client() -> (
+    CodewhaleClient,
+    Arc<AtomicUsize>,
+    codewhale_runtime::config::Config,
+) {
     let calls = Arc::new(AtomicUsize::new(0));
     let app = Router::new().route(
         "/{*path}",
@@ -17376,8 +17418,8 @@ async fn denied_call_then_report_chat_client()
         axum::serve(listener, app).await.ok();
     });
 
-    let config = crate::config::Config {
-        retry: Some(crate::config::RetryConfig {
+    let config = {
+        let __cw_config_init_14_0 = Some(codewhale_runtime::config::RetryConfig {
             enabled: Some(false),
             max_retries: Some(0),
             initial_delay: Some(0.0),
@@ -17386,8 +17428,11 @@ async fn denied_call_then_report_chat_client()
             jitter: None,
             jitter_factor: None,
             respect_retry_after: None,
-        }),
-        ..crate::config::Config::default()
+        });
+        let mut __cw_config_init_14_value: codewhale_runtime::config::Config =
+            codewhale_runtime::config::Config::default();
+        __cw_config_init_14_value.retry = __cw_config_init_14_0;
+        __cw_config_init_14_value
     }
     .with_legacy_root(
         Some("test-key".to_string()),
@@ -17788,7 +17833,9 @@ fn subagent_runtime_default_step_api_timeout_matches_config_default() {
     assert_eq!(runtime.step_api_timeout, DEFAULT_STEP_API_TIMEOUT);
     assert_eq!(
         DEFAULT_STEP_API_TIMEOUT,
-        std::time::Duration::from_secs(crate::config::DEFAULT_SUBAGENT_API_TIMEOUT_SECS)
+        std::time::Duration::from_secs(
+            codewhale_runtime::config::DEFAULT_SUBAGENT_API_TIMEOUT_SECS
+        )
     );
     assert_eq!(
         DEFAULT_STEP_API_TIMEOUT,
@@ -18184,7 +18231,7 @@ fn operator_model_for_subagent_enumerates_from_catalog_facade() {
     assert_eq!(provider, codewhale_config::ProviderKind::Deepseek);
     // Sanity: the strict provider really does reject the invalid id, so
     // operator_model_for_subagent must take the enumeration branch.
-    assert!(crate::config::validate_route(provider, &runtime.model).is_err());
+    assert!(codewhale_runtime::config::validate_route(provider, &runtime.model).is_err());
 
     let facade = crate::provider_lake::all_catalog_models_for_provider(provider);
     assert!(
@@ -18205,7 +18252,7 @@ fn operator_model_for_subagent_enumerates_from_catalog_facade() {
     // id it accepted before the migration (facade ⊇ legacy for this provider).
     let facade_lower: std::collections::BTreeSet<String> =
         facade.iter().map(|m| m.to_ascii_lowercase()).collect();
-    for legacy in crate::config::model_completion_names_for_provider(provider) {
+    for legacy in codewhale_runtime::config::model_completion_names_for_provider(provider) {
         assert!(
             facade_lower.contains(&legacy.to_ascii_lowercase()),
             "catalog facade dropped legacy model {legacy:?} for {provider:?}"
@@ -18764,7 +18811,11 @@ async fn token_heavy_chat_client(
     prompt_tokens: u64,
     completion_tokens: u64,
     response_text: &str,
-) -> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+) -> (
+    CodewhaleClient,
+    Arc<AtomicUsize>,
+    codewhale_runtime::config::Config,
+) {
     let calls = Arc::new(AtomicUsize::new(0));
     let response_text = response_text.to_string();
     let app = Router::new().route(
@@ -18810,10 +18861,7 @@ async fn token_heavy_chat_client(
         let _ = axum::serve(listener, app).await;
     });
 
-    let config = crate::config::Config {
-        ..crate::config::Config::default()
-    }
-    .with_legacy_root(
+    let config = codewhale_runtime::config::Config::default().with_legacy_root(
         Some("test-key".to_string()),
         Some(format!("http://{addr}/v1")),
     );
@@ -18826,7 +18874,11 @@ async fn token_heavy_chat_client(
 /// allowed to retry, completes normally.
 async fn incomplete_then_complete_chat_client(
     first_stop_reason: &str,
-) -> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+) -> (
+    CodewhaleClient,
+    Arc<AtomicUsize>,
+    codewhale_runtime::config::Config,
+) {
     let calls = Arc::new(AtomicUsize::new(0));
     let first_stop_reason = first_stop_reason.to_string();
     let app = Router::new().route(
@@ -18888,10 +18940,7 @@ async fn incomplete_then_complete_chat_client(
         let _ = axum::serve(listener, app).await;
     });
 
-    let config = crate::config::Config {
-        ..crate::config::Config::default()
-    }
-    .with_legacy_root(
+    let config = codewhale_runtime::config::Config::default().with_legacy_root(
         Some("test-key".to_string()),
         Some(format!("http://{addr}/v1")),
     );
@@ -19231,7 +19280,7 @@ async fn compacting_child_chat_client(
     Arc<AtomicUsize>,
     Arc<AtomicUsize>,
     Arc<AtomicBool>,
-    crate::config::Config,
+    codewhale_runtime::config::Config,
 ) {
     let calls = Arc::new(AtomicUsize::new(0));
     let summaries = Arc::new(AtomicUsize::new(0));
@@ -19320,10 +19369,7 @@ async fn compacting_child_chat_client(
         let _ = axum::serve(listener, app).await;
     });
 
-    let config = crate::config::Config {
-        ..crate::config::Config::default()
-    }
-    .with_legacy_root(
+    let config = codewhale_runtime::config::Config::default().with_legacy_root(
         Some("test-key".to_string()),
         Some(format!("http://{addr}/v1")),
     );
@@ -20906,7 +20952,7 @@ async fn tracked_running_background_shell_keeps_its_owner_off_the_heartbeat_reap
     // Keep the platform sleep spelling local to this test rather than
     // exporting a helper out of the shell test module.
     let sleep_command = {
-        let dispatcher = crate::shell_dispatcher::global_dispatcher();
+        let dispatcher = codewhale_sandbox::shell_dispatcher::global_dispatcher();
         if dispatcher.kind().is_powershell() {
             "Start-Sleep -Seconds 60".to_string()
         } else if cfg!(windows) {
@@ -23492,22 +23538,25 @@ async fn parked_followup_executes_on_the_saved_cross_provider_route() {
     // hermetic. No code path can reach a real provider: the broken path fails
     // at model resolution before any request, and the fixed path only ever
     // builds the zai client.
-    let providers = crate::config::ProvidersConfig {
-        deepseek: crate::config::ProviderConfig {
+    let providers = codewhale_runtime::config::ProvidersConfig {
+        deepseek: codewhale_runtime::config::ProviderConfig {
             api_key: Some("session-key".to_string()),
             ..Default::default()
         },
-        zai: crate::config::ProviderConfig {
+        zai: codewhale_runtime::config::ProviderConfig {
             api_key: Some("pinned-key".to_string()),
             base_url: Some(format!("http://{addr}/v1")),
             ..Default::default()
         },
         ..Default::default()
     };
-    let config = crate::config::Config {
-        provider: Some("deepseek".to_string()),
-        providers: Some(providers),
-        ..Default::default()
+    let config = {
+        let __cw_config_init_18_0 = Some("deepseek".to_string());
+        let __cw_config_init_18_1 = Some(providers);
+        let mut __cw_config_init_18_value: codewhale_runtime::config::Config = Default::default();
+        __cw_config_init_18_value.provider = __cw_config_init_18_0;
+        __cw_config_init_18_value.providers = __cw_config_init_18_1;
+        __cw_config_init_18_value
     };
     let mut runtime = stub_runtime().with_api_config(config.clone());
     runtime.client = CodewhaleClient::new(&config).expect("session client builds");
@@ -24183,7 +24232,7 @@ mod child_permission_gate {
         approval_mode: ApprovalMode,
         auto_approve: bool,
         parent_can_prompt: bool,
-        client: Option<(CodewhaleClient, crate::config::Config)>,
+        client: Option<(CodewhaleClient, codewhale_runtime::config::Config)>,
     ) -> (
         ChildCoreProbe,
         tokio::sync::mpsc::Receiver<Event>,
@@ -24202,7 +24251,7 @@ mod child_permission_gate {
         approval_mode: ApprovalMode,
         auto_approve: bool,
         parent_can_prompt: bool,
-        client: Option<(CodewhaleClient, crate::config::Config)>,
+        client: Option<(CodewhaleClient, codewhale_runtime::config::Config)>,
         live_posture: Option<crate::core::engine::LivePosture>,
     ) -> (
         ChildCoreProbe,
@@ -24327,7 +24376,7 @@ mod child_permission_gate {
         finish_reason: &str,
     ) -> (
         wiremock::MockServer,
-        (CodewhaleClient, crate::config::Config),
+        (CodewhaleClient, codewhale_runtime::config::Config),
     ) {
         use wiremock::matchers::method;
         use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -24347,10 +24396,8 @@ mod child_permission_gate {
             })))
             .mount(&server)
             .await;
-        let config = crate::config::Config {
-            ..crate::config::Config::default()
-        }
-        .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
+        let config = codewhale_runtime::config::Config::default()
+            .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
         let client = CodewhaleClient::new(&config).expect("mock-backed client");
         (server, (client, config))
     }
@@ -24359,7 +24406,7 @@ mod child_permission_gate {
         content: &str,
     ) -> (
         wiremock::MockServer,
-        (CodewhaleClient, crate::config::Config),
+        (CodewhaleClient, codewhale_runtime::config::Config),
     ) {
         guardian_mock_with_stop(content, "stop").await
     }
@@ -24368,7 +24415,7 @@ mod child_permission_gate {
         content: &str,
     ) -> (
         wiremock::MockServer,
-        (CodewhaleClient, crate::config::Config),
+        (CodewhaleClient, codewhale_runtime::config::Config),
     ) {
         use wiremock::matchers::method;
         use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -24387,20 +24434,15 @@ mod child_permission_gate {
             })))
             .mount(&server)
             .await;
-        let config = crate::config::Config {
-            ..crate::config::Config::default()
-        }
-        .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
+        let config = codewhale_runtime::config::Config::default()
+            .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
         let client = CodewhaleClient::new(&config).expect("mock-backed client");
         (server, (client, config))
     }
 
-    fn unreachable_client() -> (CodewhaleClient, crate::config::Config) {
+    fn unreachable_client() -> (CodewhaleClient, codewhale_runtime::config::Config) {
         let _ = rustls::crypto::ring::default_provider().install_default();
-        let config = crate::config::Config {
-            ..crate::config::Config::default()
-        }
-        .with_legacy_root(
+        let config = codewhale_runtime::config::Config::default().with_legacy_root(
             Some("test-key".to_string()),
             Some("http://127.0.0.1:1".to_string()),
         );
@@ -25514,7 +25556,7 @@ mod child_permission_gate {
             })
             .mount(&server)
             .await;
-        let config = crate::config::Config::default().with_legacy_root(
+        let config = codewhale_runtime::config::Config::default().with_legacy_root(
             Some("test-guardian-fresh-key".to_string()),
             Some(server.uri()),
         );
@@ -26721,7 +26763,11 @@ mod readonly_shell_6015 {
     async fn scripted_bash_calls_client(
         commands: Vec<&'static str>,
         report: &'static str,
-    ) -> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+    ) -> (
+        CodewhaleClient,
+        Arc<AtomicUsize>,
+        codewhale_runtime::config::Config,
+    ) {
         scripted_bash_calls_with_pairing(commands, report, None).await
     }
 
@@ -26729,7 +26775,11 @@ mod readonly_shell_6015 {
         commands: Vec<&'static str>,
         report: &'static str,
         invalid_ids: Option<[&'static str; 2]>,
-    ) -> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+    ) -> (
+        CodewhaleClient,
+        Arc<AtomicUsize>,
+        codewhale_runtime::config::Config,
+    ) {
         let calls = Arc::new(AtomicUsize::new(0));
         let app = Router::new().route(
             "/{*path}",
@@ -26815,8 +26865,8 @@ mod readonly_shell_6015 {
         tokio::spawn(async move {
             axum::serve(listener, app).await.ok();
         });
-        let config = crate::config::Config {
-            retry: Some(crate::config::RetryConfig {
+        let config = {
+            let __cw_config_init_22_0 = Some(codewhale_runtime::config::RetryConfig {
                 enabled: Some(false),
                 max_retries: Some(0),
                 initial_delay: Some(0.0),
@@ -26825,8 +26875,11 @@ mod readonly_shell_6015 {
                 jitter: None,
                 jitter_factor: None,
                 respect_retry_after: None,
-            }),
-            ..crate::config::Config::default()
+            });
+            let mut __cw_config_init_22_value: codewhale_runtime::config::Config =
+                codewhale_runtime::config::Config::default();
+            __cw_config_init_22_value.retry = __cw_config_init_22_0;
+            __cw_config_init_22_value
         }
         .with_legacy_root(
             Some("test-key".to_string()),
@@ -26842,7 +26895,7 @@ mod readonly_shell_6015 {
     fn scout_runtime(
         workspace: &Path,
         client: CodewhaleClient,
-        config: crate::config::Config,
+        config: codewhale_runtime::config::Config,
     ) -> SubAgentRuntime {
         let mut runtime =
             stub_runtime().with_agent_tool_surface_options(enabled_agent_surface_options());
@@ -26857,7 +26910,7 @@ mod readonly_shell_6015 {
     async fn run_scout(
         workspace: &Path,
         client: CodewhaleClient,
-        config: crate::config::Config,
+        config: codewhale_runtime::config::Config,
         id: &str,
     ) -> SubAgentResult {
         let manager = Arc::new(RwLock::new(SubAgentManager::new(
@@ -27269,8 +27322,8 @@ async fn late_launch_permit_still_gets_the_full_work_budget() {
     tokio::spawn(async move {
         axum::serve(listener, app).await.ok();
     });
-    let fixture_config = crate::config::Config {
-        retry: Some(crate::config::RetryConfig {
+    let fixture_config = {
+        let __cw_config_init_23_0 = Some(codewhale_runtime::config::RetryConfig {
             enabled: Some(false),
             max_retries: Some(0),
             initial_delay: Some(0.0),
@@ -27279,8 +27332,11 @@ async fn late_launch_permit_still_gets_the_full_work_budget() {
             jitter: None,
             jitter_factor: None,
             respect_retry_after: None,
-        }),
-        ..crate::config::Config::default()
+        });
+        let mut __cw_config_init_23_value: codewhale_runtime::config::Config =
+            codewhale_runtime::config::Config::default();
+        __cw_config_init_23_value.retry = __cw_config_init_23_0;
+        __cw_config_init_23_value
     }
     .with_legacy_root(
         Some("test-key".to_string()),

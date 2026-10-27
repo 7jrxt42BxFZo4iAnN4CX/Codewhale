@@ -297,7 +297,7 @@ fn route_declares_unknown_output_ceiling(provider: ProviderKind, model: &str) ->
         ProviderKind::Ollama | ProviderKind::Sglang | ProviderKind::Vllm => true,
         // Kimi Code membership ids publish their limits in the membership
         // catalog rather than the static model catalogue.
-        ProviderKind::Moonshot => crate::config::is_kimi_code_membership_model(model),
+        ProviderKind::Moonshot => codewhale_runtime::config::is_kimi_code_membership_model(model),
         _ => false,
     }
 }

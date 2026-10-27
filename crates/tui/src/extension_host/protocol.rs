@@ -39,6 +39,7 @@
 //! to show or submit it. The authority lint in `protocol/tests.rs` keeps
 //! [`METHODS`] that way.
 
+use codewhale_config::{EntryRef, OwnerRef};
 use std::time::Duration;
 
 use serde::de::DeserializeOwned;
@@ -345,19 +346,6 @@ fn present<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Value>, 
 // Shared types
 // ---------------------------------------------------------------------------
 
-/// Identity of one activation. `generation` bumps on every (re)activation;
-/// `owner_token` is 128+ random bits minted by the core and handed over only
-/// in `ext/activate`. It catches bugs and stale fibers; it is not a boundary
-/// against a malicious plugin in the same process (see the design, §4.4).
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(test, derive(schemars::JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct OwnerRef {
-    pub plugin_id: String,
-    pub generation: u64,
-    pub owner_token: String,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -617,6 +605,8 @@ pub struct McpOpenParams {
     pub session_id: String,
     pub launch_ticket: String,
     pub transport: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discover_grant: Option<McpOperationGrant>,
     pub initialize_grant: McpOperationGrant,
     pub initialized_grant: McpOperationGrant,
     pub client_version: String,
@@ -685,6 +675,10 @@ pub struct McpHttpHeaders {
     pub mcp_session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp_protocol_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_method: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -997,13 +991,6 @@ pub struct HostLimits {
 pub struct InitializeParams {
     pub protocol: u32,
     pub limits: HostLimits,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[cfg_attr(test, derive(schemars::JsonSchema))]
-pub struct EntryRef {
-    pub path: String,
-    pub sha256: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

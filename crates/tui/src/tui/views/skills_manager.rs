@@ -760,8 +760,8 @@ pub fn apply_toggle_compatible(view: &mut SkillsManagerView, app: &App) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
     use crate::tui::app::{App, TuiOptions};
+    use codewhale_runtime::config::Config;
     use crossterm::event::{KeyEventKind, KeyModifiers};
     use std::ffi::OsString;
     use std::fs;

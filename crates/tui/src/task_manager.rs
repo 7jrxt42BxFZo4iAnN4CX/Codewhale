@@ -22,13 +22,13 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::config::Config;
 use crate::runtime_threads::{
     CreateThreadRequest, RUNTIME_STORE_FAILURE_EVENT, RuntimeEventRecord, RuntimeProcessOwnerLock,
     RuntimeThreadManager, RuntimeThreadManagerConfig, RuntimeTurnStatus,
     SharedRuntimeThreadManager, StartTurnRequest,
 };
 use crate::utils::spawn_supervised;
+use codewhale_runtime::config::Config;
 
 const DEFAULT_WORKERS: usize = 2;
 const MAX_WORKERS: usize = 8;
@@ -1930,7 +1930,7 @@ impl TaskManager {
     /// no-op.
     pub(crate) async fn reload_runtime_config_with(
         &self,
-        edit: impl FnOnce(&mut crate::config::Config),
+        edit: impl FnOnce(&mut codewhale_runtime::config::Config),
     ) -> Result<()> {
         let Some(runtime) = &self.runtime_threads else {
             return Ok(());
@@ -4019,35 +4019,43 @@ mod tests {
     }
 
     fn provider_default_model_cases() -> Vec<(&'static str, Config, &'static str)> {
-        let deepseek = Config {
-            provider: Some("deepseek".to_string()),
-            default_text_model: Some("deepseek-v4-flash".to_string()),
-            ..Config::default()
+        let deepseek = {
+            let __cw_config_init_0_0 = Some("deepseek".to_string());
+            let __cw_config_init_0_1 = Some("deepseek-v4-flash".to_string());
+            let mut __cw_config_init_0_value: Config = Config::default();
+            __cw_config_init_0_value.provider = __cw_config_init_0_0;
+            __cw_config_init_0_value.default_text_model = __cw_config_init_0_1;
+            __cw_config_init_0_value
         };
 
-        let zai = Config {
-            provider: Some("zai".to_string()),
+        let zai = {
+            let __cw_config_init_1_0 = Some("zai".to_string());
             // Exercise provider-aware rejection of a stale DeepSeek root default.
-            default_text_model: Some(
-                codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
-            ),
-            ..Config::default()
+            let __cw_config_init_1_1 =
+                Some(codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string());
+            let mut __cw_config_init_1_value: Config = Config::default();
+            __cw_config_init_1_value.provider = __cw_config_init_1_0;
+            __cw_config_init_1_value.default_text_model = __cw_config_init_1_1;
+            __cw_config_init_1_value
         };
 
-        let mut custom_providers = crate::config::ProvidersConfig::default();
+        let mut custom_providers = codewhale_runtime::config::ProvidersConfig::default();
         custom_providers.custom.insert(
             "acme".to_string(),
-            crate::config::ProviderConfig {
+            codewhale_runtime::config::ProviderConfig {
                 base_url: Some("http://127.0.0.1:1/v1".to_string()),
                 model: Some("acme-coder".to_string()),
                 kind: Some("openai-compatible".to_string()),
-                ..crate::config::ProviderConfig::default()
+                ..codewhale_runtime::config::ProviderConfig::default()
             },
         );
-        let custom = Config {
-            provider: Some("acme".to_string()),
-            providers: Some(custom_providers),
-            ..Config::default()
+        let custom = {
+            let __cw_config_init_2_0 = Some("acme".to_string());
+            let __cw_config_init_2_1 = Some(custom_providers);
+            let mut __cw_config_init_2_value: Config = Config::default();
+            __cw_config_init_2_value.provider = __cw_config_init_2_0;
+            __cw_config_init_2_value.providers = __cw_config_init_2_1;
+            __cw_config_init_2_value
         };
 
         vec![

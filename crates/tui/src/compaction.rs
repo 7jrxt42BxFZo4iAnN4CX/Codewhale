@@ -222,7 +222,7 @@ const RETAINED_TOOL_RESULT_MAX_CHARS: usize = 64 * 1024;
 /// overrides it per session (#5956). Aliased to the config default so the two
 /// names cannot drift apart.
 pub(crate) const COMPACT_RETAINED_USER_MESSAGE_MAX_TOKENS: usize =
-    crate::config::DEFAULT_COMPACTION_RETAINED_USER_MESSAGE_TOKENS;
+    codewhale_runtime::config::DEFAULT_COMPACTION_RETAINED_USER_MESSAGE_TOKENS;
 /// Handoff summarization prompt, appended to the live conversation as the
 /// final user message. The headings are requested, not enforced:
 /// `validate_compaction_summary` only rejects corrupt output, so a provider
@@ -1764,7 +1764,7 @@ fn operator_instructions_section(instructions: Option<&str>) -> Option<String> {
     let text = instructions
         .map(str::trim)
         .filter(|text| !text.is_empty())?;
-    let max_chars = crate::config::COMPACTION_SUMMARY_INSTRUCTIONS_MAX_CHARS;
+    let max_chars = codewhale_runtime::config::COMPACTION_SUMMARY_INSTRUCTIONS_MAX_CHARS;
     let text = if text.chars().count() > max_chars {
         logging::warn(format!(
             "[compaction] summary_instructions is longer than {max_chars} characters; \
@@ -2287,7 +2287,10 @@ enum RequestSizeLadder {
 /// Large") and then wrapped again by the client's own error text, so the
 /// top-level message alone is not reliable.
 fn is_request_too_large_error(e: &anyhow::Error) -> bool {
-    e.chain().any(|cause| {
+    matches!(
+        e.downcast_ref::<crate::llm_client::LlmError>(),
+        Some(crate::llm_client::LlmError::InvalidRequest { status: 413, .. })
+    ) || e.chain().any(|cause| {
         let lower = cause.to_string().to_lowercase();
         // The client always renders the status code into the message
         // ("HTTP 413"), so that token is the primary signal; the phrase list
@@ -2922,9 +2925,7 @@ mod tests {
     }
 
     fn request_body_413() -> anyhow::Error {
-        anyhow::anyhow!(
-            "LLM error: HTTP 413: Failed to buffer the request body: length limit exceeded"
-        )
+        crate::llm_client::LlmError::from_http_response(413, "request rejected").into()
     }
 
     /// The same boundary stated by a fronting gateway (openresty) instead of

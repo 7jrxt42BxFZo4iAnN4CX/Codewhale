@@ -986,7 +986,10 @@ fn clipboard_image_target(
     all(target_os = "linux", not(target_env = "ohos"))
 ))]
 fn save_image_as_png(workspace: &Path, image: &ImageData) -> Result<PastedImage> {
-    save_image_as_png_in(&crate::config::clipboard_images_dir(workspace), image)
+    save_image_as_png_in(
+        &codewhale_runtime::config::clipboard_images_dir(workspace),
+        image,
+    )
 }
 
 /// Lower-level variant that writes into an explicit directory. Exposed so the
@@ -1288,7 +1291,10 @@ mod tests {
         let workspace = tempfile::tempdir().unwrap();
 
         assert_eq!(
-            crate::config::clipboard_images_dir_for_home(workspace.path(), Some(home.path())),
+            codewhale_runtime::config::clipboard_images_dir_for_home(
+                workspace.path(),
+                Some(home.path())
+            ),
             home.path().join(".codewhale").join("clipboard-images")
         );
     }
@@ -1298,7 +1304,7 @@ mod tests {
         let workspace = tempfile::tempdir().unwrap();
 
         assert_eq!(
-            crate::config::clipboard_images_dir_for_home(workspace.path(), None),
+            codewhale_runtime::config::clipboard_images_dir_for_home(workspace.path(), None),
             workspace.path().join("clipboard-images")
         );
     }

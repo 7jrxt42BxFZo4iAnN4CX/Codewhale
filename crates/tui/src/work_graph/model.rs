@@ -208,10 +208,14 @@ pub(crate) fn constrained_effective_reasoning_for_route(
     };
 
     if provider == ProviderKind::Zai {
-        if !crate::config::is_exact_zai_chat_route(provider, endpoint_identity) {
+        if !codewhale_runtime::config::is_exact_zai_chat_route(provider, endpoint_identity) {
             return Some(Unavailable);
         }
-        if crate::config::is_exact_zai_forced_thinking_route(provider, endpoint_identity, model) {
+        if codewhale_runtime::config::is_exact_zai_forced_thinking_route(
+            provider,
+            endpoint_identity,
+            model,
+        ) {
             // GLM-5.3 / GLM-5.3-Flash cannot disable thinking; the wire sends
             // `off` as the lowest documented tier and honours `low` natively.
             return Some(match requested {
@@ -220,13 +224,21 @@ pub(crate) fn constrained_effective_reasoning_for_route(
                 other => other,
             });
         }
-        if crate::config::is_exact_zai_tiered_effort_route(provider, endpoint_identity, model) {
+        if codewhale_runtime::config::is_exact_zai_tiered_effort_route(
+            provider,
+            endpoint_identity,
+            model,
+        ) {
             return Some(match requested {
                 Low | Medium => High,
                 other => other,
             });
         }
-        if crate::config::is_exact_known_zai_reasoning_route(provider, endpoint_identity, model) {
+        if codewhale_runtime::config::is_exact_known_zai_reasoning_route(
+            provider,
+            endpoint_identity,
+            model,
+        ) {
             return Some(match requested {
                 Off | Auto => requested,
                 _ => ThinkingEnabledGranularityUnavailable,
@@ -236,7 +248,8 @@ pub(crate) fn constrained_effective_reasoning_for_route(
     }
 
     if provider == ProviderKind::Minimax {
-        if crate::config::is_exact_minimax_m3_route(provider, endpoint_identity, model) {
+        if codewhale_runtime::config::is_exact_minimax_m3_route(provider, endpoint_identity, model)
+        {
             return Some(match requested {
                 Off | Auto => requested,
                 _ => ThinkingEnabledGranularityUnavailable,
@@ -246,7 +259,11 @@ pub(crate) fn constrained_effective_reasoning_for_route(
     }
 
     if provider == ProviderKind::MinimaxAnthropic {
-        if crate::config::is_exact_minimax_anthropic_m3_route(provider, endpoint_identity, model) {
+        if codewhale_runtime::config::is_exact_minimax_anthropic_m3_route(
+            provider,
+            endpoint_identity,
+            model,
+        ) {
             return Some(match requested {
                 Off | Auto => requested,
                 _ => ThinkingEnabledGranularityUnavailable,
@@ -263,13 +280,17 @@ pub(crate) fn constrained_effective_reasoning_for_route(
         return Some(Unavailable);
     }
 
-    if crate::config::is_exact_kimi_code_k3_route(provider, endpoint_identity, model) {
+    if codewhale_runtime::config::is_exact_kimi_code_k3_route(provider, endpoint_identity, model) {
         return Some(match requested {
             Off => Low,
             other => other,
         });
     }
-    if crate::config::is_exact_direct_moonshot_k3_route(provider, endpoint_identity, model) {
+    if codewhale_runtime::config::is_exact_direct_moonshot_k3_route(
+        provider,
+        endpoint_identity,
+        model,
+    ) {
         return Some(match requested {
             Off => Low,
             Medium => High,

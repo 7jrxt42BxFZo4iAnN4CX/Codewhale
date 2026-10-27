@@ -28,148 +28,30 @@
 //!   their own cap. They are reported in `/context` but are not charged
 //!   against the project scope here; only the instruction chain and the rules
 //!   block are.
-//! - The static-prefix guard is a safety net for the *stable* prefix (base
-//!   prompt, instructions, skills index, tool schemas). Volatile world-state
-//!   blocks — memory, environment, goals — are excluded because they have
-//!   their own budgets and drift mid-session.
-//! - Trimming is one pass per scope plus at most one guard-driven second
-//!   pass. There is no convergence loop.
+//! - The static-prefix guard measures every system block plus the tool
+//!   schemas the request carries, so memory, environment and goal blocks count
+//!   toward it even though only the two instruction scopes can be trimmed to
+//!   satisfy it.
+//! - Trimming is one pass per scope. The guard then makes one bounded pass
+//!   over both scopes, largest first, with at most two attempts per scope. A
+//!   prefix that is still over the guard afterwards is reported, not looped
+//!   on, and host-owned prompts (child, isolated, RLM) are measured but never
+//!   trimmed.
 
 use std::path::PathBuf;
 
-use serde::Deserialize;
-
-/// Absolute per-scope default: 100k estimated tokens.
-pub(crate) const DEFAULT_SCOPE_BUDGET_TOKENS: usize = 100_000;
-/// Per-scope default as a share of the usable window.
-pub(crate) const DEFAULT_SCOPE_BUDGET_PERCENT: u8 = 25;
-/// Default ceiling for the whole static prefix, as a share of the usable window.
-pub(crate) const DEFAULT_STATIC_PREFIX_GUARD_PERCENT: u8 = 80;
-/// Hard memory-safety ceiling for one instruction file (8 MiB).
-pub(crate) const DEFAULT_FILE_MAX_BYTES: u64 = 8 * 1024 * 1024;
-/// Window assumed when the route's window is unknown.
-pub(crate) const DEFAULT_CONTEXT_WINDOW_TOKENS: usize = 128 * 1024;
-/// Output tokens assumed when the route's ceiling is not resolved here.
-const DEFAULT_OUTPUT_TOKENS: usize = 2_048;
+use codewhale_config::instruction_budget::{
+    DEFAULT_FILE_MAX_BYTES, DEFAULT_SCOPE_BUDGET_PERCENT, DEFAULT_SCOPE_BUDGET_TOKENS,
+    DEFAULT_STATIC_PREFIX_GUARD_PERCENT,
+};
+pub use codewhale_config::instruction_budget::{InstructionBudgetConfig, InstructionBudgetPolicy};
 /// Share of the window kept free for the response and estimator drift.
 const SAFETY_RESERVE_PERCENT: usize = 10;
 /// Floor for [`SAFETY_RESERVE_PERCENT`] so small windows keep real headroom.
 const SAFETY_RESERVE_MIN_TOKENS: usize = 2_048;
-/// Room the guard must leave for non-instruction static content, in points.
-const MIN_STATIC_RESIDUAL_PERCENT: u8 = 10;
-
-/// What to do when an instruction scope does not fit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum InstructionBudgetPolicy {
-    /// Trim the scope and continue with a warning (default).
-    #[default]
-    Trim,
-    /// Stop the session instead of trimming or running an unsatisfiable guard.
-    Refuse,
-}
-
-impl InstructionBudgetPolicy {
-    #[must_use]
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Trim => "trim",
-            Self::Refuse => "refuse",
-        }
-    }
-}
-
-/// The `[instruction_budget]` config table.
-///
-/// Every field is optional so the table only states what the user changed and
-/// the defaults stay in one place. `deny_unknown_fields` makes a typo inside
-/// the table fail loudly — the top-level config is deliberately tolerant of
-/// unknown *tables* (#6516), so silently accepting `global_budget_token`
-/// would hide the mistake forever.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct InstructionBudgetConfig {
-    /// Absolute ceiling for the global scope, in estimated tokens.
-    pub global_budget_tokens: Option<usize>,
-    /// Absolute ceiling for the project scope, in estimated tokens.
-    pub project_budget_tokens: Option<usize>,
-    /// Global scope ceiling as a share of the usable window (1–100).
-    pub global_budget_percent: Option<u8>,
-    /// Project scope ceiling as a share of the usable window (1–100).
-    pub project_budget_percent: Option<u8>,
-    /// Ceiling for the whole static prefix as a share of the usable window.
-    pub static_prefix_guard_percent: Option<u8>,
-    /// Hard per-file ceiling in bytes; a larger file is skipped, not trimmed.
-    pub file_max_bytes: Option<u64>,
-    /// `trim` (default) or `refuse`.
-    pub policy: Option<InstructionBudgetPolicy>,
-    /// Read `CLAUDE.md` when no `AGENTS.md`/codewhale file is present.
-    pub claude_fallback: Option<bool>,
-}
-
-impl InstructionBudgetConfig {
-    /// Reject values that cannot mean anything.
-    ///
-    /// Called while config is applied, so a broken table stops the launch
-    /// instead of silently producing a nonsensical budget.
-    pub(crate) fn validate(&self) -> Result<(), String> {
-        for (name, value) in [
-            ("global_budget_tokens", self.global_budget_tokens),
-            ("project_budget_tokens", self.project_budget_tokens),
-        ] {
-            if value == Some(0) {
-                return Err(format!(
-                    "instruction_budget.{name} must be positive (0 is not an unlimited budget)"
-                ));
-            }
-        }
-        if self.file_max_bytes == Some(0) {
-            return Err(
-                "instruction_budget.file_max_bytes must be positive (a hard ceiling must exist)"
-                    .to_string(),
-            );
-        }
-        for (name, value) in [
-            ("global_budget_percent", self.global_budget_percent),
-            ("project_budget_percent", self.project_budget_percent),
-            (
-                "static_prefix_guard_percent",
-                self.static_prefix_guard_percent,
-            ),
-        ] {
-            if let Some(value) = value
-                && !(1..=100).contains(&value)
-            {
-                return Err(format!(
-                    "instruction_budget.{name} must be between 1 and 100 (got {value})"
-                ));
-            }
-        }
-        let global_percent = self
-            .global_budget_percent
-            .unwrap_or(DEFAULT_SCOPE_BUDGET_PERCENT);
-        let project_percent = self
-            .project_budget_percent
-            .unwrap_or(DEFAULT_SCOPE_BUDGET_PERCENT);
-        let guard = self
-            .static_prefix_guard_percent
-            .unwrap_or(DEFAULT_STATIC_PREFIX_GUARD_PERCENT);
-        if guard < global_percent.saturating_add(project_percent) {
-            return Err(format!(
-                "instruction_budget.static_prefix_guard_percent ({guard}) must be at least the sum of the scope percents ({global_percent} + {project_percent})"
-            ));
-        }
-        if guard - global_percent.saturating_add(project_percent) < MIN_STATIC_RESIDUAL_PERCENT {
-            return Err(format!(
-                "instruction_budget.static_prefix_guard_percent ({guard}) must leave at least {MIN_STATIC_RESIDUAL_PERCENT} points above the scope percents ({global_percent} + {project_percent}) for non-instruction static content"
-            ));
-        }
-        Ok(())
-    }
-}
 
 /// Which scope an instruction source belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize)]
 pub(crate) enum InstructionScope {
     /// User-wide authority: global files and configured `instructions` entries.
     Global,
@@ -188,7 +70,7 @@ impl InstructionScope {
 }
 
 /// Where an instruction source came from, for notices and `/context`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub(crate) enum InstructionOrigin {
     /// An `AGENTS.md` (project chain or global chain).
     Agents,
@@ -217,7 +99,7 @@ impl InstructionOrigin {
 }
 
 /// What happened to one source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub(crate) enum InstructionAction {
     Kept,
     Trimmed,
@@ -238,7 +120,7 @@ impl InstructionAction {
 }
 
 /// The limit that produced a loss.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub(crate) enum InstructionLimit {
     None,
     /// The scope's own token budget.
@@ -247,6 +129,7 @@ pub(crate) enum InstructionLimit {
     StaticGuard,
     /// `file_max_bytes`.
     FileCeiling,
+    FileContent,
     /// The file was whitespace-only.
     EmptyFile,
     /// `MAX_RULES_FILES` per directory.
@@ -265,6 +148,7 @@ impl InstructionLimit {
             Self::ScopeBudget => "scope_budget",
             Self::StaticGuard => "static_guard",
             Self::FileCeiling => "file_ceiling",
+            Self::FileContent => "file_content",
             Self::EmptyFile => "empty_file",
             Self::RulesCap => "rules_cap",
             Self::RulesBudget => "rules_budget",
@@ -274,7 +158,7 @@ impl InstructionLimit {
 }
 
 /// One instruction source that was kept, trimmed, skipped, or refused.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct InstructionNotice {
     pub(crate) path: Option<PathBuf>,
     pub(crate) scope: InstructionScope,
@@ -287,9 +171,101 @@ pub(crate) struct InstructionNotice {
     pub(crate) limit: InstructionLimit,
     /// Lower-precedence file selected after the preferred one was skipped.
     pub(crate) fallback_selected: Option<String>,
-    /// Human-readable detail for notices that are not a budget loss
-    /// (a refused symlinked rules directory, an unreadable file, a cap).
-    pub(crate) detail: Option<String>,
+    /// Typed reason for notices that are not a plain budget loss (a refused
+    /// symlinked rules directory, an unreadable file, a cap).
+    pub(crate) detail: Option<InstructionDetail>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum InstructionDetail {
+    DroppedBroadest,
+    NoRoomForContent { budget_tokens: usize },
+    RulesBudgetExhausted { budget_tokens: usize },
+    OverFileCeiling { max_bytes: u64 },
+    Unreadable { reason: String },
+    AlreadyLoaded,
+    RulesCap { max_files: usize },
+    SymlinkedRulesDir,
+}
+
+fn fill(template: &str, values: &[(&str, &str)]) -> String {
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+    while let Some(start) = rest.find('{') {
+        out.push_str(&rest[..start]);
+        let tail = &rest[start + 1..];
+        let replacement = tail.find('}').and_then(|end| {
+            values
+                .iter()
+                .find(|(key, _)| *key == &tail[..end])
+                .map(|(_, value)| (*value, end))
+        });
+        match replacement {
+            Some((value, end)) => {
+                out.push_str(value);
+                rest = &tail[end + 1..];
+            }
+            None => {
+                out.push('{');
+                rest = tail;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+impl InstructionDetail {
+    pub(crate) fn unreadable(error: &dyn std::fmt::Display) -> Self {
+        Self::Unreadable {
+            reason: codewhale_runtime::safe_label::safe_error_text(&error.to_string()),
+        }
+    }
+
+    fn render(&self, locale: codewhale_localization::Locale) -> String {
+        use codewhale_localization::{MessageId, tr};
+        match self {
+            Self::DroppedBroadest => {
+                tr(locale, MessageId::InstructionDetailDroppedBroadest).into_owned()
+            }
+            Self::NoRoomForContent { budget_tokens } => fill(
+                &tr(locale, MessageId::InstructionDetailNoRoom),
+                &[("tokens", &budget_tokens.to_string())],
+            ),
+            Self::RulesBudgetExhausted { budget_tokens } => fill(
+                &tr(locale, MessageId::InstructionDetailRulesExhausted),
+                &[("tokens", &budget_tokens.to_string())],
+            ),
+            Self::OverFileCeiling { max_bytes } => fill(
+                &tr(locale, MessageId::InstructionDetailOverCeiling),
+                &[("bytes", &max_bytes.to_string())],
+            ),
+            Self::Unreadable { reason } => fill(
+                &tr(locale, MessageId::InstructionDetailUnreadable),
+                &[("reason", reason)],
+            ),
+            Self::AlreadyLoaded => {
+                tr(locale, MessageId::InstructionDetailAlreadyLoaded).into_owned()
+            }
+            Self::RulesCap { max_files } => fill(
+                &tr(locale, MessageId::InstructionDetailRulesCap),
+                &[("count", &max_files.to_string())],
+            ),
+            Self::SymlinkedRulesDir => {
+                tr(locale, MessageId::InstructionDetailSymlinkedRules).into_owned()
+            }
+        }
+    }
+}
+
+const NOTICE_LABEL_MAX_CHARS: usize = 80;
+
+fn inline_text(text: &str) -> String {
+    text.chars()
+        .map(|ch| if ch.is_control() { '?' } else { ch })
+        .take(NOTICE_LABEL_MAX_CHARS)
+        .collect()
 }
 
 impl InstructionNotice {
@@ -316,7 +292,7 @@ impl InstructionNotice {
     }
 
     /// Notice for the static-prefix guard: either the trim it performed or the
-    /// terminal state where every instruction scope is already empty.
+    /// terminal state where the prefix is still over the guard.
     pub(crate) fn static_guard(
         scope: InstructionScope,
         tokens_dropped: usize,
@@ -354,66 +330,138 @@ impl InstructionNotice {
         self.path
             .as_ref()
             .and_then(|path| path.file_name())
-            .map(|name| name.to_string_lossy().into_owned())
+            .map(|name| inline_text(&name.to_string_lossy()))
             .unwrap_or_else(|| format!("{} instructions", self.scope.as_str()))
+    }
+
+    /// One line per loss, suitable for a system history cell or a synthetic
+    /// model message. The scope, origin, action and limit are machine keys and
+    /// stay as written; every sentence comes from the locale pack, and numbers
+    /// are always present with their unit so "trimmed" never hides how much
+    /// was dropped.
+    #[must_use]
+    pub(crate) fn render(&self, locale: codewhale_localization::Locale) -> String {
+        use codewhale_localization::{MessageId, tr};
+        if self.limit == InstructionLimit::StaticGuard {
+            let tokens = self.tokens_dropped.to_string();
+            return if self.action == InstructionAction::Skipped {
+                fill(
+                    &tr(locale, MessageId::InstructionNoticeStaticGuardOver),
+                    &[("tokens", &tokens)],
+                )
+            } else {
+                fill(
+                    &tr(locale, MessageId::InstructionNoticeStaticGuardTrimmed),
+                    &[("scope", self.scope.as_str()), ("tokens", &tokens)],
+                )
+            };
+        }
+        let mut line = fill(
+            &tr(locale, MessageId::InstructionNoticeLine),
+            &[
+                ("scope", self.scope.as_str()),
+                ("label", &self.label()),
+                ("origin", self.origin.as_str()),
+                ("action", self.action.as_str()),
+                ("limit", self.limit.as_str()),
+            ],
+        );
+        let numbers = match self.action {
+            InstructionAction::Trimmed => true,
+            InstructionAction::Refused => self.bytes_kept > 0,
+            InstructionAction::Kept | InstructionAction::Skipped => false,
+        };
+        if numbers {
+            line.push_str(&fill(
+                &tr(locale, MessageId::InstructionNoticeTrimmed),
+                &[
+                    ("kept_bytes", &self.bytes_kept.to_string()),
+                    (
+                        "total_bytes",
+                        &self
+                            .bytes_kept
+                            .saturating_add(self.bytes_dropped)
+                            .to_string(),
+                    ),
+                    ("kept_tokens", &self.tokens_kept.to_string()),
+                    (
+                        "total_tokens",
+                        &self
+                            .tokens_kept
+                            .saturating_add(self.tokens_dropped)
+                            .to_string(),
+                    ),
+                ],
+            ));
+        } else if matches!(
+            self.action,
+            InstructionAction::Skipped | InstructionAction::Refused
+        ) && self.bytes_dropped > 0
+        {
+            line.push_str(&fill(
+                &tr(locale, MessageId::InstructionNoticeDroppedBytes),
+                &[("bytes", &self.bytes_dropped.to_string())],
+            ));
+        }
+        if let Some(fallback) = self.fallback_selected.as_deref() {
+            line.push_str(&fill(
+                &tr(locale, MessageId::InstructionNoticeFallback),
+                &[("source", &inline_text(fallback))],
+            ));
+        }
+        if let Some(detail) = self.detail.as_ref() {
+            line.push_str("; ");
+            line.push_str(&detail.render(locale));
+        }
+        line
     }
 }
 
 impl std::fmt::Display for InstructionNotice {
-    /// One line per loss, suitable for a system history cell, stderr, or a
-    /// synthetic model message. Numbers are always present with their unit so
-    /// "trimmed" never hides how much was dropped.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.limit == InstructionLimit::StaticGuard {
-            return if self.action == InstructionAction::Skipped {
-                write!(
-                    f,
-                    "instructions: static prefix is still ~{} estimated tokens over the static-prefix guard with every instruction scope trimmed to zero; continuing under policy `trim` — raise static_prefix_guard_percent or narrow the tool surface.",
-                    self.tokens_dropped
-                )
-            } else {
-                write!(
-                    f,
-                    "instructions: {} scope trimmed by ~{} estimated tokens to keep the static prefix under the guard",
-                    self.scope.as_str(),
-                    self.tokens_dropped
-                )
-            };
-        }
-        write!(
-            f,
-            "instructions: {} {} ({}, {}, {})",
-            self.scope.as_str(),
-            self.label(),
-            self.origin.as_str(),
-            self.action.as_str(),
-            self.limit.as_str()
-        )?;
-        if self.action == InstructionAction::Trimmed {
-            write!(
-                f,
-                " kept {} of {} bytes and ~{} of ~{} estimated tokens",
-                self.bytes_kept,
-                self.bytes_kept.saturating_add(self.bytes_dropped),
-                self.tokens_kept,
-                self.tokens_kept.saturating_add(self.tokens_dropped)
-            )?;
-        } else if self.action == InstructionAction::Skipped && self.bytes_dropped > 0 {
-            write!(f, " dropped {} bytes", self.bytes_dropped)?;
-        }
-        if let Some(fallback) = self.fallback_selected.as_deref() {
-            write!(f, "; fallback: {fallback}")?;
-        }
-        if let Some(detail) = self.detail.as_deref() {
-            write!(f, "; {detail}")?;
-        }
-        Ok(())
+        f.write_str(&self.render(codewhale_localization::Locale::En))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum InstructionRefusal {
+    Loss(InstructionNotice),
+    OverGuard { measured: usize, guard: usize },
+    ReceiptMismatch,
+}
+
+impl InstructionRefusal {
+    #[must_use]
+    pub(crate) fn render(&self, locale_tag: &str) -> String {
+        use codewhale_localization::{MessageId, resolve_locale, tr};
+        let locale = resolve_locale(locale_tag);
+        let reason = match self {
+            Self::Loss(notice) => notice.render(locale),
+            Self::OverGuard { measured, guard } => fill(
+                &tr(locale, MessageId::InstructionBudgetOverGuard),
+                &[
+                    ("measured", &measured.to_string()),
+                    ("guard", &guard.to_string()),
+                ],
+            ),
+            Self::ReceiptMismatch => {
+                return "instruction receipt does not match the installed prompt".to_string();
+            }
+        };
+        fill(
+            &tr(locale, MessageId::InstructionBudgetRefused),
+            &[("reason", &reason)],
+        )
     }
 }
 
 /// Render the whole loss list as the body of the startup notice.
 #[must_use]
-pub(crate) fn render_notice_body(notices: &[InstructionNotice]) -> Option<String> {
+pub(crate) fn render_notice_body(
+    notices: &[InstructionNotice],
+    locale_tag: &str,
+) -> Option<String> {
+    use codewhale_localization::{MessageId, resolve_locale, tr};
     let losses: Vec<&InstructionNotice> = notices.iter().filter(|n| n.is_loss()).collect();
     if losses.is_empty() {
         return None;
@@ -423,39 +471,43 @@ pub(crate) fn render_notice_body(notices: &[InstructionNotice]) -> Option<String
     // than the budget it describes.
     const MAX_LINES: usize = 12;
     const MAX_BYTES: usize = 2_000;
-    let mut body = String::from(
-        "Standing instructions were trimmed or skipped before this session started:\n",
-    );
+    let locale = resolve_locale(locale_tag);
+    let footer = tr(locale, MessageId::InstructionNoticeFooter);
+    let more = tr(locale, MessageId::InstructionNoticeMore);
+    let reserve = footer.len() + more.len() + 16;
+    let mut body = tr(locale, MessageId::InstructionNoticeHeader).into_owned();
+    body.push('\n');
     let mut shown = 0usize;
     for notice in &losses {
-        let line = format!("- {notice}\n");
-        if shown >= MAX_LINES || body.len() + line.len() > MAX_BYTES {
+        let line = format!("- {}\n", notice.render(locale));
+        if shown >= MAX_LINES || body.len() + line.len() + reserve > MAX_BYTES {
             break;
         }
         body.push_str(&line);
         shown += 1;
     }
     if shown < losses.len() {
-        body.push_str(&format!(
-            "- …and {} more loss(es); the full list is in /context report.\n",
-            losses.len() - shown
+        body.push_str("- ");
+        body.push_str(&fill(
+            &more,
+            &[("count", &(losses.len() - shown).to_string())],
         ));
+        body.push('\n');
     }
-    body.push_str("Run /context report for the full per-source breakdown.");
+    body.push_str(&footer);
     Some(body)
 }
 
 /// Raw instruction content, kept per source so a scope can be trimmed by
 /// whole segments instead of by unmovable joined text.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct InstructionSegment {
     pub(crate) scope: InstructionScope,
     pub(crate) origin: InstructionOrigin,
     /// `None` for generated content that has no file behind it.
     pub(crate) path: Option<PathBuf>,
-    /// Display label used in the rendered block: the repo-relative path for
-    /// chain segments, the absolute path the historical `<!-- global: … -->`
-    /// label carried, or a synthetic name for inline sources.
+    /// Display label used in the rendered block: a stable relative path or
+    /// basename for file sources, or a synthetic name for inline sources.
     pub(crate) label: Option<String>,
     /// Canonical path, used to load one physical file once across scopes.
     pub(crate) canonical_path: Option<PathBuf>,
@@ -471,50 +523,38 @@ impl InstructionSegment {
         path: Option<PathBuf>,
         text: String,
     ) -> Self {
-        let canonical_path = path.as_deref().and_then(canonical_path_of);
         Self {
             scope,
             origin,
             path,
             label: None,
-            canonical_path,
+            canonical_path: None,
             text,
             fallback_selected: None,
         }
     }
 }
 
-/// Canonical identity of a file, used for symlink dedupe.
-///
-/// `fs::canonicalize` resolves every symlink on the way, so two paths that
-/// reach one physical file compare equal. Hard links are distinct directory
-/// entries for the same inode; they are **not** deduped here — a hard link is
-/// read as its own file, a documented limitation of this pass.
-fn canonical_path_of(path: &std::path::Path) -> Option<PathBuf> {
-    std::fs::canonicalize(path).ok()
-}
-
 /// Resolved, per-route budgets. Percentages are of the *usable* window, never
 /// the raw window: the response and the safety reserve are not available to
 /// standing instructions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct InstructionBudgets {
     pub(crate) global_tokens: usize,
     pub(crate) project_tokens: usize,
-    pub(crate) static_guard_tokens: usize,
+    pub(crate) static_guard_tokens: Option<usize>,
     pub(crate) file_max_bytes: u64,
     pub(crate) policy: InstructionBudgetPolicy,
     pub(crate) claude_fallback: bool,
-    pub(crate) usable_window_tokens: usize,
+    pub(crate) usable_window_tokens: Option<usize>,
 }
 
 impl InstructionBudgets {
     /// Resolve config + route window into concrete token ceilings.
     ///
     /// `window` is the route's context window; `output` its resolved output
-    /// ceiling when the caller has one. An unknown window resolves to
-    /// [`DEFAULT_CONTEXT_WINDOW_TOKENS`] so budget math never divides by a
-    /// guess of zero.
+    /// reservation when the caller has one. Unknown capacity leaves relative
+    /// ceilings unavailable and retains the absolute per-scope caps.
     pub(crate) fn resolve(
         config: Option<&InstructionBudgetConfig>,
         window: Option<usize>,
@@ -523,8 +563,27 @@ impl InstructionBudgets {
         if let Some(config) = config {
             config.validate()?;
         }
-        let window = window.unwrap_or(DEFAULT_CONTEXT_WINDOW_TOKENS);
-        let usable = usable_window_tokens(window, output);
+        Ok(Self::resolve_unchecked(config, window, output))
+    }
+
+    #[must_use]
+    pub(crate) fn resolve_or_default(
+        config: &InstructionBudgetConfig,
+        window: Option<usize>,
+        output: Option<usize>,
+    ) -> Self {
+        Self::resolve(Some(config), window, output)
+            .unwrap_or_else(|_| Self::resolve_unchecked(None, window, output))
+    }
+
+    fn resolve_unchecked(
+        config: Option<&InstructionBudgetConfig>,
+        window: Option<usize>,
+        output: Option<usize>,
+    ) -> Self {
+        let usable = window
+            .zip(output)
+            .map(|(window, output)| usable_window_tokens(window, Some(output)));
         let global_percent = config
             .and_then(|c| c.global_budget_percent)
             .unwrap_or(DEFAULT_SCOPE_BUDGET_PERCENT);
@@ -537,44 +596,30 @@ impl InstructionBudgets {
         let global_tokens = config
             .and_then(|c| c.global_budget_tokens)
             .unwrap_or(DEFAULT_SCOPE_BUDGET_TOKENS)
-            .min(share_of(usable, global_percent));
+            .min(usable.map_or(usize::MAX, |usable| share_of(usable, global_percent)));
         let project_tokens = config
             .and_then(|c| c.project_budget_tokens)
             .unwrap_or(DEFAULT_SCOPE_BUDGET_TOKENS)
-            .min(share_of(usable, project_percent));
-        Ok(Self {
+            .min(usable.map_or(usize::MAX, |usable| share_of(usable, project_percent)));
+        Self {
             global_tokens,
             project_tokens,
-            static_guard_tokens: share_of(usable, guard_percent),
+            static_guard_tokens: usable.map(|usable| share_of(usable, guard_percent)),
             file_max_bytes: config
                 .and_then(|c| c.file_max_bytes)
                 .unwrap_or(DEFAULT_FILE_MAX_BYTES),
             policy: config
                 .and_then(|c| c.policy)
                 .unwrap_or(InstructionBudgetPolicy::Trim),
-            claude_fallback: config.and_then(|c| c.claude_fallback).unwrap_or(true),
+            claude_fallback: config.and_then(|c| c.claude_fallback).unwrap_or(false),
             usable_window_tokens: usable,
-        })
+        }
     }
 
     /// The shipped defaults for a route window, with no user table.
-    ///
-    /// Infallible by construction: validation only rejects configured values,
-    /// and every default is positive and consistent.
     #[must_use]
     pub(crate) fn defaults_for(window: Option<usize>) -> Self {
-        let usable = usable_window_tokens(window.unwrap_or(DEFAULT_CONTEXT_WINDOW_TOKENS), None);
-        Self {
-            global_tokens: DEFAULT_SCOPE_BUDGET_TOKENS
-                .min(share_of(usable, DEFAULT_SCOPE_BUDGET_PERCENT)),
-            project_tokens: DEFAULT_SCOPE_BUDGET_TOKENS
-                .min(share_of(usable, DEFAULT_SCOPE_BUDGET_PERCENT)),
-            static_guard_tokens: share_of(usable, DEFAULT_STATIC_PREFIX_GUARD_PERCENT),
-            file_max_bytes: DEFAULT_FILE_MAX_BYTES,
-            policy: InstructionBudgetPolicy::Trim,
-            claude_fallback: true,
-            usable_window_tokens: usable,
-        }
+        Self::resolve_unchecked(None, window, None)
     }
 
     /// Set one scope's ceiling to an absolute value, for the static guard.
@@ -585,62 +630,10 @@ impl InstructionBudgets {
     /// from the scope's *retained* usage minus the overage.
     pub(crate) fn with_scope_ceiling(mut self, scope: InstructionScope, tokens: usize) -> Self {
         match scope {
-            InstructionScope::Global => self.global_tokens = tokens,
-            InstructionScope::Project => self.project_tokens = tokens,
+            InstructionScope::Global => self.global_tokens = self.global_tokens.min(tokens),
+            InstructionScope::Project => self.project_tokens = self.project_tokens.min(tokens),
         }
         self
-    }
-}
-
-/// How much the static-prefix guard asks a rebuild to trim, and from where.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct InstructionGuardTrim {
-    pub(crate) scope: InstructionScope,
-    /// New ceiling for `scope`, in estimated tokens.
-    pub(crate) tokens: usize,
-}
-
-/// Outcome of comparing the measured static prefix against the guard.
-///
-/// Two thresholds are distinct: trimming begins when the prefix exceeds the
-/// guard, and the guard is *unsatisfiable* only when nothing is left to trim
-/// and the prefix is still over. The latter is a terminal state — the session
-/// proceeds under `policy = "trim"` (or refuses at start under `"refuse"`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum StaticGuardOutcome {
-    Within,
-    Trim {
-        scope: InstructionScope,
-        tokens: usize,
-    },
-    Unsatisfiable {
-        over: usize,
-    },
-}
-
-/// Decide what the guard does for one measurement.
-///
-/// `largest_scope` picks the scope to cut; `tokens_kept` is how much
-/// instruction content survived the scope budgets, which is what makes the
-/// difference between "trim more" and "nothing left to trim".
-#[must_use]
-pub(crate) fn static_guard_outcome(
-    measured_tokens: usize,
-    budgets: &InstructionBudgets,
-    largest_scope: Option<InstructionScope>,
-    tokens_kept: usize,
-) -> StaticGuardOutcome {
-    let guard = budgets.static_guard_tokens;
-    if measured_tokens <= guard {
-        return StaticGuardOutcome::Within;
-    }
-    let over = measured_tokens - guard;
-    if tokens_kept == 0 {
-        return StaticGuardOutcome::Unsatisfiable { over };
-    }
-    StaticGuardOutcome::Trim {
-        scope: largest_scope.unwrap_or(InstructionScope::Global),
-        tokens: over,
     }
 }
 
@@ -648,8 +641,8 @@ pub(crate) fn static_guard_outcome(
 /// reserve of 10% (minimum 2,048 tokens).
 #[must_use]
 pub(crate) fn usable_window_tokens(window: usize, output: Option<usize>) -> usize {
-    let output = output.unwrap_or(DEFAULT_OUTPUT_TOKENS);
-    let reserve = (window * SAFETY_RESERVE_PERCENT / 100).max(SAFETY_RESERVE_MIN_TOKENS);
+    let output = output.unwrap_or(0);
+    let reserve = (window / 100 * SAFETY_RESERVE_PERCENT).max(SAFETY_RESERVE_MIN_TOKENS);
     window.saturating_sub(output).saturating_sub(reserve)
 }
 
@@ -666,7 +659,7 @@ pub(crate) fn estimate_instruction_tokens(text: &str) -> usize {
 }
 
 /// Result of trimming one piece of instruction text.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub(crate) struct TrimmedText {
     pub(crate) text: String,
     pub(crate) bytes_kept: u64,
@@ -729,10 +722,6 @@ pub(crate) fn keep_head_within_tokens(
     if total_tokens <= budget_tokens {
         return TrimmedText::whole(text);
     }
-    // The marker is charged to the budget, exactly as the old byte cap did.
-    let marker_reserve = estimate_instruction_tokens(&marker(0, total_tokens));
-    let available = budget_tokens.saturating_sub(marker_reserve);
-
     // Search over byte offsets, but only ever cut on a character boundary.
     // Both bounds move every iteration (`low` up to a strictly larger
     // boundary, `high` down past the probed one), so the loop terminates for
@@ -763,7 +752,10 @@ pub(crate) fn keep_head_within_tokens(
                 break;
             }
         }
-        if estimate_instruction_tokens(&text[..middle]) <= available {
+        let head = text[..middle].trim_end();
+        let kept = estimate_instruction_tokens(head);
+        let rendered = format!("{head}{}", marker(kept, total_tokens.saturating_sub(kept)));
+        if estimate_instruction_tokens(&rendered) <= budget_tokens {
             best = middle;
             low = middle;
         } else {
@@ -799,10 +791,16 @@ pub(crate) fn keep_head_within_tokens(
 }
 
 /// Result of one budget pass over both scopes.
-#[derive(Debug, Clone)]
-pub(crate) struct InstructionAssembly {
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct InstructionAssembly {
     /// The rendered `<project_instructions>` body, already trimmed.
     pub(crate) block: Option<String>,
+    pub(crate) source_path: Option<PathBuf>,
+    pub(crate) constitution_source_path: Option<PathBuf>,
+    pub(crate) constitution_tokens: usize,
+    pub(crate) warnings: Vec<String>,
+    #[serde(skip)]
+    pub(crate) prompt_range: Option<std::ops::Range<usize>>,
     /// Losses from trimming, plus the loader's skip notices.
     pub(crate) notices: Vec<InstructionNotice>,
     /// Estimated tokens kept per scope after trimming.
@@ -810,16 +808,11 @@ pub(crate) struct InstructionAssembly {
     pub(crate) project_tokens: usize,
     /// The budgets this pass used.
     pub(crate) budgets: InstructionBudgets,
-    /// Scope that holds the most instruction tokens; the static guard trims
-    /// this one first.
-    pub(crate) largest_scope: Option<InstructionScope>,
 }
 
 impl InstructionAssembly {
-    /// Estimated tokens of instruction content that survived the pass.
-    #[must_use]
-    pub(crate) fn tokens_kept(&self) -> usize {
-        self.global_tokens.saturating_add(self.project_tokens)
+    pub(crate) fn receipt_json(&self) -> serde_json::Value {
+        serde_json::json!({ "global_tokens": self.global_tokens, "project_tokens": self.project_tokens, "budgets": self.budgets, "notices": self.notices, "source_path": self.source_path, "constitution_source_path": self.constitution_source_path, "constitution_tokens": self.constitution_tokens, "retained_block_tokens": self.block.as_deref().map_or(0, estimate_instruction_tokens), "warnings": self.warnings })
     }
 }
 
@@ -852,10 +845,13 @@ pub(crate) fn apply_instruction_budgets(
     // Anything that survived without a loss notice is reported as `kept`, so
     // `/context report` can list every source's action rather than only the
     // ones that lost content.
-    let loss_paths: Vec<Option<PathBuf>> =
-        notices.iter().map(|notice| notice.path.clone()).collect();
     for segment in segments.iter() {
-        if loss_paths.contains(&segment.path) {
+        if notices.iter().any(|notice| {
+            notice.is_loss()
+                && notice.scope == segment.scope
+                && notice.origin == segment.origin
+                && notice.path == segment.path
+        }) {
             continue;
         }
         notices.push(InstructionNotice {
@@ -877,7 +873,10 @@ pub(crate) fn apply_instruction_budgets(
     // whatever the instruction chain could not spend.
     if let Some(rules) = rules_block.as_mut() {
         let total = estimate_instruction_tokens(rules);
-        let remaining = budgets.project_tokens.saturating_sub(project_kept);
+        let remaining = budgets
+            .project_tokens
+            .saturating_sub(project_kept)
+            .saturating_sub(usize::from(project_kept > 0) * 2);
         if total > remaining {
             if remaining == 0 {
                 notices.push(InstructionNotice {
@@ -891,10 +890,9 @@ pub(crate) fn apply_instruction_budgets(
                     tokens_dropped: total,
                     limit: InstructionLimit::RulesBudget,
                     fallback_selected: None,
-                    detail: Some(format!(
-                        "project scope budget of {} estimated tokens exhausted by instructions",
-                        budgets.project_tokens
-                    )),
+                    detail: Some(InstructionDetail::RulesBudgetExhausted {
+                        budget_tokens: budgets.project_tokens,
+                    }),
                 });
                 *rules_block = None;
             } else {
@@ -957,21 +955,21 @@ fn trim_scope(
     if order.is_empty() {
         return 0;
     }
-    let mut kept: usize = order
-        .iter()
-        .map(|&index| estimate_instruction_tokens(&segments[index].text))
-        .sum();
+    let scope_tokens = |segments: &[InstructionSegment]| {
+        super::render_instruction_scope(segments, scope)
+            .as_deref()
+            .map_or(0, estimate_instruction_tokens)
+    };
+    let mut kept = scope_tokens(segments);
     if kept <= budget_tokens {
         return kept;
     }
-
-    // 1. Drop whole segments from the broadest end, keeping at least the most
-    //    specific one to head-trim below.
     let mut dropped: Vec<usize> = Vec::new();
     while order.len() > 1 && kept > budget_tokens {
         let index = order.remove(0);
-        kept = kept.saturating_sub(estimate_instruction_tokens(&segments[index].text));
         dropped.push(index);
+        let retained: Vec<_> = order.iter().map(|&index| segments[index].clone()).collect();
+        kept = scope_tokens(&retained);
     }
 
     let dropped_count = dropped.len();
@@ -989,7 +987,7 @@ fn trim_scope(
             tokens_dropped: tokens,
             limit: InstructionLimit::ScopeBudget,
             fallback_selected: None,
-            detail: Some("dropped as a broadest-scope segment".to_string()),
+            detail: Some(InstructionDetail::DroppedBroadest),
         });
     }
     // Remove them from the segment list: a notice that says content was
@@ -1002,9 +1000,26 @@ fn trim_scope(
 
     // 2. A single segment above the remaining budget keeps its head.
     let last = order[0] - dropped_count;
-    let trimmed = keep_head_within_tokens(&segments[last].text, budget_tokens, |kept, dropped| {
-        instruction_trim_marker(scope, kept, dropped)
-    });
+    let overhead = scope_tokens(std::slice::from_ref(&segments[last]))
+        .saturating_sub(estimate_instruction_tokens(&segments[last].text));
+    let mut content_budget = budget_tokens.saturating_sub(overhead.saturating_add(2));
+    let trimmed = loop {
+        let trimmed =
+            keep_head_within_tokens(&segments[last].text, content_budget, |kept, dropped| {
+                instruction_trim_marker(scope, kept, dropped)
+            });
+        let mut candidate = segments[last].clone();
+        candidate.text = trimmed.text.clone();
+        let measured = if trimmed.empty {
+            0
+        } else {
+            scope_tokens(std::slice::from_ref(&candidate))
+        };
+        if measured <= budget_tokens || content_budget == 0 {
+            break trimmed;
+        }
+        content_budget = content_budget.saturating_sub(measured - budget_tokens);
+    };
     if trimmed.empty {
         let segment = &segments[last];
         notices.push(InstructionNotice {
@@ -1018,9 +1033,7 @@ fn trim_scope(
             tokens_dropped: estimate_instruction_tokens(&segment.text),
             limit: InstructionLimit::ScopeBudget,
             fallback_selected: None,
-            detail: Some(format!(
-                "scope budget of {budget_tokens} estimated tokens left no room for content"
-            )),
+            detail: Some(InstructionDetail::NoRoomForContent { budget_tokens }),
         });
         segments.remove(last);
     } else if trimmed.bytes_dropped > 0 {
@@ -1043,13 +1056,7 @@ fn trim_scope(
     // "trimmed" notice on untouched text is exactly the kind of false receipt
     // this contract exists to prevent. The `kept` pass below covers it.
 
-    // Report what the scope actually kept: a later scope (the rules block) is
-    // charged against the remainder, so an under-count would over-allocate it.
-    segments
-        .iter()
-        .filter(|segment| segment.scope == scope)
-        .map(|segment| estimate_instruction_tokens(&segment.text))
-        .sum()
+    scope_tokens(segments)
 }
 
 #[cfg(test)]
@@ -1072,7 +1079,7 @@ mod tests {
         // 90,480.
         assert_eq!(budgets.global_tokens, 28_275);
         assert_eq!(budgets.project_tokens, 28_275);
-        assert_eq!(budgets.static_guard_tokens, 90_480);
+        assert_eq!(budgets.static_guard_tokens, Some(90_480));
 
         let budgets =
             InstructionBudgets::resolve(None, Some(1_000_000), Some(2_048)).expect("resolve");
@@ -1174,12 +1181,12 @@ mod tests {
     }
 
     #[test]
-    fn unknown_window_uses_the_128k_default() {
+    fn unknown_window_reports_absolute_caps_and_unknown_relative_facts() {
         let budgets = InstructionBudgets::resolve(None, None, None).expect("resolve");
-        assert_eq!(
-            budgets.usable_window_tokens,
-            usable_window_tokens(DEFAULT_CONTEXT_WINDOW_TOKENS, None)
-        );
+        assert_eq!(budgets.global_tokens, DEFAULT_SCOPE_BUDGET_TOKENS);
+        assert_eq!(budgets.project_tokens, DEFAULT_SCOPE_BUDGET_TOKENS);
+        assert_eq!(budgets.usable_window_tokens, None);
+        assert_eq!(budgets.static_guard_tokens, None);
     }
 
     #[test]
@@ -1197,62 +1204,6 @@ mod tests {
             trimmed.bytes_kept as usize + trimmed.bytes_dropped as usize,
             text.len()
         );
-    }
-
-    #[test]
-    fn static_guard_trims_by_the_overage() {
-        let mut budgets = InstructionBudgets::defaults_for(Some(128_000));
-        budgets.static_guard_tokens = 1_000;
-        assert_eq!(
-            static_guard_outcome(1_400, &budgets, Some(InstructionScope::Project), 500),
-            StaticGuardOutcome::Trim {
-                scope: InstructionScope::Project,
-                tokens: 400,
-            }
-        );
-    }
-
-    #[test]
-    fn guard_trim_begins_at_residual() {
-        // At a 32k window the guard leaves ~8,000 tokens for non-instruction
-        // static content. One token under the guard is still fine; one token
-        // over starts trimming.
-        let budgets = InstructionBudgets::defaults_for(Some(32_000));
-        let guard = budgets.static_guard_tokens;
-        assert_eq!(
-            static_guard_outcome(guard.saturating_sub(1), &budgets, None, 100),
-            StaticGuardOutcome::Within
-        );
-        assert!(matches!(
-            static_guard_outcome(guard + 1, &budgets, None, 100),
-            StaticGuardOutcome::Trim { tokens: 1, .. }
-        ));
-    }
-
-    #[test]
-    fn unsatisfiable_only_above_guard() {
-        let budgets = InstructionBudgets::defaults_for(Some(32_000));
-        let guard = budgets.static_guard_tokens;
-        assert_eq!(
-            static_guard_outcome(guard, &budgets, None, 0),
-            StaticGuardOutcome::Within,
-            "at the guard there is nothing to do even with no instructions left"
-        );
-        assert!(matches!(
-            static_guard_outcome(guard + 50, &budgets, None, 0),
-            StaticGuardOutcome::Unsatisfiable { over: 50 }
-        ));
-    }
-
-    #[test]
-    fn static_guard_unsatisfied_terminates() {
-        // The guard is one pass: the same inputs give the same terminal
-        // answer, never a second trim request.
-        let budgets = InstructionBudgets::defaults_for(Some(32_000));
-        let first = static_guard_outcome(budgets.static_guard_tokens + 7, &budgets, None, 0);
-        let second = static_guard_outcome(budgets.static_guard_tokens + 7, &budgets, None, 0);
-        assert_eq!(first, StaticGuardOutcome::Unsatisfiable { over: 7 });
-        assert_eq!(first, second);
     }
 
     #[test]

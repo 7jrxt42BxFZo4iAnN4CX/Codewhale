@@ -1337,8 +1337,8 @@ pub(crate) fn install_host_terminal() {
 #[cfg(test)]
 mod host_terminal_tests {
     use super::TuiHostTerminal;
-    use crate::notify::DeliveryOutcome;
     use crate::tui::notifications::{configured_method, install_configured_method};
+    use codewhale_notify::DeliveryOutcome;
     use codewhale_runtime::host_terminal::HostTerminal;
 
     /// The `notify` tool reaches delivery only through the installed host:
@@ -1348,7 +1348,7 @@ mod host_terminal_tests {
     fn tui_host_routes_the_notify_tool_through_the_installed_method() {
         let _lock = crate::test_support::lock_test_env();
         let previous_method = configured_method();
-        let config = |text: &str| -> crate::config::Config {
+        let config = |text: &str| -> codewhale_runtime::config::Config {
             toml::from_str(text).expect("notifications config should parse")
         };
         // Settings reach the host the way the composition root sends them;

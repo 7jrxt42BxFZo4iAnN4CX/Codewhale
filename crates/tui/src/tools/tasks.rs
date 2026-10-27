@@ -1917,7 +1917,7 @@ mod tests {
         let tmp = crate::test_support::sandbox_visible_tempdir();
         let written = tmp.path().join("written-by-gate.txt");
         let mut context = ToolContext::new(tmp.path());
-        context.elevated_sandbox_policy = Some(crate::sandbox::SandboxPolicy::read_only());
+        context.elevated_sandbox_policy = Some(codewhale_sandbox::SandboxPolicy::read_only());
         let command = format!(
             "printf ran; printf x > '{}' 2>/dev/null; true",
             written.display()

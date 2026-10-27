@@ -14,15 +14,25 @@ fn write(path: &Path, body: &str) {
     fs::write(path, body).expect("write");
 }
 
+fn with_instruction_settings<T>(
+    budget: InstructionBudgetConfig,
+    run: impl FnOnce(&InstructionSettings) -> T,
+) -> T {
+    run(&InstructionSettings {
+        budget,
+        ..Default::default()
+    })
+}
+
 fn budgets(global: usize, project: usize) -> InstructionBudgets {
     InstructionBudgets {
         global_tokens: global,
         project_tokens: project,
-        static_guard_tokens: 900_000,
+        static_guard_tokens: Some(900_000),
         file_max_bytes: 8 * 1024 * 1024,
         policy: InstructionBudgetPolicy::Trim,
-        claude_fallback: true,
-        usable_window_tokens: 1_000_000,
+        claude_fallback: false,
+        usable_window_tokens: Some(1_000_000),
     }
 }
 
@@ -64,14 +74,14 @@ fn agents_md_wins_over_claude_md() {
 }
 
 #[test]
-fn claude_md_is_default_fallback() {
+fn claude_md_requires_opt_in() {
     let ws = tempdir().unwrap();
     let home = tempdir().unwrap();
     write(&ws.path().join("CLAUDE.md"), "CLAUDE_FALLBACK_TEXT");
 
     let ctx = load_isolated(ws.path(), home.path());
     assert!(
-        ctx.instructions
+        !ctx.instructions
             .unwrap_or_default()
             .contains("CLAUDE_FALLBACK_TEXT")
     );
@@ -83,12 +93,18 @@ fn claude_fallback_can_be_disabled() {
         claude_fallback: Some(false),
         ..Default::default()
     };
-    with_test_instruction_budget_config(config, || {
+    with_instruction_settings(config, |settings| {
         let ws = tempdir().unwrap();
         let home = tempdir().unwrap();
         write(&ws.path().join("CLAUDE.md"), "CLAUDE_OPTED_OUT");
 
-        let ctx = load_isolated(ws.path(), home.path());
+        let ctx = load_project_context_with_settings(
+            ws.path(),
+            &InstructionSettings {
+                home: Some(home.path().to_path_buf()),
+                ..settings.clone()
+            },
+        );
         assert!(
             !ctx.instructions
                 .unwrap_or_default()
@@ -104,7 +120,7 @@ fn claude_import_reads_when_agents_absent_and_fallback_disabled() {
         claude_fallback: Some(false),
         ..Default::default()
     };
-    with_test_instruction_budget_config(config, || {
+    with_instruction_settings(config, |settings| {
         let ws = tempdir().unwrap();
         let home = tempdir().unwrap();
         write(&ws.path().join("CLAUDE.md"), "CLAUDE_EXPLICIT_IMPORT");
@@ -112,10 +128,13 @@ fn claude_import_reads_when_agents_absent_and_fallback_disabled() {
         // The import set is explicit here: the process-wide default is
         // "import nothing", and the fallback flag is off, so only the explicit
         // `claude` import can read the file.
-        let mut ctx = load_project_context_with_parents_and_home_imports(
+        let mut ctx = load_project_context_with_settings(
             ws.path(),
-            Some(home.path()),
-            &claude_imports(),
+            &InstructionSettings {
+                home: Some(home.path().to_path_buf()),
+                imports: claude_imports(),
+                ..settings.clone()
+            },
         );
         let assembly = assemble_instruction_block(&mut ctx, &[], &budgets(1_000, 1_000));
         assert!(
@@ -160,9 +179,10 @@ fn explicit_claude_import_reads_both() {
 fn agents_md_skipped_falls_back_to_claude() {
     let config = InstructionBudgetConfig {
         file_max_bytes: Some(16),
+        claude_fallback: Some(true),
         ..Default::default()
     };
-    with_test_instruction_budget_config(config, || {
+    with_instruction_settings(config, |settings| {
         let ws = tempdir().unwrap();
         let home = tempdir().unwrap();
         write(&ws.path().join("AGENTS.md"), "A".repeat(200).as_str());
@@ -170,7 +190,13 @@ fn agents_md_skipped_falls_back_to_claude() {
         // be skipped for the same reason as `AGENTS.md`.
         write(&ws.path().join("CLAUDE.md"), "CLAUDE_OK");
 
-        let ctx = load_isolated(ws.path(), home.path());
+        let ctx = load_project_context_with_settings(
+            ws.path(),
+            &InstructionSettings {
+                home: Some(home.path().to_path_buf()),
+                ..settings.clone()
+            },
+        );
         let text = ctx.instructions.unwrap_or_default();
         assert!(
             text.contains("CLAUDE_OK"),
@@ -217,12 +243,18 @@ fn global_claude_is_read_when_nothing_else_exists() {
         claude_fallback: Some(true),
         ..Default::default()
     };
-    with_test_instruction_budget_config(config, || {
+    with_instruction_settings(config, |settings| {
         let ws = tempdir().unwrap();
         let home = tempdir().unwrap();
         write(&home.path().join(".claude/CLAUDE.md"), "GLOBAL_CLAUDE_ONLY");
 
-        let ctx = load_isolated(ws.path(), home.path());
+        let ctx = load_project_context_with_settings(
+            ws.path(),
+            &InstructionSettings {
+                home: Some(home.path().to_path_buf()),
+                ..settings.clone()
+            },
+        );
         assert!(
             ctx.instructions
                 .unwrap_or_default()
@@ -249,7 +281,14 @@ fn symlinked_duplicate_is_loaded_once() {
     );
     assert!(
         ctx.notices.iter().any(|notice| {
-            notice.path.as_deref() == Some(ws.path().join("AGENTS.md").as_path())
+            notice.path.as_deref()
+                == Some(
+                    ws.path()
+                        .canonicalize()
+                        .unwrap()
+                        .join("AGENTS.md")
+                        .as_path(),
+                )
                 && notice.action == InstructionAction::Skipped
         }),
         "the duplicate is reported, not silently dropped: {:?}",
@@ -422,7 +461,7 @@ fn file_over_ceiling_is_skipped_not_trimmed() {
         file_max_bytes: Some(8),
         ..Default::default()
     };
-    with_test_instruction_budget_config(config, || {
+    with_instruction_settings(config, |settings| {
         let ws = tempdir().unwrap();
         let home = tempdir().unwrap();
         write(
@@ -430,7 +469,13 @@ fn file_over_ceiling_is_skipped_not_trimmed() {
             "THIS IS LONGER THAN EIGHT BYTES",
         );
 
-        let ctx = load_isolated(ws.path(), home.path());
+        let ctx = load_project_context_with_settings(
+            ws.path(),
+            &InstructionSettings {
+                home: Some(home.path().to_path_buf()),
+                ..settings.clone()
+            },
+        );
         assert!(
             !ctx.instructions
                 .unwrap_or_default()
@@ -452,7 +497,17 @@ fn empty_file_is_skipped() {
     write(&ws.path().join("AGENTS.md"), "   \n\t\n");
     write(&ws.path().join("CLAUDE.md"), "CLAUDE_AFTER_EMPTY");
 
-    let ctx = load_isolated(ws.path(), home.path());
+    let ctx = load_project_context_with_settings(
+        ws.path(),
+        &InstructionSettings {
+            home: Some(home.path().to_path_buf()),
+            budget: InstructionBudgetConfig {
+                claude_fallback: Some(true),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    );
     assert!(
         ctx.notices
             .iter()
@@ -594,10 +649,11 @@ fn refuse_policy_stops_on_trim_but_not_on_skip() {
         policy: Some(InstructionBudgetPolicy::Refuse),
         ..Default::default()
     };
-    with_test_instruction_budget_config(trim_config, || {
+    with_instruction_settings(trim_config, |settings| {
         let ws = tempdir().unwrap();
         write(&ws.path().join("AGENTS.md"), &"T".repeat(4_000));
-        let outcome = startup_instruction_notice(ws.path(), &[], Some(128_000), None);
+        let outcome =
+            startup_instruction_notice(ws.path(), &[], Some(128_000), Some(2_048), settings);
         let error = outcome.expect_err("refuse stops on a trim");
         assert!(error.contains("refuse"), "{error}");
     });
@@ -607,29 +663,31 @@ fn refuse_policy_stops_on_trim_but_not_on_skip() {
         policy: Some(InstructionBudgetPolicy::Refuse),
         ..Default::default()
     };
-    with_test_instruction_budget_config(skip_config, || {
+    with_instruction_settings(skip_config, |settings| {
         let ws = tempdir().unwrap();
         write(&ws.path().join("AGENTS.md"), &"S".repeat(1_000));
-        let notice = startup_instruction_notice(ws.path(), &[], Some(128_000), None)
-            .expect("a skip is not a refusal")
-            .expect("a skip is reported");
+        let notice =
+            startup_instruction_notice(ws.path(), &[], Some(128_000), Some(2_048), settings)
+                .expect("a skip is not a refusal")
+                .expect("a skip is reported");
         assert!(notice.contains("skipped"), "{notice}");
     });
 }
 
 #[test]
 fn startup_notice_names_the_loss_and_numbers() {
-    with_test_instruction_budget_config(
+    with_instruction_settings(
         InstructionBudgetConfig {
             project_budget_tokens: Some(50),
             ..Default::default()
         },
-        || {
+        |settings| {
             let ws = tempdir().unwrap();
             write(&ws.path().join("AGENTS.md"), &"N".repeat(4_000));
-            let notice = startup_instruction_notice(ws.path(), &[], Some(128_000), None)
-                .expect("valid config")
-                .expect("a trim is reported");
+            let notice =
+                startup_instruction_notice(ws.path(), &[], Some(128_000), Some(2_048), settings)
+                    .expect("valid config")
+                    .expect("a trim is reported");
             assert!(notice.contains("trimmed"), "{notice}");
             assert!(notice.contains("estimated tokens"), "{notice}");
             assert!(notice.contains("bytes"), "{notice}");

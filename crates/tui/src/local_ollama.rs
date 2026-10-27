@@ -13,8 +13,8 @@ use codewhale_config::catalog::{
 };
 use serde::Deserialize;
 
-use crate::config::Config;
 use codewhale_config::ProviderKind;
+use codewhale_runtime::config::Config;
 
 const TAGS_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -220,7 +220,7 @@ pub(crate) fn parse_ollama_tags_with_profiles(
         } else {
             row.name.trim()
         };
-        if !crate::provider_lake::valid_catalog_model_id(tag) {
+        if !codewhale_runtime::catalog_cache::valid_catalog_model_id(tag) {
             continue;
         }
         let profile = OllamaTagProfile {
@@ -268,7 +268,7 @@ pub(crate) fn ollama_catalog_delta(
         .collect();
     let chat_tags: Vec<String> = tags
         .iter()
-        .filter(|tag| crate::provider_lake::valid_catalog_model_id(tag))
+        .filter(|tag| codewhale_runtime::catalog_cache::valid_catalog_model_id(tag))
         .filter(|tag| {
             profiles
                 .get(*tag)

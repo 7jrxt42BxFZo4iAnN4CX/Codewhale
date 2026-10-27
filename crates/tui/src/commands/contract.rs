@@ -92,11 +92,11 @@ use codewhale_execpolicy::ApprovalMode;
 use crate::commands::groups::plugins::plugin_network_policy;
 
 use crate::dependencies::ExternalTool as _;
-use crate::network_policy::NetworkPolicy;
 use crate::tui::app::App;
 use crate::tui::history::HistoryCell;
 use codewhale_config::pricing::CostCurrency;
 use codewhale_localization::{MessageId, tr};
+use codewhale_net::network_policy::NetworkPolicy;
 
 // ---------------------------------------------------------------------------
 // Pending frontier projection (D4)
@@ -299,7 +299,7 @@ pub(crate) fn key_to_message_id(key: &'static str) -> Option<MessageId> {
 /// return owned values. Command handlers never receive or name `App`.
 struct CommandHost<'a> {
     app: RefCell<&'a mut App>,
-    config: Option<&'a crate::config::Config>,
+    config: Option<&'a codewhale_runtime::config::Config>,
 }
 
 type SharedCommandHost<'a> = Rc<CommandHost<'a>>;
@@ -2804,11 +2804,11 @@ where
 /// network-gated install rather than a silent crash. Mirrors
 /// `groups/skills/skills.rs::installer_settings`.
 fn installer_settings() -> (NetworkPolicy, u64, String) {
-    let cfg = crate::config::Config::load(None, None).unwrap_or_default();
+    let cfg = crate::plugins::providers::load_config(None, None).unwrap_or_default();
     let network = cfg
         .network
         .clone()
-        .map(crate::network_policy::NetworkPolicy::from)
+        .map(codewhale_net::network_policy::NetworkPolicy::from)
         .unwrap_or_default();
     let skills_cfg = cfg.skills.as_ref();
     let max_size = skills_cfg
@@ -4624,12 +4624,13 @@ impl CommandPluginContext for PluginAdapter<'_> {
     ) -> Result<codewhale_command_contract::facets::PluginSuggestionDismissals, String> {
         // Stored lowercase by the CTA, but a hand-edited settings file may not
         // be; fold here so the list matches what suggestions actually skip.
-        let persisted: std::collections::BTreeSet<String> = crate::settings::Settings::load()
-            .map_err(|err| format!("could not read saved plugin dismissals: {err}"))?
-            .dismissed_plugin_suggestions
-            .iter()
-            .map(|name| name.to_ascii_lowercase())
-            .collect();
+        let persisted: std::collections::BTreeSet<String> =
+            codewhale_runtime::settings::Settings::load()
+                .map_err(|err| format!("could not read saved plugin dismissals: {err}"))?
+                .dismissed_plugin_suggestions
+                .iter()
+                .map(|name| name.to_ascii_lowercase())
+                .collect();
         let app = self.host.app.borrow();
         let session = app
             .plugin_cta
@@ -4650,7 +4651,7 @@ impl CommandPluginContext for PluginAdapter<'_> {
         let matches =
             |candidate: &String| name.is_none_or(|target| candidate.eq_ignore_ascii_case(target));
         let mut cleared = std::collections::BTreeSet::new();
-        crate::settings::Settings::transact_opt(|settings| {
+        codewhale_runtime::settings::Settings::transact_opt(|settings| {
             let before = settings.dismissed_plugin_suggestions.len();
             settings.dismissed_plugin_suggestions.retain(|candidate| {
                 let reset = matches(candidate);
@@ -4877,7 +4878,7 @@ impl App {
 
     pub(crate) fn command_contexts_with_config<'a>(
         &'a mut self,
-        config: Option<&'a crate::config::Config>,
+        config: Option<&'a codewhale_runtime::config::Config>,
     ) -> CommandContextBundle<'a> {
         let host = Rc::new(CommandHost {
             app: RefCell::new(self),
@@ -5051,6 +5052,7 @@ mod tests {
             display: "q".to_string(),
             skill_instruction: None,
             skill_provenance: None,
+            extension_command: None,
             history_echoed: false,
         });
         {
@@ -5076,7 +5078,7 @@ mod tests {
     fn model_adapter_delegates_selection_and_route_invalidation_to_app() {
         let mut app = test_app();
         app.last_effective_model = Some("stale-model".to_string());
-        let config = crate::config::Config::default();
+        let config = codewhale_runtime::config::Config::default();
         {
             let mut bundle = app.command_contexts_with_config(Some(&config));
             let mut parts = bundle.parts();
@@ -5095,10 +5097,10 @@ mod tests {
 
     #[test]
     fn model_adapter_admits_cross_provider_and_case_distinct_custom_routes_from_borrowed_config() {
-        use crate::config::{Config, ProviderConfig, ProvidersConfig};
-        let config = Config {
-            provider: Some("openai".to_string()),
-            providers: Some(ProvidersConfig {
+        use codewhale_runtime::config::{Config, ProviderConfig, ProvidersConfig};
+        let config = {
+            let __cw_config_init_0_0 = Some("openai".to_string());
+            let __cw_config_init_0_1 = Some(ProvidersConfig {
                 custom: [
                     ("CustomA".to_string(), "http://127.0.0.1:4111/v1"),
                     ("customa".to_string(), "http://127.0.0.1:4222/v1"),
@@ -5116,8 +5118,11 @@ mod tests {
                 })
                 .collect(),
                 ..Default::default()
-            }),
-            ..Config::default()
+            });
+            let mut __cw_config_init_0_value: Config = Config::default();
+            __cw_config_init_0_value.provider = __cw_config_init_0_0;
+            __cw_config_init_0_value.providers = __cw_config_init_0_1;
+            __cw_config_init_0_value
         };
         let mut app = test_app();
         app.set_provider_identity_record(config.active_provider_identity().unwrap());
@@ -5291,7 +5296,8 @@ mod tests {
             .provider()
             .display_name()
             .to_string();
-        let expected_support = crate::config::provider_has_balance_api(harness.app.api_provider);
+        let expected_support =
+            codewhale_runtime::config::provider_has_balance_api(harness.app.api_provider);
         let mut bundle = harness.app.command_contexts();
         let mut parts = bundle
             .contexts(CommandCapabilities::DEBUG_DIAGNOSTICS)
@@ -6883,7 +6889,7 @@ mod tests {
 
     fn lifecycle_test_app(tmpdir: &TempDir) -> App {
         let options = crate::tui::test_support::test_tui_options(tmpdir.path());
-        App::new(options, &crate::config::Config::default())
+        App::new(options, &codewhale_runtime::config::Config::default())
     }
 
     /// Point CODEWHALE_HOME at `tmp/home` with a pre-created sessions directory so
@@ -7018,7 +7024,7 @@ mod tests {
         app.add_message(HistoryCell::System {
             content: "another conversation".to_string(),
         });
-        let config = crate::config::Config::default();
+        let config = codewhale_runtime::config::Config::default();
         {
             let mut bundle = app.command_contexts_with_config(Some(&config));
             let mut parts = bundle.parts();
@@ -7700,7 +7706,7 @@ mod tests {
 
         // This window is on a non-default route; the import must bind to it.
         app.set_provider_identity_record(
-            crate::config::Config::default()
+            codewhale_runtime::config::Config::default()
                 .resolve_provider_identity(codewhale_config::ProviderKind::Openai.as_str())
                 .expect("captured fixture provider"),
         );

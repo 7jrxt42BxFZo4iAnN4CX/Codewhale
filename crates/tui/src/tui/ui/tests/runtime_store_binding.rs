@@ -6,10 +6,7 @@ use crate::runtime_threads::{RuntimeThreadManager, RuntimeThreadManagerConfig};
 use crate::task_manager::{TaskManager, TaskManagerConfig};
 
 fn fixture_config() -> Config {
-    let mut config = Config {
-        ..Config::default()
-    }
-    .with_legacy_root(
+    let mut config = Config::default().with_legacy_root(
         Some("local-runtime-binding-fixture".into()),
         Some("http://127.0.0.1:1/v1".into()),
     );

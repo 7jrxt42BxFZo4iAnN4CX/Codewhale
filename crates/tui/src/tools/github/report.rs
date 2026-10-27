@@ -757,7 +757,7 @@ mod tests {
     async fn actual_github_host_draft_read_and_operator_use_one_owned_artifact() {
         let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(false);
         let runtime = crate::dependencies::resolve_extension_host_runtime(
-            crate::config::ExtensionHostRuntime::Node,
+            codewhale_config::extension_host::ExtensionHostRuntime::Node,
             None,
             None,
         );
@@ -772,7 +772,7 @@ mod tests {
         let fixture = Fixture::new();
         let manager = std::sync::Arc::new(crate::extension_host::ExtensionHostManager::new(
             crate::extension_host::ExtensionHostOptions {
-                runtime: crate::config::ExtensionHostRuntime::Node,
+                runtime: codewhale_config::extension_host::ExtensionHostRuntime::Node,
                 node_override: Some(runtime.path),
                 root: Some(fixture.tmp.path().join("host")),
                 ..Default::default()

@@ -96,7 +96,7 @@ fn shift_p_after_a_search_pins_the_highlighted_row_and_says_so_in_the_picker() {
         .unwrap_or_else(|| provider.as_str().to_string());
     toggle_model_picker_pin(&mut app, &config, &provider_key, picked);
 
-    let saved = crate::settings::Settings::load_persisted().unwrap();
+    let saved = codewhale_runtime::settings::Settings::load_persisted().unwrap();
     assert!(
         saved
             .pinned_models
@@ -126,7 +126,7 @@ fn shift_p_after_a_search_pins_the_highlighted_row_and_says_so_in_the_picker() {
         [ViewEvent::ModelPickerTogglePin { model: again, .. }] if again == &model
     ));
     toggle_model_picker_pin(&mut app, &config, &provider_key, &model);
-    let saved = crate::settings::Settings::load_persisted().unwrap();
+    let saved = codewhale_runtime::settings::Settings::load_persisted().unwrap();
     assert!(saved.pinned_models.is_empty(), "{:?}", saved.pinned_models);
     let screen = render_picker(&mut app);
     assert!(

@@ -21,7 +21,7 @@ use super::core_call::{
     EXT_AUTO_ELIGIBLE, MAX_CALLS_PER_INVOCATION, OriginApproval, origin_approval, refusal,
     wire_from_response,
 };
-use super::protocol::{ContentBlockWire, CoreCallParams, OwnerRef, RpcErrorWire, error_code};
+use super::protocol::{ContentBlockWire, CoreCallParams, RpcErrorWire, error_code};
 use super::supervisor::HostRequestContext;
 use super::tests::{FixturePlugins, fake_authority, node_for_tests};
 use super::tier::HostTier;
@@ -33,6 +33,7 @@ use crate::tools::codemode::{
 use crate::tools::spec::{
     ApprovalRequirement, ToolCapability, ToolContext, ToolError, ToolResult, ToolSpec,
 };
+use codewhale_config::OwnerRef;
 
 // ---------------------------------------------------------------------------
 // A stand-in for the turn loop's gate
@@ -210,7 +211,7 @@ async fn started(
 ) -> (FixturePlugins, Arc<ExtensionHostManager>, HostAttachment) {
     let fixture = FixturePlugins::new(&["core-call"]).await;
     let manager = Arc::new(ExtensionHostManager::new(ExtensionHostOptions {
-        runtime: crate::config::ExtensionHostRuntime::Node,
+        runtime: codewhale_config::extension_host::ExtensionHostRuntime::Node,
         node_override: Some(node),
         root: Some(fixture.root.clone()),
         supervision: SupervisionOptions {

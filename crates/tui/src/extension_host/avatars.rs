@@ -1,18 +1,17 @@
 //! Declarative art registered through the existing reviewed Native owner.
 //! No script, lifecycle event, input handler, URL, or filesystem authority is
 //! delivered to clients. Named actions are clips on the caller's existing clock.
-use super::{
-    ManagerShared,
-    protocol::{EntryRef, OwnerRef, RegisterParams, RegisterResult},
-    supervisor::HostRequestContext,
-    tier::HostTier,
-};
+use super::ManagerShared;
+use super::protocol::{RegisterParams, RegisterResult};
+use super::supervisor::HostRequestContext;
+use super::tier::HostTier;
 use crate::plugins::{
     activation::PluginActivationCapability,
     manifest::{PluginManifest, ValidatedManifest},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use codewhale_config::PluginAuthority;
+use codewhale_config::{EntryRef, OwnerRef};
 use codewhale_ratatui::avatar::{MAX_PACK_BYTES, MAX_PNG_BYTES, Pack, RegisteredPack};
 use sha2::{Digest, Sha256};
 use std::{

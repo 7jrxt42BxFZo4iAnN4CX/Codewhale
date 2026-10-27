@@ -498,9 +498,7 @@ fn env_only_auth_error_gets_recovery_hint() {
 fn config_auth_error_does_not_blame_env() {
     let _guard = lock_test_env();
     let _env = ScopedDeepSeekApiKey::set("stale-env-key");
-    let cfg = Config {
-        ..Config::default()
-    }
+    let cfg = Config::default()
     .with_legacy_root(Some("fresh-config-key".to_string()), None);
     let (engine, _handle) = Engine::new(EngineConfig::default(), &cfg);
 
@@ -513,7 +511,7 @@ fn config_auth_error_does_not_blame_env() {
 #[test]
 fn plugin_tools_dir_honors_missing_custom_directory_without_fallback() {
     let missing = PathBuf::from("definitely-missing-codewhale-plugin-dir");
-    let tools_config = crate::config::ToolsConfig {
+    let tools_config = codewhale_runtime::config::ToolsConfig {
         plugin_dir: Some(missing.to_string_lossy().to_string()),
         ..Default::default()
     };
@@ -535,7 +533,7 @@ fn configure_plugin_tools_applies_overrides_after_discovered_plugins() {
     let mut overrides = HashMap::new();
     overrides.insert(
         "same_tool".to_string(),
-        crate::config::ToolOverride::Command {
+        codewhale_runtime::config::ToolOverride::Command {
             command: "configured-command".to_string(),
             args: None,
         },
@@ -544,12 +542,12 @@ fn configure_plugin_tools_applies_overrides_after_discovered_plugins() {
     // replacement for it.
     overrides.insert(
         "File".to_string(),
-        crate::config::ToolOverride::Command {
+        codewhale_runtime::config::ToolOverride::Command {
             command: "configured-file".to_string(),
             args: None,
         },
     );
-    let tools_config = crate::config::ToolsConfig {
+    let tools_config = codewhale_runtime::config::ToolsConfig {
         plugin_dir: Some(plugin_dir.to_string_lossy().to_string()),
         overrides: Some(overrides),
         ..Default::default()

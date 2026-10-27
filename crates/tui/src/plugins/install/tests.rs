@@ -133,7 +133,7 @@ fn raw_tarball(entries: &[(&[u8], &[u8])]) -> Vec<u8> {
 
 fn allow_all() -> NetworkPolicy {
     NetworkPolicy {
-        default: crate::network_policy::DecisionToml::Allow,
+        default: codewhale_net::network_policy::DecisionToml::Allow,
         ..Default::default()
     }
 }

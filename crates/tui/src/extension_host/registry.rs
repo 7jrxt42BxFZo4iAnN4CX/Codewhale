@@ -16,9 +16,10 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use super::protocol::{EntryRef, OwnerRef, RegisterKind, RegisterParams};
+use super::protocol::{RegisterKind, RegisterParams};
 use super::tier::HostTier;
 use codewhale_config::PluginAuthority;
+use codewhale_config::{EntryRef, OwnerRef};
 
 /// Largest accepted tool input schema, serialized.
 pub const MAX_SCHEMA_BYTES: usize = 64 * 1024;
@@ -224,7 +225,7 @@ pub(crate) struct ShellHookRegistration {
     pub owner: OwnerRef,
     pub scope: Option<EntryRef>,
     pub content_hash: String,
-    pub hook: crate::hooks::Hook,
+    pub hook: codewhale_config::hooks::Hook,
 }
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -233,7 +234,7 @@ struct ShellSpec {
     point: String,
     #[serde(default)]
     matcher: Option<String>,
-    hook: crate::hooks::Hook,
+    hook: codewhale_config::hooks::Hook,
 }
 
 #[derive(Debug, Default)]
@@ -990,13 +991,13 @@ impl OwnerRegistry {
         let mut spec: ShellSpec = serde_json::from_str(&params.spec.description)
             .map_err(|_| "invalid shell hook definition")?;
         let expected = match spec.point.as_str() {
-            "SessionStart" => crate::hooks::HookEvent::SessionStart,
-            "UserPromptSubmit" => crate::hooks::HookEvent::MessageSubmit,
-            "PreToolUse" => crate::hooks::HookEvent::ToolCallBefore,
-            "PostToolUse" => crate::hooks::HookEvent::ToolCallAfter,
-            "Stop" => crate::hooks::HookEvent::TurnEnd,
-            "SubagentStart" => crate::hooks::HookEvent::SubagentSpawn,
-            "SubagentStop" => crate::hooks::HookEvent::SubagentComplete,
+            "SessionStart" => codewhale_config::hooks::HookEvent::SessionStart,
+            "UserPromptSubmit" => codewhale_config::hooks::HookEvent::MessageSubmit,
+            "PreToolUse" => codewhale_config::hooks::HookEvent::ToolCallBefore,
+            "PostToolUse" => codewhale_config::hooks::HookEvent::ToolCallAfter,
+            "Stop" => codewhale_config::hooks::HookEvent::TurnEnd,
+            "SubagentStart" => codewhale_config::hooks::HookEvent::SubagentSpawn,
+            "SubagentStop" => codewhale_config::hooks::HookEvent::SubagentComplete,
             _ => return Err("unsupported dialect hook point".into()),
         };
         if !matches!(spec.dialect.as_str(), "claude-code" | "codex")
@@ -1030,7 +1031,7 @@ impl OwnerRegistry {
             .ok_or("Native shell hook authority is absent")?;
         let content_hash = entry.content_hash.clone();
         let handle = self.next_handle + 1;
-        spec.hook.native_shell = Some(crate::hooks::config::NativeShellHook {
+        spec.hook.native_shell = Some(codewhale_config::hooks::NativeShellHook {
             owner: params.owner.clone(),
             scope: params.scope.clone(),
             handle,
@@ -1066,7 +1067,7 @@ impl OwnerRegistry {
     }
     pub(crate) fn check_shell_hook(
         &self,
-        native: &crate::hooks::config::NativeShellHook,
+        native: &codewhale_config::hooks::NativeShellHook,
     ) -> Result<(), String> {
         self.check_scope(&native.owner, native.scope.as_ref(), true)?;
         let owner = self

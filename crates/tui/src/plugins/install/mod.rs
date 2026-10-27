@@ -57,12 +57,12 @@ use thiserror::Error;
 #[error("{0}")]
 pub struct PluginNameConflict(pub String);
 
-use crate::network_policy::NetworkPolicy;
 use crate::plugins::manifest::PluginManifest;
 use crate::skills::install::{
     self as skill_install, FetchOutcome, InstallSource, InstalledFromMarker, fetch_tarball,
     sha256_hex, source_spec_string,
 };
+use codewhale_net::network_policy::NetworkPolicy;
 
 pub(crate) mod dsh;
 mod place;

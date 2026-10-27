@@ -117,6 +117,7 @@ fn integrity_critical_event(event: &str) -> bool {
     matches!(
         event,
         "turn.completed"
+            | "review.completed"
             | "approval.required"
             | "approval.resolved"
             | "item.failed"
@@ -274,7 +275,7 @@ enum WorkerCommand {
 }
 
 struct PendingRuntimeChatConfiguration {
-    config: crate::config::Config,
+    config: codewhale_runtime::config::Config,
     plugin_registry: std::sync::Arc<crate::plugins::PluginRegistry>,
     private_root: PathBuf,
     target_ref: String,
@@ -936,7 +937,7 @@ impl RemoteControlController {
 
     pub(crate) fn configure_runtime_chat(
         &mut self,
-        config: crate::config::Config,
+        config: codewhale_runtime::config::Config,
         plugin_registry: std::sync::Arc<crate::plugins::PluginRegistry>,
         private_root: PathBuf,
         target_ref: String,
@@ -1296,7 +1297,7 @@ impl RemoteControlController {
     #[cfg(test)]
     pub(crate) fn block_runtime_chat_dispatch_for_tests(&mut self) {
         self.pending_runtime_chat_configuration = Some(PendingRuntimeChatConfiguration {
-            config: crate::config::Config::default(),
+            config: codewhale_runtime::config::Config::default(),
             plugin_registry: std::sync::Arc::new(crate::plugins::PluginRegistry::empty(Path::new(
                 ".",
             ))),
@@ -4412,6 +4413,11 @@ fn parse_remote_command(value: &Value, expected_run_id: &str) -> Result<RemoteCo
     }
     match value.get("type").and_then(Value::as_str) {
         Some("prompt.request") => {
+            if value.get("structuredReview").is_some() && value.get("runtimeBindingId").is_none() {
+                return Err(
+                    "A native review requires the authenticated Runtime binding.".to_string(),
+                );
+            }
             if value.get("images").is_some() && value.get("runtimeBindingId").is_none() {
                 return Err("Image input is unavailable for legacy remote Work; use native Runtime or Runtime Chat.".to_string());
             }
@@ -5215,10 +5221,14 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let registry = Arc::new(crate::plugins::PluginRegistry::empty(root.path()));
         let mut controller = RemoteControlController::default();
-        let old_config = crate::config::Config {
-            provider: Some("ollama".to_string()),
-            default_text_model: Some("old-safe-model".to_string()),
-            ..crate::config::Config::default()
+        let old_config = {
+            let __cw_config_init_0_0 = Some("ollama".to_string());
+            let __cw_config_init_0_1 = Some("old-safe-model".to_string());
+            let mut __cw_config_init_0_value: codewhale_runtime::config::Config =
+                codewhale_runtime::config::Config::default();
+            __cw_config_init_0_value.provider = __cw_config_init_0_0;
+            __cw_config_init_0_value.default_text_model = __cw_config_init_0_1;
+            __cw_config_init_0_value
         };
         controller
             .configure_runtime_chat(
@@ -5242,7 +5252,7 @@ mod tests {
         assert!(
             competing
                 .configure_runtime_chat(
-                    crate::config::Config::default(),
+                    codewhale_runtime::config::Config::default(),
                     Arc::clone(&registry),
                     root.path().join("runtime-chat"),
                     "target_fixture".to_string(),
@@ -5251,10 +5261,14 @@ mod tests {
                 .is_err()
         );
 
-        let new_config = crate::config::Config {
-            provider: Some("ollama".to_string()),
-            default_text_model: Some("new-safe-model".to_string()),
-            ..crate::config::Config::default()
+        let new_config = {
+            let __cw_config_init_1_0 = Some("ollama".to_string());
+            let __cw_config_init_1_1 = Some("new-safe-model".to_string());
+            let mut __cw_config_init_1_value: codewhale_runtime::config::Config =
+                codewhale_runtime::config::Config::default();
+            __cw_config_init_1_value.provider = __cw_config_init_1_0;
+            __cw_config_init_1_value.default_text_model = __cw_config_init_1_1;
+            __cw_config_init_1_value
         };
         controller
             .configure_runtime_chat(
@@ -5277,7 +5291,7 @@ mod tests {
         drop(controller);
         competing
             .configure_runtime_chat(
-                crate::config::Config::default(),
+                codewhale_runtime::config::Config::default(),
                 registry,
                 root.path().join("runtime-chat"),
                 "target_fixture".to_string(),
@@ -5291,10 +5305,14 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let registry = Arc::new(crate::plugins::PluginRegistry::empty(root.path()));
         let mut controller = RemoteControlController::default();
-        let old_config = crate::config::Config {
-            provider: Some("ollama".to_string()),
-            default_text_model: Some("old-safe-model".to_string()),
-            ..crate::config::Config::default()
+        let old_config = {
+            let __cw_config_init_2_0 = Some("ollama".to_string());
+            let __cw_config_init_2_1 = Some("old-safe-model".to_string());
+            let mut __cw_config_init_2_value: codewhale_runtime::config::Config =
+                codewhale_runtime::config::Config::default();
+            __cw_config_init_2_value.provider = __cw_config_init_2_0;
+            __cw_config_init_2_value.default_text_model = __cw_config_init_2_1;
+            __cw_config_init_2_value
         };
         controller
             .configure_runtime_chat(
@@ -5329,10 +5347,14 @@ mod tests {
                 json!({ "old": true }),
             ),
         ));
-        let new_config = crate::config::Config {
-            provider: Some("ollama".to_string()),
-            default_text_model: Some("new-safe-model".to_string()),
-            ..crate::config::Config::default()
+        let new_config = {
+            let __cw_config_init_3_0 = Some("ollama".to_string());
+            let __cw_config_init_3_1 = Some("new-safe-model".to_string());
+            let mut __cw_config_init_3_value: codewhale_runtime::config::Config =
+                codewhale_runtime::config::Config::default();
+            __cw_config_init_3_value.provider = __cw_config_init_3_0;
+            __cw_config_init_3_value.default_text_model = __cw_config_init_3_1;
+            __cw_config_init_3_value
         };
         controller
             .configure_runtime_chat(
@@ -5426,7 +5448,7 @@ mod tests {
         let mut controller = RemoteControlController::default();
         controller
             .configure_runtime_chat(
-                crate::config::Config::default(),
+                codewhale_runtime::config::Config::default(),
                 Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
                 root.path().join("runtime-chat"),
                 "target_fixture".to_string(),
@@ -5492,7 +5514,7 @@ mod tests {
             let mut first = RemoteControlController::default();
             first
                 .configure_runtime_chat(
-                    crate::config::Config::default(),
+                    codewhale_runtime::config::Config::default(),
                     Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
                     runtime_root.clone(),
                     "target_fixture".to_string(),
@@ -5538,7 +5560,7 @@ mod tests {
         let mut reopened = RemoteControlController::default();
         reopened
             .configure_runtime_chat(
-                crate::config::Config::default(),
+                codewhale_runtime::config::Config::default(),
                 Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
                 runtime_root,
                 "target_fixture".to_string(),
@@ -5581,7 +5603,7 @@ mod tests {
             let mut first = RemoteControlController::default();
             first
                 .configure_runtime_chat(
-                    crate::config::Config::default(),
+                    codewhale_runtime::config::Config::default(),
                     Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
                     runtime_root.clone(),
                     "target_fixture".to_string(),
@@ -5603,7 +5625,7 @@ mod tests {
         let mut reopened = RemoteControlController::default();
         reopened
             .configure_runtime_chat(
-                crate::config::Config::default(),
+                codewhale_runtime::config::Config::default(),
                 Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
                 runtime_root,
                 "target_fixture".to_string(),
@@ -5662,7 +5684,7 @@ mod tests {
                 .unwrap();
             first
                 .configure_runtime_chat(
-                    crate::config::Config::default(),
+                    codewhale_runtime::config::Config::default(),
                     Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
                     runtime_root.clone(),
                     "target_fixture".to_string(),
@@ -5698,7 +5720,7 @@ mod tests {
             .unwrap();
         reopened
             .configure_runtime_chat(
-                crate::config::Config::default(),
+                codewhale_runtime::config::Config::default(),
                 Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
                 runtime_root,
                 "target_fixture".to_string(),
@@ -5738,7 +5760,7 @@ mod tests {
         let mut controller = RemoteControlController::default();
         controller
             .configure_runtime_chat(
-                crate::config::Config::default(),
+                codewhale_runtime::config::Config::default(),
                 Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
                 root.path().join("runtime-chat"),
                 "target_fixture".to_string(),
@@ -5806,7 +5828,7 @@ mod tests {
 
         let runtime_root = tempfile::tempdir().expect("idle Runtime Chat host");
         let host = RuntimeChatRelayHost::open(
-            crate::config::Config::default(),
+            codewhale_runtime::config::Config::default(),
             Arc::new(crate::plugins::PluginRegistry::empty(runtime_root.path())),
             runtime_root.path().to_path_buf(),
             "target_fixture".to_string(),
@@ -5862,7 +5884,7 @@ mod tests {
         let mut controller = RemoteControlController::default();
         controller
             .configure_runtime_chat(
-                crate::config::Config::default(),
+                codewhale_runtime::config::Config::default(),
                 Arc::clone(&registry),
                 root.path().join("runtime-chat"),
                 "target_fixture".to_string(),
@@ -5882,10 +5904,14 @@ mod tests {
         let retained_model = host.configured_default_model_for_tests();
         controller
             .configure_runtime_chat(
-                crate::config::Config {
-                    provider: Some("ollama".to_string()),
-                    default_text_model: Some("must-not-replace-live-host".to_string()),
-                    ..crate::config::Config::default()
+                {
+                    let __cw_config_init_4_0 = Some("ollama".to_string());
+                    let __cw_config_init_4_1 = Some("must-not-replace-live-host".to_string());
+                    let mut __cw_config_init_4_value: codewhale_runtime::config::Config =
+                        codewhale_runtime::config::Config::default();
+                    __cw_config_init_4_value.provider = __cw_config_init_4_0;
+                    __cw_config_init_4_value.default_text_model = __cw_config_init_4_1;
+                    __cw_config_init_4_value
                 },
                 Arc::clone(&registry),
                 root.path().join("runtime-chat"),
@@ -5911,7 +5937,7 @@ mod tests {
         assert!(
             controller
                 .configure_runtime_chat(
-                    crate::config::Config::default(),
+                    codewhale_runtime::config::Config::default(),
                     registry,
                     root.path().join("runtime-chat"),
                     "target_other".to_string(),
@@ -5928,7 +5954,7 @@ mod tests {
         let (mut controller, _worker_rx, event_tx, _journal_root) = wired_controller();
         controller
             .configure_runtime_chat(
-                crate::config::Config::default(),
+                codewhale_runtime::config::Config::default(),
                 registry,
                 root.path().join("runtime-chat"),
                 "target_fixture".to_string(),
@@ -7248,7 +7274,7 @@ mod tests {
             let mut first = RemoteControlController::default();
             first
                 .configure_runtime_chat(
-                    crate::config::Config::default(),
+                    codewhale_runtime::config::Config::default(),
                     Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
                     runtime_root.clone(),
                     "target-1".to_string(),
@@ -7265,7 +7291,7 @@ mod tests {
         let mut controller = RemoteControlController::default();
         controller
             .configure_runtime_chat(
-                crate::config::Config::default(),
+                codewhale_runtime::config::Config::default(),
                 Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
                 runtime_root.clone(),
                 "target-1".to_string(),
@@ -7305,9 +7331,12 @@ mod tests {
                 },
             )]),
         );
-        let changed_config = crate::config::Config {
-            default_text_model: Some("changed-after-restart".to_string()),
-            ..crate::config::Config::default()
+        let changed_config = {
+            let __cw_config_init_5_0 = Some("changed-after-restart".to_string());
+            let mut __cw_config_init_5_value: codewhale_runtime::config::Config =
+                codewhale_runtime::config::Config::default();
+            __cw_config_init_5_value.default_text_model = __cw_config_init_5_0;
+            __cw_config_init_5_value
         };
         controller
             .configure_runtime_chat(

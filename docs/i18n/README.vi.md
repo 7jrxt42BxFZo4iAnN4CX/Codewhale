@@ -197,10 +197,10 @@ Kết nối [máy chủ MCP](../MCP.md), thêm [skill](../SKILLS.md) và
 công cụ. Chế độ code (thử nghiệm, bật theo mặc định) cho phép mô hình viết một
 chương trình `execute_tools` gọi nhiều công cụ MCP và plugin; mỗi lệnh gọi vẫn
 tuân theo quy tắc phê duyệt của bạn và vẫn có biên nhận riêng. Plugin Computer
-Use đi kèm (thử nghiệm, chỉ có trên macOS) có thể quan
+Use được cài đặt riêng (thử nghiệm, chỉ có trên macOS) có thể quan
 sát và điều khiển các ứng dụng khác. Plugin này luôn tắt cho đến khi bạn xem lại
 quyền truy cập của nó và bật nó lên
-([hướng dẫn](../../crates/tui/plugins/computer-use/README.md)).
+([hướng dẫn](https://github.com/codewhale-hq/codewhale-cu-plugin)).
 
 ## Các cách chạy
 

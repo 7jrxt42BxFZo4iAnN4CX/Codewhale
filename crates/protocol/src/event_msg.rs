@@ -752,6 +752,8 @@ pub enum EventMsg {
         messages: Vec<Value>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         system_prompt: Option<Value>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        instruction_assembly: Option<Value>,
         model: String,
         workspace: PathBuf,
     },
@@ -1496,6 +1498,7 @@ mod tests {
                 engine_session_id: "sess".into(),
                 messages: vec![json!({"role": "user", "content": []})],
                 system_prompt: Some(json!("sys")),
+                instruction_assembly: None,
                 model: "m".into(),
                 workspace: PathBuf::from("/ws"),
             },

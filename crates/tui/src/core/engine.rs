@@ -27,7 +27,6 @@ use tokio_util::sync::CancellationToken;
 use crate::approval_log::ApprovalReceiptStore;
 use crate::client::CodewhaleClient;
 use crate::compaction::{CompactionConfig, PreparedCompactionEnvelope, compact_messages_safe};
-use crate::config::{Config, DEFAULT_MAX_SUBAGENTS};
 use crate::core::model_client::SharedModelClient;
 use crate::error_taxonomy::{ErrorCategory, ErrorEnvelope, ErrorSeverity, StreamError};
 use crate::mcp::{McpConfig, McpPool, McpSupervisorUpdate};
@@ -74,6 +73,7 @@ use codewhale_models::{
     SystemPrompt, Tool, Usage, is_incomplete_stop_reason, is_output_limit_stop_reason,
     stop_contradicts_output_ceiling, stop_reason_detail,
 };
+use codewhale_runtime::config::{Config, DEFAULT_MAX_SUBAGENTS};
 use codewhale_runtime::features::{Feature, Features};
 
 #[cfg(test)]
@@ -375,7 +375,7 @@ pub struct EngineConfig {
     /// Per-domain network policy decider (#135). Shared across the session so
     /// session-scoped approvals (`/network allow <host>`) persist for the
     /// remainder of the run.
-    pub network_policy: Option<crate::network_policy::NetworkPolicyDecider>,
+    pub network_policy: Option<codewhale_net::network_policy::NetworkPolicyDecider>,
     /// Whether to take side-git workspace snapshots before/after each turn.
     pub snapshots_enabled: bool,
     /// Maximum workspace size (in bytes) before snapshots self-disable on
@@ -408,7 +408,7 @@ pub struct EngineConfig {
     /// Durable runtime services exposed to model-visible tools.
     pub runtime_services: RuntimeToolServices,
     /// Per-role/type sub-agent model overrides already resolved from config.
-    pub subagent_model_overrides: HashMap<String, crate::config::SubagentModelOverride>,
+    pub subagent_model_overrides: HashMap<String, codewhale_runtime::config::SubagentModelOverride>,
     /// Merged fleet roster (built-ins + config + personal/workspace agent
     /// files) shared by model-spawned sub-agents and fleet dispatch
     /// (#fleet-roster cutover (v0.8.67)). Defaults to built-ins only; the
@@ -424,7 +424,7 @@ pub struct EngineConfig {
     pub memory_path: PathBuf,
     /// Default directory for Xiaomi MiMo speech/TTS tool outputs.
     pub speech_output_dir: Option<PathBuf>,
-    pub vision_config: Option<crate::config::VisionModelConfig>,
+    pub vision_config: Option<codewhale_runtime::config::VisionModelConfig>,
     pub goal_objective: Option<String>,
     pub goal_token_budget: Option<u32>,
     pub goal_status: GoalStatus,
@@ -479,7 +479,7 @@ pub struct EngineConfig {
     /// Workshop / large-tool-output routing (#548). `None` disables routing.
     pub workshop: Option<codewhale_config::WorkshopConfig>,
     /// Which search backend `web_search` should use. Default: Firecrawl.
-    pub search_provider: crate::config::SearchProvider,
+    pub search_provider: codewhale_runtime::config::SearchProvider,
     /// Optional Firecrawl key, or required key for other API search providers.
     /// Metaso also falls back to the `METASO_API_KEY` env var.
     /// Baidu also falls back to `BAIDU_SEARCH_API_KEY`.
@@ -548,18 +548,18 @@ pub struct EngineConfig {
     pub prefer_bwrap: bool,
     /// User-configured bwrap mount extensions (#5410): extra read-only roots
     /// and writable device nodes such as `/dev/null`.
-    pub bwrap_extensions: crate::sandbox::BwrapMountExtensions,
+    pub bwrap_extensions: codewhale_sandbox::BwrapMountExtensions,
     /// Sandbox read deny-list (S1). One source of truth for two enforcement
     /// points: the OS wrappers get its subtree paths, and the in-process
     /// file-reading tools consult it directly (they run inside the harness
     /// process and are never wrapped by `sandbox-exec` or `bwrap`).
     /// Defense-in-depth, not a security boundary — see
-    /// `crate::sandbox::read_guard` for what it does and does not stop.
-    pub read_denylist: crate::sandbox::read_guard::ReadDenylist,
+    /// `codewhale_sandbox::read_guard` for what it does and does not stop.
+    pub read_denylist: codewhale_sandbox::read_guard::ReadDenylist,
     /// Tool override and plugin configuration (`[tools]` table in config.toml).
     /// Applied to the per-turn tool registry after built-in tools are registered.
     /// When `None`, no overrides or plugin loading occurs.
-    pub tools: Option<crate::config::ToolsConfig>,
+    pub tools: Option<codewhale_runtime::config::ToolsConfig>,
     /// Whether tools should follow symbolic links. When `true`, symlinked
     /// directories are traversed by walk-based tools and symlinked paths
     /// that resolve outside the workspace are still allowed (the symlink
@@ -635,7 +635,8 @@ impl Default for EngineConfig {
             goal_max_continuations: codewhale_runtime::goal_loop::DEFAULT_MAX_GOAL_CONTINUATIONS,
             goal_continuation_delay_seconds: 0,
             goal_enforce_token_budget: false,
-            reasoning_only_max_reprompts: crate::config::DEFAULT_REASONING_ONLY_REPROMPTS,
+            reasoning_only_max_reprompts:
+                codewhale_runtime::config::DEFAULT_REASONING_ONLY_REPROMPTS,
             reasoning_only_on_output_limit: false,
             // `None` means "use the built-in nudge". Storing the default text
             // here instead would make an operator's explicit empty string
@@ -647,15 +648,15 @@ impl Default for EngineConfig {
             hook_executor: None,
             locale_tag: "en".to_string(),
             workshop: None,
-            search_provider: crate::config::SearchProvider::default(),
+            search_provider: codewhale_runtime::config::SearchProvider::default(),
             search_api_key: None,
             search_base_url: None,
             search_native: None,
             subagent_api_timeout: Duration::from_secs(
-                crate::config::DEFAULT_SUBAGENT_API_TIMEOUT_SECS,
+                codewhale_runtime::config::DEFAULT_SUBAGENT_API_TIMEOUT_SECS,
             ),
             stream_chunk_timeout: Duration::from_secs(
-                crate::config::DEFAULT_STREAM_CHUNK_TIMEOUT_SECS,
+                codewhale_runtime::config::DEFAULT_STREAM_CHUNK_TIMEOUT_SECS,
             ),
             turn_wall_clock: turn_budget::resolve_turn_wall_clock(None),
             stream_max_content_bytes: turn_budget::DEFAULT_STREAM_MAX_CONTENT_BYTES,
@@ -663,7 +664,7 @@ impl Default for EngineConfig {
             stream_retry_limits: turn_budget::StreamRetryLimits::default(),
             stream_open_timeout: codewhale_config::resolve_stream_open_timeout(None),
             subagent_heartbeat_timeout: Duration::from_secs(
-                crate::config::DEFAULT_SUBAGENT_HEARTBEAT_TIMEOUT_SECS,
+                codewhale_runtime::config::DEFAULT_SUBAGENT_HEARTBEAT_TIMEOUT_SECS,
             ),
             tools_always_load: HashSet::new(),
             user_input_limits: crate::tools::user_input::UserInputLimits::default(),
@@ -671,14 +672,14 @@ impl Default for EngineConfig {
             goal_max_steps: None,
             // Mirrors `Config::prefers_bwrap`: on unless explicitly opted out.
             prefer_bwrap: true,
-            bwrap_extensions: crate::sandbox::BwrapMountExtensions::default(),
+            bwrap_extensions: codewhale_sandbox::BwrapMountExtensions::default(),
             // Fail-closed (F7): `Engine::new` unconditionally installs this
             // list process-wide via `read_guard::set_active`, so a default
             // here must be the built-in credential-store defaults — an empty
             // list would override the safe fallback and fail open. Mirrors
             // `Config::default`, where `sandbox_read_denylist_defaults`
             // defaults to true.
-            read_denylist: crate::sandbox::read_guard::ReadDenylist::build(true, &[], &[]),
+            read_denylist: codewhale_sandbox::read_guard::ReadDenylist::build(true, &[], &[]),
             verbosity: None,
             tools: None,
             workspace_follow_symlinks: false,
@@ -721,7 +722,7 @@ impl CancelReason {
 #[derive(Clone)]
 pub struct EngineHandle {
     goal_state: SharedGoalState,
-    pub(crate) sandbox_enforcement: crate::sandbox::policy::SandboxEnforcement,
+    pub(crate) sandbox_enforcement: codewhale_sandbox::policy::SandboxEnforcement,
     /// Send operations to the engine
     pub tx_op: mpsc::Sender<Op>,
     /// Receive events from the engine
@@ -1001,6 +1002,7 @@ pub struct Engine {
     turn_acp_shell_ceiling: Option<bool>,
     config: EngineConfig,
     api_config: Config,
+    instruction_settings: crate::project_context::InstructionSettings,
     /// Runtime-host authority consulted only when constructing a later turn
     /// descriptor (goal continuation, idle child completion, `/edit`). Active
     /// turns keep their already-installed immutable descriptor.
@@ -1017,16 +1019,10 @@ pub struct Engine {
     codewhale_client_error: Option<String>,
     api_key_env_only_recovery: Option<String>,
     session: Session,
-    /// One-shot instruction-budget notice for the model (#6526), delivered as
-    /// a synthetic user message on the first turn and then cleared.
-    pending_instruction_notice: Option<String>,
-    /// Whether the static-prefix guard has already run for this session. The
-    /// guard is a safety net with a one-shot notice, not a per-turn meter.
-    static_prefix_guard_checked: bool,
-    /// The ceiling the guard settled on, kept so every later composition of
-    /// this session honours it: without it a plain turn would recompose with
-    /// the configured budget and put the trimmed files back.
-    active_guard_trim: Option<crate::project_context::InstructionGuardTrim>,
+    /// Instruction-budget notices for the model, delivered through session history.
+    pending_instruction_notices: Vec<String>,
+    instruction_guard_key: Option<String>,
+    instruction_budget_error: Option<String>,
     /// One lazy, session-scoped working kernel for inline `repl` blocks.
     /// Its context is refreshed before each run, while user-created Python
     /// state stays alive across model turns.
@@ -1098,7 +1094,7 @@ pub struct Engine {
     api_provider: ProviderKind,
     /// One captured admitted route. Presentation snapshots derive strings from
     /// it; a changed table cannot be blessed by reinterpreting those strings.
-    api_provider_identity: Option<crate::config::ProviderIdentity>,
+    api_provider_identity: Option<codewhale_runtime::config::ProviderIdentity>,
     active_route_limits: Option<codewhale_config::route::RouteLimits>,
     active_route_capabilities: codewhale_config::route::RouteCapabilities,
     /// The endpoint the current client was built from: base URL, endpoint
@@ -1162,10 +1158,10 @@ pub struct Engine {
     lsp_manager: Arc<crate::lsp::LspManager>,
     /// External sandbox backend (#516). When `Some`, exec_shell routes commands
     /// through this instead of spawning a local process.
-    sandbox_backend: Option<std::sync::Arc<dyn crate::sandbox::backend::SandboxBackend>>,
+    sandbox_backend: Option<std::sync::Arc<dyn codewhale_sandbox::backend::SandboxBackend>>,
     /// Session-pinned execution boundary used by model-visible sandbox labels.
     /// This must not be re-probed per turn or metadata bytes can drift.
-    sandbox_enforcement: crate::sandbox::policy::SandboxEnforcement,
+    sandbox_enforcement: codewhale_sandbox::policy::SandboxEnforcement,
     /// Live no-new-privileges flag, read once at construction beside
     /// `sandbox_enforcement`: both are fixed for the process, so the per-turn
     /// posture line stays byte-stable for the session.
@@ -1635,7 +1631,7 @@ impl Engine {
     #[cfg(all(test, unix))]
     pub(crate) fn pin_recorded_platform_posture(
         &mut self,
-        enforcement: crate::sandbox::policy::SandboxEnforcement,
+        enforcement: codewhale_sandbox::policy::SandboxEnforcement,
         no_new_privs_active: Option<bool>,
     ) {
         self.sandbox_enforcement = enforcement;
@@ -1730,8 +1726,29 @@ impl Engine {
             .map(handle::SteerInput::into_pending)
     }
 
+    async fn wait_turn_steer(&mut self) -> handle::PendingSteer {
+        loop {
+            while let Some(pending) = self.next_turn_steer() {
+                if !pending.content.trim().is_empty() {
+                    return pending;
+                }
+            }
+            if self.queued_steers.len() >= self.rx_steer.max_capacity() {
+                return std::future::pending().await;
+            }
+            let Some(steer) = self.rx_steer.recv().await else {
+                return std::future::pending().await;
+            };
+            if steer.replace_pending {
+                self.queued_steers
+                    .retain(|older| older.turn_id != steer.turn_id);
+            }
+            self.queued_steers.push_back(steer);
+        }
+    }
+
     fn env_only_api_key_recovery_hint(api_config: &Config) -> Option<String> {
-        if !crate::config::active_provider_uses_env_only_api_key(api_config) {
+        if !codewhale_runtime::config::active_provider_uses_env_only_api_key(api_config) {
             return None;
         }
 
@@ -2073,6 +2090,12 @@ impl Engine {
         supplied_subagent_manager: Option<SharedSubAgentManager>,
     ) -> (Self, EngineHandle) {
         codewhale_release::tls::ensure_rustls_crypto_provider();
+        let mut instruction_settings =
+            crate::project_context::InstructionSettings::from_config(api_config);
+        let instruction_budget_error = instruction_settings.budget.validate().err();
+        if instruction_budget_error.is_some() {
+            instruction_settings.budget = Default::default();
+        }
 
         // Compaction re-states the user's `/anchor` file after its summary;
         // hand it the workspace root once so every prepared pass can read it.
@@ -2228,6 +2251,7 @@ impl Engine {
         // durable receipt path so the Context Lens can show what was assembled
         // for it. Both are inert when memory is disabled — no store I/O.
         if host.is_none()
+            && !api_config.runtime_chat_isolated
             && config.memory_enabled
             && let Some(store) =
                 codewhale_runtime::native_memory::NativeMemoryStore::from_global_path(
@@ -2246,7 +2270,7 @@ impl Engine {
             }
         }
         let user_memory_block = codewhale_runtime::native_memory::native_prompt_block_traced(
-            host.is_none() && config.memory_enabled,
+            host.is_none() && !api_config.runtime_chat_isolated && config.memory_enabled,
             &config.memory_path,
             &config.workspace,
             &session.id,
@@ -2256,8 +2280,7 @@ impl Engine {
         // #5715: name a prior workspace session that ended mid-turn so the
         // model can offer recovery without being asked. Frozen-prefix
         // contributor — computed once here, identical for every turn.
-        let recovery_hint = host
-            .is_none()
+        let recovery_hint = (host.is_none() && !api_config.runtime_chat_isolated)
             .then(|| {
                 crate::session_manager::session_recovery_hint(
                     &config.workspace,
@@ -2278,6 +2301,36 @@ impl Engine {
                 None,
             )
         } else {
+            let raw = crate::project_context::capture_instruction_context(
+                &config.workspace,
+                &config.instructions,
+                &instruction_settings,
+            );
+            let initial_instruction_budgets =
+                crate::project_context::InstructionBudgets::resolve_or_default(
+                    &instruction_settings.budget,
+                    crate::route_runtime::resolve_context_window(
+                        api_provider,
+                        &config.model,
+                        config.active_route_limits,
+                        None,
+                        None,
+                    )
+                    .instruction_budget_tokens(),
+                    Some(crate::route_budget::effective_max_output_tokens_for_turn(
+                        api_provider,
+                        &config.model,
+                        config.active_route_limits,
+                        None,
+                        turn_loop::resolve_auto_effort(
+                            api_config.reasoning_effort(),
+                            api_provider,
+                            &api_config.active_route_base_url(),
+                            &config.model,
+                        )
+                        .as_deref(),
+                    ) as usize),
+                );
             let (prompt, assembly) = prompts::system_prompt_with_instruction_assembly_for_host(
                 &config.workspace,
                 None,
@@ -2306,13 +2359,13 @@ impl Engine {
                     mode: AppMode::Agent,
                 },
                 prompt_host,
-                None,
+                Some((&raw, &instruction_settings, initial_instruction_budgets)),
             );
+            session.project_context = Some(raw);
             (prompt, Some(assembly))
         };
-        let pending_instruction_notice = instruction_assembly
-            .as_ref()
-            .and_then(|assembly| crate::project_context::render_notice_body(&assembly.notices));
+        let pending_instruction_notices = Vec::new();
+        session.instruction_assembly = instruction_assembly.map(Arc::new);
         let stable_prompt = Some(system_prompt);
         session.last_system_prompt_hash = Some(system_prompt_hash(stable_prompt.as_ref()));
         session.system_prompt = stable_prompt;
@@ -2377,7 +2430,7 @@ impl Engine {
         // `read_file`/`read`/`read_media` tools read in-process, so the same
         // deny-list is installed process-wide for them to consult (S1).
         if host.is_none() {
-            crate::sandbox::read_guard::set_active(config.read_denylist.clone());
+            codewhale_sandbox::read_guard::set_active(config.read_denylist.clone());
         }
         let shell_manager = host
             .as_ref()
@@ -2416,7 +2469,7 @@ impl Engine {
             .as_ref()
             .map(|host| host.context().sandbox_backend.clone())
             .unwrap_or_else(|| {
-                crate::sandbox::backend::create_backend(api_config)
+                codewhale_sandbox::backend::create_backend(api_config)
                     .unwrap_or_else(|e| {
                         tracing::warn!("Failed to create sandbox backend: {e}");
                         None
@@ -2424,16 +2477,16 @@ impl Engine {
                     .map(std::sync::Arc::from)
             });
         let sandbox_enforcement = if sandbox_backend.is_some() {
-            crate::sandbox::policy::SandboxEnforcement::ExternalBackend
+            codewhale_sandbox::policy::SandboxEnforcement::ExternalBackend
         } else if shell_manager
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .configured_sandbox_type()
             .is_some()
         {
-            crate::sandbox::policy::SandboxEnforcement::LocalOs
+            codewhale_sandbox::policy::SandboxEnforcement::LocalOs
         } else {
-            crate::sandbox::policy::SandboxEnforcement::Unavailable
+            codewhale_sandbox::policy::SandboxEnforcement::Unavailable
         };
 
         let active_route_limits = config.active_route_limits;
@@ -2480,6 +2533,7 @@ impl Engine {
             rlm_host,
             config,
             api_config: api_config.clone(),
+            instruction_settings,
             authoritative_route_config: None,
             host_profile,
             turn_narrowing: TurnNarrowing::Inherit,
@@ -2490,9 +2544,9 @@ impl Engine {
             codewhale_client_error,
             api_key_env_only_recovery,
             session,
-            pending_instruction_notice,
-            static_prefix_guard_checked: false,
-            active_guard_trim: None,
+            pending_instruction_notices,
+            instruction_guard_key: None,
+            instruction_budget_error,
             repl_kernel: None,
             subagent_manager,
             subagent_execution_limits,
@@ -2552,7 +2606,7 @@ impl Engine {
             pending_lsp_blocks: Vec::new(),
             sandbox_backend,
             sandbox_enforcement,
-            no_new_privs_active: crate::sandbox::process_hardening::no_new_privs_active(),
+            no_new_privs_active: codewhale_sandbox::process_hardening::no_new_privs_active(),
             current_mode: AppMode::Agent,
             turn_wall_clock: turn_budget::TurnWallClock::start(turn_wall_clock_budget),
             last_policy_narrowing: None,
@@ -3249,6 +3303,8 @@ impl Engine {
         // Host-owned overrides remain byte-stable because the
         // refresh path exits early while the override is set.
         self.session.pinned_prompt_context = None;
+        self.session.instruction_assembly = None;
+        self.instruction_guard_key = None;
         self.session.context_update_baseline = None;
         // A session sync installs a new (or restored) prefix.
         // Declare it so the next request re-pins the KV-cache
@@ -3279,6 +3335,11 @@ impl Engine {
                 .and_then(|identity| identity.persisted_id().map(str::to_string)),
             workspace: self.session.workspace.clone(),
             system_prompt: self.session.system_prompt.clone(),
+            instruction_assembly: self
+                .session
+                .instruction_assembly
+                .as_deref()
+                .map(crate::project_context::InstructionAssembly::receipt_json),
             mode: self.current_mode.as_setting().to_string(),
         }
     }
@@ -3725,6 +3786,18 @@ impl Engine {
                         self.handle_idle_shell_completion_wake().await;
                     }
                     EngineRunInput::Operation(op) => match *op {
+                        Op::Review { turn, request } => {
+                            self.admitted_turn_control = {
+                                let mut controls = self
+                                    .turn_controls
+                                    .lock()
+                                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                                let control = controls.pending.pop_front();
+                                controls.active = control.clone();
+                                control
+                            };
+                            Box::pin(self.handle_message_operation(turn, Some(request))).await;
+                        }
                         Op::SendMessage(spec) => {
                             self.admitted_turn_control = {
                                 let mut controls = self
@@ -4157,7 +4230,7 @@ impl Engine {
                         } => {
                             self.config.subagents_enabled = enabled;
                             self.config.max_subagents =
-                                max_subagents.clamp(1, crate::config::MAX_SUBAGENTS);
+                                max_subagents.clamp(1, codewhale_runtime::config::MAX_SUBAGENTS);
                             self.config.launch_concurrency =
                                 launch_concurrency.clamp(1, self.config.max_subagents);
                             self.config.max_spawn_depth = max_spawn_depth;
@@ -4217,8 +4290,9 @@ impl Engine {
                             // A fresh conversation arrives with its own
                             // sources: re-arm the guard and rebuild the notice
                             // from the assembly that installs its header.
-                            self.static_prefix_guard_checked = false;
-                            self.active_guard_trim = None;
+                            self.instruction_guard_key = None;
+                            self.pending_instruction_notices.clear();
+                            self.session.instruction_assembly = None;
                             let plugin_workspace_changed =
                                 self.plugin_registry.workspace() != workspace.as_path();
                             let previous_session_id = self.session.id.clone();
@@ -4284,14 +4358,14 @@ impl Engine {
                                     attachment.sync_in_background();
                                 }
                             }
-                            let ctx = crate::project_context::load_project_context_with_parents(
-                                &workspace,
-                            );
-                            self.session.project_context = if ctx.has_instructions() {
-                                Some(ctx)
-                            } else {
-                                None
-                            };
+                            self.session.project_context =
+                                self.host_owned_system_prompt().is_none().then(|| {
+                                    crate::project_context::capture_instruction_context(
+                                        &workspace,
+                                        &self.config.instructions,
+                                        &self.instruction_settings,
+                                    )
+                                });
                             self.session.rebuild_working_set();
                             self.reconcile_restored_work_bindings().await;
                             if self.mcp_pool.is_none()
@@ -4673,6 +4747,7 @@ impl Engine {
                 session_id: self.session.id.clone(),
                 messages: self.session.messages.snapshot(),
                 system_prompt: self.session.system_prompt.clone(),
+                instruction_assembly: self.session.instruction_assembly.clone(),
                 model: self.session.model.clone(),
                 workspace: self.session.workspace.clone(),
             })
@@ -4715,11 +4790,12 @@ impl Engine {
         &self,
         current_text: &str,
         system_prompt: Option<&SystemPrompt>,
+        messages: &[Message],
     ) -> usize {
-        // Estimate the installed history IN PLACE — no full-transcript clone
+        // Estimate the supplied history IN PLACE — no full-transcript clone
         // per `<turn_meta>` build (#perf-r5). `&AppendLog` deref-coerces to
         // `&[Message]` exactly like the cache call site.
-        let base = estimate_input_tokens_conservative(&self.session.messages, system_prompt);
+        let base = estimate_input_tokens_conservative(messages, system_prompt);
         if current_text.trim().is_empty() {
             return base;
         }
@@ -4730,9 +4806,7 @@ impl Engine {
         // ceil((S+own)*3/2) − ceil(S*3/2) = floor(own*3/2) + 1 exactly when
         // S is even and own is odd; pinned exhaustively (80k pairs) and per
         // case by `context_pressure_delta_matches_clone_and_push_reference`.
-        let sum: usize = self
-            .session
-            .messages
+        let sum: usize = messages
             .iter()
             .map(|m| {
                 crate::compaction::estimate_tokens_for_message(
@@ -4755,8 +4829,10 @@ impl Engine {
         current_text: &str,
         prompt_context: &NextTurnPromptContext,
         system_prompt: Option<&SystemPrompt>,
+        messages: &[Message],
     ) {
-        if let Some(line) = self.context_pressure_line(current_text, prompt_context, system_prompt)
+        if let Some(line) =
+            self.context_pressure_line(current_text, prompt_context, system_prompt, messages)
         {
             lines.push(line);
         }
@@ -4856,6 +4932,7 @@ impl Engine {
                 system_prompt: self.session.system_prompt.as_ref(),
                 approval_mode: self.session.approval_mode,
                 working_set: &self.session.working_set,
+                messages: &self.session.messages,
                 policy_narrowing,
             },
         )
@@ -4888,6 +4965,7 @@ impl Engine {
             approval_mode,
             working_set,
             policy_narrowing,
+            messages,
         } = snapshot;
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
         let working_set_summary = working_set
@@ -4965,6 +5043,7 @@ impl Engine {
             current_text,
             prompt_context,
             system_prompt,
+            messages,
         );
         if let Some(working_set_summary) = working_set_summary {
             lines.push(working_set_summary);
@@ -6273,6 +6352,14 @@ impl Engine {
     }
 
     async fn handle_send_message(&mut self, spec: TurnSpec) -> SendMessageOutcome {
+        self.handle_message_operation(spec, None).await
+    }
+
+    async fn handle_message_operation(
+        &mut self,
+        spec: TurnSpec,
+        review: Option<codewhale_protocol::op::ReviewOperation>,
+    ) -> SendMessageOutcome {
         let autonomous =
             self.admitted_turn_control.is_none() && !spec.provenance.can_authorize_work();
         // Claim first. Pending controls never affect the active Engine policy.
@@ -6282,7 +6369,13 @@ impl Engine {
         let previous = std::mem::replace(&mut self.turn_narrowing, control.narrowing);
         let shell_ceiling = self.is_acp_turn().then_some(spec.allow_shell);
         let previous_shell = std::mem::replace(&mut self.turn_acp_shell_ceiling, shell_ceiling);
-        let outcome = self.handle_admitted_message(spec, autonomous).await;
+        let outcome = match review {
+            Some(request) => {
+                self.handle_admitted_operation(spec, autonomous, Some(request))
+                    .await
+            }
+            None => self.handle_admitted_message(spec, autonomous).await,
+        };
         self.turn_acp_shell_ceiling = previous_shell;
         self.turn_narrowing = previous;
         drop(control);
@@ -6294,6 +6387,16 @@ impl Engine {
         spec: TurnSpec,
         autonomous: bool,
     ) -> SendMessageOutcome {
+        self.handle_admitted_operation(spec, autonomous, None).await
+    }
+
+    async fn handle_admitted_operation(
+        &mut self,
+        spec: TurnSpec,
+        autonomous: bool,
+        review: Option<codewhale_protocol::op::ReviewOperation>,
+    ) -> SendMessageOutcome {
+        let is_review = review.is_some();
         let TurnSpec {
             profile_constitution,
             max_output_tokens,
@@ -6372,7 +6475,8 @@ impl Engine {
         // keeps no lifecycle.
         // Internal follow-ups belong to the already-admitted work. They must
         // not replace its account preferences with the host operator's profile.
-        let constitution_block = if self.rlm_host.is_some()
+        let constitution_block = if is_review
+            || self.rlm_host.is_some()
             || (!provenance.can_authorize_work() && profile_constitution.is_none())
         {
             self.constitution_block.clone()
@@ -6530,7 +6634,9 @@ impl Engine {
         // Deliver completions that arrived after the previous turn before the
         // next user request is sent. This keeps background shell work
         // model-visible without requiring an explicit wait/poll tool call.
-        self.deliver_shell_completions("").await;
+        if !is_review {
+            self.deliver_shell_completions("").await;
+        }
 
         // A person writing to a goal that only the runtime stopped (a failed
         // or timed-out continuation) is continuing the work: resume it as a
@@ -6567,7 +6673,7 @@ impl Engine {
             auto_approve,
             approval_mode,
         );
-        let prompt_context = NextTurnPromptContext::for_planned_turn(
+        let mut prompt_context = NextTurnPromptContext::for_planned_turn(
             effective_provider,
             model.clone(),
             route_limits,
@@ -6578,6 +6684,27 @@ impl Engine {
             translation_enabled,
             verbosity.clone(),
         );
+        let planned_effort = turn_loop::resolve_auto_effort(
+            reasoning_effort.as_deref(),
+            effective_provider,
+            &route_api_config.active_route_base_url(),
+            &model,
+        );
+        prompt_context.planned_output_tokens =
+            Some(crate::route_budget::effective_max_output_tokens_for_turn(
+                effective_provider,
+                &model,
+                route_limits,
+                max_output_tokens,
+                planned_effort.as_deref(),
+            ));
+        if max_output_tokens.is_some()
+            && let Some(client) = self.model_client.as_ref()
+        {
+            prompt_context.planned_output_tokens = prompt_context
+                .planned_output_tokens
+                .map(|tokens| tokens.min(client.effective_max_output_tokens(&model)));
+        }
         // #3947: an effective-mode change is never silent. The structured
         // event is recorded first (so doctor and this turn's metadata can read
         // it), then rendered to the UI from that same value.
@@ -6767,15 +6894,17 @@ impl Engine {
         // failure is non-fatal (the helper logs at WARN).
         // The label carries a truncated first line of the prompt so
         // `/restore` listings are human-readable.
-        self.take_restore_point(
-            WorkspaceSnapshotKind::PreTurn,
-            format_snapshot_label("pre-turn", self.turn_counter, Some(&content)),
-            None,
-            None,
-        )
-        .await;
+        if !is_review {
+            self.take_restore_point(
+                WorkspaceSnapshotKind::PreTurn,
+                format_snapshot_label("pre-turn", self.turn_counter, Some(&content)),
+                None,
+                None,
+            )
+            .await;
 
-        self.emit_pending_snapshot_notices().await;
+            self.emit_pending_snapshot_notices().await;
+        }
 
         // A new turn means any leftover retry banner (success cleared
         // it, failure pinned it) is no longer relevant — reset to idle
@@ -6881,42 +7010,60 @@ impl Engine {
         self.config.translation_enabled = translation_enabled;
         self.config.verbosity = verbosity;
 
-        // Capture only this engine's reviewed, live plugin contributions. A
-        // failed/withdrawn capture records retirement. Full bounded snapshots
-        // use ordinary session history, not the smaller workspace line delta.
-        if let Some(attachment) = self.extension_host.as_ref() {
-            self.plugin_registry = attachment.plugin_view();
-        }
-        self.config.hook_executor = self.config.hook_executor.as_ref().map(|hooks| {
-            Arc::new(
-                hooks.bind_caller(crate::hooks::HookCaller {
-                    workspace: self.session.workspace.clone(),
-                    plugins: Some(Arc::clone(&self.plugin_registry)),
-                    session_id: Some(self.session.id.clone()),
-                    agent_id: self
-                        .child_host
-                        .as_ref()
-                        .map(|child| child.authority.owner_agent_id.clone()),
-                    origin_turn_id: Some(turn.id.clone()),
-                    origin_call_id: None,
-                }),
-            )
-        });
-        self.extension_prompt_block = if self.rlm_host.is_some() {
-            self.extension_prompt_block.clone()
-        } else if self.config.features.enabled(Feature::ExtensionHost) {
-            if let Some(attachment) = &self.extension_host {
-                match attachment.prompt_sections().await.and_then(|sections| {
-                    crate::extension_host::prompt::render_prompt_sections_for_turn(
-                        &sections,
-                        &prompt_context.model,
-                        &self.session.workspace,
-                    )
-                }) {
-                    Ok(block) => block,
-                    Err(reason) => {
-                        tracing::warn!(%reason, "extension prompt contributions unavailable");
-                        let _ = self
+        let (
+            context_update,
+            surface,
+            mut mailbox_for_runtime,
+            tool_surface,
+            tool_catalog_for_event,
+        ) = if is_review {
+            self.session.add_message(Message {
+                role: Role::User,
+                content: vec![ContentBlock::Text {
+                    text: content,
+                    cache_control: None,
+                }],
+            });
+            turn.unanswered_user_message = Some(self.mark_unanswered_user_message());
+            self.emit_session_updated().await;
+            (Ok(None), None, None, None, None)
+        } else {
+            // Capture only this engine's reviewed, live plugin contributions. A
+            // failed/withdrawn capture records retirement. Full bounded snapshots
+            // use ordinary session history, not the smaller workspace line delta.
+            if let Some(attachment) = self.extension_host.as_ref() {
+                self.plugin_registry = attachment.plugin_view();
+            }
+            self.config.hook_executor = self.config.hook_executor.as_ref().map(|hooks| {
+                Arc::new(
+                    hooks.bind_caller(crate::hooks::HookCaller {
+                        workspace: self.session.workspace.clone(),
+                        plugins: Some(Arc::clone(&self.plugin_registry)),
+                        session_id: Some(self.session.id.clone()),
+                        agent_id: self
+                            .child_host
+                            .as_ref()
+                            .map(|child| child.authority.owner_agent_id.clone()),
+                        origin_turn_id: Some(turn.id.clone()),
+                        origin_call_id: None,
+                    }),
+                )
+            });
+            self.extension_prompt_block = if self.rlm_host.is_some() {
+                self.extension_prompt_block.clone()
+            } else if self.config.features.enabled(Feature::ExtensionHost) {
+                if let Some(attachment) = &self.extension_host {
+                    match attachment.prompt_sections().await.and_then(|sections| {
+                        crate::extension_host::prompt::render_prompt_sections_for_turn(
+                            &sections,
+                            &prompt_context.model,
+                            &self.session.workspace,
+                        )
+                    }) {
+                        Ok(block) => block,
+                        Err(reason) => {
+                            tracing::warn!(%reason, "extension prompt contributions unavailable");
+                            let _ = self
                             .send_event(Event::status(
                                 codewhale_localization::tr(
                                     codewhale_localization::resolve_locale(&self.config.locale_tag),
@@ -6925,134 +7072,144 @@ impl Engine {
                                 .to_string(),
                             ))
                             .await;
-                        None
+                            None
+                        }
                     }
+                } else {
+                    None
                 }
             } else {
                 None
+            };
+            self.constitution_block = constitution_block;
+            self.record_current_constitution().await;
+            self.record_current_extension_prompt_contributions().await;
+
+            // Compose from the immutable values accepted for this turn. Preview
+            // receives the same context before anything is installed, so prompt
+            // bytes cannot depend on stale session state or mutation order. The
+            // pinned header only moves on an explicit-input change; workspace
+            // drift arrives as a `<context_update>` user message appended below.
+            let context_update = self.refresh_pinned_header_for_turn(&prompt_context);
+            if let Ok(Some(update)) = context_update.as_ref() {
+                self.session.add_message(Message {
+                    role: Role::User,
+                    content: vec![ContentBlock::Text {
+                        text: update.clone(),
+                        cache_control: None,
+                    }],
+                });
             }
-        } else {
-            None
-        };
-        self.constitution_block = constitution_block;
-        self.record_current_constitution().await;
-        self.record_current_extension_prompt_contributions().await;
 
-        // Compose from the immutable values accepted for this turn. Preview
-        // receives the same context before anything is installed, so prompt
-        // bytes cannot depend on stale session state or mutation order. The
-        // pinned header only moves on an explicit-input change; workspace
-        // drift arrives as a `<context_update>` user message appended below.
-        let context_update = self.refresh_pinned_header_for_turn(&prompt_context);
-        if let Some(update) = context_update {
-            self.session.add_message(Message {
-                role: Role::User,
-                content: vec![ContentBlock::Text {
-                    text: update,
-                    cache_control: None,
-                }],
-            });
-        }
+            self.record_mode_notice(mode);
 
-        self.record_mode_notice(mode);
+            // The Operate contract (docs/MODES.md) precedes the first Operate
+            // prompt. KV-cache effect: append-only history, one user-role runtime
+            // message; it is derived from the session log rather than a flag so a
+            // cleared, restored, or compacted session gets it again exactly once
+            // and every later Operate turn does not repeat it.
+            if mode == AppMode::Operate
+                && !self
+                    .session
+                    .messages
+                    .iter()
+                    .any(crate::runtime_handoff::is_current_operate_contract_message)
+            {
+                self.session
+                    .add_message(crate::runtime_handoff::operate_contract_runtime_message());
+            }
 
-        // The Operate contract (docs/MODES.md) precedes the first Operate
-        // prompt. KV-cache effect: append-only history, one user-role runtime
-        // message; it is derived from the session log rather than a flag so a
-        // cleared, restored, or compacted session gets it again exactly once
-        // and every later Operate turn does not repeat it.
-        if mode == AppMode::Operate
-            && !self
-                .session
-                .messages
-                .iter()
-                .any(crate::runtime_handoff::is_current_operate_contract_message)
-        {
             self.session
-                .add_message(crate::runtime_handoff::operate_contract_runtime_message());
-        }
+                .working_set
+                .observe_user_message(&content, &self.session.workspace);
 
-        self.session
-            .working_set
-            .observe_user_message(&content, &self.session.workspace);
-
-        // Add the user message through the same explicit snapshot constructor
-        // preview uses. Route limits and mode in resource metadata therefore
-        // belong to this turn even when the previous route was different.
-        let mut user_msg = self.user_text_message_from_snapshot(
-            content,
-            &model,
-            auto_model,
-            self.session.reasoning_effort.as_deref(),
-            self.session.reasoning_effort_auto,
-            provenance,
-            TurnMetadataSnapshot {
-                prompt_context: &prompt_context,
-                system_prompt: self.session.system_prompt.as_ref(),
-                approval_mode: self.session.approval_mode,
-                working_set: &self.session.working_set,
-                policy_narrowing: self.last_policy_narrowing.as_ref(),
-            },
-        );
-        let image_index = if self.api_config.runtime_chat_isolated {
-            user_msg.content.len()
-        } else {
-            user_msg.content.len().saturating_sub(1)
-        };
-        user_msg.content.splice(image_index..image_index, images);
-        self.session.add_message(user_msg);
-        turn.unanswered_user_message = Some(self.mark_unanswered_user_message());
-
-        self.emit_session_updated().await;
-
-        // Build tool registry and tool list for the current mode
-        let turn_id_for_mailbox = turn.id.clone();
-        let TurnToolBuild {
-            surface,
-            mailbox: mut mailbox_for_runtime,
-            plugin_tool_names,
-            ..
-        } = self
-            .build_turn_tool_registry_and_catalog(
-                &input_policy,
-                &dynamic_tools,
-                self.config.allowed_tools.clone(),
-                SubAgentWiring::Live,
-                McpAccess::Connect,
-                TurnRouteContext {
-                    provider: self.api_provider,
-                    model: self.config.model.clone(),
-                    capabilities: route_capabilities,
-                    limits: self.active_route_limits,
-                    client: self.codewhale_client.clone(),
-                    api_config: route_api_config,
-                    locale_tag: self.config.locale_tag.clone(),
-                    role_models: self.subagent_role_models(),
-                    auto_model,
-                    reasoning_effort: self.session.reasoning_effort.clone(),
-                    reasoning_effort_auto: self.session.reasoning_effort_auto,
+            // Add the user message through the same explicit snapshot constructor
+            // preview uses. Route limits and mode in resource metadata therefore
+            // belong to this turn even when the previous route was different.
+            let mut user_msg = self.user_text_message_from_snapshot(
+                content,
+                &model,
+                auto_model,
+                self.session.reasoning_effort.as_deref(),
+                self.session.reasoning_effort_auto,
+                provenance,
+                TurnMetadataSnapshot {
+                    prompt_context: &prompt_context,
+                    system_prompt: self.session.system_prompt.as_ref(),
+                    approval_mode: self.session.approval_mode,
+                    working_set: &self.session.working_set,
+                    messages: &self.session.messages,
+                    policy_narrowing: self.last_policy_narrowing.as_ref(),
                 },
-                &turn_id_for_mailbox,
-            )
-            .await;
-        let tool_catalog_for_event = Some(surface.catalog.clone());
+            );
+            let image_index = if self.api_config.runtime_chat_isolated {
+                user_msg.content.len()
+            } else {
+                user_msg.content.len().saturating_sub(1)
+            };
+            user_msg.content.splice(image_index..image_index, images);
+            self.session.add_message(user_msg);
+            turn.unanswered_user_message = Some(self.mark_unanswered_user_message());
 
-        // Resolve, once per turn, the out-of-request facts the read-only
-        // request projection is allowed to report: flattened registry facts,
-        // the MCP pool's own server attribution, and the engine-injected
-        // catalog names. This is where `plugin_tool_names` and the pool lock
-        // live; the snapshot itself is built later, at the request seam, from
-        // the tools actually prepared for that step.
-        let mut tool_surface = crate::tool_inspection::ToolSurfaceContext {
-            registry: surface.registry.registry_facts(&plugin_tool_names),
-            mcp_servers: match self.mcp_pool.as_ref() {
-                Some(pool) => pool.lock().await.resolved_tool_servers(),
-                None => std::collections::BTreeMap::new(),
-            },
-            synthetic_names: default_synthetic_catalog_tool_names(),
-            provider: crate::tool_inspection::ProviderAvailability::Unknown,
+            self.emit_session_updated().await;
+
+            // Build tool registry and tool list for the current mode
+            let turn_id_for_mailbox = turn.id.clone();
+            let TurnToolBuild {
+                surface,
+                mailbox: mailbox_for_runtime,
+                plugin_tool_names,
+                ..
+            } = self
+                .build_turn_tool_registry_and_catalog(
+                    &input_policy,
+                    &dynamic_tools,
+                    self.config.allowed_tools.clone(),
+                    SubAgentWiring::Live,
+                    McpAccess::Connect,
+                    TurnRouteContext {
+                        provider: self.api_provider,
+                        model: self.config.model.clone(),
+                        capabilities: route_capabilities,
+                        limits: self.active_route_limits,
+                        client: self.codewhale_client.clone(),
+                        api_config: route_api_config,
+                        locale_tag: self.config.locale_tag.clone(),
+                        role_models: self.subagent_role_models(),
+                        auto_model,
+                        reasoning_effort: self.session.reasoning_effort.clone(),
+                        reasoning_effort_auto: self.session.reasoning_effort_auto,
+                    },
+                    &turn_id_for_mailbox,
+                )
+                .await;
+            let tool_catalog_for_event = Some(surface.catalog.clone());
+
+            // Resolve, once per turn, the out-of-request facts the read-only
+            // request projection is allowed to report: flattened registry facts,
+            // the MCP pool's own server attribution, and the engine-injected
+            // catalog names. This is where `plugin_tool_names` and the pool lock
+            // live; the snapshot itself is built later, at the request seam, from
+            // the tools actually prepared for that step.
+            let mut tool_surface = crate::tool_inspection::ToolSurfaceContext {
+                registry: surface.registry.registry_facts(&plugin_tool_names),
+                mcp_servers: match self.mcp_pool.as_ref() {
+                    Some(pool) => pool.lock().await.resolved_tool_servers(),
+                    None => std::collections::BTreeMap::new(),
+                },
+                synthetic_names: default_synthetic_catalog_tool_names(),
+                provider: crate::tool_inspection::ProviderAvailability::Unknown,
+            };
+            tool_surface.provider = self.tool_surface_provider_receipt();
+
+            (
+                context_update,
+                Some(surface),
+                mailbox_for_runtime,
+                Some(tool_surface),
+                tool_catalog_for_event,
+            )
         };
-        tool_surface.provider = self.tool_surface_provider_receipt();
 
         let base_url_for_event = if self.model_client_injected {
             None
@@ -7071,14 +7228,21 @@ impl Engine {
             .as_ref()
             .map(|barrier| Arc::clone(&barrier.foreground_children));
         let turn_result = std::panic::AssertUnwindSafe(async {
+            if let Some(request) = review {
+                return self.run_structured_review(&mut turn, request).await;
+            }
+            if let Err(error) = context_update {
+                self.post_turn_budget_stop(&error).await;
+                return (TurnOutcomeStatus::Failed, Some(error));
+            }
             // Keep the turn state machine out of the enclosing event-loop
             // futures. Their nested poll frames must fit ordinary thread
             // stacks while cloning route config or executing tools.
             Box::pin(self.run_turn(
                 &mut turn,
-                surface,
+                surface.expect("ordinary turn prepared its registry"),
                 foreground_children_for_turn,
-                Some(tool_surface),
+                tool_surface,
             ))
             .await
         })
@@ -7151,7 +7315,8 @@ impl Engine {
         // belongs to this originating turn. Acquire the owner lease before an
         // interactive owner is marked terminal so a late provider response
         // retains its exact sink instead of falling into a later session.
-        let advisor_usage_context = (!self.is_acp_turn()
+        let advisor_usage_context = (!is_review
+            && !self.is_acp_turn()
             && self.config.advisor_config.enabled
             && status == TurnOutcomeStatus::Completed
             && self.codewhale_client.is_some())
@@ -7180,9 +7345,13 @@ impl Engine {
                 .send_event(Event::ToolRequestSnapshot { snapshot })
                 .await;
         }
-        self.post_turn_snapshot_before_complete(&snapshot_prompt_post)
-            .await;
-        let pending_post_turn = self.reserve_post_turn_snapshot();
+        if !is_review {
+            self.post_turn_snapshot_before_complete(&snapshot_prompt_post)
+                .await;
+        }
+        let pending_post_turn = (!is_review)
+            .then(|| self.reserve_post_turn_snapshot())
+            .flatten();
         // Cancellation still owns the decision while mailbox/snapshot
         // bookkeeping runs. The reserved completion itself never waits.
         status = terminal_turn_status_at_settlement(status, self.cancel_token.is_cancelled());
@@ -7214,11 +7383,13 @@ impl Engine {
 
         // Post-turn snapshot, unless it was already taken before
         // TurnComplete (see `EngineConfig::record_restore_points`).
-        self.post_turn_snapshot_after_complete(
-            "post-turn-snapshot",
-            snapshot_prompt_post,
-            pending_post_turn,
-        );
+        if !is_review {
+            self.post_turn_snapshot_after_complete(
+                "post-turn-snapshot",
+                snapshot_prompt_post,
+                pending_post_turn,
+            );
+        }
 
         // ── Background advisor watcher (#3982) ────────────────────────────
         // Fire-and-forget: TurnComplete is already emitted. The advisor
@@ -7476,7 +7647,9 @@ impl Engine {
     /// Role/type model map for sub-agent runtimes: roster member pins first,
     /// then explicit `[subagents]` overrides on top so explicit config wins
     /// (#fleet-roster cutover (v0.8.67)).
-    fn subagent_role_models(&self) -> HashMap<String, crate::config::SubagentModelOverride> {
+    fn subagent_role_models(
+        &self,
+    ) -> HashMap<String, codewhale_runtime::config::SubagentModelOverride> {
         let mut models = self.config.fleet_roster.model_overrides();
         models.extend(
             self.config
@@ -7627,11 +7800,14 @@ impl Engine {
     /// the approval prompt survives it. An adopted table has no cache to
     /// inherit: the session had no decider, so nothing was ever approved under
     /// one.
-    fn current_network_decider(&self) -> Option<crate::network_policy::NetworkPolicyDecider> {
+    fn current_network_decider(
+        &self,
+    ) -> Option<codewhale_net::network_policy::NetworkPolicyDecider> {
         let Some(path) = self.api_config.loaded_config_path.as_deref() else {
             return self.config.network_policy.clone();
         };
-        let Some(document) = crate::network_policy::network_policy_from_document(path) else {
+        let Some(document) = codewhale_net::network_policy::network_policy_from_document(path)
+        else {
             // The document carries no `[network]` table. Keep what the session
             // resolved: removing a table must not ungate a gated run.
             return self.config.network_policy.clone();
@@ -7652,7 +7828,9 @@ impl Engine {
             // Nothing resolved a policy for this session, so there is no higher
             // layer to protect. Adopt the table the moment it exists — that is
             // how `/network deny <host>` lands where there was no policy yet.
-            None => Some(crate::network_policy::NetworkPolicyDecider::with_default_audit(document)),
+            None => Some(
+                codewhale_net::network_policy::NetworkPolicyDecider::with_default_audit(document),
+            ),
         }
     }
 
@@ -7706,7 +7884,8 @@ impl Engine {
         }
         let trusted = crate::workspace_trust::WorkspaceTrust::load_for(&self.session.workspace);
         let mut trusted_external_paths = trusted.paths().to_vec();
-        let clipboard_images_dir = crate::config::clipboard_images_dir(&self.session.workspace);
+        let clipboard_images_dir =
+            codewhale_runtime::config::clipboard_images_dir(&self.session.workspace);
         if !trusted_external_paths
             .iter()
             .any(|path| path == &clipboard_images_dir)
@@ -9141,29 +9320,48 @@ impl Engine {
     /// logged reason instead of reporting undeclared drift. This is only ever
     /// called from explicit header-change edges (session construction, submit
     /// turn boundary, `/model`, mode change, goal edits) — never mid-tool-loop,
-    /// so an agent writing a file cannot silently move the pinned prefix.
+    /// so an agent writing a file cannot silently move the pinned prefix. The
+    /// one declared exception is the instruction-budget guard, which re-narrows
+    /// only the installed instruction block when the tool catalog changes.
     fn refresh_system_prompt_from_context_with_reason(
         &mut self,
         context: &NextTurnPromptContext,
         reason: &str,
     ) {
-        self.record_project_trust_warning();
-        let (stable_prompt, assembly) =
-            self.compose_stable_system_prompt_with_assembly(context, self.active_guard_trim);
-        // The assembly that installs the header is what the operator and the
-        // model must hear about: a route change can drop files that the
-        // construction-time assembly did not.
-        if let Some(body) = assembly
-            .as_ref()
-            .and_then(|assembly| crate::project_context::render_notice_body(&assembly.notices))
-        {
-            self.pending_instruction_notice = Some(body);
-        }
-
-        let stable_hash = system_prompt_hash(stable_prompt.as_ref());
+        self.pending_instruction_notices.clear();
         if self.session.system_prompt_override {
+            self.session.instruction_assembly = None;
             return;
         }
+        let (stable_prompt, assembly) = match self.host_owned_system_prompt() {
+            Some(prompt) => (Some(prompt), None),
+            None => {
+                self.record_project_trust_warning();
+                let raw = crate::project_context::capture_instruction_context(
+                    &self.config.workspace,
+                    &self.config.instructions,
+                    &self.instruction_settings,
+                );
+                let memory = codewhale_runtime::native_memory::native_prompt_block_traced(
+                    self.config.memory_enabled,
+                    &self.config.memory_path,
+                    &self.config.workspace,
+                    &self.session.id,
+                );
+                let budgets = self.instruction_budgets(context);
+                let (prompt, assembly) = self.compose_stable_system_prompt_with_assembly(
+                    context,
+                    &raw,
+                    memory.as_deref(),
+                    budgets,
+                );
+                self.session.project_context = Some(raw);
+                (Some(prompt), Some(assembly))
+            }
+        };
+        self.session.instruction_assembly = assembly.map(Arc::new);
+        self.instruction_guard_key = None;
+        let stable_hash = system_prompt_hash(stable_prompt.as_ref());
         self.session.pinned_prompt_context = Some(context.clone());
         if self.session.last_system_prompt_hash != Some(stable_hash) {
             self.session.system_prompt = stable_prompt;
@@ -9186,14 +9384,14 @@ impl Engine {
     ///   delta is returned as a bounded `<context_update>` snapshot for the
     ///   caller to append as a user-role message *before* the user's message
     ///   — a normal history append, so the prefix still extends.
-    /// - Returns `None` when nothing changed or a header re-pin absorbed it.
+    /// - Returns `Ok(None)` when nothing changed or a header re-pin absorbed it.
     fn refresh_pinned_header_for_turn(
         &mut self,
         context: &NextTurnPromptContext,
-    ) -> Option<String> {
-        self.record_project_trust_warning();
+    ) -> Result<Option<String>, String> {
+        self.pending_instruction_notices.clear();
         if self.session.system_prompt_override {
-            return None;
+            return Ok(None);
         }
         let explicit_reason = match self.session.pinned_prompt_context.as_ref() {
             None => Some("system".to_string()),
@@ -9204,14 +9402,55 @@ impl Engine {
         };
         if let Some(reason) = explicit_reason {
             self.refresh_system_prompt_from_context_with_reason(context, &reason);
-            return None;
+            return Ok(None);
         }
+        if self.host_owned_system_prompt().is_some() {
+            return Ok(None);
+        }
+        self.record_project_trust_warning();
+        let memory = codewhale_runtime::native_memory::native_prompt_block_traced(
+            self.config.memory_enabled,
+            &self.config.memory_path,
+            &self.config.workspace,
+            &self.session.id,
+        );
+        let observed = self.observe_context_update(context, memory.as_deref())?;
+        if let Some(notice) = observed.notice {
+            self.queue_instruction_notice_body(notice);
+        }
+        if observed.message.is_some() {
+            self.session.context_update_baseline = Some(observed.current_text);
+            if let Some(pm) = self.session.prefix_stability.as_mut() {
+                pm.note_context_update();
+            }
+        }
+        Ok(observed.message)
+    }
 
-        let composed = self.compose_stable_system_prompt(context);
-        let composed_hash = system_prompt_hash(composed.as_ref());
-        if self.session.last_system_prompt_hash == Some(composed_hash) {
-            return None;
-        }
+    fn observe_context_update(
+        &self,
+        context: &NextTurnPromptContext,
+        memory: Option<&str>,
+    ) -> Result<context::ObservedContextUpdate, String> {
+        let raw = crate::project_context::capture_instruction_context(
+            &self.config.workspace,
+            &self.config.instructions,
+            &self.instruction_settings,
+        );
+        let budgets = self.session.instruction_assembly.as_deref().map_or_else(
+            || self.instruction_budgets(context),
+            |assembly| assembly.budgets,
+        );
+        let (prompt, assembly) =
+            self.compose_stable_system_prompt_with_assembly(context, &raw, memory, budgets);
+        let (composed, assembly, _) = prompts::guard_instruction_prefix(
+            Some(prompt),
+            Some(&raw),
+            Some(assembly),
+            budgets,
+            &[],
+        )
+        .map_err(|refusal| refusal.render(&self.config.locale_tag))?;
         let pinned_text =
             codewhale_core::prefix_cache::system_prompt_text(self.session.system_prompt.as_ref());
         let known_text = self
@@ -9220,69 +9459,113 @@ impl Engine {
             .clone()
             .unwrap_or(pinned_text);
         let current_text = codewhale_core::prefix_cache::system_prompt_text(composed.as_ref());
-        if known_text == current_text {
-            return None;
-        }
-        let summary =
-            codewhale_core::prefix_cache::context_update_message(&known_text, &current_text)?;
-        self.session.context_update_baseline = Some(current_text);
-        if let Some(pm) = self.session.prefix_stability.as_mut() {
-            pm.note_context_update();
-        }
-        Some(summary)
+        let message =
+            codewhale_core::prefix_cache::context_update_message(&known_text, &current_text);
+        let notice = assembly
+            .as_ref()
+            .filter(|observed| {
+                !self
+                    .session
+                    .instruction_assembly
+                    .as_ref()
+                    .is_some_and(|installed| {
+                        installed
+                            .notices
+                            .iter()
+                            .filter(|notice| {
+                                notice.limit
+                                    != crate::project_context::InstructionLimit::StaticGuard
+                            })
+                            .eq(observed.notices.iter())
+                    })
+            })
+            .and_then(|assembly| {
+                crate::project_context::render_notice_body(
+                    &assembly.notices,
+                    &self.config.locale_tag,
+                )
+            });
+        Ok(context::ObservedContextUpdate {
+            current_text,
+            message,
+            notice,
+        })
     }
 
-    /// Compose the stable system prompt for an explicit route, without
-    /// touching session state.
-    ///
-    /// [`Self::refresh_system_prompt`] calls it for the installed route;
-    /// `/preview-request` calls it for the route the *next* turn would use,
-    /// which may be a different model with a different context window when
-    /// auto routing is on. Extracting it is what lets a preview describe the
-    /// next prompt exactly without mutating the session to find out.
-    pub(super) fn compose_stable_system_prompt(
-        &self,
-        context: &NextTurnPromptContext,
-    ) -> Option<SystemPrompt> {
-        self.compose_stable_system_prompt_with_assembly(context, self.active_guard_trim)
-            .0
-    }
-
-    /// Compose the stable system prompt together with the instruction assembly
-    /// that produced it, optionally under a static-prefix guard trim.
-    ///
-    /// The assembly carries the budgets and every trim/skip notice, so the
-    /// guard can trim the largest scope and the caller can tell the user and
-    /// the model what was lost.
-    pub(super) fn compose_stable_system_prompt_with_assembly(
-        &self,
-        context: &NextTurnPromptContext,
-        guard_trim: Option<crate::project_context::InstructionGuardTrim>,
-    ) -> (
-        Option<SystemPrompt>,
-        Option<crate::project_context::InstructionAssembly>,
-    ) {
+    fn host_owned_system_prompt(&self) -> Option<SystemPrompt> {
         if let Some(rlm) = self.rlm_host.as_ref() {
-            return (Some(rlm.system_prompt.clone()), None);
+            return Some(rlm.system_prompt.clone());
         }
         if let Some(child) = self.child_host.as_ref() {
             // The configured role is input to this same composer, and is
             // retained across route/mode/header refreshes. Volatile Native
             // contributions and work facts still append to Core Session.
-            return (Some(child.system_prompt.clone()), None);
+            return Some(child.system_prompt.clone());
         }
         if self.api_config.runtime_chat_isolated {
-            return (
-                Some(SystemPrompt::Text(ISOLATED_CHAT_SYSTEM_PROMPT.to_string())),
-                None,
-            );
+            return Some(SystemPrompt::Text(ISOLATED_CHAT_SYSTEM_PROMPT.to_string()));
         }
-        let user_memory_block = codewhale_runtime::native_memory::native_prompt_block_traced(
+        None
+    }
+
+    /// Compose the stable system prompt for an explicit route, without
+    /// touching session state.
+    ///
+    /// `/preview-request` goes through [`Self::compose_preview_prefix`] for the
+    /// route the *next* turn would use,
+    /// which may be a different model with a different context window when
+    /// auto routing is on. Extracting it is what lets a preview describe the
+    /// next prompt exactly without mutating the session to find out.
+    #[cfg(test)]
+    pub(super) fn compose_stable_system_prompt(
+        &self,
+        context: &NextTurnPromptContext,
+    ) -> Option<SystemPrompt> {
+        self.compose_preview_prefix(context).0
+    }
+
+    pub(super) fn compose_preview_prefix(
+        &self,
+        context: &NextTurnPromptContext,
+    ) -> (
+        Option<SystemPrompt>,
+        Option<crate::project_context::ProjectContext>,
+        Option<crate::project_context::InstructionAssembly>,
+    ) {
+        if let Some(prompt) = self.host_owned_system_prompt() {
+            return (Some(prompt), None, None);
+        }
+        let raw = crate::project_context::capture_instruction_context(
+            &self.config.workspace,
+            &self.config.instructions,
+            &self.instruction_settings,
+        );
+        let memory = codewhale_runtime::native_memory::native_prompt_block(
             self.config.memory_enabled,
             &self.config.memory_path,
             &self.config.workspace,
-            &self.session.id,
         );
+        let budgets = self.instruction_budgets(context);
+        let (prompt, assembly) = self.compose_stable_system_prompt_with_assembly(
+            context,
+            &raw,
+            memory.as_deref(),
+            budgets,
+        );
+        (Some(prompt), Some(raw), Some(assembly))
+    }
+
+    /// Compose the root-owned stable system prompt together with the
+    /// instruction assembly that produced it. The assembly carries the budgets
+    /// and every trim/skip notice, so the caller can enforce the static-prefix
+    /// guard and tell the user and the model what was lost.
+    pub(super) fn compose_stable_system_prompt_with_assembly(
+        &self,
+        context: &NextTurnPromptContext,
+        raw: &crate::project_context::ProjectContext,
+        user_memory_block: Option<&str>,
+        budgets: crate::project_context::InstructionBudgets,
+    ) -> (SystemPrompt, crate::project_context::InstructionAssembly) {
         let prompt_host = if self.config.terminal_chrome_enabled {
             prompts::PromptHost::Interactive
         } else {
@@ -9294,13 +9577,13 @@ impl Engine {
             &self.config.workspace,
             Some(self.session.id.as_str()),
         );
-        let (base, assembly) = prompts::system_prompt_with_instruction_assembly_for_host(
+        prompts::system_prompt_with_instruction_assembly_for_host(
             &self.config.workspace,
             None,
             Some(&self.config.skills_dir),
             Some(&self.config.instructions),
             prompts::PromptSessionContext {
-                user_memory_block: user_memory_block.as_deref(),
+                user_memory_block,
                 goal_objective: context.goal_objective.as_deref(),
                 project_context_pack_enabled: self.config.project_context_pack_enabled,
                 locale_tag: &self.config.locale_tag,
@@ -9318,154 +9601,140 @@ impl Engine {
                 mode: context.mode,
             },
             prompt_host,
-            guard_trim,
-        );
-        (Some(base), Some(assembly))
+            Some((raw, &self.instruction_settings, budgets)),
+        )
     }
 
-    /// Deliver the one-shot instruction-budget notice and, once per session,
-    /// enforce the static-prefix guard (#6526).
-    ///
-    /// The notice reaches the model as a synthetic user message with runtime
-    /// provenance — the same mechanism LSP diagnostics use — so it is part of
-    /// the logged transcript rather than an invisible prompt edit.
+    fn instruction_budgets(
+        &self,
+        context: &NextTurnPromptContext,
+    ) -> crate::project_context::InstructionBudgets {
+        crate::project_context::InstructionBudgets::resolve_or_default(
+            &self.instruction_settings.budget,
+            crate::route_runtime::resolve_context_window(
+                context.provider,
+                &context.model,
+                context.route_limits,
+                None,
+                None,
+            )
+            .instruction_budget_tokens(),
+            context.planned_output_tokens.map(|tokens| tokens as usize),
+        )
+    }
+
+    fn queue_instruction_notice(&mut self) {
+        let body = self
+            .session
+            .instruction_assembly
+            .as_deref()
+            .and_then(|assembly| {
+                crate::project_context::render_notice_body(
+                    &assembly.notices,
+                    &self.config.locale_tag,
+                )
+            });
+        if let Some(body) = body {
+            self.queue_instruction_notice_body(body);
+        }
+    }
+
+    fn queue_instruction_notice_body(&mut self, body: String) {
+        if !self.instruction_notice_in_history(&body, &self.session.messages)
+            && !self.pending_instruction_notices.contains(&body)
+        {
+            self.pending_instruction_notices.push(body);
+        }
+    }
+
+    fn instruction_notice_in_history(&self, body: &str, messages: &[Message]) -> bool {
+        let header = codewhale_localization::tr(
+            codewhale_localization::resolve_locale(&self.config.locale_tag),
+            codewhale_localization::MessageId::InstructionNoticeHeader,
+        );
+        messages
+            .iter()
+            .filter_map(|message| match message.content.first() {
+                Some(ContentBlock::Text { text, .. })
+                    if matches!(&message.role, Role::User) && text.starts_with(header.as_ref()) =>
+                {
+                    Some(text.as_str())
+                }
+                _ => None,
+            })
+            .any(|notice| notice == body)
+    }
+
     pub(super) async fn apply_instruction_budget_notices(
         &mut self,
         tools: &[codewhale_models::Tool],
-    ) {
-        if let Some(body) = self.pending_instruction_notice.take() {
-            self.add_session_message(self.runtime_text_message_with_turn_metadata(
-                body,
-                crate::core::ops::UserInputProvenance::Runtime,
-            ))
-            .await;
+        output_tokens: u32,
+    ) -> Result<(), String> {
+        if let Some(error) = self.instruction_budget_error.as_deref() {
+            return Err(format!("invalid [instruction_budget]: {error}"));
         }
-        if self.static_prefix_guard_checked {
-            return;
-        }
-        if let Some(body) = self.enforce_static_prefix_guard(tools).await {
-            self.add_session_message(self.runtime_text_message_with_turn_metadata(
-                body,
-                crate::core::ops::UserInputProvenance::Runtime,
-            ))
-            .await;
-        }
-    }
-
-    /// Keep the stable prefix — base prompt, instructions, skills index and
-    /// tool schemas — under `static_prefix_guard_percent` of the usable
-    /// window.
-    ///
-    /// Trims the largest instruction scope by the overage, recomposes once,
-    /// re-measures once. No loop: when every scope is already zero and the
-    /// prefix is still over, the session continues under `policy = "trim"`
-    /// with an explicit `static_guard_unsatisfied` notice (`policy = "refuse"`
-    /// is enforced at session start, before the engine exists).
-    async fn enforce_static_prefix_guard(
-        &mut self,
-        tools: &[codewhale_models::Tool],
-    ) -> Option<String> {
-        if self.session.system_prompt_override {
-            return None;
-        }
-        let context = self.session.pinned_prompt_context.clone()?;
-        let window = crate::route_budget::route_context_window_tokens(
-            self.api_provider,
-            &self.session.model,
-            self.active_route_limits,
-        ) as usize;
-        let budgets = crate::project_context::active_instruction_budgets(
-            Some(window),
-            Some(&self.session.model),
-        )
-        .unwrap_or_else(|_| crate::project_context::InstructionBudgets::defaults_for(Some(window)));
-        let measured = prompts::measure_static_prefix(self.session.system_prompt.as_ref(), tools);
-        if measured <= budgets.static_guard_tokens {
-            return None;
-        }
-        let over = measured - budgets.static_guard_tokens;
-
-        // The assembly reads directories and configured files: run it on a
-        // blocking worker so a slow disk cannot stall the engine's runtime
-        // thread before a provider request.
-        let workspace = self.config.workspace.clone();
-        let configured = self.config.instructions.clone();
-        let assembly = tokio::task::spawn_blocking(move || {
-            crate::project_context::instruction_assembly_for(&workspace, &configured, &budgets)
-        })
-        .await
-        .ok()?;
-
-        let scope = assembly
-            .largest_scope
-            .unwrap_or(crate::project_context::InstructionScope::Global);
-        let retained = match scope {
-            crate::project_context::InstructionScope::Global => assembly.global_tokens,
-            crate::project_context::InstructionScope::Project => assembly.project_tokens,
-        };
-
-        // Nothing left to trim: the guard is unsatisfiable. Continue under
-        // `policy = "trim"` with an explicit terminal notice — `refuse` is
-        // enforced at session start, before the engine exists.
-        if retained <= over {
-            self.session.pending_prefix_change_reason =
-                Some("instruction-budget:static-guard-unsatisfiable".to_string());
-            self.active_guard_trim =
-                Some(crate::project_context::InstructionGuardTrim { scope, tokens: 0 });
-            self.static_prefix_guard_checked = true;
-            return Some(
-                crate::project_context::InstructionNotice::static_guard(scope, over, true)
-                    .to_string(),
-            );
-        }
-
-        // Trim by the overage from what the scope actually kept, so the
-        // recomposed prefix really loses that many tokens.
-        let trim = crate::project_context::InstructionGuardTrim {
-            scope,
-            tokens: retained - over,
-        };
-        let (prompt, trimmed_assembly) =
-            self.compose_stable_system_prompt_with_assembly(&context, Some(trim));
-        let prompt = prompt?;
-        let after = prompts::measure_static_prefix(Some(&prompt), tools);
-        self.session.system_prompt = Some(prompt);
-        self.session.last_system_prompt_hash =
-            Some(system_prompt_hash(self.session.system_prompt.as_ref()));
-        self.session.pending_prefix_change_reason =
-            Some("instruction-budget:static-guard".to_string());
-        self.active_guard_trim = Some(trim);
-        self.static_prefix_guard_checked = true;
-
-        let retained_after = trimmed_assembly
-            .as_ref()
-            .map_or(0, |assembly| assembly.tokens_kept());
-        let unsatisfiable = matches!(
-            crate::project_context::static_guard_outcome(
-                after,
-                &budgets,
-                Some(scope),
-                retained_after
-            ),
-            crate::project_context::StaticGuardOutcome::Unsatisfiable { .. }
+        let mut context = self
+            .session
+            .pinned_prompt_context
+            .clone()
+            .unwrap_or_else(|| self.installed_next_turn_prompt_context());
+        context.planned_output_tokens = Some(output_tokens);
+        let budgets = self.instruction_budgets(&context);
+        let tool_catalog = preview::active_tool_catalog_sha256(tools);
+        let key = format!(
+            "{:?}:{tool_catalog}:{budgets:?}",
+            system_prompt_hash(self.session.system_prompt.as_ref())
         );
-        let mut body =
-            crate::project_context::InstructionNotice::static_guard(scope, over, unsatisfiable)
-                .to_string();
-        // The guard's own rebuild produces per-source losses; publish them with
-        // the scope-level sentence so the model sees which files went.
-        if let Some(losses) = trimmed_assembly
-            .as_ref()
-            .and_then(|assembly| crate::project_context::render_notice_body(&assembly.notices))
-        {
-            body.push('\n');
-            body.push_str(&losses);
+        let mut receipt_changed = false;
+        if self.instruction_guard_key.as_ref() != Some(&key) {
+            let (prompt, assembly, unowned_notices) = prompts::guard_instruction_prefix(
+                self.session.system_prompt.clone(),
+                self.session.project_context.as_ref(),
+                self.session.instruction_assembly.as_deref().cloned(),
+                budgets,
+                tools,
+            )
+            .map_err(|refusal| refusal.render(&self.config.locale_tag))?;
+            let changed = self.session.system_prompt != prompt;
+            receipt_changed =
+                changed || self.session.instruction_assembly.as_deref() != assembly.as_ref();
+            self.session.system_prompt = prompt;
+            self.session.instruction_assembly = assembly.map(Arc::new);
+            self.queue_instruction_notice();
+            if let Some(body) = crate::project_context::render_notice_body(
+                &unowned_notices,
+                &self.config.locale_tag,
+            ) {
+                self.queue_instruction_notice_body(body);
+            }
+            if changed {
+                self.session.last_system_prompt_hash =
+                    Some(system_prompt_hash(self.session.system_prompt.as_ref()));
+                self.session.pending_prefix_change_reason =
+                    Some("instruction-budget:static-guard".into());
+                self.session.context_update_baseline = None;
+            }
+            self.instruction_guard_key = Some(format!(
+                "{:?}:{tool_catalog}:{budgets:?}",
+                system_prompt_hash(self.session.system_prompt.as_ref())
+            ));
         }
-        Some(body)
+        let notices = std::mem::take(&mut self.pending_instruction_notices);
+        if notices.is_empty() && receipt_changed {
+            self.emit_session_updated().await;
+        }
+        for body in notices {
+            self.add_session_message(self.runtime_text_message_with_turn_metadata(
+                body,
+                crate::core::ops::UserInputProvenance::Runtime,
+            ))
+            .await;
+        }
+        Ok(())
     }
 
     fn installed_next_turn_prompt_context(&self) -> NextTurnPromptContext {
-        NextTurnPromptContext::for_planned_turn(
+        let mut context = NextTurnPromptContext::for_planned_turn(
             self.api_provider,
             self.config.model.clone(),
             self.active_route_limits,
@@ -9478,7 +9747,22 @@ impl Engine {
             self.config.goal_token_budget,
             self.config.translation_enabled,
             self.config.verbosity.clone(),
-        )
+        );
+        let effort = turn_loop::resolve_auto_effort(
+            self.session.reasoning_effort.as_deref(),
+            self.api_provider,
+            &self.api_config.active_route_base_url(),
+            &self.config.model,
+        );
+        context.planned_output_tokens =
+            Some(crate::route_budget::effective_max_output_tokens_for_turn(
+                self.api_provider,
+                &self.config.model,
+                self.active_route_limits,
+                None,
+                effort.as_deref(),
+            ));
+        context
     }
 }
 
@@ -9491,7 +9775,7 @@ fn default_plugin_tools_dir() -> PathBuf {
         .join("tools")
 }
 
-fn plugin_tools_dir(tools_config: Option<&crate::config::ToolsConfig>) -> PathBuf {
+fn plugin_tools_dir(tools_config: Option<&codewhale_runtime::config::ToolsConfig>) -> PathBuf {
     if let Some(tools_config) = tools_config
         && let Some(custom_dir) = tools_config.plugin_dir.as_deref()
     {
@@ -9515,7 +9799,7 @@ fn first_notice(key: &str) -> bool {
 /// this added and the overrides refused for naming a built-in (D4).
 fn configure_plugin_tools(
     tool_registry: &mut crate::tools::ToolRegistry,
-    tools_config: Option<&crate::config::ToolsConfig>,
+    tools_config: Option<&codewhale_runtime::config::ToolsConfig>,
 ) -> (std::collections::HashSet<String>, Vec<String>) {
     // Everything registered before the plugin directory loads is built in
     // (native and host-dynamic tools); no script tool may replace it (D4).
@@ -10029,7 +10313,7 @@ pub(crate) enum MockApprovalEvent {
     },
     RetryWithPolicy {
         id: String,
-        policy: crate::sandbox::SandboxPolicy,
+        policy: codewhale_sandbox::SandboxPolicy,
     },
 }
 
@@ -10136,7 +10420,7 @@ pub(crate) fn mock_engine_handle() -> MockEngineHandle {
     let compaction_cancellation = Arc::new(StdMutex::new(CompactionCancellationState::default()));
     let handle = EngineHandle {
         goal_state: new_shared_goal_state(),
-        sandbox_enforcement: crate::sandbox::policy::SandboxEnforcement::Unavailable,
+        sandbox_enforcement: codewhale_sandbox::policy::SandboxEnforcement::Unavailable,
         tx_op,
         rx_event: Arc::new(RwLock::new(rx_event)),
         cancel_token: shared_cancel_token,
@@ -10180,6 +10464,7 @@ pub(crate) struct TurnMetadataSnapshot<'a> {
     pub(crate) approval_mode: ApprovalMode,
     pub(crate) working_set: &'a crate::working_set::WorkingSet,
     pub(crate) policy_narrowing: Option<&'a PolicyNarrowingEvent>,
+    pub(crate) messages: &'a [Message],
 }
 
 /// Immutable prompt facts for the next accepted turn.
@@ -10190,17 +10475,33 @@ pub(crate) struct TurnMetadataSnapshot<'a> {
 /// inherit the installed turn's goal, translation, verbosity, mode,
 /// model, or context window. Workspace-scoped prompt inputs remain engine
 /// configuration and are documented separately as snapshot dependencies.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(crate) struct NextTurnPromptContext {
     pub(crate) provider: ProviderKind,
     pub(crate) model: String,
     pub(crate) route_limits: Option<codewhale_config::route::RouteLimits>,
+    pub(crate) planned_output_tokens: Option<u32>,
     pub(crate) mode: AppMode,
     pub(crate) goal_objective: Option<String>,
     pub(crate) goal_token_budget: Option<u32>,
     pub(crate) translation_enabled: bool,
     pub(crate) verbosity: Option<String>,
 }
+
+impl PartialEq for NextTurnPromptContext {
+    fn eq(&self, other: &Self) -> bool {
+        self.provider == other.provider
+            && self.model == other.model
+            && self.route_limits == other.route_limits
+            && self.mode == other.mode
+            && self.goal_objective == other.goal_objective
+            && self.goal_token_budget == other.goal_token_budget
+            && self.translation_enabled == other.translation_enabled
+            && self.verbosity == other.verbosity
+    }
+}
+
+impl Eq for NextTurnPromptContext {}
 
 /// Name the explicit prompt inputs that differ between two contexts, for the
 /// `change:<what>` prefix-pin reason.
@@ -10254,6 +10555,13 @@ impl NextTurnPromptContext {
     ) -> Self {
         Self {
             provider,
+            planned_output_tokens: Some(crate::route_budget::effective_max_output_tokens_for_turn(
+                provider,
+                &model,
+                route_limits,
+                None,
+                None,
+            )),
             model,
             route_limits,
             mode,
@@ -10428,9 +10736,9 @@ pub(crate) struct TurnRouteContext {
     pub(crate) client: Option<CodewhaleClient>,
     /// Route-scoped runtime config, captured by the planner. A preview must
     /// never construct child agents from the previously installed config.
-    pub(crate) api_config: Box<crate::config::Config>,
+    pub(crate) api_config: Box<codewhale_runtime::config::Config>,
     pub(crate) locale_tag: String,
-    pub(crate) role_models: HashMap<String, crate::config::SubagentModelOverride>,
+    pub(crate) role_models: HashMap<String, codewhale_runtime::config::SubagentModelOverride>,
     pub(crate) auto_model: bool,
     pub(crate) reasoning_effort: Option<String>,
     pub(crate) reasoning_effort_auto: bool,
@@ -10562,14 +10870,17 @@ pub use context::context_input_budget_for_route;
 use context::route_context_budget_for_provider;
 use context::{
     MAX_CONTEXT_RECOVERY_ATTEMPTS, context_overflow_exhausted_message,
-    effective_max_output_tokens_for_route, extract_compaction_summary_prompt,
-    is_context_length_error_message, is_image_input_rejection_message,
-    route_context_budget_for_route, summarize_text,
+    extract_compaction_summary_prompt, is_context_length_error_message,
+    is_image_input_rejection_message, route_context_budget_for_route, summarize_text,
 };
 #[cfg(test)]
-use context::{context_input_budget_for_provider, effective_max_output_tokens};
+use context::{
+    context_input_budget_for_provider, effective_max_output_tokens,
+    effective_max_output_tokens_for_route,
+};
 mod dispatch;
 mod lsp_hooks;
+pub(crate) mod review;
 pub(crate) mod reviewer;
 pub(crate) mod streaming;
 mod token_estimate_cache;

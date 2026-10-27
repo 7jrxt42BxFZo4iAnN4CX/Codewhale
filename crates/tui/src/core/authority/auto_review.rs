@@ -470,7 +470,7 @@ impl<'a> AutoReviewContext<'a> {
             let _membership = crate::test_support::join_env_scope(env_ticket);
             let trusted = workspace
                 .as_deref()
-                .is_some_and(crate::config::is_workspace_trusted);
+                .is_some_and(codewhale_runtime::config::is_workspace_trusted);
             AutoReviewContext::<'static>::from_tool_call_inner(
                 Cow::Owned(tool_name),
                 &params,
@@ -644,7 +644,7 @@ impl AutoReviewRule {
 }
 
 fn rule_from_config(
-    config: &crate::config::AutoReviewRuleConfig,
+    config: &codewhale_runtime::config::AutoReviewRuleConfig,
     index: usize,
     action: AutoReviewAction,
 ) -> AutoReviewRule {
@@ -682,7 +682,7 @@ fn rule_from_config(
     if let Some(action_kind) = config
         .action_kind
         .as_deref()
-        .and_then(crate::config::auto_review_action_kind_name)
+        .and_then(codewhale_runtime::config::auto_review_action_kind_name)
         .and_then(ToolActionKind::from_name)
     {
         rule = rule.action_kind(action_kind);
@@ -698,7 +698,7 @@ pub struct AutoReviewPolicy {
 
 impl AutoReviewPolicy {
     #[must_use]
-    pub fn from_config(config: &crate::config::Config) -> Self {
+    pub fn from_config(config: &codewhale_runtime::config::Config) -> Self {
         let Some(rules) = config.auto_review.as_ref() else {
             return Self::default();
         };
@@ -3882,7 +3882,7 @@ mod tests {
         let home = tempfile::tempdir().expect("test home");
         let workspace = tempfile::tempdir().expect("workspace");
         let _home = EnvVarGuard::set("CODEWHALE_HOME", home.path());
-        crate::config::save_workspace_trust(workspace.path()).expect("save trust");
+        codewhale_runtime::config::save_workspace_trust(workspace.path()).expect("save trust");
 
         let context = tokio::time::timeout(
             Duration::from_secs(2),

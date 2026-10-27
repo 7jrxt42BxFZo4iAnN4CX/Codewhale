@@ -52,6 +52,8 @@ execpolicy        cargo test -p codewhale-execpolicy --lib --locked
 hooks             cargo test -p codewhale-hooks --lib --locked
 lane              cargo test -p codewhale-lane --lib --locked
 mcp               cargo test -p codewhale-mcp --lib --locked
+net               cargo test -p codewhale-net --lib --locked
+notify            cargo test -p codewhale-notify --lib --locked
 paths             cargo test -p codewhale-paths --lib --locked
 portable-config cargo test -p codewhale-portable-config --lib --locked
 portable-core-navigation cargo test -p codewhale-portable-core-navigation --lib --locked
@@ -195,6 +197,8 @@ case $area in
   hooks) pkg=codewhale-hooks ;;
   lane) pkg=codewhale-lane ;;
   mcp) pkg=codewhale-mcp ;;
+  net) pkg=codewhale-net ;;
+  notify) pkg=codewhale-notify ;;
   paths) pkg=codewhale-paths ;;
   portable-config) pkg=codewhale-portable-config ;;
   portable-core-navigation) pkg=codewhale-portable-core-navigation ;;

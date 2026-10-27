@@ -163,7 +163,7 @@ fn probe_git(workspace: &Path) -> GitProbe {
 fn probe_bwrap_available() -> bool {
     #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
     {
-        crate::sandbox::bwrap::is_available()
+        codewhale_sandbox::bwrap::is_available()
     }
     #[cfg(not(all(target_os = "linux", not(target_env = "ohos"))))]
     {
@@ -304,7 +304,7 @@ mod tests {
 
         assert_eq!(
             parsed.bwrap_available,
-            crate::sandbox::bwrap::is_available()
+            codewhale_sandbox::bwrap::is_available()
         );
         assert_eq!(parsed.sandbox_available, parsed.bwrap_available);
         assert_eq!(

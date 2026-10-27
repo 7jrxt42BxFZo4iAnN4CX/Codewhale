@@ -21,14 +21,14 @@ use unicode_normalization::UnicodeNormalization;
 use codewhale_execpolicy::ApprovalMode;
 
 use crate::lsp::LspManager;
-use crate::network_policy::NetworkPolicyDecider;
 use crate::rlm::session::SessionObjectSnapshot;
 use crate::rlm::session::{SharedRlmSessionStore, new_shared_rlm_session_store};
-use crate::sandbox::backend::SandboxBackend;
 use crate::tools::handle::{SharedHandleStore, new_shared_handle_store};
 use crate::tools::shell::{SharedShellManager, new_shared_shell_manager};
 use codewhale_agent_contract::worker_profile::ShellPolicy;
+use codewhale_net::network_policy::NetworkPolicyDecider;
 use codewhale_runtime::features::Features;
+use codewhale_sandbox::backend::SandboxBackend;
 #[allow(unused_imports)]
 pub use codewhale_tools::{
     ApprovalRequirement, PreparedToolCall, ResourceClaim, ToolCapability, ToolError,
@@ -618,7 +618,7 @@ pub struct ToolExecutionState {
     pub plugin_registry: Option<Arc<crate::plugins::PluginRegistry>>,
     /// Elevated sandbox policy override (used when retrying after sandbox denial).
     /// This overrides the default sandbox behavior for shell commands.
-    pub elevated_sandbox_policy: Option<crate::sandbox::SandboxPolicy>,
+    pub elevated_sandbox_policy: Option<codewhale_sandbox::SandboxPolicy>,
     /// Whether the enclosing host is the real headless `codewhale exec`
     /// process. `persist:true` background services are only permitted there;
     /// interactive TUI, desktop/app-server, and hosted runtime-thread engines
@@ -698,7 +698,7 @@ pub struct ToolExecutionState {
 
     /// Which search backend `web_search` should use. Default: Firecrawl. Set via
     /// `[search] provider` in config.toml.
-    pub search_provider: crate::config::SearchProvider,
+    pub search_provider: codewhale_runtime::config::SearchProvider,
     /// Optional Firecrawl key, or required key for other API search providers.
     /// Metaso also falls back to the `METASO_API_KEY` env var.
     /// Baidu also falls back to `BAIDU_SEARCH_API_KEY`.
@@ -815,7 +815,7 @@ impl ToolContext {
                 memory_path: None,
                 lsp_manager: None,
                 large_output_router: None,
-                search_provider: crate::config::SearchProvider::default(),
+                search_provider: codewhale_runtime::config::SearchProvider::default(),
                 search_api_key: None,
                 search_base_url: None,
                 provider_native_search: None,
@@ -1344,7 +1344,10 @@ impl ToolContext {
     ///
     /// This is used when retrying a tool after a sandbox denial, to run
     /// with elevated permissions.
-    pub fn with_elevated_sandbox_policy(mut self, policy: crate::sandbox::SandboxPolicy) -> Self {
+    pub fn with_elevated_sandbox_policy(
+        mut self,
+        policy: codewhale_sandbox::SandboxPolicy,
+    ) -> Self {
         self.elevated_sandbox_policy = Some(policy);
         self
     }

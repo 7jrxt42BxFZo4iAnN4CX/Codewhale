@@ -3,17 +3,21 @@
 Plan for issue #6526 (and the comment at
 https://github.com/codewhale-hq/Codewhale/issues/6526#issuecomment-6393297659).
 
-- **Status:** v5 — implemented on this branch (see §10 for what shipped and
-  where the plan was written against an older tree).
-- **Branch:** `fix/instruction-budget-6526` (from `main` at `498dd5a87`, 2026-10-24).
+- **Status:** candidate implementation for contributor PR #7086; local verification and
+  acceptance are recorded separately. This document does not establish a merge or release.
+- **Contributor source:** `fix/instruction-budget-6526` (from `main` at `498dd5a87`,
+  2026-10-24); maintainer integration uses canonical `main`.
 - **Scope:** standing instruction files (`AGENTS.md`, `CLAUDE.md`, `instructions.md`,
   the top-level `instructions = [...]` array, `rules/`). Skills are a separate issue (#7073).
 - **Orientation:** OpenCode's selection model (AGENTS.md wins, otherwise CLAUDE.md) with
   codewhale's own sources preserved; no content truncation while a source is within budget.
 
-## 1. Problem
+## 1. Historical problem
 
-Today codewhale has four instruction sources, three ceilings, and two different trim
+This section records the pre-change baseline used for the contributor proposal. Its file
+locations and measurements are historical, not current source receipts.
+
+Before this change, codewhale has four instruction sources, three ceilings, and two different trim
 directions — none of them visible to the operator.
 
 ### 1.1 Global layer
@@ -95,7 +99,7 @@ the loader and gone by trim time. The project-context cache
 window. Both facts constrain the design: segment-level trimming needs segments kept on
 `ProjectContext`, and window-derived budgets must not be baked into a file-keyed cache.
 
-## 2. What we compared
+## 2. Historical comparison
 
 ### Claude Code (`code.claude.com/docs/en/memory`)
 
@@ -118,7 +122,7 @@ window. Both facts constrain the design: segment-level trimming needs segments k
   synthetic message `Instructions from: <path>\n<content>`.
 - Order: global → project (nearest → farthest) → configured.
 
-### codewhale today
+### codewhale before this change
 
 Concatenate global + project + rules, then trim to 48 KiB: instructions keep the tail, rules
 keep the head, global is discarded first. The only one of the three that cuts content.
@@ -127,9 +131,10 @@ keep the head, global is discarded first. The only one of the three that cuts co
 
 ### 3.1 Selection
 
-- **Project, per directory:** `AGENTS.md` wins; if absent, `CLAUDE.md` is the default
-  fallback (OpenCode parity), controlled by `claude_fallback = true`. `CLAUDE.md` is also read
-  alongside `AGENTS.md` when `project_instruction_imports` includes `claude`.
+- **Project, per directory:** `AGENTS.md` wins; if absent, `CLAUDE.md` is read only as an
+  opt-in fallback (OpenCode parity), enabled with `claude_fallback = true` — the default is
+  `false`, because importing another tool's instructions is never silent. `CLAUDE.md` is also
+  read alongside `AGENTS.md` when `project_instruction_imports` includes `claude`.
 
   | AGENTS.md | CLAUDE.md | `claude` import | `claude_fallback` | read |
   | --- | --- | --- | --- | --- |
@@ -137,8 +142,8 @@ keep the head, global is discarded first. The only one of the three that cuts co
   | loaded | loaded | no | any | AGENTS.md |
   | loaded | loaded | yes | any | both |
   | absent/skipped | loaded | yes | any | CLAUDE.md (explicit import outranks the fallback flag) |
-  | absent/skipped | loaded | no | true | CLAUDE.md |
-  | absent/skipped | loaded | no | false | nothing (explicit opt-out) |
+  | absent/skipped | loaded | no | true (opt-in) | CLAUDE.md |
+  | absent/skipped | loaded | no | false (default) | nothing |
   | absent/skipped | absent/skipped | any | any | nothing |
 
   `CLAUDE.md` here means `CLAUDE.md` or `.claude/CLAUDE.md` in the directory;
@@ -152,12 +157,14 @@ keep the head, global is discarded first. The only one of the three that cuts co
   says `duplicate`.
 
 - **Global:** the six existing candidates in order, then `~/.claude/CLAUDE.md` as the last
-  resort when none of the six loads and `claude_fallback = true`. Foreign files never outrank
-  codewhale's own.
+  resort when none of the six loads and either `claude_fallback = true` or the explicit
+  `claude` import is enabled. Foreign files never outrank codewhale's own.
 - **All ancestor directories** are read, root → workspace.
-- **Symlinks are followed** (current `open_read` behaviour); duplicates are detected by
-  canonical path (inode only on Unix) and loaded once. A project file symlinked to the global
-  file is counted as global; the project duplicate is reported, not counted twice.
+- **Symlinks:** project files are opened through `fs_confined::open_read`, which refuses a
+  symlink below the scope root; global and configured files use `open_user_read`, which
+  keeps intentional links and rejects anything that is not a regular file. Duplicates are
+  detected by canonical path and loaded once. A project file symlinked to the global file is
+  counted as global; the project duplicate is reported, not counted twice.
 - `.agents/AGENTS.md` is always a fragment; it is not deduped against a same-directory
   `AGENTS.md` unless the canonical path is identical.
 
@@ -166,53 +173,63 @@ keep the head, global is discarded first. The only one of the three that cuts co
 - Budgets are in **tokens**. Files and the per-file ceiling are in bytes; conversion uses the
   engine's token estimator on the assembled text, the same estimator the context report uses.
   No `bytes/4` shortcut (it underestimates Cyrillic by 30–50%).
-- **Usable window** = `context_window − max_output_tokens − safety_reserve`
-  (`safety_reserve` = 10% of the window, minimum 2,048 tokens). All percentages are of the
-  usable window, not the raw window.
+- **Usable window** = `context_window − planned_output_reservation − safety_reserve`
+  (`safety_reserve` = 10% of the window, minimum 2,048 tokens). The reservation is the
+  planned output cap the request will actually carry: effort normalized with
+  `resolve_auto_effort`, then `effective_max_output_tokens_for_turn`, intersected with the
+  client cap when the turn carries an explicit allowance. It is not the later,
+  input-dependent admitted cap, and never a goal token budget. A route whose window is
+  unknown has no usable window: relative ceilings and the guard are reported as unknown and
+  only the absolute scope caps apply. All percentages are of the usable window, not the raw
+  window.
 - Per-scope budgets, independent:
   `effective = min(absolute_tokens, percent × usable_window)`.
   Defaults: **100,000 tokens** and **25%** per scope. All values are positive; `0` is invalid
   (a finite budget is the point). `percent` is 1–100.
 - **Scope assignment:** global scope = the six global candidates + `~/.claude/CLAUDE.md` + the
   configured `instructions = [...]` entries (user-level authority). Project scope = the
-  per-directory chain + fragments + `CLAUDE.md` + rules. Configured entries are therefore
-  global, not project; rules are project.
-- **Static-prefix guard:** the static prefix = base system prompt + tool-use policy +
-  environment block + instructions + skills index + tool schemas + memory. It must stay under
-  `static_prefix_guard_percent` (default 80% of the usable window). The guard is the safety
-  net for non-instruction static content; it is not a substitute for a total-instructions key.
+  per-directory chain + `CLAUDE.md` + rules. Configured entries are therefore global,
+  not project; rules are project. The separately rendered additional fragments retain
+  their existing bounded-fragment cap and are outside these two scope budgets (§10).
+- **Static-prefix guard:** the measured prefix is every system block (base prompt, tool-use
+  policy, environment, instructions, skills index, memory, goals, inline authority) plus the
+  tool schemas the request carries. It must stay under `static_prefix_guard_percent`
+  (default 80% of the usable window). Only the two instruction scopes can be trimmed to
+  satisfy it. The guard is the safety net for non-instruction static content; it is not a
+  substitute for a total-instructions key.
 - **No separate "total instructions" key.** A key equal to the sum of the two scope caps
   (50%) would be inert; a smaller one would contradict the per-scope decision. The guard
   covers the actual risk.
-- Effective table (raw windows, before the output/safety reserve; the reserve only lowers the
-  usable window):
+- Worked examples with a 64K (65,536) output reservation:
 
-  | window | usable (approx) | per scope | both scopes | guard 80% | residual for other static |
-  | --- | --- | --- | --- | --- | --- |
-  | 32k | ~26.8k | 6,700 | 13,400 | 21,400 | 8,000 |
-  | 120k | ~105.8k | 26,450 | 52,900 | 84,600 | 31,700 |
-  | 128k | ~113.1k | 28,275 | 56,550 | 90,500 | 33,950 |
-  | 150k | ~132.8k | 33,200 | 66,400 | 106,200 | 39,800 |
-  | 1M | ~897.9k | 100,000 (10%) | 200,000 (20%) | 718,300 | 518,300 |
+  | window | usable | per scope | both scopes | guard 80% |
+  | --- | --- | --- | --- | --- |
+  | 128,000 | 49,664 | 12,416 | 24,832 | 39,731 |
+  | 1,000,000 | 834,464 | 100,000 (absolute cap) | 200,000 | 667,571 |
 
-  The owner's 1M expectation (10% per scope, 20% total) is preserved by the absolute cap.
-  A 32k window is best-effort. Two thresholds are distinct: guard trimming begins when
-  non-instruction static content exceeds the residual (~8,000 tokens at 32k); the guard is
-  `unsatisfiable` only when non-instruction static content alone exceeds the guard
-  (~21,400 tokens at 32k). In the first case instructions are trimmed by the overage; in the
-  second they reach zero and the session proceeds (or refuses, under `policy = refuse`).
+  On a large window the absolute cap wins: 100,000 tokens is 10% of a 1M window per scope.
+  A small window is best-effort. The guard trims instructions only until the prefix fits; it
+  is unsatisfiable when non-instruction content alone exceeds the guard, in which case both
+  scopes reach zero and the request proceeds under `policy = trim` or stops under
+  `policy = refuse`.
 
 ### 3.3 Per-file ceiling
 
-- `file_max_bytes = 8 MiB` is a memory-safety limit, not truncation. The size is checked with
-  `metadata()` before reading; a larger file is `skipped`, with a notice naming the file and
-  the limit. There is no `0`/unlimited value: a hard ceiling must always exist.
+- `file_max_bytes = 8 MiB` is a memory-safety limit, not truncation, and the configured
+  value can only lower it (validation rejects anything above 8 MiB). The read is bounded on
+  the open handle (`cap + 1` bytes, regular files only), not by trusting `metadata()`, so a
+  FIFO, a device, or a file that grows mid-read cannot become an unbounded read. A larger
+  file is `skipped`, with a notice naming the file and the limit. There is no
+  `0`/unlimited value: a hard ceiling must always exist.
+- A file that fits the ceiling still retains at most its first 100 KiB of text (a UTF-8
+  boundary head) followed by a marker naming the bytes kept and dropped, with a structured
+  `file_content` notice. This applies to instruction, rules, and configured files at
+  assembly; the structured constitution JSON reader keeps its own complete-document read.
 - A whitespace-only file is `skipped (empty)`.
 - `MAX_RULES_FILES = 50` stays as a safety cap, but its overflow is reported as
   `skipped (rules cap)` in the notice and `/context`; it is no longer silent.
-- Files are read as a whole up to the ceiling. For files near 8 MiB, tokenization is the
-  expensive step; the scope budget will trim after tokenization. A byte-side pre-cut is an
-  allowed optimization, not a behaviour change.
+- Because retention is capped at 100 KiB per file, tokenization never sees an 8 MiB file;
+  the scope budget trims what remains.
 
 ### 3.4 Trim semantics
 
@@ -229,24 +246,34 @@ keep the head, global is discarded first. The only one of the three that cuts co
 - Rules are charged to the project scope after project instructions; they keep the current
   head-first trim (rules are a flat filename-sorted list, with no nearest-scope hierarchy to
   preserve), and the marker and notice carry the numbers.
-- The trim amount is `over = content_tokens − budget_tokens`; trim `min(scope_tokens, over)`
-  from the chosen scope, then re-measure once. There is no loop.
+- A scope is trimmed once against its own ceiling. The static-prefix guard then makes one
+  bounded pass over both scopes, largest first, lowering a scope's ceiling by the measured
+  overage and re-measuring, with at most two attempts per scope. A ceiling of zero is
+  installed like any other and removes the scope. There is no convergence loop; a prefix
+  still over the guard afterwards is reported as unsatisfied.
 - The marker is included in the budget (as today: `max − marker_len`). The cut point is found
   by binary search on UTF-8 boundaries so the result is deterministic.
 - If trimming leaves zero source bytes (marker excluded), report `skipped (budget)`, not
   `trimmed`. This is reachable when the budget is smaller than the marker or when the static
   guard trims a scope to zero.
-- If the static guard trips, trim the largest instruction scope first, by `over`; re-render
-  once, re-measure once. If both scopes reach zero and the guard is still exceeded, emit
-  `static_guard_unsatisfied` and continue (policy `trim`) or stop (policy `refuse`). There is
-  no retry loop and only one notice per scope per session.
+- If the static guard trips, the pass above narrows the installed instruction block in
+  place from the captured raw segments; nothing is read from disk again. If both scopes
+  reach zero and the guard is still exceeded, report the residual excess and continue
+  (policy `trim`) or stop before dispatch (policy `refuse`).
+- A per-turn `<context_update>` for an unchanged explicit context is composed under the
+  installed (guard-narrowed) ceilings, so it can never re-append text the guard dropped. An
+  explicit route, model, or header change starts again from the base budgets. A changed
+  output reservation (including effort) reapplies budgets at the guard without declaring a
+  header change by itself.
 
 ### 3.5 Policy
 
-- Default: `trim` + warning in the chat. `refuse` remains an opt-in value for operators who
-  prefer a hard stop. `refuse` stops on **trim** losses (scope budget or static guard) and on
-  the unsatisfiable guard; **skips** (file ceiling, empty file, rules cap) remain skips and are
-  reported, because a single bad file must not make the project unopenable.
+- Default: `trim` + a reported loss. `refuse` remains an opt-in value for operators who
+  prefer a hard stop. `refuse` stops the request before dispatch on **trim** losses (scope
+  budget, rules budget, per-file 100 KiB retention) and when the request prefix exceeds the
+  guard; **skips** (file ceiling, empty file, rules cap) remain skips and are reported,
+  because a single bad file must not make the project unopenable. The check covers the real
+  system blocks and tool schemas of the request, including inline and dynamic authority.
 - The `warn` value is removed; "warn" is what `trim` does.
 - Validation rejects unknown policy values, non-positive budgets, percents outside 1–100, a
   guard outside 1–100, and any config where `guard − (global_percent + project_percent) < 10`;
@@ -254,17 +281,17 @@ keep the head, global is discarded first. The only one of the three that cuts co
 
 ### 3.6 Notice contract
 
-| Trigger | Action | User | Model |
+| Trigger | Action | Report | Model |
 | --- | --- | --- | --- |
-| file > `file_max_bytes` | skip | startup line | first-turn synthetic |
-| empty file | skip | startup line | first-turn synthetic |
-| rules cap 50 | skip files | startup line | first-turn synthetic |
-| duplicate via symlink | skip duplicate | startup line | first-turn synthetic |
-| scope > budget, `trim` | trim that scope | startup line + numbers | first-turn synthetic + marker |
+| file > `file_max_bytes` | skip | `/context report` | first-turn synthetic |
+| empty file | skip | `/context report` | first-turn synthetic |
+| rules cap 50 | skip files | `/context report` | first-turn synthetic |
+| duplicate via symlink | skip duplicate | `/context report` | first-turn synthetic |
+| scope > budget, `trim` | trim that scope | `/context report` + numbers | first-turn synthetic + marker |
 | zero source bytes left | skip | "skipped", not "trimmed" | same |
-| static guard, `trim` | trim largest scope by `over` | startup line | first-turn synthetic |
-| static guard unsatisfiable | proceed (trim) / stop (refuse) | named line | first-turn synthetic |
-| `refuse` policy on trim | stop | named error | session does not start |
+| static guard, `trim` | trim largest scope by `over` | `/context report` | first-turn synthetic |
+| static guard unsatisfiable | proceed (trim) / stop (refuse) | named row | first-turn synthetic |
+| `refuse` policy on trim | stop before dispatch | named error | request not sent |
 | all within budgets | no notice | no | no |
 
 Fields: `path`, `scope` (`global`/`project`), `source` (`agents`/`claude`/`instructions`/
@@ -275,14 +302,16 @@ Fields: `path`, `scope` (`global`/`project`), `source` (`agents`/`claude`/`instr
 
 Channels:
 
-- **User:** a system history cell at session start (`app.add_message(HistoryCell::System {
-  content })`), not the `startup_notice` status-line field (that one belongs to auto-resume and
-  would be overwritten); stderr for headless/`exec` (text output). The notice is recomputed
-  deterministically from files + config, so a resumed session states the same losses.
-- **Model:** a first-turn synthetic runtime-provenance message (the LSP-diagnostics mechanism;
-  see §10), which is part of the logged transcript.
-- **`/context report`:** per-source action and budget, alongside the existing warnings at
-  `context_report.rs:560`.
+- **Model and transcript:** a runtime-provenance synthetic message delivered once from turn
+  preparation whenever the rendered loss list changes (see §10). It is part of the logged
+  transcript, and its prose comes from the locale pack for the session locale; the scope,
+  origin, action, and limit tokens stay machine keys.
+- **`/context report`:** per-source action and budget from the installed receipt. The
+  headless `doctor` report is labelled a preview: it is built from current files and
+  config, carries no installed receipt, and does not claim the tool-schema guard accepted a
+  request.
+- **Session snapshot and protocol:** `receipt_json()` is a compact projection that omits
+  block text; the typed receipt is held only by the Session and the App.
 
 ## 4. Config surface
 
@@ -299,7 +328,7 @@ project_budget_percent = 25       # 1..=100
 static_prefix_guard_percent = 80  # 1..=100
 file_max_bytes = 8388608          # hard ceiling, positive
 policy = "trim"                   # trim | refuse
-claude_fallback = true            # AGENTS.md wins; otherwise CLAUDE.md
+claude_fallback = false           # opt in: AGENTS.md wins; otherwise CLAUDE.md
 ```
 
 - `deny_unknown_fields` on this table so a typo inside it fails loud.
@@ -311,7 +340,11 @@ claude_fallback = true            # AGENTS.md wins; otherwise CLAUDE.md
   (`[instruction_budjet]`) would be ignored; `codewhale doctor` inspects the raw TOML before
   deserialization and warns about unknown `instruction*` tables and keys.
 
-## 5. Implementation plan
+## 5. Historical implementation plan
+
+This is the contributor's original work breakdown, retained for provenance. The current
+contract is §3 and the reconciled implementation is §10. Proposed test names and mechanisms
+below are not evidence that a test exists, passed, or shipped.
 
 1. **New assembly order** in `crates/tui/src/project_context.rs`:
    `assemble_instruction_scopes(raw: &ProjectContext, configured: &[PathBuf], budgets:
@@ -346,17 +379,13 @@ claude_fallback = true            # AGENTS.md wins; otherwise CLAUDE.md
      the instruction cap so `policy = refuse` does not change relay behaviour.
      `render_instructions_block` renders only the assembled instruction block (no configured
      entries).
-5. **Static guard**: `prompts.rs` exposes `measure_static_prefix(&SystemPrompt, &[ToolSpec])`;
-   `core/engine/preview.rs` (`compose_stable_system_prompt` + `system_prompt_text`) calls
-   `enforce_static_prefix_guard` after the stable prefix is composed and the tool registry is
-   known. The guard covers the **stable** prefix only (base prompt, tool policy, instructions,
-   skills index, tool schemas); volatile memory/environment blocks are excluded (memory has
-   its own budget). On trim, rebuild the instruction block once, recompose, re-measure once;
-   if both scopes are zero and the stable prefix is still over, return `Unsatisfiable`.
+5. **Static guard**: `prompts::measure_static_prefix` counts every system block plus the
+   tool schemas, and `prompts::guard_instruction_prefix` applies the bounded two-scope pass
+   (§3.4) from turn preparation, once the pinned prefix and the real tool catalog are known
+   together. Preview runs the same pure decision without installing a receipt.
 6. **Startup notice**
-   - Emit the user line as a `HistoryCell::System` at session start (TUI), stderr
-     (headless/exec), and a session event (Runtime API); re-emit on resume from the persisted
-     event. Do not reuse `startup_notice` (auto-resume status line).
+   - Deliver the loss list to the model as one runtime-provenance message and show it in
+     `/context report`; do not reuse `startup_notice` (auto-resume status line).
 7. **`crates/tui/src/context_report.rs`**
    - Show per-source action, bytes/tokens, budget and limit kind.
 8. **Docs and registry**
@@ -364,7 +393,8 @@ claude_fallback = true            # AGENTS.md wins; otherwise CLAUDE.md
      note with the sync date), `config.example.toml` (replace the fixed 48 KiB comment),
      `CHANGELOG.md`, and a `docs/features.toml` row with id/name/summary/status/surfaces/
      since/flag/docs/owner (the registry test fails on drift).
-9. **Tests** (one per branch, plus the boundary cases):
+9. **Proposed tests** (historical names; existing tests made wrong by the final contract
+   are updated or removed):
    - `agents_md_wins_over_claude_md`
    - `claude_md_is_default_fallback`
    - `claude_fallback_can_be_disabled`
@@ -415,27 +445,25 @@ claude_fallback = true            # AGENTS.md wins; otherwise CLAUDE.md
   co-reading.
 - Global and project budgets are independent; a huge project does not shrink the global; rules
   are charged to project; configured `instructions` entries are charged to global.
-- Any loss (`trimmed`/`skipped`/`refused`) is reported to the user, to the model, and in
-  `/context`, with path, scope, source, bytes, tokens and limit kind.
+- Any loss (`trimmed`/`skipped`/`refused`) is reported to the model and in `/context`, with path, scope, source, bytes, tokens and limit kind.
 - No silent drop remains: rules cap, empty files, fall-through substitution, symlink
   duplicates and per-file skips are all in the contract; the guard has a terminal
   unsatisfiable branch and trims by a defined overage.
-- All existing tests pass; the new tests above cover every branch; the old 48 KiB tests are
-  updated.
+- Focused existing checks must pass with positive test counts; measured fixtures and
+  conformance goldens must match current behavior. Synthetic manual observations must cover
+  the changed trust boundaries and Engine lifecycle. A test-name list is not acceptance.
 
 ## 7. Risks
 
 - **Prompt-cache and cost:** a larger static prefix changes the cached prefix and increases
   cost per request; the PR must include a measured estimate.
-- **Upstream acceptance:** the maintainers said the absolute ceiling is their decision
-  (#6526); 100k tokens per scope is 6–8× the current 48 KiB. Present the defaults and the
-  knobs, and be ready to keep the current default.
-- **CLAUDE fallback is a policy change:** a repo with only `CLAUDE.md` previously got no
-  project instructions; now it does. Migration note and `claude_fallback = false` escape.
-- **Small windows:** at 32k the residual is ~8,000 tokens for skills/tool schemas; exceeding
-  it starts guard trimming, and only non-instruction static content above ~21,400 tokens is
-  `unsatisfiable`. The PR should include a 32k measurement and may lower the default percents
-  for small windows.
+- **Larger defaults:** the approved default is 100,000 tokens per scope, capped at 25% of
+  usable context. The 100 KiB retention limit still applies to each file.
+- **Foreign instructions:** a repository containing only `CLAUDE.md` contributes no foreign
+  instructions by default. The operator must enable fallback or the explicit import.
+- **Small windows:** the actual output reservation and safety reserve determine the residual;
+  a fixed nominal window alone cannot establish the guard threshold. Measure the real
+  assembled system blocks and tool catalog.
 - **Estimator drift:** tokens are estimated, not counted; the notice must say "estimated"
   where it matters.
 - **Refactor size:** moving configured `instructions` into the assembly and keeping segments
@@ -459,14 +487,15 @@ claude_fallback = true            # AGENTS.md wins; otherwise CLAUDE.md
   cost/cache estimate.
 - State the behaviour changes (CLAUDE fallback; 48 KiB → per-scope budgets; a single
   oversized file now keeps its head instead of its tail; configured `instructions` entries
-  move from `prompts.rs` rendering into the instruction assembly; the guard covers the stable
-  prefix only) and the migration path (`claude_fallback = false`, `[instruction_budget]`).
+  move from `prompts.rs` rendering into the instruction assembly; the guard covers every
+  system block and the real tool schemas) and the opt-in migration path
+  (`claude_fallback = true` or explicit import, `[instruction_budget]`).
 - Use `Refs #6526`, not `fix`/`close`. Maintainers land verified slices on `main`; this branch
   is a contributor branch, not a maintainer PR branch.
 
-## 10. Implementation notes (v5)
+## 10. Candidate implementation notes
 
-What landed, and where it differs from the plan above. The differences are
+What the candidate implements, and where it differs from the historical plan above. The differences are
 places where the plan cited a tree that has since changed, or where the plan's
 mechanism did not exist; none of them changes the behaviour contract in §3.
 
@@ -474,8 +503,7 @@ mechanism did not exist; none of them changes the behaviour contract in §3.
   markers, and the static-guard decision are in
   `crates/tui/src/project_context/budget.rs`. Loader selection and the
   assembly are in `crates/tui/src/project_context.rs`; `types.rs` carries the
-  segments and notices on `ProjectContext`. Tests for the behaviour named in
-  §5.9 are in `project_context/instruction_budget_tests.rs` (selection, skips,
+  segments and notices on `ProjectContext`. Existing tests live in `project_context/instruction_budget_tests.rs` (selection, skips,
   trims, rules, configured entries, `refuse`), `budget.rs` (budget math and the
   guard decision), `prompts.rs` (stable-prefix measurement, configured-entry
   rendering), `lib.rs` (project overlay) and `config.rs`.
@@ -489,21 +517,17 @@ mechanism did not exist; none of them changes the behaviour contract in §3.
   history — that replaces the separate persisted event.
 - **The static guard** runs in turn preparation rather than
   `core/engine/preview.rs`, because that is the first point where the pinned
-  prefix and the real tool catalog are known together. It measures the first
-  system block plus the tool schemas (`prompts::measure_static_prefix`), trims
-  the largest scope by the overage, recomposes and re-pins once under a
-  declared reason, and classifies the result with the pure
-  `static_guard_outcome`. `compose_stable_system_prompt` now has an
-  assembly-returning sibling used by the guard.
-- **`policy = "refuse"`** is enforced at session start (TUI and `exec`) by
-  `project_context::startup_instruction_notice`, which returns an error for a
-  trim loss or a rules-budget loss. Skips stay skips. The engine itself never
-  refuses: by the time it runs, the session has already started, and the guard
-  reports `static_guard_unsatisfied` and continues. **Known limit:** the
-  embed/ACP/app-server surfaces do not run the startup gate, so `refuse` is a
-  no-op there — they trim and report like `trim`.
-- **Symlinks.** §3.1 assumed the project loader follows them. It does not:
-  `fs_confined::open_read` refuses a link that leaves the scope root, so a
+  prefix and the real tool catalog are known together. It measures every
+  system block plus the tool schemas (`prompts::measure_static_prefix`) and
+  runs the bounded two-scope pass of §3.4, replacing only the verified byte
+  range of the installed instruction block. Preview and RLM run the same pure
+  decision; host-owned prompts (child, isolated, RLM) are measured and can be
+  refused but are never trimmed.
+- **`policy = "refuse"`** is enforced by the Engine before dispatch, using the
+  actual output reservation and the actual tool catalog of the request, so it
+  applies to the TUI, `exec`, ACP, and app-server alike.
+
+- **Symlinks.** `fs_confined::open_read` refuses every symlink below the scope root, so a
   project file linked to the user's global file is now recognised as a
   **duplicate** before the read (the content is already loaded from the wider
   scope), and any other symlinked instruction file is *skipped with a notice*
@@ -513,27 +537,33 @@ mechanism did not exist; none of them changes the behaviour contract in §3.
 - **Foreign fragments** (`.cursorrules`, `.clinerules`, …) keep their own
   bounded-fragment cap and are not charged to the project scope; they are
   reported in `/context` and named as a known limitation in `budget.rs`.
-- **Window used by the startup line.** The TUI/exec startup notice resolves
-  budgets for the route window they are about to launch with
-  (`route_context_window_tokens` from the app's effective model, or from the
-  validated CLI route in `exec`); the 128k default is only a fallback for a
-  caller that has no route. A first pass used that default unconditionally,
-  which could report a trim that would not happen and, under
-  `policy = "refuse"`, stop a session that would have fitted.
-- **The user/model channels** are: a `HistoryCell::System` cell at TUI start,
-  `eprintln!` for `exec` text output, one runtime-provenance transcript
-  message for the model, and per-source rows in `/context report`. The notice
-  is recomputed deterministically from files + config, so a resumed session
-  states the same losses.
-- **`/context report`** rows cover the file-based sources and the resolved
-  budgets; the TUI variant passes no configured `instructions` paths (the App
-  does not hold the config), so configured entries appear only in the headless
-  report and in the startup notice. `exec` prints the notice for text output
-  only; a JSON consumer reads the same losses from `/context report`.
-- **Build note for this environment.** The shared cargo registry and target
-  directory are read-only inside the session sandbox, so the verification
-  build used an isolated `CARGO_HOME`/target under `/tmp` (`cargo check -p
-  codewhale-tui`), not the shared target dir. The `codewhale-tui` test binary
-  is the long pole: full codegen for that crate did not finish inside this
-  session's time budget, so test *execution* is the one gate still open here;
-  the crate and its `cfg(test)` code were typechecked instead.
+- **Engine-owned settings and receipt.** The budgets, foreign imports, and
+  home directory are an explicit immutable `InstructionSettings` captured from
+  the applied config when the Engine is built; there is no process-global
+  budget or import setter. The Engine captures the raw instruction context,
+  composes the block, and installs the typed `InstructionAssembly` receipt
+  together with the prompt. The loader cache key includes the settings, and an
+  entry is stored only when its pre- and post-load signatures agree. Signatures include
+  canonical identity and symlink components as well as bounded content fingerprints.
+  Configured entries are read when capturing raw context; guard passes and installed
+  reports reuse that capture. Global labels are home-relative and configured absolute
+  file labels use the basename; full diagnostic paths stay in receipts. The installed
+  instruction range includes its leading separator, so removing the final scope removes
+  the separator too.
+- **Channels.** The loss list reaches the model as one runtime-provenance
+  transcript message and is shown per source in `/context report`. The old
+  TUI-cell and `exec` stderr startup lines were removed with the independent
+  startup checks.
+- **`/context report`** rows come from the installed receipt in the TUI. The
+  headless report builds a preview from current files and config, resolves the
+  window and output reservation through the same route helpers, and labels the
+  budget row as a preview. Facts that are unknown print `unknown`, never a
+  guessed window.
+
+A history-only workspace update is assembled under the installed effective scope
+ceilings and checked for instruction loss before dispatch. Its notice is logged
+without replacing the installed prefix receipt. Preview observes this read-only;
+when a workspace update or new notice is pending, the body is unavailable until
+the turn establishes that history. It does not advance the delta baseline or
+write prepared native-memory receipts. Host-owned prompts retain their authority;
+residual static-guard diagnostics do not require a root instruction receipt.

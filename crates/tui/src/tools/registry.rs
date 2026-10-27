@@ -104,12 +104,14 @@ impl ToolRegistry {
     }
 
     /// Execute a tool by name, returning the full `ToolResult`.
+    #[cfg(test)]
     pub async fn execute_full(&self, name: &str, input: Value) -> Result<ToolResult, ToolError> {
         self.execute_rich_full(name, input)
             .await
             .map(RichToolResult::into_result)
     }
 
+    #[cfg(test)]
     pub(crate) async fn execute_rich_full(
         &self,
         name: &str,
@@ -469,7 +471,7 @@ impl ToolRegistry {
     #[cfg(test)]
     pub fn apply_overrides(
         &mut self,
-        overrides: &std::collections::HashMap<String, crate::config::ToolOverride>,
+        overrides: &std::collections::HashMap<String, codewhale_runtime::config::ToolOverride>,
         plugin_dir: &Path,
         builtin_names: &std::collections::HashSet<String>,
     ) -> Vec<String> {
@@ -482,7 +484,7 @@ impl ToolRegistry {
     }
     pub(crate) fn apply_overrides_with_executor(
         &mut self,
-        overrides: &std::collections::HashMap<String, crate::config::ToolOverride>,
+        overrides: &std::collections::HashMap<String, codewhale_runtime::config::ToolOverride>,
         plugin_dir: &Path,
         builtin_names: &std::collections::HashSet<String>,
         executor: crate::tools::plugin::PluginExecutor,
@@ -490,7 +492,7 @@ impl ToolRegistry {
         let mut refused = Vec::new();
         for (tool_name, override_cfg) in overrides {
             match override_cfg {
-                crate::config::ToolOverride::Disabled => {
+                codewhale_runtime::config::ToolOverride::Disabled => {
                     if self.remove_tool(tool_name) {
                         tracing::info!("Tool '{}' disabled via config override", tool_name);
                     } else {
@@ -897,7 +899,7 @@ pub struct AgentToolSurfaceOptions {
     pub apply_patch_enabled: bool,
     pub web_search_enabled: bool,
     pub memory_tool_enabled: bool,
-    pub vision_config: Option<crate::config::VisionModelConfig>,
+    pub vision_config: Option<codewhale_runtime::config::VisionModelConfig>,
     pub speech_output_dir: Option<PathBuf>,
     pub goal_state: Option<SharedGoalState>,
     /// Register the agent-callable `verify` self-critique tool (#4196).
@@ -1269,7 +1271,7 @@ impl ToolRegistryBuilder {
     #[must_use]
     pub fn with_vision_tools(
         self,
-        config: crate::config::VisionModelConfig,
+        config: codewhale_runtime::config::VisionModelConfig,
         route_client: Option<CodewhaleClient>,
     ) -> Self {
         use crate::vision::tools::ImageAnalyzeTool;

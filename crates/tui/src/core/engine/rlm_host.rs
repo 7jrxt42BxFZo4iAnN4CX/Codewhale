@@ -704,15 +704,18 @@ pub(super) struct RlmDispatchedRequest {
 impl RlmDispatchedRequest {
     pub(super) async fn settle_open_error(&mut self, error: &anyhow::Error) {
         if crate::tools::subagent::engine::provider_request_refusal_proven(error) {
-            self.usage.cancel_sync(
-                self.reservation,
-                false,
-                crate::cost_status::RuntimeUsageMissingReason::RequestOutcomeUnknown,
-            );
-            self.refused = true;
+            self.cancel_unexecuted();
         } else {
             self.settle(&Usage::default(), false).await;
         }
+    }
+    pub(super) fn cancel_unexecuted(&mut self) {
+        self.usage.cancel_sync(
+            self.reservation,
+            false,
+            crate::cost_status::RuntimeUsageMissingReason::RequestOutcomeUnknown,
+        );
+        self.refused = true;
     }
     pub(super) async fn settle(&mut self, usage: &Usage, complete: bool) {
         if self.settled.is_some() || self.refused {

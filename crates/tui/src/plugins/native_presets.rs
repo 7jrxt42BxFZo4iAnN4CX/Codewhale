@@ -2,7 +2,7 @@
 //! session, filesystem root or writable catalog authority.
 use super::{PluginRegistry, activation::PluginActivationCapability};
 use crate::extension_host::composition_scope::NativePresetRef;
-use crate::extension_host::protocol::EntryRef;
+use codewhale_config::EntryRef;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;

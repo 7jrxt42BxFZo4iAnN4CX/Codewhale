@@ -95,6 +95,16 @@ impl InstallMethod {
         if path_method != Self::Binary {
             return path_method;
         }
+        if exe.parent().is_some_and(|bin| {
+            bin.file_name().is_some_and(|name| name == "bin")
+                && bin.parent().is_some_and(|root| {
+                    [".crates.toml", ".crates2.json"]
+                        .iter()
+                        .any(|name| std::fs::symlink_metadata(root.join(name)).is_ok())
+                })
+        }) {
+            return Self::Cargo;
+        }
         if owns_package(exe) {
             Self::Omarchy
         } else {
@@ -159,6 +169,21 @@ impl InstallMethod {
             Self::Cargo => "cargo install codewhale-cli --locked --force",
             Self::Omarchy => "omarchy update",
             Self::Binary => "codewhale update",
+        }
+    }
+
+    #[must_use]
+    pub fn uninstall_command(self) -> &'static str {
+        match self {
+            Self::Npm => "npm uninstall -g codewhale",
+            Self::Homebrew => {
+                "brew uninstall codewhale (use the owning formula name for a legacy formula)"
+            }
+            Self::Cargo => "cargo uninstall codewhale-cli --root <the owning Cargo install root>",
+            Self::Omarchy => {
+                "pacman -Qo <the executable path>, then remove that package with your package manager"
+            }
+            Self::Binary => "codewhale uninstall --yes",
         }
     }
 
@@ -295,6 +320,14 @@ mod tests {
             InstallMethod::Binary
         );
         assert!(!InstallMethod::Cargo.supports_self_update());
+        let root = tempfile::tempdir().unwrap();
+        let bin = root.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        std::fs::write(root.path().join(".crates2.json"), b"{}").unwrap();
+        assert_eq!(
+            InstallMethod::detect(&bin.join("codewhale")),
+            InstallMethod::Cargo
+        );
     }
 
     #[test]

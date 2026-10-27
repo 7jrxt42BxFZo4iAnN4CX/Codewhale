@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::fleet::files::WorkspaceFile;
-use crate::sandbox::SandboxPolicy;
+use codewhale_sandbox::SandboxPolicy;
 
 const APPROVAL_LOG_FILE: &str = "approval_receipts.jsonl";
 const APPROVAL_LOCK_FILE: &str = "approval_receipts.lock";
@@ -780,7 +780,7 @@ mod tests {
             ApprovalOutcome::Cancelled,
             ApprovalOutcome::Unavailable,
             ApprovalOutcome::RetryWithPolicy {
-                policy: crate::sandbox::SandboxPolicy::DangerFullAccess,
+                policy: codewhale_sandbox::SandboxPolicy::DangerFullAccess,
             },
         ];
 

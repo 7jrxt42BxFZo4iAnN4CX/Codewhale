@@ -1,5 +1,3 @@
-
-
 #[test]
 fn subagent_results_are_summarized_before_parent_context_insertion() {
     let long_result = "verified detail\n".repeat(1_000);
@@ -626,6 +624,7 @@ fn turn_metadata_keeps_stable_fields_while_pressure_reports_live_estimates() {
                 system_prompt: None,
                 approval_mode: engine.session.approval_mode,
                 working_set: &engine.session.working_set,
+                messages: &engine.session.messages,
                 policy_narrowing: None,
             },
         )
@@ -778,6 +777,7 @@ fn turn_meta_block_stays_within_measured_ceiling() {
             system_prompt: None,
             approval_mode: engine.session.approval_mode,
             working_set: &engine.session.working_set,
+            messages: &engine.session.messages,
             policy_narrowing: None,
         },
     );
@@ -829,6 +829,7 @@ fn turn_metadata_names_the_effective_sandbox_posture() {
                 system_prompt: None,
                 approval_mode: engine.session.approval_mode,
                 working_set: &engine.session.working_set,
+                messages: &engine.session.messages,
                 policy_narrowing: None,
             },
         );
@@ -857,21 +858,21 @@ fn turn_metadata_names_the_effective_sandbox_posture() {
 
     // Pin deterministic states instead of branching on the CI host. The
     // production value is also captured once at engine construction.
-    engine.sandbox_enforcement = crate::sandbox::policy::SandboxEnforcement::LocalOs;
+    engine.sandbox_enforcement = codewhale_sandbox::policy::SandboxEnforcement::LocalOs;
     let local_meta = meta_for_mode(&engine, AppMode::Agent);
     assert!(
         local_meta.contains("local OS sandbox applied"),
         "{local_meta}"
     );
 
-    engine.sandbox_enforcement = crate::sandbox::policy::SandboxEnforcement::Unavailable;
+    engine.sandbox_enforcement = codewhale_sandbox::policy::SandboxEnforcement::Unavailable;
     let unavailable_meta = meta_for_mode(&engine, AppMode::Agent);
     assert!(
         unavailable_meta.contains("policy only; no execution sandbox available"),
         "{unavailable_meta}"
     );
 
-    engine.sandbox_enforcement = crate::sandbox::policy::SandboxEnforcement::ExternalBackend;
+    engine.sandbox_enforcement = codewhale_sandbox::policy::SandboxEnforcement::ExternalBackend;
     let external_meta = meta_for_mode(&engine, AppMode::Agent);
     assert!(
         external_meta.contains("workspace-write policy"),

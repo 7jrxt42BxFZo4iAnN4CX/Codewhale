@@ -172,7 +172,7 @@ pub(super) async fn host_gh(
     input: Option<&[u8]>,
     cancel: &tokio_util::sync::CancellationToken,
 ) -> Result<String, ToolError> {
-    use crate::network_policy::Decision;
+    use codewhale_net::network_policy::Decision;
     if context
         .tool_authority
         .as_ref()

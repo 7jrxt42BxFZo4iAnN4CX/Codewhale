@@ -226,7 +226,7 @@ async fn run_reasoning_only_turn(
     run_reasoning_only_turn_with_reprompts(
         reasoning_only,
         stop_reason,
-        crate::config::DEFAULT_REASONING_ONLY_REPROMPTS,
+        codewhale_runtime::config::DEFAULT_REASONING_ONLY_REPROMPTS,
     )
     .await
 }
@@ -455,7 +455,7 @@ async fn the_reasoning_only_nudge_rides_one_request_and_never_joins_the_session(
          not added to the session"
     );
 
-    let nudge = crate::config::DEFAULT_REASONING_ONLY_REPROMPT_MESSAGE;
+    let nudge = codewhale_runtime::config::DEFAULT_REASONING_ONLY_REPROMPT_MESSAGE;
     let carries_nudge = |messages: &Vec<codewhale_models::Message>| {
         serde_json::to_string(messages)
             .expect("messages serialize")
@@ -505,7 +505,7 @@ async fn reasoning_only_forever_is_bounded_then_fails() {
 
     assert_eq!(
         model.calls.load(std::sync::atomic::Ordering::SeqCst),
-        1 + crate::config::DEFAULT_REASONING_ONLY_REPROMPTS as usize,
+        1 + codewhale_runtime::config::DEFAULT_REASONING_ONLY_REPROMPTS as usize,
         "reasoning-only retries are bounded by [reasoning_only] max_reprompts"
     );
     let status = events
@@ -525,7 +525,7 @@ async fn reasoning_only_forever_is_bounded_then_fails() {
             _ => None,
         })
         .collect::<Vec<_>>();
-    let max = crate::config::DEFAULT_REASONING_ONLY_REPROMPTS;
+    let max = codewhale_runtime::config::DEFAULT_REASONING_ONLY_REPROMPTS;
     assert_eq!(attempts.len(), max as usize);
     for (index, message) in attempts.iter().enumerate() {
         assert!(message.starts_with(&format!(
@@ -872,7 +872,7 @@ fn engine_handle_try_send_does_not_block_when_op_channel_is_full() {
     let cancel_token = CancellationToken::new();
     let handle = EngineHandle {
         goal_state: new_shared_goal_state(),
-        sandbox_enforcement: crate::sandbox::policy::SandboxEnforcement::Unavailable,
+        sandbox_enforcement: codewhale_sandbox::policy::SandboxEnforcement::Unavailable,
         tx_op,
         rx_event: Arc::new(RwLock::new(mpsc::channel::<Event>(1).1)),
         cancel_token: Arc::new(StdMutex::new(cancel_token)),

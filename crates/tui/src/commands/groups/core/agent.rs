@@ -109,7 +109,7 @@ mod tests {
         let options = TuiOptions {
             ..crate::tui::test_support::test_tui_options(PathBuf::from("."))
         };
-        App::new(options, &crate::config::Config::default())
+        App::new(options, &codewhale_runtime::config::Config::default())
     }
 
     /// #6747: the /agent brief names only callable tools and teaches the

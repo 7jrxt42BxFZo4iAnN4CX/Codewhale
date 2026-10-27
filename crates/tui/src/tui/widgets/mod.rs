@@ -3787,7 +3787,6 @@ mod tests {
         slash_completion_hints, test_native_ocean_caps, tool_run_summary_revision,
         wrap_input_lines, wrap_input_lines_for_mouse, wrap_text,
     };
-    use crate::config::Config;
     use crate::tui::active_cell::ActiveCell;
     use crate::tui::app::{
         App, ComposerDensity, QueuedMessage, TaskPanelEntry, TaskPanelEntryKind, ToolCollapseMode,
@@ -3800,6 +3799,7 @@ mod tests {
     use codewhale_config::ProviderKind;
     use codewhale_localization::Locale;
     use codewhale_palette as palette;
+    use codewhale_runtime::config::Config;
     use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
     use ratatui::{
         buffer::Buffer,

@@ -722,6 +722,7 @@ pub enum Event {
         /// instead of deep-copying the transcript per event.
         messages: Arc<Vec<Message>>,
         system_prompt: Option<SystemPrompt>,
+        instruction_assembly: Option<Arc<crate::project_context::InstructionAssembly>>,
         model: String,
         workspace: PathBuf,
     },
@@ -961,6 +962,11 @@ pub fn is_retry_status_receipt(message: &str) -> bool {
     ]
     .iter()
     .any(|prefix| message.starts_with(prefix))
+}
+
+#[must_use]
+pub fn is_request_image_status_receipt(message: &str) -> bool {
+    message.starts_with("Image request budget: ") || message.starts_with("HTTP 413 recovery: ")
 }
 
 /// Classify an engine status line for durable clients. Unknown lines stay

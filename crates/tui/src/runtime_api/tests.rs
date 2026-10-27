@@ -87,41 +87,51 @@ fn web_launcher_failure_is_a_recoverable_manual_bootstrap_warning() {
 }
 
 fn provider_default_model_cases() -> Vec<(&'static str, Config, &'static str)> {
-    let deepseek = Config {
-        provider: Some("deepseek".to_string()),
-        default_text_model: Some("deepseek-v4-flash".to_string()),
-        ..Config::default()
+    let deepseek = {
+        let __cw_config_init_0_0 = Some("deepseek".to_string());
+        let __cw_config_init_0_1 = Some("deepseek-v4-flash".to_string());
+        let mut __cw_config_init_0_value: Config = Config::default();
+        __cw_config_init_0_value.provider = __cw_config_init_0_0;
+        __cw_config_init_0_value.default_text_model = __cw_config_init_0_1;
+        __cw_config_init_0_value
     }
     .with_legacy_root(
         Some("deepseek-test-key".to_string()),
         Some("http://127.0.0.1:1/v1".to_string()),
     );
 
-    let mut zai_providers = crate::config::ProvidersConfig::default();
+    let mut zai_providers = codewhale_runtime::config::ProvidersConfig::default();
     zai_providers.zai.api_key = Some("zai-test-key".to_string());
-    let zai = Config {
-        provider: Some("zai".to_string()),
+    let zai = {
+        let __cw_config_init_1_0 = Some("zai".to_string());
         // A saved DeepSeek root default must not leak onto the active Z.ai route.
-        default_text_model: Some(DEFAULT_TEXT_MODEL.to_string()),
-        providers: Some(zai_providers),
-        ..Config::default()
+        let __cw_config_init_1_1 = Some(DEFAULT_TEXT_MODEL.to_string());
+        let __cw_config_init_1_2 = Some(zai_providers);
+        let mut __cw_config_init_1_value: Config = Config::default();
+        __cw_config_init_1_value.provider = __cw_config_init_1_0;
+        __cw_config_init_1_value.default_text_model = __cw_config_init_1_1;
+        __cw_config_init_1_value.providers = __cw_config_init_1_2;
+        __cw_config_init_1_value
     };
 
-    let mut custom_providers = crate::config::ProvidersConfig::default();
+    let mut custom_providers = codewhale_runtime::config::ProvidersConfig::default();
     custom_providers.custom.insert(
         "acme".to_string(),
-        crate::config::ProviderConfig {
+        codewhale_runtime::config::ProviderConfig {
             api_key: Some("acme-test-key".to_string()),
             base_url: Some("http://127.0.0.1:1/v1".to_string()),
             model: Some("acme-coder".to_string()),
             kind: Some("openai-compatible".to_string()),
-            ..crate::config::ProviderConfig::default()
+            ..codewhale_runtime::config::ProviderConfig::default()
         },
     );
-    let custom = Config {
-        provider: Some("acme".to_string()),
-        providers: Some(custom_providers),
-        ..Config::default()
+    let custom = {
+        let __cw_config_init_2_0 = Some("acme".to_string());
+        let __cw_config_init_2_1 = Some(custom_providers);
+        let mut __cw_config_init_2_value: Config = Config::default();
+        __cw_config_init_2_value.provider = __cw_config_init_2_0;
+        __cw_config_init_2_value.providers = __cw_config_init_2_1;
+        __cw_config_init_2_value
     };
 
     vec![
@@ -158,13 +168,15 @@ async fn http_and_web_server_thread_manager_installs_configured_workshop_byte_bu
     let temp = tempfile::tempdir()?;
     let workspace = temp.path().join("workspace");
     fs::create_dir_all(&workspace)?;
-    let config = Config {
-        workshop: Some(codewhale_config::WorkshopConfig {
+    let config = {
+        let __cw_config_init_3_0 = Some(codewhale_config::WorkshopConfig {
             read_result_max_bytes: Some(73_728),
             tool_result_max_bytes: Some(65_536),
             ..codewhale_config::WorkshopConfig::default()
-        }),
-        ..Config::default()
+        });
+        let mut __cw_config_init_3_value: Config = Config::default();
+        __cw_config_init_3_value.workshop = __cw_config_init_3_0;
+        __cw_config_init_3_value
     };
 
     let (runtime_threads, startup_activation) = open_runtime_threads_for_server(
@@ -191,13 +203,15 @@ async fn http_and_web_server_thread_manager_installs_configured_workshop_byte_bu
     );
 
     let reload_activation = runtime_threads
-        .reload_config(Config {
-            workshop: Some(codewhale_config::WorkshopConfig {
+        .reload_config({
+            let __cw_config_init_4_0 = Some(codewhale_config::WorkshopConfig {
                 read_result_max_bytes: Some(81_920),
                 tool_result_max_bytes: Some(77_824),
                 ..codewhale_config::WorkshopConfig::default()
-            }),
-            ..Config::default()
+            });
+            let mut __cw_config_init_4_value: Config = Config::default();
+            __cw_config_init_4_value.workshop = __cw_config_init_4_0;
+            __cw_config_init_4_value
         })
         .await?;
     assert_eq!(reload_activation.read_result_max_bytes, Some(81_920));
@@ -235,7 +249,7 @@ fn runtime_tui_settings_reject_legacy_modes_and_do_not_save_env_overlays() -> Re
         .expect_err("yolo must not be saved as a startup mode");
     assert_eq!(error.status, StatusCode::BAD_REQUEST);
     assert_eq!(
-        crate::settings::Settings::load_persisted()?.default_mode,
+        codewhale_runtime::settings::Settings::load_persisted()?.default_mode,
         "plan",
         "a rejected write must leave the saved startup mode intact"
     );
@@ -243,13 +257,13 @@ fn runtime_tui_settings_reject_legacy_modes_and_do_not_save_env_overlays() -> Re
     persist_runtime_tui_setting("default_mode", "operate")
         .expect("operate is a valid startup mode");
     assert_eq!(
-        crate::settings::Settings::load_persisted()?.default_mode,
+        codewhale_runtime::settings::Settings::load_persisted()?.default_mode,
         "operate"
     );
     persist_runtime_tui_setting("default_mode", "agent")
         .expect("agent should be a valid startup mode");
     persist_runtime_tui_setting("auto_compact", "false").expect("strict boolean should persist");
-    let saved = crate::settings::Settings::load_persisted()?;
+    let saved = codewhale_runtime::settings::Settings::load_persisted()?;
     assert_eq!(saved.default_mode, "agent");
     assert!(!saved.auto_compact);
     assert!(!saved.low_motion, "NO_ANIMATIONS is runtime-only");
@@ -531,6 +545,7 @@ fn messages_from_thread_detail_batches_tool_results() {
         }
     };
     let detail = ThreadDetail {
+        command_receipts: Vec::new(),
         thread,
         turns: vec![turn],
         items: vec![
@@ -657,6 +672,7 @@ fn messages_from_thread_detail_batches_tool_results() {
 fn legacy_exact_thread_export_normalizes_provider_kind_and_id() {
     let now = Utc::now();
     let detail = ThreadDetail {
+        command_receipts: Vec::new(),
         thread: ThreadRecord {
             schema_version: 2,
             id: "thr_legacy_custom".to_string(),
@@ -692,12 +708,12 @@ fn legacy_exact_thread_export_normalizes_provider_kind_and_id() {
         pending_dynamic_tool_calls: Vec::new(),
         approval_grants: Vec::new(),
     };
-    let config = Config {
-        provider: Some("lm-studio".to_string()),
-        providers: Some(crate::config::ProvidersConfig {
+    let config = {
+        let __cw_config_init_5_0 = Some("lm-studio".to_string());
+        let __cw_config_init_5_1 = Some(codewhale_runtime::config::ProvidersConfig {
             custom: std::collections::HashMap::from([(
                 "lm-studio".to_string(),
-                crate::config::ProviderConfig {
+                codewhale_runtime::config::ProviderConfig {
                     kind: Some("openai-compatible".to_string()),
                     base_url: Some("http://127.0.0.1:1234/v1".to_string()),
                     model: Some("local-model".to_string()),
@@ -705,8 +721,11 @@ fn legacy_exact_thread_export_normalizes_provider_kind_and_id() {
                 },
             )]),
             ..Default::default()
-        }),
-        ..Default::default()
+        });
+        let mut __cw_config_init_5_value: Config = Default::default();
+        __cw_config_init_5_value.provider = __cw_config_init_5_0;
+        __cw_config_init_5_value.providers = __cw_config_init_5_1;
+        __cw_config_init_5_value
     };
     let mut session = crate::session_manager::create_saved_session_with_mode(
         &[],
@@ -1160,6 +1179,8 @@ fn spawn_product_stack_server(
         .get_or_insert_with(RuntimeServerShutdown::default)
         .clone();
     let catalog = crate::command_catalog::installed();
+    let extension_manager = crate::extension_host::manager();
+    let extension_policy = crate::plugins::activation::extension_host_policy_enabled();
     std::thread::Builder::new()
         .name("runtime-api-test-server".to_string())
         .stack_size(codewhale_runtime::CODEWHALE_MAIN_STACK_BYTES)
@@ -1168,6 +1189,10 @@ fn spawn_product_stack_server(
             // refuses enrollment once the sealing test has ended.
             let _membership = crate::test_support::join_env_scope(env_ticket);
             let _catalog = catalog.map(crate::command_catalog::CatalogGuard::install);
+            let _extension_manager =
+                crate::extension_host::TestManagerGuard::install(extension_manager);
+            let _extension_policy =
+                crate::plugins::activation::TestPolicyGuard::extension_host(extension_policy);
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -1260,12 +1285,9 @@ async fn build_test_server(
     let mut config = if let Some(config) = overrides.config.clone() {
         config
     } else if let Some(path) = overrides.config_path.clone() {
-        Config::load(Some(path), None)?
+        crate::plugins::providers::load_config(Some(path), None)?
     } else {
-        Config {
-            ..Config::default()
-        }
-        .with_legacy_root(
+        Config::default().with_legacy_root(
             Some("runtime-api-test-key".to_string()),
             Some("http://127.0.0.1:1/v1".to_string()),
         )
@@ -1285,19 +1307,25 @@ async fn build_test_server(
         Arc::new(MockExecutor),
     )
     .await?;
-    let runtime_threads: SharedRuntimeThreadManager = Arc::new(RuntimeThreadManager::open(
-        config.clone(),
-        workspace.clone(),
-        // A neighboring libtest may temporarily set CODEWHALE_RUNTIME_DIR.
-        // This fixture owns an explicit root and must never borrow that
-        // other test's live store or contend for its process-owner lock.
-        RuntimeThreadManagerConfig {
-            data_dir: root.join("runtime/runtime"),
-            task_data_dir: root.join("runtime"),
-            sessions_dir: Some(sessions_dir.clone()),
-            max_active_threads: overrides.max_active_threads.unwrap_or(8),
-        },
-    )?);
+    // A neighboring libtest may temporarily set CODEWHALE_RUNTIME_DIR.
+    // This fixture owns an explicit root and must never borrow that
+    // other test's live store or contend for its process-owner lock.
+    let manager_config = RuntimeThreadManagerConfig {
+        data_dir: root.join("runtime/runtime"),
+        task_data_dir: root.join("runtime"),
+        sessions_dir: Some(sessions_dir.clone()),
+        max_active_threads: overrides.max_active_threads.unwrap_or(8),
+    };
+    let runtime_threads: SharedRuntimeThreadManager =
+        Arc::new(match overrides.plugin_discovery.as_ref() {
+            Some(discovery) => RuntimeThreadManager::open_with_plugin_registry(
+                config.clone(),
+                workspace.clone(),
+                manager_config,
+                discovery.registry_for_workspace(&workspace),
+            )?,
+            None => RuntimeThreadManager::open(config.clone(), workspace.clone(), manager_config)?,
+        });
     let sessions_dir = runtime_threads.sessions_dir().to_path_buf();
     runtime_threads.attach_task_manager(manager.clone());
     let automations = Arc::new(Mutex::new(AutomationManager::open_for_test(
@@ -2663,15 +2691,19 @@ async fn workspace_and_automation_endpoints_work() -> Result<()> {
     Ok(())
 }
 
-fn test_fleet_route_config() -> crate::config::Config {
-    let mut providers = crate::config::ProvidersConfig::default();
+fn test_fleet_route_config() -> codewhale_runtime::config::Config {
+    let mut providers = codewhale_runtime::config::ProvidersConfig::default();
     providers.deepseek.api_key = Some("test-key".to_string());
     providers.xai.api_key = Some("test-key".to_string());
     providers.zai.api_key = Some("test-key".to_string());
-    crate::config::Config {
-        provider: Some("deepseek".to_string()),
-        providers: Some(providers),
-        ..crate::config::Config::default()
+    {
+        let __cw_config_init_7_0 = Some("deepseek".to_string());
+        let __cw_config_init_7_1 = Some(providers);
+        let mut __cw_config_init_7_value: codewhale_runtime::config::Config =
+            codewhale_runtime::config::Config::default();
+        __cw_config_init_7_value.provider = __cw_config_init_7_0;
+        __cw_config_init_7_value.providers = __cw_config_init_7_1;
+        __cw_config_init_7_value
     }
     .with_legacy_root(Some("test-key".to_string()), None)
 }
@@ -7092,6 +7124,7 @@ async fn session_save_without_an_id_keeps_the_conversation_that_owns_the_snapsho
                     model_provider_id: None,
                     workspace: root.clone(),
                     system_prompt: None,
+                    instruction_assembly: None,
                     mode: "agent".to_string(),
                 };
                 if let Some(tx) = tx.lock().ok().and_then(|mut guard| guard.take()) {
@@ -12079,12 +12112,14 @@ fn resolve_skills_scenario() {
         crate::test_support::trust_workspace(workspace);
         fs::create_dir_all(&local_skills).expect("create skills dir");
 
-        let config = Config {
-            skills: Some(crate::config::SkillsConfig {
+        let config = {
+            let __cw_config_init_8_0 = Some(codewhale_runtime::config::SkillsConfig {
                 flat_workspace_root: Some(true),
                 ..Default::default()
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_8_value: Config = Default::default();
+            __cw_config_init_8_value.skills = __cw_config_init_8_0;
+            __cw_config_init_8_value
         };
         let resolved = resolve_skills_dir(&config, workspace);
 
@@ -12101,12 +12136,14 @@ fn resolve_skills_scenario() {
         fs::create_dir_all(&codewhale_skills).expect("create codewhale skills dir");
         crate::test_support::trust_workspace(workspace);
 
-        let config = Config {
-            skills: Some(crate::config::SkillsConfig {
+        let config = {
+            let __cw_config_init_9_0 = Some(codewhale_runtime::config::SkillsConfig {
                 scan_codewhale_only: Some(true),
                 ..Default::default()
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_9_value: Config = Default::default();
+            __cw_config_init_9_value.skills = __cw_config_init_9_0;
+            __cw_config_init_9_value
         };
         let resolved = resolve_skills_dir(&config, workspace);
 
@@ -12122,13 +12159,16 @@ fn resolve_skills_scenario() {
         fs::create_dir_all(&codewhale_skills).expect("create codewhale skills dir");
         fs::create_dir_all(&configured_skills).expect("create configured skills dir");
 
-        let config = Config {
-            skills_dir: Some(configured_skills.to_string_lossy().into_owned()),
-            skills: Some(crate::config::SkillsConfig {
+        let config = {
+            let __cw_config_init_10_0 = Some(configured_skills.to_string_lossy().into_owned());
+            let __cw_config_init_10_1 = Some(codewhale_runtime::config::SkillsConfig {
                 scan_codewhale_only: Some(true),
                 ..Default::default()
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_10_value: Config = Default::default();
+            __cw_config_init_10_value.skills_dir = __cw_config_init_10_0;
+            __cw_config_init_10_value.skills = __cw_config_init_10_1;
+            __cw_config_init_10_value
         };
         let resolved = resolve_skills_dir(&config, &workspace);
 
@@ -12258,25 +12298,26 @@ fn resolve_skills_dir_rejects_symlink_escaping_workspace() {
 fn resolve_skills_dir_ignores_untrusted_workspace_skills() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let _home = crate::test_support::SealedHome::at(tmp.path());
-    let codewhale_only = Config {
-        skills: Some(crate::config::SkillsConfig {
+    let codewhale_only = {
+        let __cw_config_init_11_0 = Some(codewhale_runtime::config::SkillsConfig {
             scan_codewhale_only: Some(true),
             ..Default::default()
-        }),
-        ..Default::default()
+        });
+        let mut __cw_config_init_11_value: Config = Default::default();
+        __cw_config_init_11_value.skills = __cw_config_init_11_0;
+        __cw_config_init_11_value
     };
     for (relative, config) in [
         (".agents/skills", Config::default()),
-        (
-            "skills",
-            Config {
-                skills: Some(crate::config::SkillsConfig {
-                    flat_workspace_root: Some(true),
-                    ..Default::default()
-                }),
+        ("skills", {
+            let __cw_config_init_12_0 = Some(codewhale_runtime::config::SkillsConfig {
+                flat_workspace_root: Some(true),
                 ..Default::default()
-            },
-        ),
+            });
+            let mut __cw_config_init_12_value: Config = Default::default();
+            __cw_config_init_12_value.skills = __cw_config_init_12_0;
+            __cw_config_init_12_value
+        }),
         (".codewhale/skills", codewhale_only),
     ] {
         let workspace = tmp
@@ -12315,12 +12356,14 @@ fn resolve_skills_dir_rejects_codewhale_only_symlink_escaping_workspace() {
     let bad_link = dotcodewhale.join("skills");
     std::os::unix::fs::symlink(&escape_target, &bad_link).expect("symlink");
 
-    let config = Config {
-        skills: Some(crate::config::SkillsConfig {
+    let config = {
+        let __cw_config_init_13_0 = Some(codewhale_runtime::config::SkillsConfig {
             scan_codewhale_only: Some(true),
             ..Default::default()
-        }),
-        ..Default::default()
+        });
+        let mut __cw_config_init_13_value: Config = Default::default();
+        __cw_config_init_13_value.skills = __cw_config_init_13_0;
+        __cw_config_init_13_value
     };
     let resolved = resolve_skills_dir(&config, &workspace_root);
 
@@ -12928,7 +12971,7 @@ async fn settings_schema_write_fallthrough_persists_declared_settings_keys() -> 
         .await?;
     assert_eq!(response["persisted"], true);
     assert_eq!(
-        crate::settings::Settings::load_persisted()?.composer_density,
+        codewhale_runtime::settings::Settings::load_persisted()?.composer_density,
         "compact"
     );
     let body = get_settings_schema(&client, &addr).await;
@@ -13506,12 +13549,15 @@ fn provider_reasoning_metadata_keeps_exact_roster_levels_and_unknown_boundaries(
         .expect("canonical private fixture home");
     let _codex_home = crate::test_support::EnvVarGuard::set("CODEX_HOME", &canonical_home);
     let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", &canonical_home);
-    let mut config = Config {
-        provider: Some("openai-codex".to_string()),
-        ..Config::default()
+    let mut config = {
+        let __cw_config_init_14_0 = Some("openai-codex".to_string());
+        let mut __cw_config_init_14_value: Config = Config::default();
+        __cw_config_init_14_value.provider = __cw_config_init_14_0;
+        __cw_config_init_14_value
     };
-    let access_token = crate::oauth::install_test_chatgpt_registration(&mut config).unwrap();
-    crate::codex_model_cache::install_test_chatgpt_roster_with_metadata(
+    let access_token =
+        codewhale_runtime::oauth::install_test_chatgpt_registration(&mut config).unwrap();
+    codewhale_runtime::codex_model_roster::install_test_chatgpt_roster_with_metadata(
         &config,
         [
             (
@@ -13535,7 +13581,7 @@ fn provider_reasoning_metadata_keeps_exact_roster_levels_and_unknown_boundaries(
         ]
         .into_iter()
         .map(
-            |(id, reasoning, efforts)| crate::codex_model_cache::CodexModelMetadata {
+            |(id, reasoning, efforts)| codewhale_runtime::codex_model_roster::CodexModelMetadata {
                 id: id.into(),
                 display_name: None,
                 context_window: None,
@@ -13548,7 +13594,7 @@ fn provider_reasoning_metadata_keeps_exact_roster_levels_and_unknown_boundaries(
     .unwrap();
     // Locate the one snapshot actually created by the account-scoped helper;
     // an external CODEX_HOME cache is not an account roster authority.
-    let catalog_path = crate::models_dev_live::cache_path().unwrap();
+    let catalog_path = codewhale_runtime::catalog_cache::cache_path().unwrap();
     let snapshots: Vec<_> = fs::read_dir(catalog_path.parent().unwrap())
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -13734,10 +13780,13 @@ fn provider_catalog_keeps_official_deepseek_facts_but_not_custom_proxy_claims() 
         "https://api.deepseek.com/v1",
         "https://api.deepseek.com/beta/",
     ] {
-        let mut config = Config {
-            provider: Some("deepseek".to_string()),
-            default_text_model: Some("deepseek-v4-pro".to_string()),
-            ..Config::default()
+        let mut config = {
+            let __cw_config_init_15_0 = Some("deepseek".to_string());
+            let __cw_config_init_15_1 = Some("deepseek-v4-pro".to_string());
+            let mut __cw_config_init_15_value: Config = Config::default();
+            __cw_config_init_15_value.provider = __cw_config_init_15_0;
+            __cw_config_init_15_value.default_text_model = __cw_config_init_15_1;
+            __cw_config_init_15_value
         };
         let provider_config = config
             .provider_config_for_mut(&config.test_identity_for_kind(ProviderKind::Deepseek))
@@ -13763,10 +13812,13 @@ fn provider_catalog_keeps_official_deepseek_facts_but_not_custom_proxy_claims() 
         );
     }
 
-    let mut custom = Config {
-        provider: Some("deepseek".to_string()),
-        default_text_model: Some("private-deepseek-deployment".to_string()),
-        ..Config::default()
+    let mut custom = {
+        let __cw_config_init_16_0 = Some("deepseek".to_string());
+        let __cw_config_init_16_1 = Some("private-deepseek-deployment".to_string());
+        let mut __cw_config_init_16_value: Config = Config::default();
+        __cw_config_init_16_value.provider = __cw_config_init_16_0;
+        __cw_config_init_16_value.default_text_model = __cw_config_init_16_1;
+        __cw_config_init_16_value
     };
     let provider_config = custom
         .provider_config_for_mut(&custom.test_identity_for_kind(ProviderKind::Deepseek))
@@ -15050,7 +15102,7 @@ model = "glm-2"
     // The receipt that matters: what was written still loads under the new
     // route, and resolves the selected leaf rather than the root fallback.
     // Validating the root alias instead of the selection returned 500 here.
-    let reloaded = Config::load(Some(config_file.clone()), None)?;
+    let reloaded = crate::plugins::providers::load_config(Some(config_file.clone()), None)?;
     assert_eq!(
         reloaded.active_provider_identity().unwrap().provider,
         codewhale_config::ProviderKind::Deepseek
@@ -15724,7 +15776,7 @@ async fn set_config_model_follows_persisted_provider_before_reload() -> Result<(
     );
     // The persisted value is the normalized wire id (lowercase), not the
     // display spelling of DEFAULT_VOLCENGINE_FLASH_MODEL.
-    let expected_wire = crate::config::normalize_model_name_for_provider(
+    let expected_wire = codewhale_runtime::config::normalize_model_name_for_provider(
         codewhale_config::ProviderKind::Volcengine,
         target_model,
     )
@@ -18250,7 +18302,7 @@ async fn terminal_routes_serve_a_live_engine_session_over_http() -> Result<()> {
     let _session = crate::tools::terminal_session::get_or_create(
         "pane",
         &workspace,
-        crate::sandbox::SandboxPolicy::DangerFullAccess,
+        codewhale_sandbox::SandboxPolicy::DangerFullAccess,
         &crate::tools::shell::new_shared_shell_manager(workspace.clone()),
     )
     .map_err(anyhow::Error::msg)?;
@@ -19022,9 +19074,11 @@ fn oauth_pass_through_provider_lists_catalog_models_without_a_live_listing() {
     let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", home.path());
     crate::provider_catalog_live::reset_cache_for_test();
     crate::provider_lake::clear_live_snapshot();
-    let mut config = Config {
-        provider: Some("deepseek".into()),
-        ..Default::default()
+    let mut config = {
+        let __cw_config_init_17_0 = Some("deepseek".into());
+        let mut __cw_config_init_17_value: Config = Default::default();
+        __cw_config_init_17_value.provider = __cw_config_init_17_0;
+        __cw_config_init_17_value
     };
     // Before the OAuth opt-in, a pass-through provider with no live listing
     // offers only its configured model.
@@ -19064,9 +19118,11 @@ fn api_provider_default_and_model_list_follow_exact_local_catalog() {
     crate::provider_lake::clear_live_snapshot();
     let provider = ProviderKind::Ollama;
     let endpoint = "http://localhost:11455/v1";
-    let mut config = Config {
-        provider: Some("ollama".into()),
-        ..Default::default()
+    let mut config = {
+        let __cw_config_init_18_0 = Some("ollama".into());
+        let mut __cw_config_init_18_value: Config = Default::default();
+        __cw_config_init_18_value.provider = __cw_config_init_18_0;
+        __cw_config_init_18_value
     };
     config
         .provider_config_for_mut(&config.test_identity_for_kind(provider))
@@ -19712,10 +19768,13 @@ async fn runtime_image_http_rejects_before_dispatch_and_accepts_large_canonical_
     let _env = crate::test_support::lock_test_env();
     let dir = tempfile::tempdir()?;
     let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", dir.path());
-    let mut config = Config {
-        provider: Some("deepseek".into()),
-        default_text_model: Some("deepseek-v4-flash-vision-exp".into()),
-        ..Default::default()
+    let mut config = {
+        let __cw_config_init_19_0 = Some("deepseek".into());
+        let __cw_config_init_19_1 = Some("deepseek-v4-flash-vision-exp".into());
+        let mut __cw_config_init_19_value: Config = Default::default();
+        __cw_config_init_19_value.provider = __cw_config_init_19_0;
+        __cw_config_init_19_value.default_text_model = __cw_config_init_19_1;
+        __cw_config_init_19_value
     }
     .with_legacy_root(Some("synthetic-image-key".into()), None);
     config
@@ -19836,10 +19895,13 @@ async fn runtime_image_stream_rejection_does_not_leave_empty_threads() -> Result
     let _env = crate::test_support::lock_test_env();
     let dir = tempfile::tempdir()?;
     let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", dir.path());
-    let mut config = Config {
-        provider: Some("deepseek".into()),
-        default_text_model: Some("deepseek-v4-flash-vision-exp".into()),
-        ..Default::default()
+    let mut config = {
+        let __cw_config_init_20_0 = Some("deepseek".into());
+        let __cw_config_init_20_1 = Some("deepseek-v4-flash-vision-exp".into());
+        let mut __cw_config_init_20_value: Config = Default::default();
+        __cw_config_init_20_value.provider = __cw_config_init_20_0;
+        __cw_config_init_20_value.default_text_model = __cw_config_init_20_1;
+        __cw_config_init_20_value
     }
     .with_legacy_root(Some("synthetic-image-key".into()), None);
     config
@@ -19901,22 +19963,25 @@ async fn runtime_image_named_catalog_resolves_and_echoes_exact_configured_identi
     let _env = crate::test_support::lock_test_env();
     let dir = tempfile::tempdir()?;
     let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", dir.path());
-    let route = crate::config::ProviderConfig {
+    let route = codewhale_runtime::config::ProviderConfig {
         kind: Some("openai-compatible".into()),
         base_url: Some("http://127.0.0.1:9/v1".into()),
         model: Some("same-model".into()),
         ..Default::default()
     };
-    let config = Config {
-        provider: Some("vision-personal".into()),
-        providers: Some(crate::config::ProvidersConfig {
+    let config = {
+        let __cw_config_init_21_0 = Some("vision-personal".into());
+        let __cw_config_init_21_1 = Some(codewhale_runtime::config::ProvidersConfig {
             custom: std::collections::HashMap::from([
                 ("vision-personal".into(), route.clone()),
                 ("vision-work".into(), route),
             ]),
             ..Default::default()
-        }),
-        ..Default::default()
+        });
+        let mut __cw_config_init_21_value: Config = Default::default();
+        __cw_config_init_21_value.provider = __cw_config_init_21_0;
+        __cw_config_init_21_value.providers = __cw_config_init_21_1;
+        __cw_config_init_21_value
     };
     let (addr, _, server) = spawn_test_server_with_root_token_mobile_workspace_and_overrides(
         dir.path().to_path_buf(),
@@ -20151,10 +20216,13 @@ async fn output_cap_compatibility_stream_rejects_before_thread_creation() -> Res
         false,
         root.join("workspace"),
         TestServerOverrides {
-            config: Some(Config {
-                provider: Some("openai-codex".into()),
-                default_text_model: Some("gpt-5.5".into()),
-                ..Config::default()
+            config: Some({
+                let __cw_config_init_22_0 = Some("openai-codex".into());
+                let __cw_config_init_22_1 = Some("gpt-5.5".into());
+                let mut __cw_config_init_22_value: Config = Config::default();
+                __cw_config_init_22_value.provider = __cw_config_init_22_0;
+                __cw_config_init_22_value.default_text_model = __cw_config_init_22_1;
+                __cw_config_init_22_value
             }),
             ..Default::default()
         },
@@ -25265,12 +25333,14 @@ mod thread_snapshot_ownership {
         let _env = lock_test_env();
         let root = test_root("honest");
         let _home = EnvVarGuard::set("CODEWHALE_HOME", root.join("home"));
-        let config = Config {
-            snapshots: Some(crate::config::SnapshotsConfig {
+        let config = {
+            let __cw_config_init_23_0 = Some(codewhale_runtime::config::SnapshotsConfig {
                 enabled: false,
-                ..crate::config::SnapshotsConfig::default()
-            }),
-            ..Config::default()
+                ..codewhale_runtime::config::SnapshotsConfig::default()
+            });
+            let mut __cw_config_init_23_value: Config = Config::default();
+            __cw_config_init_23_value.snapshots = __cw_config_init_23_0;
+            __cw_config_init_23_value
         }
         .with_legacy_root(
             Some("runtime-api-test-key".to_string()),
@@ -26092,13 +26162,13 @@ fn workspace_bootstrap_status_reports_the_trust_gate() -> Result<()> {
         "a fresh workspace must report untrusted"
     );
 
-    crate::config::set_workspace_trust(&workspace, true)?;
+    codewhale_runtime::config::set_workspace_trust(&workspace, true)?;
     assert!(
         collect_workspace_status(&workspace).workspace_trusted,
         "the status projection must follow the gate"
     );
 
-    crate::config::set_workspace_trust(&workspace, false)?;
+    codewhale_runtime::config::set_workspace_trust(&workspace, false)?;
     assert!(
         !collect_workspace_status(&workspace).workspace_trusted,
         "revoking must be visible to the status projection too"

@@ -405,6 +405,21 @@ impl ToolSpec for HostToolSpec {
             ))
         })?;
         let mut result = wire_to_result(wire, &self.origin());
+        if let Some(Value::Object(metadata)) = result.metadata.as_mut() {
+            metadata.insert(
+                "extension".to_string(),
+                serde_json::json!({
+                    "plugin_id": registration.owner.plugin_id,
+                    "content_hash": registration.content_hash,
+                    "entry": registration.scope,
+                    "generation": registration.owner.generation,
+                    "host_generation": host.generation,
+                    "selection": self.selection,
+                    "handle": registration.handle,
+                    "boot_id": crate::session_manager::current_session_boot_id(),
+                }),
+            );
+        }
         // What the tool asked the core to run, so the persisted record shows it.
         if let (Some(receipts), Some(Value::Object(metadata))) = (
             invocation.as_ref().and_then(InvocationGuard::receipts),

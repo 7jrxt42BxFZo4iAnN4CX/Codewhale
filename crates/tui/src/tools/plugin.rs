@@ -45,7 +45,7 @@ use super::spec::{
     ApprovalRequirement, ToolCapability, ToolContext, ToolError, ToolResult, ToolSpec,
 };
 
-use crate::config::ToolOverride;
+use codewhale_runtime::config::ToolOverride;
 
 /// Timeout for plugin script execution (120 seconds).
 const PLUGIN_EXECUTION_TIMEOUT: Duration = Duration::from_secs(120);

@@ -11,12 +11,12 @@ use super::web::extract::{DocumentKind, ExtractedDocument, extract_document};
 #[cfg(test)]
 use super::web::fetch::fetch_readable_with_initial_pin;
 use super::web::fetch::{FetchOptions, HARD_MAX_BYTES, Readable, fetch_readable};
-#[cfg(test)]
-use super::web::guard::DnsPin;
 use super::web::overflow::bound_text as bound_web_text;
 #[cfg(test)]
 use super::web::overflow::inline_char_budget;
 use async_trait::async_trait;
+#[cfg(test)]
+use codewhale_net::guard::DnsPin;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -2024,8 +2024,8 @@ mod tests {
 
     #[tokio::test]
     async fn text_search_uses_configured_shared_backend_and_exposes_receipt() {
-        use crate::config::SearchProvider;
         use crate::tools::spec::ToolSpec;
+        use codewhale_runtime::config::SearchProvider;
         use wiremock::matchers::{method, path, query_param};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -2080,8 +2080,8 @@ mod tests {
 
     #[tokio::test]
     async fn search_ref_ids_resolve_to_their_source_urls_for_open() {
-        use crate::config::SearchProvider;
         use crate::tools::spec::ToolSpec;
+        use codewhale_runtime::config::SearchProvider;
         use wiremock::matchers::{method, path, query_param};
         use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -2422,7 +2422,7 @@ mod tests {
 
     #[tokio::test]
     async fn network_policy_denies_direct_open_url() {
-        use crate::network_policy::{Decision, NetworkPolicy, NetworkPolicyDecider};
+        use codewhale_net::network_policy::{Decision, NetworkPolicy, NetworkPolicyDecider};
 
         let policy = NetworkPolicy {
             default: Decision::Deny.into(),

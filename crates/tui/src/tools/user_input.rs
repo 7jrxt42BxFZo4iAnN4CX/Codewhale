@@ -52,7 +52,7 @@ impl UserInputLimits {
     /// (#5949). Resolved once per engine build; out-of-range `[tools]` values
     /// clamp with a single warning naming the key and the value used.
     #[must_use]
-    pub fn from_config(config: &crate::config::Config) -> Self {
+    pub fn from_config(config: &codewhale_runtime::config::Config) -> Self {
         let tools = config.tools.as_ref();
         Self::from_config_values(
             tools.and_then(|t| t.user_input_max_questions),

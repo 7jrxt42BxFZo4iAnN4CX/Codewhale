@@ -13,8 +13,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 
 use super::protocol::{
-    self, OwnerRef, RegisterKind, RegisterParams, RegisterSpecWire, parse_core_message,
-    parse_host_message,
+    self, RegisterKind, RegisterParams, RegisterSpecWire, parse_core_message, parse_host_message,
 };
 use super::registry::{OwnerRegistry, OwnerState};
 use super::tier::HostTier;
@@ -24,10 +23,12 @@ use crate::plugins::PluginRegistry;
 use crate::plugins::activation::TestPolicyGuard;
 use crate::plugins::discovery::{DiscoveryConfig, discover_with_config};
 use crate::tools::spec::{ApprovalRequirement, ToolContext, ToolError, ToolSpec};
+use codewhale_config::OwnerRef;
 
 /// The integration tests below run the host on Node unless they say
 /// otherwise; the Bun ones pin Bun (`bun_for_tests`).
-const NODE: crate::config::ExtensionHostRuntime = crate::config::ExtensionHostRuntime::Node;
+const NODE: codewhale_config::extension_host::ExtensionHostRuntime =
+    codewhale_config::extension_host::ExtensionHostRuntime::Node;
 
 /// What the registry is told is a built-in command in the tests that are not
 /// about the command table. Those that are (`commands::extension_host_tests`)
@@ -149,6 +150,8 @@ pub(crate) fn fake_authority(plugin_id: &str) -> codewhale_config::PluginAuthori
         plugin_name: plugin_id.to_string(),
         workspace: PathBuf::from("/w"),
         state_path: PathBuf::from("/s"),
+        managed_policy_path: Some(PathBuf::from("/managed-policy.json")),
+        managed_policy_source: Some(PathBuf::from("/managed-policy.json")),
         source_manifest: PathBuf::from("/m"),
         staged_manifest: PathBuf::from("/sm"),
         content_hash: format!("hash-{plugin_id}"),
@@ -671,7 +674,7 @@ fn every_package_in_the_bundle_has_a_licence_notice_and_a_third_party_entry() {
 /// the tests were not explicitly required.
 pub(crate) fn node_for_tests(test: &str) -> Option<PathBuf> {
     let resolution = crate::dependencies::resolve_extension_host_runtime(
-        crate::config::ExtensionHostRuntime::Node,
+        codewhale_config::extension_host::ExtensionHostRuntime::Node,
         None,
         None,
     );
@@ -718,7 +721,7 @@ impl FixturePlugins {
                 PluginInstallSource::LocalPath(fixtures_dir().join(name)),
                 &user,
                 DEFAULT_MAX_SIZE_BYTES,
-                &crate::network_policy::NetworkPolicy::default(),
+                &codewhale_net::network_policy::NetworkPolicy::default(),
                 false,
                 &|_| None,
             )
@@ -1007,10 +1010,10 @@ async fn a_plugin_with_two_native_entries_activates_both_under_one_owner() {
 fn plugin_settings(
     name: &str,
     config: &str,
-) -> std::collections::BTreeMap<String, crate::config::PluginSettings> {
+) -> std::collections::BTreeMap<String, codewhale_config::extension_host::PluginSettings> {
     std::collections::BTreeMap::from([(
         name.to_string(),
-        crate::config::PluginSettings {
+        codewhale_config::extension_host::PluginSettings {
             config: Some(toml::from_str(config).expect("config TOML")),
         },
     )])
@@ -1046,7 +1049,7 @@ fn plugin_settings_are_read_from_the_user_config_and_bounded() {
         "model = \"x\"\n[plugins.\"greeter\".config]\ngreeting = \"Hi\"\nlimit = 3\n[plugins.\"greeter\".config.nested]\ntags = [\"a\", \"b\"]\n[plugins.\"quiet\"]\n",
     )
     .unwrap();
-    let settings = crate::config::read_plugin_settings(&path).unwrap();
+    let settings = codewhale_runtime::config::read_plugin_settings(&path).unwrap();
     let mut configs = PluginConfigs::default();
     configs.replace(&settings, Some(path.clone()));
     assert_eq!(configs.source(), Some(path.clone()));
@@ -1081,13 +1084,13 @@ fn plugin_settings_are_read_from_the_user_config_and_bounded() {
 
     // A missing file has no settings; an unreadable shape or a stray key fails loudly.
     assert!(
-        crate::config::read_plugin_settings(&dir.path().join("absent.toml"))
+        codewhale_runtime::config::read_plugin_settings(&dir.path().join("absent.toml"))
             .unwrap()
             .is_empty()
     );
     std::fs::write(&path, "[plugins.\"greeter\"]\nenabled = true\n").unwrap();
     assert!(
-        crate::config::read_plugin_settings(&path)
+        codewhale_runtime::config::read_plugin_settings(&path)
             .unwrap_err()
             .contains("cannot parse")
     );
@@ -1634,7 +1637,11 @@ async fn compiled_native_host_cannot_read_secrets_or_write_outside_its_data_dir(
     let Some(binary) = compiled_image_for_tests() else {
         return;
     };
-    sandboxed_host_boundary(crate::config::ExtensionHostRuntime::Bun, binary).await;
+    sandboxed_host_boundary(
+        codewhale_config::extension_host::ExtensionHostRuntime::Bun,
+        binary,
+    )
+    .await;
     // Emitted only after the complete actual Rust admission/tool scenario.
     // CI extracts this same full-run success output; no fake-Core promotion.
     eprintln!(
@@ -1658,7 +1665,7 @@ fn compiled_image_for_tests() -> Option<PathBuf> {
     };
     let binary = PathBuf::from(binary);
     let resolution = crate::dependencies::resolve_extension_host_runtime(
-        crate::config::ExtensionHostRuntime::Bun,
+        codewhale_config::extension_host::ExtensionHostRuntime::Bun,
         None,
         Some(&binary),
     );
@@ -1674,13 +1681,12 @@ fn compiled_image_for_tests() -> Option<PathBuf> {
 }
 
 async fn sandboxed_host_boundary(
-    choice: crate::config::ExtensionHostRuntime,
+    choice: codewhale_config::extension_host::ExtensionHostRuntime,
     runtime_path: PathBuf,
 ) {
     let _policy = TestPolicyGuard::extension_host(true);
     let fixture = FixturePlugins::new(&["secret-probe"]).await;
-    // Created before launch: the deny-list records the canonical spelling of
-    // paths that exist (macOS `/var` → `/private/var`).
+    // Synthetic credential stores created before launch remain outside read grants.
     let secrets = fixture.root.join("secrets");
     std::fs::create_dir_all(&secrets).unwrap();
     let token = secrets.join("token");
@@ -1692,15 +1698,36 @@ async fn sandboxed_host_boundary(
     let tokens = fixture.root.join("tokens");
     std::fs::create_dir_all(&tokens).unwrap();
     std::fs::write(tokens.join("codex.json"), "s3cret-oauth").unwrap();
-    // Outside Core home, POSIX ordinary reads remain allowed; Windows LPAC
-    // refuses ungranted workspace reads. Neither path grants Core secrets.
+    // Native hosts refuse ungranted workspace reads on every platform.
     let readable = fixture.workspace().join("readable.txt");
     std::fs::write(&readable, "plain").unwrap();
+    let dotenv = fixture.workspace().join(".env");
+    std::fs::write(&dotenv, "TOKEN=synthetic-private-value").unwrap();
+    #[cfg(unix)]
+    let external_metadata = {
+        let worktree = fixture.workspace().join("external-worktree");
+        let common = fixture.workspace().join("external-repository/.git");
+        let metadata = common.join("worktrees/external");
+        std::fs::create_dir_all(&worktree).unwrap();
+        std::fs::create_dir_all(&metadata).unwrap();
+        let pointer = worktree.join(".git");
+        std::fs::write(&pointer, format!("gitdir: {}\n", metadata.display())).unwrap();
+        std::fs::write(metadata.join("commondir"), "../..\n").unwrap();
+        std::fs::write(
+            metadata.join("gitdir"),
+            pointer.to_string_lossy().as_bytes(),
+        )
+        .unwrap();
+        let data = fixture.root.join("extension-host/data");
+        std::fs::create_dir_all(&data).unwrap();
+        std::os::unix::fs::symlink(&pointer, data.join(".git")).unwrap();
+        metadata
+    };
 
     let manager = Arc::new(ExtensionHostManager::new(ExtensionHostOptions {
         runtime: choice,
         node_override: (choice == NODE).then_some(runtime_path.clone()),
-        bun_override: (choice == crate::config::ExtensionHostRuntime::Bun)
+        bun_override: (choice == codewhale_config::extension_host::ExtensionHostRuntime::Bun)
             .then_some(runtime_path.clone()),
         root: Some(fixture.root.clone()),
         ..Default::default()
@@ -1723,15 +1750,19 @@ async fn sandboxed_host_boundary(
     let write = host_tool(&engine, fixture.workspace(), "probe_write");
 
     let plain = probe(&read, &readable, &context).await;
-    #[cfg(not(windows))]
     assert_eq!(
-        plain,
-        json!({"ok": true, "text": "plain"}),
-        "ordinary reads work"
+        plain["ok"], false,
+        "Native hosts refuse ungranted workspace reads"
     );
-    #[cfg(windows)]
-    assert_eq!(plain["ok"], false, "LPAC refuses ungranted workspace reads");
-    for denied in [token, backup, tokens.join("codex.json")] {
+    let late_project = fixture.workspace().join("late.env");
+    std::fs::write(&late_project, "TOKEN=synthetic-private-value").unwrap();
+    for denied in [
+        token,
+        backup,
+        tokens.join("codex.json"),
+        dotenv.clone(),
+        late_project,
+    ] {
         let secret = probe(&read, &denied, &context).await;
         assert_eq!(secret["ok"], false, "{} was readable", denied.display());
         assert!(
@@ -1740,7 +1771,7 @@ async fn sandboxed_host_boundary(
             denied.display()
         );
     }
-    // A store created after the host started is denied by name.
+    // A store created after the host started remains outside read grants.
     let state = fixture.root.join("state");
     std::fs::create_dir_all(&state).unwrap();
     std::fs::write(state.join("late.json"), "s3cret-late").unwrap();
@@ -1749,15 +1780,14 @@ async fn sandboxed_host_boundary(
         late["ok"], false,
         "a store created after start was readable"
     );
-    // The migrated history can first appear after host launch too. Its name
-    // must be denied before enumeration can observe the file.
+    // Migrated history can first appear after launch and remains unreadable.
     let history = fixture.root.join("composer_history.jsonl");
     std::fs::write(&history, "\"private synthetic prompt\"\n").unwrap();
     let late_history = probe(&read, &history, &context).await;
     assert_eq!(late_history["ok"], false, "new history was readable");
     // The Codex credential file Codewhale itself reads, when this machine has
     // one. Only `ok` is reported, never the content.
-    let codex_auth = crate::oauth::auth_file_path();
+    let codex_auth = codewhale_runtime::oauth::auth_file_path();
     if codex_auth.is_file() {
         let codex = probe(&read, &codex_auth, &context).await;
         assert_eq!(codex["ok"], false, "code: {}", codex["code"]);
@@ -1765,9 +1795,49 @@ async fn sandboxed_host_boundary(
 
     let data = fixture.root.join("extension-host/data/probe.txt");
     assert_eq!(probe(&write, &data, &context).await["ok"], true);
-    // Outside the data dir and the temp dirs (the fixture itself lives under
-    // TMPDIR, which the profile leaves writable): the crate's source dir,
-    // unless the checkout itself sits in a temp dir.
+    assert_eq!(
+        probe(&read, &data, &context).await,
+        json!({"ok": true, "text": "probe"})
+    );
+    let scratch = fixture.root.join("extension-host/data/tmp/probe.txt");
+    assert_eq!(probe(&write, &scratch, &context).await["ok"], true);
+    assert_eq!(probe(&read, &scratch, &context).await["ok"], true);
+    #[cfg(unix)]
+    {
+        assert_eq!(
+            probe(&read, &external_metadata.join("commondir"), &context).await["ok"],
+            false
+        );
+        let escaped = external_metadata.join("native-write-escape");
+        assert_eq!(probe(&write, &escaped, &context).await["ok"], false);
+        assert!(!escaped.exists());
+        let linked = fixture.root.join("extension-host/data/project-secret");
+        std::os::unix::fs::symlink(&dotenv, &linked).unwrap();
+        assert_eq!(probe(&read, &linked, &context).await["ok"], false);
+        if choice == NODE {
+            for (path, expected) in [(&data, true), (&dotenv, false), (&linked, false)] {
+                let result = read
+                    .execute(
+                        json!({"path": path.to_string_lossy(), "child": true}),
+                        &context,
+                    )
+                    .await
+                    .unwrap();
+                let result: Value = serde_json::from_str(&result.content).unwrap();
+                assert_eq!(
+                    result["ok"],
+                    expected,
+                    "Native child read {}: {result}",
+                    path.display()
+                );
+            }
+        }
+    }
+    let outside = fixture.workspace().join("native-write-escape");
+    assert_eq!(probe(&write, &outside, &context).await["ok"], false);
+    assert!(!outside.exists());
+    // Outside the data directory: the crate's source directory, unless the
+    // checkout itself sits in a temp directory.
     let crate_dir = std::fs::canonicalize(env!("CARGO_MANIFEST_DIR")).unwrap();
     let in_temp = [std::env::temp_dir(), PathBuf::from("/tmp")]
         .iter()
@@ -1784,73 +1854,74 @@ async fn sandboxed_host_boundary(
     // Bun's TCP error adapter collapses Darwin's EPERM into ECONNREFUSED.
     // Its UDP adapter retains the OS errno, so use a real bound datagram
     // receiver there; every other runtime/platform keeps the TCP control.
-    let (denied, accepted_count, protocol) =
-        if cfg!(target_os = "macos") && choice == crate::config::ExtensionHostRuntime::Bun {
-            let listener = tokio::net::UdpSocket::bind(("127.0.0.1", 0)).await.unwrap();
-            let address = listener.local_addr().unwrap();
-            let positive = tokio::net::UdpSocket::bind(("127.0.0.1", 0)).await.unwrap();
-            let marker = b"controller-network-probe";
-            assert_eq!(
-                positive.send_to(marker, address).await.unwrap(),
-                marker.len()
-            );
-            let mut packet = [0_u8; 64];
-            let (bytes, sender) =
-                tokio::time::timeout(Duration::from_secs(2), listener.recv_from(&mut packet))
-                    .await
-                    .unwrap()
-                    .unwrap();
-            assert_eq!(&packet[..bytes], marker);
-            assert_eq!(sender, positive.local_addr().unwrap());
-            let mut accepted_count = 1;
-            let send = host_tool(&engine, fixture.workspace(), "probe_send");
-            let result = tokio::time::timeout(
-                Duration::from_secs(5),
-                send.execute(json!({"port": address.port()}), &context),
-            )
-            .await
-            .unwrap()
-            .unwrap();
-            let denied: Value = serde_json::from_str(&result.content).unwrap();
-            if tokio::time::timeout(Duration::from_millis(100), listener.recv_from(&mut packet))
-                .await
-                .is_ok()
-            {
-                accepted_count += 1;
-            }
-            (denied, accepted_count, "udp")
-        } else {
-            // The unsandboxed controller reaches this actual listener. The Native
-            // host must fail the same connection at its own OS sandbox boundary.
-            let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
-                .await
-                .unwrap();
-            let address = listener.local_addr().unwrap();
-            let positive = tokio::net::TcpStream::connect(address).await.unwrap();
-            let (accepted, _) = tokio::time::timeout(Duration::from_secs(2), listener.accept())
+    let (denied, accepted_count, protocol) = if cfg!(target_os = "macos")
+        && choice == codewhale_config::extension_host::ExtensionHostRuntime::Bun
+    {
+        let listener = tokio::net::UdpSocket::bind(("127.0.0.1", 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let positive = tokio::net::UdpSocket::bind(("127.0.0.1", 0)).await.unwrap();
+        let marker = b"controller-network-probe";
+        assert_eq!(
+            positive.send_to(marker, address).await.unwrap(),
+            marker.len()
+        );
+        let mut packet = [0_u8; 64];
+        let (bytes, sender) =
+            tokio::time::timeout(Duration::from_secs(2), listener.recv_from(&mut packet))
                 .await
                 .unwrap()
                 .unwrap();
-            let mut accepted_count = 1;
-            drop(positive);
-            drop(accepted);
-            let connect = host_tool(&engine, fixture.workspace(), "probe_connect");
-            let result = tokio::time::timeout(
-                Duration::from_secs(5),
-                connect.execute(json!({"port": address.port()}), &context),
-            )
+        assert_eq!(&packet[..bytes], marker);
+        assert_eq!(sender, positive.local_addr().unwrap());
+        let mut accepted_count = 1;
+        let send = host_tool(&engine, fixture.workspace(), "probe_send");
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            send.execute(json!({"port": address.port()}), &context),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let denied: Value = serde_json::from_str(&result.content).unwrap();
+        if tokio::time::timeout(Duration::from_millis(100), listener.recv_from(&mut packet))
+            .await
+            .is_ok()
+        {
+            accepted_count += 1;
+        }
+        (denied, accepted_count, "udp")
+    } else {
+        // The unsandboxed controller reaches this actual listener. The Native
+        // host must fail the same connection at its own OS sandbox boundary.
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let positive = tokio::net::TcpStream::connect(address).await.unwrap();
+        let (accepted, _) = tokio::time::timeout(Duration::from_secs(2), listener.accept())
             .await
             .unwrap()
             .unwrap();
-            let denied: Value = serde_json::from_str(&result.content).unwrap();
-            if tokio::time::timeout(Duration::from_millis(100), listener.accept())
-                .await
-                .is_ok()
-            {
-                accepted_count += 1;
-            }
-            (denied, accepted_count, "tcp")
-        };
+        let mut accepted_count = 1;
+        drop(positive);
+        drop(accepted);
+        let connect = host_tool(&engine, fixture.workspace(), "probe_connect");
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            connect.execute(json!({"port": address.port()}), &context),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let denied: Value = serde_json::from_str(&result.content).unwrap();
+        if tokio::time::timeout(Duration::from_millis(100), listener.accept())
+            .await
+            .is_ok()
+        {
+            accepted_count += 1;
+        }
+        (denied, accepted_count, "tcp")
+    };
     assert_eq!(
         denied["ok"], false,
         "Native host reached {protocol} controller: {denied}"
@@ -1886,7 +1957,7 @@ async fn sandboxed_host_boundary(
         accepted_count, 1,
         "only the controller reached the listener"
     );
-    if choice == crate::config::ExtensionHostRuntime::Bun {
+    if choice == codewhale_config::extension_host::ExtensionHostRuntime::Bun {
         eprintln!(
             "compiled-native-network=passed controller_accepts=1 host_errno={} platform={} arch={} protocol={protocol}",
             denied["code"].as_str().unwrap(),
@@ -2187,7 +2258,7 @@ async fn typed_author_example_is_reviewed_before_its_tool_can_execute() {
         PluginInstallSource::LocalPath(example),
         &fixture.config.user_plugins_dir,
         DEFAULT_MAX_SIZE_BYTES,
-        &crate::network_policy::NetworkPolicy::default(),
+        &codewhale_net::network_policy::NetworkPolicy::default(),
         false,
         &|_| None,
     )
@@ -2340,14 +2411,14 @@ async fn engines_in_one_process_never_revoke_each_others_plugins() {
     );
     let manager = slow.manager(node);
     let first = manager.attach(slow.registry());
+    let second = manager.attach(deps.registry());
     first.sync().await.unwrap();
     let tool = host_tool(&first, slow.workspace(), "slow_wait");
     let context = ToolContext::new(slow.workspace()).with_plugin_registry(first.plugin_view());
     let call = tokio::spawn(async move { tool.execute(json!({"ms": 600}), &context).await });
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    // A second workspace's engine attaches and syncs mid-call.
-    let second = manager.attach(deps.registry());
+    // Both snapshot stores are granted at launch; the second engine syncs mid-call.
     second.sync().await.unwrap();
     assert_eq!(manager.owner_state(&slow_id), Some(OwnerState::Active));
     assert_eq!(manager.owner_state(&deps_id), Some(OwnerState::Active));
@@ -2371,6 +2442,24 @@ async fn engines_in_one_process_never_revoke_each_others_plugins() {
         "{:?}",
         manager.diagnostics()
     );
+
+    #[cfg(not(windows))]
+    {
+        let late = FixturePlugins::new(&["clash-script"]).await;
+        let late_id = plugin_id(&late, "clash-script");
+        let late_engine = manager.attach(late.registry());
+        late_engine.sync().await.unwrap();
+        assert!(
+            matches!(manager.owner_state(&late_id), Some(OwnerState::Failed(ref reason))
+                if reason.contains("Native snapshot store was not granted to this host")
+                    && reason.contains("restart Codewhale")),
+            "{:?}",
+            manager.owner_state(&late_id)
+        );
+        assert_eq!(manager.owner_state(&slow_id), Some(OwnerState::Active));
+        assert_eq!(manager.owner_state(&deps_id), Some(OwnerState::Active));
+        assert_eq!(manager.spawn_attempts(), 1);
+    }
 
     // Detaching does not revoke by itself; the next reconcile revokes only
     // what no remaining engine desires.
@@ -3412,7 +3501,7 @@ async fn explicit_retry_refreshes_same_byte_authority_without_inheriting_old_han
 /// `CODEWHALE_EXT_HOST_BUN_TESTS` requires one.
 fn bun_for_tests(test: &str) -> Option<PathBuf> {
     let resolution = crate::dependencies::resolve_extension_host_runtime(
-        crate::config::ExtensionHostRuntime::Bun,
+        codewhale_config::extension_host::ExtensionHostRuntime::Bun,
         None,
         None,
     );
@@ -3435,7 +3524,7 @@ fn bun_manager(
     supervision: super::SupervisionOptions,
 ) -> Arc<ExtensionHostManager> {
     Arc::new(ExtensionHostManager::new(ExtensionHostOptions {
-        runtime: crate::config::ExtensionHostRuntime::Bun,
+        runtime: codewhale_config::extension_host::ExtensionHostRuntime::Bun,
         node_override: None,
         bun_override: Some(bun),
         root: Some(fixture.root.clone()),
@@ -3445,7 +3534,7 @@ fn bun_manager(
 
 #[test]
 fn node_is_the_default_runtime_and_bun_is_an_opt_in() {
-    use crate::config::{ExtensionHostConfig, ExtensionHostRuntime as Choice};
+    use codewhale_config::extension_host::{ExtensionHostConfig, ExtensionHostRuntime as Choice};
     let parse = |text: &str| toml::from_str::<ExtensionHostConfig>(text).unwrap();
     // Bun is not the default until it is qualified on every platform.
     assert_eq!(parse("").effective_runtime(), Choice::Node);
@@ -3522,6 +3611,7 @@ fn launch_plan_gives_each_runtime_its_own_flags() {
             &bundle,
             home.path(),
             1 << 30,
+            &[],
         )
         .unwrap();
         // Wrapped or not, the runtime's flags come right before the bundle.
@@ -3615,6 +3705,7 @@ async fn handshake_refuses_a_runtime_or_version_mismatch_and_an_unapplied_kernel
             &bundle,
             home.path(),
             1 << 30,
+            &[],
         )
         .unwrap();
         let expected = match case {
@@ -3683,7 +3774,7 @@ async fn handshake_refuses_a_tier_or_built_in_module_digest_mismatch() {
             .selected
             .expect("the test Node resolves");
     let launch_for = |tier: HostTier| {
-        super::supervisor::plan_launch(tier, &runtime, &bundle, home.path(), 1 << 30).unwrap()
+        super::supervisor::plan_launch(tier, &runtime, &bundle, home.path(), 1 << 30, &[]).unwrap()
     };
 
     // Each tier reports its own tier and the exact embedded module digests.
@@ -3861,7 +3952,7 @@ async fn auto_uses_node_for_the_session_when_the_bun_host_fails_to_start() {
         }))
     };
 
-    let manager = manager_for(crate::config::ExtensionHostRuntime::Auto);
+    let manager = manager_for(codewhale_config::extension_host::ExtensionHostRuntime::Auto);
     let engine = manager.attach(fixture.registry());
     engine.sync().await.unwrap();
     assert!(
@@ -3896,7 +3987,7 @@ async fn auto_uses_node_for_the_session_when_the_bun_host_fails_to_start() {
     assert_eq!(manager.spawn_attempts(), 2);
     manager.shutdown().await;
 
-    let explicit = manager_for(crate::config::ExtensionHostRuntime::Bun);
+    let explicit = manager_for(codewhale_config::extension_host::ExtensionHostRuntime::Bun);
     let engine = explicit.attach(fixture.registry());
     let _ = engine.sync().await;
     assert!(
@@ -4329,7 +4420,7 @@ export function apply(ctx) {{
         crate::plugins::install::PluginInstallSource::LocalPath(plugin),
         &fixture.config.user_plugins_dir,
         crate::plugins::install::DEFAULT_MAX_SIZE_BYTES,
-        &crate::network_policy::NetworkPolicy::default(),
+        &codewhale_net::network_policy::NetworkPolicy::default(),
         false,
         &|_| None,
     )
@@ -4922,28 +5013,32 @@ fn launch_plans_carry_their_tier_and_use_a_data_directory_each() {
     };
     let mut dirs = Vec::new();
     for tier in HostTier::ALL {
-        let launch =
-            match super::supervisor::plan_launch(tier, &runtime, &bundle, home.path(), 1 << 30) {
-                Ok(launch) => launch,
-                Err(error) if tier == HostTier::Plugin => {
-                    assert!(
-                        error.contains("Native extensions require a verified OS sandbox"),
-                        "{error}"
-                    );
-                    assert!(matches!(
-                        super::supervisor::planned_sandbox(tier, &runtime, home.path()),
-                        Ok(super::supervisor::HostSandbox::Unsandboxed(_))
-                    ));
-                    let data = super::supervisor::tier_data_dir(home.path(), tier);
-                    assert!(data.is_dir());
-                    assert!(
-                        super::supervisor::tier_data_dir(home.path(), HostTier::Builtin).is_dir()
-                    );
-                    dirs.push(data);
-                    continue;
-                }
-                Err(error) => panic!("pinned Builtin plan failed: {error}"),
-            };
+        let launch = match super::supervisor::plan_launch(
+            tier,
+            &runtime,
+            &bundle,
+            home.path(),
+            1 << 30,
+            &[],
+        ) {
+            Ok(launch) => launch,
+            Err(error) if tier == HostTier::Plugin => {
+                assert!(
+                    error.contains("Native extensions require a verified OS sandbox"),
+                    "{error}"
+                );
+                assert!(matches!(
+                    super::supervisor::planned_sandbox(tier, &runtime, home.path()),
+                    Ok(super::supervisor::HostSandbox::Unsandboxed(_))
+                ));
+                let data = super::supervisor::tier_data_dir(home.path(), tier);
+                assert!(data.is_dir());
+                assert!(super::supervisor::tier_data_dir(home.path(), HostTier::Builtin).is_dir());
+                dirs.push(data);
+                continue;
+            }
+            Err(error) => panic!("pinned Builtin plan failed: {error}"),
+        };
         assert_eq!(launch.tier, tier);
         // The runtime's own argv ends `<bundle> --tier=<tier>`, wrapped by the
         // OS sandbox or not.
@@ -5590,12 +5685,12 @@ async fn all_fifteen_project_hook_events_use_the_pinned_runner_and_reject_change
         "CODEWHALE_CONFIG_PATH",
         home.path().join("config.toml"),
     );
-    let mut config = crate::hooks::HooksConfig {
+    let mut config = codewhale_config::hooks::HooksConfig {
         enabled: true,
-        ..crate::hooks::HooksConfig::default()
+        ..codewhale_config::hooks::HooksConfig::default()
     };
-    for event in crate::hooks::config::ALL_HOOK_EVENTS {
-        config.hooks.push(crate::hooks::Hook::new(
+    for event in codewhale_config::hooks::ALL_HOOK_EVENTS {
+        config.hooks.push(codewhale_config::hooks::Hook::new(
             event,
             &format!(
                 "printf '%s|%s|%s' '{}' \"$DEEPSEEK_SESSION_ID\" \"$DEEPSEEK_TOOL_CALL_ID\"",
@@ -5605,13 +5700,13 @@ async fn all_fifteen_project_hook_events_use_the_pinned_runner_and_reject_change
     }
     let hook_path = workspace.join(".codewhale/hooks.toml");
     std::fs::write(&hook_path, toml::to_string(&config).unwrap()).unwrap();
-    crate::config::save_workspace_trust(&workspace).unwrap();
+    codewhale_runtime::config::save_workspace_trust(&workspace).unwrap();
     let (reviewed, _) = crate::hooks::authority::review_project_hooks(&workspace).unwrap();
     crate::hooks::authority::approve_project_hooks(&workspace, &reviewed.digest).unwrap();
-    let admitted = crate::hooks::HooksConfig::load_with_project(
-        crate::hooks::HooksConfig {
+    let admitted = crate::hooks::config::load_with_project(
+        codewhale_config::hooks::HooksConfig {
             enabled: true,
-            ..crate::hooks::HooksConfig::default()
+            ..codewhale_config::hooks::HooksConfig::default()
         },
         &workspace,
     );
@@ -5639,7 +5734,7 @@ async fn all_fifteen_project_hook_events_use_the_pinned_runner_and_reject_change
     tokio::task::spawn_blocking(move || {
         let _env = crate::test_support::join_env_scope(env_scope);
         let _policy = crate::plugins::activation::PolicyScope::propagate(true);
-        for event in crate::hooks::config::ALL_HOOK_EVENTS {
+        for event in codewhale_config::hooks::ALL_HOOK_EVENTS {
             let results = executor.execute(event, &context);
             assert_eq!(results.len(), 1, "{event:?}");
             assert!(results[0].success, "{event:?}: {:?}", results[0]);
@@ -5650,7 +5745,7 @@ async fn all_fifteen_project_hook_events_use_the_pinned_runner_and_reject_change
             );
         }
         std::fs::write(hook_path, "# changed after admission\n").unwrap();
-        let rejected = executor.execute(crate::hooks::HookEvent::SessionStart, &context);
+        let rejected = executor.execute(codewhale_config::hooks::HookEvent::SessionStart, &context);
         assert_eq!(rejected.len(), 1);
         assert!(!rejected[0].success);
         assert!(rejected[0].stdout.is_empty());

@@ -1,6 +1,4 @@
 use super::*;
-use crate::config::{Config, ProviderConfig, ProvidersConfig};
-use crate::settings::Settings;
 use crate::test_support::{EnvVarGuard, lock_test_env};
 use crate::tools::plan::{PlanItemArg, StepStatus, UpdatePlanArgs};
 use crate::tools::todo::TodoStatus;
@@ -9,6 +7,8 @@ use crate::tui::history::{GenericToolCell, HistoryCell, ToolCell, ToolStatus};
 use crate::tui::motion::MotionMode;
 use codewhale_config::ProviderKind;
 use codewhale_models::Usage;
+use codewhale_runtime::config::{Config, ProviderConfig, ProvidersConfig};
+use codewhale_runtime::settings::Settings;
 
 fn test_options(yolo: bool) -> TuiOptions {
     TuiOptions {
@@ -739,7 +739,7 @@ fn cycle_effort_updates_effort_status_and_compaction() {
 fn glm_5_turbo_records_enabled_with_granularity_unavailable() {
     let mut app = App::new(test_options(false), &Config::default());
     app.set_provider_identity_record(
-        crate::config::Config::default()
+        codewhale_runtime::config::Config::default()
             .resolve_provider_identity(ProviderKind::Zai.as_str())
             .expect("captured fixture provider"),
     );
@@ -793,7 +793,7 @@ fn glm_5_turbo_records_enabled_with_granularity_unavailable() {
 fn glm_5_1_records_enabled_with_granularity_unavailable() {
     let mut app = App::new(test_options(false), &Config::default());
     app.set_provider_identity_record(
-        crate::config::Config::default()
+        codewhale_runtime::config::Config::default()
             .resolve_provider_identity(ProviderKind::Zai.as_str())
             .expect("captured fixture provider"),
     );
@@ -830,7 +830,7 @@ fn glm_5_1_records_enabled_with_granularity_unavailable() {
 fn unknown_model_on_exact_zai_endpoint_records_effective_unavailable() {
     let mut app = App::new(test_options(false), &Config::default());
     app.set_provider_identity_record(
-        crate::config::Config::default()
+        codewhale_runtime::config::Config::default()
             .resolve_provider_identity(ProviderKind::Zai.as_str())
             .expect("captured fixture provider"),
     );
@@ -867,7 +867,7 @@ fn unknown_model_on_exact_zai_endpoint_records_effective_unavailable() {
 fn compatible_zai_gateway_records_effective_unavailable() {
     let mut app = App::new(test_options(false), &Config::default());
     app.set_provider_identity_record(
-        crate::config::Config::default()
+        codewhale_runtime::config::Config::default()
             .resolve_provider_identity(ProviderKind::Zai.as_str())
             .expect("captured fixture provider"),
     );
@@ -924,7 +924,7 @@ fn minimax_m3_high_and_max_receipts_do_not_claim_tier_granularity() {
     ] {
         let mut app = App::new(test_options(false), &Config::default());
         app.set_provider_identity_record(
-            crate::config::Config::default()
+            codewhale_runtime::config::Config::default()
                 .resolve_provider_identity(ProviderKind::Minimax.as_str())
                 .expect("captured fixture provider"),
         );
@@ -982,7 +982,7 @@ fn minimax_anthropic_m3_high_and_max_receipts_match_adaptive_wire_truth() {
     ] {
         let mut app = App::new(test_options(false), &Config::default());
         app.set_provider_identity_record(
-            crate::config::Config::default()
+            codewhale_runtime::config::Config::default()
                 .resolve_provider_identity(ProviderKind::MinimaxAnthropic.as_str())
                 .expect("captured fixture provider"),
         );
@@ -1133,7 +1133,7 @@ fn zai_gateway_off_and_high_receipts_remain_unavailable() {
     ] {
         let mut app = App::new(test_options(false), &Config::default());
         app.set_provider_identity_record(
-            crate::config::Config::default()
+            codewhale_runtime::config::Config::default()
                 .resolve_provider_identity(ProviderKind::Zai.as_str())
                 .expect("captured fixture provider"),
         );
@@ -1160,7 +1160,7 @@ fn kimi_code_high_and_max_work_receipts_preserve_exact_tiers() {
     ] {
         let mut app = App::new(test_options(false), &Config::default());
         app.set_provider_identity_record(
-            crate::config::Config::default()
+            codewhale_runtime::config::Config::default()
                 .resolve_provider_identity(ProviderKind::Moonshot.as_str())
                 .expect("captured fixture provider"),
         );
@@ -1568,9 +1568,9 @@ fn reasoning_effort_preserves_grok_46_ladder_only_on_exact_xai_route() {
 }
 
 fn xai_grok_46_startup_config() -> Config {
-    Config {
-        provider: Some("xai".to_string()),
-        providers: Some(ProvidersConfig {
+    {
+        let __cw_config_init_0_0 = Some("xai".to_string());
+        let __cw_config_init_0_1 = Some(ProvidersConfig {
             xai: ProviderConfig {
                 api_key: Some("xai-startup-test-key".to_string()),
                 base_url: Some(
@@ -1582,8 +1582,11 @@ fn xai_grok_46_startup_config() -> Config {
                 ..ProviderConfig::default()
             },
             ..ProvidersConfig::default()
-        }),
-        ..Config::default()
+        });
+        let mut __cw_config_init_0_value: Config = Config::default();
+        __cw_config_init_0_value.provider = __cw_config_init_0_0;
+        __cw_config_init_0_value.providers = __cw_config_init_0_1;
+        __cw_config_init_0_value
     }
 }
 
@@ -1716,10 +1719,8 @@ fn app_new_scenario() {
         let _provider_env = EnvVarGuard::remove("CODEWHALE_PROVIDER");
         let _legacy_provider_env = EnvVarGuard::remove("DEEPSEEK_PROVIDER");
 
-        let config = Config {
-            ..Config::default()
-        }
-        .with_legacy_root(Some("sk-test-onboarding-key".to_string()), None);
+        let config =
+            Config::default().with_legacy_root(Some("sk-test-onboarding-key".to_string()), None);
         let app = App::new(test_options(false), &config);
         assert!(
             !app.onboarding_needs_api_key,
@@ -1743,7 +1744,7 @@ fn cycle_effort_scenario() {
     {
         let mut app = App::new(test_options(false), &Config::default());
         app.set_provider_identity_record(
-            crate::config::Config::default()
+            codewhale_runtime::config::Config::default()
                 .resolve_provider_identity(ProviderKind::Xai.as_str())
                 .expect("captured fixture provider"),
         );
@@ -1769,7 +1770,7 @@ fn cycle_effort_scenario() {
     {
         let mut app = App::new(test_options(false), &Config::default());
         app.set_provider_identity_record(
-            crate::config::Config::default()
+            codewhale_runtime::config::Config::default()
                 .resolve_provider_identity(ProviderKind::Xai.as_str())
                 .expect("captured fixture provider"),
         );
@@ -1853,9 +1854,9 @@ fn app_new_normalizes_saved_codex_reasoning_effort() {
     let config_path = tmp.path().join("config.toml");
     let _config_path = EnvVarGuard::set("DEEPSEEK_CONFIG_PATH", &config_path);
     let _token = EnvVarGuard::set("OPENAI_CODEX_ACCESS_TOKEN", "test-codex-startup-token");
-    let config = Config {
-        provider: Some("openai-codex".to_string()),
-        providers: Some(ProvidersConfig {
+    let config = {
+        let __cw_config_init_2_0 = Some("openai-codex".to_string());
+        let __cw_config_init_2_1 = Some(ProvidersConfig {
             openai_codex: ProviderConfig {
                 model: Some(
                     codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL.to_string(),
@@ -1863,8 +1864,11 @@ fn app_new_normalizes_saved_codex_reasoning_effort() {
                 ..ProviderConfig::default()
             },
             ..ProvidersConfig::default()
-        }),
-        ..Config::default()
+        });
+        let mut __cw_config_init_2_value: Config = Config::default();
+        __cw_config_init_2_value.provider = __cw_config_init_2_0;
+        __cw_config_init_2_value.providers = __cw_config_init_2_1;
+        __cw_config_init_2_value
     };
 
     for (raw, expected, display) in [
@@ -1904,9 +1908,9 @@ fn app_new_exposes_direct_moonshot_k3_off_as_effective_low() {
         "reasoning_effort = \"off\"\n",
     )
     .expect("settings");
-    let config = Config {
-        provider: Some("moonshot".to_string()),
-        providers: Some(ProvidersConfig {
+    let config = {
+        let __cw_config_init_3_0 = Some("moonshot".to_string());
+        let __cw_config_init_3_1 = Some(ProvidersConfig {
             moonshot: ProviderConfig {
                 api_key: Some("moonshot-startup-test-key".to_string()),
                 base_url: Some(
@@ -1919,8 +1923,11 @@ fn app_new_exposes_direct_moonshot_k3_off_as_effective_low() {
                 ..ProviderConfig::default()
             },
             ..ProvidersConfig::default()
-        }),
-        ..Config::default()
+        });
+        let mut __cw_config_init_3_value: Config = Config::default();
+        __cw_config_init_3_value.provider = __cw_config_init_3_0;
+        __cw_config_init_3_value.providers = __cw_config_init_3_1;
+        __cw_config_init_3_value
     };
 
     let mut options = test_options(false);
@@ -1952,9 +1959,9 @@ fn codex_startup_threads_fresh_roster_context_into_active_route_limits() {
     let config_path = tmp.path().join("config.toml");
     let _config_path = EnvVarGuard::set("DEEPSEEK_CONFIG_PATH", &config_path);
     let _home = EnvVarGuard::set("CODEWHALE_HOME", &canonical_home);
-    let mut config = Config {
-        provider: Some("openai-codex".to_string()),
-        providers: Some(ProvidersConfig {
+    let mut config = {
+        let __cw_config_init_4_0 = Some("openai-codex".to_string());
+        let __cw_config_init_4_1 = Some(ProvidersConfig {
             openai_codex: ProviderConfig {
                 model: Some(
                     codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL.to_string(),
@@ -1962,15 +1969,18 @@ fn codex_startup_threads_fresh_roster_context_into_active_route_limits() {
                 ..ProviderConfig::default()
             },
             ..ProvidersConfig::default()
-        }),
-        ..Config::default()
+        });
+        let mut __cw_config_init_4_value: Config = Config::default();
+        __cw_config_init_4_value.provider = __cw_config_init_4_0;
+        __cw_config_init_4_value.providers = __cw_config_init_4_1;
+        __cw_config_init_4_value
     };
 
-    crate::oauth::install_test_chatgpt_registration(&mut config)
+    codewhale_runtime::oauth::install_test_chatgpt_registration(&mut config)
         .expect("owned ChatGPT registration");
-    crate::codex_model_cache::install_test_chatgpt_roster_with_metadata(
+    codewhale_runtime::codex_model_roster::install_test_chatgpt_roster_with_metadata(
         &config,
-        vec![crate::codex_model_cache::CodexModelMetadata {
+        vec![codewhale_runtime::codex_model_roster::CodexModelMetadata {
             id: codewhale_config::descriptors::defaults::DEFAULT_OPENAI_CODEX_MODEL.to_string(),
             display_name: None,
             context_window: Some(128_000),
@@ -2014,15 +2024,17 @@ fn settings_default_provider_auth_check_uses_provider_scoped_key() {
     let _deepseek_key = EnvVarGuard::remove("DEEPSEEK_API_KEY");
     let _openai_key = EnvVarGuard::remove("OPENAI_API_KEY");
 
-    let config = Config {
-        providers: Some(ProvidersConfig {
+    let config = {
+        let __cw_config_init_5_0 = Some(ProvidersConfig {
             openai: ProviderConfig {
                 api_key: Some("openai-config-key".to_string()),
                 ..ProviderConfig::default()
             },
             ..ProvidersConfig::default()
-        }),
-        ..Config::default()
+        });
+        let mut __cw_config_init_5_value: Config = Config::default();
+        __cw_config_init_5_value.providers = __cw_config_init_5_0;
+        __cw_config_init_5_value
     };
 
     let app = App::new(test_options(false), &config);
@@ -2047,9 +2059,9 @@ fn saved_startup_provider_overrides_config_file_provider() {
     .expect("settings");
     let _config_path = EnvVarGuard::set("DEEPSEEK_CONFIG_PATH", &config_path);
 
-    let config = Config {
-        provider: Some("xiaomi-mimo".to_string()),
-        providers: Some(ProvidersConfig {
+    let config = {
+        let __cw_config_init_6_0 = Some("xiaomi-mimo".to_string());
+        let __cw_config_init_6_1 = Some(ProvidersConfig {
             deepseek: ProviderConfig {
                 api_key: Some("deepseek-config-key".to_string()),
                 model: Some("deepseek-v4-pro".to_string()),
@@ -2061,8 +2073,11 @@ fn saved_startup_provider_overrides_config_file_provider() {
                 ..ProviderConfig::default()
             },
             ..ProvidersConfig::default()
-        }),
-        ..Config::default()
+        });
+        let mut __cw_config_init_6_value: Config = Config::default();
+        __cw_config_init_6_value.provider = __cw_config_init_6_0;
+        __cw_config_init_6_value.providers = __cw_config_init_6_1;
+        __cw_config_init_6_value
     };
 
     let mut options = test_options(false);
@@ -2095,12 +2110,12 @@ openrouter = "openai/gpt-5"
     .expect("settings");
     let _config_path = EnvVarGuard::set("DEEPSEEK_CONFIG_PATH", &config_path);
 
-    let config = Config {
-        provider: Some("deepseek".to_string()),
-        reasoning_effort: Some("high".to_string()),
-        fleet_operator_route_applied: true,
-        fleet_operator_reasoning_applied: true,
-        providers: Some(ProvidersConfig {
+    let config = {
+        let __cw_config_init_7_0 = Some("deepseek".to_string());
+        let __cw_config_init_7_1 = Some("high".to_string());
+        let __cw_config_init_7_2 = true;
+        let __cw_config_init_7_3 = true;
+        let __cw_config_init_7_4 = Some(ProvidersConfig {
             deepseek: ProviderConfig {
                 api_key: Some("deepseek-config-key".to_string()),
                 model: Some("deepseek-v4-flash-vision-exp".to_string()),
@@ -2112,8 +2127,14 @@ openrouter = "openai/gpt-5"
                 ..ProviderConfig::default()
             },
             ..ProvidersConfig::default()
-        }),
-        ..Config::default()
+        });
+        let mut __cw_config_init_7_value: Config = Config::default();
+        __cw_config_init_7_value.provider = __cw_config_init_7_0;
+        __cw_config_init_7_value.reasoning_effort = __cw_config_init_7_1;
+        __cw_config_init_7_value.fleet_operator_route_applied = __cw_config_init_7_2;
+        __cw_config_init_7_value.fleet_operator_reasoning_applied = __cw_config_init_7_3;
+        __cw_config_init_7_value.providers = __cw_config_init_7_4;
+        __cw_config_init_7_value
     };
 
     let mut options = test_options(false);
@@ -2139,9 +2160,9 @@ fn explicit_launch_provider_overrides_saved_startup_provider() {
     let _config_path = EnvVarGuard::set("DEEPSEEK_CONFIG_PATH", &config_path);
     let _provider = EnvVarGuard::set("CODEWHALE_PROVIDER", "xiaomi-mimo");
 
-    let config = Config {
-        provider: Some("xiaomi-mimo".to_string()),
-        providers: Some(ProvidersConfig {
+    let config = {
+        let __cw_config_init_8_0 = Some("xiaomi-mimo".to_string());
+        let __cw_config_init_8_1 = Some(ProvidersConfig {
             deepseek: ProviderConfig {
                 api_key: Some("deepseek-config-key".to_string()),
                 model: Some("deepseek-v4-pro".to_string()),
@@ -2153,8 +2174,11 @@ fn explicit_launch_provider_overrides_saved_startup_provider() {
                 ..ProviderConfig::default()
             },
             ..ProvidersConfig::default()
-        }),
-        ..Config::default()
+        });
+        let mut __cw_config_init_8_value: Config = Config::default();
+        __cw_config_init_8_value.provider = __cw_config_init_8_0;
+        __cw_config_init_8_value.providers = __cw_config_init_8_1;
+        __cw_config_init_8_value
     };
 
     let mut options = test_options(false);
@@ -2995,16 +3019,15 @@ fn cached_skills_respect_codewhale_only_scan_config() {
     let mut options = test_options(false);
     options.workspace = workspace.clone();
     options.skills_dir = tmp.path().join("global-skills");
-    let app = App::new(
-        options,
-        &Config {
-            skills: Some(crate::config::SkillsConfig {
-                scan_codewhale_only: Some(true),
-                ..Default::default()
-            }),
+    let app = App::new(options, &{
+        let __cw_config_init_9_0 = Some(codewhale_runtime::config::SkillsConfig {
+            scan_codewhale_only: Some(true),
             ..Default::default()
-        },
-    );
+        });
+        let mut __cw_config_init_9_value: Config = Default::default();
+        __cw_config_init_9_value.skills = __cw_config_init_9_0;
+        __cw_config_init_9_value
+    });
 
     assert_eq!(app.skills_dir, workspace.join(".codewhale").join("skills"));
     assert!(
@@ -3035,12 +3058,14 @@ fn resolve_skills_dir_requires_codewhale_skills_to_be_directory() {
     .expect("skills file");
 
     let global_skills_dir = tmp.path().join("global-skills");
-    let config = Config {
-        skills: Some(crate::config::SkillsConfig {
+    let config = {
+        let __cw_config_init_10_0 = Some(codewhale_runtime::config::SkillsConfig {
             scan_codewhale_only: Some(true),
             ..Default::default()
-        }),
-        ..Default::default()
+        });
+        let mut __cw_config_init_10_value: Config = Default::default();
+        __cw_config_init_10_value.skills = __cw_config_init_10_0;
+        __cw_config_init_10_value
     };
 
     let resolved = resolve_skills_dir(&workspace, &global_skills_dir, &config);
@@ -3058,13 +3083,16 @@ fn resolve_skills_dir_ignores_untrusted_workspace_skills() {
             .join(format!("ws-{}", relative.replace('/', "-")));
         let local_skills = workspace.join(relative);
         std::fs::create_dir_all(&local_skills).expect("skills dir");
-        let config = Config {
-            skills_dir: Some(global_skills_dir.to_string_lossy().into_owned()),
-            skills: Some(crate::config::SkillsConfig {
+        let config = {
+            let __cw_config_init_11_0 = Some(global_skills_dir.to_string_lossy().into_owned());
+            let __cw_config_init_11_1 = Some(codewhale_runtime::config::SkillsConfig {
                 flat_workspace_root: Some(true),
                 ..Default::default()
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_11_value: Config = Default::default();
+            __cw_config_init_11_value.skills_dir = __cw_config_init_11_0;
+            __cw_config_init_11_value.skills = __cw_config_init_11_1;
+            __cw_config_init_11_value
         };
 
         assert_eq!(
@@ -3098,9 +3126,11 @@ fn cached_skills_include_configured_directory() {
     let mut options = test_options(false);
     options.workspace = workspace.clone();
     options.skills_dir = configured_dir.clone();
-    let config = Config {
-        skills_dir: Some(configured_dir.to_string_lossy().into_owned()),
-        ..Default::default()
+    let config = {
+        let __cw_config_init_12_0 = Some(configured_dir.to_string_lossy().into_owned());
+        let mut __cw_config_init_12_value: Config = Default::default();
+        __cw_config_init_12_value.skills_dir = __cw_config_init_12_0;
+        __cw_config_init_12_value
     };
     let app = App::new(options, &config);
 
@@ -3143,13 +3173,16 @@ fn cached_skills_preserve_configured_directory_in_codewhale_only_scan() {
     let mut options = test_options(false);
     options.workspace = workspace.clone();
     options.skills_dir = configured_dir.clone();
-    let config = Config {
-        skills_dir: Some(configured_dir.to_string_lossy().into_owned()),
-        skills: Some(crate::config::SkillsConfig {
+    let config = {
+        let __cw_config_init_13_0 = Some(configured_dir.to_string_lossy().into_owned());
+        let __cw_config_init_13_1 = Some(codewhale_runtime::config::SkillsConfig {
             scan_codewhale_only: Some(true),
             ..Default::default()
-        }),
-        ..Default::default()
+        });
+        let mut __cw_config_init_13_value: Config = Default::default();
+        __cw_config_init_13_value.skills_dir = __cw_config_init_13_0;
+        __cw_config_init_13_value.skills = __cw_config_init_13_1;
+        __cw_config_init_13_value
     };
     let app = App::new(options, &config);
 
@@ -3193,12 +3226,14 @@ fn cached_skills_reject_codewhale_only_workspace_symlink_escape() {
     let mut options = test_options(false);
     options.workspace = workspace.clone();
     options.skills_dir = global_skills_dir.clone();
-    let config = Config {
-        skills: Some(crate::config::SkillsConfig {
+    let config = {
+        let __cw_config_init_14_0 = Some(codewhale_runtime::config::SkillsConfig {
             scan_codewhale_only: Some(true),
             ..Default::default()
-        }),
-        ..Default::default()
+        });
+        let mut __cw_config_init_14_value: Config = Default::default();
+        __cw_config_init_14_value.skills = __cw_config_init_14_0;
+        __cw_config_init_14_value
     };
     let app = App::new(options, &config);
 
@@ -3907,9 +3942,11 @@ fn set_mode_scenario() {
     }
     // from set_mode_plan_restores_previous_approval_on_agent_exit
     {
-        let config = Config {
-            approval_policy: Some("never".to_string()),
-            ..Default::default()
+        let config = {
+            let __cw_config_init_15_0 = Some("never".to_string());
+            let mut __cw_config_init_15_value: Config = Default::default();
+            __cw_config_init_15_value.approval_policy = __cw_config_init_15_0;
+            __cw_config_init_15_value
         };
         let mut options = test_options(false);
         options.start_in_agent_mode = true; // avoid coupling to settings.default_mode
@@ -4182,7 +4219,8 @@ fn shift_tab_migrates_user_root_policy_to_durable_tui_posture() {
     std::fs::write(&settings_path, "permission_posture = \"full-access\"\n").expect("settings");
     let _config_env = EnvVarGuard::set("DEEPSEEK_CONFIG_PATH", &config_path);
     let _approval_env = EnvVarGuard::remove("DEEPSEEK_APPROVAL_POLICY");
-    let config = Config::load(Some(config_path.clone()), None).expect("load config");
+    let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)
+        .expect("load config");
     let mut options = test_options(false);
     options.start_in_agent_mode = true;
     options.config_path = Some(config_path.clone());
@@ -4200,7 +4238,8 @@ fn shift_tab_migrates_user_root_policy_to_durable_tui_posture() {
     let saved_settings = std::fs::read_to_string(&settings_path).expect("saved settings");
     assert!(saved_settings.contains("permission_posture = \"auto-review\""));
 
-    let restarted_config = Config::load(Some(config_path), None).expect("reload config");
+    let restarted_config =
+        crate::plugins::providers::load_config(Some(config_path), None).expect("reload config");
     let restarted = App::new(options, &restarted_config);
     assert_eq!(restarted.approval_mode, ApprovalMode::Auto);
     assert!(!restarted.approval_policy_locked());
@@ -4219,7 +4258,8 @@ fn legacy_yolo_migrates_root_policy_to_agent_full_access() {
     std::fs::write(&settings_path, "default_mode = \"yolo\"\n").expect("legacy settings");
     let _config_env = EnvVarGuard::set("DEEPSEEK_CONFIG_PATH", &config_path);
     let _approval_env = EnvVarGuard::remove("DEEPSEEK_APPROVAL_POLICY");
-    let config = Config::load(Some(config_path.clone()), None).expect("load config");
+    let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)
+        .expect("load config");
     let mut options = test_options(false);
     options.start_in_agent_mode = false;
     options.workspace = workspace;
@@ -4237,7 +4277,8 @@ fn legacy_yolo_migrates_root_policy_to_agent_full_access() {
     assert!(saved_settings.contains("default_mode = \"agent\""));
     assert!(saved_settings.contains("permission_posture = \"full-access\""));
 
-    let restarted_config = Config::load(Some(config_path), None).expect("reload config");
+    let restarted_config =
+        crate::plugins::providers::load_config(Some(config_path), None).expect("reload config");
     let restarted = App::new(options, &restarted_config);
     assert_eq!(restarted.mode, AppMode::Agent);
     assert_eq!(restarted.approval_mode, ApprovalMode::Bypass);
@@ -4272,7 +4313,8 @@ fn legacy_yolo_honors_a_missing_explicit_config_path_without_home_fallback() {
     let _deepseek_config = EnvVarGuard::set("DEEPSEEK_CONFIG_PATH", &missing_override);
     let _approval_env = EnvVarGuard::remove("DEEPSEEK_APPROVAL_POLICY");
 
-    let config = Config::load(None, None).expect("load explicit missing config");
+    let config =
+        crate::plugins::providers::load_config(None, None).expect("load explicit missing config");
     assert_eq!(config.approval_policy, None);
     let mut options = test_options(false);
     options.start_in_agent_mode = false;
@@ -4314,9 +4356,11 @@ fn managed_requirements_ignore_saved_full_access_and_lock_changes() {
     )
     .expect("requirements");
     let _config_env = EnvVarGuard::set("DEEPSEEK_CONFIG_PATH", &config_path);
-    let config = Config {
-        requirements_path: Some(requirements_path.to_string_lossy().into_owned()),
-        ..Config::default()
+    let config = {
+        let __cw_config_init_16_0 = Some(requirements_path.to_string_lossy().into_owned());
+        let mut __cw_config_init_16_value: Config = Config::default();
+        __cw_config_init_16_value.requirements_path = __cw_config_init_16_0;
+        __cw_config_init_16_value
     };
 
     let mut app = App::new(test_options(false), &config);
@@ -4346,9 +4390,11 @@ fn sandbox_requirements_prevent_full_access_overrides() {
     .expect("requirements");
     let _home = EnvVarGuard::set("CODEWHALE_HOME", tmp.path());
     let _config_env = EnvVarGuard::set("DEEPSEEK_CONFIG_PATH", &config_path);
-    let config = Config {
-        requirements_path: Some(requirements_path.to_string_lossy().into_owned()),
-        ..Config::default()
+    let config = {
+        let __cw_config_init_17_0 = Some(requirements_path.to_string_lossy().into_owned());
+        let mut __cw_config_init_17_value: Config = Config::default();
+        __cw_config_init_17_value.requirements_path = __cw_config_init_17_0;
+        __cw_config_init_17_value
     };
 
     for (settings, cli_yolo) in [
@@ -4375,7 +4421,7 @@ fn sandbox_requirements_prevent_full_access_overrides() {
                 &app.workspace,
                 crate::core::authority::SandboxNetworkAccess::Restricted,
             ),
-            crate::sandbox::SandboxPolicy::WorkspaceWrite { .. }
+            codewhale_sandbox::SandboxPolicy::WorkspaceWrite { .. }
         ));
     }
 }
@@ -4390,9 +4436,11 @@ fn yolo_entry_points_honor_a_locked_approval_policy() {
         "allowed_approval_policies = [\"on-request\"]\n",
     )
     .expect("requirements");
-    let config = Config {
-        requirements_path: Some(requirements_path.to_string_lossy().into_owned()),
-        ..Config::default()
+    let config = {
+        let __cw_config_init_18_0 = Some(requirements_path.to_string_lossy().into_owned());
+        let mut __cw_config_init_18_value: Config = Config::default();
+        __cw_config_init_18_value.requirements_path = __cw_config_init_18_0;
+        __cw_config_init_18_value
     };
 
     let mut options = test_options(false);
@@ -4556,9 +4604,11 @@ fn leaving_yolo_after_startup_restores_baseline_policies() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let config_path = tmp.path().join("config.toml");
     let _config_env = EnvVarGuard::set("DEEPSEEK_CONFIG_PATH", &config_path);
-    let config = Config {
-        allow_shell: Some(false),
-        ..Default::default()
+    let config = {
+        let __cw_config_init_19_0 = Some(false);
+        let mut __cw_config_init_19_value: Config = Default::default();
+        __cw_config_init_19_value.allow_shell = __cw_config_init_19_0;
+        __cw_config_init_19_value
     };
 
     let mut options = test_options(true);
@@ -4579,9 +4629,11 @@ fn leaving_yolo_after_startup_restores_baseline_policies() {
 
 #[test]
 fn configured_approval_policy_initializes_live_approval_mode() {
-    let config = Config {
-        approval_policy: Some("never".to_string()),
-        ..Default::default()
+    let config = {
+        let __cw_config_init_20_0 = Some("never".to_string());
+        let mut __cw_config_init_20_value: Config = Default::default();
+        __cw_config_init_20_value.approval_policy = __cw_config_init_20_0;
+        __cw_config_init_20_value
     };
     let mut options = test_options(false);
     options.start_in_agent_mode = true;
@@ -5184,7 +5236,7 @@ fn enter_during_active_paste_burst_appends_newline_to_buffer_not_submit() {
     assert!(app.paste_burst.is_active());
     assert!(app.input.is_empty());
 
-    let result = app.handle_composer_enter();
+    let result = app.handle_composer_enter(true);
 
     assert!(
         result.is_none(),
@@ -5216,7 +5268,7 @@ fn enter_inside_paste_burst_window_after_flush_inserts_newline_not_submit() {
         "suppression window should be open"
     );
 
-    let result = app.handle_composer_enter();
+    let result = app.handle_composer_enter(true);
 
     assert!(
         result.is_none(),
@@ -5226,6 +5278,9 @@ fn enter_inside_paste_burst_window_after_flush_inserts_newline_not_submit() {
         app.input, "hello\n",
         "newline must be inserted into the composer instead of firing a submit"
     );
+    assert!(!app.composer_enter_would_submit(true));
+    assert!(app.composer_enter_would_submit(false));
+    assert_eq!(app.handle_composer_enter(false).as_deref(), Some("hello\n"));
 }
 
 /// The absorbed Enter above must not buy the window more time. Re-arming on
@@ -5242,7 +5297,7 @@ fn enter_absorbed_after_flush_does_not_re_arm_the_suppression_window() {
     app.paste_burst.extend_window(now);
 
     assert!(
-        app.handle_composer_enter().is_none(),
+        app.handle_composer_enter(true).is_none(),
         "first Enter is absorbed as the paste's possible trailing newline"
     );
     assert_eq!(app.input, "hello\n");
@@ -5265,7 +5320,7 @@ fn enter_outside_any_paste_burst_window_submits_normally() {
     app.input = "hello world".to_string();
     app.cursor_position = "hello world".chars().count();
 
-    let result = app.handle_composer_enter();
+    let result = app.handle_composer_enter(true);
 
     assert_eq!(
         result.as_deref(),
@@ -5292,7 +5347,7 @@ fn enter_with_paste_burst_detection_disabled_submits_normally() {
     let now = Instant::now();
     app.paste_burst.extend_window(now);
 
-    let result = app.handle_composer_enter();
+    let result = app.handle_composer_enter(true);
 
     assert_eq!(result.as_deref(), Some("ship it"));
 }
@@ -6382,11 +6437,15 @@ fn app_with_fallback_chain(
         }
     }
 
-    let config = Config {
-        provider: Some(active.as_str().to_string()),
-        fallback_providers: fallbacks.to_vec(),
-        providers: Some(providers),
-        ..Default::default()
+    let config = {
+        let __cw_config_init_21_0 = Some(active.as_str().to_string());
+        let __cw_config_init_21_1 = fallbacks.to_vec();
+        let __cw_config_init_21_2 = Some(providers);
+        let mut __cw_config_init_21_value: Config = Default::default();
+        __cw_config_init_21_value.provider = __cw_config_init_21_0;
+        __cw_config_init_21_value.fallback_providers = __cw_config_init_21_1;
+        __cw_config_init_21_value.providers = __cw_config_init_21_2;
+        __cw_config_init_21_value
     };
 
     let mut options = test_options(false);
@@ -6537,13 +6596,13 @@ fn startup_and_fallback_skip_inactive_external_only_routes_without_io() {
     let _cli_key = EnvVarGuard::remove("CODEWHALE_CLI_API_KEY");
     let _cli_source = EnvVarGuard::remove("DEEPSEEK_API_KEY_SOURCE");
 
-    let config = Config {
-        provider: Some(ProviderKind::Deepseek.as_str().to_string()),
-        fallback_providers: vec![
+    let config = {
+        let __cw_config_init_22_0 = Some(ProviderKind::Deepseek.as_str().to_string());
+        let __cw_config_init_22_1 = vec![
             codewhale_config::ProviderKind::OpenaiCodex,
             codewhale_config::ProviderKind::Xai,
-        ],
-        providers: Some(ProvidersConfig {
+        ];
+        let __cw_config_init_22_2 = Some(ProvidersConfig {
             openai_codex: ProviderConfig {
                 auth_mode: Some("oauth".to_string()),
                 external_credentials: Some(
@@ -6567,8 +6626,12 @@ fn startup_and_fallback_skip_inactive_external_only_routes_without_io() {
                 ..Default::default()
             },
             ..Default::default()
-        }),
-        ..Default::default()
+        });
+        let mut __cw_config_init_22_value: Config = Default::default();
+        __cw_config_init_22_value.provider = __cw_config_init_22_0;
+        __cw_config_init_22_value.fallback_providers = __cw_config_init_22_1;
+        __cw_config_init_22_value.providers = __cw_config_init_22_2;
+        __cw_config_init_22_value
     }
     .with_legacy_root(Some("active-deepseek-key".to_string()), None);
     let mut options = test_options(false);
@@ -7040,7 +7103,7 @@ async fn fixed_route_thinking_cycle_persists_raw_preference() {
 
     let mut app = App::new(test_options(false), &Config::default());
     app.set_provider_identity_record(
-        crate::config::Config::default()
+        codewhale_runtime::config::Config::default()
             .resolve_provider_identity(ProviderKind::Moonshot.as_str())
             .expect("captured fixture provider"),
     );
@@ -7675,7 +7738,8 @@ fn an_explicit_launch_model_outranks_the_remembered_provider_model() {
     // that stickiness is what `/model` exists for.
     let _no_flag = EnvVarGuard::remove("CODEWHALE_MODEL");
     let _no_legacy_flag = EnvVarGuard::remove("DEEPSEEK_MODEL");
-    let config = Config::load(Some(config_path.clone()), None).expect("load sealed config");
+    let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)
+        .expect("load sealed config");
     let remembered = App::new(
         TuiOptions {
             model: config.default_model(),
@@ -7690,7 +7754,8 @@ fn an_explicit_launch_model_outranks_the_remembered_provider_model() {
 
     // `--model` reaches this binary as CODEWHALE_MODEL. It must win.
     let _model_flag = EnvVarGuard::set("CODEWHALE_MODEL", "kimi-k3");
-    let config = Config::load(Some(config_path), None).expect("load explicit launch snapshot");
+    let config = crate::plugins::providers::load_config(Some(config_path), None)
+        .expect("load explicit launch snapshot");
     let requested = App::new(
         TuiOptions {
             model: config.default_model(),
@@ -7884,7 +7949,7 @@ fn assert_every_ctrl_t_press_changes_the_effective_tier(
 ) -> Vec<ReasoningEffort> {
     let mut app = App::new(test_options(false), &Config::default());
     app.set_provider_identity_record(
-        crate::config::Config::default()
+        codewhale_runtime::config::Config::default()
             .resolve_provider_identity(provider.as_str())
             .expect("captured fixture provider"),
     );

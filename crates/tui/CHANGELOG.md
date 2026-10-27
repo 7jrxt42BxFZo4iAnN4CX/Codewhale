@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- **Modern MCP client:** MCP servers now connect through the official MCP SDK (2.4) behind Codewhale's Rust broker by default (`mcp_backend = "host"`; `"rust"` stays available for one release). Servers that speak the 2026-07-28 revision are discovered with `server/discover`; other stdio and HTTP servers fall back to the legacy `initialize` handshake, and configured SSE servers keep theirs. Rust keeps process, network, credential, catalog, approval and cancellation authority. (CW-6713)
+- **MCP compatibility fixes:** older servers that answer the discovery probe with an error or an unrelated result now connect through the legacy handshake instead of being refused after the probe. A server that rejects sign-in reports its real 401 and the `/mcp login` hint rather than the probe's "method not found". A stale OAuth token is refreshed once when the probe itself is rejected. A server whose command cannot start now says why (for example, command not found) instead of a generic broker refusal.
+- **DeepSeek Harness plugins:** reviewed DSH plugins (definition API pinned to DSH 0.2.1-rc.2 in a shared compatibility table) run in the Native extension host. Tool output is validated against its declared schema, unsupported options are refused instead of ignored, and plugin commands can submit a prompt with visible plugin attribution. Terminal command receipts are kept in thread snapshots without entering model history. Changing the compatibility table invalidates earlier trust. Plugin UI views remain disabled. (CW-7054)
+- **Computer Use is installed, not bundled:** the Computer Use plugin is no longer vendored into the binary. Install it from the `codewhale` marketplace, which points at its independent release; its consent tools load on first use, and decisions still require a human approval card. (CW-6732)
+- **Tool image validation:** an image returned by a tool must decode before it is sent, so truncated or corrupt files are omitted with a receipt even when they are already within the delivery budget.
+
+- **Image-heavy session recovery:** ordinary image reads use a 256 KiB delivery budget. Requests measure serialized bytes, omit older images from an outbound copy with receipts, and retry an initial HTTP 413 once only with a smaller body. Saved images and executed tool actions remain intact. (CW-7550)
+
+- **Unix uninstall:** `codewhale uninstall` previews receipt-owned release files and `--yes` removes only checked files, with the running command last. Both Unix installers record command ownership; self-update renews existing receipts. User data, modified/unreceipted files and package-managed installations are preserved. Windows removal remains pending. (Refs #7091)
+
 - **GitHub Action reviews:** analysis can export a structured Engine review for a separate trusted publisher job. The publisher checks the current PR revision and line anchors, deduplicates its findings, and keeps uncertain or preexisting claims out of inline comments.
 - **Telegram recovery:** prompts and their initiating identity are durable before the polling cursor advances. Restart recovery reuses the original Engine operation, questions preserve human ownership, and uncertain final replies remain available through `/status` without an automatic resend.
 - **DingTalk bridge:** an optional internal-app Stream adapter reuses the same Engine, shared admission and approval helpers. Tenant/staff allowlists, durable acceptance before acknowledgement and retained uncertain deliveries protect recovery. Managed account linking is separate from this advanced self-hosted bridge.
@@ -16,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Linux hardening tests:** the NoNewPrivs child matrices now respect a parent that already holds the irreversible flag, keeping the full assertions on unpinned hosts and checking the kernel ratchet on pinned hosts. Thanks [@asto18089](https://github.com/asto18089) for diagnosing the hardened-container failure. (#7021)
 
 - **OrcaRouter recommendation:** `/provider` and `/model` offer a shared partner recommendation with the DeepSeek V4.1 Flash 30% top-up-match link, public referral disclosure and localized offer details. F7 or a click opens the existing pager while retaining the current route.
+
+- **Per-scope instruction budgets:** global and project standing instructions now have separate token budgets (100,000 estimated tokens each, capped at 25% of the usable context window), every trim, skip or refusal reaches the model and `/context report`, and `[instruction_budget] policy = "refuse"` stops a request before dispatch. Other tools' instruction files stay opt-in through `project_instruction_imports` or `claude_fallback`, and the table is user config only. Thanks [@7jrxt42BxFZo4iAnN4CX](https://github.com/7jrxt42BxFZo4iAnN4CX) for the design and implementation. (#6526, #7086)
 
 - Long drafts now show a localized external-editor hint when the actual composer
   viewport clips their text. The hint uses the shared F4 binding and preserves
@@ -48,16 +60,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cancellation wiring stays in place; its stale unused-code suppressions are
   removed. No supported command or feature is retired by this cleanup.
 
-- Standing instructions are budgeted per scope (`global` and `project`) in
-  estimated tokens instead of one 48 KiB byte ceiling shared by everything, and
-  every trim, skip, and refusal is reported — as a system cell at session start,
-  on stderr in `exec`, to the model as a runtime-provenance message, and per
-  source in `/context report`. `AGENTS.md` still wins; a directory without one
-  now falls back to its `CLAUDE.md` (`claude_fallback = false` opts out).
-  Configured `instructions = [...]` entries are charged to the global scope.
-  New `[instruction_budget]` table (user config only) with per-scope token
-  budgets, percentages of the usable window, `file_max_bytes`, `policy`, the
-  static-prefix guard, and `claude_fallback` (#6526).
 - Local Ollama defaults now come from chat-capable tags, and `/provider ollama`
   refreshes the live catalog before switching. Exec and Runtime API defaults use
   the same discovery path. Fresh context observations come from loaded models'

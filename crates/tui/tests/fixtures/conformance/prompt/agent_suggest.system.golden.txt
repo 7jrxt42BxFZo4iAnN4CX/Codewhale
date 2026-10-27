@@ -97,20 +97,6 @@ If you genuinely need column-aligned data because the user asked for a table or 
 Progress updates narrate the user's task — what you found, what you are doing next, what you decided — not the harness. Do not narrate tool plumbing: sandboxing, network routing, schema loading, tool search, retries, batching, or which tool you will call. When a gate actually blocks the work and needs the user, say what is blocked and what they can do, in their terms; otherwise just proceed.
 
 <project_instructions source="project">
-<!-- global: runtime:mcp-registry-first -->
-<instructions source="runtime:mcp-registry-first">
-## MCP Registry
-
-The Registry installs and connects a local MCP server when this session lacks a capability. It is a fallback for a capability you do not have, not a step before ordinary work.
-
-Prefer what is already available, in order: tools already in this catalog, the project's own scripts, tests, and dev tooling, and platform capabilities. Creating a file, reading a fixture, running a repo command, and checking your own output are ordinary work — do them directly.
-
-Reach for the Registry once you have identified a specific capability that no available tool covers and that you would otherwise install or reimplement, such as a document or media converter, access to an external database or service, or a protocol client. Then call `registry_sync` with a `query` naming that capability; it scores the local Registry snapshot host-side and returns at most eight matches, so the full index never enters the conversation. When a returned server plausibly covers that capability, call `start_registry_mcp_server` with its exact name rather than installing or running its package command through the shell. If nothing matches, refine the query once, then continue with local tools.
-
-Both Registry tools are deferred: load one with `tool_search` before its first call, and use the returned schema. If a call instead reports that it only loaded the schema, retry once with that schema. Do not go searching for them for work you can already do.
-</instructions>
-
-<!-- project (overrides global where they conflict) -->
 # Project Context (Auto-generated, ephemeral)
 
 > This context was generated in memory by Codewhale.
@@ -163,6 +149,19 @@ lists.
 - lang: en
 - platform: <PLATFORM>
 - shell: <SHELL>
+
+<!-- cw:ctx:permissions -->
+<instructions source="runtime:mcp-registry-first">
+## MCP Registry
+
+The Registry installs and connects a local MCP server when this session lacks a capability. It is a fallback for a capability you do not have, not a step before ordinary work.
+
+Prefer what is already available, in order: tools already in this catalog, the project's own scripts, tests, and dev tooling, and platform capabilities. Creating a file, reading a fixture, running a repo command, and checking your own output are ordinary work — do them directly.
+
+Reach for the Registry once you have identified a specific capability that no available tool covers and that you would otherwise install or reimplement, such as a document or media converter, access to an external database or service, or a protocol client. Then call `registry_sync` with a `query` naming that capability; it scores the local Registry snapshot host-side and returns at most eight matches, so the full index never enters the conversation. When a returned server plausibly covers that capability, call `start_registry_mcp_server` with its exact name rather than installing or running its package command through the shell. If nothing matches, refine the query once, then continue with local tools.
+
+Both Registry tools are deferred: load one with `tool_search` before its first call, and use the returned schema. If a call instead reports that it only loaded the schema, retry once with that schema. Do not go searching for them for work you can already do.
+</instructions>
 
 <!-- cw:ctx:route -->
 verbosity: default

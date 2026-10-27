@@ -535,7 +535,7 @@ pub(crate) fn enforce_read_denylist(path: &Path, tool: &str) -> Result<(), ToolE
             "{tool} cannot expose Codewhale configuration or credential-store files; use `codewhale config list` or `codewhale auth status` for safe inspection"
         )));
     }
-    match crate::sandbox::read_guard::active().check(home_path.as_deref().unwrap_or(path)) {
+    match codewhale_sandbox::read_guard::active().check(home_path.as_deref().unwrap_or(path)) {
         Ok(()) => Ok(()),
         Err(mut denial) => {
             denial.requested = path.to_path_buf();

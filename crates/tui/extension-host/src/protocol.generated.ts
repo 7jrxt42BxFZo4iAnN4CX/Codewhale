@@ -179,12 +179,12 @@ export const SHAPES: { readonly [name: string]: Shape } = {
   McpHttpHeaders: {
     strict: true,
     required: {},
-    optional: { accept: 'string', content_type: 'string', mcp_session_id: 'string', mcp_protocol_version: 'string' },
+    optional: { accept: 'string', content_type: 'string', mcp_session_id: 'string', mcp_protocol_version: 'string', mcp_method: 'string', mcp_name: 'string' },
   },
   McpOpenParams: {
     strict: true,
     required: { owner: { ref: 'OwnerRef' }, session_id: 'string', launch_ticket: 'string', transport: 'string', initialize_grant: { ref: 'McpOperationGrant' }, initialized_grant: { ref: 'McpOperationGrant' }, client_version: 'string', deadline_ms: 'uint' },
-    optional: {},
+    optional: { discover_grant: { ref: 'McpOperationGrant' } },
   },
   McpOperationGrant: {
     strict: true,
@@ -410,6 +410,8 @@ export interface McpHttpHeaders {
   content_type?: string
   mcp_session_id?: string
   mcp_protocol_version?: string
+  mcp_method?: string
+  mcp_name?: string
 }
 
 export interface McpOpenParams {
@@ -417,6 +419,7 @@ export interface McpOpenParams {
   session_id: string
   launch_ticket: string
   transport: string
+  discover_grant?: McpOperationGrant
   initialize_grant: McpOperationGrant
   initialized_grant: McpOperationGrant
   client_version: string

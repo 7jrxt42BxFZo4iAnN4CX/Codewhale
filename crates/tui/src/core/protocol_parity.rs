@@ -967,6 +967,7 @@ pub fn event_to_protocol(event: &Event, ids: &ProtocolIds) -> wire::EventMsg {
             session_id: engine_session_id,
             messages,
             system_prompt,
+            instruction_assembly,
             model,
             workspace,
         } => wire::EventMsg::SessionUpdated {
@@ -975,6 +976,9 @@ pub fn event_to_protocol(event: &Event, ids: &ProtocolIds) -> wire::EventMsg {
             engine_session_id: engine_session_id.clone(),
             messages: messages.iter().map(to_value).collect(),
             system_prompt: system_prompt.as_ref().map(to_value),
+            instruction_assembly: instruction_assembly
+                .as_deref()
+                .map(crate::project_context::InstructionAssembly::receipt_json),
             model: model.clone(),
             workspace: workspace.clone(),
         },
@@ -1068,6 +1072,10 @@ pub fn event_to_protocol(event: &Event, ids: &ProtocolIds) -> wire::EventMsg {
 #[must_use]
 pub fn op_to_protocol(op: &Op) -> wire_op::Op {
     match op {
+        Op::Review { turn, request } => wire_op::Op::Review {
+            turn: turn_spec_to_wire(turn),
+            request: request.clone(),
+        },
         Op::SendMessage(spec) => wire_op::Op::SendMessage(turn_spec_to_wire(spec)),
         Op::ContinueGoal {
             dynamic_tools,
@@ -1681,6 +1689,7 @@ mod tests {
             model_provider_id: Some("configured-provider".into()),
             workspace: std::path::PathBuf::from("/observed/workspace"),
             system_prompt: None,
+            instruction_assembly: None,
             mode: "agent".into(),
         };
         let (tx, mut receive) = tokio::sync::oneshot::channel();

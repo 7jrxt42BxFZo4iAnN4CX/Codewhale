@@ -634,7 +634,7 @@ pub(super) async fn create_session_from_thread(
 }
 
 pub(super) fn stamp_session_provider_from_thread(
-    config: &crate::config::Config,
+    config: &codewhale_runtime::config::Config,
     detail: &ThreadDetail,
     metadata: &mut crate::session_manager::SessionMetadata,
 ) -> Result<(), String> {

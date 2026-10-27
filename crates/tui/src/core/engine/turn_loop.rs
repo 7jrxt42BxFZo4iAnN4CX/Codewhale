@@ -70,14 +70,14 @@ struct PreparedModelStep {
     fleet_report_response: bool,
 }
 
-struct PendingProviderRequestReceipt {
-    turn_id: String,
-    request_index: u32,
-    prefix_check: serde_json::Value,
-    reused_preparation: bool,
-    wire: crate::llm_client::OutboundWireObservations,
-    transport_retries: std::sync::Arc<std::sync::atomic::AtomicU32>,
-    started_at: Instant,
+pub(super) struct PendingProviderRequestReceipt {
+    pub(super) turn_id: String,
+    pub(super) request_index: u32,
+    pub(super) prefix_check: serde_json::Value,
+    pub(super) reused_preparation: bool,
+    pub(super) wire: crate::llm_client::OutboundWireObservations,
+    pub(super) transport_retries: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    pub(super) started_at: Instant,
 }
 
 struct AcceptedModelStep {
@@ -106,7 +106,7 @@ mod tool_batch;
 struct PlannedToolCalls {
     plans: Vec<ToolExecutionPlan>,
     hook_contexts: std::collections::HashMap<String, String>,
-    batch_sandbox_policy: crate::sandbox::SandboxPolicy,
+    batch_sandbox_policy: codewhale_sandbox::SandboxPolicy,
 }
 
 /// Who proposed a tool call being planned. Every source goes through the same
@@ -160,6 +160,7 @@ struct StreamOutcome {
     last_text_index: Option<usize>,
     stream_errors: u32,
     terminal_stream_error: bool,
+    steer_preempted: bool,
     /// Unsettled steers queued mid-stream. Each is committed into the turn's
     /// record at a step boundary, or dropped — and dropping one reports
     /// `SteerOutcome::Dropped` to its sender, so an interrupted or failed
@@ -568,8 +569,8 @@ pub(super) fn repo_law_must_block_without_prompt(
 pub(super) fn requested_sandbox_escalation(
     tool_name: &str,
     input: &serde_json::Value,
-    effective: &crate::sandbox::SandboxPolicy,
-) -> Result<Option<(crate::sandbox::SandboxPolicy, String)>, ToolError> {
+    effective: &codewhale_sandbox::SandboxPolicy,
+) -> Result<Option<(codewhale_sandbox::SandboxPolicy, String)>, ToolError> {
     let requested = input.get("sandbox_permissions");
     let justification = input.get("justification");
     if !matches!(
@@ -611,19 +612,19 @@ pub(super) fn requested_sandbox_escalation(
         .to_string();
 
     let policy = match (effective, requested) {
-        (crate::sandbox::SandboxPolicy::ReadOnly { .. }, "workspace-write") => {
-            crate::sandbox::SandboxPolicy::default()
+        (codewhale_sandbox::SandboxPolicy::ReadOnly { .. }, "workspace-write") => {
+            codewhale_sandbox::SandboxPolicy::default()
         }
         (
-            crate::sandbox::SandboxPolicy::ReadOnly { .. }
-            | crate::sandbox::SandboxPolicy::WorkspaceWrite { .. },
+            codewhale_sandbox::SandboxPolicy::ReadOnly { .. }
+            | codewhale_sandbox::SandboxPolicy::WorkspaceWrite { .. },
             "danger-full-access",
-        ) => crate::sandbox::SandboxPolicy::DangerFullAccess,
+        ) => codewhale_sandbox::SandboxPolicy::DangerFullAccess,
         (_, "workspace-write" | "danger-full-access") => {
             return Err(sandbox_escalation_denial(
                 requested,
                 effective,
-                crate::sandbox::process_hardening::no_new_privs_active(),
+                codewhale_sandbox::process_hardening::no_new_privs_active(),
             ));
         }
         (_, other) => {
@@ -646,7 +647,7 @@ pub(super) fn requested_sandbox_escalation(
 /// turns on escalation shapes that cannot work.
 pub(super) fn sandbox_escalation_denial(
     requested: &str,
-    effective: &crate::sandbox::SandboxPolicy,
+    effective: &codewhale_sandbox::SandboxPolicy,
     no_new_privs_active: Option<bool>,
 ) -> ToolError {
     let base = format!(
@@ -1846,7 +1847,7 @@ impl Engine {
         );
         let batch_sandbox_read_only = matches!(
             &batch_sandbox_policy,
-            crate::sandbox::SandboxPolicy::ReadOnly { .. }
+            codewhale_sandbox::SandboxPolicy::ReadOnly { .. }
         );
         for (index, tool) in tool_uses.iter_mut().enumerate() {
             let tool_id = tool.execution_id.clone();
@@ -2677,7 +2678,7 @@ impl Engine {
         tool_registry: Option<&crate::tools::ToolRegistry>,
         tool_exec_lock: Arc<RwLock<()>>,
         mcp_pool: Option<Arc<AsyncMutex<McpPool>>>,
-        batch_sandbox_policy: &crate::sandbox::SandboxPolicy,
+        batch_sandbox_policy: &codewhale_sandbox::SandboxPolicy,
         mode: &mut AppMode,
         nested_gate_env: &mut NestedGateEnv<'_>,
     ) -> (Vec<Option<ToolExecOutcome>>, bool) {
@@ -4520,7 +4521,7 @@ impl Engine {
         })
     }
 
-    async fn settle_provider_request_receipt(
+    pub(super) async fn settle_provider_request_receipt(
         &self,
         pending: &mut Option<PendingProviderRequestReceipt>,
         usage: Option<&Usage>,
@@ -4565,6 +4566,8 @@ impl Engine {
         let mut stream = stream;
         let mut stream_error: Option<String> = None;
         let mut terminal_stream_error = false;
+        let mut steer_preempted = false;
+        let stream_cancel = self.cancel_token.clone();
         // #6795: the envelope of a retryable error frame, posted only if the
         // retry budget does not re-issue the request.
         let mut frame_error: Option<ErrorEnvelope> = None;
@@ -4663,7 +4666,13 @@ impl Engine {
         loop {
             let poll_outcome = tokio::select! {
                 biased;
-                _ = self.cancel_token.cancelled() => None,
+                _ = stream_cancel.cancelled() => None,
+                pending = self.wait_turn_steer() => {
+                    pending_steers.push(pending);
+                    steer_preempted = true;
+                    drop(stream);
+                    break;
+                },
                 () = async {
                     if let Some(deadline) = child_request_deadline {
                         tokio::time::sleep_until(deadline.into()).await;
@@ -4716,22 +4725,6 @@ impl Engine {
             let Some(event_result) = poll_outcome else {
                 break;
             };
-            while let Some(pending) = self.next_turn_steer() {
-                if pending.content.trim().is_empty() {
-                    // Nothing to deliver; dropping `pending` settles it.
-                    continue;
-                }
-                if pending.replace_pending {
-                    // This vector contains only the active control's claimed
-                    // but unsettled inputs. Committed history is immutable.
-                    pending_steers.clear();
-                }
-                let preview = summarize_text(pending.content.trim(), 120);
-                pending_steers.push(pending);
-                let _ = self
-                    .send_stream_event(Event::status(format!("Steer input queued: {preview}")))
-                    .await;
-            }
 
             if self.cancel_token.is_cancelled() {
                 break;
@@ -4890,11 +4883,11 @@ impl Engine {
                             });
                         let retry_stream_result = tokio::select! {
                             biased;
-                            () = self.cancel_token.cancelled() => {
-                                diagnostics.transport_retries = diagnostics.transport_retries
-                                    .saturating_add(transport_retries.load(std::sync::atomic::Ordering::Relaxed));
-                                self.settle_provider_request_receipt(&mut request_receipt, None, "cancelled_before_stream").await;
-                                break;
+                            () = stream_cancel.cancelled() => None,
+                            pending = self.wait_turn_steer() => {
+                                pending_steers.push(pending);
+                                steer_preempted = true;
+                                None
                             },
                             result = crate::llm_client::observe_request_retries(Some(retry_observation), async {
                                 diagnostics.transparent_stream_retries =
@@ -4902,12 +4895,25 @@ impl Engine {
                                 diagnostics.model_requests_started =
                                     diagnostics.model_requests_started.saturating_add(1);
                                 client.create_message_stream(stream_request.clone()).await
-                            }) => result,
+                            }) => Some(result),
                         };
                         diagnostics.transport_retries =
                             diagnostics.transport_retries.saturating_add(
                                 transport_retries.load(std::sync::atomic::Ordering::Relaxed),
                             );
+                        let Some(retry_stream_result) = retry_stream_result else {
+                            self.settle_provider_request_receipt(
+                                &mut request_receipt,
+                                None,
+                                if steer_preempted {
+                                    "steered_before_stream"
+                                } else {
+                                    "cancelled_before_stream"
+                                },
+                            )
+                            .await;
+                            break;
+                        };
                         match retry_stream_result {
                             Ok(fresh) => {
                                 if usage_has_reported_data(&usage) {
@@ -5448,13 +5454,15 @@ impl Engine {
         // goes through the same finalization gate a normal ContentBlockStop
         // applies, and is later announced with the same finalized input — which is
         // also why no mid-stream parse is needed (#6213 T4).
-        for tool_idx in std::mem::take(&mut current_tool_indices).into_values() {
-            let Some(tool_state) = tool_uses.get_mut(tool_idx) else {
-                continue;
-            };
-            self.finalize_streamed_tool_input(tool_state).await;
+        if !steer_preempted {
+            for tool_idx in std::mem::take(&mut current_tool_indices).into_values() {
+                let Some(tool_state) = tool_uses.get_mut(tool_idx) else {
+                    continue;
+                };
+                self.finalize_streamed_tool_input(tool_state).await;
+            }
         }
-        if transparent_stream_retries > 0 {
+        if transparent_stream_retries > 0 && !steer_preempted {
             let message = if self.cancel_token.is_cancelled() {
                 "Retry interrupted: transparent stream cancelled".to_string()
             } else if stream_errors == 0 && pending_message_complete {
@@ -5476,6 +5484,8 @@ impl Engine {
         }
         let receipt_outcome = if self.cancel_token.is_cancelled() {
             "cancelled"
+        } else if steer_preempted {
+            "steered"
         } else if stream_error.is_some() || stream_errors > 0 || pending_resume.is_some() {
             "incomplete"
         } else if pending_message_complete {
@@ -5512,6 +5522,7 @@ impl Engine {
             last_text_index,
             stream_errors,
             terminal_stream_error,
+            steer_preempted,
             pending_steers,
             pending_resume,
             stream_start,
@@ -5895,7 +5906,8 @@ pub(crate) const INTERACTIVE_STREAM_CHUNK_TIMEOUT: Duration = Duration::from_sec
 
 fn stream_chunk_timeout_budget(config: &EngineConfig) -> (u64, Duration) {
     let configured = config.stream_chunk_timeout;
-    let default_budget = Duration::from_secs(crate::config::DEFAULT_STREAM_CHUNK_TIMEOUT_SECS);
+    let default_budget =
+        Duration::from_secs(codewhale_runtime::config::DEFAULT_STREAM_CHUNK_TIMEOUT_SECS);
     let effective = if config.terminal_chrome_enabled && configured == default_budget {
         INTERACTIVE_STREAM_CHUNK_TIMEOUT
     } else {
@@ -6168,7 +6180,8 @@ mod stream_timeout_tests {
 
     #[test]
     fn stall_interactive_chunk_timeout_is_well_under_default_budget() {
-        let default_budget = Duration::from_secs(crate::config::DEFAULT_STREAM_CHUNK_TIMEOUT_SECS);
+        let default_budget =
+            Duration::from_secs(codewhale_runtime::config::DEFAULT_STREAM_CHUNK_TIMEOUT_SECS);
         let interactive = EngineConfig {
             stream_chunk_timeout: default_budget,
             terminal_chrome_enabled: true,
@@ -6205,7 +6218,7 @@ mod stream_timeout_tests {
         for (open, idle) in [
             (
                 codewhale_config::resolve_stream_open_timeout(None),
-                Duration::from_secs(crate::config::DEFAULT_STREAM_CHUNK_TIMEOUT_SECS),
+                Duration::from_secs(codewhale_runtime::config::DEFAULT_STREAM_CHUNK_TIMEOUT_SECS),
             ),
             (Duration::from_secs(300), Duration::from_secs(60)),
         ] {
@@ -6453,9 +6466,11 @@ pub(crate) async fn run_tool_call_before_hooks(
     let mut hook_results = Vec::new();
     let mut lost = ToolCallHookFold::default();
     if let Some(hook_executor) = hook_executor
-        && hook_executor.has_hooks_for_event(crate::hooks::HookEvent::ToolCallBefore)
+        && hook_executor.has_hooks_for_event(codewhale_config::hooks::HookEvent::ToolCallBefore)
     {
-        if hook_executor.has_background_hooks_for_event(crate::hooks::HookEvent::ToolCallBefore) {
+        if hook_executor
+            .has_background_hooks_for_event(codewhale_config::hooks::HookEvent::ToolCallBefore)
+        {
             tracing::warn!("background ToolCallBefore hooks cannot decide admission");
         }
         let hook_context = crate::hooks::HookContext::new()
@@ -6467,10 +6482,15 @@ pub(crate) async fn run_tool_call_before_hooks(
             .with_model(model)
             .with_session_id(hook_executor.session_id());
         let executor = hook_executor.clone();
-        let strict_gates = hook_executor
-            .matched_strict_gate_labels(crate::hooks::HookEvent::ToolCallBefore, &hook_context);
+        let strict_gates = hook_executor.matched_strict_gate_labels(
+            codewhale_config::hooks::HookEvent::ToolCallBefore,
+            &hook_context,
+        );
         match tokio::task::spawn_blocking(move || {
-            executor.execute(crate::hooks::HookEvent::ToolCallBefore, &hook_context)
+            executor.execute(
+                codewhale_config::hooks::HookEvent::ToolCallBefore,
+                &hook_context,
+            )
         })
         .await
         {
@@ -6697,7 +6717,7 @@ pub(super) const REASONING_EFFORT_AUTO: &str = "auto";
 /// is no longer inspected: the keyword classifier was deleted with the #6290
 /// rework, and `auto` now means the declared default rather than a guess from
 /// the user's wording. Non-`"auto"` values pass through unchanged.
-pub(super) fn resolve_auto_effort(
+pub(crate) fn resolve_auto_effort(
     reasoning_effort: Option<&str>,
     provider: codewhale_config::ProviderKind,
     base_url: &str,
@@ -8005,7 +8025,8 @@ mod tests {
 
     #[test]
     fn hook_gate_denies_with_exit_code_2() {
-        use crate::hooks::{Hook, HookContext, HookEvent, HookExecutor, HooksConfig};
+        use crate::hooks::{HookContext, HookExecutor};
+        use codewhale_config::hooks::{Hook, HookEvent, HooksConfig};
 
         let deny_cmd = if cfg!(windows) { "exit /b 2" } else { "exit 2" };
         let config = HooksConfig {
@@ -8025,7 +8046,8 @@ mod tests {
 
     #[test]
     fn hook_gate_allows_with_exit_code_0() {
-        use crate::hooks::{Hook, HookContext, HookEvent, HookExecutor, HooksConfig};
+        use crate::hooks::{HookContext, HookExecutor};
+        use codewhale_config::hooks::{Hook, HookEvent, HooksConfig};
 
         let allow_cmd = if cfg!(windows) { "exit /b 0" } else { "exit 0" };
         let config = HooksConfig {
@@ -8046,7 +8068,8 @@ mod tests {
 
     #[test]
     fn hook_gate_failure_exit_code_1_is_not_denial() {
-        use crate::hooks::{Hook, HookContext, HookEvent, HookExecutor, HooksConfig};
+        use crate::hooks::{HookContext, HookExecutor};
+        use codewhale_config::hooks::{Hook, HookEvent, HooksConfig};
 
         let fail_cmd = if cfg!(windows) { "exit /b 1" } else { "exit 1" };
         let config = HooksConfig {
@@ -8067,7 +8090,8 @@ mod tests {
 
     #[test]
     fn hook_gate_no_hooks_returns_no_results() {
-        use crate::hooks::{HookContext, HookEvent, HookExecutor, HooksConfig};
+        use crate::hooks::{HookContext, HookExecutor};
+        use codewhale_config::hooks::{HookEvent, HooksConfig};
 
         let config = HooksConfig {
             enabled: true,
@@ -8083,7 +8107,8 @@ mod tests {
 
     #[test]
     fn hook_gate_captures_legacy_stdout_but_receipt_does_not_persist_it() {
-        use crate::hooks::{Hook, HookContext, HookEvent, HookExecutor, HooksConfig};
+        use crate::hooks::{HookContext, HookExecutor};
+        use codewhale_config::hooks::{Hook, HookEvent, HooksConfig};
 
         let deny_cmd = if cfg!(windows) {
             "echo Tool blocked by security policy & exit /b 2"
@@ -8320,7 +8345,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn timed_out_strict_gate_produces_a_bounded_receipt_from_the_executor() {
-        use crate::hooks::{Hook, HookContext, HookEvent, HookExecutor, HooksConfig};
+        use crate::hooks::{HookContext, HookExecutor};
+        use codewhale_config::hooks::{Hook, HookEvent, HooksConfig};
 
         let dir = tempfile::tempdir().expect("tempdir");
         let secret_path = dir.path().join("s3cret-token-dir");
@@ -8500,7 +8526,8 @@ mod tests {
 
     #[test]
     fn hook_gate_denies_with_json_decision_from_executor() {
-        use crate::hooks::{Hook, HookContext, HookEvent, HookExecutor, HooksConfig};
+        use crate::hooks::{HookContext, HookExecutor};
+        use codewhale_config::hooks::{Hook, HookEvent, HooksConfig};
 
         let deny_cmd = if cfg!(windows) {
             r#"echo {"decision":"deny","reason":"blocked by project policy"}"#
@@ -8526,7 +8553,8 @@ mod tests {
 
     #[test]
     fn hook_gate_ask_forces_approval_from_executor() {
-        use crate::hooks::{Hook, HookContext, HookEvent, HookExecutor, HooksConfig};
+        use crate::hooks::{HookContext, HookExecutor};
+        use codewhale_config::hooks::{Hook, HookEvent, HooksConfig};
 
         let ask_cmd = if cfg!(windows) {
             r#"echo {"decision":"ask"}"#

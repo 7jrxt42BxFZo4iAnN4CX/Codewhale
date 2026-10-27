@@ -31,15 +31,15 @@ use codewhale_config::route::{
 };
 use codewhale_config::{auth_mode_disables_api_key, is_upstream_auth_header};
 
-use crate::config::{
-    Config, ProviderIdentity, RetryPolicy, validate_route, wire_model_for_provider_route,
-};
 use crate::llm_client::{
     LlmClient, LlmError, OutboundWireObservation, RetryConfig as LlmRetryConfig,
     ToolWireMeasurement, extract_retry_after, observe_outbound_wire, retry_delay_from_error_body,
     sanitize_http_error_body, with_retry,
 };
 use codewhale_config::ProviderKind;
+use codewhale_runtime::config::{
+    Config, ProviderIdentity, RetryPolicy, validate_route, wire_model_for_provider_route,
+};
 #[cfg(test)]
 #[path = "client/catalog_tests.rs"]
 mod catalog_tests;
@@ -288,7 +288,7 @@ pub struct CodewhaleClient {
     /// an account label only, never token material.
     subscription_limit_guidance: Option<String>,
     /// Reviewed runtime authority and OAuth descriptor travel with the frozen route.
-    plugin_provider: Option<Box<crate::config::ProviderConfig>>,
+    plugin_provider: Option<Box<codewhale_runtime::config::ProviderConfig>>,
     /// Read-only diagnostic probes must never migrate or refresh the grant.
     plugin_oauth_read_only: bool,
     session_provider_keys_only: bool,
@@ -1563,7 +1563,7 @@ impl CodewhaleClient {
                 .key
                 .as_str()
                 .eq_ignore_ascii_case("ds4")
-            && crate::config::base_url_uses_local_host(&self.base_url)
+            && codewhale_runtime::config::base_url_uses_local_host(&self.base_url)
             && matches!(
                 model.trim().to_ascii_lowercase().as_str(),
                 "deepseek-v4-flash" | "deepseek-v4-pro"
@@ -1743,8 +1743,8 @@ impl CodewhaleClient {
             && crate::pricing::is_official_chatgpt_api(&base_url)
         {
             let credentials = config.codex_credentials()?;
-            let guidance = crate::oauth::usage_limit_guidance(
-                crate::oauth::OAuthProvider::Chatgpt,
+            let guidance = codewhale_runtime::oauth::usage_limit_guidance(
+                codewhale_runtime::oauth::OAuthProvider::Chatgpt,
                 credentials.account_label.as_deref(),
             );
             let identity = serde_json::to_vec(&(
@@ -1770,16 +1770,16 @@ impl CodewhaleClient {
             // OAuth mode that fell through to an API key names no account.
             let (resolved, xai_sign_in) = config.active_route_api_key_with_xai_sign_in()?;
             let guidance = xai_sign_in.map(|label| {
-                crate::oauth::usage_limit_guidance(
-                    crate::oauth::OAuthProvider::Xai,
+                codewhale_runtime::oauth::usage_limit_guidance(
+                    codewhale_runtime::oauth::OAuthProvider::Xai,
                     label.as_deref(),
                 )
             });
             (resolved, None, guidance, None)
         };
         let subscription_limit_guidance = if api_key_source == "Claude sign-in" {
-            Some(crate::oauth::usage_limit_guidance(
-                crate::oauth::OAuthProvider::Claude,
+            Some(codewhale_runtime::oauth::usage_limit_guidance(
+                codewhale_runtime::oauth::OAuthProvider::Claude,
                 None,
             ))
         } else {
@@ -2018,13 +2018,13 @@ impl CodewhaleClient {
             let read_only = self.plugin_oauth_read_only;
             let token = tokio::task::spawn_blocking(move || {
                 if read_only {
-                    crate::oauth::get_owned_credentials_read_only(
-                        crate::oauth::OAuthProvider::Claude,
+                    codewhale_runtime::oauth::get_owned_credentials_read_only(
+                        codewhale_runtime::oauth::OAuthProvider::Claude,
                         &config,
                     )
                 } else {
-                    crate::oauth::get_owned_credentials(
-                        crate::oauth::OAuthProvider::Claude,
+                    codewhale_runtime::oauth::get_owned_credentials(
+                        codewhale_runtime::oauth::OAuthProvider::Claude,
                         &config,
                     )
                 }
@@ -2068,8 +2068,9 @@ impl CodewhaleClient {
                 Some(provider.http_headers.as_ref().unwrap_or(&empty_headers)),
             )
             .map_err(anyhow::Error::msg)?;
-            let token =
-                crate::oauth::plugin_oauth_access_token(&name, &base_url, descriptor, read_only)?;
+            let token = codewhale_runtime::oauth::plugin_oauth_access_token(
+                &name, &base_url, descriptor, read_only,
+            )?;
             // Refresh may wait on the issuer. Do not send a model request if
             // the review was revoked while that HTTP request was in flight.
             crate::plugins::registry::verify_plugin_component_authority(
@@ -2733,7 +2734,7 @@ fn provider_default_wire_format(provider: ProviderKind) -> WireFormat {
 /// fixed policy (or Chat Completions).
 fn provider_wire_format_for_config(
     identity: &ProviderIdentity,
-    config: Option<&crate::config::Config>,
+    config: Option<&codewhale_runtime::config::Config>,
 ) -> WireFormat {
     let api_provider = identity.provider;
     let wire = config.and_then(|cfg| cfg.provider_wire_dialect(identity));
@@ -3007,6 +3008,84 @@ impl CodewhaleClient {
         request: MessageRequest,
         stream: bool,
     ) -> Result<PreparedOutboundRequest> {
+        let mut prepared = self.prepare_outbound_request_body(request.clone(), stream)?;
+        let original_bytes = prepared.serialized_body_bytes()?;
+        if original_bytes <= prepared::REQUEST_BODY_BYTE_TRIGGER {
+            return Ok(prepared);
+        }
+        let total = crate::image_attach::count_request_images(&request.messages);
+        if total == 0 {
+            return Ok(prepared);
+        }
+        let mut candidate = request.clone();
+        crate::image_attach::cap_request_images_with_notes(
+            &mut candidate.messages,
+            0,
+            prepared::REQUEST_BODY_IMAGE_NOTE,
+            prepared::REQUEST_BODY_IMAGE_NOTE,
+        );
+        prepared = self.prepare_outbound_request_body(candidate, stream)?;
+        let mut body_bytes = prepared.serialized_body_bytes()?;
+        let mut retained = 0;
+        let mut rejected = total;
+        if body_bytes <= prepared::REQUEST_BODY_BYTE_TARGET {
+            while retained + 1 < rejected {
+                let keep = retained + (rejected - retained) / 2;
+                let mut candidate = request.clone();
+                crate::image_attach::cap_request_images_with_notes(
+                    &mut candidate.messages,
+                    keep,
+                    prepared::REQUEST_BODY_IMAGE_NOTE,
+                    prepared::REQUEST_BODY_IMAGE_NOTE,
+                );
+                let candidate = self.prepare_outbound_request_body(candidate, stream)?;
+                let candidate_bytes = candidate.serialized_body_bytes()?;
+                if candidate_bytes <= prepared::REQUEST_BODY_BYTE_TARGET {
+                    retained = keep;
+                    body_bytes = candidate_bytes;
+                    prepared = candidate;
+                } else {
+                    rejected = keep;
+                }
+            }
+        }
+        let chunk_retained = total - crate::image_attach::images_to_elide(total, retained);
+        if chunk_retained < retained {
+            let mut candidate = request.clone();
+            crate::image_attach::cap_request_images_with_notes(
+                &mut candidate.messages,
+                chunk_retained,
+                prepared::REQUEST_BODY_IMAGE_NOTE,
+                prepared::REQUEST_BODY_IMAGE_NOTE,
+            );
+            prepared = self.prepare_outbound_request_body(candidate, stream)?;
+            body_bytes = prepared.serialized_body_bytes()?;
+            retained = chunk_retained;
+        }
+        if body_bytes >= original_bytes {
+            return self.prepare_outbound_request_body(request, stream);
+        }
+        prepared.image_projection = Some(crate::llm_client::ImageProjectionReceipt {
+            cause: "local_request_byte_budget".into(),
+            original_image_blocks: total,
+            omitted_oldest_blocks: total - retained,
+            retained_newest_blocks: retained,
+            body_bytes_before: original_bytes,
+            body_bytes_after: body_bytes,
+            omission_note: prepared::REQUEST_BODY_IMAGE_NOTE.into(),
+        });
+        prepared.image_omission_notice = Some(format!(
+            "Image request budget: omitted {} older image-bearing blocks; retained {retained} newest blocks. Serialized request reduced from {original_bytes} to {body_bytes} bytes. Original images remain in the session.",
+            total - retained,
+        ));
+        Ok(prepared)
+    }
+
+    fn prepare_outbound_request_body(
+        &self,
+        request: MessageRequest,
+        stream: bool,
+    ) -> Result<PreparedOutboundRequest> {
         // Step 0: refuse role/dialect pairs this wire cannot represent, before
         // any dialect builds a body. Doing it here rather than inside each
         // adapter is what stops an unrepresentable role from being discovered
@@ -3095,7 +3174,7 @@ impl CodewhaleClient {
                     let wire_effort = if matches!(self.wire_format, WireFormat::ChatCompletions) {
                         request.reasoning_effort.as_deref().and_then(|effort| {
                             let provider = self.chat_shape_provider(&request.model);
-                            let model = crate::config::wire_model_for_provider_route(
+                            let model = codewhale_runtime::config::wire_model_for_provider_route(
                                 provider,
                                 &self.base_url,
                                 &request.model,
@@ -4749,11 +4828,108 @@ impl CodewhaleClient {
         let _permit = self.acquire_provider_request_permit().await;
         let cacheable = allow_response_cache
             && codewhale_runtime::llm_response_cache::request_is_cacheable(&request);
-        let prepared = self.prepare_outbound_request(request, false)?;
+        let prepared = self.prepare_outbound_request(request.clone(), false)?;
+        match self.dispatch_prepared_message(&prepared, cacheable).await {
+            Err(error) => {
+                let Some(retry) =
+                    self.prepare_image_elision_retry(request, false, &prepared, &error)?
+                else {
+                    return Err(error);
+                };
+                crate::llm_client::observe_transport_attempt();
+                self.dispatch_prepared_message(&retry, cacheable).await
+            }
+            result => result,
+        }
+    }
+
+    fn prepare_image_elision_retry(
+        &self,
+        mut request: MessageRequest,
+        stream: bool,
+        previous: &PreparedOutboundRequest,
+        error: &anyhow::Error,
+    ) -> Result<Option<PreparedOutboundRequest>> {
+        if !matches!(
+            error.downcast_ref::<LlmError>(),
+            Some(LlmError::InvalidRequest { status: 413, .. })
+        ) {
+            return Ok(None);
+        }
+        if previous
+            .image_projection
+            .as_ref()
+            .is_some_and(|projection| projection.retained_newest_blocks == 0)
+        {
+            return Ok(None);
+        }
+        let window = crate::image_attach::cap_request_images_with_notes(
+            &mut request.messages,
+            0,
+            prepared::REQUEST_BODY_413_IMAGE_NOTE,
+            prepared::REQUEST_BODY_413_IMAGE_NOTE,
+        );
+        if window.elided == 0 {
+            return Ok(None);
+        }
+        let mut retry = self.prepare_outbound_request(request, stream)?;
+        let before = previous.serialized_body_bytes()?;
+        let after = retry.serialized_body_bytes()?;
+        if after >= before {
+            return Ok(None);
+        }
+        retry.image_projection = Some(crate::llm_client::ImageProjectionReceipt {
+            cause: "initial_http_413".into(),
+            original_image_blocks: window.total,
+            omitted_oldest_blocks: window.elided,
+            retained_newest_blocks: 0,
+            body_bytes_before: before,
+            body_bytes_after: after,
+            omission_note: prepared::REQUEST_BODY_413_IMAGE_NOTE.into(),
+        });
+        retry.image_omission_notice = Some(format!(
+            "HTTP 413 recovery: retrying once without image attachments; serialized request reduced from {before} to {after} bytes. Original images remain in the session.",
+        ));
+        Ok(Some(retry))
+    }
+
+    async fn observe_prepared_request(&self, prepared: &PreparedOutboundRequest) {
+        observe_outbound_wire(|| OutboundWireObservation {
+            provider_id: prepared.endpoint.provider_id.clone(),
+            route_id: self.admitted_identity.persisted_id().map(str::to_owned),
+            endpoint_fingerprint: prepared.endpoint_fingerprint(),
+            wire_model: prepared.wire_model.clone(),
+            wire_dialect: prepared.dialect.as_str().to_owned(),
+            tools: prepared.tool_wire_measurement(),
+            image_projection: prepared.image_projection.clone(),
+        });
+        if let Some(notice) = &prepared.image_omission_notice {
+            crate::llm_client::observe_transport_status(notice.clone()).await;
+        }
+    }
+
+    async fn dispatch_prepared_message(
+        &self,
+        prepared: &PreparedOutboundRequest,
+        cacheable: bool,
+    ) -> Result<MessageResponse> {
+        self.observe_prepared_request(prepared).await;
         match prepared.dialect {
-            WireDialect::OpenAiResponses => self.handle_responses_message(&prepared).await,
-            WireDialect::AnthropicMessages => self.handle_anthropic_message(&prepared).await,
-            WireDialect::ChatCompletions => self.create_message_chat(&prepared, cacheable).await,
+            WireDialect::OpenAiResponses => self.handle_responses_message(prepared).await,
+            WireDialect::AnthropicMessages => self.handle_anthropic_message(prepared).await,
+            WireDialect::ChatCompletions => self.create_message_chat(prepared, cacheable).await,
+        }
+    }
+
+    async fn dispatch_prepared_stream(
+        &self,
+        prepared: &PreparedOutboundRequest,
+    ) -> Result<crate::llm_client::StreamEventBox> {
+        self.observe_prepared_request(prepared).await;
+        match prepared.dialect {
+            WireDialect::OpenAiResponses => self.handle_responses_stream(prepared).await,
+            WireDialect::AnthropicMessages => self.handle_anthropic_stream(prepared).await,
+            WireDialect::ChatCompletions => self.handle_chat_completion_stream(prepared).await,
         }
     }
 }
@@ -4847,15 +5023,20 @@ impl LlmClient for CodewhaleClient {
     ) -> Result<crate::llm_client::StreamEventBox> {
         let inference = self.acquire_remote_control_inference_permit().await;
         let permit = self.acquire_provider_request_permit().await;
-        let prepared = self.prepare_outbound_request(request, true)?;
-        observe_outbound_wire(|| OutboundWireObservation {
-            provider_id: prepared.endpoint.provider_id.clone(),
-            route_id: self.admitted_identity.persisted_id().map(str::to_owned),
-            endpoint_fingerprint: prepared.endpoint_fingerprint(),
-            wire_model: prepared.wire_model.clone(),
-            wire_dialect: prepared.dialect.as_str().to_owned(),
-            tools: prepared.tool_wire_measurement(),
-        });
+        let mut prepared = self.prepare_outbound_request(request.clone(), true)?;
+        let stream = match self.dispatch_prepared_stream(&prepared).await {
+            Err(error) => {
+                let Some(retry) =
+                    self.prepare_image_elision_retry(request, true, &prepared, &error)?
+                else {
+                    return Err(error);
+                };
+                crate::llm_client::observe_transport_attempt();
+                prepared = retry;
+                self.dispatch_prepared_stream(&prepared).await?
+            }
+            Ok(stream) => stream,
+        };
         let projection_warning = (!prepared.omitted_tool_names.is_empty()).then(|| {
             let omitted_tool_count = prepared.omitted_tool_names.len();
             (
@@ -4866,11 +5047,6 @@ impl LlmClient for CodewhaleClient {
                 omitted_tool_count,
             )
         });
-        let stream = match prepared.dialect {
-            WireDialect::OpenAiResponses => self.handle_responses_stream(&prepared).await?,
-            WireDialect::AnthropicMessages => self.handle_anthropic_stream(&prepared).await?,
-            WireDialect::ChatCompletions => self.handle_chat_completion_stream(prepared).await?,
-        };
         let stream = match projection_warning {
             Some((provider, omitted_tool_names, omitted_tool_count)) => {
                 Self::prepend_tool_projection_warning(
@@ -5108,7 +5284,7 @@ fn parse_models_response_for_provider(
             continue;
         }
         anyhow::ensure!(
-            crate::provider_lake::valid_catalog_model_id(&row.slug)
+            codewhale_runtime::catalog_cache::valid_catalog_model_id(&row.slug)
                 && !row.display_name.trim().is_empty()
                 && row.display_name.len() <= 256
                 && !row.display_name.chars().any(char::is_control),
@@ -5173,7 +5349,7 @@ fn apply_provider_model_cutline(
     let mut models: Vec<_> = models
         .into_iter()
         .filter_map(|mut model| {
-            let canonical = crate::config::opencode_go_model_id(&model.id)?;
+            let canonical = codewhale_runtime::config::opencode_go_model_id(&model.id)?;
             model.id = canonical.to_string();
             Some(model)
         })
@@ -5551,7 +5727,7 @@ fn parse_openrouter_models_response(
         if item.id.starts_with('~') {
             continue;
         }
-        if !crate::provider_lake::valid_catalog_model_id(&item.id) {
+        if !codewhale_runtime::catalog_cache::valid_catalog_model_id(&item.id) {
             malformed += 1;
             continue;
         }
@@ -5623,7 +5799,7 @@ fn parse_orcarouter_models_response(
         if item.id.starts_with('~') {
             continue;
         }
-        if !crate::provider_lake::valid_catalog_model_id(&item.id) {
+        if !codewhale_runtime::catalog_cache::valid_catalog_model_id(&item.id) {
             malformed += 1;
             continue;
         }
@@ -6771,32 +6947,36 @@ mod tests {
 #[cfg(test)]
 mod configured_model_client_tests {
     use super::*;
-    use crate::config::{ProviderConfig, ProvidersConfig};
+    use codewhale_runtime::config::{ProviderConfig, ProvidersConfig};
 
     fn config() -> Config {
-        Config {
-            provider: Some("deepseek".into()),
-            providers: Some(ProvidersConfig {
+        {
+            let __cw_config_init_0_0 = Some("deepseek".into());
+            let __cw_config_init_0_1 = Some(ProvidersConfig {
                 deepseek: ProviderConfig {
                     api_key: Some("configured-model-local-fixture".into()),
                     base_url: Some("https://api.deepseek.com".into()),
                     ..ProviderConfig::default()
                 },
                 ..ProvidersConfig::default()
-            }),
-            custom_models: Some(vec![
+            });
+            let __cw_config_init_0_2 = Some(vec![
                 toml::from_str(
                     r#"
-                provider = "deepseek"
-                base_url = "https://api.deepseek.com"
-                id = "deepseek-v4pro"
-                limit = { context = 96000, output = 32 }
-                cost = { input = 1.0, output = 2.0 }
-            "#,
+                    provider = "deepseek"
+                    base_url = "https://api.deepseek.com"
+                    id = "deepseek-v4pro"
+                    limit = { context = 96000, output = 32 }
+                    cost = { input = 1.0, output = 2.0 }
+                "#,
                 )
                 .unwrap(),
-            ]),
-            ..Config::default()
+            ]);
+            let mut __cw_config_init_0_value: Config = Config::default();
+            __cw_config_init_0_value.provider = __cw_config_init_0_0;
+            __cw_config_init_0_value.providers = __cw_config_init_0_1;
+            __cw_config_init_0_value.custom_models = __cw_config_init_0_2;
+            __cw_config_init_0_value
         }
     }
 
@@ -6819,7 +6999,7 @@ mod configured_model_client_tests {
         .unwrap();
         let model = "deepseek-v4pro";
         config.providers.as_mut().unwrap().deepseek.model = Some(model.into());
-        crate::config::normalize_model_config_for_test(&mut config);
+        codewhale_runtime::config::normalize_model_config_for_test(&mut config);
         assert_eq!(config.default_model(), model);
         assert_eq!(
             config.providers.as_ref().unwrap().deepseek.model.as_deref(),
@@ -6943,15 +7123,15 @@ mod configured_model_client_tests {
 #[cfg(test)]
 mod openrouter_vendor_tests {
     use super::*;
-    use crate::config::{ProviderConfig, ProvidersConfig};
     use codewhale_config::catalog::reviewed::constants::OPENROUTER_QWEN_3_6_FLASH_MODEL;
+    use codewhale_runtime::config::{ProviderConfig, ProvidersConfig};
     use futures_util::StreamExt;
     use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
 
     fn config(base_url: &str, vendor: Option<&str>) -> Config {
-        Config {
-            provider: Some("openrouter".into()),
-            providers: Some(ProvidersConfig {
+        {
+            let __cw_config_init_1_0 = Some("openrouter".into());
+            let __cw_config_init_1_1 = Some(ProvidersConfig {
                 openrouter: ProviderConfig {
                     api_key: Some("vendor-pin-local-fixture".into()),
                     base_url: Some(base_url.into()),
@@ -6960,8 +7140,11 @@ mod openrouter_vendor_tests {
                     ..ProviderConfig::default()
                 },
                 ..ProvidersConfig::default()
-            }),
-            ..Config::default()
+            });
+            let mut __cw_config_init_1_value: Config = Config::default();
+            __cw_config_init_1_value.provider = __cw_config_init_1_0;
+            __cw_config_init_1_value.providers = __cw_config_init_1_1;
+            __cw_config_init_1_value
         }
     }
 

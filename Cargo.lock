@@ -903,6 +903,7 @@ dependencies = [
  "codewhale-lane",
  "codewhale-paths",
  "codewhale-release",
+ "codewhale-runtime",
  "codewhale-secrets",
  "codewhale-state",
  "codewhale-telemetry",
@@ -978,6 +979,7 @@ dependencies = [
  "libc",
  "ring",
  "rust_decimal",
+ "schemars",
  "semver",
  "serde",
  "serde_json",
@@ -1101,6 +1103,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "codewhale-net"
+version = "0.10.2"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "codewhale-command-contract",
+ "codewhale-config",
+ "codewhale-release",
+ "codewhale-runtime",
+ "codewhale-tools",
+ "http",
+ "hyper-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "toml 1.1.4+spec-1.1.0",
+ "tracing",
+]
+
+[[package]]
+name = "codewhale-notify"
+version = "0.10.2"
+dependencies = [
+ "codewhale-config",
+ "codewhale-runtime",
+ "codewhale-secrets",
+ "dirs 7.0.0",
+ "regex",
+ "tempfile",
+ "tracing",
+ "windows",
+]
+
+[[package]]
 name = "codewhale-palette"
 version = "0.10.2"
 dependencies = [
@@ -1192,36 +1231,77 @@ version = "0.10.2"
 dependencies = [
  "ahash",
  "anyhow",
+ "aws-lc-rs",
+ "base64 0.23.1",
  "chrono",
+ "codewhale-cloud-facts",
  "codewhale-command-contract",
  "codewhale-config",
  "codewhale-core",
  "codewhale-execpolicy",
  "codewhale-lane",
+ "codewhale-localization",
  "codewhale-memory",
  "codewhale-models",
  "codewhale-palette",
  "codewhale-paths",
+ "codewhale-protocol",
+ "codewhale-release",
  "codewhale-secrets",
  "colored",
+ "dirs 7.0.0",
  "fd-lock",
+ "futures-util",
+ "jsonwebtoken",
  "libc",
  "lru",
+ "parking_lot",
  "portable-pty",
  "regex",
+ "reqwest",
+ "ring",
  "serde",
  "serde_json",
  "sha2 0.11.1",
+ "shellexpand",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
  "tokio-util",
  "toml 1.1.4+spec-1.1.0",
+ "toml_edit 0.25.15+spec-1.1.0",
  "tracing",
  "uuid",
  "wait-timeout",
  "windows",
  "windows-sys 0.61.2",
+ "wiremock",
+]
+
+[[package]]
+name = "codewhale-sandbox"
+version = "0.10.2"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "codewhale-app-server",
+ "codewhale-execpolicy",
+ "codewhale-paths",
+ "codewhale-release",
+ "codewhale-runtime",
+ "dirs 7.0.0",
+ "libc",
+ "portable-pty",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+ "wait-timeout",
 ]
 
 [[package]]
@@ -1311,7 +1391,6 @@ dependencies = [
  "arboard",
  "async-stream",
  "async-trait",
- "aws-lc-rs",
  "axum",
  "base64 0.23.1",
  "chrono",
@@ -1332,12 +1411,15 @@ dependencies = [
  "codewhale-mcp",
  "codewhale-memory",
  "codewhale-models",
+ "codewhale-net",
+ "codewhale-notify",
  "codewhale-palette",
  "codewhale-paths",
  "codewhale-protocol",
  "codewhale-ratatui",
  "codewhale-release",
  "codewhale-runtime",
+ "codewhale-sandbox",
  "codewhale-sanitize",
  "codewhale-secrets",
  "codewhale-telemetry",
@@ -1355,11 +1437,9 @@ dependencies = [
  "futures-util",
  "globset",
  "htmd",
- "hyper-util",
  "ignore",
  "image",
  "jsonschema",
- "jsonwebtoken",
  "libc",
  "liblzma",
  "lru",
@@ -1642,6 +1722,7 @@ dependencies = [
  "crossterm_winapi",
  "derive_more",
  "document-features",
+ "filedescriptor",
  "mio",
  "parking_lot",
  "rustix",
@@ -3985,6 +4066,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "pastey"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
+
+[[package]]
 name = "peg"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4774,17 +4861,20 @@ dependencies = [
 
 [[package]]
 name = "rmcp"
-version = "3.5.1"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab5023804cbe0304cbe06197ac16e645a0a0d0ffa2953bf735c15c2fa0213350"
+checksum = "ece64e19631fc38758181e637c15509a2c2709ee53bfde1e1d58f9dc991f919e"
 dependencies = [
  "async-trait",
  "chrono",
  "futures",
  "indexmap",
+ "libc",
  "oauth2",
+ "pastey",
  "pin-project-lite",
  "reqwest",
+ "schemars",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -4793,6 +4883,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -5088,6 +5179,7 @@ version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "687274d293b6cdc6e73e0fee520bf2049650090d7164f87672d212a3c530cf4a"
 dependencies = [
+ "chrono",
  "dyn-clone",
  "ref-cast",
  "schemars_derive",

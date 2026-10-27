@@ -51,7 +51,7 @@ impl ProviderKeyVerifier for LiveProviderKeyVerifier {
 /// endpoint; account-scoped endpoints are re-fenced by
 /// `begin_refresh_for_identity`.
 pub(crate) fn publish_verified_roster(
-    identity: &crate::config::ProviderIdentity,
+    identity: &codewhale_runtime::config::ProviderIdentity,
     base_url: &str,
     roster: Option<codewhale_config::catalog::ProviderCatalogDelta>,
 ) {

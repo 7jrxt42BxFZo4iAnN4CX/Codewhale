@@ -213,24 +213,25 @@ impl PluginRegistry {
             .as_ref()
             .map(|context| context.catalog_stamp_for_workspace(&workspace))
             .unwrap_or_default();
-        let host_environment = discovery_context
-            .as_ref()
-            .map(|context| context.host_environment());
-        let policy_path = resolve_managed_policy_path(&state_path, host_environment.as_deref());
-        let (managed_policy, managed_policy_error) = match load_managed_policy(&policy_path) {
-            ManagedPolicyOutcome::Absent => (None, None),
-            ManagedPolicyOutcome::Loaded(policy) => (Some(policy), None),
-            ManagedPolicyOutcome::Invalid(error) => {
-                diagnostics.push(PluginDiagnostic::error(
-                    "policy-invalid",
-                    format!(
-                        "Managed plugin policy is fail-closed; no plugin may stay enabled until it is repaired or removed: {error}"
-                    ),
-                    Some(policy_path.clone()),
-                ));
-                (None, Some(error))
-            }
+        let source = discovery_context.as_ref().map_or_else(
+            || resolve_managed_policy_path(&state_path, None),
+            |context| context.managed_policy_source(),
+        );
+        let (policy_path, managed_policy, managed_policy_error) = match source {
+            Ok(path) => match load_managed_policy(&path) {
+                ManagedPolicyOutcome::Absent => (Some(path), None, None),
+                ManagedPolicyOutcome::Loaded(policy) => (Some(path), Some(policy), None),
+                ManagedPolicyOutcome::Invalid(error) => (Some(path), None, Some(error)),
+            },
+            Err(error) => (None, None, Some(error)),
         };
+        if let Some(error) = managed_policy_error.as_ref() {
+            diagnostics.push(PluginDiagnostic::error(
+                "policy-invalid",
+                format!("Managed plugin policy is fail-closed; no plugin may stay enabled until it is repaired or removed: {error}"),
+                policy_path.clone(),
+            ));
+        }
         let mut registry = Self {
             plugins: BTreeMap::new(),
             names: BTreeMap::new(),
@@ -239,7 +240,7 @@ impl PluginRegistry {
             state_path: Some(state_path),
             state_error,
             managed_policy,
-            managed_policy_path: Some(policy_path),
+            managed_policy_path: policy_path,
             managed_policy_error,
             workspace,
             discovery_context,
@@ -392,8 +393,13 @@ impl PluginRegistry {
 
     #[must_use]
     pub fn authority_for(&self, selector: &str) -> Option<PluginAuthority> {
-        self.get(selector)
-            .and_then(|plugin| plugin.authority(self.state_path.clone()?, self.workspace.clone()))
+        self.get(selector).and_then(|plugin| {
+            plugin.authority(
+                self.state_path.clone()?,
+                self.workspace.clone(),
+                self.managed_policy_path.clone()?,
+            )
+        })
     }
 
     #[must_use]
@@ -2389,8 +2395,34 @@ pub fn verify_plugin_authority(authority: &PluginAuthority) -> Result<(), String
 
 /// Cheap cross-process revocation probe used while an established MCP request
 /// is in flight. Full source/stage hashing is intentionally done before each
-/// dispatch; the watcher only needs to notice the locked state transition.
+/// dispatch; the watcher rechecks the trusted policy source and locked state.
 pub fn verify_plugin_state_authority(authority: &PluginAuthority) -> Result<(), String> {
+    let policy_path = authority
+        .managed_policy_source
+        .as_deref()
+        .filter(|path| path.is_absolute())
+        .ok_or_else(|| {
+            "Plugin authority has no managed policy source; reload the plugin before executing it"
+                .to_string()
+        })?;
+    if authority.managed_policy_path.as_deref() != Some(policy_path) {
+        return Err("Plugin authority does not match its trusted managed policy source; reload the plugin before executing it".to_string());
+    }
+    match load_managed_policy(policy_path) {
+        ManagedPolicyOutcome::Absent => {}
+        ManagedPolicyOutcome::Loaded(policy) if policy.allows(&authority.plugin_id) => {}
+        ManagedPolicyOutcome::Loaded(_) => {
+            return Err(format!(
+                "Plugin bundle `{}` is blocked by managed plugin policy",
+                authority.plugin_name
+            ));
+        }
+        ManagedPolicyOutcome::Invalid(_) => {
+            return Err(
+                "Managed plugin policy is invalid; the bundle is disabled fail-closed".to_string(),
+            );
+        }
+    }
     let state_parent = authority
         .state_path
         .parent()

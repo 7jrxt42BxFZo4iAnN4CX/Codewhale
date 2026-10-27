@@ -44,27 +44,22 @@ pub(crate) use self::wire::read_line_capped;
 use self::wire::{
     is_mcp_connection_lost_error, is_mcp_session_rejected_error, is_mcp_stale_session_body,
 };
-use crate::network_policy::{Decision, NetworkPolicyDecider, host_from_url};
 use crate::utils::write_atomic;
+use codewhale_net::network_policy::{Decision, NetworkPolicyDecider, host_from_url};
 
 // === Error diagnostics helpers (#71) ===
 
 /// Bytes of a non-2xx response body to surface in connection errors.
 pub(crate) const ERROR_BODY_PREVIEW_BYTES: usize = 200;
 
-/// Newest dated MCP protocol revision Codewhale advertises at `initialize` and
-/// answers as the native MCP server.
+/// Preferred dated MCP protocol revision for the legacy Rust client.
 pub(crate) const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
-/// Dated MCP revisions accepted during negotiation, newest first. A peer
-/// answering or requesting any of these continues the handshake.
-pub(crate) const MCP_SUPPORTED_PROTOCOL_VERSIONS: &[&str] =
-    &[MCP_PROTOCOL_VERSION, "2025-03-26", "2024-11-05"];
+pub(crate) const MCP_MODERN_PROTOCOL_VERSION: &str = "2026-07-28";
 /// Revisions a *server* may answer our client `initialize` with, newest first.
 /// Servers built on current SDKs (Pi, OMP and the 2025-11-25 TypeScript and
 /// Python SDKs) answer `2025-11-25` even when offered an older revision; the
 /// message shapes our client uses are unchanged in that revision, so ending
-/// the handshake there only turns a working server into a failed row. Our own
-/// MCP server still negotiates from `MCP_SUPPORTED_PROTOCOL_VERSIONS` alone.
+/// the handshake there only turns a working server into a failed row.
 pub(crate) const MCP_CLIENT_ACCEPTED_PROTOCOL_VERSIONS: &[&str] = &[
     "2025-11-25",
     MCP_PROTOCOL_VERSION,
@@ -392,40 +387,6 @@ pub(crate) fn mask_url_secrets(url: &str) -> String {
     url.to_string()
 }
 
-/// Redact the userinfo segment (`username[:password]@…` portion) from
-/// a proxy URL so it can be safely included in `tracing::warn!` output
-/// without leaking the
-/// password into the on-disk log. URLs without userinfo are returned
-/// unchanged. Garbage input (no `://` scheme separator) is also returned
-/// unchanged — the malformed-URL warning path is the only caller, so an
-/// unparseable input is already the failure case.
-fn redact_proxy_userinfo(proxy_url: &str) -> String {
-    let Some(scheme_end) = proxy_url.find("://") else {
-        return proxy_url.to_string();
-    };
-    let after_scheme = scheme_end + 3;
-    // The userinfo segment ends at the next `@`, but only if that `@`
-    // comes before the next `/`, `?`, or `#` (otherwise the `@` is in a
-    // path / query and the URL has no userinfo at all).
-    let rest = &proxy_url[after_scheme..];
-    let at_idx = rest.find('@');
-    let path_idx = rest.find(['/', '?', '#']);
-    let userinfo_end = match (at_idx, path_idx) {
-        (Some(a), Some(p)) if a < p => Some(a),
-        (Some(a), None) => Some(a),
-        _ => None,
-    };
-    if let Some(end) = userinfo_end {
-        let mut out = String::with_capacity(proxy_url.len());
-        out.push_str(&proxy_url[..after_scheme]);
-        out.push_str("***@");
-        out.push_str(&rest[end + 1..]);
-        out
-    } else {
-        proxy_url.to_string()
-    }
-}
-
 fn redact_values_after_ascii_needle(
     output: &mut String,
     needle: &str,
@@ -676,7 +637,7 @@ pub struct McpServerConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oauth: Option<McpServerOAuthConfig>,
-    /// Optional RFC 8707 resource parameter appended to the authorization URL.
+    /// Optional exact RFC 8707 resource pin, checked against SDK discovery.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oauth_resource: Option<String>,
@@ -1225,6 +1186,10 @@ pub struct McpServerOAuthConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issuer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_metadata_url: Option<String>,
 }
 
 fn default_enabled() -> bool {
@@ -1557,6 +1522,15 @@ fn response_result<'a>(
         }
         anyhow::bail!("MCP error in '{method}': {error}");
     }
+    if let Some(result_type) = response
+        .get("result")
+        .and_then(|result| result.get("resultType"))
+        && result_type != "complete"
+    {
+        anyhow::bail!(
+            "MCP '{method}' requires an unsupported result flow; the request was not replayed"
+        );
+    }
     Ok(response.get("result"))
 }
 
@@ -1619,6 +1593,9 @@ pub(crate) trait McpTransport: Send + Sync {
     /// subsequent requests); stdio and legacy SSE have no header channel, so
     /// the default is a no-op.
     fn set_protocol_version(&mut self, _version: &str) {}
+    fn is_modern(&self) -> bool {
+        false
+    }
 
     /// The last non-empty line the server wrote to stderr, for naming why a
     /// handshake was refused. Only stdio children have a stderr; a reviewed
@@ -2125,7 +2102,7 @@ impl McpConnection {
             decision_key: None,
         };
 
-        // The built-in Computer Use plugin accepts consent and script calls
+        // The reviewed Computer Use plugin accepts consent and script calls
         // only with a decision attested by its host. Its keys travel as the
         // first message on the plugin's own stdin, never in its environment.
         if backend == McpBackend::Rust
@@ -2243,7 +2220,8 @@ impl McpConnection {
                 )
             })?;
         anyhow::ensure!(
-            MCP_CLIENT_ACCEPTED_PROTOCOL_VERSIONS.contains(&negotiated),
+            MCP_CLIENT_ACCEPTED_PROTOCOL_VERSIONS.contains(&negotiated)
+                || (negotiated == MCP_MODERN_PROTOCOL_VERSION && self.transport.is_modern()),
             "MCP server '{}' negotiated unsupported protocol version '{negotiated}' (supported: {})",
             self.name,
             MCP_CLIENT_ACCEPTED_PROTOCOL_VERSIONS.join(", ")
@@ -2780,7 +2758,7 @@ impl McpConnection {
         // `null` tool result that is indistinguishable from a tool that
         // genuinely returned nothing. An explicit `"result": null` is still a
         // valid empty success and passes through unchanged.
-        response.get("result").cloned().with_context(|| {
+        response_result(&response, method, self.config.reviewed_plugin.is_some())?.cloned().with_context(|| {
             format!(
                 "MCP response from server '{}' for '{method}' contained neither a result nor an error",
                 self.name
@@ -3002,74 +2980,6 @@ impl McpConnection {
         }
         Err(error)
     }
-}
-
-/// Resolve the operator's proxy route for this exact request using the same
-/// matcher as reqwest. A NO_PROXY match returns None: direct requests must keep
-/// their public DNS validation and pins. Model and reviewed-plugin requests
-/// return before even reading proxy credentials.
-pub(crate) fn configured_mcp_proxy<F>(
-    url: &reqwest::Url,
-    disallow_ambient_proxy: bool,
-    mut read_environment: F,
-) -> Result<Option<reqwest::Proxy>>
-where
-    F: FnMut(&str) -> std::result::Result<String, std::env::VarError>,
-{
-    if disallow_ambient_proxy {
-        return Ok(None);
-    }
-    let proxy_url = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"]
-        .into_iter()
-        .find_map(|key| {
-            read_environment(key)
-                .ok()
-                .filter(|value| !value.trim().is_empty())
-        });
-    let Some(proxy_url) = proxy_url else {
-        return Ok(None);
-    };
-    // Normalize userinfo and Unicode with the URL parser before passing the
-    // URL to reqwest's own underlying matcher. Keep its missing-scheme support.
-    let normalized = reqwest::Url::parse(&proxy_url)
-        .ok()
-        .filter(|url| url.has_host())
-        .or_else(|| reqwest::Url::parse(&format!("http://{proxy_url}")).ok());
-    let Some(normalized) = normalized else {
-        tracing::warn!(target: "mcp", proxy = %redact_proxy_userinfo(&proxy_url), "ignoring malformed HTTP(S)_PROXY URL");
-        return Ok(None);
-    };
-    let no_proxy = read_environment("NO_PROXY")
-        .or_else(|_| read_environment("no_proxy"))
-        .unwrap_or_default()
-        .replace(char::is_whitespace, ",");
-    if no_proxy.split(',').any(|entry| entry == "*") {
-        return Ok(None);
-    }
-    let matcher = hyper_util::client::proxy::matcher::Matcher::builder()
-        .all(normalized.as_str())
-        .no(no_proxy)
-        .build();
-    let destination: oauth2::http::Uri = url.as_str().parse()?;
-    let Some(route) = matcher.intercept(&destination) else {
-        return Ok(None);
-    };
-    // Build the actual proxy from the matched route itself so the decision
-    // that grants delegated DNS authority cannot diverge from the transport.
-    let route_uri = route.uri().to_string();
-    let route_uri = match route.uri().scheme_str() {
-        Some("socks5") => route_uri.replacen("socks5://", "socks5h://", 1),
-        Some("socks4") => route_uri.replacen("socks4://", "socks4a://", 1),
-        _ => route_uri,
-    };
-    let mut proxy = reqwest::Proxy::all(route_uri)?;
-    if let Some(auth) = route.basic_auth() {
-        proxy = proxy.custom_http_auth(auth.clone());
-    }
-    if let Some((user, password)) = route.raw_auth() {
-        proxy = proxy.basic_auth(user, password);
-    }
-    Ok(Some(proxy))
 }
 
 impl Drop for McpConnection {
@@ -3351,7 +3261,7 @@ impl McpPool {
     pub fn new(config: McpConfig) -> Self {
         let config_hash = hash_mcp_config(&config);
         Self {
-            backend: McpBackend::Rust,
+            backend: McpBackend::default(),
             connections: HashMap::new(),
             disallowed_tools: Vec::new(),
             config,
@@ -3422,7 +3332,7 @@ impl McpPool {
             checked_workspace_mcp_config_path(&workspace)?,
         ];
         pool.config_sources
-            .extend(crate::config::workspace_trust_config_candidate_paths());
+            .extend(codewhale_runtime::config::workspace_trust_config_candidate_paths());
         pool.last_mtimes = pool
             .config_sources
             .iter()
@@ -3453,7 +3363,7 @@ impl McpPool {
             checked_workspace_mcp_config_path(&workspace)?,
         ];
         pool.config_sources
-            .extend(crate::config::workspace_trust_config_candidate_paths());
+            .extend(codewhale_runtime::config::workspace_trust_config_candidate_paths());
         pool.last_mtimes = pool
             .config_sources
             .iter()
@@ -3724,7 +3634,7 @@ impl McpPool {
             path.to_path_buf(),
             checked_workspace_mcp_config_path(&workspace)?,
         ];
-        new_sources.extend(crate::config::workspace_trust_config_candidate_paths());
+        new_sources.extend(codewhale_runtime::config::workspace_trust_config_candidate_paths());
         let new_mtimes = new_sources
             .iter()
             .map(|source| mcp_config_mtime(source))
@@ -4850,7 +4760,7 @@ impl McpPool {
 
     /// Phase one of the synthetic `mcp_<server>_authenticate` tool: decide
     /// whether a browser login is needed and, if so, start it. Only touches
-    /// config, the connection map, and the token store — it returns as soon
+    /// config, the connection map, discovery, and the token store — it returns as soon
     /// as the authorization URL exists, so a caller holding the pool lock can
     /// release it before the (up to 15 minute) browser wait in
     /// [`oauth::McpOAuthToolLogin::finish`]. Holding the lock across that wait
@@ -4880,7 +4790,10 @@ impl McpPool {
             .connections
             .get(server_name)
             .is_some_and(McpConnection::is_ready);
-        if ready || oauth::has_usable_stored_tokens(server_name, &server) {
+        if ready
+            || oauth::has_usable_stored_tokens(server_name, &server, self.network_policy.as_ref())
+                .await?
+        {
             return Ok(AuthenticateToolStart::AlreadyAuthorized);
         }
         let login = oauth::begin_oauth_login_for_server_tool(
@@ -6256,8 +6169,7 @@ impl McpServerSnapshot {
     /// Recovery for this observed server. The typed auth-required state wins
     /// over error-text sniffing so a needs-auth server routes to
     /// `/mcp login <name>` whenever that login can run, and diagnoses when it
-    /// cannot (not OAuth-capable, or no dynamic client registration and no
-    /// `oauth.client_id`).
+    /// cannot (not OAuth-capable, or no usable client registration).
     #[must_use]
     pub fn recovery_kind(&self, oauth_capable: bool) -> Option<McpRecoveryKind> {
         let dynamic_registration_hint = oauth::dynamic_registration_unavailable_hint(&self.name);
@@ -6687,7 +6599,7 @@ pub fn resolve_server_scope(global_path: &Path, workspace: &Path, name: &str) ->
 /// Plugin name of the built-in Computer Use bundle.
 pub(crate) const COMPUTER_USE_PLUGIN_NAME: &str = "computer-use";
 
-/// First message the host sends the built-in Computer Use plugin: its
+/// First message the host sends the reviewed Computer Use plugin: its
 /// per-connection decision key and the persisted-ledger key.
 pub(crate) const COMPUTER_USE_HOST_KEYS_METHOD: &str = "codewhale/host_keys";
 
@@ -6884,15 +6796,15 @@ fn merge_plugin_mcp_servers(
     config: McpConfig,
     registry: &crate::plugins::PluginRegistry,
 ) -> Result<McpConfig> {
-    let Some(state_path) = registry.state_path().map(Path::to_path_buf) else {
+    if registry.state_path().is_none() {
         return Ok(config);
-    };
+    }
     let plugins = registry
         .active_plugins()
         .into_iter()
         .filter_map(|plugin| {
-            plugin
-                .authority(state_path.clone(), registry.workspace().to_path_buf())
+            registry
+                .authority_for(plugin.id.as_str())
                 .map(|authority| (plugin.name().to_string(), plugin.clone(), authority))
         })
         .collect::<Vec<_>>();
@@ -7112,7 +7024,7 @@ fn resolve_plugin_mcp_cwd(plugin_path: &Path, cwd: Option<&Path>) -> Result<Path
 }
 
 fn workspace_allows_project_mcp_config(workspace: &Path) -> bool {
-    crate::config::is_workspace_trusted(workspace)
+    codewhale_runtime::config::is_workspace_trusted(workspace)
 }
 
 fn checked_workspace_mcp_config_path(workspace: &Path) -> Result<PathBuf> {
@@ -7624,7 +7536,7 @@ pub async fn discover_manager_snapshot(
     reload_required: bool,
 ) -> Result<McpManagerSnapshot> {
     let cfg = load_config(path)?;
-    let mut pool = McpPool::new(cfg.clone());
+    let mut pool = McpPool::new(cfg.clone()).with_backend(McpBackend::Rust);
     if let Some(policy) = network_policy {
         pool = pool.with_network_policy(policy);
     }
@@ -7796,6 +7708,11 @@ fn snapshot_from_config(
                     && server
                         .oauth_client_id()
                         .is_none_or(|client_id| client_id.trim().is_empty())
+                    && server
+                        .oauth
+                        .as_ref()
+                        .and_then(|oauth| oauth.client_metadata_url.as_deref())
+                        .is_none_or(|url| url.trim().is_empty())
                     && server
                         .url
                         .as_deref()

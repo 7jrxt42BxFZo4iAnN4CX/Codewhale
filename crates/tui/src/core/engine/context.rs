@@ -6,6 +6,7 @@
 
 #[cfg(test)]
 pub(super) use crate::route_budget::effective_max_output_tokens;
+#[cfg(test)]
 pub(super) use crate::route_budget::effective_max_output_tokens_for_route;
 use crate::tools::spec::ToolResult;
 use codewhale_config::ProviderKind;
@@ -13,6 +14,13 @@ use codewhale_config::route::RouteLimits;
 use codewhale_models::SystemPrompt;
 use codewhale_runtime::context_budget::ContextBudget;
 use serde_json::Value;
+
+pub(super) struct ObservedContextUpdate {
+    pub(super) current_text: String,
+    pub(super) message: Option<String>,
+    pub(super) notice: Option<String>,
+}
+
 /// Allow a few emergency recovery attempts before failing the turn.
 pub(super) const MAX_CONTEXT_RECOVERY_ATTEMPTS: u8 = 2;
 /// Max chars to keep from metadata-provided output summaries.

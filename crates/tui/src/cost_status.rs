@@ -249,7 +249,7 @@ impl EffectiveRouteEnvelope {
 
     #[cfg(test)]
     pub fn capture(
-        config: Option<&crate::config::Config>,
+        config: Option<&codewhale_runtime::config::Config>,
         provider: ProviderKind,
         provider_identity: impl Into<String>,
         model: impl Into<String>,
@@ -269,8 +269,8 @@ impl EffectiveRouteEnvelope {
 
     #[must_use]
     pub fn from_admitted(
-        config: Option<&crate::config::Config>,
-        identity: &crate::config::ProviderIdentity,
+        config: Option<&codewhale_runtime::config::Config>,
+        identity: &codewhale_runtime::config::ProviderIdentity,
         model: impl Into<String>,
         base_url: Option<&str>,
         dispatched_at: DateTime<Utc>,
@@ -288,7 +288,10 @@ impl EffectiveRouteEnvelope {
     }
 
     fn from_facts(
-        admission: Option<(&crate::config::Config, &crate::config::ProviderIdentity)>,
+        admission: Option<(
+            &codewhale_runtime::config::Config,
+            &codewhale_runtime::config::ProviderIdentity,
+        )>,
         facts: (ProviderKind, &str),
         model: impl Into<String>,
         base_url: Option<&str>,
@@ -2978,7 +2981,11 @@ pub(crate) fn test_scope() -> TestCostScope {
 mod tests {
     use super::*;
 
-    fn configured_fixture_receipt() -> (crate::config::Config, EffectiveRouteEnvelope, Usage) {
+    fn configured_fixture_receipt() -> (
+        codewhale_runtime::config::Config,
+        EffectiveRouteEnvelope,
+        Usage,
+    ) {
         let config = toml::from_str(include_str!(
             "../../config/tests/fixtures/custom_models.toml"
         ))
@@ -3095,7 +3102,10 @@ mod tests {
 
     /// An OpenRouter config on the official endpoint with one
     /// `[[custom_models]]` row; `extra` adds fields such as `cost`.
-    fn openrouter_declared_config(extra: &str, vendor: Option<&str>) -> crate::config::Config {
+    fn openrouter_declared_config(
+        extra: &str,
+        vendor: Option<&str>,
+    ) -> codewhale_runtime::config::Config {
         let vendor = vendor.map_or_else(String::new, |vendor| format!("vendor = \"{vendor}\"\n"));
         toml::from_str(&format!(
             "provider = \"openrouter\"\ntelemetry = false\n\n\
@@ -3109,7 +3119,7 @@ mod tests {
     }
 
     fn declared_openrouter_client(
-        config: &crate::config::Config,
+        config: &codewhale_runtime::config::Config,
     ) -> crate::client::CodewhaleClient {
         let route = crate::route_runtime::resolve_runtime_route(
             config,
@@ -4089,7 +4099,7 @@ mod tests {
     }
 
     fn deepseek_envelope() -> EffectiveRouteEnvelope {
-        let config = crate::config::Config::default();
+        let config = codewhale_runtime::config::Config::default();
         let identity = config
             .active_provider_identity()
             .expect("captured DeepSeek identity");
@@ -4368,9 +4378,12 @@ mod tests {
 
     #[test]
     fn openrouter_vendor_pin_survives_envelope_and_child_metadata_persistence() {
-        let mut config = crate::config::Config {
-            provider: Some("openrouter".to_string()),
-            ..Default::default()
+        let mut config = {
+            let __cw_config_init_0_0 = Some("openrouter".to_string());
+            let mut __cw_config_init_0_value: codewhale_runtime::config::Config =
+                Default::default();
+            __cw_config_init_0_value.provider = __cw_config_init_0_0;
+            __cw_config_init_0_value
         };
         config
             .provider_config_for_mut(&config.test_identity_for_kind(ProviderKind::Openrouter))

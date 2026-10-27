@@ -4932,7 +4932,7 @@ mod tests {
     {
         let _env = crate::test_support::lock_test_env();
         let root = tempfile::tempdir()?;
-        let mut config: crate::config::Config = toml::from_str(
+        let mut config: codewhale_runtime::config::Config = toml::from_str(
             r#"
 provider = "first"
 [providers.first]

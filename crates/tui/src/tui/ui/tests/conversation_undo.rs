@@ -340,7 +340,11 @@ fn undo_retry_apply_path_keeps_engine_request_and_reopened_session_consistent() 
             handle = real_handle;
             interleaving.await.unwrap();
             let current = handle.get_session_snapshot().await.unwrap();
-            assert!(current == newer, "queued {changed_field} update must not be overwritten");
+            let installed = crate::core::ops::SessionSnapshot {
+                instruction_assembly: None,
+                ..newer.clone()
+            };
+            assert!(current == installed, "queued {changed_field} update must not be overwritten");
             assert!(app.api_messages == visible, "visible history changed on refusal");
             assert!(app.current_session_id == visible_id, "visible identity changed on refusal");
             assert!(app.model == visible_model, "visible model changed on refusal");
@@ -356,7 +360,13 @@ fn undo_retry_apply_path_keeps_engine_request_and_reopened_session_consistent() 
             ));
             // Restore only the fixture between independent race cases.
             handle.send(sync_snapshot(&original)).await.unwrap();
-            assert!(handle.get_session_snapshot().await.unwrap() == original);
+            assert!(
+                handle.get_session_snapshot().await.unwrap()
+                    == crate::core::ops::SessionSnapshot {
+                        instruction_assembly: None,
+                        ..original
+                    }
+            );
         }
 
         // Runtime Chat ownership and a locally active turn must refuse before

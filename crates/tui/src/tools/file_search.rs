@@ -345,7 +345,7 @@ fn search_files(
             // Sandbox read deny-list (S1). A walk rooted above a denied tree
             // must not enumerate its names. Reject directories before descent;
             // the explicit root refusal remains at the guard above.
-            if let Err(denial) = crate::sandbox::read_guard::active().check(entry.path()) {
+            if let Err(denial) = codewhale_sandbox::read_guard::active().check(entry.path()) {
                 tracing::debug!(
                     target: "codewhale::sandbox::read_guard",
                     requested = %denial.requested.display(),

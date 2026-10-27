@@ -1,10 +1,10 @@
 //! Public-host observations captured before FEAT-027 production migration.
 //! Fixtures stay outside the portable command closure.
 use crate::commands::{CommandResult, execute};
-use crate::config::Config;
 use crate::tui::app::{App, AppAction, TuiOptions};
 use codewhale_config::ProviderKind;
 use codewhale_localization::Locale;
+use codewhale_runtime::config::Config;
 use serde_json::{Value, json};
 use std::fs;
 use tempfile::TempDir;

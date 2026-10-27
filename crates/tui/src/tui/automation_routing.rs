@@ -16,7 +16,7 @@ use codewhale_localization::{Locale, MessageId, tr};
 
 pub(super) async fn handle_action(
     app: &mut App,
-    config: &crate::config::Config,
+    config: &codewhale_runtime::config::Config,
     action: AutomationAction,
     task_manager: &SharedTaskManager,
 ) {

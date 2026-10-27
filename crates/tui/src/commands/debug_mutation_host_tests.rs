@@ -14,11 +14,11 @@ fn undo_conversation(app: &mut App) -> CommandResult {
 fn retry(app: &mut App) -> CommandResult {
     super::execute("/retry", app)
 }
-use crate::config::Config;
 use crate::tui::app::{App, AppAction, TuiOptions};
 use crate::tui::history::HistoryCell;
 use codewhale_models::Role;
 use codewhale_models::{ContentBlock, Message, Tool};
+use codewhale_runtime::config::Config;
 use std::path::PathBuf;
 
 pub(in crate::commands) fn create_test_app() -> App {

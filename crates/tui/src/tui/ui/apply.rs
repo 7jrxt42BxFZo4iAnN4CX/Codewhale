@@ -229,10 +229,10 @@ pub(crate) fn apply_engine_error_to_app(
     // skip when no hooks configured.
     if app
         .hooks
-        .has_hooks_for_event(crate::hooks::HookEvent::OnError)
+        .has_hooks_for_event(codewhale_config::hooks::HookEvent::OnError)
     {
         let context = app.base_hook_context().with_error(&message);
-        if let Err(error) = app.submit_hooks(crate::hooks::HookEvent::OnError, context) {
+        if let Err(error) = app.submit_hooks(codewhale_config::hooks::HookEvent::OnError, context) {
             surface_observer_hook_submission_failure(app, error);
         }
     }
@@ -276,11 +276,12 @@ pub(crate) fn apply_engine_error_to_app(
         app.onboarding_missing_key_recovery = true;
         app.onboarding = OnboardingState::Provider;
         let provider = app.api_provider;
-        let config_path = match crate::config::resolve_load_config_path(app.config_path.clone()) {
-            Ok(Some(path)) => path.display().to_string(),
-            Ok(None) => "~/.codewhale/config.toml".to_string(),
-            Err(error) => error.to_string(),
-        };
+        let config_path =
+            match codewhale_runtime::config::resolve_load_config_path(app.config_path.clone()) {
+                Ok(Some(path)) => path.display().to_string(),
+                Ok(None) => "~/.codewhale/config.toml".to_string(),
+                Err(error) => error.to_string(),
+            };
         let notice = tr(app.ui_locale, MessageId::OnboardApiKeyRejectedEnv)
             .replace("{provider}", provider.as_str())
             .replace("{env}", &provider.provider().env_vars().join(" / "))
@@ -924,7 +925,7 @@ pub(crate) async fn apply_model_picker_choice(
     engine_handle: &mut EngineHandle,
     config: &mut Config,
     model: String,
-    target_identity: Option<crate::config::ProviderIdentity>,
+    target_identity: Option<codewhale_runtime::config::ProviderIdentity>,
     effort: crate::reasoning_preference::ReasoningEffort,
     previous_model: String,
     previous_effort: crate::reasoning_preference::ReasoningEffort,
@@ -1554,17 +1555,19 @@ async fn apply_command_result_inner(
                         return Ok(false);
                     }
                 };
-                let fresh_config =
-                    match Config::load(app.config_path.clone(), app.config_profile.as_deref()) {
-                        Ok(config) => config,
-                        Err(err) => {
-                            crate::tui::ui::session_state::surface_session_load_failure(
-                                app,
-                                format!("Failed to load live config for session restore: {err}"),
-                            );
-                            return Ok(false);
-                        }
-                    };
+                let fresh_config = match crate::plugins::providers::load_config(
+                    app.config_path.clone(),
+                    app.config_profile.as_deref(),
+                ) {
+                    Ok(config) => config,
+                    Err(err) => {
+                        crate::tui::ui::session_state::surface_session_load_failure(
+                            app,
+                            format!("Failed to load live config for session restore: {err}"),
+                        );
+                        return Ok(false);
+                    }
+                };
                 let resumed_id = session.metadata.id.clone();
                 let title = crate::session_manager::sanitize_session_title(&session.metadata.title);
                 crate::runtime_threads::prepare_canonical_sessions_root().await;
@@ -1806,7 +1809,7 @@ async fn apply_command_result_inner(
                     app.plugin_registry.as_ref(),
                 );
                 app.hooks = app.hooks.rebind(
-                    crate::hooks::HooksConfig::load_with_project_and_plugins(
+                    crate::hooks::config::load_with_project_and_plugins(
                         config.hooks_config(),
                         &app.workspace,
                         Some(app.plugin_registry.as_ref()),
@@ -1915,7 +1918,16 @@ async fn apply_command_result_inner(
                             content.push_str(&format!("\n{note}"));
                         }
                         app.add_message(HistoryCell::System { content });
-                        let queued = build_queued_message(app, prompt);
+                        let Some(session_id) = app.current_session_id.clone() else {
+                            app.add_message(HistoryCell::System {
+                                content:
+                                    "Extension command prompt was not submitted: no active session"
+                                        .into(),
+                            });
+                            return Ok(false);
+                        };
+                        let mut queued = QueuedMessage::new(prompt, None);
+                        queued.extension_command = Some((command, session_id));
                         dispatch_composer_message(
                             app,
                             config,
@@ -2086,7 +2098,7 @@ async fn apply_command_result_inner(
             }
             AppAction::FetchBalance => {
                 let provider = app.api_provider;
-                if !crate::config::provider_has_balance_api(provider) {
+                if !codewhale_runtime::config::provider_has_balance_api(provider) {
                     app.add_message(HistoryCell::System {
                         content: format!(
                             "Balance check is not supported for {} yet. Check the provider dashboard for account balance details.",
@@ -2476,8 +2488,8 @@ async fn apply_command_result_inner(
             AppAction::StartClaudeRevoke => {
                 let path = app.config_path.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    crate::oauth::revoke_owned_login(
-                        crate::oauth::OAuthProvider::Claude,
+                    codewhale_runtime::oauth::revoke_owned_login(
+                        codewhale_runtime::oauth::OAuthProvider::Claude,
                         path.as_deref(),
                         None,
                     )
@@ -2908,7 +2920,11 @@ async fn apply_command_result_inner(
             }
             AppAction::SwitchProfile { profile } => {
                 let previous_profile = app.config_profile.clone();
-                match Config::load(app.config_path.clone(), Some(&profile)).and_then(|new_config| {
+                match crate::plugins::providers::load_config(
+                    app.config_path.clone(),
+                    Some(&profile),
+                )
+                .and_then(|new_config| {
                     validated_profile_default_route(&new_config)
                         .map(|validated_route| (new_config, validated_route))
                 }) {
@@ -2921,7 +2937,7 @@ async fn apply_command_result_inner(
                             new_config,
                             &validated_route,
                         );
-                        crate::config::initialize_cloud_facts(config);
+                        codewhale_runtime::config::initialize_cloud_facts(config);
                         // Rebuild the engine with the new config so API key/model/base URL take effect.
                         replace_tui_engine(app, config, engine_handle).await;
                         if !app.api_messages.is_empty() {
@@ -3052,7 +3068,7 @@ fn edit_project_hooks_from_tui(terminal: &mut AppTerminal, app: &mut App, config
     match outcome {
         Ok(crate::tui::external_editor::EditorOutcome::Edited(_)) => {
             app.hooks = app.hooks.rebind(
-                crate::hooks::HooksConfig::load_with_project_and_plugins(
+                crate::hooks::config::load_with_project_and_plugins(
                     config.hooks_config(),
                     &app.workspace,
                     Some(app.plugin_registry.as_ref()),
@@ -3138,7 +3154,7 @@ pub(crate) fn apply_workspace_runtime_state(app: &mut App, config: &Config, work
     // Switching workspace reloads the hook set (project hooks are per-repo)
     // but stays inside the same TUI session, so the session id is preserved.
     app.hooks = app.hooks.rebind(
-        crate::hooks::HooksConfig::load_with_project_and_plugins(
+        crate::hooks::config::load_with_project_and_plugins(
             config.hooks_config(),
             &workspace,
             Some(app.plugin_registry.as_ref()),
@@ -3168,8 +3184,10 @@ pub(crate) fn apply_hotbar_setup_saved(
     config: &mut Config,
     bindings: Vec<codewhale_config::HotbarBindingToml>,
 ) {
-    match crate::config_persistence::persist_hotbar_bindings(app.config_path.as_deref(), &bindings)
-    {
+    match codewhale_runtime::config_persistence::persist_hotbar_bindings(
+        app.config_path.as_deref(),
+        &bindings,
+    ) {
         Ok(path) => {
             config.hotbar = Some(bindings);
             app.status_message = Some(format!("Hotbar bindings saved to {}", path.display()));
@@ -3401,7 +3419,7 @@ pub(crate) fn apply_setup_runtime_preset(
     // this save nor be reverted by the rollback.
     // Every durable write happens inside this closure, so the settings lock is
     // released before live state moves below.
-    crate::settings::with_settings_transaction(|settings_transaction| {
+    codewhale_runtime::settings::with_settings_transaction(|settings_transaction| {
         let mut settings = settings_transaction
             .load()
             .context("failed to load settings")?;
@@ -3412,38 +3430,41 @@ pub(crate) fn apply_setup_runtime_preset(
         // explicit env target remains authoritative for both reads and writes;
         // an invalid target fails here instead of selecting a different file.
         let selected_config_path =
-            crate::config::resolve_load_config_path(app.config_path.clone())?
+            codewhale_runtime::config::resolve_load_config_path(app.config_path.clone())?
                 .or_else(|| app.config_path.clone());
-        let config_path =
-            crate::config_persistence::config_toml_path(selected_config_path.as_deref())
-                .context("failed to resolve config path")?;
+        let config_path = codewhale_runtime::config_persistence::config_toml_path(
+            selected_config_path.as_deref(),
+        )
+        .context("failed to resolve config path")?;
         let config_snapshot = RuntimePresetFileSnapshot::capture(config_path.clone())?;
-        if let Err(error) =
-            crate::config_persistence::mutate_config_document(&config_path, |document| {
+        if let Err(error) = codewhale_runtime::config_persistence::mutate_config_document(
+            &config_path,
+            |document| {
                 if let Some(policy) = preset.approval_policy() {
-                    crate::config_persistence::set_document_value(
+                    codewhale_runtime::config_persistence::set_document_value(
                         document,
                         &["approval_policy"],
                         policy,
                     )?;
                 } else {
-                    crate::config_persistence::unset_document_value(
+                    codewhale_runtime::config_persistence::unset_document_value(
                         document,
                         &["approval_policy"],
                     )?;
                 }
-                crate::config_persistence::set_document_value(
+                codewhale_runtime::config_persistence::set_document_value(
                     document,
                     &["allow_shell"],
                     preset.allow_shell(),
                 )?;
-                crate::config_persistence::set_document_value(
+                codewhale_runtime::config_persistence::set_document_value(
                     document,
                     &["sandbox_mode"],
                     preset.sandbox_mode(),
                 )
-            })
-            .context("failed to persist runtime posture")
+            },
+        )
+        .context("failed to persist runtime posture")
         {
             return Err(runtime_preset_error_with_rollback(
                 error,
@@ -3559,7 +3580,7 @@ pub(crate) async fn apply_provider_picker_custom_provider(
     model: Option<String>,
     api_key_env: Option<String>,
 ) -> bool {
-    let written = match crate::config_persistence::persist_custom_provider(
+    let written = match codewhale_runtime::config_persistence::persist_custom_provider(
         app.config_path.as_deref(),
         &provider_id,
         &base_url,
@@ -3585,7 +3606,7 @@ pub(crate) async fn apply_provider_picker_custom_provider(
         .or_default();
     entry.kind = Some("openai-compatible".to_string());
     entry.base_url = Some(base_url.trim().trim_end_matches('/').to_string());
-    if provider_id == "ds4" && crate::config::base_url_uses_local_host(&base_url) {
+    if provider_id == "ds4" && codewhale_runtime::config::base_url_uses_local_host(&base_url) {
         entry.context_window = Some(100_000);
     }
     entry.model = model.clone().and_then(|value| {
@@ -3596,7 +3617,7 @@ pub(crate) async fn apply_provider_picker_custom_provider(
         && api_key_env
             .as_deref()
             .is_none_or(|value| value.trim().is_empty())
-        && crate::config::base_url_uses_local_host(&base_url);
+        && codewhale_runtime::config::base_url_uses_local_host(&base_url);
     entry.api_key_env = api_key_env.and_then(|value| {
         let value = value.trim().to_string();
         (!value.is_empty()).then_some(value)
@@ -3654,7 +3675,7 @@ pub(crate) async fn apply_provider_picker_test_connection(
     app: &mut App,
     engine_handle: &mut EngineHandle,
     config: &mut Config,
-    identity: crate::config::ProviderIdentity,
+    identity: codewhale_runtime::config::ProviderIdentity,
     catalog_view: bool,
 ) {
     apply_provider_picker_test_connection_with_verifier(
@@ -3704,7 +3725,7 @@ pub(crate) async fn apply_provider_picker_test_connection_with_verifier(
     app: &mut App,
     engine_handle: &mut EngineHandle,
     config: &mut Config,
-    identity: crate::config::ProviderIdentity,
+    identity: codewhale_runtime::config::ProviderIdentity,
     catalog_view: bool,
     verifier: &dyn ProviderKeyVerifier,
 ) {
@@ -3797,7 +3818,7 @@ pub(crate) async fn apply_provider_picker_api_key(
     app: &mut App,
     engine_handle: &mut EngineHandle,
     config: &mut Config,
-    identity: crate::config::ProviderIdentity,
+    identity: codewhale_runtime::config::ProviderIdentity,
     api_key: String,
     base_url: Option<String>,
 ) {
@@ -3817,7 +3838,7 @@ pub(crate) async fn apply_provider_picker_api_key_with_verifier(
     app: &mut App,
     engine_handle: &mut EngineHandle,
     config: &mut Config,
-    identity: crate::config::ProviderIdentity,
+    identity: codewhale_runtime::config::ProviderIdentity,
     api_key: String,
     base_url_override: Option<String>,
     verifier: &dyn ProviderKeyVerifier,
@@ -3955,13 +3976,13 @@ pub(crate) async fn apply_provider_picker_setup_confirmed(
     app: &mut App,
     engine_handle: &mut EngineHandle,
     config: &mut Config,
-    identity: crate::config::ProviderIdentity,
+    identity: codewhale_runtime::config::ProviderIdentity,
     api_key: String,
     model: String,
     context_window: Option<u32>,
     base_url: Option<String>,
 ) -> bool {
-    use crate::config::{
+    use codewhale_runtime::config::{
         save_api_key_for_identity, save_provider_base_url_for_identity,
         save_provider_context_window_for_identity, save_provider_model_for_identity,
     };
@@ -4094,14 +4115,14 @@ pub(crate) async fn apply_codewhale_owned_login(
     engine_handle: &mut EngineHandle,
     config: &mut Config,
     provider: ProviderKind,
-    pending: crate::oauth::PendingOAuthLogin,
+    pending: codewhale_runtime::oauth::PendingOAuthLogin,
     status_prefix: &str,
     login_kind: &str,
 ) -> bool {
     let path = app.config_path.clone();
     let mut live = config.clone();
     let activation = tokio::task::spawn_blocking(move || {
-        crate::oauth::activate_login(pending, path.as_deref(), Some(&mut live))
+        codewhale_runtime::oauth::activate_login(pending, path.as_deref(), Some(&mut live))
             .map(|activation| (activation, live))
     })
     .await
@@ -4168,7 +4189,7 @@ pub(crate) async fn apply_codewhale_owned_xai_login(
     app: &mut App,
     engine_handle: &mut EngineHandle,
     config: &mut Config,
-    pending: crate::oauth::PendingOAuthLogin,
+    pending: codewhale_runtime::oauth::PendingOAuthLogin,
     status_prefix: &str,
 ) -> bool {
     apply_codewhale_owned_login(
@@ -4187,7 +4208,7 @@ pub(crate) async fn apply_codewhale_owned_chatgpt_login(
     app: &mut App,
     engine_handle: &mut EngineHandle,
     config: &mut Config,
-    pending: crate::oauth::PendingOAuthLogin,
+    pending: codewhale_runtime::oauth::PendingOAuthLogin,
     status_prefix: &str,
 ) -> bool {
     apply_codewhale_owned_login(
@@ -4209,8 +4230,8 @@ pub(crate) async fn apply_codewhale_owned_chatgpt_login(
 pub(crate) async fn run_chatgpt_revoke_from_tui(app: &mut App, config: &mut Config) {
     let config_path = app.config_path.clone();
     let outcome = tokio::task::spawn_blocking(move || {
-        crate::oauth::revoke_owned_login(
-            crate::oauth::OAuthProvider::Chatgpt,
+        codewhale_runtime::oauth::revoke_owned_login(
+            codewhale_runtime::oauth::OAuthProvider::Chatgpt,
             config_path.as_deref(),
             None,
         )
@@ -4248,7 +4269,7 @@ pub(crate) async fn run_orcarouter_revoke_from_tui(app: &mut App, config: &mut C
     let provider = ProviderKind::Orcarouter;
     let provider_name = provider.as_str().to_string();
     let outcome = tokio::task::spawn_blocking(move || {
-        crate::config::clear_active_provider_api_key(&provider_name)
+        codewhale_runtime::config::clear_active_provider_api_key(&provider_name)
     })
     .await
     .map_err(|err| anyhow::anyhow!("OrcaRouter revoke task was lost: {err}"))
@@ -4679,7 +4700,7 @@ pub(crate) fn apply_loaded_session_config_snapshot(
         );
     *config = next_config;
     app.configured_models = config.custom_models.clone().unwrap_or_default();
-    crate::config::initialize_cloud_facts(config);
+    codewhale_runtime::config::initialize_cloud_facts(config);
     app.refresh_notification_settings(config);
     Ok(respawn)
 }

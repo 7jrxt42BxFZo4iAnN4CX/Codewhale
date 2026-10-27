@@ -20,11 +20,11 @@ use tiny_http::{Method, Response, Server};
 // Pull the production source files into this test binary so the test can
 // reach `install`'s public surface without a dedicated library crate.
 //
-// `install.rs` references `crate::network_policy` and `super::package_digest`
-// (sibling under `skills::`), so both are pulled in alongside `install`.
+// `install.rs` references `super::package_digest` (sibling under `skills::`),
+// so it is pulled in alongside `install`.
 
 use crate::install::{InstallOutcome, InstallSource, UpdateResult};
-use crate::network_policy::{DecisionToml, NetworkPolicy};
+use codewhale_net::network_policy::{DecisionToml, NetworkPolicy};
 
 /// Construct a gzipped tarball from `(path, body)` pairs. Permissions are set
 /// to 0o644 so umask differences across platforms don't perturb the bytes.

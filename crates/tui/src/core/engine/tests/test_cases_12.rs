@@ -72,9 +72,7 @@ async fn auto_review_asks_the_user_and_returns_the_answer() {
         .mount(&server)
         .await;
 
-    let api_config = Config {
-        ..Config::default()
-    }
+    let api_config = Config::default()
     .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
     let (engine, handle) = Engine::new(
         EngineConfig {
@@ -246,9 +244,7 @@ async fn full_access_permission_allow_runs_background_destructive_shell_without_
         .mount(&server)
         .await;
 
-    let api_config = Config {
-        ..Config::default()
-    }
+    let api_config = Config::default()
     .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
     let engine_config = EngineConfig {
         model: codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL.to_string(),
@@ -410,9 +406,7 @@ async fn yolo_mode_does_not_prompt_for_background_shell() {
         .mount(&server)
         .await;
 
-    let api_config = Config {
-        ..Config::default()
-    }
+    let api_config = Config::default()
     .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
     let (engine, handle) = Engine::new(
         EngineConfig {
@@ -550,9 +544,7 @@ async fn yolo_mode_executes_publish_like_shell_without_prompt() {
         .mount(&server)
         .await;
 
-    let api_config = Config {
-        ..Config::default()
-    }
+    let api_config = Config::default()
     .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
     let (engine, handle) = Engine::new(
         EngineConfig {
@@ -694,9 +686,7 @@ async fn yolo_mode_does_not_prompt_for_mcp_action() {
         .mount(&server)
         .await;
 
-    let api_config = Config {
-        ..Config::default()
-    }
+    let api_config = Config::default()
     .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
     let (engine, handle) = Engine::new(
         EngineConfig {
@@ -1049,9 +1039,7 @@ fn plan_mode_registry_can_expose_agent_launcher_without_shell_tools() {
     let (engine, _handle) = Engine::new(EngineConfig::default(), &Config::default());
     let context = engine.build_tool_context(AppMode::Plan, false);
     let client = CodewhaleClient::new(
-        &Config {
-            ..Config::default()
-        }
+        &Config::default()
         .with_legacy_root(Some("test-key".to_string()), None),
     )
     .expect("stub client");
@@ -1090,7 +1078,7 @@ fn plan_mode_registry_can_expose_agent_launcher_without_shell_tools() {
 
 #[test]
 fn mode_invariant_matrix_covers_context_catalog_subagents_and_prompt_metadata() {
-    use crate::sandbox::SandboxPolicy;
+    use codewhale_sandbox::SandboxPolicy;
     use codewhale_agent_contract::worker_profile::ShellPolicy;
     use ApprovalMode;
 
@@ -1224,9 +1212,7 @@ fn mode_invariant_matrix_covers_context_catalog_subagents_and_prompt_metadata() 
         }
 
         let client = CodewhaleClient::new(
-            &Config {
-                ..Config::default()
-            }
+            &Config::default()
             .with_legacy_root(Some("test-key".to_string()), None),
         )
         .expect("stub client");
@@ -1317,7 +1303,7 @@ fn mode_invariant_matrix_covers_context_catalog_subagents_and_prompt_metadata() 
 
 #[test]
 fn engine_context_honors_stricter_config_under_full_access() {
-    use crate::sandbox::SandboxPolicy;
+    use codewhale_sandbox::SandboxPolicy;
     use ApprovalMode;
 
     let tmp = tempdir().expect("tempdir");
@@ -1325,9 +1311,11 @@ fn engine_context_honors_stricter_config_under_full_access() {
         workspace: tmp.path().to_path_buf(),
         ..EngineConfig::default()
     };
-    let api_config = Config {
-        sandbox_mode: Some("workspace-write".to_string()),
-        ..Config::default()
+    let api_config = {
+        let __cw_config_init_7_0 = Some("workspace-write".to_string());
+        let mut __cw_config_init_7_value: Config = Config::default();
+        __cw_config_init_7_value.sandbox_mode = __cw_config_init_7_0;
+        __cw_config_init_7_value
     };
     let (mut engine, _handle) = Engine::new(config, &api_config);
     engine.session.approval_mode = ApprovalMode::Bypass;
@@ -1594,7 +1582,7 @@ fn turn_tool_context_uses_planned_authority_and_route_not_installed_session() {
 /// for a session that kept refusing a host the file already allowed.
 #[test]
 fn tool_context_network_policy_follows_the_config_document_mid_session() {
-    use crate::network_policy::{Decision, DecisionToml, NetworkPolicy, NetworkPolicyDecider};
+    use codewhale_net::network_policy::{Decision, DecisionToml, NetworkPolicy, NetworkPolicyDecider};
 
     let dir = tempdir().expect("temp dir");
     let config_path = dir.path().join("config.toml");
@@ -1604,9 +1592,11 @@ fn tool_context_network_policy_follows_the_config_document_mid_session() {
     )
     .expect("write config");
 
-    let api_config = Config {
-        loaded_config_path: Some(config_path),
-        ..Config::default()
+    let api_config = {
+        let __cw_config_init_8_0 = Some(config_path);
+        let mut __cw_config_init_8_value: Config = Config::default();
+        __cw_config_init_8_value.loaded_config_path = __cw_config_init_8_0;
+        __cw_config_init_8_value
     };
 
     // The snapshot the engine was spawned with does not allow the host yet.
@@ -1667,7 +1657,7 @@ fn tool_context_network_policy_follows_the_config_document_mid_session() {
 /// away.
 #[test]
 fn tool_context_adopts_a_policy_written_mid_session_and_never_ungates_one() {
-    use crate::network_policy::{Decision, DecisionToml, NetworkPolicy, NetworkPolicyDecider};
+    use codewhale_net::network_policy::{Decision, DecisionToml, NetworkPolicy, NetworkPolicyDecider};
 
     let dir = tempdir().expect("temp dir");
     let config_path = dir.path().join("config.toml");
@@ -1677,9 +1667,11 @@ fn tool_context_adopts_a_policy_written_mid_session_and_never_ungates_one() {
     )
     .expect("write config");
 
-    let api_config = Config {
-        loaded_config_path: Some(config_path.clone()),
-        ..Config::default()
+    let api_config = {
+        let __cw_config_init_9_0 = Some(config_path.clone());
+        let mut __cw_config_init_9_value: Config = Config::default();
+        __cw_config_init_9_value.loaded_config_path = __cw_config_init_9_0;
+        __cw_config_init_9_value
     };
 
     // A session that started with no `[network]` table at all adopts the deny.
