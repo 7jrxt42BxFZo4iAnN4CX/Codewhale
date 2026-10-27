@@ -6521,6 +6521,8 @@ mod tests {
     include!("client/test_cases_07.rs");
 
     include!("client/test_cases_08.rs");
+
+    include!("client/test_cases_09.rs");
 }
 
 #[cfg(test)]
