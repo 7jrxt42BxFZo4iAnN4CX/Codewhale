@@ -956,7 +956,7 @@ impl ModalView for ContextInspectorView {
                 ),
             ]),
             Line::from(Span::styled(
-                crate::tui::ui_text::semantic_truncate(&self.workspace, width),
+                crate::tui::workspace_context::truncate_left(&self.workspace, width),
                 Style::default().fg(palette::TEXT_DIM),
             )),
             Line::from(""),
