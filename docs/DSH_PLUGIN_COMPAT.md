@@ -41,6 +41,19 @@ For the separate launcher that runs your own installed `dsh`, see
 | Rich or media tool output | dropped | Not implemented |
 | Direct `git` from a plugin | Native profile denies repository reads | Not implemented |
 
+## Surfaces walked through live
+
+The same DSH-format probe plugin (a tool that saves the session and asks one
+question, plus two commands), run against a local fake model provider on
+macOS with no account or spend:
+
+| Surface | What was seen | Status |
+| --- | --- | --- |
+| Runtime API | preview → exact-hash install → review → trust → enable; first-turn tool; approval; question answered through `POST /v1/user-input`; command result | Verified |
+| `codewhale exec --auto` | first-turn tool runs and saves the session; the plugin's question is refused with `NO_PROVIDER` because no person is present to answer | Verified |
+| Desktop app | the tool's approval card; the plugin's question rendered as a native card (option descriptions, your own answer, Skip, Send answers); the answer reaches the plugin; `/probe-count` in the command palette with plugin attribution | Verified (plugin installed through the Runtime API, not the app's own settings flow) |
+| Terminal UI (interactive) | — | Not walked through; its question and approval code is covered by focused tests only |
+
 ## Child agents: planned mapping
 
 DSH child agents are not a second agent system. Each DSH call below is meant
