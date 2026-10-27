@@ -761,7 +761,7 @@ pub(crate) fn measure_deferred_tools(
                 .filter(|name| {
                     wire.omitted_tool_names
                         .iter()
-                        .any(|omitted| crate::client::from_api_tool_name(omitted) == **name)
+                        .any(|omitted| crate::client::wire::from_api_tool_name(omitted) == **name)
                 })
                 .cloned()
                 .collect()

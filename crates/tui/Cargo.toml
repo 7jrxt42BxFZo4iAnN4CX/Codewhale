@@ -70,6 +70,7 @@ workspace = true
 [features]
 default = []
 long-running-tests = []
+test-thread-scoped-state = []
 # Accepted compatibility feature names. Allocators belong exclusively to the
 # canonical codewhale-cli executable; these library aliases have no effect.
 mimalloc-allocator = []
