@@ -160,7 +160,7 @@ export function deriveFeatures() {
     }
     ids.add(row.id);
     for (const [surface, state] of Object.entries(row.surfaces)) {
-      if (!["tui", "api", "web"].includes(surface) || !["stable", "partial", "preview", "none"].includes(state)) {
+      if (!["tui", "desktop", "web", "api"].includes(surface) || !["stable", "partial", "preview", "none"].includes(state)) {
         throw new Error(`invalid feature surface: ${row.id}/${surface}`);
       }
     }

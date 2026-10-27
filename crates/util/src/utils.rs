@@ -16,6 +16,7 @@ mod response_body;
 pub use response_body::read_response_body_capped;
 
 /// A writer that counts bytes written without storing them.
+#[derive(Default)]
 pub struct CountingWriter {
     count: usize,
 }
