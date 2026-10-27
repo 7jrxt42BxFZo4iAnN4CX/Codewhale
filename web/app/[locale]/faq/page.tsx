@@ -159,14 +159,14 @@ codewhale doctor         # offline configuration checks`}
         <pre tabIndex={0} className="code-block mb-2">
 {`# ~/.codewhale/config.toml
 provider = "openrouter"
-default_text_model = "deepseek/deepseek-v4-pro"
+default_text_model = "deepseek/deepseek-v4.1-flash"
 
 [providers.openrouter]
 api_key = "sk-or-v1-..."`}
         </pre>
         <p>
           OpenRouter uses the same reasoning/cache parser as the native DeepSeek provider.
-          Model IDs are OpenRouter's own slugs (e.g. <code className="inline">deepseek/deepseek-v4-flash</code>); pick the route with <code className="inline">--provider openrouter</code> or top-level <code className="inline">provider = &quot;openrouter&quot;</code>.
+          Model IDs are OpenRouter's own slugs (e.g. <code className="inline">deepseek/deepseek-v4.1-flash</code>); pick the route with <code className="inline">--provider openrouter</code> or top-level <code className="inline">provider = &quot;openrouter&quot;</code>.
         </p>
       </>
     ),
@@ -513,14 +513,14 @@ codewhale doctor         # 离线配置检查`}
         <pre tabIndex={0} className="code-block mb-2">
 {`# ~/.codewhale/config.toml
 provider = "openrouter"
-default_text_model = "deepseek/deepseek-v4-pro"
+default_text_model = "deepseek/deepseek-v4.1-flash"
 
 [providers.openrouter]
 api_key = "sk-or-v1-..."`}
         </pre>
         <p>
           OpenRouter 使用与原生 DeepSeek 提供商相同的推理/缓存解析器。
-          模型 ID 使用 OpenRouter 自己的 slug（如 <code className="inline">deepseek/deepseek-v4-flash</code>）；通过 <code className="inline">--provider openrouter</code> 或顶层 <code className="inline">provider = &quot;openrouter&quot;</code> 选择路由。
+          模型 ID 使用 OpenRouter 自己的 slug（如 <code className="inline">deepseek/deepseek-v4.1-flash</code>）；通过 <code className="inline">--provider openrouter</code> 或顶层 <code className="inline">provider = &quot;openrouter&quot;</code> 选择路由。
         </p>
       </>
     ),
