@@ -1075,6 +1075,8 @@ struct ThreadSummary {
     pending_attention_count: usize,
     last_read_item_id: Option<String>,
     unread: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent_thread_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1274,14 +1276,7 @@ struct DecideApprovalResponse {
 
 #[derive(Debug, Deserialize)]
 struct SubmitUserInputBody {
-    answers: Vec<UserInputAnswerBody>,
-}
-
-#[derive(Debug, Deserialize)]
-struct UserInputAnswerBody {
-    id: String,
-    label: String,
-    value: String,
+    answers: Vec<crate::tools::user_input::UserInputAnswer>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1655,7 +1650,7 @@ fn replay_flag_is_absent(replayed: &bool) -> bool {
 }
 
 fn install_runtime_server_workshop_budgets(config: &Config) -> codewhale_config::WorkshopConfig {
-    crate::tools::large_output_router::install_active_workshop(config.workshop.as_ref())
+    codewhale_runtime::active_workshop::install_active_workshop(config.workshop.as_ref())
 }
 
 #[cfg(test)]
@@ -2872,7 +2867,7 @@ pub fn build_router(state: RuntimeApiState) -> Router {
         )
         .route(
             "/v1/user-input/{thread_id}/{input_id}",
-            post(submit_user_input),
+            post(submit_user_input).delete(cancel_user_input_request),
         )
         .route("/v1/tasks", get(list_tasks).post(create_task))
         .route("/v1/tasks/{id}", get(get_task))
@@ -3670,6 +3665,7 @@ async fn list_threads_summary(
             pending_attention_count,
             last_read_item_id,
             unread,
+            parent_thread_id: thread.parent_thread_id,
         });
     }
 
@@ -6299,20 +6295,33 @@ async fn submit_user_input(
     Path((thread_id, input_id)): Path<(String, String)>,
     Json(req): Json<SubmitUserInputBody>,
 ) -> Result<Json<SubmitUserInputResponse>, ApiError> {
-    use crate::tools::user_input::{UserInputAnswer, UserInputResponse};
-    let answers: Vec<UserInputAnswer> = req
-        .answers
-        .into_iter()
-        .map(|a| UserInputAnswer {
-            id: a.id,
-            label: a.label,
-            value: a.value,
-        })
-        .collect();
-    let response = UserInputResponse { answers };
+    let response = crate::tools::user_input::UserInputResponse {
+        answers: req.answers,
+    };
     let delivered = state
         .runtime_threads
         .submit_user_input(&thread_id, &input_id, response)
+        .await
+        .map_err(map_thread_err)?;
+    if !delivered {
+        return Err(ApiError::not_found(format!(
+            "no pending user-input request with id '{input_id}'"
+        )));
+    }
+    Ok(Json(SubmitUserInputResponse {
+        ok: true,
+        input_id,
+        delivered,
+    }))
+}
+
+async fn cancel_user_input_request(
+    State(state): State<RuntimeApiState>,
+    Path((thread_id, input_id)): Path<(String, String)>,
+) -> Result<Json<SubmitUserInputResponse>, ApiError> {
+    let delivered = state
+        .runtime_threads
+        .cancel_user_input(&thread_id, &input_id)
         .await
         .map_err(map_thread_err)?;
     if !delivered {
@@ -10635,6 +10644,7 @@ fn map_compat_stream_event(event: &crate::runtime_threads::RuntimeEventRecord) -
                     "thread_id": event.thread_id,
                     "turn_id": event.turn_id,
                     "status": status,
+                    "outcome": payload.get("outcome"),
                     "terminal": payload.get("terminal").and_then(Value::as_bool).unwrap_or(false),
                 }),
             ))

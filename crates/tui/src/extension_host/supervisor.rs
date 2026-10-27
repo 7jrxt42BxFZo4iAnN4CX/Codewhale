@@ -1369,6 +1369,11 @@ pub(crate) fn registry_host_request<E: HostEvents + ?Sized>(
             events.unregister(&params);
             Ok(json!({}))
         }
+        HostRequest::UserQuestion(_) => Err(RpcErrorWire {
+            code: error_code::NOT_AVAILABLE,
+            message: "user-questions/ask is not served here".to_string(),
+            data: None,
+        }),
         HostRequest::SessionCheckpoint(_) => Err(RpcErrorWire {
             code: error_code::REFUSED,
             message: "session/checkpoint is not served here".to_string(),
@@ -1551,6 +1556,7 @@ pub(crate) struct HostProcess {
     /// How the cap is enforced for this process, settled at the handshake.
     memory: Arc<std::sync::OnceLock<MemoryEnforcement>>,
     pub sandbox: HostSandbox,
+    #[cfg_attr(windows, expect(dead_code))]
     native_snapshot_roots: Vec<PathBuf>,
     tree: Arc<codewhale_runtime::process_tree::ProcessTree>,
     #[cfg(windows)]

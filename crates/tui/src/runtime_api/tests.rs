@@ -164,7 +164,7 @@ fn runtime_request_model_uses_the_active_provider_default() {
 #[tokio::test(flavor = "current_thread")]
 async fn http_and_web_server_thread_manager_installs_configured_workshop_byte_budgets() -> Result<()>
 {
-    let _workshop_guard = crate::tools::large_output_router::active_workshop_test_guard();
+    let _workshop_guard = codewhale_runtime::active_workshop::active_workshop_test_guard();
     let temp = tempfile::tempdir()?;
     let workspace = temp.path().join("workspace");
     fs::create_dir_all(&workspace)?;
@@ -194,11 +194,11 @@ async fn http_and_web_server_thread_manager_installs_configured_workshop_byte_bu
     assert_eq!(startup_activation.read_result_max_bytes, Some(73_728));
     assert_eq!(startup_activation.tool_result_max_bytes, Some(65_536));
     assert_eq!(
-        crate::tools::large_output_router::active_read_result_max_bytes(),
+        codewhale_runtime::active_workshop::active_read_result_max_bytes(),
         Some(73_728)
     );
     assert_eq!(
-        crate::tools::large_output_router::active_tool_result_max_bytes(),
+        codewhale_runtime::active_workshop::active_tool_result_max_bytes(),
         Some(65_536)
     );
 
@@ -217,14 +217,14 @@ async fn http_and_web_server_thread_manager_installs_configured_workshop_byte_bu
     assert_eq!(reload_activation.read_result_max_bytes, Some(81_920));
     assert_eq!(reload_activation.tool_result_max_bytes, Some(77_824));
     assert_eq!(
-        crate::tools::large_output_router::active_read_result_max_bytes(),
+        codewhale_runtime::active_workshop::active_read_result_max_bytes(),
         Some(81_920)
     );
     assert_eq!(
-        crate::tools::large_output_router::active_tool_result_max_bytes(),
+        codewhale_runtime::active_workshop::active_tool_result_max_bytes(),
         Some(77_824)
     );
-    crate::tools::large_output_router::install_active_workshop(None);
+    codewhale_runtime::active_workshop::install_active_workshop(None);
     Ok(())
 }
 
@@ -472,6 +472,7 @@ fn messages_from_thread_detail_batches_tool_results() {
         archived: false,
         system_prompt: None,
         task_id: None,
+        parent_thread_id: None,
         title: None,
         session_id: None,
         saved_session_checkpoint: None,
@@ -696,6 +697,7 @@ fn legacy_exact_thread_export_normalizes_provider_kind_and_id() {
             archived: false,
             system_prompt: None,
             task_id: None,
+            parent_thread_id: None,
             title: None,
             session_id: None,
             saved_session_checkpoint: None,
@@ -3690,7 +3692,13 @@ async fn compatibility_stream_exposes_and_resolves_user_input_without_answer_ech
             })
             .await?;
         let request = crate::tools::user_input::UserInputRequest {
+            require_typed_answers: true,
             questions: vec![crate::tools::user_input::UserInputQuestion {
+                detail: Some("Inspect the full plan".into()),
+                intent: Some(crate::tools::user_input::UserInputIntent::PlanReview {
+                    approve: "Continue".into(),
+                    call_id: Some("plan-compat".into()),
+                }),
                 header: "Continue".to_string(),
                 id: "choice".to_string(),
                 question: "Continue the compatibility turn?".to_string(),
@@ -3704,7 +3712,7 @@ async fn compatibility_stream_exposes_and_resolves_user_input_without_answer_ech
                         description: "Cancel the turn".to_string(),
                     },
                 ],
-                allow_free_text: false,
+                allow_free_text: true,
                 multi_select: false,
             }],
         };
@@ -3852,6 +3860,44 @@ async fn compatibility_stream_exposes_and_resolves_user_input_without_answer_ech
     assert_eq!(required_payload["request"]["questions"][0]["id"], "choice");
     assert!(required_payload.get("answers").is_none());
 
+    assert_eq!(required_payload["request"]["require_typed_answers"], true);
+    assert_eq!(
+        required_payload["request"]["questions"][0]["detail"],
+        "Inspect the full plan"
+    );
+    assert_eq!(
+        required_payload["request"]["questions"][0]["intent"]["kind"],
+        "plan-review"
+    );
+    for answer in [
+        json!({"id":"choice","label":"Continue","value":"Continue"}),
+        json!({"kind":"choice","id":"choice","label":"Continue","value":"forged"}),
+        json!({"kind":"custom","id":"choice","label":"Other","value":"text"}),
+        json!({"kind":"skipped","id":"choice","label":"","value":"not empty"}),
+    ] {
+        let rejected = client
+            .post(format!(
+                "http://{addr}/v1/user-input/{thread_id}/input_compat"
+            ))
+            .json(&json!({"answers":[answer]}))
+            .send()
+            .await?;
+        assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            runtime_threads
+                .get_thread_detail(&thread_id)
+                .await?
+                .pending_user_inputs
+                .len(),
+            1
+        );
+        assert!(
+            !runtime_threads
+                .events_since(&thread_id, None)?
+                .iter()
+                .any(|event| event.event == "user_input.answered")
+        );
+    }
     const SECRET_ANSWER: &str = "compat-answer-must-not-be-echoed";
     let submitted: serde_json::Value = client
         .post(format!(
@@ -3860,7 +3906,8 @@ async fn compatibility_stream_exposes_and_resolves_user_input_without_answer_ech
         .json(&json!({
             "answers": [{
                 "id": "choice",
-                "label": "Continue",
+                "kind": "custom",
+                "label": "",
                 "value": SECRET_ANSWER,
             }],
         }))
@@ -3878,6 +3925,10 @@ async fn compatibility_stream_exposes_and_resolves_user_input_without_answer_ech
             .context("compatibility user input was canceled instead of submitted")?;
     assert_eq!(submitted_id, "input_compat");
     assert_eq!(submitted_response.answers[0].value, SECRET_ANSWER);
+    assert_eq!(
+        submitted_response.answers[0].kind,
+        Some(crate::tools::user_input::UserInputAnswerKind::Custom)
+    );
     release_completion
         .send(())
         .map_err(|_| anyhow::anyhow!("mock interaction engine dropped completion release"))?;
@@ -11591,6 +11642,61 @@ async fn submit_user_input_404s_without_entering_engine_mailbox_for_unknown_id()
         "unknown user input reached the engine mailbox"
     );
 
+    let client = codewhale_release::tls::reqwest_client();
+    let missing = client
+        .delete(format!(
+            "http://{addr}/v1/user-input/{}/input-missing",
+            thread.id
+        ))
+        .send()
+        .await?;
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    runtime_threads.register_pending_user_input_for_thread_for_test(&thread.id, "cancel-known");
+    let cancellation = client
+        .delete(format!(
+            "http://{addr}/v1/user-input/{}/cancel-known",
+            thread.id
+        ))
+        .send();
+    let (response, delivered) = tokio::join!(cancellation, harness.recv_user_input_cancellation());
+    let response: Value = response?.error_for_status()?.json().await?;
+    assert_eq!(
+        response,
+        json!({"ok":true,"input_id":"cancel-known","delivered":true})
+    );
+    assert_eq!(delivered.as_deref(), Some("cancel-known"));
+    assert!(
+        runtime_threads
+            .get_thread_detail(&thread.id)
+            .await?
+            .pending_user_inputs
+            .is_empty()
+    );
+    let replay = client
+        .delete(format!(
+            "http://{addr}/v1/user-input/{}/cancel-known",
+            thread.id
+        ))
+        .send()
+        .await?;
+    assert_eq!(replay.status(), StatusCode::NOT_FOUND);
+    let late = client
+        .post(format!(
+            "http://{addr}/v1/user-input/{}/cancel-known",
+            thread.id
+        ))
+        .json(&json!({"answers":[]}))
+        .send()
+        .await?;
+    assert_eq!(late.status(), StatusCode::NOT_FOUND);
+    assert_eq!(
+        runtime_threads
+            .events_since(&thread.id, None)?
+            .iter()
+            .filter(|event| event.event == "user_input.canceled")
+            .count(),
+        1
+    );
     handle.abort();
     Ok(())
 }

@@ -1814,7 +1814,7 @@ mod tests {
         app.auto_model = true;
         app.last_effective_provider = Some(codewhale_config::ProviderKind::Deepseek);
         app.last_effective_model = Some("deepseek-v4-pro".to_string());
-        let decision = crate::model_routing::AutoRouteDecisionEvidence {
+        let decision = codewhale_models::auto_route_evidence::AutoRouteDecisionEvidence {
             choice: "strong".to_string(),
             probabilities_bp: [("fast".to_string(), 1800), ("strong".to_string(), 8200)]
                 .into_iter()

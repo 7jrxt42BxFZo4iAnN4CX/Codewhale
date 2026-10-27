@@ -22,6 +22,15 @@ use crate::tools::user_input::UserInputRequest;
 use codewhale_config::ProviderKind;
 use codewhale_models::{Message, SystemPrompt, Tool, Usage};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UserInputClosedOutcome {
+    Answered,
+    Cancelled,
+    TimedOut,
+    Unavailable,
+}
+
 /// Status receipt carried by the one request a reasoning-only / empty-stop
 /// nudge rides (C02-04). The nudge itself never joins the session.
 pub(crate) const REQUEST_NUDGE_RECEIPT_PREFIX: &str =
@@ -870,6 +879,11 @@ pub enum Event {
     UserInputRequired {
         id: String,
         request: UserInputRequest,
+    },
+
+    UserInputClosed {
+        id: String,
+        outcome: UserInputClosedOutcome,
     },
 
     /// Authoritative API conversation state from the engine session.

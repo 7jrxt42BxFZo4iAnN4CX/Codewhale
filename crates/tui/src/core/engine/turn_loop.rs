@@ -3773,6 +3773,48 @@ impl Engine {
                 Some(request) = requests.recv() => {
                     let request = match request {
                         crate::tools::codemode::NestedCallRequest::Tool(request) => request,
+                        crate::tools::codemode::NestedCallRequest::UserQuestion { caller, mut request, withdraw, clock, reply } => {
+                            if reply.is_closed() || withdraw.is_cancelled() {
+                                continue;
+                            }
+                            if extension.is_none() || self.child_host.is_some() || caller.agent_id.is_some()
+                                || caller.session_id != self.session.id || caller.workspace != self.session.workspace
+                                || Some(caller.turn_id.as_str()) != checkpoint_turn_id.as_deref()
+                            {
+                                let _ = reply.send(Err(ToolError::not_available("user question does not belong to a serving root turn")));
+                                continue;
+                            }
+                            if !self.config.user_input_responder {
+                                let _ = reply.send(Err(ToolError::execution_failed_with_metadata(
+                                    "no user-questions answerer accepted the request",
+                                    serde_json::json!({"user_question_error": "NO_PROVIDER"}),
+                                )));
+                                continue;
+                            }
+                            request.require_typed_answers = true;
+                            for question in &mut request.questions {
+                                question.allow_free_text = true;
+                            }
+                            if let Err(error) = request.validate_transport() {
+                                let _ = reply.send(Err(error));
+                                continue;
+                            }
+                            let request_id = format!("question_{}", uuid::Uuid::new_v4().simple());
+                            let outcome = {
+                                let wait = self.await_user_input_withdrawal(&request_id, request, withdraw, Some(clock.as_ref()));
+                                tokio::pin!(wait);
+                                tokio::select! {
+                                    biased;
+                                    () = cancel.cancelled() => {
+                                        return (Ok(RichToolResult::plain(interrupted_active_tool_result())), true);
+                                    }
+                                    result = &mut run => return (result, false),
+                                    result = &mut wait => result,
+                                }
+                            };
+                            let _ = reply.send(outcome);
+                            continue;
+                        }
                         crate::tools::codemode::NestedCallRequest::Checkpoint { caller, withdraw, reply } => {
                             if reply.is_closed() || withdraw.is_cancelled() {
                                 continue;

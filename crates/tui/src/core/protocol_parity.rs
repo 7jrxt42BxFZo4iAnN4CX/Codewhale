@@ -345,6 +345,7 @@ fn roster_row_to_wire(row: &AgentRosterRow) -> wire::AgentRosterRow {
 
 fn user_input_to_wire(request: &UserInputRequest) -> wire::UserInputRequest {
     wire::UserInputRequest {
+        require_typed_answers: request.require_typed_answers,
         questions: request
             .questions
             .iter()
@@ -352,6 +353,15 @@ fn user_input_to_wire(request: &UserInputRequest) -> wire::UserInputRequest {
                 header: question.header.clone(),
                 id: question.id.clone(),
                 question: question.question.clone(),
+                detail: question.detail.clone(),
+                intent: question.intent.as_ref().map(|intent| match intent {
+                    crate::tools::user_input::UserInputIntent::PlanReview { approve, call_id } => {
+                        codewhale_protocol::UserInputIntentEvent::PlanReview {
+                            approve: approve.clone(),
+                            call_id: call_id.clone(),
+                        }
+                    }
+                }),
                 options: question
                     .options
                     .iter()
@@ -962,6 +972,25 @@ pub fn event_to_protocol(event: &Event, ids: &ProtocolIds) -> wire::EventMsg {
             session_id,
             id: id.clone(),
             request: user_input_to_wire(request),
+        },
+        Event::UserInputClosed { id, outcome } => wire::EventMsg::UserInputClosed {
+            thread_id,
+            session_id,
+            id: id.clone(),
+            outcome: match outcome {
+                crate::core::events::UserInputClosedOutcome::Answered => {
+                    wire::UserInputClosedOutcome::Answered
+                }
+                crate::core::events::UserInputClosedOutcome::Cancelled => {
+                    wire::UserInputClosedOutcome::Cancelled
+                }
+                crate::core::events::UserInputClosedOutcome::TimedOut => {
+                    wire::UserInputClosedOutcome::TimedOut
+                }
+                crate::core::events::UserInputClosedOutcome::Unavailable => {
+                    wire::UserInputClosedOutcome::Unavailable
+                }
+            },
         },
         Event::SessionUpdated {
             checkpoint: _,

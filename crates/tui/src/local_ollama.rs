@@ -59,6 +59,7 @@ pub(crate) fn should_adopt_live_local_ollama(
 }
 
 /// Resolve the OpenAI-compat Ollama base URL (`…/v1`) from config defaults.
+#[cfg_attr(windows, allow(dead_code))]
 pub(crate) fn ollama_v1_base_url(config: &Config) -> String {
     config
         .resolve_provider_pin_identity("ollama")
@@ -68,6 +69,7 @@ pub(crate) fn ollama_v1_base_url(config: &Config) -> String {
         .unwrap_or_default()
 }
 
+#[cfg_attr(windows, allow(dead_code))]
 fn record_ollama_tags_into_lake(
     endpoint_v1: &str,
     tags: &[String],
@@ -98,6 +100,7 @@ fn record_ollama_tags_into_lake(
 /// Probe local Ollama for a live catalog. Prefers native `/api/tags`, falls
 /// back to OpenAI-compat `/v1/models`. Returns `None` when nothing useful
 /// answered — never invents a tag.
+#[cfg_attr(windows, allow(dead_code))]
 pub(crate) async fn probe_live_local_ollama_catalog(
     config: &Config,
 ) -> Option<LiveLocalOllamaCatalog> {

@@ -792,7 +792,7 @@ impl CapturedRlmCaller {
                     usage,
                 );
             } else {
-                crate::cost_status::report_effective_route_for_interactive_origin(
+                crate::usage_persistence::report_effective_route_for_interactive_origin(
                     self.origin_scope,
                     &self.origin_session,
                     &self.origin_turn,
@@ -810,7 +810,7 @@ impl CapturedRlmCaller {
                 reason,
             );
         } else {
-            crate::cost_status::report_missing_usage_for_interactive_origin(
+            crate::usage_persistence::report_missing_usage_for_interactive_origin(
                 self.origin_scope,
                 &self.origin_session,
                 &self.origin_turn,
