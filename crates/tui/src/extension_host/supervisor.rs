@@ -165,6 +165,7 @@ pub(crate) struct HostLaunch {
     /// build pins ([`tier::BUILTIN_MODULES`]), which the host bundle embedded
     /// from the same build must agree with ([`check_hello_identity`]).
     pub builtin_modules: &'static [BuiltinModule],
+    #[cfg(not(windows))]
     pub native_snapshot_roots: Vec<PathBuf>,
     /// Exact verified Native LPAC plan; Builtin retains its labelled exception.
     #[cfg(windows)]
@@ -551,7 +552,6 @@ pub(crate) fn plan_launch(
             memory_cap,
             memory: MemoryEnforcement::JobObject,
             builtin_modules: tier::BUILTIN_MODULES,
-            native_snapshot_roots: Vec::new(),
             windows: Some(sandbox),
         });
     }
@@ -569,8 +569,12 @@ pub(crate) fn plan_launch(
         bundle,
         &snapshot_roots,
     );
-    let mut launch = host_launch(tier, runtime, args, data, memory_cap, wrapped)?;
-    launch.native_snapshot_roots = snapshot_roots;
+    let launch = host_launch(tier, runtime, args, data, memory_cap, wrapped)?;
+    #[cfg(not(windows))]
+    let launch = HostLaunch {
+        native_snapshot_roots: snapshot_roots,
+        ..launch
+    };
     Ok(launch)
 }
 
@@ -810,15 +814,15 @@ fn native_readable_paths(
             return Err("Native writable data overlaps a runtime or package read grant".into());
         }
         canonical.push(resolved);
-        if path.is_file() {
-            if let (Some(parent), Some(name)) = (path.parent(), path.file_name()) {
-                canonical.push(
-                    parent
-                        .canonicalize()
-                        .map_err(|error| error.to_string())?
-                        .join(name),
-                );
-            }
+        if path.is_file()
+            && let (Some(parent), Some(name)) = (path.parent(), path.file_name())
+        {
+            canonical.push(
+                parent
+                    .canonicalize()
+                    .map_err(|error| error.to_string())?
+                    .join(name),
+            );
         }
     }
     paths.extend(canonical);
@@ -1095,6 +1099,7 @@ fn host_launch(
         memory_cap,
         memory: MemoryEnforcement::planned(runtime.kind),
         builtin_modules: tier::BUILTIN_MODULES,
+        #[cfg(not(windows))]
         native_snapshot_roots: Vec::new(),
         #[cfg(windows)]
         windows: None,
@@ -1556,7 +1561,7 @@ pub(crate) struct HostProcess {
     /// How the cap is enforced for this process, settled at the handshake.
     memory: Arc<std::sync::OnceLock<MemoryEnforcement>>,
     pub sandbox: HostSandbox,
-    #[cfg_attr(windows, expect(dead_code))]
+    #[cfg(not(windows))]
     native_snapshot_roots: Vec<PathBuf>,
     tree: Arc<codewhale_runtime::process_tree::ProcessTree>,
     #[cfg(windows)]
@@ -1732,7 +1737,7 @@ impl HostProcess {
                 if !snapshot_roots.iter().any(|grant| canonical.starts_with(grant) && canonical != *grant) {
                     return Err("Native snapshot store was not granted to this host; restart Codewhale to admit this store".into());
                 }
-                let current = native_snapshot_roots(&[authority.state_path.clone()])?;
+                let current = native_snapshot_roots(std::slice::from_ref(&authority.state_path))?;
                 if !current.iter().any(|grant| snapshot_roots.contains(grant) && canonical.starts_with(grant)) {
                     return Err("Native snapshot store changed after host launch".into());
                 }
@@ -1941,6 +1946,7 @@ impl HostProcess {
             memory_cap: launch.memory_cap,
             memory,
             sandbox: launch.sandbox.clone(),
+            #[cfg(not(windows))]
             native_snapshot_roots: launch.native_snapshot_roots.clone(),
             tree,
             #[cfg(windows)]
@@ -2396,7 +2402,7 @@ impl Reader {
                 };
                 let _ = call.tx.send(result);
             }
-            HostMessage::Request { id, request } => self.start_host_request(id, request)?,
+            HostMessage::Request { id, request } => self.start_host_request(id, *request)?,
             HostMessage::Notification(notification) => match notification {
                 HostNotification::Hello(hello) => {
                     if let Some(tx) = self.handshake.lock().expect("handshake lock").hello.take() {
@@ -3012,7 +3018,7 @@ mod tests {
     fn request(rig: &Rig, id: u64, plugin: &str) -> Result<(), String> {
         rig.reader.handle(HostMessage::Request {
             id,
-            request: register_request(plugin),
+            request: Box::new(register_request(plugin)),
         })
     }
 
@@ -3060,10 +3066,10 @@ mod tests {
         rig.reader
             .handle(HostMessage::Request {
                 id: 6,
-                request: HostRequest::Unregister(protocol::UnregisterParams {
+                request: Box::new(HostRequest::Unregister(protocol::UnregisterParams {
                     owner: owner("p"),
                     handle: 9,
-                }),
+                })),
             })
             .unwrap();
         assert_eq!(

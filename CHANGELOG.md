@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCP catalogs stay fresh:** a server's tools, resources, prompts and skills are rediscovered on their own connection when an advertised `ttlMs` expires or the server sends a list-changed notice. A tool resolved against the old catalog is refused with "retry the call", a removed tool cannot run, and a failed refresh reconnects instead of serving stale entries. Catalogs are never shared across servers, credentials or reconnects. (CW-7547)
 - **MCP Skills extension:** servers that advertise the published Skills extension have their skills listed in `list_mcp_resources`. Listing never activates a skill, and reading a skill file is refused unless its size and sha256 digest match the listing. MCP skills do not yet join `/skills`. (CW-7545)
 - **Computer Use is installed, not bundled:** the Computer Use plugin is no longer vendored into the binary. Install it from the `codewhale` marketplace, which points at its independent release; its consent tools load on first use, and decisions still require a human approval card. (CW-6732)
+- **First-party marketplace receipt:** the shipped catalog is pinned to marketplace revision `a5f1d210372ff48c9a278a0a39737956ac0f2d93`.
 - **Tool image validation:** an image returned by a tool must decode before it is sent, so truncated or corrupt files are omitted with a receipt even when they are already within the delivery budget.
 
 - **Image-heavy session recovery:** ordinary image reads use a 256 KiB delivery budget. Requests measure serialized bytes, omit older images from an outbound copy with receipts, and retry an initial HTTP 413 once only with a smaller body. Saved images and executed tool actions remain intact. (CW-7550)
@@ -209,6 +210,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `app-server`: a turn whose `response_start` could not be written to stdio
   is now interrupted instead of running on with nothing able to stop it
   (#6558).
+
+- Multiline mode now has a send key on every terminal: with
+  `composer_multiline_mode = true`, `Enter` inserts a newline and `Alt-Enter`
+  sends. `Shift-Enter` also sends where the terminal reports it distinctly; on
+  Linux terminals that report it as plain `Enter`, multiline mode previously
+  had no way to send. `Ctrl-J` always inserts a newline. Thanks
+  [@luestr](https://github.com/luestr) for the report. (#7093)
+- Session saves no longer fail with "Fleet artifact path must stay within the
+  workspace" when the Codewhale state root is a symlink or Windows junction to
+  another volume: the state root is resolved before session-side state is
+  opened. Thanks [@SparkofSpike](https://github.com/SparkofSpike). (#7097)
+- README translations carry refreshed source stamps after the 0.10.3 batch.
+  Thanks [@Aboysky](https://github.com/Aboysky). (#7104)
+
+### Contributors
+
+- **[@7jrxt42BxFZo4iAnN4CX](https://github.com/7jrxt42BxFZo4iAnN4CX)** — per-scope instruction budgets with visible truncation ([#7086](https://github.com/codewhale-hq/Codewhale/pull/7086), [#6526](https://github.com/codewhale-hq/Codewhale/issues/6526)).
+- **[@Lstarsky0](https://github.com/Lstarsky0)** — kept the `/diff` pager's place across a resize ([#7087](https://github.com/codewhale-hq/Codewhale/pull/7087)), said "Goal cleared." only when there was a goal ([#7089](https://github.com/codewhale-hq/Codewhale/pull/7089)), and stopped printing an unpriced session cost as `$0.0000` in `/status` ([#7090](https://github.com/codewhale-hq/Codewhale/pull/7090)).
+- **[@gaord](https://github.com/gaord)** — a running turn's cost and context in the Runtime ([#7074](https://github.com/codewhale-hq/Codewhale/pull/7074)).
+- **[Sh1Zuku / @SparkofSpike](https://github.com/SparkofSpike)** — resolved a relocated state root before session-side state opens ([#7097](https://github.com/codewhale-hq/Codewhale/pull/7097)).
+- **[Boyce / @Aboysky](https://github.com/Aboysky)** — refreshed the README translation source stamps ([#7104](https://github.com/codewhale-hq/Codewhale/pull/7104)).
+- **[@M-Maciej](https://github.com/M-Maciej)** — reported answerless output-limit stops in long Fleet proofs ([#6990](https://github.com/codewhale-hq/Codewhale/issues/6990)).
+- **[@asto18089](https://github.com/asto18089)** — diagnosed the NoNewPrivs child-matrix failure on hardened containers ([#7021](https://github.com/codewhale-hq/Codewhale/issues/7021)).
+- **[@luestr](https://github.com/luestr)** — reported the Linux multiline send key ([#7093](https://github.com/codewhale-hq/Codewhale/issues/7093)) and session export guidance ([#6996](https://github.com/codewhale-hq/Codewhale/issues/6996)).
 
 ## [0.10.2] - 2026-10-22
 

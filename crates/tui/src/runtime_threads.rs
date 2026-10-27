@@ -17152,7 +17152,10 @@ impl RuntimeThreadManager {
             submission_id: None,
         };
         let op = match &input_source {
-            RuntimeTurnInputSource::Review(request) => Op::Review { turn: spec, request: request.clone() },
+            RuntimeTurnInputSource::Review(request) => Op::Review {
+                turn: Box::new(spec),
+                request: request.clone(),
+            },
             _ => Op::SendMessage(spec),
         };
 

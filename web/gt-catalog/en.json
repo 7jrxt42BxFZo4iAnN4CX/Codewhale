@@ -203,6 +203,7 @@
     "screenshotAlt": "Codewhale v{version}: a captured terminal view with the conversation, message composer and session controls.",
     "latestRelease": "Latest release {tag}",
     "releaseUnavailable": "Release status unavailable",
+    "proofContributors": "{count} contributors",
     "currentSource": "Source",
     "sourceCandidate": "Unreleased",
     "publishedRelease": "released",

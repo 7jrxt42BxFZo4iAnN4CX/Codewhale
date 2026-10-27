@@ -111,7 +111,7 @@ pub(crate) struct RemoteControlInferencePermit {
 }
 
 #[cfg(any(test, all(feature = "test-thread-scoped-state", debug_assertions)))]
-#[cfg_attr(windows, allow(dead_code))]
+#[cfg_attr(all(not(test), debug_assertions), expect(dead_code))]
 pub(crate) async fn acquire_runtime_chat_inference_ownership() -> RuntimeChatInferenceOwnership {
     let gate = runtime_chat_inference_gate().write_owned().await;
     RuntimeChatInferenceOwnership { _gate: gate }
