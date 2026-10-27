@@ -49,12 +49,12 @@ use crate::tools::workflow_plan_approval::{
     WorkflowPlanApprovalReceipt, analyze_workflow_plan_approval_with_config, analyze_workflow_spec,
     workflow_approval_requirement_for,
 };
-use crate::utils::spawn_supervised;
 use crate::work_graph::{
     CancelOutcome, EvidenceKind, EvidenceRef, OperationIntent, OperationObservation,
     OperationOwnerSnapshot, OwnerState, SharedWorkRuntime,
 };
 use codewhale_agent_contract::role::{FleetRole, public_role_label};
+use codewhale_util::utils::spawn_supervised;
 
 /// Keep promoted artifacts compact without clipping ordinary evidence reports.
 /// A 900-character cap cut six-line source receipts in half during live Fleet

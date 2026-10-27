@@ -628,7 +628,7 @@ fn is_carve_out_excluded_name(name: &str) -> bool {
     // excluded here exactly as the workspace file routes exclude it.
     // `.codewhale` holds session state plus MCP/hook configuration — editing
     // it changes what runs, so it keeps the modal.
-    crate::snapshot::is_git_metadata_name(OsStr::new(name))
+    codewhale_util::git_metadata::is_git_metadata_name(OsStr::new(name))
         || name == ".codewhale"
         || is_credential_file_name(name)
 }

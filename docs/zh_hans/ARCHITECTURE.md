@@ -12,6 +12,7 @@ Codewhale Engine 是现有 Rust 执行运行时。[Runtime API](RUNTIME_API.md) 
 - 其他工作区 crate 正在逐步拆出，但它们还不是唯一的权威运行时。
 - `crates/net` 拥有网络策略与审计、目标地址和 DNS 检查、代理解析及 Claude 导入规划。工具上下文、传输授权、重定向和响应大小限制仍由调用方负责。纯扩展宿主设置归 `crates/config` 所有。
 - `crates/notify` 拥有共享通知内容脱敏、注意力和类别门控、声音策略及本地音频派发。TUI 保留终端输出端，原生宿主保留横幅提交通道。
+- `crates/util` 拥有共享字符串、路径与原子写入辅助函数、受限工作区文件访问、链接与文件身份检查、捆绑文件读取、`.git` 名称规则和独占文件锁。
 - `crates/tui` 正按照 `docs/design/TUI_DECONSTRUCTION.md` 记录的顺序拆分为以智能体
   工作分区为单位的 crate：契约、工具库、服务、提供方、运行时、叶子功能 crate、TUI 视图
   与宿主。TUI 始终是唯一写终端的 crate。在某个模块迁走之前，

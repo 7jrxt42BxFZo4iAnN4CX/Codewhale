@@ -30,8 +30,8 @@ use std::path::{Path, PathBuf};
 
 use super::agent_plugin;
 use super::manifest::PluginPathSpec;
-use super::path_identity::metadata_is_link_or_reparse;
 use super::types::LoadedPlugin;
+use codewhale_util::path_identity::metadata_is_link_or_reparse;
 
 /// Mirrors the install staging budget: a validated bundle already fits the
 /// review limits, and export refuses to grow unbounded copies regardless.

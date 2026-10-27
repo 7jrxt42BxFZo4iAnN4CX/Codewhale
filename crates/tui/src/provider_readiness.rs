@@ -914,7 +914,7 @@ fn provider_owned_failure(envelope: &ErrorEnvelope) -> bool {
 }
 
 fn sanitize_message(message: &str) -> String {
-    crate::utils::truncate_with_ellipsis(message.trim(), 120, "…")
+    codewhale_util::utils::truncate_with_ellipsis(message.trim(), 120, "…")
 }
 
 #[cfg(test)]

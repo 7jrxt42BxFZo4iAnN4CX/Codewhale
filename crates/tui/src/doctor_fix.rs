@@ -69,13 +69,13 @@ impl DoctorFixPlan {
                 DoctorFixAction::DeleteStaleTempFile { path } => {
                     format!(
                         "delete stale temp file {}",
-                        crate::utils::display_path(path)
+                        codewhale_util::utils::display_path(path)
                     )
                 }
                 #[cfg(unix)]
                 DoctorFixAction::TightenSecretPermissions { path, from_mode } => format!(
                     "restrict {} to 0600 (currently {:o})",
-                    crate::utils::display_path(path),
+                    codewhale_util::utils::display_path(path),
                     from_mode & 0o7777
                 ),
                 DoctorFixAction::DisableMcpServer {
@@ -83,12 +83,12 @@ impl DoctorFixPlan {
                     server,
                 } => format!(
                     "disable broken MCP server entry '{server}' in {}",
-                    crate::utils::display_path(config_path)
+                    codewhale_util::utils::display_path(config_path)
                 ),
                 DoctorFixAction::ScaffoldDirectory { path } => {
                     format!(
                         "create missing directory {}",
-                        crate::utils::display_path(path)
+                        codewhale_util::utils::display_path(path)
                     )
                 }
             })

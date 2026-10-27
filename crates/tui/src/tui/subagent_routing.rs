@@ -981,7 +981,7 @@ fn format_task_detail(task: &TaskRecord) -> String {
     lines.push(format!("Model: {}", task.model));
     lines.push(format!(
         "Workspace: {}",
-        crate::utils::display_path(&task.workspace)
+        codewhale_util::utils::display_path(&task.workspace)
     ));
     if let Some(owner_session_id) = task.owner_session_id.as_deref() {
         lines.push(format!("Owning Session: {owner_session_id}"));

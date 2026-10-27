@@ -3509,7 +3509,7 @@ pub(crate) fn workspace_file(workspace: &Path, raw: &str) -> Option<PathBuf> {
     for component in relative.components() {
         path.push(component);
         let metadata = std::fs::symlink_metadata(&path).ok()?;
-        if crate::plugins::metadata_is_link_or_reparse(&metadata) {
+        if codewhale_util::path_identity::metadata_is_link_or_reparse(&metadata) {
             return None;
         }
         is_file = metadata.is_file();

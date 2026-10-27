@@ -66,6 +66,7 @@ state             cargo test -p codewhale-state --lib --locked
 telemetry         cargo test -p codewhale-telemetry --lib --locked
 tools             cargo test -p codewhale-tools --lib --locked
 tui               cargo test -p codewhale-tui --lib --locked
+util              cargo test -p codewhale-util --lib --locked
 tui-integration   cargo test -p codewhale-tui --test integration --locked
 tui-cucumber      cargo test -p codewhale-tui --test cucumber --locked
 workflow          cargo test -p codewhale-workflow --lib --locked
@@ -211,6 +212,7 @@ case $area in
   telemetry) pkg=codewhale-telemetry ;;
   tools) pkg=codewhale-tools ;;
   tui) pkg=codewhale-tui ;;
+  util) pkg=codewhale-util ;;
   workflow) pkg=codewhale-workflow ;;
   workflow-js) pkg=codewhale-workflow-js ;;
   tui-integration)

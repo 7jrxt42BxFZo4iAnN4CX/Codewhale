@@ -329,7 +329,7 @@ impl PreparedOutboundRequest {
     }
 
     pub(crate) fn serialized_body_bytes(&self) -> anyhow::Result<usize> {
-        let mut writer = crate::utils::CountingWriter::new();
+        let mut writer = codewhale_util::utils::CountingWriter::new();
         serde_json::to_writer(&mut writer, &self.body)?;
         Ok(writer.count())
     }

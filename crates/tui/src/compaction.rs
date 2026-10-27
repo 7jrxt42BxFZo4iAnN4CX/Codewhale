@@ -642,7 +642,7 @@ pub(crate) fn estimate_tokens_for_message(message: &Message, include_thinking: b
 }
 
 fn compact_json_len(value: &serde_json::Value) -> Option<usize> {
-    let mut counter = crate::utils::CountingWriter::new();
+    let mut counter = codewhale_util::utils::CountingWriter::new();
     serde_json::to_writer(&mut counter, value).ok()?;
     Some(counter.count())
 }

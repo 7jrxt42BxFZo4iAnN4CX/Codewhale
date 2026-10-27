@@ -1494,7 +1494,7 @@ pub(crate) fn system_prompt_with_instruction_assembly_for_host(
         codewhale_core::fragments::load_selected_project_instruction_fragment_with_reader(
             workspace,
             &crate::project_context::fragment_candidates_for(&settings.imports),
-            |path| crate::fs_confined::open_read(workspace, path),
+            |path| codewhale_util::fs_confined::open_read(workspace, path),
         )
     {
         // `BoundedFragment` already enforces `MAX_FRAGMENT_BYTES` (10K-token

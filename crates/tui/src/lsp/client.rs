@@ -39,7 +39,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 
 use super::diagnostics::{Diagnostic, Severity};
-use crate::utils::spawn_supervised;
+use codewhale_util::utils::spawn_supervised;
 
 const INITIALIZE_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_LSP_HEADER_BYTES: usize = 8 * 1024;

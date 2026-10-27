@@ -156,7 +156,7 @@ fn relative_display(rel: &Path) -> Option<String> {
         let Component::Normal(name) = component else {
             return None;
         };
-        if crate::snapshot::is_git_metadata_name(name) {
+        if codewhale_util::git_metadata::is_git_metadata_name(name) {
             return None;
         }
         parts.push(name.to_str()?);

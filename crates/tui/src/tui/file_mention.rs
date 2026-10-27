@@ -820,9 +820,9 @@ fn stabilize_screencapture_file(path: &Path, artifact_dir: &Path) -> Option<Path
     let state_root = codewhale_paths::user_home()
         .is_some_and(|home| root == home.join(codewhale_paths::CODEWHALE_APP_DIR));
     let open = if state_root {
-        crate::fleet::files::WorkspaceFile::open_resolved_root
+        codewhale_util::files::WorkspaceFile::open_resolved_root
     } else {
-        crate::fleet::files::WorkspaceFile::open
+        codewhale_util::files::WorkspaceFile::open
     };
     let target = open(root, &relative, true).ok()?;
     // An existing regular destination is reused; a link there fails to open.

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::dependencies::Git;
-use crate::snapshot::is_git_metadata_name;
+use codewhale_util::git_metadata::is_git_metadata_name;
 
 use super::{ApiError, RuntimeApiState};
 
@@ -494,7 +494,7 @@ pub(super) fn relative_request_path(raw: &str, allow_root: bool) -> Result<PathB
         };
     }
     let path = PathBuf::from(trimmed);
-    if !crate::fleet::files::path_is_confined(&path) {
+    if !codewhale_util::files::path_is_confined(&path) {
         return Err(ApiError::bad_request(
             "path must be workspace-relative without . or .. components",
         ));
@@ -534,7 +534,7 @@ fn confined_directory(root: &FsPath, relative: &FsPath) -> Result<PathBuf, ApiEr
         let metadata = std::fs::symlink_metadata(&directory)
             .map_err(|error| map_fs_error(error, "directory"))?;
         if metadata.file_type().is_symlink()
-            || crate::plugins::metadata_is_link_or_reparse(&metadata)
+            || codewhale_util::path_identity::metadata_is_link_or_reparse(&metadata)
         {
             return Err(ApiError::forbidden("symlinks are not followed"));
         }
@@ -594,7 +594,7 @@ fn list_workspace_directory(
         let is_link = file_type.is_symlink()
             || metadata
                 .as_ref()
-                .is_some_and(crate::plugins::metadata_is_link_or_reparse);
+                .is_some_and(codewhale_util::path_identity::metadata_is_link_or_reparse);
         let kind = if is_link {
             "symlink"
         } else if file_type.is_dir() {
@@ -635,8 +635,8 @@ pub(super) fn open_confined_file(
     root: &FsPath,
     relative: &FsPath,
     create: bool,
-) -> Result<crate::fleet::files::WorkspaceFile, ApiError> {
-    crate::fleet::files::WorkspaceFile::open(root, relative, create)
+) -> Result<codewhale_util::files::WorkspaceFile, ApiError> {
+    codewhale_util::files::WorkspaceFile::open(root, relative, create)
         .map_err(|error| map_fs_error(error, "file"))
 }
 
@@ -649,15 +649,15 @@ pub(super) fn open_confined_file_resolved(
     root: &FsPath,
     relative: &FsPath,
     create: bool,
-) -> Result<crate::fleet::files::WorkspaceFile, ApiError> {
-    crate::fleet::files::WorkspaceFile::open_resolved_root(root, relative, create)
+) -> Result<codewhale_util::files::WorkspaceFile, ApiError> {
+    codewhale_util::files::WorkspaceFile::open_resolved_root(root, relative, create)
         .map_err(|error| map_fs_error(error, "file"))
 }
 
 /// Read one confined file completely (bounded by `FILE_SERVE_MAX_BYTES`) so
 /// the revision always describes the whole file.
 pub(super) fn read_confined_bytes(
-    file: &crate::fleet::files::WorkspaceFile,
+    file: &codewhale_util::files::WorkspaceFile,
 ) -> Result<ConfinedFileBytes, ApiError> {
     let mut handle = file
         .open_file()
@@ -712,7 +712,7 @@ pub(super) fn precheck_file_target(
     match std::fs::symlink_metadata(root.join(relative)) {
         Ok(metadata) => {
             if metadata.file_type().is_symlink()
-                || crate::plugins::metadata_is_link_or_reparse(&metadata)
+                || codewhale_util::path_identity::metadata_is_link_or_reparse(&metadata)
             {
                 return Err(ApiError::forbidden("symlinks are not followed"));
             }
@@ -817,7 +817,7 @@ fn write_workspace_file(
     // opener, which refuses links at every component. This is the user's own
     // file, not a private store: keep its mode on edit, follow the umask on
     // creation.
-    let file = crate::fleet::files::WorkspaceFile::open_shared(&root, relative, created)
+    let file = codewhale_util::files::WorkspaceFile::open_shared(&root, relative, created)
         .map_err(|error| map_fs_error(error, "file"))?;
     if let Some(expected) = expected_revision {
         let current = read_confined_bytes(&file)?;
@@ -846,7 +846,7 @@ fn write_workspace_file(
 }
 
 pub(super) fn publish_workspace_file(
-    file: &crate::fleet::files::WorkspaceFile,
+    file: &codewhale_util::files::WorkspaceFile,
     bytes: &[u8],
     created: bool,
 ) -> Result<(), ApiError> {

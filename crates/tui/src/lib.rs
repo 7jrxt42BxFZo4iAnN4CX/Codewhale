@@ -44,7 +44,6 @@ mod error_taxonomy;
 mod eval;
 mod extension_host;
 mod fleet;
-mod fs_confined;
 mod git_status;
 mod keybinding_table;
 use crate::fleet::executor::exec_stream_final_answer_excerpt;
@@ -127,7 +126,6 @@ mod tui;
 /// The terminal and external renderers share this implementation.
 pub use tui::ambient_life::pet_sim as pet;
 mod turn_route_plan;
-mod utils;
 mod vision;
 mod voice;
 pub mod whats_new;
@@ -4332,7 +4330,10 @@ fn run_setup(
         "Codewhale Setup".truecolor(aqua_r, aqua_g, aqua_b).bold()
     );
     println!("{}", "==============".truecolor(sky_r, sky_g, sky_b));
-    println!("Workspace: {}", crate::utils::display_path(workspace));
+    println!(
+        "Workspace: {}",
+        codewhale_util::utils::display_path(workspace)
+    );
 
     if run_mcp {
         let mcp_path = config.mcp_config_path();
@@ -4377,12 +4378,12 @@ fn run_setup(
         if args.local {
             println!(
                 "    Project skills dir (loads after workspace trust): {}",
-                crate::utils::display_path(&skills_dir)
+                codewhale_util::utils::display_path(&skills_dir)
             );
         } else {
             println!(
                 "    Skills dir: {}",
-                crate::utils::display_path(&skills_dir)
+                codewhale_util::utils::display_path(&skills_dir)
             );
         }
         println!("    Next: run the TUI and use `/skills` then `/skill getting-started`.");
@@ -4393,7 +4394,10 @@ fn run_setup(
         let (dir, readme_status, example_status) = init_tools_dir(&tools_dir, args.force)?;
         report_write_status("Tools README", &dir.join("README.md"), readme_status);
         report_write_status("Example tool", &dir.join("example.sh"), example_status);
-        println!("    Tools dir: {}", crate::utils::display_path(&dir));
+        println!(
+            "    Tools dir: {}",
+            codewhale_util::utils::display_path(&dir)
+        );
         println!("    Next: drop scripts here; surface them via skills/MCP when ready.");
     }
 
@@ -4406,7 +4410,7 @@ fn run_setup(
         report_write_status("Example plugin skill", &skill_path, skill_status);
         println!(
             "    Plugins dir: {}",
-            crate::utils::display_path(&plugins_dir)
+            codewhale_util::utils::display_path(&plugins_dir)
         );
         println!("    Next: run `/plugin validate`, review `example`, then trust and enable it.");
     }
@@ -4767,7 +4771,7 @@ fn run_setup_status(
     println!(
         "  · skills: {} at {}",
         skills_count_for(&skills_dir),
-        crate::utils::display_path(&skills_dir)
+        codewhale_util::utils::display_path(&skills_dir)
     );
 
     let tools_dir = default_tools_dir();
@@ -4783,7 +4787,7 @@ fn run_setup_status(
         } else {
             0
         },
-        crate::utils::display_path(&tools_dir)
+        codewhale_util::utils::display_path(&tools_dir)
     );
 
     let plugins_dir = default_plugins_dir();
@@ -4799,7 +4803,7 @@ fn run_setup_status(
         } else {
             0
         },
-        crate::utils::display_path(&plugins_dir)
+        codewhale_util::utils::display_path(&plugins_dir)
     );
 
     let sandbox =
@@ -4881,7 +4885,7 @@ fn run_session_diagnostics(args: SessionDiagnosticsArgs) -> Result<()> {
     let contents = std::fs::read_to_string(&args.path).with_context(|| {
         format!(
             "read session diagnostic JSONL from {}",
-            crate::utils::display_path(&args.path)
+            codewhale_util::utils::display_path(&args.path)
         )
     })?;
     let summary = crate::session_diagnostics::analyze_session_failure_jsonl(&contents);
@@ -5045,7 +5049,7 @@ async fn run_doctor(
         println!(
             "  {} config.toml found at {}",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(config_path)
+            codewhale_util::utils::display_path(config_path)
         );
         // Secret hygiene: name the keys, never the values. Plain-text config
         // is not a secret store.
@@ -5081,16 +5085,19 @@ async fn run_doctor(
         println!(
             "  {} config.toml not found at {} (using defaults/env)",
             "!".truecolor(sky_r, sky_g, sky_b),
-            crate::utils::display_path(config_path)
+            codewhale_util::utils::display_path(config_path)
         );
     }
-    println!("  workspace: {}", crate::utils::display_path(workspace));
+    println!(
+        "  workspace: {}",
+        codewhale_util::utils::display_path(workspace)
+    );
     println!("  {}", doctor_search_provider_line(config));
 
     println!();
     println!("{}", "Resolved User Paths (read-only):".bold());
     for (label, path) in doctor_paths.entries() {
-        println!("  · {label}: {}", crate::utils::display_path(path));
+        println!("  · {label}: {}", codewhale_util::utils::display_path(path));
     }
 
     let secret_backend = codewhale_secrets::diagnose_secret_backend();
@@ -5121,18 +5128,21 @@ async fn run_doctor(
     } else {
         &code_home
     };
-    println!("  active: {}", crate::utils::display_path(active_root));
+    println!(
+        "  active: {}",
+        codewhale_util::utils::display_path(active_root)
+    );
     if active_root != &code_home {
         println!(
             "  note: legacy {} found; start Codewhale once to trigger safe migration where available.",
-            crate::utils::display_path(&legacy_home)
+            codewhale_util::utils::display_path(&legacy_home)
         );
     }
     if legacy_home.exists() && code_home.exists() {
         println!(
             "  dual roots: {} (primary) + {} (legacy)",
-            crate::utils::display_path(&code_home),
-            crate::utils::display_path(&legacy_home)
+            codewhale_util::utils::display_path(&code_home),
+            codewhale_util::utils::display_path(&legacy_home)
         );
     }
     let legacy_state_report = doctor_legacy_state_report(&code_home, &legacy_home);
@@ -5459,26 +5469,26 @@ async fn run_doctor(
         println!(
             "  {} MCP config found at {}",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&mcp_config_path)
+            codewhale_util::utils::display_path(&mcp_config_path)
         );
     } else {
         println!(
             "  {} MCP config not found at {}",
             "·".dimmed(),
-            crate::utils::display_path(&mcp_config_path)
+            codewhale_util::utils::display_path(&mcp_config_path)
         );
     }
     if project_mcp_config_path.exists() {
         println!(
             "  {} Project MCP config found at {}",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&project_mcp_config_path)
+            codewhale_util::utils::display_path(&project_mcp_config_path)
         );
     } else {
         println!(
             "  {} Project MCP config not found at {}",
             "·".dimmed(),
-            crate::utils::display_path(&project_mcp_config_path)
+            codewhale_util::utils::display_path(&project_mcp_config_path)
         );
     }
 
@@ -5618,14 +5628,14 @@ async fn run_doctor(
         println!(
             "  {} local skills dir found at {} ({} items)",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&local_skills_dir),
+            codewhale_util::utils::display_path(&local_skills_dir),
             describe_dir(&local_skills_dir)
         );
     } else {
         println!(
             "  {} local skills dir not found at {}",
             "·".dimmed(),
-            crate::utils::display_path(&local_skills_dir)
+            codewhale_util::utils::display_path(&local_skills_dir)
         );
     }
 
@@ -5633,14 +5643,14 @@ async fn run_doctor(
         println!(
             "  {} .agents skills dir found at {} ({} items)",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&agents_skills_dir),
+            codewhale_util::utils::display_path(&agents_skills_dir),
             describe_dir(&agents_skills_dir)
         );
     } else {
         println!(
             "  {} .agents skills dir not found at {}",
             "·".dimmed(),
-            crate::utils::display_path(&agents_skills_dir)
+            codewhale_util::utils::display_path(&agents_skills_dir)
         );
     }
 
@@ -5649,14 +5659,14 @@ async fn run_doctor(
             println!(
                 "  {} global .agents skills dir found at {} ({} items)",
                 "✓".truecolor(aqua_r, aqua_g, aqua_b),
-                crate::utils::display_path(agents_global_skills_dir),
+                codewhale_util::utils::display_path(agents_global_skills_dir),
                 describe_dir(agents_global_skills_dir)
             );
         } else {
             println!(
                 "  {} global .agents skills dir not found at {}",
                 "·".dimmed(),
-                crate::utils::display_path(agents_global_skills_dir)
+                codewhale_util::utils::display_path(agents_global_skills_dir)
             );
         }
     }
@@ -5665,14 +5675,14 @@ async fn run_doctor(
         println!(
             "  {} global skills dir found at {} ({} items)",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&global_skills_dir),
+            codewhale_util::utils::display_path(&global_skills_dir),
             describe_dir(&global_skills_dir)
         );
     } else {
         println!(
             "  {} global skills dir not found at {}",
             "·".dimmed(),
-            crate::utils::display_path(&global_skills_dir)
+            codewhale_util::utils::display_path(&global_skills_dir)
         );
     }
 
@@ -5683,7 +5693,7 @@ async fn run_doctor(
         println!(
             "  {} .opencode skills dir found at {} ({} items)",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&opencode_skills_dir),
+            codewhale_util::utils::display_path(&opencode_skills_dir),
             describe_dir(&opencode_skills_dir)
         );
     }
@@ -5691,7 +5701,7 @@ async fn run_doctor(
         println!(
             "  {} .claude skills dir found at {} ({} items)",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&claude_skills_dir),
+            codewhale_util::utils::display_path(&claude_skills_dir),
             describe_dir(&claude_skills_dir)
         );
     }
@@ -5699,7 +5709,7 @@ async fn run_doctor(
     println!(
         "  {} selected skills dir: {}",
         "·".dimmed(),
-        crate::utils::display_path(&selected_skills_dir)
+        codewhale_util::utils::display_path(&selected_skills_dir)
     );
     let unrecognized_system_skills = crate::skills::unrecognized_system_skills(&global_skills_dir);
     if !unrecognized_system_skills.is_empty() {
@@ -5707,7 +5717,7 @@ async fn run_doctor(
             "  {} {} bundled skill(s) in {} are customized or from an unknown generation and are never refreshed: {}",
             "!".truecolor(sky_r, sky_g, sky_b),
             unrecognized_system_skills.len(),
-            crate::utils::display_path(&global_skills_dir),
+            codewhale_util::utils::display_path(&global_skills_dir),
             unrecognized_system_skills.join(", ")
         );
     }
@@ -5731,14 +5741,14 @@ async fn run_doctor(
         println!(
             "  {} tools dir found at {} ({} items)",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&tools_dir),
+            codewhale_util::utils::display_path(&tools_dir),
             count
         );
     } else {
         println!(
             "  {} tools dir not found at {}",
             "·".dimmed(),
-            crate::utils::display_path(&tools_dir)
+            codewhale_util::utils::display_path(&tools_dir)
         );
         println!("    Run `codewhale setup --tools` to scaffold a starter dir.");
     }
@@ -5752,14 +5762,14 @@ async fn run_doctor(
         println!(
             "  {} plugins dir found at {} ({} items)",
             "✓".truecolor(aqua_r, aqua_g, aqua_b),
-            crate::utils::display_path(&plugins_dir),
+            codewhale_util::utils::display_path(&plugins_dir),
             count
         );
     } else {
         println!(
             "  {} plugins dir not found at {}",
             "·".dimmed(),
-            crate::utils::display_path(&plugins_dir)
+            codewhale_util::utils::display_path(&plugins_dir)
         );
         println!("    Run `codewhale setup --plugins` to scaffold a starter dir.");
     }
@@ -5777,7 +5787,7 @@ async fn run_doctor(
             println!(
                 "  {} tool-output spillover at {} ({} file{})",
                 "✓".truecolor(aqua_r, aqua_g, aqua_b),
-                crate::utils::display_path(&spillover_root),
+                codewhale_util::utils::display_path(&spillover_root),
                 count,
                 if count == 1 { "" } else { "s" }
             );
@@ -5785,7 +5795,7 @@ async fn run_doctor(
             println!(
                 "  {} tool-output spillover dir not yet created at {}",
                 "·".dimmed(),
-                crate::utils::display_path(&spillover_root)
+                codewhale_util::utils::display_path(&spillover_root)
             );
         }
     }
@@ -5795,13 +5805,13 @@ async fn run_doctor(
             println!(
                 "  {} composer stash was not inspected at {}: {error}",
                 "!".truecolor(sky_r, sky_g, sky_b),
-                crate::utils::display_path(stash_path),
+                codewhale_util::utils::display_path(stash_path),
             );
         } else if stash.present {
             println!(
                 "  {} composer stash at {} ({} parked draft{})",
                 "✓".truecolor(aqua_r, aqua_g, aqua_b),
-                crate::utils::display_path(stash_path),
+                codewhale_util::utils::display_path(stash_path),
                 stash.count,
                 if stash.count == 1 { "" } else { "s" }
             );
@@ -6698,7 +6708,7 @@ fn doctor_session_recovery_report(
             report.status = DoctorSessionRecoveryStatus::ScanFailed;
             report.error = Some(format!(
                 "could not inspect legacy session filenames at {}: {err}",
-                crate::utils::display_path(&report.legacy_sessions_path)
+                codewhale_util::utils::display_path(&report.legacy_sessions_path)
             ));
             return report;
         }
@@ -6711,7 +6721,7 @@ fn doctor_session_recovery_report(
                 report.status = DoctorSessionRecoveryStatus::ScanFailed;
                 report.error = Some(format!(
                     "could not inspect an entry under {}: {err}",
-                    crate::utils::display_path(&report.legacy_sessions_path)
+                    codewhale_util::utils::display_path(&report.legacy_sessions_path)
                 ));
                 return report;
             }
@@ -6722,7 +6732,7 @@ fn doctor_session_recovery_report(
                 report.status = DoctorSessionRecoveryStatus::ScanFailed;
                 report.error = Some(format!(
                     "could not inspect legacy session entry metadata under {}: {err}",
-                    crate::utils::display_path(&report.legacy_sessions_path)
+                    codewhale_util::utils::display_path(&report.legacy_sessions_path)
                 ));
                 return report;
             }
@@ -6747,7 +6757,7 @@ fn doctor_session_recovery_report(
                 };
                 report.error = Some(format!(
                     "could not inspect destination session metadata at {}: {shape}",
-                    crate::utils::display_path(&destination_path)
+                    codewhale_util::utils::display_path(&destination_path)
                 ));
                 return report;
             }
@@ -6766,7 +6776,7 @@ fn doctor_session_recovery_report(
                 report.status = DoctorSessionRecoveryStatus::ScanFailed;
                 report.error = Some(format!(
                     "could not inspect destination metadata at {}: {err}",
-                    crate::utils::display_path(&destination_path)
+                    codewhale_util::utils::display_path(&destination_path)
                 ));
                 return report;
             }
@@ -6799,20 +6809,20 @@ fn doctor_session_directory_is_safe(path: &Path, label: &str) -> std::result::Re
         Err(error) => {
             return Err(format!(
                 "could not inspect {label} at {}: {error}",
-                crate::utils::display_path(path)
+                codewhale_util::utils::display_path(path)
             ));
         }
     };
     if metadata.file_type().is_symlink() {
         return Err(format!(
             "could not inspect {label} at {}: path is a symlink",
-            crate::utils::display_path(path)
+            codewhale_util::utils::display_path(path)
         ));
     }
     if !metadata.file_type().is_dir() {
         return Err(format!(
             "could not inspect {label} at {}: path is not a directory",
-            crate::utils::display_path(path)
+            codewhale_util::utils::display_path(path)
         ));
     }
     Ok(true)
@@ -6878,16 +6888,16 @@ fn print_doctor_legacy_state_report(
                     println!(
                         "    {} {} exists but {} is missing",
                         "!".truecolor(warn_rgb.0, warn_rgb.1, warn_rgb.2),
-                        crate::utils::display_path(&entry.legacy_path),
-                        crate::utils::display_path(&entry.primary_path),
+                        codewhale_util::utils::display_path(&entry.legacy_path),
+                        codewhale_util::utils::display_path(&entry.primary_path),
                     );
                 }
                 DoctorLegacyStateStatus::Both => {
                     println!(
                         "    {} {} exists alongside primary {}; legacy data may still need review",
                         "!".truecolor(warn_rgb.0, warn_rgb.1, warn_rgb.2),
-                        crate::utils::display_path(&entry.legacy_path),
-                        crate::utils::display_path(&entry.primary_path),
+                        codewhale_util::utils::display_path(&entry.legacy_path),
+                        codewhale_util::utils::display_path(&entry.primary_path),
                     );
                 }
                 DoctorLegacyStateStatus::PrimaryOnly | DoctorLegacyStateStatus::Absent => {}
@@ -6929,7 +6939,7 @@ fn print_doctor_session_recovery_report(
                 "  {} legacy sessions: all {} filename(s) have regular-file counterparts under {}; descriptor contents were not compared and legacy originals remain preserved",
                 "✓".truecolor(ok_rgb.0, ok_rgb.1, ok_rgb.2),
                 report.legacy_session_file_count,
-                crate::utils::display_path(&report.primary_sessions_path),
+                codewhale_util::utils::display_path(&report.primary_sessions_path),
             );
         }
         DoctorSessionRecoveryStatus::MigrationPending
@@ -6943,7 +6953,7 @@ fn print_doctor_session_recovery_report(
                 "  {} legacy sessions: {label}; {} recoverable file(s) are absent from {}",
                 "!".truecolor(warn_rgb.0, warn_rgb.1, warn_rgb.2),
                 report.recoverable_file_count,
-                crate::utils::display_path(&report.primary_sessions_path),
+                codewhale_util::utils::display_path(&report.primary_sessions_path),
             );
             for entry in report
                 .recoverable
@@ -6953,8 +6963,8 @@ fn print_doctor_session_recovery_report(
                 println!(
                     "    {} {} -> {}",
                     "·".dimmed(),
-                    crate::utils::display_path(&entry.source_path),
-                    crate::utils::display_path(&entry.destination_path),
+                    codewhale_util::utils::display_path(&entry.source_path),
+                    codewhale_util::utils::display_path(&entry.destination_path),
                 );
             }
             if report.recoverable_file_count > DOCTOR_SESSION_RECOVERY_HUMAN_SAMPLE_LIMIT {
@@ -6966,8 +6976,8 @@ fn print_doctor_session_recovery_report(
             println!("    Safe recovery:");
             println!(
                 "      1. Back up {} and {} (if present).",
-                crate::utils::display_path(&report.legacy_sessions_path),
-                crate::utils::display_path(&report.primary_sessions_path),
+                codewhale_util::utils::display_path(&report.legacy_sessions_path),
+                codewhale_util::utils::display_path(&report.primary_sessions_path),
             );
             println!(
                 "      2. Close other Codewhale processes, then run `codewhale sessions`; migration adds only missing files, never overwrites primary files, and leaves legacy originals in place."
@@ -7734,7 +7744,7 @@ fn doctor_dsh_integration_lines(config: &Config, workspace: &Path) -> Vec<String
                 crate::integrations::dsh::status_line(&report),
                 format!(
                     "owned files: {} (overlay {})",
-                    crate::utils::display_path(&report.paths_root),
+                    codewhale_util::utils::display_path(&report.paths_root),
                     if report.overlay_present {
                         "present"
                     } else {
@@ -8497,7 +8507,7 @@ fn doctor_route_report(config: &Config) -> serde_json::Value {
         "base_url": {
             "redacted": redacted_base_url,
             "class": doctor_base_url_class(provider, &target.base_url),
-            "fingerprint": crate::utils::redacted_identifier_for_log(&target.base_url),
+            "fingerprint": codewhale_util::utils::redacted_identifier_for_log(&target.base_url),
         },
         "auth": {
             "scheme": doctor_auth_scheme(config),
@@ -15004,7 +15014,7 @@ fn exec_resumed_session_line(session_id: &str) -> String {
 }
 
 fn exec_stream_session_ref(session_id: &str) -> String {
-    crate::utils::redacted_identifier_for_log(session_id)
+    codewhale_util::utils::redacted_identifier_for_log(session_id)
 }
 
 /// Resume hint for the terminal `metadata` receipt. `metadata` carries only

@@ -39,9 +39,9 @@ use serde::Serialize;
 use tar::Builder;
 
 use crate::artifacts::{ARTIFACTS_DIR_NAME, is_valid_session_id};
-use crate::fleet::files::WorkspaceFile;
 use crate::session_manager::{SavedSession, SessionMetadata};
 use codewhale_runtime::session_tree::SessionImportContainer;
+use codewhale_util::files::WorkspaceFile;
 
 /// Layout version of the exported archive. Bump when members change.
 pub const SESSION_ARCHIVE_FORMAT_VERSION: u32 = 1;

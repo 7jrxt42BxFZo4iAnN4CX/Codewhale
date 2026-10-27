@@ -75,7 +75,7 @@ pub fn lines(app: &App, content_width: usize) -> Vec<Line<'static>> {
     let location = format!(
         "{}{}",
         app.tr(MessageId::OnboardTrustLocationPrefix),
-        crate::utils::display_path(&app.workspace)
+        codewhale_util::utils::display_path(&app.workspace)
     );
     for segment in wrap_on_path_separators(&location, content_width) {
         lines.push(Line::from(Span::styled(

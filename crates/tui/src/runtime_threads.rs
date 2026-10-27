@@ -3173,7 +3173,7 @@ impl RuntimeThreadStore {
     /// throttled per directory inside `write_atomic`; unthrottled it cost 22 ms
     /// of directory scan per item, 34 s for one fork's 771. The per-record
     /// checks and the atomic replace are unchanged; see
-    /// [`crate::utils::write_atomic_batch`].
+    /// [`codewhale_util::utils::write_atomic_batch`].
     ///
     /// Ordering stays the caller's: items, then their turns, then the thread
     /// record that makes them reachable.
@@ -3186,7 +3186,7 @@ impl RuntimeThreadStore {
             let payload = serde_json::to_string_pretty(item)?;
             files.push((path, payload.into_bytes()));
         }
-        crate::utils::write_atomic_batch(&files)
+        codewhale_util::utils::write_atomic_batch(&files)
             .with_context(|| format!("Failed to write {} store items", files.len()))?;
         for item in items {
             self.note_item_in_index(&item.turn_id, &item.id);
@@ -3206,7 +3206,7 @@ impl RuntimeThreadStore {
         let digest = hex_digest(Sha256::digest(&bytes));
         let path = self.settled_history_path(&digest)?;
         reject_symlinked_store_file(&path)?;
-        crate::utils::write_atomic(&path, &bytes)
+        codewhale_util::utils::write_atomic(&path, &bytes)
             .with_context(|| format!("Failed to write settled history {}", path.display()))?;
         Ok(json!({ "sha256": digest, "messages": messages.len() }))
     }
@@ -4937,9 +4937,9 @@ impl RuntimeStoreBinding {
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
             Err(err) => return Err(err.into()),
         };
-        match RuntimeProcessOwnerLock::try_lock_exclusive(&file) {
+        match codewhale_util::lock::try_lock_exclusive(&file) {
             Ok(()) => Ok(false),
-            Err(error) if RuntimeProcessOwnerLock::is_contention(&error) => Ok(true),
+            Err(error) if codewhale_util::lock::is_contention(&error) => Ok(true),
             Err(error) => Err(error.into()),
         }
     }
@@ -7289,17 +7289,6 @@ fn unbind_session_threads_in_store(
     Ok(unbound)
 }
 
-/// Try to take an exclusive OS lock on `file` without blocking: `Ok(true)`
-/// when acquired (released when the file closes), `Ok(false)` when another
-/// open file description holds it.
-pub(crate) fn try_lock_file_exclusive(file: &File) -> std::io::Result<bool> {
-    match RuntimeProcessOwnerLock::try_lock_exclusive(file) {
-        Ok(()) => Ok(true),
-        Err(error) if RuntimeProcessOwnerLock::is_contention(&error) => Ok(false),
-        Err(error) => Err(error),
-    }
-}
-
 /// How many times an owner-lock acquire reopens the path after finding the
 /// file it locked was moved out of the store. Each retry needs another
 /// maintenance move to land in the same window, so a few is plenty.
@@ -7379,18 +7368,6 @@ pub(crate) struct RuntimeProcessOwnerLock {
     holder_recorded: bool,
 }
 
-/// Upper bound on the bytes read back from a lock file's holder record.
-const OWNER_LOCK_HOLDER_MAX_BYTES: u64 = 128;
-
-/// The Windows byte range `LockFile` takes: `(offset low, offset high, length
-/// low, length high)`. A Windows byte-range lock is mandatory, so locking the
-/// whole file would stop a contender reading the holder record at the front
-/// (#6573). The range starts after the record and still overlaps the
-/// whole-file range older builds take, so mixed versions exclude each other.
-#[cfg(windows)]
-const OWNER_LOCK_RANGE: (u32, u32, u32, u32) =
-    (OWNER_LOCK_HOLDER_MAX_BYTES as u32, 0, u32::MAX, 0x7FFF_FFFF);
-
 impl RuntimeProcessOwnerLock {
     /// Reuse the Runtime's protected OS lease for task-store ownership. A
     /// missing existing lease is uncertainty, never proof that an owner died.
@@ -7409,9 +7386,9 @@ impl RuntimeProcessOwnerLock {
                     .read(true)
                     .write(true);
             })?;
-            match Self::try_lock_exclusive(&file) {
+            match codewhale_util::lock::try_lock_exclusive(&file) {
                 Ok(()) => {}
-                Err(error) if Self::is_contention(&error) => return Ok(None),
+                Err(error) if codewhale_util::lock::is_contention(&error) => return Ok(None),
                 Err(error) => {
                     return Err(error).context("Failed to acquire execution owner lease");
                 }
@@ -7469,9 +7446,9 @@ impl RuntimeProcessOwnerLock {
             #[cfg(test)]
             run_owner_lock_test_hook(OwnerLockTestPoint::LockFileOpened);
             loop {
-                match Self::try_lock_exclusive(&file) {
+                match codewhale_util::lock::try_lock_exclusive(&file) {
                     Ok(()) => break,
-                    Err(error) if Self::is_contention(&error) => {
+                    Err(error) if codewhale_util::lock::is_contention(&error) => {
                         if Instant::now() >= deadline {
                             return Err(Self::held_error());
                         }
@@ -7526,7 +7503,7 @@ impl RuntimeProcessOwnerLock {
         })
         .ok()?;
         let mut text = String::new();
-        file.take(OWNER_LOCK_HOLDER_MAX_BYTES)
+        file.take(codewhale_util::lock::OWNER_LOCK_HOLDER_MAX_BYTES)
             .read_to_string(&mut text)
             .ok()?;
         let mut pid = None;
@@ -7554,49 +7531,6 @@ impl RuntimeProcessOwnerLock {
         )
         .into()
     }
-
-    fn is_contention(error: &std::io::Error) -> bool {
-        error.kind() == std::io::ErrorKind::WouldBlock
-            || matches!(error.raw_os_error(), Some(32 | 33))
-    }
-
-    fn try_lock_exclusive(file: &File) -> std::io::Result<()> {
-        #[cfg(unix)]
-        {
-            use std::os::fd::AsRawFd as _;
-            // SAFETY: `file` owns a valid descriptor and is retained by this
-            // guard for the entire RuntimeThreadManager lifetime.
-            if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::io::AsRawHandle as _;
-            use windows_sys::Win32::Storage::FileSystem::LockFile;
-            let (offset_low, offset_high, length_low, length_high) = OWNER_LOCK_RANGE;
-            // SAFETY: `file` owns a valid handle retained by this guard.
-            if unsafe {
-                LockFile(
-                    file.as_raw_handle() as _,
-                    offset_low,
-                    offset_high,
-                    length_low,
-                    length_high,
-                )
-            } == 0
-            {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        }
-        #[cfg(not(any(unix, windows)))]
-        {
-            let _ = file;
-            Ok(())
-        }
-    }
 }
 
 impl Drop for RuntimeProcessOwnerLock {
@@ -7607,30 +7541,7 @@ impl Drop for RuntimeProcessOwnerLock {
         }
         // close() also releases, but unlocking first lets a same-process
         // reopen proceed without racing the previous fd's teardown (#5735).
-        #[cfg(unix)]
-        {
-            use std::os::fd::AsRawFd as _;
-            // SAFETY: Drop runs only while `_file` still owns this descriptor.
-            unsafe {
-                libc::flock(self._file.as_raw_fd(), libc::LOCK_UN);
-            }
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::io::AsRawHandle as _;
-            use windows_sys::Win32::Storage::FileSystem::UnlockFile;
-            let (offset_low, offset_high, length_low, length_high) = OWNER_LOCK_RANGE;
-            // SAFETY: Drop runs only while `_file` still owns this handle.
-            unsafe {
-                UnlockFile(
-                    self._file.as_raw_handle() as _,
-                    offset_low,
-                    offset_high,
-                    length_low,
-                    length_high,
-                );
-            }
-        }
+        codewhale_util::lock::unlock(&self._file);
     }
 }
 
@@ -14292,8 +14203,11 @@ impl RuntimeThreadManager {
         for turn_seed in turns {
             let turn_at = next_seed_stamp();
             let turn_id = runtime_record_id("turn");
-            let summary =
-                crate::utils::truncate_with_ellipsis(&turn_seed.user_text, SUMMARY_LIMIT, "...");
+            let summary = codewhale_util::utils::truncate_with_ellipsis(
+                &turn_seed.user_text,
+                SUMMARY_LIMIT,
+                "...",
+            );
             let mut item_ids = Vec::new();
 
             // Save user message item.
@@ -14329,7 +14243,11 @@ impl RuntimeThreadManager {
                 match seed_item {
                     SeedItem::Text(text) => {
                         let asst_summary = if text.len() > SUMMARY_LIMIT {
-                            crate::utils::truncate_with_ellipsis(text, SUMMARY_LIMIT, "...")
+                            codewhale_util::utils::truncate_with_ellipsis(
+                                text,
+                                SUMMARY_LIMIT,
+                                "...",
+                            )
                         } else {
                             text.clone()
                         };
@@ -14350,7 +14268,11 @@ impl RuntimeThreadManager {
                     }
                     SeedItem::Thinking(thinking) => {
                         let thinking_summary = if thinking.len() > SUMMARY_LIMIT {
-                            crate::utils::truncate_with_ellipsis(thinking, SUMMARY_LIMIT, "...")
+                            codewhale_util::utils::truncate_with_ellipsis(
+                                thinking,
+                                SUMMARY_LIMIT,
+                                "...",
+                            )
                         } else {
                             thinking.clone()
                         };
@@ -14382,7 +14304,7 @@ impl RuntimeThreadManager {
                         let tool_summary = format!("{name}({})", {
                             let s = &input_str;
                             if s.len() > 80 {
-                                crate::utils::truncate_with_ellipsis(s, 80, "...")
+                                codewhale_util::utils::truncate_with_ellipsis(s, 80, "...")
                             } else {
                                 s.clone()
                             }
@@ -14426,7 +14348,11 @@ impl RuntimeThreadManager {
                         content_blocks,
                     } => {
                         let result_summary = if content.len() > SUMMARY_LIMIT {
-                            crate::utils::truncate_with_ellipsis(content, SUMMARY_LIMIT, "...")
+                            codewhale_util::utils::truncate_with_ellipsis(
+                                content,
+                                SUMMARY_LIMIT,
+                                "...",
+                            )
                         } else {
                             content.clone()
                         };
@@ -21911,7 +21837,7 @@ fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     }
     reject_symlinked_store_file(path)?;
     let payload = serde_json::to_string_pretty(value)?;
-    crate::utils::write_atomic(path, payload.as_bytes())
+    codewhale_util::utils::write_atomic(path, payload.as_bytes())
         .with_context(|| format!("Failed to write {}", path.display()))
 }
 

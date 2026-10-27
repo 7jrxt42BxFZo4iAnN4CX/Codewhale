@@ -592,7 +592,7 @@ impl SkillRegistry {
         let mut registry = Self::default();
         let mut watched = WatchedPaths::default();
         if let Some(workspace) = confine_to
-            && let Err(error) = crate::fleet::files::reject_linked_path(workspace, dir)
+            && let Err(error) = codewhale_util::files::reject_linked_path(workspace, dir)
         {
             registry.push_warning(format!(
                 "{error}: workspace skills must stay inside the workspace."
@@ -712,7 +712,7 @@ impl SkillRegistry {
                     } else {
                         fs::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf())
                     };
-                    crate::fs_confined::read_to_string(&root, &skill_path)
+                    codewhale_util::fs_confined::read_to_string(&root, &skill_path)
                 }
                 None => match fs::metadata(&skill_path) {
                     Ok(meta) if !meta.is_file() => Err(std::io::Error::new(

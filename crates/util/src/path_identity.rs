@@ -10,30 +10,30 @@ use sha2::Digest;
 /// predicate shared by discovery, manifest validation, staging, and ACL
 /// hardening so no surface silently follows a broader class than another.
 #[cfg(windows)]
-pub(crate) fn metadata_is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
+pub fn metadata_is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
     use std::os::windows::fs::MetadataExt as _;
 
     metadata.file_type().is_symlink() || metadata.file_attributes() & 0x0000_0400 != 0
 }
 
 #[cfg(not(windows))]
-pub(crate) fn metadata_is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
+pub fn metadata_is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
     metadata.file_type().is_symlink()
 }
 
 #[cfg(windows)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct WindowsFileIdentity {
-    pub(crate) volume: u32,
-    pub(crate) index: u64,
-    pub(crate) links: u32,
-    pub(crate) attributes: u32,
+pub struct WindowsFileIdentity {
+    pub volume: u32,
+    pub index: u64,
+    pub links: u32,
+    pub attributes: u32,
 }
 
 /// Query stable handle-relative Windows identity without relying on Rust's
 /// still-unstable `windows_by_handle` metadata extensions.
 #[cfg(windows)]
-pub(crate) fn windows_file_identity(file: &std::fs::File) -> std::io::Result<WindowsFileIdentity> {
+pub fn windows_file_identity(file: &std::fs::File) -> std::io::Result<WindowsFileIdentity> {
     use std::os::windows::io::AsRawHandle as _;
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::Storage::FileSystem::{
@@ -60,7 +60,7 @@ pub(crate) fn windows_file_identity(file: &std::fs::File) -> std::io::Result<Win
 /// paths can therefore have the same `to_string_lossy()` representation. The
 /// framing below also prevents a future platform/domain change from silently
 /// reusing an existing trust receipt.
-pub(crate) fn hash_os_path(hasher: &mut impl Digest, domain: &'static [u8], path: &Path) {
+pub fn hash_os_path(hasher: &mut impl Digest, domain: &'static [u8], path: &Path) {
     hasher.update(b"codewhale-os-path-v1\0");
     hasher.update((domain.len() as u64).to_le_bytes());
     hasher.update(domain);

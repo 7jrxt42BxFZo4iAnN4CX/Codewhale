@@ -110,6 +110,7 @@ codewhale-runtime = { path = "../runtime", version = "0.10.2" }
 codewhale-sandbox = { path = "../sandbox", version = "0.10.2" }
 codewhale-secrets = { path = "../secrets", version = "0.10.2" }
 codewhale-telemetry = { path = "../telemetry", version = "0.10.2" }
+codewhale-util = { path = "../util", version = "0.10.2" }
 codewhale-tools = { path = "../tools", version = "0.10.2" }
 codewhale-workflow = { path = "../workflow", version = "0.10.2" }
 codewhale-workflow-js = { path = "../workflow-js", version = "0.10.2" }
@@ -214,6 +215,7 @@ codewhale-runtime = { path = "../runtime", version = "0.10.2", features = [
     "test-thread-scoped-state",
 ] }
 codewhale-sandbox = { path = "../sandbox", version = "0.10.2", features = ["test-support"] }
+codewhale-util = { path = "../util", version = "0.10.2", features = ["test-support"] }
 codewhale-models = { path = "../models", version = "0.10.2", features = [
     "test-support",
 ] }

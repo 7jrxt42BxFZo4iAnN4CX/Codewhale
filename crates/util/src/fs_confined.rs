@@ -9,7 +9,7 @@ use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::Path;
 
-use crate::fleet::files::WorkspaceFile;
+use crate::files::WorkspaceFile;
 
 fn target(root: &Path, path: &Path, create: bool) -> io::Result<WorkspaceFile> {
     let relative = path.strip_prefix(root).map_err(|_| {
@@ -21,7 +21,7 @@ fn target(root: &Path, path: &Path, create: bool) -> io::Result<WorkspaceFile> {
     WorkspaceFile::open(root, relative, create)
 }
 
-pub(crate) fn open_read(root: &Path, path: &Path) -> io::Result<File> {
+pub fn open_read(root: &Path, path: &Path) -> io::Result<File> {
     open_regular(root, path, false)
 }
 
@@ -29,7 +29,7 @@ pub(crate) fn open_read(root: &Path, path: &Path) -> io::Result<File> {
 /// a running worker's log. Windows denies those writers to [`open_read`] (it
 /// is the protected reader), so this takes the sharing reader; the links and
 /// regular-file policy is the same.
-pub(crate) fn open_read_shared(root: &Path, path: &Path) -> io::Result<File> {
+pub fn open_read_shared(root: &Path, path: &Path) -> io::Result<File> {
     open_regular(root, path, true)
 }
 
@@ -57,7 +57,7 @@ fn open_regular(root: &Path, path: &Path, shared: bool) -> io::Result<File> {
     }
 }
 
-pub(crate) fn read_to_string(root: &Path, path: &Path) -> io::Result<String> {
+pub fn read_to_string(root: &Path, path: &Path) -> io::Result<String> {
     let mut contents = String::new();
     open_read(root, path)?.read_to_string(&mut contents)?;
     Ok(contents)
@@ -65,7 +65,7 @@ pub(crate) fn read_to_string(root: &Path, path: &Path) -> io::Result<String> {
 
 /// Operator-owned global instructions may intentionally share a linked file.
 /// This is not a workspace reader: it resolves links without a containment root.
-pub(crate) fn open_user_read(path: &Path) -> io::Result<File> {
+pub fn open_user_read(path: &Path) -> io::Result<File> {
     let resolved = fs::canonicalize(path)?;
     let mut options = fs::OpenOptions::new();
     options.read(true);
@@ -81,7 +81,7 @@ pub(crate) fn open_user_read(path: &Path) -> io::Result<File> {
     }
     let file = options.open(resolved)?;
     let metadata = file.metadata()?;
-    if !metadata.is_file() || crate::plugins::metadata_is_link_or_reparse(&metadata) {
+    if !metadata.is_file() || crate::path_identity::metadata_is_link_or_reparse(&metadata) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "Path is not a regular file",
@@ -90,11 +90,11 @@ pub(crate) fn open_user_read(path: &Path) -> io::Result<File> {
     Ok(file)
 }
 
-pub(crate) fn open_append(root: &Path, path: &Path) -> io::Result<File> {
+pub fn open_append(root: &Path, path: &Path) -> io::Result<File> {
     target(root, path, true)?.open_write(true)
 }
 
-pub(crate) fn write(root: &Path, path: &Path, contents: &[u8]) -> io::Result<()> {
+pub fn write(root: &Path, path: &Path, contents: &[u8]) -> io::Result<()> {
     let mut file = target(root, path, true)?.open_write(false)?;
     // Validate the opened file before truncating it.
     file.set_len(0)?;

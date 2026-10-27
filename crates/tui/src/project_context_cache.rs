@@ -136,8 +136,8 @@ const FINGERPRINT_MAX_READ_BYTES: u64 = 8 * 1024 * 1024;
 
 fn file_fingerprint(path: &Path, read_root: Option<&Path>) -> Option<String> {
     let file = match read_root.map_or_else(
-        || crate::fs_confined::open_user_read(path),
-        |root| crate::fs_confined::open_read(root, path),
+        || codewhale_util::fs_confined::open_user_read(path),
+        |root| codewhale_util::fs_confined::open_read(root, path),
     ) {
         Ok(file) => file,
         Err(error) => return Some(format!("unreadable:{error}")),

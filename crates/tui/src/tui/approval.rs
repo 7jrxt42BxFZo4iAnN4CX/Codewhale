@@ -337,7 +337,8 @@ impl ApprovalRequest {
             .into_iter()
             .map(|mut detail| {
                 if matches!(detail.label.as_str(), "File" | "Path" | "Dir") {
-                    detail.value = crate::utils::workspace_relative(&detail.value, &self.workspace);
+                    detail.value =
+                        codewhale_util::utils::workspace_relative(&detail.value, &self.workspace);
                 }
                 detail.label = localize_detail_label(&detail.label, locale).to_string();
                 if detail.is_preview

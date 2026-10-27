@@ -1695,7 +1695,7 @@ pub(super) fn exploring_label(
     let path = || {
         obj.and_then(|o| o.get("path"))
             .and_then(|v| v.as_str())
-            .map(|path| crate::utils::workspace_relative(path, workspace))
+            .map(|path| codewhale_util::utils::workspace_relative(path, workspace))
     };
     match name {
         "read_file" => path().map_or(fallback, |path| format!("Reading {path}")),

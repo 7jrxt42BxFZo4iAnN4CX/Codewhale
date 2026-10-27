@@ -2265,7 +2265,7 @@ mod owner_origin_tests {
             let mut held = manager.write().await;
             for lexical in [&original, &selected] {
                 let (canonical, file) =
-                    crate::runtime_api::open_workspace_directory(lexical).unwrap();
+                    codewhale_util::workspace_dir::open_workspace_directory(lexical).unwrap();
                 held.admit_coordination_workspace(lexical.clone(), canonical, Arc::new(file))
                     .unwrap();
             }

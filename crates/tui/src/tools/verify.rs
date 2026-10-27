@@ -47,9 +47,9 @@ use crate::client::CodewhaleClient;
 use crate::dependencies::ExternalTool;
 use crate::llm_client::LlmClient;
 use crate::reasoning_preference::ReasoningEffort;
-use crate::utils::truncate_with_ellipsis;
 use codewhale_models::{ContentBlock, Message, MessageRequest, SystemPrompt, Usage};
 use codewhale_runtime::features::Feature;
+use codewhale_util::utils::truncate_with_ellipsis;
 
 use super::spec::{
     ApprovalRequirement, ToolCapability, ToolContext, ToolError, ToolResult, ToolSpec,

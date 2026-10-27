@@ -41,7 +41,10 @@ fn normalize(message: &str, temp: &TempDir) -> String {
             &codewhale_config::quote_os_path(&workspace.join("permissions.toml")),
             "\"<WORKSPACE>/permissions.toml\"",
         );
-        text = text.replace(&crate::utils::display_path(workspace), "<WORKSPACE>");
+        text = text.replace(
+            &codewhale_util::utils::display_path(workspace),
+            "<WORKSPACE>",
+        );
         if let Some(workspace) = workspace.to_str() {
             text = text.replace(workspace, "<WORKSPACE>");
         }

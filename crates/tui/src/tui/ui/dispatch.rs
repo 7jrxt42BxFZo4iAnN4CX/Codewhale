@@ -864,8 +864,8 @@ where
     match outcome {
         Ok(Ok(apply)) => apply,
         Ok(Err(panic)) => {
-            let detail = crate::utils::panic_message(&*panic);
-            crate::utils::record_caught_panic("user-dispatch", &detail);
+            let detail = codewhale_util::utils::panic_message(&*panic);
+            codewhale_util::utils::record_caught_panic("user-dispatch", &detail);
             build_dispatch_error_closure(
                 fallback,
                 recovery,

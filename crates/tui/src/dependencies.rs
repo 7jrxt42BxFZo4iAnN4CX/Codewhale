@@ -98,7 +98,7 @@ const VERSION_PROBE_MAX_OUTPUT: u64 = 16 * 1024;
 
 fn version_probe_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
     let mut cmd = Command::new(program);
-    crate::utils::suppress_console_window(&mut cmd);
+    codewhale_util::utils::suppress_console_window(&mut cmd);
     codewhale_runtime::child_env::apply_to_command(&mut cmd, std::iter::empty::<(&str, &str)>());
     // A presence probe needs no bootstrap code or import paths from the
     // parent. The general child allowlist retains these for normal SDK tools.
@@ -675,7 +675,7 @@ impl HostRuntimeResolution {
 /// `SystemRoot` to load system DLLs.
 fn probe_command(path: &Path) -> Command {
     let mut cmd = Command::new(path);
-    crate::utils::suppress_console_window(&mut cmd);
+    codewhale_util::utils::suppress_console_window(&mut cmd);
     cmd.env_clear();
     #[cfg(windows)]
     if let Some(root) = std::env::var_os("SystemRoot") {
@@ -1060,7 +1060,7 @@ pub trait ExternalTool {
         let spec = Self::resolve()?;
         let (program, fixed_args) = split_interpreter_spec(&spec);
         let mut cmd = tokio::process::Command::new(&program);
-        crate::utils::suppress_tokio_console_window(&mut cmd);
+        codewhale_util::utils::suppress_tokio_console_window(&mut cmd);
         for arg in &fixed_args {
             cmd.arg(arg);
         }
@@ -1072,7 +1072,7 @@ pub trait ExternalTool {
 fn command_for_spec(spec: &str) -> Command {
     let (program, fixed_args) = split_interpreter_spec(spec);
     let mut cmd = Command::new(&program);
-    crate::utils::suppress_console_window(&mut cmd);
+    codewhale_util::utils::suppress_console_window(&mut cmd);
     for arg in &fixed_args {
         cmd.arg(arg);
     }
@@ -1314,7 +1314,7 @@ impl ExternalTool for Git {
     /// credentials. The guards below are applied after the scrub.
     fn command() -> Option<Command> {
         let mut cmd = Command::new(Self::resolve()?);
-        crate::utils::suppress_console_window(&mut cmd);
+        codewhale_util::utils::suppress_console_window(&mut cmd);
         codewhale_runtime::child_env::apply_to_git_command(&mut cmd);
         cmd.env("GIT_OPTIONAL_LOCKS", "0");
         apply_git_noninteractive_env(&mut cmd);

@@ -44,8 +44,8 @@ pub(crate) use self::wire::read_line_capped;
 use self::wire::{
     is_mcp_connection_lost_error, is_mcp_session_rejected_error, is_mcp_stale_session_body,
 };
-use crate::utils::write_atomic;
 use codewhale_net::network_policy::{Decision, NetworkPolicyDecider, host_from_url};
+use codewhale_util::utils::write_atomic;
 
 // === Error diagnostics helpers (#71) ===
 
@@ -96,7 +96,7 @@ fn reject_linked_workspace_state_path(path: &Path) -> Result<()> {
     if codewhale_paths::user_home().is_some_and(|home| home == root) {
         return Ok(());
     }
-    crate::fleet::files::reject_linked_path(root, path)
+    codewhale_util::files::reject_linked_path(root, path)
         .with_context(|| format!("MCP config {} is not safe to write", path.display()))
 }
 
@@ -1133,13 +1133,13 @@ impl ReviewedStdioLaunch {
 
 #[cfg(unix)]
 fn open_reviewed_launch_file(path: &Path) -> Result<fs::File> {
-    crate::plugins::manifest::open_bundle_file(path)
+    codewhale_util::bundle_file::open_bundle_file(path)
         .context("open reviewed launch file without following links")
 }
 
 #[cfg(windows)]
 fn open_reviewed_launch_file(path: &Path) -> Result<fs::File> {
-    crate::plugins::manifest::open_bundle_file(path)
+    codewhale_util::bundle_file::open_bundle_file(path)
         .context("open reviewed launch file without links, hard links, or write/delete sharing")
 }
 

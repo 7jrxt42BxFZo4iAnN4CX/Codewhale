@@ -58,7 +58,6 @@ use crate::tools::subagent::{
 use crate::tools::todo::{SharedTodoList, new_shared_todo_list};
 use crate::tools::user_input::{UserInputRequest, UserInputResponse};
 use crate::tools::{ToolContext, ToolRegistryBuilder};
-use crate::utils::spawn_supervised;
 use crate::working_set::WorkingSet;
 use codewhale_agent_contract::role::FleetRole;
 use codewhale_agent_contract::worker_profile::WorkerRuntimeProfile;
@@ -75,6 +74,7 @@ use codewhale_models::{
 };
 use codewhale_runtime::config::{Config, DEFAULT_MAX_SUBAGENTS};
 use codewhale_runtime::features::{Feature, Features};
+use codewhale_util::utils::spawn_supervised;
 
 #[cfg(test)]
 use super::authority::agent_approval_mode_for_turn;
@@ -2966,7 +2966,7 @@ impl Engine {
         let post_seq = self.turn_counter;
         let post_cap = self.config.snapshots_max_workspace_bytes;
         let post_sid = self.session.id.clone();
-        crate::utils::spawn_blocking_supervised(task, move || {
+        codewhale_util::utils::spawn_blocking_supervised(task, move || {
             post_turn_snapshot(
                 &post_workspace,
                 post_seq,
@@ -3396,7 +3396,7 @@ impl Engine {
             || codewhale_config::persistence::redact_secrets(detail),
             |client| client.redact_model_bound_text(detail),
         );
-        Some(crate::utils::truncate_with_ellipsis(
+        Some(codewhale_util::utils::truncate_with_ellipsis(
             &detail,
             GOAL_CONTINUATION_FAILURE_DETAIL_MAX_BYTES,
             "…",
@@ -7244,8 +7244,8 @@ impl Engine {
         let (mut status, error) = match turn_result {
             Ok(outcome) => outcome,
             Err(panic) => {
-                let detail = crate::utils::panic_message(&*panic);
-                crate::utils::record_caught_panic("engine-event-loop", &detail);
+                let detail = codewhale_util::utils::panic_message(&*panic);
+                codewhale_util::utils::record_caught_panic("engine-event-loop", &detail);
                 (
                     TurnOutcomeStatus::Failed,
                     Some(format!(
@@ -7413,7 +7413,7 @@ impl Engine {
             let advisor_tx = self.tx_event.clone();
             let advisor_turn_id = turn.id.clone();
 
-            crate::utils::spawn_supervised(
+            codewhale_util::utils::spawn_supervised(
                 "advisor-watcher",
                 std::panic::Location::caller(),
                 async move {

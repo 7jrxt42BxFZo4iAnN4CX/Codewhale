@@ -2027,7 +2027,8 @@ impl App {
         // Confined to the workspace: a linked `.codewhale` or `pastes`
         // directory must not send the pasted text somewhere else.
         let file_path = self.workspace.join(&rel_path);
-        let written = crate::fs_confined::write(&self.workspace, &file_path, self.input.as_bytes());
+        let written =
+            codewhale_util::fs_confined::write(&self.workspace, &file_path, self.input.as_bytes());
         if let Err(error) = written {
             let limit = MAX_SUBMITTED_INPUT_CHARS.to_string();
             // The toast row sheds clauses to fit and left only "Not sent", so

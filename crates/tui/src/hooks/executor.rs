@@ -1124,7 +1124,7 @@ fn terminate_tree(process_tree: &ProcessTree, child: &mut Child) {
 #[cfg(windows)]
 fn kill_windows_process_tree(pid: u32) -> std::io::Result<()> {
     let mut command = Command::new("taskkill");
-    crate::utils::suppress_console_window(&mut command);
+    codewhale_util::utils::suppress_console_window(&mut command);
     let pid = pid.to_string();
     let mut child = command
         .args(["/F", "/T", "/PID", pid.as_str()])

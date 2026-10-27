@@ -256,41 +256,13 @@ struct RuntimeWorkspaceScope {
     _drive_lease: Option<crate::workspace_lease::SharedWorkspaceDriveLease>,
 }
 
-pub(crate) fn open_workspace_directory(workspace: &FsPath) -> Result<(PathBuf, std::fs::File)> {
-    let canonical = workspace
-        .canonicalize()
-        .context("workspace is unavailable")?;
-    let mut options = std::fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt as _;
-        options.custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC);
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt as _;
-        options.custom_flags(0x0200_0000 | 0x0020_0000); // BACKUP_SEMANTICS, OPEN_REPARSE_POINT
-    }
-    let directory = options.open(&canonical)?;
-    let metadata = directory.metadata()?;
-    anyhow::ensure!(
-        metadata.is_dir() && !crate::plugins::metadata_is_link_or_reparse(&metadata),
-        "workspace is not an ordinary directory"
-    );
-    anyhow::ensure!(
-        workspace.canonicalize()? == canonical,
-        "selected workspace changed"
-    );
-    Ok((canonical, directory))
-}
-
 impl RuntimeWorkspaceScope {
     fn validate_sync(&self) -> Result<()> {
-        let (canonical, directory) = open_workspace_directory(&self.lexical)?;
+        let (canonical, directory) =
+            codewhale_util::workspace_dir::open_workspace_directory(&self.lexical)?;
         anyhow::ensure!(
             canonical == self.canonical
-                && crate::fleet::files::same_file(&self.directory, &directory)?,
+                && codewhale_util::files::same_file(&self.directory, &directory)?,
             "selected workspace identity changed"
         );
         Ok(())
@@ -394,13 +366,14 @@ impl RuntimeWorkspaceScopes {
     async fn admit(self: &Arc<Self>, lexical: PathBuf) -> Result<Arc<RuntimeWorkspaceScope>> {
         let owner = self.clone();
         codewhale_app_server::daemon_socket::owner_work(move || {
-            let (canonical, directory) = open_workspace_directory(&lexical)?;
+            let (canonical, directory) =
+                codewhale_util::workspace_dir::open_workspace_directory(&lexical)?;
             let directory = Arc::new(directory);
             let mut scopes = owner.scopes.lock();
             if let Some(scope) = scopes.get(&lexical) {
                 anyhow::ensure!(
                     canonical == scope.canonical
-                        && crate::fleet::files::same_file(&scope.directory, &directory)?,
+                        && codewhale_util::files::same_file(&scope.directory, &directory)?,
                     "selected workspace identity changed"
                 );
                 return Ok(scope.clone());

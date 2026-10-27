@@ -31,6 +31,7 @@ members = [
     "crates/telemetry",
     "crates/tools",
     "crates/tui",
+    "crates/util",
     "crates/workflow",
     "crates/workflow-js",
     "tests/portable-session",

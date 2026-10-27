@@ -725,7 +725,7 @@ fn parse_diff(diff_output: &str) -> Vec<ChangedFile> {
 fn untracked_hunk(repo_root: &Path, path: &str) -> Option<Hunk> {
     use std::io::Read as _;
     let full = repo_root.join(path);
-    let file = crate::fs_confined::open_read(repo_root, &full).ok()?;
+    let file = codewhale_util::fs_confined::open_read(repo_root, &full).ok()?;
     if file.metadata().ok()?.len() > MAX_UNTRACKED_BYTES {
         return None;
     }

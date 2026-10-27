@@ -92,8 +92,8 @@ pub(in crate::commands) fn apply_plan(
                     .join("CLAUDE.md");
                 if destination.exists() {
                     manual.push(CommandImportFollowUp::InstructionsKeptExisting {
-                        destination: crate::utils::display_path(&destination).to_string(),
-                        source: crate::utils::display_path(&source).to_string(),
+                        destination: codewhale_util::utils::display_path(&destination).to_string(),
+                        source: codewhale_util::utils::display_path(&source).to_string(),
                     });
                 } else {
                     let copy_source = source.clone();
@@ -146,12 +146,14 @@ pub(in crate::commands) fn apply_plan(
                     };
                     if copied {
                         done.push(CommandImportFollowUp::InstructionsCopied {
-                            destination: crate::utils::display_path(&destination).to_string(),
+                            destination: codewhale_util::utils::display_path(&destination)
+                                .to_string(),
                         });
                     } else {
                         manual.push(CommandImportFollowUp::InstructionsCopyFailed {
-                            source: crate::utils::display_path(&source).to_string(),
-                            destination: crate::utils::display_path(&destination).to_string(),
+                            source: codewhale_util::utils::display_path(&source).to_string(),
+                            destination: codewhale_util::utils::display_path(&destination)
+                                .to_string(),
                         });
                     }
                 }

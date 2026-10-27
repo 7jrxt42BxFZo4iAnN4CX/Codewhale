@@ -35,7 +35,7 @@ use std::sync::{Arc, OnceLock};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::session_manager::{OfflineQueueLease, OfflineQueueState, SavedSession, SessionManager};
-use crate::utils::spawn_supervised;
+use codewhale_util::utils::spawn_supervised;
 
 // ---------------------------------------------------------------------------
 // Request type

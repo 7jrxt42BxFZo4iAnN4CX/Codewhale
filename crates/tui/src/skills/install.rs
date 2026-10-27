@@ -655,7 +655,7 @@ pub async fn fetch_registry(
         .with_context(|| format!("failed to fetch registry {registry_url}"))?
         .error_for_status()
         .with_context(|| format!("registry {registry_url} returned an error status"))?;
-    let body = crate::utils::read_response_body_capped(response, MAX_REGISTRY_BYTES)
+    let body = codewhale_util::utils::read_response_body_capped(response, MAX_REGISTRY_BYTES)
         .await
         .with_context(|| format!("failed to read registry body from {registry_url}"))?;
     let parsed: RegistryDocument = serde_json::from_slice(&body)
@@ -861,7 +861,9 @@ async fn sync_one_skill(
             .map(|s| s.to_string());
 
         let compressed_cap = compressed_download_cap(max_size);
-        let bytes = match crate::utils::read_response_body_capped(resp, compressed_cap).await {
+        let bytes = match codewhale_util::utils::read_response_body_capped(resp, compressed_cap)
+            .await
+        {
             Ok(b) => b,
             Err(err) => {
                 return SkillSyncOutcome::Failed {
@@ -1248,7 +1250,7 @@ async fn download_with_cap(
         bail!("download {url} returned {status}");
     }
     let compressed_cap = compressed_download_cap(max_size);
-    let bytes = crate::utils::read_response_body_capped(resp, compressed_cap)
+    let bytes = codewhale_util::utils::read_response_body_capped(resp, compressed_cap)
         .await
         .with_context(|| {
             format!("failed to read body of {url} (compressed size cap {compressed_cap} bytes)")

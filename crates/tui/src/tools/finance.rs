@@ -46,7 +46,7 @@ impl FinanceEndpoints {
         format!(
             "{}?symbols={}",
             self.quote_base.trim_end_matches('/'),
-            crate::utils::url_encode(symbol)
+            codewhale_util::utils::url_encode(symbol)
         )
     }
 
@@ -54,7 +54,7 @@ impl FinanceEndpoints {
         format!(
             "{}/{}?interval=1d&range=5d",
             self.chart_base.trim_end_matches('/'),
-            crate::utils::url_encode(symbol)
+            codewhale_util::utils::url_encode(symbol)
         )
     }
 }

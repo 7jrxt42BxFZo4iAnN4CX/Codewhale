@@ -25,10 +25,6 @@ mod llm_client;
 #[path = "../../src/skills/package_digest.rs"]
 #[allow(dead_code)]
 mod package_digest;
-/// `skills/install.rs` reads downloads through `crate::utils`; only the
-/// capped body reader is needed, so only that file is included.
-#[path = "../../src/utils/response_body.rs"]
-mod utils;
 // The legacy text tool-call parser lives in codewhale-core now; keep the
 // `crate::tool_parser` path the suites use.
 use codewhale_core::tool_parser;

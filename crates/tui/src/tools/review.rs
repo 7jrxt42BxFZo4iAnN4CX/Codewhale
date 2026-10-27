@@ -12,8 +12,8 @@ use serde_json::{Value, json};
 use crate::client::CodewhaleClient;
 #[cfg(test)]
 use crate::dependencies::ExternalTool;
-use crate::utils::truncate_with_ellipsis;
 use codewhale_models::Usage;
+use codewhale_util::utils::truncate_with_ellipsis;
 
 use super::spec::{
     ApprovalRequirement, ToolCapability, ToolContext, ToolError, ToolResult, ToolSpec,

@@ -374,7 +374,7 @@ impl StartupDefaultsWriter {
         };
         self.lock_queue().push_back(update);
         let writer = self.clone();
-        crate::utils::spawn_blocking_supervised("startup-defaults-persist", move || {
+        codewhale_util::utils::spawn_blocking_supervised("startup-defaults-persist", move || {
             #[cfg(test)]
             let _scope = ticket.enter();
             writer.drain_pending();

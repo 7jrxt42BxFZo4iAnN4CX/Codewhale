@@ -131,7 +131,7 @@ impl BrokerSession {
                 command_process
             },
         );
-        crate::utils::suppress_tokio_console_window(&mut cmd);
+        codewhale_util::utils::suppress_tokio_console_window(&mut cmd);
         cmd.stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())

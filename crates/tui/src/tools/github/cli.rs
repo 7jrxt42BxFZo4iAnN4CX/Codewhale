@@ -199,7 +199,7 @@ pub(super) async fn host_gh(
         crate::dependencies::Gh::tokio_command()
             .ok_or_else(|| ToolError::not_available("gh CLI is unavailable"))?
     };
-    crate::utils::suppress_tokio_console_window(&mut command);
+    codewhale_util::utils::suppress_tokio_console_window(&mut command);
     command
         .args(args)
         .args(["--repo", &target.repo])

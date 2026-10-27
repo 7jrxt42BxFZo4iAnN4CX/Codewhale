@@ -120,12 +120,13 @@ impl CapturedOcr {
             let root = path.ancestors().last().expect("absolute source has a root");
             // Reuse the Fleet-anchored regular-file reader: no final or parent
             // link can redirect the read after the path guards authorize it.
-            let mut source = crate::fs_confined::open_read(root, &path).map_err(|error| {
-                ToolError::execution_failed(format!(
-                    "Failed to capture image {}: {error}",
-                    path.display()
-                ))
-            })?;
+            let mut source =
+                codewhale_util::fs_confined::open_read(root, &path).map_err(|error| {
+                    ToolError::execution_failed(format!(
+                        "Failed to capture image {}: {error}",
+                        path.display()
+                    ))
+                })?;
             let bytes = crate::tools::file::read_contract_source(&mut source, cancel.as_ref())?;
             let captured_sha256 = codewhale_runtime::hashing::sha256_hex(&bytes);
             // Reuse the fetched PDF staging contract. The temporary is private
@@ -255,7 +256,7 @@ impl OcrNativeStep {
             if tokio::time::Instant::now()>=deadline {return Err(ToolError::Timeout {seconds:OCR_TIMEOUT.as_secs()});}
             let binary=self.fallback.as_ref().ok_or_else(||ToolError::execution_failed("OCR fallback was not admitted"))?;
             let mut command=tokio::process::Command::new(binary);
-            crate::utils::suppress_tokio_console_window(&mut command);
+            codewhale_util::utils::suppress_tokio_console_window(&mut command);
             command.arg(&self.input.path).arg("-");
             codewhale_runtime::child_env::apply_to_tokio_command(&mut command,std::iter::empty::<(&str,&str)>());
             let stop=async { tokio::select! {biased;()=wait_cancel(cancel)=>{},()=tokio::time::sleep_until(deadline)=>{},} };

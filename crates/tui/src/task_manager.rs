@@ -27,8 +27,8 @@ use crate::runtime_threads::{
     RuntimeThreadManager, RuntimeThreadManagerConfig, RuntimeTurnStatus,
     SharedRuntimeThreadManager, StartTurnRequest,
 };
-use crate::utils::spawn_supervised;
 use codewhale_runtime::config::Config;
+use codewhale_util::utils::spawn_supervised;
 
 const DEFAULT_WORKERS: usize = 2;
 const MAX_WORKERS: usize = 8;
@@ -3930,7 +3930,7 @@ fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<()> {
             .with_context(|| format!("Failed to create directory {}", parent.display()))?;
     }
     let payload = serde_json::to_string_pretty(value)?;
-    crate::utils::write_atomic(path, payload.as_bytes())
+    codewhale_util::utils::write_atomic(path, payload.as_bytes())
         .with_context(|| format!("Failed to write {}", path.display()))
 }
 

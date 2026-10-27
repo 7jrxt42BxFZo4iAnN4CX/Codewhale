@@ -12,6 +12,7 @@ boundary has held since v0.9.1):
 - Other workspace crates are being split out incrementally, but they are not yet the sole runtime source of truth.
 - `crates/net` owns network policy/auditing, destination and DNS guards, proxy resolution, and Claude import planning. Host tool context, transport grants, redirects and response limits stay with their callers. Pure extension-host settings belong to `crates/config`.
 - `crates/notify` owns shared notification payload redaction, attention/category gates, sound policy, and local audio dispatch. TUI retains terminal sinks and native hosts retain banner submission.
+- `crates/util` owns shared string/path/atomic-write helpers, confined workspace file access, link and file-identity checks, bundle file readers, the `.git` name rule and the exclusive file lock.
 
 <img src="assets/architecture.webp" alt="Codewhale architecture: clients reach the one turn loop, Engine::run_turn, through the CLI or the Runtime API; the engine uses crates/core to build requests, runs tools under approval and sandbox policy, routes to any provider through crates/config, and logs everything model-visible to the session store." width="1000">
 

@@ -121,7 +121,7 @@ pub fn pinned_anchors_text(workspace: Option<&std::path::Path>) -> Option<String
     } else {
         workspace.join(".deepseek").join("anchors.md")
     };
-    crate::fs_confined::read_to_string(workspace, &path)
+    codewhale_util::fs_confined::read_to_string(workspace, &path)
         .ok()
         .map(|contents| contents.trim().to_string())
         .filter(|contents| !contents.is_empty())

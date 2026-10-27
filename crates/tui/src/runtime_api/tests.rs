@@ -7031,7 +7031,7 @@ async fn session_export_retry_after_a_crash_binds_the_document_it_wrote() -> Res
         .read(true)
         .write(true)
         .open(&lease_path)?;
-    assert!(crate::runtime_threads::try_lock_file_exclusive(&lease)?);
+    assert!(codewhale_util::lock::try_lock_file_exclusive(&lease)?);
     let refused = client
         .delete(format!("http://{addr}/v1/sessions/{session_id}"))
         .send()
@@ -20320,8 +20320,8 @@ fn workspace_file_concurrent_creates_preserve_the_first_publication() -> Result<
     // Admit both creators while the destination is absent, before either
     // publishes. This makes the stale-create race independent of scheduling.
     let files = [
-        crate::fleet::files::WorkspaceFile::open_shared(tmp.path(), relative, true)?,
-        crate::fleet::files::WorkspaceFile::open_shared(tmp.path(), relative, true)?,
+        codewhale_util::files::WorkspaceFile::open_shared(tmp.path(), relative, true)?,
+        codewhale_util::files::WorkspaceFile::open_shared(tmp.path(), relative, true)?,
     ];
     assert!(!tmp.path().join(relative).exists());
     let payloads = [

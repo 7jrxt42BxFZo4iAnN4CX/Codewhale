@@ -1504,7 +1504,7 @@ async fn canonical_history_import_runs_real_engine_retains_all_branches_and_refu
     ));
     let mut operation: Value = serde_json::from_slice(&fs::read(&operation_path)?)?;
     operation["committed"] = json!(false);
-    crate::utils::write_atomic(&operation_path, &serde_json::to_vec(&operation)?)?;
+    codewhale_util::utils::write_atomic(&operation_path, &serde_json::to_vec(&operation)?)?;
     let post_seed_retry: CanonicalThreadReceipt = client
         .post(&endpoint)
         .json(&request)
@@ -2055,7 +2055,7 @@ async fn canonical_fork_keeps_all_branches_selects_exact_leaf_and_recovers_after
     );
     // Model interruption after complete publication but before the intent commit.
     prepared["committed"] = json!(false);
-    crate::utils::write_atomic(&operation_path, &serde_json::to_vec(&prepared)?)?;
+    codewhale_util::utils::write_atomic(&operation_path, &serde_json::to_vec(&prepared)?)?;
     let association = match fixture.lookup(&request).await? {
         CanonicalThreadOperationStatus::Pending { association, .. } => association,
         other => anyhow::bail!("expected prepared Fork intent: {other:?}"),
@@ -2296,7 +2296,7 @@ async fn canonical_resume_offered_suffix_settles_once_and_full_graph_witness_ref
         "the retained recovery witness must bind the exact count and offered leaf published to disk"
     );
     operation["committed"] = json!(false);
-    crate::utils::write_atomic(&operation_path, &serde_json::to_vec(&operation)?)?;
+    codewhale_util::utils::write_atomic(&operation_path, &serde_json::to_vec(&operation)?)?;
     let association = match fixture.lookup(&request).await? {
         CanonicalThreadOperationStatus::Pending { association, .. } => association,
         other => anyhow::bail!("expected published pending intent: {other:?}"),
@@ -2412,7 +2412,7 @@ async fn canonical_resume_offered_suffix_settles_once_and_full_graph_witness_ref
         anyhow::bail!("inactive fixture text missing");
     };
     *text = "tampered inactive branch".into();
-    crate::utils::write_atomic(&file, &serde_json::to_vec(&tampered)?)?;
+    codewhale_util::utils::write_atomic(&file, &serde_json::to_vec(&tampered)?)?;
     let lookup = codewhale_protocol::CanonicalThreadOperationLookup {
         version: 1,
         operation_key: request.operation_key,
@@ -2594,7 +2594,7 @@ async fn canonical_fork_copies_local_goal_under_source_witness_and_never_replays
         .sessions_dir
         .join(".goals")
         .join(format!("{}.json", original.session_id));
-    crate::utils::write_atomic(&goal_path, b"{corrupt-local-goal")?;
+    codewhale_util::utils::write_atomic(&goal_path, b"{corrupt-local-goal")?;
     assert_eq!(
         fixture
             .client
@@ -2755,7 +2755,7 @@ async fn native_fork_copy_refusal_never_publishes_a_shared_session_thread() -> R
         .sessions_dir
         .join(format!("{}.json", original.session_id));
     let original_bytes = fs::read(&path)?;
-    crate::utils::write_atomic(&path, b"{invalid-complete-source")?;
+    codewhale_util::utils::write_atomic(&path, b"{invalid-complete-source")?;
     let refused = fixture
         .client
         .post(fixture.url(&format!("/v1/threads/{}/fork", original.runtime_thread_id)))
@@ -2779,7 +2779,7 @@ async fn native_fork_copy_refusal_never_publishes_a_shared_session_thread() -> R
         Some(original.session_id.clone())
     );
     assert_eq!(fs::read(&path)?, b"{invalid-complete-source");
-    crate::utils::write_atomic(&path, &original_bytes)?;
+    codewhale_util::utils::write_atomic(&path, &original_bytes)?;
     assert!(fixture.model.captured_requests().is_empty());
     Ok(())
 }

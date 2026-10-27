@@ -972,7 +972,7 @@ impl SnapshotRepo {
         if !is_safe_relative_path(rel)
             || rel
                 .components()
-                .any(|part| is_git_metadata_name(part.as_os_str()))
+                .any(|part| codewhale_util::git_metadata::is_git_metadata_name(part.as_os_str()))
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -2258,7 +2258,7 @@ fn write_builtin_excludes(git_dir: &Path) -> io::Result<()> {
         return Ok(());
     }
     std::fs::create_dir_all(&info_dir)?;
-    crate::utils::write_atomic(&exclude, BUILTIN_EXCLUDES.as_bytes())
+    codewhale_util::utils::write_atomic(&exclude, BUILTIN_EXCLUDES.as_bytes())
 }
 
 /// Recursively compute the total size of a directory in bytes.
@@ -2678,35 +2678,6 @@ fn is_safe_relative_path(path: &Path) -> bool {
             .all(|component| matches!(component, Component::Normal(_)))
 }
 
-/// Whether one path component names the repository metadata directory as the
-/// filesystem resolves it, not just as spelled: `.git` in any letter case
-/// (macOS and Windows default to case-insensitive names) and, on Windows,
-/// with the trailing dots/spaces or `:stream` suffix it drops and the `GIT~N`
-/// short-name alias. The one `.git` rule for workspace file routes, file
-/// restore, displayed workspace paths, the write carve-out and sub-agent
-/// deliverables.
-pub fn is_git_metadata_name(name: &std::ffi::OsStr) -> bool {
-    git_metadata_name(&name.to_string_lossy(), cfg!(windows))
-}
-
-fn git_metadata_name(name: &str, windows: bool) -> bool {
-    let name = if windows {
-        name.split(':')
-            .next()
-            .unwrap_or_default()
-            .trim_end_matches(['.', ' '])
-    } else {
-        name
-    };
-    name.eq_ignore_ascii_case(".git")
-        || (windows
-            && name.len() > 4
-            && name
-                .get(..4)
-                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("git~"))
-            && name[4..].bytes().all(|byte| byte.is_ascii_digit()))
-}
-
 /// Normalize a caller-supplied path into a safe workspace-relative path.
 ///
 /// Accepts either a workspace-relative path or an absolute path inside
@@ -2753,7 +2724,10 @@ mod tests {
     fn git_metadata_name_covers_case_and_windows_aliases() {
         for windows in [false, true] {
             for name in [".git", ".GIT", ".Git", ".gIt"] {
-                assert!(git_metadata_name(name, windows), "{name} windows={windows}");
+                assert!(
+                    codewhale_util::git_metadata::git_metadata_name(name, windows),
+                    "{name} windows={windows}"
+                );
             }
             for name in [
                 ".github",
@@ -2765,7 +2739,7 @@ mod tests {
                 "GIT~1a",
             ] {
                 assert!(
-                    !git_metadata_name(name, windows),
+                    !codewhale_util::git_metadata::git_metadata_name(name, windows),
                     "{name} windows={windows}"
                 );
             }
@@ -2782,8 +2756,14 @@ mod tests {
             "GIT~1",
             "git~12",
         ] {
-            assert!(git_metadata_name(name, true), "{name}");
-            assert!(!git_metadata_name(name, false), "{name}");
+            assert!(
+                codewhale_util::git_metadata::git_metadata_name(name, true),
+                "{name}"
+            );
+            assert!(
+                !codewhale_util::git_metadata::git_metadata_name(name, false),
+                "{name}"
+            );
         }
     }
 

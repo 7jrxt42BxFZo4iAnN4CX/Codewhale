@@ -16,16 +16,16 @@ mod response_body;
 pub use response_body::read_response_body_capped;
 
 /// A writer that counts bytes written without storing them.
-pub(crate) struct CountingWriter {
+pub struct CountingWriter {
     count: usize,
 }
 
 impl CountingWriter {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self { count: 0 }
     }
 
-    pub(crate) fn count(&self) -> usize {
+    pub fn count(&self) -> usize {
         self.count
     }
 }
@@ -48,7 +48,7 @@ const LOG_FINGERPRINT_PRIME: u64 = 0x0000_0100_0000_01b3;
 /// `1M`, `1.05M`, `262K`, `500`. Shared by the model picker and the fleet
 /// capability badges. Not the same scale as `agent_roster::format_tokens`
 /// (`1.2k`), which labels usage rather than window size.
-pub(crate) fn format_context_window(tokens: u64) -> String {
+pub fn format_context_window(tokens: u64) -> String {
     if tokens >= 1_000_000 {
         if tokens.is_multiple_of(1_000_000) {
             format!("{}M", tokens / 1_000_000)
@@ -87,7 +87,7 @@ pub fn redacted_identifier_for_log(identifier: &str) -> String {
 }
 
 #[cfg(windows)]
-pub(crate) fn suppress_console_window(cmd: &mut Command) {
+pub fn suppress_console_window(cmd: &mut Command) {
     use std::os::windows::process::CommandExt;
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -95,16 +95,16 @@ pub(crate) fn suppress_console_window(cmd: &mut Command) {
 }
 
 #[cfg(not(windows))]
-pub(crate) fn suppress_console_window(_cmd: &mut Command) {}
+pub fn suppress_console_window(_cmd: &mut Command) {}
 
 #[cfg(windows)]
-pub(crate) fn suppress_tokio_console_window(cmd: &mut tokio::process::Command) {
+pub fn suppress_tokio_console_window(cmd: &mut tokio::process::Command) {
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     cmd.creation_flags(CREATE_NO_WINDOW);
 }
 
 #[cfg(not(windows))]
-pub(crate) fn suppress_tokio_console_window(_cmd: &mut tokio::process::Command) {}
+pub fn suppress_tokio_console_window(_cmd: &mut tokio::process::Command) {}
 
 // === Project Mapping Helpers ===
 
@@ -387,7 +387,7 @@ fn hard_link_count(_path: &Path) -> Option<u64> {
 /// particular is a real answer for no-clobber publication — Fleet artifact
 /// immutability depends on receiving it — so it is returned unchanged.
 #[cfg(windows)]
-pub(crate) fn windows_publish_retry_delay(
+pub fn windows_publish_retry_delay(
     error: &std::io::Error,
     attempt: usize,
 ) -> Option<std::time::Duration> {
@@ -624,7 +624,7 @@ fn write_atomic_scoped(
         let result = (|| {
             std::io::Write::write_all(&mut tmp, contents)?;
             tmp.as_file().sync_all()?;
-            crate::fleet::files::rename_windows_opened(tmp.as_file(), &target_name, true)
+            crate::files::rename_windows_opened(tmp.as_file(), &target_name, true)
         })();
         match result {
             // The temp name is vacant now; never unlink a later entry.
@@ -890,11 +890,11 @@ where
     F: FnOnce() + Send + 'static,
 {
     let location = std::panic::Location::caller();
-    #[cfg(test)]
-    let env_ticket = crate::test_support::env_scope_ticket();
+    #[cfg(any(test, feature = "test-support"))]
+    let env_ticket = codewhale_runtime::test_support::env_scope_ticket();
     tokio::task::spawn_blocking(move || {
-        #[cfg(test)]
-        let _membership = crate::test_support::join_env_scope(env_ticket);
+        #[cfg(any(test, feature = "test-support"))]
+        let _membership = codewhale_runtime::test_support::join_env_scope(env_ticket);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
         if let Err(panic_info) = result {
             let msg = panic_message(&*panic_info);
@@ -1126,7 +1126,7 @@ mod atomic_write_tests {
     /// file is still reclaimed, and none of ours is left behind.
     #[test]
     fn write_atomic_batch_writes_every_file_and_sweeps_the_directory() {
-        let _lock = crate::test_support::lock_test_env();
+        let _lock = codewhale_runtime::test_support::lock_test_env();
         let tmp = tempfile::TempDir::new().expect("tempdir");
         let (product, _guards) = seal_product_home(tmp.path());
 
@@ -1209,7 +1209,7 @@ mod atomic_write_tests {
         // read-only sharing, so MoveFileExW could not add an entry there
         // (hosted os error 32 writing mcp.json).
         let workspace = tempdir().expect("tempdir");
-        let _pins = crate::fleet::files::WorkspaceFile::open(
+        let _pins = crate::files::WorkspaceFile::open(
             workspace.path(),
             Path::new(".codewhale/fleet.jsonl"),
             true,
@@ -1613,8 +1613,11 @@ mod atomic_write_tests {
     /// and never inspects the developer's real `~/.codewhale`.
     fn seal_product_home(
         tmp: &std::path::Path,
-    ) -> (std::path::PathBuf, Vec<crate::test_support::EnvVarGuard>) {
-        use crate::test_support::EnvVarGuard;
+    ) -> (
+        std::path::PathBuf,
+        Vec<codewhale_runtime::test_support::EnvVarGuard>,
+    ) {
+        use codewhale_runtime::test_support::EnvVarGuard;
 
         let product = tmp.join("product-home");
         std::fs::create_dir_all(&product).expect("create product home");
@@ -1631,7 +1634,7 @@ mod atomic_write_tests {
 
     #[test]
     fn a_private_atomic_write_in_a_product_dir_collects_strays() {
-        let _lock = crate::test_support::lock_test_env();
+        let _lock = codewhale_runtime::test_support::lock_test_env();
         let tmp = tempfile::TempDir::new().expect("tempdir");
         let (product, _guards) = seal_product_home(tmp.path());
 
@@ -1653,7 +1656,7 @@ mod atomic_write_tests {
 
     #[test]
     fn a_private_atomic_write_to_a_user_chosen_dest_does_not_sweep() {
-        let _lock = crate::test_support::lock_test_env();
+        let _lock = codewhale_runtime::test_support::lock_test_env();
         let tmp = tempfile::TempDir::new().expect("tempdir");
         let (_product, _guards) = seal_product_home(tmp.path());
         let user_dir = tmp.path().join("user-chosen");
@@ -1681,7 +1684,7 @@ mod atomic_write_tests {
 
     #[test]
     fn atomic_write_product_dir_detection_matches_codewhale_home_not_siblings() {
-        let _lock = crate::test_support::lock_test_env();
+        let _lock = codewhale_runtime::test_support::lock_test_env();
         let tmp = tempfile::TempDir::new().expect("tempdir");
         let (product, explicit_guards) = seal_product_home(tmp.path());
         let sessions = product.join("sessions");
@@ -1695,7 +1698,7 @@ mod atomic_write_tests {
         assert!(!super::is_codewhale_owned_state_dir(tmp.path()));
         drop(explicit_guards);
 
-        use crate::test_support::EnvVarGuard;
+        use codewhale_runtime::test_support::EnvVarGuard;
         let _home = EnvVarGuard::set("HOME", tmp.path());
         let _userprofile = EnvVarGuard::set("USERPROFILE", tmp.path());
         let _no_explicit = EnvVarGuard::remove("CODEWHALE_HOME");
@@ -1719,7 +1722,7 @@ mod atomic_write_tests {
     fn symlinked_product_subdir_cannot_sweep_an_external_directory() {
         use std::os::unix::fs::symlink;
 
-        let _lock = crate::test_support::lock_test_env();
+        let _lock = codewhale_runtime::test_support::lock_test_env();
         let tmp = tempfile::TempDir::new().expect("tempdir");
         let (product, _guards) = seal_product_home(tmp.path());
         let external = tmp.path().join("external");
@@ -1759,9 +1762,10 @@ mod spawn_supervised_tests {
     /// the dump on Windows).
     #[tokio::test]
     async fn panicking_task_does_not_propagate_to_parent() {
-        let _lock = crate::test_support::lock_test_env();
+        let _lock = codewhale_runtime::test_support::lock_test_env();
         let tmp = tempfile::tempdir().expect("tempdir");
-        let _profile = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", tmp.path());
+        let _profile =
+            codewhale_runtime::test_support::EnvVarGuard::set("CODEWHALE_HOME", tmp.path());
         let parent_alive = Arc::new(AtomicBool::new(false));
         let parent_alive_clone = parent_alive.clone();
 
@@ -1787,9 +1791,10 @@ mod spawn_supervised_tests {
 
     #[tokio::test]
     async fn panicking_blocking_task_does_not_propagate_to_parent() {
-        let _lock = crate::test_support::lock_test_env();
+        let _lock = codewhale_runtime::test_support::lock_test_env();
         let tmp = tempfile::tempdir().expect("tempdir");
-        let _profile = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", tmp.path());
+        let _profile =
+            codewhale_runtime::test_support::EnvVarGuard::set("CODEWHALE_HOME", tmp.path());
         let parent_alive = Arc::new(AtomicBool::new(false));
         let parent_alive_clone = parent_alive.clone();
 
@@ -1813,9 +1818,10 @@ mod spawn_supervised_tests {
     /// when another supervised task also writes a crash there.
     #[test]
     fn write_panic_dump_writes_named_log() {
-        let _lock = crate::test_support::lock_test_env();
+        let _lock = codewhale_runtime::test_support::lock_test_env();
         let tmp = tempfile::tempdir().expect("tempdir");
-        let _profile = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", tmp.path());
+        let _profile =
+            codewhale_runtime::test_support::EnvVarGuard::set("CODEWHALE_HOME", tmp.path());
         let crash_dir = tmp.path().join("crashes");
         let location = std::panic::Location::caller();
 

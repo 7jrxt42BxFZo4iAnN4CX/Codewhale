@@ -13,7 +13,6 @@ use crate::project_context::find_git_root;
 use crate::tools::goal::{GoalPauseReason, GoalSnapshot};
 use crate::tools::plan::PlanSnapshot;
 use crate::tools::todo::TodoListSnapshot;
-use crate::utils::write_atomic;
 use crate::work_graph::ReasoningEffortTier;
 use chrono::{DateTime, Utc};
 use codewhale_config::ProviderKind;
@@ -22,6 +21,7 @@ use codewhale_core::ContextReference;
 use codewhale_core::{ContextReferenceKind, ContextReferenceSource};
 use codewhale_models::{ContentBlock, Message, SystemPrompt};
 use codewhale_runtime::session_tree::{SessionEntry, SessionImportContainer, SessionJournal};
+use codewhale_util::utils::write_atomic;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, OpenOptions};
@@ -1835,7 +1835,7 @@ impl SessionManager {
         };
         let file = self.live_lease_path(id, true).and_then(|path| {
             let file = open_private_lock_file(&path)?;
-            Ok(crate::runtime_threads::try_lock_file_exclusive(&file)?.then_some(file))
+            Ok(codewhale_util::lock::try_lock_file_exclusive(&file)?.then_some(file))
         });
         match &file {
             Ok(Some(_)) => {}
@@ -1891,7 +1891,7 @@ impl SessionManager {
         // A liveness probe from another process holds this lock for a moment;
         // a few short retries tell that apart from a running owner.
         for attempt in 0..LIVE_LEASE_ATTACH_ATTEMPTS {
-            if crate::runtime_threads::try_lock_file_exclusive(&file).map_err(lease_unavailable)? {
+            if codewhale_util::lock::try_lock_file_exclusive(&file).map_err(lease_unavailable)? {
                 return Ok(SessionLease {
                     id: id.to_string(),
                     file: Some(file),
@@ -1966,7 +1966,7 @@ impl SessionManager {
         // Contention means a live holder; acquiring proves none, and the
         // probe's lock is released when `file` drops here.
         !matches!(
-            crate::runtime_threads::try_lock_file_exclusive(&file),
+            codewhale_util::lock::try_lock_file_exclusive(&file),
             Ok(true)
         )
     }
@@ -1977,7 +1977,7 @@ impl SessionManager {
     pub(crate) fn hold_live_lease_elsewhere(&self, session_id: &str) -> fs::File {
         let path = self.live_lease_path(session_id, true).expect("lease path");
         let lease = open_private_lock_file(&path).expect("open lease");
-        assert!(crate::runtime_threads::try_lock_file_exclusive(&lease).expect("lock lease"));
+        assert!(codewhale_util::lock::try_lock_file_exclusive(&lease).expect("lock lease"));
         lease
     }
 
@@ -2981,7 +2981,7 @@ impl SessionManager {
         let path = journal_archive_path(&self.sessions_dir, session_id)?;
         let dir = self.sessions_dir.join(JOURNAL_ARCHIVE_DIR);
         if let Ok(metadata) = fs::symlink_metadata(&dir)
-            && crate::plugins::metadata_is_link_or_reparse(&metadata)
+            && codewhale_util::path_identity::metadata_is_link_or_reparse(&metadata)
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -3101,7 +3101,9 @@ impl SessionManager {
     fn remove_journal_archive(&self, id: &str) -> io::Result<()> {
         let dir = self.sessions_dir.join(JOURNAL_ARCHIVE_DIR);
         match fs::symlink_metadata(&dir) {
-            Ok(metadata) if crate::plugins::metadata_is_link_or_reparse(&metadata) => {
+            Ok(metadata)
+                if codewhale_util::path_identity::metadata_is_link_or_reparse(&metadata) =>
+            {
                 tracing::warn!(
                     path = %dir.display(),
                     "journal archive directory is a link; its copies were not removed"
@@ -4073,7 +4075,9 @@ impl SessionManager {
         };
         let dir = self.sessions_dir.join(WORK_GRAPH_IMPORT_ARCHIVE_DIR);
         match fs::symlink_metadata(&dir) {
-            Ok(metadata) if crate::plugins::metadata_is_link_or_reparse(&metadata) => {
+            Ok(metadata)
+                if codewhale_util::path_identity::metadata_is_link_or_reparse(&metadata) =>
+            {
                 tracing::warn!(
                     path = %dir.display(),
                     "work-graph import archive is a link; its copies were not removed"
@@ -4197,7 +4201,9 @@ impl SessionManager {
         self.clear_session_boot_owner(id);
         let session_dir = self.sessions_dir.join(id.trim());
         if session_dir.exists() {
-            if crate::plugins::metadata_is_link_or_reparse(&fs::symlink_metadata(&session_dir)?) {
+            if codewhale_util::path_identity::metadata_is_link_or_reparse(&fs::symlink_metadata(
+                &session_dir,
+            )?) {
                 // Preserve remove_dir_all's existing no-follow behavior.
                 fs::remove_dir_all(session_dir)?;
                 return Ok(());

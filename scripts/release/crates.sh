@@ -42,6 +42,7 @@ release_crates=(
   codewhale-notify
   codewhale-app-server
   codewhale-sandbox
+  codewhale-util
   codewhale-tui
   codewhale-cli
 )

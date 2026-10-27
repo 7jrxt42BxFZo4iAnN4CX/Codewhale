@@ -1743,7 +1743,7 @@ impl HostProcess {
         events: Arc<dyn HostEvents>,
     ) -> Result<Arc<Self>, String> {
         let mut command = tokio::process::Command::new(&launch.program);
-        crate::utils::suppress_tokio_console_window(&mut command);
+        codewhale_util::utils::suppress_tokio_console_window(&mut command);
         command
             .args(&launch.args)
             .current_dir(&launch.cwd)

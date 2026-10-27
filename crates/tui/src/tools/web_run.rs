@@ -1131,7 +1131,7 @@ async fn run_image_search(
             .await
             .map_err(ToolError::from)?
     } else {
-        let bytes = crate::utils::read_response_body_capped(seed_resp, HARD_MAX_BYTES)
+        let bytes = codewhale_util::utils::read_response_body_capped(seed_resp, HARD_MAX_BYTES)
             .await
             .map_err(|e| {
                 ToolError::execution_failed(format!("Failed to read image seed response: {e}"))
@@ -1167,7 +1167,7 @@ async fn run_image_search(
             .await
             .map_err(ToolError::from)?
     } else {
-        let bytes = crate::utils::read_response_body_capped(api_resp, HARD_MAX_BYTES)
+        let bytes = codewhale_util::utils::read_response_body_capped(api_resp, HARD_MAX_BYTES)
             .await
             .map_err(|e| {
                 ToolError::execution_failed(format!("Failed to read image response: {e}"))
@@ -1859,7 +1859,7 @@ fn decode_html_entities(text: &str) -> String {
 }
 
 fn url_encode(input: &str) -> String {
-    crate::utils::url_encode(input)
+    codewhale_util::utils::url_encode(input)
 }
 
 // === Tests ===

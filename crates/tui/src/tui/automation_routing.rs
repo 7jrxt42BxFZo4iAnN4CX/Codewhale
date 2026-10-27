@@ -359,7 +359,7 @@ fn format_detail(
         field(
             locale,
             MessageId::AutomationCwdLabel,
-            &display_text(&crate::utils::display_path(cwd)),
+            &display_text(&codewhale_util::utils::display_path(cwd)),
         )
     }));
     if let Some(mode) = record.mode.as_deref() {

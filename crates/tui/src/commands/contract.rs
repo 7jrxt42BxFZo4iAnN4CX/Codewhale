@@ -532,7 +532,7 @@ impl CommandSessionLifecycleContext for SessionLifecycleAdapter<'_> {
                     Ok(j) => j,
                     Err(e) => return Err(format!("Failed to serialize session: {e}")),
                 };
-                match crate::utils::write_atomic(&save_path, json.as_bytes()) {
+                match codewhale_util::utils::write_atomic(&save_path, json.as_bytes()) {
                     Ok(()) => {
                         crate::tui::ui::install_offline_queue_transition(
                             &mut app,
@@ -3778,7 +3778,9 @@ fn scan_managed_plugins_portable(
                 error
             )
         })?;
-        if crate::plugins::metadata_is_link_or_reparse(&metadata) || !metadata.is_file() {
+        if codewhale_util::path_identity::metadata_is_link_or_reparse(&metadata)
+            || !metadata.is_file()
+        {
             return Err(format!(
                 "Kimi manifest must be a regular file at {}",
                 canonical_path.display()
@@ -3845,7 +3847,7 @@ fn scan_managed_plugins_portable(
             .replace("{error}", &error_text));
         }
     };
-    if crate::plugins::metadata_is_link_or_reparse(&metadata) || !metadata.is_dir() {
+    if codewhale_util::path_identity::metadata_is_link_or_reparse(&metadata) || !metadata.is_dir() {
         let root_text = escape_review_text(&configured_root.display().to_string());
         return Err(tr(
             codewhale_localization::Locale::En,
@@ -3913,7 +3915,7 @@ fn scan_managed_plugins_portable(
                 continue;
             }
         };
-        if crate::plugins::metadata_is_link_or_reparse(&metadata) {
+        if codewhale_util::path_identity::metadata_is_link_or_reparse(&metadata) {
             let path_text = escape_review_path(&path);
             rejected.push(
                 tr(

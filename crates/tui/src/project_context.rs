@@ -327,7 +327,7 @@ fn unimported_foreign_warnings(
             codewhale_core::fragments::load_selected_project_instruction_fragment_with_reader(
                 workspace,
                 format.fragment_candidates(),
-                |path| crate::fs_confined::open_read(workspace, path),
+                |path| codewhale_util::fs_confined::open_read(workspace, path),
             )
             .is_some();
         // Keep discovery aligned with the loaders. A path can exist without
@@ -614,7 +614,7 @@ pub fn startup_instruction_notice(
 fn read_instruction_file_bounded(path: &Path, cap: u64) -> std::io::Result<(String, bool)> {
     use std::io::Read as _;
 
-    let file = crate::fs_confined::open_user_read(path)?;
+    let file = codewhale_util::fs_confined::open_user_read(path)?;
     if !file.metadata()?.is_file() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -1702,11 +1702,12 @@ fn load_context_file_limited(
     path: &Path,
     cap: u64,
 ) -> Result<String, ProjectContextError> {
-    let file =
-        crate::fs_confined::open_read(root, path).map_err(|source| ProjectContextError::Read {
+    let file = codewhale_util::fs_confined::open_read(root, path).map_err(|source| {
+        ProjectContextError::Read {
             path: path.to_path_buf(),
             source,
-        })?;
+        }
+    })?;
     read_context_file(file, path, cap)
 }
 
@@ -1907,11 +1908,12 @@ fn load_global_context_file(path: &Path) -> Result<String, ProjectContextError> 
 }
 
 fn load_global_context_file_limited(path: &Path, cap: u64) -> Result<String, ProjectContextError> {
-    let file =
-        crate::fs_confined::open_user_read(path).map_err(|source| ProjectContextError::Read {
+    let file = codewhale_util::fs_confined::open_user_read(path).map_err(|source| {
+        ProjectContextError::Read {
             path: path.to_path_buf(),
             source,
-        })?;
+        }
+    })?;
     read_context_file(file, path, cap)
 }
 
@@ -2311,7 +2313,7 @@ pub(crate) fn project_instruction_sources_with_settings(
     // mark the files the bounded loader's own selection walk picks.
     let fragment_candidates = fragment_candidates_for(imports);
     let fragment_loaded = |path: &Path| {
-        crate::fs_confined::open_read(&workspace, path)
+        codewhale_util::fs_confined::open_read(&workspace, path)
             .ok()
             .and_then(codewhale_core::fragments::read_project_instruction_file)
             .is_some()

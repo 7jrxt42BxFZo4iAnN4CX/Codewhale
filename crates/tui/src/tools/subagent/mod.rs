@@ -63,7 +63,6 @@ use crate::tools::spec::{
 use crate::tools::todo::SharedTodoList;
 #[cfg(test)]
 use crate::tools::todo::TodoList;
-use crate::utils::spawn_supervised;
 use crate::work_graph::{
     EvidenceKind, EvidenceRef, OperationIntent, OperationOwnerSnapshot, OwnerState,
     SharedWorkRuntime,
@@ -87,6 +86,7 @@ use codewhale_protocol::fleet::migrate_legacy_role_token;
 use codewhale_runtime::config::{MAX_SUBAGENTS, SubagentModelOverride};
 #[cfg(test)]
 use codewhale_tools::names::{TOOL_SEARCH_NAME, is_tool_search_tool};
+use codewhale_util::utils::spawn_supervised;
 use coord::{
     CoordinationClaimScope, CoordinationDetailMetrics, CoordinationHotPath, CoordinationLedger,
     DecisionRecord, DecisionStatus, PersistedWriteClaim, ReconciliationReceipt, WriteScopeClaim,
@@ -3871,10 +3871,11 @@ struct AdmittedCoordinationRoot {
 
 impl AdmittedCoordinationRoot {
     fn validate(&self) -> Result<(), String> {
-        let (canonical, current) = crate::runtime_api::open_workspace_directory(&self.lexical)
-            .map_err(|error| error.to_string())?;
+        let (canonical, current) =
+            codewhale_util::workspace_dir::open_workspace_directory(&self.lexical)
+                .map_err(|error| error.to_string())?;
         if canonical != self.receipt.canonical_root
-            || !crate::fleet::files::same_file(&self.directory, &current)
+            || !codewhale_util::files::same_file(&self.directory, &current)
                 .map_err(|error| error.to_string())?
         {
             return Err("coordination workspace identity changed".into());
@@ -4455,7 +4456,7 @@ impl SubAgentManager {
     ) -> Result<(), String> {
         if let Some(existing) = self.admitted_coordination_roots.get(&lexical) {
             if existing.receipt.canonical_root != canonical_root
-                || !crate::fleet::files::same_file(&existing.directory, &directory)
+                || !codewhale_util::files::same_file(&existing.directory, &directory)
                     .map_err(|error| error.to_string())?
             {
                 return Err("coordination workspace identity changed".into());
@@ -4473,7 +4474,7 @@ impl SubAgentManager {
         };
         #[cfg(windows)]
         let (platform, volume, index) = {
-            let identity = crate::plugins::windows_file_identity(&directory)
+            let identity = codewhale_util::path_identity::windows_file_identity(&directory)
                 .map_err(|error| error.to_string())?;
             ("windows", u64::from(identity.volume), identity.index)
         };
@@ -10852,7 +10853,7 @@ fn effective_state_root(state_root: &Path, state_path: &Path) -> PathBuf {
     // Windows junctions are reparse points without the symlink tag, so the
     // shared predicate is required here; `FileType::is_symlink` alone would
     // miss exactly the case this exists for.
-    if !crate::plugins::metadata_is_link_or_reparse(&metadata) {
+    if !codewhale_util::path_identity::metadata_is_link_or_reparse(&metadata) {
         return state_root.to_path_buf();
     }
     match resolve_path_for_containment(&linked) {
@@ -11269,7 +11270,7 @@ fn write_json_atomic(state_root: &Path, path: &Path, value: &PersistedSubAgentSt
     {
         return Ok(());
     }
-    crate::utils::write_atomic(path, payload.as_bytes())?;
+    codewhale_util::utils::write_atomic(path, payload.as_bytes())?;
     published.insert(path.to_path_buf(), value.snapshot_sequence);
     Ok(())
 }
@@ -13799,7 +13800,7 @@ async fn supervise_subagent_task_body(
     let Err(panic) = panicked else {
         return;
     };
-    let message = crate::utils::panic_message(&*panic);
+    let message = codewhale_util::utils::panic_message(&*panic);
     let mut result = match manager_handle.read().await.get_result(&agent_id) {
         Ok(result) => result,
         Err(err) => {
@@ -15061,7 +15062,7 @@ fn bound_subagent_tool_result(
 /// budgets. Exact JSON size via serde; unserializable messages (should not
 /// happen) count as 1 KiB so they still consume budget.
 fn approximate_message_bytes(message: &Message) -> usize {
-    let mut counter = crate::utils::CountingWriter::new();
+    let mut counter = codewhale_util::utils::CountingWriter::new();
     serde_json::to_writer(&mut counter, message).map_or(1024, |()| counter.count())
 }
 
@@ -19859,7 +19860,8 @@ mod owner_scoped_coordination_tests {
     use super::*;
 
     fn admit(manager: &mut SubAgentManager, lexical: &Path) {
-        let (canonical, file) = crate::runtime_api::open_workspace_directory(lexical).unwrap();
+        let (canonical, file) =
+            codewhale_util::workspace_dir::open_workspace_directory(lexical).unwrap();
         manager
             .admit_coordination_workspace(lexical.to_path_buf(), canonical, Arc::new(file))
             .unwrap();
@@ -20029,7 +20031,8 @@ mod captured_worker_origin_tests {
         (temporary, original, selected, execution)
     }
     fn admit(manager: &mut SubAgentManager, workspace: &Path) {
-        let (canonical, file) = crate::runtime_api::open_workspace_directory(workspace).unwrap();
+        let (canonical, file) =
+            codewhale_util::workspace_dir::open_workspace_directory(workspace).unwrap();
         manager
             .admit_coordination_workspace(workspace.to_path_buf(), canonical, Arc::new(file))
             .unwrap();

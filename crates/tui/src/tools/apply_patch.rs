@@ -1514,13 +1514,14 @@ fn apply_pending_writes(pending: &[PendingWrite]) -> Result<(), ToolError> {
             };
 
             parent_result.and_then(|()| {
-                crate::utils::write_atomic_workspace(&entry.path, content.as_bytes()).map_err(|e| {
-                    ToolError::execution_failed(format!(
-                        "Failed to write {}: {}",
-                        entry.path.display(),
-                        e
-                    ))
-                })
+                codewhale_util::utils::write_atomic_workspace(&entry.path, content.as_bytes())
+                    .map_err(|e| {
+                        ToolError::execution_failed(format!(
+                            "Failed to write {}: {}",
+                            entry.path.display(),
+                            e
+                        ))
+                    })
             })
         } else if entry.path.exists() {
             fs::remove_file(&entry.path).map_err(|e| {
@@ -1560,7 +1561,9 @@ fn rollback_pending_writes(applied: &[PendingWrite]) -> Vec<String> {
     let mut failures = Vec::new();
     for entry in applied.iter().rev() {
         let restored = match entry.original.as_ref() {
-            Some(content) => crate::utils::write_atomic_workspace(&entry.path, content.as_bytes()),
+            Some(content) => {
+                codewhale_util::utils::write_atomic_workspace(&entry.path, content.as_bytes())
+            }
             None => match fs::remove_file(&entry.path) {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
                 other => other,

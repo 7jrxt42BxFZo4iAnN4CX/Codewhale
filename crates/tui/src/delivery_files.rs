@@ -11,7 +11,7 @@ use std::time::SystemTime;
 
 use sha2::{Digest, Sha256};
 
-use crate::fleet::files::{WorkspaceFile, same_file};
+use codewhale_util::files::{WorkspaceFile, same_file};
 
 #[derive(Debug, PartialEq, Eq)]
 struct Version {
@@ -35,7 +35,7 @@ fn version(file: &File) -> io::Result<Version> {
     }
     #[cfg(windows)]
     {
-        let identity = crate::plugins::windows_file_identity(file)?;
+        let identity = codewhale_util::path_identity::windows_file_identity(file)?;
         if identity.links != 1 || identity.attributes & 0x0000_0400 != 0 {
             return Err(invalid("delivery file is linked or a reparse point"));
         }

@@ -68,7 +68,7 @@ pub(crate) fn metadata(
     }) {
         return None;
     }
-    let mut file = crate::plugins::manifest::open_bundle_file(path).ok()?;
+    let mut file = codewhale_util::bundle_file::open_bundle_file(path).ok()?;
     let mut bytes = Vec::new();
     file.by_ref()
         .take(MAX_ENTRY + 1)
@@ -127,7 +127,7 @@ pub(crate) fn admitted_entries(
         // their whole bundles just to rediscover their existing roster view.
         // active_component_sources already validated the authority and used
         // the shared translator to prove this canonical entry is confined.
-        let Ok(mut file) = super::manifest::open_bundle_file(&source.path) else {
+        let Ok(mut file) = codewhale_util::bundle_file::open_bundle_file(&source.path) else {
             continue;
         };
         let mut header = Vec::new();

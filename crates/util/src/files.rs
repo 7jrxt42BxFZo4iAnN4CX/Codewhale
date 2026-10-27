@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{self, Write};
 use std::path::{Component, Path};
 
-pub(crate) fn path_is_confined(path: &Path) -> bool {
+pub fn path_is_confined(path: &Path) -> bool {
     !path.as_os_str().is_empty()
         && path.components().all(|component| match component {
             Component::Normal(name) => !cfg!(windows) || !name.as_encoded_bytes().contains(&b':'),
@@ -18,7 +18,7 @@ pub(crate) fn path_is_confined(path: &Path) -> bool {
 /// lexical check made before the use; prefer [`WorkspaceFile`] where the
 /// caller can open through it, and use this for paths a library call (a
 /// directory listing, a removal) takes by name.
-pub(crate) fn reject_linked_path(root: &Path, path: &Path) -> io::Result<()> {
+pub fn reject_linked_path(root: &Path, path: &Path) -> io::Result<()> {
     let relative = path.strip_prefix(root).map_err(|_| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -29,7 +29,7 @@ pub(crate) fn reject_linked_path(root: &Path, path: &Path) -> io::Result<()> {
     for component in relative.components() {
         current.push(component);
         match std::fs::symlink_metadata(&current) {
-            Ok(metadata) if crate::plugins::metadata_is_link_or_reparse(&metadata) => {
+            Ok(metadata) if crate::path_identity::metadata_is_link_or_reparse(&metadata) => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     format!("Refusing symlinked path {}", current.display()),
@@ -52,7 +52,7 @@ fn invalid_path() -> io::Error {
 
 #[cfg(unix)]
 #[derive(Debug)]
-pub(crate) struct WorkspaceFile {
+pub struct WorkspaceFile {
     directory: File,
     filename: std::ffi::CString,
     /// A user's own workspace file rather than a private store entry: new
@@ -65,19 +65,19 @@ pub(crate) struct WorkspaceFile {
 impl WorkspaceFile {
     /// Private store entry: created files are 0600, created parents 0700, and
     /// every replacement is owner-only again.
-    pub(crate) fn open(workspace: &Path, relative: &Path, create: bool) -> io::Result<Self> {
+    pub fn open(workspace: &Path, relative: &Path, create: bool) -> io::Result<Self> {
         Self::open_confined(workspace, relative, create, false, true)
     }
 
     /// A user's workspace file, edited in place: created entries follow the
     /// umask and replacement preserves the file's permission bits (an
     /// executable script stays executable). Confinement is unchanged.
-    pub(crate) fn open_shared(workspace: &Path, relative: &Path, create: bool) -> io::Result<Self> {
+    pub fn open_shared(workspace: &Path, relative: &Path, create: bool) -> io::Result<Self> {
         Self::open_confined(workspace, relative, create, true, true)
     }
 
     /// An already captured absolute root: reject later root/ancestor links.
-    pub(crate) fn open_delivery(workspace: &Path, relative: &Path) -> io::Result<Self> {
+    pub fn open_delivery(workspace: &Path, relative: &Path) -> io::Result<Self> {
         Self::open_confined(workspace, relative, false, false, false)
     }
 
@@ -86,11 +86,7 @@ impl WorkspaceFile {
     /// behind a symlink. The Unix opener already resolves the root and still
     /// refuses every link below it, so this is the same call under a name that
     /// says why a caller wants it. Not for a caller-supplied workspace root.
-    pub(crate) fn open_resolved_root(
-        workspace: &Path,
-        relative: &Path,
-        create: bool,
-    ) -> io::Result<Self> {
+    pub fn open_resolved_root(workspace: &Path, relative: &Path, create: bool) -> io::Result<Self> {
         Self::open(workspace, relative, create)
     }
 
@@ -222,7 +218,7 @@ impl WorkspaceFile {
         if self.shared { 0o666 } else { 0o600 }
     }
 
-    pub(crate) fn sibling(&self, name: &str) -> io::Result<Self> {
+    pub fn sibling(&self, name: &str) -> io::Result<Self> {
         if !path_is_confined(Path::new(name)) || Path::new(name).components().count() != 1 {
             return Err(invalid_path());
         }
@@ -233,7 +229,7 @@ impl WorkspaceFile {
         })
     }
 
-    pub(crate) fn open_update(&self, create: bool, append: bool) -> io::Result<File> {
+    pub fn open_update(&self, create: bool, append: bool) -> io::Result<File> {
         self.open_with_flags(
             libc::O_RDWR
                 | if create { libc::O_CREAT } else { 0 }
@@ -241,17 +237,17 @@ impl WorkspaceFile {
         )
     }
 
-    pub(crate) fn open_file(&self) -> io::Result<File> {
+    pub fn open_file(&self) -> io::Result<File> {
         self.open_with_flags(libc::O_RDONLY)
     }
 
     /// Reads a file another process may hold open for writing. Unix opens do
     /// not exclude writers, so this is [`Self::open_file`].
-    pub(crate) fn open_file_shared(&self) -> io::Result<File> {
+    pub fn open_file_shared(&self) -> io::Result<File> {
         self.open_file()
     }
 
-    pub(crate) fn open_write(&self, append: bool) -> io::Result<File> {
+    pub fn open_write(&self, append: bool) -> io::Result<File> {
         self.open_with_flags(
             libc::O_WRONLY | libc::O_CREAT | if append { libc::O_APPEND } else { 0 },
         )
@@ -300,11 +296,11 @@ impl WorkspaceFile {
         Ok(file)
     }
 
-    pub(crate) fn publish(&self, bytes: &[u8]) -> io::Result<()> {
+    pub fn publish(&self, bytes: &[u8]) -> io::Result<()> {
         self.atomic_write(bytes, false)
     }
 
-    pub(crate) fn replace(&self, bytes: &[u8]) -> io::Result<()> {
+    pub fn replace(&self, bytes: &[u8]) -> io::Result<()> {
         self.atomic_write(bytes, true)
     }
 
@@ -312,7 +308,7 @@ impl WorkspaceFile {
         self.atomic_write_retained(bytes, replace, None).map(drop)
     }
 
-    pub(crate) fn publish_retained(&self, bytes: &[u8], executable: bool) -> io::Result<File> {
+    pub fn publish_retained(&self, bytes: &[u8], executable: bool) -> io::Result<File> {
         self.atomic_write_retained(bytes, false, Some(if executable { 0o755 } else { 0o644 }))
     }
 
@@ -398,15 +394,15 @@ impl WorkspaceFile {
         Ok(file)
     }
 
-    pub(crate) fn open_retained(&self) -> io::Result<File> {
+    pub fn open_retained(&self) -> io::Result<File> {
         self.open_file()
     }
 
-    pub(crate) fn identity_probe(&self) -> io::Result<File> {
+    pub fn identity_probe(&self) -> io::Result<File> {
         self.open_file()
     }
 
-    pub(crate) fn move_opened_to_sibling(&self, file: &File, destination: &Self) -> io::Result<()> {
+    pub fn move_opened_to_sibling(&self, file: &File, destination: &Self) -> io::Result<()> {
         if !same_file(&self.directory, &destination.directory)? {
             return Err(invalid_path());
         }
@@ -415,7 +411,7 @@ impl WorkspaceFile {
         self.move_opened_to_directory(file, destination)
     }
 
-    pub(crate) fn verify_delivery_owner(&self, file: &File) -> io::Result<()> {
+    pub fn verify_delivery_owner(&self, file: &File) -> io::Result<()> {
         use std::os::unix::fs::MetadataExt;
         let owner = codewhale_config::private_directory::PrivateDirectory::current_user_id();
         let parent = self.directory.metadata()?;
@@ -436,11 +432,7 @@ impl WorkspaceFile {
         Ok(())
     }
 
-    pub(crate) fn move_opened_to_directory(
-        &self,
-        file: &File,
-        destination: &Self,
-    ) -> io::Result<()> {
+    pub fn move_opened_to_directory(&self, file: &File, destination: &Self) -> io::Result<()> {
         use std::os::fd::AsRawFd;
         if !same_file(file, &self.identity_probe()?)? {
             return Err(invalid_path());
@@ -459,7 +451,7 @@ impl WorkspaceFile {
         Ok(())
     }
 
-    pub(crate) fn unlink_opened(&self, file: &File) -> io::Result<()> {
+    pub fn unlink_opened(&self, file: &File) -> io::Result<()> {
         use std::os::fd::AsRawFd;
         use std::os::unix::fs::MetadataExt;
         let parent = self.directory.metadata()?;
@@ -475,7 +467,7 @@ impl WorkspaceFile {
         Ok(())
     }
 
-    pub(crate) fn sync_parent(&self) -> io::Result<()> {
+    pub fn sync_parent(&self) -> io::Result<()> {
         self.directory.sync_all()
     }
 }
@@ -593,14 +585,14 @@ fn exclusive_rename_outcome(renamed: bool) -> io::Result<bool> {
 /// sharing and without following reparse points before path-based calls.
 #[cfg(windows)]
 #[derive(Clone, Debug)]
-pub(crate) struct WindowsDirectory {
+pub struct WindowsDirectory {
     ancestors: Vec<std::sync::Arc<File>>,
     directory: std::path::PathBuf,
 }
 
 #[cfg(windows)]
 impl WindowsDirectory {
-    pub(crate) fn open(path: &Path) -> io::Result<Self> {
+    pub fn open(path: &Path) -> io::Result<Self> {
         Self::open_inner(path, false, false)
     }
 
@@ -659,13 +651,13 @@ impl WindowsDirectory {
         }
         let file = options.open(path)?;
         let metadata = file.metadata()?;
-        if !metadata.is_dir() || crate::plugins::metadata_is_link_or_reparse(&metadata) {
+        if !metadata.is_dir() || crate::path_identity::metadata_is_link_or_reparse(&metadata) {
             return Err(invalid_path());
         }
         Ok(std::sync::Arc::new(file))
     }
 
-    pub(crate) fn child_path(&self, name: &std::ffi::OsStr) -> io::Result<std::path::PathBuf> {
+    pub fn child_path(&self, name: &std::ffi::OsStr) -> io::Result<std::path::PathBuf> {
         let name = Path::new(name);
         if !path_is_confined(name) || name.components().count() != 1 {
             return Err(invalid_path());
@@ -675,7 +667,7 @@ impl WindowsDirectory {
 
     /// Extend the actual held direct-parent chain instead of reopening pinned
     /// ancestors by path.
-    pub(crate) fn open_acl_child(&self, name: &std::ffi::OsStr) -> io::Result<Self> {
+    pub fn open_acl_child(&self, name: &std::ffi::OsStr) -> io::Result<Self> {
         let directory = self.child_path(name)?;
         let file = Self::open_component(&directory, true)?;
         let mut ancestors = self.ancestors.clone();
@@ -686,11 +678,11 @@ impl WindowsDirectory {
         })
     }
 
-    pub(crate) fn open_acl(path: &Path) -> io::Result<Self> {
+    pub fn open_acl(path: &Path) -> io::Result<Self> {
         Self::open_inner(path, false, true)
     }
 
-    pub(crate) fn acl_handle(&self) -> io::Result<&File> {
+    pub fn acl_handle(&self) -> io::Result<&File> {
         self.ancestors
             .last()
             .map(std::sync::Arc::as_ref)
@@ -700,7 +692,7 @@ impl WindowsDirectory {
 
 #[cfg(windows)]
 #[derive(Debug)]
-pub(crate) struct WorkspaceFile {
+pub struct WorkspaceFile {
     // Retaining every ancestor without delete/write sharing prevents a path
     // swap or junction replacement while path-based Windows calls are running.
     _ancestors: Vec<std::sync::Arc<File>>,
@@ -710,7 +702,7 @@ pub(crate) struct WorkspaceFile {
 
 #[cfg(windows)]
 impl WorkspaceFile {
-    pub(crate) fn open(workspace: &Path, relative: &Path, create: bool) -> io::Result<Self> {
+    pub fn open(workspace: &Path, relative: &Path, create: bool) -> io::Result<Self> {
         if !path_is_confined(relative) {
             return Err(invalid_path());
         }
@@ -740,25 +732,21 @@ impl WorkspaceFile {
     /// the same link-refusing walk then runs, so links below the root are still
     /// refused. The caller must have created the root already. Not for a
     /// caller-supplied workspace root.
-    pub(crate) fn open_resolved_root(
-        workspace: &Path,
-        relative: &Path,
-        create: bool,
-    ) -> io::Result<Self> {
+    pub fn open_resolved_root(workspace: &Path, relative: &Path, create: bool) -> io::Result<Self> {
         let resolved = workspace.canonicalize()?;
         Self::open(&resolved, relative, create)
     }
 
-    pub(crate) fn open_delivery(workspace: &Path, relative: &Path) -> io::Result<Self> {
+    pub fn open_delivery(workspace: &Path, relative: &Path) -> io::Result<Self> {
         Self::open(workspace, relative, false)
     }
 
     /// Windows has no Unix permission bits to preserve; see the Unix opener.
-    pub(crate) fn open_shared(workspace: &Path, relative: &Path, create: bool) -> io::Result<Self> {
+    pub fn open_shared(workspace: &Path, relative: &Path, create: bool) -> io::Result<Self> {
         Self::open(workspace, relative, create)
     }
 
-    pub(crate) fn sibling(&self, name: &str) -> io::Result<Self> {
+    pub fn sibling(&self, name: &str) -> io::Result<Self> {
         if !path_is_confined(Path::new(name)) || Path::new(name).components().count() != 1 {
             return Err(invalid_path());
         }
@@ -769,11 +757,11 @@ impl WorkspaceFile {
         })
     }
 
-    pub(crate) fn open_update(&self, create: bool, append: bool) -> io::Result<File> {
+    pub fn open_update(&self, create: bool, append: bool) -> io::Result<File> {
         self.open_with_access(create, append, true, true)
     }
 
-    pub(crate) fn open_write(&self, append: bool) -> io::Result<File> {
+    pub fn open_write(&self, append: bool) -> io::Result<File> {
         self.open_with_access(true, append, false, true)
     }
 
@@ -782,7 +770,7 @@ impl WorkspaceFile {
     /// fails with a sharing violation while the writer is alive; this opens
     /// read-only with full sharing and applies the same regular, unlinked
     /// checks to the handle.
-    pub(crate) fn open_file_shared(&self) -> io::Result<File> {
+    pub fn open_file_shared(&self) -> io::Result<File> {
         self.open_with_access(false, false, true, false)
     }
 
@@ -805,8 +793,8 @@ impl WorkspaceFile {
             .open(self.directory.join(&self.filename))?;
         let metadata = file.metadata()?;
         if !metadata.is_file()
-            || crate::plugins::metadata_is_link_or_reparse(&metadata)
-            || crate::plugins::windows_file_identity(&file)?.links != 1
+            || crate::path_identity::metadata_is_link_or_reparse(&metadata)
+            || crate::path_identity::windows_file_identity(&file)?.links != 1
         {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -816,17 +804,17 @@ impl WorkspaceFile {
         Ok(file)
     }
 
-    pub(crate) fn open_file(&self) -> io::Result<File> {
+    pub fn open_file(&self) -> io::Result<File> {
         // Existing protected reader rejects reparse points, hard links and
         // non-regular files, and denies concurrent writes/replacement.
-        crate::plugins::manifest::open_bundle_file(&self.directory.join(&self.filename))
+        crate::bundle_file::open_bundle_file(&self.directory.join(&self.filename))
     }
 
-    pub(crate) fn publish(&self, bytes: &[u8]) -> io::Result<()> {
+    pub fn publish(&self, bytes: &[u8]) -> io::Result<()> {
         self.atomic_write(bytes, false)
     }
 
-    pub(crate) fn replace(&self, bytes: &[u8]) -> io::Result<()> {
+    pub fn replace(&self, bytes: &[u8]) -> io::Result<()> {
         self.atomic_write(bytes, true)
     }
 
@@ -834,31 +822,26 @@ impl WorkspaceFile {
         self.atomic_write_retained(bytes, replace).map(drop)
     }
 
-    pub(crate) fn publish_retained(&self, bytes: &[u8], _executable: bool) -> io::Result<File> {
+    pub fn publish_retained(&self, bytes: &[u8], _executable: bool) -> io::Result<File> {
         self.atomic_write_retained(bytes, false)
     }
 
-    pub(crate) fn open_retained(&self) -> io::Result<File> {
-        crate::plugins::manifest::open_bundle_file_for_retirement(
-            &self.directory.join(&self.filename),
-        )
+    pub fn open_retained(&self) -> io::Result<File> {
+        crate::bundle_file::open_bundle_file_for_retirement(&self.directory.join(&self.filename))
     }
 
-    pub(crate) fn identity_probe(&self) -> io::Result<File> {
-        crate::plugins::manifest::open_bundle_identity_probe(
-            &self.directory.join(&self.filename),
-            false,
-        )
+    pub fn identity_probe(&self) -> io::Result<File> {
+        crate::bundle_file::open_bundle_identity_probe(&self.directory.join(&self.filename), false)
     }
 
-    pub(crate) fn move_opened_to_sibling(&self, file: &File, destination: &Self) -> io::Result<()> {
+    pub fn move_opened_to_sibling(&self, file: &File, destination: &Self) -> io::Result<()> {
         if self.directory != destination.directory {
             return Err(invalid_path());
         }
         rename_windows_opened(file, &destination.filename, false)
     }
 
-    pub(crate) fn sync_parent(&self) -> io::Result<()> {
+    pub fn sync_parent(&self) -> io::Result<()> {
         Ok(())
     }
 
@@ -902,7 +885,7 @@ impl WorkspaceFile {
 }
 
 #[cfg(windows)]
-pub(crate) fn rename_windows_opened(
+pub fn rename_windows_opened(
     file: &File,
     filename: &std::ffi::OsStr,
     replace: bool,
@@ -953,7 +936,8 @@ pub(crate) fn rename_windows_opened(
         }
         // SAFETY: converts the returned NTSTATUS without dereferencing.
         let error = io::Error::from_raw_os_error(unsafe { RtlNtStatusToDosError(result) as i32 });
-        let Some(backoff) = crate::utils::windows_publish_retry_delay(&error, attempt) else {
+        let Some(backoff) = codewhale_util::utils::windows_publish_retry_delay(&error, attempt)
+        else {
             return Err(error);
         };
         std::thread::sleep(backoff);
@@ -1257,69 +1241,65 @@ mod windows_root_link_tests {
 
 #[cfg(all(not(unix), not(windows)))]
 #[derive(Debug)]
-pub(crate) struct WorkspaceFile;
+pub struct WorkspaceFile;
 #[cfg(all(not(unix), not(windows)))]
 impl WorkspaceFile {
-    pub(crate) fn open(_: &Path, _: &Path, _: bool) -> io::Result<Self> {
+    pub fn open(_: &Path, _: &Path, _: bool) -> io::Result<Self> {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "Confined Fleet artifact I/O is unavailable on this platform",
         ))
     }
-    pub(crate) fn open_shared(workspace: &Path, relative: &Path, create: bool) -> io::Result<Self> {
+    pub fn open_shared(workspace: &Path, relative: &Path, create: bool) -> io::Result<Self> {
         Self::open(workspace, relative, create)
     }
-    pub(crate) fn open_resolved_root(
-        workspace: &Path,
-        relative: &Path,
-        create: bool,
-    ) -> io::Result<Self> {
+    pub fn open_resolved_root(workspace: &Path, relative: &Path, create: bool) -> io::Result<Self> {
         Self::open(workspace, relative, create)
     }
-    pub(crate) fn sibling(&self, _: &str) -> io::Result<Self> {
+    pub fn sibling(&self, _: &str) -> io::Result<Self> {
         unreachable!()
     }
-    pub(crate) fn open_update(&self, _: bool, _: bool) -> io::Result<File> {
+    pub fn open_update(&self, _: bool, _: bool) -> io::Result<File> {
         unreachable!()
     }
-    pub(crate) fn open_write(&self, _: bool) -> io::Result<File> {
+    pub fn open_write(&self, _: bool) -> io::Result<File> {
         unreachable!()
     }
-    pub(crate) fn replace(&self, _: &[u8]) -> io::Result<()> {
+    pub fn replace(&self, _: &[u8]) -> io::Result<()> {
         unreachable!()
     }
-    pub(crate) fn open_file(&self) -> io::Result<File> {
+    pub fn open_file(&self) -> io::Result<File> {
         unreachable!()
     }
-    pub(crate) fn open_file_shared(&self) -> io::Result<File> {
+    pub fn open_file_shared(&self) -> io::Result<File> {
         unreachable!()
     }
-    pub(crate) fn publish(&self, _: &[u8]) -> io::Result<()> {
+    pub fn publish(&self, _: &[u8]) -> io::Result<()> {
         unreachable!()
     }
-    pub(crate) fn open_delivery(workspace: &Path, relative: &Path) -> io::Result<Self> {
+    pub fn open_delivery(workspace: &Path, relative: &Path) -> io::Result<Self> {
         Self::open(workspace, relative, false)
     }
-    pub(crate) fn open_retained(&self) -> io::Result<File> {
+    pub fn open_retained(&self) -> io::Result<File> {
         self.open_file()
     }
-    pub(crate) fn identity_probe(&self) -> io::Result<File> {
+    pub fn identity_probe(&self) -> io::Result<File> {
         self.open_file()
     }
-    pub(crate) fn publish_retained(&self, _: &[u8], _: bool) -> io::Result<File> {
+    pub fn publish_retained(&self, _: &[u8], _: bool) -> io::Result<File> {
         Err(io::ErrorKind::Unsupported.into())
     }
-    pub(crate) fn move_opened_to_sibling(&self, _: &File, _: &Self) -> io::Result<()> {
+    pub fn move_opened_to_sibling(&self, _: &File, _: &Self) -> io::Result<()> {
         Err(io::ErrorKind::Unsupported.into())
     }
-    pub(crate) fn sync_parent(&self) -> io::Result<()> {
+    pub fn sync_parent(&self) -> io::Result<()> {
         Err(io::ErrorKind::Unsupported.into())
     }
 }
 
 /// Compare already opened lock handles; a replaced lock must never create two
 /// independent critical sections for the same live ledger.
-pub(crate) fn same_file(left: &File, right: &File) -> io::Result<bool> {
+pub fn same_file(left: &File, right: &File) -> io::Result<bool> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -1329,8 +1309,8 @@ pub(crate) fn same_file(left: &File, right: &File) -> io::Result<bool> {
     }
     #[cfg(windows)]
     {
-        let a = crate::plugins::windows_file_identity(left)?;
-        let b = crate::plugins::windows_file_identity(right)?;
+        let a = crate::path_identity::windows_file_identity(left)?;
+        let b = crate::path_identity::windows_file_identity(right)?;
         Ok(a.volume == b.volume && a.index == b.index)
     }
     #[cfg(all(not(unix), not(windows)))]

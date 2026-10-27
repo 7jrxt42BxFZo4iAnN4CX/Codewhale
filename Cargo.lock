@@ -1424,6 +1424,7 @@ dependencies = [
  "codewhale-secrets",
  "codewhale-telemetry",
  "codewhale-tools",
+ "codewhale-util",
  "codewhale-workflow",
  "codewhale-workflow-js",
  "colored",
@@ -1495,6 +1496,31 @@ dependencies = [
  "windows-sys 0.61.2",
  "wiremock",
  "yaml-rust2",
+]
+
+[[package]]
+name = "codewhale-util"
+version = "0.10.2"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "codewhale-config",
+ "codewhale-models",
+ "codewhale-paths",
+ "codewhale-protocol",
+ "codewhale-runtime",
+ "codewhale-telemetry",
+ "futures-util",
+ "ignore",
+ "libc",
+ "reqwest",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

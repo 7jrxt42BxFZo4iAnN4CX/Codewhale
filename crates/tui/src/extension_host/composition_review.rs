@@ -80,7 +80,7 @@ async fn bounded_read(pipe: impl AsyncRead + Unpin, limit: usize) -> Result<Vec<
 async fn run(launch: super::supervisor::HostLaunch, input: Vec<u8>) -> Result<Value, String> {
     use std::process::Stdio;
     let mut command = tokio::process::Command::new(&launch.program);
-    crate::utils::suppress_tokio_console_window(&mut command);
+    codewhale_util::utils::suppress_tokio_console_window(&mut command);
     command
         .args(&launch.args)
         .current_dir(&launch.cwd)

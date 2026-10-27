@@ -30775,7 +30775,7 @@ mod work_sidebar_projection_tests {
 
         // The runtime helper should step back to the start of the char
         // and append the ellipsis without panicking.
-        let truncated = crate::utils::truncate_with_ellipsis(&summary, 60, "…");
+        let truncated = codewhale_util::utils::truncate_with_ellipsis(&summary, 60, "…");
         assert_eq!(truncated, format!("{prefix}…"));
     }
 

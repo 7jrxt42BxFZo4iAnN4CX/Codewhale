@@ -375,7 +375,7 @@ impl Package {
             }
             if let Ok(metadata) = fs::symlink_metadata(&current) {
                 require(
-                    !crate::plugins::metadata_is_link_or_reparse(&metadata),
+                    !codewhale_util::path_identity::metadata_is_link_or_reparse(&metadata),
                     "Source paths must not contain links or reparse points.",
                 )?;
             }
@@ -394,7 +394,8 @@ fn read_file(path: &Path, limit: usize) -> Result<Vec<u8>> {
         anyhow::Error::msg("File operation failed; source files must be accessible regular paths.")
     })?;
     require(
-        metadata.is_file() && !crate::plugins::metadata_is_link_or_reparse(&metadata),
+        metadata.is_file()
+            && !codewhale_util::path_identity::metadata_is_link_or_reparse(&metadata),
         "Only regular, non-linked source files are supported.",
     )?;
     #[cfg(unix)]
@@ -1470,7 +1471,7 @@ fn walk_files(root: &Path, mut visit: impl FnMut(&Path, bool) -> Result<()>) -> 
             let path = child.path();
             let metadata = fs::symlink_metadata(&path)?;
             require(
-                !crate::plugins::metadata_is_link_or_reparse(&metadata),
+                !codewhale_util::path_identity::metadata_is_link_or_reparse(&metadata),
                 "Source paths must not contain links or reparse points.",
             )?;
             visit(&path, metadata.is_dir())?;

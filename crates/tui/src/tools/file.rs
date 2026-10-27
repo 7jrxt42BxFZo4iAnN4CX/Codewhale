@@ -777,7 +777,7 @@ async fn acquire_file_mutation(
 async fn run_blocking_write_atomic(path: &Path, contents: Vec<u8>) -> Result<(), ToolError> {
     let path = path.to_path_buf();
     tokio::task::spawn_blocking(move || {
-        crate::utils::write_atomic_workspace(&path, &contents).map_err(|e| {
+        codewhale_util::utils::write_atomic_workspace(&path, &contents).map_err(|e| {
             ToolError::execution_failed(format!("Failed to write {}: {e}", path.display()))
         })
     })

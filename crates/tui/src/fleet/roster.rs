@@ -783,14 +783,14 @@ impl FleetRoster {
                 "{}: effective={} · {}",
                 entry.id,
                 entry.effective,
-                crate::utils::display_path(&entry.effective_path)
+                codewhale_util::utils::display_path(&entry.effective_path)
             ));
             for layer in &entry.layers {
                 let mark = if layer.wins { "wins" } else { "ignored" };
                 lines.push(format!(
                     "  {} · {} ({mark})",
                     layer.origin,
-                    crate::utils::display_path(&layer.source)
+                    codewhale_util::utils::display_path(&layer.source)
                 ));
             }
         }

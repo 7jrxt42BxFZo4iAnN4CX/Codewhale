@@ -28,7 +28,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::task_manager::{NewTaskRequest, SharedTaskManager, TaskStatus};
-use crate::utils::spawn_supervised;
+use codewhale_util::utils::spawn_supervised;
 
 /// Current automation record schema. `pub(crate)` so the Operate keepalive
 /// can build a fixed-id record directly (no create/delete id swap).
@@ -3134,7 +3134,7 @@ fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     }
-    crate::utils::write_atomic(path, &serde_json::to_vec_pretty(value)?)
+    codewhale_util::utils::write_atomic(path, &serde_json::to_vec_pretty(value)?)
         .with_context(|| format!("write {}", path.display()))
 }
 
@@ -3801,7 +3801,7 @@ mod tests {
         let mut service = AutomationManager::open(root.join("automations"))?;
         service.bind_task_manager(&tasks)?;
         let shared = Arc::new(Mutex::new(service));
-        crate::utils::write_atomic(&root.join(format!("{role}-ready")), b"ready")?;
+        codewhale_util::utils::write_atomic(&root.join(format!("{role}-ready")), b"ready")?;
         wait_fixture_path(&root.join(format!("{role}-go"))).await?;
         let observations = Arc::new(std::sync::Mutex::new(Vec::new()));
         scheduler_tick_with(&shared, &tasks.data_dir(), {
@@ -3817,14 +3817,17 @@ mod tests {
                 async move {
                     let id = run.task_id.clone().expect("durably claimed fixture id");
                     observations.lock().unwrap().push(id.clone());
-                    crate::utils::write_atomic(
+                    codewhale_util::utils::write_atomic(
                         &root.join(format!("{role}-entered")),
                         id.as_bytes(),
                     )
                     .expect("record dispatch entry");
                     if role == "first" {
-                        crate::utils::write_atomic(&root.join("first-held"), id.as_bytes())
-                            .expect("record claim barrier");
+                        codewhale_util::utils::write_atomic(
+                            &root.join("first-held"),
+                            id.as_bytes(),
+                        )
+                        .expect("record claim barrier");
                         wait_fixture_path(&root.join("release-first"))
                             .await
                             .expect("release owner");
@@ -3846,7 +3849,7 @@ mod tests {
             assert_eq!(task.status, TaskStatus::Completed);
         }
         reconcile_run_statuses_shared(&shared, &tasks).await?;
-        crate::utils::write_atomic(
+        codewhale_util::utils::write_atomic(
             &root.join(format!("{role}-done")),
             serde_json::to_vec(&ids)?.as_slice(),
         )?;
@@ -3865,10 +3868,10 @@ mod tests {
         // adopt the first scope's immutable dispatch even before acceptance.
         wait_fixture_path(&root.path().join("first-ready")).await?;
         wait_fixture_path(&root.path().join("second-ready")).await?;
-        crate::utils::write_atomic(&root.path().join("first-go"), b"go")?;
+        codewhale_util::utils::write_atomic(&root.path().join("first-go"), b"go")?;
         wait_fixture_path(&root.path().join("first-held")).await?;
         let id = fs::read_to_string(root.path().join("first-held"))?;
-        crate::utils::write_atomic(&root.path().join("second-go"), b"go")?;
+        codewhale_util::utils::write_atomic(&root.path().join("second-go"), b"go")?;
         wait_fixture_path(&root.path().join("second-done")).await?;
         finish_scheduler_fixture(&mut second, &root.path().join("second.log")).await?;
         assert!(
@@ -3879,7 +3882,7 @@ mod tests {
             fixture_executions(&root.path().join("executions")).is_empty(),
             "owner is blocked before actual enqueue"
         );
-        crate::utils::write_atomic(&root.path().join("release-first"), b"release")?;
+        codewhale_util::utils::write_atomic(&root.path().join("release-first"), b"release")?;
         finish_scheduler_fixture(&mut first, &root.path().join("first.log")).await?;
         assert_eq!(
             fixture_executions(&root.path().join("executions")),

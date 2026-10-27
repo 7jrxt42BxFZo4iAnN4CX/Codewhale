@@ -1198,7 +1198,7 @@ pub fn empty_state_lines(app: &App, area: Rect) -> Vec<Line<'static>> {
         &app.workspace,
         app.workspace_context.as_deref(),
     );
-    let workspace = crate::utils::display_path(&app.workspace);
+    let workspace = codewhale_util::utils::display_path(&app.workspace);
     let branch = identity.branch.as_deref().map_or_else(
         || tr(app.ui_locale, MessageId::EmptyStateNoGit),
         |branch| Cow::Owned(branch.to_string()),
@@ -1743,7 +1743,7 @@ pub fn launch_empty_state(app: &App, area: Rect) -> LaunchEmptyState {
         text.push(Some(Line::from(spans)));
     }
     if fit.context {
-        let workspace = shorten_workspace(&crate::utils::display_path(&app.workspace), 2);
+        let workspace = shorten_workspace(&codewhale_util::utils::display_path(&app.workspace), 2);
         let identity = crate::tui::workspace_context::identity_from_context(
             &app.workspace,
             app.workspace_context.as_deref(),

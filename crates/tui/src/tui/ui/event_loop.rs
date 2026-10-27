@@ -3538,7 +3538,7 @@ pub(crate) async fn run_event_loop(
                             if tool_count > 0 {
                                 let _ = write!(receipt, " · {tool_count} tool(s) used");
                                 for evidence in &app.tool_evidence {
-                                    let summary = crate::utils::truncate_with_ellipsis(
+                                    let summary = codewhale_util::utils::truncate_with_ellipsis(
                                         &evidence.summary,
                                         60,
                                         "…",

@@ -238,7 +238,8 @@ impl LspManager {
             // Match the existing workspace file serving ceiling. Decode only
             // bounded UTF-8 bytes from the same no-follow workspace opener.
             const MAX_DOCUMENT_BYTES: u64 = 16 * 1024 * 1024;
-            let file = crate::fleet::files::WorkspaceFile::open(&canonical_root, relative, false)?;
+            let file =
+                codewhale_util::files::WorkspaceFile::open(&canonical_root, relative, false)?;
             let mut bytes = Vec::new();
             file.open_file()?
                 .take(MAX_DOCUMENT_BYTES + 1)
@@ -748,7 +749,7 @@ impl LspManager {
             };
             let relative = match target.strip_prefix(&self.workspace).or_else(|_| target.strip_prefix(&root)) {
                 Ok(relative) if !relative.as_os_str().is_empty()
-                    && relative.components().all(|component| matches!(component, std::path::Component::Normal(part) if !crate::snapshot::is_git_metadata_name(part))) => relative,
+                    && relative.components().all(|component| matches!(component, std::path::Component::Normal(part) if !codewhale_util::git_metadata::is_git_metadata_name(part))) => relative,
                 _ => { omitted += 1; continue; }
             };
             let Some(path) = semantic_relative_path(relative) else {
@@ -906,7 +907,9 @@ fn semantic_relative_path(path: &Path) -> Option<String> {
     let parts = path
         .components()
         .map(|component| match component {
-            std::path::Component::Normal(part) if !crate::snapshot::is_git_metadata_name(part) => {
+            std::path::Component::Normal(part)
+                if !codewhale_util::git_metadata::is_git_metadata_name(part) =>
+            {
                 part.to_str().filter(|part| !part.contains('\\'))
             }
             _ => None,

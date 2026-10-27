@@ -319,7 +319,7 @@ pub fn read_evidence_metadata(session_id: &str, handle: &str) -> io::Result<Evid
 /// Bounded, no-follow read shared by publication/replay and authenticated HTTP
 /// retrieval. The caller chooses the existing session-root authority.
 pub(crate) fn read_evidence_metadata_file(
-    file: &crate::fleet::files::WorkspaceFile,
+    file: &codewhale_util::files::WorkspaceFile,
 ) -> io::Result<EvidenceArtifact> {
     use std::io::Read;
     const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
