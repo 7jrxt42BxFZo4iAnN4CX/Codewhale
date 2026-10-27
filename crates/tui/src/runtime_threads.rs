@@ -5576,6 +5576,8 @@ pub struct CreateThreadRequest {
     pub dynamic_tools: Vec<DynamicToolSpec>,
     #[serde(default)]
     pub environments: Vec<TurnEnvironmentParams>,
+    #[serde(default, alias = "parentThreadId")]
+    pub parent_thread_id: Option<String>,
 }
 
 /// Mutable fields accepted by `PATCH /v1/threads/{id}`.
@@ -11653,6 +11655,16 @@ impl RuntimeThreadManager {
         let trust_mode = req.trust_mode.unwrap_or(false);
         let auto_approve = policy.auto_approve();
 
+        let parent_thread_id = match req.parent_thread_id.as_deref().map(str::trim) {
+            Some(parent) => {
+                let parent = validated_record_id(parent, "parent thread id")?.to_string();
+                if self.store.load_thread(&parent).is_err() {
+                    bail!("parent_thread_id {parent} does not name a thread");
+                }
+                Some(parent)
+            }
+            None => None,
+        };
         let thread = ThreadRecord {
             schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
             id: match reserved_id {
@@ -11677,7 +11689,7 @@ impl RuntimeThreadManager {
             archived: req.archived,
             system_prompt: req.system_prompt,
             task_id: req.task_id,
-            parent_thread_id: None,
+            parent_thread_id,
             title: None,
             session_id: None,
             saved_session_checkpoint: None,
@@ -11826,6 +11838,39 @@ impl RuntimeThreadManager {
         // A deleted conversation keeps no session grants behind it.
         self.take_approval_grants(thread_id);
         Ok(())
+    }
+
+    pub async fn delete_thread(&self, thread_id: &str) -> Result<ThreadRecord> {
+        let mut active = self.active.lock().await;
+        if active
+            .engines
+            .get(thread_id)
+            .is_some_and(|state| state.active_turn.is_some())
+        {
+            bail!("thread {thread_id} already has an active turn; stop it before deleting");
+        }
+        let _thread_mutation = self.store.thread_mutation.lock();
+        let thread = self.store.load_thread(thread_id)?;
+        active.lru.retain(|id| id != thread_id);
+        active.shell_managers.remove(thread_id);
+        let evicted = active.engines.remove(thread_id).map(|state| state.engine);
+        for turn in self.store.list_turns_for_thread(thread_id)? {
+            for item_id in &turn.item_ids {
+                self.store.remove_item(item_id)?;
+            }
+            self.store.remove_turn(&turn.id)?;
+        }
+        remove_file_if_exists(&self.store.events_path(thread_id)?)?;
+        remove_file_if_exists(&self.store.goal_path(thread_id)?)?;
+        self.store.remove_seed_journal(thread_id)?;
+        self.store.remove_thread(thread_id)?;
+        drop(active);
+        if let Some(engine) = evicted {
+            engine.cancel_with_reason(crate::core::engine::CancelReason::Internal);
+            let _ = engine.try_send(Op::Shutdown);
+        }
+        self.take_approval_grants(thread_id);
+        Ok(thread)
     }
 
     pub async fn list_threads(

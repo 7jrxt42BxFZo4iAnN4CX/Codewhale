@@ -1093,7 +1093,7 @@ pub(super) fn session_to_detail(session: SavedSession) -> SessionDetailResponse 
     }
 }
 
-fn map_session_err(id: &str, err: std::io::Error, action: &str) -> ApiError {
+pub(super) fn map_session_err(id: &str, err: std::io::Error, action: &str) -> ApiError {
     match err.kind() {
         std::io::ErrorKind::NotFound => ApiError::not_found(format!("Session '{id}' not found")),
         std::io::ErrorKind::InvalidData => {

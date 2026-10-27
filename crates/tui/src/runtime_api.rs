@@ -120,6 +120,7 @@ mod secrets;
 pub(crate) mod sessions;
 mod targets;
 mod terminal;
+mod thread_delete;
 pub(crate) mod thread_history;
 mod turn_artifacts;
 mod voice;
@@ -2695,7 +2696,12 @@ pub fn build_router(state: RuntimeApiState) -> Router {
             "/v1/threads/{id}/notices/{notice_id}",
             delete(ack_thread_notice),
         )
-        .route("/v1/threads/{id}", get(get_thread).patch(update_thread))
+        .route(
+            "/v1/threads/{id}",
+            get(get_thread)
+                .patch(update_thread)
+                .delete(thread_delete::delete_thread),
+        )
         .route(
             "/v1/threads/{id}/history",
             get(thread_history::snapshot_thread_history),
