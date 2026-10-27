@@ -41,6 +41,8 @@ function requestMethod(value: string): RequestMethod {
     default: throw new Error('MCP request method is unavailable')
   }
 }
+const EXTENSION_METHODS = new Set(['skills/list', 'skills/get'])
+const brokerValidated = { '~standard': { version: 1, vendor: 'codewhale', validate: (value: unknown) => ({ value }) } } as const
 const SUPPORTED = ['2026-07-28', '2025-06-18', '2025-11-25', '2025-03-26', '2024-11-05']
 function identity(owner: OwnerRef): string {
   return JSON.stringify([owner.plugin_id, owner.generation, owner.owner_token])
@@ -322,7 +324,8 @@ export class McpModule {
   async request(params: RequestParams, signal: AbortSignal): Promise<unknown> {
     this.check(params.owner)
     const timeout = deadline(params.deadline_ms)
-    const method = requestMethod(params.grant.method)
+    const extension = EXTENSION_METHODS.has(params.grant.method)
+    const method = extension ? params.grant.method : requestMethod(params.grant.method)
     const session = this.sessions.get(params.session_id)
     if (!session) throw new Error('MCP session is no longer live')
     const run = session.tail.then(async () => {
@@ -332,7 +335,10 @@ export class McpModule {
       // Generic request preserves per-page cursors. listTools/listResources /
       // listPrompts convenience methods would auto-aggregate into an SDK cache.
       try {
-        return await session.client.request({ method, params: params.grant.params }, { signal, timeout, resetTimeoutOnProgress: false, allowInputRequired: true })
+        const options = { signal, timeout, resetTimeoutOnProgress: false, allowInputRequired: true }
+        return extension
+          ? await session.client.request({ method, params: params.grant.params }, brokerValidated, options)
+          : await session.client.request({ method: method as RequestMethod, params: params.grant.params }, options)
       } catch (error) {
         // A correlated reply completed the exchange, even if the SDK's
         // stricter result schema rejected a legacy malformed catalog item.

@@ -19,7 +19,7 @@ var __export = (target, all) => {
 var define_BUILTIN_MODULE_DIGESTS_default;
 var init_define_BUILTIN_MODULE_DIGESTS = __esm({
   "<define:__BUILTIN_MODULE_DIGESTS__>"() {
-    define_BUILTIN_MODULE_DIGESTS_default = { harness: "ad24207f93d963dcffe1967f6863f416117d9acd67cdfccbcef59c12ccb39f92", mcp: "a176634ff596dc99ad6e3ee388939231d65d6998253839a1e9ebf3a350d2fb76" };
+    define_BUILTIN_MODULE_DIGESTS_default = { harness: "ad24207f93d963dcffe1967f6863f416117d9acd67cdfccbcef59c12ccb39f92", mcp: "50516f554ba8786b3282c8f576a11e86df189ac7fd226176a5d1b618042246ea" };
   }
 });
 

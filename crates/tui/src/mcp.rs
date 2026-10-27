@@ -1352,6 +1352,112 @@ pub struct McpResource {
     pub mime_type: Option<String>,
 }
 
+/// One `skills/list` entry of the published Skills extension (SEP-2640).
+/// Discovery only records it; nothing here loads or activates the skill.
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct McpSkill {
+    pub uri: String,
+    pub frontmatter: serde_json::Map<String, serde_json::Value>,
+    pub resources: Vec<McpSkillFile>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct McpSkillFile {
+    pub uri: String,
+    pub digest: String,
+    pub size: u64,
+}
+
+const MCP_SKILLS_EXTENSION: &str = "io.modelcontextprotocol/skills";
+const MAX_MCP_SKILL_FILES: usize = 512;
+const MAX_MCP_SKILL_BYTES: u64 = 16 * 1024 * 1024;
+
+impl McpSkill {
+    fn frontmatter_text(&self, key: &str) -> Option<&str> {
+        self.frontmatter
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+    }
+
+    pub fn name(&self) -> &str {
+        self.frontmatter_text("name").unwrap_or_default()
+    }
+
+    pub fn description(&self) -> &str {
+        self.frontmatter_text("description").unwrap_or_default()
+    }
+
+    /// Entry checks a host owes before offering the skill: a `SKILL.md` root
+    /// it lists itself, files confined beneath that root with sha256 digests,
+    /// and the extension's file and byte limits.
+    fn admissible(&self) -> bool {
+        let Some(root) = self.uri.strip_suffix("SKILL.md") else {
+            return false;
+        };
+        let mut seen = HashSet::new();
+        let mut bytes = 0u64;
+        !root.is_empty()
+            && self.frontmatter_text("name").is_some()
+            && self.frontmatter_text("description").is_some()
+            && self.resources.len() <= MAX_MCP_SKILL_FILES
+            && self.resources.iter().any(|file| file.uri == self.uri)
+            && self.resources.iter().all(|file| {
+                bytes = bytes.saturating_add(file.size);
+                file.uri.strip_prefix(root).is_some_and(|rel| {
+                    !rel.is_empty()
+                        && !rel.contains(['\\', '?', '#', '%'])
+                        && rel.split('/').all(|part| !matches!(part, "" | "." | ".."))
+                }) && file.digest.strip_prefix("sha256:").is_some_and(|hex| {
+                    hex.len() == 64 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+                }) && seen.insert(file.uri.as_str())
+            })
+            && bytes <= MAX_MCP_SKILL_BYTES
+    }
+}
+
+/// Check one `resources/read` result against its skill entry: exactly the
+/// requested URI, and bytes whose size and sha256 equal the listing's.
+fn verify_mcp_skill_file(file: &McpSkillFile, result: &serde_json::Value) -> Result<()> {
+    use base64::Engine as _;
+    let contents = result
+        .get("contents")
+        .and_then(serde_json::Value::as_array)
+        .filter(|contents| contents.len() == 1)
+        .context("MCP skill file read must return exactly one content entry")?;
+    let entry = &contents[0];
+    anyhow::ensure!(
+        entry.get("uri").and_then(serde_json::Value::as_str) == Some(file.uri.as_str()),
+        "MCP skill file read returned a different URI than '{}'",
+        file.uri
+    );
+    let bytes = if let Some(text) = entry.get("text").and_then(serde_json::Value::as_str) {
+        text.as_bytes().to_vec()
+    } else {
+        let blob = entry
+            .get("blob")
+            .and_then(serde_json::Value::as_str)
+            .context("MCP skill file read carried neither text nor blob")?;
+        base64::engine::general_purpose::STANDARD
+            .decode(blob)
+            .context("MCP skill file blob is not base64")?
+    };
+    let digest = sha2::Sha256::digest(&bytes).iter().fold(
+        String::from("sha256:"),
+        |mut out, byte| {
+            use std::fmt::Write as _;
+            let _ = write!(out, "{byte:02x}");
+            out
+        },
+    );
+    anyhow::ensure!(
+        bytes.len() as u64 == file.size && digest == file.digest,
+        "MCP skill file '{}' does not match its listed size and digest; it was not loaded",
+        file.uri
+    );
+    Ok(())
+}
+
 /// Resource template discovered from an MCP server
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct McpResourceTemplate {
@@ -1615,6 +1721,13 @@ pub(crate) trait McpTransport: Send + Sync {
         false
     }
 
+    /// Whether the server announced a `notifications/*/list_changed` since
+    /// the last call. Transports that read frames only inside an exchange
+    /// leave this to [`McpConnection::recv_reply`].
+    fn take_list_changed(&self) -> bool {
+        false
+    }
+
     /// Graceful shutdown — stdio transports send SIGTERM to the child and
     /// give it a brief window to exit before tokio's `kill_on_drop` fires
     /// SIGKILL as the backstop. Default is a no-op for non-stdio transports
@@ -1625,6 +1738,16 @@ pub(crate) trait McpTransport: Send + Sync {
 const MAX_MCP_CATALOG_PAGES: usize = 64;
 const MAX_MCP_CATALOG_ITEMS: usize = 4_096;
 const MAX_MCP_CATALOG_BYTES: usize = 32 * 1024 * 1024;
+const MAX_MCP_CATALOG_TTL_MS: u64 = 86_400_000;
+
+pub(crate) fn is_mcp_list_changed_method(method: &str) -> bool {
+    matches!(
+        method,
+        "notifications/tools/list_changed"
+            | "notifications/resources/list_changed"
+            | "notifications/prompts/list_changed"
+    )
+}
 
 /// One retained catalog generation, shared by every advertised family.
 struct McpCatalogBudget {
@@ -1635,6 +1758,7 @@ struct McpCatalogBudget {
     seen_cursors: HashSet<(&'static str, String)>,
     // Optional-method recovery cannot turn a budget refusal into success.
     refused: Option<String>,
+    ttl_ms: Option<u64>,
 }
 
 impl McpCatalogBudget {
@@ -1645,6 +1769,7 @@ impl McpCatalogBudget {
             bytes: 0,
             seen_cursors: HashSet::new(),
             refused: None,
+            ttl_ms: None,
         }
     }
 
@@ -1683,6 +1808,9 @@ impl McpCatalogBudget {
         if let Some(reason) = refusal {
             self.refused = Some(reason);
             self.ensure_available()?;
+        }
+        if let Some(ttl) = result.get("ttlMs").and_then(serde_json::Value::as_u64) {
+            self.ttl_ms = Some(self.ttl_ms.map_or(ttl, |known| known.min(ttl)));
         }
         let cursor = result
             .get("nextCursor")
@@ -1738,6 +1866,8 @@ pub struct McpConnection {
     resources: Vec<McpResource>,
     resource_templates: Vec<McpResourceTemplate>,
     prompts: Vec<McpPrompt>,
+    skills: Vec<McpSkill>,
+    skills_extension: bool,
     request_id: AtomicU64,
     state: ConnectionState,
     config: McpServerConfig,
@@ -1754,6 +1884,13 @@ pub struct McpConnection {
     /// Pool catalog generation that created/last authorized this connection.
     /// Directly constructed test connections use zero until inserted.
     catalog_generation: u64,
+    /// Bumped whenever an in-place revalidation changes this catalog, so a
+    /// route resolved against the previous catalog cannot execute.
+    catalog_revision: u64,
+    /// Earliest advertised `ttlMs` across the last discovery's pages. `None`
+    /// keeps the catalog until a list-change notice or reconnect.
+    catalog_fresh_until: Option<std::time::Instant>,
+    catalog_stale: bool,
     /// Key this host shares with the built-in Computer Use plugin over the
     /// connection itself, to attest a person's card decision on a call.
     decision_key: Option<[u8; 32]>,
@@ -2088,6 +2225,8 @@ impl McpConnection {
             resources: Vec::new(),
             resource_templates: Vec::new(),
             prompts: Vec::new(),
+            skills: Vec::new(),
+            skills_extension: false,
             request_id: AtomicU64::new(1),
             state: ConnectionState::Connecting,
             config,
@@ -2099,6 +2238,9 @@ impl McpConnection {
             authority_revocation_reason,
             authority_watch,
             catalog_generation: 0,
+            catalog_revision: 0,
+            catalog_fresh_until: None,
+            catalog_stale: false,
             decision_key: None,
         };
 
@@ -2228,6 +2370,10 @@ impl McpConnection {
         );
         self.transport.set_protocol_version(negotiated);
         self.server_capabilities = McpServerCapabilities::from_initialize_response(&response);
+        self.skills_extension = result
+            .and_then(|result| result.pointer("/capabilities/extensions"))
+            .and_then(|extensions| extensions.get(MCP_SKILLS_EXTENSION))
+            .is_some_and(serde_json::Value::is_object);
         self.instructions = codewhale_mcp::sanitize_server_instructions(
             &self.name,
             result.and_then(|result| result.get("instructions")),
@@ -2253,6 +2399,7 @@ impl McpConnection {
         let mut resources = None;
         let mut resource_templates = None;
         let mut prompts = None;
+        let mut skills = None;
 
         // Missing initialize metadata is treated as a legacy/unknown server:
         // retain tool discovery and bounded best-effort probes for compatibility.
@@ -2300,6 +2447,15 @@ impl McpConnection {
             )
             .await;
         }
+        if self.skills_extension {
+            skills = run_optional_discovery(
+                &server,
+                "skills/list",
+                optional_timeout,
+                self.discover_skills(&mut budget),
+            )
+            .await;
+        }
         // Ordinary optional-method errors remain best effort. Admit only the
         // freshly staged families; do not mix them with an old generation.
         // A budget/cursor refusal preserves the entire previous catalog.
@@ -2308,7 +2464,48 @@ impl McpConnection {
         self.resources = resources.unwrap_or_default();
         self.resource_templates = resource_templates.unwrap_or_default();
         self.prompts = prompts.unwrap_or_default();
+        self.skills = skills.unwrap_or_default();
+        self.catalog_fresh_until = budget.ttl_ms.map(|ttl| {
+            std::time::Instant::now() + Duration::from_millis(ttl.min(MAX_MCP_CATALOG_TTL_MS))
+        });
+        self.catalog_stale = false;
         Ok(())
+    }
+
+    fn catalog_needs_revalidation(&mut self) -> bool {
+        if self.transport.take_list_changed() {
+            self.catalog_stale = true;
+        }
+        self.catalog_stale
+            || self
+                .catalog_fresh_until
+                .is_some_and(|until| std::time::Instant::now() >= until)
+    }
+
+    /// Rediscover a stale catalog on its own connection. Returns whether the
+    /// admitted catalog changed; a failure leaves the previous catalog in
+    /// place and the caller retires the connection.
+    async fn revalidate_catalog(&mut self) -> Result<bool> {
+        let before = (
+            serde_json::to_value(&self.tools)?,
+            serde_json::to_value(&self.resources)?,
+            serde_json::to_value(&self.resource_templates)?,
+            serde_json::to_value(&self.prompts)?,
+            serde_json::to_value(&self.skills)?,
+        );
+        self.discover_all().await?;
+        let changed = before
+            != (
+                serde_json::to_value(&self.tools)?,
+                serde_json::to_value(&self.resources)?,
+                serde_json::to_value(&self.resource_templates)?,
+                serde_json::to_value(&self.prompts)?,
+                serde_json::to_value(&self.skills)?,
+            );
+        if changed {
+            self.catalog_revision = self.catalog_revision.wrapping_add(1);
+        }
+        Ok(changed)
     }
 
     /// Discover available tools from the MCP server
@@ -2533,6 +2730,61 @@ impl McpConnection {
                 break;
             }
         }
+        Ok(discovered)
+    }
+
+    async fn discover_skills(&mut self, budget: &mut McpCatalogBudget) -> Result<Vec<McpSkill>> {
+        let mut cursor: Option<String> = None;
+        let mut discovered: Vec<McpSkill> = Vec::new();
+        loop {
+            budget.ensure_available()?;
+            let list_id = self.next_id();
+            let params = match &cursor {
+                Some(c) => serde_json::json!({ "cursor": c }),
+                None => serde_json::json!({}),
+            };
+            self.send(serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": &list_id,
+                "method": "skills/list",
+                "params": params
+            }))
+            .await?;
+            let response = self.recv(list_id).await?;
+            let Some(result) = response_result(
+                &response,
+                "skills/list",
+                self.config.reviewed_plugin.is_some(),
+            )?
+            else {
+                break;
+            };
+            let items = result
+                .get("skills")
+                .and_then(serde_json::Value::as_array)
+                .map_or(0, Vec::len);
+            cursor = budget.observe_page("skills/list", result, items)?;
+            for item in result
+                .get("skills")
+                .and_then(serde_json::Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                match serde_json::from_value::<McpSkill>(item.clone()) {
+                    Ok(skill)
+                        if skill.admissible()
+                            && !discovered.iter().any(|known| known.uri == skill.uri) =>
+                    {
+                        discovered.push(skill);
+                    }
+                    _ => tracing::debug!(target: "mcp", "skipping inadmissible skill entry"),
+                }
+            }
+            if cursor.is_none() {
+                break;
+            }
+        }
+        discovered.sort_by(|a, b| a.uri.cmp(&b.uri));
         Ok(discovered)
     }
 
@@ -2771,6 +3023,31 @@ impl McpConnection {
         &self.tools
     }
 
+    fn skill_file(&self, uri: &str) -> Option<McpSkillFile> {
+        self.skills
+            .iter()
+            .flat_map(|skill| &skill.resources)
+            .find(|file| file.uri == uri)
+            .cloned()
+    }
+
+    fn skill_items(&self, server: &str) -> impl Iterator<Item = serde_json::Value> + '_ {
+        let server = server.to_string();
+        self.skills.iter().map(move |skill| {
+            serde_json::json!({
+                "server": server,
+                "uri": skill.uri,
+                "name": skill.name(),
+                "description": skill.description(),
+                "mime_type": "text/markdown",
+                "skill": {
+                    "files": skill.resources.iter().map(|file| &file.uri).collect::<Vec<_>>(),
+                    "activation": "explicit read only",
+                },
+            })
+        })
+    }
+
     /// Get discovered resources
     pub fn resources(&self) -> &[McpResource] {
         &self.resources
@@ -2932,6 +3209,14 @@ impl McpConnection {
             // string IDs because some MCP gateways reject numeric JSON-RPC
             // IDs, but accept numeric echoes for compatibility with older
             // servers and tests.
+            if value.get("id").is_none()
+                && value
+                    .get("method")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(is_mcp_list_changed_method)
+            {
+                self.catalog_stale = true;
+            }
             if response_id_matches(value.get("id"), &expected_id) {
                 // Marks the connection stale so it is rebuilt, but this is a
                 // reply to the request, so it never qualifies for a replay.
@@ -2998,6 +3283,7 @@ struct McpToolRoute {
     server_name: String,
     tool_name: String,
     catalog_generation: u64,
+    catalog_revision: u64,
     plugin_authority: Option<codewhale_config::PluginAuthority>,
 }
 
@@ -3194,6 +3480,9 @@ pub(crate) struct McpSupervisorUpdate {
     pub recovered: Vec<String>,
     /// Newly parked after repeated failures; explicit `/mcp retry` resumes.
     pub parked: Vec<String>,
+    /// Live catalogs an expired TTL or list-change notice rediscovered with
+    /// a different result.
+    pub refreshed: Vec<String>,
 }
 
 impl McpSupervisorUpdate {
@@ -3202,6 +3491,7 @@ impl McpSupervisorUpdate {
             && self.failed.is_empty()
             && self.recovered.is_empty()
             && self.parked.is_empty()
+            && self.refreshed.is_empty()
     }
 
     fn merge(&mut self, other: McpSupervisorUpdate) {
@@ -3209,6 +3499,7 @@ impl McpSupervisorUpdate {
         self.failed.extend(other.failed);
         self.recovered.extend(other.recovered);
         self.parked.extend(other.parked);
+        self.refreshed.extend(other.refreshed);
     }
 }
 
@@ -4198,6 +4489,35 @@ impl McpPool {
         }
     }
 
+    /// Rediscover every ready catalog whose TTL expired or whose server
+    /// announced a list change. A failed rediscovery retires the connection
+    /// so ordinary supervision redials it instead of serving stale entries.
+    pub(crate) async fn revalidate_catalogs(&mut self) -> Vec<String> {
+        let stale: Vec<String> = self
+            .connections
+            .iter_mut()
+            .filter(|(_, connection)| connection.is_transport_ready())
+            .filter_map(|(name, connection)| {
+                connection.catalog_needs_revalidation().then(|| name.clone())
+            })
+            .collect();
+        let mut refreshed = Vec::new();
+        for name in stale {
+            let Some(connection) = self.connections.get_mut(&name) else {
+                continue;
+            };
+            match connection.revalidate_catalog().await {
+                Ok(true) => refreshed.push(name),
+                Ok(false) => {}
+                Err(error) => {
+                    tracing::debug!(target: "mcp", server = name, %error, "MCP catalog revalidation failed");
+                    connection.state = ConnectionState::Disconnected;
+                }
+            }
+        }
+        refreshed
+    }
+
     /// Resolve one supervised reconnect attempt. Success stores the live
     /// connection (which clears the backoff, the dead mark, and any park);
     /// failure records the backoff and reports the death or the repeated
@@ -4264,6 +4584,18 @@ impl McpPool {
                 () = tx.closed() => break,
             }
             let Some(pool) = pool.upgrade() else { break };
+            let refreshed = pool.lock().await.revalidate_catalogs().await;
+            if !refreshed.is_empty()
+                && tx
+                    .send(McpSupervisorUpdate {
+                        refreshed,
+                        ..Default::default()
+                    })
+                    .await
+                    .is_err()
+            {
+                break;
+            }
             let plan = pool.lock().await.plan_supervision();
             if plan.due.is_empty() && plan.recovered.is_empty() && plan.parked.is_empty() {
                 continue;
@@ -5070,6 +5402,8 @@ impl McpPool {
             resources: Vec::new(),
             resource_templates: Vec::new(),
             prompts: Vec::new(),
+            skills: Vec::new(),
+            skills_extension: false,
             request_id: AtomicU64::new(1),
             state: ConnectionState::Ready,
             config,
@@ -5081,6 +5415,9 @@ impl McpPool {
             authority_revocation_reason: Arc::new(std::sync::Mutex::new(None)),
             authority_watch: None,
             catalog_generation: 0,
+            catalog_revision: 0,
+            catalog_fresh_until: None,
+            catalog_stale: false,
             decision_key: None,
         };
         self.connections.insert(server.to_string(), conn);
@@ -5171,6 +5508,7 @@ impl McpPool {
                         "mime_type": resource.mime_type,
                     })
                 })
+                .chain(conn.skill_items(&server_name))
                 .collect();
             return Ok(resources);
         }
@@ -5259,6 +5597,7 @@ impl McpPool {
                         "mime_type": resource.mime_type,
                     })
                 }));
+                items.extend(conn.skill_items(server));
             }
         }
         items
@@ -5325,18 +5664,24 @@ impl McpPool {
     ) -> Result<serde_json::Value> {
         let global_timeouts = self.config.timeouts;
         let conn = self.get_or_connect(server_name).await?;
+        let skill_file = conn.skill_file(uri);
         let advertised_literal = conn.resources().iter().any(|resource| resource.uri == uri);
         let advertised_template = conn
             .resource_templates()
             .iter()
             .any(|template| resource_uri_matches_template(uri, &template.uri_template));
-        if !advertised_literal && !advertised_template {
+        if !advertised_literal && !advertised_template && skill_file.is_none() {
             anyhow::bail!("MCP resource URI '{uri}' was not advertised by server '{server_name}'");
         }
         let timeout = conn.config().effective_read_timeout(&global_timeouts);
-        conn.read_resource(uri, timeout)
+        let result = conn
+            .read_resource(uri, timeout)
             .await
-            .map_err(|error| self.note_live_call_failure(server_name, error))
+            .map_err(|error| self.note_live_call_failure(server_name, error))?;
+        if let Some(file) = skill_file {
+            verify_mcp_skill_file(&file, &result)?;
+        }
+        Ok(result)
     }
 
     /// Get a prompt from a specific server
@@ -5463,6 +5808,7 @@ impl McpPool {
             server_name,
             tool_name,
             catalog_generation: connection.catalog_generation,
+            catalog_revision: connection.catalog_revision,
             plugin_authority,
         })
     }
@@ -5872,7 +6218,9 @@ impl McpPool {
         // Copy the global timeouts to avoid borrow conflict
         let global_timeouts = self.config.timeouts;
         let conn = self.get_or_connect(&server_name).await?;
-        if conn.catalog_generation != route.catalog_generation {
+        if conn.catalog_generation != route.catalog_generation
+            || conn.catalog_revision != route.catalog_revision
+        {
             anyhow::bail!("MCP catalog changed after tool resolution; retry the call");
         }
         if conn

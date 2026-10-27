@@ -691,6 +691,7 @@ async fn supervisor_update_refreshes_error_map_and_generation() {
             failed: Vec::new(),
             recovered: Vec::new(),
             parked: Vec::new(),
+            refreshed: Vec::new(),
         })
         .await;
     assert_eq!(
@@ -708,6 +709,7 @@ async fn supervisor_update_refreshes_error_map_and_generation() {
             failed: Vec::new(),
             recovered: vec!["alpha".to_string()],
             parked: vec!["beta".to_string()],
+            refreshed: Vec::new(),
         })
         .await;
     assert!(!engine.mcp_connection_errors.contains_key("alpha"));

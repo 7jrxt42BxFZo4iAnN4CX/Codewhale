@@ -24655,6 +24655,8 @@ function requestMethod(value) {
       throw new Error("MCP request method is unavailable");
   }
 }
+var EXTENSION_METHODS = /* @__PURE__ */ new Set(["skills/list", "skills/get"]);
+var brokerValidated = { "~standard": { version: 1, vendor: "codewhale", validate: (value) => ({ value }) } };
 var SUPPORTED = ["2026-07-28", "2025-06-18", "2025-11-25", "2025-03-26", "2024-11-05"];
 function identity(owner) {
   return JSON.stringify([owner.plugin_id, owner.generation, owner.owner_token]);
@@ -25026,7 +25028,8 @@ var McpModule = class {
   async request(params, signal) {
     this.check(params.owner);
     const timeout = deadline(params.deadline_ms);
-    const method = requestMethod(params.grant.method);
+    const extension = EXTENSION_METHODS.has(params.grant.method);
+    const method = extension ? params.grant.method : requestMethod(params.grant.method);
     const session = this.sessions.get(params.session_id);
     if (!session) throw new Error("MCP session is no longer live");
     const run = session.tail.then(async () => {
@@ -25034,7 +25037,8 @@ var McpModule = class {
       if (this.sessions.get(params.session_id) !== session || signal.aborted) throw new Error("MCP operation cancelled or stale");
       session.transport.grant(params.grant);
       try {
-        return await session.client.request({ method, params: params.grant.params }, { signal, timeout, resetTimeoutOnProgress: false, allowInputRequired: true });
+        const options = { signal, timeout, resetTimeoutOnProgress: false, allowInputRequired: true };
+        return extension ? await session.client.request({ method, params: params.grant.params }, brokerValidated, options) : await session.client.request({ method, params: params.grant.params }, options);
       } catch (error2) {
         if (!session.transport.takeReply(params.grant.operation_id)) {
           this.sessions.delete(params.session_id);

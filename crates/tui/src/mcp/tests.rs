@@ -3050,6 +3050,8 @@ fn test_connection(transport: Box<dyn McpTransport>) -> McpConnection {
         resources: Vec::new(),
         resource_templates: Vec::new(),
         prompts: Vec::new(),
+        skills: Vec::new(),
+        skills_extension: false,
         request_id: AtomicU64::new(1),
         state: ConnectionState::Ready,
         config: test_server_config(),
@@ -3061,6 +3063,9 @@ fn test_connection(transport: Box<dyn McpTransport>) -> McpConnection {
         authority_revocation_reason: Arc::new(std::sync::Mutex::new(None)),
         authority_watch: None,
         catalog_generation: 0,
+        catalog_revision: 0,
+        catalog_fresh_until: None,
+        catalog_stale: false,
         decision_key: None,
     }
 }
