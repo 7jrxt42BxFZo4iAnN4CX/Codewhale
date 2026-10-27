@@ -10526,15 +10526,15 @@ async fn run_review(config: &Config, args: ReviewArgs) -> Result<()> {
     // text, so the review request has to keep room for the review itself.
     let review_reserve_percent =
         crate::route_budget::review_visible_text_reserve_percent(&request_route.model);
-    let review_budget = crate::tools::review_triage::budget_for(&review_triage)
-        .with_reasoning_floor(review_reserve_percent)
-        .with_money_cap(
-            args.money_cap_usd,
-            review_rates.map(|rates| (rates.input_usd_per_million, rates.output_usd_per_million)),
-        );
-    let review_allowance = client
-        .effective_max_output_tokens(&request_route.model)
-        .min(review_budget.max_output_tokens);
+    let review_budget = crate::tools::review_triage::budget_for(
+        &review_triage,
+        client.effective_max_output_tokens(&request_route.model),
+    )
+    .with_money_cap(
+        args.money_cap_usd,
+        review_rates.map(|rates| (rates.input_usd_per_million, rates.output_usd_per_million)),
+    );
+    let review_allowance = review_budget.max_output_tokens;
     let review_reserve_tokens = crate::route_budget::review_visible_text_reserve_tokens(
         &request_route.model,
         review_allowance,

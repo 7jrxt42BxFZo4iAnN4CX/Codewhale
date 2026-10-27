@@ -110,12 +110,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged (#6436, #7082).
 - `codewhale review` no longer accepts leaked tool-call markup as a review: a
   pass whose reply is a DeepSeek DSML (or other) tool-call wrapper outside code
-  now fails as incomplete, with no tally and nothing posted (#7072). A review on a
-  reasoning model now raises its tier output allowance to 8,192 tokens (a
-  Low-risk review used to get 4,000, which a reasoning pass could spend entirely
-  on thinking), the `review` tool bounds its reasoning level to leave room for
-  the review, and an exhausted pass reports the allowance and reserve actually
-  sent and says "cut off" when visible text came back (#7067).
+  now fails as incomplete, with no tally and nothing posted (#7072). Reviews no
+  longer have fixed per-risk output caps (a Low-risk review used to get 4,000
+  tokens, which a reasoning pass could spend entirely on thinking): every pass
+  may use the route's own output limit, and the step, tool and money budgets
+  still stop a review early as a named partial review rather than truncating
+  it. The `review` tool bounds its reasoning level to leave room for the review,
+  and an exhausted pass reports the allowance and reserve actually sent and
+  says "cut off" when visible text came back (#7067).
 - `--full-access` is now the documented flag for Full Access (`--yolo` stays an
   alias), and `serve` accepts it after the subcommand: `codewhale serve --acp
   --yolo` used to fail with "unexpected argument". `serve --acp` also writes one

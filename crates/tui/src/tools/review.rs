@@ -1576,11 +1576,11 @@ impl ToolSpec for ReviewTool {
         let triage = super::review_triage::triage_review(&review_diff);
         let reserve_percent =
             crate::route_budget::review_visible_text_reserve_percent(&route.model);
-        let budget =
-            super::review_triage::budget_for(&triage).with_reasoning_floor(reserve_percent);
-        let allowance = client
-            .effective_max_output_tokens(&route.model)
-            .min(budget.max_output_tokens);
+        let budget = super::review_triage::budget_for(
+            &triage,
+            client.effective_max_output_tokens(&route.model),
+        );
+        let allowance = budget.max_output_tokens;
         let reasoning_effort =
             (codewhale_models::model_reasoning_capability(&route.model) == Some(true)).then(|| {
                 bounded_review_reasoning_effort(
