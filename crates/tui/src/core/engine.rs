@@ -6980,7 +6980,7 @@ impl Engine {
             && self.config.compaction.runtime_cost_owner.is_none()
         {
             let owner = format!("interactive:{}:{}", self.session.id, turn.id);
-            crate::cost_status::register_persistent_interactive_runtime_usage_sink(
+            crate::usage_persistence::register_persistent_interactive_runtime_usage_sink(
                 &owner,
                 crate::cost_status::scope_token(),
                 &self.session.id,

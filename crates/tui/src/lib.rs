@@ -35,6 +35,7 @@ mod conformance;
 mod context_report;
 mod core;
 mod cost_status;
+mod usage_persistence;
 /// Guarded installation I/O reusing Engine's confined file primitives.
 pub mod delivery_files;
 mod doctor;

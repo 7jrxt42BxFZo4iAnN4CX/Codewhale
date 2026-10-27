@@ -347,7 +347,7 @@ impl TranslationAccountingContext {
                 self.origin_session_id.as_deref(),
                 self.origin_turn_id.as_deref(),
             ) {
-                crate::cost_status::report_effective_route_for_interactive_origin(
+                crate::usage_persistence::report_effective_route_for_interactive_origin(
                     self.cost_scope,
                     session_id,
                     turn_id,
@@ -369,7 +369,7 @@ impl TranslationAccountingContext {
                 self.origin_session_id.as_deref(),
                 self.origin_turn_id.as_deref(),
             ) {
-                crate::cost_status::report_unreceipted_for_interactive_origin(
+                crate::usage_persistence::report_unreceipted_for_interactive_origin(
                     self.cost_scope,
                     session_id,
                     turn_id,

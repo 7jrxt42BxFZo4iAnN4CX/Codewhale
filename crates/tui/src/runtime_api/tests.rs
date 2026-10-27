@@ -164,7 +164,7 @@ fn runtime_request_model_uses_the_active_provider_default() {
 #[tokio::test(flavor = "current_thread")]
 async fn http_and_web_server_thread_manager_installs_configured_workshop_byte_budgets() -> Result<()>
 {
-    let _workshop_guard = crate::tools::large_output_router::active_workshop_test_guard();
+    let _workshop_guard = codewhale_runtime::active_workshop::active_workshop_test_guard();
     let temp = tempfile::tempdir()?;
     let workspace = temp.path().join("workspace");
     fs::create_dir_all(&workspace)?;
@@ -194,11 +194,11 @@ async fn http_and_web_server_thread_manager_installs_configured_workshop_byte_bu
     assert_eq!(startup_activation.read_result_max_bytes, Some(73_728));
     assert_eq!(startup_activation.tool_result_max_bytes, Some(65_536));
     assert_eq!(
-        crate::tools::large_output_router::active_read_result_max_bytes(),
+        codewhale_runtime::active_workshop::active_read_result_max_bytes(),
         Some(73_728)
     );
     assert_eq!(
-        crate::tools::large_output_router::active_tool_result_max_bytes(),
+        codewhale_runtime::active_workshop::active_tool_result_max_bytes(),
         Some(65_536)
     );
 
@@ -217,14 +217,14 @@ async fn http_and_web_server_thread_manager_installs_configured_workshop_byte_bu
     assert_eq!(reload_activation.read_result_max_bytes, Some(81_920));
     assert_eq!(reload_activation.tool_result_max_bytes, Some(77_824));
     assert_eq!(
-        crate::tools::large_output_router::active_read_result_max_bytes(),
+        codewhale_runtime::active_workshop::active_read_result_max_bytes(),
         Some(81_920)
     );
     assert_eq!(
-        crate::tools::large_output_router::active_tool_result_max_bytes(),
+        codewhale_runtime::active_workshop::active_tool_result_max_bytes(),
         Some(77_824)
     );
-    crate::tools::large_output_router::install_active_workshop(None);
+    codewhale_runtime::active_workshop::install_active_workshop(None);
     Ok(())
 }
 

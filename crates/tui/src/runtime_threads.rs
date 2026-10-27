@@ -8746,7 +8746,7 @@ impl RuntimeThreadManager {
         // byte limits are active. Rejected reloads leave the prior limits in
         // place.
         new_config.retain_compatible_session_keys();
-        let workshop_activation = crate::tools::large_output_router::install_active_workshop(
+        let workshop_activation = codewhale_runtime::active_workshop::install_active_workshop(
             new_config.workshop.as_ref(),
         );
         codewhale_runtime::config::initialize_cloud_facts(&new_config);

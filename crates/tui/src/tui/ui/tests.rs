@@ -17824,7 +17824,7 @@ fn active_deleted_origin_mailbox_usage_does_not_accrue_or_restore_the_session() 
     app.current_session_metadata = Some(session.metadata.clone());
     let origin_scope = crate::cost_status::scope_token();
     let owner = "interactive:active-deleted-origin:origin-turn";
-    crate::cost_status::register_persistent_interactive_runtime_usage_sink_for_test(
+    crate::usage_persistence::register_persistent_interactive_runtime_usage_sink_for_test(
         owner,
         origin_scope,
         &session.metadata.id,

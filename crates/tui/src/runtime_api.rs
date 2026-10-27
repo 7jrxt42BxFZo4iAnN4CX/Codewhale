@@ -1648,7 +1648,7 @@ fn replay_flag_is_absent(replayed: &bool) -> bool {
 }
 
 fn install_runtime_server_workshop_budgets(config: &Config) -> codewhale_config::WorkshopConfig {
-    crate::tools::large_output_router::install_active_workshop(config.workshop.as_ref())
+    codewhale_runtime::active_workshop::install_active_workshop(config.workshop.as_ref())
 }
 
 #[cfg(test)]
