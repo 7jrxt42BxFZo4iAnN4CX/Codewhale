@@ -4713,7 +4713,7 @@ fn copy_file_create_new(src: &Path, dst: &Path) -> io::Result<bool> {
 /// Always non-fatal. Returns silently — callers don't need the count
 /// (the underlying repo logs at WARN if anything blew up).
 pub fn prune_workspace_snapshots(workspace: &Path, max_age: std::time::Duration) {
-    match crate::snapshot::prune_older_than(workspace, max_age) {
+    match codewhale_snapshot::prune_older_than(workspace, max_age) {
         Ok(0) => {}
         Ok(n) => {
             tracing::debug!(target: "snapshot", "boot prune removed {n} snapshot(s)");

@@ -26625,7 +26625,7 @@ fn turn_inspector_timeline_numbers_semantic_entries_and_checkpoint_actions() {
     let workspace = tmp.path().join("workspace");
     std::fs::create_dir_all(&workspace).expect("workspace");
     std::fs::write(workspace.join("src.rs"), "fn main() {}\n").expect("source");
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace).expect("snapshot repo");
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&workspace).expect("snapshot repo");
     repo.snapshot("pre-turn:12: Fix timeline")
         .expect("pre-turn snapshot");
 

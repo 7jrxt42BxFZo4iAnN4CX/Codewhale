@@ -1731,7 +1731,7 @@ pub struct TurnRecord {
     /// imported from a saved session, and turns that ran with snapshots off
     /// carry none, and so have no restore point.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub workspace_snapshots: Vec<crate::snapshot::WorkspaceSnapshotRef>,
+    pub workspace_snapshots: Vec<codewhale_snapshot::WorkspaceSnapshotRef>,
 }
 
 impl TurnRecord {
@@ -6972,7 +6972,7 @@ pub(crate) struct DroppedTurnSnapshots {
     /// not keep tool calls.
     pub may_change_files: bool,
     /// The restore points the engine reported for the turn, in order.
-    pub snapshots: Vec<crate::snapshot::WorkspaceSnapshotRef>,
+    pub snapshots: Vec<codewhale_snapshot::WorkspaceSnapshotRef>,
     /// Paths the turn's file-tool calls (`write_file`, `edit_file`,
     /// `apply_patch`) declared they write, as the calls named them, for every
     /// call that ran (completed, or stopped mid-run). A turn-scoped undo can
@@ -12207,14 +12207,14 @@ impl RuntimeThreadManager {
             if turn.thread_id != thread_id {
                 return Ok(None);
             }
-            let recorded = |kind: crate::snapshot::WorkspaceSnapshotKind| {
+            let recorded = |kind: codewhale_snapshot::WorkspaceSnapshotKind| {
                 turn.workspace_snapshots.iter().rfind(|receipt| {
                     receipt.kind == kind
                         && receipt.tool_call_id.as_deref() == Some(tool_call_id.as_str())
                 })
             };
-            let pre = recorded(crate::snapshot::WorkspaceSnapshotKind::Tool);
-            let post = recorded(crate::snapshot::WorkspaceSnapshotKind::PostTool);
+            let pre = recorded(codewhale_snapshot::WorkspaceSnapshotKind::Tool);
+            let post = recorded(codewhale_snapshot::WorkspaceSnapshotKind::PostTool);
             let item = manager.item_for_call(&turn, &tool_call_id)?;
             // A call the turn recorded no item for is a call this turn never
             // ran: the caller asked about the wrong turn. A call with an item
@@ -13191,7 +13191,7 @@ impl RuntimeThreadManager {
     pub(crate) fn thread_workspace_snapshots(
         &self,
         thread_id: &str,
-    ) -> Result<Vec<crate::snapshot::WorkspaceSnapshotRef>> {
+    ) -> Result<Vec<codewhale_snapshot::WorkspaceSnapshotRef>> {
         Ok(self
             .store
             .list_turns_for_thread(thread_id)?
@@ -17668,7 +17668,7 @@ impl RuntimeThreadManager {
             let lsp_config = (!isolated_chat)
                 .then(|| cfg.lsp.clone())
                 .flatten()
-                .map(crate::lsp::LspConfig::from);
+                .map(codewhale_lsp::LspConfig::from);
             let max_subagents = cfg
                 .max_subagents_for_provider(&route_identity)
                 .clamp(1, MAX_SUBAGENTS);
@@ -20973,7 +20973,7 @@ impl RuntimeThreadManager {
                             "workspace snapshot receipt was not recorded; this turn has no such restore point: {err:#}"
                         );
                     } else {
-                        if snapshot.kind == crate::snapshot::WorkspaceSnapshotKind::Tool
+                        if snapshot.kind == codewhale_snapshot::WorkspaceSnapshotKind::Tool
                             && let Some(call_id) = snapshot.tool_call_id.as_ref()
                         {
                             tool_restore_points.insert(call_id.clone(), snapshot.tree_id.clone());
@@ -21363,14 +21363,14 @@ impl RuntimeThreadManager {
     fn initial_turn_workspace(
         &self,
         thread_id: &str,
-        snapshots: &[crate::snapshot::WorkspaceSnapshotRef],
+        snapshots: &[codewhale_snapshot::WorkspaceSnapshotRef],
     ) -> TurnWorkspaceArtifacts {
         if let Some(pair) = turn_snapshot_pair(snapshots) {
             return TurnWorkspaceArtifacts::pending(pair.pre.tree_id);
         }
         let pre = snapshots
             .iter()
-            .find(|snapshot| snapshot.kind == crate::snapshot::WorkspaceSnapshotKind::PreTurn);
+            .find(|snapshot| snapshot.kind == codewhale_snapshot::WorkspaceSnapshotKind::PreTurn);
         let gated = || -> Option<TurnWorkspaceReason> {
             if !self.config.read().snapshots_config().enabled {
                 return Some(TurnWorkspaceReason::SnapshotsDisabled);
@@ -22618,16 +22618,16 @@ pub struct TurnArtifactsView {
 /// The pre-turn and post-turn restore points recorded on one turn: the
 /// pair its workspace delta is diffed from.
 struct TurnSnapshotPair {
-    pre: crate::snapshot::WorkspaceSnapshotRef,
-    post: crate::snapshot::WorkspaceSnapshotRef,
+    pre: codewhale_snapshot::WorkspaceSnapshotRef,
+    post: codewhale_snapshot::WorkspaceSnapshotRef,
 }
 
 /// The turn's first `pre_turn` and last `post_turn` receipts, when both were
 /// recorded.
 fn turn_snapshot_pair(
-    snapshots: &[crate::snapshot::WorkspaceSnapshotRef],
+    snapshots: &[codewhale_snapshot::WorkspaceSnapshotRef],
 ) -> Option<TurnSnapshotPair> {
-    use crate::snapshot::WorkspaceSnapshotKind;
+    use codewhale_snapshot::WorkspaceSnapshotKind;
     let pre = snapshots
         .iter()
         .find(|snapshot| snapshot.kind == WorkspaceSnapshotKind::PreTurn)?;
@@ -22648,11 +22648,11 @@ fn workspace_delta(
     pre: &str,
     post: &str,
     item_paths: &[String],
-) -> Result<(crate::snapshot::SnapshotDelta, HashSet<String>)> {
-    let repo = crate::snapshot::SnapshotRepo::open_existing(workspace)?
+) -> Result<(codewhale_snapshot::SnapshotDelta, HashSet<String>)> {
+    let repo = codewhale_snapshot::SnapshotRepo::open_existing(workspace)?
         .context("workspace snapshot repo is missing")?;
-    let pre = crate::snapshot::SnapshotId::parse(pre)?;
-    let post = crate::snapshot::SnapshotId::parse(post)?;
+    let pre = codewhale_snapshot::SnapshotId::parse(pre)?;
+    let post = codewhale_snapshot::SnapshotId::parse(post)?;
     let delta = repo.diff_snapshots(&pre, &post, turn_artifacts::MAX_TURN_ARTIFACTS)?;
     let mut tracked = repo.tracked_paths(&pre, item_paths)?;
     tracked.extend(repo.tracked_paths(&post, item_paths)?);

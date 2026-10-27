@@ -52,7 +52,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-use crate::dependencies::{ExternalTool as _, Git};
+use codewhale_dependencies::{ExternalTool as _, Git};
 
 use super::workspace::{
     FILE_SERVE_MAX_BYTES, canonical_workspace, collect_workspace_status, content_revision,
@@ -121,7 +121,7 @@ async fn git_read(workspace: &FsPath, args: &[&str]) -> Result<GitRun, ApiError>
 
 /// Write path for operator-driven mutations. Non-interactive by contract:
 /// [`Git::tokio_command`] carries the shared no-prompt environment
-/// ([`crate::dependencies::apply_git_noninteractive_env`]) so a credential or
+/// ([`codewhale_dependencies::apply_git_noninteractive_env`]) so a credential or
 /// key prompt can never hang the request. Hooks and filters run exactly as they do for the user's own
 /// `git` — a Review-sheet commit is the user's commit.
 async fn git_write(workspace: &FsPath, args: Vec<String>) -> Result<GitRun, ApiError> {

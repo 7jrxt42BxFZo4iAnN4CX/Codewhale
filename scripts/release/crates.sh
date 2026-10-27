@@ -43,6 +43,10 @@ release_crates=(
   codewhale-app-server
   codewhale-sandbox
   codewhale-util
+  codewhale-dependencies
+  codewhale-snapshot
+  codewhale-lsp
+  codewhale-repl
   codewhale-tui
   codewhale-cli
 )

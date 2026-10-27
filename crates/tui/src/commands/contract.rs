@@ -91,10 +91,10 @@ use codewhale_execpolicy::ApprovalMode;
 
 use crate::commands::groups::plugins::plugin_network_policy;
 
-use crate::dependencies::ExternalTool as _;
 use crate::tui::app::App;
 use crate::tui::history::HistoryCell;
 use codewhale_config::pricing::CostCurrency;
+use codewhale_dependencies::ExternalTool as _;
 use codewhale_localization::{MessageId, tr};
 use codewhale_net::network_policy::NetworkPolicy;
 
@@ -920,7 +920,7 @@ fn hosted_work_url(repo: &str, branch: &str) -> String {
 }
 
 fn read_git_value(workspace: &Path, args: &[&str]) -> Option<String> {
-    let mut command = crate::dependencies::Git::command()?;
+    let mut command = codewhale_dependencies::Git::command()?;
     let output = command.arg("-C").arg(workspace).args(args).output().ok()?;
     if !output.status.success()
         || output.stdout.is_empty()
@@ -941,7 +941,7 @@ fn valid_branch_name(branch: &str) -> bool {
     if branch.is_empty() || branch.len() > MAX_GIT_VALUE_BYTES {
         return false;
     }
-    let Some(mut command) = crate::dependencies::Git::command() else {
+    let Some(mut command) = codewhale_dependencies::Git::command() else {
         return false;
     };
     command
@@ -1869,7 +1869,7 @@ fn flatten_history_lines(lines: Vec<ratatui::text::Line<'static>>) -> String {
 /// Read the workspace snapshot repository read-only and project its state
 /// (D8): only an existing repo is opened, never created.
 fn project_restore_points(workspace: &Path) -> RestorePointProjection {
-    match crate::snapshot::SnapshotRepo::open_existing(workspace) {
+    match codewhale_snapshot::SnapshotRepo::open_existing(workspace) {
         Ok(None) => RestorePointProjection::None,
         Err(err) => RestorePointProjection::Unreadable {
             reason: err.to_string(),
@@ -1885,7 +1885,7 @@ fn project_restore_points(workspace: &Path) -> RestorePointProjection {
     }
 }
 
-fn project_restore_snapshot(snapshot: &crate::snapshot::Snapshot) -> RestoreSnapshot {
+fn project_restore_snapshot(snapshot: &codewhale_snapshot::Snapshot) -> RestoreSnapshot {
     let parsed = crate::core::turn::parse_snapshot_label(&snapshot.label);
     RestoreSnapshot {
         id: snapshot.id.as_str().to_string(),
@@ -3359,7 +3359,7 @@ impl CommandSkillGroupContext for SkillGroupAdapter<'_> {
 
     fn snapshot_list(&mut self, limit: usize) -> Result<Vec<SnapshotEntry>, String> {
         let workspace = self.host.app.borrow().workspace.clone();
-        let repo = match crate::snapshot::SnapshotRepo::open_or_init(&workspace) {
+        let repo = match codewhale_snapshot::SnapshotRepo::open_or_init(&workspace) {
             Ok(repo) => repo,
             Err(err) => {
                 return Err(format!(
@@ -3391,7 +3391,7 @@ impl CommandSkillGroupContext for SkillGroupAdapter<'_> {
         let workspace = self.host.app.borrow().workspace.clone();
         let id = id.to_owned();
         let restore = move || {
-            let repo = match crate::snapshot::SnapshotRepo::open_or_init(&workspace) {
+            let repo = match codewhale_snapshot::SnapshotRepo::open_or_init(&workspace) {
                 Ok(repo) => repo,
                 Err(err) => {
                     return Err(format!(
@@ -3400,7 +3400,7 @@ impl CommandSkillGroupContext for SkillGroupAdapter<'_> {
                     ));
                 }
             };
-            let id = crate::snapshot::SnapshotId::parse(&id)
+            let id = codewhale_snapshot::SnapshotId::parse(&id)
                 .map_err(|err| format!("Restore failed: {err}"))?;
             repo.restore(&id)
                 .map_err(|err| format!("Restore failed: {err}"))
@@ -6540,7 +6540,7 @@ mod tests {
             let _home = scoped_home(&tmp);
             let skills_dir = tmp.path().join("skills");
             let file = tmp.path().join("a.txt");
-            let repo = crate::snapshot::SnapshotRepo::open_or_init(tmp.path()).unwrap();
+            let repo = codewhale_snapshot::SnapshotRepo::open_or_init(tmp.path()).unwrap();
             std::fs::write(&file, b"v1").unwrap();
             repo.snapshot("pre-turn:1").unwrap();
             std::fs::write(&file, b"v2").unwrap();

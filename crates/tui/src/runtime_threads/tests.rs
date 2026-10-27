@@ -23385,10 +23385,10 @@ async fn workspace_turn_fixture() -> Result<WorkspaceTurnFixture> {
 /// Runtime engine tags it (the thread's own id, #6621).
 fn fixture_restore_point(
     fixture: &WorkspaceTurnFixture,
-    kind: crate::snapshot::WorkspaceSnapshotKind,
+    kind: codewhale_snapshot::WorkspaceSnapshotKind,
     label: &str,
     tool_call_id: Option<&str>,
-) -> Result<crate::snapshot::WorkspaceSnapshotRef> {
+) -> Result<codewhale_snapshot::WorkspaceSnapshotRef> {
     let (taken, _) = crate::core::turn::restore_point_snapshot(
         &fixture.workspace,
         label,
@@ -23397,7 +23397,7 @@ fn fixture_restore_point(
         None,
     )
     .ok_or_else(|| anyhow!("snapshot {label} failed"))?;
-    Ok(crate::snapshot::WorkspaceSnapshotRef::new(
+    Ok(codewhale_snapshot::WorkspaceSnapshotRef::new(
         kind,
         &taken,
         &fixture.thread.id,
@@ -23423,8 +23423,8 @@ enum ScriptedSnapshots {
 async fn run_workspace_turn(
     fixture: &WorkspaceTurnFixture,
     scripted: ScriptedSnapshots,
-) -> Result<(TurnRecord, Vec<crate::snapshot::WorkspaceSnapshotRef>)> {
-    use crate::snapshot::WorkspaceSnapshotKind;
+) -> Result<(TurnRecord, Vec<codewhale_snapshot::WorkspaceSnapshotRef>)> {
+    use codewhale_snapshot::WorkspaceSnapshotKind;
     let manager = &fixture.manager;
     let mut harness = install_mock_engine(manager, &fixture.thread.id).await;
     let turn = manager

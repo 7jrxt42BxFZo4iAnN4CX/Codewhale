@@ -42,7 +42,6 @@ use crate::core::engine::tool_catalog::{
 use crate::core::events::{AgentProgressEventMeta, Event};
 #[cfg(test)]
 use crate::core::session::ToolActivationCache;
-use crate::dependencies::{ExternalTool, Git};
 use crate::llm_client::LlmError;
 use crate::reasoning_preference::ReasoningEffort;
 use crate::request_tuning::RequestTuning;
@@ -72,6 +71,7 @@ use codewhale_agent_contract::worker_profile::{
     narrow_model_steps, narrow_optional_limit,
 };
 use codewhale_config::AppMode;
+use codewhale_dependencies::{ExternalTool, Git};
 #[cfg(test)]
 use codewhale_execpolicy::ApprovalMode;
 use codewhale_execpolicy::canonical_action::{

@@ -836,7 +836,7 @@ impl Engine {
     #[allow(clippy::too_many_arguments)] // mirrors `gate_nested_call`
     async fn repl_fence_blocked_reason(
         &mut self,
-        blocks: &[crate::repl::ReplBlock],
+        blocks: &[codewhale_repl::ReplBlock],
         // What the approval card says would run, e.g. "the reply's ```repl
         // block(s) in the session REPL kernel".
         what_runs: &str,
@@ -3509,7 +3509,7 @@ impl Engine {
                     {
                         tool_restore_point = self
                             .take_restore_point(
-                                crate::snapshot::WorkspaceSnapshotKind::Tool,
+                                codewhale_snapshot::WorkspaceSnapshotKind::Tool,
                                 format!("tool:{tool_id}"),
                                 Some(tool_id.as_str()),
                                 super::file_write_tool_target_paths(&tool_name, &tool_input),
@@ -3614,7 +3614,7 @@ impl Engine {
                     // Close the span the call ran in (recording hosts only).
                     if tool_restore_point && self.config.record_restore_points {
                         self.take_restore_point(
-                            crate::snapshot::WorkspaceSnapshotKind::PostTool,
+                            codewhale_snapshot::WorkspaceSnapshotKind::PostTool,
                             format!("post-tool:{tool_id}"),
                             Some(tool_id.as_str()),
                             None,
@@ -3916,7 +3916,7 @@ impl Engine {
         if !code_execution_offered(mode, tool_catalog, nested_gate_env.tool_policy) {
             return refused("code execution is not available on this turn".to_string());
         }
-        let block = crate::repl::ReplBlock {
+        let block = codewhale_repl::ReplBlock {
             code,
             start_offset: 0,
             end_offset: 0,
@@ -4254,7 +4254,7 @@ impl Engine {
             &plan.input,
         ) {
             self.take_restore_point(
-                crate::snapshot::WorkspaceSnapshotKind::Tool,
+                codewhale_snapshot::WorkspaceSnapshotKind::Tool,
                 format!("tool:{nested_id}"),
                 Some(nested_id.as_str()),
                 super::file_write_tool_target_paths(&plan.name, &plan.input),

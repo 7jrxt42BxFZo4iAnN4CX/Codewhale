@@ -512,7 +512,7 @@ summary = "Feeds language-server diagnostics to the agent; custom servers can be
 status = "stable"
 surfaces = { tui = "stable", api = "stable" }
 docs = "docs/LSP_PHP_CUSTOM.md"
-owner = "crates/tui/src/lsp"
+owner = "crates/lsp/src"
 
 [[feature]]
 id = "runtime-api"

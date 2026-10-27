@@ -507,11 +507,11 @@ pub enum Event {
     /// (`pre_turn`), before one file-modifying tool call (`tool`), after that
     /// call (`post_tool`, recording hosts only), or after the turn
     /// (`post_turn`). A host that records these on its turn records owns
-    /// exactly those restore points (see `crate::snapshot::WorkspaceSnapshotRef`).
+    /// exactly those restore points (see `codewhale_snapshot::WorkspaceSnapshotRef`).
     /// With `EngineConfig::record_restore_points` every receipt of a turn
     /// arrives before its `TurnComplete`.
     WorkspaceSnapshotTaken {
-        snapshot: crate::snapshot::WorkspaceSnapshotRef,
+        snapshot: codewhale_snapshot::WorkspaceSnapshotRef,
     },
 
     /// Immutable billing route captured at CodeWhale's pre-permit application

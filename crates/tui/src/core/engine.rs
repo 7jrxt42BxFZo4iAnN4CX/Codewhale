@@ -37,7 +37,6 @@ use crate::route_runtime::resolve_runtime_route;
 use crate::route_runtime::{
     ResolvedRuntimeRoute, ValidatedRuntimeRoute, resolve_runtime_route_for_identity,
 };
-use crate::snapshot::{WorkspaceSnapshotKind, WorkspaceSnapshotRef};
 use crate::tools::goal::{
     GoalPauseReason, GoalSnapshot, GoalStatus, SharedGoalState, new_shared_goal_state,
 };
@@ -74,6 +73,7 @@ use codewhale_models::{
 };
 use codewhale_runtime::config::{Config, DEFAULT_MAX_SUBAGENTS};
 use codewhale_runtime::features::{Feature, Features};
+use codewhale_snapshot::{WorkspaceSnapshotKind, WorkspaceSnapshotRef};
 use codewhale_util::utils::spawn_supervised;
 
 #[cfg(test)]
@@ -405,7 +405,7 @@ pub struct EngineConfig {
     pub record_restore_points: bool,
     /// Post-edit LSP diagnostics injection (#136). When `None`, the engine
     /// constructs a disabled manager so the field is always present.
-    pub lsp_config: Option<crate::lsp::LspConfig>,
+    pub lsp_config: Option<codewhale_lsp::LspConfig>,
     /// Durable runtime services exposed to model-visible tools.
     pub runtime_services: RuntimeToolServices,
     /// Per-role/type sub-agent model overrides already resolved from config.
@@ -1029,7 +1029,7 @@ pub struct Engine {
     /// One lazy, session-scoped working kernel for inline `repl` blocks.
     /// Its context is refreshed before each run, while user-created Python
     /// state stays alive across model turns.
-    repl_kernel: Option<crate::repl::PythonRuntime>,
+    repl_kernel: Option<codewhale_repl::PythonRuntime>,
     subagent_manager: SharedSubAgentManager,
     subagent_execution_limits: Option<SubAgentExecutionLimits>,
     /// The deterministic Auto-Review policy shared with every child runtime
@@ -1154,11 +1154,11 @@ pub struct Engine {
     /// next receipt's `changed_paths` is computed against. `None` before a
     /// turn's first snapshot and after one failed, so a span that cannot be
     /// accounted for is reported as unknown rather than folded into the next.
-    restore_point_since: Option<crate::snapshot::SnapshotId>,
+    restore_point_since: Option<codewhale_snapshot::SnapshotId>,
     /// Post-edit LSP diagnostics injection (#136). Populated unconditionally
     /// — when LSP is disabled in config, this is an inert manager that
     /// always returns `None` from `diagnostics_for`.
-    lsp_manager: Arc<crate::lsp::LspManager>,
+    lsp_manager: Arc<codewhale_lsp::LspManager>,
     /// External sandbox backend (#516). When `Some`, exec_shell routes commands
     /// through this instead of spawning a local process.
     sandbox_backend: Option<std::sync::Arc<dyn codewhale_sandbox::backend::SandboxBackend>>,
@@ -1171,7 +1171,7 @@ pub struct Engine {
     no_new_privs_active: Option<bool>,
     /// Diagnostics collected during the current step's tool calls. Drained
     /// and forwarded as a synthetic user message before the next API call.
-    pending_lsp_blocks: Vec<crate::lsp::DiagnosticBlock>,
+    pending_lsp_blocks: Vec<codewhale_lsp::DiagnosticBlock>,
     /// Current operating mode. Updated on `ChangeMode` and `SendMessage`.
     current_mode: AppMode,
     /// R1: cumulative wall-clock budget for the turn currently running.
@@ -2462,8 +2462,8 @@ impl Engine {
                 host.context().file_read_tracker.clone()
             });
         let lsp_manager = Arc::new(match config.lsp_config.clone() {
-            Some(cfg) => crate::lsp::LspManager::new(cfg, config.workspace.clone()),
-            None => crate::lsp::LspManager::disabled(),
+            Some(cfg) => codewhale_lsp::LspManager::new(cfg, config.workspace.clone()),
+            None => codewhale_lsp::LspManager::disabled(),
         });
 
         // External sandbox backend (#516). Logged but non-fatal: if the
@@ -2945,9 +2945,9 @@ impl Engine {
     /// snapshot [`Self::post_turn_snapshot_after_complete`] takes. Called
     /// before `TurnComplete`, so a `/undo` the user types as soon as the
     /// turn ends waits for that snapshot instead of racing it (#6644).
-    fn reserve_post_turn_snapshot(&self) -> Option<crate::snapshot::PendingPostTurnSnapshot> {
+    fn reserve_post_turn_snapshot(&self) -> Option<codewhale_snapshot::PendingPostTurnSnapshot> {
         (self.config.snapshots_enabled && !self.config.record_restore_points)
-            .then(crate::snapshot::PendingPostTurnSnapshot::reserve)
+            .then(codewhale_snapshot::PendingPostTurnSnapshot::reserve)
     }
 
     /// Take the post-turn snapshot reserved by
@@ -2959,7 +2959,7 @@ impl Engine {
         &self,
         task: &'static str,
         prompt: String,
-        pending: Option<crate::snapshot::PendingPostTurnSnapshot>,
+        pending: Option<codewhale_snapshot::PendingPostTurnSnapshot>,
     ) {
         let Some(pending) = pending else {
             return;

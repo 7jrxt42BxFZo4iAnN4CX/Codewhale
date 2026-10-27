@@ -344,7 +344,7 @@ fn saved_session_with_blocks(blocks: Vec<codewhale_models::ContentBlock>) -> Sav
 }
 
 fn run_test_git(workspace: &std::path::Path, args: &[&str]) -> Result<()> {
-    let output = crate::dependencies::Git::output(args, workspace)
+    let output = codewhale_dependencies::Git::output(args, workspace)
         .with_context(|| format!("git {args:?} failed to spawn"))?;
     if !output.status.success() {
         bail!(
@@ -1052,7 +1052,7 @@ struct TestServerOverrides {
     compat_stream_test_hook: Option<mpsc::UnboundedSender<CompatStreamTestPoint>>,
     plugin_discovery: Option<Arc<crate::plugins::PluginDiscoveryContext>>,
     /// Pre-seeded workspace LSP manager (test transports, disabled configs).
-    lsp_manager: Option<Arc<crate::lsp::LspManager>>,
+    lsp_manager: Option<Arc<codewhale_lsp::LspManager>>,
     /// Engine LRU capacity; `None` keeps the fixture default of 8.
     max_active_threads: Option<usize>,
     /// Stops the server through the product's own graceful-shutdown path.
@@ -7558,22 +7558,22 @@ async fn patch_undo_endpoint_refuses_turns_it_cannot_prove() -> Result<()> {
 }
 
 fn snapshot_receipt(
-    kind: crate::snapshot::WorkspaceSnapshotKind,
-    taken: &crate::snapshot::TakenSnapshot,
+    kind: codewhale_snapshot::WorkspaceSnapshotKind,
+    taken: &codewhale_snapshot::TakenSnapshot,
     session_id: &str,
-) -> crate::snapshot::WorkspaceSnapshotRef {
-    crate::snapshot::WorkspaceSnapshotRef::new(kind, taken, session_id, None)
+) -> codewhale_snapshot::WorkspaceSnapshotRef {
+    codewhale_snapshot::WorkspaceSnapshotRef::new(kind, taken, session_id, None)
 }
 
 /// The receipts of a shell turn: its command runs from the pre-turn snapshot
 /// to the post-turn one, so the whole window is the turn's own span.
 fn shell_turn_receipts(
-    repo: &crate::snapshot::SnapshotRepo,
-    pre: &crate::snapshot::TakenSnapshot,
-    post: &crate::snapshot::TakenSnapshot,
+    repo: &codewhale_snapshot::SnapshotRepo,
+    pre: &codewhale_snapshot::TakenSnapshot,
+    post: &codewhale_snapshot::TakenSnapshot,
     session_id: &str,
-) -> Vec<crate::snapshot::WorkspaceSnapshotRef> {
-    use crate::snapshot::WorkspaceSnapshotKind::{PostTurn, PreTurn};
+) -> Vec<codewhale_snapshot::WorkspaceSnapshotRef> {
+    use codewhale_snapshot::WorkspaceSnapshotKind::{PostTurn, PreTurn};
     let mut pre_receipt = snapshot_receipt(PreTurn, pre, session_id);
     pre_receipt.tool_call_id = Some("user_shell_1".to_string());
     let mut post_receipt = snapshot_receipt(PostTurn, post, session_id);
@@ -7582,9 +7582,9 @@ fn shell_turn_receipts(
 }
 
 fn changed_between(
-    repo: &crate::snapshot::SnapshotRepo,
-    from: &crate::snapshot::TakenSnapshot,
-    to: &crate::snapshot::TakenSnapshot,
+    repo: &codewhale_snapshot::SnapshotRepo,
+    from: &codewhale_snapshot::TakenSnapshot,
+    to: &codewhale_snapshot::TakenSnapshot,
 ) -> Vec<String> {
     repo.changed_paths_between(&from.tree, &to.tree)
         .expect("diff snapshots")
@@ -7596,7 +7596,7 @@ fn changed_between(
 fn dropped_turn(
     turn_id: &str,
     may_change_files: bool,
-    snapshots: Vec<crate::snapshot::WorkspaceSnapshotRef>,
+    snapshots: Vec<codewhale_snapshot::WorkspaceSnapshotRef>,
 ) -> crate::runtime_threads::DroppedTurnSnapshots {
     crate::runtime_threads::DroppedTurnSnapshots {
         turn_id: turn_id.to_string(),
@@ -7608,7 +7608,7 @@ fn dropped_turn(
 }
 
 fn git_missing() -> bool {
-    crate::dependencies::Git::command().is_none()
+    codewhale_dependencies::Git::command().is_none()
 }
 
 /// A patch-undo restores exactly what the dropped turn changed — every write
@@ -7627,7 +7627,7 @@ fn patch_undo_helper_restores_only_the_dropped_turns_changes() -> Result<()> {
 
     let workspace = root.path().join("workspace");
     fs::create_dir_all(&workspace)?;
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace)?;
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&workspace)?;
     let a = workspace.join("a.txt");
     let other = workspace.join("other.txt");
     fs::write(&a, "before")?;
@@ -7690,7 +7690,7 @@ fn patch_undo_helper_refuses_to_overwrite_later_edits() -> Result<()> {
 
     let workspace = root.path().join("workspace");
     fs::create_dir_all(&workspace)?;
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace)?;
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&workspace)?;
     let a = workspace.join("a.txt");
     fs::write(&a, "before")?;
     let pre = repo.take_snapshot("pre-turn:1", Some("thr_a"))?;
@@ -7717,7 +7717,7 @@ fn patch_undo_helper_refuses_to_overwrite_later_edits() -> Result<()> {
 /// forking over changed files. A turn that ran no tools needs none.
 #[test]
 fn patch_undo_helper_fails_honestly_without_an_owned_restore_point() -> Result<()> {
-    use crate::snapshot::WorkspaceSnapshotKind::PreTurn;
+    use codewhale_snapshot::WorkspaceSnapshotKind::PreTurn;
     if git_missing() {
         return Ok(());
     }
@@ -7729,7 +7729,7 @@ fn patch_undo_helper_fails_honestly_without_an_owned_restore_point() -> Result<(
 
     let workspace = root.path().join("workspace");
     fs::create_dir_all(&workspace)?;
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace)?;
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&workspace)?;
     let a = workspace.join("a.txt");
     fs::write(&a, "before")?;
     let pre = repo.take_snapshot("pre-turn:1", Some("thr_a"))?;
@@ -7801,7 +7801,7 @@ fn patch_undo_helper_survives_a_prune_that_rewrites_commit_ids() -> Result<()> {
 
     let workspace = root.path().join("workspace");
     fs::create_dir_all(&workspace)?;
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace)?;
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&workspace)?;
     let a = workspace.join("a.txt");
     fs::write(&a, "ancient")?;
     repo.take_snapshot("pre-turn:0", Some("thr_old"))?;
@@ -7834,12 +7834,12 @@ fn patch_undo_helper_survives_a_prune_that_rewrites_commit_ids() -> Result<()> {
 
 /// One recorded receipt with the span data a recording engine reports.
 fn span_receipt(
-    kind: crate::snapshot::WorkspaceSnapshotKind,
-    taken: &crate::snapshot::TakenSnapshot,
+    kind: codewhale_snapshot::WorkspaceSnapshotKind,
+    taken: &codewhale_snapshot::TakenSnapshot,
     call: Option<&str>,
     write_paths: Option<&[&str]>,
     changed: Option<Vec<String>>,
-) -> crate::snapshot::WorkspaceSnapshotRef {
+) -> codewhale_snapshot::WorkspaceSnapshotRef {
     let mut receipt = snapshot_receipt(kind, taken, "thr_a");
     receipt.tool_call_id = call.map(str::to_string);
     receipt.write_paths = write_paths.map(|paths| paths.iter().map(|p| p.to_string()).collect());
@@ -7855,7 +7855,7 @@ fn span_receipt(
 /// and a span with no record of its changes fails closed.
 #[test]
 fn patch_undo_helper_attributes_changes_to_the_turns_own_tool_spans() -> Result<()> {
-    use crate::snapshot::WorkspaceSnapshotKind::{PostTool, PostTurn, PreTurn, Tool};
+    use codewhale_snapshot::WorkspaceSnapshotKind::{PostTool, PostTurn, PreTurn, Tool};
     if git_missing() {
         return Ok(());
     }
@@ -7867,7 +7867,7 @@ fn patch_undo_helper_attributes_changes_to_the_turns_own_tool_spans() -> Result<
 
     let workspace = root.path().join("workspace");
     fs::create_dir_all(&workspace)?;
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace)?;
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&workspace)?;
     let own = workspace.join("own.txt");
     let sibling = workspace.join("sibling.txt");
     fs::write(&own, "before")?;
@@ -7986,7 +7986,7 @@ fn patch_undo_helper_attributes_changes_to_the_turns_own_tool_spans() -> Result<
 /// when the snapshots show nothing changed.
 #[test]
 fn patch_undo_helper_refuses_declared_writes_snapshots_cannot_hold() -> Result<()> {
-    use crate::snapshot::WorkspaceSnapshotKind::{PostTool, PostTurn, PreTurn, Tool};
+    use codewhale_snapshot::WorkspaceSnapshotKind::{PostTool, PostTurn, PreTurn, Tool};
     if git_missing() {
         return Ok(());
     }
@@ -7999,7 +7999,7 @@ fn patch_undo_helper_refuses_declared_writes_snapshots_cannot_hold() -> Result<(
     let workspace = root.path().join("workspace");
     fs::create_dir_all(&workspace)?;
     fs::write(workspace.join(".gitignore"), "*.local\n")?;
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace)?;
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&workspace)?;
     let pre = repo.take_snapshot("pre-turn:1", Some("thr_a"))?;
     let tool = repo.take_snapshot("tool:call-1", Some("thr_a"))?;
     fs::write(workspace.join(".env.local"), "SECRET=changed")?;
@@ -8075,7 +8075,7 @@ fn patch_undo_helper_refuses_an_untrusted_rollback_and_touches_nothing() -> Resu
 
     let workspace = root.path().join("workspace");
     fs::create_dir_all(&workspace)?;
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace)?;
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&workspace)?;
     let file = workspace.join("a.txt");
 
     fs::write(&file, "before")?;
@@ -8127,7 +8127,7 @@ fn patch_undo_helper_allows_an_untrusted_undo_with_nothing_to_roll_back() -> Res
 
     let workspace = root.path().join("workspace");
     fs::create_dir_all(&workspace)?;
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace)?;
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&workspace)?;
     let file = workspace.join("a.txt");
 
     fs::write(&file, "only-state")?;
@@ -8178,7 +8178,7 @@ fn revert_file_helper_restores_only_the_named_file() -> Result<()> {
 
     let workspace = root.path().join("workspace");
     fs::create_dir_all(&workspace)?;
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace)?;
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&workspace)?;
     let wanted = workspace.join("wanted.txt");
     let other = workspace.join("other.txt");
 
@@ -8186,7 +8186,7 @@ fn revert_file_helper_restores_only_the_named_file() -> Result<()> {
     fs::write(&other, "other-before")?;
     let taken = repo.take_snapshot("pre-turn:1", Some("session-a"))?;
     let owned = [snapshot_receipt(
-        crate::snapshot::WorkspaceSnapshotKind::PreTurn,
+        codewhale_snapshot::WorkspaceSnapshotKind::PreTurn,
         &taken,
         "session-a",
     )];
@@ -8224,13 +8224,13 @@ fn revert_file_helper_accepts_an_absolute_path_inside_the_workspace() -> Result<
 
     let workspace = root.path().join("workspace");
     fs::create_dir_all(&workspace)?;
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace)?;
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&workspace)?;
     let file = workspace.join("a.txt");
 
     fs::write(&file, "v1")?;
     let taken = repo.take_snapshot("pre-turn:1", Some("session-a"))?;
     let owned = [snapshot_receipt(
-        crate::snapshot::WorkspaceSnapshotKind::PreTurn,
+        codewhale_snapshot::WorkspaceSnapshotKind::PreTurn,
         &taken,
         "session-a",
     )];
@@ -8260,7 +8260,7 @@ fn revert_file_helper_accepts_an_absolute_path_inside_the_workspace() -> Result<
 /// the workspace untouched.
 #[test]
 fn revert_file_helper_requires_exact_snapshot_identity_and_reviewed_hash() -> Result<()> {
-    use crate::snapshot::WorkspaceSnapshotKind::{PostTurn, Tool};
+    use codewhale_snapshot::WorkspaceSnapshotKind::{PostTurn, Tool};
     let _lock = lock_test_env();
     let root = tempfile::tempdir()?;
     let home = root.path().join("home");
@@ -8269,7 +8269,7 @@ fn revert_file_helper_requires_exact_snapshot_identity_and_reviewed_hash() -> Re
 
     let workspace = root.path().join("workspace");
     fs::create_dir_all(&workspace)?;
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace)?;
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&workspace)?;
     let a = workspace.join("a.txt");
     let b = workspace.join("b.txt");
 
@@ -8382,7 +8382,7 @@ fn revert_file_helper_refuses_foreign_snapshots_and_paths_outside_the_workspace(
 
     let workspace = root.path().join("workspace");
     fs::create_dir_all(&workspace)?;
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace)?;
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&workspace)?;
     let file = workspace.join("a.txt");
 
     // Only another thread recorded a restore point, so this thread owns
@@ -8652,7 +8652,7 @@ fn restore_snapshot_endpoint_helper_restores_workspace_files() -> Result<()> {
 
     let workspace = root.path().join("workspace");
     fs::create_dir_all(&workspace)?;
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace)?;
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&workspace)?;
     fs::write(workspace.join("a.txt"), "v1")?;
     let snapshot_id = repo.snapshot("pre-turn:1")?;
     fs::write(workspace.join("a.txt"), "v2")?;
@@ -8789,7 +8789,7 @@ fn snapshots_endpoint_lists_workspace_snapshots() -> Result<()> {
 
     let workspace = root.path().join("workspace");
     fs::create_dir_all(&workspace)?;
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace)?;
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&workspace)?;
     fs::write(workspace.join("a.txt"), "v1")?;
     repo.snapshot("pre-turn:1")?;
     fs::write(workspace.join("a.txt"), "v2")?;
@@ -21248,7 +21248,7 @@ async fn call_change_route_reads_one_calls_workspace_span() -> Result<()> {
     // `post-tool` partner after. `out.md` is the command's own write;
     // `script.py` is a path it modified. Afterwards the work tree moves on
     // again — the route must report the span, not what is on disk now.
-    let repo = crate::snapshot::SnapshotRepo::open_or_init(&workspace)?;
+    let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&workspace)?;
     fs::write(workspace.join("script.py"), "print('v1')\n")?;
     let tool = repo.take_snapshot(&format!("tool:{SHELL_CALL}"), Some(&thread.id))?;
     fs::write(workspace.join("out.md"), "written by the command\n")?;
@@ -22461,9 +22461,9 @@ async fn targets_report_self_and_probe_remote_endpoints() -> Result<()> {
 
 #[tokio::test]
 async fn lsp_routes_serve_workspace_files_through_a_transport() -> Result<()> {
-    use crate::lsp::diagnostics::{Diagnostic, Severity};
-    use crate::lsp::registry::Language;
-    use crate::lsp::tests::FakeTransport;
+    use codewhale_lsp::diagnostics::{Diagnostic, Severity};
+    use codewhale_lsp::registry::Language;
+    use codewhale_lsp::tests::FakeTransport;
 
     let tmp = tempfile::tempdir()?;
     let workspace = tmp.path().join("workspace");
@@ -22472,8 +22472,8 @@ async fn lsp_routes_serve_workspace_files_through_a_transport() -> Result<()> {
     fs::write(workspace.join("notes.unknownext"), "hi\n")?;
 
     // Seed the shared manager with a fake Rust transport — no real LSP spawn.
-    let manager = Arc::new(crate::lsp::LspManager::new(
-        crate::lsp::LspConfig::default(),
+    let manager = Arc::new(codewhale_lsp::LspManager::new(
+        codewhale_lsp::LspConfig::default(),
         workspace.canonicalize()?,
     ));
     manager
@@ -22677,7 +22677,7 @@ async fn voice_routes_report_capability_and_fail_closed_without_a_recorder() -> 
 
 #[tokio::test]
 async fn git_routes_drive_a_real_workspace_repo() -> Result<()> {
-    use crate::dependencies::{ExternalTool as _, Git};
+    use codewhale_dependencies::{ExternalTool as _, Git};
 
     let tmp = tempfile::tempdir()?;
     let workspace = tmp.path().join("workspace");
@@ -22980,7 +22980,7 @@ async fn git_routes_drive_a_real_workspace_repo() -> Result<()> {
 /// current state and writes nothing; no `expect` keeps the old behaviour.
 #[tokio::test]
 async fn git_write_preconditions_reject_stale_state() -> Result<()> {
-    use crate::dependencies::{ExternalTool as _, Git};
+    use codewhale_dependencies::{ExternalTool as _, Git};
 
     let tmp = tempfile::tempdir()?;
     let workspace = tmp.path().join("workspace");
@@ -24713,7 +24713,7 @@ mod thread_snapshot_ownership {
 
     /// `None` when git or a loopback listener is unavailable.
     async fn fixture(root: &FsPath, overrides: TestServerOverrides) -> Result<Option<Fixture>> {
-        if crate::dependencies::Git::command().is_none() {
+        if codewhale_dependencies::Git::command().is_none() {
             return Ok(None);
         }
         let workspace = root.join("workspace");
@@ -25251,7 +25251,7 @@ mod thread_snapshot_ownership {
             .find(|receipt| receipt["kind"] == "tool")
             .context("a tool receipt")?;
 
-        let repo = crate::snapshot::SnapshotRepo::open_or_init(&fx.workspace)?;
+        let repo = codewhale_snapshot::SnapshotRepo::open_or_init(&fx.workspace)?;
         let tui = repo.take_snapshot("tool:tui-call", Some("tui-session-6621"))?;
         let listed_a = repo
             .list(usize::MAX)?
@@ -25452,7 +25452,7 @@ mod thread_snapshot_ownership {
         };
         let pruned = fx.create_thread().await?;
         fx.write_turn(&pruned, &[("pruned.txt", "p")]).await?;
-        crate::snapshot::SnapshotRepo::open_or_init(&fx.workspace)?
+        codewhale_snapshot::SnapshotRepo::open_or_init(&fx.workspace)?
             .prune_older_than(Duration::ZERO)?;
         refused(&fx, pruned, "restore_point_pruned").await?;
         assert_eq!(fx.read("pruned.txt").as_deref(), Some("p"));
@@ -25657,7 +25657,7 @@ mod thread_snapshot_ownership {
             .collect();
         fx.write_turn(&thread_id, &writes).await?;
         let listed =
-            crate::snapshot::SnapshotRepo::open_or_init(&fx.workspace)?.list(usize::MAX)?;
+            codewhale_snapshot::SnapshotRepo::open_or_init(&fx.workspace)?.list(usize::MAX)?;
         assert!(
             listed.len() < 12,
             "the cap pruned the tool snapshots: {}",

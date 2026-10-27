@@ -1567,8 +1567,8 @@ mod tests {
                 base_url: Some("https://example.invalid".into()),
             },
             Event::WorkspaceSnapshotTaken {
-                snapshot: crate::snapshot::WorkspaceSnapshotRef {
-                    kind: crate::snapshot::WorkspaceSnapshotKind::Tool,
+                snapshot: codewhale_snapshot::WorkspaceSnapshotRef {
+                    kind: codewhale_snapshot::WorkspaceSnapshotKind::Tool,
                     snapshot_id: "a".repeat(40),
                     tree_id: "b".repeat(40),
                     session_id: "thr_1".into(),

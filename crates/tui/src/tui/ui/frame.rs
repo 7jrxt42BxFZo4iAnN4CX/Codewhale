@@ -1031,7 +1031,7 @@ pub(crate) fn build_engine_config(app: &App, config: &Config) -> EngineConfig {
         // The TUI records no snapshot receipts; its post-turn snapshot stays
         // off the input path (#234).
         record_restore_points: false,
-        lsp_config: config.lsp.clone().map(crate::lsp::LspConfig::from),
+        lsp_config: config.lsp.clone().map(codewhale_lsp::LspConfig::from),
         runtime_services: app.runtime_services.clone(),
         subagent_model_overrides: config.subagent_model_overrides(),
         fleet_roster: std::sync::Arc::new(crate::fleet::identity::load_effective_roster(

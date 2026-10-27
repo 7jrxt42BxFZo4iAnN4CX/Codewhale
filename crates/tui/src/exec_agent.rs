@@ -632,7 +632,7 @@ pub(crate) async fn run_exec_agent(
             execution_config
                 .lsp
                 .clone()
-                .map(crate::lsp::LspConfig::from)
+                .map(codewhale_lsp::LspConfig::from)
         })
         .flatten();
     let mut engine_features = execution_config.features();
