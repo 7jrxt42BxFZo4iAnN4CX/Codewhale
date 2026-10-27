@@ -84,7 +84,9 @@ ${hash}  codew
     assert.ok(result.stdout.includes(`"${fs.realpathSync(f.destination)}/codewhale" update`), result.stdout);
     if (kind === "website") {
       const downloads = fs.readFileSync(f.env.INSTALL_TEST_DOWNLOADS, "utf8").trim().split("\n");
-      assert.equal(downloads.length, 3);
+      assert.equal(downloads.length, 2);
+      assert.ok(downloads.some(url => url.endsWith("/codewhale-macos-arm64")));
+      assert.ok(!downloads.some(url => url.endsWith("/codew-macos-arm64")));
       assert.ok(downloads.every(url => url.startsWith("https://github.com/codewhale-hq/CodeWhale/releases/download/v0.9.11/")));
     }
     f.untouched();
@@ -233,7 +235,7 @@ exec /bin/ln "$@"
 
 test("website: a checksum mismatch stops before any installation", t => {
   const f = fixture(t, "website");
-  fs.writeFileSync(path.join(f.assets, "codew-macos-arm64"), "tampered");
+  fs.writeFileSync(path.join(f.assets, "codewhale-macos-arm64"), "tampered");
   const result = f.run();
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /checksum mismatch/);
