@@ -240,7 +240,7 @@ pub struct TurnSpec {
 #[derive(Debug)]
 pub enum Op {
     Review {
-        turn: TurnSpec,
+        turn: Box<TurnSpec>,
         request: codewhale_protocol::op::ReviewOperation,
     },
     /// Send a message to the AI
