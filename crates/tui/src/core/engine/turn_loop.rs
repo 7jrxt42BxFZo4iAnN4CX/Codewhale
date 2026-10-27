@@ -3744,6 +3744,7 @@ impl Engine {
             (Some(caller), Some(registry)) => gate.for_extension(caller.clone(), registry.all()),
             _ => gate,
         };
+        let checkpoint_turn_id = context.execution.origin_turn_id.clone();
         context.execution.nested_call_gate = Some(gate);
         let cancel = self.cancel_token.clone();
         let run = Self::execute_tool_with_lock(
@@ -3770,6 +3771,60 @@ impl Engine {
                 }
                 result = &mut run => return (result, false),
                 Some(request) = requests.recv() => {
+                    let request = match request {
+                        crate::tools::codemode::NestedCallRequest::Tool(request) => request,
+                        crate::tools::codemode::NestedCallRequest::Checkpoint { caller, withdraw, reply } => {
+                            if reply.is_closed() || withdraw.is_cancelled() {
+                                continue;
+                            }
+                            let Some(projection) = self.config.session_checkpoint_backend else {
+                                let _ = reply.send(Err(ToolError::not_available("owning host has no acknowledged session checkpoint backend")));
+                                continue;
+                            };
+                            if extension.is_none() || self.child_host.is_some() || caller.agent_id.is_some()
+                                || caller.session_id != self.session.id || caller.workspace != self.session.workspace
+                                || Some(caller.turn_id.as_str()) != checkpoint_turn_id.as_deref()
+                            {
+                                let _ = reply.send(Err(ToolError::not_available("session checkpoint does not belong to the serving root turn")));
+                                continue;
+                            }
+                            let snapshot = Arc::new(self.session_snapshot());
+                            let prefix_sha256 = match crate::core::events::SessionCheckpointRequest::prefix_hash(&snapshot.messages) {
+                                Ok(hash) => hash,
+                                Err(error) => {
+                                    let _ = reply.send(Err(ToolError::not_available(error)));
+                                    continue;
+                                }
+                            };
+                            let request = crate::core::events::SessionCheckpointRequest::new(caller, snapshot, prefix_sha256, projection, withdraw, reply);
+                            let event = Event::SessionUpdated {
+                                checkpoint: Some(request.clone()),
+                                session_id: self.session.id.clone(),
+                                messages: self.session.messages.snapshot(),
+                                system_prompt: self.session.system_prompt.clone(),
+                                instruction_assembly: self.session.instruction_assembly.clone(),
+                                model: self.session.model.clone(),
+                                workspace: self.session.workspace.clone(),
+                            };
+                            let sent = tokio::select! {
+                                biased;
+                                () = cancel.cancelled() => {
+                                    request.fail("session checkpoint turn was cancelled");
+                                    return (Ok(RichToolResult::plain(interrupted_active_tool_result())), true);
+                                }
+                                () = request.withdraw.cancelled() => None,
+                                result = &mut run => {
+                                    request.fail("extension invocation ended before checkpoint delivery");
+                                    return (result, false);
+                                }
+                                sent = self.send_event(event) => Some(sent),
+                            };
+                            if !matches!(sent, Some(Ok(()))) {
+                                request.fail("owning host session checkpoint event channel is unavailable");
+                            }
+                            continue;
+                        }
+                    };
                     // Nobody is waiting for this one any more (a withdrawn
                     // extension call): no plan, no card.
                     if request.is_stale() {

@@ -519,6 +519,7 @@ const CURRENT_RUNTIME_SCHEMA_VERSION: u32 = 2;
 const IMAGE_RUNTIME_SCHEMA_VERSION: u32 = 3;
 // Explicit allowances need a newer reader so old binaries cannot retry uncapped.
 const OUTPUT_LIMIT_RUNTIME_SCHEMA_VERSION: u32 = 4;
+const PREFIX_CHECKPOINT_RUNTIME_SCHEMA_VERSION: u32 = 5;
 const MAX_SUPPORTED_RUNTIME_SCHEMA_VERSION: u32 = OUTPUT_LIMIT_RUNTIME_SCHEMA_VERSION;
 
 fn is_zero_u64(value: &u64) -> bool {
@@ -1159,20 +1160,19 @@ fn session_recovery_projection(messages: &[Message]) -> Vec<Value> {
 /// on, and the fork rebuilds the kept exchanges from the newest one it keeps
 /// plus the raw turns after it (`RuntimeThreadStore::history_from_records`).
 ///
-/// The compaction names the turn it ran for, so the records answer the
-/// question directly. Any compaction in the thread is enough: the turns before
-/// it are the ones whose transcript was replaced, and a cut after them would
-/// still slice an abbreviation.
-fn saved_transcript_is_compacted(
+/// Compaction and active-prefix checkpoints name their owning turn. Either
+/// requires the canonical record history instead of a saved abbreviation.
+fn saved_transcript_requires_record_history(
     turns: &[TurnRecord],
     items_by_turn: &HashMap<String, Vec<TurnItemRecord>>,
 ) -> bool {
     turns.iter().any(|turn| {
-        items_by_turn.get(&turn.id).is_some_and(|items| {
-            items
-                .iter()
-                .any(|item| item.kind == TurnItemKind::ContextCompaction)
-        })
+        turn.prefix_checkpoint.is_some()
+            || items_by_turn.get(&turn.id).is_some_and(|items| {
+                items
+                    .iter()
+                    .any(|item| item.kind == TurnItemKind::ContextCompaction)
+            })
     })
 }
 
@@ -1469,7 +1469,84 @@ pub struct RuntimeOperationActivity {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RuntimePrefixCheckpoint {
+    checkpoint_id: String,
+    session_id: String,
+    agent_id: Option<String>,
+    runtime_turn_id: String,
+    engine_turn_id: String,
+    call_id: String,
+    owner_id: String,
+    source_sha256: String,
+    persisted_sha256: String,
+    messages_len: usize,
+    projection: String,
+    item_ids: Vec<String>,
+    covered_items: HashMap<String, String>,
+    pending_items: Vec<String>,
+    tool_declarations: HashMap<String, String>,
+}
+
+fn checkpoint_tool_declarations(messages: &[Message]) -> Result<HashMap<String, String>> {
+    let mut declarations = HashMap::new();
+    for block in messages.iter().flat_map(|message| &message.content) {
+        if let ContentBlock::ToolUse {
+            execution_id, id, ..
+        } = block
+        {
+            declarations.insert(
+                serde_json::to_string(&(execution_id, id))?,
+                hex_digest(Sha256::digest(serde_json::to_vec(block)?)),
+            );
+        }
+    }
+    Ok(declarations)
+}
+
+fn checkpoint_item_digest(item: &TurnItemRecord) -> Result<String> {
+    Ok(hex_digest(Sha256::digest(serde_json::to_vec(&json!({
+        "kind": item.kind,
+        "summary": item.summary,
+        "detail": item.detail,
+        "metadata": item.metadata,
+    }))?)))
+}
+
+fn ordered_turn_items(
+    turn: &TurnRecord,
+    items_by_turn: &HashMap<String, Vec<TurnItemRecord>>,
+) -> Result<Vec<TurnItemRecord>> {
+    let stored = items_by_turn.get(&turn.id).cloned().unwrap_or_default();
+    let mut by_id = HashMap::new();
+    for item in &stored {
+        anyhow::ensure!(
+            item.turn_id == turn.id,
+            "Stored item belongs to another turn"
+        );
+        anyhow::ensure!(
+            by_id.insert(item.id.clone(), item.clone()).is_none(),
+            "Duplicate stored item"
+        );
+    }
+    let mut ordered = Vec::with_capacity(stored.len());
+    for id in &turn.item_ids {
+        if let Some(item) = by_id.remove(id) {
+            ordered.push(item);
+        }
+    }
+    for item in stored {
+        if by_id.remove(&item.id).is_some() {
+            ordered.push(item);
+        }
+    }
+    Ok(ordered)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnRecord {
+    #[serde(default, skip_serializing)]
+    pub(crate) prefix_checkpoint: Option<RuntimePrefixCheckpoint>,
     /// Admitted per-request allowance. Older turns have no explicit allowance.
     #[serde(
         default,
@@ -1682,15 +1759,22 @@ impl TurnRecord {
         {
             bail!("Turn decision evidence exceeds its bound");
         }
-        if self.schema_version > MAX_SUPPORTED_RUNTIME_SCHEMA_VERSION {
+        anyhow::ensure!(
+            self.prefix_checkpoint.is_none()
+                || self.schema_version >= PREFIX_CHECKPOINT_RUNTIME_SCHEMA_VERSION,
+            "Runtime prefix checkpoint requires its recovery schema"
+        );
+        if self.schema_version > PREFIX_CHECKPOINT_RUNTIME_SCHEMA_VERSION {
             bail!(
                 "Turn schema v{} is newer than supported v{}",
                 self.schema_version,
-                MAX_SUPPORTED_RUNTIME_SCHEMA_VERSION
+                PREFIX_CHECKPOINT_RUNTIME_SCHEMA_VERSION
             );
         }
-        if self.max_output_tokens.is_some()
-            != (self.schema_version == OUTPUT_LIMIT_RUNTIME_SCHEMA_VERSION)
+        if (self.max_output_tokens.is_some()
+            && self.schema_version < OUTPUT_LIMIT_RUNTIME_SCHEMA_VERSION)
+            || (self.max_output_tokens.is_none()
+                && self.schema_version == OUTPUT_LIMIT_RUNTIME_SCHEMA_VERSION)
         {
             bail!("Turn output allowance does not match its schema");
         }
@@ -1973,6 +2057,7 @@ fn settle_unaccepted_routed_usage(
     } else {
         let now = Utc::now();
         TurnRecord {
+            prefix_checkpoint: None,
             decision_receipts: Vec::new(),
             max_output_tokens: None,
             schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -3141,7 +3226,11 @@ impl RuntimeThreadStore {
         turn.validate_output_token_limit()?;
         validated_record_id(&turn.thread_id, "thread id")?;
         let path = self.turn_path(&turn.id)?;
-        write_json_atomic(&path, turn).with_context(|| {
+        let mut stored = serde_json::to_value(turn)?;
+        if let Some(checkpoint) = &turn.prefix_checkpoint {
+            stored["prefix_checkpoint"] = serde_json::to_value(checkpoint)?;
+        }
+        write_json_atomic(&path, &stored).with_context(|| {
             RuntimeStoreRecordFailure::new(
                 RuntimeStoreOperation::Write,
                 RuntimeStoreRecordKind::Turn,
@@ -3287,21 +3376,349 @@ impl RuntimeThreadStore {
         Ok(None)
     }
 
-    /// The model-visible history the records hold: the newest settled
-    /// history, then every later turn rebuilt from its items.
+    fn load_prefix_history(&self, checkpoint: &RuntimePrefixCheckpoint) -> Result<Vec<Message>> {
+        anyhow::ensure!(
+            checkpoint.persisted_sha256.len() == 64
+                && checkpoint
+                    .persisted_sha256
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit())
+                && checkpoint.projection == "runtime_receipt_redacted",
+            "Invalid Runtime prefix checkpoint reference"
+        );
+        let path = self.settled_history_path(&checkpoint.persisted_sha256)?;
+        reject_symlinked_store_file(&path)?;
+        let bytes = fs::read(&path).context("Runtime prefix checkpoint is unreadable")?;
+        anyhow::ensure!(
+            hex_digest(Sha256::digest(&bytes)) == checkpoint.persisted_sha256,
+            "Runtime prefix checkpoint digest mismatch"
+        );
+        let messages: Vec<Message> = serde_json::from_slice(&bytes)?;
+        anyhow::ensure!(
+            messages.len() == checkpoint.messages_len,
+            "Runtime prefix checkpoint length mismatch"
+        );
+        Ok(messages)
+    }
+
+    fn checkpoint_tail(
+        &self,
+        turn: &TurnRecord,
+        items_by_turn: &HashMap<String, Vec<TurnItemRecord>>,
+        messages: &[Message],
+    ) -> Result<HashMap<String, Vec<TurnItemRecord>>> {
+        let checkpoint = turn
+            .prefix_checkpoint
+            .as_ref()
+            .context("Missing Runtime prefix checkpoint")?;
+        anyhow::ensure!(
+            checkpoint.session_id == turn.thread_id
+                && checkpoint.runtime_turn_id == turn.id
+                && checkpoint.agent_id.is_none()
+                && checkpoint.owner_id == self.owner_id
+                && !checkpoint.engine_turn_id.is_empty()
+                && !checkpoint.call_id.is_empty()
+                && !checkpoint.checkpoint_id.is_empty()
+                && checkpoint.source_sha256.len() == 64
+                && checkpoint
+                    .source_sha256
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit()),
+            "Runtime prefix checkpoint owner mismatch"
+        );
+        anyhow::ensure!(
+            turn.item_ids.starts_with(&checkpoint.item_ids)
+                && checkpoint.item_ids.iter().collect::<HashSet<_>>().len()
+                    == checkpoint.item_ids.len()
+                && checkpoint
+                    .covered_items
+                    .keys()
+                    .all(|id| checkpoint.item_ids.contains(id))
+                && checkpoint
+                    .pending_items
+                    .iter()
+                    .all(|id| checkpoint.item_ids.contains(id)
+                        && !checkpoint.covered_items.contains_key(id)),
+            "Runtime prefix checkpoint item cursor changed"
+        );
+        let mut calls = HashMap::<(Option<String>, String), ContentBlock>::new();
+        let mut results = HashMap::<(Option<String>, String), ContentBlock>::new();
+        let mut call_order = Vec::new();
+        let mut execution_providers = HashMap::new();
+        for block in messages.iter().flat_map(|message| &message.content) {
+            match block {
+                ContentBlock::ToolUse {
+                    execution_id, id, ..
+                } => {
+                    check_execution_provider(
+                        &mut execution_providers,
+                        execution_id.as_deref(),
+                        id,
+                    )?;
+                    let key = (execution_id.clone(), id.clone());
+                    anyhow::ensure!(
+                        !calls.contains_key(&key) || results.contains_key(&key),
+                        "Checkpoint contains duplicate open tool identity"
+                    );
+                    results.remove(&key);
+                    call_order.retain(|previous| previous != &key);
+                    call_order.push(key.clone());
+                    calls.insert(key, block.clone());
+                }
+                ContentBlock::ToolResult {
+                    execution_id,
+                    tool_use_id,
+                    ..
+                } => {
+                    check_execution_provider(
+                        &mut execution_providers,
+                        execution_id.as_deref(),
+                        tool_use_id,
+                    )?;
+                    let key = (execution_id.clone(), tool_use_id.clone());
+                    anyhow::ensure!(
+                        calls.contains_key(&key) && results.insert(key, block.clone()).is_none(),
+                        "Checkpoint contains an unpaired tool result"
+                    );
+                }
+                _ => {}
+            }
+        }
+        anyhow::ensure!(
+            calls.len() == checkpoint.tool_declarations.len()
+                && calls
+                    .keys()
+                    .all(
+                        |key| serde_json::to_string(key).ok().is_some_and(|key| checkpoint
+                            .tool_declarations
+                            .get(&key)
+                            .is_some_and(|digest| digest.len() == 64
+                                && digest.bytes().all(|byte| byte.is_ascii_hexdigit())))
+                    ),
+            "Runtime prefix checkpoint tool declarations are incomplete"
+        );
+        let items = ordered_turn_items(turn, items_by_turn)?;
+        let present: HashSet<_> = items.iter().map(|item| item.id.as_str()).collect();
+        anyhow::ensure!(
+            checkpoint
+                .item_ids
+                .iter()
+                .all(|id| present.contains(id.as_str())),
+            "Runtime prefix checkpoint item is missing"
+        );
+        let mut retained = Vec::new();
+        let mut answered = HashSet::new();
+        for mut item in items {
+            if let Some(expected) = checkpoint.covered_items.get(&item.id) {
+                anyhow::ensure!(
+                    checkpoint_item_digest(&item)? == *expected
+                        && (projects_tool_history(&item)
+                            || !matches!(
+                                item.status,
+                                TurnItemLifecycleStatus::Queued | TurnItemLifecycleStatus::Canceled
+                            )),
+                    "Runtime prefix checkpoint covered item changed"
+                );
+                if !projects_tool_history(&item) {
+                    continue;
+                }
+            }
+            anyhow::ensure!(
+                !checkpoint.item_ids.contains(&item.id)
+                    || checkpoint.pending_items.contains(&item.id)
+                    || !matches!(
+                        item.kind,
+                        TurnItemKind::UserMessage
+                            | TurnItemKind::AgentMessage
+                            | TurnItemKind::AgentReasoning
+                    )
+                    || matches!(
+                        item.status,
+                        TurnItemLifecycleStatus::Queued | TurnItemLifecycleStatus::Canceled
+                    ),
+                "Runtime prefix checkpoint covered item reference is missing"
+            );
+            if projects_tool_history(&item) {
+                let identity =
+                    RuntimeToolIdentity::read(item.metadata.as_ref(), "tool_use_id")?.or(
+                        RuntimeToolIdentity::read(item.metadata.as_ref(), "tool_result_for")?,
+                    );
+                if let Some(identity) = identity {
+                    check_execution_provider(
+                        &mut execution_providers,
+                        identity.execution_id,
+                        identity.provider_id,
+                    )?;
+                    let key = (
+                        identity.execution_id.map(str::to_owned),
+                        identity.provider_id.to_owned(),
+                    );
+                    if calls.contains_key(&key) {
+                        let declaration = checkpoint
+                            .tool_declarations
+                            .get(&serde_json::to_string(&key)?)
+                            .context("Runtime prefix tool declaration reference is missing")?;
+                        let mut isolated = turn.clone();
+                        isolated.item_ids = vec![item.id.clone()];
+                        let projected = RuntimeThreadManager::reconstruct_messages_from_turns_with(
+                            &[isolated],
+                            &HashMap::from([(turn.id.clone(), vec![item.clone()])]),
+                        )?;
+                        let mut outcome = None;
+                        for block in projected.into_iter().flat_map(|message| message.content) {
+                            match &block {
+                                ContentBlock::ToolUse { .. } => anyhow::ensure!(
+                                    hex_digest(Sha256::digest(serde_json::to_vec(&block)?))
+                                        == *declaration,
+                                    "Runtime prefix tool declaration changed"
+                                ),
+                                ContentBlock::ToolResult { .. } => outcome = Some(block),
+                                _ => {}
+                            }
+                        }
+                        if results.contains_key(&key) {
+                            anyhow::ensure!(
+                                checkpoint.covered_items.contains_key(&item.id),
+                                "Runtime prefix completed tool receipt is not bound to its cursor"
+                            );
+                            continue;
+                        }
+                        if let Some(outcome) = outcome {
+                            anyhow::ensure!(
+                                answered.insert(key.clone()),
+                                "Duplicate Runtime prefix tool result"
+                            );
+                            let ContentBlock::ToolResult {
+                                content,
+                                is_error,
+                                content_blocks,
+                                ..
+                            } = outcome
+                            else {
+                                unreachable!()
+                            };
+                            let metadata = item
+                                .metadata
+                                .as_mut()
+                                .and_then(Value::as_object_mut)
+                                .context("Invalid Runtime prefix tool metadata")?;
+                            metadata.remove("tool_use_id");
+                            metadata.insert(
+                                "tool_result_for".into(),
+                                json!(key.0.as_deref().unwrap_or(&key.1)),
+                            );
+                            metadata.insert("is_error".into(), json!(is_error.unwrap_or(false)));
+                            if let Some(content_blocks) = content_blocks {
+                                metadata.insert("content_blocks".into(), json!(content_blocks));
+                            }
+                            item.detail = Some(content);
+                            retained.push(item);
+                        }
+                        continue;
+                    }
+                    anyhow::ensure!(
+                        !checkpoint.item_ids.contains(&item.id),
+                        "Runtime prefix does not contain a covered tool declaration"
+                    );
+                }
+            }
+            retained.push(item);
+        }
+        if !turn.status.is_active_work() {
+            let mut missing = Vec::new();
+            for key in call_order
+                .iter()
+                .filter(|key| !results.contains_key(*key) && !answered.contains(*key))
+            {
+                let id = format!("checkpoint_result_{}", missing.len());
+                missing.push(TurnItemRecord {
+                    schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
+                    id,
+                    turn_id: turn.id.clone(),
+                    kind: TurnItemKind::ToolCall,
+                    status: TurnItemLifecycleStatus::Interrupted,
+                    summary: String::new(),
+                    detail: Some(
+                        codewhale_runtime::tool_history_repair::CRASH_REPAIR_CONTENT.to_string(),
+                    ),
+                    metadata: Some(match &key.0 {
+                        Some(execution) => {
+                            json!({"tool_result_for": execution, "execution_id": execution,
+                            "provider_tool_use_id": key.1, "is_error": true})
+                        }
+                        None => json!({"tool_result_for": key.1, "is_error": true}),
+                    }),
+                    artifact_refs: Vec::new(),
+                    artifacts: Vec::new(),
+                    started_at: None,
+                    ended_at: None,
+                });
+            }
+            let boundary = retained
+                .iter()
+                .position(|item| {
+                    matches!(
+                        item.kind,
+                        TurnItemKind::UserMessage
+                            | TurnItemKind::AgentMessage
+                            | TurnItemKind::AgentReasoning
+                    )
+                })
+                .unwrap_or(retained.len());
+            retained.splice(boundary..boundary, missing);
+        }
+        let mut tail = items_by_turn.clone();
+        tail.insert(turn.id.clone(), retained);
+        Ok(tail)
+    }
+
+    fn history_with_prefix(
+        &self,
+        turns: &[TurnRecord],
+        items_by_turn: &HashMap<String, Vec<TurnItemRecord>>,
+        mut messages: Vec<Message>,
+        mut covered: usize,
+    ) -> Result<Vec<Message>> {
+        if let Some((settled, history)) = self.settled_history(&turns[covered..], items_by_turn)? {
+            covered += settled;
+            messages = history;
+        }
+        if let Some((index, turn)) = turns
+            .iter()
+            .enumerate()
+            .skip(covered)
+            .rev()
+            .find(|(_, turn)| turn.prefix_checkpoint.is_some())
+        {
+            messages = self.load_prefix_history(turn.prefix_checkpoint.as_ref().unwrap())?;
+            let tail = self.checkpoint_tail(turn, items_by_turn, &messages)?;
+            let mut remaining = turns[index..].to_vec();
+            remaining[0].item_ids = tail
+                .get(&turn.id)
+                .into_iter()
+                .flatten()
+                .map(|item| item.id.clone())
+                .collect();
+            messages.extend(RuntimeThreadManager::reconstruct_messages_from_turns_with(
+                &remaining, &tail,
+            )?);
+        } else {
+            messages.extend(RuntimeThreadManager::reconstruct_messages_from_turns_with(
+                &turns[covered..],
+                items_by_turn,
+            )?);
+        }
+        Ok(messages)
+    }
+
+    /// The model-visible history the records hold: the newest canonical
+    /// checkpoint, then later item outcomes and turns.
     pub(crate) fn history_from_records(
         &self,
         turns: &[TurnRecord],
         items_by_turn: &HashMap<String, Vec<TurnItemRecord>>,
     ) -> Result<Vec<Message>> {
-        let (covered, mut messages) = self
-            .settled_history(turns, items_by_turn)?
-            .unwrap_or_default();
-        messages.extend(RuntimeThreadManager::reconstruct_messages_from_turns_with(
-            &turns[covered..],
-            items_by_turn,
-        )?);
-        Ok(messages)
+        self.history_with_prefix(turns, items_by_turn, Vec::new(), 0)
     }
 
     /// Journal for one history seed into an existing thread (#6555), kept
@@ -13175,7 +13592,8 @@ impl RuntimeThreadManager {
         let (captured_source, saved_prefix) = self
             .capture_native_fork_source(&source, &source_turns, sessions_dir)
             .await?;
-        let fork_prefix = if saved_transcript_is_compacted(&source_turns, &items_by_turn) {
+        let fork_prefix = if saved_transcript_requires_record_history(&source_turns, &items_by_turn)
+        {
             (
                 self.store
                     .history_from_records(&source_turns, &items_by_turn)?,
@@ -13192,6 +13610,7 @@ impl RuntimeThreadManager {
             let mut cloned_turn = source_turn.clone();
             cloned_turn.id = runtime_record_id("turn");
             cloned_turn.thread_id = forked.id.clone();
+            cloned_turn.prefix_checkpoint = None;
             if let Some(checkpoint) = forked.saved_session_checkpoint.as_mut()
                 && checkpoint.covered_turn_id.as_deref() == Some(source_turn.id.as_str())
             {
@@ -13681,13 +14100,13 @@ impl RuntimeThreadManager {
         if let Some((messages, covered)) = saved_prefix {
             let kept_turns = covered.min(cutoff_turn_idx);
             // A compacted source has no transcript to cut — see
-            // `saved_transcript_is_compacted`. Every boundary in its saved
+            // `saved_transcript_requires_record_history`. Every boundary in its saved
             // messages names a turn while carrying only that turn's prompt, so
             // a slice of them would claim coverage of exchanges the fork's own
             // document does not hold. There is nothing for the boundary search
             // to find either, so it is skipped rather than risk a refusal for a
             // trim the fork is not going to take.
-            let compacted = saved_transcript_is_compacted(&source_turns, &items_by_turn);
+            let compacted = saved_transcript_requires_record_history(&source_turns, &items_by_turn);
             let retained_messages = if compacted {
                 None
             } else if covered <= cutoff_turn_idx {
@@ -13793,6 +14212,7 @@ impl RuntimeThreadManager {
             let mut cloned_turn = source_turn.clone();
             cloned_turn.id = runtime_record_id("turn");
             cloned_turn.thread_id = forked.id.clone();
+            cloned_turn.prefix_checkpoint = None;
             if let Some(checkpoint) = forked.saved_session_checkpoint.as_mut()
                 && checkpoint.covered_turn_id.as_deref() == Some(source_turn.id.as_str())
             {
@@ -14396,6 +14816,7 @@ impl RuntimeThreadManager {
             // Only create a turn if there's content.
             if !item_ids.is_empty() {
                 seed_turns.push(TurnRecord {
+                    prefix_checkpoint: None,
                     decision_receipts: Vec::new(),
                     max_output_tokens: None,
                     schema_version: if turn_seed.image_content.is_empty() {
@@ -16355,6 +16776,7 @@ impl RuntimeThreadManager {
             .clone()
             .unwrap_or_else(|| summarize_text(&prompt, SUMMARY_LIMIT));
         let mut turn = TurnRecord {
+            prefix_checkpoint: None,
             decision_receipts: Vec::new(),
             max_output_tokens,
             schema_version: if max_output_tokens.is_some() { OUTPUT_LIMIT_RUNTIME_SCHEMA_VERSION } else { CURRENT_RUNTIME_SCHEMA_VERSION },
@@ -16889,6 +17311,7 @@ impl RuntimeThreadManager {
             thread.auto_approve,
         );
         let turn = TurnRecord {
+            prefix_checkpoint: None,
             decision_receipts: Vec::new(),
             max_output_tokens: None,
             schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -17253,6 +17676,9 @@ impl RuntimeThreadManager {
                 features.disable(codewhale_runtime::features::Feature::Mcp);
             }
             let engine_cfg = EngineConfig {
+                session_checkpoint_backend: Some(
+                    crate::core::events::SessionCheckpointProjection::RuntimeReceiptRedacted,
+                ),
                 model: route_model.clone(),
                 active_route_limits: route_limits,
                 workspace: thread.workspace.clone(),
@@ -17629,6 +18055,13 @@ impl RuntimeThreadManager {
                     tokio::pin!(notified);
                     notified.as_mut().enable();
                     let Some(active) = active.upgrade() else {
+                        if let EngineEvent::SessionUpdated {
+                            checkpoint: Some(checkpoint),
+                            ..
+                        } = &event
+                        {
+                            checkpoint.fail("Runtime checkpoint active owner was released");
+                        }
                         break 'pump;
                     };
                     let owns_turn = {
@@ -17642,6 +18075,12 @@ impl RuntimeThreadManager {
                     };
                     if !owns_turn {
                         match &event {
+                            EngineEvent::SessionUpdated {
+                                checkpoint: Some(checkpoint),
+                                ..
+                            } => {
+                                checkpoint.fail("Runtime checkpoint has no active event owner");
+                            }
                             EngineEvent::ApprovalRequired { id, .. }
                             | EngineEvent::ElevationRequired { tool_id: id, .. } => {
                                 let _ = handle
@@ -17661,10 +18100,20 @@ impl RuntimeThreadManager {
                     tokio::select! {
                         permit = forward.reserve() => match permit {
                             Ok(permit) => { permit.send(event); break; },
-                            Err(_) => break 'pump,
+                            Err(_) => {
+                                if let EngineEvent::SessionUpdated { checkpoint: Some(checkpoint), .. } = &event {
+                                    checkpoint.fail("Runtime checkpoint event receiver closed");
+                                }
+                                break 'pump;
+                            },
                         },
                         _ = &mut notified => {},
-                        _ = stop.cancelled() => break 'pump,
+                        _ = stop.cancelled() => {
+                            if let EngineEvent::SessionUpdated { checkpoint: Some(checkpoint), .. } = &event {
+                                checkpoint.fail("Runtime checkpoint event owner stopped");
+                            }
+                            break 'pump;
+                        },
                     }
                 }
             }
@@ -17865,7 +18314,7 @@ impl RuntimeThreadManager {
 
     fn restore_thread_messages(&self, thread: &ThreadRecord) -> Result<Vec<Message>> {
         let turns = self.store.list_turns_for_thread(&thread.id)?;
-        let (mut messages, mut covered) = match self.saved_session_prefix(thread, &turns) {
+        let (messages, covered) = match self.saved_session_prefix(thread, &turns) {
             Ok(prefix) => prefix.unwrap_or_default(),
             Err(error) => {
                 let Some(stale) = error.downcast_ref::<StaleSessionBinding>() else {
@@ -17879,18 +18328,8 @@ impl RuntimeThreadManager {
             }
         };
         let items_by_turn = self.prepared_items_for_turns(&turns[covered..])?;
-        if let Some((settled, history)) = self
-            .store
-            .settled_history(&turns[covered..], &items_by_turn)?
-        {
-            messages = history;
-            covered += settled;
-        }
-        messages.extend(Self::reconstruct_messages_from_turns_with(
-            &turns[covered..],
-            &items_by_turn,
-        )?);
-        Ok(messages)
+        self.store
+            .history_with_prefix(&turns, &items_by_turn, messages, covered)
     }
 
     /// Drop `thread`'s saved-session binding when the stored record still
@@ -18147,28 +18586,7 @@ impl RuntimeThreadManager {
         let mut messages = Vec::new();
         let mut execution_providers = HashMap::new();
         for turn in turns {
-            let stored_items = items_by_turn.get(&turn.id).cloned().unwrap_or_default();
-            let items = if turn.item_ids.is_empty() {
-                stored_items
-            } else {
-                let mut by_id: HashMap<String, TurnItemRecord> = stored_items
-                    .iter()
-                    .cloned()
-                    .map(|item| (item.id.clone(), item))
-                    .collect();
-                let mut ordered = Vec::new();
-                for item_id in &turn.item_ids {
-                    if let Some(item) = by_id.remove(item_id) {
-                        ordered.push(item);
-                    }
-                }
-                for item in stored_items {
-                    if by_id.contains_key(&item.id) {
-                        ordered.push(item);
-                    }
-                }
-                ordered
-            };
+            let items = ordered_turn_items(turn, items_by_turn)?;
 
             for item in items.iter().filter(|item| projects_tool_history(item)) {
                 for side in ["tool_use_id", "tool_result_for"] {
@@ -18462,6 +18880,218 @@ impl RuntimeThreadManager {
         Ok(())
     }
 
+    async fn persist_runtime_checkpoint(
+        &self,
+        thread_id: &str,
+        turn_id: &str,
+        engine: &EngineHandle,
+        engine_turn_id: Option<&str>,
+        request: Arc<crate::core::events::SessionCheckpointRequest>,
+        receipt_secrets: &[String],
+    ) -> Result<crate::core::events::SessionCheckpointReceipt> {
+        let thread = self.store.load_thread(thread_id)?;
+        request
+            .validate_prefix(thread_id, &thread.workspace, &request.snapshot.messages)
+            .map_err(anyhow::Error::msg)?;
+        anyhow::ensure!(
+            request.caller.agent_id.is_none()
+                && engine_turn_id == Some(request.caller.turn_id.as_str())
+                && !request.is_stale(),
+            "Runtime checkpoint caller is not the active root turn"
+        );
+        {
+            let active = self.active.lock().await;
+            anyhow::ensure!(
+                active.engines.get(thread_id).is_some_and(|state| {
+                    Arc::ptr_eq(&state.engine.rx_event, &engine.rx_event)
+                        && state.active_turn.as_ref().is_some_and(|turn| {
+                            turn.turn_id == turn_id && !turn.interrupt_requested
+                        })
+                }),
+                "Runtime checkpoint active owner changed"
+            );
+        }
+        let tool_declarations = checkpoint_tool_declarations(&request.snapshot.messages)?;
+        let private_results: HashSet<_> = request
+            .snapshot
+            .messages
+            .iter()
+            .flat_map(|message| &message.content)
+            .filter_map(|block| match block {
+                ContentBlock::ToolUse {
+                    execution_id,
+                    id,
+                    name,
+                    ..
+                } if name == REQUEST_USER_INPUT_TOOL_NAME => {
+                    Some((execution_id.clone(), id.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        let settled_calls: HashSet<_> = request
+            .snapshot
+            .messages
+            .iter()
+            .flat_map(|message| &message.content)
+            .filter_map(|block| match block {
+                ContentBlock::ToolResult {
+                    execution_id,
+                    tool_use_id,
+                    ..
+                } => Some((execution_id.clone(), tool_use_id.clone())),
+                _ => None,
+            })
+            .collect();
+        let mut messages = request.snapshot.messages.clone();
+        for message in &mut messages {
+            crate::core::engine::redact_tool_blocks(message, |text| {
+                crate::client::redact_model_bound_text(text, receipt_secrets)
+            });
+            for block in &mut message.content {
+                if let ContentBlock::ToolResult {
+                    execution_id,
+                    tool_use_id,
+                    content,
+                    content_blocks,
+                    ..
+                } = block
+                    && private_results.contains(&(execution_id.clone(), tool_use_id.clone()))
+                {
+                    *content = REDACTED_USER_INPUT_RECEIPT.to_string();
+                    *content_blocks = None;
+                }
+            }
+        }
+        let store = self.store.clone();
+        let owner = self._process_owner_lock.clone();
+        let owner_path = self
+            .session_store_binding()
+            .data_dir
+            .join(RUNTIME_PROCESS_OWNER_LOCK_FILE);
+        let turn_id_owned = turn_id.to_owned();
+        let pending = request.clone();
+        let receipt = tokio::task::spawn_blocking(
+            move || -> Result<crate::core::events::SessionCheckpointReceipt> {
+                anyhow::ensure!(
+                    !pending.is_stale() && owner_lock_is_at_path(&owner._file, &owner_path)?,
+                    "Runtime checkpoint owner lease expired"
+                );
+                let _mutation = store.turn_mutation.lock();
+                let mut turn = store.load_turn(&turn_id_owned)?;
+                anyhow::ensure!(
+                    turn.thread_id == pending.caller.session_id && turn.status.is_active_work(),
+                    "Runtime checkpoint turn is no longer active"
+                );
+                let items_by_turn =
+                    store.list_items_for_turns_map(std::slice::from_ref(&turn.id))?;
+                let items = ordered_turn_items(&turn, &items_by_turn)?;
+                anyhow::ensure!(
+                    items.iter().map(|item| &item.id).eq(turn.item_ids.iter()),
+                    "Runtime checkpoint item cursor is incomplete"
+                );
+                let mut covered_items = HashMap::new();
+                let mut pending_items = Vec::new();
+                for item in &items {
+                    if projects_tool_history(item)
+                        && let Some(identity) =
+                            RuntimeToolIdentity::read(item.metadata.as_ref(), "tool_result_for")?
+                        && settled_calls.contains(&(
+                            identity.execution_id.map(str::to_owned),
+                            identity.provider_id.to_owned(),
+                        ))
+                    {
+                        covered_items.insert(item.id.clone(), checkpoint_item_digest(item)?);
+                    }
+                    if matches!(item.kind, TurnItemKind::UserMessage)
+                        && matches!(
+                            item.status,
+                            TurnItemLifecycleStatus::Queued | TurnItemLifecycleStatus::Canceled
+                        )
+                    {
+                        pending_items.push(item.id.clone());
+                    }
+                    if !projects_tool_history(item)
+                        && matches!(
+                            item.kind,
+                            TurnItemKind::UserMessage
+                                | TurnItemKind::AgentMessage
+                                | TurnItemKind::AgentReasoning
+                        )
+                        && !matches!(
+                            item.status,
+                            TurnItemLifecycleStatus::Queued | TurnItemLifecycleStatus::Canceled
+                        )
+                    {
+                        covered_items.insert(item.id.clone(), checkpoint_item_digest(item)?);
+                    }
+                }
+                let digest = session_messages_sha256(&messages)?;
+                turn.schema_version = turn
+                    .schema_version
+                    .max(PREFIX_CHECKPOINT_RUNTIME_SCHEMA_VERSION);
+                turn.prefix_checkpoint = Some(RuntimePrefixCheckpoint {
+                    checkpoint_id: pending.checkpoint_id.clone(),
+                    session_id: pending.caller.session_id.clone(),
+                    agent_id: pending.caller.agent_id.clone(),
+                    runtime_turn_id: turn.id.clone(),
+                    engine_turn_id: pending.caller.turn_id.clone(),
+                    call_id: pending.caller.call_id.clone(),
+                    owner_id: store.owner_id.clone(),
+                    source_sha256: pending.prefix_sha256.clone(),
+                    persisted_sha256: digest.clone(),
+                    messages_len: messages.len(),
+                    projection: "runtime_receipt_redacted".to_string(),
+                    item_ids: turn.item_ids.clone(),
+                    covered_items,
+                    pending_items,
+                    tool_declarations,
+                });
+                store.checkpoint_tail(&turn, &items_by_turn, &messages)?;
+                let reference = store.save_settled_history(&messages)?;
+                anyhow::ensure!(
+                    reference["sha256"].as_str() == Some(digest.as_str()),
+                    "Runtime checkpoint stored projection changed"
+                );
+                anyhow::ensure!(
+                    !pending.is_stale() && owner_lock_is_at_path(&owner._file, &owner_path)?,
+                    "Runtime checkpoint was withdrawn before publication"
+                );
+                store.save_turn(&turn)?;
+                let published = store.load_turn(&turn.id)?;
+                let checkpoint = published
+                    .prefix_checkpoint
+                    .as_ref()
+                    .context("Runtime checkpoint publication was lost")?;
+                anyhow::ensure!(
+                    checkpoint.checkpoint_id == pending.checkpoint_id
+                        && store.load_prefix_history(checkpoint)? == messages,
+                    "Runtime checkpoint publication could not be verified"
+                );
+                Ok(crate::core::events::SessionCheckpointReceipt {
+                    persisted_sha256: digest,
+                    messages_len: messages.len(),
+                    projection:
+                        crate::core::events::SessionCheckpointProjection::RuntimeReceiptRedacted,
+                })
+            },
+        )
+        .await
+        .context("Runtime checkpoint writer stopped; persistence is uncertain")??;
+        let active = self.active.lock().await;
+        anyhow::ensure!(
+            !request.is_stale()
+                && active.engines.get(thread_id).is_some_and(|state| {
+                    Arc::ptr_eq(&state.engine.rx_event, &engine.rx_event)
+                        && state.active_turn.as_ref().is_some_and(|turn| {
+                            turn.turn_id == turn_id && !turn.interrupt_requested
+                        })
+                }),
+            "Runtime checkpoint owner changed after writing; persistence is uncertain"
+        );
+        Ok(receipt)
+    }
+
     async fn monitor_turn(
         &self,
         thread_id: String,
@@ -18582,6 +19212,28 @@ impl RuntimeThreadManager {
                 }
                 bail!("engine event channel closed before turn {turn_id} completed");
             };
+
+            if let EngineEvent::SessionUpdated {
+                checkpoint: Some(checkpoint),
+                ..
+            } = &event
+            {
+                match self
+                    .persist_runtime_checkpoint(
+                        &thread_id,
+                        &turn_id,
+                        &engine,
+                        engine_turn_id.as_deref(),
+                        checkpoint.clone(),
+                        &receipt_secrets,
+                    )
+                    .await
+                {
+                    Ok(receipt) => checkpoint.succeed(receipt),
+                    Err(error) => checkpoint.fail(format!("Runtime checkpoint failed: {error:#}")),
+                }
+                continue;
+            }
 
             // SyncSession and configuration operations emit control status
             // receipts on the same channel before SendMessage is processed.
@@ -19736,6 +20388,9 @@ impl RuntimeThreadManager {
                                 if !event_channel_closed =>
                             {
                                 match event {
+                                    Some(EngineEvent::SessionUpdated { checkpoint: Some(checkpoint), .. }) => {
+                                        checkpoint.fail("Runtime checkpoint cannot wait behind an approval");
+                                    }
                                     Some(EngineEvent::ApprovalWithdrawn { id: withdrawn }) if withdrawn == id => {
                                         self.cancel_pending_approval(&approval_id);
                                         break None;

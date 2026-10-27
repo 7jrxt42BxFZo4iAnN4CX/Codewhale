@@ -943,6 +943,24 @@ impl HostEvents for Events {
                     .serve(&shared, self.generation, params, cx)
                     .await
             }
+            protocol::HostRequest::SessionCheckpoint(params) => {
+                let shared = self
+                    .shared
+                    .upgrade()
+                    .ok_or_else(|| refuse("extension host manager is gone"))?;
+                if shared
+                    .tier_runtime(self.tier)
+                    .host_generation
+                    .load(Ordering::SeqCst)
+                    != self.generation
+                {
+                    return Err(refuse("stale host generation"));
+                }
+                shared
+                    .core_calls
+                    .serve_checkpoint(&shared, self.tier, self.generation, params, cx)
+                    .await
+            }
             protocol::HostRequest::CoreCall(params) => {
                 let Some(shared) = self.shared.upgrade() else {
                     return Err(refuse("extension host manager is gone"));

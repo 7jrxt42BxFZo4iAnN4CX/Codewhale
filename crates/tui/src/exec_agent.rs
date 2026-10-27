@@ -287,6 +287,103 @@ pub(crate) fn exec_automation_services(
 /// tool-call markup that the engine stripped from the visible output.
 pub(crate) const ONE_SHOT_TOOL_CALL_NOTICE: &str = "codewhale exec: the model tried to call a tool, but this run offers none, so the tool call was removed from the answer. Re-run with --auto (or --allowed-tools) to let it use tools.";
 
+async fn persist_exec_checkpoint(
+    request: Arc<crate::core::events::SessionCheckpointRequest>,
+    manager: Option<Arc<SessionManager>>,
+    session_id: &str,
+    workspace: &Path,
+    turn_id: Option<&str>,
+    engine: &crate::core::engine::EngineHandle,
+    deadline: Instant,
+) {
+    use crate::core::events::{
+        SessionCheckpointProjection, SessionCheckpointReceipt, SessionCheckpointRequest,
+    };
+
+    if turn_id != Some(request.caller.turn_id.as_str()) {
+        request.fail("exec session checkpoint does not match its active turn");
+        return;
+    }
+    if let Err(error) = request.validate_prefix(session_id, workspace, &request.snapshot.messages) {
+        request.fail(error);
+        return;
+    }
+    let turn_cancel = engine.captured_turn_cancel();
+    if turn_cancel.is_cancelled() {
+        request.fail("exec session checkpoint cancelled before persistence");
+        return;
+    }
+    if Instant::now() >= deadline {
+        request.fail("exec session checkpoint deadline expired before persistence");
+        engine.cancel_with_reason(crate::core::engine::CancelReason::External);
+        return;
+    }
+    let Some(manager) = manager else {
+        request.no_backend();
+        return;
+    };
+    let write_request = Arc::clone(&request);
+    let mut writer = tokio::task::spawn_blocking(move || -> Result<SessionCheckpointReceipt> {
+        let snapshot = &write_request.snapshot;
+        let id = persist_exec_session(
+            &snapshot.messages,
+            &snapshot.model,
+            PersistedProviderRoute {
+                kind: &snapshot.model_provider,
+                id: snapshot.model_provider_id.as_deref(),
+            },
+            &snapshot.workspace,
+            &snapshot.system_prompt,
+            Some(&snapshot.session_id),
+            snapshot.total_tokens,
+            None,
+            manager.as_ref(),
+            &[],
+            Some(write_request.as_ref()),
+        )?;
+        let persisted = manager
+            .load_session_snapshot(&id)
+            .context("could not read back exec session checkpoint")?;
+        write_request
+            .validate_prefix(
+                &persisted.metadata.id,
+                &persisted.metadata.workspace,
+                &persisted.messages,
+            )
+            .map_err(anyhow::Error::msg)?;
+        Ok(SessionCheckpointReceipt {
+            persisted_sha256: SessionCheckpointRequest::prefix_hash(&persisted.messages)
+                .map_err(anyhow::Error::msg)?,
+            messages_len: persisted.messages.len(),
+            projection: SessionCheckpointProjection::Exact,
+        })
+    });
+    let result = tokio::select! {
+        biased;
+        () = request.withdraw.cancelled() => {
+            request.fail("exec session checkpoint was withdrawn; its write may have completed");
+            writer.await
+        }
+        () = turn_cancel.cancelled() => {
+            request.fail("exec session checkpoint was cancelled; its write may have completed");
+            request.withdraw.cancel();
+            writer.await
+        }
+        () = tokio::time::sleep_until(deadline.into()) => {
+            request.fail("exec session checkpoint deadline expired; its write may have completed");
+            request.withdraw.cancel();
+            engine.cancel_with_reason(crate::core::engine::CancelReason::External);
+            writer.await
+        }
+        result = &mut writer => result,
+    };
+    match result {
+        Ok(Ok(receipt)) => request.succeed(receipt),
+        Ok(Err(error)) => request.fail(format!("exec session checkpoint failed: {error:#}")),
+        Err(error) => request.fail(format!("exec session checkpoint writer failed: {error}")),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn run_exec_agent(
     config: &Config,
@@ -375,6 +472,40 @@ pub(crate) async fn run_exec_agent(
         (None, None) => None,
         _ => anyhow::bail!("incomplete Fleet session capture destination"),
     };
+
+    let exec_session_id = fleet_capture
+        .as_ref()
+        .map(|(id, _)| id.clone())
+        .or_else(|| {
+            resume_session
+                .as_ref()
+                .map(|saved| saved.metadata.id.clone())
+        })
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let exec_session_workspace = resume_session
+        .as_ref()
+        .map(|saved| saved.metadata.workspace.clone())
+        .unwrap_or_else(|| workspace.clone());
+    let mut should_persist_session = !one_shot
+        || resume_session.is_some()
+        || fleet_capture.is_some()
+        || output_format == ExecOutputFormat::StreamJson;
+    let mut exec_session_manager = fleet_capture.map(|(_, manager)| Arc::new(manager));
+    let mut open_exec_session_manager = || -> Result<Arc<SessionManager>> {
+        if exec_session_manager.is_none() {
+            exec_session_manager = Some(Arc::new(
+                SessionManager::default_location().context("could not open exec session store")?,
+            ));
+        }
+        Ok(Arc::clone(
+            exec_session_manager
+                .as_ref()
+                .expect("opened exec session store"),
+        ))
+    };
+    if should_persist_session {
+        open_exec_session_manager()?;
+    }
 
     let route = resolve_cli_exec_route(config, model, prompt, force_configured_route).await?;
     let execution_config = config_for_cli_route(config, &route)?;
@@ -566,14 +697,8 @@ pub(crate) async fn run_exec_agent(
         model: effective_model.clone(),
         active_route_limits,
         workspace: workspace.clone(),
-        session_id: fleet_capture
-            .as_ref()
-            .map(|(id, _)| id.clone())
-            .or_else(|| {
-                resume_session
-                    .as_ref()
-                    .map(|saved| saved.metadata.id.clone())
-            }),
+        session_id: Some(exec_session_id.clone()),
+        session_checkpoint_backend: Some(crate::core::events::SessionCheckpointProjection::Exact),
         subagent_state_root: None,
         plugin_registry: Some(std::sync::Arc::clone(&engine_plugin_registry)),
         allow_shell: exec_allow_shell,
@@ -741,7 +866,6 @@ pub(crate) async fn run_exec_agent(
         eprintln!("warning: {sandbox_posture} — shell commands will run unrestricted");
     }
 
-    let resuming_session = resume_session.is_some();
     let mut loaded_session_id = None;
     if let Some(saved) = resume_session {
         let saved_id = saved.metadata.id.clone();
@@ -792,8 +916,7 @@ pub(crate) async fn run_exec_agent(
             )
         })
         .unwrap_or_else(codewhale_hooks::LifecycleOutbox::disabled);
-    // Wall clock for the outbox `turn_end` duration. `exec` never receives
-    // a TurnStarted engine event, so the start is marked at the same
+    // Wall clock for the outbox `turn_end` duration starts at the same
     // `Op::SendMessage` boundary where `turn_start` is emitted below.
     let exec_turn_started_at = Instant::now();
 
@@ -828,9 +951,8 @@ pub(crate) async fn run_exec_agent(
         }))
         .await?;
 
-    // Lifecycle outbox: the clean headless turn-start boundary. `exec` has
-    // no TurnStarted engine event; the message submission above is exactly
-    // where the engine begins the turn. No-op when the feature is disabled.
+    // Lifecycle outbox: the headless submission boundary, before the Engine
+    // reports TurnStarted. No-op when the feature is disabled.
     lifecycle_outbox.emit(codewhale_hooks::LifecycleEvent {
         event: "turn_start".to_string(),
         kind: "turn.started".to_string(),
@@ -861,8 +983,7 @@ pub(crate) async fn run_exec_agent(
     let mut last_error_category = None;
     let mut reported_sandbox_contract = false;
 
-    let mut should_persist_session =
-        !one_shot || resuming_session || output_format == ExecOutputFormat::StreamJson;
+    let mut active_turn_id = None;
     let mut image_request_receipts = Vec::new();
     let mut latest_session_id = loaded_session_id;
     let mut latest_messages: Arc<Vec<Message>> = Arc::new(Vec::new());
@@ -891,6 +1012,9 @@ pub(crate) async fn run_exec_agent(
         };
 
         match event {
+            Event::TurnStarted { turn_id, .. } => {
+                active_turn_id = Some(turn_id);
+            }
             Event::MessageDelta { content, .. } => {
                 summary.output.push_str(&content);
                 if output_format == ExecOutputFormat::StreamJson {
@@ -1333,30 +1457,34 @@ pub(crate) async fn run_exec_agent(
                         last_error_category.map(|category| category.to_string());
                 }
                 let saved_session_id = if should_persist_session && !latest_messages.is_empty() {
-                    match persist_exec_session(
-                        &latest_messages,
-                        &latest_model,
-                        PersistedProviderRoute {
-                            kind: effective_identity.persisted_kind(),
-                            id: effective_identity.persisted_id(),
-                        },
-                        &latest_workspace,
-                        &latest_system_prompt,
-                        latest_session_id.as_deref(),
-                        u64::from(usage.input_tokens) + u64::from(usage.output_tokens),
-                        (terminal_status == crate::core::events::TurnOutcomeStatus::Failed)
-                            .then_some(summary.error.as_deref().unwrap_or_else(|| {
-                                crate::core::termination::classify_turn_termination(
-                                    terminal_status,
-                                    last_error_category,
-                                    tool_error_seen,
-                                    approval_required,
-                                )
-                                .as_str()
-                            })),
-                        fleet_capture.as_ref().map(|(_, manager)| manager),
-                        &image_request_receipts,
-                    ) {
+                    let saved = open_exec_session_manager().and_then(|manager| {
+                        persist_exec_session(
+                            &latest_messages,
+                            &latest_model,
+                            PersistedProviderRoute {
+                                kind: effective_identity.persisted_kind(),
+                                id: effective_identity.persisted_id(),
+                            },
+                            &latest_workspace,
+                            &latest_system_prompt,
+                            latest_session_id.as_deref(),
+                            u64::from(usage.input_tokens) + u64::from(usage.output_tokens),
+                            (terminal_status == crate::core::events::TurnOutcomeStatus::Failed)
+                                .then_some(summary.error.as_deref().unwrap_or_else(|| {
+                                    crate::core::termination::classify_turn_termination(
+                                        terminal_status,
+                                        last_error_category,
+                                        tool_error_seen,
+                                        approval_required,
+                                    )
+                                    .as_str()
+                                })),
+                            manager.as_ref(),
+                            &image_request_receipts,
+                            None,
+                        )
+                    });
+                    match saved {
                         Ok(id) => {
                             if output_format == ExecOutputFormat::Text && !json_output {
                                 eprintln!("{}", exec_saved_session_line(&id));
@@ -1538,7 +1666,47 @@ pub(crate) async fn run_exec_agent(
                 instruction_assembly: _,
                 model,
                 workspace,
+                checkpoint,
             } => {
+                if let Some(checkpoint) = checkpoint {
+                    if session_id != exec_session_id
+                        || workspace != exec_session_workspace
+                        || active_turn_id.as_deref() != Some(checkpoint.caller.turn_id.as_str())
+                        || model != checkpoint.snapshot.model
+                        || system_prompt != checkpoint.snapshot.system_prompt
+                    {
+                        checkpoint
+                            .fail("exec checkpoint event does not match its captured root turn");
+                        continue;
+                    }
+                    if let Err(error) =
+                        checkpoint.validate_prefix(&session_id, &workspace, &messages)
+                    {
+                        checkpoint.fail(error);
+                        continue;
+                    }
+                    let manager = if should_persist_session {
+                        open_exec_session_manager().map(Some)
+                    } else {
+                        Ok(None)
+                    };
+                    match manager {
+                        Ok(manager) => {
+                            persist_exec_checkpoint(
+                                checkpoint,
+                                manager,
+                                &exec_session_id,
+                                &exec_session_workspace,
+                                active_turn_id.as_deref(),
+                                &engine_handle,
+                                exec_deadline,
+                            )
+                            .await
+                        }
+                        Err(error) => checkpoint
+                            .fail(format!("could not open exec checkpoint store: {error:#}")),
+                    }
+                }
                 latest_session_id = Some(session_id);
                 latest_messages = messages;
                 latest_system_prompt = system_prompt;
@@ -1826,6 +1994,211 @@ mod tests {
         assert!(
             engine.rx_op.try_recv().is_err(),
             "the event reader does not send early Shutdown"
+        );
+
+        use crate::core::events::{
+            SessionCheckpointCaller, SessionCheckpointProjection, SessionCheckpointRequest,
+        };
+        use crate::core::ops::SessionSnapshot;
+        use std::sync::Arc;
+        use tokio_util::sync::CancellationToken;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let manager = Arc::new(
+            crate::session_manager::SessionManager::new(tmp.path().join("fleet-capture")).unwrap(),
+        );
+        let workspace = tmp.path().join("workspace");
+        let messages: Vec<codewhale_models::Message> = serde_json::from_value(serde_json::json!([
+            {"role":"user","content":[{"type":"text","text":"review the changes"}]},
+            {"role":"assistant","content":[{"type":"tool_use","id":"provider-call","execution_id":"exec-call","name":"review","input":{}}]}
+        ])).unwrap();
+        let snapshot = Arc::new(SessionSnapshot {
+            session_id: "exec-checkpoint".into(),
+            messages: messages.clone(),
+            total_tokens: 23,
+            model: "review-model".into(),
+            model_provider: "custom".into(),
+            model_provider_id: Some("review-route".into()),
+            workspace: workspace.clone(),
+            system_prompt: None,
+            instruction_assembly: None,
+            mode: "exec".into(),
+        });
+        let caller = SessionCheckpointCaller {
+            session_id: snapshot.session_id.clone(),
+            agent_id: None,
+            turn_id: "exec-turn".into(),
+            call_id: "exec-call".into(),
+            workspace: workspace.clone(),
+        };
+        let checkpoint = |caller: SessionCheckpointCaller, snapshot: Arc<SessionSnapshot>| {
+            let (reply, receive) = tokio::sync::oneshot::channel();
+            let hash = SessionCheckpointRequest::prefix_hash(&snapshot.messages).unwrap();
+            (
+                SessionCheckpointRequest::new(
+                    caller,
+                    snapshot,
+                    hash,
+                    SessionCheckpointProjection::Exact,
+                    CancellationToken::new(),
+                    reply,
+                ),
+                receive,
+            )
+        };
+        let (request, receive) = checkpoint(caller.clone(), Arc::clone(&snapshot));
+        super::persist_exec_checkpoint(
+            Arc::clone(&request),
+            Some(Arc::clone(&manager)),
+            &snapshot.session_id,
+            &workspace,
+            Some("exec-turn"),
+            &engine.handle,
+            Instant::now() + Duration::from_secs(3),
+        )
+        .await;
+        assert!(receive.await.unwrap().unwrap());
+        let persisted = manager.load_session_snapshot(&snapshot.session_id).unwrap();
+        assert_eq!(persisted.messages, messages);
+        assert_eq!(persisted.metadata.total_tokens, 23);
+        assert_eq!(
+            persisted.metadata.model_provider_id.as_deref(),
+            Some("review-route")
+        );
+        assert_eq!(persisted.metadata.workspace, workspace);
+        assert_eq!(persisted.metadata.mode.as_deref(), Some("exec"));
+
+        let mut completed = messages.clone();
+        completed.push(serde_json::from_value(serde_json::json!({
+            "role":"user","content":[{"type":"tool_result","tool_use_id":"provider-call","execution_id":"exec-call","content":"review complete"}]
+        })).unwrap());
+        crate::persist_exec_session(
+            &completed,
+            &snapshot.model,
+            crate::PersistedProviderRoute {
+                kind: "custom",
+                id: Some("review-route"),
+            },
+            &workspace,
+            &None,
+            Some(&snapshot.session_id),
+            42,
+            None,
+            manager.as_ref(),
+            &[],
+            None,
+        )
+        .unwrap();
+        super::persist_exec_checkpoint(
+            request,
+            Some(Arc::clone(&manager)),
+            &snapshot.session_id,
+            &workspace,
+            Some("exec-turn"),
+            &engine.handle,
+            Instant::now() + Duration::from_secs(3),
+        )
+        .await;
+        assert_eq!(
+            manager
+                .load_session_snapshot(&snapshot.session_id)
+                .unwrap()
+                .messages,
+            completed
+        );
+
+        for mismatch in ["session", "workspace", "child", "turn"] {
+            let mut foreign = caller.clone();
+            match mismatch {
+                "session" => foreign.session_id = "foreign-session".into(),
+                "workspace" => foreign.workspace = tmp.path().join("foreign-workspace"),
+                "child" => foreign.agent_id = Some("child-agent".into()),
+                "turn" => foreign.turn_id = "foreign-turn".into(),
+                _ => unreachable!(),
+            }
+            let (request, receive) = checkpoint(foreign, Arc::clone(&snapshot));
+            super::persist_exec_checkpoint(
+                request,
+                Some(Arc::clone(&manager)),
+                &snapshot.session_id,
+                &workspace,
+                Some("exec-turn"),
+                &engine.handle,
+                Instant::now() + Duration::from_secs(3),
+            )
+            .await;
+            assert!(receive.await.unwrap().is_err(), "{mismatch}");
+        }
+        assert_eq!(
+            manager
+                .load_session_snapshot(&snapshot.session_id)
+                .unwrap()
+                .messages,
+            completed
+        );
+        assert!(!manager.sessions_dir().join("foreign-session.json").exists());
+
+        let (request, receive) = checkpoint(caller.clone(), Arc::clone(&snapshot));
+        request.withdraw.cancel();
+        super::persist_exec_checkpoint(
+            request,
+            Some(Arc::clone(&manager)),
+            &snapshot.session_id,
+            &workspace,
+            Some("exec-turn"),
+            &engine.handle,
+            Instant::now() + Duration::from_secs(3),
+        )
+        .await;
+        assert!(receive.await.unwrap().is_err());
+        let (request, receive) = checkpoint(caller.clone(), Arc::clone(&snapshot));
+        super::persist_exec_checkpoint(
+            request,
+            None,
+            &snapshot.session_id,
+            &workspace,
+            Some("exec-turn"),
+            &engine.handle,
+            Instant::now() + Duration::from_secs(3),
+        )
+        .await;
+        assert!(!receive.await.unwrap().unwrap());
+
+        let failed_store = Arc::new(
+            crate::session_manager::SessionManager::new(tmp.path().join("failed-store")).unwrap(),
+        );
+        std::fs::create_dir(failed_store.sessions_dir().join("exec-checkpoint.json")).unwrap();
+        let (request, receive) = checkpoint(caller.clone(), Arc::clone(&snapshot));
+        super::persist_exec_checkpoint(
+            request,
+            Some(failed_store),
+            &snapshot.session_id,
+            &workspace,
+            Some("exec-turn"),
+            &engine.handle,
+            Instant::now() + Duration::from_secs(3),
+        )
+        .await;
+        assert!(receive.await.unwrap().is_err());
+        let (request, receive) = checkpoint(caller, Arc::clone(&snapshot));
+        super::persist_exec_checkpoint(
+            request,
+            Some(Arc::clone(&manager)),
+            &snapshot.session_id,
+            &workspace,
+            Some("exec-turn"),
+            &engine.handle,
+            Instant::now(),
+        )
+        .await;
+        assert!(receive.await.unwrap().is_err());
+        assert!(engine.handle.is_cancelled());
+        assert_eq!(
+            manager
+                .load_session_snapshot(&snapshot.session_id)
+                .unwrap()
+                .messages,
+            completed
         );
     }
 

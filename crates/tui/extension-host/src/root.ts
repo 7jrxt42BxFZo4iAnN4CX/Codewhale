@@ -132,8 +132,18 @@ function withDeadline<T>(promise: Promise<T>, ms: number, label: string): Promis
   return Promise.race([promise, deadline]).finally(() => clearTimeout(timer))
 }
 
+interface ToolInvocation {
+  owner: OwnerRecord
+  session: object | undefined
+  ticket: string | undefined
+  signal: AbortSignal
+  active: boolean
+  pending: Promise<void>
+}
+
 export class HostRoot {
   readonly root: any
+  private readonly toolInvocations = new AsyncLocalStorage<ToolInvocation>()
   readonly owners = new Map<string, OwnerRecord>()
   private readonly toolRegistrations: OwnedRegistrations<OwnerRecord, LocalTool>
   private readonly commandRegistrations: OwnedRegistrations<OwnerRecord, LocalCommand<OwnerRecord>>
@@ -274,11 +284,35 @@ export class HostRoot {
       set(key: string, value: Json) { return this.api().set(key, value) }
       delete(key: string) { return this.api().delete(key) }
     }
+    class SessionsShim extends Service {
+      constructor(ctx: any) { super(ctx, 'sessions') }
+      async flush(session: unknown): Promise<boolean> {
+        const invocation = host.toolInvocations.getStore()
+        const owner: OwnerRecord | undefined = (this.ctx as any)[OWNER]
+        const live = () => invocation && invocation.active && !invocation.signal.aborted
+          && invocation.owner === owner && owner?.state === 'active' && !owner.disposing
+          && invocation.ticket !== undefined && session === invocation.session && session !== undefined
+        if (!live()) throw new RpcError(ErrorCode.NotAvailable, 'sessions.flush requires this live tool invocation’s session')
+        const call = invocation!
+        const run = async () => {
+          if (!live()) throw new RpcError(ErrorCode.NotAvailable, 'session checkpoint invocation ended')
+          const result = await host.rpc.request<unknown>('session/checkpoint', { owner: call.owner.ref, ticket: call.ticket }, call.signal)
+          if (!live()) throw new RpcError(ErrorCode.NotAvailable, 'session checkpoint invocation ended')
+          if (typeof result !== 'boolean') throw new RpcError(ErrorCode.Internal, 'invalid session checkpoint receipt')
+          return result
+        }
+        const result = call.pending.then(run)
+        call.pending = result.then(() => undefined, () => undefined)
+        return result
+      }
+    }
+    Object.freeze(SessionsShim.prototype)
     Object.freeze(StorageShim.prototype)
     shimClasses.set('tools', ToolsShim)
     shimClasses.set('commands', CommandsShim)
     shimClasses.set('prompt', PromptShim)
     shimClasses.set('storage', StorageShim)
+    shimClasses.set('sessions', SessionsShim)
     shimClasses.set('skills', SkillsShim)
     shimClasses.set('avatars', AvatarsShim)
     shimClasses.set('mcp',McpShim)
@@ -287,6 +321,7 @@ export class HostRoot {
     root.plugin(CommandsShim)
     root.plugin(PromptShim)
     root.plugin(StorageShim)
+    root.plugin(SessionsShim)
     root.plugin(SkillsShim)
     root.plugin(AvatarsShim)
     root.plugin(McpShim)
@@ -553,11 +588,25 @@ export class HostRoot {
       session: Object.freeze({ header: Object.freeze({ cwd: workspace }) }),
     }) : undefined
     const exec = Object.freeze({ signal, callId, args: input, ...callContext(local.owner, workspace, identity), ...core, ...(agent === undefined ? {} : { agent }) })
-    const run = ownerStorage.run(local.owner, async () => {
+    const closed = new AbortController()
+    const invocation: ToolInvocation = {
+      owner: local.owner,
+      session: agent?.session,
+      ticket: identity?.checkpoint_ticket,
+      signal: AbortSignal.any([signal, closed.signal]),
+      active: true,
+      pending: Promise.resolve(),
+    }
+    const run = ownerStorage.run(local.owner, () => this.toolInvocations.run(invocation, async () => {
       const value = await definition.execute(input, exec)
       return renderResult(definition, input, value)
-    })
-    return Promise.race([run, abortedBy(signal)])
+    }))
+    try {
+      return await Promise.race([run, abortedBy(signal)])
+    } finally {
+      invocation.active = false
+      closed.abort()
+    }
   }
 
   /** `command/run`: only for a handle the core admitted, and only on a user's own invocation. */
@@ -603,6 +652,7 @@ export class HostRoot {
 
 /** The read-only context a call carries beyond its input; a field the core did not send is absent. */
 interface InvocationIdentityWire {
+  checkpoint_ticket?: string
   session_id?: string
   agent_id?: string
   origin_turn_id?: string

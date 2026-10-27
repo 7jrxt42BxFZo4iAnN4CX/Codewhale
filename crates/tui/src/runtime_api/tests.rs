@@ -478,6 +478,7 @@ fn messages_from_thread_detail_batches_tool_results() {
         last_read: None,
     };
     let turn = TurnRecord {
+        prefix_checkpoint: None,
         decision_receipts: Vec::new(),
         max_output_tokens: None,
         schema_version: 2,
@@ -9936,6 +9937,7 @@ async fn session_save_merges_thread_cost_split_and_records_coverage() -> Result<
     let store = runtime_threads.test_store();
     let now = Utc::now();
     let mut turn = TurnRecord {
+        prefix_checkpoint: None,
         decision_receipts: Vec::new(),
         max_output_tokens: None,
         schema_version: 2,
@@ -10136,6 +10138,7 @@ async fn session_save_persists_parent_cny_unpriced_reasons_without_double_count(
     let store = runtime_threads.test_store();
     let now = Utc::now();
     let mut turn = TurnRecord {
+        prefix_checkpoint: None,
         decision_receipts: Vec::new(),
         max_output_tokens: None,
         schema_version: 2,
@@ -11489,6 +11492,7 @@ fn seed_summary_search_transcript(
             item_ids.push(item_id);
         }
         store.save_turn(&TurnRecord {
+            prefix_checkpoint: None,
             decision_receipts: Vec::new(),
             max_output_tokens: None,
             schema_version: 2,
@@ -18675,6 +18679,36 @@ async fn dsh_package_preview_then_exact_install_over_http() -> Result<()> {
             .any(|p| p["name"] == "docs-dsh"),
         "preview installs nothing"
     );
+
+    let wrong_hash = "0".repeat(64);
+    assert_ne!(preview["content_hash"].as_str(), Some(wrong_hash.as_str()));
+    let mismatch = client
+        .post(format!("http://{addr}/v1/apps/plugins/install"))
+        .json(&serde_json::json!({
+            "source": preview["install_source"],
+            "expected_content_hash": wrong_hash.as_str(),
+        }))
+        .send()
+        .await?;
+    assert_eq!(mismatch.status(), StatusCode::CONFLICT);
+    let mismatch: serde_json::Value = mismatch.json().await?;
+    assert_eq!(mismatch["error"]["status"], 409);
+    assert_eq!(
+        mismatch["error"]["message"],
+        format!(
+            "plugin mutation failed: plugin source changed after review: expected content hash {wrong_hash}, copied bytes hash is {}; nothing was installed",
+            preview["content_hash"].as_str().unwrap()
+        )
+    );
+    let plugins_dir = tmp.path().join("runtime/plugins");
+    assert!(!plugins_dir.join("docs-dsh").exists());
+    assert!(fs::read_dir(&plugins_dir)?.all(|entry| {
+        !entry
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .starts_with(".staging-")
+    }));
 
     let installed = client
         .post(format!("http://{addr}/v1/apps/plugins/install"))

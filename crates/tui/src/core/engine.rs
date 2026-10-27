@@ -573,6 +573,7 @@ pub struct EngineConfig {
     /// Interactive TUI sessions enable this; headless and machine-readable
     /// hosts disable it so stdout remains protocol-clean.
     pub terminal_chrome_enabled: bool,
+    pub session_checkpoint_backend: Option<crate::core::events::SessionCheckpointProjection>,
     /// Resolved advisor watcher configuration (#3982). Off by default.
     /// Updated live by `Op::SetAdvisorEnabled`.
     pub advisor_config: crate::tools::subagent::AdvisorConfig,
@@ -686,6 +687,7 @@ impl Default for EngineConfig {
             workspace_follow_symlinks: false,
             exec_policy_engine: codewhale_execpolicy::ExecPolicyEngine::new(Vec::new(), Vec::new()),
             terminal_chrome_enabled: true,
+            session_checkpoint_backend: None,
             advisor_config: crate::tools::subagent::AdvisorConfig::disabled(),
         }
     }
@@ -4746,6 +4748,7 @@ impl Engine {
         }
         let _ = self
             .send_event(Event::SessionUpdated {
+                checkpoint: None,
                 session_id: self.session.id.clone(),
                 messages: self.session.messages.snapshot(),
                 system_prompt: self.session.system_prompt.clone(),

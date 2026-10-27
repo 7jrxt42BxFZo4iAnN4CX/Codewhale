@@ -12030,7 +12030,8 @@ var init_compatibility = __esm({
         "logger",
         "events",
         "reflect",
-        "registry"
+        "registry",
+        "sessions"
       ],
       refused_services: [
         "shellHooks",
@@ -12273,7 +12274,10 @@ var init_compatibility = __esm({
           sha256: "66ee7f28877afa912496ba944a581ac74e7b87390e6a47c4c640d8f477bdc6e2"
         }
       },
-      tool_caller_projection: "readonly-id-session-header-cwd"
+      tool_caller_projection: "readonly-id-session-header-cwd",
+      session_methods: {
+        flush: "invocation-bound-acknowledged-checkpoint-with-host-redaction-policy"
+      }
     };
   }
 });

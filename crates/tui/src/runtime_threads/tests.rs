@@ -2474,6 +2474,7 @@ fn sample_thread(thread_id: &str) -> ThreadRecord {
 fn sample_turn(thread_id: &str, turn_id: &str, status: RuntimeTurnStatus) -> TurnRecord {
     let now = Utc::now();
     TurnRecord {
+        prefix_checkpoint: None,
         decision_receipts: Vec::new(),
         max_output_tokens: None,
         schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -6912,7 +6913,7 @@ fn store_load_scenario() {
         let store = RuntimeThreadStore::open(dir.clone()).expect("open store");
 
         let mut turn = sample_turn("thr_t", "trn_future", RuntimeTurnStatus::InProgress);
-        turn.schema_version = MAX_SUPPORTED_RUNTIME_SCHEMA_VERSION + 1;
+        turn.schema_version = PREFIX_CHECKPOINT_RUNTIME_SCHEMA_VERSION + 1;
 
         let path = store.turns_dir.join(format!("{}.json", turn.id));
         std::fs::create_dir_all(path.parent().unwrap()).expect("mkdirs");
@@ -18438,6 +18439,8 @@ async fn compaction_lifecycle_emits_item_events_with_compaction_counts() -> Resu
     let harness = install_mock_engine(&manager, &thread.id).await;
     let mut rx_op = harness.rx_op;
     let tx_event = harness.tx_event;
+    let checkpoint_thread = thread.id.clone();
+    let checkpoint_workspace = thread.workspace.clone();
     tokio::spawn(async move {
         let mut op_count = 0usize;
         let mut snapshots = 0usize;
@@ -18464,6 +18467,61 @@ async fn compaction_lifecycle_emits_item_events_with_compaction_counts() -> Resu
                             submission_id: None,
                         })
                         .await;
+                    for (agent_id, withdrawn, accepted) in [
+                        (Some("child".to_string()), false, false),
+                        (None, true, false),
+                        (None, false, true),
+                        (None, false, true),
+                    ] {
+                        let messages: Vec<Message> = serde_json::from_value(json!([
+                            {"role":"user","content":[{"type":"text","text":"auto checkpoint prefix"}]}
+                        ])).unwrap();
+                        let snapshot = Arc::new(crate::core::ops::SessionSnapshot {
+                            session_id: checkpoint_thread.clone(),
+                            messages: messages.clone(),
+                            total_tokens: 0,
+                            model: String::new(),
+                            model_provider: String::new(),
+                            model_provider_id: None,
+                            workspace: checkpoint_workspace.clone(),
+                            system_prompt: None,
+                            instruction_assembly: None,
+                            mode: "agent".into(),
+                        });
+                        let (reply, received) = oneshot::channel();
+                        let withdraw = CancellationToken::new();
+                        if withdrawn {
+                            withdraw.cancel();
+                        }
+                        let request = crate::core::events::SessionCheckpointRequest::new(
+                            crate::core::events::SessionCheckpointCaller {
+                                session_id: checkpoint_thread.clone(), agent_id, turn_id: "engine_turn_auto".into(),
+                                call_id: "mock_checkpoint_call".into(), workspace: checkpoint_workspace.clone(),
+                            }, snapshot, session_messages_sha256(&messages).unwrap(),
+                            crate::core::events::SessionCheckpointProjection::RuntimeReceiptRedacted, withdraw, reply,
+                        );
+                        tx_event
+                            .send(EngineEvent::SessionUpdated {
+                                checkpoint: Some(request),
+                                session_id: checkpoint_thread.clone(),
+                                messages: Arc::new(messages),
+                                system_prompt: None,
+                                instruction_assembly: None,
+                                model: String::new(),
+                                workspace: checkpoint_workspace.clone(),
+                            })
+                            .await
+                            .unwrap();
+                        let outcome = tokio::time::timeout(Duration::from_secs(5), received)
+                            .await
+                            .expect("checkpoint must not call back into the Engine mailbox")
+                            .expect("checkpoint writer must settle its sender");
+                        if accepted {
+                            assert!(matches!(outcome, Ok(true)));
+                        } else {
+                            assert!(outcome.is_err());
+                        }
+                    }
                     let _ = tx_event
                         .send(EngineEvent::CompactionStarted {
                             id: "auto_compact_1".to_string(),
@@ -18627,6 +18685,13 @@ async fn compaction_lifecycle_emits_item_events_with_compaction_counts() -> Resu
     // Each compacting turn stores the history the engine settled on; a
     // reload restores the newest one instead of replaying the turns it
     // replaced, and the thread record carries no summary of its own.
+    assert!(
+        manager
+            .store
+            .list_turns_for_thread(&thread.id)?
+            .iter()
+            .any(|turn| turn.prefix_checkpoint.is_some())
+    );
     let record = manager.get_thread(&thread.id).await?;
     assert_eq!(record.system_prompt, None);
     let restored = manager.restore_thread_messages(&record)?;
@@ -18725,6 +18790,7 @@ fn opening_manager_recovers_stale_queued_and_in_progress_work() -> Result<()> {
     manager.store.save_item(&queued_item)?;
 
     manager.store.save_turn(&TurnRecord {
+        prefix_checkpoint: None,
         decision_receipts: Vec::new(),
         max_output_tokens: None,
         schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -18765,6 +18831,7 @@ fn opening_manager_recovers_stale_queued_and_in_progress_work() -> Result<()> {
         workspace_snapshots: Vec::new(),
     })?;
     manager.store.save_turn(&TurnRecord {
+        prefix_checkpoint: None,
         decision_receipts: Vec::new(),
         max_output_tokens: None,
         schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -18963,6 +19030,7 @@ fn seed_turns_with_user_messages(
             ended_at: Some(created_at),
         })?;
         manager.store.save_turn(&TurnRecord {
+            prefix_checkpoint: None,
             decision_receipts: Vec::new(),
             max_output_tokens: None,
             schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -19720,6 +19788,7 @@ fn restart_rebuild_restores_tool_call_identity_from_persisted_items() -> Result<
     manager.store.save_item(&user_item)?;
     manager.store.save_item(&call_item)?;
     manager.store.save_turn(&TurnRecord {
+        prefix_checkpoint: None,
         decision_receipts: Vec::new(),
         max_output_tokens: None,
         schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -19792,6 +19861,186 @@ fn restart_rebuild_restores_tool_call_identity_from_persisted_items() -> Result<
         other => panic!("expected restored tool result, got {other:?}"),
     }
 
+    let mut checkpoint_turn = sample_turn(&thread.id, "turn_prefix", RuntimeTurnStatus::InProgress);
+    checkpoint_turn.schema_version = PREFIX_CHECKPOINT_RUNTIME_SCHEMA_VERSION;
+    checkpoint_turn.max_output_tokens = std::num::NonZeroU32::new(1500);
+    let mut checkpoint_user = user_item.clone();
+    checkpoint_user.id = "item_prefix_user".into();
+    checkpoint_user.turn_id = checkpoint_turn.id.clone();
+    checkpoint_user.detail = Some("checkpoint input".into());
+    checkpoint_user.summary = "checkpoint input".into();
+    let mut first = call_item.clone();
+    first.id = "item_prefix_first".into();
+    first.turn_id = checkpoint_turn.id.clone();
+    first.status = TurnItemLifecycleStatus::InProgress;
+    first.detail = Some(r#"{"path":"first","token":"fixture-secret"}"#.into());
+    first.metadata = Some(
+        json!({"tool_use_id":"execution_first", "execution_id":"execution_first",
+        "provider_tool_use_id":"provider_first", "tool_name":"read", "tool_input":r#"{"path":"first","token":"fixture-secret"}"#}),
+    );
+    let mut closed = first.clone();
+    closed.id = "item_prefix_closed".into();
+    closed.status = TurnItemLifecycleStatus::Completed;
+    closed.detail = Some("raw durable result".into());
+    closed.metadata = Some(
+        json!({"tool_use_id":"execution_closed", "execution_id":"execution_closed",
+        "provider_tool_use_id":"provider_closed", "tool_name":"read", "tool_input":r#"{"path":"closed"}"#,
+        "tool_result_for":"execution_closed"}),
+    );
+    checkpoint_turn.item_ids = vec![
+        checkpoint_user.id.clone(),
+        closed.id.clone(),
+        first.id.clone(),
+    ];
+    manager.store.save_item(&checkpoint_user)?;
+    manager.store.save_item(&closed)?;
+    manager.store.save_item(&first)?;
+    let mut prefix = messages.clone();
+    prefix.extend(serde_json::from_value::<Vec<Message>>(json!([
+        {"role":"user", "content":[{"type":"text","text":"<turn_meta>canonical</turn_meta>checkpoint input"}]},
+        {"role":"assistant", "content":[{"type":"tool_use","execution_id":"execution_closed","id":"provider_closed","name":"read","input":{"path":"closed"}}]},
+        {"role":"user", "content":[{"type":"tool_result","execution_id":"execution_closed","tool_use_id":"provider_closed","content":"compacted result\n[hook context] retained canonical detail"}]},
+        {"role":"assistant", "content":[
+            {"type":"thinking","thinking":"canonical thought","signature":"retained-signature"},
+            {"type":"tool_use","execution_id":"execution_first","id":"provider_first","name":"read","input":{"path":"first","token":"fixture-secret"}},
+            {"type":"tool_use","execution_id":"execution_second","id":"provider_second","name":"read","input":{"path":"second"}}
+        ]}
+    ]))?);
+    let source_sha256 = session_messages_sha256(&prefix)?;
+    let tool_declarations = checkpoint_tool_declarations(&prefix)?;
+    for message in &mut prefix {
+        crate::core::engine::redact_tool_blocks(message, |text| {
+            text.replace("fixture-secret", "[REDACTED]")
+        });
+    }
+    let reference = manager.store.save_settled_history(&prefix)?;
+    checkpoint_turn.prefix_checkpoint = Some(RuntimePrefixCheckpoint {
+        checkpoint_id: "checkpoint_fixture".into(),
+        session_id: thread.id.clone(),
+        agent_id: None,
+        runtime_turn_id: checkpoint_turn.id.clone(),
+        engine_turn_id: "engine_prefix".into(),
+        call_id: "invocation_prefix".into(),
+        owner_id: manager.store.owner_id.clone(),
+        source_sha256,
+        persisted_sha256: reference["sha256"].as_str().unwrap().into(),
+        messages_len: prefix.len(),
+        projection: "runtime_receipt_redacted".into(),
+        item_ids: checkpoint_turn.item_ids.clone(),
+        tool_declarations,
+        pending_items: Vec::new(),
+        covered_items: HashMap::from([
+            (
+                checkpoint_user.id.clone(),
+                checkpoint_item_digest(&checkpoint_user)?,
+            ),
+            (closed.id.clone(), checkpoint_item_digest(&closed)?),
+        ]),
+    });
+    manager.store.save_turn(&checkpoint_turn)?;
+    assert!(
+        serde_json::to_value(&checkpoint_turn)?
+            .get("prefix_checkpoint")
+            .is_none()
+    );
+    assert!(
+        manager
+            .store
+            .load_turn(&checkpoint_turn.id)?
+            .prefix_checkpoint
+            .is_some()
+    );
+    assert_eq!(manager.restore_thread_messages(&thread)?, prefix);
+    checkpoint_turn.prefix_checkpoint.as_mut().unwrap().owner_id = "foreign_owner".into();
+    manager.store.save_turn(&checkpoint_turn)?;
+    assert!(manager.restore_thread_messages(&thread).is_err());
+    checkpoint_turn.prefix_checkpoint.as_mut().unwrap().owner_id = manager.store.owner_id.clone();
+    manager.store.save_turn(&checkpoint_turn)?;
+
+    first.status = TurnItemLifecycleStatus::Completed;
+    first.detail = Some("first result".into());
+    first.metadata.as_mut().unwrap()["tool_result_for"] = json!("execution_first");
+    manager.store.save_item(&first)?;
+    let mut second = first.clone();
+    second.id = "item_prefix_second".into();
+    second.status = TurnItemLifecycleStatus::Interrupted;
+    second.detail = Some(r#"{"path":"second"}"#.into());
+    second.metadata = Some(
+        json!({"tool_use_id":"execution_second", "execution_id":"execution_second",
+        "provider_tool_use_id":"provider_second", "tool_name":"read", "tool_input":r#"{"path":"second"}"#}),
+    );
+    let mut later = checkpoint_user.clone();
+    later.id = "item_prefix_later".into();
+    later.kind = TurnItemKind::AgentMessage;
+    later.detail = Some("later assistant".into());
+    later.summary = "later assistant".into();
+    manager.store.save_item(&second)?;
+    manager.store.save_item(&later)?;
+    checkpoint_turn
+        .item_ids
+        .extend([second.id.clone(), later.id.clone()]);
+    checkpoint_turn.status = RuntimeTurnStatus::Interrupted;
+    manager.store.save_turn(&checkpoint_turn)?;
+    let mut expected = prefix.clone();
+    expected.extend(serde_json::from_value::<Vec<Message>>(json!([
+        {"role":"user","content":[
+            {"type":"tool_result","execution_id":"execution_first","tool_use_id":"provider_first","content":"first result"},
+            {"type":"tool_result","execution_id":"execution_second","tool_use_id":"provider_second",
+                "content":codewhale_runtime::tool_history_repair::CRASH_REPAIR_CONTENT,"is_error":true}
+        ]},
+        {"role":"assistant","content":[{"type":"text","text":"later assistant"}]}
+    ]))?);
+    assert_eq!(manager.restore_thread_messages(&thread)?, expected);
+    let turn = manager.store.load_turn(&checkpoint_turn.id)?;
+    let items = manager.prepared_items_for_turns(std::slice::from_ref(&turn))?;
+    assert_eq!(
+        manager.history_from_records(&[turn.clone()], &items)?,
+        expected
+    );
+    first.metadata.as_mut().unwrap()["tool_input"] = json!(r#"{"path":"changed"}"#);
+    manager.store.save_item(&first)?;
+    assert!(manager.restore_thread_messages(&thread).is_err());
+    first.metadata.as_mut().unwrap()["tool_input"] =
+        json!(r#"{"path":"first","token":"fixture-secret"}"#);
+    manager.store.save_item(&first)?;
+    let history_path = manager
+        .store
+        .settled_history_path(reference["sha256"].as_str().unwrap())?;
+    fs::write(&history_path, b"corrupt")?;
+    assert!(manager.restore_thread_messages(&thread).is_err());
+    manager.store.save_settled_history(&prefix)?;
+    fs::remove_file(manager.store.item_path(&checkpoint_user.id)?)?;
+    assert!(manager.restore_thread_messages(&thread).is_err());
+    manager.store.save_item(&checkpoint_user)?;
+    fs::remove_file(manager.store.item_path(&second.id)?)?;
+    checkpoint_turn.item_ids.retain(|id| id != &second.id);
+    manager.store.save_turn(&checkpoint_turn)?;
+    assert_eq!(manager.restore_thread_messages(&thread)?, expected);
+    drop(manager);
+    let manager = test_manager(dir.clone())?;
+    assert_eq!(manager.restore_thread_messages(&thread)?, expected);
+
+    let mut compacted = sample_turn(
+        &thread.id,
+        "turn_after_prefix",
+        RuntimeTurnStatus::Completed,
+    );
+    compacted.created_at = checkpoint_turn.created_at + chrono::Duration::seconds(1);
+    let compacted_history: Vec<Message> = serde_json::from_value(json!([
+        {"role":"user","content":[{"type":"text","text":"newer canonical compaction"}]}
+    ]))?;
+    let compacted_reference = manager.store.save_settled_history(&compacted_history)?;
+    let mut compaction_item = later.clone();
+    compaction_item.id = "item_after_prefix_compaction".into();
+    compaction_item.turn_id = compacted.id.clone();
+    compaction_item.kind = TurnItemKind::ContextCompaction;
+    compaction_item.metadata = Some(json!({"settled_history":compacted_reference}));
+    compacted.item_ids = vec![compaction_item.id.clone()];
+    manager.store.save_item(&compaction_item)?;
+    manager.store.save_turn(&compacted)?;
+    fs::write(&history_path, b"superseded old prefix")?;
+    assert_eq!(manager.restore_thread_messages(&thread)?, compacted_history);
+
     let _ = std::fs::remove_dir_all(dir);
     Ok(())
 }
@@ -19827,6 +20076,7 @@ fn restart_rebuild_keeps_in_flight_tool_call_identity() -> Result<()> {
     };
     manager.store.save_item(&call_item)?;
     manager.store.save_turn(&TurnRecord {
+        prefix_checkpoint: None,
         decision_receipts: Vec::new(),
         max_output_tokens: None,
         schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -19929,6 +20179,7 @@ fn restart_rebuild_skips_steers_the_engine_never_delivered() -> Result<()> {
     manager.store.save_item(&dropped)?;
     manager.store.save_item(&pending)?;
     manager.store.save_turn(&TurnRecord {
+        prefix_checkpoint: None,
         decision_receipts: Vec::new(),
         max_output_tokens: None,
         schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,
@@ -20032,6 +20283,7 @@ fn restart_rebuild_skips_legacy_tool_items_without_identity() -> Result<()> {
     manager.store.save_item(&user_item)?;
     manager.store.save_item(&legacy_tool_item)?;
     manager.store.save_turn(&TurnRecord {
+        prefix_checkpoint: None,
         decision_receipts: Vec::new(),
         max_output_tokens: None,
         schema_version: CURRENT_RUNTIME_SCHEMA_VERSION,

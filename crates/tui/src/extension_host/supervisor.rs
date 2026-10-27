@@ -1369,6 +1369,11 @@ pub(crate) fn registry_host_request<E: HostEvents + ?Sized>(
             events.unregister(&params);
             Ok(json!({}))
         }
+        HostRequest::SessionCheckpoint(_) => Err(RpcErrorWire {
+            code: error_code::REFUSED,
+            message: "session/checkpoint is not served here".to_string(),
+            data: None,
+        }),
         HostRequest::ExecutionRedeem(_)
         | HostRequest::CoreCall(_)
         | HostRequest::ProcLaunch(_)

@@ -57,6 +57,15 @@ use thiserror::Error;
 #[error("{0}")]
 pub struct PluginNameConflict(pub String);
 
+#[derive(Debug, Error)]
+#[error(
+    "plugin source changed after review: expected content hash {expected}, copied bytes hash is {actual}; nothing was installed"
+)]
+pub struct PluginContentMismatch {
+    pub expected: String,
+    pub actual: String,
+}
+
 use crate::plugins::manifest::PluginManifest;
 use crate::skills::install::{
     self as skill_install, FetchOutcome, InstallSource, InstalledFromMarker, fetch_tarball,
@@ -546,9 +555,11 @@ fn verify_expected_content_hash(
     }
     let actual = staged.content_hash.clone();
     let _ = fs::remove_dir_all(&staged.staged_path);
-    bail!(
-        "plugin source changed after review: expected content hash {expected}, copied bytes hash is {actual}; nothing was installed"
-    )
+    Err(PluginContentMismatch {
+        expected: expected.to_string(),
+        actual,
+    }
+    .into())
 }
 
 /// Stage and finalize an already-downloaded remote tarball. Kept separate

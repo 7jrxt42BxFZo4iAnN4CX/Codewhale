@@ -964,6 +964,7 @@ pub fn event_to_protocol(event: &Event, ids: &ProtocolIds) -> wire::EventMsg {
             request: user_input_to_wire(request),
         },
         Event::SessionUpdated {
+            checkpoint: _,
             session_id: engine_session_id,
             messages,
             system_prompt,

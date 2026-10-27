@@ -111,10 +111,28 @@ pub(super) fn apply_engine_session_projection(
         instruction_assembly,
         model,
         workspace,
+        checkpoint,
     } = event
     else {
         return false;
     };
+    if let Some(request) = checkpoint.as_ref() {
+        if request.is_stale()
+            || request.caller.agent_id.is_some()
+            || app.current_session_id.as_deref() != Some(request.caller.session_id.as_str())
+            || app.runtime_turn_id.as_deref() != Some(request.caller.turn_id.as_str())
+            || app.workspace != request.caller.workspace
+            || !app.is_loading
+            || app.suppress_stream_events_until_turn_complete
+        {
+            request.fail("checkpoint does not belong to the active terminal turn");
+            return false;
+        }
+        if let Err(error) = request.validate_prefix(&session_id, &workspace, &messages) {
+            request.fail(error);
+            return false;
+        }
+    }
     // SetModel can emit the old session while a host-owned
     // SyncSession is still queued. Reject that entire stale
     // projection before changing transcript or persistence.
@@ -151,6 +169,67 @@ pub(super) fn apply_engine_session_projection(
     app.update_model_compaction_budget();
     if app.workspace != workspace {
         apply_workspace_runtime_state(app, config, workspace);
+    }
+    if let Some(request) = checkpoint {
+        let prepared = SessionManager::default_location()
+            .map_err(|error| error.to_string())
+            .and_then(|manager| build_session_snapshot(app, &manager));
+        let mut session = match prepared {
+            Ok(session) => session,
+            Err(error) => {
+                request.fail(error);
+                return false;
+            }
+        };
+        session.make_storage_compatible();
+        if let Err(error) = request.validate_prefix(
+            &session.metadata.id,
+            &session.metadata.workspace,
+            &session.messages,
+        ) {
+            request.fail(error);
+            return false;
+        }
+        let (reply, receiver) = tokio::sync::oneshot::channel();
+        if !crate::tui::persistence_actor::try_persist(PersistRequest::AcknowledgedCheckpoint {
+            session,
+            reply,
+        }) {
+            request.fail("terminal persistence actor is unavailable");
+            return false;
+        }
+        if app
+            .runtime_services
+            .work
+            .as_ref()
+            .is_some_and(|work| work.has_pending_publish())
+            && let Err(error) = app.publish_pending_work_state()
+        {
+            request.fail(format!(
+                "checkpoint queued but Work projection failed: {error}"
+            ));
+            return false;
+        }
+        codewhale_util::utils::spawn_supervised(
+            "terminal-session-checkpoint",
+            std::panic::Location::caller(),
+            async move {
+                tokio::select! {
+                    biased;
+                    () = request.withdraw.cancelled() => request.fail("checkpoint withdrawn; a write already in progress may have completed"),
+                    result = receiver => match result {
+                        Ok(Ok(())) => request.succeed(crate::core::events::SessionCheckpointReceipt {
+                            persisted_sha256: request.prefix_sha256.clone(),
+                            messages_len: request.snapshot.messages.len(),
+                            projection: crate::core::events::SessionCheckpointProjection::Exact,
+                        }),
+                        Ok(Err(error)) => request.fail(error),
+                        Err(_) => request.fail("terminal persistence actor dropped checkpoint acknowledgement"),
+                    },
+                }
+            },
+        );
+        return true;
     }
     if (app.is_loading || app.is_compacting || app.is_purging)
         && let Ok(manager) = SessionManager::default_location()
@@ -2505,6 +2584,16 @@ pub(crate) async fn run_event_loop(
                 // cancel redraws owed to other events in the same batch.
                 let redraw_requested_before_event = received_engine_event;
                 received_engine_event = true;
+                if matches!(
+                    &event,
+                    EngineEvent::SessionUpdated {
+                        checkpoint: Some(_),
+                        ..
+                    }
+                ) {
+                    apply_engine_session_projection(app, config, event);
+                    continue;
+                }
                 capture_turn_started_metadata(app, &event);
                 observe_human_request_settlement(app, &event);
                 // Child approval bookkeeping runs before every filter: it is

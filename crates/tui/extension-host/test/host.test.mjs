@@ -174,11 +174,11 @@ test('injecting a service the host does not provide fails with its name', async 
   const { result } = await activate(host, 'needs-secrets', plugin.entry)
   assert.equal(result.status, 'failed')
   assert.match(result.diagnostic, /requires `secrets`/)
-  const provided = tempPlugin("export const inject = ['shellHooks']; export function apply(ctx) { if (!ctx.shellHooks) throw new Error('missing shell hooks') }\n")
+  const provided = tempPlugin("export const inject = ['shellHooks', 'sessions']; export function apply(ctx) { if (!ctx.shellHooks || typeof ctx.sessions.flush !== 'function') throw new Error('missing provided service') }\n")
   t.after(() => provided.cleanup())
   const available = await activate(host, 'needs-shell-hooks', provided.entry)
   assert.equal(available.result.status, 'ok', available.result.diagnostic)
-  for (const service of ['llm', 'sessions', 'systemPrompt', 'agents', 'subagents', 'userQuestions']) {
+  for (const service of ['llm', 'systemPrompt', 'agents', 'subagents', 'userQuestions']) {
     const pure = tempPlugin(`import { createUserMessage } from '@deepseek-ai/dsh-llm'
 export const inject = [${JSON.stringify(service)}]
 export function apply() { createUserMessage({ content: [], source: { kind: 'fixture' } }) }
@@ -1154,14 +1154,16 @@ test('several core calls can be in flight at once, each answered to its own requ
 })
 
 test('storage survives owner reload, refuses disposed owner access, and call identity is per invocation', async (t) => {
-  const host = await startHost()
+  let checkpointResult = true
+  const host = await startHost({ checkpoint: () => typeof checkpointResult === 'function' ? checkpointResult() : checkpointResult })
   t.after(() => host.stop())
   const plugin = tempPlugin(`
-export const inject = ['tools', 'commands', 'storage']
+export const inject = ['tools', 'commands', 'storage', 'sessions']
 let savedStorage
 let savedAgent
+let savedSessions
 export async function apply(ctx, config) {
-  if (config.capture) savedStorage = ctx.storage
+  if (config.capture) { savedStorage = ctx.storage; savedSessions = ctx.sessions }
   const identity = (exec) => ({
     frozen: Object.isFrozen(exec),
     sessionId: exec.sessionId ?? null,
@@ -1177,6 +1179,13 @@ export async function apply(ctx, config) {
   })
   ctx.tools.register({ name: config.tool, description: 'Read owner-local state.', parameters: { type: 'object' },
     async execute(input, exec) {
+      if (input.flush) {
+        try {
+          const target = input.flush === 'forged' ? { header: { cwd: exec.workspace } } : input.flush === 'retained' ? savedAgent?.session : exec.agent?.session
+          const service = input.flush === 'foreign-owner' ? savedSessions : ctx.sessions
+          return { flushed: input.many ? await Promise.all([service.flush(target), service.flush(target)]) : await service.flush(target) }
+        } catch (error) { return { flushError: error.code } }
+      }
       if (input.captureAgent) savedAgent = exec.agent
       if (input.readSavedAgent) return { previous: agentIdentity(savedAgent), current: agentIdentity(exec.agent) }
       if (input.saved) { try { await savedStorage.get('state'); return { accessed: true } } catch (error) { return { error: error.code } } }
@@ -1212,12 +1221,52 @@ export async function apply(ctx, config) {
   assert.equal((await tool('first_state', {}, { workspace: '/workspace/only' })).structured.agent, null)
   assert.equal((await tool('first_state', {}, { ...identity, session_id: '' })).structured.agent, null)
   assert.equal((await tool('first_state', {}, { ...identity, workspace: '' })).structured.agent, null)
+  const checkpointIdentity = { ...rootIdentity, checkpoint_ticket: 'exact-checkpoint-ticket' }
+  assert.deepEqual((await tool('first_state', { flush: 'current' }, rootIdentity)).structured, { flushError: ErrorCode.NotAvailable })
+  assert.deepEqual((await tool('first_state', { flush: 'forged' }, checkpointIdentity)).structured, { flushError: ErrorCode.NotAvailable })
+  assert.deepEqual((await tool('first_state', { flush: 'retained' }, checkpointIdentity)).structured, { flushError: ErrorCode.NotAvailable })
+  assert.equal(host.checkpoints.length, 0)
+  assert.deepEqual((await tool('first_state', { flush: 'current' }, checkpointIdentity)).structured, { flushed: true })
+  assert.deepEqual(host.checkpoints[0], { id: host.checkpoints[0].id, owner: first.ref, ticket: 'exact-checkpoint-ticket' })
+  checkpointResult = false
+  assert.deepEqual((await tool('first_state', { flush: 'current' }, checkpointIdentity)).structured, { flushed: false })
+  checkpointResult = 'not-a-receipt'
+  assert.deepEqual((await tool('first_state', { flush: 'current' }, checkpointIdentity)).structured, { flushError: ErrorCode.Internal })
+  checkpointResult = { error: { code: ErrorCode.Refused, message: 'checkpoint refused' } }
+  assert.deepEqual((await tool('first_state', { flush: 'current' }, checkpointIdentity)).structured, { flushError: ErrorCode.Refused })
+  let inFlight = 0
+  let peak = 0
+  checkpointResult = async () => {
+    inFlight++
+    peak = Math.max(peak, inFlight)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    inFlight--
+    return true
+  }
+  assert.deepEqual((await tool('first_state', { flush: 'current', many: true }, checkpointIdentity)).structured, { flushed: [true, true] })
+  assert.equal(peak, 1, 'one invocation serializes its checkpoint requests')
+  let releaseCheckpoint
+  checkpointResult = new Promise(resolve => { releaseCheckpoint = resolve })
+  const pendingCheckpoint = host.request('tool/call', {
+    handle: handle('first_state'), call_id: 'cancel-checkpoint', input: { flush: 'current' }, deadline_ms: 5000,
+    ...rootIdentity, checkpoint_ticket: 'cancel-checkpoint-ticket',
+  })
+  await host.waitFor(message => message.method === 'session/checkpoint' && message.params.ticket === 'cancel-checkpoint-ticket')
+  const checkpointRequest = host.checkpoints.find(request => request.ticket === 'cancel-checkpoint-ticket')
+  const cancelledCheckpoint = host.waitFor(message => message.method === '$/cancel' && message.params.id === checkpointRequest.id)
+  host.cancel(pendingCheckpoint.id)
+  await assert.rejects(pendingCheckpoint.promise, error => error.code === ErrorCode.Cancelled)
+  await cancelledCheckpoint
+  releaseCheckpoint(true)
+  checkpointResult = true
+  assert.deepEqual(await host.call('host/ping', {}), {})
   assert.equal(host.coreCalls.length, 0, 'read-only projections do not grant core calls')
   const command = await host.call('command/run', { handle: handle('first-state'), command_id: 'state-command', raw_input: '', deadline_ms: 5000, ...identity })
   assert.deepEqual(JSON.parse(command.text), { frozen: true, sessionId: 'session-one', agentId: 'agent-one', originTurnId: 'turn-one' })
   await host.call('ext/deactivate', { owner: first.ref })
   const other = await activate(host, 'other-state-owner', plugin.entry, { config: { tool: 'other_state', command: 'other-state' }, data_dir: otherDir })
   assert.equal(other.result.status, 'ok')
+  assert.deepEqual((await tool('other_state', { flush: 'foreign-owner' }, checkpointIdentity)).structured, { flushError: ErrorCode.NotAvailable })
   assert.deepEqual((await tool('other_state', { saved: true })).structured, { error: 'not_available' })
   assert.equal((await tool('other_state')).structured.value, null, 'another owner directory has separate state')
   assert.deepEqual((await tool('other_state', { readSavedAgent: true }, rootIdentity)).structured,

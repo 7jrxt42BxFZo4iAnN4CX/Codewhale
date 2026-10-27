@@ -15081,19 +15081,12 @@ fn persist_exec_session(
     session_id: Option<&str>,
     total_tokens: u64,
     turn_failure: Option<&str>,
-    session_manager: Option<&SessionManager>,
+    manager: &SessionManager,
     image_request_receipts: &[serde_json::Value],
+    checkpoint: Option<&crate::core::events::SessionCheckpointRequest>,
 ) -> Result<String> {
-    let default_manager;
-    let manager = if let Some(manager) = session_manager {
-        manager
-    } else {
-        default_manager = SessionManager::default_location()
-            .context("could not open session manager for save")?;
-        &default_manager
-    };
     let mut saved = if let Some(id) = session_id.filter(|id| !id.trim().is_empty()) {
-        match manager.load_session(id) {
+        match manager.load_session_snapshot(id) {
             Ok(existing) => session_manager::update_session(
                 existing,
                 messages,
@@ -15147,6 +15140,16 @@ fn persist_exec_session(
                 journal.leaf_id.clone_from(&leaf);
             }
         }
+    }
+    saved.make_storage_compatible();
+    if let Some(checkpoint) = checkpoint {
+        checkpoint
+            .validate_prefix(
+                &saved.metadata.id,
+                &saved.metadata.workspace,
+                &saved.messages,
+            )
+            .map_err(anyhow::Error::msg)?;
     }
     let id = saved.metadata.id.clone();
     manager

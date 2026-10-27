@@ -157,8 +157,19 @@ Rust 未提供的字段缺省；激活时不缓存会话身份。这些字符串
 会话或 agent 的权利。用户命令通常只有已知的 session 标签。
 当 Rust 提供会话和工作区时，工具调用还包含冻结的 `exec.agent.id` 和
 `exec.agent.session.header.cwd`；根身份使用会话 id，子 agent 使用 Core 提供的 id。
-这只是只读投影，不提供通用 agent 操作或会话持久化服务，保留该对象也不会获得
-调用结束后的操作权限。
+投影本身没有方法；保留该对象不会获得调用结束后的操作权限。
+
+注入 `sessions` 的插件可在直接调用的根工具持有 Engine checkpoint ticket 时调用
+`ctx.sessions.flush(exec.agent.session)`，参数必须是本次调用的原始 session 对象。
+Engine 捕获已提交的前缀，由所属 Runtime、终端或 exec 存储实际写入并确认。
+Runtime 保留现有的回执秘密脱敏规则；成功确认的是持久化投影，不包含当前工具
+未来的结果或插件自己的日志。恢复时保留后续工具结果，不重新执行工具。
+含 checkpoint 的 Runtime turn 使用 schema 5，旧读取器会拒绝，避免静默丢失历史。
+
+只有明确选择无持久化后端的临时宿主返回 `false`。缺少权限、外来或过期对象、
+子 agent checkpoint、被后续请求替代的写入、存储失败、取消及不可用的消费者均拒绝。
+取消可能与磁盘写入竞争，因此拒绝不能证明磁盘完全未写入。其他 `sessions` 方法
+仍未支持。
 
 当 Rust 提供调用者会话时，`invocation.agent` 另外提供只读 id 和
 `followup(message)`。一次调用只接收一条 JSON user 消息，包含有界 id、仅有 kind

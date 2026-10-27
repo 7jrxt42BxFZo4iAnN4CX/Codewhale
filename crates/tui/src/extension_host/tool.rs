@@ -373,6 +373,9 @@ impl ToolSpec for HostToolSpec {
             // learns where else this process has workspaces.
             workspace: context.workspace.to_str().map(str::to_owned),
             ticket: invocation.as_ref().map(|i| i.ticket().to_string()),
+            checkpoint_ticket: invocation
+                .as_ref()
+                .and_then(|i| i.checkpoint_ticket().map(str::to_string)),
             session_id: context
                 .execution
                 .session_objects

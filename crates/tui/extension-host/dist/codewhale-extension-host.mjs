@@ -13801,7 +13801,8 @@ var init_compatibility = __esm({
         "logger",
         "events",
         "reflect",
-        "registry"
+        "registry",
+        "sessions"
       ],
       refused_services: [
         "shellHooks",
@@ -14044,7 +14045,10 @@ var init_compatibility = __esm({
           sha256: "66ee7f28877afa912496ba944a581ac74e7b87390e6a47c4c640d8f477bdc6e2"
         }
       },
-      tool_caller_projection: "readonly-id-session-header-cwd"
+      tool_caller_projection: "readonly-id-session-header-cwd",
+      session_methods: {
+        flush: "invocation-bound-acknowledged-checkpoint-with-host-redaction-policy"
+      }
     };
   }
 });
@@ -14441,6 +14445,7 @@ var init_protocol_generated = __esm({
       { name: "registry/register", direction: "host_to_core", request: true, params: "RegisterParams", tiers: ["plugin", "builtin"] },
       { name: "registry/unregister", direction: "host_to_core", request: true, params: "UnregisterParams", tiers: ["plugin", "builtin"] },
       { name: "core/call", direction: "host_to_core", request: true, params: "CoreCallParams", tiers: ["plugin", "builtin"] },
+      { name: "session/checkpoint", direction: "host_to_core", request: true, params: "SessionCheckpointParams", tiers: ["plugin", "builtin"] },
       { name: "proc/launch", direction: "host_to_core", request: true, params: "ProcLaunchParams", tiers: ["builtin"] },
       { name: "proc/read", direction: "host_to_core", request: true, params: "ProcSessionParams", tiers: ["builtin"] },
       { name: "proc/write", direction: "host_to_core", request: true, params: "ProcWriteParams", tiers: ["builtin"] },
@@ -14626,10 +14631,15 @@ var init_protocol_generated = __esm({
         required: { code: "integer", message: "string" },
         optional: { data: "json" }
       },
+      SessionCheckpointParams: {
+        strict: true,
+        required: { owner: { ref: "OwnerRef" }, ticket: "string" },
+        optional: {}
+      },
       ToolCallParams: {
         strict: false,
         required: { handle: "uint", call_id: "string", input: "json", deadline_ms: "uint" },
-        optional: { workspace: "string", ticket: "string", session_id: "string", agent_id: "string", origin_turn_id: "string" }
+        optional: { workspace: "string", ticket: "string", checkpoint_ticket: "string", session_id: "string", agent_id: "string", origin_turn_id: "string" }
       },
       UnregisterParams: {
         strict: true,
@@ -15827,11 +15837,35 @@ var init_root = __esm({
             return this.api().delete(key);
           }
         }
+        class SessionsShim extends Service {
+          constructor(ctx) {
+            super(ctx, "sessions");
+          }
+          async flush(session) {
+            const invocation = host2.toolInvocations.getStore();
+            const owner = this.ctx[OWNER];
+            const live = () => invocation && invocation.active && !invocation.signal.aborted && invocation.owner === owner && owner?.state === "active" && !owner.disposing && invocation.ticket !== void 0 && session === invocation.session && session !== void 0;
+            if (!live()) throw new RpcError(ErrorCode.NotAvailable, "sessions.flush requires this live tool invocation’s session");
+            const call = invocation;
+            const run = async () => {
+              if (!live()) throw new RpcError(ErrorCode.NotAvailable, "session checkpoint invocation ended");
+              const result2 = await host2.rpc.request("session/checkpoint", { owner: call.owner.ref, ticket: call.ticket }, call.signal);
+              if (!live()) throw new RpcError(ErrorCode.NotAvailable, "session checkpoint invocation ended");
+              if (typeof result2 !== "boolean") throw new RpcError(ErrorCode.Internal, "invalid session checkpoint receipt");
+              return result2;
+            };
+            const result = call.pending.then(run);
+            call.pending = result.then(() => void 0, () => void 0);
+            return result;
+          }
+        }
+        Object.freeze(SessionsShim.prototype);
         Object.freeze(StorageShim.prototype);
         shimClasses.set("tools", ToolsShim);
         shimClasses.set("commands", CommandsShim);
         shimClasses.set("prompt", PromptShim);
         shimClasses.set("storage", StorageShim);
+        shimClasses.set("sessions", SessionsShim);
         shimClasses.set("skills", SkillsShim);
         shimClasses.set("avatars", AvatarsShim);
         shimClasses.set("mcp", McpShim);
@@ -15840,6 +15874,7 @@ var init_root = __esm({
         root.plugin(CommandsShim);
         root.plugin(PromptShim);
         root.plugin(StorageShim);
+        root.plugin(SessionsShim);
         root.plugin(SkillsShim);
         root.plugin(AvatarsShim);
         root.plugin(McpShim);
@@ -15850,6 +15885,7 @@ var init_root = __esm({
       rpc;
       tier;
       root;
+      toolInvocations = new AsyncLocalStorage();
       owners = /* @__PURE__ */ new Map();
       toolRegistrations;
       commandRegistrations;
@@ -16105,11 +16141,25 @@ var init_root = __esm({
           session: Object.freeze({ header: Object.freeze({ cwd: workspace }) })
         }) : void 0;
         const exec = Object.freeze({ signal, callId, args: input, ...callContext(local.owner, workspace, identity), ...core2, ...agent === void 0 ? {} : { agent } });
-        const run = ownerStorage.run(local.owner, async () => {
+        const closed = new AbortController();
+        const invocation = {
+          owner: local.owner,
+          session: agent?.session,
+          ticket: identity?.checkpoint_ticket,
+          signal: AbortSignal.any([signal, closed.signal]),
+          active: true,
+          pending: Promise.resolve()
+        };
+        const run = ownerStorage.run(local.owner, () => this.toolInvocations.run(invocation, async () => {
           const value = await definition.execute(input, exec);
           return renderResult(definition, input, value);
-        });
-        return Promise.race([run, abortedBy(signal)]);
+        }));
+        try {
+          return await Promise.race([run, abortedBy(signal)]);
+        } finally {
+          invocation.active = false;
+          closed.abort();
+        }
       }
       /** `command/run`: only for a handle the core admitted, and only on a user's own invocation. */
       async callCommand(handle, rawInput, commandId, signal, workspace, identity) {

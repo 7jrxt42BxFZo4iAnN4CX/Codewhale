@@ -3,7 +3,13 @@
 //! These events flow from the engine to the TUI via a channel,
 //! enabling non-blocking, real-time updates.
 
-use std::{path::PathBuf, sync::Arc};
+use sha2::{Digest, Sha256};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+};
+use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -198,6 +204,163 @@ impl AgentProgressEventMeta {
     pub fn with_approval_id(mut self, approval_id: impl Into<String>) -> Self {
         self.approval_id = Some(approval_id.into());
         self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SessionCheckpointCaller {
+    pub(crate) session_id: String,
+    pub(crate) agent_id: Option<String>,
+    pub(crate) turn_id: String,
+    pub(crate) call_id: String,
+    pub(crate) workspace: PathBuf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionCheckpointProjection {
+    Exact,
+    RuntimeReceiptRedacted,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SessionCheckpointReceipt {
+    pub(crate) persisted_sha256: String,
+    pub(crate) messages_len: usize,
+    pub(crate) projection: SessionCheckpointProjection,
+}
+
+#[derive(Debug)]
+pub struct SessionCheckpointRequest {
+    pub(crate) checkpoint_id: String,
+    pub(crate) caller: SessionCheckpointCaller,
+    pub(crate) prefix_sha256: String,
+    pub(crate) snapshot: Arc<crate::core::ops::SessionSnapshot>,
+    pub(crate) withdraw: CancellationToken,
+    projection: SessionCheckpointProjection,
+    reply: Mutex<Option<oneshot::Sender<Result<bool, ToolError>>>>,
+}
+
+impl SessionCheckpointRequest {
+    pub(crate) fn new(
+        caller: SessionCheckpointCaller,
+        snapshot: Arc<crate::core::ops::SessionSnapshot>,
+        prefix_sha256: String,
+        projection: SessionCheckpointProjection,
+        withdraw: CancellationToken,
+        reply: oneshot::Sender<Result<bool, ToolError>>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            checkpoint_id: uuid::Uuid::new_v4().to_string(),
+            caller,
+            prefix_sha256,
+            snapshot,
+            withdraw,
+            projection,
+            reply: Mutex::new(Some(reply)),
+        })
+    }
+
+    pub(crate) fn prefix_hash(messages: &[Message]) -> Result<String, String> {
+        serde_json::to_vec(messages)
+            .map(|bytes| {
+                Sha256::digest(bytes)
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect()
+            })
+            .map_err(|error| format!("session checkpoint could not encode its prefix: {error}"))
+    }
+
+    pub(crate) fn validate_prefix(
+        &self,
+        session_id: &str,
+        workspace: &Path,
+        messages: &[Message],
+    ) -> Result<(), String> {
+        if self.is_stale() {
+            return Err("session checkpoint was withdrawn".into());
+        }
+        if self.caller.agent_id.is_some()
+            || session_id != self.caller.session_id
+            || session_id != self.snapshot.session_id
+            || workspace != self.caller.workspace
+            || workspace != self.snapshot.workspace
+            || messages.len() != self.snapshot.messages.len()
+            || Self::prefix_hash(messages)? != self.prefix_sha256
+        {
+            return Err("session checkpoint does not match its captured owner and prefix".into());
+        }
+        Ok(())
+    }
+
+    pub(crate) fn is_stale(&self) -> bool {
+        self.withdraw.is_cancelled()
+            || self
+                .reply
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .as_ref()
+                .is_none_or(oneshot::Sender::is_closed)
+    }
+
+    fn finish(&self, result: Result<bool, ToolError>) {
+        let result = if self.withdraw.is_cancelled() {
+            Err(ToolError::cancelled("session checkpoint was withdrawn"))
+        } else {
+            result
+        };
+        if let Some(reply) = self
+            .reply
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
+            let _ = reply.send(result);
+        }
+    }
+
+    pub(crate) fn succeed(&self, receipt: SessionCheckpointReceipt) {
+        let valid_hash = receipt.persisted_sha256.len() == 64
+            && receipt
+                .persisted_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
+        let allowed = match receipt.projection {
+            SessionCheckpointProjection::Exact => receipt.persisted_sha256 == self.prefix_sha256,
+            SessionCheckpointProjection::RuntimeReceiptRedacted => {
+                self.projection == SessionCheckpointProjection::RuntimeReceiptRedacted
+            }
+        };
+        if !valid_hash || !allowed || receipt.messages_len != self.snapshot.messages.len() {
+            self.fail(
+                "session checkpoint persistence receipt does not match its captured projection",
+            );
+            return;
+        }
+        self.finish(Ok(true));
+    }
+
+    pub(crate) fn fail(&self, reason: impl Into<String>) {
+        self.finish(Err(ToolError::not_available(reason.into())));
+    }
+
+    pub(crate) fn no_backend(&self) {
+        self.finish(Ok(false));
+    }
+}
+
+impl Drop for SessionCheckpointRequest {
+    fn drop(&mut self) {
+        if let Some(reply) = self
+            .reply
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
+            let _ = reply.send(Err(ToolError::not_available(
+                "owning host did not acknowledge the session checkpoint",
+            )));
+        }
     }
 }
 
@@ -717,6 +880,7 @@ pub enum Event {
     /// text block, and that assistant message still has to be persisted for
     /// later `reasoning_content` replay.
     SessionUpdated {
+        checkpoint: Option<Arc<SessionCheckpointRequest>>,
         session_id: String,
         /// Shared history snapshot (#6214 T2): the engine hands out an `Arc`
         /// instead of deep-copying the transcript per event.

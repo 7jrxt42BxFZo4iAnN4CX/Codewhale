@@ -13973,6 +13973,7 @@ async fn a_steer_settles_even_though_the_engine_stored_it_trimmed() {
         &mut app,
         &Config::default(),
         EngineEvent::SessionUpdated {
+            checkpoint: None,
             session_id: session,
             messages: std::sync::Arc::new(vec![
                 text_message("user", "original request"),
@@ -14051,6 +14052,7 @@ async fn steer_becomes_the_newest_transcript_entry_only_when_the_engine_records_
         &mut app,
         &Config::default(),
         EngineEvent::SessionUpdated {
+            checkpoint: None,
             session_id: session,
             messages: std::sync::Arc::new(vec![
                 text_message("user", "original request"),
@@ -19104,6 +19106,7 @@ fn local_cancel_marks_late_stream_events_for_suppression() {
     ));
     assert!(suppress_engine_event_after_local_cancel(
         &EngineEvent::SessionUpdated {
+            checkpoint: None,
             session_id: "session".to_string(),
             messages: std::sync::Arc::new(Vec::new()),
             system_prompt: None,
@@ -33493,6 +33496,7 @@ fn stale_session_projection_cannot_rewind_a_host_launch() {
         &mut app,
         &Config::default(),
         EngineEvent::SessionUpdated {
+            checkpoint: None,
             session_id: previous,
             messages: std::sync::Arc::new(vec![text_message("user", "stale transcript")]),
             system_prompt: Some(SystemPrompt::Text("stale prompt".into())),
@@ -33515,10 +33519,96 @@ fn stale_session_projection_cannot_rewind_a_host_launch() {
     assert_eq!(app.input, "typing remains responsive");
     assert_eq!(app.history.len(), history_length);
     assert_eq!(app.status_toasts.len(), notice_count);
+    app.runtime_turn_id = Some("checkpoint-turn".into());
+    app.is_loading = true;
+    for invalid in ["session", "turn", "workspace", "child", "withdrawn"] {
+        let snapshot = std::sync::Arc::new(crate::core::ops::SessionSnapshot {
+            session_id: if invalid == "session" {
+                "stale-session".into()
+            } else {
+                current.clone()
+            },
+            messages: vec![text_message("user", "must not replace the transcript")],
+            total_tokens: 0,
+            model: model.clone(),
+            model_provider: "fixture".into(),
+            model_provider_id: None,
+            workspace: if invalid == "workspace" {
+                PathBuf::from("/must-not-be-adopted")
+            } else {
+                workspace.clone()
+            },
+            system_prompt: None,
+            instruction_assembly: None,
+            mode: "agent".into(),
+        });
+        let (reply, mut answer) = tokio::sync::oneshot::channel();
+        let request = crate::core::events::SessionCheckpointRequest::new(
+            crate::core::events::SessionCheckpointCaller {
+                session_id: snapshot.session_id.clone(),
+                agent_id: (invalid == "child").then(|| "child".into()),
+                turn_id: if invalid == "turn" {
+                    "wrong-turn".into()
+                } else {
+                    "checkpoint-turn".into()
+                },
+                call_id: "checkpoint-call".into(),
+                workspace: snapshot.workspace.clone(),
+            },
+            snapshot.clone(),
+            crate::core::events::SessionCheckpointRequest::prefix_hash(&snapshot.messages).unwrap(),
+            crate::core::events::SessionCheckpointProjection::Exact,
+            tokio_util::sync::CancellationToken::new(),
+            reply,
+        );
+        if invalid == "withdrawn" {
+            request.withdraw.cancel();
+        }
+        assert!(
+            !super::event_loop::apply_engine_session_projection(
+                &mut app,
+                &Config::default(),
+                EngineEvent::SessionUpdated {
+                    checkpoint: Some(request),
+                    session_id: snapshot.session_id.clone(),
+                    messages: std::sync::Arc::new(snapshot.messages.clone()),
+                    system_prompt: None,
+                    instruction_assembly: None,
+                    model: snapshot.model.clone(),
+                    workspace: snapshot.workspace.clone(),
+                },
+            ),
+            "{invalid}"
+        );
+        assert!(
+            answer
+                .try_recv()
+                .expect("explicit checkpoint refusal")
+                .is_err(),
+            "{invalid}"
+        );
+        assert_eq!(app.current_session_id.as_deref(), Some(current.as_str()));
+        assert_eq!(
+            *app.api_messages,
+            vec![text_message("user", "current host transcript")]
+        );
+        assert_eq!(
+            app.system_prompt,
+            Some(SystemPrompt::Text("current prompt".into()))
+        );
+        assert_eq!(app.workspace, workspace);
+        assert_eq!(app.model, model);
+        assert_eq!(app.input, "typing remains responsive");
+        assert_eq!(app.history.len(), history_length);
+        assert_eq!(app.status_toasts.len(), notice_count);
+    }
+    app.runtime_turn_id = None;
+    app.is_loading = false;
     assert!(super::event_loop::apply_engine_session_projection(
         &mut app,
         &Config::default(),
         EngineEvent::SessionUpdated {
+            checkpoint: None,
             session_id: current.clone(),
             messages: std::sync::Arc::new(vec![
                 text_message("user", "expected engine transcript",)
