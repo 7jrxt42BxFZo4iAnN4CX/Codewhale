@@ -17,6 +17,34 @@ fn diff_formats_observations_without_host_state_or_actions() {
             self.0.clone()
         }
     }
+    struct Presentation;
+    impl CommandPresentationContext for Presentation {
+        fn translate(&self, key: &str, replacements: &[(&str, &str)]) -> Result<String, String> {
+            let catalog: serde_json::Value =
+                serde_json::from_str(include_str!("../../../localization/locales/en.json"))
+                    .unwrap();
+            let id: String = key
+                .split('_')
+                .map(|word| {
+                    let mut chars = word.chars();
+                    chars
+                        .next()
+                        .unwrap()
+                        .to_uppercase()
+                        .chain(chars)
+                        .collect::<String>()
+                })
+                .collect();
+            let mut text = catalog[&id]
+                .as_str()
+                .ok_or_else(|| format!("unknown test key {key}"))?
+                .to_string();
+            for (name, value) in replacements {
+                text = text.replace(&format!("{{{name}}}"), value);
+            }
+            Ok(text)
+        }
+    }
     let output =
         |names: &str, stat: &str, patch: &str, patch_truncated| DebugDiffObservation::Output {
             names: names.into(),
@@ -76,7 +104,9 @@ fn diff_formats_observations_without_host_state_or_actions() {
         ),
     ] {
         let result = undo::diff(
-            CommandContexts::empty().with_debug_diff(&mut Diff(observation)),
+            CommandContexts::empty()
+                .with_debug_diff(&mut Diff(observation))
+                .with_presentation(&mut Presentation),
             None,
         );
         assert_eq!(result.message.as_deref(), Some(message));
@@ -128,7 +158,7 @@ fn whole_group_has_exact_authority_and_safe_missing_facets() {
         ("system", Caps::DEBUG_DIAGNOSTICS),
         ("context", Caps::DEBUG_DIAGNOSTICS),
         ("edit", Caps::DEBUG_HISTORY),
-        ("diff", Caps::DEBUG_DIFF),
+        ("diff", Caps::DEBUG_DIFF | Caps::PRESENTATION),
         ("undo", Caps::DEBUG_UNDO | Caps::DEBUG_HISTORY),
         ("retry", Caps::DEBUG_HISTORY),
     ];
