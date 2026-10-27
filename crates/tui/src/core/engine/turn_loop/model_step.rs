@@ -12,6 +12,7 @@ impl Engine {
         prepared: PreparedModelStep,
     ) -> PhaseResult<AcceptedModelStep> {
         let PreparedModelStep {
+            request_nudge,
             prefix_check,
             request: stream_request,
             zero_tool_turn,
@@ -29,6 +30,52 @@ impl Engine {
             }
             if job.authority.runtime.cancel_token.is_cancelled() {
                 return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
+            }
+        }
+        if let Some(nudge) = request_nudge {
+            if let Some(job) = child_job.as_ref()
+                && let Err(error) = job
+                    .record_request_nudge(
+                        &turn.id,
+                        turn.stop_diagnostics
+                            .model_requests_started
+                            .saturating_add(1),
+                        &nudge,
+                        &self.cancel_token,
+                    )
+                    .await
+            {
+                if self.cancel_token.is_cancelled()
+                    || job.authority.runtime.cancel_token.is_cancelled()
+                {
+                    return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
+                }
+                return PhaseResult::Return((
+                    TurnOutcomeStatus::Failed,
+                    Some(format!(
+                        "child request receipt failed before dispatch: {error:#}"
+                    )),
+                ));
+            }
+            if self.cancel_token.is_cancelled() {
+                return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
+            }
+            if let Err(error) = self
+                .send_event(Event::status(format!(
+                    "{}{nudge}",
+                    crate::core::events::REQUEST_NUDGE_RECEIPT_PREFIX
+                )))
+                .await
+            {
+                if self.cancel_token.is_cancelled() {
+                    return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
+                }
+                return PhaseResult::Return((
+                    TurnOutcomeStatus::Failed,
+                    Some(format!(
+                        "request nudge receipt could not be delivered before dispatch: {error:?}"
+                    )),
+                ));
             }
         }
         // Session metrics: the model call is measured from this dispatch
@@ -70,46 +117,114 @@ impl Engine {
             transport_retries: transport_retries.clone(),
             started_at: request_dispatched_at,
         });
-        let stream_result = tokio::select! {
+        let rlm_request = tokio::select! {
             biased;
             () = request_cancel.cancelled() => {
-                turn.stop_diagnostics.transport_retries = turn.stop_diagnostics.transport_retries
-                    .saturating_add(transport_retries.load(std::sync::atomic::Ordering::Relaxed));
                 self.settle_provider_request_receipt(&mut request_receipt, None, "cancelled_before_stream").await;
                 let _ = self.send_event(Event::status("Request cancelled")).await;
                 return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
             }
-            result = crate::llm_client::observe_request_retries(Some(retry_observation), async {
-                rlm_dispatch = match self.rlm_provider_request(client, &stream_request).await {
-                    Ok(request) => request,
-                    Err(error) => return Err(anyhow!(error)),
-                };
-                turn.stop_diagnostics.model_requests_started = turn
-                    .stop_diagnostics
-                    .model_requests_started
-                    .saturating_add(1);
-                if let Some(job) = child_job.as_ref() {
-                    let child = &job.authority;
-                    let route = client.effective_route_envelope(&stream_request.model, chrono::Utc::now());
-                    let source = format!("child:{}:turn:{}:request:{}:dispatch:{}", child.owner_agent_id, turn.id, turn.stop_diagnostics.model_requests_started, route.dispatched_at.timestamp_nanos_opt().unwrap_or_default());
-                    child_dispatch = Some(job.dispatched(child_logical_step.expect("captured child step"), source, route));
+            result = self.rlm_provider_request(client, &stream_request) => result.map_err(|error| anyhow!(error)),
+        };
+        let mut opening_steer = None;
+        let mut request_started = false;
+        let stream_result = match rlm_request {
+            Err(error) => Some(Err(error)),
+            Ok(request) => {
+                rlm_dispatch = request;
+                let opening =
+                    crate::llm_client::observe_request_retries(Some(retry_observation), async {
+                        request_started = true;
+                        turn.stop_diagnostics.model_requests_started = turn
+                            .stop_diagnostics
+                            .model_requests_started
+                            .saturating_add(1);
+                        if let Some(job) = child_job.as_ref() {
+                            let child = &job.authority;
+                            let route = client.effective_route_envelope(
+                                &stream_request.model,
+                                chrono::Utc::now(),
+                            );
+                            let source = format!(
+                                "child:{}:turn:{}:request:{}:dispatch:{}",
+                                child.owner_agent_id,
+                                turn.id,
+                                turn.stop_diagnostics.model_requests_started,
+                                route
+                                    .dispatched_at
+                                    .timestamp_nanos_opt()
+                                    .unwrap_or_default()
+                            );
+                            child_dispatch = Some(job.dispatched(
+                                child_logical_step.expect("captured child step"),
+                                source,
+                                route,
+                            ));
+                        }
+                        if let Some(job) = child_job.as_ref() {
+                            tokio::time::timeout(
+                                job.authority.runtime.step_api_timeout,
+                                client.create_message_stream(stream_request.clone()),
+                            )
+                            .await
+                            .unwrap_or_else(|_| {
+                                Err(anyhow::Error::new(LlmError::Timeout(
+                                    job.authority.runtime.step_api_timeout,
+                                )))
+                            })
+                        } else {
+                            client.create_message_stream(stream_request.clone()).await
+                        }
+                    });
+                tokio::pin!(opening);
+                tokio::select! {
+                    biased;
+                    () = request_cancel.cancelled() => None,
+                    pending = self.wait_turn_steer() => {
+                        opening_steer = Some(pending);
+                        None
+                    },
+                    result = &mut opening => Some(result),
                 }
-                if let Some(job) = child_job.as_ref() {
-                    tokio::time::timeout(
-                        job.authority.runtime.step_api_timeout,
-                        client.create_message_stream(stream_request.clone()),
-                    ).await.unwrap_or_else(|_| Err(anyhow::Error::new(LlmError::Timeout(
-                        job.authority.runtime.step_api_timeout,
-                    ))))
-                } else {
-                    client.create_message_stream(stream_request.clone()).await
-                }
-            }) => result,
+            }
         };
         turn.stop_diagnostics.transport_retries = turn
             .stop_diagnostics
             .transport_retries
             .saturating_add(transport_retries.load(std::sync::atomic::Ordering::Relaxed));
+        let Some(stream_result) = stream_result else {
+            self.settle_provider_request_receipt(
+                &mut request_receipt,
+                None,
+                if opening_steer.is_some() {
+                    "steered_before_stream"
+                } else {
+                    "cancelled_before_stream"
+                },
+            )
+            .await;
+            if let Some(dispatch) = rlm_dispatch.as_mut() {
+                if request_started {
+                    dispatch.settle(&Usage::default(), false).await;
+                } else {
+                    dispatch.cancel_unexecuted();
+                    if let Some(state) = self.rlm_host.as_mut() {
+                        state.model_rounds = state.model_rounds.saturating_sub(1);
+                    }
+                }
+            }
+            if let Some(dispatch) = child_dispatch.as_mut() {
+                dispatch.settle(&Usage::default(), false).await;
+            }
+            drop(child_dispatch.take());
+            if let Some(pending) = opening_steer {
+                return self
+                    .resume_after_model_steer(turn, progress, vec![pending], request_started)
+                    .await;
+            }
+            let _ = self.send_event(Event::status("Request cancelled")).await;
+            return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
+        };
         let stream = match stream_result {
             Ok(s) => {
                 if let Some(job) = child_job.as_ref() {
@@ -180,7 +295,12 @@ impl Engine {
                         Ok(false) => {}
                     }
                 }
-                if self.rlm_host.is_none()
+                let body_size_rejection = matches!(
+                    e.downcast_ref::<LlmError>(),
+                    Some(LlmError::InvalidRequest { status: 413, .. })
+                );
+                if !body_size_rejection
+                    && self.rlm_host.is_none()
                     && let Some(rejection) =
                         crate::llm_client::image_count_rejection(&format!("{e:#}").to_lowercase())
                     && let Some(result) = self
@@ -195,7 +315,8 @@ impl Engine {
                 // Recovery/classification keeps its existing input. Expanding
                 // diagnostics must not introduce another model request.
                 let message = self.decorate_auth_error_message(e.to_string());
-                if self.rlm_host.is_none()
+                if !body_size_rejection
+                    && self.rlm_host.is_none()
                     && is_context_length_error_message(&message)
                     && progress.context_recovery_attempts < MAX_CONTEXT_RECOVERY_ATTEMPTS
                     && self
@@ -211,11 +332,14 @@ impl Engine {
                         progress.context_recovery_attempts.saturating_add(1);
                     return PhaseResult::Retry;
                 }
-                if self.rlm_host.is_none()
+                if !body_size_rejection
+                    && self.rlm_host.is_none()
                     && is_image_input_rejection_message(&message)
                     && self.active_route_capabilities.image_input != CapabilityState::Unsupported
                     && !progress.image_rejection_recovered
-                    && crate::image_attach::count_request_images(&stream_request.messages) > 0
+                    && codewhale_models::image_window::count_request_images(
+                        &stream_request.messages,
+                    ) > 0
                 {
                     return self.resend_without_images(progress).await;
                 }
@@ -260,7 +384,7 @@ impl Engine {
                         "Retry attempt: stream-open {attempt}/{}; connection failed before response headers",
                         progress.stream_retry_budget.limit()
                     )).await;
-                    crate::logging::warn(format!(
+                    codewhale_runtime::logging::warn(format!(
                         "Stream failed to open (attempt {attempt}/{}); retrying request: {message}",
                         progress.stream_retry_budget.limit()
                     ));
@@ -340,6 +464,7 @@ impl Engine {
             last_text_index,
             stream_errors,
             terminal_stream_error,
+            steer_preempted,
             pending_steers,
             pending_resume,
             stream_start,
@@ -365,14 +490,17 @@ impl Engine {
         );
         if let Some(dispatch) = rlm_dispatch.as_mut() {
             dispatch
-                .settle(&usage, stream_error.is_none() && stream_errors == 0)
+                .settle(
+                    &usage,
+                    !steer_preempted && stream_error.is_none() && stream_errors == 0,
+                )
                 .await;
         }
-        // C02-05: a response whose stream failed — a provider error frame,
-        // a transport error, a stall, or a cap — is not a complete
+        // C02-05: a response whose stream failed or was steered — a provider error
+        // frame, a transport error, a stall, or a cap — is not a complete
         // response. Unless the retry below re-issues the request, nothing
         // it collected may execute or continue the turn.
-        let response_stream_failed = stream_error.is_some();
+        let response_stream_failed = steer_preempted || stream_error.is_some();
         progress.turn_error = progress.turn_error.take().or(stream_error.clone());
         turn.stop_diagnostics
             .observe_provider_response(stop_reason.as_deref(), tool_uses.len());
@@ -405,7 +533,7 @@ impl Engine {
             usage_reported.then_some(usage.output_tokens),
             stream_request.max_tokens,
         ) {
-            crate::logging::warn(format!(
+            codewhale_runtime::logging::warn(format!(
                 "Provider reported stop reason `stop`, but its usage shows the whole requested output allowance was used ({} tokens, reasoning tokens: {:?}); treating the response as cut at the output limit.",
                 usage.output_tokens, usage.reasoning_tokens
             ));
@@ -461,6 +589,14 @@ impl Engine {
                 .await;
         }
 
+        if steer_preempted {
+            self.add_interrupted_assistant_text(&current_text_visible)
+                .await;
+            return self
+                .resume_after_model_steer(turn, progress, pending_steers, true)
+                .await;
+        }
+
         if let Some(state) = self.rlm_host.as_mut() {
             state.usage.record_nested_event(serde_json::json!({"run_id": state.run_id, "depth_remaining": match state.mode { rlm_host::RlmMode::Completion => 0, rlm_host::RlmMode::Recursive { depth_remaining } => depth_remaining }, "kind":"code", "content":current_text_visible})).await;
             if is_incomplete_stop_reason(stop_reason.as_deref())
@@ -512,6 +648,9 @@ impl Engine {
                 )
             };
             if !terminal_stream_error
+                && stop_reason
+                    .as_deref()
+                    .is_none_or(|reason| reason.trim().is_empty())
                 && let Some(recovery) = self.recover_child_request(progress, &error).await
             {
                 return recovery;
@@ -549,7 +688,20 @@ impl Engine {
             return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
         }
 
-        if is_incomplete_stop_reason(stop_reason.as_deref()) {
+        let retry_empty_child_output = self.child_host.is_some()
+            && self.config.reasoning_only_on_output_limit
+            && is_output_limit_stop_reason(stop_reason.as_deref())
+            && current_text_visible.trim().is_empty()
+            && stream_errors == 0
+            && progress.reasoning_only_reprompts < self.config.reasoning_only_max_reprompts
+            && should_fail_no_sendable_content(
+                tool_uses.is_empty(),
+                progress.turn_error.is_none(),
+                self.cancel_token.is_cancelled(),
+                !pending_steers.is_empty(),
+                false,
+            );
+        if is_incomplete_stop_reason(stop_reason.as_deref()) && !retry_empty_child_output {
             let reason = stop_reason_detail(stop_reason.as_deref());
             if self.child_host.is_none()
                 && is_output_limit_stop_reason(stop_reason.as_deref())
@@ -567,7 +719,7 @@ impl Engine {
                 // is committed (and, for a tool-call response, after the
                 // tool result is appended) so the transcript stays
                 // well-formed.
-                crate::logging::warn(format!(
+                codewhale_runtime::logging::warn(format!(
                     "Model output truncated: provider stop reason `{reason}`; accepting partial response and continuing the turn."
                 ));
                 output_limit_truncated = Some(reason.to_string());
@@ -589,7 +741,7 @@ impl Engine {
                         "Model response incomplete: provider stop reason `{reason}`; no complete response or tool call was accepted."
                     )
                 };
-                crate::logging::warn(&error);
+                codewhale_runtime::logging::warn(&error);
                 self.post_held_frame_error(&frame_error).await;
                 return PhaseResult::Return((TurnOutcomeStatus::Failed, Some(error)));
             }
@@ -599,7 +751,7 @@ impl Engine {
         // when reqwest yields chunk decode errors three times in a row;
         // most of the time those are recoverable proxy / HTTP/2 issues
         // and the request can simply be re-issued. Re-issue silently up
-        // to MAX_STREAM_RETRIES, but only when the stream produced
+        // to DEFAULT_STREAM_MAX_RESUMES, but only when the stream produced
         // nothing actionable — if any tool call landed or text was
         // streamed, ship the partial state to the rest of the turn
         // pipeline so we don't double-bill the user by re-running it.
@@ -659,7 +811,7 @@ impl Engine {
                 .await;
             match resume {
                 StreamResume::AfterSleep => {
-                    crate::logging::warn(format!(
+                    codewhale_runtime::logging::warn(format!(
                         "Resuming after system sleep (attempt {attempt}/{limit}); discarding partial output and retrying request"
                     ));
                     // Finalize any partially-rendered assistant cell so
@@ -671,7 +823,7 @@ impl Engine {
                     }
                 }
                 StreamResume::HeadlessNetworkDrop => {
-                    crate::logging::warn(format!(
+                    codewhale_runtime::logging::warn(format!(
                         "Resuming headless turn after mid-stream network drop (attempt {attempt}/{limit}); discarding partial output and retrying request"
                     ));
                 }
@@ -730,11 +882,11 @@ impl Engine {
                         // copy may claim a partial reply was preserved —
                         // that claim is what minted the fake `[runtime]`
                         // user turn in session 1589c05d.
-                        crate::logging::warn(format!(
+                        codewhale_runtime::logging::warn(format!(
                             "Resuming interactive turn after mid-stream network drop (attempt {attempt}/{limit}); only hidden reasoning streamed — no partial reply to preserve, retrying request"
                         ));
                     } else {
-                        crate::logging::warn(format!(
+                        codewhale_runtime::logging::warn(format!(
                             "Resuming interactive turn after mid-stream network drop (attempt {attempt}/{limit}); preserving partial reply and retrying request"
                         ));
                         // Finalize the partial text cell so the UI stops
@@ -760,7 +912,7 @@ impl Engine {
                     }
                 }
                 StreamResume::NoContentStreamDeath => {
-                    crate::logging::warn(format!(
+                    codewhale_runtime::logging::warn(format!(
                         "Stream died with no content (attempt {attempt}/{limit}); retrying request"
                     ));
                 }
@@ -784,7 +936,7 @@ impl Engine {
                     ))
                     .await;
             }
-            crate::logging::warn(format!(
+            codewhale_runtime::logging::warn(format!(
                 "Stream retry budget exhausted ({} attempts); failing turn",
                 progress.stream_retry_budget.spent()
             ));
@@ -982,11 +1134,10 @@ impl Engine {
         // DeepSeek chat API rejects assistant messages that contain only
         // Keep thinking for UI stream events, but persist only sendable
         // assistant turns in the conversation state.
-        let has_sendable_assistant_content = content_blocks.iter().any(|block| {
-            matches!(
-                block,
-                ContentBlock::Text { .. } | ContentBlock::ToolUse { .. }
-            )
+        let has_sendable_assistant_content = content_blocks.iter().any(|block| match block {
+            ContentBlock::Text { text, .. } => !text.trim().is_empty(),
+            ContentBlock::ToolUse { .. } => true,
+            _ => false,
         });
         let has_provider_reasoning = content_blocks.iter().any(|block| {
             matches!(
@@ -1046,6 +1197,52 @@ impl Engine {
             prepared_output_tokens: stream_request.max_tokens,
         })
     }
+    async fn resume_after_model_steer(
+        &mut self,
+        turn: &mut TurnContext,
+        progress: &mut TurnLoopProgress,
+        mut pending_steers: Vec<handle::PendingSteer>,
+        request_started: bool,
+    ) -> PhaseResult<AcceptedModelStep> {
+        while let Some(pending) = self.next_turn_steer() {
+            if pending.content.trim().is_empty() {
+                continue;
+            }
+            if pending.replace_pending {
+                pending_steers.clear();
+            }
+            pending_steers.push(pending);
+        }
+        if self.cancel_token.is_cancelled() {
+            return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
+        }
+        for pending in pending_steers {
+            if self.cancel_token.is_cancelled() {
+                return PhaseResult::Return((TurnOutcomeStatus::Interrupted, None));
+            }
+            let steer = pending.content.trim().to_string();
+            self.session
+                .working_set
+                .observe_user_message(&steer, &self.session.workspace);
+            self.add_session_message(self.user_text_message_with_turn_metadata(steer))
+                .await;
+            pending.commit();
+        }
+        if let Some(guard) = progress.fleet_denial_guard.as_mut() {
+            guard.reset();
+            turn.stop_diagnostics
+                .permission_denial_rounds_without_progress = 0;
+        }
+        progress.turn_error = None;
+        let _ = self
+            .send_event(Event::status("Continuing — queued steer input"))
+            .await;
+        if request_started {
+            turn.next_step();
+        }
+        PhaseResult::Retry
+    }
+
     async fn resend_without_images(
         &mut self,
         progress: &mut TurnLoopProgress,
@@ -1055,7 +1252,7 @@ impl Engine {
         // not announce the same omission a second time.
         progress.image_omission_notified = true;
         self.active_route_capabilities.image_input = CapabilityState::Unsupported;
-        crate::logging::warn(format!(
+        codewhale_runtime::logging::warn(format!(
             "model {} rejected image content; resending with images replaced by text",
             self.session.model
         ));
@@ -1075,7 +1272,7 @@ impl Engine {
         rejection: crate::llm_client::ImageCountRejection,
         error: &anyhow::Error,
     ) -> Option<PhaseResult<AcceptedModelStep>> {
-        let sent = crate::image_attach::count_request_images(&request.messages);
+        let sent = codewhale_models::image_window::count_request_images(&request.messages);
         let model = self.session.model.clone();
         let cap = self.learn_image_cap(&model, sent, rejection)?;
         if cap == 0 {

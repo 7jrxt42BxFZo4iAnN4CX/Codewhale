@@ -36,9 +36,8 @@ pub use elevation::{
 };
 pub use fleet_exact::{
     EXACT_FLEET_SCHEMA_KIND, EXACT_FLEET_SCHEMA_REVISION, ExactFleet, ExactFleetError, ExactMember,
-    FrozenRoute, LEGACY_FLEET_SCHEMA_KIND, PermissionCeiling, ROLE_ALIASES, ROUTER_PUBLIC_ID,
-    ROUTER_PUBLIC_ROLE, ReasoningTier, RequestedReasoning, RouterMember, ShellCeiling,
-    canonical_member_key, canonical_role_key,
+    FrozenRoute, LEGACY_FLEET_SCHEMA_KIND, ROLE_ALIASES, ROUTER_PUBLIC_ID, ROUTER_PUBLIC_ROLE,
+    ReasoningTier, RequestedReasoning, RouterMember, canonical_member_key, canonical_role_key,
 };
 pub use fleet_preflight::{
     CredentialReadiness, EndpointIdentity, PreflightError, PreflightedRoute, RoutePreflight,
@@ -1712,6 +1711,8 @@ impl ParetoFrontier {
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum WorkflowExecutionError {
+    #[error("workflow must contain at least one node")]
+    EmptyWorkflow,
     #[error("{kind} node id must not be empty")]
     EmptyNodeId { kind: &'static str },
     #[error("leaf `{leaf}` prompt must not be empty")]
@@ -1875,6 +1876,9 @@ fn node_id(node: &WorkflowNode) -> String {
 pub(crate) fn validate_workflow_nodes(
     nodes: &[WorkflowNode],
 ) -> Result<(), WorkflowExecutionError> {
+    if nodes.is_empty() {
+        return Err(WorkflowExecutionError::EmptyWorkflow);
+    }
     let mut seen = BTreeSet::new();
     validate_workflow_nodes_inner(nodes, &mut seen)?;
     validate_workflow_references(nodes, &seen)

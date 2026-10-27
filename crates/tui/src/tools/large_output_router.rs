@@ -8,14 +8,13 @@
 //! and publishes non-inline results exactly once under their origin session
 //! with immutable evidence metadata for bounded retrieval.
 
-use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
 use crate::tools::spec::ToolResult;
+use codewhale_config::WorkshopConfig;
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -33,162 +32,17 @@ pub const DEFAULT_LARGE_OUTPUT_THRESHOLD_TOKENS: usize = 32_768;
 /// on the side of routing rather than dumping raw data into the parent.
 const CHARS_PER_TOKEN_ESTIMATE: usize = 3;
 
-static ACTIVE_WORKSHOP: OnceLock<Mutex<WorkshopConfig>> = OnceLock::new();
-
-#[cfg(test)]
-static ACTIVE_WORKSHOP_TEST_SERIAL: OnceLock<Mutex<()>> = OnceLock::new();
-
-#[cfg(test)]
-std::thread_local! {
-    static ACTIVE_WORKSHOP_TEST_SERIAL_HELD: std::cell::Cell<bool> = const {
-        std::cell::Cell::new(false)
-    };
-}
-
-/// Holds every test-side workshop activation behind one process-wide gate.
-/// The thread-local marker lets the owning current-thread test call
-/// `install_active` without trying to acquire its own non-reentrant lock.
-///
-/// The guard also owns the process-wide test env barrier, because holding this
-/// gate across a `reload_config` is holding it across `Settings::load` and
-/// `Config`'s env reads, which take that barrier (#6306). Field order is the
-/// release order: the serial gate first, then the barrier.
-#[cfg(test)]
-pub(crate) struct ActiveWorkshopTestGuard {
-    _serial: std::sync::MutexGuard<'static, ()>,
-    _env: Option<crate::test_support::TestEnvLock>,
-}
-
-#[cfg(test)]
-impl Drop for ActiveWorkshopTestGuard {
-    fn drop(&mut self) {
-        ACTIVE_WORKSHOP_TEST_SERIAL_HELD.with(|held| held.set(false));
+/// Resolve the effective threshold for the given tool name.
+#[must_use]
+pub fn workshop_threshold_for(config: &WorkshopConfig, tool_name: &str) -> usize {
+    if let Some(per_tool) = config.per_tool_thresholds.as_ref()
+        && let Some(&limit) = per_tool.get(tool_name)
+    {
+        return limit;
     }
-}
-
-/// Take the workshop gate, and the env barrier under it, in that order (#6306).
-///
-/// A holder of this gate keeps it across whole product calls — `reload_config`
-/// installs the budgets and then loads settings — and those calls read the
-/// environment through `test_support::with_test_env_lock`. A test that sealed
-/// the environment first and then reaches `install_active` through the very
-/// same `reload_config` takes the two locks in the opposite order, and the
-/// pair wedges the whole binary: `cargo test -p codewhale-tui --lib config`
-/// never returned, with dozens of unrelated tests queued on the barrier.
-/// Acquiring the barrier here, before the gate, makes that inversion
-/// impossible for every caller at once — the same shape as
-/// `provider_lake::lock_live_snapshot`.
-///
-/// Known limitation: this orders these two locks and nothing else. A future
-/// process-wide test gate held across product code has to join the same order
-/// rather than invent a third one.
-#[cfg(test)]
-pub(crate) fn active_workshop_test_guard() -> ActiveWorkshopTestGuard {
-    assert!(
-        !ACTIVE_WORKSHOP_TEST_SERIAL_HELD.with(std::cell::Cell::get),
-        "active workshop test guard is not reentrant"
-    );
-    let env = if crate::test_support::current_thread_holds_test_env_lock() {
-        None
-    } else {
-        Some(crate::test_support::lock_test_env())
-    };
-    let serial = ACTIVE_WORKSHOP_TEST_SERIAL
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    ACTIVE_WORKSHOP_TEST_SERIAL_HELD.with(|held| held.set(true));
-    ActiveWorkshopTestGuard {
-        _serial: serial,
-        _env: env,
-    }
-}
-
-fn active_workshop_slot() -> &'static Mutex<WorkshopConfig> {
-    ACTIVE_WORKSHOP.get_or_init(|| Mutex::new(WorkshopConfig::default()))
-}
-
-// ── Configuration ─────────────────────────────────────────────────────────────
-
-/// Existing `[workshop]` threshold configuration, retained for compatibility.
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct WorkshopConfig {
-    /// Token threshold above which results become handle-only evidence.
-    #[serde(default)]
-    pub large_output_threshold_tokens: Option<usize>,
-
-    /// Per-tool threshold overrides (tool name → token limit). A tool whose
-    /// name appears here uses this limit instead of
-    /// `large_output_threshold_tokens`.
-    #[serde(default)]
-    pub per_tool_thresholds: Option<HashMap<String, usize>>,
-
-    /// Optional model-visible byte budget for a single `read` / `read_file`
-    /// result. Absent keeps the compile-time default (#5367).
-    #[serde(default)]
-    pub read_result_max_bytes: Option<usize>,
-
-    /// Optional model-visible byte budget for a generic tool result after
-    /// spillover. Absent keeps the compile-time default (#5367).
-    #[serde(default)]
-    pub tool_result_max_bytes: Option<usize>,
-}
-
-impl WorkshopConfig {
-    /// Install the process-wide workshop budgets used by read/tool compactors.
-    ///
-    /// The returned immutable receipt is the snapshot written while the
-    /// singleton lock was held. Callers that need evidence of their own
-    /// activation can inspect it without racing a later process-wide update.
-    pub fn install_active(config: Option<&Self>) -> Self {
-        #[cfg(test)]
-        let _test_serial = if ACTIVE_WORKSHOP_TEST_SERIAL_HELD.with(std::cell::Cell::get) {
-            None
-        } else {
-            Some(
-                ACTIVE_WORKSHOP_TEST_SERIAL
-                    .get_or_init(|| Mutex::new(()))
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner),
-            )
-        };
-        let snapshot = config.cloned().unwrap_or_default();
-        let mut slot = active_workshop_slot()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *slot = snapshot;
-        slot.clone()
-    }
-
-    /// Optional model-visible read budget, when the user opted in (#5367).
-    #[must_use]
-    pub fn active_read_result_max_bytes() -> Option<usize> {
-        active_workshop_slot()
-            .lock()
-            .ok()
-            .and_then(|cfg| cfg.read_result_max_bytes.filter(|n| *n > 0))
-    }
-
-    /// Optional model-visible tool-result budget, when the user opted in (#5367).
-    #[must_use]
-    pub fn active_tool_result_max_bytes() -> Option<usize> {
-        active_workshop_slot()
-            .lock()
-            .ok()
-            .and_then(|cfg| cfg.tool_result_max_bytes.filter(|n| *n > 0))
-    }
-
-    /// Resolve the effective threshold for the given tool name.
-    #[must_use]
-    pub fn threshold_for(&self, tool_name: &str) -> usize {
-        if let Some(per_tool) = self.per_tool_thresholds.as_ref()
-            && let Some(&limit) = per_tool.get(tool_name)
-        {
-            return limit;
-        }
-        self.large_output_threshold_tokens
-            .unwrap_or(DEFAULT_LARGE_OUTPUT_THRESHOLD_TOKENS)
-    }
+    config
+        .large_output_threshold_tokens
+        .unwrap_or(DEFAULT_LARGE_OUTPUT_THRESHOLD_TOKENS)
 }
 
 // ── Token estimation ──────────────────────────────────────────────────────────
@@ -230,7 +84,7 @@ impl LargeOutputRouter {
         tool_name: &str,
         result: &ToolResult,
     ) -> (EvidenceRouting, usize, usize) {
-        let threshold = self.config.threshold_for(tool_name);
+        let threshold = workshop_threshold_for(&self.config, tool_name);
         let estimated_tokens = estimate_tokens(&result.content);
         // There is no per-call bypass of the context bound: exact bytes stay
         // available through the artifact handle.
@@ -344,7 +198,7 @@ pub fn read_evidence_metadata(session_id: &str, handle: &str) -> io::Result<Evid
 /// Bounded, no-follow read shared by publication/replay and authenticated HTTP
 /// retrieval. The caller chooses the existing session-root authority.
 pub(crate) fn read_evidence_metadata_file(
-    file: &crate::fleet::files::WorkspaceFile,
+    file: &codewhale_util::files::WorkspaceFile,
 ) -> io::Result<EvidenceArtifact> {
     use std::io::Read;
     const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
@@ -382,6 +236,7 @@ pub fn evidence_is_expired(artifact: &EvidenceArtifact, now_ms: u64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     fn make_result(content: &str) -> ToolResult {
         ToolResult::success(content.to_string())
@@ -410,36 +265,13 @@ mod tests {
             read_result_max_bytes: None,
             tool_result_max_bytes: None,
         };
-        assert_eq!(config.threshold_for("grep_files"), 100);
-        assert_eq!(config.threshold_for("read_file"), 4096);
+        assert_eq!(workshop_threshold_for(&config, "grep_files"), 100);
+        assert_eq!(workshop_threshold_for(&config, "read_file"), 4096);
         let default_config = WorkshopConfig::default();
         assert_eq!(
-            default_config.threshold_for("read_file"),
+            workshop_threshold_for(&default_config, "read_file"),
             DEFAULT_LARGE_OUTPUT_THRESHOLD_TOKENS
         );
-    }
-
-    #[test]
-    fn workshop_byte_budgets_raise_floor_only() {
-        let _guard = active_workshop_test_guard();
-        let installed = WorkshopConfig::install_active(Some(&WorkshopConfig {
-            large_output_threshold_tokens: None,
-            per_tool_thresholds: None,
-            read_result_max_bytes: Some(102_400),
-            tool_result_max_bytes: Some(80_000),
-        }));
-        assert_eq!(installed.read_result_max_bytes, Some(102_400));
-        assert_eq!(installed.tool_result_max_bytes, Some(80_000));
-        assert_eq!(
-            WorkshopConfig::active_read_result_max_bytes(),
-            Some(102_400)
-        );
-        assert_eq!(WorkshopConfig::active_tool_result_max_bytes(), Some(80_000));
-        let cleared = WorkshopConfig::install_active(None);
-        assert_eq!(cleared.read_result_max_bytes, None);
-        assert_eq!(cleared.tool_result_max_bytes, None);
-        assert_eq!(WorkshopConfig::active_read_result_max_bytes(), None);
-        assert_eq!(WorkshopConfig::active_tool_result_max_bytes(), None);
     }
 
     #[test]

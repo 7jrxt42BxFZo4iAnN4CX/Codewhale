@@ -159,20 +159,35 @@ pub(crate) fn restore_matching_offline_queue_state(
     true
 }
 
-/// Prior-session Running rows have no live actor in this process. Elapsed
-/// time alone does not establish that a current child is stalled.
-pub(crate) fn suspect_running_agents(app: &App) -> Vec<String> {
+/// Running rows that never veto recovery: a prior-session row has no live
+/// actor in this process, and a current child silent beyond its heartbeat
+/// bound (at least `TOOL_HANG_WATCHDOG_TIMEOUT`) may have lost its terminal event (#6184).
+/// Elapsed time alone does not establish that a current child is stalled.
+pub(crate) fn suspect_running_agents(app: &App, now: Instant) -> Vec<String> {
     app.subagent_cache
         .iter()
         .filter(|agent| matches!(agent.status, SubAgentStatus::Running))
-        .filter(|agent| agent.from_prior_session)
+        .filter(|agent| {
+            agent.from_prior_session
+                || app
+                    .agent_progress_meta
+                    .get(&agent.agent_id)
+                    .and_then(|meta| meta.last_progress_at)
+                    .or(agent.started_at)
+                    .is_some_and(|at| {
+                        now.saturating_duration_since(at)
+                            > TOOL_HANG_WATCHDOG_TIMEOUT.max(Duration::from_millis(
+                                agent.heartbeat_timeout_ms.unwrap_or(0),
+                            ))
+                    })
+        })
         .map(|agent| agent.agent_id.clone())
         .collect()
 }
 
 /// Running sub-agents that still legitimately hold the turn open.
-pub(crate) fn live_running_agent_count(app: &App) -> usize {
-    let suspects = suspect_running_agents(app);
+pub(crate) fn live_running_agent_count(app: &App, now: Instant) -> usize {
+    let suspects = suspect_running_agents(app, now);
     let mut ids: std::collections::HashSet<&str> =
         app.agent_progress.keys().map(String::as_str).collect();
     for agent in app
@@ -197,28 +212,26 @@ fn held_queue_note(app: &App) -> String {
 
 /// Log, record under `crashes/`, and name a stall the UI watchdog saw.
 fn record_ui_stall(app: &App, phase: &str, since_progress: Duration, bound: Duration) {
-    let suspects = suspect_running_agents(app);
+    let suspects = suspect_running_agents(app, Instant::now());
     let detail = (!suspects.is_empty()).then(|| {
         format!(
-            "sub-agent(s) retained from a prior session, with no live actor: {}",
+            "sub-agent(s) from a prior session or with no progress for 10m, treated as suspect: {}",
             suspects.join(", ")
         )
     });
-    crate::core::engine::turn_heartbeat::report_stall(
-        &crate::core::engine::turn_heartbeat::StallReport {
-            source: "ui",
-            phase: phase.to_string(),
-            detail,
-            turn_id: app.runtime_turn_id.clone(),
-            provider_request: app
-                .active_turn
-                .as_ref()
-                .and_then(|turn| turn.route.as_ref())
-                .map(|route| format!("{} / {}", route.provider_identity, route.model)),
-            since_progress,
-            bound: Some(bound),
-        },
-    );
+    codewhale_runtime::stall_report::report_stall(&codewhale_runtime::stall_report::StallReport {
+        source: "ui",
+        phase: phase.to_string(),
+        detail,
+        turn_id: app.runtime_turn_id.clone(),
+        provider_request: app
+            .active_turn
+            .as_ref()
+            .and_then(|turn| turn.route.as_ref())
+            .map(|route| format!("{} / {}", route.provider_identity, route.model)),
+        since_progress,
+        bound: Some(bound),
+    });
 }
 
 /// The UI watchdog, supervised by the engine heartbeat (#6184). Suspect
@@ -247,7 +260,7 @@ pub(crate) fn reconcile_turn_liveness_supervised(
         let text = format!("{}{}", stall.status_line(), held_queue_note(app));
         app.push_status_toast(text, StatusToastLevel::Error, None);
     }
-    let has_live_agents = live_running_agent_count(app) > 0;
+    let has_live_agents = live_running_agent_count(app, now) > 0;
     let recovered = reconcile_turn_liveness_with(app, now, has_live_agents, Some(heartbeat));
     if recovered && turn_in_progress && app.runtime_turn_status.is_none() {
         engine.cancel_with_reason(crate::core::engine::CancelReason::Stalled);
@@ -708,9 +721,23 @@ pub(crate) fn persist_offline_queue_state(app: &App) {
         return;
     }
     let (messages, draft) = offline_queue_projection(app);
+    let converted = messages
+        .iter()
+        .map(queued_ui_to_session)
+        .collect::<Result<Vec<_>>>();
+    let draft = draft.as_ref().map(queued_ui_to_session).transpose();
+    let (messages, draft) = match converted
+        .and_then(|messages| draft.map(|draft| (messages, draft)))
+    {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(target: "persistence", %error, "offline queue serialization refused");
+            return;
+        }
+    };
     let state = OfflineQueueState {
-        messages: messages.iter().map(queued_ui_to_session).collect(),
-        draft: draft.as_ref().map(queued_ui_to_session),
+        messages,
+        draft,
         ..OfflineQueueState::default()
     };
     persistence_actor::persist(PersistRequest::OfflineQueue {
@@ -720,6 +747,10 @@ pub(crate) fn persist_offline_queue_state(app: &App) {
 }
 
 pub(crate) fn restore_queued_message(app: &mut App, index: Option<usize>, message: QueuedMessage) {
+    if message.extension_command.is_some() {
+        app.restore_unsent_message(message);
+        return;
+    }
     if let Some(index) = index
         && index <= app.queued_messages.len()
     {
@@ -737,6 +768,10 @@ pub(crate) fn restore_queued_or_draft_message(
     recovery: DispatchRecovery,
     message: QueuedMessage,
 ) {
+    if message.extension_command.is_some() {
+        app.restore_unsent_message(message);
+        return;
+    }
     match recovery {
         DispatchRecovery::Draft => {
             app.input.clone_from(&message.display);
@@ -958,6 +993,11 @@ pub(crate) async fn switch_workspace(
 /// default's key or print its help page. A returning user whose saved route
 /// lost its key also gets the one command that saves it.
 pub(crate) fn keep_unsent_message_for_connect(app: &mut App, message: QueuedMessage, error: &str) {
+    if message.extension_command.is_some() {
+        app.restore_unsent_message(message);
+        app.status_message = Some(error.to_string());
+        return;
+    }
     tracing::warn!(
         error = %error,
         "user message not sent: no usable credential; restored to composer"
@@ -1031,6 +1071,11 @@ pub(crate) fn restore_failed_immediate_submit(
     message: QueuedMessage,
     error: &anyhow::Error,
 ) {
+    if message.extension_command.is_some() {
+        app.restore_unsent_message(message);
+        app.status_message = Some(error.to_string());
+        return;
+    }
     tracing::warn!(
         error = %error,
         "immediate user message dispatch failed; restored composer"
@@ -1056,8 +1101,10 @@ pub(crate) fn restore_failed_immediate_submit(
 /// bindings are replaced with the recommended set.
 pub(crate) fn restore_hotbar_defaults(app: &mut App, config: &mut Config) {
     let defaults = codewhale_config::default_hotbar_bindings_toml();
-    match crate::config_persistence::persist_hotbar_bindings(app.config_path.as_deref(), &defaults)
-    {
+    match codewhale_runtime::config_persistence::persist_hotbar_bindings(
+        app.config_path.as_deref(),
+        &defaults,
+    ) {
         Ok(path) => {
             config.hotbar = Some(defaults);
             app.status_message = Some(format!(
@@ -1173,7 +1220,7 @@ pub(crate) fn mirror_saved_api_key_in_config(
     }
     let pin_kimi_code_base_url = provider == ProviderKind::Moonshot
         && config.provider_config_for(identity).is_some_and(|entry| {
-            crate::config::provider_config_uses_kimi_imported_token(entry)
+            codewhale_runtime::config::provider_config_uses_kimi_imported_token(entry)
                 && entry
                     .base_url
                     .as_deref()
@@ -1188,7 +1235,8 @@ pub(crate) fn mirror_saved_api_key_in_config(
         .provider_config_for_mut(&auth_owner)
         .map_err(|error| error.to_string())?;
     if pin_kimi_code_base_url {
-        entry.base_url = Some(crate::config::DEFAULT_KIMI_CODE_BASE_URL.to_string());
+        entry.base_url =
+            Some(codewhale_config::descriptors::defaults::DEFAULT_KIMI_CODE_BASE_URL.to_string());
     }
     entry.auth_mode = Some("api_key".to_string());
     entry.api_key = Some(api_key);
@@ -1221,7 +1269,7 @@ pub(crate) fn restore_loaded_session_provider(
     app.billing_presentation = crate::route_billing::for_route(config, &identity);
     app.max_subagents = config
         .max_subagents_for_provider(&identity)
-        .clamp(1, crate::config::MAX_SUBAGENTS);
+        .clamp(1, codewhale_runtime::config::MAX_SUBAGENTS);
     app.provider_chain = (identity.key.as_str() == provider.as_str()
         && provider != ProviderKind::Antigravity)
         .then(|| codewhale_config::ProviderChain::new(provider, &config.fallback_providers))
@@ -1391,13 +1439,15 @@ mod stall_outbox_tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let outbox_path = dir.path().join("outbox.jsonl");
 
-        let config = Config {
-            lifecycle_outbox: Some(codewhale_config::LifecycleOutboxToml {
+        let config = {
+            let __cw_config_init_0_0 = Some(codewhale_config::LifecycleOutboxToml {
                 path: Some(outbox_path.clone()),
                 webhook_url: None,
                 webhook_token: None,
-            }),
-            ..Default::default()
+            });
+            let mut __cw_config_init_0_value: Config = Default::default();
+            __cw_config_init_0_value.lifecycle_outbox = __cw_config_init_0_0;
+            __cw_config_init_0_value
         };
         let options = TuiOptions {
             start_in_agent_mode: true,

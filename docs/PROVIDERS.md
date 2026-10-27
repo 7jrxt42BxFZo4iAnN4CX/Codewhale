@@ -11,6 +11,15 @@ Codewhale codebase. It is intentionally conservative: shipped entries are
 limited to provider IDs, config keys, auth paths, base URLs, model resolution,
 and capability metadata that the code already knows about.
 
+The `/provider` and `/model` pickers recommend OrcaRouter as a partner option.
+Click the recommendation or press F7 to view the Codewhale × OrcaRouter offer:
+a **30% top-up match for DeepSeek V4.1 Flash**. The pager includes the
+[redemption link](https://www.orcarouter.ai/redeem/1a6250545fdc4e0aaccb0a4470159e67)
+and can copy its text. Codewhale earns a referral fee from OrcaRouter.
+Current eligibility and terms are owned by the linked offer page. Viewing it
+preserves the current provider, model and credentials; redemption happens on
+OrcaRouter's site.
+
 DeepSeek remains the default provider, but every entry in `ProviderKind::ALL`
 is a first-class selectable provider route. `ALL` is the catalog/picker
 surface — one identity per vendor. Dual-wire dialect kinds (`*Anthropic`, e.g.
@@ -892,8 +901,8 @@ overlay and lets DSH resolve its own keys.
 
 StepFun's four coding models are available through both its standard API and
 [Step Plan](https://platform.stepfun.ai/docs/en/step-plan/integrations/reasoning-api).
-Choose the billing route in `/provider`, then the model in `/model`; existing
-Step 3.7 selections remain unchanged. [Step 5 Preview](https://platform.stepfun.ai/docs/en/guides/models/step-5-preview)
+Choose the billing route in `/provider`, then the model in `/model`; Step 5
+Preview is the default, and an existing Step 3.7 selection remains unchanged. [Step 5 Preview](https://platform.stepfun.ai/docs/en/guides/models/step-5-preview)
 has a 1M context window. Step 5 and Step 3.7 expose low/medium/high reasoning;
 Step 3.5 Flash 2603 exposes low/high; base Step 3.5 uses provider-default reasoning.
 [Published API prices](https://platform.stepfun.ai/docs/en/guides/pricing/details)
@@ -1208,7 +1217,7 @@ See [Catalog refresh](CATALOG_REFRESH.md) for freshness and estimate boundaries.
 | `arcee` | `trinity-large-thinking`, `trinity-large-preview`; provider-hinted custom model IDs pass through | yes | yes for `trinity-large-thinking`; no for `trinity-large-preview` |
 | `moonshot` | `kimi-k2.7-code`, `kimi-k2.6` | yes | yes |
 | `zai` | `GLM-5.3`, `GLM-5.3-Flash`, `GLM-5.2`, `GLM-5.1`, `GLM-5-Turbo`; provider-hinted custom model IDs pass through | yes | yes |
-| `stepfun` | `step-3.7-flash` (default), `step-5-preview`, `step-3.5-flash`, `step-3.5-flash-2603` | yes | yes |
+| `stepfun` | `step-5-preview` (default), `step-3.7-flash`, `step-3.5-flash`, `step-3.5-flash-2603` | yes | yes |
 | `minimax` | `MiniMax-M3`, `MiniMax-M2.1`, `MiniMax-M2.1-highspeed`, `MiniMax-M2`; `MiniMax-M2.7`, `MiniMax-M2.7-highspeed`, `MiniMax-M2.5` and `MiniMax-M2.5-highspeed` stay accepted until their 2026-11-18 retirement | yes | yes |
 | `minimax-anthropic` | `MiniMax-M3`, `MiniMax-M2.7` | yes | yes |
 | `sglang` | `deepseek-ai/DeepSeek-V4-Pro`, `deepseek-ai/DeepSeek-V4-Flash` | yes | yes |

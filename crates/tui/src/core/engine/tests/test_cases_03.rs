@@ -1251,7 +1251,10 @@ async fn cross_turn_token_budget_exhaustion_does_not_pause_goal() {
             content: "start budgeted goal".to_string(),
             images: Vec::new(),
             mode: AppMode::Agent,
-            route: resolved_route_for_test(&config, crate::config::DEFAULT_TEXT_MODEL),
+            route: resolved_route_for_test(
+                &config,
+                codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL,
+            ),
             compaction: Box::new(CompactionConfig::default()),
             initial_routed_usage: Box::default(),
             goal_objective: Some("finish within budget".to_string()),

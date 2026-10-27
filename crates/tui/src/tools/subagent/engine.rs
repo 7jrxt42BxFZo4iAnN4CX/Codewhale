@@ -64,7 +64,7 @@ impl ChildAccountingProjection {
                     route,
                     reason,
                 ),
-                None => crate::cost_status::report_missing_usage_for_interactive_origin(
+                None => crate::usage_persistence::report_missing_usage_for_interactive_origin(
                     self.origin.cost_scope,
                     &self.origin.session_id,
                     &self.owner,
@@ -139,7 +139,7 @@ impl ChildAccountingProjection {
 
 #[derive(Clone)]
 pub(crate) struct ChildAuthority {
-    pub(crate) grant: crate::worker_profile::ChildGrant,
+    pub(crate) grant: codewhale_agent_contract::worker_profile::ChildGrant,
     pub(super) disallowed_tools: Vec<String>,
     pub(super) accept_edits: bool,
     pub(crate) agent_type: FleetRole,
@@ -176,7 +176,7 @@ impl ChildAuthority {
         let mut effective = runtime.worker_profile.clone();
         effective.shell = effective.shell.min_with(parent_shell);
         let scope = intersect_explicit_tool_scope(&effective.tools, explicit_allowed_tools);
-        let grant = crate::worker_profile::ChildGrant::resolve(
+        let grant = codewhale_agent_contract::worker_profile::ChildGrant::resolve(
             &agent_type,
             &effective,
             scope,
@@ -364,7 +364,7 @@ impl ChildAuthority {
             )));
         }
         let action = input.get("action").and_then(Value::as_str);
-        if self.grant.surface == crate::worker_profile::ToolSurface::Evidence
+        if self.grant.surface == codewhale_agent_contract::worker_profile::ToolSurface::Evidence
             && name == "Web"
             && !matches!(action, Some("search" | "fetch"))
         {
@@ -574,7 +574,7 @@ impl ChildAuthority {
             .is_some_and(|spec| match spec.approval_requirement_for(input) {
                 ApprovalRequirement::Auto => true,
                 ApprovalRequirement::Suggest => {
-                    self.grant.files == crate::worker_profile::FileGrant::Write
+                    self.grant.files == codewhale_agent_contract::worker_profile::FileGrant::Write
                         && (self.accept_edits
                             || Self::role_can_delegate_writes(&self.agent_type)
                             || self.workspace_write_carve_out_permits(registry, name, input))
@@ -599,7 +599,7 @@ impl ChildAuthority {
         // This is a bounded convenience for write-capable children, not an
         // authority escalation: every target must resolve inside the workspace
         // and still pass sensitive-path, repository-law, and claim checks.
-        if self.grant.files != crate::worker_profile::FileGrant::Write {
+        if self.grant.files != codewhale_agent_contract::worker_profile::FileGrant::Write {
             return false;
         }
         crate::core::authority::paths_within_workspace_write_carve_out(
@@ -637,7 +637,7 @@ impl ChildAuthority {
             ) {
                 ApprovalRequirement::Auto => true,
                 ApprovalRequirement::Suggest => {
-                    self.grant.files == crate::worker_profile::FileGrant::Write
+                    self.grant.files == codewhale_agent_contract::worker_profile::FileGrant::Write
                 }
                 ApprovalRequirement::Required => {
                     // An outbound read needs approval because its payload can
@@ -674,7 +674,7 @@ impl ChildAuthority {
                     // `Verify` holds process-start authority for the bounded
                     // verification surface; the envelope below still refuses
                     // its ExecutesCode/WritesFiles calls by capability.
-                    self.grant.shell >= crate::worker_profile::ShellGrant::Verify
+                    self.grant.shell >= codewhale_agent_contract::worker_profile::ShellGrant::Verify
                 }
             },
             None => true,
@@ -689,7 +689,8 @@ impl ChildAuthority {
     }
 
     pub(crate) fn allows_bounded_readonly_bash(&self, name: &str) -> bool {
-        name == "bash" && self.grant.shell == crate::worker_profile::ShellGrant::Inspect
+        name == "bash"
+            && self.grant.shell == codewhale_agent_contract::worker_profile::ShellGrant::Inspect
     }
 
     pub(crate) fn legacy_action_alias(family: &str, action: &str) -> Option<&'static str> {
@@ -752,14 +753,14 @@ impl ChildAuthority {
         }
         // Core's virtual search returns this child's filtered catalog; it is
         // not a registered process tool. Scope and deny checks still follow.
-        let evidence_tool = crate::core::engine::tool_catalog::is_tool_search_tool(name)
+        let evidence_tool = codewhale_tools::names::is_tool_search_tool(name)
             || crate::tools::registry::readonly_evidence_tool_name(name)
             || registry
                 .get(name)
                 .is_some_and(|tool| crate::tools::registry::readonly_evidence_tool(tool.as_ref()));
         // The Evidence surface admits only the hardened evidence tools and
         // `agent` (delegation).
-        if self.grant.surface == crate::worker_profile::ToolSurface::Evidence
+        if self.grant.surface == codewhale_agent_contract::worker_profile::ToolSurface::Evidence
             && lower != "agent"
             && !evidence_tool
         {
@@ -776,7 +777,7 @@ impl ChildAuthority {
             )
             || lower.starts_with("terminal/");
         raw_shell
-            && self.grant.shell < crate::worker_profile::ShellGrant::Full
+            && self.grant.shell < codewhale_agent_contract::worker_profile::ShellGrant::Full
             && !self.allows_bounded_readonly_bash(name)
     }
 
@@ -785,11 +786,11 @@ impl ChildAuthority {
     }
 
     pub(crate) fn write_is_denied(&self) -> bool {
-        self.grant.files != crate::worker_profile::FileGrant::Write
+        self.grant.files != codewhale_agent_contract::worker_profile::FileGrant::Write
     }
 
     pub(crate) fn shell_is_denied(&self) -> bool {
-        self.grant.shell < crate::worker_profile::ShellGrant::Verify
+        self.grant.shell < codewhale_agent_contract::worker_profile::ShellGrant::Verify
     }
 
     pub(crate) fn execution_envelope(&self) -> crate::tools::execution_envelope::ExecutionEnvelope {
@@ -797,7 +798,7 @@ impl ChildAuthority {
         // dispatch derive it from the same fields, never from a deny-list
         // sentinel or a role re-mapping that could disagree with them.
         crate::tools::execution_envelope::ExecutionEnvelope {
-            write: self.grant.files == crate::worker_profile::FileGrant::Write,
+            write: self.grant.files == codewhale_agent_contract::worker_profile::FileGrant::Write,
             network: self.grant.network,
             shell: !self.shell_is_denied(),
         }
@@ -838,7 +839,7 @@ impl ChildAuthority {
         if !matches!(action, "claim" | "release") {
             return true;
         }
-        self.grant.files == crate::worker_profile::FileGrant::Write
+        self.grant.files == codewhale_agent_contract::worker_profile::FileGrant::Write
             && !self.is_tool_denied("agents/coordinate")
     }
 
@@ -846,7 +847,7 @@ impl ChildAuthority {
         // Visibility and dispatch consult the same capability guard. These
         // representative calls let a read-only bash schema survive catalog
         // shaping without treating an empty input as arbitrary shell authority.
-        if self.grant.shell != crate::worker_profile::ShellGrant::Inspect {
+        if self.grant.shell != codewhale_agent_contract::worker_profile::ShellGrant::Inspect {
             return None;
         }
         match name {
@@ -932,10 +933,11 @@ impl ChildAuthority {
                     return false;
                 };
                 let posture_allows = tool.name != "File"
-                    || self.grant.files == crate::worker_profile::FileGrant::Write
+                    || self.grant.files
+                        == codewhale_agent_contract::worker_profile::FileGrant::Write
                     || matches!(action, "read" | "list" | "search_name" | "search_content");
                 let evidence_action = self.grant.surface
-                    != crate::worker_profile::ToolSurface::Evidence
+                    != codewhale_agent_contract::worker_profile::ToolSurface::Evidence
                     || tool.name != "Web"
                     || matches!(action, "search" | "fetch");
                 let mut representative = self
@@ -989,7 +991,7 @@ pub(crate) struct ChildJob {
     pub(crate) deadline: Option<Instant>,
     pub(crate) fork_context: bool,
     parking: Option<Arc<std::sync::atomic::AtomicBool>>,
-    artifact: tokio::sync::Mutex<Option<SubAgentTranscriptArtifactWriter>>,
+    artifact: Arc<tokio::sync::Mutex<Option<SubAgentTranscriptArtifactWriter>>>,
     scheduler: tokio::runtime::Handle,
     pub(crate) requests: std::sync::atomic::AtomicU32,
     logical_steps: std::sync::atomic::AtomicU32,
@@ -1021,7 +1023,7 @@ impl ChildJob {
             deadline,
             fork_context,
             parking,
-            artifact: tokio::sync::Mutex::new(Some(artifact)),
+            artifact: Arc::new(tokio::sync::Mutex::new(Some(artifact))),
             scheduler: tokio::runtime::Handle::try_current()
                 .map_err(|_| anyhow!("child admission requires the existing Engine scheduler"))?,
             requests: std::sync::atomic::AtomicU32::new(0),
@@ -1063,8 +1065,53 @@ impl ChildJob {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = model.to_owned();
     }
+    pub(crate) async fn record_request_nudge(
+        &self,
+        turn_id: &str,
+        request_index: u32,
+        text: &str,
+        cancel: &CancellationToken,
+    ) -> Result<()> {
+        let deadline = self
+            .deadline
+            .map(tokio::time::Instant::from_std)
+            .into_iter()
+            .chain(self.authority.runtime.context.turn_deadline)
+            .chain(Some(
+                tokio::time::Instant::now() + self.authority.runtime.tool_timeout,
+            ))
+            .min()
+            .expect("captured tool timeout bounds receipt persistence");
+        let artifact = self.artifact.clone();
+        let acquire = tokio::time::timeout_at(deadline, artifact.lock_owned());
+        let mut artifact = tokio::select! {
+            biased;
+            () = cancel.cancelled() => return Err(anyhow!("child request receipt cancelled")),
+            () = self.authority.runtime.cancel_token.cancelled() => return Err(anyhow!("child request receipt cancelled")),
+            result = acquire => result.map_err(|_| anyhow!("child request receipt deadline elapsed"))?,
+        };
+        let turn_id = turn_id.to_string();
+        let text = text.to_string();
+        let persist = tokio::task::spawn_blocking(move || {
+            artifact
+                .as_mut()
+                .ok_or_else(|| anyhow!("child transcript writer is unavailable"))?
+                .record_request_nudge(&turn_id, request_index, &text)
+        });
+        tokio::select! {
+            biased;
+            () = cancel.cancelled() => Err(anyhow!("child request receipt cancelled")),
+            () = self.authority.runtime.cancel_token.cancelled() => Err(anyhow!("child request receipt cancelled")),
+            result = tokio::time::timeout_at(deadline, persist) => result
+                .map_err(|_| anyhow!("child request receipt deadline elapsed"))?
+                .map_err(|error| anyhow!("child receipt writer failed: {error}"))?,
+        }
+    }
+
     pub(crate) async fn project(&self, messages: &[Message], steps: u32) -> Result<()> {
-        let mut artifact = self.artifact.lock().await;
+        let mut artifact = self.artifact.try_lock().map_err(|_| {
+            anyhow!("child transcript writer is still busy; checkpoint not advanced")
+        })?;
         if let Some(writer) = artifact.as_mut() {
             writer.sync_messages(messages, true)?;
         }
@@ -1576,11 +1623,14 @@ pub(super) async fn run_child_agent(
     let config = crate::core::engine::EngineConfig {
         workspace: runtime.context.workspace.clone(),
         model: runtime.model.clone(),
-        max_steps: crate::core::engine::turn_budget::resolve_max_model_steps(Some(max_steps)),
+        max_steps: codewhale_runtime::turn_budget::resolve_max_model_steps(Some(max_steps)),
         compaction: runtime.compaction.clone(),
         subagent_api_timeout: runtime.step_api_timeout,
         auto_review_policy: runtime.auto_review_policy.as_ref().clone(),
         tools_always_load: allowed_tools.iter().flatten().cloned().collect(),
+        reasoning_only_max_reprompts: api.reasoning_only_max_reprompts(),
+        reasoning_only_on_output_limit: api.reasoning_only_on_output_limit(),
+        reasoning_only_reprompt_message: Some(api.reasoning_only_reprompt_message().to_string()),
         locale_tag: runtime.locale_tag.clone(),
         ..Default::default()
     };
@@ -1633,6 +1683,60 @@ pub(crate) async fn forward_child_gate_observation(
     } else {
         // Available capacity can still carry the final observation after
         // cancellation. A full/closed host cannot keep the actor alive.
+        let _ = tx.try_send(event);
+    }
+}
+
+async fn forward_child_request_receipt(
+    runtime: &SubAgentRuntime,
+    owner: &str,
+    message: String,
+    cancel: &CancellationToken,
+    deadline: Option<tokio::time::Instant>,
+) {
+    let deadline = deadline
+        .into_iter()
+        .chain(runtime.context.turn_deadline)
+        .chain(Some(tokio::time::Instant::now() + runtime.tool_timeout))
+        .min()
+        .expect("captured tool timeout bounds receipt delivery");
+    let activity = AgentProgressEventMeta::new(AgentWorkerStatus::Running);
+    let manager = tokio::select! {
+        biased;
+        () = runtime.cancel_token.cancelled() => None,
+        () = cancel.cancelled() => None,
+        result = tokio::time::timeout_at(deadline, runtime.manager.write()) => result.ok(),
+    };
+    if let Some(mut manager) = manager {
+        manager.touch(owner);
+        manager.record_worker_event(
+            owner,
+            activity.worker_status,
+            Some(message.clone()),
+            activity.step,
+            activity.tool_name.clone(),
+        );
+    }
+    let Some(tx) = runtime.event_tx.as_ref() else {
+        return;
+    };
+    let event = Event::AgentProgress {
+        owner_session_id: runtime.context.state_namespace.clone(),
+        id: owner.to_string(),
+        status: message,
+        activity,
+        parent_run_id: runtime.parent_agent_id.clone(),
+        spawn_depth: runtime.spawn_depth,
+    };
+    let permit = tokio::select! {
+        biased;
+        () = runtime.cancel_token.cancelled() => None,
+        () = cancel.cancelled() => None,
+        result = tokio::time::timeout_at(deadline, tx.reserve()) => result.ok().and_then(Result::ok),
+    };
+    if let Some(permit) = permit {
+        permit.send(event);
+    } else {
         let _ = tx.try_send(event);
     }
 }
@@ -1796,6 +1900,11 @@ pub(crate) async fn drive_child_actor(
                         record_agent_progress(&runtime, &agent_id, AgentProgressEventMeta::new(AgentWorkerStatus::RunningTool).with_tool(name.clone()),
                             format!("{label} {}", if result.is_ok() { "done" } else { "failed" }));
                     }
+                    Event::Status { message, .. }
+                        if message.starts_with(crate::core::events::REQUEST_NUDGE_RECEIPT_PREFIX) => {
+                        forward_child_request_receipt(&runtime, &agent_id, message.clone(),
+                            &handle.captured_turn_cancel(), job.deadline.map(Into::into)).await;
+                    }
                     Event::Status { message, .. } => record_agent_progress(&runtime, &agent_id,
                         AgentProgressEventMeta::new(AgentWorkerStatus::Running), message.clone()),
                     _ => {} // Session is projected by Core; aggregate usage is never rebilled here.
@@ -1830,6 +1939,17 @@ pub(crate) async fn drive_child_actor(
             if let Some(tx) = &runtime.event_tx {
                 let _ = tx.try_send(event);
             }
+        } else if let Event::Status { message, .. } = &event
+            && message.starts_with(crate::core::events::REQUEST_NUDGE_RECEIPT_PREFIX)
+        {
+            forward_child_request_receipt(
+                &runtime,
+                &agent_id,
+                message.clone(),
+                &handle.captured_turn_cancel(),
+                job.deadline.map(Into::into),
+            )
+            .await;
         } else if matches!(event, Event::ToolGateDecision { .. }) {
             forward_child_gate_observation(
                 &runtime,
@@ -2145,7 +2265,7 @@ mod owner_origin_tests {
             let mut held = manager.write().await;
             for lexical in [&original, &selected] {
                 let (canonical, file) =
-                    crate::runtime_api::open_workspace_directory(lexical).unwrap();
+                    codewhale_util::workspace_dir::open_workspace_directory(lexical).unwrap();
                 held.admit_coordination_workspace(lexical.clone(), canonical, Arc::new(file))
                     .unwrap();
             }

@@ -7,9 +7,11 @@ fn fixture(
     workspace: &Path,
     scope: Option<Vec<String>>,
 ) -> (Engine, EngineHandle, Arc<ChildAuthority>, TurnRouteContext) {
-    let api = Config {
-        allow_shell: Some(true),
-        ..Default::default()
+    let api = {
+        let __cw_config_init_0_0 = Some(true);
+        let mut __cw_config_init_0_value: Config = Default::default();
+        __cw_config_init_0_value.allow_shell = __cw_config_init_0_0;
+        __cw_config_init_0_value
     }
     .with_legacy_root(Some("child-local-fixture".into()), None);
     let (mut parent, _parent_handle) = Engine::new(
@@ -220,17 +222,20 @@ async fn child_shell_ceiling_survives_every_context_policy_setter() {
     let _home = crate::test_support::SealedHome::at(dir.path());
     let (_engine, _handle, authority, _route) = fixture(dir.path(), None);
     let ceiling = authority.grant.shell_policy();
-    assert_ne!(ceiling, crate::worker_profile::ShellPolicy::Full);
+    assert_ne!(
+        ceiling,
+        codewhale_agent_contract::worker_profile::ShellPolicy::Full
+    );
     let mut context = authority
         .context()
-        .with_shell_policy(crate::worker_profile::ShellPolicy::Full);
+        .with_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::Full);
     assert_eq!(context.shell_policy, ceiling);
-    context.set_shell_policy(crate::worker_profile::ShellPolicy::None);
+    context.set_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::None);
     assert_eq!(
         context.shell_policy,
-        crate::worker_profile::ShellPolicy::None
+        codewhale_agent_contract::worker_profile::ShellPolicy::None
     );
-    context.set_shell_policy(crate::worker_profile::ShellPolicy::Full);
+    context.set_shell_policy(codewhale_agent_contract::worker_profile::ShellPolicy::Full);
     assert_eq!(context.shell_policy, ceiling);
 }
 
@@ -605,7 +610,9 @@ async fn actual_child_transport_services_approval_and_cancel_with_saturated_stee
         let (_old, _old_handle, captured, _) = fixture(dir.path(), Some(vec!["bash".into()]));
         let mut runtime = captured.runtime.clone();
         runtime.worker_profile =
-            crate::worker_profile::WorkerRuntimeProfile::for_role(FleetRole::Worker);
+            codewhale_agent_contract::worker_profile::WorkerRuntimeProfile::for_role(
+                FleetRole::Worker,
+            );
         runtime.parent_can_prompt = true;
         runtime.context.auto_approve = false;
         runtime.context.approval_mode = ApprovalMode::Suggest;
@@ -1158,7 +1165,10 @@ async fn actual_child_tool_output_cap_reaches_core_fanout_with_full_artifact() {
     assert!(saved.len() > output.content.len());
     assert_eq!(
         metadata["content_digest"],
-        format!("sha256:{}", crate::hashing::sha256_hex(saved.as_bytes()))
+        format!(
+            "sha256:{}",
+            codewhale_runtime::hashing::sha256_hex(saved.as_bytes())
+        )
     );
     assert_eq!(metadata["truncated"], true);
 }
@@ -1352,7 +1362,9 @@ async fn detached_child_catastrophic_shell_floor_uses_captured_origin_in_every_p
         let (_old, _handle, captured, _) = fixture(dir.path(), Some(vec!["bash".into()]));
         let mut runtime = captured.runtime.clone();
         runtime.worker_profile =
-            crate::worker_profile::WorkerRuntimeProfile::for_role(FleetRole::Worker);
+            codewhale_agent_contract::worker_profile::WorkerRuntimeProfile::for_role(
+                FleetRole::Worker,
+            );
         runtime.context.live_posture = None;
         runtime.context.approval_mode = approval_mode;
         runtime.context.auto_approve = approval_mode == ApprovalMode::Bypass;

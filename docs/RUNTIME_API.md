@@ -2,7 +2,7 @@
 
 > 阅读简体中文版：[zh_hans/RUNTIME_API.md](zh_hans/RUNTIME_API.md)。
 
-`codewhale app-server` exposes the [Codewhale Engine](ARCHITECTURE.md) through
+`codewhale app-server --http` exposes the [Codewhale Engine](ARCHITECTURE.md) through
 its canonical local Runtime API and control plane.
 Local SDKs, mobile/remote-control clients, and editor integrations talk to it
 instead of screen-scraping terminal output. It serves the full HTTP/SSE runtime
@@ -13,7 +13,9 @@ such as Zed.
 
 `codewhale serve --http` / `serve --mobile` remain as **compatibility aliases**
 for `codewhale app-server --http` / `--mobile`; both launch the identical
-server. New integrations should target `app-server`.
+server. Desktop, web, SDK and custom integrations should target
+`app-server --http`. Bare `app-server`, `--stdio` and `--socket` select smaller
+compatibility interfaces, not the full Engine API.
 
 `codewhale exec` is the separate one-shot headless worker path (stream-json,
 fleet worker subprocess, CI primitive). It is not part of this API, but it
@@ -53,9 +55,9 @@ For the read-only record of what a thread or turn did, see
 | `codewhale web [--port 7878]` | HTTP/SSE on `127.0.0.1:7878` + embedded client | First-class loopback-only browser client; opens the default browser |
 | `codewhale app-server --http` | HTTP/SSE on `127.0.0.1:7878` | Full `/v1/*` runtime API (canonical) |
 | `codewhale app-server --mobile` | HTTP/SSE on loopback + `/mobile` | Runtime API + local mobile control page |
-| `codewhale app-server --stdio` | JSON-RPC 2.0 over stdio | Local SDK / control probe (no listener) |
+| `codewhale app-server --stdio` | JSON-RPC 2.0 over stdio | Compatibility controls and explicit tool-free turns; no full Engine event or approval/input channel. |
 | `codewhale app-server --socket [--socket-path P]` | JSON-RPC 2.0 over a `0600` Unix domain socket (macOS/Linux) or an owner-only named pipe (Windows) | Desktop daemon: multi-client, kernel peer identity checked, `daemon/attach` claim handshake. Windows native-app qualification remains open. |
-| `codewhale app-server` | HTTP on `127.0.0.1:8787` | Legacy in-process app-server (`/healthz`, `/thread`, `/app`, `/prompt`); background jobs are `GET /v1/jobs` on the Runtime API; `/prompt` and `/thread` messages execute real turns via the runtime bridge. There is no direct `/tool` route: tools run only inside Engine turns, under the Engine's tool catalog and approval posture. This legacy server does not surface approvals: its bridge forwards only text deltas and the turn's completion, and it has no decision route, so an approval-gated call waits unanswered. Drive approval-gated work through the Runtime API (`/v1/threads/*` events and `POST /v1/approvals/{approval_id}`) |
+| `codewhale app-server` | HTTP on `127.0.0.1:8787` | Compatibility `/healthz`, `/thread`, `/app`, `/prompt`. Turn requests require explicit `allowed_tools: []`; interactive execution fails before a turn starts. Use `app-server --http` for tools, approvals, clarification, goal execution, steering and the full event journal. |
 | `codewhale serve --http` / `--mobile` | same server as `app-server --http`/`--mobile` | Compatibility aliases |
 
 `app-server --http` and `--mobile` launch the same mature runtime API server
@@ -123,7 +125,7 @@ prompt/tool prefix.
 
 ### Workspace files and session artifacts
 
-Native clients (the GPUI desktop's Files and Preview modules) browse and edit
+Native clients browse and edit
 the server's configured workspace through three authenticated routes. They
 read and write the workspace directly; there is no second file store, cache
 or index, and no path override: the workspace root is the only root.
@@ -437,16 +439,10 @@ local integration clients can rely on it not changing silently.
 
 ### Daemon socket: `codewhale app-server --socket`
 
-The desktop shell (DESKTOP-APP-BRIEF §2) attaches to a long-lived daemon over
-a unix domain socket. The wire is the `--stdio` transport verbatim — the same
+The socket transport exposes compatibility controls on a long-lived daemon.
+The wire is the `--stdio` transport verbatim — the same
 newline-delimited JSON-RPC 2.0 methods, dispatched by the same code — with one
 handshake in front of it.
-
-> Note (2026-09-14): the Tauri desktop shell named above is retiring under the
-> 2026-09-14 product-client transition, and the DESKTOP-APP-BRIEF reference is
-> a dangling pointer (that brief does not exist in this repo). The GPUI client
-> in the private `codehwhale-gpui` repo is the successor daemon consumer over
-> this HTTP runtime API; the socket protocol described here is unchanged.
 
 **Endpoint.** `--socket-path` if given; else `$CODEWHALE_HOME/run/daemon.sock`
 when `CODEWHALE_HOME` is set (an explicit home is an isolation boundary); else
@@ -495,6 +491,36 @@ left running. The owner's `shutdown` stops the listener, closes every
 connection, and removes the socket file. Journal replay from a client's
 last-seen `seq` is not part of this transport yet.
 
+### Compatibility execution limits
+
+The compatibility HTTP, stdio and socket interfaces advertise
+`interactive_execution: false`, `goal_execution: false`, `tool_free_turns: true` and
+`full_api_entrypoint: "codewhale app-server --http"`. Clients must require
+`tool_free_turns: true` before relying on an empty allowlist: older compatibility
+servers may ignore the field. Every `thread/message`,
+`thread/request` message, `prompt/run`, `prompt/request` and HTTP `/prompt` or
+`/thread` message requires an explicit `allowed_tools: []`. Omitted, null or
+nonempty lists fail with `interactive_execution_unsupported` before creating a
+Runtime thread or starting a turn. Malformed lists fail parameter decoding.
+JSON-RPC reports `-32602` with `data.error: "interactive_execution_unsupported"`;
+HTTP reports 400 with `error.code: "invalid_request"`, `error.jsonrpc_code: -32602`
+and the same detail in `error.data`. Compatibility `thread/goal/set` and
+`ThreadRequest::GoalSet` also refuse before changing the goal: setting an active
+goal starts background Engine work. Reading and clearing existing goals remain
+available; starting goals uses the full Runtime HTTP API. The known method
+remains dispatchable so older clients get this actionable refusal. For example:
+
+```json
+{"jsonrpc":"2.0","id":3,"method":"thread/message","params":{"thread_id":"thr_...","input":"Summarize this conversation","allowed_tools":[]}}
+```
+
+The bridge sends the same empty allowlist to the canonical Runtime for each
+admitted turn, so a tool-enabled thread cannot widen it. It forwards assistant
+text and terminal status. Unexpected approval or clarification requests fail
+and interrupt the exact owned turn; they cannot wait silently. This deliberately
+narrows the old compatibility behavior. Tool-enabled clients must migrate to
+the authenticated `/v1/*` API and SSE rather than enabling Full Access.
+
 ### Interrupting a turn
 
 `thread/message` streams until the turn reaches a terminal state, which can
@@ -525,6 +551,7 @@ same bridge `thread/message` uses. There is no local fallback: nothing else
 in the app-server can produce model output, so a prompt either runs or fails.
 
 - `params.prompt` is required and must be non-empty (`-32602` otherwise).
+- `params.allowed_tools` must be `[]`; interactive turns use `app-server --http`.
 - `params.thread_id` is optional. With one, the prompt runs on that thread and
   its history. Without one, the runtime gets a fresh thread for that single
   turn; the mapping is dropped when the turn ends, so a one-shot prompt is not
@@ -651,16 +678,23 @@ When a headless turn calls `request_user_input`, the runtime emits a
 POST /v1/user-input/{thread_id}/{request_id}
 ```
 
-The app-server control transport cannot accept that reply.
+The compatibility control transport cannot accept that reply.
 `app/request` with `SubmitUserInput` returns `ok: false` and
-`error: "user_input_reply_unsupported"`. This is a property of the transport,
-not an omission: while a turn is streaming, the stdio loop executes only
-`thread/interrupt` and queues everything else, so an answer sent there would
-wait on the very turn that is waiting for it.
+`error: "user_input_reply_unsupported"`. Compatibility turns require an empty
+tool catalog and refuse interactive execution at admission, so this limitation
+cannot leave a supported turn waiting for an answer. The fixed catalog and
+response limitation are Codewhale implementation choices.
 
 ## SDK contract
 
-The app-server exists so an external SDK can answer — without scraping TUI
+The `@codewhale/runtime-sdk` package currently supplies Fleet helpers and
+read-only thread event streaming. It does not wrap thread creation, turn
+start/steer/interrupt, approval decisions, clarification answers or model
+discovery. Use authenticated raw HTTP for these operations; the package guide
+provides the [request recipe](../npm/runtime-sdk/README.md#full-engine-api).
+The hosted Responses SDK is a separate contract.
+
+The full `app-server --http` API exists so an external SDK can answer — without scraping TUI
 output — *what route ran, which provider/model/reasoning/permission profile was
 effective, what events happened, how many tokens were used, and how the run
 finished.* The durable Thread/Turn/Item data model already carries most of
@@ -678,7 +712,7 @@ this; the table maps each integration need to where a local client reads it.
 
 For one-shot/headless automation, prefer `codewhale exec` with explicit
 `--provider <id> --model <id>` so a failure identifies the exact provider/model
-pair. Use `app-server` when a local integration needs to start, resume, steer,
+pair. Use `app-server --http` when a local integration needs to start, resume, steer,
 or interrupt turns, list models/capabilities, follow the event stream, or read
 usage. Both paths share the same runtime, so route-effective model resolution
 and the event vocabulary match.
@@ -729,6 +763,16 @@ Full histories, tool pairs, signatures, media and partial-effect receipts are
 saved under the same checkpoint guard and session write lease used by HTTP.
 ACP display text may be shortened; the saved history is the full Core snapshot.
 
+Codewhale 0.10.2 implements a partial ACP v1 adapter. Both `session/new`
+and `session/load` reject a nonempty client-supplied `mcpServers` list with
+`-32602` before creating, resuming or returning a cached session. The field may
+be omitted or `[]`; null and other non-array values are invalid. No supplied
+command is executed during this validation. [ACP v1 requires stdio MCP support](https://agentclientprotocol.com/protocol/v1/session-setup#mcp-servers);
+`mcpCapabilities.http: false` and `sse: false` only describe optional transports
+and do not establish full conformance. Use the full Runtime API and its existing
+MCP management for those integrations. The restricted tool catalog below is a
+Codewhale host profile, not an ACP protocol restriction.
+
 The trusted local ACP profile narrows Core to file/search/git/patch and admitted
 foreground shell tools. Shell requires both editor terminal support and operator
 `allow_shell`; a requested external sandbox that is unavailable removes shell.
@@ -740,6 +784,15 @@ remains read-only under Full Access. Full Access and the ordinary approval
 posture are server-owned read-only options; the editor cannot widen them.
 `approval_policy = "never"` is not an ACP posture, so the server refuses to
 start with it instead of serving it as Ask.
+
+Full Access is `yolo`. Start it with `codewhale serve --acp --full-access`
+(the flag may also come before `serve`; `--yolo` is an alias) or set
+`yolo = true` in config. A configured `sandbox_mode = "danger-full-access"` does
+not turn it on: that value can only narrow the sandbox the permission picks, so
+under Ask or Auto-Review it changes nothing, and `ask` is not a config key. At
+startup the server writes one line to stderr naming the permission and sandbox it
+will run with, so an editor's agent log shows which posture a launch command
+produced.
 
 Tool updates begin `pending`. `in_progress` means Core reached final dispatch;
 `completed`/`failed` and typed image blocks come from the actual Core result.
@@ -1159,7 +1212,9 @@ title is unset, the latest turn's input summary — the displayed title). It
 does not scan turn or item bodies: `preview` is filled only after a match, so
 a dashboard keystroke is not a whole-store read per thread. Each item includes
 `id`, `title`, `preview`, `model`, `mode`, `archived`, `updated_at`,
-`latest_turn_id`, `latest_turn_status`, plus workspace metadata:
+`latest_turn_id`, `latest_turn_status`, `parent_thread_id` when the thread
+was forked from another (absent on threads forked before the field existed),
+plus workspace metadata:
 
 ```json
 {
@@ -1811,6 +1866,46 @@ Create and update requests accept an optional `model`. When present, each
 scheduled or manually triggered run uses that model; omitting it keeps the
 runtime's default task model.
 
+Create and update requests also accept an optional `destination_thread_id`.
+When set, each run is delivered into that existing thread as a new turn
+instead of starting a new task thread; the turn item carries
+`{"input_provenance":"scheduled","task_id":...}` metadata, and the turn uses
+the thread's own model and permission posture. If the thread is busy the run
+waits for its current turn to finish (bounded by the task wall-time budget).
+A destination that no longer exists or is archived fails the run with a
+receipt naming the thread; it is never rerouted to a new thread. An empty
+string on `PATCH` clears the destination. Create and update return `404` for
+an unknown thread and `409` for an archived one.
+
+**Delayed triggers** (one-shot messages; the HTTP face of `send_later`)
+- `GET /v1/triggers?thread_id=&status=&limit=50` — newest first; `thread_id`
+  filters by destination thread, `status` is one of `pending`,
+  `dispatching`, `fired`, `canceled`, `failed`
+- `POST /v1/triggers` — `{"message", "fire_at" | "delay_minutes",
+  "thread_id"?, "workspace"?, "owner_session_id"?}`; exactly one of `fire_at`
+  (RFC 3339, in the future) or `delay_minutes` (>= 1). `owner_session_id`
+  defaults to `thread_id` and is required without one. Returns `201` with the
+  `DelayedTriggerRecord`; honours `Idempotency-Key` like `POST
+  /v1/automations`
+- `GET /v1/triggers/{id}`
+- `DELETE /v1/triggers/{id}` — cancels a pending trigger; `409` once it has
+  been admitted
+
+A trigger with `destination_thread_id` fires into that thread exactly as an
+automation run does above. `send_later` called from inside a Runtime thread
+defaults its destination to that thread, so the reminder comes back to the
+same conversation; `thread_id: ""` keeps the old new-task-thread behaviour.
+The `automation` tool accepts the same `thread_id`. From a tool, `thread_id`
+can name only the calling thread (`"current"` or its id); targeting another
+thread is a Runtime API operation.
+
+When an automation or trigger names a destination thread, the Engine
+publishes typed events on that thread's stream: `automation.created`,
+`automation.updated` (`automation_id`, `name`, `rrule`, `status`,
+`next_run_at`), `trigger.scheduled`, `trigger.canceled` and `trigger.fired`
+(`trigger_id`, `message`, `fire_at`, `status`, `task_id`). They are
+notifications for captions, not model input.
+
 **Automation mutation preconditions.** `GET /v1/runtime/info` advertises
 `capabilities.automation_mutation_preconditions: true`; require it before
 relying on the behavior below (older Engines ignore both inputs).
@@ -1947,9 +2042,9 @@ tokens but `0.0` cost. Added in v0.8.10 (#564).
 }
 ```
 
-### Native client routes (GPUI desktop)
+### Native client routes
 
-These families serve the GPUI desktop client over the same bearer-token
+These families serve native clients over the same bearer-token
 transport. They reuse the runtime's existing authorities — the engine's shell
 manager, the durable thread store, the workspace confinement layer, the
 config's credential plumbing — and add no second runtime, session store,
@@ -2148,7 +2243,14 @@ also how a client sees model-spawned work.
   `POST /v1/git/unstage` same; `POST /v1/git/discard` `{ "paths": [...] }`
   (tracked paths only — no `all`, an untracked path fails closed);
   `POST /v1/git/commit` `{ "message", "all"? }`; stage, unstage, discard
-  and commit also take an optional `expect` (below); `POST /v1/git/push`
+  and commit also take an optional `expect` (below). Stage, unstage and
+  discard also take `patch`: hunks of the one path in `paths`, with file
+  headers `diff --git a/<path> b/<path>`, `--- a/<path>`, `+++ b/<path>`
+  naming that workspace-relative path. Stage applies them to the index,
+  unstage reverses them in the index, discard reverses them in the working
+  tree (`git apply [--cached] [--reverse]`). Renames, copies, mode changes,
+  creations, deletions and binary patches are refused, and a patch that no
+  longer applies fails with git's message and writes nothing. `POST /v1/git/push`
   `{ "remote"?, "set_upstream"? }` (`remote`, or `origin` when only
   `set_upstream` is given, must name a configured remote);
   `POST /v1/git/branch`
@@ -2858,13 +2960,37 @@ A client that treats `200` as "the model saw it" is therefore wrong in the third
 case: read the item's status, or wait for the event.
 
 Common event names: `thread.started`, `thread.forked`, `turn.started`,
-`turn.lifecycle`, `turn.steered`, `turn.steer_dropped`, `turn.interrupt_requested`,
+`turn.lifecycle`, `turn.usage`, `turn.steered`, `turn.steer_dropped`,
+`turn.interrupt_requested`,
 `turn.completed`, `turn.artifacts`, `item.started`, `item.delta`, `item.completed`,
 `item.failed`, `item.interrupted`, `approval.required`, `approval.decided`,
 `approval.timeout`, `user_input.required`, `user_input.answered`,
 `user_input.canceled`, `tool_call.requested`, `tool_call.resolved`,
 `tool_call.timeout`, `tool_call.canceled`, `sandbox.denied`,
 `turn.workspace_snapshot`, `turn.provider_request`, `runtime.store_failure`.
+
+`turn.usage` is one model call's receipt, emitted when a parent model call
+reports usage — not once per turn. Its `payload` carries the call's `usage`,
+its `duration_ms` / `first_token_ms` / `request_ms` timings, the
+`maxOutputTokens` allowance, `billed_prompt_tokens` (the prompt size the
+provider billed: the last itemised request's input when retries were reported,
+else the call's own input count), and `cost` — that call priced on the route it
+was dispatched on, as `{usd, cny, usd_priced, cny_priced}`.
+
+`cost` is `null` when the route cannot price every token class the call used; a
+client must not read that as a free call. A currency whose `*_priced` flag is
+false is unpriced. These receipts cover the parent model calls; child and
+compaction usage arrive through other paths. Summed per-call prices are
+therefore partial estimates, not the complete turn bill.
+
+`turn.completed` carries the turn's authoritative cumulative token usage in
+`payload.turn.usage`, including routed work. It replaces the running token
+counts; it does not supply an authoritative last-turn cost. The thread totals
+at `GET /v1/threads/{id}/usage` remain the accounting record. The mobile page
+keeps the observed priced-call estimate after completion, marks it as a
+partial estimate, and resets its figure when a new turn starts. Replayed
+journal sequences are counted once. `billed_prompt_tokens` is available to
+API clients; the mobile header shows token usage and partial cost.
 
 `turn.provider_request` carries diagnostic request observations, not additional
 billing usage. See [per-request cache receipts](CACHE.md#per-request-receipts).
@@ -3051,6 +3177,32 @@ Verification:
 ```bash
 npm test --workspace @codewhale/runtime-sdk
 ```
+
+## Thread Fleet members
+
+`thread_fleet_members` in runtime capabilities enables
+`POST /v1/threads/{id}/members`. The body is
+`{operation_key, member_id, display_name, prompt, fleet}`, where `fleet` is a
+complete Fleet v2 document (the same shape as a saved `fleets/*.toml`, as JSON)
+and `member_id` names one of its members with an exact `provider` and `model`.
+The thread's Engine starts that member as an ordinary child of the session,
+through the same spawn path as the `agent` tool: the member's provider and
+model are bound exactly and never fall back to the session route, its
+instructions join the child's task prompt as its Fleet profile, and the child
+keeps the session's permissions and spawn limits. The document is used for this
+start only; it is not saved and does not change the selected Fleet.
+
+The response is `200 {thread_id, member_id, agent_id, state: "started"}`, or
+`202 {state: "queued"}` when the thread is mid-turn: host requests are handled
+between turns. Repeating the same `operation_key` with the same body returns
+the original `agent_id` once started; a different body under the same key is
+refused. The child appears in `/v1/agent-runs` with `owner_session_id` set to the
+thread and its `member_id` as `session_name` (a display name may hold spaces or
+non-ASCII text, which session names refuse); `agent.spawned`,
+`agent.progress` and `agent.completed` arrive on the thread's event stream.
+Stop it with `POST /v1/agent-runs/{id}/cancel`, which also stops its
+descendants. A second start for a member whose child is still running is
+refused by the existing session-name rule; follow up with that child instead.
 
 ## Agent Run Receipts
 

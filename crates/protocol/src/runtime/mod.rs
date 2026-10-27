@@ -66,6 +66,8 @@ pub struct RuntimeCapabilities {
     pub threads: bool,
     #[serde(default)]
     pub thread_create_idempotency: bool,
+    #[serde(default)]
+    pub thread_idle_precondition: bool,
     /// Explicit per-thread shell opt-in is checked against loaded policy and
     /// cannot broaden a conversation while it has an active turn.
     #[serde(default)]
@@ -78,6 +80,8 @@ pub struct RuntimeCapabilities {
     /// Read-only exact accepted-turn lookup by thread and operation key.
     #[serde(default)]
     pub turn_operation_lookup: bool,
+    #[serde(default)]
+    pub structured_review_turns: bool,
     /// Automation patch/run/pause/resume honor `expected_revision` (409
     /// `revision_conflict` carrying `current_revision`); create/patch/run/pause/
     /// resume honor a bounded, persisted `Idempotency-Key`. Delete honors
@@ -101,6 +105,8 @@ pub struct RuntimeCapabilities {
     pub worker_runtime: bool,
     #[serde(default)]
     pub fleet_run_create: bool,
+    #[serde(default)]
+    pub thread_fleet_members: bool,
     #[serde(default)]
     pub fleet_run_start: bool,
     #[serde(default)]
@@ -451,10 +457,12 @@ mod tests {
             session_provider_keys: false,
             threads: true,
             thread_create_idempotency: true,
+            thread_idle_precondition: true,
             thread_shell_consent: true,
             turns: true,
             turn_operation_idempotency: true,
             turn_operation_lookup: true,
+            structured_review_turns: true,
             automation_mutation_preconditions: true,
             turn_image_inputs: true,
             turn_steer: true,
@@ -464,6 +472,7 @@ mod tests {
             environments: false,
             worker_runtime: false,
             fleet_run_create: true,
+            thread_fleet_members: true,
             fleet_run_start: true,
             fleet_event_replay: true,
             fleet_event_stream: true,

@@ -21,7 +21,8 @@ pub(super) fn repair_stopped_tool_calls(messages: &mut Vec<Message>, cause: &str
         .find(|message| message.role == Role::Assistant)
         .map(|message| message.content.clone())
         .unwrap_or_default();
-    let repair = crate::tool_history_repair::repair_tool_call_pairs_for_provider(messages);
+    let repair =
+        codewhale_runtime::tool_history_repair::repair_tool_call_pairs_for_provider(messages);
     let final_message = messages
         .iter()
         .rposition(|message| message.role == Role::Assistant);
@@ -48,7 +49,7 @@ const HANDBACK_DIGEST_DIR: &str = "subagent-results";
 /// Private state-root path of a child's budget-death result artifact
 /// (#6536). Derived from `agent_id`, never accepted from input.
 fn digest_artifact_relative_path(agent_id: &str) -> PathBuf {
-    let digest = crate::hashing::sha256_hex(agent_id.as_bytes());
+    let digest = codewhale_runtime::hashing::sha256_hex(agent_id.as_bytes());
     Path::new(".codewhale")
         .join("state")
         .join(HANDBACK_DIGEST_DIR)

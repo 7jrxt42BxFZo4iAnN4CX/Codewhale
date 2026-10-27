@@ -12,12 +12,11 @@ use serde::Serialize;
 use super::adapter::AdapterResult;
 use super::cache::{self, CachedFetch};
 use super::extract::is_js_shell_error;
-use super::guard::{
-    DnsPin, guarded_reqwest_client_builder, validate_fetch_target, validate_network_policy,
-};
-use crate::features::Feature;
+use super::guard::{validate_fetch_target, validate_network_policy};
 use crate::tools::spec::{ToolContext, ToolError};
-use crate::worker_profile::ShellPolicy;
+use codewhale_agent_contract::worker_profile::ShellPolicy;
+use codewhale_net::guard::{DnsPin, guarded_reqwest_client_builder};
+use codewhale_runtime::features::Feature;
 
 pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(15);
 pub(crate) const HARD_MAX_TIMEOUT: Duration = Duration::from_secs(60);
@@ -406,7 +405,7 @@ fn js_shell_message(
 /// Both facts already exist: the web family is feature-gated, and a
 /// network-denied Fleet worker carries `network_access: Some(false)` on the
 /// authority envelope that also removes the web tools from its registry
-/// (`fleet::role::NETWORK_TOOL_DENYLIST`). Nothing new is registered here.
+/// (`codewhale_agent_contract::role::NETWORK_TOOL_DENYLIST`). Nothing new is registered here.
 fn web_tool_available(context: &ToolContext) -> bool {
     context.features.enabled(Feature::WebSearch) && network_authorized(context)
 }
@@ -1366,7 +1365,7 @@ mod tests {
 
     #[tokio::test]
     async fn tightened_network_policy_blocks_an_existing_cache_entry() {
-        use crate::network_policy::{Decision, NetworkPolicy, NetworkPolicyDecider};
+        use codewhale_net::network_policy::{Decision, NetworkPolicy, NetworkPolicyDecider};
 
         let url = reqwest::Url::parse("https://example.com/cached").unwrap();
         cache::insert(
@@ -1409,7 +1408,7 @@ mod tests {
 
     #[tokio::test]
     async fn tightened_network_policy_checks_cached_redirect_destination() {
-        use crate::network_policy::{Decision, NetworkPolicy, NetworkPolicyDecider};
+        use codewhale_net::network_policy::{Decision, NetworkPolicy, NetworkPolicyDecider};
 
         let initial_url = reqwest::Url::parse("https://8.8.8.8/cached").unwrap();
         cache::insert(

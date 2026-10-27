@@ -1,9 +1,9 @@
 use super::*;
-use crate::config::ProviderKind;
 use crate::fleet::roster::FleetRoster;
 use crate::tools::{AgentToolSurfaceOptions, ToolRegistryBuilder};
-use crate::worker_profile::ShellPolicy;
 use axum::{Json, Router, http::StatusCode, response::IntoResponse, routing::post};
+use codewhale_agent_contract::worker_profile::ShellPolicy;
+use codewhale_config::ProviderKind;
 use std::collections::HashSet;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -744,7 +744,7 @@ async fn explicit_read_only_general_can_inspect_git_but_cannot_mutate() {
     assert!(registry.unavailable_allowed_tools().is_empty());
     assert_ne!(
         registry.grant.files,
-        crate::worker_profile::FileGrant::Write
+        codewhale_agent_contract::worker_profile::FileGrant::Write
     );
     for command in ["pwd", "git status --short", "git log --oneline -1"] {
         let output = registry
@@ -2315,7 +2315,7 @@ pub(super) async fn delayed_chat_client(
     CodewhaleClient,
     Arc<AtomicUsize>,
     Arc<std::sync::Mutex<Vec<Value>>>,
-    crate::config::Config,
+    codewhale_runtime::config::Config,
 ) {
     let calls = Arc::new(AtomicUsize::new(0));
     let bodies = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -2371,10 +2371,7 @@ pub(super) async fn delayed_chat_client(
         let _ = axum::serve(listener, app).await;
     });
 
-    let config = crate::config::Config {
-        ..crate::config::Config::default()
-    }
-    .with_legacy_root(
+    let config = codewhale_runtime::config::Config::default().with_legacy_root(
         Some("test-key".to_string()),
         Some(format!("http://{addr}/v1")),
     );
@@ -2928,7 +2925,11 @@ const HANG_GUARD: Duration = Duration::from_secs(30);
 async fn always_delayed_chat_client(
     delay: Duration,
     response_text: &str,
-) -> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+) -> (
+    CodewhaleClient,
+    Arc<AtomicUsize>,
+    codewhale_runtime::config::Config,
+) {
     let calls = Arc::new(AtomicUsize::new(0));
     let response_text = response_text.to_string();
     let app = Router::new().route(
@@ -2974,10 +2975,7 @@ async fn always_delayed_chat_client(
         let _ = axum::serve(listener, app).await;
     });
 
-    let config = crate::config::Config {
-        ..crate::config::Config::default()
-    }
-    .with_legacy_root(
+    let config = codewhale_runtime::config::Config::default().with_legacy_root(
         Some("test-key".to_string()),
         Some(format!("http://{addr}/v1")),
     );
@@ -3047,7 +3045,11 @@ async fn tool_free_subagent_omits_chat_tools_and_tool_choice() {
 
 async fn transient_header_timeout_then_success_chat_client(
     response_text: &str,
-) -> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+) -> (
+    CodewhaleClient,
+    Arc<AtomicUsize>,
+    codewhale_runtime::config::Config,
+) {
     let calls = Arc::new(AtomicUsize::new(0));
     let response_text = response_text.to_string();
     let app = Router::new().route(
@@ -3101,10 +3103,7 @@ async fn transient_header_timeout_then_success_chat_client(
         let _ = axum::serve(listener, app).await;
     });
 
-    let config = crate::config::Config {
-        ..crate::config::Config::default()
-    }
-    .with_legacy_root(
+    let config = codewhale_runtime::config::Config::default().with_legacy_root(
         Some("test-key".to_string()),
         Some(format!("http://{addr}/v1")),
     );
@@ -3112,8 +3111,11 @@ async fn transient_header_timeout_then_success_chat_client(
     (client, calls, config)
 }
 
-async fn always_rate_limited_chat_client()
--> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+async fn always_rate_limited_chat_client() -> (
+    CodewhaleClient,
+    Arc<AtomicUsize>,
+    codewhale_runtime::config::Config,
+) {
     let calls = Arc::new(AtomicUsize::new(0));
     let app = Router::new().route(
         "/{*path}",
@@ -3146,8 +3148,8 @@ async fn always_rate_limited_chat_client()
         let _ = axum::serve(listener, app).await;
     });
 
-    let config = crate::config::Config {
-        retry: Some(crate::config::RetryConfig {
+    let config = {
+        let __cw_config_init_3_0 = Some(codewhale_runtime::config::RetryConfig {
             enabled: Some(false),
             max_retries: Some(0),
             initial_delay: Some(0.0),
@@ -3156,8 +3158,11 @@ async fn always_rate_limited_chat_client()
             jitter: None,
             jitter_factor: None,
             respect_retry_after: None,
-        }),
-        ..crate::config::Config::default()
+        });
+        let mut __cw_config_init_3_value: codewhale_runtime::config::Config =
+            codewhale_runtime::config::Config::default();
+        __cw_config_init_3_value.retry = __cw_config_init_3_0;
+        __cw_config_init_3_value
     }
     .with_legacy_root(
         Some("test-key".to_string()),
@@ -3167,8 +3172,11 @@ async fn always_rate_limited_chat_client()
     (client, calls, config)
 }
 
-async fn always_invalid_request_chat_client()
--> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+async fn always_invalid_request_chat_client() -> (
+    CodewhaleClient,
+    Arc<AtomicUsize>,
+    codewhale_runtime::config::Config,
+) {
     let calls = Arc::new(AtomicUsize::new(0));
     let app = Router::new().route(
         "/{*path}",
@@ -3202,8 +3210,8 @@ async fn always_invalid_request_chat_client()
         let _ = axum::serve(listener, app).await;
     });
 
-    let config = crate::config::Config {
-        retry: Some(crate::config::RetryConfig {
+    let config = {
+        let __cw_config_init_4_0 = Some(codewhale_runtime::config::RetryConfig {
             enabled: Some(false),
             max_retries: Some(0),
             initial_delay: Some(0.0),
@@ -3212,8 +3220,11 @@ async fn always_invalid_request_chat_client()
             jitter: None,
             jitter_factor: None,
             respect_retry_after: None,
-        }),
-        ..crate::config::Config::default()
+        });
+        let mut __cw_config_init_4_value: codewhale_runtime::config::Config =
+            codewhale_runtime::config::Config::default();
+        __cw_config_init_4_value.retry = __cw_config_init_4_0;
+        __cw_config_init_4_value
     }
     .with_legacy_root(
         Some("test-key".to_string()),
@@ -3229,18 +3240,15 @@ fn estimate_tool_description_tokens_conservative(text: &str) -> usize {
 
 #[test]
 fn test_agent_type_from_str() {
-    assert_eq!(FleetRole::from_str("general"), Some(FleetRole::Worker));
-    assert_eq!(FleetRole::from_str("explore"), Some(FleetRole::Scout));
-    assert_eq!(FleetRole::from_str("PLAN"), Some(FleetRole::Planner));
-    assert_eq!(
-        FleetRole::from_str("code-review"),
-        Some(FleetRole::Reviewer)
-    );
-    assert_eq!(FleetRole::from_str("worker"), Some(FleetRole::Worker));
-    assert_eq!(FleetRole::from_str("default"), Some(FleetRole::Worker));
-    assert_eq!(FleetRole::from_str("explorer"), Some(FleetRole::Scout));
-    assert_eq!(FleetRole::from_str("awaiter"), Some(FleetRole::Planner));
-    assert_eq!(FleetRole::from_str("invalid"), None);
+    assert_eq!(FleetRole::parse("general"), Some(FleetRole::Worker));
+    assert_eq!(FleetRole::parse("explore"), Some(FleetRole::Scout));
+    assert_eq!(FleetRole::parse("PLAN"), Some(FleetRole::Planner));
+    assert_eq!(FleetRole::parse("code-review"), Some(FleetRole::Reviewer));
+    assert_eq!(FleetRole::parse("worker"), Some(FleetRole::Worker));
+    assert_eq!(FleetRole::parse("default"), Some(FleetRole::Worker));
+    assert_eq!(FleetRole::parse("explorer"), Some(FleetRole::Scout));
+    assert_eq!(FleetRole::parse("awaiter"), Some(FleetRole::Planner));
+    assert_eq!(FleetRole::parse("invalid"), None);
 }
 
 #[test]
@@ -3249,13 +3257,13 @@ fn test_agent_type_implementer_aliases() {
     // likely to reach for when the user says "build this".
     for alias in ["implementer", "implement", "implementation", "builder"] {
         assert_eq!(
-            FleetRole::from_str(alias),
+            FleetRole::parse(alias),
             Some(FleetRole::Builder),
             "alias {alias} should resolve to Builder"
         );
     }
     // Case-insensitive.
-    assert_eq!(FleetRole::from_str("IMPLEMENTER"), Some(FleetRole::Builder));
+    assert_eq!(FleetRole::parse("IMPLEMENTER"), Some(FleetRole::Builder));
 }
 
 #[test]
@@ -3264,12 +3272,12 @@ fn test_agent_type_verifier_aliases() {
     // Reviewer, which is for *grading* code rather than *running* it.
     for alias in ["verifier", "verify", "verification", "validator", "tester"] {
         assert_eq!(
-            FleetRole::from_str(alias),
+            FleetRole::parse(alias),
             Some(FleetRole::Verifier),
             "alias {alias} should resolve to Verifier"
         );
     }
-    assert_eq!(FleetRole::from_str("VERIFY"), Some(FleetRole::Verifier));
+    assert_eq!(FleetRole::parse("VERIFY"), Some(FleetRole::Verifier));
 }
 
 #[test]
@@ -3288,7 +3296,7 @@ fn test_agent_type_round_trips_via_as_str() {
         FleetRole::Custom,
     ] {
         let label = t.as_str();
-        let back = FleetRole::from_str(label)
+        let back = FleetRole::parse(label)
             .unwrap_or_else(|| panic!("as_str label {label:?} doesn't round-trip via from_str"));
         assert_eq!(back, t, "round-trip failed for {t:?} via {label:?}");
     }
@@ -3392,9 +3400,9 @@ fn test_implementer_and_verifier_have_distinct_prompts() {
     // The whole point of adding the types is that they carry distinct
     // posture. Defensive guard: catch the easy bug where copy-paste
     // leaves two new variants with the same prompt as `Worker`.
-    let implementer = FleetRole::Builder.system_prompt();
-    let verifier = FleetRole::Verifier.system_prompt();
-    let general = FleetRole::Worker.system_prompt();
+    let implementer = role_system_prompt(&FleetRole::Builder);
+    let verifier = role_system_prompt(&FleetRole::Verifier);
+    let general = role_system_prompt(&FleetRole::Worker);
     assert_ne!(
         implementer, general,
         "Implementer prompt must differ from General"
@@ -3434,7 +3442,7 @@ fn test_agent_type_prompts_include_shared_output_contract_once() {
         (FleetRole::Verifier, "Fleet verifier"),
         (FleetRole::Custom, "custom Fleet worker"),
     ] {
-        let prompt = agent_type.system_prompt();
+        let prompt = role_system_prompt(&agent_type);
         assert!(prompt.contains(marker));
         // Every role shares the parseable output-contract spine exactly once.
         assert_eq!(
@@ -3467,7 +3475,7 @@ fn test_agent_type_prompts_include_shared_output_contract_once() {
 
 #[test]
 fn explore_prompt_orients_before_searching() {
-    let prompt = FleetRole::Scout.system_prompt();
+    let prompt = role_system_prompt(&FleetRole::Scout);
     assert!(prompt.contains("role: `scout`"));
     assert!(prompt.contains("AGENTS.md/README"));
     assert!(prompt.contains("workspace/project root"));
@@ -3476,7 +3484,7 @@ fn explore_prompt_orients_before_searching() {
 
 #[test]
 fn explore_prompt_requires_evidence_and_read_only_scope() {
-    let prompt = FleetRole::Scout.system_prompt();
+    let prompt = role_system_prompt(&FleetRole::Scout);
     assert!(prompt.contains("Gather enough evidence to answer the assigned question reliably"));
     assert!(prompt.contains("there is no per-agent call cap to save"));
     assert!(prompt.contains("strictly read-only"));
@@ -3489,14 +3497,14 @@ fn explore_prompt_requires_evidence_and_read_only_scope() {
     assert!(prompt.contains("allowed read-only inspection subset"));
     assert!(prompt.contains("`git log -n 5`"));
     assert!(!prompt.contains("use RLM"));
-    let reviewer = FleetRole::Reviewer.system_prompt();
+    let reviewer = role_system_prompt(&FleetRole::Reviewer);
     assert!(reviewer.contains("allowed read-only navigation/rg"));
     assert!(reviewer.contains("shell control actions are unavailable"));
 }
 
 #[test]
 fn implementer_prompt_is_not_forced_into_explorer_cap() {
-    let prompt = FleetRole::Builder.system_prompt();
+    let prompt = role_system_prompt(&FleetRole::Builder);
     assert!(!prompt.contains("3-5 tool-call cap"));
     assert!(prompt.contains("Checkpoint before expanding scope"));
     assert!(!prompt.contains("Default to `EFFORT: quick`"));
@@ -3504,11 +3512,11 @@ fn implementer_prompt_is_not_forced_into_explorer_cap() {
 
 #[test]
 fn role_prompts_use_lowercase_primitive_contract() {
-    let explore = FleetRole::Scout.system_prompt();
+    let explore = role_system_prompt(&FleetRole::Scout);
     assert!(explore.contains("Use `read` for bounded file reads"));
     assert!(explore.contains("`bash` only for the allowed read-only"));
 
-    let implementer = FleetRole::Builder.system_prompt();
+    let implementer = role_system_prompt(&FleetRole::Builder);
     assert!(implementer.contains("Use `edit` for precise unique replacements"));
     assert!(implementer.contains("`write` for whole-file changes"));
     assert!(implementer.contains("discover `apply_patch`"));
@@ -3525,8 +3533,8 @@ fn role_prompts_use_lowercase_primitive_contract() {
 
 #[test]
 fn review_and_verifier_prompts_stop_after_decisive_evidence() {
-    let review = FleetRole::Reviewer.system_prompt();
-    let verifier = FleetRole::Verifier.system_prompt();
+    let review = role_system_prompt(&FleetRole::Reviewer);
+    let verifier = role_system_prompt(&FleetRole::Verifier);
     assert!(review.contains("stop after decisive evidence"));
     assert!(review.contains("private `todo_write` list as editable working notes"));
     assert!(verifier.contains("stop after decisive pass/fail evidence"));
@@ -4090,12 +4098,9 @@ fn a_fast_lane_the_router_cannot_serve_carries_a_note() {
 /// silently reclassify a consultant as the default worker.
 #[test]
 fn consultant_round_trips_canonically_and_accepts_compatibility_aliases() {
-    assert_eq!(
-        FleetRole::from_str("consultant"),
-        Some(FleetRole::Consultant)
-    );
-    assert_eq!(FleetRole::from_str("oracle"), Some(FleetRole::Consultant));
-    assert_eq!(FleetRole::from_str("advisor"), Some(FleetRole::Consultant));
+    assert_eq!(FleetRole::parse("consultant"), Some(FleetRole::Consultant));
+    assert_eq!(FleetRole::parse("oracle"), Some(FleetRole::Consultant));
+    assert_eq!(FleetRole::parse("advisor"), Some(FleetRole::Consultant));
     assert_eq!(FleetRole::Consultant.as_str(), "advisor");
 
     let json = serde_json::to_string(&FleetRole::Consultant).expect("serialize");
@@ -4793,7 +4798,7 @@ async fn manual_config_role_pin_refuses_task_model_and_strength_before_binding()
     let mut runtime = stub_runtime();
     runtime.model = "deepseek-v4-pro".into();
     Arc::make_mut(runtime.api_config.as_mut().unwrap()).subagents = Some(
-        toml::from_str::<crate::config::SubagentsConfig>(
+        toml::from_str::<codewhale_runtime::config::SubagentsConfig>(
             "[roles.review]\nmodel = 'deepseek-v4-flash'\n",
         )
         .unwrap(),
@@ -4833,7 +4838,7 @@ async fn manual_config_role_pin_refuses_task_model_and_strength_before_binding()
 async fn manual_role_pin_accepts_only_its_exact_qualified_provider_selector() {
     let mut runtime = stub_runtime();
     Arc::make_mut(runtime.api_config.as_mut().unwrap()).subagents = Some(
-        toml::from_str::<crate::config::SubagentsConfig>(
+        toml::from_str::<codewhale_runtime::config::SubagentsConfig>(
             "[roles.reviewer]\nmodel = 'deepseek/deepseek-v4-flash'\n",
         )
         .unwrap(),
@@ -4874,7 +4879,7 @@ async fn structured_role_pin_rejects_incomplete_auto_and_unknown_provider_pairs(
         let original_model = runtime.model.clone();
         let original_endpoint = runtime.client.base_url().to_string();
         Arc::make_mut(runtime.api_config.as_mut().unwrap()).subagents = Some(
-            toml::from_str::<crate::config::SubagentsConfig>(&format!(
+            toml::from_str::<codewhale_runtime::config::SubagentsConfig>(&format!(
                 "[roles.reviewer]\nmodel = '{value}'\n",
             ))
             .unwrap(),
@@ -4979,13 +4984,13 @@ fn credentialless_xai_runtime() -> SubAgentRuntime {
 #[tokio::test]
 async fn manual_role_pin_keeps_case_distinct_custom_provider_identity() {
     let mut runtime = stub_runtime();
-    let config = crate::config::Config {
-        provider: Some("TeamA".into()),
-        providers: Some(crate::config::ProvidersConfig {
+    let config = {
+        let __cw_config_init_5_0 = Some("TeamA".into());
+        let __cw_config_init_5_1 = Some(codewhale_runtime::config::ProvidersConfig {
             custom: HashMap::from([
                 (
                     "TeamA".into(),
-                    crate::config::ProviderConfig {
+                    codewhale_runtime::config::ProviderConfig {
                         kind: Some("openai-compatible".into()),
                         base_url: Some("http://127.0.0.1:1/v1".into()),
                         api_key: Some("fixture-upper-key".into()),
@@ -4995,7 +5000,7 @@ async fn manual_role_pin_keeps_case_distinct_custom_provider_identity() {
                 ),
                 (
                     "teama".into(),
-                    crate::config::ProviderConfig {
+                    codewhale_runtime::config::ProviderConfig {
                         kind: Some("openai-compatible".into()),
                         base_url: Some("http://127.0.0.1:2/v1".into()),
                         api_key: Some("fixture-lower-key".into()),
@@ -5005,14 +5010,18 @@ async fn manual_role_pin_keeps_case_distinct_custom_provider_identity() {
                 ),
             ]),
             ..Default::default()
-        }),
-        subagents: Some(
-            toml::from_str::<crate::config::SubagentsConfig>(
+        });
+        let __cw_config_init_5_2 = Some(
+            toml::from_str::<codewhale_runtime::config::SubagentsConfig>(
                 "[roles.reviewer]\nmodel = 'TeamA/model-x'\n",
             )
             .unwrap(),
-        ),
-        ..Default::default()
+        );
+        let mut __cw_config_init_5_value: codewhale_runtime::config::Config = Default::default();
+        __cw_config_init_5_value.provider = __cw_config_init_5_0;
+        __cw_config_init_5_value.providers = __cw_config_init_5_1;
+        __cw_config_init_5_value.subagents = __cw_config_init_5_2;
+        __cw_config_init_5_value
     };
     assert_ne!(
         config.resolve_provider_pin_identity("TeamA").unwrap().key,
@@ -5041,22 +5050,26 @@ async fn manual_role_pin_keeps_case_distinct_custom_provider_identity() {
 #[tokio::test]
 async fn foreign_manual_role_pin_is_not_downgraded_to_an_implicit_default() {
     let mut runtime = stub_runtime();
-    let config = crate::config::Config {
-        provider: Some("moonshot".into()),
-        providers: Some(crate::config::ProvidersConfig {
-            moonshot: crate::config::ProviderConfig {
+    let config = {
+        let __cw_config_init_6_0 = Some("moonshot".into());
+        let __cw_config_init_6_1 = Some(codewhale_runtime::config::ProvidersConfig {
+            moonshot: codewhale_runtime::config::ProviderConfig {
                 api_key: Some("fixture-key".into()),
                 ..Default::default()
             },
             ..Default::default()
-        }),
-        subagents: Some(
-            toml::from_str::<crate::config::SubagentsConfig>(
+        });
+        let __cw_config_init_6_2 = Some(
+            toml::from_str::<codewhale_runtime::config::SubagentsConfig>(
                 "[roles.reviewer]\nmodel = 'deepseek-v4-flash'\n",
             )
             .unwrap(),
-        ),
-        ..Default::default()
+        );
+        let mut __cw_config_init_6_value: codewhale_runtime::config::Config = Default::default();
+        __cw_config_init_6_value.provider = __cw_config_init_6_0;
+        __cw_config_init_6_value.providers = __cw_config_init_6_1;
+        __cw_config_init_6_value.subagents = __cw_config_init_6_2;
+        __cw_config_init_6_value
     };
     runtime.client = CodewhaleClient::new(&config).unwrap();
     runtime.api_config = Some(Arc::new(config));
@@ -5079,18 +5092,18 @@ async fn foreign_manual_role_pin_is_not_downgraded_to_an_implicit_default() {
 async fn structured_custom_pin_refuses_named_provider_migration_but_accepts_literal_custom() {
     let pin = || {
         Some(
-            toml::from_str::<crate::config::SubagentsConfig>(
+            toml::from_str::<codewhale_runtime::config::SubagentsConfig>(
                 "[roles.reviewer]\nmodel = 'custom/model-x'\n",
             )
             .unwrap(),
         )
     };
-    let named = crate::config::Config {
-        provider: Some("TeamA".into()),
-        providers: Some(crate::config::ProvidersConfig {
+    let named = {
+        let __cw_config_init_7_0 = Some("TeamA".into());
+        let __cw_config_init_7_1 = Some(codewhale_runtime::config::ProvidersConfig {
             custom: HashMap::from([(
                 "TeamA".into(),
-                crate::config::ProviderConfig {
+                codewhale_runtime::config::ProviderConfig {
                     kind: Some("openai-compatible".into()),
                     base_url: Some("http://127.0.0.1:1/v1".into()),
                     api_key: Some("fixture-named-key".into()),
@@ -5099,9 +5112,13 @@ async fn structured_custom_pin_refuses_named_provider_migration_but_accepts_lite
                 },
             )]),
             ..Default::default()
-        }),
-        subagents: pin(),
-        ..Default::default()
+        });
+        let __cw_config_init_7_2 = pin();
+        let mut __cw_config_init_7_value: codewhale_runtime::config::Config = Default::default();
+        __cw_config_init_7_value.provider = __cw_config_init_7_0;
+        __cw_config_init_7_value.providers = __cw_config_init_7_1;
+        __cw_config_init_7_value.subagents = __cw_config_init_7_2;
+        __cw_config_init_7_value
     };
     assert_eq!(
         named
@@ -5112,11 +5129,15 @@ async fn structured_custom_pin_refuses_named_provider_migration_but_accepts_lite
         "TeamA",
         "historical session migration remains available and is the exact rejected pin shape"
     );
-    let literal = crate::config::Config {
-        provider: Some("custom".into()),
-        default_text_model: Some("model-x".into()),
-        subagents: pin(),
-        ..Default::default()
+    let literal = {
+        let __cw_config_init_8_0 = Some("custom".into());
+        let __cw_config_init_8_1 = Some("model-x".into());
+        let __cw_config_init_8_2 = pin();
+        let mut __cw_config_init_8_value: codewhale_runtime::config::Config = Default::default();
+        __cw_config_init_8_value.provider = __cw_config_init_8_0;
+        __cw_config_init_8_value.default_text_model = __cw_config_init_8_1;
+        __cw_config_init_8_value.subagents = __cw_config_init_8_2;
+        __cw_config_init_8_value
     }
     .with_legacy_root(
         Some("fixture-literal-key".into()),
@@ -5182,7 +5203,7 @@ fn saved_role_ambiguity_fails_unless_a_higher_priority_pin_selects_the_route() {
     );
 
     Arc::make_mut(runtime.api_config.as_mut().unwrap()).subagents = Some(
-        toml::from_str::<crate::config::SubagentsConfig>(
+        toml::from_str::<codewhale_runtime::config::SubagentsConfig>(
             "[roles.reviewer]\nmodel = 'deepseek-v4-pro'\n",
         )
         .unwrap(),
@@ -5315,7 +5336,9 @@ fn providerless_spawn_model_gate_rejects_known_foreign_route_before_spawn() {
         .expect("an explicit aggregator route remains allowed");
     assert_eq!(
         explicit.model_route,
-        ModelRoute::Fixed(crate::config::DEFAULT_OPENROUTER_MODEL.to_string()),
+        ModelRoute::Fixed(
+            codewhale_config::descriptors::defaults::DEFAULT_OPENROUTER_MODEL.to_string()
+        ),
         "the child and receipt must use the provider's exact wire id"
     );
 }
@@ -5394,7 +5417,7 @@ fn spawn_route_sources_refresh_removes_stale_pins_and_overlays_live_config() {
 
     let config = runtime.api_config.clone().expect("stub config");
     let mut live = (*config).clone();
-    live.subagents = Some(crate::config::SubagentsConfig {
+    live.subagents = Some(codewhale_runtime::config::SubagentsConfig {
         worker_model: Some("live-config-model".to_string()),
         ..Default::default()
     });
@@ -5868,7 +5891,7 @@ fn test_parse_spawn_request_accepts_fleet_role_token_for_runtime_resolution() {
 
 #[test]
 fn test_parse_spawn_request_accepts_full_role_vocabulary() {
-    // Regression for #2649: every token `FleetRole::from_str` accepts must
+    // Regression for #2649: every token `FleetRole::parse` accepts must
     // pass the spawn boundary through `role` *and* `type`, in any case and
     // with surrounding whitespace, land on the canonical serialized role,
     // never become a profile key, and conflict with a different type.
@@ -6415,7 +6438,7 @@ fn agent_tool_role_schema_is_a_closed_canonical_enum() {
 
 #[test]
 fn provider_schema_sanitizers_preserve_the_closed_fleet_role_enum() {
-    use crate::tools::schema_sanitize;
+    use codewhale_models::schema_sanitize;
 
     let tmp = tempdir().expect("tempdir");
     let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 1);
@@ -6578,7 +6601,7 @@ fn agent_tool_schema_bounds_fields_by_explicit_action() {
     // actual contract both before and after the generic provider sanitizer;
     // required-only `not` branches used to be pruned into an impossible schema.
     let mut generic = agent_schema.clone();
-    crate::tools::schema_sanitize::sanitize(&mut generic);
+    codewhale_models::schema_sanitize::sanitize(&mut generic);
     for (provider, schema) in [("canonical", agent_schema), ("generic", generic)] {
         let validator = draft_2020_validator(&schema);
         for target in [
@@ -6621,7 +6644,7 @@ fn agent_tool_schema_bounds_fields_by_explicit_action() {
 
 #[test]
 fn agent_tool_schema_rejects_empty_input_across_provider_forms() {
-    use crate::tools::schema_sanitize;
+    use codewhale_models::schema_sanitize;
 
     let tmp = tempdir().expect("tempdir");
     let manager = new_shared_subagent_manager(tmp.path().to_path_buf(), 1);
@@ -7552,7 +7575,9 @@ fn role_grants_block_writes_and_raw_shell_for_read_only_roles() {
     // never hold write authority, regardless of parent auto-approval, and the
     // bounded shell grants are exactly Inspect (evidence reads) and Verify
     // (the workspace's own checks).
-    use crate::worker_profile::{ChildGrant, FileGrant, ShellGrant, ToolSurface};
+    use codewhale_agent_contract::worker_profile::{
+        ChildGrant, FileGrant, ShellGrant, ToolSurface,
+    };
     let full_parent = WorkerRuntimeProfile::for_role(FleetRole::Worker);
 
     for role in [
@@ -7613,7 +7638,7 @@ fn role_grants_block_writes_and_raw_shell_for_read_only_roles() {
 /// visible. Asserted against the real child registry.
 #[tokio::test]
 async fn issue_5633_catalog_and_dispatch_are_one_grant() {
-    use crate::worker_profile::{FileGrant, ShellGrant};
+    use codewhale_agent_contract::worker_profile::{FileGrant, ShellGrant};
     for role in FleetRole::all() {
         let tmp = tempdir().expect("tempdir");
         let mut runtime =
@@ -8218,7 +8243,7 @@ fn every_named_role_has_one_complete_capability_based_surface() {
         }
         // The converter registers only when the `pandoc` binary exists.
         if matches!(role, FleetRole::Builder | FleetRole::Worker)
-            && crate::dependencies::resolve_pandoc().is_some()
+            && codewhale_dependencies::resolve_pandoc().is_some()
         {
             expected.insert("pandoc_convert".to_string());
         }
@@ -8240,10 +8265,11 @@ fn an_explicit_parent_tool_scope_is_enforced_by_the_child_registry() {
     let mut runtime =
         stub_runtime().with_agent_tool_surface_options(enabled_agent_surface_options());
     runtime.context = ToolContext::new(tmp.path().to_path_buf());
-    runtime.worker_profile.tools = crate::worker_profile::ToolScope::Explicit(vec![
-        "read_file".to_string(),
-        "grep_files".to_string(),
-    ]);
+    runtime.worker_profile.tools =
+        codewhale_agent_contract::worker_profile::ToolScope::Explicit(vec![
+            "read_file".to_string(),
+            "grep_files".to_string(),
+        ]);
 
     let registry = ChildCoreProbe::new(
         runtime,
@@ -8274,7 +8300,7 @@ fn an_explicit_parent_tool_scope_is_enforced_by_the_child_registry() {
 /// outside it, however it asks.
 #[test]
 fn a_child_allowlist_cannot_widen_an_explicit_parent_tool_scope() {
-    let parent = crate::worker_profile::ToolScope::Explicit(vec![
+    let parent = codewhale_agent_contract::worker_profile::ToolScope::Explicit(vec![
         "read_file".to_string(),
         "File".to_string(),
     ]);
@@ -8302,13 +8328,16 @@ fn a_child_allowlist_cannot_widen_an_explicit_parent_tool_scope() {
     // An unrestricted parent leaves the child's request untouched.
     assert_eq!(
         intersect_explicit_tool_scope(
-            &crate::worker_profile::ToolScope::Inherit,
+            &codewhale_agent_contract::worker_profile::ToolScope::Inherit,
             Some(vec!["exec_shell".to_string()])
         ),
         Some(vec!["exec_shell".to_string()]),
     );
     assert_eq!(
-        intersect_explicit_tool_scope(&crate::worker_profile::ToolScope::Inherit, None),
+        intersect_explicit_tool_scope(
+            &codewhale_agent_contract::worker_profile::ToolScope::Inherit,
+            None
+        ),
         None
     );
 }
@@ -8966,7 +8995,7 @@ fn subagent_feature_gates_match_parent_agent_surface() {
 /// deny list via `allows_bounded_readonly_bash`, so seeding the rule is what
 /// makes these tests exercise the carve-out rather than an absent denial.
 fn seed_read_only_role_deny_list(runtime: &mut SubAgentRuntime) {
-    use crate::fleet::role::{MUTATING_TOOL_DENYLIST, RAW_SHELL_DENYLIST};
+    use codewhale_agent_contract::role::{MUTATING_TOOL_DENYLIST, RAW_SHELL_DENYLIST};
     for rule in RAW_SHELL_DENYLIST
         .iter()
         .chain(MUTATING_TOOL_DENYLIST.iter())
@@ -12872,7 +12901,7 @@ fn annotated_failure_message_composes_class_tag_and_model_hint() {
     ))
     .context("Responses API request failed");
 
-    let provider = crate::config::ProviderKind::OpenaiCodex;
+    let provider = codewhale_config::ProviderKind::OpenaiCodex;
     let route = ModelRoute::Fixed("gpt-5.5-codex".to_string());
     let annotated = annotate_child_model_error(
         &subagent_failure_message(&err),
@@ -12952,7 +12981,7 @@ fn subagent_failure_message_preserves_error_chain() {
 fn annotate_child_model_error_adds_actionable_hint() {
     // #2653: a bare provider 403 becomes actionable by naming the model and the
     // recovery path, while unrelated errors pass through unchanged.
-    let provider = crate::config::ProviderKind::Moonshot;
+    let provider = codewhale_config::ProviderKind::Moonshot;
     let inherit = ModelRoute::Inherit;
     let auth = annotate_child_model_error("403 Forbidden", "kimi-k2", provider, &inherit);
     assert!(auth.contains("kimi-k2"), "names the model: {auth}");
@@ -12989,7 +13018,7 @@ fn annotate_child_model_error_adds_actionable_hint() {
     let openai_style = annotate_child_model_error(
         "The model `gpt-5.5-nano` does not exist or you do not have access to it.",
         "gpt-5.5-nano",
-        crate::config::ProviderKind::OpenaiCodex,
+        codewhale_config::ProviderKind::OpenaiCodex,
         &ModelRoute::Fixed("gpt-5.5-nano".to_string()),
     );
     assert!(
@@ -13027,7 +13056,7 @@ fn child_runtime_capability_errors_are_not_misreported_as_model_access_errors() 
             annotate_child_model_error(
                 error,
                 "deepseek-flash",
-                crate::config::ProviderKind::Deepseek,
+                codewhale_config::ProviderKind::Deepseek,
                 &ModelRoute::Inherit,
             ),
             error,
@@ -13044,7 +13073,7 @@ fn child_launch_error_names_provider_model_and_route_source() {
     let err = anyhow::Error::new(crate::llm_client::LlmError::ModelError(
         "Model \"deepseek-v4-pro\" not found".to_string(),
     ));
-    let provider = crate::config::ProviderKind::Deepseek;
+    let provider = codewhale_config::ProviderKind::Deepseek;
     let route = ModelRoute::Fixed("deepseek-v4-pro".to_string());
     let annotated = annotate_child_model_error(
         &subagent_failure_message(&err),
@@ -13134,18 +13163,18 @@ fn clamp_child_max_spawn_depth_enforces_absolute_ceiling() {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)]
 async fn rate_limit_pause_blocks_subagent_spawn() {
-    let _guard = crate::retry_status::test_guard();
+    let _guard = codewhale_runtime::retry_status::test_guard();
     // Drop-clear the window even if an assertion below panics: this state is
     // process-global, and a leaked 30s pause strands every concurrently
     // running test whose worker issues a model request.
     let _clear = ClearRateLimitOnDrop;
-    crate::retry_status::clear();
-    crate::retry_status::clear_rate_limit();
+    codewhale_runtime::retry_status::clear();
+    codewhale_runtime::retry_status::clear_rate_limit();
 
     let tmp = tempdir().expect("tempdir");
     let mut runtime = stub_runtime();
     runtime.context = ToolContext::new(tmp.path().to_path_buf());
-    crate::retry_status::note_rate_limit(
+    codewhale_runtime::retry_status::note_rate_limit(
         &runtime.client.rate_limit_scope(),
         Duration::from_secs(30),
     );
@@ -13156,6 +13185,7 @@ async fn rate_limit_pause_blocks_subagent_spawn() {
         Arc::clone(&manager),
         runtime,
         false,
+        None,
         None,
         None,
     )
@@ -15606,10 +15636,8 @@ pub(crate) fn stub_runtime() -> SubAgentRuntime {
     // A real session always carries its config; spawn-time protocol
     // rebinding (#5042) needs it to rebuild the client for model-aware
     // routes such as deepseek-v4-flash.
-    let stub_config = crate::config::Config {
-        ..crate::config::Config::default()
-    }
-    .with_legacy_root(Some("test-key".to_string()), None);
+    let stub_config = codewhale_runtime::config::Config::default()
+        .with_legacy_root(Some("test-key".to_string()), None);
     let accounting_origin = SubAgentAccountingOrigin::capture(&context);
     SubAgentRuntime {
         client: stub_client(),
@@ -15887,24 +15915,26 @@ fn stub_runtime_for_provider(provider: &str) -> SubAgentRuntime {
     runtime
 }
 
-fn stub_client_for_provider(provider: &str) -> (CodewhaleClient, crate::config::Config) {
+fn stub_client_for_provider(
+    provider: &str,
+) -> (CodewhaleClient, codewhale_runtime::config::Config) {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let mut providers = crate::config::ProvidersConfig::default();
+    let mut providers = codewhale_runtime::config::ProvidersConfig::default();
     match provider {
         "moonshot" => {
-            providers.moonshot = crate::config::ProviderConfig {
+            providers.moonshot = codewhale_runtime::config::ProviderConfig {
                 api_key: Some("test-key".to_string()),
                 ..Default::default()
             };
         }
         "openrouter" => {
-            providers.openrouter = crate::config::ProviderConfig {
+            providers.openrouter = codewhale_runtime::config::ProviderConfig {
                 api_key: Some("test-key".to_string()),
                 ..Default::default()
             };
         }
         "zai" => {
-            providers.zai = crate::config::ProviderConfig {
+            providers.zai = codewhale_runtime::config::ProviderConfig {
                 api_key: Some("test-key".to_string()),
                 ..Default::default()
             };
@@ -15912,7 +15942,7 @@ fn stub_client_for_provider(provider: &str) -> (CodewhaleClient, crate::config::
         // OpenAI Codex (ChatGPT backend). Exercises the faster-lane reasoning
         // rule: GPT-5.5 children stay on GPT-5.5 and resolve Low reasoning.
         "openai-codex" => {
-            providers.openai_codex = crate::config::ProviderConfig {
+            providers.openai_codex = codewhale_runtime::config::ProviderConfig {
                 api_key: Some("test-key".to_string()),
                 ..Default::default()
             };
@@ -15922,21 +15952,25 @@ fn stub_client_for_provider(provider: &str) -> (CodewhaleClient, crate::config::
             providers.ollama.model = Some("fixture-local:tag".to_string());
         }
         "sakana" => {
-            providers.sakana = crate::config::ProviderConfig {
+            providers.sakana = codewhale_runtime::config::ProviderConfig {
                 api_key: Some("test-key".to_string()),
                 ..Default::default()
             };
         }
         other => panic!("extend stub_client_for_provider for provider {other}"),
     }
-    let mut config = crate::config::Config {
-        provider: Some(provider.to_string()),
-        providers: Some(providers),
-        ..crate::config::Config::default()
+    let mut config = {
+        let __cw_config_init_10_0 = Some(provider.to_string());
+        let __cw_config_init_10_1 = Some(providers);
+        let mut __cw_config_init_10_value: codewhale_runtime::config::Config =
+            codewhale_runtime::config::Config::default();
+        __cw_config_init_10_value.provider = __cw_config_init_10_0;
+        __cw_config_init_10_value.providers = __cw_config_init_10_1;
+        __cw_config_init_10_value
     }
     .with_legacy_root(Some("test-key".to_string()), None);
     if provider == "openai-codex" {
-        crate::oauth::install_test_chatgpt_registration(&mut config)
+        codewhale_runtime::oauth::install_test_chatgpt_registration(&mut config)
             .expect("owned official ChatGPT fixture grant");
     }
     (
@@ -15947,10 +15981,8 @@ fn stub_client_for_provider(provider: &str) -> (CodewhaleClient, crate::config::
 
 fn stub_client() -> CodewhaleClient {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let config = crate::config::Config {
-        ..crate::config::Config::default()
-    }
-    .with_legacy_root(Some("test-key".to_string()), None);
+    let config = codewhale_runtime::config::Config::default()
+        .with_legacy_root(Some("test-key".to_string()), None);
     CodewhaleClient::new(&config).expect("stub client should construct")
 }
 
@@ -15964,23 +15996,27 @@ fn stub_client() -> CodewhaleClient {
 /// exactly as the engine wires it via `with_api_config`.
 fn cross_provider_runtime() -> SubAgentRuntime {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let providers = crate::config::ProvidersConfig {
-        deepseek: crate::config::ProviderConfig {
+    let providers = codewhale_runtime::config::ProvidersConfig {
+        deepseek: codewhale_runtime::config::ProviderConfig {
             api_key: Some("session-key".to_string()),
             base_url: Some("https://session-provider.example.com/v1".to_string()),
             ..Default::default()
         },
-        zai: crate::config::ProviderConfig {
+        zai: codewhale_runtime::config::ProviderConfig {
             api_key: Some("pinned-key".to_string()),
             base_url: Some("https://pinned-provider.example.com/v1".to_string()),
             ..Default::default()
         },
-        ..crate::config::ProvidersConfig::default()
+        ..codewhale_runtime::config::ProvidersConfig::default()
     };
-    let config = crate::config::Config {
-        provider: Some("deepseek".to_string()),
-        providers: Some(providers),
-        ..crate::config::Config::default()
+    let config = {
+        let __cw_config_init_12_0 = Some("deepseek".to_string());
+        let __cw_config_init_12_1 = Some(providers);
+        let mut __cw_config_init_12_value: codewhale_runtime::config::Config =
+            codewhale_runtime::config::Config::default();
+        __cw_config_init_12_value.provider = __cw_config_init_12_0;
+        __cw_config_init_12_value.providers = __cw_config_init_12_1;
+        __cw_config_init_12_value
     };
     let client = CodewhaleClient::new(&config).expect("session client builds");
     let mut runtime = stub_runtime().with_api_config(config);
@@ -15993,7 +16029,7 @@ fn spawn_child_runtime_inherits_session_client_and_config() {
     let runtime = cross_provider_runtime();
     assert_eq!(
         runtime.client.api_provider(),
-        crate::config::ProviderKind::Deepseek,
+        codewhale_config::ProviderKind::Deepseek,
         "precondition: session is on DeepSeek"
     );
 
@@ -16002,7 +16038,7 @@ fn spawn_child_runtime_inherits_session_client_and_config() {
     for child in [runtime.child_runtime(), runtime.background_runtime()] {
         assert_eq!(
             child.client.api_provider(),
-            crate::config::ProviderKind::Deepseek
+            codewhale_config::ProviderKind::Deepseek
         );
         assert!(
             child
@@ -17033,8 +17069,11 @@ async fn cancellation_wins_task_race_but_still_fans_in_exactly_once() {
 
 /// Call 1 answers with a tool call (so the child banks a real step);
 /// every later call fails with a non-retryable 400.
-async fn tool_call_then_invalid_request_chat_client()
--> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+async fn tool_call_then_invalid_request_chat_client() -> (
+    CodewhaleClient,
+    Arc<AtomicUsize>,
+    codewhale_runtime::config::Config,
+) {
     let calls = Arc::new(AtomicUsize::new(0));
     let app = Router::new().route(
         "/{*path}",
@@ -17098,8 +17137,8 @@ async fn tool_call_then_invalid_request_chat_client()
         axum::serve(listener, app).await.ok();
     });
 
-    let config = crate::config::Config {
-        retry: Some(crate::config::RetryConfig {
+    let config = {
+        let __cw_config_init_13_0 = Some(codewhale_runtime::config::RetryConfig {
             enabled: Some(false),
             max_retries: Some(0),
             initial_delay: Some(0.0),
@@ -17108,8 +17147,11 @@ async fn tool_call_then_invalid_request_chat_client()
             jitter: None,
             jitter_factor: None,
             respect_retry_after: None,
-        }),
-        ..crate::config::Config::default()
+        });
+        let mut __cw_config_init_13_value: codewhale_runtime::config::Config =
+            codewhale_runtime::config::Config::default();
+        __cw_config_init_13_value.retry = __cw_config_init_13_0;
+        __cw_config_init_13_value
     }
     .with_legacy_root(
         Some("test-key".to_string()),
@@ -17296,8 +17338,11 @@ async fn fatal_provider_failure_mid_run_parks_a_continuable_checkpoint() {
 /// Six responses re-issuing the same role-denied call, then a text report —
 /// the exact stall #6015 guards: three denied rounds trigger the strategy
 /// switch, three held rounds the report-only response.
-async fn denied_call_then_report_chat_client()
--> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+async fn denied_call_then_report_chat_client() -> (
+    CodewhaleClient,
+    Arc<AtomicUsize>,
+    codewhale_runtime::config::Config,
+) {
     let calls = Arc::new(AtomicUsize::new(0));
     let app = Router::new().route(
         "/{*path}",
@@ -17373,8 +17418,8 @@ async fn denied_call_then_report_chat_client()
         axum::serve(listener, app).await.ok();
     });
 
-    let config = crate::config::Config {
-        retry: Some(crate::config::RetryConfig {
+    let config = {
+        let __cw_config_init_14_0 = Some(codewhale_runtime::config::RetryConfig {
             enabled: Some(false),
             max_retries: Some(0),
             initial_delay: Some(0.0),
@@ -17383,8 +17428,11 @@ async fn denied_call_then_report_chat_client()
             jitter: None,
             jitter_factor: None,
             respect_retry_after: None,
-        }),
-        ..crate::config::Config::default()
+        });
+        let mut __cw_config_init_14_value: codewhale_runtime::config::Config =
+            codewhale_runtime::config::Config::default();
+        __cw_config_init_14_value.retry = __cw_config_init_14_0;
+        __cw_config_init_14_value
     }
     .with_legacy_root(
         Some("test-key".to_string()),
@@ -17785,7 +17833,9 @@ fn subagent_runtime_default_step_api_timeout_matches_config_default() {
     assert_eq!(runtime.step_api_timeout, DEFAULT_STEP_API_TIMEOUT);
     assert_eq!(
         DEFAULT_STEP_API_TIMEOUT,
-        std::time::Duration::from_secs(crate::config::DEFAULT_SUBAGENT_API_TIMEOUT_SECS)
+        std::time::Duration::from_secs(
+            codewhale_runtime::config::DEFAULT_SUBAGENT_API_TIMEOUT_SECS
+        )
     );
     assert_eq!(
         DEFAULT_STEP_API_TIMEOUT,
@@ -17988,7 +18038,10 @@ fn inherit_route_remaps_stale_deepseek_model_for_sakana_provider() {
 
     let validated = ensure_subagent_model_for_provider(&runtime, &route.model_route, route.model)
         .expect("inherit should remap to operator route");
-    assert_eq!(validated, crate::config::DEFAULT_SAKANA_MODEL);
+    assert_eq!(
+        validated,
+        codewhale_config::descriptors::defaults::DEFAULT_SAKANA_MODEL
+    );
     assert!(
         !validated.contains("deepseek"),
         "Sakana inherit must not keep DeepSeek ids: {validated}"
@@ -18008,7 +18061,10 @@ fn faster_route_remaps_stale_deepseek_model_for_sakana_provider() {
     );
     let validated = ensure_subagent_model_for_provider(&runtime, &route.model_route, route.model)
         .expect("faster should remap to operator route");
-    assert_eq!(validated, crate::config::DEFAULT_SAKANA_MODEL);
+    assert_eq!(
+        validated,
+        codewhale_config::descriptors::defaults::DEFAULT_SAKANA_MODEL
+    );
 }
 
 #[test]
@@ -18031,7 +18087,7 @@ fn normalize_requested_subagent_model_rejects_cross_namespace_for_sakana() {
     let err = normalize_requested_subagent_model(
         "deepseek-v4-flash",
         "model",
-        crate::config::ProviderKind::Sakana,
+        codewhale_config::ProviderKind::Sakana,
     )
     .expect_err("Sakana must reject DeepSeek-only model ids at spawn");
     assert!(
@@ -18172,10 +18228,10 @@ fn operator_model_for_subagent_enumerates_from_catalog_facade() {
     runtime.model = "definitely-not-a-real-model".to_string();
 
     let provider = runtime.client.api_provider();
-    assert_eq!(provider, crate::config::ProviderKind::Deepseek);
+    assert_eq!(provider, codewhale_config::ProviderKind::Deepseek);
     // Sanity: the strict provider really does reject the invalid id, so
     // operator_model_for_subagent must take the enumeration branch.
-    assert!(crate::config::validate_route(provider, &runtime.model).is_err());
+    assert!(codewhale_runtime::config::validate_route(provider, &runtime.model).is_err());
 
     let facade = crate::provider_lake::all_catalog_models_for_provider(provider);
     assert!(
@@ -18196,7 +18252,7 @@ fn operator_model_for_subagent_enumerates_from_catalog_facade() {
     // id it accepted before the migration (facade ⊇ legacy for this provider).
     let facade_lower: std::collections::BTreeSet<String> =
         facade.iter().map(|m| m.to_ascii_lowercase()).collect();
-    for legacy in crate::config::model_completion_names_for_provider(provider) {
+    for legacy in codewhale_runtime::config::model_completion_names_for_provider(provider) {
         assert!(
             facade_lower.contains(&legacy.to_ascii_lowercase()),
             "catalog facade dropped legacy model {legacy:?} for {provider:?}"
@@ -18210,7 +18266,7 @@ fn normalize_requested_subagent_model_is_provider_aware() {
         normalize_requested_subagent_model(
             "kimi-k2.5",
             "model",
-            crate::config::ProviderKind::Moonshot
+            codewhale_config::ProviderKind::Moonshot
         )
         .expect("Moonshot accepts its own ids"),
         "kimi-k2.5"
@@ -18219,7 +18275,7 @@ fn normalize_requested_subagent_model_is_provider_aware() {
         normalize_requested_subagent_model(
             "qwen3:32b",
             "model",
-            crate::config::ProviderKind::Ollama
+            codewhale_config::ProviderKind::Ollama
         )
         .expect("Ollama tags pass through"),
         "qwen3:32b"
@@ -18228,7 +18284,7 @@ fn normalize_requested_subagent_model_is_provider_aware() {
         normalize_requested_subagent_model(
             "kimi-k2.5",
             "model",
-            crate::config::ProviderKind::Deepseek
+            codewhale_config::ProviderKind::Deepseek
         )
         .is_err(),
         "official DeepSeek API rejects foreign ids"
@@ -18755,7 +18811,11 @@ async fn token_heavy_chat_client(
     prompt_tokens: u64,
     completion_tokens: u64,
     response_text: &str,
-) -> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+) -> (
+    CodewhaleClient,
+    Arc<AtomicUsize>,
+    codewhale_runtime::config::Config,
+) {
     let calls = Arc::new(AtomicUsize::new(0));
     let response_text = response_text.to_string();
     let app = Router::new().route(
@@ -18801,10 +18861,7 @@ async fn token_heavy_chat_client(
         let _ = axum::serve(listener, app).await;
     });
 
-    let config = crate::config::Config {
-        ..crate::config::Config::default()
-    }
-    .with_legacy_root(
+    let config = codewhale_runtime::config::Config::default().with_legacy_root(
         Some("test-key".to_string()),
         Some(format!("http://{addr}/v1")),
     );
@@ -18817,7 +18874,11 @@ async fn token_heavy_chat_client(
 /// allowed to retry, completes normally.
 async fn incomplete_then_complete_chat_client(
     first_stop_reason: &str,
-) -> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+) -> (
+    CodewhaleClient,
+    Arc<AtomicUsize>,
+    codewhale_runtime::config::Config,
+) {
     let calls = Arc::new(AtomicUsize::new(0));
     let first_stop_reason = first_stop_reason.to_string();
     let app = Router::new().route(
@@ -18879,10 +18940,7 @@ async fn incomplete_then_complete_chat_client(
         let _ = axum::serve(listener, app).await;
     });
 
-    let config = crate::config::Config {
-        ..crate::config::Config::default()
-    }
-    .with_legacy_root(
+    let config = codewhale_runtime::config::Config::default().with_legacy_root(
         Some("test-key".to_string()),
         Some(format!("http://{addr}/v1")),
     );
@@ -19175,7 +19233,7 @@ async fn spawn_budget_capped_worker_with_pause(
         _foreground_child_registration: None,
     };
     if let Some(pause) = pause {
-        crate::retry_status::note_rate_limit(&runtime.client.rate_limit_scope(), pause);
+        codewhale_runtime::retry_status::note_rate_limit(&runtime.client.rate_limit_scope(), pause);
     }
     let task_handle = tokio::spawn(run_subagent_task(task));
     (manager, agent_id, calls, task_handle)
@@ -19222,7 +19280,7 @@ async fn compacting_child_chat_client(
     Arc<AtomicUsize>,
     Arc<AtomicUsize>,
     Arc<AtomicBool>,
-    crate::config::Config,
+    codewhale_runtime::config::Config,
 ) {
     let calls = Arc::new(AtomicUsize::new(0));
     let summaries = Arc::new(AtomicUsize::new(0));
@@ -19264,7 +19322,7 @@ async fn compacting_child_chat_client(
                         }));
                     } else if summaries.load(Ordering::SeqCst) > 0 {
                         saw_checkpoint.store(
-                            wire.contains(crate::compaction::COMPACTION_SUMMARY_MARKER),
+                            wire.contains(codewhale_models::turn_classify::COMPACTION_SUMMARY_MARKER),
                             Ordering::SeqCst,
                         );
                         json!({ "role": "assistant", "content": "done after compaction" })
@@ -19311,10 +19369,7 @@ async fn compacting_child_chat_client(
         let _ = axum::serve(listener, app).await;
     });
 
-    let config = crate::config::Config {
-        ..crate::config::Config::default()
-    }
-    .with_legacy_root(
+    let config = codewhale_runtime::config::Config::default().with_legacy_root(
         Some("test-key".to_string()),
         Some(format!("http://{addr}/v1")),
     );
@@ -19428,7 +19483,7 @@ async fn worker_compacts_past_its_context_window_and_keeps_working() {
         load_subagent_transcript_artifact(&state_root, &agent_id).expect("transcript loads");
     let checkpoint_at = transcript
         .iter()
-        .position(crate::compaction::is_wire_compaction_checkpoint_message)
+        .position(codewhale_models::turn_classify::is_wire_compaction_checkpoint_message)
         .expect("checkpoint recorded");
     assert!(checkpoint_at >= 7, "replaced history kept before it");
     assert!(
@@ -19445,7 +19500,7 @@ struct ClearRateLimitOnDrop;
 
 impl Drop for ClearRateLimitOnDrop {
     fn drop(&mut self) {
-        crate::retry_status::clear_rate_limit();
+        codewhale_runtime::retry_status::clear_rate_limit();
     }
 }
 
@@ -19459,7 +19514,7 @@ async fn worker_is_not_stranded_by_transient_global_rate_limit_window() {
     // re-checking, blowing the 5s timeouts in the budget tests above. The
     // pause must be re-polled so an already-cleared window releases
     // in-flight requests promptly.
-    let _guard = crate::retry_status::test_guard();
+    let _guard = codewhale_runtime::retry_status::test_guard();
     let _clear = ClearRateLimitOnDrop;
 
     let tmp = tempdir().expect("tempdir");
@@ -19477,7 +19532,7 @@ async fn worker_is_not_stranded_by_transient_global_rate_limit_window() {
     // after the worker's first request has already observed it.
     tokio::spawn(async {
         tokio::time::sleep(Duration::from_millis(250)).await;
-        crate::retry_status::clear_rate_limit();
+        codewhale_runtime::retry_status::clear_rate_limit();
     });
 
     tokio::time::timeout(Duration::from_secs(5), task_handle)
@@ -19893,7 +19948,7 @@ fn subagent_tool_results_spill_to_disk_and_stay_bounded_inline() {
         assert!(!inline.contains(crate::tools::truncate::SPILLOVER_PREVIEW_HINT));
         assert!(inline.contains("of output omitted"));
         assert!(inline.contains("full output at"));
-        assert!(inline.contains(crate::tools::truncate::SPILLOVER_RECOVERY_HINT));
+        assert!(inline.contains(codewhale_tools::names::SPILLOVER_RECOVERY_HINT));
         assert!(inline.contains("\n…\n"));
         assert!(inline.contains(&crate::artifacts::format_artifact_relative_path(&path)));
         assert!(!inline.contains("Exact evidence retained"));
@@ -19927,7 +19982,7 @@ fn subagent_tool_results_spill_to_disk_and_stay_bounded_inline() {
         assert!(spilled.is_some());
         assert!(bounded_err.len() <= 42 * 1024);
         assert!(bounded_err.contains("of output omitted"));
-        assert!(bounded_err.contains(crate::tools::truncate::SPILLOVER_RECOVERY_HINT));
+        assert!(bounded_err.contains(codewhale_tools::names::SPILLOVER_RECOVERY_HINT));
         assert!(!bounded_err.contains("Exact evidence retained"));
         assert!(
             bounded_err.contains("retrieve_tool_result"),
@@ -20897,7 +20952,7 @@ async fn tracked_running_background_shell_keeps_its_owner_off_the_heartbeat_reap
     // Keep the platform sleep spelling local to this test rather than
     // exporting a helper out of the shell test module.
     let sleep_command = {
-        let dispatcher = crate::shell_dispatcher::global_dispatcher();
+        let dispatcher = codewhale_sandbox::shell_dispatcher::global_dispatcher();
         if dispatcher.kind().is_powershell() {
             "Start-Sleep -Seconds 60".to_string()
         } else if cfg!(windows) {
@@ -21078,9 +21133,9 @@ async fn child_work_state_publishes_only_real_changes_from_its_own_list() {
 #[test]
 fn an_exact_member_with_tools_false_gets_no_model_tools_at_all() {
     let tmp = tempdir().expect("tempdir");
-    let authority = crate::fleet::role::ChildAuthority::clamp(
-        codewhale_workflow::PermissionCeiling::ROUTER,
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+    let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
+        codewhale_protocol::fleet::PermissionCeiling::ROUTER,
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     assert_eq!(authority.allowed_tools.as_deref(), Some(&[] as &[String]));
 
@@ -21116,9 +21171,9 @@ fn an_exact_member_with_tools_false_gets_no_model_tools_at_all() {
 #[tokio::test]
 async fn an_exact_member_without_a_network_tool_really_loses_the_network_surface() {
     let tmp = tempdir().expect("tempdir");
-    let authority = crate::fleet::role::ChildAuthority::clamp(
-        codewhale_workflow::PermissionCeiling::preset("read_write").expect("preset"),
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+    let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
+        codewhale_protocol::fleet::PermissionCeiling::preset("read_write").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     assert!(authority.ceiling.tools);
     assert!(!authority.ceiling.network_tool);
@@ -21297,14 +21352,15 @@ async fn read_only_web_evidence_keeps_the_parent_approval_gate() {
 #[tokio::test]
 async fn a_read_only_inspection_member_gets_only_bounded_web_search() {
     let tmp = tempdir().expect("tempdir");
-    let parent = codewhale_workflow::PermissionCeiling {
+    let parent = codewhale_protocol::fleet::PermissionCeiling {
         write: true,
         network_tool: false,
-        shell: codewhale_workflow::ShellCeiling::Full,
-        delegation_depth: codewhale_config::DEFAULT_SPAWN_DEPTH,
+        shell: codewhale_protocol::fleet::ShellCeiling::Full,
+        delegation_depth: codewhale_protocol::fleet::DEFAULT_SPAWN_DEPTH,
         tools: true,
     };
-    let authority = crate::fleet::role::ChildAuthority::from_runtime_role("scout", parent);
+    let authority =
+        codewhale_agent_contract::role::ChildAuthority::from_runtime_role("scout", parent);
     assert_eq!(authority.posture_role, "explore");
     assert!(!authority.ceiling.network_tool);
 
@@ -21369,9 +21425,9 @@ async fn a_read_only_inspection_member_gets_only_bounded_web_search() {
     );
 
     // A Runtime builder under a full parent keeps the whole family.
-    let full_authority = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let full_authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "builder",
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     assert!(full_authority.ceiling.network_tool);
     assert!(full_authority.disallowed_tools.is_empty());
@@ -21412,9 +21468,9 @@ async fn a_read_only_inspection_member_gets_only_bounded_web_search() {
 #[test]
 fn the_unified_rlm_action_cannot_bypass_a_denied_alias() {
     let tmp = tempdir().expect("tempdir");
-    let authority = crate::fleet::role::ChildAuthority::clamp(
-        codewhale_workflow::PermissionCeiling::preset("read_write").expect("preset"),
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+    let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
+        codewhale_protocol::fleet::PermissionCeiling::preset("read_write").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     assert!(!authority.ceiling.network_tool);
 
@@ -21657,15 +21713,15 @@ fn a_shell_capable_read_only_member_keeps_test_selection_arguments() {
 #[tokio::test]
 async fn a_parent_read_only_session_narrows_a_full_exact_member_in_the_child_registry() {
     let tmp = tempdir().expect("tempdir");
-    let session = codewhale_workflow::PermissionCeiling {
+    let session = codewhale_protocol::fleet::PermissionCeiling {
         write: false,
         network_tool: false,
-        shell: codewhale_workflow::ShellCeiling::ReadOnly,
+        shell: codewhale_protocol::fleet::ShellCeiling::ReadOnly,
         delegation_depth: 0,
         tools: true,
     };
-    let authority = crate::fleet::role::ChildAuthority::clamp(
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+    let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
         session,
     );
     assert!(!authority.ceiling.write);
@@ -21749,7 +21805,7 @@ fn the_session_ceiling_reflects_the_live_parent_posture() {
     no_shell.allow_shell = false;
     assert_ne!(
         super::session_permission_ceiling(&no_shell).shell,
-        codewhale_workflow::ShellCeiling::Full
+        codewhale_protocol::fleet::ShellCeiling::Full
     );
 }
 
@@ -21772,9 +21828,9 @@ fn the_session_ceiling_reflects_the_live_parent_posture() {
 /// The child registry a Runtime verifier under a full parent actually runs with.
 fn read_only_with_shell_registry() -> (tempfile::TempDir, ChildCoreProbe) {
     let tmp = tempdir().expect("tempdir");
-    let authority = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "verifier",
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     assert!(
         !authority.ceiling.write,
@@ -21782,7 +21838,7 @@ fn read_only_with_shell_registry() -> (tempfile::TempDir, ChildCoreProbe) {
     );
     assert_eq!(
         authority.ceiling.shell,
-        codewhale_workflow::ShellCeiling::Full,
+        codewhale_protocol::fleet::ShellCeiling::Full,
         "…that nonetheless kept `shell = full` so it can run checks"
     );
 
@@ -21832,7 +21888,7 @@ fn shell_denial_from_parent_is_not_a_read_only_role_exception() {
             if explicit_rule.is_some() {
                 assert_eq!(
                     registry.grant.shell,
-                    crate::worker_profile::ShellGrant::None
+                    codewhale_agent_contract::worker_profile::ShellGrant::None
                 );
                 assert!(!registry.is_tool_allowed("bash"));
             }
@@ -22072,9 +22128,9 @@ fn bounded_read_only_and_verification_paths_survive_the_ceiling() {
 #[test]
 fn a_write_capable_member_keeps_every_execution_gate() {
     let tmp = tempdir().expect("tempdir");
-    let authority = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "builder",
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     assert!(authority.ceiling.write);
 
@@ -22112,7 +22168,7 @@ fn a_write_capable_member_keeps_every_execution_gate() {
 /// canonical name is simply a second spelling that nothing checks.
 #[test]
 fn the_durable_work_families_resolve_their_actions_through_the_policy_seam() {
-    use crate::tools::canonical_action::canonical_action_alias;
+    use codewhale_execpolicy::canonical_action::canonical_action_alias;
 
     for (family, action, alias) in [
         ("tasks", "gate_run", "task_gate_run"),
@@ -22148,9 +22204,9 @@ fn the_durable_work_families_resolve_their_actions_through_the_policy_seam() {
 /// Legacy opt-out inputs cannot relax role or operator ceilings.
 #[test]
 fn posture_denials_survive_a_child_that_declines_to_inherit() {
-    let authority = crate::fleet::role::ChildAuthority::clamp(
-        codewhale_workflow::PermissionCeiling::preset("read_write").expect("preset"),
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+    let authority = codewhale_agent_contract::role::ChildAuthority::clamp(
+        codewhale_protocol::fleet::PermissionCeiling::preset("read_write").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     assert!(!authority.ceiling.network_tool);
 
@@ -22183,12 +22239,12 @@ fn posture_denials_survive_a_child_that_declines_to_inherit() {
         "operator rules also remain a ceiling; got {child:?}"
     );
     assert!(
-        !crate::fleet::role::is_posture_denial("some_session_preference"),
+        !codewhale_agent_contract::role::is_posture_denial("some_session_preference"),
         "only ceiling-derived rules are sealed"
     );
-    for name in crate::fleet::role::NON_SHELL_EXECUTION_DENYLIST {
+    for name in codewhale_agent_contract::role::NON_SHELL_EXECUTION_DENYLIST {
         assert!(
-            crate::fleet::role::is_posture_denial(name),
+            codewhale_agent_contract::role::is_posture_denial(name),
             "{name} is installed by a ceiling and must be sealed"
         );
     }
@@ -22201,9 +22257,10 @@ fn posture_denials_survive_a_child_that_declines_to_inherit() {
 /// proves nothing.
 #[test]
 fn the_authority_fingerprint_distinguishes_every_envelope_it_names() {
-    let session = codewhale_workflow::PermissionCeiling::preset("full").expect("preset");
+    let session = codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset");
     let fingerprint = |role: &str| {
-        crate::fleet::role::ChildAuthority::from_runtime_role(role, session).fingerprint()
+        codewhale_agent_contract::role::ChildAuthority::from_runtime_role(role, session)
+            .fingerprint()
     };
 
     let mut seen = HashSet::new();
@@ -22227,9 +22284,9 @@ fn the_authority_fingerprint_distinguishes_every_envelope_it_names() {
     assert_eq!(fingerprint("verifier"), fingerprint("verifier"));
     // The parent posture is part of it: the same Runtime role under a narrower
     // parent is a different envelope.
-    let narrow = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let narrow = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "builder",
-        codewhale_workflow::PermissionCeiling::preset("read_only").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("read_only").expect("preset"),
     );
     assert_ne!(narrow.fingerprint(), fingerprint("builder"));
 }
@@ -22239,9 +22296,9 @@ fn the_authority_fingerprint_distinguishes_every_envelope_it_names() {
 /// is not enforced authority.
 #[test]
 fn the_spawn_boundary_fails_closed_on_a_missing_or_mismatched_authority() {
-    let authority = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "verifier",
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     let fingerprint = authority.fingerprint();
 
@@ -22301,9 +22358,9 @@ fn the_spawn_boundary_fails_closed_on_a_missing_or_mismatched_authority() {
 /// and that fingerprint is what the spawn boundary accepts.
 #[test]
 fn the_launched_authority_is_the_one_the_spawn_boundary_accepts() {
-    let authority = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let authority = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "auditor",
-        codewhale_workflow::PermissionCeiling::preset("analyst").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("analyst").expect("preset"),
     );
     // A free-form Fleet identity is undeclared, so it now fails closed to the
     // read-only `explore` posture rather than inheriting write-capable
@@ -22323,9 +22380,9 @@ fn the_launched_authority_is_the_one_the_spawn_boundary_accepts() {
         .expect("the launched envelope must satisfy its own receipt");
 
     // A different member's envelope must not satisfy it.
-    let other = crate::fleet::role::ChildAuthority::from_runtime_role(
+    let other = codewhale_agent_contract::role::ChildAuthority::from_runtime_role(
         "builder",
-        codewhale_workflow::PermissionCeiling::preset("full").expect("preset"),
+        codewhale_protocol::fleet::PermissionCeiling::preset("full").expect("preset"),
     );
     assert!(
         verify_fleet_authority_input(&other.fingerprint(), &input).is_err(),
@@ -22605,6 +22662,7 @@ async fn runtime_surface_hardening_resume_from_requires_descendant_control() {
         false,
         None,
         None,
+        None,
     )
     .await
     .expect_err("a sibling is not a continuation source");
@@ -22614,7 +22672,7 @@ async fn runtime_surface_hardening_resume_from_requires_descendant_control() {
     );
 
     runtime.parent_agent_id = None;
-    let err = spawn_subagent_from_input(input, manager.clone(), runtime, false, None, None)
+    let err = spawn_subagent_from_input(input, manager.clone(), runtime, false, None, None, None)
         .await
         .expect_err("root still observes the workspace boundary");
     assert!(err.to_string().contains("different workspace"), "{err}");
@@ -23480,22 +23538,25 @@ async fn parked_followup_executes_on_the_saved_cross_provider_route() {
     // hermetic. No code path can reach a real provider: the broken path fails
     // at model resolution before any request, and the fixed path only ever
     // builds the zai client.
-    let providers = crate::config::ProvidersConfig {
-        deepseek: crate::config::ProviderConfig {
+    let providers = codewhale_runtime::config::ProvidersConfig {
+        deepseek: codewhale_runtime::config::ProviderConfig {
             api_key: Some("session-key".to_string()),
             ..Default::default()
         },
-        zai: crate::config::ProviderConfig {
+        zai: codewhale_runtime::config::ProviderConfig {
             api_key: Some("pinned-key".to_string()),
             base_url: Some(format!("http://{addr}/v1")),
             ..Default::default()
         },
         ..Default::default()
     };
-    let config = crate::config::Config {
-        provider: Some("deepseek".to_string()),
-        providers: Some(providers),
-        ..Default::default()
+    let config = {
+        let __cw_config_init_18_0 = Some("deepseek".to_string());
+        let __cw_config_init_18_1 = Some(providers);
+        let mut __cw_config_init_18_value: codewhale_runtime::config::Config = Default::default();
+        __cw_config_init_18_value.provider = __cw_config_init_18_0;
+        __cw_config_init_18_value.providers = __cw_config_init_18_1;
+        __cw_config_init_18_value
     };
     let mut runtime = stub_runtime().with_api_config(config.clone());
     runtime.client = CodewhaleClient::new(&config).expect("session client builds");
@@ -24106,6 +24167,7 @@ async fn refuse_worktree_spawn_and_expect_cleanup(repo: &tempfile::TempDir, bran
         false,
         None,
         None,
+        None,
     )
     .await
     .expect_err("a running resume source refuses the spawn");
@@ -24170,7 +24232,7 @@ mod child_permission_gate {
         approval_mode: ApprovalMode,
         auto_approve: bool,
         parent_can_prompt: bool,
-        client: Option<(CodewhaleClient, crate::config::Config)>,
+        client: Option<(CodewhaleClient, codewhale_runtime::config::Config)>,
     ) -> (
         ChildCoreProbe,
         tokio::sync::mpsc::Receiver<Event>,
@@ -24189,7 +24251,7 @@ mod child_permission_gate {
         approval_mode: ApprovalMode,
         auto_approve: bool,
         parent_can_prompt: bool,
-        client: Option<(CodewhaleClient, crate::config::Config)>,
+        client: Option<(CodewhaleClient, codewhale_runtime::config::Config)>,
         live_posture: Option<crate::core::engine::LivePosture>,
     ) -> (
         ChildCoreProbe,
@@ -24314,7 +24376,7 @@ mod child_permission_gate {
         finish_reason: &str,
     ) -> (
         wiremock::MockServer,
-        (CodewhaleClient, crate::config::Config),
+        (CodewhaleClient, codewhale_runtime::config::Config),
     ) {
         use wiremock::matchers::method;
         use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -24334,10 +24396,8 @@ mod child_permission_gate {
             })))
             .mount(&server)
             .await;
-        let config = crate::config::Config {
-            ..crate::config::Config::default()
-        }
-        .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
+        let config = codewhale_runtime::config::Config::default()
+            .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
         let client = CodewhaleClient::new(&config).expect("mock-backed client");
         (server, (client, config))
     }
@@ -24346,7 +24406,7 @@ mod child_permission_gate {
         content: &str,
     ) -> (
         wiremock::MockServer,
-        (CodewhaleClient, crate::config::Config),
+        (CodewhaleClient, codewhale_runtime::config::Config),
     ) {
         guardian_mock_with_stop(content, "stop").await
     }
@@ -24355,7 +24415,7 @@ mod child_permission_gate {
         content: &str,
     ) -> (
         wiremock::MockServer,
-        (CodewhaleClient, crate::config::Config),
+        (CodewhaleClient, codewhale_runtime::config::Config),
     ) {
         use wiremock::matchers::method;
         use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -24374,20 +24434,15 @@ mod child_permission_gate {
             })))
             .mount(&server)
             .await;
-        let config = crate::config::Config {
-            ..crate::config::Config::default()
-        }
-        .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
+        let config = codewhale_runtime::config::Config::default()
+            .with_legacy_root(Some("test-key".to_string()), Some(server.uri()));
         let client = CodewhaleClient::new(&config).expect("mock-backed client");
         (server, (client, config))
     }
 
-    fn unreachable_client() -> (CodewhaleClient, crate::config::Config) {
+    fn unreachable_client() -> (CodewhaleClient, codewhale_runtime::config::Config) {
         let _ = rustls::crypto::ring::default_provider().install_default();
-        let config = crate::config::Config {
-            ..crate::config::Config::default()
-        }
-        .with_legacy_root(
+        let config = codewhale_runtime::config::Config::default().with_legacy_root(
             Some("test-key".to_string()),
             Some("http://127.0.0.1:1".to_string()),
         );
@@ -25501,7 +25556,7 @@ mod child_permission_gate {
             })
             .mount(&server)
             .await;
-        let config = crate::config::Config::default().with_legacy_root(
+        let config = codewhale_runtime::config::Config::default().with_legacy_root(
             Some("test-guardian-fresh-key".to_string()),
             Some(server.uri()),
         );
@@ -26507,9 +26562,10 @@ fn agent_tool_description_names_only_schema_roles() {
     // sentence must be a value the `type` enum accepts; the legacy aliases
     // parse at the deserialization boundary but a strict gateway rejects
     // them against the declared enum (#5940).
-    let schema: std::collections::HashSet<&str> = crate::fleet::role::FLEET_ROLE_SCHEMA_VALUES
-        .into_iter()
-        .collect();
+    let schema: std::collections::HashSet<&str> =
+        codewhale_agent_contract::role::FLEET_ROLE_SCHEMA_VALUES
+            .into_iter()
+            .collect();
     let texts = [
         super::AGENT_TOOL_DESCRIPTION.as_str(),
         super::SUBAGENT_TYPE_DESCRIPTION,
@@ -26707,7 +26763,11 @@ mod readonly_shell_6015 {
     async fn scripted_bash_calls_client(
         commands: Vec<&'static str>,
         report: &'static str,
-    ) -> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+    ) -> (
+        CodewhaleClient,
+        Arc<AtomicUsize>,
+        codewhale_runtime::config::Config,
+    ) {
         scripted_bash_calls_with_pairing(commands, report, None).await
     }
 
@@ -26715,7 +26775,11 @@ mod readonly_shell_6015 {
         commands: Vec<&'static str>,
         report: &'static str,
         invalid_ids: Option<[&'static str; 2]>,
-    ) -> (CodewhaleClient, Arc<AtomicUsize>, crate::config::Config) {
+    ) -> (
+        CodewhaleClient,
+        Arc<AtomicUsize>,
+        codewhale_runtime::config::Config,
+    ) {
         let calls = Arc::new(AtomicUsize::new(0));
         let app = Router::new().route(
             "/{*path}",
@@ -26801,8 +26865,8 @@ mod readonly_shell_6015 {
         tokio::spawn(async move {
             axum::serve(listener, app).await.ok();
         });
-        let config = crate::config::Config {
-            retry: Some(crate::config::RetryConfig {
+        let config = {
+            let __cw_config_init_22_0 = Some(codewhale_runtime::config::RetryConfig {
                 enabled: Some(false),
                 max_retries: Some(0),
                 initial_delay: Some(0.0),
@@ -26811,8 +26875,11 @@ mod readonly_shell_6015 {
                 jitter: None,
                 jitter_factor: None,
                 respect_retry_after: None,
-            }),
-            ..crate::config::Config::default()
+            });
+            let mut __cw_config_init_22_value: codewhale_runtime::config::Config =
+                codewhale_runtime::config::Config::default();
+            __cw_config_init_22_value.retry = __cw_config_init_22_0;
+            __cw_config_init_22_value
         }
         .with_legacy_root(
             Some("test-key".to_string()),
@@ -26828,7 +26895,7 @@ mod readonly_shell_6015 {
     fn scout_runtime(
         workspace: &Path,
         client: CodewhaleClient,
-        config: crate::config::Config,
+        config: codewhale_runtime::config::Config,
     ) -> SubAgentRuntime {
         let mut runtime =
             stub_runtime().with_agent_tool_surface_options(enabled_agent_surface_options());
@@ -26843,7 +26910,7 @@ mod readonly_shell_6015 {
     async fn run_scout(
         workspace: &Path,
         client: CodewhaleClient,
-        config: crate::config::Config,
+        config: codewhale_runtime::config::Config,
         id: &str,
     ) -> SubAgentResult {
         let manager = Arc::new(RwLock::new(SubAgentManager::new(
@@ -27255,8 +27322,8 @@ async fn late_launch_permit_still_gets_the_full_work_budget() {
     tokio::spawn(async move {
         axum::serve(listener, app).await.ok();
     });
-    let fixture_config = crate::config::Config {
-        retry: Some(crate::config::RetryConfig {
+    let fixture_config = {
+        let __cw_config_init_23_0 = Some(codewhale_runtime::config::RetryConfig {
             enabled: Some(false),
             max_retries: Some(0),
             initial_delay: Some(0.0),
@@ -27265,8 +27332,11 @@ async fn late_launch_permit_still_gets_the_full_work_budget() {
             jitter: None,
             jitter_factor: None,
             respect_retry_after: None,
-        }),
-        ..crate::config::Config::default()
+        });
+        let mut __cw_config_init_23_value: codewhale_runtime::config::Config =
+            codewhale_runtime::config::Config::default();
+        __cw_config_init_23_value.retry = __cw_config_init_23_0;
+        __cw_config_init_23_value
     }
     .with_legacy_root(
         Some("test-key".to_string()),

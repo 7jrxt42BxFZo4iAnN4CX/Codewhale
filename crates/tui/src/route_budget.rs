@@ -1,9 +1,10 @@
 use codewhale_config::route::RouteLimits;
 
-use crate::config::{ProviderKind, provider_capability};
-use crate::context_budget::ContextBudget;
+use crate::provider_lake::provider_capability;
 use crate::reasoning_preference::ReasoningEffort;
+use codewhale_config::ProviderKind;
 use codewhale_models::{DEFAULT_COMPACTION_TOKEN_THRESHOLD, context_window_for_model};
+use codewhale_runtime::context_budget::ContextBudget;
 
 /// Safe ordinary API request cap across provider routes.
 const API_MAX_OUTPUT_TOKENS: u32 = 65_536;
@@ -97,7 +98,7 @@ const TOOL_OUTPUT_INLINE_OPT_IN_MAX_CHARS: usize = 2 * 1024 * 1024;
 pub(crate) fn route_inline_char_budget(window_tokens: Option<u32>) -> usize {
     route_inline_char_budget_with_raise(
         window_tokens,
-        crate::tools::large_output_router::WorkshopConfig::active_tool_result_max_bytes(),
+        codewhale_runtime::active_workshop::active_tool_result_max_bytes(),
     )
 }
 
@@ -296,7 +297,7 @@ fn route_declares_unknown_output_ceiling(provider: ProviderKind, model: &str) ->
         ProviderKind::Ollama | ProviderKind::Sglang | ProviderKind::Vllm => true,
         // Kimi Code membership ids publish their limits in the membership
         // catalog rather than the static model catalogue.
-        ProviderKind::Moonshot => crate::config::is_kimi_code_membership_model(model),
+        ProviderKind::Moonshot => codewhale_runtime::config::is_kimi_code_membership_model(model),
         _ => false,
     }
 }
@@ -551,7 +552,7 @@ pub(crate) fn request_output_cap_for_input(
     }
     let remaining = u64::from(route_context_window_tokens(provider, model, route_limits))
         .saturating_sub(estimated_input_tokens)
-        .saturating_sub(crate::context_budget::CONTEXT_HEADROOM_TOKENS);
+        .saturating_sub(codewhale_runtime::context_budget::CONTEXT_HEADROOM_TOKENS);
     u32::try_from(remaining.min(u64::from(ceiling)))
         .ok()
         .filter(|cap| *cap > 0)
