@@ -262,21 +262,26 @@ codewhale doctor        # diagnostics; see the note in §8 about what it does NO
 
 * Same version already installed: harmless. It prints
   `Already installed: …` and exits 0.
-* Different version already installed: it **refuses**
-  (`codewhale install: refusing to replace existing …/codewhale`), exits 1 and
-  changes nothing. It downloads the release before refusing. Use
-  [`codewhale update`](#7-updating-and-rolling-back) instead.
+* An earlier Codewhale already installed (a regular file you own that is a
+  Codewhale release binary, with or without an install receipt): the
+  installer **upgrades** it. The old `codewhale`, `codew` and receipt move to
+  `~/.codewhale/recovery/<UTC stamp>/` (kept 30 days, never left beside the
+  commands on PATH), the new release is installed with a fresh receipt, and the
+  last lines print the undo command
+  (`codewhale doctor --restore <stamp>`) and a short report of any other copies
+  on the machine (`codewhale doctor --installs --brief`).
+* A symlink, a file owned by another user, or a file that is not a Codewhale
+  binary at the destination is **refused** and left unchanged. Install into a
+  fresh directory, or set `CODEWHALE_FORCE_REINSTALL=1` to move a regular file
+  you own to the recovery folder and install anyway. A managed directory
+  (npm, Cargo, Homebrew, system paths) is always refused.
 * Not a release build, at the same version (a local `cargo build` reports
   `0.10.2 (dev)`): `codewhale update` still reinstalls the release artifact
   over it, because that build has no release provenance to preserve.
-* Deliberate replacement: `CODEWHALE_FORCE_REINSTALL=1` replaces a differing
-  `codewhale`/`codew` in the install directory and keeps each previous file
-  beside it as `<name>.bak-<utc-timestamp>`. It never replaces a symlink or a
-  non-regular file, and never replaces a file in a managed directory.
 
 ### Upgrade / uninstall
 
-* Upgrade: `codewhale update` (see §7).
+* Upgrade: automatic for this install (see §7), or `codewhale update` now.
 * Uninstall: `~/.local/bin/codewhale uninstall` previews the receipt-owned
   files; add `--yes` to remove them. See §12 for data.
 
@@ -579,7 +584,67 @@ Unless you already live in Nix, use §2 instead.
 ## 7. Updating and rolling back
 
 These work for installs from §2 and §3 (direct binaries). Package-manager
-installs (npm, Cargo, Homebrew) must be updated with their own tool.
+installs (npm, Cargo, Homebrew) must be updated with their own tool, and the
+Engine inside the Codewhale desktop app is updated by the app
+(Codewhale > Check for Updates); `codewhale update` refuses to write there.
+
+<a id="automatic-updates"></a>
+
+### Automatic updates
+
+Release-binary installs update themselves:
+
+1. When the TUI starts it checks for a newer release at most every 6 hours
+   (`[update] check_interval_hours`). Offline or rate-limited checks keep the
+   last answer and retry about an hour later, never on every launch.
+2. If one exists, it downloads and verifies it in the background
+   (`codewhale update --stage`, a separate low-impact process) into
+   `~/.codewhale/updates/staged/`. The header shows `↑ v0.10.4 ready`.
+3. The next time you start `codewhale`, before any session opens, the staged
+   binary replaces the installed one. A running session is never touched.
+   You see one line:
+   `Updated to v0.10.4 · What's new: https://codewhale.net/en/changelog/0.10.4 · Undo: codewhale update --rollback`.
+
+**Until releases are signed, an update waits for your OK.** The download is
+checksum-verified, but the checksum comes from the same place as the binary, so
+the next start asks once (`Install v0.10.4 now? [y/N]`, no unless you type y); you can also run
+`/update install` or `codewhale update`. Say no and it does not ask again for
+that version. Once a release carries a valid Ed25519 signature
+(`codewhale-artifacts-sha256.txt.sig`), it applies without asking. A build
+that has the release key compiled in refuses any release whose signature is
+missing or does not verify, both for `codewhale update` and at start, where the
+staged binary is checked again against the signed manifest. The checksum
+manifest always comes from GitHub Releases; the CNB mirror can only supply a
+binary whose SHA-256 that manifest already lists. Non-interactive
+starts never prompt and never apply an unsigned update.
+
+Turn it down or off:
+
+```bash
+codewhale config set update.mode notify   # tell me about updates, don't download
+codewhale config set update.mode off      # no update checks at all
+export CODEWHALE_UPDATE_MODE=notify       # same, per environment
+```
+
+`CODEWHALE_NO_UPDATE_CHECK=1` and CI environments also turn checks off.
+
+**Organizations** can set the mode for every user of a machine in a
+root-owned, not group/world-writable policy file that wins over user settings:
+`/Library/Application Support/Codewhale/policy.toml` (macOS),
+`/etc/codewhale/policy.toml` (Linux and macOS) or
+`%ProgramData%\Codewhale\policy.toml` (Windows):
+
+```toml
+[update]
+mode = "off"   # auto | notify | off
+```
+
+An unreadable or malformed policy file means `off`. `codewhale doctor` shows
+the mode in force and where it came from, any staged update, and the version
+kept for rollback.
+
+Package-manager and desktop-app copies never download or replace anything;
+the notice names their own command instead.
 
 ```bash
 codewhale update --check
@@ -596,9 +661,13 @@ codewhale update
 #     - /home/you/.local/bin/codew (codewhale-linux-x64)
 ```
 
-It updates `codewhale` **and** `codew` together. It took 10 s here. Run it
-again and you get `Already up to date; no download needed.` Other options:
-`--beta` and `--proxy <URL>`.
+It updates `codewhale` **and** `codew` together. If `codew` is a different
+Codewhale build than `codewhale`, the old `codew` moves to the recovery folder
+and is replaced, instead of the update refusing. An install from before
+receipts gets one (`.codewhale-install.sha256`), so `codewhale uninstall` can
+remove it later. It took 10 s here. Run it again and you get
+`Already up to date; no download needed.` Other options: `--beta` and
+`--proxy <URL>`.
 
 A build that is not a published release reports its provenance in
 `codewhale --version` (`0.10.2 (dev)` for a local build, a commit hash for a
@@ -610,8 +679,17 @@ reporting "Already up to date" forever.
 
 ### Rolling back (e.g. to v0.9.13)
 
-`codewhale update` never downgrades, and `CODEWHALE_VERSION=0.9.13 codewhale
-update` just says "Already up to date". To roll back, replace the files:
+Every update, automatic or manual, keeps the version it replaced in
+`~/.codewhale/updates/previous/`. To go back one version:
+
+```bash
+codewhale update --rollback
+#   Rolled back to v0.10.3. v0.10.4 will not be installed automatically again; the next newer release will.
+```
+
+Run it again to swap forward. `codewhale update` never downgrades, and
+`CODEWHALE_VERSION=0.9.13 codewhale update` just says "Already up to date". To
+go back further than one version, replace the files:
 
 ```bash
 dir="$(dirname "$(command -v codewhale)")"     # the install PATH actually selects
@@ -637,6 +715,66 @@ To return to the latest after an in-place rollback, run `codewhale update`.
 npm: `npm install -g codewhale@0.9.13`. Cargo:
 `cargo install codewhale-cli --version 0.9.13 --locked --force` **(untested on
 this VM: only 0.10.0 was built)**.
+
+<a id="clean-up-old-copies"></a>
+
+### Clean up old copies
+
+`codewhale doctor` has an **Installations** section, and
+`codewhale doctor --installs` prints only that (`--json` for machines,
+`--brief` for nothing on a tidy machine). It lists every `codewhale`, `codew`,
+`codewhale-tui`, `deepseek` and `deepseek-tui` in your `PATH`, `~/.local/bin`,
+`~/.cargo/bin` and beside the running binary, says which one your shell runs,
+and classifies each: receipt-owned, unreceipted Codewhale, backup, managed by a
+package manager (with that manager's exact removal command), part of the
+desktop app, or left alone (symlinks, other programs such as `codewhale-go`,
+files of other users). It never runs a file it finds; a copy whose bytes
+differ from the running one is reported as "version unknown".
+
+`codewhale doctor --fix` shows one plan and asks once (`[Y/n]`). For
+installations it can:
+
+* move old backups (`codewhale.bak-…`, `codewhale-0.8.60.bak`,
+  `codewhale.pre-v…`, `codewhale.old-<pid>`, `.codewhale-backup-*` folders and
+  similar) into `~/.codewhale/recovery/<UTC stamp>/`;
+* make an unreceipted `codew` match the `codewhale` beside it (old copy to
+  recovery) and record an install receipt for that directory.
+
+Every move prints its own undo command; `codewhale doctor --restore <stamp>`
+(or `--restore` for the newest) puts the whole folder back. Recovery folders
+are deleted by a later `doctor --fix` after 30 days, and `doctor` shows when.
+Nothing is deleted on the spot, user data (`~/.codewhale`, `~/.deepseek`) is
+never touched, and package-managed, desktop-app and foreign files are only
+reported.
+
+<a id="release-signing"></a>
+
+### Release signing (maintainers)
+
+The Engine verifies `codewhale-artifacts-sha256.txt.sig`, a base64 Ed25519
+signature over `codewhale-release-manifest-v1\n<version>\n<manifest bytes>`
+(`crates/release/src/signing.rs`). With no key configured every release reads
+as unsigned and automatic updates wait for each user's OK. One key signs both
+the CLI manifest and the desktop appcast. To turn signing on:
+
+1. Create the key offline with OpenSSL 3 and keep the private half outside
+   any repository:
+   `openssl genpkey -algorithm ed25519 -out codewhale-release-ed25519.pem`
+2. Add the PEM file's contents as the GitHub Actions secret
+   `CODEWHALE_RELEASE_SIGNING_KEY` on the Engine repository. The release
+   workflow (`release-artifacts.yml`, assemble job) then runs
+   `scripts/release/sign-release-manifest.sh` and publishes the `.sig`
+   beside the manifest; without the secret it skips signing and says so.
+3. Print the public key:
+   `CODEWHALE_RELEASE_SIGNING_KEY="$(cat codewhale-release-ed25519.pem)" scripts/release/sign-release-manifest.sh --public-key`
+   and add it to `TRUSTED_RELEASE_KEYS` in `crates/release/src/signing.rs`
+   (or set `CODEWHALE_RELEASE_PUBLIC_KEY=<hex>` when building). Add the same
+   32 bytes to the desktop app's `TRUSTED_APPCAST_KEYS`.
+4. Ship a release built with the public key first; the release after it is the
+   first one installed without asking.
+
+To rotate, add the new public key next to the old one, release, then switch
+the secret and remove the old key a release later.
 
 ---
 
@@ -888,13 +1026,13 @@ codewhale auth clear --provider deepseek
 | Cargo | `cargo uninstall codewhale-cli` (`codewhale uninstall` prints the owning `--root`) |
 | Homebrew | `brew uninstall codewhale && brew untap Hmbown/deepseek-tui` (also removes its node dependency; `codewhale uninstall` prints the owning formula) |
 
-Not sure which one you have? Run `codewhale uninstall` (no `--yes`): it names the owner of the copy you ran and the exact command that removes it, changes nothing, and lists every other `codewhale`/`codew` still on `PATH`. Run each listed copy by its full path with `uninstall` until none remain.
+Not sure which one you have? Run `codewhale doctor --installs`: it lists every copy, who owns it and the exact command that removes it, without running or changing anything. `codewhale uninstall` (no `--yes`) shows the same classified list after its own plan.
 
 The Unix installers and the Windows archive installer write `.codewhale-install.sha256` beside the commands. Uninstall accepts only existing regular, single-link files whose bytes match that receipt. On Unix, receipts, selected files and their retained parent directory must belong to the current user and must not be writable by group or others. Optional compiled-host files use their existing release receipt. All selected files pass preflight before any removal; the executing command is removed last. Modified files, symlinks, ambiguous receipts, shared writable directories, legacy unreceipted installs and unrelated files are preserved. No recursive directory removal is performed. A failed removal reports which entries were unlinked, any remaining recovery paths, and any durability failure. If the command receipt was unlinked while the executable remains, recovery republishes it only to a vacant receipt name.
 
 The command runs before configuration, credential migration and telemetry, so malformed config does not block it. It preserves data, credentials, workspaces, shell profiles, completions and services. Package-managed copies get removal guidance; custom Cargo roots with local Cargo metadata are recognized. Other command copies still on PATH are listed without running them. Refresh the shell command cache with `hash -r` and inspect the remaining entries.
 
-Successful self-update renews an existing command receipt; it does not claim ownership of old unreceipted copies or unknown siblings. This command does not remove a remote-setup service or a desktop application.
+Successful self-update renews an existing command receipt, and writes one for a pre-receipt directory whose commands it just installed; it never claims unknown siblings. This command does not remove a remote-setup service or a desktop application.
 
 On Windows, `codewhale uninstall --yes` removes `codewhale.exe`, `codew.exe`, `codewhale.bat`, any receipted compiled-host files and the receipt itself. Windows cannot delete a running program, so the running `codewhale.exe` is renamed in place to a `.codewhale-host-recovery-…` name and deleted by a helper once the command exits; the output names that file in case it remains. `codewhale.old-…` files left by an earlier self-update are listed, not deleted. Archive installs made before this receipt existed are treated as unreceipted (reinstall with the current `install.ps1`, then uninstall). Windows removal has been compile-checked but not yet exercised on a Windows host.
 
@@ -1092,8 +1230,9 @@ instructions for npm, Cargo, Homebrew, and Omarchy instead of overwriting them.
 Known system/package directories are also protected. A `CODEWHALE_INSTALL_METHOD=binary`
 override cannot bypass a recognized managed path.
 
-Create a fresh destination when `~/.local/bin` is occupied or a sibling command
-has different bytes. This leaves every existing installation in place:
+Re-running the installer upgrades an earlier Codewhale in `~/.local/bin` in
+place (old files go to the recovery folder). Create a fresh destination only
+when you want to keep every existing installation exactly as it is:
 
 ```bash
 mkdir -p "$HOME/.local"
@@ -1113,10 +1252,10 @@ only changes its own install directory, so another earlier PATH entry can still
 launch an older copy.
 
 Modern matched `codewhale`, `codew`, and compatibility copies update from the
-same verified bytes. Symlinks to the running binary are preserved. A different
-or unrelated sibling is named in the error and left untouched; no sibling is
-executed merely to guess its owner. Use the fresh-directory migration above
-for older installs with separate dispatcher/TUI binaries.
+same verified bytes. Symlinks to the running binary are preserved. A sibling
+that is a different Codewhale build is moved to the recovery folder and
+replaced; an unrelated sibling is named in the error and left untouched. No
+sibling is executed merely to guess its owner.
 
 To retain a secondary package-managed install, use its manager:
 

@@ -911,20 +911,37 @@ desktop environments:
 check_for_updates = false
 ```
 
+#### Automatic updates
+
+`mode` decides what happens when a newer release is found (release-binary
+installs only; package-manager and desktop-app copies always just notify):
+
+```toml
+[update]
+mode = "auto"    # auto (default): download in the background, apply at next start
+                 # notify: tell me only;  off: no checks
+```
+
+`codewhale config set update.mode notify` writes it. `CODEWHALE_UPDATE_MODE`
+overrides it, and an organization policy file overrides both; see
+[INSTALL.md](INSTALL.md#automatic-updates) for the full flow, signing, the
+policy file and `codewhale update --rollback`.
+
 #### Throttling
 
 The answer is cached in `~/.codewhale/update-check.json` and reused for
-`check_interval_hours` (default `1`). Only the *network request* is throttled —
+`check_interval_hours` (default `6`). Only the *network request* is throttled —
 the notice still appears on every launch while an update is outstanding. Set `0`
 to check on every launch.
 
 ```toml
 [update]
-check_interval_hours = 1
+check_interval_hours = 6
 ```
 
-A failed check is not cached, so an outage does not suppress the notice until
-the interval elapses.
+A failed check keeps the last answer (so the notice stays) and retries about an
+hour later rather than on every launch, which keeps offline and rate-limited
+machines quiet.
 
 #### Automatic suppression
 
