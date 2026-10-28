@@ -1928,8 +1928,8 @@ fn validated_patch(patch: &str, path: &str) -> Result<(), ApiError> {
             if !(seen_old && seen_new) {
                 return refuse(&format!("must start with --- a/{path} and +++ b/{path}"));
             }
-            let mut counts = range.split_whitespace().take(2).map(|side| {
-                let side = &side[1..];
+            let mut counts = range.split_whitespace().zip(['-', '+']).map(|(side, sign)| {
+                let side = side.strip_prefix(sign)?;
                 match side.split_once(',') {
                     Some((_, count)) => count.parse::<usize>().ok(),
                     None => side.parse::<usize>().ok().map(|_| 1),
