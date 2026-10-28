@@ -59,6 +59,14 @@ pub fn configured_codewhale_binary() -> String {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+        .or_else(|| {
+            let exe = std::env::current_exe().ok()?;
+            let stem = exe.file_stem()?.to_str()?;
+            let cli = matches!(stem, "codewhale" | "codew")
+                || stem.starts_with("codewhale-")
+                || stem.starts_with("codew-");
+            cli.then(|| exe.to_string_lossy().into_owned())
+        })
         .unwrap_or_else(|| "codewhale".to_string())
 }
 
