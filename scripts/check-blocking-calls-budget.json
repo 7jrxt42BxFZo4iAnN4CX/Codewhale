@@ -32,9 +32,15 @@
   "crates/config/src/config_document.rs": {
     "std_fs": 3
   },
-  "crates/config/src/lib.rs": {
-    "path_canonicalize": 3,
-    "std_fs": 9
+  "crates/config/src/config_migration.rs": {
+    "std_fs": 1
+  },
+  "crates/config/src/path_io.rs": {
+    "path_canonicalize": 2
+  },
+  "crates/config/src/state_dirs.rs": {
+    "path_canonicalize": 1,
+    "std_fs": 8
   },
   "crates/config/src/private_directory.rs": {
     "path_canonicalize": 1,

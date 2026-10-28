@@ -159,7 +159,7 @@ def presentation_provider_ids() -> set[str]:
 
 def provider_tables(config_rs: str) -> set[str]:
     struct_start = require_index(
-        config_rs, "pub struct ProvidersToml", "crates/config/src/lib.rs"
+        config_rs, "pub struct ProvidersToml", "crates/config/src/provider_toml.rs"
     )
     struct_end = require_index(config_rs, "\n}", "ProvidersToml struct", struct_start)
     fields = re.findall(
@@ -572,7 +572,7 @@ def provider_table_name(provider_id: str) -> str:
 
 def main() -> int:
     try:
-        config_rs = read(CONFIG_RS)
+        config_rs = "\n".join(read(path) for path in sorted(CONFIG_RS.parent.glob("*.rs")) if path.name != "tests.rs")
         provider_kind_rs = read(PROVIDER_KIND_RS)
         tui_config_rs = read(TUI_CONFIG_RS)
         agent_rs = read(AGENT_RS)
