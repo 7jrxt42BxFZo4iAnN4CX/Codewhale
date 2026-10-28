@@ -25,7 +25,10 @@ pub(super) async fn delete_thread(
             })
             .map(|a| format!("automation {}", a.id))
             .collect();
-        for status in [DelayedTriggerStatus::Pending, DelayedTriggerStatus::Dispatching] {
+        for status in [
+            DelayedTriggerStatus::Pending,
+            DelayedTriggerStatus::Dispatching,
+        ] {
             scheduled.extend(
                 automations
                     .list_triggers(Some(status), None)
