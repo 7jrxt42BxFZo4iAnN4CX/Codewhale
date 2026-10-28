@@ -203,13 +203,38 @@ pub struct McpServerOAuthConfig {
     pub client_metadata_url: Option<String>,
 }
 
+const PACKAGE_RUNNER_CONNECT_TIMEOUT_SECS: u64 = 120;
+
 fn default_enabled() -> bool {
     true
 }
 
 impl McpServerConfig {
     pub fn effective_connect_timeout(&self, global: &McpTimeouts) -> u64 {
-        self.connect_timeout.unwrap_or(global.connect_timeout)
+        self.connect_timeout.unwrap_or_else(|| {
+            if self.launches_package_runner() {
+                global
+                    .connect_timeout
+                    .max(PACKAGE_RUNNER_CONNECT_TIMEOUT_SECS)
+            } else {
+                global.connect_timeout
+            }
+        })
+    }
+
+    fn launches_package_runner(&self) -> bool {
+        self.url.is_none()
+            && self
+                .command
+                .as_deref()
+                .and_then(|command| std::path::Path::new(command).file_stem())
+                .and_then(|stem| stem.to_str())
+                .is_some_and(|stem| {
+                    matches!(
+                        stem.to_ascii_lowercase().as_str(),
+                        "npx" | "pnpx" | "bunx" | "uvx"
+                    )
+                })
     }
 
     pub fn effective_execute_timeout(&self, global: &McpTimeouts) -> u64 {

@@ -2077,9 +2077,20 @@ impl McpConnection {
         }
 
         // Initialize with timeout
-        tokio::time::timeout(Duration::from_secs(connect_timeout_secs), conn.initialize())
+        let connect_deadline = Duration::from_secs(connect_timeout_secs);
+        let initialize_started = std::time::Instant::now();
+        let initialized = tokio::time::timeout(connect_deadline, conn.initialize())
             .await
-            .with_context(|| format!("MCP server '{name}' initialization timed out"))??;
+            .map_err(anyhow::Error::from)
+            .and_then(|result| result);
+        if let Err(error) = initialized {
+            if initialize_started.elapsed() >= connect_deadline {
+                return Err(error.context(format!(
+                    "MCP server '{name}' didn't start within {connect_timeout_secs}s; retry with /mcp restart, or raise its connect_timeout"
+                )));
+            }
+            return Err(error);
+        }
 
         conn.discover_all()
             .await

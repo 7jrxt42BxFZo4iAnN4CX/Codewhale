@@ -719,7 +719,7 @@ Per-server settings:
 - `args` (array of strings, optional)
 - `env` (object, optional)
 - `connect_timeout`, `execute_timeout`, `read_timeout` (seconds, optional). A per-server value overrides the global `timeouts` block, and each budget is independent of the others:
-  - `connect_timeout` (default 30) covers spawn, `initialize` and the first `tools/list`, so a cold `uvx`/`npx` package download counts against it.
+  - `connect_timeout` (default 30) covers spawn, `initialize` and the first `tools/list`, so a cold `uvx`/`npx` package download counts against it. A server launched through `npx`, `pnpx`, `bunx` or `uvx` without its own `connect_timeout` gets at least 120 seconds for that first download.
   - `execute_timeout` (default 1800) is the budget for each `tools/call` and `prompts/get`. An explicit shorter value is respected, and `read_timeout` never cuts a running tool short.
   - `read_timeout` (default 120) bounds each reply wait during the handshake and tool discovery, and is the budget for `resources/read`.
   - A request that runs out of budget fails with a timeout. The connection is kept, and a reply that arrives later is discarded instead of being handed to another call. Interrupting the turn stops the wait at once, but Codewhale does not send `notifications/cancelled` yet, so a server that handles one request at a time finishes the abandoned call before it answers the next one.
