@@ -2002,9 +2002,15 @@ impl ProviderPickerView {
             let active = active_identity
                 .as_ref()
                 .is_some_and(|identity| identity.key.as_str() == row.id);
-            let configured = config.providers.as_ref().is_some_and(|providers| {
-                codewhale_config::provider_config_table!(@read providers, row.id).is_some()
-            });
+            let configured = codewhale_runtime::config::provider_is_configured(
+                row.kind,
+                false,
+                false,
+                config.providers.as_ref().and_then(
+                    |providers| codewhale_config::provider_config_table!(@read providers, row.id),
+                ),
+                false,
+            );
             if active || configured {
                 rows.push(ProviderDashboardRow::from_config_with_provider_id(
                     row.kind,
@@ -2038,10 +2044,14 @@ impl ProviderPickerView {
             .position(|row| row.is_active)
             .or_else(|| rows.iter().position(|row| row.provider == active))
             .unwrap_or(0);
-        // Default to the configured-only view (#3830); if nothing is
-        // configured yet (a fresh install), open straight on the full
-        // catalog instead of an empty list with no obvious next step.
-        let view = if rows.iter().any(|row| row.is_configured) {
+        // Default to the configured-only view (#3830); if nothing beyond an
+        // adopted local runtime is configured yet (a fresh install), open
+        // straight on the full catalog so the cloud providers are visible.
+        let view = if rows.iter().any(|row| {
+            row.is_configured
+                && row.provider.provider().credential_help().acquisition
+                    != CredentialAcquisition::LocalOptional
+        }) {
             ProviderListView::Configured
         } else {
             ProviderListView::Catalog
@@ -4897,7 +4907,7 @@ impl ModalView for ProviderPickerView {
                 // type-ahead arm so `a`/`A` always toggles instead of
                 // seeking a provider whose name starts with "a".
                 KeyCode::Char(c)
-                    if key.modifiers.is_empty()
+                    if (key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT)
                         && self.query.is_empty()
                         && c.eq_ignore_ascii_case(&'a') =>
                 {

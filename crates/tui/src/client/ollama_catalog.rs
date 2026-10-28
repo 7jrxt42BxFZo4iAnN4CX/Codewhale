@@ -224,6 +224,25 @@ pub(crate) fn probe_client() -> anyhow::Result<reqwest::Client> {
         .build()?)
 }
 
+#[cfg(not(any(test, all(feature = "test-thread-scoped-state", debug_assertions))))]
+pub(crate) const MODEL_LOAD_TIMEOUT: Duration = Duration::from_secs(60);
+
+#[cfg(not(any(test, all(feature = "test-thread-scoped-state", debug_assertions))))]
+pub(crate) async fn load_model(origin: &str, tag: &str) -> bool {
+    let Ok(client) = codewhale_release::tls::reqwest_client_builder()
+        .timeout(MODEL_LOAD_TIMEOUT)
+        .build()
+    else {
+        return false;
+    };
+    client
+        .post(format!("{origin}/api/generate"))
+        .json(&serde_json::json!({ "model": tag }))
+        .send()
+        .await
+        .is_ok_and(|response| response.status().is_success())
+}
+
 #[cfg_attr(
     all(not(test), feature = "test-thread-scoped-state", debug_assertions),
     expect(dead_code)

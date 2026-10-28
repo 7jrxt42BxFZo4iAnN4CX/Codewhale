@@ -829,6 +829,7 @@ pub(crate) struct UserDispatchOutcome {
     effective_provider_label: String,
     effective_reasoning_effort: EffectiveReasoningEffort,
     auto_selection: Option<crate::model_routing::AutoRouteSelection>,
+    route_limits: codewhale_config::route::RouteLimits,
 }
 
 /// Tell the operator that an explicit "make this my default" request did not
