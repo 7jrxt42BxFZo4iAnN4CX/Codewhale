@@ -1414,6 +1414,13 @@ impl UpdateNotice {
     /// Short line for the transient status toast, naming the command that
     /// actually updates *this* install.
     fn toast_line(&self, install: InstallMethod) -> String {
+        if install == InstallMethod::DesktopApp {
+            return format!(
+                "v{latest} available - use {command}",
+                latest = self.latest,
+                command = install.update_command()
+            );
+        }
         format!(
             "v{latest} available - run `{command}` and restart",
             latest = self.latest,
@@ -1437,7 +1444,9 @@ impl UpdateNotice {
     /// Homebrew or npm owns leaves the manager's metadata lying about what is
     /// on disk, and the next upgrade silently reverts the user.
     fn notice_block(&self, install: InstallMethod) -> String {
-        let action = if install.supports_self_update() {
+        let action = if install == InstallMethod::DesktopApp {
+            codewhale_release::install::DESKTOP_APP_UPDATE_HELP.to_string()
+        } else if install.supports_self_update() {
             "Run `/update install` here (preview it with a bare `/update`), or `codewhale update` in a shell, then restart Codewhale."
                 .to_string()
         } else {
