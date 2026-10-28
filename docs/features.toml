@@ -64,7 +64,7 @@ status = "experimental"
 surfaces = { tui = "preview" }
 since = "unreleased"
 docs = "docs/CLOUD_DISPATCH.md"
-owner = "crates/cli/src/cloud/computer.rs"
+owner = "crates/account-cli/src/computer.rs"
 
 [[feature]]
 id = "shell-tool"
@@ -698,7 +698,7 @@ summary = "Save computer files as account versions, restore with revision checks
 status = "experimental"
 surfaces = { tui = "preview" }
 since = "0.10.2"
-owner = "crates/cli/src/cloud.rs"
+owner = "crates/account-cli/src/lib.rs"
 
 [[feature]]
 id = "context-anchors"

@@ -5,9 +5,9 @@ use clap::Args;
 use codewhale_config::ConfigStore;
 
 #[derive(Debug, Args)]
-pub(crate) struct DispatchArgs {
+pub struct DispatchArgs {
     #[command(flatten)]
-    computer: crate::cloud::computer::ComputerOptions,
+    computer: crate::computer::ComputerOptions,
     /// Task for the remote agent. Required unless inspecting or cancelling a job.
     #[arg(value_name = "PROMPT")]
     prompt: Vec<String>,
@@ -47,12 +47,8 @@ fn unknown_job(id: &str) -> anyhow::Error {
     anyhow::anyhow!("Unknown job {id}: it is not a Codewhale account job ID.")
 }
 
-pub(crate) fn run(
-    args: DispatchArgs,
-    profile: Option<&str>,
-    config: &mut ConfigStore,
-) -> Result<()> {
-    use crate::cloud::{AccountDispatch, run_dispatch};
+pub fn run(args: DispatchArgs, profile: Option<&str>, config: &mut ConfigStore) -> Result<()> {
+    use crate::{AccountDispatch, run_dispatch};
     let legacy_work = args.agent.is_some()
         || args.seconds.is_some()
         || args.context_file.is_some()
@@ -89,7 +85,7 @@ pub(crate) fn run(
             options.stop = args.cancel.is_some();
         }
         return run_dispatch(
-            AccountDispatch::Computer(crate::cloud::computer::SessionArgs {
+            AccountDispatch::Computer(crate::computer::SessionArgs {
                 prompt: args.prompt,
                 options,
                 operation_key: args.operation_key,
@@ -141,7 +137,7 @@ pub(crate) fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Cli, Commands};
+    use crate::tests::{Cli, Commands};
     use clap::Parser;
 
     fn args(argv: &[&str]) -> DispatchArgs {

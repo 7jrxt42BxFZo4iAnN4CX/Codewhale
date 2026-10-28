@@ -832,6 +832,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "codewhale-account-cli"
+version = "0.10.2"
+dependencies = [
+ "anyhow",
+ "clap",
+ "codewhale-config",
+ "codewhale-release",
+ "codewhale-runtime",
+ "codewhale-secrets",
+ "console",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml 1.1.4+spec-1.1.0",
+ "webbrowser",
+ "zeroize",
+]
+
+[[package]]
 name = "codewhale-agent"
 version = "0.10.2"
 dependencies = [
@@ -894,6 +914,7 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
+ "codewhale-account-cli",
  "codewhale-app-server",
  "codewhale-build-support",
  "codewhale-config",
@@ -922,7 +943,6 @@ dependencies = [
  "tokio",
  "toml 1.1.4+spec-1.1.0",
  "tracing",
- "webbrowser",
  "windows",
  "zeroize",
 ]

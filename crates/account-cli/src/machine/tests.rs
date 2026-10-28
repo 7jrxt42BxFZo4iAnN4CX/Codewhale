@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use serde_json::json;
 
 use super::*;
-use crate::cloud::{CloudResponse, CloudTransport};
+use crate::{CloudResponse, CloudTransport};
 
 const VALID: &str = "cwc_key_3f2a9c1e4b7d8a0f5c6e2b91_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-xQRST";
 
@@ -64,7 +64,7 @@ impl ScriptedTransport {
 }
 
 impl CloudTransport for ScriptedTransport {
-    fn execute(&self, request: crate::cloud::CloudRequest) -> Result<CloudResponse> {
+    fn execute(&self, request: crate::CloudRequest) -> Result<CloudResponse> {
         self.seen
             .lock()
             .unwrap()

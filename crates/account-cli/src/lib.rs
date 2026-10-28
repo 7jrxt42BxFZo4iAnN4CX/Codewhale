@@ -26,8 +26,9 @@ use codewhale_secrets::account::{
 use reqwest::Url;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-pub(crate) mod computer;
-pub(crate) mod machine;
+mod computer;
+pub mod dispatch;
+pub mod machine;
 mod work;
 
 const MAX_RESPONSE_BYTES: u64 = 256 * 1024;
@@ -39,11 +40,11 @@ const MIN_API_KEY_BYTES: usize = 8;
 const MAX_API_KEY_BYTES: u64 = 4096;
 const MAX_API_KEY_STDIN_BYTES: u64 = MAX_API_KEY_BYTES + 1024;
 const MAX_KEY_LABEL_CHARS: usize = 80;
-pub(crate) const DEFAULT_LOGIN_TIMEOUT_SECONDS: u64 = 600;
-pub(crate) const MAX_LOGIN_TIMEOUT_SECONDS: u64 = 3600;
+pub const DEFAULT_LOGIN_TIMEOUT_SECONDS: u64 = 600;
+pub const MAX_LOGIN_TIMEOUT_SECONDS: u64 = 3600;
 
 #[derive(Debug, Args)]
-pub(crate) struct CloudArgs {
+pub struct CloudArgs {
     /// Codewhale account API origin. HTTPS is required except for loopback HTTP.
     #[arg(long, global = true, value_name = "URL")]
     api_base: Option<String>,
@@ -1539,7 +1540,7 @@ impl<'a, T: CloudTransport> CloudClient<'a, T> {
             return Err(response_error(&response));
         }
         if response.body.len() as u64 != metadata.size
-            || crate::hashing::sha256_hex(&response.body) != metadata.sha256
+            || codewhale_runtime::hashing::sha256_hex(&response.body) != metadata.sha256
         {
             bail!(
                 "The downloaded file did not match its saved size and SHA-256; nothing was written"
@@ -2023,7 +2024,7 @@ fn dispatch_stamp(objective: &str) -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_nanos());
     let seed = format!("{nanos}:{}:{objective}", std::process::id());
-    crate::hashing::sha256_hex(seed.as_bytes())[..24].to_string()
+    codewhale_runtime::hashing::sha256_hex(seed.as_bytes())[..24].to_string()
 }
 
 pub(crate) enum AccountDispatch {
@@ -3038,7 +3039,7 @@ enum KeyReadMode {
     HiddenPrompt(String),
 }
 
-pub(crate) fn run(args: CloudArgs, profile: Option<&str>, config: &mut ConfigStore) -> Result<()> {
+pub fn run(args: CloudArgs, profile: Option<&str>, config: &mut ConfigStore) -> Result<()> {
     let machine = machine::MachineKeyEnv::from_process_env();
     let requested_base = machine::resolve_api_base(
         args.api_base.as_deref(),
@@ -3091,7 +3092,7 @@ fn cloud_session_secrets() -> Result<Secrets> {
 
 /// `codewhale login` is a convenience entry to the account device flow — the
 /// same path as `codewhale account login`, without re-spelling the subcommand.
-pub(crate) fn run_account_login(
+pub fn run_account_login(
     no_open: bool,
     timeout_seconds: u64,
     profile: Option<&str>,
@@ -3110,7 +3111,7 @@ pub(crate) fn run_account_login(
     )
 }
 
-pub(crate) fn reject_inline_api_key(api_key: Option<&str>) -> Result<()> {
+pub fn reject_inline_api_key(api_key: Option<&str>) -> Result<()> {
     if api_key.is_some() {
         bail!(
             "`codewhale account` does not accept the global `--api-key` flag because command-line values can leak through shell history. Use `account keys set <provider>` for a hidden prompt, `--api-key-stdin`, or `--from-local`"
@@ -3396,7 +3397,7 @@ fn run_with<T: CloudTransport, W: Write>(
 /// answered that question, so its configured provider is the disambiguator —
 /// no new flag, and no guess. Returns `None` when no machine key is set, which
 /// leaves the ordinary local resolution untouched.
-pub(crate) fn machine_review_provider() -> Result<Option<ProviderKind>> {
+pub fn machine_review_provider() -> Result<Option<ProviderKind>> {
     let machine = machine::MachineKeyEnv::from_process_env();
     let Some(key) = machine.resolve()? else {
         return Ok(None);

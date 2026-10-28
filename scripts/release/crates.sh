@@ -41,6 +41,7 @@ release_crates=(
   codewhale-net
   codewhale-notify
   codewhale-app-server
+  codewhale-account-cli
   codewhale-sandbox
   codewhale-util
   codewhale-dependencies

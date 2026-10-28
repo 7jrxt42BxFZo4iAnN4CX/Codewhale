@@ -1,9 +1,7 @@
 #![allow(clippy::uninlined_format_args)]
 
-mod cloud;
 mod config_bundles;
 mod credential_handoff;
-mod dispatch;
 mod hashing;
 mod metrics;
 #[cfg(not(target_env = "ohos"))]
@@ -387,9 +385,9 @@ New integrations should prefer `codewhale app-server --http` for the full Engine
     Auth(AuthArgs),
     /// Manage an existing Codewhale account; new accounts are not open.
     #[command(visible_alias = "cloud")]
-    Account(cloud::CloudArgs),
+    Account(codewhale_account_cli::CloudArgs),
     /// Run a task on a Codewhale cloud computer using your configured model.
-    Dispatch(dispatch::DispatchArgs),
+    Dispatch(codewhale_account_cli::dispatch::DispatchArgs),
     /// Run MCP server mode over stdio.
     McpServer,
     /// Read/write/list config values.
@@ -1684,8 +1682,8 @@ struct LoginArgs {
     /// Maximum time to wait for browser authorization.
     #[arg(
         long = "timeout-seconds",
-        default_value_t = cloud::DEFAULT_LOGIN_TIMEOUT_SECONDS,
-        value_parser = clap::value_parser!(u64).range(1..=cloud::MAX_LOGIN_TIMEOUT_SECONDS)
+        default_value_t = codewhale_account_cli::DEFAULT_LOGIN_TIMEOUT_SECONDS,
+        value_parser = clap::value_parser!(u64).range(1..=codewhale_account_cli::MAX_LOGIN_TIMEOUT_SECONDS)
     )]
     timeout_seconds: u64,
     /// Legacy provider-key flag: rejected with a redirect to `auth set`.
@@ -2094,7 +2092,9 @@ pub fn run_cli() -> std::process::ExitCode {
             // able to tell a bad credential from an unconfigured agent model
             // without parsing English, and the machine-readable code beside
             // it names the control-plane branch that was taken.
-            if let Some(machine) = err.downcast_ref::<cloud::machine::MachineError>() {
+            if let Some(machine) =
+                err.downcast_ref::<codewhale_account_cli::machine::MachineError>()
+            {
                 eprintln!(
                     "  codewhale: code={} status={}",
                     machine.code, machine.status
@@ -2518,7 +2518,7 @@ fn run() -> Result<()> {
             // configured routes, which review otherwise hard-errors on.
             let mut overrides = runtime_overrides.clone();
             if overrides.provider.is_none()
-                && let Some(provider) = cloud::machine_review_provider()?
+                && let Some(provider) = codewhale_account_cli::machine_review_provider()?
             {
                 overrides.provider = Some(provider);
             }
@@ -2592,8 +2592,8 @@ fn run() -> Result<()> {
         }
         Some(Commands::Login(args)) => {
             reject_legacy_login_provider_args(&args)?;
-            cloud::reject_inline_api_key(cli.api_key.as_deref())?;
-            cloud::run_account_login(
+            codewhale_account_cli::reject_inline_api_key(cli.api_key.as_deref())?;
+            codewhale_account_cli::run_account_login(
                 args.no_open,
                 args.timeout_seconds,
                 cli.profile.as_deref(),
@@ -2700,12 +2700,12 @@ fn run() -> Result<()> {
             }
         },
         Some(Commands::Account(args)) => {
-            cloud::reject_inline_api_key(cli.api_key.as_deref())?;
-            cloud::run(args, cli.profile.as_deref(), &mut store)
+            codewhale_account_cli::reject_inline_api_key(cli.api_key.as_deref())?;
+            codewhale_account_cli::run(args, cli.profile.as_deref(), &mut store)
         }
         Some(Commands::Dispatch(args)) => {
-            cloud::reject_inline_api_key(cli.api_key.as_deref())?;
-            dispatch::run(args, cli.profile.as_deref(), &mut store)
+            codewhale_account_cli::reject_inline_api_key(cli.api_key.as_deref())?;
+            codewhale_account_cli::dispatch::run(args, cli.profile.as_deref(), &mut store)
         }
         Some(Commands::McpServer) => {
             // Keep the CLI spelling, with the same tool and permission authority

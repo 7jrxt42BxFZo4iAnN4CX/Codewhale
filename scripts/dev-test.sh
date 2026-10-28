@@ -39,6 +39,7 @@ list_areas() {
   cat <<'EOF'
 area              command
 ----              -------
+account-cli       cargo test -p codewhale-account-cli --lib --locked
 agent             cargo test -p codewhale-agent --lib --locked
 agent-contract    cargo test -p codewhale-agent-contract --lib --locked
 app-server        cargo test -p codewhale-app-server --lib --locked
@@ -191,6 +192,7 @@ fi
 pkg=
 target=--lib
 case $area in
+  account-cli) pkg=codewhale-account-cli ;;
   agent) pkg=codewhale-agent ;;
   agent-contract) pkg=codewhale-agent-contract ;;
   app-server) pkg=codewhale-app-server ;;

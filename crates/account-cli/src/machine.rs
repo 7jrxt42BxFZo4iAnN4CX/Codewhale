@@ -274,12 +274,12 @@ struct ErrorDetails {
 /// three different 401s and two different 403s need three and two different
 /// fixes, and only the code tells them apart.
 #[derive(Debug, Clone)]
-pub(crate) struct MachineError {
-    pub(crate) status: u16,
-    pub(crate) code: String,
-    pub(crate) message: String,
-    pub(crate) exit_code: i32,
-    pub(crate) retryable: bool,
+pub struct MachineError {
+    pub status: u16,
+    pub code: String,
+    pub message: String,
+    pub exit_code: i32,
+    pub retryable: bool,
 }
 
 impl fmt::Display for MachineError {

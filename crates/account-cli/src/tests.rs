@@ -10,7 +10,20 @@ use codewhale_secrets::{InMemoryKeyringStore, KeyringStore};
 use serde_json::json;
 
 use super::*;
-use crate::{Cli, Commands};
+
+#[derive(Debug, Parser)]
+#[command(name = "codewhale", bin_name = "codewhale")]
+pub(crate) struct Cli {
+    #[command(subcommand)]
+    pub(crate) command: Option<Commands>,
+}
+
+#[derive(Debug, clap::Subcommand)]
+pub(crate) enum Commands {
+    #[command(visible_alias = "cloud")]
+    Account(CloudArgs),
+    Dispatch(crate::dispatch::DispatchArgs),
+}
 
 struct FakeTransport {
     responses: Mutex<VecDeque<CloudResponse>>,
