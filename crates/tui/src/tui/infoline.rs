@@ -161,7 +161,7 @@ pub(super) fn ink_role(ink: ChromeInk) -> Role {
         | ChromeInk::PolicyPlan
         | ChromeInk::PolicyOperate
         | ChromeInk::Identity
-        | ChromeInk::Info => Role::Primary,
+        | ChromeInk::Info => Role::Accent,
         ChromeInk::MetadataValue => Role::Foreground,
         ChromeInk::Metadata => Role::Muted,
         ChromeInk::MetadataHint => Role::Hint,
