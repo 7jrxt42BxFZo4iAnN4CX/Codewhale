@@ -673,8 +673,8 @@ discovers them again, and allow/deny rules and approvals are checked on each
 call rather than cached with the catalog. Within one connection the catalog is
 revalidated in place, on the five-second supervision sweep, when either:
 
-- a list page carried `ttlMs` and the earliest of those TTLs (capped at 24
-  hours) has passed, or
+- a list page carried `ttlMs` and the earliest of those TTLs (held between
+  60 seconds and 24 hours) has passed, or
 - the server sent `notifications/tools/list_changed`,
   `notifications/resources/list_changed` or
   `notifications/prompts/list_changed`.
