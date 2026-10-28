@@ -803,12 +803,14 @@ impl codewhale_app_server::RuntimeOwnerFrontend for CapturedRuntimeFrontend {
             let shutdown = RuntimeServerShutdown::default();
             state.shutdown = shutdown.clone();
             let app = with_loopback_host_guard(
-                build_router(state).merge(codewhale_app_server::runtime_compatibility_router(
-                    compatibility,
-                    &options.cors_origins,
-                    resolved.token.clone(),
-                    Some(workspace),
-                )),
+                build_router(state).merge(
+                    codewhale_app_server::http::runtime_compatibility_router(
+                        compatibility,
+                        &options.cors_origins,
+                        resolved.token.clone(),
+                        Some(workspace),
+                    ),
+                ),
                 resolved.token.is_none(),
             );
             let ready = RuntimeFrontendReady {
@@ -858,7 +860,7 @@ async fn write_frontend_ready(
 async fn wait_frontend_input_close(
     input: Box<dyn tokio::io::AsyncBufRead + Send + Unpin>,
 ) -> Result<()> {
-    let mut input = codewhale_app_server::BoundedLines::new(input);
+    let mut input = codewhale_app_server::stdio::BoundedLines::new(input);
     if let Some(line) = input.next_line().await? {
         let value: Value = serde_json::from_str(&line)?;
         anyhow::ensure!(
@@ -2091,7 +2093,7 @@ pub async fn run_http_server(
     let listener_workspace = state.workspace.clone();
     let app = build_router(state);
     #[cfg(any(unix, windows))]
-    let app = app.merge(codewhale_app_server::runtime_compatibility_router(
+    let app = app.merge(codewhale_app_server::http::runtime_compatibility_router(
         control_state.clone(),
         &options.cors_origins,
         runtime_token.clone(),

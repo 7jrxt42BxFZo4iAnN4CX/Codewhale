@@ -10,7 +10,7 @@ mod platform {
     use super::*;
     use crate::daemon_socket::AuthorizedPeer;
     use crate::daemon_socket::{default_socket_path, owner_work};
-    use crate::{BoundedLines, ParsedStdioLine, parse_stdio_line, write_stdio_line};
+    use crate::stdio::{BoundedLines, ParsedStdioLine, parse_stdio_line, write_stdio_line};
     use anyhow::{Context as _, bail};
     use codewhale_config::private_directory::PrivateDirectory;
     use codewhale_protocol::RuntimeOwnerReceipt;

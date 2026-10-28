@@ -1426,7 +1426,7 @@ async fn build_test_server(
     };
     let mut app = build_router(state.clone());
     if let Some(compatibility) = compatibility {
-        app = app.merge(codewhale_app_server::runtime_compatibility_router(
+        app = app.merge(codewhale_app_server::http::runtime_compatibility_router(
             compatibility,
             &state.cors_origins,
             state.runtime_token.clone(),

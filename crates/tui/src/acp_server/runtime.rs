@@ -46,7 +46,7 @@ impl AcpServer {
     pub(super) async fn drive_prompt<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
         &mut self,
         params: Value,
-        reader: &mut codewhale_app_server::BoundedLines<R>,
+        reader: &mut codewhale_app_server::stdio::BoundedLines<R>,
         writer: &mut W,
     ) -> Result<&'static str> {
         let (session_id, prompt) = self
@@ -177,7 +177,7 @@ impl AcpServer {
         &self,
         projection: &mut Projection<'_>,
         receiver: &mut tokio::sync::broadcast::Receiver<RuntimeEventRecord>,
-        reader: &mut codewhale_app_server::BoundedLines<R>,
+        reader: &mut codewhale_app_server::stdio::BoundedLines<R>,
         writer: &mut W,
     ) -> Result<TurnRecord> {
         let session = projection.session;
@@ -908,7 +908,7 @@ mod tests {
         )?;
         let id = rig.new_session().await;
         let (client, input) = tokio::io::duplex(1024);
-        let mut reader = codewhale_app_server::BoundedLines::new(BufReader::new(input));
+        let mut reader = codewhale_app_server::stdio::BoundedLines::new(BufReader::new(input));
         let mut writer = FailedAnswerWriter(Vec::new());
         let error = tokio::time::timeout(
             Duration::from_secs(20),

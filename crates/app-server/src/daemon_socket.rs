@@ -4,7 +4,7 @@
 //! daemon over a local socket instead of a TCP port: local multi-client,
 //! peer-credential auth, nothing to firewall (CORE-PROTOCOL spec §5). The
 //! wire is *identical* to the `--stdio` transport — newline-delimited
-//! JSON-RPC 2.0 driven by the same `crate::run_stdio_loop` — with exactly
+//! JSON-RPC 2.0 driven by the same `crate::stdio::run_stdio_loop` — with exactly
 //! one addition in front of it: a `daemon/attach` handshake that establishes
 //! who this client is and whether it owns the daemon.
 //!
@@ -374,10 +374,13 @@ where
     .await
 }
 
+use crate::stdio::{
+    ParsedStdioLine, dispatch_stdio_request_with_writer, parse_stdio_line, run_stdio_loop,
+    write_stdio_line,
+};
 use crate::{
-    AppState, AppTransport, JsonRpcError, ParsedStdioLine, ShutdownAuthority, StdioLoopExit,
-    StdioLoopPolicy, dispatch_stdio_request_with_writer, jsonrpc_error, jsonrpc_result,
-    params_or_object, parse_params, parse_stdio_line, run_stdio_loop, write_stdio_line,
+    AppState, AppTransport, JsonRpcError, ShutdownAuthority, StdioLoopExit, StdioLoopPolicy,
+    jsonrpc_error, jsonrpc_result, params_or_object, parse_params,
 };
 use anyhow::Result;
 use serde_json::{Value, json};
@@ -515,7 +518,7 @@ impl ConnectionTasks {
 /// refused with `attach_required` until the client attaches.
 async fn handshake<R, W>(
     context: &ConnectionContext,
-    lines: &mut crate::BoundedLines<R>,
+    lines: &mut crate::stdio::BoundedLines<R>,
     writer: &mut W,
 ) -> Result<Option<ConnectionGuard>>
 where
@@ -785,7 +788,7 @@ pub(crate) async fn run_authorized_connection<R, W>(
     if owner_work(move || check.check()).await.is_err() {
         return;
     }
-    let mut lines = crate::BoundedLines::new(BufReader::new(read));
+    let mut lines = crate::stdio::BoundedLines::new(BufReader::new(read));
     let guard = match tokio::time::timeout(
         Duration::from_secs(5),
         handshake(&context, &mut lines, &mut writer),

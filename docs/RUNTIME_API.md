@@ -434,7 +434,7 @@ printf '%s\n' \
 `capabilities` returns the advertised method families (`thread/*`, `app/*`,
 `prompt/*`) and the full method list; `thread/capabilities`,
 `app/capabilities`, and `prompt/capabilities` scope it per family. The method
-set is pinned by a drift test in `crates/app-server/src/lib.rs`, so SDK and
+set is pinned by a drift test in `crates/app-server/src/tests.rs`, so SDK and
 local integration clients can rely on it not changing silently.
 
 ### Daemon socket: `codewhale app-server --socket`
@@ -3280,7 +3280,7 @@ This validates that the app-server's event schema hasn't drifted from the
 documented contract. CI runs this on every push to `main` and on release tags.
 
 The app-server stdio control surface has its own drift guard — the advertised
-`capabilities` method set is pinned in `crates/app-server/src/lib.rs`:
+`capabilities` method set is pinned in `crates/app-server/src/tests.rs`:
 
 ```bash
 cargo test -p codewhale-app-server capabilities

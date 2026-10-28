@@ -95,7 +95,7 @@ impl CapturedAcpFrontend {
                 self.config_path.clone(),
                 self.config_profile.clone(),
             );
-            let mut input = codewhale_app_server::BoundedLines::new(input);
+            let mut input = codewhale_app_server::stdio::BoundedLines::new(input);
             server.serve(&mut input, &mut output).await
         })
     }
@@ -196,7 +196,7 @@ impl AcpServer {
     }
     async fn serve<R: AsyncBufRead + Unpin, W: AsyncWrite + Unpin>(
         &mut self,
-        reader: &mut codewhale_app_server::BoundedLines<R>,
+        reader: &mut codewhale_app_server::stdio::BoundedLines<R>,
         writer: &mut W,
     ) -> Result<()> {
         while let Some(line) = reader.next_line().await? {
@@ -1402,7 +1402,7 @@ mod tests {
         ) -> Result<(&'static str, Vec<Value>)> {
             // Keep the transport input open: an empty reader is a real EOF/cancel.
             let (client, input) = tokio::io::duplex(4096);
-            let mut reader = codewhale_app_server::BoundedLines::new(BufReader::new(input));
+            let mut reader = codewhale_app_server::stdio::BoundedLines::new(BufReader::new(input));
             let mut output = Vec::new();
             let result = tokio::time::timeout(
                 Duration::from_secs(if cfg!(windows) { 120 } else { 20 }),
@@ -2399,9 +2399,9 @@ mod tests {
         let target = rig.workspace.join("ask.txt");
         let (client, transport) = tokio::io::duplex(65536);
         let (read, mut write) = tokio::io::split(transport);
-        let mut reader = codewhale_app_server::BoundedLines::new(BufReader::new(read));
+        let mut reader = codewhale_app_server::stdio::BoundedLines::new(BufReader::new(read));
         let (cr, mut cw) = tokio::io::split(client);
-        let mut cr = codewhale_app_server::BoundedLines::new(BufReader::new(cr));
+        let mut cr = codewhale_app_server::stdio::BoundedLines::new(BufReader::new(cr));
         let sid = id.clone();
         let target_in = target.clone();
         let client = async move {
@@ -3076,7 +3076,8 @@ mod tests {
             json!({"jsonrpc":"2.0","id":5,"method":"fabricated"}),
             json!({"jsonrpc":"2.0","id":6,"method":"shutdown"})
         );
-        let mut reader = codewhale_app_server::BoundedLines::new(BufReader::new(input.as_bytes()));
+        let mut reader =
+            codewhale_app_server::stdio::BoundedLines::new(BufReader::new(input.as_bytes()));
         let mut output = Vec::new();
         rig.server.serve(&mut reader, &mut output).await?;
         let wire = parse_lines(output);

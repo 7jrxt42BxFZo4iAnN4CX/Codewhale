@@ -341,7 +341,7 @@ printf '%s\n' \
 `capabilities` 返回已声明的方法族（`thread/*`、`app/*`、
 `prompt/*`）以及完整的方法清单；`thread/capabilities`、
 `app/capabilities` 与 `prompt/capabilities` 则按族缩小范围。方法集合由
-`crates/app-server/src/lib.rs` 中的一个漂移测试钉住，因此 SDK 与本地集成客户端
+`crates/app-server/src/tests.rs` 中的一个漂移测试钉住，因此 SDK 与本地集成客户端
 可以依赖它不会悄悄变化。
 
 ### 兼容执行限制
@@ -2672,7 +2672,7 @@ cargo test -p codewhale-protocol --test parity_protocol --locked
 CI 在每次推送到 `main` 时以及发布标签上都会运行它。
 
 app-server 的 stdio 控制表面有自己的漂移防护——所声明的
-`capabilities` 方法集合被钉在 `crates/app-server/src/lib.rs`：
+`capabilities` 方法集合被钉在 `crates/app-server/src/tests.rs`：
 
 ```bash
 cargo test -p codewhale-app-server capabilities
