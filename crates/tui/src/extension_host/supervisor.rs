@@ -1174,7 +1174,10 @@ fn probe_bwrap(command: &[String], cwd: &Path, env: &[(String, String)]) -> Resu
 }
 
 /// What a wrapped `<runtime> --version` run says about bwrap here: `Ok` when
-/// it ran, otherwise the reason `/plugin` and doctor show — bwrap's first
+/// it ran, or when bwrap built the sandbox and only the runtime failed to
+/// execute in it (a script shim whose interpreter is not granted): the host
+/// spawn then reports that as a runtime start failure, which `auto` answers
+/// by falling back to Node. Otherwise the reason `/plugin` and doctor show — bwrap's first
 /// line of stderr (or the exit status), and a hint when that line is about
 /// the user namespace bwrap could not create. Pure.
 #[cfg(any(test, all(target_os = "linux", not(target_env = "ohos"))))]
@@ -1183,6 +1186,9 @@ fn bwrap_probe_verdict(succeeded: bool, status: &str, stderr: &str) -> Result<()
         return Ok(());
     }
     let first = stderr.lines().map(str::trim).find(|line| !line.is_empty());
+    if first.is_some_and(|line| line.starts_with("bwrap: execvp ")) {
+        return Ok(());
+    }
     let mut detail: String = first.map_or_else(
         || status.to_string(),
         |line| line.chars().take(240).collect(),
@@ -2646,6 +2652,14 @@ mod tests {
 
         // A probe that ran keeps the wrapper.
         assert_eq!(bwrap_probe_verdict(true, "exit status: 0", ""), Ok(()));
+        assert_eq!(
+            bwrap_probe_verdict(
+                false,
+                "exit status: 1",
+                "bwrap: execvp /tmp/.tmp1/bun: No such file or directory\n",
+            ),
+            Ok(())
+        );
         let command: Vec<String> = ["/usr/bin/bwrap", "--unshare-all", "--die-with-parent", "--"]
             .iter()
             .map(ToString::to_string)
