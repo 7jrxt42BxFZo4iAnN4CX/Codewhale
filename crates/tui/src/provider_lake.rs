@@ -1994,6 +1994,10 @@ pub(crate) async fn refresh_local_ollama_catalog(config: &Config, identity: &Pro
     }
 }
 
+#[cfg_attr(
+    any(test, all(feature = "test-thread-scoped-state", debug_assertions)),
+    allow(clippy::needless_return)
+)]
 pub(crate) async fn refresh_unverified_local_context(
     config: &Config,
     identity: &ProviderIdentity,
