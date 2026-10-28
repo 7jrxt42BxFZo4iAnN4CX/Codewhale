@@ -9,7 +9,6 @@ use serde_json::{Value, json};
 
 use crate::runtime_threads::{
     CreateThreadRequest, RuntimeThreadManager, RuntimeTurnStatus, ThreadDetail, ThreadListFilter,
-    TurnItemLifecycleStatus,
 };
 use crate::session_manager::{
     SavedSession, SessionListFilter, SessionManager, SessionMetadata, SessionMutator,
@@ -673,16 +672,25 @@ pub(super) fn stamp_session_provider_from_thread(
     Ok(())
 }
 
+/// Whether a thread still has work in flight, for the routes that must not
+/// read a half-written conversation.
+///
+/// The turn is the authority, and an item is not. `monitor_turn` assigns a
+/// turn's terminal status only after every item write for that turn, and crash
+/// recovery normalizes a turn a dead process left live; the item list, by
+/// contrast, is a projection that can outlive the turn which produced it (a
+/// reasoning segment whose completion frame a retried stream never sent).
+/// Reading items here made one such row — permanently `in_progress` inside a
+/// turn that had completed — refuse every later save of that thread's session,
+/// with a 409 that named an "active turn" which did not exist.
+///
+/// Items are still repaired, just not here: `get_thread_detail` closes a
+/// terminal turn's leftovers in the snapshot it already holds.
 pub(super) fn thread_detail_has_live_work(detail: &ThreadDetail) -> bool {
     detail.turns.iter().any(|turn| {
         matches!(
             turn.status,
             RuntimeTurnStatus::Queued | RuntimeTurnStatus::InProgress
-        )
-    }) || detail.items.iter().any(|item| {
-        matches!(
-            item.status,
-            TurnItemLifecycleStatus::Queued | TurnItemLifecycleStatus::InProgress
         )
     })
 }

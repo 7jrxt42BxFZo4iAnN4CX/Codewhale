@@ -14558,6 +14558,327 @@ async fn thread_detail_materializes_stream_prefixes_before_their_delta_cursor() 
     Ok(())
 }
 
+/// A reasoning segment whose stream died before its own stop frame must not
+/// outlive the turn that streamed it.
+///
+/// A stream-resume retry — system sleep, a mid-stream network drop — discards
+/// the fragment and re-issues the request without ever emitting
+/// `ThinkingComplete`; the engine parks the block itself when the next one
+/// starts (`flush_thinking_block`). The projection has to close the superseded
+/// item at that same boundary. Overwriting the pointer instead left the record
+/// `in_progress` inside a turn that went on to complete, which made every later
+/// session save of that thread fail with a 409 naming an "active turn" that did
+/// not exist.
+#[tokio::test]
+async fn superseded_reasoning_segment_closes_when_the_retried_stream_starts() -> Result<()> {
+    let manager = test_manager(test_runtime_dir())?;
+    let thread = manager
+        .create_thread(CreateThreadRequest::default())
+        .await?;
+    let mut harness = install_mock_engine(&manager, &thread.id).await;
+    let turn = manager
+        .start_turn(
+            &thread.id,
+            StartTurnRequest {
+                prompt: "retry the request after the stream dies".to_string(),
+                ..StartTurnRequest::default()
+            },
+        )
+        .await?;
+    assert!(matches!(
+        harness.rx_op.recv().await,
+        Some(Op::SendMessage(TurnSpec { .. }))
+    ));
+
+    harness
+        .tx_event
+        .send(EngineEvent::TurnStarted {
+            turn_id: "retried_stream".to_string(),
+            created_at: Utc::now(),
+            route: None,
+            submission_id: None,
+        })
+        .await?;
+    // First attempt: reasoning streams, then the connection dies before the
+    // block's stop frame arrives.
+    harness
+        .tx_event
+        .send(EngineEvent::ThinkingStarted { index: 0 })
+        .await?;
+    harness
+        .tx_event
+        .send(EngineEvent::ThinkingDelta {
+            index: 0,
+            content: "first fragment".to_string(),
+        })
+        .await?;
+    // The re-issued request streams a fresh block.
+    harness
+        .tx_event
+        .send(EngineEvent::ThinkingStarted { index: 0 })
+        .await?;
+    harness
+        .tx_event
+        .send(EngineEvent::ThinkingDelta {
+            index: 0,
+            content: "second fragment".to_string(),
+        })
+        .await?;
+    harness
+        .tx_event
+        .send(EngineEvent::ThinkingComplete { index: 0 })
+        .await?;
+    harness
+        .tx_event
+        .send(EngineEvent::MessageStarted { index: 1 })
+        .await?;
+    harness
+        .tx_event
+        .send(EngineEvent::MessageDelta {
+            index: 1,
+            content: "the answer".to_string(),
+        })
+        .await?;
+    harness
+        .tx_event
+        .send(EngineEvent::MessageComplete { index: 1 })
+        .await?;
+    harness
+        .tx_event
+        .send(EngineEvent::TurnComplete {
+            turn_id: None,
+            submission_id: None,
+            compaction_id: None,
+            usage: Usage::default(),
+            parent_route_usage: Usage::default(),
+            routed_usage_dropped_records: 0,
+            status: TurnOutcomeStatus::Completed,
+            error: None,
+            tool_catalog: None,
+            base_url: None,
+        })
+        .await?;
+
+    let terminal = wait_for_terminal_turn(&manager, &turn.id).await?;
+    assert_eq!(terminal.status, RuntimeTurnStatus::Completed);
+
+    // Read the records from the store, not through `get_thread_detail`: the
+    // projection repairs terminal-turn leftovers on read, and this test is
+    // about the close happening at the boundary that causes it.
+    let stored = manager.store.load_turn(&turn.id)?;
+    let items = stored
+        .item_ids
+        .iter()
+        .map(|item_id| manager.store.load_item(item_id))
+        .collect::<Result<Vec<_>>>()?;
+    let reasoning = items
+        .iter()
+        .filter(|item| item.kind == TurnItemKind::AgentReasoning)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        reasoning.len(),
+        2,
+        "each streamed segment keeps its own record: {items:#?}"
+    );
+    assert_eq!(reasoning[0].detail.as_deref(), Some("first fragment"));
+    for item in &reasoning {
+        assert_eq!(
+            item.status,
+            TurnItemLifecycleStatus::Completed,
+            "a segment the retry superseded still ended: {item:#?}"
+        );
+        assert!(item.ended_at.is_some(), "{item:#?}");
+    }
+    assert!(
+        items
+            .iter()
+            .all(|item| item.status == TurnItemLifecycleStatus::Completed),
+        "no item may outlive a completed turn: {items:#?}"
+    );
+
+    // The close is published too, so a live client stops rendering the
+    // superseded segment as still running.
+    let closed = manager
+        .events_since(&thread.id, None)?
+        .into_iter()
+        .filter(|event| {
+            event.event == "item.completed"
+                && event.item_id.as_deref() == Some(reasoning[0].id.as_str())
+        })
+        .count();
+    assert_eq!(closed, 1, "the superseded segment is announced once");
+    Ok(())
+}
+
+/// A tool call whose completion frame never arrived must not survive the turn
+/// that started it.
+///
+/// Nothing in the monitor's own pointers holds a tool item: it lives only in
+/// the turn's item list, so an interrupt or a stream that dies between the call
+/// and its result used to leave the record `in_progress` forever. The terminal
+/// sweep is what closes it, and it has to run before the parent turn is
+/// written.
+#[tokio::test]
+async fn turn_end_closes_a_tool_call_that_never_completed() -> Result<()> {
+    let manager = test_manager(test_runtime_dir())?;
+    let thread = manager
+        .create_thread(CreateThreadRequest::default())
+        .await?;
+    let mut harness = install_mock_engine(&manager, &thread.id).await;
+    let turn = manager
+        .start_turn(
+            &thread.id,
+            StartTurnRequest {
+                prompt: "start a tool call that never answers".to_string(),
+                ..StartTurnRequest::default()
+            },
+        )
+        .await?;
+    assert!(matches!(
+        harness.rx_op.recv().await,
+        Some(Op::SendMessage(TurnSpec { .. }))
+    ));
+
+    harness
+        .tx_event
+        .send(EngineEvent::TurnStarted {
+            turn_id: "unanswered_tool_call".to_string(),
+            created_at: Utc::now(),
+            route: None,
+            submission_id: None,
+        })
+        .await?;
+    harness
+        .tx_event
+        .send(EngineEvent::ToolCallStarted {
+            id: "call-never-completed".to_string(),
+            model_call: None,
+            name: "bash".to_string(),
+            input: json!({ "command": "true" }),
+        })
+        .await?;
+    harness
+        .tx_event
+        .send(EngineEvent::TurnComplete {
+            turn_id: None,
+            submission_id: None,
+            compaction_id: None,
+            usage: Usage::default(),
+            parent_route_usage: Usage::default(),
+            routed_usage_dropped_records: 0,
+            status: TurnOutcomeStatus::Completed,
+            error: None,
+            tool_catalog: None,
+            base_url: None,
+        })
+        .await?;
+
+    let terminal = wait_for_terminal_turn(&manager, &turn.id).await?;
+    assert_eq!(terminal.status, RuntimeTurnStatus::Completed);
+
+    let stored = manager.store.load_turn(&turn.id)?;
+    let tool_item = stored
+        .item_ids
+        .iter()
+        .map(|item_id| manager.store.load_item(item_id))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .find(|item| item.kind == TurnItemKind::ToolCall)
+        .context("the tool call item")?;
+    assert_eq!(
+        tool_item.status,
+        TurnItemLifecycleStatus::Completed,
+        "a call left open by the turn's own terminal boundary: {tool_item:#?}"
+    );
+    assert!(tool_item.ended_at.is_some(), "{tool_item:#?}");
+    Ok(())
+}
+
+/// A store an older build wrote — a terminal turn still listing an item as
+/// live — is repaired where the projection already holds it.
+///
+/// The repair must close the leftovers to the outcome the turn itself recorded
+/// and leave a live turn alone, because a live turn's monitor is still writing
+/// those records.
+#[tokio::test]
+async fn thread_detail_closes_items_a_terminal_turn_still_lists_as_live() -> Result<()> {
+    let manager = test_manager(test_runtime_dir())?;
+    let thread = manager
+        .create_thread(CreateThreadRequest::default())
+        .await?;
+    let terminal_turn = {
+        let mut turn = sample_turn(&thread.id, "turn_stale_item", RuntimeTurnStatus::Completed);
+        turn.ended_at = Some(turn.created_at + chrono::Duration::seconds(1));
+        let mut item = sample_item(
+            &turn.id,
+            "item_stale_reasoning",
+            TurnItemLifecycleStatus::InProgress,
+        );
+        item.kind = TurnItemKind::AgentReasoning;
+        item.detail = Some("half a thought".to_string());
+        manager.store.save_item(&item)?;
+        turn.item_ids = vec![item.id.clone()];
+        manager.store.save_turn(&turn)?;
+        turn
+    };
+    let live_turn = {
+        let mut turn = sample_turn(&thread.id, "turn_live_item", RuntimeTurnStatus::InProgress);
+        let mut item = sample_item(
+            &turn.id,
+            "item_live_reasoning",
+            TurnItemLifecycleStatus::InProgress,
+        );
+        item.kind = TurnItemKind::AgentReasoning;
+        manager.store.save_item(&item)?;
+        turn.item_ids = vec![item.id.clone()];
+        manager.store.save_turn(&turn)?;
+        turn
+    };
+    let mut record = manager.store.load_thread(&thread.id)?;
+    record.latest_turn_id = Some(live_turn.id.clone());
+    manager.store.save_thread(&record)?;
+
+    let detail = manager.get_thread_detail(&thread.id).await?;
+    let repaired = detail
+        .items
+        .iter()
+        .find(|item| item.id == "item_stale_reasoning")
+        .context("the stale item")?;
+    assert_eq!(repaired.status, TurnItemLifecycleStatus::Completed);
+    assert_eq!(
+        repaired.ended_at, terminal_turn.ended_at,
+        "the turn's own end is the honest end for a segment it delivered"
+    );
+    assert_eq!(
+        manager.store.load_item("item_stale_reasoning")?.status,
+        TurnItemLifecycleStatus::Completed,
+        "the repair is persisted, not only projected"
+    );
+
+    let still_live = detail
+        .items
+        .iter()
+        .find(|item| item.id == "item_live_reasoning")
+        .context("the live item")?;
+    assert_eq!(
+        still_live.status,
+        TurnItemLifecycleStatus::InProgress,
+        "a live turn's records belong to its monitor"
+    );
+
+    // Idempotent: a second read finds nothing left to do.
+    let again = manager.get_thread_detail(&thread.id).await?;
+    assert_eq!(
+        again
+            .items
+            .iter()
+            .find(|item| item.id == "item_stale_reasoning")
+            .map(|item| item.status),
+        Some(TurnItemLifecycleStatus::Completed)
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn thread_detail_delta_boundary_is_replay_idempotent() -> Result<()> {
     let manager = test_manager(test_runtime_dir())?;
