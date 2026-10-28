@@ -167,8 +167,43 @@ fn remove(yes: bool) -> Result<()> {
             identity.path.display()
         );
     }
-    let ownership = CommandReceipt::capture(&identity.path)?.with_context(|| format!(
-        "No command ownership receipt beside {}. This legacy/manual copy is preserved. Inspect its exact path and provenance before removing it manually; reinstalling into a fresh directory creates a receipted install.", identity.path.display()))?;
+    let ownership = match CommandReceipt::capture(&identity.path)? {
+        Some(ownership) => ownership,
+        None => {
+            let (directory, entries) = curl_install_entries(&identity).with_context(|| format!(
+                "No command ownership receipt beside {}. This legacy/manual copy is preserved. Inspect its exact path and provenance before removing it manually; reinstalling into a fresh directory creates a receipted install.", identity.path.display()))?;
+            println!(
+                "No ownership receipt yet: {} is a curl-installer location and these commands are byte-identical to this Codewhale {}.",
+                directory.display(),
+                env!("CARGO_PKG_VERSION")
+            );
+            if !yes {
+                for (name, _) in &entries {
+                    println!("Would record and remove {}", directory.join(name).display());
+                }
+                println!(
+                    "No files were changed. Run this executable again with uninstall --yes to record a receipt for exactly these files and remove them."
+                );
+                return Ok(());
+            }
+            let text: String = entries
+                .iter()
+                .map(|(name, digest)| format!("{digest}  {name}\n"))
+                .collect();
+            let mut staged = GuardedFile::stage(&directory, text.as_bytes(), false)?;
+            staged.verify_owned()?;
+            staged.move_to_vacant(RECEIPT).with_context(|| {
+                format!(
+                    "could not record a receipt in {}; staged bytes retained at {}",
+                    directory.display(),
+                    directory.join(staged.name()).display()
+                )
+            })?;
+            println!("Recorded an install receipt in {}.", directory.display());
+            CommandReceipt::capture(&identity.path)?
+                .context("the adopted ownership receipt disappeared; nothing was removed")?
+        }
+    };
     if ownership.hashes.get(&primary_name) != Some(&identity.file_hash) {
         bail!("The receipt does not own the selected executable; nothing was removed");
     }
@@ -340,6 +375,50 @@ fn manager_command(method: InstallMethod, executable: &Path) -> String {
         },
         _ => method.uninstall_command().to_string(),
     }
+}
+
+fn curl_install_entries(
+    identity: &UpdateExecutableIdentity,
+) -> Option<(PathBuf, Vec<(String, String)>)> {
+    let directory = identity.path.parent()?.canonicalize().ok()?;
+    let home = dirs::home_dir()?.canonicalize().ok()?;
+    let local = home.join(".local");
+    let known = directory == local.join("bin")
+        || directory == local.join("codewhale").join("bin")
+        || (cfg!(windows) && directory == home.join("bin"))
+        || (directory.parent() == Some(local.as_path())
+            && directory
+                .file_name()?
+                .to_str()?
+                .starts_with("codewhale-release."));
+    if !known {
+        return None;
+    }
+    let entries: Vec<(String, String)> = COMMANDS
+        .iter()
+        .filter(|name| {
+            let path = directory.join(name);
+            std::fs::symlink_metadata(&path)
+                .is_ok_and(|meta| meta.is_file() && owned_by_user(&meta))
+                && std::fs::read(&path).is_ok_and(|bytes| sha256_hex(&bytes) == identity.file_hash)
+        })
+        .map(|name| ((*name).to_string(), identity.file_hash.clone()))
+        .collect();
+    entries
+        .iter()
+        .any(|(name, _)| identity.path.file_name() == Some(std::ffi::OsStr::new(name)))
+        .then_some((directory, entries))
+}
+
+#[cfg(unix)]
+fn owned_by_user(meta: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    meta.uid() == codewhale_config::private_directory::PrivateDirectory::current_user_id()
+}
+
+#[cfg(not(unix))]
+fn owned_by_user(_meta: &std::fs::Metadata) -> bool {
+    true
 }
 
 fn windows_installer_uninstaller(executable: &Path) -> Option<PathBuf> {

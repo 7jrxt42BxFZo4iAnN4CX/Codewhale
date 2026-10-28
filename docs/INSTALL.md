@@ -882,7 +882,8 @@ codewhale auth clear --provider deepseek
 | Windows setup (NSIS) | Settings > Apps > CodeWhale > Uninstall, or `%LOCALAPPDATA%\Programs\CodeWhale\Uninstall.exe`. `codewhale uninstall` prints this path. |
 | WinGet | `winget uninstall --id HunterBown.CodeWhale` |
 | Scoop | `scoop uninstall codewhale` |
-| old unreceipted installer or manual (§3) | Inspect the exact command paths and provenance before removing them manually; automatic uninstall preserves them. |
+| older `curl \| sh` install without a receipt | `~/.local/bin/codewhale uninstall --yes`: in an install.sh default directory (`~/.local/bin`, `~/.local/codewhale/bin`, `~/.local/codewhale-release.*`, or `%USERPROFILE%\bin` on Windows) it records a receipt for the commands that are byte-identical to the running program, then removes only those. |
+| manual copy elsewhere (§3) | Inspect the exact command paths and provenance before removing them manually; automatic uninstall preserves them. |
 | npm | `npm uninstall -g codewhale` (`codewhale uninstall` prints the `--prefix` for this copy) |
 | Cargo | `cargo uninstall codewhale-cli` (`codewhale uninstall` prints the owning `--root`) |
 | Homebrew | `brew uninstall codewhale && brew untap Hmbown/deepseek-tui` (also removes its node dependency; `codewhale uninstall` prints the owning formula) |
