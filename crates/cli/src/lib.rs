@@ -6795,6 +6795,7 @@ mod tests {
     }
 
     pub(crate) fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        codewhale_runtime::resolve_state_from_environment();
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
             .lock()

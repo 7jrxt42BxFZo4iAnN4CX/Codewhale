@@ -1994,10 +1994,6 @@ pub(crate) async fn refresh_local_ollama_catalog(config: &Config, identity: &Pro
     }
 }
 
-#[cfg_attr(
-    any(test, all(feature = "test-thread-scoped-state", debug_assertions)),
-    allow(clippy::needless_return)
-)]
 pub(crate) async fn refresh_unverified_local_context(
     config: &Config,
     identity: &ProviderIdentity,
@@ -2033,15 +2029,13 @@ pub(crate) async fn refresh_unverified_local_context(
         return;
     }
     let _ = refresh().await;
-    if known().await {
-        return;
-    }
     #[cfg(not(any(test, all(feature = "test-thread-scoped-state", debug_assertions))))]
-    if crate::client::ollama_catalog::load_model(
-        &crate::client::ollama_catalog::ollama_native_origin(&base_url),
-        model,
-    )
-    .await
+    if !known().await
+        && crate::client::ollama_catalog::load_model(
+            &crate::client::ollama_catalog::ollama_native_origin(&base_url),
+            model,
+        )
+        .await
     {
         let _ = refresh().await;
     }

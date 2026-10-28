@@ -2,6 +2,7 @@
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -228,8 +229,21 @@ fn unregister_guarded_env_key(key: &'static str) {
     }
 }
 
+static STATE_FROM_ENVIRONMENT: AtomicBool = AtomicBool::new(false);
+
+pub fn resolve_state_from_environment() {
+    STATE_FROM_ENVIRONMENT.store(true, Ordering::SeqCst);
+}
+
+pub fn state_from_environment() -> bool {
+    STATE_FROM_ENVIRONMENT.load(Ordering::SeqCst)
+}
+
 /// Whether some live [`EnvVarGuard`] currently covers `key`.
 pub fn env_var_currently_guarded(key: &str) -> bool {
+    if state_from_environment() {
+        return true;
+    }
     match guarded_env_keys().lock() {
         Ok(keys) => keys.contains_key(key),
         Err(poisoned) => poisoned.into_inner().contains_key(key),
@@ -248,6 +262,9 @@ pub fn env_var_currently_guarded(key: &str) -> bool {
 /// override variables or redirecting `HOME`/`USERPROFILE` through
 /// [`EnvVarGuard`].
 pub fn guarded_environment_provides_state_paths() -> bool {
+    if state_from_environment() {
+        return true;
+    }
     if !current_thread_holds_test_env_lock() {
         return false;
     }
@@ -283,6 +300,9 @@ pub fn guarded_environment_provides_state_paths() -> bool {
 /// is set, so a guarded `HOME` seals nothing while an unguarded
 /// `CODEWHALE_HOME` is in the ambient environment.
 pub fn home_is_sealed() -> bool {
+    if state_from_environment() {
+        return true;
+    }
     if !current_thread_holds_test_env_lock() {
         return false;
     }

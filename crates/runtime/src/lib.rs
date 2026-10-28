@@ -53,6 +53,11 @@ pub mod workspace_discovery;
 
 pub const CODEWHALE_MAIN_STACK_BYTES: usize = 32 * 1024 * 1024;
 
+pub fn resolve_state_from_environment() {
+    #[cfg(any(test, feature = "test-support"))]
+    test_support::resolve_state_from_environment();
+}
+
 pub mod catalog_cache;
 
 pub mod codex_model_roster;
