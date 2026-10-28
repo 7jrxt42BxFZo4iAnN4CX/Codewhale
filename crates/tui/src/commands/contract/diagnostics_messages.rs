@@ -8,6 +8,15 @@ pub(super) fn resolve(key: &str) -> Option<MessageId> {
         return Some(crate::pricing::UnpricedReason::from_label(reason).message_id());
     }
     Some(match key {
+        "cmd_diff_git_unavailable" => MessageId::CmdDiffGitUnavailable,
+        "cmd_diff_no_baseline" => MessageId::CmdDiffNoBaseline,
+        "cmd_diff_failed" => MessageId::CmdDiffFailed,
+        "cmd_diff_no_changes" => MessageId::CmdDiffNoChanges,
+        "cmd_diff_changed_files" => MessageId::CmdDiffChangedFiles,
+        "cmd_diff_changed_files_renamed" => MessageId::CmdDiffChangedFilesRenamed,
+        "cmd_diff_stat_header" => MessageId::CmdDiffStatHeader,
+        "cmd_diff_truncated" => MessageId::CmdDiffTruncated,
+        "cmd_diff_title" => MessageId::CmdDiffTitle,
         "cmd_change_header" => MessageId::CmdChangeHeader,
         "cmd_change_previous_version" => MessageId::CmdChangePreviousVersion,
         "cmd_change_translation_unavailable" => MessageId::CmdChangeTranslationUnavailable,

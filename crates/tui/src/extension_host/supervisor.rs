@@ -165,6 +165,7 @@ pub(crate) struct HostLaunch {
     /// build pins ([`tier::BUILTIN_MODULES`]), which the host bundle embedded
     /// from the same build must agree with ([`check_hello_identity`]).
     pub builtin_modules: &'static [BuiltinModule],
+    #[cfg(not(windows))]
     pub native_snapshot_roots: Vec<PathBuf>,
     /// Exact verified Native LPAC plan; Builtin retains its labelled exception.
     #[cfg(windows)]
@@ -551,7 +552,6 @@ pub(crate) fn plan_launch(
             memory_cap,
             memory: MemoryEnforcement::JobObject,
             builtin_modules: tier::BUILTIN_MODULES,
-            native_snapshot_roots: Vec::new(),
             windows: Some(sandbox),
         });
     }
@@ -569,8 +569,12 @@ pub(crate) fn plan_launch(
         bundle,
         &snapshot_roots,
     );
-    let mut launch = host_launch(tier, runtime, args, data, memory_cap, wrapped)?;
-    launch.native_snapshot_roots = snapshot_roots;
+    let launch = host_launch(tier, runtime, args, data, memory_cap, wrapped)?;
+    #[cfg(not(windows))]
+    let launch = HostLaunch {
+        native_snapshot_roots: snapshot_roots,
+        ..launch
+    };
     Ok(launch)
 }
 
@@ -810,15 +814,15 @@ fn native_readable_paths(
             return Err("Native writable data overlaps a runtime or package read grant".into());
         }
         canonical.push(resolved);
-        if path.is_file() {
-            if let (Some(parent), Some(name)) = (path.parent(), path.file_name()) {
-                canonical.push(
-                    parent
-                        .canonicalize()
-                        .map_err(|error| error.to_string())?
-                        .join(name),
-                );
-            }
+        if path.is_file()
+            && let (Some(parent), Some(name)) = (path.parent(), path.file_name())
+        {
+            canonical.push(
+                parent
+                    .canonicalize()
+                    .map_err(|error| error.to_string())?
+                    .join(name),
+            );
         }
     }
     paths.extend(canonical);
@@ -918,10 +922,9 @@ fn native_runtime_libraries(program: &Path) -> Result<Vec<PathBuf>, String> {
                     | "LC_LOAD_WEAK_DYLIB"
                     | "LC_REEXPORT_DYLIB"
                     | "LC_LOAD_UPWARD_DYLIB"
-            ) {
-                if let Some(value) = line.strip_prefix("name ") {
-                    dependencies.push(value.split(" (offset ").next().unwrap_or_default());
-                }
+            ) && let Some(value) = line.strip_prefix("name ")
+            {
+                dependencies.push(value.split(" (offset ").next().unwrap_or_default());
             }
         }
         run_paths.extend(inherited_paths);
@@ -1095,6 +1098,7 @@ fn host_launch(
         memory_cap,
         memory: MemoryEnforcement::planned(runtime.kind),
         builtin_modules: tier::BUILTIN_MODULES,
+        #[cfg(not(windows))]
         native_snapshot_roots: Vec::new(),
         #[cfg(windows)]
         windows: None,
@@ -1169,7 +1173,10 @@ fn probe_bwrap(command: &[String], cwd: &Path, env: &[(String, String)]) -> Resu
 }
 
 /// What a wrapped `<runtime> --version` run says about bwrap here: `Ok` when
-/// it ran, otherwise the reason `/plugin` and doctor show — bwrap's first
+/// it ran, or when bwrap built the sandbox and only the runtime failed to
+/// execute in it (a script shim whose interpreter is not granted): the host
+/// spawn then reports that as a runtime start failure, which `auto` answers
+/// by falling back to Node. Otherwise the reason `/plugin` and doctor show — bwrap's first
 /// line of stderr (or the exit status), and a hint when that line is about
 /// the user namespace bwrap could not create. Pure.
 #[cfg(any(test, all(target_os = "linux", not(target_env = "ohos"))))]
@@ -1178,6 +1185,9 @@ fn bwrap_probe_verdict(succeeded: bool, status: &str, stderr: &str) -> Result<()
         return Ok(());
     }
     let first = stderr.lines().map(str::trim).find(|line| !line.is_empty());
+    if first.is_some_and(|line| line.starts_with("bwrap: execvp ")) {
+        return Ok(());
+    }
     let mut detail: String = first.map_or_else(
         || status.to_string(),
         |line| line.chars().take(240).collect(),
@@ -1556,7 +1566,7 @@ pub(crate) struct HostProcess {
     /// How the cap is enforced for this process, settled at the handshake.
     memory: Arc<std::sync::OnceLock<MemoryEnforcement>>,
     pub sandbox: HostSandbox,
-    #[cfg_attr(windows, expect(dead_code))]
+    #[cfg(not(windows))]
     native_snapshot_roots: Vec<PathBuf>,
     tree: Arc<codewhale_runtime::process_tree::ProcessTree>,
     #[cfg(windows)]
@@ -1732,7 +1742,7 @@ impl HostProcess {
                 if !snapshot_roots.iter().any(|grant| canonical.starts_with(grant) && canonical != *grant) {
                     return Err("Native snapshot store was not granted to this host; restart Codewhale to admit this store".into());
                 }
-                let current = native_snapshot_roots(&[authority.state_path.clone()])?;
+                let current = native_snapshot_roots(std::slice::from_ref(&authority.state_path))?;
                 if !current.iter().any(|grant| snapshot_roots.contains(grant) && canonical.starts_with(grant)) {
                     return Err("Native snapshot store changed after host launch".into());
                 }
@@ -1941,6 +1951,7 @@ impl HostProcess {
             memory_cap: launch.memory_cap,
             memory,
             sandbox: launch.sandbox.clone(),
+            #[cfg(not(windows))]
             native_snapshot_roots: launch.native_snapshot_roots.clone(),
             tree,
             #[cfg(windows)]
@@ -2396,7 +2407,7 @@ impl Reader {
                 };
                 let _ = call.tx.send(result);
             }
-            HostMessage::Request { id, request } => self.start_host_request(id, request)?,
+            HostMessage::Request { id, request } => self.start_host_request(id, *request)?,
             HostMessage::Notification(notification) => match notification {
                 HostNotification::Hello(hello) => {
                     if let Some(tx) = self.handshake.lock().expect("handshake lock").hello.take() {
@@ -2640,6 +2651,14 @@ mod tests {
 
         // A probe that ran keeps the wrapper.
         assert_eq!(bwrap_probe_verdict(true, "exit status: 0", ""), Ok(()));
+        assert_eq!(
+            bwrap_probe_verdict(
+                false,
+                "exit status: 1",
+                "bwrap: execvp /tmp/.tmp1/bun: No such file or directory\n",
+            ),
+            Ok(())
+        );
         let command: Vec<String> = ["/usr/bin/bwrap", "--unshare-all", "--die-with-parent", "--"]
             .iter()
             .map(ToString::to_string)
@@ -3012,7 +3031,7 @@ mod tests {
     fn request(rig: &Rig, id: u64, plugin: &str) -> Result<(), String> {
         rig.reader.handle(HostMessage::Request {
             id,
-            request: register_request(plugin),
+            request: Box::new(register_request(plugin)),
         })
     }
 
@@ -3060,10 +3079,10 @@ mod tests {
         rig.reader
             .handle(HostMessage::Request {
                 id: 6,
-                request: HostRequest::Unregister(protocol::UnregisterParams {
+                request: Box::new(HostRequest::Unregister(protocol::UnregisterParams {
                     owner: owner("p"),
                     handle: 9,
-                }),
+                })),
             })
             .unwrap();
         assert_eq!(

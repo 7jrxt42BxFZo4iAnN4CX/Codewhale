@@ -1173,7 +1173,17 @@ and live state comes only from a resumed thread's SSE stream.
 - `GET /v1/threads/{id}`
 - `PATCH /v1/threads/{id}` (see body shape below)
 - `POST /v1/threads/{id}/resume`
-- `POST /v1/threads/{id}/fork`
+- `DELETE /v1/threads/{id}` — removes the thread with its turns, items,
+  events, goal and approval grants, and stops its cached engine. A thread
+  with a running turn, or one that an active automation or a pending
+  trigger delivers into, answers `409` naming them. The saved session bound to it is
+  deleted too unless another thread is bound to the same session or an open
+  terminal holds it; the answer
+  `{deleted, session_id?, session_deleted, session_kept?, session_error?}`
+  says which. Tasks, automations and child threads that name it keep the
+  stale id.
+- `POST /v1/threads/{id}/fork` (`POST /v1/threads` also accepts
+  `parent_thread_id` naming an existing thread)
 - `POST /v1/threads/{id}/read` — record the newest item a client has shown
   (body `{"item_id": "<item id>"}`; see "Read markers" below)
 - `GET /v1/threads/{id}/receipt` — what the thread did, one entry per action

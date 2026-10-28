@@ -83,23 +83,27 @@ sha256_file() {
   fi
 }
 
+manifest_digest() {
+  asset="$1"
+  manifest="$2"
+  awk -v name="$asset" '
+    {
+      digest = tolower($1)
+      file = $2
+      sub(/^\*/, "", file)
+      if (file == name && digest ~ /^[0-9a-f]{64}$/) {
+        print digest
+        exit
+      }
+    }
+  ' "$manifest"
+}
+
 verify_asset() {
   asset="$1"
   file="$2"
   manifest="$3"
-  expected="$(
-    awk -v name="$asset" '
-      {
-        digest = tolower($1)
-        file = $2
-        sub(/^\*/, "", file)
-        if (file == name && digest ~ /^[0-9a-f]{64}$/) {
-          print digest
-          exit
-        }
-      }
-    ' "$manifest"
-  )"
+  expected="$(manifest_digest "$asset" "$manifest")"
   [ -n "$expected" ] || fail "checksum not found for $asset"
   actual="$(sha256_file "$file" | tr '[:upper:]' '[:lower:]')"
   [ "$actual" = "$expected" ] || fail "checksum mismatch for $asset"
@@ -301,7 +305,15 @@ say "Install dir: $install_dir"
 
 download "$release_base/$manifest_asset" "$tmpdir/$manifest_asset"
 download "$release_base/$cli_asset" "$tmpdir/codewhale"
-download "$release_base/$shim_asset" "$tmpdir/codew"
+cli_digest="$(manifest_digest "$cli_asset" "$tmpdir/$manifest_asset")"
+shim_digest="$(manifest_digest "$shim_asset" "$tmpdir/$manifest_asset")"
+if [ -n "$cli_digest" ] && [ "$cli_digest" = "$shim_digest" ]; then
+  if ! ln "$tmpdir/codewhale" "$tmpdir/codew" 2>/dev/null; then
+    cp "$tmpdir/codewhale" "$tmpdir/codew"
+  fi
+else
+  download "$release_base/$shim_asset" "$tmpdir/codew"
+fi
 
 verify_asset "$cli_asset" "$tmpdir/codewhale" "$tmpdir/$manifest_asset"
 verify_asset "$shim_asset" "$tmpdir/codew" "$tmpdir/$manifest_asset"

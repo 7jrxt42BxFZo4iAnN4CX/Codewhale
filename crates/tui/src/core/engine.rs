@@ -3802,7 +3802,7 @@ impl Engine {
                                 controls.active = control.clone();
                                 control
                             };
-                            Box::pin(self.handle_message_operation(turn, Some(request))).await;
+                            Box::pin(self.handle_message_operation(*turn, Some(request))).await;
                         }
                         Op::SendMessage(spec) => {
                             self.admitted_turn_control = {
@@ -4181,6 +4181,7 @@ impl Engine {
                                 route_limits,
                             );
                             self.session.auto_model = model.trim().eq_ignore_ascii_case("auto");
+                            let switched = self.session.model != model;
                             self.session.model = model;
                             self.config.model.clone_from(&self.session.model);
                             self.active_route_limits = route_limits;
@@ -4191,12 +4192,14 @@ impl Engine {
                                 codewhale_config::route::RouteCapabilities::default();
                             self.refresh_system_prompt_with_reason("model");
                             self.emit_session_updated().await;
-                            let _ = self
-                                .send_event(Event::status(format!(
-                                    "Model set to: {}",
-                                    self.session.model
-                                )))
-                                .await;
+                            if switched {
+                                let _ = self
+                                    .send_event(Event::status(format!(
+                                        "Model set to: {}",
+                                        self.session.model
+                                    )))
+                                    .await;
+                            }
                         }
                         Op::SetCompaction { config } => {
                             // Hosts resend the compaction config on every route,

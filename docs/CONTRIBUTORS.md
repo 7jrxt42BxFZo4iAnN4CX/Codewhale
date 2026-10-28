@@ -40,6 +40,20 @@ changelog or release notes, and this contributor record.
 ## Contributors by time
 
 <details open>
+<summary><strong>Unreleased (0.10.3 candidate)</strong></summary>
+
+**Contributions**
+
+- **[ddlw](https://github.com/ddlw)** — repaired clippy, rustfmt, extension-host imports and Windows DSH receipt bytes on main for the 0.10.3 batch ([#7108](https://github.com/codewhale-hq/Codewhale/pull/7108), [#7109](https://github.com/codewhale-hq/Codewhale/pull/7109)).
+- **[Boyce / Aboysky](https://github.com/Aboysky)** — refreshed the README translation source stamps ([#7104](https://github.com/codewhale-hq/Codewhale/pull/7104)).
+- **[7jrxt42BxFZo4iAnN4CX](https://github.com/7jrxt42BxFZo4iAnN4CX)** — per-scope instruction budgets with visible truncation ([#7086](https://github.com/codewhale-hq/Codewhale/pull/7086)).
+- **[Lstarsky0](https://github.com/Lstarsky0)** — `/diff` pager resize, goal-clear wording and unpriced `/status` cost ([#7087](https://github.com/codewhale-hq/Codewhale/pull/7087), [#7089](https://github.com/codewhale-hq/Codewhale/pull/7089), [#7090](https://github.com/codewhale-hq/Codewhale/pull/7090)).
+- **[gaord](https://github.com/gaord)** — a running turn's cost and context ([#7074](https://github.com/codewhale-hq/Codewhale/pull/7074)).
+- **[Sh1Zuku / SparkofSpike](https://github.com/SparkofSpike)** — relocated state root before session-side state ([#7097](https://github.com/codewhale-hq/Codewhale/pull/7097)).
+
+</details>
+
+<details>
 <summary><strong>v0.10.2 — terminal, recovery and reliability</strong></summary>
 
 **Contributions**

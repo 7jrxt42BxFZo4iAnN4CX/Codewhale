@@ -317,6 +317,9 @@ fn managed_install_warning(method: InstallMethod) -> Option<String> {
     if method.supports_self_update() {
         return None;
     }
+    if method == InstallMethod::DesktopApp {
+        return Some(codewhale_release::install::DESKTOP_APP_UPDATE_HELP.to_string());
+    }
     Some(format!(
         "This executable is managed by {label}; in-place self-update is disabled.\n\n\
          {GITHUB_MIGRATION_HELP}\n\n\

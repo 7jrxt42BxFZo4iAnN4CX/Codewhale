@@ -594,6 +594,18 @@ codewhale mcp tools codewhale
 
 ## Connection Lifecycle
 
+As a client, Codewhale connects servers through the official MCP SDK (2.4)
+behind its Rust broker by default (`[extension_host] mcp_backend = "host"` in
+your user config; `"rust"` selects the previous Rust client and stays available
+for one release, and a host refusal never falls back to it). Servers that speak
+the 2026-07-28 revision are discovered with `server/discover`. Other stdio and
+HTTP servers, including ones that answer the discovery probe with an error or
+an unrelated result, connect through the legacy `initialize` handshake, and
+configured SSE servers keep theirs. A server that rejects sign-in reports its
+real 401 with the `/mcp login` hint, and one whose command cannot start says
+why. Rust keeps process, network, credential, catalog, approval and
+cancellation authority.
+
 Session boot connects in the background: every enabled, allowed server —
 user-configured or contributed by an enabled plugin — is started at session
 start, concurrently and without holding the first turn. A plugin server passes
@@ -661,8 +673,8 @@ discovers them again, and allow/deny rules and approvals are checked on each
 call rather than cached with the catalog. Within one connection the catalog is
 revalidated in place, on the five-second supervision sweep, when either:
 
-- a list page carried `ttlMs` and the earliest of those TTLs (capped at 24
-  hours) has passed, or
+- a list page carried `ttlMs` and the earliest of those TTLs (held between
+  60 seconds and 24 hours) has passed, or
 - the server sent `notifications/tools/list_changed`,
   `notifications/resources/list_changed` or
   `notifications/prompts/list_changed`.

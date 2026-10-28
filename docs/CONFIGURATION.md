@@ -2023,8 +2023,10 @@ Composer shortcuts keep the same role throughout a session:
   steers the active turn. It sends normally when idle.
 - By default, **Shift+Enter**, **Alt+Enter**, and **Ctrl+J** insert a newline.
 - Set `composer_multiline_mode = true` to make **Enter** insert a newline and
-  **Shift+Enter** send instead. **Alt+Enter**, **Ctrl+J**, and supported
-  **Ctrl+Enter** / **Cmd+Enter** behavior is unchanged.
+  **Alt+Enter** send instead. **Shift+Enter** also sends when the terminal
+  reports it distinctly; legacy terminals may report it as plain **Enter**.
+  **Ctrl+J** still inserts a newline, and supported **Ctrl+Enter** /
+  **Cmd+Enter** behavior is unchanged.
 - **Ctrl+G** and **Ctrl+S** only stash drafts; they never send or steer.
 
 ### Composer stash (`/stash`, Ctrl+G / Ctrl+S)
@@ -3446,6 +3448,12 @@ changes the plugin activation policy, so every plugin is reviewed again after a
 restart. Its `[extension_host]` table (`runtime`, `node`, `bun`) and what the
 host's sandbox does on each platform are in
 [Writing an extension tool](EXTENSIONS.md).
+
+`[extension_host] mcp_backend` (user config only) chooses the MCP client
+independently of the `extension_host` flag: `"host"` (default) uses the official
+MCP SDK behind the Rust broker; `"rust"` keeps the previous Rust client for one
+release. A host refusal never falls back to Rust. See
+[MCP connection lifecycle](MCP.md#connection-lifecycle).
 
 Every flag has a row in [`docs/features.toml`](features.toml), the feature
 registry; a test fails when a flag and its row disagree.

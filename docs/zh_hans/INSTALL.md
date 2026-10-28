@@ -126,8 +126,14 @@ curl -fsSL https://codewhale.net/install.sh | sh
 它做了什么（已验证）：
 
 * 检测你的平台（`linux-x64`、`linux-arm64`、`macos-x64`、`macos-arm64`）。对 Android/Termux 和 riscv64，它会给出明确提示并拒绝安装。
-* 从最新的 GitHub Release 下载 `codewhale-<platform>`、`codew-<platform>` 和 `codewhale-artifacts-sha256.txt`，并对照清单校验两个二进制。只要有一个不匹配，就会在安装任何东西之前停止（`codewhale install: checksum mismatch for …`）。
-* 安装 `~/.local/bin/codewhale` 和 `~/.local/bin/codew`：两个内容相同的 78 MB 文件。
+* 从最新的 GitHub Release 下载 `codewhale-<platform>` 和
+  `codewhale-artifacts-sha256.txt`。当清单中 `codewhale` 和 `codew` 的摘要相同
+  时，两个命令名会复用同一次下载；摘要不同时才会单独下载并校验
+  `codew-<platform>`。只要有一个摘要不匹配，就会在安装任何东西之前停止
+  （`codewhale install: checksum mismatch for …`）。
+* 使用校验过的发布内容分别安装 `~/.local/bin/codewhale` 和
+  `~/.local/bin/codew`。当两个清单摘要相同时，下载暂存阶段尽量使用硬链接，
+  失败时使用临时副本。
 * **从不使用 sudo，也从不修改你的 shell 配置文件。** 它拒绝安装到系统或包管理器目录（`/usr/bin`、`~/.cargo/bin`、Homebrew、`node_modules`、`/nix/store` 等），也拒绝覆盖一个*不同的*已有 `codewhale`。
 
 预期输出：

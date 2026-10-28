@@ -1738,6 +1738,7 @@ pub(crate) trait McpTransport: Send + Sync {
 const MAX_MCP_CATALOG_PAGES: usize = 64;
 const MAX_MCP_CATALOG_ITEMS: usize = 4_096;
 const MAX_MCP_CATALOG_BYTES: usize = 32 * 1024 * 1024;
+const MIN_MCP_CATALOG_TTL_MS: u64 = 60_000;
 const MAX_MCP_CATALOG_TTL_MS: u64 = 86_400_000;
 
 pub(crate) fn is_mcp_list_changed_method(method: &str) -> bool {
@@ -2466,7 +2467,8 @@ impl McpConnection {
         self.prompts = prompts.unwrap_or_default();
         self.skills = skills.unwrap_or_default();
         self.catalog_fresh_until = budget.ttl_ms.map(|ttl| {
-            std::time::Instant::now() + Duration::from_millis(ttl.min(MAX_MCP_CATALOG_TTL_MS))
+            std::time::Instant::now()
+                + Duration::from_millis(ttl.clamp(MIN_MCP_CATALOG_TTL_MS, MAX_MCP_CATALOG_TTL_MS))
         });
         self.catalog_stale = false;
         Ok(())

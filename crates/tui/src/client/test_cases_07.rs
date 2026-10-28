@@ -215,8 +215,16 @@
             let offering = &delta.offerings[0];
             assert_eq!(offering.wire_model_id, "synthetic/custom-model");
             assert_eq!(offering.provider, identity);
+            // The generic branch reads the ceilings a row states and nothing
+            // else: no price, no capability claim. `context_length` is a flat
+            // field every OpenAI-shaped listing may carry, so it survives; the
+            // Baseten enrichment (pricing, `supported_features`) does not.
+            let limit = offering.limit.as_ref().expect("stated context_length");
+            assert_eq!(limit.context, Some(1_048_576));
+            assert_eq!(limit.input, None);
+            assert_eq!(limit.output, None);
             assert!(
-                offering.limit.is_none() && offering.cost.is_none() && offering.tool_call.is_none(),
+                offering.cost.is_none() && offering.tool_call.is_none(),
                 "a non-Baseten endpoint takes the generic branch for any identity: {offering:?}"
             );
         }

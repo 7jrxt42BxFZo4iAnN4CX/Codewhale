@@ -10,11 +10,42 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 #[test]
-fn diff_formats_observations_without_host_state_or_actions() {
+fn diff_formats_and_localizes_observations_without_host_state_or_actions() {
     struct Diff(DebugDiffObservation);
     impl CommandDebugDiffContext for Diff {
         fn diff(&self) -> DebugDiffObservation {
             self.0.clone()
+        }
+    }
+    struct Presentation(&'static str);
+    impl CommandPresentationContext for Presentation {
+        fn translate(&self, key: &str, replacements: &[(&str, &str)]) -> Result<String, String> {
+            let json = match self.0 {
+                "en" => include_str!("../../../localization/locales/en.json"),
+                "zh-Hans" => include_str!("../../../localization/locales/zh-Hans.json"),
+                _ => unreachable!(),
+            };
+            let catalog: serde_json::Value = serde_json::from_str(json).unwrap();
+            let id: String = key
+                .split('_')
+                .map(|word| {
+                    let mut chars = word.chars();
+                    chars
+                        .next()
+                        .unwrap()
+                        .to_uppercase()
+                        .chain(chars)
+                        .collect::<String>()
+                })
+                .collect();
+            let mut text = catalog[&id]
+                .as_str()
+                .ok_or_else(|| format!("unknown test key {key}"))?
+                .to_string();
+            for (name, value) in replacements {
+                text = text.replace(&format!("{{{name}}}"), value);
+            }
+            Ok(text)
         }
     }
     let output =
@@ -76,7 +107,9 @@ fn diff_formats_observations_without_host_state_or_actions() {
         ),
     ] {
         let result = undo::diff(
-            CommandContexts::empty().with_debug_diff(&mut Diff(observation)),
+            CommandContexts::empty()
+                .with_debug_diff(&mut Diff(observation))
+                .with_presentation(&mut Presentation("en")),
             None,
         );
         assert_eq!(result.message.as_deref(), Some(message));
@@ -92,6 +125,28 @@ fn diff_formats_observations_without_host_state_or_actions() {
             (action, expected) => panic!("{message}: {action:?} vs {expected:?}"),
         }
     }
+
+    let result = undo::diff(
+        CommandContexts::empty()
+            .with_debug_diff(&mut Diff(output(
+                "a -> b\nc.rs\n",
+                " 2 files changed\n",
+                patch,
+                false,
+            )))
+            .with_presentation(&mut Presentation("zh-Hans")),
+        None,
+    );
+    assert_eq!(
+        result.message.as_deref(),
+        Some("变更文件（2 个，其中 1 个已重命名）：\na -> b\nc.rs\n\n── 统计 ──\n2 files changed")
+    );
+    assert!(!result.is_error);
+    assert!(matches!(
+        result.action,
+        Some(DebugAction::OpenDiffPager { ref title, ref diff })
+            if title == "会话开始以来的变更" && diff == patch
+    ));
 }
 
 #[test]
@@ -128,7 +183,7 @@ fn whole_group_has_exact_authority_and_safe_missing_facets() {
         ("system", Caps::DEBUG_DIAGNOSTICS),
         ("context", Caps::DEBUG_DIAGNOSTICS),
         ("edit", Caps::DEBUG_HISTORY),
-        ("diff", Caps::DEBUG_DIFF),
+        ("diff", Caps::DEBUG_DIFF | Caps::PRESENTATION),
         ("undo", Caps::DEBUG_UNDO | Caps::DEBUG_HISTORY),
         ("retry", Caps::DEBUG_HISTORY),
     ];

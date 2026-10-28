@@ -1743,7 +1743,11 @@ pub fn launch_empty_state(app: &App, area: Rect) -> LaunchEmptyState {
         text.push(Some(Line::from(spans)));
     }
     if fit.context {
-        let workspace = shorten_workspace(&codewhale_util::utils::display_path(&app.workspace), 2);
+        let path = codewhale_util::utils::display_path(&app.workspace);
+        let mut workspace = shorten_workspace(&path, 2);
+        if text_display_width(&workspace) > header_width {
+            workspace = shorten_workspace(&path, 1);
+        }
         let identity = crate::tui::workspace_context::identity_from_context(
             &app.workspace,
             app.workspace_context.as_deref(),

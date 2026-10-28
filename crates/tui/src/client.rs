@@ -111,7 +111,7 @@ pub(crate) struct RemoteControlInferencePermit {
 }
 
 #[cfg(any(test, all(feature = "test-thread-scoped-state", debug_assertions)))]
-#[cfg_attr(windows, allow(dead_code))]
+#[cfg_attr(all(not(test), debug_assertions), expect(dead_code))]
 pub(crate) async fn acquire_runtime_chat_inference_ownership() -> RuntimeChatInferenceOwnership {
     let gate = runtime_chat_inference_gate().write_owned().await;
     RuntimeChatInferenceOwnership { _gate: gate }
@@ -4946,6 +4946,136 @@ struct ModelListItem {
     created: Option<u64>,
 }
 
+/// Token limits a provider's own `/models` listing states for one row.
+///
+/// Relays publish the same two numbers under several shapes: the
+/// OpenAI-style `limit` block, flat `context_length` / `max_model_len`
+/// fields, or a vendor `metadata` block. Each field is read only as the
+/// token count it names; a row that states nothing stays empty so the
+/// resolver can still tell "the provider said 1M" from "nobody said".
+#[derive(Debug, Default, Deserialize)]
+struct ListedRowLimits {
+    #[serde(default)]
+    context_length: Option<CatalogNumber>,
+    #[serde(default)]
+    context_window: Option<CatalogNumber>,
+    #[serde(default)]
+    max_model_len: Option<CatalogNumber>,
+    #[serde(default)]
+    max_context_length: Option<CatalogNumber>,
+    #[serde(default)]
+    max_output_tokens: Option<CatalogNumber>,
+    #[serde(default)]
+    max_completion_tokens: Option<CatalogNumber>,
+    #[serde(default)]
+    limit: Option<ListedLimitBlock>,
+    #[serde(default)]
+    metadata: Option<ListedMetadataBlock>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ListedLimitBlock {
+    #[serde(default)]
+    context: Option<CatalogNumber>,
+    #[serde(default)]
+    output: Option<CatalogNumber>,
+}
+
+/// Relay-specific limits. Some gateways publish a private `metadata` block
+/// beside the OpenAI list shape; `context_limit` is the model capability and
+/// `context_budget` the share this deployment will actually accept, so the
+/// capability is preferred when both are stated.
+#[derive(Debug, Default, Deserialize)]
+struct ListedMetadataBlock {
+    #[serde(default)]
+    context_limit: Option<CatalogNumber>,
+    #[serde(default)]
+    context_budget: Option<CatalogNumber>,
+    #[serde(default)]
+    output_budget: Option<CatalogNumber>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ListedRow {
+    id: String,
+    #[serde(flatten)]
+    limits: ListedRowLimits,
+}
+
+impl ListedRowLimits {
+    fn to_models_dev_limit(&self) -> Option<codewhale_config::models_dev::ModelsDevLimit> {
+        let block = self.limit.as_ref();
+        let metadata = self.metadata.as_ref();
+        // Each candidate is parsed on its own and the first readable one wins:
+        // selecting by presence first would let one unreadable field hide every
+        // field below it, reintroducing the 128K fallback this pass exists to
+        // replace.
+        let context = [
+            block.and_then(|block| block.context.as_ref()),
+            metadata.and_then(|block| block.context_limit.as_ref()),
+            self.context_length.as_ref(),
+            self.context_window.as_ref(),
+            self.max_model_len.as_ref(),
+            self.max_context_length.as_ref(),
+            metadata.and_then(|block| block.context_budget.as_ref()),
+        ]
+        .into_iter()
+        .find_map(stated_token_count);
+        let output = [
+            block.and_then(|block| block.output.as_ref()),
+            metadata.and_then(|block| block.output_budget.as_ref()),
+            self.max_output_tokens.as_ref(),
+            self.max_completion_tokens.as_ref(),
+        ]
+        .into_iter()
+        .find_map(stated_token_count);
+        (context.is_some() || output.is_some()).then_some(
+            codewhale_config::models_dev::ModelsDevLimit {
+                context,
+                input: None,
+                output,
+            },
+        )
+    }
+}
+
+/// A positive whole token count, or `None` when the field is unreadable.
+fn stated_token_count(value: Option<&CatalogNumber>) -> Option<u64> {
+    catalog_number_u64(value)
+        .ok()
+        .flatten()
+        .filter(|tokens| *tokens > 0)
+}
+
+/// Per-model limits a provider's `/models` body states, keyed by wire id.
+///
+/// Best-effort by design: the roster itself has already been parsed and
+/// validated by the provider's typed parser, so one unreadable metadata row
+/// must not fail the refresh. A body with no `data` array yields no limits.
+fn listed_limits_by_model_id(
+    body: &str,
+) -> std::collections::BTreeMap<String, codewhale_config::models_dev::ModelsDevLimit> {
+    let Ok(page) = serde_json::from_str::<ModelsPage<'_>>(body) else {
+        return std::collections::BTreeMap::new();
+    };
+    let Ok(rows) = page.rows() else {
+        return std::collections::BTreeMap::new();
+    };
+    let Ok(rows) = serde_json::from_str::<Vec<Box<serde_json::value::RawValue>>>(rows.get()) else {
+        return std::collections::BTreeMap::new();
+    };
+    let mut limits = std::collections::BTreeMap::new();
+    for row in rows {
+        let Ok(row) = serde_json::from_str::<ListedRow>(row.get()) else {
+            continue;
+        };
+        if let Some(limit) = row.limits.to_models_dev_limit() {
+            limits.insert(row.id, limit);
+        }
+    }
+    limits
+}
+
 /// OpenRouter `/models` response item with full capability metadata (#3385).
 #[derive(Debug, Deserialize)]
 struct OpenRouterModelItem {
@@ -5467,6 +5597,7 @@ fn catalog_delta_from_models_body(
             fetched_at,
         )?
     } else {
+        let mut listed_limits = listed_limits_by_model_id(body);
         let models = apply_provider_model_cutline(
             api_provider,
             parse_models_response_for_provider(body, api_provider)
@@ -5474,6 +5605,19 @@ fn catalog_delta_from_models_body(
         );
         if models.is_empty() {
             return Err(CatalogRefreshError::EmptyList);
+        }
+        // OpenCode Go's cutline rewrites a listed id to its canonical spelling.
+        // Key the limits map the same way so a row keeps the numbers the
+        // provider stated for it.
+        if api_provider == ProviderKind::OpencodeGo {
+            listed_limits = listed_limits
+                .into_iter()
+                .map(|(id, limit)| {
+                    let canonical = crate::config::opencode_go_model_id(&id)
+                        .map_or_else(|| id.clone(), str::to_string);
+                    (canonical, limit)
+                })
+                .collect();
         }
         models
             .into_iter()
@@ -5488,11 +5632,11 @@ fn catalog_delta_from_models_body(
                     "chat"
                 }
                 .to_string(),
+                limit: listed_limits.get(&model.id).cloned(),
                 wire_model_id: model.id,
                 canonical_model: None,
                 default_for_provider: false,
                 family: None,
-                limit: None,
                 cost: None,
                 modalities: None,
                 attachment: None,
@@ -6378,6 +6522,8 @@ mod tests {
     include!("client/test_cases_07.rs");
 
     include!("client/test_cases_08.rs");
+
+    include!("client/test_cases_09.rs");
 }
 
 #[cfg(test)]

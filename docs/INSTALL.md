@@ -161,12 +161,16 @@ What it does (verified):
 
 * It detects your platform (`linux-x64`, `linux-arm64`, `macos-x64`,
   `macos-arm64`). It refuses Android/Termux and riscv64 with a clear message.
-* It downloads `codewhale-<platform>`, `codew-<platform>` and
-  `codewhale-artifacts-sha256.txt` from the latest GitHub Release, and verifies
-  both binaries against the manifest. If either doesn't match, it stops before
-  installing anything (`codewhale install: checksum mismatch for …`).
-* It installs `~/.local/bin/codewhale` and `~/.local/bin/codew`: two identical
-  78 MB files.
+* It downloads `codewhale-<platform>` and `codewhale-artifacts-sha256.txt` from
+  the latest GitHub Release. When the `codewhale` and `codew` manifest entries
+  have the same digest, it reuses that verified download for both command names;
+  otherwise it downloads and verifies `codew-<platform>` separately. If either
+  entry doesn't match, it stops before installing anything (`codewhale install:
+  checksum mismatch for …`).
+* It installs `~/.local/bin/codewhale` and `~/.local/bin/codew` from the
+  verified release bytes as two separately managed files. When both manifest
+  entries match, the download staging step uses a hard link when possible and
+  a temporary copy otherwise.
 * It **never uses sudo and never edits your shell profile.** It refuses to
   install into system or package-manager directories (`/usr/bin`,
   `~/.cargo/bin`, Homebrew, `node_modules`, `/nix/store`…) and refuses to
@@ -878,7 +882,8 @@ codewhale auth clear --provider deepseek
 | Windows setup (NSIS) | Settings > Apps > CodeWhale > Uninstall, or `%LOCALAPPDATA%\Programs\CodeWhale\Uninstall.exe`. `codewhale uninstall` prints this path. |
 | WinGet | `winget uninstall --id HunterBown.CodeWhale` |
 | Scoop | `scoop uninstall codewhale` |
-| old unreceipted installer or manual (§3) | Inspect the exact command paths and provenance before removing them manually; automatic uninstall preserves them. |
+| older `curl \| sh` install without a receipt | `~/.local/bin/codewhale uninstall --yes`: in an install.sh default directory (`~/.local/bin`, `~/.local/codewhale/bin`, `~/.local/codewhale-release.*`, or `%USERPROFILE%\bin` on Windows) it records a receipt for the commands that are byte-identical to the running program, then removes only those. |
+| manual copy elsewhere (§3) | Inspect the exact command paths and provenance before removing them manually; automatic uninstall preserves them. |
 | npm | `npm uninstall -g codewhale` (`codewhale uninstall` prints the `--prefix` for this copy) |
 | Cargo | `cargo uninstall codewhale-cli` (`codewhale uninstall` prints the owning `--root`) |
 | Homebrew | `brew uninstall codewhale && brew untap Hmbown/deepseek-tui` (also removes its node dependency; `codewhale uninstall` prints the owning formula) |

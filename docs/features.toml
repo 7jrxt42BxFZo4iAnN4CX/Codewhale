@@ -396,6 +396,16 @@ since = "unreleased"
 owner = "crates/tui/src/tools/tasks.rs"
 
 [[feature]]
+id = "thread-delete"
+name = "Delete a thread"
+summary = "DELETE /v1/threads/{id} removes an idle thread with its turns, items, events and goal, and its unshared saved session."
+status = "experimental"
+surfaces = { api = "preview" }
+since = "unreleased"
+docs = "docs/RUNTIME_API.md"
+owner = "crates/tui/src/runtime_api/thread_delete.rs"
+
+[[feature]]
 id = "todos"
 name = "Todo list"
 summary = "The agent keeps a visible todo list for multi-step work."

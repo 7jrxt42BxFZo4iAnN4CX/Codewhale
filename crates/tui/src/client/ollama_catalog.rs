@@ -5,7 +5,10 @@ use codewhale_config::catalog::{
 };
 use serde::Deserialize;
 
-#[cfg_attr(windows, allow(dead_code))]
+#[cfg_attr(
+    all(not(test), feature = "test-thread-scoped-state", debug_assertions),
+    expect(dead_code)
+)]
 pub(crate) const TAGS_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Upper bound on `/api/show` lookups per probe. A developer box can hold
@@ -208,7 +211,10 @@ pub(crate) fn ollama_catalog_delta(
     }
 }
 
-#[cfg_attr(windows, allow(dead_code))]
+#[cfg_attr(
+    all(not(test), feature = "test-thread-scoped-state", debug_assertions),
+    expect(dead_code)
+)]
 pub(crate) fn probe_client() -> anyhow::Result<reqwest::Client> {
     // The first-run probe can run before any provider client has installed
     // the rustls crypto provider; the shared builder installs it (the bare
@@ -218,7 +224,29 @@ pub(crate) fn probe_client() -> anyhow::Result<reqwest::Client> {
         .build()?)
 }
 
-#[cfg_attr(windows, allow(dead_code))]
+#[cfg(not(any(test, all(feature = "test-thread-scoped-state", debug_assertions))))]
+pub(crate) const MODEL_LOAD_TIMEOUT: Duration = Duration::from_secs(60);
+
+#[cfg(not(any(test, all(feature = "test-thread-scoped-state", debug_assertions))))]
+pub(crate) async fn load_model(origin: &str, tag: &str) -> bool {
+    let Ok(client) = codewhale_release::tls::reqwest_client_builder()
+        .timeout(MODEL_LOAD_TIMEOUT)
+        .build()
+    else {
+        return false;
+    };
+    client
+        .post(format!("{origin}/api/generate"))
+        .json(&serde_json::json!({ "model": tag }))
+        .send()
+        .await
+        .is_ok_and(|response| response.status().is_success())
+}
+
+#[cfg_attr(
+    all(not(test), feature = "test-thread-scoped-state", debug_assertions),
+    expect(dead_code)
+)]
 pub(crate) async fn fetch_text(url: &str) -> anyhow::Result<String> {
     let response = probe_client()?.get(url).send().await?;
     if !response.status().is_success() {
@@ -229,7 +257,10 @@ pub(crate) async fn fetch_text(url: &str) -> anyhow::Result<String> {
         .map_err(|reason| anyhow::anyhow!("Ollama catalog response rejected: {reason:?}"))
 }
 
-#[cfg_attr(windows, allow(dead_code))]
+#[cfg_attr(
+    all(not(test), feature = "test-thread-scoped-state", debug_assertions),
+    expect(dead_code)
+)]
 pub(crate) async fn fetch_tag_profile(origin: &str, tag: &str) -> anyhow::Result<OllamaTagProfile> {
     let response = probe_client()?
         .post(format!("{origin}/api/show"))

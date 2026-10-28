@@ -35,7 +35,6 @@ mod conformance;
 mod context_report;
 mod core;
 mod cost_status;
-mod usage_persistence;
 /// Guarded installation I/O reusing Engine's confined file primitives.
 pub mod delivery_files;
 mod doctor;
@@ -46,6 +45,7 @@ mod extension_host;
 mod fleet;
 mod git_status;
 mod keybinding_table;
+mod usage_persistence;
 use crate::fleet::executor::exec_stream_final_answer_excerpt;
 mod hooks;
 mod image_attach;
@@ -1553,6 +1553,48 @@ fn validate_serve_mode_selection(
     Ok(http_selected)
 }
 
+#[derive(Args, Debug, Clone)]
+struct McpAddArgs {
+    /// Server name
+    name: String,
+    /// Command to launch stdio server
+    #[arg(long, conflicts_with = "url")]
+    command: Option<String>,
+    /// URL for streamable HTTP/SSE server
+    #[arg(long, conflicts_with = "command")]
+    url: Option<String>,
+    /// Explicit URL transport override. Use "sse" for legacy SSE endpoints.
+    #[arg(long, requires = "url")]
+    transport: Option<String>,
+    /// Environment variable containing a bearer token for URL-based servers
+    #[arg(long, requires = "url")]
+    bearer_token_env_var: Option<String>,
+    /// Pre-registered OAuth client ID, bound to --oauth-issuer
+    #[arg(long, requires_all = ["url", "oauth_issuer"])]
+    oauth_client_id: Option<String>,
+    #[arg(
+        long,
+        requires = "url",
+        help = "Exact authorization issuer bound to this OAuth client"
+    )]
+    oauth_issuer: Option<String>,
+    #[arg(
+        long,
+        requires = "url",
+        help = "HTTPS URL of a hosted OAuth client metadata document"
+    )]
+    oauth_client_metadata_url: Option<String>,
+    /// Exact OAuth resource pin checked against server discovery
+    #[arg(long, requires = "url")]
+    oauth_resource: Option<String>,
+    /// OAuth scope to request during login. Repeat or comma-separate.
+    #[arg(long = "scope", requires = "url", value_delimiter = ',')]
+    scopes: Vec<String>,
+    /// Arguments for command-based servers
+    #[arg(long = "arg", allow_hyphen_values = true)]
+    args: Vec<String>,
+}
+
 #[derive(Subcommand, Debug, Clone)]
 enum McpCommand {
     /// List configured MCP servers
@@ -1577,46 +1619,7 @@ enum McpCommand {
         server: Option<String>,
     },
     /// Add an MCP server entry
-    Add {
-        /// Server name
-        name: String,
-        /// Command to launch stdio server
-        #[arg(long, conflicts_with = "url")]
-        command: Option<String>,
-        /// URL for streamable HTTP/SSE server
-        #[arg(long, conflicts_with = "command")]
-        url: Option<String>,
-        /// Explicit URL transport override. Use "sse" for legacy SSE endpoints.
-        #[arg(long, requires = "url")]
-        transport: Option<String>,
-        /// Environment variable containing a bearer token for URL-based servers
-        #[arg(long, requires = "url")]
-        bearer_token_env_var: Option<String>,
-        /// Pre-registered OAuth client ID, bound to --oauth-issuer
-        #[arg(long, requires_all = ["url", "oauth_issuer"])]
-        oauth_client_id: Option<String>,
-        #[arg(
-            long,
-            requires = "url",
-            help = "Exact authorization issuer bound to this OAuth client"
-        )]
-        oauth_issuer: Option<String>,
-        #[arg(
-            long,
-            requires = "url",
-            help = "HTTPS URL of a hosted OAuth client metadata document"
-        )]
-        oauth_client_metadata_url: Option<String>,
-        /// Exact OAuth resource pin checked against server discovery
-        #[arg(long, requires = "url")]
-        oauth_resource: Option<String>,
-        /// OAuth scope to request during login. Repeat or comma-separate.
-        #[arg(long = "scope", requires = "url", value_delimiter = ',')]
-        scopes: Vec<String>,
-        /// Arguments for command-based servers
-        #[arg(long = "arg", allow_hyphen_values = true)]
-        args: Vec<String>,
-    },
+    Add(Box<McpAddArgs>),
     /// Authenticate to a URL-based MCP server using OAuth
     Login {
         /// Server name
@@ -3104,14 +3107,14 @@ async fn run_async_main_dispatch(
         Some(id)
     } else if !cli.fresh {
         let workspace = resolve_workspace(&cli);
-        preserve_interrupted_checkpoint_for_explicit_resume(&workspace);
+        let checkpoint_notice = preserve_interrupted_checkpoint_for_explicit_resume(&workspace);
         // Opt-in auto-resume (#2934). Off by default, so the historical
         // "plain `codewhale` starts fresh" behaviour is unchanged unless the
         // user asked for something else. The decision never resumes an
         // archived, unreadable, or foreign-workspace session; every fallback
         // carries a receipt rather than silently starting blank.
         let (session_id, notice) = resolve_auto_resume(&workspace);
-        startup_notice = notice;
+        startup_notice = notice.or(checkpoint_notice);
         session_id
     } else {
         None
@@ -12224,19 +12227,20 @@ async fn run_mcp_command(
             }
             Ok(())
         }
-        McpCommand::Add {
-            name,
-            command,
-            url,
-            transport,
-            bearer_token_env_var,
-            oauth_client_id,
-            oauth_issuer,
-            oauth_client_metadata_url,
-            oauth_resource,
-            scopes,
-            args,
-        } => {
+        McpCommand::Add(args) => {
+            let McpAddArgs {
+                name,
+                command,
+                url,
+                transport,
+                bearer_token_env_var,
+                oauth_client_id,
+                oauth_issuer,
+                oauth_client_metadata_url,
+                oauth_resource,
+                scopes,
+                args,
+            } = *args;
             if command.is_none() && url.is_none() {
                 bail!("Provide either --command or --url for `mcp add`.");
             }
@@ -13115,18 +13119,14 @@ fn saved_session_is_newer(
 /// the same folder" from re-entering the previous in-flight session while still
 /// leaving an explicit resume path.
 ///
-/// Only the newest recent checkpoint drives the notice. The legacy
-/// single-slot file is persisted as a regular session and consumed (today's
-/// behavior for that slot); per-session checkpoint files are persisted but
-/// left in place — they may belong to a live session in another terminal,
-/// and `--continue` reads them directly.
-fn preserve_interrupted_checkpoint_for_explicit_resume(launch_workspace: &Path) {
-    let Some(manager) = session_manager::SessionManager::default_location().ok() else {
-        return;
-    };
-    let Some(newest) = load_recent_checkpoints(&manager).into_iter().next() else {
-        return;
-    };
+/// Only the newest recent checkpoint drives the notice, which is returned for
+/// the TUI to show. The legacy single-slot file is migrated to a per-session
+/// checkpoint and consumed; per-session checkpoint files are left in place —
+/// they may belong to a live session in another terminal, and `--continue`
+/// reads them directly.
+fn preserve_interrupted_checkpoint_for_explicit_resume(launch_workspace: &Path) -> Option<String> {
+    let manager = session_manager::SessionManager::default_location().ok()?;
+    let newest = load_recent_checkpoints(&manager).into_iter().next()?;
 
     let session_workspace = newest.session.metadata.workspace.clone();
     // #4479: removed save_session call — checkpoint should not be auto-promoted to session
@@ -13139,20 +13139,22 @@ fn preserve_interrupted_checkpoint_for_explicit_resume(launch_workspace: &Path) 
     }
 
     let age_str = checkpoint_age_label(newest.age);
-    if session_manager::workspace_scope_matches(&session_workspace, launch_workspace) {
-        eprintln!(
-            "Found an in-flight session snapshot ({age_str}). Starting a new \
-             session. Run `codewhale --continue` to resume it."
-        );
-    } else {
-        eprintln!(
-            "Note: an interrupted session from another workspace ({}) is \
-             available. Run `codewhale sessions` to list saved sessions. Starting \
-             fresh in {}.",
-            session_workspace.display(),
-            launch_workspace.display(),
-        );
-    }
+    Some(
+        if session_manager::workspace_scope_matches(&session_workspace, launch_workspace) {
+            format!(
+                "Found an in-flight session snapshot ({age_str}). Starting a new \
+                 session. Run `codewhale --continue` to resume it."
+            )
+        } else {
+            format!(
+                "Note: an interrupted session from another workspace ({}) is \
+                 available. Run `codewhale sessions` to list saved sessions. Starting \
+                 fresh in {}.",
+                session_workspace.display(),
+                launch_workspace.display(),
+            )
+        },
+    )
 }
 
 /// Load project-level config from `$WORKSPACE/.codewhale/config.toml`, with
@@ -20934,10 +20936,10 @@ mod mcp_add_arg_tests {
         let Some(Commands::Mcp { command }) = cli.command else {
             panic!("expected mcp command");
         };
-        let McpCommand::Add { args, .. } = command else {
+        let McpCommand::Add(args) = command else {
             panic!("expected mcp add subcommand");
         };
-        assert_eq!(args, vec!["-y".to_string()]);
+        assert_eq!(args.args, vec!["-y".to_string()]);
     }
 }
 

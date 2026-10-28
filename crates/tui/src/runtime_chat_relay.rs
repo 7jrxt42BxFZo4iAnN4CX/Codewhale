@@ -542,6 +542,7 @@ impl RuntimeChatRelayHost {
         let native_thread_id = self
             .manager
             .create_thread(CreateThreadRequest {
+                parent_thread_id: None,
                 operation_key: None,
                 model: Some(command.model.clone()),
                 model_provider: Some(command.model_provider.clone()),
@@ -698,6 +699,7 @@ impl RuntimeChatRelayHost {
                         command.system_prompt.as_deref(),
                     )),
                     task_id: None,
+                    parent_thread_id: None,
                     dynamic_tools: Vec::new(),
                     environments: Vec::new(),
                 })

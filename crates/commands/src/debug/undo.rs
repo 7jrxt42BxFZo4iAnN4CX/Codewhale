@@ -44,7 +44,7 @@ registration!(
     "/diff",
     &[],
     "cmd_diff_description",
-    Caps::DEBUG_DIFF,
+    Caps::DEBUG_DIFF.union(Caps::PRESENTATION),
     diff
 );
 registration!(
@@ -122,14 +122,29 @@ pub(super) fn diff(contexts: CommandContexts<'_>, _: Option<&str>) -> CommandRes
     let Some(diff) = parts.debug_diff.as_deref_mut() else {
         return CommandResult::error("Command capability unavailable: debug_diff");
     };
-    match diff.diff() {
-        DebugDiffObservation::GitUnavailable => CommandResult::error("git not found on PATH"),
-        DebugDiffObservation::NoBaseline => CommandResult::message(
-            "Nothing to compare yet: this session has not saved a restore point here, and this folder is not a git repository.",
-        ),
-        DebugDiffObservation::Failed(error) => CommandResult::message(format!(
-            "Git diff failed — is this a git repository?\n{error}"
-        )),
+    let Some(presentation) = parts.presentation.as_deref_mut() else {
+        return CommandResult::error("Command capability unavailable: presentation");
+    };
+    match diff_report(diff.diff(), presentation) {
+        Ok(result) => result,
+        Err(error) => CommandResult::error(error),
+    }
+}
+
+fn diff_report(
+    observation: DebugDiffObservation,
+    presentation: &dyn CommandPresentationContext,
+) -> Result<CommandResult, String> {
+    Ok(match observation {
+        DebugDiffObservation::GitUnavailable => {
+            CommandResult::error(presentation.translate("cmd_diff_git_unavailable", &[])?)
+        }
+        DebugDiffObservation::NoBaseline => {
+            CommandResult::message(presentation.translate("cmd_diff_no_baseline", &[])?)
+        }
+        DebugDiffObservation::Failed(error) => {
+            CommandResult::message(presentation.translate("cmd_diff_failed", &[("error", &error)])?)
+        }
         DebugDiffObservation::Output {
             names,
             stat,
@@ -137,7 +152,9 @@ pub(super) fn diff(contexts: CommandContexts<'_>, _: Option<&str>) -> CommandRes
             patch_truncated,
         } => {
             if names.trim().is_empty() {
-                return CommandResult::message("No changes since session start");
+                return Ok(CommandResult::message(
+                    presentation.translate("cmd_diff_no_changes", &[])?,
+                ));
             }
 
             let files: Vec<&str> = names.lines().filter(|l| !l.is_empty()).collect();
@@ -149,34 +166,44 @@ pub(super) fn diff(contexts: CommandContexts<'_>, _: Option<&str>) -> CommandRes
             // modifications.
             let renamed_count = files.iter().filter(|f| f.contains(" -> ")).count();
             let summary = if renamed_count > 0 {
-                format!("Changed files ({file_count}, {renamed_count} renamed):\n{file_list}")
+                presentation.translate(
+                    "cmd_diff_changed_files_renamed",
+                    &[
+                        ("count", &file_count.to_string()),
+                        ("renamed", &renamed_count.to_string()),
+                        ("files", &file_list),
+                    ],
+                )?
             } else {
-                format!("Changed files ({file_count}):\n{file_list}")
+                presentation.translate(
+                    "cmd_diff_changed_files",
+                    &[("count", &file_count.to_string()), ("files", &file_list)],
+                )?
             };
 
             let stat_str = stat.trim();
             let mut message = summary;
             if !stat_str.is_empty() {
-                message.push_str("\n\n── Stat ──\n");
+                let stat_header = presentation.translate("cmd_diff_stat_header", &[])?;
+                message.push_str(&format!("\n\n── {stat_header} ──\n"));
                 message.push_str(stat_str);
             }
             if patch_truncated {
-                message.push_str(
-                    "\n\nThe diff is too long to show in full. The file list above is complete.",
-                );
+                message.push_str("\n\n");
+                message.push_str(&presentation.translate("cmd_diff_truncated", &[])?);
             }
             if patch.trim().is_empty() {
-                return CommandResult::message(message);
+                return Ok(CommandResult::message(message));
             }
             CommandResult::with_message_and_action(
                 message,
                 DebugAction::OpenDiffPager {
-                    title: "Changes since session start".to_string(),
+                    title: presentation.translate("cmd_diff_title", &[])?,
                     diff: patch,
                 },
             )
         }
-    }
+    })
 }
 
 /// A conversation undo that removed anything hands the truncated conversation

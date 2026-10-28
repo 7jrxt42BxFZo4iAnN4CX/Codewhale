@@ -1505,18 +1505,29 @@ pub fn configured_providers(config: &Config) -> Vec<ProviderIdentity> {
         .collect()
 }
 
-/// Catalog models for providers that qualify as configured for `active`.
+/// Catalog models for providers that qualify as configured for `active`, or
+/// whose own endpoint has answered a live listing (a keyless local runtime
+/// that is not the active route).
 #[must_use]
 pub fn models_for_provider(config: &Config, identity: &ProviderIdentity) -> Vec<String> {
     let Ok(active) = config.active_provider_identity() else {
         return Vec::new();
     };
-    if provider_is_configured_for_active(config, identity, &active) {
+    let base_url = config.base_url_for_route(identity);
+    let endpoint_listed = crate::provider_catalog_live::cached_entry_for_route(
+        identity.provider,
+        identity.key.as_str(),
+        &base_url,
+    )
+    .ok()
+    .flatten()
+    .is_some_and(|entry| entry.fetched_at > 0 && !entry.offerings.is_empty());
+    if endpoint_listed || provider_is_configured_for_active(config, identity, &active) {
         configured_catalog_models_for_route(
             config,
             identity.provider,
             identity.key.as_str(),
-            &config.base_url_for_route(identity),
+            &base_url,
         )
     } else {
         Vec::new()
@@ -1991,24 +2002,44 @@ pub(crate) async fn refresh_unverified_local_context(
     if identity.provider != ProviderKind::Ollama {
         return;
     }
-    let provider = identity.provider;
-    let key = identity.key.as_str().to_string();
     let base_url = config.base_url_for_route(identity);
-    let model = model.to_string();
-    let known = tokio::task::spawn_blocking(move || {
-        catalog_offering_for_route(provider, &key, &base_url, &model)
-            .and_then(|row| row.limit)
-            .and_then(|limit| limit.context)
-            .is_some()
-    })
-    .await
-    .unwrap_or(false);
-    if !known {
-        let _ = tokio::time::timeout(
+    let known = || {
+        let provider = identity.provider;
+        let key = identity.key.as_str().to_string();
+        let base_url = base_url.clone();
+        let model = model.to_string();
+        async move {
+            tokio::task::spawn_blocking(move || {
+                catalog_offering_for_route(provider, &key, &base_url, &model)
+                    .and_then(|row| row.limit)
+                    .and_then(|limit| limit.context)
+                    .is_some()
+            })
+            .await
+            .unwrap_or(false)
+        }
+    };
+    let refresh = || {
+        tokio::time::timeout(
             std::time::Duration::from_secs(3),
             refresh_local_ollama_catalog(config, identity),
         )
-        .await;
+    };
+    if known().await {
+        return;
+    }
+    let _ = refresh().await;
+    if known().await {
+        return;
+    }
+    #[cfg(not(any(test, all(feature = "test-thread-scoped-state", debug_assertions))))]
+    if crate::client::ollama_catalog::load_model(
+        &crate::client::ollama_catalog::ollama_native_origin(&base_url),
+        model,
+    )
+    .await
+    {
+        let _ = refresh().await;
     }
 }
 

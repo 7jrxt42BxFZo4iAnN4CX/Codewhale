@@ -996,6 +996,7 @@ pub(crate) async fn spawned_dispatch_inner(
         scope: prepare.cost_scope,
         batch: Some(initial_routed_usage.clone()),
     };
+    let route_limits = turn_route.candidate.limits();
     let op = Op::SendMessage(TurnSpec {
         profile_constitution: None,
         max_output_tokens: None,
@@ -1040,6 +1041,7 @@ pub(crate) async fn spawned_dispatch_inner(
         effective_provider_label,
         effective_reasoning_effort: effective_reasoning_receipt,
         auto_selection,
+        route_limits,
     };
     Box::new(move |app, current_engine, config| {
         // Admission stays serialized by this flag until its callback retires,
@@ -1145,6 +1147,8 @@ pub(crate) fn build_dispatch_success_closure(
                 app.last_effective_provider = None;
                 app.last_effective_provider_identity = None;
                 app.last_auto_route_receipt = None;
+                app.set_active_route_limits(outcome.route_limits);
+                app.update_model_compaction_budget();
             }
             app.pending_auto_route_receipt = outcome
                 .auto_selection
