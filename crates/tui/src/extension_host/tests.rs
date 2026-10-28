@@ -5062,7 +5062,7 @@ fn launch_plans_carry_their_tier_and_use_a_data_directory_each() {
                 );
                 assert!(matches!(
                     super::supervisor::planned_sandbox(tier, &runtime, home.path()),
-                    Ok(super::supervisor::HostSandbox::Unsandboxed(_))
+                    Err(reason) if reason.contains("would create")
                 ));
                 let data = super::supervisor::tier_data_dir(home.path(), tier);
                 assert!(data.is_dir());

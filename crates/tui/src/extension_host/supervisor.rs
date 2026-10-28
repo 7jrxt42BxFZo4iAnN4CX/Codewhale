@@ -580,19 +580,25 @@ pub(crate) fn plan_launch(
 
 /// The runtime sandbox a `tier` host would get, planned (and on Linux probed)
 /// as [`plan_launch`] does, without package-store grants, for doctor.
-/// Blocking; creates the data dir, as a launch would.
+/// Blocking; creates nothing, so a host that has not started yet is reported
+/// as not planned, naming the first path its start would create.
 pub(crate) fn planned_sandbox(
     tier: HostTier,
     runtime: &HostRuntime,
     home: &Path,
 ) -> Result<HostSandbox, String> {
-    let data = host_data_dir(home, tier)?;
+    let data = tier_data_dir(home, tier);
+    let mut required = vec![data.clone()];
     if tier == HostTier::Plugin {
-        host_data_dir(home, HostTier::Builtin)?;
+        required.push(tier_data_dir(home, HostTier::Builtin));
+        required.push(data.join("tmp"));
+    }
+    if let Some(missing) = required.iter().find(|path| !path.is_dir()) {
+        return Err(would_create(missing));
     }
     #[cfg(windows)]
     if tier == HostTier::Plugin {
-        let bundle = super::materialize_bundle(home)?;
+        let bundle = super::materialized_bundle(home)?;
         return Ok(
             match super::windows::NativeSandbox::prepare(
                 runtime,
@@ -607,7 +613,7 @@ pub(crate) fn planned_sandbox(
         );
     }
     let bundle = if tier == HostTier::Plugin {
-        super::materialize_bundle(home)?
+        super::materialized_bundle(home)?
     } else {
         PathBuf::new()
     };
@@ -690,6 +696,13 @@ pub(crate) fn plugin_data_dir(home: &Path, plugin_id: &str, plugin_name: &str) -
         .join("data")
         .join("plugins")
         .join(format!("{name}-{short}"))
+}
+
+pub(crate) fn would_create(path: &Path) -> String {
+    format!(
+        "not planned until the host first starts, which would create {}",
+        path.display()
+    )
 }
 
 fn host_data_dir(home: &Path, tier: HostTier) -> Result<PathBuf, String> {

@@ -234,6 +234,15 @@ fn materialize_bundle(root: &Path) -> Result<PathBuf, String> {
     Ok(bundle)
 }
 
+fn materialized_bundle(root: &Path) -> Result<PathBuf, String> {
+    let bundle = supervisor::bundle_dir(root, bundle_sha256()).join(BUNDLE_FILE_NAME);
+    if bundle.is_file() {
+        Ok(bundle)
+    } else {
+        Err(supervisor::would_create(&bundle))
+    }
+}
+
 /// One embedded file in `dir`: written to a private staging name, made
 /// read-only, renamed into place (so a reader never sees a partial file and a
 /// symlink at the final name is replaced, not followed), and read back.
@@ -672,7 +681,7 @@ fn host_root(options: &ExtensionHostOptions) -> Result<PathBuf, String> {
 }
 
 /// The selected tier's sandbox, planned exactly as a launch does (for doctor).
-/// Blocking; creates the host's data dir and probes bubblewrap on Linux.
+/// Blocking; creates nothing, and probes bubblewrap on Linux.
 pub(crate) fn planned_sandbox(
     options: &ExtensionHostOptions,
     runtime: &codewhale_dependencies::HostRuntime,
