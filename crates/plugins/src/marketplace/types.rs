@@ -205,7 +205,7 @@ pub enum MarketplaceSourceSpec {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sha: Option<String>,
     },
-    /// Tarball archive URL with an optional unverified sha256 pin.
+    /// Tarball archive URL with an optional sha256 pin, verified at install.
     ArchiveUrl {
         url: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]

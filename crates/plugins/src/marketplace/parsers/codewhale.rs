@@ -3,7 +3,8 @@
 //! This is Codewhale's own documented catalog format. It is deliberately
 //! the smallest of the supported formats: entries carry a `name` and a
 //! `source` that is exactly the install spec `/plugin install` accepts
-//! (`github:owner/repo`, `path:dir`, an http(s) tarball URL).
+//! (`github:owner/repo`, `path:dir`, an http(s) tarball URL). A tarball
+//! entry may add `sha256`; the install refuses archive bytes that differ.
 //!
 //! ```json
 //! {
@@ -39,6 +40,7 @@ const ENTRY_FIELDS: &[&str] = &[
     "author",
     "icon",
     "platforms",
+    "sha256",
 ];
 
 pub fn parse_codewhale_catalog(document: MarketplaceDocument) -> MarketplaceCatalog {
@@ -204,7 +206,7 @@ fn parse_codewhale_entry(
         return None;
     };
 
-    let install_plan = match PluginInstallSource::parse(source) {
+    let mut install_plan = match PluginInstallSource::parse(source) {
         Ok(parsed) => {
             let source_kind = match &parsed {
                 PluginInstallSource::Remote(
@@ -229,7 +231,29 @@ fn parse_codewhale_entry(
             raw: source.to_string(),
         },
     };
-    let normalized = normalize_native_source(source);
+    let mut normalized = normalize_native_source(source);
+    if let Some(pin) = obj.get("sha256").filter(|value| !value.is_null()) {
+        let pinned = pin
+            .as_str()
+            .ok_or_else(|| "sha256 must be a string".to_string())
+            .and_then(|pin| PluginInstallSource::pin_archive_spec(source, pin));
+        match pinned {
+            Ok((pinned_spec, digest)) => {
+                if let MarketplaceInstallPlan::Supported { spec, .. } = &mut install_plan {
+                    *spec = pinned_spec;
+                }
+                if let MarketplaceSourceSpec::ArchiveUrl { sha256, .. } = &mut normalized {
+                    *sha256 = Some(digest);
+                }
+            }
+            Err(reason) => entry_diags.push(MarketplaceDiagnostic::error(
+                "INVALID_SHA256",
+                reason,
+                Some(name.clone()),
+                Some(index),
+            )),
+        }
+    }
 
     let (description, bad_desc) = str_field(obj, "description");
     if let Some(diag) = bad_desc {

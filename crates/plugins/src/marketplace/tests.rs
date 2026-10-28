@@ -300,7 +300,7 @@ fn claude_source_object_matrix_matches_documented_forms() {
           {"name": "u", "source": {"source": "url", "url": "https://git.example.com/x.git"}},
           {"name": "gs", "source": {"source": "git-subdir", "url": "https://github.com/a/sub", "path": "p"}},
           {"name": "np", "source": {"source": "npm", "package": "pkg"}},
-          {"name": "ar", "source": {"source": "archive", "url": "https://x.example.com/p.tgz", "sha256": "abc"}},
+          {"name": "ar", "source": {"source": "archive", "url": "https://x.example.com/p.tgz", "sha256": "ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef0123456789"}},
           {"name": "cm", "source": {"source": "command", "command": "curl x"}}
         ]
       }"#;
@@ -329,10 +329,13 @@ fn claude_source_object_matrix_matches_documented_forms() {
 
     let ar = catalog.candidate_by_name("ar").unwrap();
     assert!(ar.install_plan.is_supported());
+    let pin = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
     assert!(matches!(&ar.source,
         MarketplaceSourceSpec::ArchiveUrl { url, sha256: Some(s) }
-            if url == "https://x.example.com/p.tgz" && s == "abc"));
-    assert!(ar.diagnostics.iter().any(|d| d.code == "UNVERIFIED_PIN"));
+            if url == "https://x.example.com/p.tgz" && s == pin));
+    assert!(matches!(&ar.install_plan,
+        MarketplaceInstallPlan::Supported { spec, .. }
+            if *spec == format!("https://x.example.com/p.tgz#sha256={pin}")));
 
     let cm = catalog.candidate_by_name("cm").unwrap();
     assert!(!cm.install_plan.is_supported());

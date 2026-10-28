@@ -556,18 +556,23 @@ fn normalize_claude_source(
             let Some(url) = field("url") else {
                 return invalid("archive source requires `url`", value, &mut diags);
             };
-            if let Some(pin) = field("sha256") {
-                diags.push(MarketplaceDiagnostic::warning(
-                    "UNVERIFIED_PIN",
-                    format!("archive sha256 pin `{pin}` is recorded but not verified during fetch"),
-                    None,
-                    None,
-                ));
-            }
+            let (spec, sha256) = match obj.get("sha256").filter(|pin| !pin.is_null()) {
+                None => (url.to_string(), None),
+                Some(pin) => match pin
+                    .as_str()
+                    .ok_or_else(|| "archive `sha256` must be a string".to_string())
+                    .and_then(|pin| {
+                        crate::install::PluginInstallSource::pin_archive_spec(url, pin)
+                    })
+                {
+                    Ok((spec, digest)) => (spec, Some(digest)),
+                    Err(reason) => return invalid(&reason, value, &mut diags),
+                },
+            };
             (
-                MarketplaceSourceSpec::ArchiveUrl { url: url.to_string(), sha256: field("sha256").map(ToString::to_string) },
+                MarketplaceSourceSpec::ArchiveUrl { url: url.to_string(), sha256 },
                 MarketplaceInstallPlan::Supported {
-                    spec: url.to_string(),
+                    spec,
                     source_kind: "Tarball archive URL".to_string(),
                 },
                 diags,

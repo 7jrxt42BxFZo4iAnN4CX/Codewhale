@@ -66,6 +66,16 @@ pub struct PluginContentMismatch {
     pub actual: String,
 }
 
+#[derive(Debug, Error)]
+#[error(
+    "plugin archive {url} does not match its pinned sha256: expected {expected}, downloaded bytes hash {actual}; nothing was installed"
+)]
+pub struct PluginArchiveMismatch {
+    pub url: String,
+    pub expected: String,
+    pub actual: String,
+}
+
 use crate::manifest::PluginManifest;
 use codewhale_net::network_policy::NetworkPolicy;
 use codewhale_skill_install::install::{
@@ -200,7 +210,7 @@ impl PluginInstallSource {
             let source = InstallSource::parse(trimmed)?;
             return match source {
                 InstallSource::GitHubRepo(_) | InstallSource::DirectUrl(_) => {
-                    remote_bundle_path(&source)?;
+                    remote_fragment(&source)?;
                     Ok(Self::Remote(source))
                 }
                 InstallSource::Registry(_) => {
@@ -223,34 +233,68 @@ impl PluginInstallSource {
         }
         Ok(Self::LocalPath(path))
     }
+
+    pub(crate) fn pin_archive_spec(spec: &str, sha256: &str) -> Result<(String, String), String> {
+        let digest = sha256.trim().to_ascii_lowercase();
+        if digest.len() != 64 || !digest.bytes().all(|ch| ch.is_ascii_hexdigit()) {
+            return Err(format!(
+                "archive sha256 pin `{sha256}` must be 64 hexadecimal characters"
+            ));
+        }
+        let spec = spec.trim();
+        let separator = if spec.contains('#') { '&' } else { '#' };
+        let pinned = format!("{spec}{separator}sha256={digest}");
+        match Self::parse(&pinned) {
+            Ok(Self::Remote(InstallSource::DirectUrl(_))) => Ok((pinned, digest)),
+            Ok(_) => Err("a sha256 pin applies only to an http(s) archive URL source".to_string()),
+            Err(err) => Err(format!("cannot pin `{spec}` to a sha256: {err}")),
+        }
+    }
 }
 
-/// Select one manifest-rooted bundle from a repository archive. The fragment
-/// is local extraction metadata, never a path sent to or executed by a server.
-fn remote_bundle_path(source: &InstallSource) -> Result<Option<String>> {
+/// Read a repository archive's fragment: `path=` selects one manifest-rooted
+/// bundle and `sha256=` pins the archive bytes. The fragment is local install
+/// metadata, never sent to or executed by a server.
+fn remote_fragment(source: &InstallSource) -> Result<(Option<String>, Option<String>)> {
     let InstallSource::DirectUrl(raw) = source else {
-        return Ok(None);
+        return Ok((None, None));
     };
     let url = reqwest::Url::parse(raw).context("invalid plugin archive URL")?;
     let Some(fragment) = url.fragment() else {
-        return Ok(None);
+        return Ok((None, None));
     };
-    let path = fragment
-        .strip_prefix("path=")
-        .context("plugin archive fragment must be #path=<bundle-directory>")?;
-    if path.is_empty()
-        || !path.split('/').all(|part| {
-            !part.is_empty()
-                && part != "."
-                && part != ".."
-                && part
-                    .bytes()
-                    .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, b'-' | b'_' | b'.'))
-        })
+    let (mut path, mut sha256) = (None, None);
+    for part in fragment.split('&') {
+        match part.split_once('=') {
+            Some(("path", value)) if path.is_none() => path = Some(value),
+            Some(("sha256", value)) if sha256.is_none() => sha256 = Some(value),
+            _ => bail!(
+                "plugin archive fragment must be #path=<bundle-directory>, #sha256=<hex>, or both joined by &"
+            ),
+        }
+    }
+    if let Some(path) = path
+        && (path.is_empty()
+            || !path.split('/').all(|part| {
+                !part.is_empty()
+                    && part != "."
+                    && part != ".."
+                    && part
+                        .bytes()
+                        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, b'-' | b'_' | b'.'))
+            }))
     {
         bail!("plugin archive bundle path must contain only safe relative directory names");
     }
-    Ok(Some(path.to_string()))
+    if let Some(digest) = sha256
+        && (digest.len() != 64
+            || !digest
+                .bytes()
+                .all(|ch| ch.is_ascii_digit() || (b'a'..=b'f').contains(&ch)))
+    {
+        bail!("plugin archive sha256 pin must be 64 lowercase hexadecimal characters");
+    }
+    Ok((path.map(str::to_string), sha256.map(str::to_string)))
 }
 
 /// Serialize a source for the `.installed-from` marker. Must round-trip
@@ -572,7 +616,17 @@ fn install_remote_bytes(
     expected_content_hash: Option<&str>,
 ) -> Result<PluginInstallOutcome> {
     let checksum = sha256_hex(bytes);
-    let bundle_path = remote_bundle_path(remote)?;
+    let (bundle_path, pinned_sha256) = remote_fragment(remote)?;
+    if let Some(pinned) = pinned_sha256
+        && pinned != checksum
+    {
+        return Err(PluginArchiveMismatch {
+            url: url.to_string(),
+            expected: pinned,
+            actual: checksum,
+        }
+        .into());
+    }
     let staged = stage_tarball(bytes, user_plugins_dir, max_size, bundle_path.as_deref())?;
     verify_expected_content_hash(&staged, expected_content_hash)?;
     if let Some(conflict) = name_conflict(&staged.name) {

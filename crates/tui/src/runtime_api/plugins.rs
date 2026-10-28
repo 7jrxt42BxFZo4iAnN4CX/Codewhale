@@ -422,6 +422,9 @@ async fn run_plugin_mutation(
                 || error
                     .downcast_ref::<codewhale_plugins::install::PluginContentMismatch>()
                     .is_some()
+                || error
+                    .downcast_ref::<codewhale_plugins::install::PluginArchiveMismatch>()
+                    .is_some()
             {
                 ApiError::conflict(format!("plugin mutation failed: {error:#}"))
             } else {
