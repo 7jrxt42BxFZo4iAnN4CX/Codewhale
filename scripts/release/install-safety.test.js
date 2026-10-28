@@ -11,7 +11,7 @@ const path = require("node:path");
 const test = require("node:test");
 
 const repo = path.resolve(__dirname, "../..");
-const bytes = '#!/bin/sh\necho executed >> "$INSTALL_TEST_EXECUTED"\necho "codewhale 0.9.11"\n';
+const bytes = '#!/bin/sh\necho "executed $*" >> "$INSTALL_TEST_EXECUTED"\necho "codewhale 0.9.11"\n';
 
 function executable(file, body) {
   fs.writeFileSync(file, body, { mode: 0o755 });
@@ -61,7 +61,10 @@ cp "$INSTALL_TEST_ASSETS/$asset" "$output"
     return spawnSync(kind === "website" ? "sh" : "bash", [script], { env, encoding: "utf8", timeout: 10000 });
   }
   function prepare() { fs.mkdirSync(env.CODEWHALE_INSTALL_DIR, { recursive: true }); }
-  function untouched() { assert.equal(fs.existsSync(env.INSTALL_TEST_EXECUTED), false, "installers must not execute existing files or sudo"); }
+  function untouched() {
+    const runs = fs.existsSync(env.INSTALL_TEST_EXECUTED) ? fs.readFileSync(env.INSTALL_TEST_EXECUTED, "utf8").trim().split("\n") : [];
+    assert.ok(runs.every(line => line === "executed doctor --installs --brief"), `installers must not execute existing files or sudo: ${runs.join(", ")}`);
+  }
   return { root, home, bin, archive, assets, destination, env, run, prepare, untouched };
 }
 
@@ -104,7 +107,7 @@ ${hash}  codew
     f.untouched();
   });
 
-  test(`${kind}: refuses a newer existing binary without downgrading or executing it`, t => {
+  test(`${kind}: refuses a non-Codewhale file at the destination without executing it`, t => {
     const f = fixture(t, kind); f.prepare();
     const primary = path.join(f.destination, "codewhale");
     const newer = bytes.replace("0.9.11", "0.9.12");
@@ -112,7 +115,7 @@ ${hash}  codew
     const result = f.run();
     assert.notEqual(result.status, 0);
     assert.ok(result.stderr.includes(primary), result.stderr);
-    assert.match(result.stderr, /mktemp -d/);
+    assert.match(result.stderr, /fresh (directory|prefix)/);
     assert.equal(fs.readFileSync(primary, "utf8"), newer);
     assert.equal(fs.existsSync(path.join(f.destination, "codew")), false);
     f.untouched();
