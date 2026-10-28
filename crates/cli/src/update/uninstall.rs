@@ -101,10 +101,23 @@ impl CommandReceipt {
                 self.directory.join(staged.name()).display()
             );
         }
-        println!(
-            "Renewed command ownership receipt; previous receipt retained at {}",
-            self.directory.join(backup).display()
-        );
+        let retired = self.directory.join(&backup);
+        match codewhale_config::codewhale_home()
+            .and_then(|home| installs::RecoveryBatch::open(&home))
+            .and_then(|mut batch| {
+                let moved = batch.move_in(&retired)?;
+                batch.finish();
+                Ok(moved)
+            }) {
+            Ok(moved) => println!(
+                "Renewed command ownership receipt; previous receipt kept at {}",
+                moved.to.display()
+            ),
+            Err(_) => println!(
+                "Renewed command ownership receipt; previous receipt retained at {}",
+                retired.display()
+            ),
+        }
         self.receipt = staged;
         Ok(())
     }

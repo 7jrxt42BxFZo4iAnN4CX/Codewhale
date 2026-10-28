@@ -572,6 +572,20 @@ impl ConfigToml {
                 .insert(field.to_string(), stored);
             return Ok(());
         }
+        if key == "update.mode" {
+            let mode = value.trim().to_ascii_lowercase();
+            anyhow::ensure!(
+                matches!(mode.as_str(), "auto" | "notify" | "off"),
+                "invalid value for `update.mode`: expected auto, notify or off. No value was changed."
+            );
+            self.extras
+                .entry("update".to_string())
+                .or_insert_with(|| toml::Value::Table(toml::Table::new()))
+                .as_table_mut()
+                .ok_or_else(|| anyhow::anyhow!("update must be a TOML table"))?
+                .insert("mode".to_string(), toml::Value::String(mode));
+            return Ok(());
+        }
         if notifications::in_namespace(key) {
             let setting = notifications::NotificationSetting::required(key)?;
             let update = notifications::NotificationConfigUpdate::parse(setting, value)?;

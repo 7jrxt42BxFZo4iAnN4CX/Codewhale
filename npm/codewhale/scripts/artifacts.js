@@ -3,6 +3,7 @@ const os = require("os");
 const compiledHosts = require("./compiled-hosts");
 
 const CHECKSUM_MANIFEST = "codewhale-artifacts-sha256.txt";
+const CHECKSUM_SIGNATURE = `${CHECKSUM_MANIFEST}.sig`;
 const BUNDLE_CHECKSUM_MANIFEST = "codewhale-bundles-sha256.txt";
 const WINDOWS_INSTALLER_ASSET = "CodeWhaleSetup.exe";
 
@@ -292,6 +293,7 @@ module.exports = {
   BUNDLE_ASSET_NAMES,
   BUNDLE_CHECKSUM_MANIFEST,
   CHECKSUM_MANIFEST,
+  CHECKSUM_SIGNATURE,
   checksummedReleaseAssetNames,
   CNB_BINARY_ASSET_NAMES,
   CNB_RELEASE_ASSET_NAMES,

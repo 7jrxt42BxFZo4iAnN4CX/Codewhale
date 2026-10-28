@@ -645,6 +645,12 @@ struct UpdateArgs {
     /// Proxy URL to use for update HTTP requests.
     #[arg(long, value_name = "URL")]
     proxy: Option<String>,
+    /// Download and verify the latest release for the next start to apply (used by background updates).
+    #[arg(long, conflicts_with_all = ["check", "rollback"])]
+    stage: bool,
+    /// Put back the version the last update replaced, and do not reinstall the rolled-back version automatically.
+    #[arg(long, conflicts_with_all = ["check", "beta", "proxy"])]
+    rollback: bool,
 }
 
 #[derive(Debug, Args)]
@@ -2297,6 +2303,16 @@ fn run() -> Result<()> {
             || matches!(cli.command.as_ref(), Some(Commands::AppServer(args)) if args.http),
         "An inherited Runtime listener requires serve --http or app-server --http"
     );
+    #[cfg(not(target_env = "ohos"))]
+    if !inherited_listener
+        && !matches!(
+            cli.command.as_ref(),
+            Some(Commands::Update(_) | Commands::Uninstall { .. } | Commands::Doctor(_))
+        )
+        && !argv_requests_machine_output(&argv)
+    {
+        update::apply_staged_at_start(&argv);
+    }
     if let Some(Commands::Uninstall { yes, purge_data }) = cli.command.as_ref() {
         #[cfg(any(all(unix, not(target_env = "ohos")), windows))]
         return update::uninstall::run(*yes, *purge_data);
@@ -2788,7 +2804,13 @@ fn run() -> Result<()> {
                 Surface::Cli,
             );
             #[cfg(not(target_env = "ohos"))]
-            let outcome = update::run_update(args.beta, args.check, args.proxy);
+            let outcome = if args.rollback {
+                update::run_rollback()
+            } else if args.stage {
+                update::run_stage(args.beta, args.proxy)
+            } else {
+                update::run_update(args.beta, args.check, args.proxy)
+            };
             #[cfg(target_env = "ohos")]
             let outcome = {
                 let _ = args;
@@ -7758,7 +7780,8 @@ verbosity = "concise"
             Some(Commands::Update(UpdateArgs {
                 beta: false,
                 check: false,
-                proxy: None
+                proxy: None,
+                ..
             }))
         ));
 
@@ -7768,7 +7791,8 @@ verbosity = "concise"
             Some(Commands::Update(UpdateArgs {
                 beta: true,
                 check: false,
-                proxy: None
+                proxy: None,
+                ..
             }))
         ));
 
@@ -7778,7 +7802,8 @@ verbosity = "concise"
             Some(Commands::Update(UpdateArgs {
                 beta: false,
                 check: true,
-                proxy: None
+                proxy: None,
+                ..
             }))
         ));
 

@@ -1683,6 +1683,8 @@ pub struct UpdateConfig {
     pub update_uri: Option<String>,
     #[serde(default = "default_update_show_whats_new")]
     pub show_whats_new: bool,
+    #[serde(default)]
+    pub mode: Option<String>,
 }
 
 fn default_update_show_whats_new() -> bool {
@@ -1696,6 +1698,7 @@ impl Default for UpdateConfig {
             check_interval_hours: default_update_check_interval_hours(),
             update_uri: None,
             show_whats_new: true,
+            mode: None,
         }
     }
 }

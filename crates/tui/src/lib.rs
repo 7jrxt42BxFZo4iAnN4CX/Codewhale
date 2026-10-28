@@ -5052,7 +5052,7 @@ async fn run_doctor(
     println!();
 
     println!("{}", "Updates:".bold());
-    crate::doctor::print_update_report(probes).await;
+    crate::doctor::print_update_report(probes, &config.update_config()).await;
     println!();
 
     println!("{}", "Installations:".bold());

@@ -1409,12 +1409,28 @@ pub(crate) enum StartupVersionCheckSource {
 pub(crate) struct UpdateNotice {
     current: String,
     latest: String,
+    staged: Option<bool>,
 }
 
 impl UpdateNotice {
     /// Short line for the transient status toast, naming the command that
     /// actually updates *this* install.
     fn toast_line(&self, install: InstallMethod) -> String {
+        match self.staged {
+            Some(true) => {
+                return format!(
+                    "v{latest} is downloaded and verified; it starts the next time you open Codewhale",
+                    latest = self.latest
+                );
+            }
+            Some(false) => {
+                return format!(
+                    "v{latest} is downloaded - run /update install to use it",
+                    latest = self.latest
+                );
+            }
+            None => {}
+        }
         if install == InstallMethod::DesktopApp {
             return format!(
                 "v{latest} available - use {command}",
@@ -1433,7 +1449,11 @@ impl UpdateNotice {
     /// design: no action verb, no repetition — the toast and transcript
     /// notice carry the update instructions (#14).
     fn chip_label(&self) -> String {
-        format!("↑ v{latest}", latest = self.latest)
+        if self.staged.is_some() {
+            format!("↑ v{latest} ready", latest = self.latest)
+        } else {
+            format!("↑ v{latest}", latest = self.latest)
+        }
     }
 
     /// Durable, actionable notice pushed into the transcript so it survives the
@@ -1445,7 +1465,13 @@ impl UpdateNotice {
     /// Homebrew or npm owns leaves the manager's metadata lying about what is
     /// on disk, and the next upgrade silently reverts the user.
     fn notice_block(&self, install: InstallMethod) -> String {
-        let action = if install == InstallMethod::DesktopApp {
+        let action = if self.staged == Some(true) {
+            "It is downloaded and verified, and starts the next time you open Codewhale. Turn this off with `codewhale config set update.mode notify`."
+                .to_string()
+        } else if self.staged == Some(false) {
+            "It is downloaded and its checksum verified. Releases are not signed yet, so it waits for your OK: run `/update install`, or say yes when Codewhale next starts."
+                .to_string()
+        } else if install == InstallMethod::DesktopApp {
             codewhale_release::install::DESKTOP_APP_UPDATE_HELP.to_string()
         } else if install.supports_self_update() {
             "Run `/update install` here (preview it with a bare `/update`), or `codewhale update` in a shell, then restart Codewhale."

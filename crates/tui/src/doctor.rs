@@ -515,9 +515,15 @@ fn doctor_update_report_lines(report: &DoctorUpdateReport, update_command: &str)
 /// explicit request bit. The default branch returns before constructing an
 /// HTTP request. Failure details are deliberately typed and generic because
 /// transport errors and release metadata are untrusted strings.
-pub(crate) async fn print_update_report(probes: DoctorProbeRequest) {
+pub(crate) async fn print_update_report(
+    probes: DoctorProbeRequest,
+    update: &codewhale_runtime::config::UpdateConfig,
+) {
     let current_version = env!("CARGO_PKG_VERSION");
     println!("  · current: v{current_version}");
+    for line in update_mode_lines(update) {
+        println!("  · {line}");
+    }
     let report = if probes.should_check_updates() {
         doctor_update_report(
             current_version,
@@ -625,6 +631,51 @@ fn ds4_probe_error(config: &codewhale_runtime::config::Config, error: &str) -> S
 #[cfg(test)]
 #[path = "doctor/tests.rs"]
 mod tests;
+
+pub(crate) fn update_mode_lines(update: &codewhale_runtime::config::UpdateConfig) -> Vec<String> {
+    use codewhale_release::autoupdate;
+    let method = codewhale_release::current_install_method();
+    let resolved = autoupdate::resolve_mode(update.mode.as_deref(), update.check_for_updates);
+    let mut lines = vec![if method.supports_self_update() {
+        format!("automatic updates: {}", resolved.describe())
+    } else {
+        format!(
+            "automatic updates: not for this copy; {} updates it ({})",
+            method.label(),
+            method.update_command()
+        )
+    }];
+    if let Ok(home) = codewhale_config::codewhale_home() {
+        if let Some(staged) = autoupdate::load_staged(&home) {
+            lines.push(format!(
+                "staged: v{} ({}){}",
+                staged.version,
+                if staged.signed {
+                    "signed; applies at next start"
+                } else {
+                    "checksum verified; waits for your OK"
+                },
+                if staged.declined {
+                    "; you declined it, run `codewhale update` to install"
+                } else {
+                    ""
+                }
+            ));
+        }
+        if let Some(previous) = autoupdate::load_previous(&home) {
+            lines.push(format!(
+                "rollback: v{} is kept (`codewhale update --rollback`)",
+                previous.version
+            ));
+        }
+        if let Some(skip) = autoupdate::load_state(&home).skip_version {
+            lines.push(format!(
+                "skipped: v{skip} was rolled back and is not reinstalled automatically"
+            ));
+        }
+    }
+    lines
+}
 
 pub(crate) fn installation_lines(brief: bool) -> Vec<String> {
     let running = std::env::current_exe().ok();

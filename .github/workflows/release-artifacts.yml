@@ -31,6 +31,10 @@ on:
         required: false
         default: 7
         type: number
+    secrets:
+      CODEWHALE_RELEASE_SIGNING_KEY:
+        description: Ed25519 release key (PEM). Absent means the release ships unsigned.
+        required: false
 
 permissions:
   contents: read
@@ -525,6 +529,20 @@ jobs:
           pattern: '*'
       - name: Assemble exact authoritative release inventory
         run: node scripts/release/assemble-release-assets.js intermediate-artifacts release-assets
+      - name: Sign the checksum manifest when the release key is configured
+        env:
+          CODEWHALE_RELEASE_SIGNING_KEY: ${{ secrets.CODEWHALE_RELEASE_SIGNING_KEY }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${CODEWHALE_RELEASE_SIGNING_KEY}" ]]; then
+            echo "CODEWHALE_RELEASE_SIGNING_KEY is not configured; this release is unsigned and automatic updates wait for each user's OK."
+            exit 0
+          fi
+          bash scripts/release/sign-release-manifest.sh "${VERSION}" \
+            release-assets/codewhale-artifacts-sha256.txt \
+            release-assets/codewhale-artifacts-sha256.txt.sig
+          node scripts/release/assemble-release-assets.js --verify release-assets
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: codewhale-release-assets

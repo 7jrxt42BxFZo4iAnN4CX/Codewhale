@@ -1312,13 +1312,16 @@ name = "codewhale-release"
 version = "0.10.2"
 dependencies = [
  "anyhow",
+ "base64 0.23.1",
  "reqwest",
+ "ring",
  "rustls",
  "semver",
  "serde",
  "serde_json",
  "sha2 0.11.1",
  "tempfile",
+ "toml 1.1.4+spec-1.1.0",
  "webpki-roots",
 ]
 
