@@ -1085,7 +1085,7 @@ continue_on_error = true
 - 输入区为空且可见排队后续动作时，**Enter** 现在把最旧的排队后续动作送入活动回合。
 - **Ctrl+Enter**(或终端转发它时的 **Cmd+Enter**)显式引导（steer）活动回合。空闲时它正常发送。
 - 默认情况下，**Shift+Enter**、**Alt+Enter** 和 **Ctrl+J** 插入换行。
-- 设置 `composer_multiline_mode = true` 让 **Enter** 插入换行、**Shift+Enter** 发送。**Alt+Enter**、**Ctrl+J** 以及受支持的 **Ctrl+Enter** / **Cmd+Enter** 行为不变。
+- 设置 `composer_multiline_mode = true` 让 **Enter** 插入换行、**Alt+Enter** 发送。终端能够区分 **Shift+Enter** 时，它也会发送；传统终端可能将它报告为普通 **Enter**。**Ctrl+J** 始终插入换行，受支持的 **Ctrl+Enter** / **Cmd+Enter** 行为不变。
 - **Ctrl+G** 和 **Ctrl+S** 只暂存草稿；它们从不发送或引导。
 
 ### 输入区暂存(`/stash`，Ctrl+G / Ctrl+S)

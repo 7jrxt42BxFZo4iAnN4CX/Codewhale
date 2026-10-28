@@ -2023,8 +2023,10 @@ Composer shortcuts keep the same role throughout a session:
   steers the active turn. It sends normally when idle.
 - By default, **Shift+Enter**, **Alt+Enter**, and **Ctrl+J** insert a newline.
 - Set `composer_multiline_mode = true` to make **Enter** insert a newline and
-  **Shift+Enter** send instead. **Alt+Enter**, **Ctrl+J**, and supported
-  **Ctrl+Enter** / **Cmd+Enter** behavior is unchanged.
+  **Alt+Enter** send instead. **Shift+Enter** also sends when the terminal
+  reports it distinctly; legacy terminals may report it as plain **Enter**.
+  **Ctrl+J** still inserts a newline, and supported **Ctrl+Enter** /
+  **Cmd+Enter** behavior is unchanged.
 - **Ctrl+G** and **Ctrl+S** only stash drafts; they never send or steer.
 
 ### Composer stash (`/stash`, Ctrl+G / Ctrl+S)
