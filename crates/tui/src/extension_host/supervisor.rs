@@ -922,10 +922,9 @@ fn native_runtime_libraries(program: &Path) -> Result<Vec<PathBuf>, String> {
                     | "LC_LOAD_WEAK_DYLIB"
                     | "LC_REEXPORT_DYLIB"
                     | "LC_LOAD_UPWARD_DYLIB"
-            ) {
-                if let Some(value) = line.strip_prefix("name ") {
-                    dependencies.push(value.split(" (offset ").next().unwrap_or_default());
-                }
+            ) && let Some(value) = line.strip_prefix("name ")
+            {
+                dependencies.push(value.split(" (offset ").next().unwrap_or_default());
             }
         }
         run_paths.extend(inherited_paths);
