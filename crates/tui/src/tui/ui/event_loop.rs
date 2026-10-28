@@ -906,7 +906,7 @@ pub(crate) fn shutdown_persistence_notice(
 pub async fn run_tui(
     config: &Config,
     options: TuiOptions,
-    plugin_registry: std::sync::Arc<crate::plugins::PluginRegistry>,
+    plugin_registry: std::sync::Arc<codewhale_plugins::PluginRegistry>,
     pending_telemetry_notice: Option<crate::telemetry_notice::PendingTelemetryNotice>,
 ) -> Result<()> {
     // Install notification, sound, category, and attention policy before any
@@ -4853,7 +4853,7 @@ pub(crate) async fn run_event_loop(
         if skill_cache_refresh.is_none() && skill_registry_epoch != Some(current_skill_epoch) {
             let scope = app.skill_cache_scope(current_skill_epoch);
             let scan = scope.clone();
-            let policy = crate::plugins::activation::extension_host_policy_enabled();
+            let policy = codewhale_plugins::activation::extension_host_policy_enabled();
             #[cfg(test)]
             let env_scope = crate::test_support::env_scope_ticket();
             #[cfg(test)]
@@ -4863,7 +4863,7 @@ pub(crate) async fn run_event_loop(
                 let _env_scope = crate::test_support::join_env_scope(env_scope);
                 #[cfg(test)]
                 let _manager = crate::extension_host::TestManagerGuard::install(manager);
-                let _policy = crate::plugins::activation::PolicyScope::propagate(policy);
+                let _policy = codewhale_plugins::activation::PolicyScope::propagate(policy);
                 crate::skills::clear_skill_discovery_cache();
                 App::discover_cached_skills(
                     &scan.workspace,
@@ -7882,7 +7882,7 @@ pub(crate) async fn run_plugin_oauth_from_tui(
     provider: String,
     logout: bool,
 ) -> Result<()> {
-    let entry = match crate::plugins::providers::plugin_auth_entry(config, &provider) {
+    let entry = match codewhale_plugins::providers::plugin_auth_entry(config, &provider) {
         Ok(entry) => entry,
         Err(error) => {
             app.push_status_toast(
@@ -7914,10 +7914,10 @@ pub(crate) async fn run_plugin_oauth_from_tui(
             .context("Missing plugin review")?;
         if logout {
             let provider = provider.clone();
-            let policy = crate::plugins::activation::extension_host_policy_enabled();
+            let policy = codewhale_plugins::activation::extension_host_policy_enabled();
             tokio::task::spawn_blocking(move || {
-                let _scope = crate::plugins::activation::PolicyScope::propagate(policy);
-                crate::plugins::providers::verify_provider_binding(
+                let _scope = codewhale_plugins::activation::PolicyScope::propagate(policy);
+                codewhale_plugins::providers::verify_provider_binding(
                     &authority, &provider, &base_url, &oauth, None,
                 )
                 .map_err(anyhow::Error::msg)?;
@@ -7925,7 +7925,7 @@ pub(crate) async fn run_plugin_oauth_from_tui(
             })
             .await??;
         } else {
-            crate::plugins::providers::plugin_oauth_login(
+            codewhale_plugins::providers::plugin_oauth_login(
                 provider.clone(),
                 base_url,
                 oauth,
@@ -8516,9 +8516,9 @@ mod launch_session_sync_tests {
     use crate::extension_host::{
         ExtensionHostManager, ExtensionHostOptions, TestManagerGuard, caller_view,
     };
-    use crate::plugins::PluginRegistry;
-    use crate::plugins::activation::TestPolicyGuard;
     use codewhale_config::AppMode;
+    use codewhale_plugins::PluginRegistry;
+    use codewhale_plugins::activation::TestPolicyGuard;
     use codewhale_runtime::config::Config;
     use codewhale_runtime::features::Feature;
     use std::sync::Arc;

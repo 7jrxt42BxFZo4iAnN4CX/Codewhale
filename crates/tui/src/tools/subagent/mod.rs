@@ -565,7 +565,7 @@ pub struct SubAgentAssignment {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub native_preset: Option<crate::extension_host::composition_scope::NativePresetRef>,
+    pub native_preset: Option<codewhale_plugins::composition_scope::NativePresetRef>,
 }
 
 impl SubAgentAssignment {
@@ -16439,8 +16439,8 @@ fn apply_spawn_profile(
     if member.native_preset.is_none()
         && let Some(authority) = member.plugin_authority.as_ref()
     {
-        crate::plugins::registry::verify_plugin_component_authority(
-            authority, crate::plugins::activation::PluginActivationCapability::Agents,
+        codewhale_plugins::registry::verify_plugin_component_authority(
+            authority, codewhale_plugins::activation::PluginActivationCapability::Agents,
         ).map_err(|reason| ToolError::permission_denied(format!(
             "Plugin Agent profile '{}' is unavailable: {reason}. Reload and review the bundle before retrying.", member.id
         )))?;

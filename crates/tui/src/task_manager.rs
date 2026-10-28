@@ -1717,7 +1717,7 @@ impl TaskManager {
     pub async fn start(
         cfg: TaskManagerConfig,
         api_config: Config,
-        plugin_registry: Arc<crate::plugins::PluginRegistry>,
+        plugin_registry: Arc<codewhale_plugins::PluginRegistry>,
         session_id: &str,
         binding: Option<&crate::runtime_threads::RuntimeStoreBinding>,
     ) -> Result<SharedTaskManager> {

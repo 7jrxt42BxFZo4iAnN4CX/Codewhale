@@ -301,7 +301,7 @@ fn doctor(
     plugin: &mut dyn CommandPluginContext,
     fix: bool,
 ) -> CommandResult {
-    use crate::plugins::registry::gc;
+    use codewhale_plugins::registry::gc;
 
     let Some(state_path) = plugin.state_path() else {
         return CommandResult::error("Plugin registry has no persistence store; nothing to check");
@@ -809,7 +809,7 @@ fn rollback_hash_mismatch(
 ) -> CommandResult {
     let missing_destination = translate(presentation, "plugin_kimi_rollback_destination_missing");
     // File-level rollback removal crosses the boundary through the plugin
-    // facet (D1); the host adapter owns the `crate::plugins::install::uninstall`
+    // facet (D1); the host adapter owns the `codewhale_plugins::install::uninstall`
     // call.
     let rollback = installed_path
         .and_then(Path::parent)
@@ -914,7 +914,7 @@ fn uninstall_bundle(
 
 /// Read the active network policy for plugin downloads (host-side, D11).
 pub(crate) fn plugin_network_policy() -> codewhale_net::network_policy::NetworkPolicy {
-    crate::plugins::providers::load_config(None, None)
+    codewhale_plugins::providers::load_config(None, None)
         .unwrap_or_default()
         .network
         .map(codewhale_net::network_policy::NetworkPolicy::from)

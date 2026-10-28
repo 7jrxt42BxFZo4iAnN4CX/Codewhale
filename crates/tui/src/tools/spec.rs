@@ -615,7 +615,7 @@ pub struct ToolExecutionState {
     /// Restrict skill discovery to CodeWhale-owned roots plus `skills_dir`.
     pub skills_discovery_mode: crate::skills::SkillDiscoveryMode,
     /// Immutable registry snapshot for this workspace/engine context.
-    pub plugin_registry: Option<Arc<crate::plugins::PluginRegistry>>,
+    pub plugin_registry: Option<Arc<codewhale_plugins::PluginRegistry>>,
     /// Elevated sandbox policy override (used when retrying after sandbox denial).
     /// This overrides the default sandbox behavior for shell commands.
     pub elevated_sandbox_policy: Option<codewhale_sandbox::SandboxPolicy>,
@@ -930,7 +930,10 @@ impl ToolContext {
     }
 
     #[must_use]
-    pub fn with_plugin_registry(mut self, registry: Arc<crate::plugins::PluginRegistry>) -> Self {
+    pub fn with_plugin_registry(
+        mut self,
+        registry: Arc<codewhale_plugins::PluginRegistry>,
+    ) -> Self {
         self.plugin_registry = Some(registry);
         self
     }

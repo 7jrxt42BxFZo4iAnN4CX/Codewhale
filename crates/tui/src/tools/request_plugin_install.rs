@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use super::spec::{
     ApprovalRequirement, ToolCapability, ToolContext, ToolError, ToolResult, ToolSpec, required_str,
 };
-use crate::plugins::recommend::{load_marketplace_candidates, lookup_reviewable_plugin};
+use codewhale_plugins::recommend::{load_marketplace_candidates, lookup_reviewable_plugin};
 
 pub const REQUEST_PLUGIN_INSTALL_TOOL_NAME: &str = "request_plugin_install";
 
@@ -151,7 +151,7 @@ mod tests {
         let root = TempDir::new().unwrap();
         let _home = EnvVarGuard::set("CODEWHALE_HOME", root.path().join("home"));
         write_keyword_bundle(root.path(), "supabase");
-        let registry = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv()
+        let registry = codewhale_plugins::PluginDiscoveryContext::capture_pre_dotenv()
             .registry_for_workspace(root.path());
         let bundle = root.path().join(".codewhale/plugins/supabase/plugin.toml");
         let before = fs::read(&bundle).unwrap();
@@ -192,7 +192,7 @@ mod tests {
         let root = TempDir::new().unwrap();
         let _home = EnvVarGuard::set("CODEWHALE_HOME", root.path().join("home"));
         write_keyword_bundle(root.path(), "supabase");
-        let registry = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv()
+        let registry = codewhale_plugins::PluginDiscoveryContext::capture_pre_dotenv()
             .registry_for_workspace(root.path());
         let ctx = ToolContext::new(root.path())
             .with_plugin_registry(Arc::clone(&registry))

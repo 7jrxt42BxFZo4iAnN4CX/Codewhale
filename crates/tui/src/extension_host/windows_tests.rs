@@ -3,9 +3,9 @@ use super::*;
 use crate::extension_host::supervisor::{HostSandbox, MemoryEnforcement};
 use crate::extension_host::tests::{FixturePlugins, host_tool};
 use crate::extension_host::{ExtensionHostManager, ExtensionHostOptions, HostStatus};
-use crate::plugins::activation::TestPolicyGuard;
 use crate::tools::spec::ToolContext;
 use codewhale_config::extension_host::ExtensionHostRuntime;
+use codewhale_plugins::activation::TestPolicyGuard;
 use serde_json::json;
 
 const ACL_LOCK_FIXTURE_DIR: &str = "CODEWHALE_WINDOWS_ACL_LOCK_FIXTURE_DIR";

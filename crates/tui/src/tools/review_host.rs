@@ -155,7 +155,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn actual_review_pass_host_reuses_pinned_context_and_partial_plan_exactly() {
         let _home = crate::test_support::SealedHome::new();
-        let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(false);
+        let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(false);
         let Some(node) = crate::extension_host::tests::node_for_tests("review_pass_context_parity")
         else {
             return;

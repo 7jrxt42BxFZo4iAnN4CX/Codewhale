@@ -3,7 +3,7 @@
 use super::*;
 use crate::extension_host::tests::node_for_tests;
 use crate::extension_host::{ExtensionHostManager, ExtensionHostOptions, TestManagerGuard};
-use crate::plugins::activation::TestPolicyGuard;
+use codewhale_plugins::activation::TestPolicyGuard;
 use codewhale_runtime::features::{Feature, Features};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::Arc;
@@ -117,7 +117,7 @@ async fn real_host_ocr_and_read_file_preserve_native_first_and_tesseract_results
         }
     }
     assert_eq!(std::fs::read(&marker).unwrap(), b"xxxxxxxx");
-    assert!(!crate::plugins::activation::extension_host_policy_enabled());
+    assert!(!codewhale_plugins::activation::extension_host_policy_enabled());
     manager.shutdown().await;
 }
 #[tokio::test(flavor = "current_thread")]

@@ -3,8 +3,8 @@
 use super::*;
 use crate::extension_host::tests::node_for_tests;
 use crate::extension_host::{ExtensionHostManager, ExtensionHostOptions, TestManagerGuard};
-use crate::plugins::activation::TestPolicyGuard;
 use crate::tools::validate_data::ValidateDataTool;
+use codewhale_plugins::activation::TestPolicyGuard;
 use codewhale_runtime::features::{Feature, Features};
 use std::sync::Arc;
 use wiremock::matchers::{method, path};
@@ -86,7 +86,7 @@ async fn real_host_data_recorded_results_match_rust_without_native_activation() 
             .unwrap(),
         &ValidateDataTool.execute(input, &host).await.unwrap(),
     );
-    assert!(!crate::plugins::activation::extension_host_policy_enabled());
+    assert!(!codewhale_plugins::activation::extension_host_policy_enabled());
     manager.shutdown().await;
 }
 

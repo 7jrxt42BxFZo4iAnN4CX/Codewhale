@@ -501,7 +501,7 @@ fn base_source_entries(
     skills_discovery_mode: crate::skills::SkillDiscoveryMode,
     locale_tag: &str,
     mode: AppMode,
-    plugin_registry: Option<&crate::plugins::PluginRegistry>,
+    plugin_registry: Option<&codewhale_plugins::PluginRegistry>,
     context_window_tokens: Option<u32>,
     instruction_assembly: Option<&crate::project_context::InstructionAssembly>,
     instruction_preview: bool,

@@ -815,7 +815,7 @@ async fn fleet_editor_save_reload_reaches_type_only_admission_without_a_model_re
     drop(fixture_client);
 
     // Restart from the ordinary file loader; no old UI state or runtime roster survives.
-    let reloaded = crate::plugins::providers::load_config(Some(config_path), None).unwrap();
+    let reloaded = codewhale_plugins::providers::load_config(Some(config_path), None).unwrap();
     let client = CodewhaleClient::new(&reloaded).unwrap();
     let manager = new_shared_subagent_manager(root.path().to_path_buf(), 1);
     let gate = manager.read().await.launch_gate.clone();
@@ -929,7 +929,7 @@ model = "deepseek-v4-pro"
     }
     save_fleet(&fleet, FleetScope::Workspace, root.path()).unwrap();
     set_selected(&fleet.name, FleetScope::Workspace, root.path()).unwrap();
-    let config = crate::plugins::providers::load_config(Some(config_path), None).unwrap();
+    let config = codewhale_plugins::providers::load_config(Some(config_path), None).unwrap();
     let overrides = config.subagent_model_overrides();
     assert_eq!(overrides["reviewer"].model, "deepseek-v4-pro");
     assert_eq!(overrides["reviewer"].provider, None);
@@ -1111,7 +1111,7 @@ model = "deepseek/deepseek-v4-flash"
             base_url = fixture_client.base_url()
         );
         write_restart_route_config(&config_path, fixture_client.base_url(), &declarations);
-        let config = crate::plugins::providers::load_config(Some(config_path), None).unwrap();
+        let config = codewhale_plugins::providers::load_config(Some(config_path), None).unwrap();
         let overrides = config.subagent_model_overrides();
         assert_eq!(
             overrides["reviewer"].provider.as_deref(),

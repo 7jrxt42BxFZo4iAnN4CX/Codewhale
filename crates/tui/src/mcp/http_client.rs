@@ -7,6 +7,7 @@
 //! The same client owns MCP request-time auth/header resolution for HTTP,
 //! Streamable HTTP and SSE. OAuth retains the raw guarded request path.
 
+use crate::mcp::McpServerConfigExt;
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
@@ -16,7 +17,8 @@ use anyhow::{Context, Result, bail};
 use reqwest::{Method, Request, Response, Url, header};
 
 use super::headers::{apply_safe_custom_headers, with_default_mcp_http_headers};
-use super::{McpServerConfig, ReviewedPluginMcpSource, oauth};
+use super::{ReviewedPluginMcpSource, oauth};
+use codewhale_mcp::config::McpServerConfig;
 use codewhale_net::guard::{guarded_reqwest_client_builder, is_restricted_ip};
 use codewhale_net::network_policy::{Decision, NetworkPolicyDecider};
 
@@ -58,7 +60,7 @@ impl McpHttpAuth {
             oauth,
             oauth_configured: oauth::server_supports_oauth_login(config),
             suppress_server_error_details: config.reviewed_plugin.is_some(),
-            reviewed_plugin: config.reviewed_plugin.clone(),
+            reviewed_plugin: config.reviewed_plugin_source().cloned(),
         }
     }
 

@@ -90,13 +90,13 @@ pub fn load_with_project(global: HooksConfig, workspace: &Path) -> HooksConfig {
 pub fn load_with_project_and_plugins(
     global: HooksConfig,
     workspace: &Path,
-    plugins: Option<&crate::plugins::PluginRegistry>,
+    plugins: Option<&codewhale_plugins::PluginRegistry>,
 ) -> HooksConfig {
     let mut merged = global;
     if let Some(plugins) = plugins {
-        let (sources, adapter_errors) = crate::plugins::runtime::active_component_sources(
+        let (sources, adapter_errors) = codewhale_plugins::runtime::active_component_sources(
             plugins,
-            crate::plugins::activation::PluginActivationCapability::Hooks,
+            codewhale_plugins::activation::PluginActivationCapability::Hooks,
         );
         for error in adapter_errors {
             merged.problems.push(HookConfigProblem {

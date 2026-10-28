@@ -6169,11 +6169,11 @@ impl ToolSpec for BashTool {
                 .with_tool_name("exec_shell")
                 .with_tool_args(&input);
             let executor = Arc::clone(hook_executor);
-            let policy = crate::plugins::activation::extension_host_policy_enabled();
+            let policy = codewhale_plugins::activation::extension_host_policy_enabled();
             #[cfg(test)]
             let env_scope = crate::test_support::env_scope_ticket();
             tokio::task::spawn_blocking(move || {
-                let _policy = crate::plugins::activation::PolicyScope::propagate(policy);
+                let _policy = codewhale_plugins::activation::PolicyScope::propagate(policy);
                 #[cfg(test)]
                 let _env_scope = crate::test_support::join_env_scope(env_scope);
                 executor.collect_shell_env(&hook_ctx)

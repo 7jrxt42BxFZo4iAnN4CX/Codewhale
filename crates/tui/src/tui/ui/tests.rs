@@ -6179,7 +6179,7 @@ api_key = "test-key"
 
     let mut app = create_test_app();
     app.config_path = Some(config_path.clone());
-    let mut config = crate::plugins::providers::load_config(Some(config_path.clone()), None)
+    let mut config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)
         .expect("load config");
     let bindings = vec![codewhale_config::HotbarBindingToml {
         slot: 1,
@@ -8873,7 +8873,7 @@ fn setup_runtime_presets_preserve_environment_authority_and_state() {
                 |value| EnvVarGuard::set(legacy, value),
             );
             let mut config =
-                crate::plugins::providers::load_config(Some(config_path.clone()), None)
+                codewhale_plugins::providers::load_config(Some(config_path.clone()), None)
                     .expect("load the real environment-controlled config");
             let effective = match canonical {
                 "CODEWHALE_APPROVAL_POLICY" => config.approval_policy.clone(),
@@ -10506,14 +10506,14 @@ fn persisted_queued_plugin_skill_is_denied_after_cross_process_revocation() {
         "---\nname: queued\ndescription: Queue provenance test\n---\nDo the queued work.\n",
     )
     .unwrap();
-    let discovery = crate::plugins::discovery::DiscoveryConfig {
+    let discovery = codewhale_plugins::discovery::DiscoveryConfig {
         workspace: workspace.clone(),
         user_plugins_dir: plugins_root,
         workspace_plugins_dir: tmpdir.path().join("workspace-plugins-unused"),
         builtin_plugin_dirs: Vec::new(),
         state_path: tmpdir.path().join("plugin-state/state.json"),
     };
-    let mut registry = crate::plugins::discovery::discover_with_config(&discovery);
+    let mut registry = codewhale_plugins::discovery::discover_with_config(&discovery);
     registry.trust("queued-skill").unwrap();
     registry.enable("queued-skill").unwrap();
     let authority = registry.authority_for("queued-skill").unwrap();
@@ -10607,7 +10607,7 @@ fn persisted_queued_plugin_skill_is_denied_after_cross_process_revocation() {
         .is_ok()
     );
 
-    let mut external = crate::plugins::discovery::discover_with_config(&discovery);
+    let mut external = codewhale_plugins::discovery::discover_with_config(&discovery);
     external.revoke_trust("queued-skill").unwrap();
     let error = queued_message_content_for_app(
         &app,
@@ -11175,7 +11175,7 @@ fn first_run_route_starts_with_configured_provider_and_model() {
         let _provider = from_env.then(|| EnvVarGuard::set("CODEWHALE_PROVIDER", "openai"));
         let _model = from_env.then(|| EnvVarGuard::set("CODEWHALE_MODEL", "gpui-fixture"));
         let config =
-            crate::plugins::providers::load_config(None, None).expect("load fresh home config");
+            codewhale_plugins::providers::load_config(None, None).expect("load fresh home config");
         assert_eq!(
             config.active_provider_identity().unwrap().provider,
             ProviderKind::Openai
@@ -11191,7 +11191,7 @@ fn first_run_route_starts_with_configured_provider_and_model() {
         assert!(!app.should_adopt_live_local_ollama());
         assert!(codewhale_config::SetupState::load().unwrap().is_none());
         assert_eq!(
-            crate::plugins::providers::load_config(None, None)
+            codewhale_plugins::providers::load_config(None, None)
                 .unwrap()
                 .default_model(),
             "gpui-fixture"
@@ -11335,7 +11335,7 @@ async fn first_run_route_generated_config_restart_keeps_local_discovery() {
     // Launch 0: no daemon answers. Launch 1 (restart): Ollama is up.
     for launch in 0..2 {
         let mut config =
-            crate::plugins::providers::load_config(None, None).expect("load generated config");
+            codewhale_plugins::providers::load_config(None, None).expect("load generated config");
         let mut options = create_test_options();
         options.model = config.default_model();
         let mut app = App::new(options, &config);
@@ -11379,8 +11379,8 @@ async fn first_run_route_endpoint_only_keeps_route_when_credentials_are_missing(
         let path = codewhale_runtime::config::home_config_path().unwrap();
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, document).unwrap();
-        let mut config =
-            crate::plugins::providers::load_config(None, None).expect("load endpoint-only config");
+        let mut config = codewhale_plugins::providers::load_config(None, None)
+            .expect("load endpoint-only config");
         assert!(config.active_route_endpoint_configured(), "{document:?}");
         let provider = config.active_provider_identity().unwrap().provider;
         let mut options = create_test_options();
@@ -11433,7 +11433,7 @@ async fn first_run_switch_to_keyed_route_clears_launch_missing_key_state() {
     )
     .unwrap();
     let mut config =
-        crate::plugins::providers::load_config(None, None).expect("load configured route");
+        codewhale_plugins::providers::load_config(None, None).expect("load configured route");
     let mut options = create_test_options();
     options.model = config.default_model();
     let mut app = App::new(options, &config);
@@ -11475,7 +11475,8 @@ fn first_run_route_env_key_only_is_not_replaced() {
     codewhale_runtime::config::ensure_config_file_exists(None)
         .unwrap()
         .expect("first launch writes the template");
-    let config = crate::plugins::providers::load_config(None, None).expect("load generated config");
+    let config =
+        codewhale_plugins::providers::load_config(None, None).expect("load generated config");
     let mut options = create_test_options();
     options.model = config.default_model();
     let mut app = App::new(options, &config);
@@ -11956,7 +11957,7 @@ api_key = "arcee-key"
     app.config_path = Some(config_path.clone());
 
     let mut engine = mock_engine_handle();
-    let mut config = crate::plugins::providers::load_config(Some(config_path.clone()), None)
+    let mut config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)
         .expect("load config");
 
     {
@@ -11978,7 +11979,7 @@ api_key = "arcee-key"
     // disk still selects the old provider and the startup default is
     // untouched. A switch made in one folder must never rewrite a config
     // another folder (or restart) will read.
-    let reloaded = crate::plugins::providers::load_config(Some(config_path.clone()), None)
+    let reloaded = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)
         .expect("reload config");
     // The on-disk config still resolves to the OLD provider's endpoint —
     // nothing changed for a restart or another folder.
@@ -12047,7 +12048,7 @@ fn first_run_ollama_choice_survives_restart_from_canonical_config() {
     let original_config = "default_text_model = \"deepseek-v4-pro\"\n";
     std::fs::write(&config_path, original_config).expect("seed compatibility config");
 
-    let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)
+    let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)
         .expect("load first-run config");
     let mut app = Box::new(App::new(create_test_options(), &config));
     app.onboarding = OnboardingState::Provider;
@@ -12125,7 +12126,7 @@ fn first_run_ollama_choice_survives_restart_from_canonical_config() {
     // this deliberately large state object on one thread stack at once.
     app.finish_onboarding_without_feature_intro();
     drop(app);
-    let restart_config = crate::plugins::providers::load_config(Some(config_path), None)
+    let restart_config = codewhale_plugins::providers::load_config(Some(config_path), None)
         .expect("reload restart config");
     // A launch derives its startup model from the config it just read
     // (`run_interactive`: `TuiOptions.model = config.default_model()`). The
@@ -14296,7 +14297,7 @@ async fn reserved_dispatch_waits_for_ui_acceptance_before_engine_op() {
         return;
     };
     let _home = crate::test_support::SealedHome::new();
-    let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(true);
+    let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(true);
     let fixture = FixturePlugins::new(&["ext-commands"]).await;
     let manager = fixture.manager(node);
     let _manager = crate::extension_host::TestManagerGuard::install(Arc::clone(&manager));
@@ -20792,7 +20793,7 @@ async fn redaction_confirmation_restores_history_before_first_local_provider_req
         "provider = \"deepseek\"\napi_key = \"synthetic-local-consent-key\"\nbase_url = \"{}\"\n[redaction]\nmodel_bound = \"disabled\"\n",
         server.uri()
     )).unwrap();
-    let config = crate::plugins::providers::load_config(Some(config_path), None).unwrap();
+    let config = codewhale_plugins::providers::load_config(Some(config_path), None).unwrap();
     let mut app = crate::tui::test_support::test_app_with_options(TuiOptions {
         start_in_agent_mode: true,
         ..crate::tui::test_support::test_tui_options(temp.path())
@@ -25165,7 +25166,7 @@ async fn model_picker_startup_default_overrides_configured_xai_route_after_resta
         Some("grok-4.5")
     );
 
-    let restart_config = crate::plugins::providers::load_config(Some(config_path), None)
+    let restart_config = codewhale_plugins::providers::load_config(Some(config_path), None)
         .expect("reload saved route");
     let restart_options = TuiOptions {
         model: restart_config.default_model(),
@@ -34710,7 +34711,7 @@ fn background_skill_cache_refuses_stale_epoch_workspace_and_plugin_snapshot() {
     };
     assert!(!app.install_skill_cache_if_current(&stale_mode, 7, result.clone()));
     let mut stale_plugins = current.clone();
-    stale_plugins.plugins = Arc::new(crate::plugins::PluginRegistry::empty(&app.workspace));
+    stale_plugins.plugins = Arc::new(codewhale_plugins::PluginRegistry::empty(&app.workspace));
     assert!(!app.install_skill_cache_if_current(&stale_plugins, 7, result.clone()));
     assert_eq!(app.cached_skills, [("existing".into(), "kept".into())]);
     assert!(app.install_skill_cache_if_current(&current, 7, result.clone()));
@@ -34726,7 +34727,7 @@ async fn persisted_queued_native_skill_is_denied_after_host_withdrawal() {
         return;
     };
     let _home = crate::test_support::SealedHome::new();
-    let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(true);
+    let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(true);
     let fixture = FixturePlugins::new(&["skills-root"]).await;
     let plugins = fixture.registry();
     let manager = fixture.manager(node);

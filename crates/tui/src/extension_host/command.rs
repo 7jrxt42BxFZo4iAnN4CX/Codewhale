@@ -93,7 +93,7 @@ pub struct ExtensionCommandRef {
     /// The workspace whose user registry loaded the command: what the handler
     /// is told as the place the user ran it.
     pub workspace: std::path::PathBuf,
-    pub selection: Option<super::composition_scope::SelectionRevision>,
+    pub selection: Option<codewhale_plugins::composition_scope::SelectionRevision>,
     pub scope: Option<codewhale_config::EntryRef>,
     pub content_hash: String,
 }
@@ -171,7 +171,7 @@ pub struct ExtensionCommandEntry {
     pub authority: PluginAuthority,
     /// The workspace this entry was loaded for.
     pub workspace: std::path::PathBuf,
-    pub selection: Option<super::composition_scope::SelectionRevision>,
+    pub selection: Option<codewhale_plugins::composition_scope::SelectionRevision>,
 }
 
 impl ExtensionCommandEntry {

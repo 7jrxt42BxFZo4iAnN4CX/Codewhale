@@ -3,7 +3,9 @@ use tempfile::TempDir;
 #[test]
 fn frontmatter_handles_bom_exact_fences_and_plain_continuations() {
     let content = "\u{feff}---\r\nname: demo\r\ndescription: Deploy apps --- safely\r\n  for X or Y: really\r\ninvocation: user\r\n---\r\n# Body\r\n";
-    let (metadata, body) = super::parse_frontmatter(content).unwrap().unwrap();
+    let (metadata, body) = codewhale_skill_install::frontmatter::parse_frontmatter(content)
+        .unwrap()
+        .unwrap();
     assert_eq!(metadata["name"], "demo");
     assert_eq!(
         metadata["description"],
@@ -12,11 +14,16 @@ fn frontmatter_handles_bom_exact_fences_and_plain_continuations() {
     assert_eq!(metadata.len(), 3, "continuation text is not a new key");
     assert_eq!(body.trim(), "# Body");
     assert!(
-        super::parse_frontmatter("---not a fence\n# Body")
+        codewhale_skill_install::frontmatter::parse_frontmatter("---not a fence\n# Body")
             .unwrap()
             .is_none()
     );
-    assert!(super::parse_frontmatter("---\nname: demo\ndescription: inline --- only").is_err());
+    assert!(
+        codewhale_skill_install::frontmatter::parse_frontmatter(
+            "---\nname: demo\ndescription: inline --- only"
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -25,7 +32,9 @@ fn frontmatter_block_indentation_is_character_safe_and_keeps_nested_fences() {
         let content = format!(
             "---\nname: demo\ndescription: {indicator}\n  first\n\u{3000}wide\n \u{a0}mixed\n  ---\n    nested\n---\nbody"
         );
-        let (metadata, body) = super::parse_frontmatter(&content).unwrap().unwrap();
+        let (metadata, body) = codewhale_skill_install::frontmatter::parse_frontmatter(&content)
+            .unwrap()
+            .unwrap();
         let expected = if indicator == "|" {
             "first\nwide\nmixed\n---\n  nested"
         } else {
@@ -145,7 +154,7 @@ fn unicode_skill_identity_preserves_bodies_and_legacy_activation() {
 #[test]
 fn unicode_plugin_identity_keeps_exact_namespaces_and_reviewed_metadata() {
     let tmp = TempDir::new().unwrap();
-    let config = crate::plugins::discovery::DiscoveryConfig {
+    let config = codewhale_plugins::discovery::DiscoveryConfig {
         workspace: tmp.path().join("workspace"),
         user_plugins_dir: tmp.path().join("plugins"),
         workspace_plugins_dir: tmp.path().join("workspace-plugins"),
@@ -174,7 +183,7 @@ fn unicode_plugin_identity_keeps_exact_namespaces_and_reviewed_metadata() {
             );
         }
     }
-    let mut plugins = crate::plugins::discovery::discover_with_config(&config);
+    let mut plugins = codewhale_plugins::discovery::discover_with_config(&config);
     assert!(plugins.validation_is_clean(), "{:?}", plugins.diagnostics());
     let mut registry = super::SkillRegistry::default();
     super::merge_active_plugin_skills(&mut registry, &plugins);
@@ -1879,14 +1888,14 @@ fn plugin_skills_are_qualified_and_denied_until_trusted_and_enabled() {
         "---\nname: hello-world\ndescription: hello\n---\nbody\n",
     )
     .unwrap();
-    let config = crate::plugins::discovery::DiscoveryConfig {
+    let config = codewhale_plugins::discovery::DiscoveryConfig {
         workspace: tmp.path().join("workspace"),
         user_plugins_dir: tmp.path().join("plugins"),
         workspace_plugins_dir: tmp.path().join("workspace-plugins"),
         builtin_plugin_dirs: Vec::new(),
         state_path: tmp.path().join("plugin-state/state.json"),
     };
-    let mut plugins = crate::plugins::discovery::discover_with_config(&config);
+    let mut plugins = codewhale_plugins::discovery::discover_with_config(&config);
 
     let mut registry = super::SkillRegistry::default();
     super::merge_active_plugin_skills(&mut registry, &plugins);

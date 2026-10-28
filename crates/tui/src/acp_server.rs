@@ -29,7 +29,7 @@ pub async fn run_acp_server(
     config: Config,
     model: String,
     default_cwd: PathBuf,
-    plugins: Arc<crate::plugins::PluginDiscoveryContext>,
+    plugins: Arc<codewhale_plugins::PluginDiscoveryContext>,
     config_path: Option<PathBuf>,
     config_profile: Option<String>,
 ) -> Result<()> {
@@ -1351,7 +1351,7 @@ mod tests {
                 sessions_dir: None,
                 max_active_threads: 4,
             };
-            let plugins = Arc::new(crate::plugins::PluginRegistry::empty(&workspace));
+            let plugins = Arc::new(codewhale_plugins::PluginRegistry::empty(&workspace));
             let manager = Arc::new(if acp {
                 RuntimeThreadManager::open_host(
                     config.clone(),

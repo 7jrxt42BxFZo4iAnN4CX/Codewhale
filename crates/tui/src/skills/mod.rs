@@ -4,11 +4,12 @@ pub mod audit;
 /// Provider-free contract tests for the bundled starter pack (#4698).
 #[cfg(test)]
 mod catalog_matrix;
-use codewhale_skill_install::frontmatter::{
-    SkillValidationMode, parse_frontmatter, parse_frontmatter_bool, validate_skill_frontmatter,
+#[cfg(test)]
+use codewhale_skill_install::skill_parse::is_valid_skill_name;
+use codewhale_skill_install::skill_parse::{
+    self, SkillInvocation, normalize_skill_name_for_lookup, normalize_skill_name_segment,
 };
 pub mod mutation;
-pub mod recommend;
 pub mod roots;
 mod system;
 #[allow(unused_imports)]
@@ -63,7 +64,6 @@ const MIN_SHORTENED_DESCRIPTION_CHARS: usize = 40;
 #[cfg(test)]
 pub(crate) const MAX_AVAILABLE_SKILLS_CHARS: usize =
     skills_prompt_budget_chars(Some(SKILL_BUDGET_DEFAULT_WINDOW_TOKENS));
-const MAX_SKILL_NAME_CHARS: usize = 64;
 
 /// Chars of system prompt the ambient skill index may occupy for a route
 /// with `window_tokens` of context. Session-pinned: the window is fixed per
@@ -280,33 +280,6 @@ pub struct Skill {
     pub source: SkillSource,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SkillInvocation {
-    ModelAndUser,
-    ExplicitOnly,
-    ModelOnly,
-    Disabled,
-}
-
-impl SkillInvocation {
-    pub fn model_invocable(self) -> bool {
-        matches!(self, Self::ModelAndUser | Self::ModelOnly)
-    }
-
-    pub fn user_invocable(self) -> bool {
-        matches!(self, Self::ModelAndUser | Self::ExplicitOnly)
-    }
-
-    fn from_frontmatter(value: Option<&str>) -> Self {
-        match value.map(str::trim).map(|value| value.to_ascii_lowercase()) {
-            Some(value) if value == "explicit-only" || value == "explicit_only" => {
-                Self::ExplicitOnly
-            }
-            _ => Self::ModelAndUser,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SkillSource {
     Native,
@@ -350,7 +323,7 @@ impl SkillProvenance {
     pub(crate) fn verify_for(
         &self,
         workspace: &Path,
-        plugins: Option<&crate::plugins::PluginRegistry>,
+        plugins: Option<&codewhale_plugins::PluginRegistry>,
     ) -> Result<(), String> {
         if self.authority().workspace != workspace {
             return Err("plugin skill belongs to a different workspace".to_string());
@@ -377,9 +350,9 @@ impl SkillProvenance {
             )?;
         }
         match self {
-            Self::Plugin(_) => crate::plugins::registry::verify_plugin_component_authority(
+            Self::Plugin(_) => codewhale_plugins::registry::verify_plugin_component_authority(
                 &authority,
-                crate::plugins::activation::PluginActivationCapability::Skills,
+                codewhale_plugins::activation::PluginActivationCapability::Skills,
             ),
             Self::NativeRoot(source) => {
                 crate::extension_host::skills::verify_native_skill(&authority, &source.registration)
@@ -528,7 +501,8 @@ impl SkillRegistry {
     /// Defends against pathological configurations (e.g. a user pointing
     /// `skills_dir` at `~`) without artificially limiting realistic
     /// vendored layouts like `<root>/<org>/<repo>/<skill>/SKILL.md`.
-    pub(crate) const MAX_DISCOVERY_DEPTH: usize = 8;
+    pub(crate) const MAX_DISCOVERY_DEPTH: usize =
+        codewhale_skill_install::skill_parse::MAX_DISCOVERY_DEPTH;
 
     /// Discover skills from the given directory.
     ///
@@ -804,26 +778,11 @@ impl SkillRegistry {
     }
 
     fn normalize_skill_name(&mut self, skill: &mut Skill, skill_path: &Path) {
-        let legacy = legacy_skill_name_for_lookup(&skill.name);
-        let normalized = normalize_skill_name_for_lookup(&skill.name);
-        let supported_unicode_name = !skill.name.is_ascii()
-            && !skill.name.chars().any(char::is_control)
-            && is_valid_skill_name(&normalized);
-        skill.legacy_activation_name = (legacy != normalized).then_some(legacy);
-        if normalized != skill.name || !is_valid_skill_name(&skill.name) {
-            let original = skill.name.clone();
-            skill.name = normalized;
-            // Unicode names have an intentional, stable command identity.
-            // Reporting that translation as invalid would make reviewed plugin
-            // snapshots refuse otherwise valid skills. Malformed names still
-            // produce the existing warning and fail closed during review.
-            if !supported_unicode_name {
-                self.push_warning(format!(
-                    "Skill name `{original}` in {} is not a safe command name; using `{}` instead.",
-                    skill_path.display(),
-                    skill.name
-                ));
-            }
+        let normalized = skill_parse::normalize_skill_name(&skill.name, skill_path);
+        skill.legacy_activation_name = normalized.legacy_activation_name;
+        skill.name = normalized.name;
+        if let Some(warning) = normalized.warning {
+            self.push_warning(warning);
         }
     }
 
@@ -836,120 +795,23 @@ impl SkillRegistry {
         path: &Path,
         content: &str,
     ) -> std::result::Result<(Skill, Vec<String>), String> {
-        // Try to parse frontmatter block first. If absent, fall back to
-        // extracting the first `# Heading` as the skill name so that plain
-        // Markdown files (no `---` fence) are accepted instead of rejected.
-        let parsed = parse_frontmatter(content)?;
-        let warnings = validate_skill_frontmatter(
-            parsed.as_ref().map(|(metadata, _)| metadata),
-            Some(path),
-            SkillValidationMode::Lenient,
-        )?;
-        if let Some((metadata, body)) = parsed {
-            let name = metadata
-                .get("name")
-                .filter(|name| !name.is_empty())
-                .cloned()
-                .ok_or_else(|| "missing required frontmatter field: name".to_string())?;
-
-            let mut description = metadata.get("description").cloned().unwrap_or_default();
-            if let Some(trigger) = metadata
-                .get("when_to_use")
-                .filter(|value| !value.trim().is_empty())
-            {
-                if !description.is_empty() {
-                    description.push(' ');
-                }
-                description.push_str("Use when: ");
-                description.push_str(trigger.trim());
-            }
-
-            let explicit =
-                SkillInvocation::from_frontmatter(metadata.get("invocation").map(String::as_str))
-                    == SkillInvocation::ExplicitOnly;
-            let model_allowed = !explicit
-                && metadata
-                    .get("disable-model-invocation")
-                    .is_none_or(|value| parse_frontmatter_bool(value) == Some(false));
-            let user_allowed = metadata
-                .get("user-invocable")
-                .is_none_or(|value| parse_frontmatter_bool(value) == Some(true));
-            let invocation = match (model_allowed, user_allowed) {
-                (true, true) => SkillInvocation::ModelAndUser,
-                (false, true) => SkillInvocation::ExplicitOnly,
-                (true, false) => SkillInvocation::ModelOnly,
-                (false, false) => SkillInvocation::Disabled,
-            };
-            let aliases = metadata
-                .get("aliases-for")
-                .into_iter()
-                .flat_map(|value| value.split([',', ' ', '\t']))
-                .map(str::trim)
-                .filter(|alias| !alias.is_empty())
-                .map(normalize_skill_name_for_lookup)
-                .filter(|alias| is_valid_skill_name(alias))
-                .collect();
-
-            // Collect `description_<tag>:` frontmatter keys (already lowercased
-            // above) into locale-specific descriptions, e.g. `description_zh`.
-            let localized_descriptions = metadata
-                .iter()
-                .filter_map(|(key, value)| {
-                    key.strip_prefix("description_")
-                        .filter(|tag| !tag.is_empty())
-                        .map(|tag| (tag.to_string(), value.clone()))
-                })
-                .collect();
-
-            return Ok((
+        skill_parse::parse_skill_and_warnings(path, content).map(|(parsed, warnings)| {
+            (
                 Skill {
-                    name,
-                    legacy_activation_name: None,
-                    description,
-                    localized_descriptions,
-                    invocation,
-                    aliases,
-                    argument_hint: metadata
-                        .get("argument-hint")
-                        .filter(|value| !value.trim().is_empty())
-                        .cloned(),
-                    body: body.trim().to_string(),
-                    // Filled in by `discover` after parse succeeds; default to an
-                    // empty path so direct constructors (e.g. tests) compile.
+                    name: parsed.name,
+                    legacy_activation_name: parsed.legacy_activation_name,
+                    description: parsed.description,
+                    localized_descriptions: parsed.localized_descriptions,
+                    invocation: parsed.invocation,
+                    aliases: parsed.aliases,
+                    argument_hint: parsed.argument_hint,
+                    body: parsed.body,
                     path: PathBuf::new(),
                     source: SkillSource::Native,
                 },
                 warnings,
-            ));
-        }
-
-        // Graceful degradation: no frontmatter fence found.
-        // Extract the first `# Heading` as the skill name.
-        let heading_re = regex::Regex::new(r"(?m)^#\s+(.+)$").expect("static regex is valid");
-        let name = heading_re
-            .captures(content)
-            .and_then(|c| c.get(1))
-            .map(|m| m.as_str().trim().to_string())
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| {
-                "no frontmatter and no `# Heading` found to use as skill name".to_string()
-            })?;
-
-        Ok((
-            Skill {
-                name,
-                legacy_activation_name: None,
-                description: String::new(),
-                localized_descriptions: HashMap::new(),
-                invocation: SkillInvocation::ModelAndUser,
-                aliases: Vec::new(),
-                argument_hint: None,
-                body: content.trim().to_string(),
-                path: PathBuf::new(),
-                source: SkillSource::Native,
-            },
-            warnings,
-        ))
+            )
+        })
     }
 
     /// Parse one already-read Skill body while preserving the same name
@@ -1063,84 +925,6 @@ impl SkillRegistry {
     }
 }
 
-fn is_valid_skill_name(name: &str) -> bool {
-    let char_count = name.chars().count();
-    char_count > 0
-        && char_count <= MAX_SKILL_NAME_CHARS
-        && name
-            .chars()
-            .next()
-            .is_some_and(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit())
-        && name
-            .chars()
-            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-')
-}
-
-pub(crate) fn normalize_skill_name_for_lookup(name: &str) -> String {
-    normalize_qualified_skill_name(name, normalize_skill_name_segment)
-}
-
-fn legacy_skill_name_for_lookup(name: &str) -> String {
-    normalize_qualified_skill_name(name, legacy_skill_name_segment)
-}
-
-fn normalize_qualified_skill_name(name: &str, segment: fn(&str) -> String) -> String {
-    if let Some((plugin, skill)) = name.trim().split_once(':')
-        && !plugin.is_empty()
-        && !skill.is_empty()
-        && !skill.contains(':')
-    {
-        return format!("{}:{}", segment(plugin), segment(skill));
-    }
-    segment(name)
-}
-
-fn normalize_skill_name_segment(name: &str) -> String {
-    let name = name.trim();
-    let legacy = legacy_skill_name_segment(name);
-    if name.is_ascii() {
-        return legacy;
-    }
-    // Preserve ASCII identities, but distinguish UTF-8 source names the old
-    // slug folded together. No transliteration or Unicode normalization.
-    let digest = codewhale_runtime::hashing::sha256_hex(name.to_ascii_lowercase().as_bytes());
-    let prefix = legacy[..legacy.len().min(31)].trim_end_matches('-');
-    format!("{prefix}-{}", &digest[..32])
-}
-
-fn legacy_skill_name_segment(name: &str) -> String {
-    let mut out = String::new();
-    let mut pending_dash = false;
-
-    for ch in name.trim().chars() {
-        if ch.is_ascii_alphanumeric() {
-            if pending_dash && !out.is_empty() && out.len() < MAX_SKILL_NAME_CHARS {
-                out.push('-');
-            }
-            pending_dash = false;
-            if out.len() < MAX_SKILL_NAME_CHARS {
-                out.push(ch.to_ascii_lowercase());
-            }
-        } else {
-            pending_dash = true;
-        }
-
-        if out.len() >= MAX_SKILL_NAME_CHARS {
-            break;
-        }
-    }
-
-    while out.ends_with('-') {
-        out.pop();
-    }
-
-    if out.is_empty() {
-        "skill".to_string()
-    } else {
-        out
-    }
-}
-
 /// Resolve every candidate skills directory for a workspace, in
 /// precedence order — most specific first. Used for session-time
 /// skill discovery so the model sees skills that originated in
@@ -1207,7 +991,7 @@ pub fn discover_in_workspace_with_mode(
 pub fn discover_in_workspace_with_mode_and_plugins(
     workspace: &Path,
     mode: SkillDiscoveryMode,
-    plugins: Option<&crate::plugins::PluginRegistry>,
+    plugins: Option<&codewhale_plugins::PluginRegistry>,
 ) -> SkillRegistry {
     let registry = discover_from_directories_in_workspace(
         skills_directories_for_mode(workspace, mode),
@@ -1267,7 +1051,7 @@ pub fn discover_for_workspace_and_dir_with_mode_and_plugins(
     workspace: &Path,
     skills_dir: &Path,
     mode: SkillDiscoveryMode,
-    plugins: Option<&crate::plugins::PluginRegistry>,
+    plugins: Option<&codewhale_plugins::PluginRegistry>,
 ) -> SkillRegistry {
     let dirs = skill_directories_for_workspace_and_dir(workspace, skills_dir, mode);
     let registry = discover_from_directories_in_workspace(dirs, Some(workspace), plugins);
@@ -1322,7 +1106,7 @@ fn insert_configured_skills_dir(
 #[cfg(test)]
 pub(crate) fn discover_from_directories_with_plugins(
     dirs: impl IntoIterator<Item = PathBuf>,
-    plugins: Option<&crate::plugins::PluginRegistry>,
+    plugins: Option<&codewhale_plugins::PluginRegistry>,
 ) -> SkillRegistry {
     discover_from_directories_in_workspace(dirs, None, plugins)
 }
@@ -1333,7 +1117,7 @@ pub(crate) fn discover_from_directories_with_plugins(
 pub(crate) fn discover_from_directories_in_workspace(
     dirs: impl IntoIterator<Item = PathBuf>,
     workspace: Option<&Path>,
-    plugins: Option<&crate::plugins::PluginRegistry>,
+    plugins: Option<&codewhale_plugins::PluginRegistry>,
 ) -> SkillRegistry {
     let dirs: Vec<PathBuf> = dirs.into_iter().collect();
     // The watched-validated cache covers the disk-walk merge. Plugin skills
@@ -1345,7 +1129,7 @@ pub(crate) fn discover_from_directories_in_workspace(
 
 fn merge_plugin_skills(
     mut merged: SkillRegistry,
-    plugins: Option<&crate::plugins::PluginRegistry>,
+    plugins: Option<&codewhale_plugins::PluginRegistry>,
 ) -> SkillRegistry {
     if let Some(plugins) = plugins {
         merge_active_plugin_skills(&mut merged, plugins);
@@ -1488,7 +1272,7 @@ fn cached_merged_discovery(dirs: Vec<PathBuf>, workspace: Option<PathBuf>) -> Sk
 
 fn merge_active_plugin_skills(
     registry: &mut SkillRegistry,
-    plugins: &crate::plugins::PluginRegistry,
+    plugins: &codewhale_plugins::PluginRegistry,
 ) {
     if plugins.state_path().is_none() {
         return;
@@ -1509,17 +1293,18 @@ fn merge_plugin_skills_from_plugins(
     registry: &mut SkillRegistry,
     plugins: impl IntoIterator<
         Item = (
-            crate::plugins::types::LoadedPlugin,
+            codewhale_plugins::types::LoadedPlugin,
             codewhale_config::PluginAuthority,
         ),
     >,
 ) {
     for (plugin, authority) in plugins {
         // Keep the adapter independently fail-closed for headless callers.
-        if !plugin.component_active(crate::plugins::activation::PluginActivationCapability::Skills)
-            || crate::plugins::registry::verify_plugin_component_authority(
+        if !plugin
+            .component_active(codewhale_plugins::activation::PluginActivationCapability::Skills)
+            || codewhale_plugins::registry::verify_plugin_component_authority(
                 &authority,
-                crate::plugins::activation::PluginActivationCapability::Skills,
+                codewhale_plugins::activation::PluginActivationCapability::Skills,
             )
             .is_err()
         {
@@ -1542,7 +1327,7 @@ fn merge_plugin_skill_snapshots(
     plugin_id: &str,
     plugin_name: &str,
     authority: &codewhale_config::PluginAuthority,
-    snapshots: Vec<crate::plugins::types::PluginSkillSnapshot>,
+    snapshots: Vec<codewhale_plugins::types::PluginSkillSnapshot>,
     native_registration: Option<crate::extension_host::skills::NativeSkillRef>,
 ) {
     for snapshot in snapshots {
@@ -1613,7 +1398,7 @@ pub(crate) fn discover_for_workspace_and_dir_with_home_and_mode_and_plugins(
     skills_dir: &Path,
     home_dir: Option<&Path>,
     mode: SkillDiscoveryMode,
-    plugins: Option<&crate::plugins::PluginRegistry>,
+    plugins: Option<&codewhale_plugins::PluginRegistry>,
 ) -> SkillRegistry {
     let mut dirs = skills_directories_with_home_and_mode(workspace, home_dir, mode);
     insert_configured_skills_dir(&mut dirs, workspace, home_dir, skills_dir);
@@ -1634,7 +1419,7 @@ pub fn render_available_skills_context_for_workspace_with_mode_and_plugins(
     workspace: &Path,
     mode: SkillDiscoveryMode,
     locale: &str,
-    plugins: Option<&crate::plugins::PluginRegistry>,
+    plugins: Option<&codewhale_plugins::PluginRegistry>,
     budget_chars: usize,
 ) -> Option<String> {
     let registry = discover_from_directories_in_workspace(
@@ -1665,7 +1450,7 @@ pub fn render_available_skills_context_for_workspace_and_dir_with_mode_and_plugi
     skills_dir: &Path,
     mode: SkillDiscoveryMode,
     locale: &str,
-    plugins: Option<&crate::plugins::PluginRegistry>,
+    plugins: Option<&codewhale_plugins::PluginRegistry>,
     budget_chars: usize,
 ) -> Option<String> {
     let registry = discover_from_directories_in_workspace(

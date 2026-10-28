@@ -188,7 +188,7 @@ async fn http_and_web_server_thread_manager_installs_configured_workshop_byte_bu
             sessions_dir: None,
             max_active_threads: 2,
         },
-        Arc::new(crate::plugins::PluginRegistry::empty(&workspace)),
+        Arc::new(codewhale_plugins::PluginRegistry::empty(&workspace)),
     )?;
 
     assert_eq!(startup_activation.read_result_max_bytes, Some(73_728));
@@ -1052,7 +1052,7 @@ struct TestServerOverrides {
     mobile: Option<mobile::RuntimeMobileState>,
     web: Option<web::RuntimeWebState>,
     compat_stream_test_hook: Option<mpsc::UnboundedSender<CompatStreamTestPoint>>,
-    plugin_discovery: Option<Arc<crate::plugins::PluginDiscoveryContext>>,
+    plugin_discovery: Option<Arc<codewhale_plugins::PluginDiscoveryContext>>,
     /// Pre-seeded workspace LSP manager (test transports, disabled configs).
     lsp_manager: Option<Arc<codewhale_lsp::LspManager>>,
     /// Engine LRU capacity; `None` keeps the fixture default of 8.
@@ -1183,7 +1183,7 @@ fn spawn_product_stack_server(
         .clone();
     let catalog = crate::command_catalog::installed();
     let extension_manager = crate::extension_host::manager();
-    let extension_policy = crate::plugins::activation::extension_host_policy_enabled();
+    let extension_policy = codewhale_plugins::activation::extension_host_policy_enabled();
     std::thread::Builder::new()
         .name("runtime-api-test-server".to_string())
         .stack_size(codewhale_runtime::CODEWHALE_MAIN_STACK_BYTES)
@@ -1195,7 +1195,7 @@ fn spawn_product_stack_server(
             let _extension_manager =
                 crate::extension_host::TestManagerGuard::install(extension_manager);
             let _extension_policy =
-                crate::plugins::activation::TestPolicyGuard::extension_host(extension_policy);
+                codewhale_plugins::activation::TestPolicyGuard::extension_host(extension_policy);
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
@@ -1288,7 +1288,7 @@ async fn build_test_server(
     let mut config = if let Some(config) = overrides.config.clone() {
         config
     } else if let Some(path) = overrides.config_path.clone() {
-        crate::plugins::providers::load_config(Some(path), None)?
+        codewhale_plugins::providers::load_config(Some(path), None)?
     } else {
         Config::default().with_legacy_root(
             Some("runtime-api-test-key".to_string()),
@@ -1384,7 +1384,7 @@ async fn build_test_server(
         workspace,
         plugin_discovery: overrides
             .plugin_discovery
-            .unwrap_or_else(crate::plugins::PluginDiscoveryContext::capture_pre_dotenv),
+            .unwrap_or_else(codewhale_plugins::PluginDiscoveryContext::capture_pre_dotenv),
         task_manager: manager,
         runtime_threads: runtime_threads.clone(),
         cors_origins: Vec::new(),
@@ -11963,8 +11963,8 @@ async fn unicode_skill_activation_matches_api_load_and_owned_lifecycle() -> Resu
     let (original_dir, _) = create_managed_skill(&workspace, "技能")?;
     create_managed_skill(&workspace, "分析")?;
     create_managed_skill(&workspace, "skill")?;
-    let a = crate::skills::normalize_skill_name_for_lookup("技能");
-    let b = crate::skills::normalize_skill_name_for_lookup("分析");
+    let a = codewhale_skill_install::skill_parse::normalize_skill_name_for_lookup("技能");
+    let b = codewhale_skill_install::skill_parse::normalize_skill_name_for_lookup("分析");
     assert_ne!(a, b);
     let state_path = root.join("skills_state.toml");
     let initial = b"disabled = [\"skill\"]\n";
@@ -12097,16 +12097,16 @@ async fn skills_endpoint_exposes_safe_plugin_provenance_and_shared_toggle() -> R
         plugin_root.join("skills/review/SKILL.md"),
         "---\nname: review\ndescription: reviewed plugin Skill\n---\nbody\n",
     )?;
-    let plugin_config = crate::plugins::discovery::DiscoveryConfig {
+    let plugin_config = codewhale_plugins::discovery::DiscoveryConfig {
         workspace: workspace.clone(),
         user_plugins_dir: tmp.path().join("plugins"),
         workspace_plugins_dir: workspace.join(".codewhale/plugins"),
         builtin_plugin_dirs: Vec::new(),
         state_path: tmp.path().join("plugin-state/state.json"),
     };
-    let discovery = crate::plugins::PluginDiscoveryContext::from_config_and_environment(
+    let discovery = codewhale_plugins::PluginDiscoveryContext::from_config_and_environment(
         &plugin_config,
-        crate::plugins::HostEnvironment::default(),
+        codewhale_plugins::HostEnvironment::default(),
     );
     let mut plugins = discovery.registry_for_workspace(&workspace);
     Arc::make_mut(&mut plugins)
@@ -12340,7 +12340,7 @@ fn skill_entry_is_bundled_requires_configured_bundle_path() {
         name: "delegate".to_string(),
         description: String::new(),
         localized_descriptions: std::collections::HashMap::new(),
-        invocation: crate::skills::SkillInvocation::ModelAndUser,
+        invocation: codewhale_skill_install::skill_parse::SkillInvocation::ModelAndUser,
         aliases: Vec::new(),
         argument_hint: None,
         body: String::new(),
@@ -12352,7 +12352,7 @@ fn skill_entry_is_bundled_requires_configured_bundle_path() {
         name: "delegate".to_string(),
         description: String::new(),
         localized_descriptions: std::collections::HashMap::new(),
-        invocation: crate::skills::SkillInvocation::ModelAndUser,
+        invocation: codewhale_skill_install::skill_parse::SkillInvocation::ModelAndUser,
         aliases: Vec::new(),
         argument_hint: None,
         body: String::new(),
@@ -15212,7 +15212,7 @@ model = "glm-2"
     // The receipt that matters: what was written still loads under the new
     // route, and resolves the selected leaf rather than the root fallback.
     // Validating the root alias instead of the selection returned 500 here.
-    let reloaded = crate::plugins::providers::load_config(Some(config_file.clone()), None)?;
+    let reloaded = codewhale_plugins::providers::load_config(Some(config_file.clone()), None)?;
     assert_eq!(
         reloaded.active_provider_identity().unwrap().provider,
         codewhale_config::ProviderKind::Deepseek
@@ -18287,18 +18287,18 @@ fn write_plugin_source_bundle(dir: &Path, name: &str) -> Result<PathBuf> {
 fn isolated_plugin_discovery(
     root: &Path,
     workspace: &Path,
-) -> Arc<crate::plugins::PluginDiscoveryContext> {
-    crate::plugins::PluginDiscoveryContext::from_config_and_environment(
-        &crate::plugins::discovery::DiscoveryConfig {
+) -> Arc<codewhale_plugins::PluginDiscoveryContext> {
+    codewhale_plugins::PluginDiscoveryContext::from_config_and_environment(
+        &codewhale_plugins::discovery::DiscoveryConfig {
             workspace: workspace.to_path_buf(),
             user_plugins_dir: root.join("plugins"),
-            workspace_plugins_dir: crate::plugins::discovery::default_workspace_plugins_dir(
+            workspace_plugins_dir: codewhale_plugins::discovery::default_workspace_plugins_dir(
                 workspace,
             ),
             builtin_plugin_dirs: Vec::new(),
             state_path: root.join("plugins").join("state.json"),
         },
-        crate::plugins::HostEnvironment::from_entries(Vec::new()),
+        codewhale_plugins::HostEnvironment::from_entries(Vec::new()),
     )
 }
 
@@ -19008,17 +19008,17 @@ async fn marketplace_builtin_name_is_reviewable_without_install_or_network_acces
     let workspace = tmp.path().join("ws");
     fs::create_dir_all(&root)?;
     let bundle = write_plugin_source_bundle(&tmp.path().join("builtin"), "computer-use")?;
-    let discovery = crate::plugins::PluginDiscoveryContext::from_config_and_environment(
-        &crate::plugins::discovery::DiscoveryConfig {
+    let discovery = codewhale_plugins::PluginDiscoveryContext::from_config_and_environment(
+        &codewhale_plugins::discovery::DiscoveryConfig {
             workspace: workspace.clone(),
             user_plugins_dir: root.join("plugins"),
-            workspace_plugins_dir: crate::plugins::discovery::default_workspace_plugins_dir(
+            workspace_plugins_dir: codewhale_plugins::discovery::default_workspace_plugins_dir(
                 &workspace,
             ),
             builtin_plugin_dirs: vec![bundle.parent().unwrap().to_path_buf()],
             state_path: root.join("plugins/state.json"),
         },
-        crate::plugins::HostEnvironment::from_entries(Vec::new()),
+        codewhale_plugins::HostEnvironment::from_entries(Vec::new()),
     );
     let Some((addr, _, handle)) = spawn_test_server_with_root_token_mobile_workspace_and_overrides(
         root.clone(),

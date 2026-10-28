@@ -64,7 +64,7 @@ struct FrozenFleetMember {
     max_spawn_depth: Option<u32>,
     origin: ProfileOrigin,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    native_preset: Option<crate::extension_host::composition_scope::NativePresetRef>,
+    native_preset: Option<codewhale_plugins::composition_scope::NativePresetRef>,
 }
 
 impl FrozenFleetMember {

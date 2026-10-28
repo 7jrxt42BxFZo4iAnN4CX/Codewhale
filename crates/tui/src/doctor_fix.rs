@@ -200,7 +200,7 @@ fn secret_files_needing_tightening() -> Vec<(PathBuf, u32)> {
 fn broken_mcp_entries(
     config: &codewhale_runtime::config::Config,
     workspace: &Path,
-    plugins: &crate::plugins::PluginRegistry,
+    plugins: &codewhale_plugins::PluginRegistry,
 ) -> Vec<(PathBuf, Vec<String>)> {
     let global_path = config.mcp_config_path();
     let project_path = mcp::workspace_mcp_config_path(workspace);
@@ -247,7 +247,7 @@ fn missing_user_directories(config: &codewhale_runtime::config::Config) -> Vec<P
 pub(crate) fn plan_fixes(
     config: &codewhale_runtime::config::Config,
     workspace: &Path,
-    plugins: &crate::plugins::PluginRegistry,
+    plugins: &codewhale_plugins::PluginRegistry,
 ) -> DoctorFixPlan {
     let mut actions = Vec::new();
     actions.extend(
@@ -658,7 +658,7 @@ mod tests {
         let plan = plan_fixes(
             &config,
             workspace.path(),
-            &crate::plugins::PluginRegistry::default(),
+            &codewhale_plugins::PluginRegistry::default(),
         );
         let temp_deletions = plan
             .actions
@@ -700,7 +700,7 @@ mod tests {
     fn missing_user_directories_are_planned_and_scaffolding_is_idempotent() {
         let (home, config) = ScratchHome::new();
         let workspace = tempfile::tempdir().expect("workspace");
-        let registry = crate::plugins::PluginRegistry::default();
+        let registry = codewhale_plugins::PluginRegistry::default();
         let plan = plan_fixes(&config, workspace.path(), &registry);
         assert!(
             plan.actions
@@ -741,7 +741,7 @@ mod tests {
             .expect("loosen");
 
         let workspace = tempfile::tempdir().expect("workspace");
-        let registry = crate::plugins::PluginRegistry::default();
+        let registry = codewhale_plugins::PluginRegistry::default();
         let plan = plan_fixes(&config, workspace.path(), &registry);
         let tighten = plan
             .actions
@@ -799,7 +799,7 @@ mod tests {
         let mut config = config;
         config.mcp_config_path = Some(mcp_path.display().to_string());
 
-        let registry = crate::plugins::PluginRegistry::default();
+        let registry = codewhale_plugins::PluginRegistry::default();
         let plan = plan_fixes(&config, workspace.path(), &registry);
         let disable = plan
             .actions

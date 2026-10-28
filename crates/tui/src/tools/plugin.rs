@@ -58,7 +58,7 @@ pub(crate) enum PluginExecutor {
 }
 impl PluginExecutor {
     pub(crate) fn for_engine() -> Self {
-        if crate::plugins::activation::extension_host_policy_enabled() {
+        if codewhale_plugins::activation::extension_host_policy_enabled() {
             let manager = crate::extension_host::manager();
             if let Ok(handle) = tokio::runtime::Handle::try_current() {
                 manager.bind_engine_handle(handle);
@@ -76,7 +76,7 @@ impl PluginExecutor {
         context: &ToolContext,
     ) -> Result<ToolResult, ToolError> {
         match self {
-            Self::Legacy if !crate::plugins::activation::extension_host_policy_enabled() => {
+            Self::Legacy if !codewhale_plugins::activation::extension_host_policy_enabled() => {
                 run_plugin_child_raw(&mut command, label, input).await
             }
             Self::Legacy => Err(ToolError::not_available(

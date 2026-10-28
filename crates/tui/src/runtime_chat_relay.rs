@@ -15,6 +15,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
+use codewhale_plugins::PluginRegistry;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -22,7 +23,6 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     core::engine::ISOLATED_CHAT_SYSTEM_PROMPT,
-    plugins::PluginRegistry,
     runtime_threads::{
         CreateThreadRequest, RuntimeEventRecord, RuntimeThreadManager, RuntimeThreadManagerConfig,
         RuntimeTurnStatus, StartTurnRequest,

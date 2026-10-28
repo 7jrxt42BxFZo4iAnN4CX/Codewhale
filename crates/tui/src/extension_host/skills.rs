@@ -9,16 +9,15 @@ use super::ManagerShared;
 use super::protocol::{RegisterParams, RegisterResult};
 use super::supervisor::HostRequestContext;
 use super::tier::HostTier;
-use crate::plugins::activation::PluginActivationCapability;
-use crate::plugins::types::PluginSkillSnapshot;
 use codewhale_config::OwnerRef;
 use codewhale_config::PluginAuthority;
+use codewhale_plugins::activation::PluginActivationCapability;
+use codewhale_plugins::types::PluginSkillSnapshot;
 
+pub use codewhale_plugins::discovery::{MAX_BYTES_PER_OWNER, MAX_SKILLS_PER_OWNER};
 pub const MAX_ROOTS_PER_OWNER: usize = 8;
 pub const MAX_ROOTS_PER_HOST: usize = 64;
-pub const MAX_SKILLS_PER_OWNER: usize = 128;
 pub const MAX_SKILLS_PER_HOST: usize = 1024;
-pub const MAX_BYTES_PER_OWNER: usize = 4 * 1024 * 1024;
 pub const MAX_BYTES_PER_HOST: usize = 32 * 1024 * 1024;
 
 /// Public receipt reuses the existing process and host/owner lifetimes. The
@@ -31,7 +30,7 @@ pub struct NativeSkillRef {
     pub owner_generation: u64,
     pub handle: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub selection: Option<super::composition_scope::SelectionRevision>,
+    pub selection: Option<codewhale_plugins::composition_scope::SelectionRevision>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<codewhale_config::EntryRef>,
 }
@@ -111,14 +110,14 @@ pub(super) async fn admit_root(
             bounded_review_check(Arc::clone(&shared.skill_admission), &cx.cancel, move || {
                 // One permit covers every disk check, including the Native receipt
                 // phase; cancellation never leaves that phase outside the bound.
-                crate::plugins::registry::verify_plugin_component_authority(
+                codewhale_plugins::registry::verify_plugin_component_authority(
                     &authority,
                     PluginActivationCapability::Native,
                 )?;
-                let snapshots = crate::plugins::discovery::load_staged_skill_root_snapshots(
+                let snapshots = codewhale_plugins::discovery::load_staged_skill_root_snapshots(
                     &authority, &relative,
                 )?;
-                crate::plugins::registry::verify_plugin_component_authority(
+                codewhale_plugins::registry::verify_plugin_component_authority(
                     &authority,
                     PluginActivationCapability::Native,
                 )?;
@@ -181,7 +180,7 @@ pub(super) async fn bounded_review_check<T: Send + 'static>(
         let _permit = permit;
         #[cfg(test)]
         let _env_scope = crate::test_support::join_env_scope(env_scope);
-        let _policy = crate::plugins::activation::PolicyScope::propagate(policy);
+        let _policy = codewhale_plugins::activation::PolicyScope::propagate(policy);
         check()
     });
     tokio::select! {
@@ -246,7 +245,7 @@ pub(crate) fn verify_native_skill(
         return Err("Native skill is no longer selected".into());
     }
     live(&manager, authority, reference)?;
-    crate::plugins::registry::verify_plugin_component_authority(
+    codewhale_plugins::registry::verify_plugin_component_authority(
         authority,
         PluginActivationCapability::Native,
     )?;
@@ -271,7 +270,7 @@ pub(crate) fn verify_native_skill(
 /// Caller-snapshot scope, rather than the first workspace that activated an
 /// owner. All normal discovery consumers use this one existing catalog merge.
 pub(crate) fn roots_for_plugins(
-    plugins: &crate::plugins::PluginRegistry,
+    plugins: &codewhale_plugins::PluginRegistry,
 ) -> Vec<(SkillRootRegistration, PluginAuthority, NativeSkillRef)> {
     if !super::activation::extension_host_policy_enabled() {
         return Vec::new();
@@ -343,9 +342,10 @@ mod tests {
     use crate::extension_host::protocol::{RegisterKind, RegisterSpecWire};
     use crate::extension_host::registry::OwnerRegistry;
     use crate::extension_host::tests::{FixturePlugins, fake_authority, node_for_tests};
-    use crate::plugins::activation::TestPolicyGuard;
-    use crate::skills::{SkillDiscoveryMode, SkillInvocation, SkillProvenance};
+    use crate::skills::{SkillDiscoveryMode, SkillProvenance};
     use crate::tools::spec::{ToolContext, ToolSpec};
+    use codewhale_plugins::activation::TestPolicyGuard;
+    use codewhale_skill_install::skill_parse::SkillInvocation;
     use std::collections::HashMap;
 
     fn params(owner: &OwnerRef, path: &str) -> RegisterParams {
@@ -645,7 +645,7 @@ mod tests {
         let old_receipt: SkillProvenance = serde_json::from_value(old_receipt).unwrap();
         assert!(old_receipt.authority().managed_policy_path.is_none());
         assert!(
-            crate::plugins::registry::verify_plugin_state_authority(old_receipt.authority())
+            codewhale_plugins::registry::verify_plugin_state_authority(old_receipt.authority())
                 .unwrap_err()
                 .contains("managed policy source")
         );
@@ -696,7 +696,7 @@ mod tests {
             )
             .unwrap();
         }
-        let validated = crate::plugins::manifest::PluginManifest::validate_from_path(
+        let validated = codewhale_plugins::manifest::PluginManifest::validate_from_path(
             &temp.path().join("plugin.json"),
         )
         .unwrap();
@@ -711,7 +711,7 @@ mod tests {
     fn reviewed_skill_root_parser_bounds_accumulation_and_parent_claims() {
         let (_many, authority) = parser_bundle(129, 1);
         assert!(
-            crate::plugins::discovery::load_staged_skill_root_snapshots(
+            codewhale_plugins::discovery::load_staged_skill_root_snapshots(
                 &authority,
                 Path::new("skills")
             )
@@ -720,7 +720,7 @@ mod tests {
         );
         let (_large, authority) = parser_bundle(8, 600 * 1024);
         assert!(
-            crate::plugins::discovery::load_staged_skill_root_snapshots(
+            codewhale_plugins::discovery::load_staged_skill_root_snapshots(
                 &authority,
                 Path::new("skills")
             )
@@ -735,13 +735,13 @@ mod tests {
             "---\nname: nested\ndescription: nested fixture\n---\nbody",
         )
         .unwrap();
-        let validated = crate::plugins::manifest::PluginManifest::validate_from_path(
+        let validated = codewhale_plugins::manifest::PluginManifest::validate_from_path(
             &authority.staged_manifest,
         )
         .unwrap();
         authority.content_hash = validated.content_hash;
         authority.capability_hash = validated.capability_hash;
-        let snapshots = crate::plugins::discovery::load_staged_skill_root_snapshots(
+        let snapshots = codewhale_plugins::discovery::load_staged_skill_root_snapshots(
             &authority,
             Path::new("skills"),
         )
@@ -778,8 +778,8 @@ mod tests {
         let manifest = temp.path().join("plugin.toml");
         std::fs::write(&manifest, "schema_version = 1\n[plugin]\nname = \"bounded-skills\"\nversion = \"0.1.0\"\n[skills]\npath = \"skills\"\n[native]\npath = \"index.mjs\"\n").unwrap();
         let validated =
-            crate::plugins::manifest::PluginManifest::validate_from_path(&manifest).unwrap();
-        let declared = crate::plugins::discovery::load_staged_skill_snapshots(
+            codewhale_plugins::manifest::PluginManifest::validate_from_path(&manifest).unwrap();
+        let declared = codewhale_plugins::discovery::load_staged_skill_snapshots(
             &validated.canonical_root,
             &validated.content_hash,
             &validated.capability_hash,
@@ -789,7 +789,7 @@ mod tests {
         authority.staged_manifest = validated.canonical_root.join("plugin.toml");
         authority.content_hash = validated.content_hash;
         authority.capability_hash = validated.capability_hash;
-        let native = crate::plugins::discovery::load_staged_skill_root_snapshots(
+        let native = codewhale_plugins::discovery::load_staged_skill_root_snapshots(
             &authority,
             Path::new("skills"),
         )
@@ -979,7 +979,7 @@ mod tests {
             .source
             .provenance()
             .unwrap();
-        let source_root = crate::plugins::agent_plugin::plugin_root_for_manifest(
+        let source_root = codewhale_plugins::agent_plugin::plugin_root_for_manifest(
             &current.authority().source_manifest,
         )
         .unwrap();

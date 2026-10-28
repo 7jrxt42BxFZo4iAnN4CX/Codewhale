@@ -7,6 +7,7 @@
 //! The skills mutation manager remains at `/skills manage`; MCP setup is a
 //! read-only suggestions handoff, not an inline installer or credential editor.
 
+use crate::mcp::McpServerConfigExt;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::BTreeSet;
@@ -619,7 +620,7 @@ fn hooks_model(app: &App, locale: Locale) -> ExtensionsTabModel {
 }
 
 fn inventory_summary(
-    inventory: &crate::plugins::manifest::PluginInventory,
+    inventory: &codewhale_plugins::manifest::PluginInventory,
     locale: Locale,
 ) -> String {
     let mut parts = Vec::new();
@@ -704,7 +705,7 @@ fn localized_plugin_state(locale: Locale, state: &str) -> String {
 /// review`, so turning it on is visibly a two-part step rather than a dead
 /// `disabled` with no explanation — the exact row (`computer-use`) the
 /// founder could not enable.
-fn plugin_row_state(locale: Locale, plugin: &crate::plugins::types::LoadedPlugin) -> String {
+fn plugin_row_state(locale: Locale, plugin: &codewhale_plugins::types::LoadedPlugin) -> String {
     let state = localized_plugin_state(locale, plugin.state_label());
     if plugin.trusted() || plugin.enabled {
         return state;
@@ -787,12 +788,11 @@ fn localized_skill_root(locale: Locale, kind: crate::skills::roots::SkillRootKin
 /// how the marketplace ends up offering `Enable` for something already active.
 fn plugin_row_action(
     locale: Locale,
-    plugin: &crate::plugins::types::LoadedPlugin,
+    plugin: &codewhale_plugins::types::LoadedPlugin,
 ) -> ExtensionAction {
-    let has_error_diagnostics = plugin
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.level == crate::plugins::types::PluginDiagnosticLevel::Error);
+    let has_error_diagnostics = plugin.diagnostics.iter().any(|diagnostic| {
+        diagnostic.level == codewhale_plugins::types::PluginDiagnosticLevel::Error
+    });
     if has_error_diagnostics {
         ExtensionAction::Command {
             label: tr(locale, MessageId::ExtensionsActionDiagnose).into_owned(),
@@ -838,7 +838,7 @@ fn plugin_row_action(
 /// the affordance without widening what runs unreviewed.
 fn plugin_row_toggle(
     locale: Locale,
-    plugin: &crate::plugins::types::LoadedPlugin,
+    plugin: &codewhale_plugins::types::LoadedPlugin,
 ) -> Option<ExtensionAction> {
     Some(if plugin.enabled {
         ExtensionAction::Command {
@@ -856,11 +856,10 @@ fn plugin_row_toggle(
 }
 
 /// How a plugin row reads, using the same ladder as [`plugin_row_action`].
-fn plugin_row_tone(plugin: &crate::plugins::types::LoadedPlugin) -> ExtensionTone {
-    let has_error_diagnostics = plugin
-        .diagnostics
-        .iter()
-        .any(|diagnostic| diagnostic.level == crate::plugins::types::PluginDiagnosticLevel::Error);
+fn plugin_row_tone(plugin: &codewhale_plugins::types::LoadedPlugin) -> ExtensionTone {
+    let has_error_diagnostics = plugin.diagnostics.iter().any(|diagnostic| {
+        diagnostic.level == codewhale_plugins::types::PluginDiagnosticLevel::Error
+    });
     if has_error_diagnostics {
         ExtensionTone::Failure
     } else if plugin.active() {
@@ -878,9 +877,9 @@ fn plugins_model(app: &App, locale: Locale) -> ExtensionsTabModel {
     let mut by_scope = [Vec::new(), Vec::new(), Vec::new()];
     for plugin in app.plugin_registry.list() {
         let scope = match plugin.scope {
-            crate::plugins::types::PluginScope::Builtin => 0,
-            crate::plugins::types::PluginScope::User => 1,
-            crate::plugins::types::PluginScope::Workspace => 2,
+            codewhale_plugins::types::PluginScope::Builtin => 0,
+            codewhale_plugins::types::PluginScope::User => 1,
+            codewhale_plugins::types::PluginScope::Workspace => 2,
         };
         let diagnostic_count = plugin.diagnostics.len();
         let action = plugin_row_action(locale, plugin);
@@ -963,7 +962,7 @@ fn plugins_model(app: &App, locale: Locale) -> ExtensionsTabModel {
             tone: ExtensionTone::Failure,
             label: diagnostic.code.to_string(),
             description: diagnostic.message.clone(),
-            state: if diagnostic.level == crate::plugins::types::PluginDiagnosticLevel::Error {
+            state: if diagnostic.level == codewhale_plugins::types::PluginDiagnosticLevel::Error {
                 tr(locale, MessageId::ExtensionsStateInvalid)
             } else {
                 tr(locale, MessageId::ExtensionsStateWarning)
@@ -997,10 +996,10 @@ fn plugins_model(app: &App, locale: Locale) -> ExtensionsTabModel {
 }
 
 fn marketplace_model(app: &App, locale: Locale) -> ExtensionsTabModel {
-    use crate::plugins::marketplace::document::{
+    use codewhale_plugins::marketplace::document::{
         CatalogInstallResolution, resolve_candidate_install,
     };
-    let Some(store) = crate::plugins::marketplace::store::MarketplaceStore::open(
+    let Some(store) = codewhale_plugins::marketplace::store::MarketplaceStore::open(
         app.plugin_registry.state_path(),
     ) else {
         return ExtensionsTabModel {
@@ -1049,7 +1048,7 @@ fn marketplace_model(app: &App, locale: Locale) -> ExtensionsTabModel {
                                     .clone()
                                     .unwrap_or_default(),
                                 state: if plugin.scope
-                                    == crate::plugins::types::PluginScope::Builtin
+                                    == codewhale_plugins::types::PluginScope::Builtin
                                 {
                                     tr(locale, MessageId::ExtensionsStateFirstParty).into_owned()
                                 } else {
@@ -1258,7 +1257,7 @@ fn mcp_model(app: &App, locale: Locale) -> ExtensionsTabModel {
             // — a disabled server offered "reconnect" instead of "enable".
             // When the two disagree, the observation belongs to a config the
             // user already changed, so it is not shown as this row's state.
-            let config_enabled = config.map(crate::mcp::McpServerConfig::is_enabled);
+            let config_enabled = config.map(codewhale_mcp::config::McpServerConfig::is_enabled);
             let stale = observed
                 .zip(config_enabled)
                 .is_some_and(|(server, enabled)| server.enabled != enabled);
@@ -1373,7 +1372,7 @@ fn mcp_model(app: &App, locale: Locale) -> ExtensionsTabModel {
                 },
             };
             let scope = config
-                .and_then(|server| server.reviewed_plugin.as_ref())
+                .and_then(|server| server.reviewed_plugin_source())
                 .map(|source| {
                     localize(
                         locale,
@@ -2602,7 +2601,7 @@ mod tests {
         let _env = crate::test_support::lock_test_env();
         let root = tempfile::tempdir().unwrap();
         let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", root.path());
-        let registry = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv()
+        let registry = codewhale_plugins::PluginDiscoveryContext::capture_pre_dotenv()
             .registry_for_workspace(root.path());
         let mut app = App::new_with_plugin_registry(
             crate::tui::test_support::test_tui_options(root.path()),
@@ -2731,7 +2730,7 @@ mod tests {
         let _env = crate::test_support::lock_test_env();
         let root = tempfile::tempdir().unwrap();
         let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", root.path());
-        let registry = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv()
+        let registry = codewhale_plugins::PluginDiscoveryContext::capture_pre_dotenv()
             .registry_for_workspace(root.path());
         let app = App::new_with_plugin_registry(
             crate::tui::test_support::test_tui_options(root.path()),
@@ -2878,7 +2877,7 @@ mod tests {
             r#"{"$schema":"https://agent-plugins.org/schemas/plugin.json","name":"computer-use","version":"1.0.0","description":"Locally installed fixture"}"#,
         )
         .unwrap();
-        let registry = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv()
+        let registry = codewhale_plugins::PluginDiscoveryContext::capture_pre_dotenv()
             .registry_for_workspace(root.path());
         let app = App::new_with_plugin_registry(
             crate::tui::test_support::test_tui_options(root.path()),
@@ -2946,7 +2945,7 @@ mod tests {
             r#"{"$schema":"https://agent-plugins.org/schemas/plugin.json","name":"computer-use","version":"1.0.0","description":"Locally installed fixture"}"#,
         )
         .unwrap();
-        let registry = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv()
+        let registry = codewhale_plugins::PluginDiscoveryContext::capture_pre_dotenv()
             .registry_for_workspace(root.path());
         let app = App::new_with_plugin_registry(
             crate::tui::test_support::test_tui_options(root.path()),
@@ -2988,7 +2987,7 @@ mod tests {
             r#"{"$schema":"https://agent-plugins.org/schemas/plugin.json","name":"computer-use","version":"1.0.0","description":"Locally installed fixture"}"#,
         )
         .unwrap();
-        let registry = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv()
+        let registry = codewhale_plugins::PluginDiscoveryContext::capture_pre_dotenv()
             .registry_for_workspace(root.path());
         let app = App::new_with_plugin_registry(
             crate::tui::test_support::test_tui_options(root.path()),

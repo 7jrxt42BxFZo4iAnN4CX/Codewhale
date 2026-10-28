@@ -21,6 +21,7 @@ members = [
     "crates/notify",
     "crates/palette",
     "crates/paths",
+    "crates/plugins",
     "crates/protocol",
     "crates/release",
     "crates/runtime",

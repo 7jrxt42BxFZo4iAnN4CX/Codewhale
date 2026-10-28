@@ -121,7 +121,6 @@
 
 pub(crate) mod command;
 pub(crate) mod composition_review;
-pub mod composition_scope;
 pub(crate) mod core_call;
 pub(crate) mod execution;
 pub(crate) use execution::StockOperation;
@@ -164,10 +163,10 @@ use self::protocol::{
 use self::registry::{CommandRegistration, OwnerRegistry, OwnerState, ToolRegistration};
 use self::supervisor::{HostEvents, HostProcess, HostRequestContext};
 use self::tier::{BuiltinModule, HostTier};
-use crate::plugins::PluginRegistry;
-use crate::plugins::activation::{self, PluginActivationCapability};
 use codewhale_config::PluginAuthority;
 use codewhale_config::{EntryRef, OwnerRef};
+use codewhale_plugins::PluginRegistry;
+use codewhale_plugins::activation::{self, PluginActivationCapability};
 
 /// The host bundle, embedded so every distribution channel carries it.
 const BUNDLE: &[u8] = include_bytes!("../../extension-host/dist/codewhale-extension-host.mjs");
@@ -542,10 +541,10 @@ struct Activation {
 struct AttachmentState {
     plugins: Arc<PluginRegistry>,
     desired: BTreeMap<String, String>,
-    selection: composition_scope::CompositionSelection,
+    selection: codewhale_plugins::composition_scope::CompositionSelection,
     revision: u64,
     selection_cancel: CancellationToken,
-    settled: Option<composition_scope::SelectionRevision>,
+    settled: Option<codewhale_plugins::composition_scope::SelectionRevision>,
     session_id: Option<String>,
     agent_id: Option<String>,
 }
@@ -840,7 +839,7 @@ impl ManagerShared {
                 #[cfg(test)]
                 let _env_scope = crate::test_support::join_env_scope(env_scope);
                 let _scope = activation::PolicyScope::propagate(policy);
-                crate::plugins::registry::verify_plugin_component_authority(
+                codewhale_plugins::registry::verify_plugin_component_authority(
                     &authority,
                     PluginActivationCapability::Native,
                 )
@@ -1747,12 +1746,15 @@ impl ExtensionHostManager {
             .insert(
                 id,
                 AttachmentState {
-                    plugins: Arc::new(plugins.bind_caller(composition_scope::SelectionRevision {
-                        attachment_id: id,
-                        revision: 1,
-                    })),
+                    plugins: Arc::new(plugins.bind_caller(
+                        codewhale_plugins::composition_scope::SelectionRevision {
+                            attachment_id: id,
+                            revision: 1,
+                        },
+                    )),
                     desired: BTreeMap::new(),
-                    selection: composition_scope::CompositionSelection::default(),
+                    selection: codewhale_plugins::composition_scope::CompositionSelection::default(
+                    ),
                     revision: 1,
                     selection_cancel: CancellationToken::new(),
                     settled: None,
@@ -1809,10 +1811,12 @@ impl ExtensionHostManager {
                     .caller_selection()
                     .expect("attached caller")
                     .attachment_id;
-                state.plugins = Arc::new(view.bind_caller(composition_scope::SelectionRevision {
-                    attachment_id: id,
-                    revision: state.revision,
-                }));
+                state.plugins = Arc::new(view.bind_caller(
+                    codewhale_plugins::composition_scope::SelectionRevision {
+                        attachment_id: id,
+                        revision: state.revision,
+                    },
+                ));
                 state.desired.clear();
                 state.selection = Default::default();
             }
@@ -3121,7 +3125,7 @@ fn builtin_source_path(root: &Path, module: &BuiltinModule) -> PathBuf {
 /// Reviewed, enabled plugins with `native` entries, keyed by plugin id, read
 /// from Codewhale's immutable staged snapshot. Blocking.
 fn desired_owners(plugins: &PluginRegistry) -> (BTreeMap<String, DesiredOwner>, Vec<String>) {
-    let (sources, mut errors) = crate::plugins::runtime::active_component_sources(
+    let (sources, mut errors) = codewhale_plugins::runtime::active_component_sources(
         plugins,
         PluginActivationCapability::Native,
     );
@@ -3150,7 +3154,7 @@ fn desired_owners(plugins: &PluginRegistry) -> (BTreeMap<String, DesiredOwner>, 
         }
         // The rule discovery reports, re-checked on the staged copy: the
         // name here, and file-ness by the read itself.
-        let bytes = match crate::plugins::runtime::native_entry_problem(&source.path, true) {
+        let bytes = match codewhale_plugins::runtime::native_entry_problem(&source.path, true) {
             None => std::fs::read(&source.path).map_err(|error| error.to_string()),
             Some(problem) => Err(problem.to_string()),
         };
@@ -3232,15 +3236,17 @@ impl DesiredScan {
                                 &entry.path,
                                 &entry.sha256,
                             ))
-                        .then(|| composition_scope::NativePresetRef {
-                            plugin_id: plugin_id.clone(),
-                            content_hash: want.authority.content_hash.clone(),
-                            entry,
+                        .then(|| {
+                            codewhale_plugins::composition_scope::NativePresetRef {
+                                plugin_id: plugin_id.clone(),
+                                content_hash: want.authority.content_hash.clone(),
+                                entry,
+                            }
                         })
                     })
                 })
                 .collect();
-            state.selection = composition_scope::CompositionSelection {
+            state.selection = codewhale_plugins::composition_scope::CompositionSelection {
                 revision: state.plugins.caller_selection(),
                 desired: desired.clone(),
                 entries,
@@ -3339,10 +3345,12 @@ impl HostAttachment {
             state.selection_cancel.cancel();
             state.selection_cancel = CancellationToken::new();
             state.revision += 1;
-            state.plugins = Arc::new(plugins.bind_caller(composition_scope::SelectionRevision {
-                attachment_id: self.id,
-                revision: state.revision,
-            }));
+            state.plugins = Arc::new(plugins.bind_caller(
+                codewhale_plugins::composition_scope::SelectionRevision {
+                    attachment_id: self.id,
+                    revision: state.revision,
+                },
+            ));
             state.desired.clear();
             state.selection = Default::default();
         }
@@ -3422,7 +3430,7 @@ impl HostAttachment {
 impl ManagerShared {
     pub(crate) fn plugins_for_selection(
         &self,
-        revision: composition_scope::SelectionRevision,
+        revision: codewhale_plugins::composition_scope::SelectionRevision,
         session_id: Option<&str>,
     ) -> Option<(Arc<PluginRegistry>, Option<String>)> {
         self.attachments
@@ -3436,7 +3444,7 @@ impl ManagerShared {
     }
     pub(super) fn selection_cancellation(
         &self,
-        revision: composition_scope::SelectionRevision,
+        revision: codewhale_plugins::composition_scope::SelectionRevision,
     ) -> Option<CancellationToken> {
         self.attachments
             .lock()
@@ -3445,7 +3453,10 @@ impl ManagerShared {
             .filter(|state| state.revision == revision.revision)
             .map(|state| state.selection_cancel.clone())
     }
-    pub(crate) fn selection(&self, id: u64) -> composition_scope::CompositionSelection {
+    pub(crate) fn selection(
+        &self,
+        id: u64,
+    ) -> codewhale_plugins::composition_scope::CompositionSelection {
         self.attachments
             .lock()
             .expect("attachments lock")
@@ -3455,7 +3466,7 @@ impl ManagerShared {
     }
     pub(crate) fn selection_current(
         &self,
-        selection: composition_scope::SelectionRevision,
+        selection: codewhale_plugins::composition_scope::SelectionRevision,
         plugin_id: &str,
         hash: &str,
         scope: Option<&EntryRef>,
@@ -3471,7 +3482,7 @@ impl ManagerShared {
     }
     pub(crate) fn check_selection(
         &self,
-        selection: Option<composition_scope::SelectionRevision>,
+        selection: Option<codewhale_plugins::composition_scope::SelectionRevision>,
         plugins: Option<&PluginRegistry>,
         plugin_id: &str,
         hash: &str,
@@ -3510,12 +3521,15 @@ pub(crate) fn validate_caller_plugins(plugins: Option<&PluginRegistry>) -> Resul
 /// discovery. Child preparation revalidates before attaching the chosen entry.
 pub(crate) fn native_presets_for_plugins(
     plugins: &PluginRegistry,
-) -> Vec<(composition_scope::NativePresetRef, PluginAuthority)> {
+) -> Vec<(
+    codewhale_plugins::composition_scope::NativePresetRef,
+    PluginAuthority,
+)> {
     if !activation::extension_host_policy_enabled() {
         return Vec::new();
     }
     let manager = manager();
-    let mut presets: Vec<_> = crate::plugins::native_presets::admitted_entries(plugins)
+    let mut presets: Vec<_> = codewhale_plugins::native_presets::admitted_entries(plugins)
         .into_iter()
         .map(|(preset, _, authority)| (preset, authority))
         .collect();
@@ -3545,7 +3559,7 @@ pub(crate) fn native_presets_for_plugins(
                 })
             {
                 presets.push((
-                    composition_scope::NativePresetRef {
+                    codewhale_plugins::composition_scope::NativePresetRef {
                         plugin_id: owner.owner.plugin_id.clone(),
                         content_hash: owner.content_hash.clone(),
                         entry: entry.clone(),
@@ -3626,9 +3640,10 @@ pub fn manager() -> Arc<ExtensionHostManager> {
     if let Some(manager) = TEST_MANAGER.with(|cell| cell.borrow().clone()) {
         return manager;
     }
-    Arc::clone(
-        GLOBAL.get_or_init(|| Arc::new(ExtensionHostManager::new(ExtensionHostOptions::default()))),
-    )
+    Arc::clone(GLOBAL.get_or_init(|| {
+        composition_review::install();
+        Arc::new(ExtensionHostManager::new(ExtensionHostOptions::default()))
+    }))
 }
 
 /// Test-only: route [`manager`] on this thread to `manager`.
@@ -3638,6 +3653,7 @@ pub(crate) struct TestManagerGuard(Option<Arc<ExtensionHostManager>>);
 #[cfg(test)]
 impl TestManagerGuard {
     pub(crate) fn install(manager: Arc<ExtensionHostManager>) -> Self {
+        composition_review::install();
         Self(TEST_MANAGER.with(|cell| cell.replace(Some(manager))))
     }
 }

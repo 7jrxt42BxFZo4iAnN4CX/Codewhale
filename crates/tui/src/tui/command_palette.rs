@@ -85,7 +85,7 @@ pub fn build_entries(
         workspace,
         mcp_config_path,
         mcp_snapshot,
-        &crate::plugins::PluginRegistry::empty(workspace),
+        &codewhale_plugins::PluginRegistry::empty(workspace),
     )
 }
 
@@ -96,7 +96,7 @@ pub fn build_entries_with_plugins(
     workspace: &Path,
     mcp_config_path: &Path,
     mcp_snapshot: Option<&crate::mcp::McpManagerSnapshot>,
-    plugins: &crate::plugins::PluginRegistry,
+    plugins: &codewhale_plugins::PluginRegistry,
 ) -> Vec<CommandPaletteEntry> {
     let mut entries = Vec::new();
     commands::user_registry::with_registry_for_plugins(plugins, |user_registry| {
@@ -293,7 +293,7 @@ fn build_mcp_entries(
     workspace: &Path,
     mcp_config_path: &Path,
     mcp_snapshot: Option<&crate::mcp::McpManagerSnapshot>,
-    plugins: &crate::plugins::PluginRegistry,
+    plugins: &codewhale_plugins::PluginRegistry,
 ) -> Vec<CommandPaletteEntry> {
     let owned_snapshot = if mcp_snapshot.is_none() {
         crate::mcp::manager_snapshot_from_config_with_workspace_and_plugins(
@@ -1431,14 +1431,14 @@ mod tests {
             "---\nname: review\ndescription: reviewed plugin Skill\n---\nbody\n",
         )
         .expect("plugin Skill");
-        let config = crate::plugins::discovery::DiscoveryConfig {
+        let config = codewhale_plugins::discovery::DiscoveryConfig {
             workspace: workspace.clone(),
             user_plugins_dir: tmp.path().join("plugins"),
             workspace_plugins_dir: workspace.join(".codewhale/plugins"),
             builtin_plugin_dirs: Vec::new(),
             state_path: tmp.path().join("plugin-state/state.json"),
         };
-        let mut plugins = crate::plugins::discovery::discover_with_config(&config);
+        let mut plugins = codewhale_plugins::discovery::discover_with_config(&config);
         let entries_before = build_entries_with_plugins(
             Locale::En,
             tmp.path().join("skills").as_path(),

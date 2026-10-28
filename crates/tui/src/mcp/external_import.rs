@@ -20,7 +20,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-use super::{McpConfig, McpServerConfig};
+use codewhale_mcp::config::{McpConfig, McpServerConfig};
 
 /// Where an import candidate came from.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -578,7 +578,7 @@ pub fn format_candidates_for_display(candidates: &[ImportCandidate]) -> String {
 pub struct ImportContext<'a> {
     pub workspace: &'a Path,
     pub mcp_path: &'a Path,
-    pub plugins: &'a crate::plugins::PluginRegistry,
+    pub plugins: &'a codewhale_plugins::PluginRegistry,
     pub home: PathBuf,
     pub codewhale_home: PathBuf,
 }
@@ -586,7 +586,7 @@ impl<'a> ImportContext<'a> {
     pub fn new(
         workspace: &'a Path,
         mcp_path: &'a Path,
-        plugins: &'a crate::plugins::PluginRegistry,
+        plugins: &'a codewhale_plugins::PluginRegistry,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             workspace,
@@ -845,7 +845,7 @@ mod tests {
             fs::create_dir_all(path).unwrap();
         }
         let path = state.join("mcp.json");
-        let plugins = crate::plugins::PluginRegistry::empty(&workspace);
+        let plugins = codewhale_plugins::PluginRegistry::empty(&workspace);
         test(&ImportContext {
             workspace: &workspace,
             mcp_path: &path,

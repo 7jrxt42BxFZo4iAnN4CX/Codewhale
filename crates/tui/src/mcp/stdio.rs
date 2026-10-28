@@ -2,9 +2,10 @@
 use anyhow::Result;
 use tokio::process::ChildStdout;
 
+use super::McpTransport;
 use super::process_broker::BrokerSession;
 use super::wire::{MAX_MCP_RESPONSE_BYTES, read_line_capped};
-use super::{McpServerConfig, McpTransport};
+use codewhale_mcp::config::McpServerConfig;
 
 pub(super) struct StdioTransport {
     pub(super) session: BrokerSession,

@@ -619,7 +619,7 @@ impl OwnerRegistry {
     pub(super) fn register_mcp(
         &mut self,
         params: &RegisterParams,
-        config: crate::mcp::McpServerConfig,
+        config: codewhale_mcp::config::McpServerConfig,
         host_generation: u64,
     ) -> Result<u64, String> {
         self.check_scope(&params.owner, params.scope.as_ref(), false)?;
@@ -768,7 +768,7 @@ impl OwnerRegistry {
     pub(crate) fn register_skill_root(
         &mut self,
         params: &RegisterParams,
-        snapshots: Vec<crate::plugins::types::PluginSkillSnapshot>,
+        snapshots: Vec<codewhale_plugins::types::PluginSkillSnapshot>,
         host_generation: u64,
     ) -> Result<u64, String> {
         self.check_scope(&params.owner, params.scope.as_ref(), false)?;
@@ -1186,7 +1186,7 @@ impl OwnerRegistry {
         let mut replaced = None;
         if let Some(existing) = self
             .commands_by_name
-            .get(&super::composition_scope::name_key(
+            .get(&codewhale_plugins::composition_scope::name_key(
                 &params.owner.plugin_id,
                 name,
                 params.scope.as_ref(),
@@ -1238,7 +1238,7 @@ impl OwnerRegistry {
             },
         );
         self.commands_by_name.insert(
-            super::composition_scope::name_key(
+            codewhale_plugins::composition_scope::name_key(
                 &params.owner.plugin_id,
                 name,
                 params.scope.as_ref(),
@@ -1267,7 +1267,7 @@ impl OwnerRegistry {
             ));
         }
         let plain_key = name.to_ascii_lowercase();
-        let key = super::composition_scope::name_key(
+        let key = codewhale_plugins::composition_scope::name_key(
             &params.owner.plugin_id,
             &plain_key,
             params.scope.as_ref(),
@@ -1434,7 +1434,7 @@ impl OwnerRegistry {
         {
             if self
                 .commands_by_name
-                .get(&super::composition_scope::name_key(
+                .get(&codewhale_plugins::composition_scope::name_key(
                     &command.owner.plugin_id,
                     &command.name,
                     command.scope.as_ref(),
@@ -1442,7 +1442,7 @@ impl OwnerRegistry {
                 == Some(&handle)
             {
                 self.commands_by_name
-                    .remove(&super::composition_scope::name_key(
+                    .remove(&codewhale_plugins::composition_scope::name_key(
                         &command.owner.plugin_id,
                         &command.name,
                         command.scope.as_ref(),
@@ -1459,7 +1459,7 @@ impl OwnerRegistry {
             return;
         }
         if let Some(tool) = self.tools.remove(&handle) {
-            let key = super::composition_scope::name_key(
+            let key = codewhale_plugins::composition_scope::name_key(
                 &tool.owner.plugin_id,
                 &tool.name.to_ascii_lowercase(),
                 tool.scope.as_ref(),
@@ -1483,7 +1483,7 @@ impl OwnerRegistry {
             if let Some(command) = self.commands.remove(&handle)
                 && self
                     .commands_by_name
-                    .get(&super::composition_scope::name_key(
+                    .get(&codewhale_plugins::composition_scope::name_key(
                         &command.owner.plugin_id,
                         &command.name,
                         command.scope.as_ref(),
@@ -1491,7 +1491,7 @@ impl OwnerRegistry {
                     == Some(&handle)
             {
                 self.commands_by_name
-                    .remove(&super::composition_scope::name_key(
+                    .remove(&codewhale_plugins::composition_scope::name_key(
                         &command.owner.plugin_id,
                         &command.name,
                         command.scope.as_ref(),
@@ -1534,7 +1534,7 @@ impl OwnerRegistry {
             .collect();
         for handle in &handles {
             if let Some(tool) = self.tools.remove(handle) {
-                let key = super::composition_scope::name_key(
+                let key = codewhale_plugins::composition_scope::name_key(
                     &tool.owner.plugin_id,
                     &tool.name.to_ascii_lowercase(),
                     tool.scope.as_ref(),

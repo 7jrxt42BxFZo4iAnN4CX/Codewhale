@@ -1833,7 +1833,7 @@ mod tests {
             tmp.path(),
             &tmp.path().join("mcp.json"),
             None,
-            &crate::plugins::PluginRegistry::empty(tmp.path()),
+            &codewhale_plugins::PluginRegistry::empty(tmp.path()),
         )
         .into_iter()
         .filter(|entry| entry.section() == crate::tui::command_palette::PaletteSection::Command)

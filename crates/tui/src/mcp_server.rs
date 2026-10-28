@@ -23,9 +23,10 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
-use crate::skills::{SkillDiscoveryMode, SkillInvocation, SkillSource};
+use crate::skills::{SkillDiscoveryMode, SkillSource};
 use crate::tools::spec::{ToolError, ToolResult};
 use crate::tools::{ToolContext, ToolRegistryBuilder};
+use codewhale_skill_install::skill_parse::SkillInvocation;
 
 const SUPPORTED_PROTOCOL_VERSIONS: &[ProtocolVersion] = &[
     ProtocolVersion::V_2024_11_05,

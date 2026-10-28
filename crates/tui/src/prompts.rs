@@ -55,7 +55,7 @@ pub struct PromptSessionContext<'a> {
     pub skills_discovery_mode: crate::skills::SkillDiscoveryMode,
     /// Immutable plugin snapshot owned by this App/Engine workspace context.
     /// Never sourced from process-global mutable state.
-    pub plugin_registry: Option<&'a crate::plugins::PluginRegistry>,
+    pub plugin_registry: Option<&'a codewhale_plugins::PluginRegistry>,
     /// Active runtime mode. Retained in the session contract for embedders;
     /// bundled prompt text deliberately ignores it because policy and the live
     /// tool catalog already express the mode.

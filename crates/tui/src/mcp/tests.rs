@@ -7,6 +7,7 @@ use super::wire::{
     parse_sse_message_data,
 };
 use super::*;
+use codewhale_mcp::config::{default_connect_timeout, default_read_timeout};
 use reqwest::header::{ACCEPT, CONTENT_TYPE};
 use serde_json::{Value, json};
 use std::collections::VecDeque;
@@ -366,7 +367,7 @@ fn reviewed_plugin_environment_uses_only_the_pre_dotenv_snapshot() {
     )
     .unwrap();
     let (_, authority) = active_plugin_fixture(&plugin_base);
-    let snapshot = crate::plugins::HostEnvironment::from_entries([(
+    let snapshot = codewhale_plugins::HostEnvironment::from_entries([(
         OsString::from("PLUGIN_SNAPSHOT_TOKEN"),
         OsString::from("captured-before-dotenv"),
     )]);
@@ -374,8 +375,9 @@ fn reviewed_plugin_environment_uses_only_the_pre_dotenv_snapshot() {
     server
         .env
         .insert("TOKEN".to_string(), "${PLUGIN_SNAPSHOT_TOKEN}".to_string());
-    server.reviewed_plugin =
-        Some(ReviewedPluginMcpSource::from_authority(authority, None, Arc::new(snapshot)).unwrap());
+    server.reviewed_plugin = provenance_of(
+        ReviewedPluginMcpSource::from_authority(authority, None, Arc::new(snapshot)).unwrap(),
+    );
     let _late_dotenv = crate::test_support::EnvVarGuard::set(
         "PLUGIN_SNAPSHOT_TOKEN",
         "workspace-dotenv-must-not-win",
@@ -384,8 +386,9 @@ fn reviewed_plugin_environment_uses_only_the_pre_dotenv_snapshot() {
     let expanded = expanded_mcp_stdio_env(&server).unwrap();
     assert_eq!(expanded["TOKEN"], "captured-before-dotenv");
 
-    server.reviewed_plugin.as_mut().unwrap().host_environment =
-        Arc::new(crate::plugins::HostEnvironment::from_entries([]));
+    let mut source = server.reviewed_plugin_source().cloned().unwrap();
+    source.host_environment = Arc::new(codewhale_plugins::HostEnvironment::from_entries([]));
+    server.reviewed_plugin = provenance_of(source);
     let error = expanded_mcp_stdio_env(&server)
         .expect_err("a value present only after dotenv must fail closed");
     assert!(
@@ -1079,14 +1082,14 @@ connect_timeout = 2
     )
     .unwrap();
 
-    let discovery = crate::plugins::discovery::DiscoveryConfig {
+    let discovery = codewhale_plugins::discovery::DiscoveryConfig {
         workspace: dir.path().join("project"),
         user_plugins_dir: plugins_root,
         workspace_plugins_dir: dir.path().join("workspace-plugins-unused"),
         builtin_plugin_dirs: Vec::new(),
         state_path: dir.path().join("plugin-state/state.json"),
     };
-    let mut registry = crate::plugins::discovery::discover_with_config(&discovery);
+    let mut registry = codewhale_plugins::discovery::discover_with_config(&discovery);
     registry.trust("node-esm").unwrap();
     registry.enable("node-esm").unwrap();
     let active = registry.active_plugins()[0].clone();
@@ -1214,14 +1217,14 @@ connect_timeout = 2
         )
         .unwrap();
 
-        let discovery = crate::plugins::discovery::DiscoveryConfig {
+        let discovery = codewhale_plugins::discovery::DiscoveryConfig {
             workspace: dir.path().join("project"),
             user_plugins_dir: plugins_root,
             workspace_plugins_dir: dir.path().join("workspace-plugins-unused"),
             builtin_plugin_dirs: Vec::new(),
             state_path: dir.path().join("plugin-state/state.json"),
         };
-        let mut registry = crate::plugins::discovery::discover_with_config(&discovery);
+        let mut registry = codewhale_plugins::discovery::discover_with_config(&discovery);
         registry.trust("node-esm-multi").unwrap();
         registry.enable("node-esm-multi").unwrap();
         let active = registry.active_plugins()[0].clone();
@@ -1528,7 +1531,7 @@ command = "node"
     disabled.enabled = false;
     let mut untrusted = disabled.clone();
     untrusted.enabled = true;
-    untrusted.trust_status = crate::plugins::types::PluginTrustStatus::NeverReviewed;
+    untrusted.trust_status = codewhale_plugins::types::PluginTrustStatus::NeverReviewed;
 
     for plugin in [disabled, untrusted] {
         let config = merge_plugin_mcp_servers_from_plugins(
@@ -1577,7 +1580,7 @@ fn registry_with_local_mcp(
     name: &str,
     base_path: PathBuf,
     workspace: &Path,
-) -> crate::plugins::PluginRegistry {
+) -> codewhale_plugins::PluginRegistry {
     fs::write(
         base_path.join("plugin.toml"),
         format!(
@@ -1595,7 +1598,7 @@ args = ["server.js"]
     )
     .unwrap();
     let plugins_root = base_path.parent().expect("plugin parent").to_path_buf();
-    let discovery = crate::plugins::discovery::DiscoveryConfig {
+    let discovery = codewhale_plugins::discovery::DiscoveryConfig {
         workspace: workspace.to_path_buf(),
         user_plugins_dir: plugins_root,
         workspace_plugins_dir: workspace.join(".codewhale/plugins-unused"),
@@ -1604,7 +1607,7 @@ args = ["server.js"]
             .join("plugin-state")
             .join(format!("plugin-state-{name}.json")),
     };
-    let mut registry = crate::plugins::discovery::discover_with_config(&discovery);
+    let mut registry = codewhale_plugins::discovery::discover_with_config(&discovery);
     registry.trust(name).unwrap();
     registry.enable(name).unwrap();
     registry
@@ -1671,14 +1674,14 @@ connect_timeout = 1
     )
     .unwrap();
 
-    let discovery = crate::plugins::discovery::DiscoveryConfig {
+    let discovery = codewhale_plugins::discovery::DiscoveryConfig {
         workspace: dir.path().join("project"),
         user_plugins_dir: plugins_root,
         workspace_plugins_dir: dir.path().join("workspace-plugins"),
         builtin_plugin_dirs: Vec::new(),
         state_path: dir.path().join("plugin-state/state.json"),
     };
-    let mut registry = crate::plugins::discovery::discover_with_config(&discovery);
+    let mut registry = codewhale_plugins::discovery::discover_with_config(&discovery);
     registry.trust("guarded").unwrap();
     registry.enable("guarded").unwrap();
     let active = registry.active_plugins()[0].clone();
@@ -1778,14 +1781,14 @@ CALL_MARKER = "${CODEWHALE_TEST_PLUGIN_CALL_MARKER}"
     )
     .unwrap();
 
-    let discovery = crate::plugins::discovery::DiscoveryConfig {
+    let discovery = codewhale_plugins::discovery::DiscoveryConfig {
         workspace: dir.path().join("project"),
         user_plugins_dir: plugins_root,
         workspace_plugins_dir: dir.path().join("workspace-plugins-unused"),
         builtin_plugin_dirs: Vec::new(),
         state_path: dir.path().join("plugin-state/state.json"),
     };
-    let mut registry = crate::plugins::discovery::discover_with_config(&discovery);
+    let mut registry = codewhale_plugins::discovery::discover_with_config(&discovery);
     registry.trust("revoked").unwrap();
     registry.enable("revoked").unwrap();
     let active = registry.active_plugins()[0].clone();
@@ -1819,7 +1822,7 @@ CALL_MARKER = "${CODEWHALE_TEST_PLUGIN_CALL_MARKER}"
         "test server never observed the in-flight tool call"
     );
 
-    let mut external = crate::plugins::discovery::discover_with_config(&discovery);
+    let mut external = codewhale_plugins::discovery::discover_with_config(&discovery);
     external.revoke_trust("revoked").unwrap();
     let result = tokio::time::timeout(Duration::from_secs(5), call)
         .await
@@ -1850,11 +1853,11 @@ async fn plugin_stdio_authority_cancellation_terminates_an_idle_child() {
         "-c".to_string(),
         "trap 'exit 0' TERM INT; while :; do sleep 1; done".to_string(),
     ];
-    config.reviewed_plugin = Some(
+    config.reviewed_plugin = provenance_of(
         ReviewedPluginMcpSource::from_authority(
             authority,
             None,
-            Arc::new(crate::plugins::HostEnvironment::capture()),
+            Arc::new(codewhale_plugins::HostEnvironment::capture()),
         )
         .unwrap(),
     );
@@ -1901,11 +1904,11 @@ async fn plugin_stdio_does_not_surface_reviewed_child_stderr() {
         "-c".to_string(),
         "echo 'ARBITRARY_PLUGIN_CREDENTIAL' 1>&2; exit 1".to_string(),
     ];
-    config.reviewed_plugin = Some(
+    config.reviewed_plugin = provenance_of(
         ReviewedPluginMcpSource::from_authority(
             authority,
             None,
-            Arc::new(crate::plugins::HostEnvironment::capture()),
+            Arc::new(codewhale_plugins::HostEnvironment::capture()),
         )
         .unwrap(),
     );
@@ -2026,14 +2029,14 @@ async fn revoked_plugin_mcp_denies_catalog_tool_resource_and_prompt_operations()
         "schema_version = 1\n[plugin]\nname = \"catalog-guard\"\nversion = \"1.0.0\"\n",
     )
     .unwrap();
-    let discovery = crate::plugins::discovery::DiscoveryConfig {
+    let discovery = codewhale_plugins::discovery::DiscoveryConfig {
         workspace: dir.path().join("project"),
         user_plugins_dir: plugins_root,
         workspace_plugins_dir: dir.path().join("workspace-plugins-unused"),
         builtin_plugin_dirs: Vec::new(),
         state_path: dir.path().join("plugin-state/state.json"),
     };
-    let mut registry = crate::plugins::discovery::discover_with_config(&discovery);
+    let mut registry = codewhale_plugins::discovery::discover_with_config(&discovery);
     registry.trust("catalog-guard").unwrap();
     registry.enable("catalog-guard").unwrap();
     let authority = registry.authority_for("catalog-guard").unwrap();
@@ -2046,10 +2049,10 @@ async fn revoked_plugin_mcp_denies_catalog_tool_resource_and_prompt_operations()
     let source = ReviewedPluginMcpSource::from_authority(
         authority,
         None,
-        Arc::new(crate::plugins::HostEnvironment::capture()),
+        Arc::new(codewhale_plugins::HostEnvironment::capture()),
     )
     .unwrap();
-    connection.config.reviewed_plugin = Some(source.clone());
+    connection.config.reviewed_plugin = provenance_of(source.clone());
     connection.tools.push(McpTool {
         name: "echo".to_string(),
         description: None,
@@ -2075,7 +2078,7 @@ async fn revoked_plugin_mcp_denies_catalog_tool_resource_and_prompt_operations()
     });
     let mut config = McpConfig::default();
     let mut server = test_server_config();
-    server.reviewed_plugin = Some(source);
+    server.reviewed_plugin = provenance_of(source);
     config.servers.insert("guarded".to_string(), server);
     let mut pool = McpPool::new(config).with_backend(McpBackend::Rust);
     pool.connections.insert("guarded".to_string(), connection);
@@ -2084,7 +2087,7 @@ async fn revoked_plugin_mcp_denies_catalog_tool_resource_and_prompt_operations()
     assert_eq!(pool.all_resource_templates().len(), 1);
     assert_eq!(pool.all_prompts().len(), 1);
 
-    let mut external = crate::plugins::discovery::discover_with_config(&discovery);
+    let mut external = codewhale_plugins::discovery::discover_with_config(&discovery);
     external.revoke_trust("catalog-guard").unwrap();
     assert!(pool.all_tools().is_empty());
     assert!(pool.all_resources().is_empty());
@@ -2133,14 +2136,14 @@ fn cached_reviewed_plugin_catalog_fixture() -> (tempfile::TempDir, PathBuf, Path
         "schema_version = 1\n[plugin]\nname = \"catalog-drift\"\nversion = \"1.0.0\"\n",
     )
     .unwrap();
-    let discovery = crate::plugins::discovery::DiscoveryConfig {
+    let discovery = codewhale_plugins::discovery::DiscoveryConfig {
         workspace: dir.path().join("project"),
         user_plugins_dir: plugins_root,
         workspace_plugins_dir: dir.path().join("workspace-plugins-unused"),
         builtin_plugin_dirs: Vec::new(),
         state_path: dir.path().join("plugin-state/state.json"),
     };
-    let mut registry = crate::plugins::discovery::discover_with_config(&discovery);
+    let mut registry = codewhale_plugins::discovery::discover_with_config(&discovery);
     registry.trust("catalog-drift").unwrap();
     registry.enable("catalog-drift").unwrap();
     let authority = registry.authority_for("catalog-drift").unwrap();
@@ -2153,10 +2156,10 @@ fn cached_reviewed_plugin_catalog_fixture() -> (tempfile::TempDir, PathBuf, Path
     let source = ReviewedPluginMcpSource::from_authority(
         authority,
         None,
-        Arc::new(crate::plugins::HostEnvironment::capture()),
+        Arc::new(codewhale_plugins::HostEnvironment::capture()),
     )
     .unwrap();
-    connection.config.reviewed_plugin = Some(source.clone());
+    connection.config.reviewed_plugin = provenance_of(source.clone());
     connection.tools.push(McpTool {
         name: "echo".to_string(),
         description: None,
@@ -2182,7 +2185,7 @@ fn cached_reviewed_plugin_catalog_fixture() -> (tempfile::TempDir, PathBuf, Path
     });
     let mut config = McpConfig::default();
     let mut server = test_server_config();
-    server.reviewed_plugin = Some(source);
+    server.reviewed_plugin = provenance_of(source);
     config.servers.insert("guarded".to_string(), server);
     let mut pool = McpPool::new(config).with_backend(McpBackend::Rust);
     pool.connections.insert("guarded".to_string(), connection);
@@ -2252,11 +2255,11 @@ async fn reviewed_plugin_oauth_is_disabled_without_network_or_token_mutation() {
     let mut server = test_server_config();
     server.command = None;
     server.url = Some(endpoint.clone());
-    server.reviewed_plugin = Some(
+    server.reviewed_plugin = provenance_of(
         ReviewedPluginMcpSource::from_authority(
             authority,
             Some(&endpoint),
-            Arc::new(crate::plugins::HostEnvironment::default()),
+            Arc::new(codewhale_plugins::HostEnvironment::default()),
         )
         .unwrap(),
     );
@@ -2303,7 +2306,7 @@ async fn reviewed_plugin_oauth_is_disabled_without_network_or_token_mutation() {
 fn active_plugin_fixture(
     plugin_base: &Path,
 ) -> (
-    crate::plugins::types::LoadedPlugin,
+    codewhale_plugins::types::LoadedPlugin,
     codewhale_config::PluginAuthority,
 ) {
     let plugins_root = plugin_base.parent().expect("plugin parent").to_path_buf();
@@ -2316,7 +2319,7 @@ fn active_plugin_fixture(
     } else {
         plugins_root.clone()
     };
-    let discovery = crate::plugins::discovery::DiscoveryConfig {
+    let discovery = codewhale_plugins::discovery::DiscoveryConfig {
         workspace: root.join("project"),
         user_plugins_dir: plugins_root,
         workspace_plugins_dir: root.join("workspace-plugins-unused"),
@@ -2326,7 +2329,7 @@ fn active_plugin_fixture(
             plugin_base.file_name().unwrap().to_string_lossy()
         )),
     };
-    let mut registry = crate::plugins::discovery::discover_with_config(&discovery);
+    let mut registry = codewhale_plugins::discovery::discover_with_config(&discovery);
     let name = registry
         .list()
         .first()
@@ -3796,7 +3799,7 @@ async fn config_source_switch_preserves_dynamic_servers_in_the_shared_pool() {
     .unwrap();
     std::fs::write(&invalid_path, r#"{"servers":{"broken": trailing}}"#).unwrap();
     std::fs::write(&replacement_path, r#"{"servers":{}}"#).unwrap();
-    let plugins = Arc::new(crate::plugins::PluginRegistry::empty(&workspace));
+    let plugins = Arc::new(codewhale_plugins::PluginRegistry::empty(&workspace));
     let mut pool = McpPool::from_config_path_with_workspace_and_plugins(
         &initial_path,
         &workspace,
@@ -7206,14 +7209,14 @@ async fn reviewed_plugin_rejection_keeps_aws_recovery_but_not_server_text() {
         "schema_version = 1\n[plugin]\nname = \"aws-guard\"\nversion = \"1.0.0\"\n",
     )
     .unwrap();
-    let discovery = crate::plugins::discovery::DiscoveryConfig {
+    let discovery = codewhale_plugins::discovery::DiscoveryConfig {
         workspace: dir.path().join("project"),
         user_plugins_dir: plugins_root,
         workspace_plugins_dir: dir.path().join("workspace-plugins-unused"),
         builtin_plugin_dirs: Vec::new(),
         state_path: dir.path().join("plugin-state/state.json"),
     };
-    let mut registry = crate::plugins::discovery::discover_with_config(&discovery);
+    let mut registry = codewhale_plugins::discovery::discover_with_config(&discovery);
     registry.trust("aws-guard").unwrap();
     registry.enable("aws-guard").unwrap();
     let authority = registry.authority_for("aws-guard").unwrap();
@@ -7222,11 +7225,11 @@ async fn reviewed_plugin_rejection_keeps_aws_recovery_but_not_server_text() {
     config
         .env
         .insert("AWS_PROFILE".to_string(), "env-profile-secret".to_string());
-    config.reviewed_plugin = Some(
+    config.reviewed_plugin = provenance_of(
         ReviewedPluginMcpSource::from_authority(
             authority,
             None,
-            Arc::new(crate::plugins::HostEnvironment::capture()),
+            Arc::new(codewhale_plugins::HostEnvironment::capture()),
         )
         .unwrap(),
     );
@@ -8332,7 +8335,7 @@ async fn mid_session_revocation_for_backend(backend: McpBackend) {
     let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", dir.path());
     let _backend = crate::test_support::EnvVarGuard::set("CODEWHALE_SECRET_BACKEND", "file");
     let _loopback = lock_mcp_loopback_tests().await;
-    let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(true);
+    let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(true);
     let manager = (backend == McpBackend::Host).then(|| {
         let node = crate::extension_host::tests::node_for_tests("Host revoked OAuth parity")
             .expect("Host parity requires Node");
@@ -8587,11 +8590,11 @@ async fn plugin_contributed_server_auth_required_names_its_env_credential_not_oa
         "Authorization".to_string(),
         "CW_TEST_WIKI_PLUGIN_TOKEN".to_string(),
     );
-    server.reviewed_plugin = Some(
+    server.reviewed_plugin = provenance_of(
         ReviewedPluginMcpSource::from_authority(
             authority,
             Some(&endpoint),
-            Arc::new(crate::plugins::HostEnvironment::default()),
+            Arc::new(codewhale_plugins::HostEnvironment::default()),
         )
         .unwrap(),
     );
@@ -10015,11 +10018,11 @@ fn computer_use_duplicate_warning_names_user_copies_of_the_enabled_bundle() {
             .to_string_lossy()
             .to_string(),
     ]);
-    builtin.reviewed_plugin = Some(
+    builtin.reviewed_plugin = provenance_of(
         ReviewedPluginMcpSource::from_authority(
             authority,
             None,
-            Arc::new(crate::plugins::HostEnvironment::default()),
+            Arc::new(codewhale_plugins::HostEnvironment::default()),
         )
         .expect("reviewed source"),
     );
@@ -10349,7 +10352,7 @@ async fn copied_human_decision_cannot_authorize_another_mcp_call() {
 
 pub(crate) fn computer_use_test_fixture() -> (
     tempfile::TempDir,
-    Arc<crate::plugins::PluginRegistry>,
+    Arc<codewhale_plugins::PluginRegistry>,
     McpPool,
     String,
 ) {
@@ -10412,14 +10415,14 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
          [mcp_servers.local]\ncommand = \"node\"\nargs = [\"server.mjs\"]\nconnect_timeout = 5\n",
     )
     .unwrap();
-    let discovery = crate::plugins::discovery::DiscoveryConfig {
+    let discovery = codewhale_plugins::discovery::DiscoveryConfig {
         workspace,
         user_plugins_dir: root.path().join("plugins"),
         workspace_plugins_dir: root.path().join("unused-workspace-plugins"),
         builtin_plugin_dirs: Vec::new(),
         state_path: root.path().join("plugin-state/state.json"),
     };
-    let mut registry = crate::plugins::discovery::discover_with_config(&discovery);
+    let mut registry = codewhale_plugins::discovery::discover_with_config(&discovery);
     registry.trust("computer-use").unwrap();
     registry.enable("computer-use").unwrap();
     let plugin = registry.get("computer-use").unwrap().clone();
@@ -10697,7 +10700,7 @@ async fn http_backend_parity_reactive_refresh_reuses_exact_facade_id_once() {
     for backend in [McpBackend::Rust, McpBackend::Host] {
         let dir = tempfile::tempdir().unwrap();
         let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", dir.path());
-        let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(true);
+        let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(true);
         let manager = Arc::new(crate::extension_host::ExtensionHostManager::new(
             crate::extension_host::ExtensionHostOptions {
                 root: Some(dir.path().to_path_buf()),

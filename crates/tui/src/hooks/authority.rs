@@ -54,9 +54,9 @@ pub(crate) fn verify_hook_authorities(
     project: Option<&ProjectHookAuthority>,
 ) -> Result<(), String> {
     if let Some(authority) = plugin {
-        crate::plugins::registry::verify_plugin_component_authority(
+        codewhale_plugins::registry::verify_plugin_component_authority(
             authority,
-            crate::plugins::activation::PluginActivationCapability::Hooks,
+            codewhale_plugins::activation::PluginActivationCapability::Hooks,
         )?;
     }
     if let Some(authority) = project {
@@ -93,9 +93,9 @@ pub(crate) fn verify_hook(hook: &codewhale_config::hooks::Hook) -> Result<(), St
             .plugin_authority
             .as_ref()
             .ok_or("Native hook has no authority")?;
-        crate::plugins::registry::verify_plugin_component_authority(
+        codewhale_plugins::registry::verify_plugin_component_authority(
             authority,
-            crate::plugins::activation::PluginActivationCapability::Native,
+            codewhale_plugins::activation::PluginActivationCapability::Native,
         )?;
         Ok(())
     } else {

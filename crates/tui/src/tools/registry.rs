@@ -1925,7 +1925,7 @@ pub(super) fn mcp_tool_adapter_for_test(name: &str) -> Arc<dyn ToolSpec> {
             annotations: None,
         },
         pool: Arc::new(tokio::sync::Mutex::new(crate::mcp::McpPool::new(
-            crate::mcp::McpConfig::default(),
+            codewhale_mcp::config::McpConfig::default(),
         ))),
     })
 }

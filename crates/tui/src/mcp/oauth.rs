@@ -1,4 +1,5 @@
 use super::http_client::McpHttpClient;
+use crate::mcp::McpServerConfigExt;
 use codewhale_net::network_policy::NetworkPolicyDecider;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -443,7 +444,7 @@ pub(crate) fn auth_required_recovery_hint(server_name: &str, server: &McpServerC
             env_vars.join(", ")
         )
     };
-    if let Some(source) = server.reviewed_plugin.as_ref() {
+    if let Some(source) = server.reviewed_plugin_source() {
         return format!(
             "MCP server '{server_name}' is contributed by plugin '{}' and its credential comes from {credential_source} (OAuth login is disabled for plugin-contributed servers). Set the credential, then run `/mcp reload`.",
             source.authority.plugin_name
@@ -1583,7 +1584,7 @@ pub(super) fn build_default_headers(server: &McpServerConfig) -> Result<HeaderMa
         insert_header(&mut headers, name, value)?;
     }
     for (name, env_var) in &server.env_headers {
-        if let Ok(value) = super::mcp_secret_var(server.reviewed_plugin.as_ref(), env_var)
+        if let Ok(value) = super::mcp_secret_var(server.reviewed_plugin_source(), env_var)
             && !value.trim().is_empty()
         {
             insert_header(&mut headers, name, &value)?;
@@ -2434,8 +2435,12 @@ fn append_query_param(url: &str, key: &str, value: Option<&str>) -> String {
     format!("{url}{separator}{key}={}", urlencoding::encode(value))
 }
 
-impl McpServerConfig {
-    pub fn oauth_client_id(&self) -> Option<&str> {
+pub(crate) trait McpServerConfigOAuthExt {
+    fn oauth_client_id(&self) -> Option<&str>;
+}
+
+impl McpServerConfigOAuthExt for McpServerConfig {
+    fn oauth_client_id(&self) -> Option<&str> {
         self.oauth
             .as_ref()
             .and_then(|oauth| oauth.client_id.as_deref())
@@ -3139,7 +3144,8 @@ mod tests {
 
     #[tokio::test]
     async fn guarded_oauth_network_deny_applies_to_standalone_and_synthetic_login() {
-        use crate::mcp::{AuthenticateToolStart, McpConfig, McpPool};
+        use crate::mcp::{AuthenticateToolStart, McpPool};
+        use codewhale_mcp::config::McpConfig;
         use codewhale_net::network_policy::{DecisionToml, NetworkPolicy};
         let _env = crate::test_support::lock_test_env();
         let dir = tempfile::tempdir().unwrap();
@@ -3227,7 +3233,8 @@ mod tests {
 
     #[tokio::test]
     async fn interactive_login_forces_the_consent_screen() {
-        use crate::mcp::{AuthenticateToolStart, McpConfig, McpPool};
+        use crate::mcp::{AuthenticateToolStart, McpPool};
+        use codewhale_mcp::config::McpConfig;
         use codewhale_net::network_policy::{DecisionToml, NetworkPolicy};
         let _env = crate::test_support::lock_test_env();
         let dir = tempfile::tempdir().unwrap();

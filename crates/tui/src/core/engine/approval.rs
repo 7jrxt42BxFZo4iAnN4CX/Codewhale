@@ -1465,7 +1465,7 @@ mod tests {
         ) else {
             return;
         };
-        let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(true);
+        let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(true);
         let fixture = crate::extension_host::tests::FixturePlugins::new(&["slow-tool"]).await;
         let manager = fixture.manager(node);
         let _manager = crate::extension_host::TestManagerGuard::install(Arc::clone(&manager));

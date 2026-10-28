@@ -8953,7 +8953,7 @@ pub(crate) async fn run_tool_call_before_hooks_for_context(
     model: &str,
 ) -> Result<ToolCallBeforeHookOutcome, ToolError> {
     if context.is_none()
-        && crate::plugins::activation::extension_host_policy_enabled()
+        && codewhale_plugins::activation::extension_host_policy_enabled()
         && (hooks.is_some() || attachment.is_some())
     {
         return Err(ToolError::not_available(

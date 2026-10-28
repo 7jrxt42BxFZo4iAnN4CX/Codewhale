@@ -755,7 +755,7 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn actual_github_host_draft_read_and_operator_use_one_owned_artifact() {
-        let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(false);
+        let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(false);
         let runtime = codewhale_dependencies::resolve_extension_host_runtime(
             codewhale_config::extension_host::ExtensionHostRuntime::Node,
             None,
@@ -782,7 +782,7 @@ mod tests {
         let _manager =
             crate::extension_host::TestManagerGuard::install(std::sync::Arc::clone(&manager));
         let attachment = manager.attach(std::sync::Arc::new(
-            crate::plugins::PluginRegistry::empty(fixture.tmp.path()),
+            codewhale_plugins::PluginRegistry::empty(fixture.tmp.path()),
         ));
         attachment.set_identity(Some("session-a".into()), None);
         let mut context = fixture.context("session-a");

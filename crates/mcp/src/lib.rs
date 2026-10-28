@@ -4,6 +4,8 @@
 //! Client/session authority stays in the existing TUI MCP pool; native server
 //! mode uses its shared Rust tool registry through `serve --mcp`.
 
+pub mod config;
+
 use serde_json::Value;
 
 /// Upper bound, in bytes, on the `instructions` an MCP server may supply at

@@ -1,15 +1,15 @@
 //! Actual child loop, selected Native templates and an approved local route replacement.
 use super::*;
 use crate::extension_host::TestManagerGuard;
-use crate::extension_host::composition_scope::NativePresetRef;
 use crate::extension_host::tests::{FixturePlugins, node_for_tests};
-use crate::plugins::activation::{PluginActivationCapability, TestPolicyGuard};
 use codewhale_config::EntryRef;
+use codewhale_plugins::activation::{PluginActivationCapability, TestPolicyGuard};
+use codewhale_plugins::composition_scope::NativePresetRef;
 
 #[cfg(test)]
 fn preset(fixture: &FixturePlugins, tag: &str) -> NativePresetRef {
     let plugins = fixture.registry();
-    let (sources, problems) = crate::plugins::runtime::active_component_sources(
+    let (sources, problems) = codewhale_plugins::runtime::active_component_sources(
         &plugins,
         PluginActivationCapability::Native,
     );
@@ -65,7 +65,7 @@ replacements = ["BackupRoute/fixture-backup-model"]
 "#,
     )
     .await;
-    let mut config = crate::plugins::providers::load_config(Some(config_path), None).unwrap();
+    let mut config = codewhale_plugins::providers::load_config(Some(config_path), None).unwrap();
     config.set_feature("extension_host", true).unwrap();
     let mut runtime = stub_runtime().with_api_config(config.clone());
     runtime.client = CodewhaleClient::new(&config).unwrap();

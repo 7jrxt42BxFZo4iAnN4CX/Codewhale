@@ -2,8 +2,8 @@
 use super::*;
 use crate::extension_host::tests::node_for_tests;
 use crate::extension_host::{ExtensionHostManager, ExtensionHostOptions, TestManagerGuard};
-use crate::plugins::activation::TestPolicyGuard;
 use crate::tools::spec::ToolContext;
+use codewhale_plugins::activation::TestPolicyGuard;
 use codewhale_runtime::features::{Feature, Features};
 use std::sync::Arc;
 #[tokio::test(flavor = "current_thread")]

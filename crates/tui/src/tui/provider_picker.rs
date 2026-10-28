@@ -1918,7 +1918,7 @@ impl ProviderPickerView {
     /// typed input and pastes are accepted events but never stored.
     fn selected_plugin_provider(&self) -> Option<String> {
         let identity = self.selected_identity()?;
-        crate::plugins::providers::plugin_auth_entry(&self.route_config, identity.key.as_str())
+        codewhale_plugins::providers::plugin_auth_entry(&self.route_config, identity.key.as_str())
             .ok()
             .map(|_| identity.key.as_str().to_owned())
     }
@@ -8670,7 +8670,7 @@ mod tests {
         .map(EnvVarGuard::remove)
         .collect();
         std::fs::write(&config_path, document).expect("config only");
-        let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)
+        let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)
             .expect("load route");
         let mut options = crate::tui::test_support::test_tui_options(home.path());
         options.config_path = Some(config_path);

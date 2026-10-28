@@ -170,7 +170,7 @@ mod tests {
         let Some(node) = node_for_tests("real_host_hook_timeout_and_revocation") else {
             return;
         };
-        let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(true);
+        let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(true);
         let fixture = FixturePlugins::new(&["hook-policy"]).await;
         let manager = Arc::new(super::super::ExtensionHostManager::new(
             super::super::ExtensionHostOptions {
@@ -205,7 +205,7 @@ mod tests {
         );
 
         let other_workspace = tempfile::tempdir().unwrap();
-        let other = manager.attach(Arc::new(crate::plugins::PluginRegistry::empty(
+        let other = manager.attach(Arc::new(codewhale_plugins::PluginRegistry::empty(
             other_workspace.path(),
         )));
         other.sync().await.unwrap();

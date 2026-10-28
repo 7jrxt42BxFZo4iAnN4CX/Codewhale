@@ -43,7 +43,7 @@ pub struct PromptSection {
 
 fn selected(
     registry: &OwnerRegistry,
-    desired: &super::composition_scope::CompositionSelection,
+    desired: &codewhale_plugins::composition_scope::CompositionSelection,
 ) -> Vec<PromptSectionRegistration> {
     registry
         .live_prompt_sections()
@@ -298,9 +298,9 @@ mod tests {
     use super::*;
     use crate::extension_host::protocol::{RegisterKind, RegisterParams, RegisterSpecWire};
     use crate::extension_host::tests::{FixturePlugins, fake_authority, node_for_tests};
-    use crate::plugins::PluginRegistry;
-    use crate::plugins::activation::TestPolicyGuard;
     use codewhale_config::OwnerRef;
+    use codewhale_plugins::PluginRegistry;
+    use codewhale_plugins::activation::TestPolicyGuard;
 
     fn params(owner: &OwnerRef, id: &str, text: &str) -> RegisterParams {
         RegisterParams {
@@ -497,9 +497,9 @@ mod tests {
             registry.mark_scope_active(&live, scope);
         }
         registry.mark_active(&live);
-        let mut desired = super::super::composition_scope::CompositionSelection {
+        let mut desired = codewhale_plugins::composition_scope::CompositionSelection {
             desired: BTreeMap::from([("selected-persona".into(), "hash-selected-persona".into())]),
-            entries: vec![super::super::composition_scope::NativePresetRef {
+            entries: vec![codewhale_plugins::composition_scope::NativePresetRef {
                 plugin_id: "selected-persona".into(),
                 content_hash: "hash-selected-persona".into(),
                 entry: a.clone(),
@@ -557,7 +557,7 @@ mod tests {
         registry
             .register_prompt_section(&params(&b, "a", "other workspace"))
             .unwrap();
-        let desired = super::super::composition_scope::CompositionSelection {
+        let desired = codewhale_plugins::composition_scope::CompositionSelection {
             desired: BTreeMap::from([("a".to_string(), "hash-a".to_string())]),
             ..Default::default()
         };
@@ -577,7 +577,7 @@ mod tests {
         assert!(
             selected(
                 &registry,
-                &super::super::composition_scope::CompositionSelection {
+                &codewhale_plugins::composition_scope::CompositionSelection {
                     desired: BTreeMap::from([("a".to_string(), "different-hash".to_string())]),
                     ..Default::default()
                 }

@@ -7408,7 +7408,7 @@ pub struct RuntimeThreadManager {
     host_profile: crate::core::engine::EngineHostProfile,
     config: Arc<parking_lot::RwLock<Config>>,
     workspace: PathBuf,
-    plugin_registry: Option<Arc<crate::plugins::PluginRegistry>>,
+    plugin_registry: Option<Arc<codewhale_plugins::PluginRegistry>>,
     store: RuntimeThreadStore,
     _process_owner_lock: Arc<RuntimeProcessOwnerLock>,
     /// Concurrent turn admissions share a read lease; config reload owns the
@@ -8603,7 +8603,7 @@ impl RuntimeThreadManager {
         &self,
         config: &Config,
         workspace: &Path,
-        plugins: Option<&crate::plugins::PluginRegistry>,
+        plugins: Option<&codewhale_plugins::PluginRegistry>,
     ) -> crate::hooks::HookExecutor {
         let hooks = crate::hooks::config::load_with_project_and_plugins(
             config.hooks_config(),
@@ -8865,7 +8865,7 @@ impl RuntimeThreadManager {
         config: Config,
         workspace: PathBuf,
         manager_cfg: RuntimeThreadManagerConfig,
-        plugin_registry: Arc<crate::plugins::PluginRegistry>,
+        plugin_registry: Arc<codewhale_plugins::PluginRegistry>,
     ) -> Result<Self> {
         Self::open_inner(
             config,
@@ -8882,7 +8882,7 @@ impl RuntimeThreadManager {
         config: Config,
         workspace: PathBuf,
         mut manager_cfg: RuntimeThreadManagerConfig,
-        plugin_registry: Arc<crate::plugins::PluginRegistry>,
+        plugin_registry: Arc<codewhale_plugins::PluginRegistry>,
         binding: Option<&RuntimeStoreBinding>,
     ) -> Result<Self> {
         if let Some(binding) = binding {
@@ -8931,7 +8931,7 @@ impl RuntimeThreadManager {
         config: Config,
         workspace: PathBuf,
         mut manager_cfg: RuntimeThreadManagerConfig,
-        plugin_registry: Arc<crate::plugins::PluginRegistry>,
+        plugin_registry: Arc<codewhale_plugins::PluginRegistry>,
         binding: &RuntimeStoreBinding,
     ) -> Result<Self> {
         if let Some(override_dir) = runtime_dir_override() {
@@ -8959,7 +8959,7 @@ impl RuntimeThreadManager {
         config: Config,
         workspace: PathBuf,
         manager_cfg: RuntimeThreadManagerConfig,
-        plugin_registry: Arc<crate::plugins::PluginRegistry>,
+        plugin_registry: Arc<codewhale_plugins::PluginRegistry>,
     ) -> Result<Self> {
         let root = checked_existing_runtime_store_dir(&manager_cfg.data_dir)?;
         let owner: RuntimeStoreOwner =
@@ -8979,7 +8979,7 @@ impl RuntimeThreadManager {
         config: Config,
         workspace: PathBuf,
         manager_cfg: RuntimeThreadManagerConfig,
-        plugins: Arc<crate::plugins::PluginRegistry>,
+        plugins: Arc<codewhale_plugins::PluginRegistry>,
         host_profile: crate::core::engine::EngineHostProfile,
         preheld_lock: Option<RuntimeProcessOwnerLock>,
         binding: Option<&RuntimeStoreBinding>,
@@ -8999,7 +8999,7 @@ impl RuntimeThreadManager {
         mut config: Config,
         workspace: PathBuf,
         mut manager_cfg: RuntimeThreadManagerConfig,
-        plugin_registry: Option<Arc<crate::plugins::PluginRegistry>>,
+        plugin_registry: Option<Arc<codewhale_plugins::PluginRegistry>>,
         binding: Option<&RuntimeStoreBinding>,
         host_profile: crate::core::engine::EngineHostProfile,
         preheld_lock: Option<RuntimeProcessOwnerLock>,
@@ -16213,7 +16213,7 @@ impl RuntimeThreadManager {
     ) -> Result<Vec<crate::extension_host::command::ExtensionCommandEntry>> {
         let _admission = self.config_admission.read().await;
         let thread = self.get_thread(thread_id).await?;
-        if !crate::plugins::activation::extension_host_policy_enabled() {
+        if !codewhale_plugins::activation::extension_host_policy_enabled() {
             return Ok(Vec::new());
         }
         self.ensure_engine_loaded(&thread).await?;

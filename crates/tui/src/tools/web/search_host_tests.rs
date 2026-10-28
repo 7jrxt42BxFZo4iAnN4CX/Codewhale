@@ -2,7 +2,7 @@
 use super::*;
 use crate::extension_host::tests::node_for_tests;
 use crate::extension_host::{ExtensionHostManager, ExtensionHostOptions, TestManagerGuard};
-use crate::plugins::activation::TestPolicyGuard;
+use codewhale_plugins::activation::TestPolicyGuard;
 use codewhale_runtime::features::{Feature, Features};
 use std::sync::Arc;
 
@@ -136,7 +136,7 @@ async fn real_host_all_nine_provider_decoders_match_current_rust_semantics() {
             assert!(result.unwrap().unwrap().is_empty());
         }
     }
-    assert!(!crate::plugins::activation::extension_host_policy_enabled());
+    assert!(!codewhale_plugins::activation::extension_host_policy_enabled());
     manager.shutdown().await;
 }
 #[tokio::test(flavor = "current_thread")]

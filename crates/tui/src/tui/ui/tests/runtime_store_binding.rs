@@ -83,7 +83,7 @@ async fn runtime_store_binding_persists_on_exit_without_a_model_turn() -> anyhow
     let resumed = TaskManager::start(
         task_config,
         config,
-        Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
+        Arc::new(codewhale_plugins::PluginRegistry::empty(root.path())),
         &saved.metadata.id,
         saved.metadata.runtime_store.as_ref(),
     )
@@ -289,7 +289,7 @@ fn runtime_store_binding_survives_launch_snapshot_and_resume() -> anyhow::Result
             TaskManager::start(
                 task_config.clone(),
                 config.clone(),
-                Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
+                Arc::new(codewhale_plugins::PluginRegistry::empty(root.path())),
                 &loaded.metadata.id,
                 None,
             )
@@ -421,7 +421,7 @@ fn runtime_store_binding_rejects_foreign_missing_or_overridden_store() -> anyhow
             config.clone(),
             root.path().into(),
             cfg.clone(),
-            Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
+            Arc::new(codewhale_plugins::PluginRegistry::empty(root.path())),
             Some(binding),
         )
     };
@@ -482,7 +482,7 @@ fn missing_runtime_store_recovers_without_reusing_authority_or_resurrecting_stal
         fixture_config(),
         root.path().into(),
         RuntimeThreadManagerConfig::for_session(root.path().join("tasks"), "interrupted"),
-        Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
+        Arc::new(codewhale_plugins::PluginRegistry::empty(root.path())),
         Some(&missing),
     )?;
     let recovered = manager.session_store_binding();
@@ -494,7 +494,7 @@ fn missing_runtime_store_recovers_without_reusing_authority_or_resurrecting_stal
             fixture_config(),
             root.path().into(),
             RuntimeThreadManagerConfig::for_session(root.path().join("tasks"), "interrupted"),
-            Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
+            Arc::new(codewhale_plugins::PluginRegistry::empty(root.path())),
             Some(&missing),
         )
         .is_err(),
@@ -507,7 +507,7 @@ fn missing_runtime_store_recovers_without_reusing_authority_or_resurrecting_stal
         fixture_config(),
         root.path().into(),
         RuntimeThreadManagerConfig::for_session(root.path().join("tasks"), "interrupted"),
-        Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
+        Arc::new(codewhale_plugins::PluginRegistry::empty(root.path())),
         Some(&missing),
     )?;
     assert_eq!(manager.session_store_binding(), recovered);
@@ -515,7 +515,7 @@ fn missing_runtime_store_recovers_without_reusing_authority_or_resurrecting_stal
         fixture_config(),
         root.path().into(),
         RuntimeThreadManagerConfig::for_session(root.path().join("tasks"), "other-interrupted"),
-        Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
+        Arc::new(codewhale_plugins::PluginRegistry::empty(root.path())),
         Some(&missing),
     )?;
     assert_ne!(
@@ -537,7 +537,7 @@ fn missing_runtime_store_recovers_without_reusing_authority_or_resurrecting_stal
         fixture_config(),
         root.path().into(),
         RuntimeThreadManagerConfig::for_session(root.path().join("tasks"), "competing"),
-        Arc::new(crate::plugins::PluginRegistry::empty(root.path())),
+        Arc::new(codewhale_plugins::PluginRegistry::empty(root.path())),
         None,
     )?;
     let mut competing_snapshot = stale.clone();

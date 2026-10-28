@@ -160,7 +160,7 @@ pub(crate) fn apply_preset(app: &mut App, name: &str, persist: bool) -> ConfigRe
 
 /// Show the current value of a single setting.
 fn config_context_window_override(app: &App) -> Option<u32> {
-    let mut config = crate::plugins::providers::load_config(
+    let mut config = codewhale_plugins::providers::load_config(
         app.config_path.clone(),
         app.config_profile.as_deref(),
     )
@@ -228,7 +228,7 @@ pub(crate) fn show_single_setting(app: &App, key: &str) -> ConfigReply {
         "approval_mode" | "approval" => Some(app.approval_mode.permission_chip_label().to_string()),
         "allow_shell" | "shell" | "exec_shell" => Some(app.allow_shell.to_string()),
         "base_url" => {
-            let config = match crate::plugins::providers::load_config(
+            let config = match codewhale_plugins::providers::load_config(
                 app.config_path.clone(),
                 app.config_profile.as_deref(),
             ) {
@@ -248,7 +248,7 @@ pub(crate) fn show_single_setting(app: &App, key: &str) -> ConfigReply {
                 .unwrap_or_else(|| "(unset)".to_string()),
         ),
         "provider_url" | "provider_base_url" | "endpoint" => {
-            let config = match crate::plugins::providers::load_config(
+            let config = match codewhale_plugins::providers::load_config(
                 app.config_path.clone(),
                 app.config_profile.as_deref(),
             ) {
@@ -1178,8 +1178,11 @@ fn stream_chunk_timeout_value_label(raw: u64, resolved: u64) -> String {
 }
 
 fn load_command_config(app: &App) -> Result<Config, String> {
-    crate::plugins::providers::load_config(app.config_path.clone(), app.config_profile.as_deref())
-        .map_err(|err| format!("Failed to load config: {err}"))
+    codewhale_plugins::providers::load_config(
+        app.config_path.clone(),
+        app.config_profile.as_deref(),
+    )
+    .map_err(|err| format!("Failed to load config: {err}"))
 }
 
 /// The compatibility default_model command describes saved DeepSeek config,
@@ -3378,7 +3381,7 @@ mod tests {
         assert!(!result.is_error, "{:?}", result.message);
         assert_eq!(app.title_default.as_deref(), Some("Ev]0;PWNEDil Beta"));
         assert!(app.needs_redraw);
-        let loaded = crate::plugins::providers::load_config(Some(config_path), None)
+        let loaded = codewhale_plugins::providers::load_config(Some(config_path), None)
             .expect("reload saved config");
         assert_eq!(loaded.title.as_deref(), Some("Ev]0;PWNEDil Beta"));
     }
@@ -4040,7 +4043,7 @@ mod tests {
                 Some("auto")
             );
             let loaded =
-                crate::plugins::providers::load_config(Some(config_path.clone()), None).unwrap();
+                codewhale_plugins::providers::load_config(Some(config_path.clone()), None).unwrap();
             assert_eq!(
                 loaded.default_model(),
                 "auto",
@@ -4264,7 +4267,7 @@ mod tests {
         let mut app = create_test_app();
         app.config_path = Some(config_path.clone());
         app.set_provider_identity_record(
-            crate::plugins::providers::load_config(Some(config_path.clone()), None)
+            codewhale_plugins::providers::load_config(Some(config_path.clone()), None)
                 .expect("captured hosted config")
                 .active_provider_identity()
                 .expect("captured hosted identity"),
@@ -4547,7 +4550,7 @@ mod tests {
         // this variable on drop.
         unsafe { env::set_var("DEEPSEEK_ALLOW_SHELL", "false") };
         let config =
-            crate::plugins::providers::load_config(Some(config_path.clone()), None).unwrap();
+            codewhale_plugins::providers::load_config(Some(config_path.clone()), None).unwrap();
         let mut app = create_test_app_with_config(&config);
         app.config_path = Some(config_path);
         app.set_agent_shell_access(false);
@@ -4843,9 +4846,10 @@ completion_sound = "bell"
         app.config_path = Some(config_path.clone());
         // This fixture starts App with defaults; seed its current Config view
         // as the real constructor does before asking a live-session query.
-        app.notification_settings = crate::plugins::providers::load_config(Some(config_path), None)
-            .unwrap()
-            .notifications_config();
+        app.notification_settings =
+            codewhale_plugins::providers::load_config(Some(config_path), None)
+                .unwrap()
+                .notifications_config();
 
         let search = config_command(&mut app, Some("search.provider"));
         assert!(!search.is_error, "{:?}", search.message);
@@ -4944,7 +4948,7 @@ api_key = "tvly-autodetected"
         assert!(saved.contains("prompt_suggestion = true"), "{saved}");
         assert!(saved.contains("method = \"osc9\""), "{saved}");
 
-        let loaded = crate::plugins::providers::load_config(Some(config_path), None)
+        let loaded = codewhale_plugins::providers::load_config(Some(config_path), None)
             .expect("reloaded config");
         assert_eq!(loaded.search_provider(), SearchProvider::DuckDuckGo);
         assert!(loaded.prompt_suggestion_enabled());
@@ -5364,7 +5368,7 @@ context_window = 262144
             }
             fs::write(&path, body).unwrap();
             let config =
-                crate::plugins::providers::load_config(Some(path.clone()), Some("work.team"))
+                codewhale_plugins::providers::load_config(Some(path.clone()), Some("work.team"))
                     .unwrap();
             let mut app = create_test_app_with_config(&config);
             app.config_path = Some(path.clone());
@@ -5374,7 +5378,7 @@ context_window = 262144
             assert!(!result.is_error, "{result:?}");
             assert_eq!(app.posture_bar, ChromeRowPreset::Compact);
             let reloaded =
-                crate::plugins::providers::load_config(Some(path.clone()), Some("work.team"))
+                codewhale_plugins::providers::load_config(Some(path.clone()), Some("work.team"))
                     .unwrap();
             let restarted = create_test_app_with_config(&reloaded);
             assert_eq!(restarted.posture_bar, app.posture_bar);
@@ -5913,7 +5917,7 @@ context_window = 262144
         assert!(saved.contains("approval_policy = \"on-request\""));
 
         let loaded =
-            crate::plugins::providers::load_config(Some(config_path.clone()), None).unwrap();
+            codewhale_plugins::providers::load_config(Some(config_path.clone()), None).unwrap();
         assert_eq!(loaded.approval_policy.as_deref(), Some("on-request"));
 
         let mut restarted = create_test_app_with_config(&loaded);
@@ -5929,7 +5933,7 @@ context_window = 262144
             })
         );
         assert_eq!(restarted.approval_mode, ApprovalMode::Auto);
-        let reloaded = crate::plugins::providers::load_config(Some(config_path), None).unwrap();
+        let reloaded = codewhale_plugins::providers::load_config(Some(config_path), None).unwrap();
         assert_eq!(reloaded.approval_policy.as_deref(), Some("auto"));
     }
 
@@ -5949,7 +5953,7 @@ context_window = 262144
         )
         .unwrap();
         let loaded =
-            crate::plugins::providers::load_config(Some(config_path.clone()), None).unwrap();
+            codewhale_plugins::providers::load_config(Some(config_path.clone()), None).unwrap();
         let mut app = create_test_app_with_config(&loaded);
         app.config_path = Some(config_path.clone());
 
@@ -5983,7 +5987,7 @@ context_window = 262144
         )
         .unwrap();
         let loaded =
-            crate::plugins::providers::load_config(Some(config_path.clone()), None).unwrap();
+            codewhale_plugins::providers::load_config(Some(config_path.clone()), None).unwrap();
         let mut app = create_test_app_with_config(&loaded);
         app.config_path = Some(config_path.clone());
         // The production constructor receives the path up front and marks a

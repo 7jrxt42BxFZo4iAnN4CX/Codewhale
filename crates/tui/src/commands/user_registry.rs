@@ -23,7 +23,7 @@ struct UserCommandRegistryState {
     workspace: Option<PathBuf>,
     command_dirs_snapshot: Vec<CommandDirSnapshot>,
     plugin_workspace: Option<PathBuf>,
-    plugin_sources: Vec<crate::plugins::runtime::PluginComponentSource>,
+    plugin_sources: Vec<codewhale_plugins::runtime::PluginComponentSource>,
     plugin_errors: Vec<String>,
     /// `extension_host::command::epoch()` when `registry` was built: it
     /// reloads when the live extension commands may have changed.
@@ -150,7 +150,7 @@ impl UserCommandRegistry {
     pub(crate) fn load_with_sources(
         md_dirs: &[PathBuf],
         workflow_dirs: &[PathBuf],
-        plugin_sources: &[crate::plugins::runtime::PluginComponentSource],
+        plugin_sources: &[codewhale_plugins::runtime::PluginComponentSource],
         plugin_errors: &[String],
     ) -> Self {
         let mut registry = Self::load_from_paths(md_dirs);
@@ -604,7 +604,7 @@ fn is_protected_builtin_command(name: &str) -> bool {
 
 fn plugin_command_is_current(command: &UserCommandMetadata) -> bool {
     command.plugin_authority.as_ref().is_none_or(|authority| {
-        crate::plugins::registry::verify_plugin_state_authority(authority).is_ok()
+        codewhale_plugins::registry::verify_plugin_state_authority(authority).is_ok()
     })
 }
 
@@ -703,7 +703,7 @@ fn command_dirs_snapshot(workspace: Option<&Path>) -> Vec<CommandDirSnapshot> {
 
 fn command_dirs_snapshot_with_plugins(
     workspace: Option<&Path>,
-    plugin_sources: &[crate::plugins::runtime::PluginComponentSource],
+    plugin_sources: &[codewhale_plugins::runtime::PluginComponentSource],
 ) -> Vec<CommandDirSnapshot> {
     user_commands::commands_dirs(workspace)
         .into_iter()
@@ -870,11 +870,11 @@ pub fn with_registry_for_workspace<R>(
 /// before expanding the command body.
 pub fn install_plugin_registry(
     workspace: &Path,
-    plugins: &crate::plugins::PluginRegistry,
+    plugins: &codewhale_plugins::PluginRegistry,
 ) -> Vec<String> {
-    let (sources, errors) = crate::plugins::runtime::active_component_sources(
+    let (sources, errors) = codewhale_plugins::runtime::active_component_sources(
         plugins,
-        crate::plugins::activation::PluginActivationCapability::Commands,
+        codewhale_plugins::activation::PluginActivationCapability::Commands,
     );
     let mut guard = registry_lock()
         .write()
@@ -887,7 +887,7 @@ pub fn install_plugin_registry(
 }
 
 pub fn with_registry_for_plugins<R>(
-    plugins: &crate::plugins::PluginRegistry,
+    plugins: &codewhale_plugins::PluginRegistry,
     f: impl FnOnce(&UserCommandRegistry) -> R,
 ) -> R {
     with_registry_for_workspace(Some(plugins.workspace()), |base| {
@@ -935,9 +935,9 @@ pub fn try_dispatch(app: &mut App, input: &str) -> Option<CommandResult> {
         }));
     }
     if let Some(authority) = metadata.plugin_authority.as_ref()
-        && let Err(reason) = crate::plugins::registry::verify_plugin_component_authority(
+        && let Err(reason) = codewhale_plugins::registry::verify_plugin_component_authority(
             authority,
-            crate::plugins::activation::PluginActivationCapability::Commands,
+            codewhale_plugins::activation::PluginActivationCapability::Commands,
         )
     {
         return Some(CommandResult::error(format!(
@@ -1218,7 +1218,7 @@ mod tests {
     #[test]
     fn plugin_command_dispatch_survives_restart_and_revocation_is_visible() {
         let _lock = crate::test_support::lock_test_env();
-        let fixture = crate::plugins::test_fixture::DeclarativePluginFixture::new();
+        let fixture = codewhale_plugins::test_fixture::DeclarativePluginFixture::new();
         let mut app = test_app(fixture.workspace.clone());
         install_plugin_registry(&fixture.workspace, &fixture.registry);
 

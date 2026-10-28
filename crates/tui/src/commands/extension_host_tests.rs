@@ -20,7 +20,7 @@ use crate::extension_host::tests::{
     FixturePlugins, fake_authority, installed, node_for_tests, plugin_id,
 };
 use crate::extension_host::tier::HostTier;
-use crate::plugins::activation::TestPolicyGuard;
+use codewhale_plugins::activation::TestPolicyGuard;
 
 /// The real catalog answers to every built-in name, every alias and the fixed
 /// mode aliases the dispatcher handles ahead of the registry, and an extension

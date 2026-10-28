@@ -14,7 +14,7 @@ const outdir = join(here, 'dist')
 mkdirSync(outdir, { recursive: true })
 const compatibilityBytes = readFileSync(join(here, 'src/dsh/compatibility.json'))
 const compatibility = JSON.parse(compatibilityBytes)
-writeFileSync(join(outdir, 'dsh-compatibility.json'), compatibilityBytes)
+writeFileSync(join(here, '../../plugins/assets/dsh-compatibility.json'), compatibilityBytes)
 const reusedPure = compatibility.pure_api.reuse
 const reusedRoot = join(here, 'node_modules', reusedPure.package)
 const reusedPackage = JSON.parse(readFileSync(join(reusedRoot, 'package.json'), 'utf8'))

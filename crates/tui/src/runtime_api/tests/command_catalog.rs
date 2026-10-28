@@ -215,7 +215,7 @@ async fn get_v1_commands_serves_the_catalog_over_http() -> Result<()> {
     let Some(node) = crate::extension_host::tests::node_for_tests("runtime_command_catalog") else {
         return Ok(());
     };
-    let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(true);
+    let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(true);
     let fixture = crate::extension_host::tests::FixturePlugins::new(&[]).await;
     let source = temp.path().join("native-command-plugin");
     fs::create_dir_all(&source)?;
@@ -237,16 +237,16 @@ export function apply(ctx) {
 }
 "#,
     )?;
-    crate::plugins::install::install(
-        crate::plugins::install::PluginInstallSource::LocalPath(source),
+    codewhale_plugins::install::install(
+        codewhale_plugins::install::PluginInstallSource::LocalPath(source),
         &fixture.config.user_plugins_dir,
-        crate::plugins::install::DEFAULT_MAX_SIZE_BYTES,
+        codewhale_plugins::install::DEFAULT_MAX_SIZE_BYTES,
         &codewhale_net::network_policy::NetworkPolicy::default(),
         false,
         &|_| None,
     )
     .await?;
-    let mut plugins = crate::plugins::discovery::discover_with_config(&fixture.config);
+    let mut plugins = codewhale_plugins::discovery::discover_with_config(&fixture.config);
     plugins
         .trust("native-command-fixture")
         .map_err(anyhow::Error::msg)?;
@@ -271,9 +271,9 @@ export function apply(ctx) {
             TestServerOverrides {
                 config: Some(config),
                 plugin_discovery: Some(
-                    crate::plugins::PluginDiscoveryContext::from_config_and_environment(
+                    codewhale_plugins::PluginDiscoveryContext::from_config_and_environment(
                         &fixture.config,
-                        crate::plugins::HostEnvironment::from_entries(Vec::new()),
+                        codewhale_plugins::HostEnvironment::from_entries(Vec::new()),
                     ),
                 ),
                 ..TestServerOverrides::default()
@@ -666,7 +666,7 @@ export function apply(ctx) {
         .reconcile()
         .await
         .map_err(anyhow::Error::msg)?;
-    let mut plugins = crate::plugins::discovery::discover_with_config(&fixture.config);
+    let mut plugins = codewhale_plugins::discovery::discover_with_config(&fixture.config);
     plugins
         .enable("native-command-fixture")
         .map_err(anyhow::Error::msg)?;

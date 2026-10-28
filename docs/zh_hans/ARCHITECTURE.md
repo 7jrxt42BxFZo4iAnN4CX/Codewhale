@@ -14,6 +14,7 @@ Codewhale Engine 是现有 Rust 执行运行时。[Runtime API](RUNTIME_API.md) 
 - `crates/notify` 拥有共享通知内容脱敏、注意力和类别门控、声音策略及本地音频派发。TUI 保留终端输出端，原生宿主保留横幅提交通道。
 - `crates/util` 拥有共享字符串、路径与原子写入辅助函数、受限工作区文件访问、链接与文件身份检查、捆绑文件读取、`.git` 名称规则和独占文件锁。
 - `crates/dependencies` 负责外部工具解析与受限子进程探测；`crates/snapshot` 负责回合前后的侧仓库快照；`crates/lsp` 负责语言服务器客户端；`crates/repl` 负责 Python REPL 运行时与 RLM 上下文文件。
+- `crates/plugins` 拥有插件清单、发现、信任审查、安装与市场解析。其仅用于测试的构造函数与策略守卫位于仅限开发依赖的 `test-support` 特性之后；DSH 组合审查器由 TUI 在启动时注册。
 - `crates/skill-install` 拥有社区技能安装器（GitHub 与压缩包来源、精选注册表、受限解压、安装与信任标记）、包内容摘要以及共享的 `SKILL.md` 前置元数据读取器。其 SSRF DNS 固定与缩短的超时仅在仅限开发依赖的 `test-support` 特性下放宽。
 - `crates/tui` 正按照 `docs/design/TUI_DECONSTRUCTION.md` 记录的顺序拆分为以智能体
   工作分区为单位的 crate：契约、工具库、服务、提供方、运行时、叶子功能 crate、TUI 视图

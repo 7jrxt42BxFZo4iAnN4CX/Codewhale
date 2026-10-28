@@ -721,7 +721,7 @@ fn native_snapshot_roots(state_paths: &[PathBuf]) -> Result<Vec<PathBuf>, String
         if !root.exists() {
             continue;
         }
-        crate::plugins::registry::ensure_private_plugin_state_directory(parent)?;
+        codewhale_plugins::registry::ensure_private_plugin_state_directory(parent)?;
         let mut path = parent.canonicalize().map_err(|error| error.to_string())?;
         for component in [".runtime", "v2"] {
             path.push(component);
@@ -1016,7 +1016,7 @@ fn wrap_host(
     let mut environment: Vec<_> = env.env.into_iter().collect();
     if tier == HostTier::Plugin {
         let scratch = data.join("tmp");
-        crate::plugins::registry::ensure_private_plugin_state_directory(&scratch)?;
+        codewhale_plugins::registry::ensure_private_plugin_state_directory(&scratch)?;
         for name in ["TMPDIR", "TMP", "TEMP"] {
             environment.push((name.into(), scratch.to_string_lossy().into_owned()));
         }
@@ -1719,7 +1719,7 @@ impl HostProcess {
             .ok_or("Native host has no verified LPAC plan")?;
         #[cfg(not(windows))]
         let snapshot_roots = self.native_snapshot_roots.clone();
-        let policy = crate::plugins::activation::extension_host_policy_enabled();
+        let policy = codewhale_plugins::activation::extension_host_policy_enabled();
         if !policy {
             return Err("Native extensions are disabled".into());
         }
@@ -1728,11 +1728,11 @@ impl HostProcess {
         tokio::task::spawn_blocking(move || {
             #[cfg(test)]
             let _env_scope = crate::test_support::join_env_scope(env_scope);
-            let _policy = crate::plugins::activation::PolicyScope::propagate(policy);
-            let capability = crate::plugins::activation::PluginActivationCapability::Native;
-            crate::plugins::registry::verify_plugin_component_authority(&authority, capability)?;
+            let _policy = codewhale_plugins::activation::PolicyScope::propagate(policy);
+            let capability = codewhale_plugins::activation::PluginActivationCapability::Native;
+            codewhale_plugins::registry::verify_plugin_component_authority(&authority, capability)?;
             let root =
-                crate::plugins::agent_plugin::plugin_root_for_manifest(&authority.staged_manifest)
+                codewhale_plugins::agent_plugin::plugin_root_for_manifest(&authority.staged_manifest)
                     .ok_or("reviewed runtime manifest has no bundle root")?;
             #[cfg(windows)]
             sandbox.admit_root(root)?;
@@ -1747,7 +1747,7 @@ impl HostProcess {
                     return Err("Native snapshot store changed after host launch".into());
                 }
             }
-            crate::plugins::registry::verify_plugin_component_authority(&authority, capability)
+            codewhale_plugins::registry::verify_plugin_component_authority(&authority, capability)
         })
         .await
         .map_err(|error| format!("Native bundle admission worker failed: {error}"))?

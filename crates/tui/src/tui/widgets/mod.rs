@@ -3252,7 +3252,7 @@ pub(crate) fn slash_completion_hints_for_plugins(
     locale: codewhale_localization::Locale,
     workspace: Option<&std::path::Path>,
     model_candidates: &[String],
-    plugins: Option<&crate::plugins::PluginRegistry>,
+    plugins: Option<&codewhale_plugins::PluginRegistry>,
 ) -> Vec<SlashMenuEntry> {
     if !super::app::looks_like_slash_command_input(input) {
         return Vec::new();

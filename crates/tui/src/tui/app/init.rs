@@ -19,7 +19,7 @@ impl App {
         Self::new_with_plugin_registry(
             options,
             config,
-            std::sync::Arc::new(crate::plugins::PluginRegistry::empty(&workspace)),
+            std::sync::Arc::new(codewhale_plugins::PluginRegistry::empty(&workspace)),
         )
     }
 
@@ -27,7 +27,7 @@ impl App {
     pub fn new_with_plugin_registry(
         options: TuiOptions,
         config: &Config,
-        plugin_registry: std::sync::Arc<crate::plugins::PluginRegistry>,
+        plugin_registry: std::sync::Arc<codewhale_plugins::PluginRegistry>,
     ) -> Self {
         let TuiOptions {
             model,

@@ -77,7 +77,7 @@ fn remembered_deepseek_cn_and_layered_root_models_keep_their_precedence() {
     )
     .unwrap();
     assert_eq!(
-        crate::plugins::providers::load_config(None, None)
+        codewhale_plugins::providers::load_config(None, None)
             .unwrap()
             .default_model(),
         "deepseek-v4-pro"
@@ -85,14 +85,14 @@ fn remembered_deepseek_cn_and_layered_root_models_keep_their_precedence() {
     codewhale_runtime::config_persistence::persist_root_bool_key(Some(&path), "allow_shell", false)
         .unwrap();
     assert_eq!(
-        crate::plugins::providers::load_config(None, None)
+        codewhale_plugins::providers::load_config(None, None)
             .unwrap()
             .default_model(),
         "deepseek-v4-pro"
     );
 
     fs::write(&path, "route_preferences_version = 1\nprovider = 'deepseek'\n[providers.deepseek]\nmodel = 'deepseek-v4-flash'\n[profiles.pro]\ndefault_text_model = 'deepseek-v4-pro'\n").unwrap();
-    let profile = crate::plugins::providers::load_config(None, Some("pro")).unwrap();
+    let profile = codewhale_plugins::providers::load_config(None, Some("pro")).unwrap();
     assert_eq!(profile.default_model(), "deepseek-v4-pro");
     assert_eq!(
         crate::route_runtime::resolve_runtime_route(&profile, ProviderKind::Deepseek, None)
@@ -109,7 +109,7 @@ fn remembered_deepseek_cn_and_layered_root_models_keep_their_precedence() {
     );
     fs::write(&path, source).unwrap();
     assert_eq!(
-        crate::plugins::providers::load_config(None, None)
+        codewhale_plugins::providers::load_config(None, None)
             .unwrap()
             .default_model(),
         "deepseek-v4-pro"
@@ -138,7 +138,7 @@ fn loaded_startup_selection_is_shared_and_does_not_rewrite_saved_files() {
     let saved = "[provider_models]\nzai = 'GLM-5.3'\n";
     fs::write(&path, source).unwrap();
     fs::write(home.path().join("settings.toml"), saved).unwrap();
-    let mut config = crate::plugins::providers::load_config(None, None).unwrap();
+    let mut config = codewhale_plugins::providers::load_config(None, None).unwrap();
     assert_eq!(config.default_model(), "GLM-5.3");
     assert_eq!(
         crate::model_inventory::provider_default_model(
@@ -202,7 +202,7 @@ fn startup_memory_yields_to_explicit_launch_scoped_config_and_profile() {
     .unwrap();
     {
         let _explicit = EnvVarGuard::set("CODEWHALE_MODEL", "GLM-5.2");
-        let config = crate::plugins::providers::load_config(None, None).unwrap();
+        let config = codewhale_plugins::providers::load_config(None, None).unwrap();
         assert_eq!(config.default_model(), "GLM-5.2");
         assert_eq!(
             crate::route_runtime::resolve_runtime_route(&config, ProviderKind::Zai, None)
@@ -211,14 +211,14 @@ fn startup_memory_yields_to_explicit_launch_scoped_config_and_profile() {
             "GLM-5.2"
         );
     }
-    let profile = crate::plugins::providers::load_config(None, Some("pinned")).unwrap();
+    let profile = codewhale_plugins::providers::load_config(None, Some("pinned")).unwrap();
     assert_eq!(profile.default_model(), "GLM-5.1");
     assert!(!profile.remembered_selection_is_applicable());
     let project = home.path().join("project");
     fs::create_dir(&project).unwrap();
     let path = project.join("config.toml");
     fs::write(&path, source).unwrap();
-    let config = crate::plugins::providers::load_config(Some(path), None).unwrap();
+    let config = codewhale_plugins::providers::load_config(Some(path), None).unwrap();
     assert_eq!(config.default_model(), "GLM-5.2");
     assert!(!config.remembered_selection_is_applicable());
 }
@@ -336,7 +336,7 @@ fn provider_environment_model_outranks_startup_memory() {
     )
     .unwrap();
     let _model = EnvVarGuard::set("OPENAI_MODEL", "gpt-5.6-luna");
-    let config = crate::plugins::providers::load_config(None, None).unwrap();
+    let config = codewhale_plugins::providers::load_config(None, None).unwrap();
     assert_eq!(config.default_model(), "gpt-5.6-luna");
     assert_eq!(
         crate::route_runtime::resolve_runtime_route(&config, ProviderKind::Openai, None)
@@ -1094,7 +1094,7 @@ default_text_model = "deepseek-chat"
             "CODEWHALE_BASE_URL",
             "https://generic-gateway.example.test/v1",
         );
-        let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)?;
+        let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)?;
         assert!(
             config.provider_uses_custom_endpoint(
                 &config.test_identity_for_kind(ProviderKind::Deepseek)
@@ -1130,7 +1130,7 @@ model = "openai/gpt-5"
         ),
     ] {
         let _base = EnvVarGuard::set(env_name, endpoint);
-        let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)?;
+        let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)?;
         assert_eq!(config.active_route_base_url(), endpoint);
         assert!(config.provider_uses_custom_endpoint(
             &config.test_identity_for_kind(ProviderKind::Openrouter)
@@ -1162,7 +1162,7 @@ base_url = "https://file-deepseek-gateway.example.test/v1"
 default_text_model = "private-deepseek-model"
 "#,
     )?;
-    let root = crate::plugins::providers::load_config(Some(config_path.clone()), None)?;
+    let root = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)?;
     assert_eq!(root.active_route_api_key()?, "file-root-key");
     assert!(active_provider_has_config_api_key(&root));
     assert!(has_api_key_for(
@@ -1180,7 +1180,7 @@ base_url = "https://file-openrouter-gateway.example.test/v1"
 model = "private-openrouter-model"
 "#,
     )?;
-    let provider_key = crate::plugins::providers::load_config(Some(config_path.clone()), None)?;
+    let provider_key = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)?;
     assert_eq!(provider_key.active_route_api_key()?, "file-provider-key");
     assert!(active_provider_has_config_api_key(&provider_key));
     assert!(has_api_key_for(
@@ -1198,7 +1198,7 @@ base_url = "https://file-openrouter-gateway.example.test/v1"
 model = "private-openrouter-model"
 "#,
     )?;
-    let route_env = crate::plugins::providers::load_config(Some(config_path), None)?;
+    let route_env = codewhale_plugins::providers::load_config(Some(config_path), None)?;
     assert_eq!(route_env.active_route_api_key()?, "file-env-route-key");
     assert!(active_provider_has_env_api_key(&route_env));
     assert!(has_api_key_for(
@@ -1239,7 +1239,7 @@ fn generic_base_url_override_never_reaches_pinned_child_routes() -> Result<()> {
     for env_name in ["CODEWHALE_BASE_URL", "DEEPSEEK_BASE_URL"] {
         let session_host = "https://session-gateway.example.test/v1";
         let _base = EnvVarGuard::set(env_name, session_host);
-        let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)?;
+        let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)?;
 
         // Documented behavior for the active DeepSeek route is unchanged.
         assert_eq!(
@@ -1300,7 +1300,7 @@ fn provider_scoped_base_url_env_applies_only_to_its_own_route() -> Result<()> {
 
     // Without a generic override the active DeepSeek route keeps its default:
     // a provider-scoped variable names exactly one provider.
-    let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)?;
+    let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)?;
     assert_eq!(config.active_route_base_url(), DEFAULT_DEEPSEEK_BASE_URL);
     assert_eq!(
         config.base_url_for_route(&config.test_identity_for_kind(ProviderKind::Zai)),
@@ -1317,7 +1317,7 @@ fn provider_scoped_base_url_env_applies_only_to_its_own_route() -> Result<()> {
     // With both set, each override stays on its own route.
     let session_host = "https://session-gateway.example.test/v1";
     let _base = EnvVarGuard::set("CODEWHALE_BASE_URL", session_host);
-    let config = crate::plugins::providers::load_config(Some(config_path), None)?;
+    let config = codewhale_plugins::providers::load_config(Some(config_path), None)?;
     assert_eq!(config.active_route_base_url(), session_host);
     assert_eq!(
         config.base_url_for_route(&config.test_identity_for_kind(ProviderKind::Moonshot)),
@@ -1356,7 +1356,7 @@ default_text_model = "deepseek-chat"
     let _source = EnvVarGuard::set(codewhale_config::CLI_API_KEY_SOURCE_ENV, "cli");
     let _cli_key = EnvVarGuard::set(codewhale_config::CLI_API_KEY_ENV, "explicit-cli-key");
 
-    let config = crate::plugins::providers::load_config(Some(config_path), None)?;
+    let config = codewhale_plugins::providers::load_config(Some(config_path), None)?;
     assert_eq!(config.active_route_api_key()?, "explicit-cli-key");
     assert!(!active_provider_has_config_api_key(&config));
     assert!(active_provider_has_env_api_key(&config));
@@ -1395,7 +1395,7 @@ model = "managed-model"
         "https://lower-env-gateway.example.test/v1",
     );
 
-    let config = crate::plugins::providers::load_config(Some(config_path), None)?;
+    let config = codewhale_plugins::providers::load_config(Some(config_path), None)?;
     assert_eq!(
         config.active_route_base_url(),
         "https://managed-gateway.example.test/v1"
@@ -1441,7 +1441,7 @@ consent_version = 1
     )?;
 
     codewhale_runtime::external_credentials::reset_side_effect_trap();
-    let config = crate::plugins::providers::load_config(Some(config_path), None)?;
+    let config = codewhale_plugins::providers::load_config(Some(config_path), None)?;
     assert!(
         config
             .provider_config_for(&config.test_identity_for_kind(ProviderKind::OpenaiCodex))
@@ -1508,7 +1508,7 @@ consent_version = 1
     )?;
     let _auth_path = EnvVarGuard::set("OPENAI_CODEX_AUTH_FILE", &external_path);
     codewhale_runtime::external_credentials::reset_side_effect_trap();
-    let config = crate::plugins::providers::load_config(Some(config_path), None)?;
+    let config = codewhale_plugins::providers::load_config(Some(config_path), None)?;
     let effective = config
         .provider_config_for(&config.test_identity_for_kind(ProviderKind::OpenaiCodex))
         .and_then(|provider| provider.external_credentials.as_ref())
@@ -1668,7 +1668,7 @@ fn provider_sentinel_falls_through_to_route_env_then_fixture_store() -> Result<(
             &config_path,
             format!("provider = \"openai\"\n\n[providers.openai]\napi_key = {sentinel:?}\n"),
         )?;
-        let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)?;
+        let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)?;
         assert_eq!(
             config
                 .provider_config()
@@ -1702,7 +1702,7 @@ fn provider_sentinel_falls_through_to_route_env_then_fixture_store() -> Result<(
                 "provider = \"openai\"\n\n[providers.openai]\napi_key = {sentinel:?}\napi_key_env = \"OFFICIAL_SENTINEL_ROUTE_KEY\"\n"
             ),
         )?;
-        let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)?;
+        let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)?;
         assert_eq!(
             config.active_route_api_key()?,
             "FIXTURE-ENV-KEY",
@@ -1712,7 +1712,7 @@ fn provider_sentinel_falls_through_to_route_env_then_fixture_store() -> Result<(
         assert!(active_provider_has_env_api_key(&config));
 
         fs::write(&config_path, format!("api_key = {sentinel:?}\n"))?;
-        let root = crate::plugins::providers::load_config(Some(config_path.clone()), None)?;
+        let root = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)?;
         assert!(!active_provider_has_config_api_key(&root));
         assert!(!has_api_key_for(
             &root,
@@ -1744,7 +1744,7 @@ fn custom_route_sentinel_is_never_a_key_and_requires_a_route_binding() -> Result
                 "provider = \"acme\"\n\n[providers.acme]\nkind = \"openai-compatible\"\nbase_url = \"https://acme.example.test/v1\"\nmodel = \"acme-model\"\napi_key = {sentinel:?}\n"
             ),
         )?;
-        let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)?;
+        let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)?;
         assert!(config.should_skip_secret_store_for_provider(
             &config.test_identity_for_kind(ProviderKind::Custom)
         ));
@@ -1765,7 +1765,7 @@ fn custom_route_sentinel_is_never_a_key_and_requires_a_route_binding() -> Result
                 "provider = \"acme\"\n\n[providers.acme]\nkind = \"openai-compatible\"\nbase_url = \"https://acme.example.test/v1\"\nmodel = \"acme-model\"\napi_key = {sentinel:?}\napi_key_env = \"CUSTOM_SENTINEL_ROUTE_KEY\"\n"
             ),
         )?;
-        let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)?;
+        let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)?;
         assert_eq!(config.active_route_api_key()?, "FIXTURE-CUSTOM-ENV-KEY");
         assert!(!active_provider_has_config_api_key(&config));
         assert!(active_provider_has_env_api_key(&config));
@@ -1777,7 +1777,7 @@ fn custom_route_sentinel_is_never_a_key_and_requires_a_route_binding() -> Result
             "provider = \"openrouter\"\n\n[providers.openrouter]\nbase_url = \"https://gateway.example.test/v1\"\napi_key = {API_KEYRING_SENTINEL:?}\n"
         ),
     )?;
-    let custom_endpoint = crate::plugins::providers::load_config(Some(config_path), None)?;
+    let custom_endpoint = codewhale_plugins::providers::load_config(Some(config_path), None)?;
     assert!(custom_endpoint.should_skip_secret_store_for_provider(
         &custom_endpoint.test_identity_for_kind(ProviderKind::Openrouter)
     ));
@@ -1828,7 +1828,7 @@ fn xiaomi_mimo_custom_env_url_does_not_inherit_ambient_key() -> Result<()> {
         env::set_var("MIMO_MODEL", "mimo-v2.5");
     }
 
-    let config = crate::plugins::providers::load_config(None, None)?;
+    let config = codewhale_plugins::providers::load_config(None, None)?;
     assert_eq!(
         config.active_provider_identity().unwrap().provider,
         ProviderKind::XiaomiMimo
@@ -1868,7 +1868,7 @@ fn wanjie_ark_custom_env_url_does_not_inherit_ambient_key() -> Result<()> {
         env::set_var("WANJIE_ARK_MODEL", "wanjie-model-id");
     }
 
-    let config = crate::plugins::providers::load_config(None, None)?;
+    let config = codewhale_plugins::providers::load_config(None, None)?;
     assert_eq!(
         config.active_provider_identity().unwrap().provider,
         ProviderKind::WanjieArk
@@ -1909,7 +1909,7 @@ fn openai_custom_env_url_does_not_inherit_ambient_key() -> Result<()> {
         env::set_var("OPENAI_MODEL", "glm-5");
     }
 
-    let config = crate::plugins::providers::load_config(None, None)?;
+    let config = codewhale_plugins::providers::load_config(None, None)?;
     assert_eq!(
         config.active_provider_identity().unwrap().provider,
         ProviderKind::Openai
@@ -1950,7 +1950,7 @@ fn openai_facade_custom_url_does_not_inherit_ambient_key() -> Result<()> {
         env::set_var("DEEPSEEK_MODEL", "glm-5");
     }
 
-    let config = crate::plugins::providers::load_config(None, None)?;
+    let config = codewhale_plugins::providers::load_config(None, None)?;
     assert_eq!(
         config.active_provider_identity().unwrap().provider,
         ProviderKind::Openai
@@ -1991,7 +1991,7 @@ fn volcengine_custom_env_url_does_not_inherit_ambient_key() -> Result<()> {
         env::set_var("VOLCENGINE_ARK_MODEL", "DeepSeek-V4-Flash");
     }
 
-    let config = crate::plugins::providers::load_config(None, None)?;
+    let config = codewhale_plugins::providers::load_config(None, None)?;
     assert_eq!(
         config.active_provider_identity().unwrap().provider,
         ProviderKind::Volcengine
@@ -2337,7 +2337,7 @@ fn siliconflow_custom_env_url_does_not_inherit_ambient_key() -> Result<()> {
         env::set_var("SILICONFLOW_MODEL", "deepseek-v4-flash");
     }
 
-    let config = crate::plugins::providers::load_config(None, None)?;
+    let config = codewhale_plugins::providers::load_config(None, None)?;
     assert_eq!(
         config.active_provider_identity().unwrap().provider,
         ProviderKind::Siliconflow
@@ -2377,7 +2377,7 @@ fn arcee_custom_env_url_does_not_inherit_ambient_key() -> Result<()> {
         env::set_var("ARCEE_MODEL", "arcee-trinity-large-preview");
     }
 
-    let config = crate::plugins::providers::load_config(None, None)?;
+    let config = codewhale_plugins::providers::load_config(None, None)?;
     assert_eq!(
         config.active_provider_identity().unwrap().provider,
         ProviderKind::Arcee
@@ -2423,7 +2423,7 @@ model = "deepseek-reasoner"
 "#,
     )?;
 
-    let config = crate::plugins::providers::load_config(None, None)?;
+    let config = codewhale_plugins::providers::load_config(None, None)?;
     assert_eq!(
         config.active_provider_identity().unwrap().provider,
         ProviderKind::SiliconflowCN
@@ -2487,7 +2487,7 @@ api_key = "stale-api-key"
 "#,
     )?;
 
-    let config = crate::plugins::providers::load_config(None, None)?;
+    let config = codewhale_plugins::providers::load_config(None, None)?;
     assert_eq!(
         config.active_provider_identity().unwrap().provider,
         ProviderKind::Moonshot
@@ -2631,7 +2631,7 @@ base_url = "https://api.kimi.com/coding/v1"
 "#,
     )?;
 
-    let config = crate::plugins::providers::load_config(None, None)?;
+    let config = codewhale_plugins::providers::load_config(None, None)?;
     assert_eq!(
         config.active_provider_identity().unwrap().provider,
         ProviderKind::Moonshot
@@ -2678,7 +2678,7 @@ api_key = "kimi-code-env-key"
         env::set_var("CODEWHALE_BASE_URL", "https://api.kimi.com/coding/v1");
     }
 
-    let config = crate::plugins::providers::load_config(None, None)?;
+    let config = codewhale_plugins::providers::load_config(None, None)?;
     assert_eq!(
         config.active_provider_identity().unwrap().provider,
         ProviderKind::Moonshot
@@ -2947,7 +2947,7 @@ fn modelstudio_variants_share_one_secret_slot_and_key_availability() -> Result<(
     // Every variant — active or not — resolves the family key, so the picker
     // badge stops showing three bogus "missing key" rows after one save.
     let inactive_variants =
-        crate::plugins::providers::load_config(Some(config_path.clone()), None)?;
+        codewhale_plugins::providers::load_config(Some(config_path.clone()), None)?;
     for variant in variants {
         assert_eq!(
             provider_secret_store_api_key(
@@ -2977,7 +2977,7 @@ fn modelstudio_variants_share_one_secret_slot_and_key_availability() -> Result<(
         Some("ms-family-key-v2".to_string())
     );
     assert_eq!(secrets.get("modelstudio-coding-plan-anthropic")?, None);
-    let reloaded = crate::plugins::providers::load_config(Some(config_path), None)?;
+    let reloaded = codewhale_plugins::providers::load_config(Some(config_path), None)?;
     for variant in variants {
         assert_eq!(
             provider_secret_store_api_key(&reloaded, &(reloaded).test_identity_for_kind(variant))
@@ -3606,7 +3606,7 @@ fn huggingface_custom_env_urls_do_not_inherit_ambient_keys() -> Result<()> {
             env::set_var("HF_MODEL", "fallback/model");
         }
 
-        let config = crate::plugins::providers::load_config(None, None)?;
+        let config = codewhale_plugins::providers::load_config(None, None)?;
         assert_eq!(
             config.active_provider_identity().unwrap().provider,
             ProviderKind::Huggingface
@@ -3635,7 +3635,7 @@ fn huggingface_custom_env_urls_do_not_inherit_ambient_keys() -> Result<()> {
             env::set_var("HF_MODEL", "meta-llama/Llama-3-70B");
         }
 
-        let config = crate::plugins::providers::load_config(None, None)?;
+        let config = codewhale_plugins::providers::load_config(None, None)?;
         assert_eq!(
             config.active_provider_identity().unwrap().provider,
             ProviderKind::Huggingface
@@ -3676,7 +3676,7 @@ fn huggingface_short_custom_env_url_does_not_inherit_ambient_key() -> Result<()>
         env::set_var("HF_MODEL", "org/short-model");
     }
 
-    let config = crate::plugins::providers::load_config(None, None)?;
+    let config = codewhale_plugins::providers::load_config(None, None)?;
     assert_eq!(
         config.active_provider_identity().unwrap().provider,
         ProviderKind::Huggingface
@@ -3765,7 +3765,7 @@ fn dispatch_endpoint_and_billing_receipts_agree_for_every_resolved_route() -> Re
     fs::write(&config_path, "provider = \"deepseek\"\n")?;
     let _base = EnvVarGuard::set("CODEWHALE_BASE_URL", "https://env-gateway.example.test/v1");
 
-    let config = crate::plugins::providers::load_config(Some(config_path), None)?;
+    let config = codewhale_plugins::providers::load_config(Some(config_path), None)?;
 
     // `for_route` reads the ambient config; `for_dispatched_route` reads the
     // endpoint the client is actually built from. After the resolver became
@@ -3813,7 +3813,7 @@ fn readiness_and_inventory_classify_the_resolved_route_not_the_session_host() ->
     fs::write(&config_path, "provider = \"deepseek\"\n")?;
     let _base = EnvVarGuard::set("CODEWHALE_BASE_URL", "http://127.0.0.1:11434/v1");
 
-    let config = crate::plugins::providers::load_config(Some(config_path), None)?;
+    let config = codewhale_plugins::providers::load_config(Some(config_path), None)?;
 
     // Readiness: the active route is on a local custom host and classifies as
     // keyless-local; the sibling identity is still the canonical hosted

@@ -26,7 +26,6 @@ use super::supervisor::HostRequestContext;
 use super::tests::{FixturePlugins, fake_authority, node_for_tests};
 use super::tier::HostTier;
 use super::{ExtensionHostManager, ExtensionHostOptions, HostAttachment, SupervisionOptions};
-use crate::plugins::activation::TestPolicyGuard;
 use crate::tools::codemode::{
     ExtensionCaller, NestedCallGate, NestedCallRequest, NestedCallVerdict, NestedDecision,
 };
@@ -34,6 +33,7 @@ use crate::tools::spec::{
     ApprovalRequirement, ToolCapability, ToolContext, ToolError, ToolResult, ToolSpec,
 };
 use codewhale_config::OwnerRef;
+use codewhale_plugins::activation::TestPolicyGuard;
 
 // ---------------------------------------------------------------------------
 // A stand-in for the turn loop's gate
@@ -529,7 +529,7 @@ async fn cancel_revoke_and_host_exit_withdraw_a_pending_core_call() {
     assert_eq!(manager.shared.core_calls.live_tickets(), 0);
 
     // The host exits while a card is open (the plugin is enabled again first).
-    crate::plugins::discovery::discover_with_config(&fixture.config)
+    codewhale_plugins::discovery::discover_with_config(&fixture.config)
         .enable("core-call")
         .unwrap();
     engine.set_plugins(fixture.registry());

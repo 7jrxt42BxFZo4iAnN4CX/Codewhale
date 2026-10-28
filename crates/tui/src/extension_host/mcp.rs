@@ -1,5 +1,6 @@
 //! The pinned SDK owns MCP framing; Rust owns every process/network operation.
 //! The selected Host backend immediately adopts proc/* and FetchProxy sessions.
+use crate::mcp::McpServerConfigExt;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -19,7 +20,8 @@ use super::tier::HostTier;
 use super::{ExtensionHostManager, ManagerShared};
 use crate::core::engine::HumanDecision;
 use crate::mcp::process_broker::BrokerSession;
-use crate::mcp::{MAX_MCP_RESPONSE_BYTES, McpPool, McpServerConfig};
+use crate::mcp::{MAX_MCP_RESPONSE_BYTES, McpPool};
+use codewhale_mcp::config::McpServerConfig;
 
 const MAX_SESSIONS: usize = 64;
 const MAX_PENDING: usize = 256;
@@ -111,7 +113,7 @@ impl Session {
                     .ok_or_else(|| "MCP builtin owner is no longer live".to_string())
             })
             .map_err(anyhow::Error::msg)?;
-        if let Some(source) = self.config.reviewed_plugin.as_ref() {
+        if let Some(source) = self.config.reviewed_plugin_source() {
             source.validate_before_use(&self.name, "broker operation")?;
         }
         Ok(())
@@ -407,8 +409,7 @@ impl Broker {
         session.validate(shared, generation, &params.owner)?;
         if session
             .config
-            .reviewed_plugin
-            .as_ref()
+            .reviewed_plugin_source()
             .is_some_and(|source| source.plugin_name() == crate::mcp::COMPUTER_USE_PLUGIN_NAME)
         {
             let key = crate::mcp::random_key()?;

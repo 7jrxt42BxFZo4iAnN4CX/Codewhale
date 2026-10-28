@@ -223,7 +223,7 @@ impl FleetRoster {
     pub fn load_with_plugins(
         fleet_config: &FleetConfigToml,
         workspace: &Path,
-        plugins: &crate::plugins::PluginRegistry,
+        plugins: &codewhale_plugins::PluginRegistry,
     ) -> Self {
         let personal_dir = personal_agent_profile_dir().ok();
         Self::load_with_personal_dir_and_plugins(
@@ -259,7 +259,7 @@ impl FleetRoster {
         personal_dir: Option<&Path>,
         claude_user_dir: Option<&Path>,
         include_workspace_profiles: bool,
-        plugins: Option<&crate::plugins::PluginRegistry>,
+        plugins: Option<&codewhale_plugins::PluginRegistry>,
     ) -> Self {
         let mut built_ins = Self::built_in_members();
         let mut extras: Vec<AgentProfile> = Vec::new();
@@ -273,7 +273,7 @@ impl FleetRoster {
                 let identity = codewhale_runtime::hashing::sha256_hex(
                     format!("{}:{}", preset.plugin_id, preset.entry.path).as_bytes(),
                 );
-                let metadata = crate::plugins::native_presets::metadata(plugins, &preset);
+                let metadata = codewhale_plugins::native_presets::metadata(plugins, &preset);
                 let id = format!(
                     "{}-native-{}",
                     authority.plugin_name.chars().take(32).collect::<String>(),
@@ -311,9 +311,9 @@ impl FleetRoster {
                     &mut shadowed,
                 );
             }
-            let (sources, errors) = crate::plugins::runtime::active_component_sources(
+            let (sources, errors) = codewhale_plugins::runtime::active_component_sources(
                 plugins,
-                crate::plugins::activation::PluginActivationCapability::Agents,
+                codewhale_plugins::activation::PluginActivationCapability::Agents,
             );
             for error in errors {
                 tracing::warn!("fleet roster: {error}");

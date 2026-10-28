@@ -2360,7 +2360,7 @@ fn registration_adapter_origins_are_bounded_and_exclude_execution_payloads() {
                     annotations: None,
                 },
                 pool: Arc::new(tokio::sync::Mutex::new(crate::mcp::McpPool::new(
-                    crate::mcp::McpConfig::default(),
+                    codewhale_mcp::config::McpConfig::default(),
                 ))),
             }),
             "MCP server plugin-4-demo-server_with_underscores, tool sha256:",

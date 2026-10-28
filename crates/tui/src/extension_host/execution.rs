@@ -18,11 +18,11 @@ use super::supervisor::HostRequestContext;
 use super::ticket::{Grant, Presented, Ticket, TicketKind};
 use super::tier::HostTier;
 use super::{ExtensionHostManager, ManagerShared, activation};
-use crate::plugins::PluginRegistry;
-use crate::plugins::activation::PluginActivationCapability;
 use crate::tools::spec::{ToolContext, ToolError, ToolResult};
 use codewhale_config::OwnerRef;
 use codewhale_config::PluginAuthority;
+use codewhale_plugins::PluginRegistry;
+use codewhale_plugins::activation::PluginActivationCapability;
 
 const DEADLINE: Duration = Duration::from_secs(120);
 const MAX_JOBS: usize = 32;
@@ -334,7 +334,7 @@ impl Job {
                 #[cfg(test)]
                 let _env_scope = crate::test_support::join_env_scope(env_scope);
                 for authority in &job.caller.authorities {
-                    crate::plugins::registry::verify_plugin_component_authority(
+                    codewhale_plugins::registry::verify_plugin_component_authority(
                         authority,
                         PluginActivationCapability::Native,
                     )?;
@@ -1481,7 +1481,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn actual_review_host_matches_frozen_core_cases_and_accepts_over_one_mib() {
         let _home = crate::test_support::SealedHome::new();
-        let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(false);
+        let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(false);
         let Some(node) = super::super::tests::node_for_tests("review_captured_parity") else {
             return;
         };
@@ -1594,7 +1594,7 @@ mod tests {
     async fn actual_github_broker_returns_private_core_permission_fault() {
         use codewhale_net::network_policy::{DecisionToml, NetworkPolicy, NetworkPolicyDecider};
         let _home = crate::test_support::SealedHome::new();
-        let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(false);
+        let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(false);
         let Some(node) = super::super::tests::node_for_tests("github_private_core_fault") else {
             return;
         };
@@ -1644,7 +1644,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn actual_ocr_native_cancel_retains_job_quota_until_framework_worker_exits() {
         let _home = crate::test_support::SealedHome::new();
-        let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(false);
+        let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(false);
         let Some(node) = super::super::tests::node_for_tests("ocr_native_quota") else {
             return;
         };
@@ -1705,7 +1705,7 @@ mod tests {
     async fn actual_ocr_broker_decodes_exact_ordered_grants_and_refuses_replay_or_withdrawal() {
         use std::os::unix::fs::PermissionsExt;
         let _home = crate::test_support::SealedHome::new();
-        let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(false);
+        let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(false);
         let Some(node) = super::super::tests::node_for_tests("ocr_exact_grants") else {
             return;
         };

@@ -144,7 +144,7 @@ async fn fetched_pdf_host_text_matches_default_and_raw_bypasses_host() {
     use std::os::unix::fs::PermissionsExt;
     use std::sync::Arc;
     let _home = crate::test_support::SealedHome::new();
-    let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(false);
+    let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(false);
     let Some(node) = crate::extension_host::tests::node_for_tests("fetched_pdf_host") else {
         return;
     };

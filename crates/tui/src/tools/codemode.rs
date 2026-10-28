@@ -1797,7 +1797,7 @@ mod tests {
     async fn gated_nested_mcp_call_runs_through_the_session_pool() {
         let dir = tempfile::tempdir().unwrap();
         let pool = Arc::new(AsyncMutex::new(McpPool::new(
-            crate::mcp::McpConfig::default(),
+            codewhale_mcp::config::McpConfig::default(),
         )));
         let (context, asked) = gated_context(
             dir.path(),

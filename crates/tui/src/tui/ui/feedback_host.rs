@@ -185,7 +185,7 @@ mod tests {
         app.workspace = tmp.path().join("other");
         assert!(!scope.current(&app, &config));
         app.workspace = scope.caller.workspace.clone();
-        app.plugin_registry = Arc::new(crate::plugins::PluginRegistry::new());
+        app.plugin_registry = Arc::new(codewhale_plugins::PluginRegistry::new());
         assert!(!scope.current(&app, &config));
     }
     #[test]

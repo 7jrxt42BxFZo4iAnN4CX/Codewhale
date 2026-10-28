@@ -405,7 +405,7 @@ pub(crate) async fn run_exec_agent(
     append_system_prompt: Option<String>,
     tool_authority_json: Option<String>,
     exec_hooks_enabled: bool,
-    plugin_registry: std::sync::Arc<crate::plugins::PluginRegistry>,
+    plugin_registry: std::sync::Arc<codewhale_plugins::PluginRegistry>,
     // #6510: plain `exec` (no tool-surface flag). The caller passes an empty
     // allowlist; this also skips workspace snapshots, LSP and the automation
     // store, and writes the one-shot `--json` receipt shape.
@@ -648,7 +648,7 @@ pub(crate) async fn run_exec_agent(
         engine_features.disable(codewhale_runtime::features::Feature::Mcp);
     }
     let engine_plugin_registry = if fleet_authority_active {
-        std::sync::Arc::new(crate::plugins::PluginRegistry::empty(&workspace))
+        std::sync::Arc::new(codewhale_plugins::PluginRegistry::empty(&workspace))
     } else {
         plugin_registry
     };

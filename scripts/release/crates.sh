@@ -48,6 +48,7 @@ release_crates=(
   codewhale-lsp
   codewhale-repl
   codewhale-skill-install
+  codewhale-plugins
   codewhale-tui
   codewhale-cli
 )

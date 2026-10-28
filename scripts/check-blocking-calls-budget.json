@@ -269,38 +269,38 @@
   "crates/tui/src/models_dev_live.rs": {
     "std_fs": 1
   },
-  "crates/tui/src/plugins/builtin.rs": {
+  "crates/plugins/src/builtin.rs": {
     "thread_sleep": 1
   },
-  "crates/tui/src/plugins/discovery.rs": {
+  "crates/plugins/src/discovery.rs": {
     "path_canonicalize": 1
   },
-  "crates/tui/src/plugins/export.rs": {
+  "crates/plugins/src/export.rs": {
     "path_canonicalize": 1
   },
-  "crates/tui/src/plugins/install/dsh.rs": {
+  "crates/plugins/src/install/dsh.rs": {
     "path_canonicalize": 2
   },
-  "crates/tui/src/plugins/install/mod.rs": {
+  "crates/plugins/src/install/mod.rs": {
     "path_canonicalize": 1
   },
-  "crates/tui/src/plugins/install/stage.rs": {
+  "crates/plugins/src/install/stage.rs": {
     "path_canonicalize": 2
   },
-  "crates/tui/src/plugins/manifest.rs": {
+  "crates/plugins/src/manifest.rs": {
     "path_canonicalize": 2
   },
-  "crates/tui/src/plugins/marketplace/document.rs": {
+  "crates/plugins/src/marketplace/document.rs": {
     "std_fs": 1
   },
-  "crates/tui/src/plugins/marketplace/store.rs": {
+  "crates/plugins/src/marketplace/store.rs": {
     "std_fs": 1
   },
-  "crates/tui/src/plugins/registry.rs": {
+  "crates/plugins/src/registry.rs": {
     "path_canonicalize": 6,
     "thread_sleep": 1
   },
-  "crates/tui/src/plugins/runtime.rs": {
+  "crates/plugins/src/runtime.rs": {
     "path_canonicalize": 2
   },
   "crates/tui/src/project_context.rs": {

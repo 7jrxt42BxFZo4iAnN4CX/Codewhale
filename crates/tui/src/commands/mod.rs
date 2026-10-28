@@ -3040,7 +3040,7 @@ mod tests {
             ..crate::tui::test_support::test_tui_options(tmpdir.path())
         };
         let mut app = App::new(options, &Config::default());
-        let discovery = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv();
+        let discovery = codewhale_plugins::PluginDiscoveryContext::capture_pre_dotenv();
         app.plugin_registry = discovery.registry_for_workspace(tmpdir.path());
         app
     }

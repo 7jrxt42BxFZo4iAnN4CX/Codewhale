@@ -88,7 +88,7 @@ pub struct AgentProfile {
     /// Runtime authority for a profile loaded from an immutable plugin
     /// snapshot. Rechecked at Agent spawn so another process can revoke it.
     pub plugin_authority: Option<codewhale_config::PluginAuthority>,
-    pub native_preset: Option<crate::extension_host::composition_scope::NativePresetRef>,
+    pub native_preset: Option<codewhale_plugins::composition_scope::NativePresetRef>,
 }
 
 /// The minimum profile information needed to prevent a save from clobbering

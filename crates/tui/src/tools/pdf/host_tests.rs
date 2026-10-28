@@ -3,8 +3,8 @@
 use super::*;
 use crate::extension_host::tests::node_for_tests;
 use crate::extension_host::{ExtensionHostManager, ExtensionHostOptions, TestManagerGuard};
-use crate::plugins::activation::TestPolicyGuard;
 use crate::tools::spec::{ToolContext, ToolResult, ToolSpec};
+use codewhale_plugins::activation::TestPolicyGuard;
 use codewhale_runtime::features::{Feature, Features};
 use std::sync::Arc;
 
@@ -113,7 +113,7 @@ async fn real_host_pdf_matches_default_stdout_page_arguments_and_faults() {
         .await,
         Err(PdfTextError::BinaryUnavailable)
     );
-    assert!(!crate::plugins::activation::extension_host_policy_enabled());
+    assert!(!codewhale_plugins::activation::extension_host_policy_enabled());
     manager.shutdown().await;
 }
 

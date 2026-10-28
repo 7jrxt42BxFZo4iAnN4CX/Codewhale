@@ -110,8 +110,8 @@ fn readiness_is_identical_across_unrelated_workspaces() {
     std::fs::create_dir_all(&ws_b).expect("ws b");
 
     // Same user-global home, two unrelated folders, no workspace overrides.
-    let config_a = crate::plugins::providers::load_config(None, None).expect("load from A");
-    let config_b = crate::plugins::providers::load_config(None, None).expect("load from B");
+    let config_a = codewhale_plugins::providers::load_config(None, None).expect("load from A");
+    let config_b = codewhale_plugins::providers::load_config(None, None).expect("load from B");
 
     let readiness_a = deepseek_readiness(&config_a);
     let readiness_b = deepseek_readiness(&config_b);
@@ -145,7 +145,7 @@ fn explicit_workspace_config_selects_its_route_without_locking_user_global() {
     let config_path = ws_a.join(".codewhale").join("config.toml");
     let _home = sealed_env(Some(&config_path));
 
-    let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)
+    let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)
         .expect("load workspace config");
     // The workspace selection IS honored for the session route.
     assert_eq!(
@@ -200,7 +200,7 @@ fn write_nested_zai_config(base: &std::path::Path) -> std::path::PathBuf {
 
 fn assert_user_global_survives_workspace(label: &str, config_path: std::path::PathBuf) {
     let _home = sealed_env(Some(&config_path));
-    let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)
+    let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)
         .unwrap_or_else(|err| panic!("load from {label}: {err}"));
     let deepseek = deepseek_readiness(&config);
     assert!(
@@ -234,7 +234,7 @@ fn unavailable_truly_means_unavailable_with_a_reason() {
     let _lock = crate::test_support::lock_test_env();
     let _home = sealed_env(None);
 
-    let config = crate::plugins::providers::load_config(None, None).expect("load config");
+    let config = codewhale_plugins::providers::load_config(None, None).expect("load config");
     // Moonshot has no key anywhere in the sealed fixtures.
     let moonshot = resolve_for_model(
         &config,
@@ -264,8 +264,8 @@ fn repeated_readers_never_rewrite_configuration() {
     // would contend on the process-wide test env lock; the property under
     // test is that loading is side-effect-free, which a second load proves.)
     for _ in 0..2 {
-        let config =
-            crate::plugins::providers::load_config(Some(config_path.clone()), None).expect("load");
+        let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)
+            .expect("load");
         let readiness = deepseek_readiness(&config);
         assert!(readiness.can_attempt());
     }

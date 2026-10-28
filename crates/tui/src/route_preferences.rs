@@ -533,7 +533,7 @@ pub(crate) fn set_provider_model_document(
         codewhale_runtime::config::parse_config_base(&doc.to_string()).map_err(|_| {
             anyhow::anyhow!("Could not parse destination route identity; contents omitted")
         })?;
-    crate::plugins::providers::apply_startup_providers(&mut config)?;
+    codewhale_plugins::providers::apply_startup_providers(&mut config)?;
     persistence::set_verified_provider_model_document(doc, &config, identity, model)
 }
 
@@ -556,7 +556,7 @@ pub(crate) fn persist_provider_selection(
                 moved,
             )
             .map_err(|_| anyhow::anyhow!("Could not parse destination route; contents omitted"))?;
-            crate::plugins::providers::apply_startup_providers(&mut config)?;
+            codewhale_plugins::providers::apply_startup_providers(&mut config)?;
             config
                 .verify_provider_identity(identity)
                 .map_err(anyhow::Error::msg)?;
@@ -633,7 +633,7 @@ pub(crate) fn reconcile_root_model_aliases(
     };
     let mut switched = codewhale_runtime::config::parse_config_base(&doc.to_string())
         .map_err(|_| anyhow::anyhow!("Could not parse switched route; contents omitted"))?;
-    crate::plugins::providers::apply_startup_providers(&mut switched)?;
+    codewhale_plugins::providers::apply_startup_providers(&mut switched)?;
     // `Config::validate` is the single authority on what the incoming route can
     // serve, so a writer cannot disagree with the loader. Act only when this
     // alias is what the loader rejects: a document already broken for an
@@ -864,7 +864,7 @@ model = "Other-X"
         let doc = document(&path);
         assert!(doc.get("default_text_model").is_none());
         assert_eq!(doc["providers"]["zai"]["model"].as_str(), Some("GLM-4.6"));
-        let switched = crate::plugins::providers::load_config(Some(path.clone()), None)
+        let switched = codewhale_plugins::providers::load_config(Some(path.clone()), None)
             .expect("a CLI provider switch must remain loadable");
         assert_eq!(
             switched.active_provider_identity().unwrap().provider,
@@ -873,7 +873,7 @@ model = "Other-X"
         assert_eq!(switched.default_model(), "deepseek-v4-pro");
         set(&path, "provider", "zai")?;
         assert_eq!(
-            crate::plugins::providers::load_config(Some(path.clone()), None)
+            codewhale_plugins::providers::load_config(Some(path.clone()), None)
                 .expect("switching back must remain loadable")
                 .default_model(),
             "GLM-4.6"
@@ -892,11 +892,11 @@ model = "Other-X"
             doc["providers"]["volcengine"]["model"].as_str(),
             Some("ark-private-id")
         );
-        crate::plugins::providers::load_config(Some(path.clone()), None)
+        codewhale_plugins::providers::load_config(Some(path.clone()), None)
             .expect("a CLI switch must not commit an unloadable config");
         set(&path, "provider", "volcengine")?;
         assert_eq!(
-            crate::plugins::providers::load_config(Some(path), None)
+            codewhale_plugins::providers::load_config(Some(path), None)
                 .expect("switching back must remain loadable")
                 .default_model(),
             "ark-private-id"
@@ -1005,7 +1005,8 @@ model = "Other-X"
             set(&path, &leaf, model)?;
             assert_eq!(get(&path, &leaf)?.as_deref(), Some(model));
             assert_eq!(
-                crate::plugins::providers::load_config(Some(path.clone()), None)?.default_model(),
+                codewhale_plugins::providers::load_config(Some(path.clone()), None)?
+                    .default_model(),
                 model
             );
             assert_eq!(document(&path)["provider"].as_str(), Some(provider));
@@ -1020,7 +1021,7 @@ model = "Other-X"
         )?;
         assert_eq!(get(&path, "model")?.as_deref(), Some("GLM-5.3"));
         assert_eq!(
-            crate::plugins::providers::load_config(Some(path.clone()), None)?.default_model(),
+            codewhale_plugins::providers::load_config(Some(path.clone()), None)?.default_model(),
             "GLM-5.3"
         );
         assert_eq!(
@@ -1035,7 +1036,7 @@ model = "Other-X"
         unset(&path, "providers.zai.model")?;
         assert!(document(&path).get("model").is_none());
         assert_eq!(
-            crate::plugins::providers::load_config(Some(path.clone()), None)?.default_model(),
+            codewhale_plugins::providers::load_config(Some(path.clone()), None)?.default_model(),
             selected_route(&path)?.1
         );
 
@@ -1058,7 +1059,8 @@ model = "Other-X"
                 ),
             )?;
             assert_eq!(
-                crate::plugins::providers::load_config(Some(path.clone()), None)?.default_model(),
+                codewhale_plugins::providers::load_config(Some(path.clone()), None)?
+                    .default_model(),
                 leaf
             );
             unset(&path, &format!("providers.{provider}.model"))?;
@@ -1066,7 +1068,7 @@ model = "Other-X"
             assert!(doc.get("model").is_none());
             assert!(doc.get("default_text_model").is_none());
             assert!(doc["providers"][provider].get("model").is_none());
-            let loaded = crate::plugins::providers::load_config(Some(path.clone()), None)?;
+            let loaded = codewhale_plugins::providers::load_config(Some(path.clone()), None)?;
             assert_eq!(loaded.default_model(), selected_route(&path)?.1);
             assert!(loaded.legacy_model.is_none());
         }
@@ -1082,7 +1084,7 @@ model = "Other-X"
             Some("deepseek-v4-flash")
         );
         assert!(document(&path).get("model").is_none());
-        let loaded = crate::plugins::providers::load_config(Some(path.clone()), None)?;
+        let loaded = codewhale_plugins::providers::load_config(Some(path.clone()), None)?;
         assert_ne!(loaded.default_model(), "GLM-5.1");
         assert_eq!(loaded.default_model(), selected_route(&path)?.1);
         Ok(())

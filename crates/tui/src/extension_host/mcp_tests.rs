@@ -3,9 +3,10 @@
 use super::*;
 use crate::extension_host::tests::{FixturePlugins, node_for_tests};
 use crate::extension_host::{ExtensionHostOptions, TestManagerGuard};
-use crate::mcp::{McpConnection, McpTimeouts, McpTransport};
-use crate::plugins::activation::TestPolicyGuard;
+use crate::mcp::{McpConnection, McpTransport};
 use codewhale_config::McpBackend;
+use codewhale_mcp::config::McpTimeouts;
+use codewhale_plugins::activation::TestPolicyGuard;
 use std::sync::atomic::Ordering;
 
 const PEER: &str = r#"
@@ -766,7 +767,7 @@ async fn selected_host_without_node_uses_runtime_diagnostic_not_native_gate() {
     let _manager = TestManagerGuard::install(Arc::clone(&manager));
     let config: McpServerConfig =
         serde_json::from_value(json!({"command":"missing-peer"})).unwrap();
-    let mut pool = crate::mcp::McpPool::new(crate::mcp::McpConfig {
+    let mut pool = crate::mcp::McpPool::new(codewhale_mcp::config::McpConfig {
         servers: [("missing-runtime".to_string(), config)].into(),
         ..Default::default()
     });

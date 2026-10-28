@@ -8,12 +8,12 @@
 use std::path::{Path, PathBuf};
 
 use crate::mcp::{
-    McpCommandAvailability, McpConfig, McpManagerSnapshot, McpServerConfig, McpServerSnapshot,
-    static_mcp_command_availability,
+    McpCommandAvailability, McpManagerSnapshot, McpServerSnapshot, static_mcp_command_availability,
 };
 use crate::tui::app::App;
 use crate::tui::hotbar::actions::HotbarActionCategory;
 use codewhale_localization::{Locale, MessageId, tr};
+use codewhale_mcp::config::{McpConfig, McpServerConfig};
 use codewhale_runtime::config::Config;
 use codewhale_util::utils::display_path;
 
@@ -531,22 +531,25 @@ fn plugins_inventory(app: &App, config: &Config, codewhale_home: &Path) -> Inven
     let active_commands = list
         .iter()
         .filter(|plugin| {
-            plugin
-                .component_active(crate::plugins::activation::PluginActivationCapability::Commands)
+            plugin.component_active(
+                codewhale_plugins::activation::PluginActivationCapability::Commands,
+            )
         })
         .map(|plugin| plugin.inventory.commands)
         .sum::<usize>();
     let active_agents = list
         .iter()
         .filter(|plugin| {
-            plugin.component_active(crate::plugins::activation::PluginActivationCapability::Agents)
+            plugin
+                .component_active(codewhale_plugins::activation::PluginActivationCapability::Agents)
         })
         .map(|plugin| plugin.inventory.agents)
         .sum::<usize>();
     let active_hooks = list
         .iter()
         .filter(|plugin| {
-            plugin.component_active(crate::plugins::activation::PluginActivationCapability::Hooks)
+            plugin
+                .component_active(codewhale_plugins::activation::PluginActivationCapability::Hooks)
         })
         .map(|plugin| plugin.inventory.hooks)
         .sum::<usize>();
@@ -797,16 +800,16 @@ mod tests {
         .expect("manifest");
 
         let mut app = test_app(tmp.path(), None, mcp_path, skills_dir);
-        let discovery_config = crate::plugins::discovery::DiscoveryConfig {
+        let discovery_config = codewhale_plugins::discovery::DiscoveryConfig {
             workspace: tmp.path().to_path_buf(),
             user_plugins_dir: plugins_dir,
             workspace_plugins_dir: tmp.path().join("workspace-plugins-unused"),
             builtin_plugin_dirs: Vec::new(),
             state_path: home.join("plugins/state.json"),
         };
-        let discovery = crate::plugins::PluginDiscoveryContext::from_config_and_environment(
+        let discovery = codewhale_plugins::PluginDiscoveryContext::from_config_and_environment(
             &discovery_config,
-            crate::plugins::HostEnvironment::default(),
+            codewhale_plugins::HostEnvironment::default(),
         );
         app.plugin_registry = discovery.registry_for_workspace(tmp.path());
         // Simulate the same skill registration Hotbar uses at startup.

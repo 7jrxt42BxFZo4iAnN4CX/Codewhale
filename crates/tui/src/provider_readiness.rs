@@ -242,9 +242,9 @@ pub(crate) fn credential_state_for_provider(
             let Some(authority) = entry.plugin_authority.as_ref() else {
                 return false;
             };
-            if crate::plugins::registry::verify_plugin_component_authority(
+            if codewhale_plugins::registry::verify_plugin_component_authority(
                 authority,
-                crate::plugins::activation::PluginActivationCapability::Providers,
+                codewhale_plugins::activation::PluginActivationCapability::Providers,
             )
             .is_err()
             {
@@ -2400,8 +2400,8 @@ default_text_model = "deepseek-chat"
         let _cli_key =
             crate::test_support::EnvVarGuard::set("CODEWHALE_CLI_API_KEY", "explicit-cli-key");
 
-        let config =
-            crate::plugins::providers::load_config(Some(config_path), None).expect("load config");
+        let config = codewhale_plugins::providers::load_config(Some(config_path), None)
+            .expect("load config");
         assert_eq!(config.default_model(), "anthropic/private-model");
         assert_eq!(
             config.active_route_api_key().expect("explicit CLI key"),

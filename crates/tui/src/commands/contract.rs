@@ -2776,7 +2776,7 @@ impl CommandProjectContext for ProjectAdapter<'_> {
 /// The single new skills-specific host adapter.
 ///
 /// Owns every concrete skills touch: `App` skill state, `crate::skills`
-/// discovery/mutation/install/recommend services, `crate::plugins` authority
+/// discovery/mutation/install/recommend services, `codewhale_plugins` authority
 /// verification, `SnapshotRepo`, config/network policy, and the async bridge
 /// (`tokio::task::block_in_place`). Portable handlers never name these
 /// subsystems (D3); every method returns portable contract values or safe
@@ -2804,7 +2804,7 @@ where
 /// network-gated install rather than a silent crash. Mirrors
 /// `groups/skills/skills.rs::installer_settings`.
 fn installer_settings() -> (NetworkPolicy, u64, String) {
-    let cfg = crate::plugins::providers::load_config(None, None).unwrap_or_default();
+    let cfg = codewhale_plugins::providers::load_config(None, None).unwrap_or_default();
     let network = cfg
         .network
         .clone()
@@ -3290,7 +3290,7 @@ impl CommandSkillGroupContext for SkillGroupAdapter<'_> {
         match registry {
             Ok(codewhale_skill_install::install::RegistryFetchResult::Loaded(doc)) => {
                 let recommendations =
-                    crate::skills::recommend::recommend_remote_skills(task, &doc, 3);
+                    codewhale_skill_install::recommend::recommend_remote_skills(task, &doc, 3);
                 Ok(recommendations
                     .into_iter()
                     .map(|recommendation| SkillRecommendation {
@@ -3460,11 +3460,15 @@ pub(crate) struct PluginAdapter<'a> {
 }
 
 /// Convert a TUI-owned diagnostic to the portable contract diagnostic.
-fn portable_diagnostic(diagnostic: &crate::plugins::types::PluginDiagnostic) -> PluginDiagnostic {
+fn portable_diagnostic(
+    diagnostic: &codewhale_plugins::types::PluginDiagnostic,
+) -> PluginDiagnostic {
     PluginDiagnostic {
         level: match diagnostic.level {
-            crate::plugins::types::PluginDiagnosticLevel::Warning => PluginDiagnosticLevel::Warning,
-            crate::plugins::types::PluginDiagnosticLevel::Error => PluginDiagnosticLevel::Error,
+            codewhale_plugins::types::PluginDiagnosticLevel::Warning => {
+                PluginDiagnosticLevel::Warning
+            }
+            codewhale_plugins::types::PluginDiagnosticLevel::Error => PluginDiagnosticLevel::Error,
         },
         code: diagnostic.code.to_string(),
         message: diagnostic.message.clone(),
@@ -3474,12 +3478,14 @@ fn portable_diagnostic(diagnostic: &crate::plugins::types::PluginDiagnostic) -> 
 
 /// Convert a TUI marketplace diagnostic into the portable contract diagnostic.
 fn portable_marketplace_diagnostic(
-    diagnostic: &crate::plugins::marketplace::types::MarketplaceDiagnostic,
+    diagnostic: &codewhale_plugins::marketplace::types::MarketplaceDiagnostic,
 ) -> PluginDiagnostic {
     PluginDiagnostic {
         level: match diagnostic.level {
-            crate::plugins::types::PluginDiagnosticLevel::Warning => PluginDiagnosticLevel::Warning,
-            crate::plugins::types::PluginDiagnosticLevel::Error => PluginDiagnosticLevel::Error,
+            codewhale_plugins::types::PluginDiagnosticLevel::Warning => {
+                PluginDiagnosticLevel::Warning
+            }
+            codewhale_plugins::types::PluginDiagnosticLevel::Error => PluginDiagnosticLevel::Error,
         },
         code: diagnostic.code.clone(),
         message: diagnostic.message.clone(),
@@ -3488,7 +3494,7 @@ fn portable_marketplace_diagnostic(
 }
 
 /// Convert a TUI-owned loaded plugin into the portable list summary.
-fn portable_summary(plugin: &crate::plugins::types::LoadedPlugin) -> PluginSummary {
+fn portable_summary(plugin: &codewhale_plugins::types::LoadedPlugin) -> PluginSummary {
     PluginSummary {
         name: plugin.name().to_string(),
         id: plugin.id.as_str().to_string(),
@@ -3504,7 +3510,10 @@ fn portable_summary(plugin: &crate::plugins::types::LoadedPlugin) -> PluginSumma
 }
 
 /// Convert one TUI MCP server config into the portable review detail.
-fn portable_mcp_server(name: &str, server: &crate::mcp::McpServerConfig) -> PluginMcpServerDetail {
+fn portable_mcp_server(
+    name: &str,
+    server: &codewhale_mcp::config::McpServerConfig,
+) -> PluginMcpServerDetail {
     let transport = if server.url.is_some() {
         PluginMcpTransport::Http
     } else if server.command.is_some() {
@@ -3545,7 +3554,7 @@ fn portable_mcp_server(name: &str, server: &crate::mcp::McpServerConfig) -> Plug
 }
 
 /// Convert a TUI-owned loaded plugin into the portable full detail.
-fn portable_detail(plugin: &crate::plugins::types::LoadedPlugin) -> PluginDetail {
+fn portable_detail(plugin: &codewhale_plugins::types::LoadedPlugin) -> PluginDetail {
     let mcp_servers = plugin
         .manifest
         .mcp_servers
@@ -3603,23 +3612,25 @@ fn portable_detail(plugin: &crate::plugins::types::LoadedPlugin) -> PluginDetail
 
 /// Convert a TUI mutation receipt into the portable contract receipt.
 fn portable_plugin_mutation_receipt(
-    receipt: &crate::plugins::mutation::PluginMutationReceipt,
+    receipt: &codewhale_plugins::mutation::PluginMutationReceipt,
 ) -> PluginMutationReceipt {
     let outcome = match &receipt.outcome {
-        crate::plugins::mutation::PluginMutationOutcome::Installed => {
+        codewhale_plugins::mutation::PluginMutationOutcome::Installed => {
             PluginMutationOutcome::Installed
         }
-        crate::plugins::mutation::PluginMutationOutcome::Updated => PluginMutationOutcome::Updated,
-        crate::plugins::mutation::PluginMutationOutcome::NoChange => {
+        codewhale_plugins::mutation::PluginMutationOutcome::Updated => {
+            PluginMutationOutcome::Updated
+        }
+        codewhale_plugins::mutation::PluginMutationOutcome::NoChange => {
             PluginMutationOutcome::NoChange
         }
-        crate::plugins::mutation::PluginMutationOutcome::Uninstalled => {
+        codewhale_plugins::mutation::PluginMutationOutcome::Uninstalled => {
             PluginMutationOutcome::Uninstalled
         }
-        crate::plugins::mutation::PluginMutationOutcome::NeedsApproval(host) => {
+        codewhale_plugins::mutation::PluginMutationOutcome::NeedsApproval(host) => {
             PluginMutationOutcome::NeedsApproval(host.clone())
         }
-        crate::plugins::mutation::PluginMutationOutcome::NetworkDenied(host) => {
+        codewhale_plugins::mutation::PluginMutationOutcome::NetworkDenied(host) => {
             PluginMutationOutcome::NetworkDenied(host.clone())
         }
     };
@@ -3634,7 +3645,7 @@ fn portable_plugin_mutation_receipt(
 
 /// Convert a TUI export receipt into the portable contract receipt.
 fn portable_export_receipt(
-    receipt: &crate::plugins::export::PluginExportReceipt,
+    receipt: &codewhale_plugins::export::PluginExportReceipt,
 ) -> PluginExportReceipt {
     PluginExportReceipt {
         exported_name: receipt.exported_name.clone(),
@@ -3669,11 +3680,11 @@ fn portable_legacy_tool(
 
 /// Convert one TUI marketplace candidate into the portable value.
 fn portable_marketplace_candidate(
-    entry: &crate::plugins::marketplace::store::StoredMarketplaceCatalog,
-    candidate: &crate::plugins::marketplace::types::MarketplaceCandidate,
-    registry: &crate::plugins::PluginRegistry,
+    entry: &codewhale_plugins::marketplace::store::StoredMarketplaceCatalog,
+    candidate: &codewhale_plugins::marketplace::types::MarketplaceCandidate,
+    registry: &codewhale_plugins::PluginRegistry,
 ) -> PluginMarketplaceCandidate {
-    use crate::plugins::marketplace::document::{
+    use codewhale_plugins::marketplace::document::{
         CatalogInstallResolution, resolve_candidate_install,
     };
     let install_plan = match resolve_candidate_install(entry, candidate, registry) {
@@ -3723,8 +3734,8 @@ fn portable_marketplace_candidate(
 
 /// Convert one stored TUI marketplace catalog (with its source path).
 fn portable_marketplace_catalog_with_source(
-    entry: &crate::plugins::marketplace::store::StoredMarketplaceCatalog,
-    registry: &crate::plugins::PluginRegistry,
+    entry: &codewhale_plugins::marketplace::store::StoredMarketplaceCatalog,
+    registry: &codewhale_plugins::PluginRegistry,
 ) -> PluginMarketplaceCatalog {
     let catalog = &entry.catalog;
     PluginMarketplaceCatalog {
@@ -3762,7 +3773,7 @@ fn scan_managed_plugins_portable(
     use std::path::PathBuf;
 
     const MAX_MANAGED_CHILDREN: usize = 128;
-    const KIMI_PLUGIN_JSON_NAME: &str = crate::plugins::agent_plugin::KIMI_PLUGIN_JSON_NAME;
+    const KIMI_PLUGIN_JSON_NAME: &str = codewhale_plugins::agent_plugin::KIMI_PLUGIN_JSON_NAME;
 
     struct Candidate {
         name: String,
@@ -3792,15 +3803,14 @@ fn scan_managed_plugins_portable(
                 canonical_path.display()
             ));
         }
-        let validated = crate::plugins::manifest::PluginManifest::validate_from_path(
-            &manifest_path,
-        )
-        .map_err(|error| {
-            format!(
-                "Kimi manifest invalid at {}: {error}",
-                canonical_path.display()
-            )
-        })?;
+        let validated =
+            codewhale_plugins::manifest::PluginManifest::validate_from_path(&manifest_path)
+                .map_err(|error| {
+                    format!(
+                        "Kimi manifest invalid at {}: {error}",
+                        canonical_path.display()
+                    )
+                })?;
         let name = validated.manifest.plugin.name.clone();
         if canonical_path.file_name().and_then(|part| part.to_str()) != Some(name.as_str()) {
             return Err(format!(
@@ -4053,8 +4063,11 @@ impl CommandPluginContext for PluginAdapter<'_> {
     fn reload_nudge(&mut self) -> Option<String> {
         let mut app = self.host.app.borrow_mut();
         let registry = app.plugin_registry.clone();
-        crate::plugins::plugin_reload_nudge(registry.as_ref(), &mut app.plugin_reload_nudge_stamp)
-            .map(str::to_string)
+        codewhale_plugins::plugin_reload_nudge(
+            registry.as_ref(),
+            &mut app.plugin_reload_nudge_stamp,
+        )
+        .map(str::to_string)
     }
 
     fn state_path(&self) -> Option<PathBuf> {
@@ -4072,26 +4085,26 @@ impl CommandPluginContext for PluginAdapter<'_> {
             return Err("Usage: /plugin suggest <task of at least 3 characters>".to_string());
         }
         let app = self.host.app.borrow();
-        let marketplace = crate::plugins::recommend::load_marketplace_candidates(
+        let marketplace = codewhale_plugins::recommend::load_marketplace_candidates(
             app.plugin_registry.state_path(),
         );
-        let recommendations = crate::plugins::recommend::recommend_plugins_for_task(
+        let recommendations = codewhale_plugins::recommend::recommend_plugins_for_task(
             task,
             app.plugin_registry.as_ref(),
             &marketplace,
-            crate::plugins::recommend::RecommendOptions::default(),
+            codewhale_plugins::recommend::RecommendOptions::default(),
         );
         Ok(recommendations
             .into_iter()
             .map(|recommendation| {
                 let description = match &recommendation.source {
-                    crate::plugins::recommend::PluginMatchSource::Installed { id } => app
+                    codewhale_plugins::recommend::PluginMatchSource::Installed { id } => app
                         .plugin_registry
                         .get(id)
                         .and_then(|plugin| plugin.manifest.plugin.description.clone())
                         .filter(|description| !description.trim().is_empty())
                         .unwrap_or_else(|| "No description provided.".to_string()),
-                    crate::plugins::recommend::PluginMatchSource::Marketplace { catalog_id } => {
+                    codewhale_plugins::recommend::PluginMatchSource::Marketplace { catalog_id } => {
                         marketplace
                             .iter()
                             .find(|candidate| {
@@ -4104,12 +4117,12 @@ impl CommandPluginContext for PluginAdapter<'_> {
                     }
                 };
                 let state_label = match &recommendation.source {
-                    crate::plugins::recommend::PluginMatchSource::Installed { id } => app
+                    codewhale_plugins::recommend::PluginMatchSource::Installed { id } => app
                         .plugin_registry
                         .get(id)
                         .map(|plugin| plugin.state_label().to_string())
                         .unwrap_or_else(|| "installed".to_string()),
-                    crate::plugins::recommend::PluginMatchSource::Marketplace { .. } => {
+                    codewhale_plugins::recommend::PluginMatchSource::Marketplace { .. } => {
                         "not installed".to_string()
                     }
                 };
@@ -4129,7 +4142,7 @@ impl CommandPluginContext for PluginAdapter<'_> {
             let app = self.host.app.borrow();
             app.plugin_registry
                 .get(selector)
-                .map(crate::plugins::types::LoadedPlugin::review_token)
+                .map(codewhale_plugins::types::LoadedPlugin::review_token)
                 .ok_or_else(|| format!("no plugin named {selector}"))?
         };
         if token != expected {
@@ -4193,8 +4206,8 @@ impl CommandPluginContext for PluginAdapter<'_> {
         source: &str,
         expected_content_hash: Option<&str>,
     ) -> Result<PluginMutationReceipt, String> {
-        use crate::plugins::install::PluginInstallSource;
-        use crate::plugins::mutation::{
+        use codewhale_plugins::install::PluginInstallSource;
+        use codewhale_plugins::mutation::{
             PluginMutationContext, PluginMutationOutcome, PluginMutationRequest,
         };
 
@@ -4212,7 +4225,7 @@ impl CommandPluginContext for PluginAdapter<'_> {
         let outcome = run_async(async move {
             let ctx = PluginMutationContext {
                 network: &network,
-                max_size: crate::plugins::install::DEFAULT_MAX_SIZE_BYTES,
+                max_size: codewhale_plugins::install::DEFAULT_MAX_SIZE_BYTES,
             };
             let request = match expected_for_request {
                 Some(expected_content_hash) => PluginMutationRequest::InstallExact {
@@ -4223,7 +4236,7 @@ impl CommandPluginContext for PluginAdapter<'_> {
                     source: plugin_source,
                 },
             };
-            crate::plugins::mutation::execute(request, &ctx, registry).await
+            codewhale_plugins::mutation::execute(request, &ctx, registry).await
         });
         match outcome {
             Ok(receipt) => {
@@ -4241,7 +4254,7 @@ impl CommandPluginContext for PluginAdapter<'_> {
     }
 
     fn update(&mut self, selector: &str) -> Result<PluginMutationReceipt, String> {
-        use crate::plugins::mutation::{
+        use codewhale_plugins::mutation::{
             PluginMutationContext, PluginMutationOutcome, PluginMutationRequest,
         };
         let network = plugin_network_policy();
@@ -4251,9 +4264,9 @@ impl CommandPluginContext for PluginAdapter<'_> {
         let outcome = run_async(async move {
             let ctx = PluginMutationContext {
                 network: &network,
-                max_size: crate::plugins::install::DEFAULT_MAX_SIZE_BYTES,
+                max_size: codewhale_plugins::install::DEFAULT_MAX_SIZE_BYTES,
             };
-            crate::plugins::mutation::execute(
+            codewhale_plugins::mutation::execute(
                 PluginMutationRequest::Update {
                     selector: selector_owned,
                 },
@@ -4277,7 +4290,7 @@ impl CommandPluginContext for PluginAdapter<'_> {
     }
 
     fn uninstall(&mut self, selector: &str) -> Result<PluginMutationReceipt, String> {
-        use crate::plugins::mutation::{
+        use codewhale_plugins::mutation::{
             PluginMutationContext, PluginMutationOutcome, PluginMutationRequest,
         };
         let network = plugin_network_policy();
@@ -4287,9 +4300,9 @@ impl CommandPluginContext for PluginAdapter<'_> {
         let outcome = run_async(async move {
             let ctx = PluginMutationContext {
                 network: &network,
-                max_size: crate::plugins::install::DEFAULT_MAX_SIZE_BYTES,
+                max_size: codewhale_plugins::install::DEFAULT_MAX_SIZE_BYTES,
             };
-            crate::plugins::mutation::execute(
+            codewhale_plugins::mutation::execute(
                 PluginMutationRequest::Uninstall {
                     selector: selector_owned,
                 },
@@ -4317,8 +4330,9 @@ impl CommandPluginContext for PluginAdapter<'_> {
     fn uninstall_path(&mut self, name: &str, plugins_dir: &Path) -> Result<(), String> {
         // File-level rollback removal for a bundle whose content hash
         // mismatched; no registry resolution, rediscovery, or skill side
-        // effects (FEAT-020 D1 — the `crate::plugins` call stays host-side).
-        crate::plugins::install::uninstall(name, plugins_dir).map_err(|error| format!("{error:#}"))
+        // effects (FEAT-020 D1 — the `codewhale_plugins` call stays host-side).
+        codewhale_plugins::install::uninstall(name, plugins_dir)
+            .map_err(|error| format!("{error:#}"))
     }
 
     fn export(&self, selector: &str, target: &Path) -> Result<PluginExportReceipt, String> {
@@ -4340,7 +4354,7 @@ impl CommandPluginContext for PluginAdapter<'_> {
         } else {
             app.workspace.join(target)
         };
-        crate::plugins::export::export_plugin_bundle(&plugin, &target, &existing_names)
+        codewhale_plugins::export::export_plugin_bundle(&plugin, &target, &existing_names)
             .map(|receipt| portable_export_receipt(&receipt))
             .map_err(|error| format!("Export of `{}` failed: {}", plugin.name(), error))
     }
@@ -4396,7 +4410,7 @@ impl CommandPluginContext for PluginAdapter<'_> {
             let canonical = package
                 .canonicalize()
                 .map_err(|_| format!("DSH package not found at {}", package.display()))?;
-            let (conversion, content_hash) = crate::plugins::install::preview_dsh(&canonical)
+            let (conversion, content_hash) = codewhale_plugins::install::preview_dsh(&canonical)
                 .map_err(|error| format!("{error:#}"))?;
             Ok(codewhale_command_contract::facets::PluginDshPreview {
                 package_path: canonical,
@@ -4451,8 +4465,8 @@ impl CommandPluginContext for PluginAdapter<'_> {
         canonical_path: &Path,
         expected_content_hash: &str,
     ) -> Result<PluginMutationReceipt, String> {
-        use crate::plugins::install::PluginInstallSource;
-        use crate::plugins::mutation::{
+        use codewhale_plugins::install::PluginInstallSource;
+        use codewhale_plugins::mutation::{
             PluginMutationContext, PluginMutationOutcome, PluginMutationRequest,
         };
         let network = plugin_network_policy();
@@ -4463,9 +4477,9 @@ impl CommandPluginContext for PluginAdapter<'_> {
         let outcome = run_async(async move {
             let ctx = PluginMutationContext {
                 network: &network,
-                max_size: crate::plugins::install::DEFAULT_MAX_SIZE_BYTES,
+                max_size: codewhale_plugins::install::DEFAULT_MAX_SIZE_BYTES,
             };
-            crate::plugins::mutation::execute(
+            codewhale_plugins::mutation::execute(
                 PluginMutationRequest::InstallExact {
                     source: PluginInstallSource::LocalPath(path),
                     expected_content_hash,
@@ -4491,7 +4505,7 @@ impl CommandPluginContext for PluginAdapter<'_> {
 
     fn marketplace_state(&self) -> Result<PluginMarketplaceState, String> {
         let app = self.host.app.borrow();
-        let store = crate::plugins::marketplace::store::MarketplaceStore::open(
+        let store = codewhale_plugins::marketplace::store::MarketplaceStore::open(
             app.plugin_registry.state_path(),
         )
         .ok_or_else(|| {
@@ -4516,7 +4530,7 @@ impl CommandPluginContext for PluginAdapter<'_> {
         path: &Path,
     ) -> Result<PluginMarketplaceAddReceipt, String> {
         let app = self.host.app.borrow();
-        let store = crate::plugins::marketplace::store::MarketplaceStore::open(
+        let store = codewhale_plugins::marketplace::store::MarketplaceStore::open(
             app.plugin_registry.state_path(),
         )
         .ok_or_else(|| {
@@ -4524,7 +4538,7 @@ impl CommandPluginContext for PluginAdapter<'_> {
                 .to_string()
         })?;
         let raw_path = path.to_string_lossy();
-        let loaded = crate::plugins::marketplace::document::load_catalog_document(
+        let loaded = codewhale_plugins::marketplace::document::load_catalog_document(
             name,
             &app.workspace,
             &raw_path,
@@ -4544,7 +4558,7 @@ impl CommandPluginContext for PluginAdapter<'_> {
 
     fn marketplace_remove(&mut self, name: &str) -> Result<bool, String> {
         let app = self.host.app.borrow();
-        let store = crate::plugins::marketplace::store::MarketplaceStore::open(
+        let store = codewhale_plugins::marketplace::store::MarketplaceStore::open(
             app.plugin_registry.state_path(),
         )
         .ok_or_else(|| {
@@ -4560,7 +4574,7 @@ impl CommandPluginContext for PluginAdapter<'_> {
         candidate: &str,
     ) -> Result<PluginMutationReceipt, String> {
         let app = self.host.app.borrow();
-        let store = crate::plugins::marketplace::store::MarketplaceStore::open(
+        let store = codewhale_plugins::marketplace::store::MarketplaceStore::open(
             app.plugin_registry.state_path(),
         )
         .ok_or_else(|| {
@@ -4576,22 +4590,22 @@ impl CommandPluginContext for PluginAdapter<'_> {
         let candidate_entry = entry.catalog.candidate_by_name(candidate).ok_or_else(|| {
             format!("No candidate `{candidate_text}` in marketplace `{catalog_text}`.")
         })?;
-        let spec = match crate::plugins::marketplace::document::resolve_candidate_install(
+        let spec = match codewhale_plugins::marketplace::document::resolve_candidate_install(
             &entry,
             candidate_entry,
             &app.plugin_registry,
         ) {
-            crate::plugins::marketplace::document::CatalogInstallResolution::Supported {
+            codewhale_plugins::marketplace::document::CatalogInstallResolution::Supported {
                 spec,
                 ..
             } => spec,
-            crate::plugins::marketplace::document::CatalogInstallResolution::AlreadyPresent {
+            codewhale_plugins::marketplace::document::CatalogInstallResolution::AlreadyPresent {
                 plugin,
                 reason,
             } => {
                 // Installing a bundle Codewhale ships succeeds as a no-op
                 // (B5); any other occupied name stays a refusal.
-                if plugin.scope == crate::plugins::types::PluginScope::Builtin {
+                if plugin.scope == codewhale_plugins::types::PluginScope::Builtin {
                     return Ok(PluginMutationReceipt {
                         name: plugin.id.as_str().to_string(),
                         path: None,
@@ -4603,7 +4617,7 @@ impl CommandPluginContext for PluginAdapter<'_> {
                 }
                 return Err(escape_review_text(&reason));
             }
-            crate::plugins::marketplace::document::CatalogInstallResolution::Unsupported {
+            codewhale_plugins::marketplace::document::CatalogInstallResolution::Unsupported {
                 reason,
             } => {
                 let localized = key_to_plugin_message_id(&reason)
@@ -4614,7 +4628,7 @@ impl CommandPluginContext for PluginAdapter<'_> {
                     escape_review_text(&localized)
                 ));
             }
-            crate::plugins::marketplace::document::CatalogInstallResolution::HasErrors {
+            codewhale_plugins::marketplace::document::CatalogInstallResolution::HasErrors {
                 diagnostics,
             } => {
                 return Err(format!(
@@ -6716,16 +6730,16 @@ mod tests {
         // Discover only the demo bundle: the host's real `~/.codewhale/plugins`
         // and materialized builtin plugins must not leak diagnostics into this
         // assertion (they did on a shared CI agent).
-        let plugin_config = crate::plugins::discovery::DiscoveryConfig {
+        let plugin_config = codewhale_plugins::discovery::DiscoveryConfig {
             workspace: tmp.path().to_path_buf(),
             user_plugins_dir: tmp.path().join("user-plugins"),
             workspace_plugins_dir: tmp.path().join(".codewhale/plugins"),
             builtin_plugin_dirs: Vec::new(),
             state_path: tmp.path().join("user-plugins/state.json"),
         };
-        let discovery = crate::plugins::PluginDiscoveryContext::from_config_and_environment(
+        let discovery = codewhale_plugins::PluginDiscoveryContext::from_config_and_environment(
             &plugin_config,
-            crate::plugins::HostEnvironment::capture(),
+            codewhale_plugins::HostEnvironment::capture(),
         );
         app.plugin_registry = discovery.registry_for_workspace(tmp.path());
         let mut bundle = app.command_contexts();
@@ -6803,16 +6817,16 @@ mod tests {
         // Discover only the demo bundle: the host's real `~/.codewhale/plugins`
         // and materialized builtin plugins must not leak diagnostics into this
         // assertion (they did on a shared CI agent).
-        let plugin_config = crate::plugins::discovery::DiscoveryConfig {
+        let plugin_config = codewhale_plugins::discovery::DiscoveryConfig {
             workspace: tmp.path().to_path_buf(),
             user_plugins_dir: tmp.path().join("user-plugins"),
             workspace_plugins_dir: tmp.path().join(".codewhale/plugins"),
             builtin_plugin_dirs: Vec::new(),
             state_path: tmp.path().join("user-plugins/state.json"),
         };
-        let discovery = crate::plugins::PluginDiscoveryContext::from_config_and_environment(
+        let discovery = codewhale_plugins::PluginDiscoveryContext::from_config_and_environment(
             &plugin_config,
-            crate::plugins::HostEnvironment::capture(),
+            codewhale_plugins::HostEnvironment::capture(),
         );
         app.plugin_registry = discovery.registry_for_workspace(tmp.path());
         // Capture the review token before borrowing the mutable facet.

@@ -67,6 +67,7 @@ telemetry         cargo test -p codewhale-telemetry --lib --locked
 tools             cargo test -p codewhale-tools --lib --locked
 tui               cargo test -p codewhale-tui --lib --locked
 skill-install     cargo test -p codewhale-skill-install --lib --locked
+plugins           cargo test -p codewhale-plugins --lib --locked
 util              cargo test -p codewhale-util --lib --locked
 dependencies      cargo test -p codewhale-dependencies --lib --locked
 snapshot          cargo test -p codewhale-snapshot --lib --locked
@@ -218,6 +219,7 @@ case $area in
   tools) pkg=codewhale-tools ;;
   tui) pkg=codewhale-tui ;;
   skill-install) pkg=codewhale-skill-install ;;
+  plugins) pkg=codewhale-plugins ;;
   util) pkg=codewhale-util ;;
   dependencies) pkg=codewhale-dependencies ;;
   snapshot) pkg=codewhale-snapshot ;;

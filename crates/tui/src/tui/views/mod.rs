@@ -2249,7 +2249,7 @@ impl ConfigView {
             }
             Err(error) => (Settings::default(), Some(error.to_string())),
         };
-        let (config, config_error) = match crate::plugins::providers::load_config(
+        let (config, config_error) = match codewhale_plugins::providers::load_config(
             app.config_path.clone(),
             app.config_profile.as_deref(),
         ) {
@@ -8945,7 +8945,7 @@ base_url = "https://api.xiaomimimo.com/v1"
         std::fs::write(&path, "[notifications]\nquiet = false\nsound = \"off\"\n").unwrap();
         let mut app = create_test_app();
         app.config_path = Some(path.clone());
-        let mut config = crate::plugins::providers::load_config(Some(path), None).unwrap();
+        let mut config = codewhale_plugins::providers::load_config(Some(path), None).unwrap();
         crate::tui::ui::apply_notification_update(
             &mut app,
             &mut config,
@@ -9153,9 +9153,10 @@ base_url = "https://api.xiaomimimo.com/v1"
                     )
                     .unwrap();
                     edit.persist(&path).unwrap();
-                    let loaded = crate::plugins::providers::load_config(Some(path.clone()), None)
-                        .unwrap()
-                        .notifications_config();
+                    let loaded =
+                        codewhale_plugins::providers::load_config(Some(path.clone()), None)
+                            .unwrap()
+                            .notifications_config();
                     assert_eq!(
                         loaded.display(setting),
                         edit.display(),
@@ -9396,7 +9397,7 @@ context_window = 262144
         .expect("config");
         let _config_path =
             crate::test_support::EnvVarGuard::set("DEEPSEEK_CONFIG_PATH", &config_path);
-        let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)
+        let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)
             .expect("captured fixture config");
         let options = TuiOptions {
             config_path: Some(config_path),
@@ -9471,7 +9472,7 @@ context_window = 131072
 "#,
         )
         .expect("saved custom provider");
-        let saved = crate::plugins::providers::load_config(Some(saved_path.clone()), None)
+        let saved = codewhale_plugins::providers::load_config(Some(saved_path.clone()), None)
             .expect("saved custom config");
         let saved_identity = saved
             .active_provider_identity()

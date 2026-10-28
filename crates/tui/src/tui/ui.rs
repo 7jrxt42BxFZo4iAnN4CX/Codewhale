@@ -2524,8 +2524,9 @@ default_text_model = "legacy-model"
             custom["base_url"].as_str(),
             Some("http://127.0.0.1:18180/v1")
         );
-        let reloaded = crate::plugins::providers::load_config(Some(config_env.config_path()), None)
-            .expect("reload legacy");
+        let reloaded =
+            codewhale_plugins::providers::load_config(Some(config_env.config_path()), None)
+                .expect("reload legacy");
         assert!(reloaded.selects_literal_custom_provider());
         assert_eq!(
             reloaded
@@ -2561,8 +2562,9 @@ model = "model-b"
 "#,
         )
         .expect("seed coexistence config");
-        let config = crate::plugins::providers::load_config(Some(config_env.config_path()), None)
-            .expect("load config");
+        let config =
+            codewhale_plugins::providers::load_config(Some(config_env.config_path()), None)
+                .expect("load config");
         assert!(config.selects_literal_custom_provider());
         let identity = config
             .resolve_provider_identity("custom-b")

@@ -6019,7 +6019,7 @@ fn test_invalid_role_error_lists_real_aliases() {
 #[test]
 fn plugin_agent_profile_resolves_from_staged_snapshot_and_rechecks_revocation() {
     let _lock = crate::test_support::lock_test_env();
-    let fixture = crate::plugins::test_fixture::DeclarativePluginFixture::new();
+    let fixture = codewhale_plugins::test_fixture::DeclarativePluginFixture::new();
     let config = codewhale_config::FleetConfigToml::default();
     let roster = FleetRoster::load_with_plugins(&config, &fixture.workspace, &fixture.registry);
     let member = roster.get("plugin-scout").expect("plugin Agent is loaded");
@@ -12591,14 +12591,14 @@ fn fresh_forked_and_nested_subagents_share_authority_bound_skill_catalogs() {
         "---\nname: review\ndescription: reviewed plugin review\n---\nbody\n",
     )
     .expect("plugin Skill");
-    let config = crate::plugins::discovery::DiscoveryConfig {
+    let config = codewhale_plugins::discovery::DiscoveryConfig {
         workspace: workspace.clone(),
         user_plugins_dir: tmp.path().join("user-plugins"),
         workspace_plugins_dir: workspace.join(".codewhale/plugins"),
         builtin_plugin_dirs: Vec::new(),
         state_path: tmp.path().join("plugin-state/state.json"),
     };
-    let mut plugins = crate::plugins::discovery::discover_with_config(&config);
+    let mut plugins = codewhale_plugins::discovery::discover_with_config(&config);
     plugins.trust("demo").expect("trust plugin");
     plugins.enable("demo").expect("enable plugin");
     let context = ToolContext::new(&workspace).with_plugin_registry(Arc::new(plugins));
@@ -13657,7 +13657,7 @@ fn subagent_registry_with_mcp_action(auto_approve: bool) -> (ChildCoreProbe, tem
     runtime.context.auto_approve = auto_approve;
     // Core dispatches MCP through the captured pool; the registry facade supplies its schema.
     runtime = runtime.with_mcp_pool(Some(Arc::new(tokio::sync::Mutex::new(
-        crate::mcp::McpPool::new(crate::mcp::McpConfig::default()),
+        crate::mcp::McpPool::new(codewhale_mcp::config::McpConfig::default()),
     ))));
     let mut registry = ChildCoreProbe::new(
         runtime,

@@ -2,7 +2,7 @@
 use super::*;
 use crate::extension_host::tests::node_for_tests;
 use crate::extension_host::{ExtensionHostManager, ExtensionHostOptions, TestManagerGuard};
-use crate::plugins::activation::TestPolicyGuard;
+use codewhale_plugins::activation::TestPolicyGuard;
 use codewhale_runtime::config::Config;
 use codewhale_runtime::features::{Feature, Features, FeaturesToml};
 use std::sync::Arc;
@@ -164,7 +164,7 @@ async fn real_host_speech_options_and_formats_match_both_legacy_surfaces() {
             );
         }
     }
-    assert!(!crate::plugins::activation::extension_host_policy_enabled());
+    assert!(!codewhale_plugins::activation::extension_host_policy_enabled());
     manager.shutdown().await;
 }
 

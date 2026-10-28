@@ -18,7 +18,7 @@ use codewhale_runtime::process_tree::ProcessTree;
 #[derive(Debug, Clone)]
 pub(crate) struct HookCaller {
     pub workspace: PathBuf,
-    pub plugins: Option<Arc<crate::plugins::PluginRegistry>>,
+    pub plugins: Option<Arc<codewhale_plugins::PluginRegistry>>,
     pub session_id: Option<String>,
     pub agent_id: Option<String>,
     pub origin_turn_id: Option<String>,
@@ -1304,7 +1304,7 @@ impl ObserverJob {
         let policy = match &self {
             Self::Environment { hooks, .. } | Self::Json { hooks, .. } => hooks.native_policy,
         };
-        let _policy = crate::plugins::activation::PolicyScope::propagate(policy);
+        let _policy = codewhale_plugins::activation::PolicyScope::propagate(policy);
         match self {
             Self::Environment {
                 hooks,
@@ -1443,7 +1443,7 @@ impl BackgroundHookJob {
             }
             return;
         }
-        if crate::plugins::activation::extension_host_policy_enabled() {
+        if codewhale_plugins::activation::extension_host_policy_enabled() {
             tracing::warn!(target:"hooks",hook=%self.label,"legacy background hook was withdrawn by enabled host policy");
             return;
         }
@@ -1607,7 +1607,7 @@ impl HookExecutor {
     pub(crate) fn bind_caller(&self, caller: HookCaller) -> Self {
         let mut bound = self.clone();
         bound.caller = Some(caller);
-        bound.native_policy = crate::plugins::activation::extension_host_policy_enabled();
+        bound.native_policy = codewhale_plugins::activation::extension_host_policy_enabled();
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             bound.engine_handle = Some(handle);
         }
@@ -1698,7 +1698,7 @@ impl HookExecutor {
             cancel: None,
             host_manager: crate::extension_host::manager(),
             engine_handle: tokio::runtime::Handle::try_current().ok(),
-            native_policy: crate::plugins::activation::extension_host_policy_enabled(),
+            native_policy: codewhale_plugins::activation::extension_host_policy_enabled(),
             #[cfg(test)]
             lose_message_submit_executor: false,
         }
@@ -1748,7 +1748,7 @@ impl HookExecutor {
             cancel: None,
             host_manager: crate::extension_host::manager(),
             engine_handle: tokio::runtime::Handle::try_current().ok(),
-            native_policy: crate::plugins::activation::extension_host_policy_enabled(),
+            native_policy: codewhale_plugins::activation::extension_host_policy_enabled(),
             #[cfg(test)]
             lose_message_submit_executor: false,
         }
@@ -2357,7 +2357,7 @@ impl HookExecutor {
         env_vars: &HashMap<String, String>,
         stdin_json: Option<&serde_json::Value>,
     ) -> HookResult {
-        let _policy = crate::plugins::activation::PolicyScope::propagate(self.native_policy);
+        let _policy = codewhale_plugins::activation::PolicyScope::propagate(self.native_policy);
         if !self.native_policy {
             if hook.native_shell.is_some() {
                 return unavailable_hook(hook, "Native shell hook is disabled");
@@ -2405,13 +2405,13 @@ impl HookExecutor {
         };
         let turn_cancel = self.cancel.clone();
         let work = handle.spawn(async move {
-            let _policy = crate::plugins::activation::PolicyScope::propagate(policy);
+            let _policy = codewhale_plugins::activation::PolicyScope::propagate(policy);
             #[cfg(test)]
             let _env_scope = crate::test_support::join_env_scope(env_scope);
             let timeout = Duration::from_secs(executor.effective_timeout_secs(&owned_hook));
             let hook_for_run = owned_hook.clone();
             let run = manager.execute_hook(caller, owned_hook, timeout, query, move |cancel| {
-                let _policy = crate::plugins::activation::PolicyScope::propagate(policy);
+                let _policy = codewhale_plugins::activation::PolicyScope::propagate(policy);
                 executor.execute_sync_legacy(&hook_for_run, &env, input.as_ref(), Some(&cancel))
             });
             let result = match turn_cancel {
@@ -3590,7 +3590,7 @@ mod tests {
     #[test]
     fn plugin_hook_runs_after_restart_and_process_spawn_rechecks_revocation() {
         let _lock = lock_test_env();
-        let fixture = crate::plugins::test_fixture::DeclarativePluginFixture::new();
+        let fixture = codewhale_plugins::test_fixture::DeclarativePluginFixture::new();
         let config = crate::hooks::config::load_with_project_and_plugins(
             HooksConfig {
                 enabled: true,
@@ -3649,7 +3649,7 @@ mod tests {
     #[test]
     fn queued_plugin_hook_rechecks_revocation_at_dequeue() {
         let _lock = lock_test_env();
-        let fixture = crate::plugins::test_fixture::DeclarativePluginFixture::new();
+        let fixture = codewhale_plugins::test_fixture::DeclarativePluginFixture::new();
         let blocker_one = Hook::new(HookEvent::SessionStart, "sleep 1").background();
         let blocker_two = Hook::new(HookEvent::SessionStart, "sleep 1").background();
         let mut config = crate::hooks::config::load_with_project_and_plugins(

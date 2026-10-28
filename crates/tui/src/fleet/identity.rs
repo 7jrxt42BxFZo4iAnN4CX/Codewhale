@@ -32,7 +32,7 @@ const MAX_IDENTITY_FIELD_CHARS: usize = 160;
 pub fn load_effective_roster(
     fleet_config: &FleetConfigToml,
     workspace: &Path,
-    plugins: Option<&crate::plugins::PluginRegistry>,
+    plugins: Option<&codewhale_plugins::PluginRegistry>,
 ) -> FleetRoster {
     let selected = match resolve_selected_fleet(workspace) {
         Ok(selected) => selected,

@@ -16433,7 +16433,7 @@ fn dynamic_tool_result_backstop_matches_mcp_tools_call_budget() {
     // 1800s executions, so the backstop must not fire earlier than that.
     assert_eq!(
         DYNAMIC_TOOL_RESULT_TIMEOUT,
-        Duration::from_secs(crate::mcp::McpTimeouts::default().execute_timeout),
+        Duration::from_secs(codewhale_mcp::config::McpTimeouts::default().execute_timeout),
         "dynamic tool-result backstop must not undercut the MCP tools/call budget"
     );
     assert_eq!(DYNAMIC_TOOL_RESULT_TIMEOUT, Duration::from_secs(1800));

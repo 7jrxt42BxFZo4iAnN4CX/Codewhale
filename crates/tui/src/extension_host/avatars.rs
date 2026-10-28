@@ -5,13 +5,13 @@ use super::ManagerShared;
 use super::protocol::{RegisterParams, RegisterResult};
 use super::supervisor::HostRequestContext;
 use super::tier::HostTier;
-use crate::plugins::{
-    activation::PluginActivationCapability,
-    manifest::{PluginManifest, ValidatedManifest},
-};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use codewhale_config::PluginAuthority;
 use codewhale_config::{EntryRef, OwnerRef};
+use codewhale_plugins::{
+    activation::PluginActivationCapability,
+    manifest::{PluginManifest, ValidatedManifest},
+};
 use codewhale_ratatui::avatar::{MAX_PACK_BYTES, MAX_PNG_BYTES, Pack, RegisteredPack};
 use sha2::{Digest, Sha256};
 use std::{
@@ -71,7 +71,7 @@ fn reviewed_bytes(
 }
 
 fn snapshot(authority: &PluginAuthority, relative: &Path) -> Result<(Pack, Vec<Vec<u8>>), String> {
-    crate::plugins::registry::verify_plugin_component_authority(
+    codewhale_plugins::registry::verify_plugin_component_authority(
         authority,
         PluginActivationCapability::Native,
     )?;
@@ -96,7 +96,7 @@ fn snapshot(authority: &PluginAuthority, relative: &Path) -> Result<(Pack, Vec<V
             .map_err(|_| "avatar PNG cannot be decoded")?;
         images.push(png);
     }
-    crate::plugins::registry::verify_plugin_component_authority(
+    codewhale_plugins::registry::verify_plugin_component_authority(
         authority,
         PluginActivationCapability::Native,
     )?;
@@ -191,7 +191,7 @@ async fn live(workspace: std::path::PathBuf) -> Vec<AvatarRegistration> {
                 let Some(authority) = authority else { continue };
                 if authority.workspace != workspace
                     || authority.content_hash != entry.content_hash
-                    || crate::plugins::registry::verify_plugin_component_authority(
+                    || codewhale_plugins::registry::verify_plugin_component_authority(
                         &authority,
                         PluginActivationCapability::Native,
                     )

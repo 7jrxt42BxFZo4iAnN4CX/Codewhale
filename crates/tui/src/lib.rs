@@ -60,7 +60,12 @@ mod model_relevance;
 mod model_routing;
 mod models_dev_live;
 mod operate;
-mod plugins;
+#[cfg(test)]
+mod plugins_dsh_tests;
+#[cfg(test)]
+mod plugins_provider_tests;
+#[cfg(test)]
+mod plugins_skill_tests;
 mod pricing;
 mod profile_constitution;
 mod project_context;
@@ -133,16 +138,14 @@ mod workspace_trust;
 
 use crate::eval::{EvalHarness, EvalHarnessConfig, ScenarioStepKind};
 use crate::llm_client::LlmClient;
-use crate::mcp::{
-    McpCommandAvailability, McpPool, McpServerConfig, McpServerOAuthConfig,
-    is_relative_stdio_path_arg,
-};
+use crate::mcp::{McpCommandAvailability, McpPool};
 #[cfg(test)]
 use crate::session_manager::create_saved_session;
 use crate::session_manager::{SessionManager, truncate_id};
 use crate::tui::app::ScreenMode;
 use crate::tui::history::{summarize_tool_args, summarize_tool_output};
 use codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL;
+use codewhale_mcp::config::{McpServerConfig, McpServerOAuthConfig, is_relative_stdio_path_arg};
 use codewhale_models::Role;
 use codewhale_models::{ContentBlock, Message, SystemPrompt};
 use codewhale_runtime::child_env;
@@ -1925,6 +1928,7 @@ pub fn run(options: RuntimeOptions, args: Vec<String>) -> std::process::ExitCode
 /// args instead of reading `std::env::args()`. Startup facts are captured by
 /// the canonical CLI and applied before config/discovery or worker startup.
 fn run_with_args(options: RuntimeOptions, args: Vec<String>) -> Result<()> {
+    crate::extension_host::composition_review::install();
     let inherited_listener = prepare_runtime_listener_handoff()?;
     let args: Vec<String> = std::iter::once("codewhale".to_string())
         .chain(args)
@@ -2073,7 +2077,7 @@ fn run_with_args(options: RuntimeOptions, args: Vec<String>) -> Result<()> {
     let (cli, command) = prepare_cli_startup(
         cli,
         || {
-            let discovery = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv();
+            let discovery = codewhale_plugins::PluginDiscoveryContext::capture_pre_dotenv();
             plugin_registry = Some(discovery.registry_for_workspace(&workspace));
             plugin_discovery = Some(discovery);
         },
@@ -2084,7 +2088,7 @@ fn run_with_args(options: RuntimeOptions, args: Vec<String>) -> Result<()> {
     let plugin_registry = plugin_registry
         .expect("plugin discovery initialization must precede workspace dotenv loading");
 
-    crate::plugins::providers::install_startup_registry(plugin_registry.clone());
+    codewhale_plugins::providers::install_startup_registry(plugin_registry.clone());
 
     // The interactive runtime intentionally carries a large state machine:
     // terminal rendering, modal dispatch, provider setup, and fleet/workflow
@@ -2126,8 +2130,8 @@ fn run_with_args(options: RuntimeOptions, args: Vec<String>) -> Result<()> {
 fn run_async_main(
     cli: Cli,
     command: Option<Commands>,
-    plugin_discovery: Arc<crate::plugins::PluginDiscoveryContext>,
-    plugin_registry: Arc<crate::plugins::PluginRegistry>,
+    plugin_discovery: Arc<codewhale_plugins::PluginDiscoveryContext>,
+    plugin_registry: Arc<codewhale_plugins::PluginRegistry>,
 ) -> Result<()> {
     build_runtime(command.as_ref())?.block_on(run_async_main_inner(
         cli,
@@ -2455,8 +2459,8 @@ async fn finish_telemetry(outcome: &Result<()>, surface: codewhale_telemetry::Su
 async fn run_async_main_inner(
     cli: Cli,
     command: Option<Commands>,
-    plugin_discovery: Arc<crate::plugins::PluginDiscoveryContext>,
-    plugin_registry: Arc<crate::plugins::PluginRegistry>,
+    plugin_discovery: Arc<codewhale_plugins::PluginDiscoveryContext>,
+    plugin_registry: Arc<codewhale_plugins::PluginRegistry>,
 ) -> Result<()> {
     // Install signal handlers that restore the terminal before the process
     // exits. Without this, Ctrl+C delivered while raw mode / kitty keyboard
@@ -2513,8 +2517,8 @@ async fn run_async_main_inner(
 async fn run_async_main_dispatch(
     cli: Cli,
     command: Option<Commands>,
-    plugin_discovery: Arc<crate::plugins::PluginDiscoveryContext>,
-    plugin_registry: Arc<crate::plugins::PluginRegistry>,
+    plugin_discovery: Arc<codewhale_plugins::PluginDiscoveryContext>,
+    plugin_registry: Arc<codewhale_plugins::PluginRegistry>,
     mut pending_telemetry_notice: Option<crate::telemetry_notice::PendingTelemetryNotice>,
 ) -> Result<()> {
     logging::set_verbose(cli.verbose || logging::env_requests_verbose_logging());
@@ -2602,7 +2606,7 @@ async fn run_async_main_dispatch(
             Commands::SessionDiagnostics(args) => run_session_diagnostics(args),
             Commands::Install { source } => {
                 let config = load_config_from_cli(&cli)?;
-                crate::plugins::mutation::install_from_cli(
+                codewhale_plugins::mutation::install_from_cli(
                     source,
                     config,
                     (*plugin_registry).clone(),
@@ -2673,7 +2677,7 @@ async fn run_async_main_dispatch(
                 TuiAuthCommand::OrcarouterRevoke => run_orcarouter_revoke(cli.config.as_deref()),
                 TuiAuthCommand::PluginLogin { provider } => {
                     let entry = plugin_auth_entry_from_cli(&cli, &provider).await?;
-                    crate::plugins::providers::plugin_oauth_login(
+                    codewhale_plugins::providers::plugin_oauth_login(
                         provider,
                         entry.base_url.clone().unwrap(),
                         entry.oauth.clone().unwrap(),
@@ -2683,12 +2687,12 @@ async fn run_async_main_dispatch(
                 }
                 TuiAuthCommand::PluginLogout { provider } => {
                     let entry = plugin_auth_entry_from_cli(&cli, &provider).await?;
-                    let policy = crate::plugins::activation::extension_host_policy_enabled();
+                    let policy = codewhale_plugins::activation::extension_host_policy_enabled();
                     tokio::task::spawn_blocking(move || {
-                        let _scope = crate::plugins::activation::PolicyScope::propagate(policy);
-                        crate::plugins::registry::verify_plugin_component_authority(
+                        let _scope = codewhale_plugins::activation::PolicyScope::propagate(policy);
+                        codewhale_plugins::registry::verify_plugin_component_authority(
                             entry.plugin_authority.as_ref().unwrap(),
-                            crate::plugins::activation::PluginActivationCapability::Providers,
+                            codewhale_plugins::activation::PluginActivationCapability::Providers,
                         )
                         .map_err(anyhow::Error::msg)?;
                         codewhale_runtime::oauth::plugin_oauth_logout(
@@ -4325,7 +4329,7 @@ fn run_setup(
     config: &Config,
     workspace: &Path,
     args: SetupArgs,
-    plugins: &crate::plugins::PluginRegistry,
+    plugins: &codewhale_plugins::PluginRegistry,
 ) -> Result<()> {
     if args.status {
         return run_setup_status(config, workspace, plugins);
@@ -4695,7 +4699,7 @@ fn skills_count_for(dir: &Path) -> usize {
 fn run_setup_status(
     config: &Config,
     workspace: &Path,
-    plugins: &crate::plugins::PluginRegistry,
+    plugins: &codewhale_plugins::PluginRegistry,
 ) -> Result<()> {
     use codewhale_palette as palette;
     use colored::Colorize;
@@ -4979,7 +4983,7 @@ async fn run_doctor(
     config_path_override: Option<&Path>,
     profile: Option<&str>,
     probes: crate::doctor::DoctorProbeRequest,
-    plugins: &crate::plugins::PluginRegistry,
+    plugins: &codewhale_plugins::PluginRegistry,
 ) {
     use codewhale_palette as palette;
     use colored::Colorize;
@@ -8143,7 +8147,7 @@ fn run_doctor_json(
     config: &Config,
     workspace: &Path,
     config_path_override: Option<&Path>,
-    plugins: &crate::plugins::PluginRegistry,
+    plugins: &codewhale_plugins::PluginRegistry,
 ) -> Result<()> {
     use serde_json::json;
 
@@ -9607,11 +9611,11 @@ async fn plugin_auth_entry_from_cli(
     let profile = effective_config_profile(cli);
     let options = cli.options.clone();
     let provider = provider.to_owned();
-    let policy = crate::plugins::activation::extension_host_policy_enabled();
+    let policy = codewhale_plugins::activation::extension_host_policy_enabled();
     tokio::task::spawn_blocking(move || {
-        let _scope = crate::plugins::activation::PolicyScope::propagate(policy);
+        let _scope = codewhale_plugins::activation::PolicyScope::propagate(policy);
         let config = load_config_with_cli_preferences(path, profile.as_deref(), &options)?;
-        crate::plugins::providers::plugin_auth_entry(&config, &provider)
+        codewhale_plugins::providers::plugin_auth_entry(&config, &provider)
     })
     .await?
 }
@@ -9633,8 +9637,10 @@ fn load_doctor_config_from_cli(cli: &Cli, args: &DoctorArgs) -> Result<Config> {
 
 fn load_structural_config_from_cli(cli: &Cli) -> Result<Config> {
     let profile = effective_config_profile(cli);
-    let mut config =
-        crate::plugins::providers::load_config_structural(cli.config.clone(), profile.as_deref())?;
+    let mut config = codewhale_plugins::providers::load_config_structural(
+        cli.config.clone(),
+        profile.as_deref(),
+    )?;
     if let Ok(settings) = codewhale_runtime::settings::Settings::load_read_only() {
         apply_saved_reasoning_preference(&mut config, &settings);
     }
@@ -9650,7 +9656,8 @@ fn install_extension_host_boot_config(config: &Config) {
     let enabled = config
         .features()
         .enabled(codewhale_runtime::features::Feature::ExtensionHost);
-    crate::plugins::activation::install_extension_host_policy(enabled);
+    codewhale_plugins::activation::install_extension_host_policy(enabled);
+    crate::extension_host::composition_review::install();
     // Builtin MCP uses the configured runtime without enabling Native plugins.
     // Configuration is lazy: it does not start an unused host.
     crate::extension_host::configure_with_handle(
@@ -9686,7 +9693,7 @@ fn load_config_with_cli_preferences(
     profile: Option<&str>,
     options: &RuntimeOptions,
 ) -> Result<Config> {
-    let mut config = crate::plugins::providers::load_config(path, profile)?;
+    let mut config = codewhale_plugins::providers::load_config(path, profile)?;
     // Config loading is shared by diagnostics and mutating runtimes. Read the
     // saved preference without migrating or creating state here; interactive
     // startup performs any permitted migration later through `Settings::load`.
@@ -9881,7 +9888,8 @@ async fn run_claude_auth(config_path: Option<&Path>) -> Result<()> {
 }
 
 async fn run_chatgpt_pkce_auth(config_path: Option<&Path>) -> Result<()> {
-    let config = crate::plugins::providers::load_config(config_path.map(Path::to_path_buf), None)?;
+    let config =
+        codewhale_plugins::providers::load_config(config_path.map(Path::to_path_buf), None)?;
     let pending = codewhale_runtime::oauth::login_with_config(
         codewhale_runtime::oauth::OAuthProvider::Chatgpt,
         &config,
@@ -9901,7 +9909,7 @@ async fn run_chatgpt_pkce_auth(config_path: Option<&Path>) -> Result<()> {
         "To switch ChatGPT accounts or workspaces, run `CODEWHALE_CHATGPT_NEW_ACCOUNT=1 codewhale auth chatgpt` in a shell and restart open Codewhale sessions. `/auth chatgpt` reauthorizes the selected account."
     );
     let mut selected =
-        crate::plugins::providers::load_config(config_path.map(Path::to_path_buf), None)?;
+        codewhale_plugins::providers::load_config(config_path.map(Path::to_path_buf), None)?;
     selected.provider = Some(
         codewhale_config::ProviderKind::OpenaiCodex
             .as_str()
@@ -9955,7 +9963,8 @@ async fn run_orcarouter_pkce_auth(config_path: Option<&Path>) -> Result<()> {
     })
     .await
     .context("OrcaRouter PKCE login worker failed")??;
-    let config = crate::plugins::providers::load_config(config_path.map(Path::to_path_buf), None)?;
+    let config =
+        codewhale_plugins::providers::load_config(config_path.map(Path::to_path_buf), None)?;
     let saved = codewhale_runtime::oauth::activate_orcarouter_credential(&credential, &config)?;
     println!(
         "OrcaRouter is ready; stored the key in {}",
@@ -10023,7 +10032,7 @@ async fn prepare_mounted_session(
     mut prepared: PreparedInteractiveConfig,
     selector: String,
     intent: MountedHistoryIntent,
-    plugins: Arc<crate::plugins::PluginRegistry>,
+    plugins: Arc<codewhale_plugins::PluginRegistry>,
 ) -> Result<(PreparedInteractiveConfig, String)> {
     use crate::runtime_api::thread_history::{
         history_owner_work, lookup_thread_history_operation_in_runtime,
@@ -11158,7 +11167,7 @@ async fn run_pr(
     repo: Option<&str>,
     checkout: bool,
     pending_telemetry_notice: Option<crate::telemetry_notice::PendingTelemetryNotice>,
-    plugin_registry: Arc<crate::plugins::PluginRegistry>,
+    plugin_registry: Arc<codewhale_plugins::PluginRegistry>,
 ) -> Result<()> {
     if !is_command_available("gh") {
         bail!(
@@ -12091,7 +12100,7 @@ async fn run_mcp_command(
     config: &Config,
     workspace: &Path,
     command: McpCommand,
-    plugins: &crate::plugins::PluginRegistry,
+    plugins: &codewhale_plugins::PluginRegistry,
 ) -> Result<()> {
     let config_path = config.mcp_config_path();
     let network_policy = config.network.clone().map(|network| {
@@ -13581,9 +13590,9 @@ fn normalize_windows_config_path_str(path: &str) -> String {
 /// `mcp`, `doctor`, `setup`, `pr`, `review` and workflow-tool subcommands do
 /// not call this yet.
 fn policy_current_registry(
-    registry: Arc<crate::plugins::PluginRegistry>,
-) -> Arc<crate::plugins::PluginRegistry> {
-    if crate::plugins::activation::extension_host_policy_enabled() {
+    registry: Arc<codewhale_plugins::PluginRegistry>,
+) -> Arc<codewhale_plugins::PluginRegistry> {
+    if codewhale_plugins::activation::extension_host_policy_enabled() {
         let workspace = registry.workspace().to_path_buf();
         registry.rediscover_for_workspace(&workspace)
     } else {
@@ -13601,7 +13610,7 @@ async fn run_interactive(
     resume_session_id: Option<String>,
     initial_input: Option<tui::InitialInput>,
     pending_telemetry_notice: Option<crate::telemetry_notice::PendingTelemetryNotice>,
-    plugin_registry: std::sync::Arc<crate::plugins::PluginRegistry>,
+    plugin_registry: std::sync::Arc<codewhale_plugins::PluginRegistry>,
 ) -> Result<()> {
     run_interactive_with_notice(
         cli,
@@ -13625,7 +13634,7 @@ async fn run_interactive_with_notice(
     initial_input: Option<tui::InitialInput>,
     startup_notice: Option<String>,
     pending_telemetry_notice: Option<crate::telemetry_notice::PendingTelemetryNotice>,
-    plugin_registry: std::sync::Arc<crate::plugins::PluginRegistry>,
+    plugin_registry: std::sync::Arc<codewhale_plugins::PluginRegistry>,
 ) -> Result<()> {
     tui::ui::require_interactive_terminal(io::stdin().is_terminal(), io::stdout().is_terminal())?;
     let plugin_registry = policy_current_registry(plugin_registry);
@@ -13709,7 +13718,7 @@ async fn run_interactive_prepared(
     initial_input: Option<tui::InitialInput>,
     startup_notice: Option<String>,
     pending_telemetry_notice: Option<crate::telemetry_notice::PendingTelemetryNotice>,
-    plugin_registry: Arc<crate::plugins::PluginRegistry>,
+    plugin_registry: Arc<codewhale_plugins::PluginRegistry>,
 ) -> Result<()> {
     let PreparedInteractiveConfig { config, workspace } = prepared;
     let config = &config;
@@ -14456,7 +14465,7 @@ fn current_binary_sha256() -> Option<String> {
 async fn run_workflow_tool_command(
     cli: &Cli,
     args: WorkflowToolArgs,
-    plugin_registry: std::sync::Arc<crate::plugins::PluginRegistry>,
+    plugin_registry: std::sync::Arc<codewhale_plugins::PluginRegistry>,
 ) -> Result<()> {
     match run_workflow_tool_command_inner(cli, args, plugin_registry).await {
         Ok(()) => Ok(()),
@@ -14472,7 +14481,7 @@ async fn run_workflow_tool_command(
 async fn run_workflow_tool_command_inner(
     cli: &Cli,
     args: WorkflowToolArgs,
-    plugin_registry: std::sync::Arc<crate::plugins::PluginRegistry>,
+    plugin_registry: std::sync::Arc<codewhale_plugins::PluginRegistry>,
 ) -> Result<()> {
     use crate::tools::spec::ToolSpec;
 
@@ -14682,7 +14691,7 @@ async fn initialize_direct_workflow_mcp_pool(
     config: &Config,
     workspace: &Path,
     network_policy: Option<codewhale_net::network_policy::NetworkPolicyDecider>,
-    plugin_registry: std::sync::Arc<crate::plugins::PluginRegistry>,
+    plugin_registry: std::sync::Arc<codewhale_plugins::PluginRegistry>,
 ) -> Option<(
     std::sync::Arc<tokio::sync::Mutex<crate::mcp::McpPool>>,
     Vec<(String, String)>,
@@ -14697,7 +14706,7 @@ async fn initialize_direct_workflow_mcp_pool(
     )
     .unwrap_or_else(|error| {
         tracing::debug!("No MCP config for direct Workflow runtime: {error:#}");
-        crate::mcp::McpPool::new(crate::mcp::McpConfig::default())
+        crate::mcp::McpPool::new(codewhale_mcp::config::McpConfig::default())
     });
     pool = pool.with_backend(config.mcp_backend());
     if let Some(policy) = network_policy {
@@ -14717,7 +14726,7 @@ async fn build_direct_workflow_tool(
     route: &CliAutoRoute,
     workspace: &Path,
     event_tx: tokio::sync::mpsc::Sender<crate::core::events::Event>,
-    plugin_registry: std::sync::Arc<crate::plugins::PluginRegistry>,
+    plugin_registry: std::sync::Arc<codewhale_plugins::PluginRegistry>,
 ) -> Result<(
     crate::tools::workflow::WorkflowTool,
     crate::tools::ToolContext,
@@ -17640,8 +17649,8 @@ mod mounted_history_tests {
         )
     }
 
-    fn plugins(workspace: &Path) -> Arc<crate::plugins::PluginRegistry> {
-        Arc::new(crate::plugins::PluginRegistry::empty(workspace))
+    fn plugins(workspace: &Path) -> Arc<codewhale_plugins::PluginRegistry> {
+        Arc::new(codewhale_plugins::PluginRegistry::empty(workspace))
     }
 
     #[tokio::test]
@@ -18815,7 +18824,7 @@ mod project_config_tests {
         )
         .unwrap();
         let workspace = workspace_with_project_config("model = 'gpt-5.6-luna'\n");
-        let mut saved = crate::plugins::providers::load_config(None, None).unwrap();
+        let mut saved = codewhale_plugins::providers::load_config(None, None).unwrap();
         assert_eq!(saved.default_model(), "gpt-5.6-terra");
         merge_project_config(&mut saved, workspace.path());
         assert_eq!(saved.default_model(), "gpt-5.6-luna");
@@ -18827,7 +18836,7 @@ mod project_config_tests {
         ] {
             // Equal to the saved model still counts as an explicit request.
             let _model = EnvVarGuard::set(key, "gpt-5.6-terra");
-            let mut explicit = crate::plugins::providers::load_config(None, None).unwrap();
+            let mut explicit = codewhale_plugins::providers::load_config(None, None).unwrap();
             merge_project_config(&mut explicit, workspace.path());
             assert_eq!(explicit.default_model(), "gpt-5.6-terra", "{key}");
             assert_eq!(
@@ -19902,7 +19911,7 @@ mod setup_helper_tests {
         assert!(manifest.contains("schema_version = 1"));
         assert!(manifest.contains("name = \"example\""));
         let validated =
-            crate::plugins::manifest::PluginManifest::validate_from_path(&manifest_path)
+            codewhale_plugins::manifest::PluginManifest::validate_from_path(&manifest_path)
                 .expect("scaffolded plugin should validate");
         assert_eq!(validated.inventory.skills, 1);
     }

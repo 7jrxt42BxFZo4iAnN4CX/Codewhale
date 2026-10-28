@@ -1556,7 +1556,7 @@ async fn apply_command_result_inner(
                         return Ok(false);
                     }
                 };
-                let fresh_config = match crate::plugins::providers::load_config(
+                let fresh_config = match codewhale_plugins::providers::load_config(
                     app.config_path.clone(),
                     app.config_profile.as_deref(),
                 ) {
@@ -2922,7 +2922,7 @@ async fn apply_command_result_inner(
             }
             AppAction::SwitchProfile { profile } => {
                 let previous_profile = app.config_profile.clone();
-                match crate::plugins::providers::load_config(
+                match codewhale_plugins::providers::load_config(
                     app.config_path.clone(),
                     Some(&profile),
                 )
@@ -3141,7 +3141,7 @@ pub(crate) fn apply_workspace_runtime_state(app: &mut App, config: &Config, work
         .diagnostics()
         .iter()
         .filter(|diagnostic| {
-            diagnostic.level == crate::plugins::types::PluginDiagnosticLevel::Error
+            diagnostic.level == codewhale_plugins::types::PluginDiagnosticLevel::Error
         })
         .count();
     if plugin_load_errors > 0 {

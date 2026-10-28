@@ -58,7 +58,7 @@ pub const TOOL_CALL_DEADLINE: Duration = Duration::from_secs(120);
 pub(crate) struct HostToolSpec {
     registration: ToolRegistration,
     manager: Arc<ManagerShared>,
-    selection: Option<super::composition_scope::SelectionRevision>,
+    selection: Option<codewhale_plugins::composition_scope::SelectionRevision>,
 }
 
 impl HostToolSpec {
@@ -74,7 +74,7 @@ impl HostToolSpec {
     pub(crate) fn for_selection(
         registration: ToolRegistration,
         manager: Arc<ManagerShared>,
-        selection: Option<super::composition_scope::SelectionRevision>,
+        selection: Option<codewhale_plugins::composition_scope::SelectionRevision>,
     ) -> Self {
         Self {
             registration,

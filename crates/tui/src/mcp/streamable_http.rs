@@ -204,8 +204,8 @@ fn unauthorized_session_hint(oauth_configured: bool) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::{oauth_refresh_failed_hint, unauthorized_session_hint};
-    use crate::mcp::McpServerConfig;
     use crate::mcp::http_client::McpHttpAuth;
+    use codewhale_mcp::config::McpServerConfig;
 
     fn server_config(json: serde_json::Value) -> McpServerConfig {
         serde_json::from_value(json).expect("MCP server config fixture")

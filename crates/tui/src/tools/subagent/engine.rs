@@ -2007,18 +2007,18 @@ async fn prepare_child_membership(
     Option<crate::extension_host::HostAttachment>,
 )> {
     let mut scoped_runtime = runtime.clone();
-    let extension_host = if crate::plugins::activation::extension_host_policy_enabled() {
+    let extension_host = if codewhale_plugins::activation::extension_host_policy_enabled() {
         if let Some(plugins) = runtime.context.plugin_registry.as_ref() {
             let selected = if let Some(preset) = assignment.native_preset.as_ref() {
                 let plugins = Arc::clone(plugins);
                 let preset = preset.clone();
-                let policy = crate::plugins::activation::extension_host_policy_enabled();
+                let policy = codewhale_plugins::activation::extension_host_policy_enabled();
                 #[cfg(test)]
                 let env_scope = crate::test_support::env_scope_ticket();
                 tokio::task::spawn_blocking(move || {
                     #[cfg(test)]
                     let _env_scope = crate::test_support::join_env_scope(env_scope);
-                    let _policy = crate::plugins::activation::PolicyScope::propagate(policy);
+                    let _policy = codewhale_plugins::activation::PolicyScope::propagate(policy);
                     plugins.with_native_preset(preset)
                 })
                 .await

@@ -12,6 +12,7 @@
 //! Protocol negotiation, catalog admission, tool approvals and call replay
 //! policy remain in their owners.
 
+use crate::mcp::McpServerConfigExt;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
@@ -93,7 +94,7 @@ impl BrokerSession {
         config: &McpServerConfig,
         cancel_token: tokio_util::sync::CancellationToken,
     ) -> Result<(Self, ChildStdout)> {
-        let reviewed_launch = if let Some(reviewed_plugin) = config.reviewed_plugin.as_ref() {
+        let reviewed_launch = if let Some(reviewed_plugin) = config.reviewed_plugin_source() {
             // This is deliberately the last trust check before constructing
             // and spawning the lazy stdio child. It re-reads only the
             // Codewhale-owned plugin bundle, never user MCP/provider config or
@@ -175,7 +176,7 @@ impl BrokerSession {
         // secret-scrubbed child environment plus their explicitly reviewed
         // mappings, so namespaces such as NPM_CONFIG_* are never inherited
         // ambiently across the consent boundary.
-        if let Some(reviewed_plugin) = config.reviewed_plugin.as_ref() {
+        if let Some(reviewed_plugin) = config.reviewed_plugin_source() {
             cmd.env_clear();
             for (key, value) in child_env::sanitized_plugin_mcp_env_from(
                 reviewed_plugin.host_environment.entries().iter().cloned(),
@@ -247,7 +248,7 @@ impl BrokerSession {
         }
 
         let child = Arc::new(TokioMutex::new(child));
-        let authority_cancel_watch = config.reviewed_plugin.as_ref().map(|_| {
+        let authority_cancel_watch = config.reviewed_plugin_source().map(|_| {
             let watched_child = Arc::clone(&child);
             let watched_tree = Arc::clone(&process_tree);
             tokio::spawn(async move {

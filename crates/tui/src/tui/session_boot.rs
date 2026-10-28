@@ -16,10 +16,10 @@
 use unicode_width::UnicodeWidthStr;
 
 use crate::mcp::{McpManagerSnapshot, McpServerSnapshot};
-use crate::plugins::PluginRegistry;
-use crate::plugins::types::{PluginDiagnosticLevel, PluginTrustStatus};
 use crate::tui::app::App;
 use codewhale_localization::{Locale, MessageId, tr};
+use codewhale_plugins::PluginRegistry;
+use codewhale_plugins::types::{PluginDiagnosticLevel, PluginTrustStatus};
 
 pub(crate) const ITEM_SEPARATOR: &str = " · ";
 const MAX_NAMED_CHIPS: usize = 4;
@@ -531,7 +531,7 @@ mod tests {
         std::fs::create_dir_all(&home).unwrap();
         let _home = crate::test_support::EnvVarGuard::set("CODEWHALE_HOME", &home);
 
-        let registry = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv()
+        let registry = codewhale_plugins::PluginDiscoveryContext::capture_pre_dotenv()
             .registry_for_workspace(&workspace);
         let summary = PluginBootSummary::from_registry(&registry);
         assert_eq!(summary.loaded, registry.list().len());

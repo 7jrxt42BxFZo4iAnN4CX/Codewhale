@@ -4221,7 +4221,7 @@ fn shift_tab_migrates_user_root_policy_to_durable_tui_posture() {
     std::fs::write(&settings_path, "permission_posture = \"full-access\"\n").expect("settings");
     let _config_env = EnvVarGuard::set("DEEPSEEK_CONFIG_PATH", &config_path);
     let _approval_env = EnvVarGuard::remove("DEEPSEEK_APPROVAL_POLICY");
-    let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)
+    let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)
         .expect("load config");
     let mut options = test_options(false);
     options.start_in_agent_mode = true;
@@ -4241,7 +4241,7 @@ fn shift_tab_migrates_user_root_policy_to_durable_tui_posture() {
     assert!(saved_settings.contains("permission_posture = \"auto-review\""));
 
     let restarted_config =
-        crate::plugins::providers::load_config(Some(config_path), None).expect("reload config");
+        codewhale_plugins::providers::load_config(Some(config_path), None).expect("reload config");
     let restarted = App::new(options, &restarted_config);
     assert_eq!(restarted.approval_mode, ApprovalMode::Auto);
     assert!(!restarted.approval_policy_locked());
@@ -4260,7 +4260,7 @@ fn legacy_yolo_migrates_root_policy_to_agent_full_access() {
     std::fs::write(&settings_path, "default_mode = \"yolo\"\n").expect("legacy settings");
     let _config_env = EnvVarGuard::set("DEEPSEEK_CONFIG_PATH", &config_path);
     let _approval_env = EnvVarGuard::remove("DEEPSEEK_APPROVAL_POLICY");
-    let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)
+    let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)
         .expect("load config");
     let mut options = test_options(false);
     options.start_in_agent_mode = false;
@@ -4280,7 +4280,7 @@ fn legacy_yolo_migrates_root_policy_to_agent_full_access() {
     assert!(saved_settings.contains("permission_posture = \"full-access\""));
 
     let restarted_config =
-        crate::plugins::providers::load_config(Some(config_path), None).expect("reload config");
+        codewhale_plugins::providers::load_config(Some(config_path), None).expect("reload config");
     let restarted = App::new(options, &restarted_config);
     assert_eq!(restarted.mode, AppMode::Agent);
     assert_eq!(restarted.approval_mode, ApprovalMode::Bypass);
@@ -4315,8 +4315,8 @@ fn legacy_yolo_honors_a_missing_explicit_config_path_without_home_fallback() {
     let _deepseek_config = EnvVarGuard::set("DEEPSEEK_CONFIG_PATH", &missing_override);
     let _approval_env = EnvVarGuard::remove("DEEPSEEK_APPROVAL_POLICY");
 
-    let config =
-        crate::plugins::providers::load_config(None, None).expect("load explicit missing config");
+    let config = codewhale_plugins::providers::load_config(None, None)
+        .expect("load explicit missing config");
     assert_eq!(config.approval_policy, None);
     let mut options = test_options(false);
     options.start_in_agent_mode = false;
@@ -7739,7 +7739,7 @@ fn an_explicit_launch_model_outranks_the_remembered_provider_model() {
     // that stickiness is what `/model` exists for.
     let _no_flag = EnvVarGuard::remove("CODEWHALE_MODEL");
     let _no_legacy_flag = EnvVarGuard::remove("DEEPSEEK_MODEL");
-    let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)
+    let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)
         .expect("load sealed config");
     let remembered = App::new(
         TuiOptions {
@@ -7755,7 +7755,7 @@ fn an_explicit_launch_model_outranks_the_remembered_provider_model() {
 
     // `--model` reaches this binary as CODEWHALE_MODEL. It must win.
     let _model_flag = EnvVarGuard::set("CODEWHALE_MODEL", "kimi-k3");
-    let config = crate::plugins::providers::load_config(Some(config_path), None)
+    let config = codewhale_plugins::providers::load_config(Some(config_path), None)
         .expect("load explicit launch snapshot");
     let requested = App::new(
         TuiOptions {

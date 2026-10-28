@@ -77,9 +77,10 @@ use self::server::{ServerOptions, TranscriptServer};
 use super::golden::{self, Failures, Sandbox};
 use crate::core::engine::Engine;
 use crate::core::events::Event;
-use crate::mcp::{McpConfig, McpPool, McpToolApprovalHint};
+use crate::mcp::{McpPool, McpToolApprovalHint};
 use crate::test_support::EnvVarGuard;
 use crate::tools::spec::{RichToolResult, ToolError};
+use codewhale_mcp::config::McpConfig;
 
 const FAMILY: &str = "mcp";
 const CALL_DEADLINE: Duration = Duration::from_secs(30);
@@ -219,7 +220,7 @@ struct HostMcpDispatch {
     inner: McpPoolDispatch,
     manager: Arc<crate::extension_host::ExtensionHostManager>,
     _manager: crate::extension_host::TestManagerGuard,
-    _policy: crate::plugins::activation::TestPolicyGuard,
+    _policy: codewhale_plugins::activation::TestPolicyGuard,
 }
 impl HostMcpDispatch {
     fn boxed(setup: DispatchSetup) -> Box<dyn McpDispatchUnderTest> {
@@ -234,7 +235,7 @@ impl HostMcpDispatch {
                 ..Default::default()
             },
         ));
-        let policy = crate::plugins::activation::TestPolicyGuard::extension_host(true);
+        let policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(true);
         let manager_guard = crate::extension_host::TestManagerGuard::install(Arc::clone(&manager));
         let (tx_event, rx_event) = mpsc::channel(64);
         let pool = McpPool::new(setup.config)

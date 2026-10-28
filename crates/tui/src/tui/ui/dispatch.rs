@@ -1161,7 +1161,7 @@ pub(crate) fn build_dispatch_success_closure(
             ));
 
             maybe_warn_context_pressure_for_config(app, &outcome.turn_compaction);
-            if let Some(message) = crate::plugins::plugin_reload_nudge(
+            if let Some(message) = codewhale_plugins::plugin_reload_nudge(
                 app.plugin_registry.as_ref(),
                 &mut app.plugin_reload_nudge_stamp,
             ) {

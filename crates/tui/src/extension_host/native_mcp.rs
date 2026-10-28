@@ -1,13 +1,13 @@
 //! Native definition admission joins Rust's existing MCP pool; no transport here.
 use super::ManagerShared;
-use super::composition_scope::SelectionRevision;
 use super::protocol::{RegisterKind, RegisterParams, RegisterResult};
 use super::supervisor::HostRequestContext;
 use super::tier::HostTier;
-use crate::mcp::McpServerConfig;
-use crate::plugins::{PluginRegistry, activation::PluginActivationCapability};
 use codewhale_config::PluginAuthority;
 use codewhale_config::{EntryRef, OwnerRef};
+use codewhale_mcp::config::McpServerConfig;
+use codewhale_plugins::composition_scope::SelectionRevision;
+use codewhale_plugins::{PluginRegistry, activation::PluginActivationCapability};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 
@@ -56,7 +56,7 @@ impl NativeMcpAuthority for ManagerShared {
         selection: SelectionRevision,
         registration: &McpRegistration,
     ) -> Result<(), String> {
-        if !crate::plugins::activation::extension_host_policy_enabled() {
+        if !codewhale_plugins::activation::extension_host_policy_enabled() {
             return Err("Native MCP is disabled by current policy".into());
         }
         self.ready_host(HostTier::Plugin)
@@ -178,7 +178,7 @@ fn validate_definition(
     authority: &PluginAuthority,
     params: &RegisterParams,
 ) -> Result<McpServerConfig, String> {
-    crate::plugins::registry::verify_plugin_component_authority(
+    codewhale_plugins::registry::verify_plugin_component_authority(
         authority,
         PluginActivationCapability::Native,
     )?;
@@ -188,7 +188,7 @@ fn validate_definition(
         &serde_json::json!({"mcpServers":{(params.spec.name.clone()):declaration}}),
     )
     .map_err(|_| "MCP definition encoding failed")?;
-    let mut servers = crate::plugins::agent_plugin::parse_mcp_json(&text)
+    let mut servers = codewhale_plugins::agent_plugin::parse_mcp_json(&text)
         .map_err(|_| "MCP proposal does not match the existing transport schema")?;
     let config = servers
         .remove(&params.spec.name)
@@ -198,8 +198,9 @@ fn validate_definition(
     if !config.env.is_empty() || !config.headers.is_empty() {
         return Err("MCP credential values must remain under Core authentication authority".into());
     }
-    let mut validated =
-        crate::plugins::manifest::PluginManifest::validate_from_path(&authority.staged_manifest)?;
+    let mut validated = codewhale_plugins::manifest::PluginManifest::validate_from_path(
+        &authority.staged_manifest,
+    )?;
     let root = &validated.canonical_root;
     validated.manifest.mcp_servers = Some(servers);
     validated
@@ -209,7 +210,7 @@ fn validate_definition(
         .expect("set servers")
         .insert(params.spec.name.clone(), config.clone());
     validated.manifest.validate_mcp_servers(root)?;
-    crate::plugins::registry::verify_plugin_component_authority(
+    codewhale_plugins::registry::verify_plugin_component_authority(
         authority,
         PluginActivationCapability::Native,
     )?;
@@ -219,7 +220,7 @@ fn validate_definition(
 pub(crate) fn for_plugins(
     plugins: &PluginRegistry,
 ) -> Result<Vec<(String, McpServerConfig, PluginAuthority, NativeMcpRef)>, String> {
-    if !crate::plugins::activation::extension_host_policy_enabled() {
+    if !codewhale_plugins::activation::extension_host_policy_enabled() {
         return Ok(Vec::new());
     }
     let Some(selection) = plugins.caller_selection() else {
@@ -262,7 +263,7 @@ pub(crate) fn for_plugins(
             caller_cancel: caller_cancel.clone(),
         };
         if receipt.validate().is_err()
-            || crate::plugins::registry::verify_plugin_component_authority(
+            || codewhale_plugins::registry::verify_plugin_component_authority(
                 &authority,
                 PluginActivationCapability::Native,
             )

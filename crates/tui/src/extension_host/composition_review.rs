@@ -182,3 +182,7 @@ async fn monitor_memory(pid: u32, cap: u64) -> Result<(), String> {
         }
     }
 }
+
+pub(crate) fn install() {
+    codewhale_plugins::composition_review::install_composition_reviewer(review);
+}

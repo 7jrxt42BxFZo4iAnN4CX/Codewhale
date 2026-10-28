@@ -8,7 +8,7 @@ async fn typescript_mod_rewrites_denies_and_regates_native_tools_on_the_real_eng
     else {
         return;
     };
-    let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(true);
+    let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(true);
     let fixture = crate::extension_host::tests::FixturePlugins::new(&["hook-policy"]).await;
     for (name, text) in [
         ("before.txt", "original"),

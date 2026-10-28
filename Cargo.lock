@@ -1108,6 +1108,7 @@ dependencies = [
 name = "codewhale-mcp"
 version = "0.10.2"
 dependencies = [
+ "serde",
  "serde_json",
  "tracing",
 ]
@@ -1193,6 +1194,44 @@ name = "codewhale-paths"
 version = "0.10.2"
 dependencies = [
  "dirs 7.0.0",
+]
+
+[[package]]
+name = "codewhale-plugins"
+version = "0.10.2"
+dependencies = [
+ "anyhow",
+ "base64 0.23.1",
+ "chrono",
+ "codewhale-config",
+ "codewhale-mcp",
+ "codewhale-net",
+ "codewhale-runtime",
+ "codewhale-sanitize",
+ "codewhale-secrets",
+ "codewhale-skill-install",
+ "codewhale-util",
+ "fd-lock",
+ "flate2",
+ "libc",
+ "regex",
+ "reqwest",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "toml 1.1.4+spec-1.1.0",
+ "toml_edit 0.25.15+spec-1.1.0",
+ "tracing",
+ "uuid",
+ "webbrowser",
+ "windows",
+ "windows-sys 0.61.2",
+ "yaml-rust2",
 ]
 
 [[package]]
@@ -1392,6 +1431,7 @@ dependencies = [
  "codewhale-util",
  "flate2",
  "futures-util",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",
@@ -1507,6 +1547,7 @@ dependencies = [
  "codewhale-notify",
  "codewhale-palette",
  "codewhale-paths",
+ "codewhale-plugins",
  "codewhale-protocol",
  "codewhale-ratatui",
  "codewhale-release",

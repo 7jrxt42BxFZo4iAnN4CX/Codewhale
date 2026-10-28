@@ -1033,7 +1033,7 @@ pub(crate) fn mcp_ui_action_refreshes_discovery(action: &crate::tui::app::McpUiA
 pub(crate) fn mcp_external_import_status_text(
     workspace: &std::path::Path,
     mcp_path: &std::path::Path,
-    plugins: &crate::plugins::PluginRegistry,
+    plugins: &codewhale_plugins::PluginRegistry,
 ) -> String {
     use crate::mcp::external_import::{ImportContext, preview_imports};
     let result = ImportContext::new(workspace, mcp_path, plugins)
@@ -1084,7 +1084,7 @@ pub(crate) fn mcp_external_import_status_text(
 pub(crate) fn mcp_import_apply(
     workspace: &std::path::Path,
     mcp_path: &std::path::Path,
-    plugins: &crate::plugins::PluginRegistry,
+    plugins: &codewhale_plugins::PluginRegistry,
     token: &str,
     approve: bool,
 ) -> anyhow::Result<String> {

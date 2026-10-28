@@ -99,7 +99,7 @@ mod tests {
             "no fresh roster, no claim"
         );
 
-        let config = crate::plugins::providers::load_config(
+        let config = codewhale_plugins::providers::load_config(
             app.config_path.clone(),
             app.config_profile.as_deref(),
         )

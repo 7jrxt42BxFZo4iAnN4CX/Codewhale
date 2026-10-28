@@ -3,9 +3,10 @@
 use super::*;
 use crate::extension_host::TestManagerGuard;
 use crate::extension_host::tests::{FixturePlugins, node_for_tests};
-use crate::mcp::{McpConfig, McpPool};
-use crate::plugins::activation::TestPolicyGuard;
+use crate::mcp::McpPool;
 use codewhale_config::McpBackend;
+use codewhale_mcp::config::McpConfig;
+use codewhale_plugins::activation::TestPolicyGuard;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 

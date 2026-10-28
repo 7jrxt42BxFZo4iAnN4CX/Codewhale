@@ -769,7 +769,7 @@ async fn extension_tool_is_deferred_gated_and_attributed_on_the_model_path() {
     ) else {
         return;
     };
-    let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(true);
+    let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(true);
     let fixture = crate::extension_host::tests::FixturePlugins::new(&["dsh-workspace-deps"]).await;
     let manager = fixture.manager(node);
     let warm = manager.attach(fixture.registry());
@@ -898,7 +898,7 @@ async fn an_isolated_chat_engine_never_revokes_another_engines_extension() {
     ) else {
         return;
     };
-    let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(true);
+    let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(true);
     let fixture = crate::extension_host::tests::FixturePlugins::new(&["slow-tool"]).await;
     let plugin_id = fixture
         .registry()
@@ -993,10 +993,10 @@ async fn extension_host_flag_off_never_spawns_the_host() {
     use crate::llm_client::mock::{MockLlmClient, canned};
 
     let fixture = {
-        let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(true);
+        let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(true);
         crate::extension_host::tests::FixturePlugins::new(&["dsh-workspace-deps"]).await
     };
-    let _policy = crate::plugins::activation::TestPolicyGuard::extension_host(false);
+    let _policy = codewhale_plugins::activation::TestPolicyGuard::extension_host(false);
     let manager = Arc::new(crate::extension_host::ExtensionHostManager::new(
         crate::extension_host::ExtensionHostOptions::default(),
     ));
@@ -1177,7 +1177,7 @@ async fn mcp_server_instructions_reach_the_request_labelled_once_and_only_for_vi
         },
         &Config::default(),
     );
-    let mut pool = McpPool::new(crate::mcp::McpConfig::default());
+    let mut pool = McpPool::new(codewhale_mcp::config::McpConfig::default());
     pool.insert_test_connection(
         "guided",
         &["search"],
@@ -1255,7 +1255,7 @@ async fn configured_mcp_servers_are_named_to_the_model_once_without_loading_them
         &Config::default(),
     );
     let pinned_prompt = engine.session.system_prompt.clone();
-    let mut config = crate::mcp::McpConfig::default();
+    let mut config = codewhale_mcp::config::McpConfig::default();
     for (name, server) in [
         ("shoreline", json!({"command":"unused"})),
         ("switched_off", json!({"command":"unused", "enabled":false})),
@@ -1350,7 +1350,7 @@ async fn no_configured_mcp_servers_adds_nothing_to_history() {
         .record_mcp_configured_servers(&policy, &catalog)
         .await;
     engine.mcp_pool = Some(Arc::new(AsyncMutex::new(McpPool::new(
-        crate::mcp::McpConfig::default(),
+        codewhale_mcp::config::McpConfig::default(),
     ))));
     engine
         .record_mcp_configured_servers(&policy, &catalog)

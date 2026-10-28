@@ -256,7 +256,7 @@ fn ensure_reviewed_plugin_skill_is_current(
 fn ensure_reviewed_plugin_skill_is_current_for(
     skill: &Skill,
     workspace: &std::path::Path,
-    plugins: Option<&crate::plugins::PluginRegistry>,
+    plugins: Option<&codewhale_plugins::PluginRegistry>,
 ) -> Result<(), ToolError> {
     let Some(provenance) = skill.source.provenance() else {
         return Ok(());
@@ -277,10 +277,10 @@ fn format_skill_body(skill: &Skill) -> String {
         out.push_str(&format!("> {}\n\n", skill.description.trim()));
     }
     let invocation = match skill.invocation {
-        crate::skills::SkillInvocation::ModelAndUser => "model+user",
-        crate::skills::SkillInvocation::ExplicitOnly => "explicit-only",
-        crate::skills::SkillInvocation::ModelOnly => "model-only",
-        crate::skills::SkillInvocation::Disabled => "disabled",
+        codewhale_skill_install::skill_parse::SkillInvocation::ModelAndUser => "model+user",
+        codewhale_skill_install::skill_parse::SkillInvocation::ExplicitOnly => "explicit-only",
+        codewhale_skill_install::skill_parse::SkillInvocation::ModelOnly => "model-only",
+        codewhale_skill_install::skill_parse::SkillInvocation::Disabled => "disabled",
     };
     out.push_str(&format!("Invocation: `{invocation}`\n"));
     if !skill.aliases.is_empty() {
@@ -425,7 +425,7 @@ mod tests {
             name: "delegate".to_string(),
             description: "delegate work".to_string(),
             localized_descriptions: std::collections::HashMap::new(),
-            invocation: crate::skills::SkillInvocation::ModelAndUser,
+            invocation: codewhale_skill_install::skill_parse::SkillInvocation::ModelAndUser,
             aliases: Vec::new(),
             argument_hint: None,
             body: "cached body".to_string(),
@@ -485,7 +485,7 @@ mod tests {
             name: "demo:hello".to_string(),
             description: "hello".to_string(),
             localized_descriptions: std::collections::HashMap::new(),
-            invocation: crate::skills::SkillInvocation::ModelAndUser,
+            invocation: codewhale_skill_install::skill_parse::SkillInvocation::ModelAndUser,
             aliases: Vec::new(),
             argument_hint: None,
             body: "reviewed body".to_string(),
@@ -538,7 +538,7 @@ mod tests {
         .unwrap();
         fs::write(skill_dir.join("companion.txt"), "reviewed companion").unwrap();
 
-        let discovery = crate::plugins::PluginDiscoveryContext::capture_pre_dotenv();
+        let discovery = codewhale_plugins::PluginDiscoveryContext::capture_pre_dotenv();
         let mut plugins = discovery.registry_for_workspace(tmp.path());
         std::sync::Arc::make_mut(&mut plugins)
             .trust("demo")

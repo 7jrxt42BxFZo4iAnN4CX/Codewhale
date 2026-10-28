@@ -1,21 +1,21 @@
 //! Real installed Native composition, committed host bundle and local MCP peer.
 //! No provider traffic; the Node-only suite uses a fake Core separately.
 use super::*;
-use crate::extension_host::composition_scope::NativePresetRef;
 use crate::extension_host::protocol::RegisterSpecWire;
 use crate::extension_host::registry::OwnerRegistry;
 use crate::extension_host::tests::{FixturePlugins, fake_authority, node_for_tests};
 use crate::extension_host::{ExtensionHostManager, HostAttachment, TestManagerGuard};
 use crate::mcp::McpPool;
-use crate::plugins::activation::TestPolicyGuard;
 use codewhale_config::McpBackend;
+use codewhale_plugins::activation::TestPolicyGuard;
+use codewhale_plugins::composition_scope::NativePresetRef;
 use serde_json::json;
 use std::path::Path;
 use std::time::Duration;
 
 fn selected(fixture: &FixturePlugins, tag: &str) -> Arc<PluginRegistry> {
     let plugins = fixture.registry();
-    let (sources, problems) = crate::plugins::runtime::active_component_sources(
+    let (sources, problems) = codewhale_plugins::runtime::active_component_sources(
         &plugins,
         PluginActivationCapability::Native,
     );

@@ -35,6 +35,7 @@ pub(crate) mod wire;
 
 use self::http::HttpTransport;
 use self::http_client::McpHttpAuth;
+use self::oauth::McpServerConfigOAuthExt;
 #[cfg(all(test, unix))]
 use self::process_broker::STDIO_SHUTDOWN_GRACE;
 use self::sse::SseTransport;
@@ -44,8 +45,26 @@ pub(crate) use self::wire::read_line_capped;
 use self::wire::{
     is_mcp_connection_lost_error, is_mcp_session_rejected_error, is_mcp_stale_session_body,
 };
+use codewhale_mcp::config::{
+    McpConfig, McpProvenance, McpServerConfig, McpServerOAuthConfig, McpTimeouts,
+    is_relative_stdio_path_arg,
+};
 use codewhale_net::network_policy::{Decision, NetworkPolicyDecider, host_from_url};
 use codewhale_util::utils::write_atomic;
+
+pub(crate) trait McpServerConfigExt {
+    fn reviewed_plugin_source(&self) -> Option<&ReviewedPluginMcpSource>;
+}
+
+impl McpServerConfigExt for McpServerConfig {
+    fn reviewed_plugin_source(&self) -> Option<&ReviewedPluginMcpSource> {
+        self.reviewed_plugin.as_ref()?.downcast_ref()
+    }
+}
+
+pub(crate) fn provenance_of(source: ReviewedPluginMcpSource) -> Option<McpProvenance> {
+    Some(McpProvenance::new(source))
+}
 
 // === Error diagnostics helpers (#71) ===
 
@@ -180,7 +199,7 @@ fn expanded_mcp_stdio_env(config: &McpServerConfig) -> Result<HashMap<String, St
     expand_env_placeholders_map_with_environment(
         &config.env,
         "env",
-        config.reviewed_plugin.as_ref(),
+        config.reviewed_plugin_source(),
     )
 }
 
@@ -189,7 +208,7 @@ fn expanded_mcp_stdio_env(config: &McpServerConfig) -> Result<HashMap<String, St
 fn mcp_stdio_child_env(config: &McpServerConfig) -> Result<Vec<(OsString, OsString)>> {
     let expanded_env = expanded_mcp_stdio_env(config)?;
     let overrides = codewhale_runtime::child_env::string_map_env(&expanded_env);
-    Ok(if let Some(source) = config.reviewed_plugin.as_ref() {
+    Ok(if let Some(source) = config.reviewed_plugin_source() {
         // Plugin reviews name every extra environment source explicitly. Do
         // not silently widen that consent to the compatibility-oriented MCP
         // bootstrap namespace (for example NPM_CONFIG_*).
@@ -219,21 +238,6 @@ impl McpCommandAvailability {
             Self::NotChecked => "not_checked",
         }
     }
-}
-
-pub(crate) fn is_relative_stdio_path_arg(value: &str) -> bool {
-    if value.is_empty() || value.starts_with('-') || value.contains("://") || value.starts_with('~')
-    {
-        return false;
-    }
-    let looks_like_path = value.contains('/') || value.contains('\\');
-    if !looks_like_path {
-        return false;
-    }
-    let bytes = value.as_bytes();
-    let windows_absolute = value.starts_with("\\\\")
-        || (bytes.len() >= 3 && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/'));
-    !Path::new(value).is_absolute() && !windows_absolute
 }
 
 fn env_value<'a>(env: &'a [(OsString, OsString)], name: &str) -> Option<&'a OsStr> {
@@ -498,165 +502,12 @@ fn invalid_json_preview(bytes: &[u8]) -> String {
 
 // === Configuration Types ===
 
-/// Full MCP configuration from mcp.json
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct McpConfig {
-    #[serde(default)]
-    pub timeouts: McpTimeouts,
-    #[serde(default, alias = "mcpServers")]
-    pub servers: HashMap<String, McpServerConfig>,
-}
-
-/// Global timeout configuration
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-#[allow(clippy::struct_field_names)]
-pub struct McpTimeouts {
-    #[serde(default = "default_connect_timeout")]
-    pub connect_timeout: u64,
-    #[serde(default = "default_execute_timeout")]
-    pub execute_timeout: u64,
-    #[serde(default = "default_read_timeout")]
-    pub read_timeout: u64,
-}
-
-/// Covers spawn, `initialize` and the first `tools/list` together. A cold
-/// `uvx`/`npx` start resolves and downloads the package inside this window,
-/// which routinely takes longer than 10 s; 30 s matches Codex, opencode, OMP
-/// and Claude Code's `MCP_TIMEOUT` default.
-fn default_connect_timeout() -> u64 {
-    30
-}
-// 30 minutes: an MCP tool call legitimately runs minutes — builds, test
-// suites, scrapes, remote jobs. The old 60s default returned "timed out" to
-// the model for healthy-but-slow tools, which then retried and compounded
-// the cost. Per-server and global `execute_timeout` overrides still win.
-// Scope note: `prompts/get` also routes through `effective_execute_timeout`,
-// so it inherits this default; its server-side template work is normally
-// fast, but the override knob is the intended way to keep it tight.
-fn default_execute_timeout() -> u64 {
-    1800
-}
-fn default_read_timeout() -> u64 {
-    120
-}
-
-impl Default for McpTimeouts {
-    fn default() -> Self {
-        Self {
-            connect_timeout: default_connect_timeout(),
-            execute_timeout: default_execute_timeout(),
-            read_timeout: default_read_timeout(),
-        }
-    }
-}
-
-/// Configuration for a single MCP server
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct McpServerConfig {
-    pub command: Option<String>,
-    #[serde(default)]
-    pub args: Vec<String>,
-    #[serde(default)]
-    pub env: HashMap<String, String>,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cwd: Option<PathBuf>,
-    pub url: Option<String>,
-    /// Explicit operator authority for private DNS names at this exact origin.
-    /// Ignored for model-added runtime servers.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub allow_private_network: bool,
-    /// Optional explicit HTTP transport override.
-    ///
-    /// By default URL-based MCP servers use Streamable HTTP first and fall
-    /// back to legacy SSE only when the server rejects Streamable HTTP with
-    /// a known incompatible status. Set this to `"sse"` for legacy SSE
-    /// endpoints that must start with a long-lived GET endpoint discovery
-    /// stream and cannot accept an initial POST to the configured URL.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub transport: Option<String>,
-    #[serde(default)]
-    pub connect_timeout: Option<u64>,
-    #[serde(default)]
-    pub execute_timeout: Option<u64>,
-    #[serde(default)]
-    pub read_timeout: Option<u64>,
-    #[serde(default)]
-    pub disabled: bool,
-    #[serde(default = "default_enabled")]
-    pub enabled: bool,
-    #[serde(default)]
-    pub required: bool,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub lazy: bool,
-    #[serde(default)]
-    pub enabled_tools: Vec<String>,
-    #[serde(default)]
-    pub disabled_tools: Vec<String>,
-    /// Extra HTTP headers sent with every request to this MCP server.
-    /// Only the HTTP transports (streamable HTTP today; SSE in a
-    /// follow-up) honor this — `command`-based stdio servers ignore it.
-    ///
-    /// Mirrors the `headers` field that Claude Code, Codex, and
-    /// OpenCode already accept in their MCP config formats. Use it to
-    /// authenticate against gateways that require a Bearer token or
-    /// API key, e.g.:
-    ///
-    /// ```jsonc
-    /// "huggingface": {
-    ///     "url": "https://huggingface.co/api/mcp",
-    ///     "headers": { "Authorization": "Bearer ${HF_TOKEN}" }
-    /// }
-    /// ```
-    ///
-    /// Header keys and values are passed through as-is — we do not
-    /// substitute environment variables in v0.8.31. If you store a
-    /// real token here, the value lives in plain text in
-    /// `~/.deepseek/mcp.json`; treat that file with the same care
-    /// as any other secret-bearing config.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub headers: HashMap<String, String>,
-    /// HTTP headers whose values are read from environment variables at request
-    /// time. This keeps common bearer/API-token integrations out of mcp.json.
-    #[serde(default, alias = "env_http_headers")]
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub env_headers: HashMap<String, String>,
-    /// Environment variable containing a bearer token. When present and set,
-    /// CodeWhale sends `Authorization: Bearer <value>` for URL-based servers.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub bearer_token_env_var: Option<String>,
-    /// OAuth scopes requested during `codewhale mcp login`.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub scopes: Vec<String>,
-    /// OAuth client override for MCP servers that require a pre-registered
-    /// public client instead of dynamic registration.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub oauth: Option<McpServerOAuthConfig>,
-    /// Optional exact RFC 8707 resource pin, checked against SDK discovery.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub oauth_resource: Option<String>,
-    /// In-memory provenance for MCP servers contributed by a reviewed plugin
-    /// bundle. This is never deserialized from or serialized into user config:
-    /// only the trusted plugin merge adapter may attach it.
-    #[serde(skip)]
-    pub(crate) reviewed_plugin: Option<ReviewedPluginMcpSource>,
-    /// Only the runtime registration boundary can attach this provenance.
-    #[serde(skip)]
-    pub(crate) runtime_added: bool,
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct ReviewedPluginMcpSource {
     authority: codewhale_config::PluginAuthority,
     approved_remote_endpoint: Option<String>,
     approved_remote_origin: Option<String>,
-    host_environment: Arc<crate::plugins::HostEnvironment>,
+    host_environment: Arc<codewhale_plugins::HostEnvironment>,
     native_mcp: Option<crate::extension_host::native_mcp::NativeMcpRef>,
 }
 
@@ -671,7 +522,7 @@ impl ReviewedPluginMcpSource {
     fn from_authority(
         authority: codewhale_config::PluginAuthority,
         remote_endpoint: Option<&str>,
-        host_environment: Arc<crate::plugins::HostEnvironment>,
+        host_environment: Arc<codewhale_plugins::HostEnvironment>,
     ) -> Result<Self> {
         let (approved_remote_endpoint, approved_remote_origin) = match remote_endpoint {
             Some(endpoint) => reviewed_remote_endpoint_identity(endpoint)
@@ -704,7 +555,7 @@ impl ReviewedPluginMcpSource {
             .staged_manifest
             .parent()
             .context("reviewed plugin stage manifest has no parent")?;
-        let validated = crate::plugins::manifest::PluginManifest::validate_from_path(
+        let validated = codewhale_plugins::manifest::PluginManifest::validate_from_path(
             &self.authority.staged_manifest,
         )
         .map_err(|_| anyhow::anyhow!("reviewed plugin stage could not be opened for launch"))?;
@@ -781,14 +632,14 @@ impl ReviewedPluginMcpSource {
         Ok(launch)
     }
 
-    fn required_capability(&self) -> crate::plugins::activation::PluginActivationCapability {
+    fn required_capability(&self) -> codewhale_plugins::activation::PluginActivationCapability {
         if self.native_mcp.is_some() {
-            return crate::plugins::activation::PluginActivationCapability::Native;
+            return codewhale_plugins::activation::PluginActivationCapability::Native;
         }
         if self.approved_remote_endpoint.is_some() {
-            crate::plugins::activation::PluginActivationCapability::McpRemote
+            codewhale_plugins::activation::PluginActivationCapability::McpRemote
         } else {
-            crate::plugins::activation::PluginActivationCapability::McpStdio
+            codewhale_plugins::activation::PluginActivationCapability::McpStdio
         }
     }
 
@@ -800,7 +651,7 @@ impl ReviewedPluginMcpSource {
             "Run `/plugin reload`, inspect `/plugin show {0}`, then repeat the displayed trust command and `/plugin enable {0}` before retrying",
             self.authority.plugin_name
         );
-        crate::plugins::registry::verify_plugin_component_authority(
+        codewhale_plugins::registry::verify_plugin_component_authority(
             &self.authority,
             self.required_capability(),
         )
@@ -837,7 +688,7 @@ impl ReviewedPluginMcpSource {
         // or resource descriptions can steer the model even when the later
         // operation would be denied. Revalidate both the mutable reviewed
         // source and the Codewhale-owned stage before publishing any entry.
-        crate::plugins::registry::verify_plugin_component_authority(
+        codewhale_plugins::registry::verify_plugin_component_authority(
             &self.authority,
             self.required_capability(),
         )
@@ -1179,51 +1030,6 @@ fn reviewed_remote_origin(endpoint: &reqwest::Url) -> Option<String> {
 
 fn reviewed_redirect_matches_origin(endpoint: &reqwest::Url, approved_origin: &str) -> bool {
     reviewed_remote_origin(endpoint).as_deref() == Some(approved_origin)
-}
-
-#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
-pub struct McpServerOAuthConfig {
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub client_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub issuer: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub client_metadata_url: Option<String>,
-}
-
-fn default_enabled() -> bool {
-    true
-}
-
-impl McpServerConfig {
-    pub fn effective_connect_timeout(&self, global: &McpTimeouts) -> u64 {
-        self.connect_timeout.unwrap_or(global.connect_timeout)
-    }
-
-    pub fn effective_execute_timeout(&self, global: &McpTimeouts) -> u64 {
-        self.execute_timeout.unwrap_or(global.execute_timeout)
-    }
-
-    pub fn effective_read_timeout(&self, global: &McpTimeouts) -> u64 {
-        self.read_timeout.unwrap_or(global.read_timeout)
-    }
-
-    pub fn is_enabled(&self) -> bool {
-        self.enabled && !self.disabled
-    }
-
-    pub fn is_tool_enabled(&self, tool_name: &str) -> bool {
-        let allowed = if self.enabled_tools.is_empty() {
-            true
-        } else {
-            self.enabled_tools.iter().any(|t| t == tool_name)
-        };
-        if !allowed {
-            return false;
-        }
-        !self.disabled_tools.iter().any(|t| t == tool_name)
-    }
 }
 
 // === MCP Tool Definition ===
@@ -1923,7 +1729,7 @@ impl PendingAuthorityWatch {
             loop {
                 let source = Arc::clone(&source);
                 let check = tokio::task::spawn_blocking(move || {
-                    crate::plugins::registry::verify_plugin_state_authority(&source.authority)
+                    codewhale_plugins::registry::verify_plugin_state_authority(&source.authority)
                 })
                 .await;
                 let reason = match check {
@@ -2124,7 +1930,7 @@ impl McpConnection {
         let read_timeout_secs = config.effective_read_timeout(global_timeouts);
         let cancel_token = tokio_util::sync::CancellationToken::new();
         let authority_revocation_reason = Arc::new(std::sync::Mutex::new(None));
-        if let Some(source) = config.reviewed_plugin.as_ref() {
+        if let Some(source) = config.reviewed_plugin_source() {
             source.validate_before_use(&name, "connect")?;
             if let Some(url) = config.url.as_deref() {
                 source.validate_remote_endpoint(&name, url)?;
@@ -2133,7 +1939,7 @@ impl McpConnection {
         // Start the cross-process generation watch before any network request
         // or child spawn. The guard cancels and aborts itself on every early
         // return; a successful connection transfers the task into `Self`.
-        let authority_watch = config.reviewed_plugin.clone().map(|source| {
+        let authority_watch = config.reviewed_plugin_source().cloned().map(|source| {
             PendingAuthorityWatch::start(
                 source,
                 cancel_token.clone(),
@@ -2214,7 +2020,7 @@ impl McpConnection {
         // await DNS/TLS/SSE preflight, and a concurrent process can revoke the
         // receipt during that interval. Initialization and catalog discovery
         // never start under a stale generation.
-        if let Some(source) = config.reviewed_plugin.as_ref() {
+        if let Some(source) = config.reviewed_plugin_source() {
             source.validate_before_use(&name, "initialize")?;
         }
         let authority_watch = authority_watch.map(PendingAuthorityWatch::disarm);
@@ -2253,8 +2059,7 @@ impl McpConnection {
             && conn.config.command.is_some()
             && conn
                 .config
-                .reviewed_plugin
-                .as_ref()
+                .reviewed_plugin_source()
                 .is_some_and(|source| source.plugin_name() == COMPUTER_USE_PLUGIN_NAME)
         {
             let decision_key = random_key()?;
@@ -2879,8 +2684,7 @@ impl McpConnection {
     ) -> Result<serde_json::Value> {
         let cancellation = self
             .config
-            .reviewed_plugin
-            .as_ref()
+            .reviewed_plugin_source()
             .and_then(|source| source.native_mcp.as_ref())
             .cloned();
         let Some(cancellation) = cancellation else {
@@ -2912,7 +2716,7 @@ impl McpConnection {
                 self.name
             );
         }
-        if let Some(source) = self.config.reviewed_plugin.as_ref() {
+        if let Some(source) = self.config.reviewed_plugin_source() {
             source.validate_before_use(&self.name, method)?;
         }
 
@@ -2983,7 +2787,7 @@ impl McpConnection {
             Err(error) => return self.finish_guarded_error(error).await,
         };
 
-        if let Some(source) = self.config.reviewed_plugin.as_ref() {
+        if let Some(source) = self.config.reviewed_plugin_source() {
             source.validate_before_use(&self.name, method)?;
         }
         if let Some(error) = response.get("error") {
@@ -3246,8 +3050,7 @@ impl McpConnection {
 
     fn catalog_authorized(&self) -> bool {
         self.config
-            .reviewed_plugin
-            .as_ref()
+            .reviewed_plugin_source()
             .is_none_or(ReviewedPluginMcpSource::catalog_is_current)
     }
 
@@ -3358,7 +3161,7 @@ pub struct McpPool {
     /// either file appear or change.
     config_sources: Vec<PathBuf>,
     workspace: Option<PathBuf>,
-    plugin_registry: Option<Arc<crate::plugins::PluginRegistry>>,
+    plugin_registry: Option<Arc<codewhale_plugins::PluginRegistry>>,
     /// 64-bit content hash of the active config (`hash_mcp_config`). Compared
     /// against the freshly-loaded config after an mtime change to skip
     /// reloading when the file was merely touched.
@@ -3435,8 +3238,7 @@ fn mcp_server_identity(config: &McpConfig, name: &str) -> Option<McpServerIdenti
                 servers: HashMap::from([(name.to_string(), server.clone())]),
             }),
             server
-                .reviewed_plugin
-                .as_ref()
+                .reviewed_plugin_source()
                 .map(|source| source.authority.clone()),
         )
     })
@@ -3605,14 +3407,14 @@ impl McpPool {
         path: &std::path::Path,
         workspace: &Path,
     ) -> Result<Self> {
-        let plugins = Arc::new(crate::plugins::PluginRegistry::empty(workspace));
+        let plugins = Arc::new(codewhale_plugins::PluginRegistry::empty(workspace));
         Self::from_config_path_with_workspace_and_plugins(path, workspace, plugins)
     }
 
     pub fn from_config_path_with_workspace_and_plugins(
         path: &std::path::Path,
         workspace: &Path,
-        plugins: Arc<crate::plugins::PluginRegistry>,
+        plugins: Arc<codewhale_plugins::PluginRegistry>,
     ) -> Result<Self> {
         if plugins.workspace() != workspace {
             anyhow::bail!("plugin registry workspace does not match MCP pool workspace");
@@ -3643,7 +3445,7 @@ impl McpPool {
     pub(crate) fn empty_with_workspace_config_sources(
         path: &std::path::Path,
         workspace: &Path,
-        plugins: Arc<crate::plugins::PluginRegistry>,
+        plugins: Arc<codewhale_plugins::PluginRegistry>,
     ) -> Result<Self> {
         validate_mcp_config_path(path)?;
         if plugins.workspace() != workspace {
@@ -3914,7 +3716,7 @@ impl McpPool {
         &mut self,
         path: &Path,
         workspace: &Path,
-        plugins: Arc<crate::plugins::PluginRegistry>,
+        plugins: Arc<codewhale_plugins::PluginRegistry>,
     ) -> Result<()> {
         validate_mcp_config_path(path)?;
         if plugins.workspace() != workspace {
@@ -3949,13 +3751,13 @@ impl McpPool {
     /// parent's shared pool. No transport, credential or catalog owner changes.
     pub(crate) fn bind_caller_plugins(
         &mut self,
-        plugins: Arc<crate::plugins::PluginRegistry>,
+        plugins: Arc<codewhale_plugins::PluginRegistry>,
     ) -> Result<()> {
         let next = plugins.caller_selection();
         let previous = self
             .plugin_registry
             .as_deref()
-            .and_then(crate::plugins::PluginRegistry::caller_selection);
+            .and_then(codewhale_plugins::PluginRegistry::caller_selection);
         if next == previous {
             return Ok(());
         }
@@ -3995,7 +3797,7 @@ impl McpPool {
     /// receipt. Dynamic operator servers keep their single shared registry.
     pub(crate) fn fork_for_plugins(
         &self,
-        plugins: Arc<crate::plugins::PluginRegistry>,
+        plugins: Arc<codewhale_plugins::PluginRegistry>,
     ) -> Result<Self> {
         let workspace = plugins.workspace().to_path_buf();
         let config = match self.config_sources.first() {
@@ -4032,26 +3834,25 @@ impl McpPool {
     }
     pub(crate) fn validate_native_caller(
         &self,
-        plugins: Option<&crate::plugins::PluginRegistry>,
+        plugins: Option<&codewhale_plugins::PluginRegistry>,
     ) -> Result<()> {
         if self.config.servers.values().any(|server| {
             server
-                .reviewed_plugin
-                .as_ref()
+                .reviewed_plugin_source()
                 .is_some_and(|source| source.native_mcp.is_some())
         }) {
-            let selection = plugins.and_then(crate::plugins::PluginRegistry::caller_selection);
+            let selection = plugins.and_then(codewhale_plugins::PluginRegistry::caller_selection);
             anyhow::ensure!(
                 selection
                     == self
                         .plugin_registry
                         .as_deref()
-                        .and_then(crate::plugins::PluginRegistry::caller_selection)
+                        .and_then(codewhale_plugins::PluginRegistry::caller_selection)
                     && self
                         .config
                         .servers
                         .values()
-                        .filter_map(|server| server.reviewed_plugin.as_ref()?.native_mcp.as_ref())
+                        .filter_map(|server| server.reviewed_plugin_source()?.native_mcp.as_ref())
                         .all(|receipt| Some(receipt.selection()) == selection),
                 "Native MCP pool belongs to another caller composition"
             );
@@ -4072,12 +3873,12 @@ impl McpPool {
         let plugin_source = self
             .connections
             .get(server_name)
-            .and_then(|connection| connection.config().reviewed_plugin.clone())
+            .and_then(|connection| connection.config().reviewed_plugin_source().cloned())
             .or_else(|| {
                 self.config
                     .servers
                     .get(server_name)
-                    .and_then(|config| config.reviewed_plugin.clone())
+                    .and_then(|config| config.reviewed_plugin_source().cloned())
             });
         if let Some(source) = plugin_source
             && let Err(error) = source.validate_before_use(server_name, "use")
@@ -4209,12 +4010,12 @@ impl McpPool {
         let plugin_source = self
             .connections
             .get(server_name)
-            .and_then(|connection| connection.config().reviewed_plugin.clone())
+            .and_then(|connection| connection.config().reviewed_plugin_source().cloned())
             .or_else(|| {
                 self.config
                     .servers
                     .get(server_name)
-                    .and_then(|config| config.reviewed_plugin.clone())
+                    .and_then(|config| config.reviewed_plugin_source().cloned())
             });
         if let Some(source) = plugin_source
             && let Err(error) = source.validate_before_use(server_name, "use")
@@ -4249,7 +4050,7 @@ impl McpPool {
             connection.catalog_generation == self.current_catalog_generation(),
             "MCP configuration changed while connecting {name}; retry against the current config"
         );
-        if let Some(source) = connection.config().reviewed_plugin.as_ref() {
+        if let Some(source) = connection.config().reviewed_plugin_source() {
             source.validate_before_use(&name, "use")?;
         }
         // A successful connect settles the auth question for this server,
@@ -4671,8 +4472,8 @@ impl McpPool {
             let plugin_source = self
                 .connections
                 .get(&name)
-                .and_then(|connection| connection.config().reviewed_plugin.clone())
-                .or_else(|| server_config.reviewed_plugin.clone());
+                .and_then(|connection| connection.config().reviewed_plugin_source().cloned())
+                .or_else(|| server_config.reviewed_plugin_source().cloned());
             if let Some(source) = plugin_source
                 && let Err(error) = source.validate_before_use(&name, "use")
             {
@@ -4733,8 +4534,8 @@ impl McpPool {
             let plugin_source = self
                 .connections
                 .get(name)
-                .and_then(|connection| connection.config().reviewed_plugin.clone())
-                .or_else(|| server_config.reviewed_plugin.clone());
+                .and_then(|connection| connection.config().reviewed_plugin_source().cloned())
+                .or_else(|| server_config.reviewed_plugin_source().cloned());
             if let Some(source) = plugin_source
                 && let Err(error) = source.validate_before_use(name, "use")
             {
@@ -5805,8 +5606,7 @@ impl McpPool {
             .context("advertised MCP connection disappeared during resolution")?;
         let plugin_authority = connection
             .config()
-            .reviewed_plugin
-            .as_ref()
+            .reviewed_plugin_source()
             .map(|source| source.authority.clone());
         Ok(McpToolRoute {
             server_name,
@@ -6229,8 +6029,7 @@ impl McpPool {
         }
         if conn
             .config()
-            .reviewed_plugin
-            .as_ref()
+            .reviewed_plugin_source()
             .map(|source| &source.authority)
             != route.plugin_authority.as_ref()
             || !conn.config().is_tool_enabled(&tool_name)
@@ -6268,8 +6067,7 @@ impl McpPool {
                         if conn.catalog_generation != route.catalog_generation
                             || conn
                                 .config()
-                                .reviewed_plugin
-                                .as_ref()
+                                .reviewed_plugin_source()
                                 .map(|source| &source.authority)
                                 != route.plugin_authority.as_ref()
                             || !conn.config().is_tool_enabled(&tool_name)
@@ -7054,8 +6852,7 @@ pub(crate) fn duplicate_computer_use_servers(config: &McpConfig) -> Vec<(String,
     let builtin_enabled = config.servers.values().any(|server| {
         server.is_enabled()
             && server
-                .reviewed_plugin
-                .as_ref()
+                .reviewed_plugin_source()
                 .is_some_and(|source| source.plugin_name() == COMPUTER_USE_PLUGIN_NAME)
     });
     if !builtin_enabled {
@@ -7109,14 +6906,14 @@ fn launches_computer_use_plugin(server: &McpServerConfig) -> Option<String> {
 }
 
 pub fn load_config_with_workspace(global_path: &Path, workspace: &Path) -> Result<McpConfig> {
-    let plugins = crate::plugins::PluginRegistry::empty(workspace);
+    let plugins = codewhale_plugins::PluginRegistry::empty(workspace);
     load_config_with_workspace_and_plugins(global_path, workspace, &plugins)
 }
 
 pub fn load_config_with_workspace_and_plugins(
     global_path: &Path,
     workspace: &Path,
-    plugins: &crate::plugins::PluginRegistry,
+    plugins: &codewhale_plugins::PluginRegistry,
 ) -> Result<McpConfig> {
     let mut merged = load_config(global_path)?;
     let workspace = checked_workspace_path(workspace)?;
@@ -7146,7 +6943,7 @@ pub fn load_config_with_workspace_and_plugins(
 
 fn merge_plugin_mcp_servers(
     config: McpConfig,
-    registry: &crate::plugins::PluginRegistry,
+    registry: &codewhale_plugins::PluginRegistry,
 ) -> Result<McpConfig> {
     if registry.state_path().is_none() {
         return Ok(config);
@@ -7191,7 +6988,7 @@ fn merge_plugin_mcp_servers(
             Arc::clone(&host_environment),
         )?;
         source.native_mcp = Some(receipt);
-        server.reviewed_plugin = Some(source);
+        server.reviewed_plugin = provenance_of(source);
         config.servers.insert(qualified, server);
     }
     Ok(config)
@@ -7202,11 +6999,11 @@ fn merge_plugin_mcp_servers_from_plugins_with_environment(
     plugins: impl IntoIterator<
         Item = (
             String,
-            crate::plugins::types::LoadedPlugin,
+            codewhale_plugins::types::LoadedPlugin,
             codewhale_config::PluginAuthority,
         ),
     >,
-    host_environment: Arc<crate::plugins::HostEnvironment>,
+    host_environment: Arc<codewhale_plugins::HostEnvironment>,
 ) -> Result<McpConfig> {
     for (plugin_name, plugin, authority) in plugins {
         // Adapter-level denial keeps headless paths fail-closed even if a
@@ -7222,9 +7019,9 @@ fn merge_plugin_mcp_servers_from_plugins_with_environment(
                 let required_capability = if server_config.command.is_some()
                     && server_config.url.is_none()
                 {
-                    crate::plugins::activation::PluginActivationCapability::McpStdio
+                    codewhale_plugins::activation::PluginActivationCapability::McpStdio
                 } else if server_config.url.is_some() && server_config.command.is_none() {
-                    crate::plugins::activation::PluginActivationCapability::McpRemote
+                    codewhale_plugins::activation::PluginActivationCapability::McpRemote
                 } else {
                     tracing::warn!(
                         target: "mcp",
@@ -7235,7 +7032,7 @@ fn merge_plugin_mcp_servers_from_plugins_with_environment(
                     continue;
                 };
                 if !plugin.component_active(required_capability)
-                    || crate::plugins::registry::verify_plugin_component_authority(
+                    || codewhale_plugins::registry::verify_plugin_component_authority(
                         &authority,
                         required_capability,
                     )
@@ -7274,11 +7071,12 @@ fn merge_plugin_mcp_servers_from_plugins_with_environment(
                     )?);
                     freeze_plugin_stdio_paths(&mut server_config, staged_root)?;
                 }
-                server_config.reviewed_plugin = Some(ReviewedPluginMcpSource::from_authority(
-                    authority.clone(),
-                    server_config.url.as_deref(),
-                    Arc::clone(&host_environment),
-                )?);
+                server_config.reviewed_plugin =
+                    provenance_of(ReviewedPluginMcpSource::from_authority(
+                        authority.clone(),
+                        server_config.url.as_deref(),
+                        Arc::clone(&host_environment),
+                    )?);
 
                 config.servers.insert(qualified_name, server_config);
             }
@@ -7294,7 +7092,7 @@ fn merge_plugin_mcp_servers_from_plugins(
     plugins: impl IntoIterator<
         Item = (
             String,
-            crate::plugins::types::LoadedPlugin,
+            codewhale_plugins::types::LoadedPlugin,
             codewhale_config::PluginAuthority,
         ),
     >,
@@ -7302,7 +7100,7 @@ fn merge_plugin_mcp_servers_from_plugins(
     merge_plugin_mcp_servers_from_plugins_with_environment(
         config,
         plugins,
-        Arc::new(crate::plugins::HostEnvironment::capture()),
+        Arc::new(codewhale_plugins::HostEnvironment::capture()),
     )
 }
 
@@ -7563,8 +7361,7 @@ fn hash_mcp_config(config: &McpConfig) -> u64 {
             Some((
                 name,
                 server
-                    .reviewed_plugin
-                    .as_ref()?
+                    .reviewed_plugin_source()?
                     .native_mcp
                     .as_ref()?
                     .catalog_identity(),
@@ -7856,7 +7653,7 @@ pub fn manager_snapshot_from_config_with_workspace(
     workspace: &Path,
     reload_required: bool,
 ) -> Result<McpManagerSnapshot> {
-    let plugins = crate::plugins::PluginRegistry::empty(workspace);
+    let plugins = codewhale_plugins::PluginRegistry::empty(workspace);
     manager_snapshot_from_config_with_workspace_and_plugins(
         path,
         workspace,
@@ -7869,7 +7666,7 @@ pub fn manager_snapshot_from_config_with_workspace_and_plugins(
     path: &Path,
     workspace: &Path,
     reload_required: bool,
-    plugins: &crate::plugins::PluginRegistry,
+    plugins: &codewhale_plugins::PluginRegistry,
 ) -> Result<McpManagerSnapshot> {
     let cfg = load_config_with_workspace_and_plugins(path, workspace, plugins)?;
     Ok(snapshot_from_config(
@@ -7912,7 +7709,7 @@ pub async fn discover_manager_snapshot_with_workspace_and_plugins(
     workspace: &Path,
     network_policy: Option<NetworkPolicyDecider>,
     reload_required: bool,
-    plugins: Arc<crate::plugins::PluginRegistry>,
+    plugins: Arc<codewhale_plugins::PluginRegistry>,
     backend: McpBackend,
 ) -> Result<McpManagerSnapshot> {
     let cfg = load_config_with_workspace_and_plugins(path, workspace, plugins.as_ref())?;

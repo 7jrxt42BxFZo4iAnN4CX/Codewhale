@@ -11,10 +11,11 @@ use anyhow::Result;
 use serde_json::{Value, json};
 use tokio::sync::Mutex as AsyncMutex;
 
-use crate::mcp::{McpPool, McpServerConfig};
+use crate::mcp::McpPool;
 use crate::tools::spec::{
     ApprovalRequirement, ToolCapability, ToolContext, ToolError, ToolResult, ToolSpec,
 };
+use codewhale_mcp::config::McpServerConfig;
 
 // === Parsing Functions ===
 
@@ -491,7 +492,7 @@ mod tests {
     async fn mcp_ceiling_runtime_registration_respects_child_policy_before_connection() {
         let directory = tempfile::tempdir().unwrap();
         let pool = Arc::new(AsyncMutex::new(McpPool::new(
-            crate::mcp::McpConfig::default(),
+            codewhale_mcp::config::McpConfig::default(),
         )));
         let tool = StartRuntimeMcpServer::new(Arc::clone(&pool));
         let mut context = ToolContext::new(directory.path());
@@ -863,7 +864,7 @@ mod tests {
         // with the engine's non-bypassable gate (see engine tests), this
         // guarantees an unapproved start is rejected before `execute` runs.
         let pool = Arc::new(AsyncMutex::new(McpPool::new(
-            crate::mcp::McpConfig::default(),
+            codewhale_mcp::config::McpConfig::default(),
         )));
         let tool = StartRuntimeMcpServer::new(pool);
         assert_eq!(tool.name(), "start_mcp_server");

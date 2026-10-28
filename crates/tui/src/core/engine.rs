@@ -29,7 +29,7 @@ use crate::client::CodewhaleClient;
 use crate::compaction::{CompactionConfig, PreparedCompactionEnvelope, compact_messages_safe};
 use crate::core::model_client::SharedModelClient;
 use crate::error_taxonomy::{ErrorCategory, ErrorEnvelope, ErrorSeverity, StreamError};
-use crate::mcp::{McpConfig, McpPool, McpSupervisorUpdate};
+use crate::mcp::{McpPool, McpSupervisorUpdate};
 use crate::prompts;
 use crate::purge::{emit_purge_completed, emit_purge_failed, emit_purge_started, run_purge};
 #[cfg(test)]
@@ -64,6 +64,7 @@ use codewhale_config::AppMode;
 use codewhale_config::ProviderKind;
 use codewhale_config::descriptors::defaults::DEFAULT_TEXT_MODEL;
 use codewhale_execpolicy::ApprovalMode;
+use codewhale_mcp::config::McpConfig;
 #[cfg(test)]
 use codewhale_models::ToolCaller;
 use codewhale_models::{
@@ -327,7 +328,7 @@ pub struct EngineConfig {
     /// Immutable plugin authority snapshot scoped to `workspace`. Normal App
     /// hosts provide this explicitly; headless/embed callers that leave it
     /// unset receive a fresh workspace-specific snapshot in [`Engine::new`].
-    pub plugin_registry: Option<Arc<crate::plugins::PluginRegistry>>,
+    pub plugin_registry: Option<Arc<codewhale_plugins::PluginRegistry>>,
     /// Sources injected as `<instructions source="…">` blocks in the system
     /// prompt (#454). Each entry is either a disk path (read at render time)
     /// or an inline string. Loaded in declared order from the user's
@@ -1079,7 +1080,7 @@ pub struct Engine {
     /// only genuinely stale work.
     mcp_event_generation: u64,
     /// Workspace-scoped immutable plugin catalogue and authority receipts.
-    plugin_registry: Arc<crate::plugins::PluginRegistry>,
+    plugin_registry: Arc<codewhale_plugins::PluginRegistry>,
     /// This engine's hold on the process-wide extension host (`[features]
     /// extension_host`), carrying `plugin_registry`. `None` with the flag off
     /// and for engines without a plugin snapshot of their own (isolated
@@ -2196,7 +2197,9 @@ impl Engine {
             .as_ref()
             .map(|attachment| attachment.plugin_view())
             .or(own_plugin_registry)
-            .unwrap_or_else(|| Arc::new(crate::plugins::PluginRegistry::empty(&config.workspace)));
+            .unwrap_or_else(|| {
+                Arc::new(codewhale_plugins::PluginRegistry::empty(&config.workspace))
+            });
 
         // Create clients for both providers
         let (codewhale_client, codewhale_client_error) = match host

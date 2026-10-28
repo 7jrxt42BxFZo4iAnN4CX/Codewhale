@@ -78,7 +78,7 @@ impl CommandConfigStatusContext for ConfigStatusAdapter<'_> {
 }
 
 fn project_status(app: &App) -> ConfigStatusView {
-    let config = crate::plugins::providers::load_config(
+    let config = codewhale_plugins::providers::load_config(
         app.config_path.clone(),
         app.config_profile.as_deref(),
     )

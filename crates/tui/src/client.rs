@@ -1907,16 +1907,16 @@ impl CodewhaleClient {
             destination.url().origin() == base.origin(),
             "plugin request escaped its reviewed provider origin"
         );
-        let policy = crate::plugins::activation::extension_host_policy_enabled();
+        let policy = codewhale_plugins::activation::extension_host_policy_enabled();
         let read_only = self.plugin_oauth_read_only;
         let token = tokio::task::spawn_blocking(move || -> Result<String> {
-            let _scope = crate::plugins::activation::PolicyScope::propagate(policy);
+            let _scope = codewhale_plugins::activation::PolicyScope::propagate(policy);
             let descriptor = provider
                 .oauth
                 .as_ref()
                 .context("plugin provider requires host-managed OAuth")?;
             let empty_headers = std::collections::HashMap::new();
-            crate::plugins::providers::verify_provider_binding(
+            codewhale_plugins::providers::verify_provider_binding(
                 &authority,
                 &name,
                 &base_url,
@@ -1929,9 +1929,9 @@ impl CodewhaleClient {
             )?;
             // Refresh may wait on the issuer. Do not send a model request if
             // the review was revoked while that HTTP request was in flight.
-            crate::plugins::registry::verify_plugin_component_authority(
+            codewhale_plugins::registry::verify_plugin_component_authority(
                 &authority,
-                crate::plugins::activation::PluginActivationCapability::Providers,
+                codewhale_plugins::activation::PluginActivationCapability::Providers,
             )
             .map_err(anyhow::Error::msg)?;
             Ok(token)

@@ -1382,7 +1382,7 @@ pub(crate) async fn handle_skill_mutation_requested(
 
     let workspace = app.workspace.clone();
     let home = codewhale_paths::user_home();
-    let cfg = crate::plugins::providers::load_config(None, None).unwrap_or_default();
+    let cfg = codewhale_plugins::providers::load_config(None, None).unwrap_or_default();
     let network = cfg
         .network
         .clone()

@@ -19,11 +19,11 @@ use super::registry::{OwnerRegistry, OwnerState};
 use super::tier::HostTier;
 use super::{ExtensionHostManager, ExtensionHostOptions, HostAttachment, HostStatus};
 use crate::command_catalog::{BuiltinCommand, CatalogGuard, CommandCatalog, UserCommand};
-use crate::plugins::PluginRegistry;
-use crate::plugins::activation::TestPolicyGuard;
-use crate::plugins::discovery::{DiscoveryConfig, discover_with_config};
 use crate::tools::spec::{ApprovalRequirement, ToolContext, ToolError, ToolSpec};
 use codewhale_config::OwnerRef;
+use codewhale_plugins::PluginRegistry;
+use codewhale_plugins::activation::TestPolicyGuard;
+use codewhale_plugins::discovery::{DiscoveryConfig, discover_with_config};
 
 /// The integration tests below run the host on Node unless they say
 /// otherwise; the Bun ones pin Bun (`bun_for_tests`).
@@ -710,7 +710,7 @@ pub(crate) struct FixturePlugins {
 
 impl FixturePlugins {
     pub(crate) async fn new(names: &[&str]) -> Self {
-        use crate::plugins::install::{
+        use codewhale_plugins::install::{
             DEFAULT_MAX_SIZE_BYTES, PluginInstallOutcome, PluginInstallSource, install,
         };
         let temp = tempfile::tempdir().unwrap();
@@ -2122,7 +2122,7 @@ fn native_entry_rule_fails_validation_when_the_host_is_enabled() {
             .map(|diagnostic| {
                 assert_eq!(
                     diagnostic.level,
-                    crate::plugins::types::PluginDiagnosticLevel::Error
+                    codewhale_plugins::types::PluginDiagnosticLevel::Error
                 );
                 diagnostic.message.clone()
             })
@@ -2247,7 +2247,7 @@ fn owner_reports_keep_bounded_attributed_logs_and_ignore_stale_hosts() {
 
 #[tokio::test]
 async fn typed_author_example_is_reviewed_before_its_tool_can_execute() {
-    use crate::plugins::install::{DEFAULT_MAX_SIZE_BYTES, PluginInstallSource, install};
+    use codewhale_plugins::install::{DEFAULT_MAX_SIZE_BYTES, PluginInstallSource, install};
 
     let Some(node) = node_for_tests("typed author example") else {
         return;
@@ -4444,10 +4444,10 @@ export function apply(ctx) {{
     .unwrap();
     let _policy = TestPolicyGuard::extension_host(true);
     let fixture = FixturePlugins::new(&[]).await;
-    crate::plugins::install::install(
-        crate::plugins::install::PluginInstallSource::LocalPath(plugin),
+    codewhale_plugins::install::install(
+        codewhale_plugins::install::PluginInstallSource::LocalPath(plugin),
         &fixture.config.user_plugins_dir,
-        crate::plugins::install::DEFAULT_MAX_SIZE_BYTES,
+        codewhale_plugins::install::DEFAULT_MAX_SIZE_BYTES,
         &codewhale_net::network_policy::NetworkPolicy::default(),
         false,
         &|_| None,
@@ -5766,7 +5766,7 @@ async fn all_fifteen_project_hook_events_use_the_pinned_runner_and_reject_change
     let env_scope = crate::test_support::env_scope_ticket();
     tokio::task::spawn_blocking(move || {
         let _env = crate::test_support::join_env_scope(env_scope);
-        let _policy = crate::plugins::activation::PolicyScope::propagate(true);
+        let _policy = codewhale_plugins::activation::PolicyScope::propagate(true);
         for event in codewhale_config::hooks::ALL_HOOK_EVENTS {
             let results = executor.execute(event, &context);
             assert_eq!(results.len(), 1, "{event:?}");

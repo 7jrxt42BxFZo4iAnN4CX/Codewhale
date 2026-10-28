@@ -103,7 +103,7 @@ fn open_server_manager(config: &Config, root: &Path) -> Result<SharedRuntimeThre
             sessions_dir: None,
             max_active_threads: 2,
         },
-        Arc::new(crate::plugins::PluginRegistry::empty(&workspace)),
+        Arc::new(codewhale_plugins::PluginRegistry::empty(&workspace)),
     )?;
     Ok(manager)
 }

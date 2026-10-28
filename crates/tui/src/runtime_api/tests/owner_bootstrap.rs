@@ -59,7 +59,7 @@ impl Rig {
                 sessions_dir: Some(self.root.join("sessions")),
                 max_active_threads: 8,
             },
-            Arc::new(crate::plugins::PluginRegistry::new()),
+            Arc::new(codewhale_plugins::PluginRegistry::new()),
             false,
             lock,
             binding,

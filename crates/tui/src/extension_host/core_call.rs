@@ -257,7 +257,7 @@ pub(crate) struct Invocation {
     host_generation: u64,
     owner: OwnerRef,
     scope: Option<codewhale_config::EntryRef>,
-    plugins: Option<Arc<crate::plugins::PluginRegistry>>,
+    plugins: Option<Arc<codewhale_plugins::PluginRegistry>>,
     content_hash: String,
     calls: CodemodeInvoker,
     gate: NestedCallGate,

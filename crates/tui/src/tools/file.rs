@@ -587,8 +587,9 @@ async fn load_contract_source(
                 ToolError::execution_failed(format!("Failed to read {}: {error}", path.display()))
             }
         };
-        let Some(mut file) = crate::plugins::registry::open_existing_regular_file(&path, writable)
-            .map_err(open_error)?
+        let Some(mut file) =
+            codewhale_plugins::registry::open_existing_regular_file(&path, writable)
+                .map_err(open_error)?
         else {
             return Ok(None);
         };

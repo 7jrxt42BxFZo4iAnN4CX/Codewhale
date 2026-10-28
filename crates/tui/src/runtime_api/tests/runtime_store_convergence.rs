@@ -1290,7 +1290,7 @@ async fn real_owner_rejects_different_operator_source_before_attach_and_accepts_
     fs::create_dir_all(&workspace)?;
     let config_path = root.join("operator.toml");
     fs::write(&config_path, "")?;
-    let config = crate::plugins::providers::load_config(Some(config_path.clone()), None)?;
+    let config = codewhale_plugins::providers::load_config(Some(config_path.clone()), None)?;
     let other_config = root.join("other-operator.toml");
     fs::write(&other_config, "")?;
     let alias_directory = root.join("alias");
