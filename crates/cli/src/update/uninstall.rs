@@ -2,12 +2,9 @@ use super::*;
 use codewhale_tui::delivery_files::GuardedFile;
 use std::collections::BTreeMap;
 
-const RECEIPT: &str = ".codewhale-install.sha256";
+const RECEIPT: &str = codewhale_release::installs::RECEIPT_FILE;
 const MAX_RECEIPT: usize = 512;
-#[cfg(windows)]
-const COMMANDS: &[&str] = &["codewhale.exe", "codew.exe", "codewhale.bat"];
-#[cfg(not(windows))]
-const COMMANDS: &[&str] = &["codewhale", "codew"];
+pub(super) const COMMANDS: &[&str] = codewhale_release::installs::RECEIPT_COMMANDS;
 
 pub(super) struct CommandReceipt {
     directory: PathBuf,
@@ -139,7 +136,7 @@ fn remove(yes: bool) -> Result<()> {
         println!(
             "This copy belongs to {}. Remove it with: {}",
             method.label(),
-            manager_command(method, &identity.path)
+            codewhale_release::installs::manager_command(method, &identity.path)
         );
         return Ok(());
     }
@@ -339,44 +336,6 @@ fn remove(yes: bool) -> Result<()> {
     Ok(())
 }
 
-fn quoted(path: &Path) -> String {
-    format!("\"{}\"", path.display())
-}
-
-fn manager_command(method: InstallMethod, executable: &Path) -> String {
-    let real = std::fs::canonicalize(executable).unwrap_or_else(|_| executable.to_path_buf());
-    let names: Vec<_> = real.components().map(|part| part.as_os_str()).collect();
-    let position = |marker: &str| {
-        names
-            .iter()
-            .position(|name| name.eq_ignore_ascii_case(marker))
-    };
-    let prefix = |count: usize| names[..count].iter().collect::<PathBuf>();
-    match method {
-        InstallMethod::Cargo => match real.parent().and_then(Path::parent) {
-            Some(root) => format!("cargo uninstall codewhale-cli --root {}", quoted(root)),
-            None => method.uninstall_command().to_string(),
-        },
-        InstallMethod::Homebrew => {
-            match position("Cellar").and_then(|index| names.get(index + 1)) {
-                Some(formula) => format!("brew uninstall {}", formula.to_string_lossy()),
-                None => method.uninstall_command().to_string(),
-            }
-        }
-        InstallMethod::Npm => match position("node_modules") {
-            Some(index) if index > 0 => {
-                let mut root = prefix(index);
-                if !cfg!(windows) && root.file_name().is_some_and(|name| name == "lib") {
-                    root.pop();
-                }
-                format!("npm uninstall -g codewhale --prefix {}", quoted(&root))
-            }
-            _ => method.uninstall_command().to_string(),
-        },
-        _ => method.uninstall_command().to_string(),
-    }
-}
-
 fn curl_install_entries(
     identity: &UpdateExecutableIdentity,
 ) -> Option<(PathBuf, Vec<(String, String)>)> {
@@ -535,37 +494,18 @@ fn purge(yes: bool) -> Result<()> {
 }
 
 fn report_path_copies(selected: Option<&Path>) {
-    let extensions: &[&str] = if cfg!(windows) {
-        &[".exe", ".cmd", ".bat", ".ps1"]
-    } else {
-        &[""]
-    };
-    let mut seen = std::collections::HashSet::new();
-    let mut remaining = false;
-    for directory in std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()) {
-        for name in [
-            "codewhale",
-            "codew",
-            "codewhale-tui",
-            "deepseek",
-            "deepseek-tui",
-        ] {
-            for extension in extensions {
-                let path = directory.join(format!("{name}{extension}"));
-                if Some(path.as_path()) == selected {
-                    continue;
-                }
-                if seen.insert(path.clone()) && std::fs::symlink_metadata(&path).is_ok() {
-                    remaining = true;
-                    println!(
-                        "Another copy remains on PATH (preserved): {}. Run it with uninstall to see who owns it and how to remove it.",
-                        path.display()
-                    );
-                }
-            }
-        }
-    }
-    if !remaining {
+    let inventory = codewhale_release::installs::inventory(selected);
+    let lines = inventory.summary_lines(false, env!("CARGO_PKG_VERSION"));
+    if inventory
+        .entries
+        .iter()
+        .all(|entry| Some(entry.path.as_path()) == selected)
+    {
         println!("No other Codewhale command remains on PATH.");
+        return;
+    }
+    println!("Other Codewhale copies on this machine (not changed by uninstall):");
+    for line in lines {
+        println!("  {line}");
     }
 }
