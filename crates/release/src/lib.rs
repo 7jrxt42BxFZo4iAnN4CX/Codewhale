@@ -5,6 +5,7 @@ use serde::Deserialize;
 
 pub mod check;
 pub mod install;
+pub mod installs;
 pub mod launch;
 pub mod tls;
 

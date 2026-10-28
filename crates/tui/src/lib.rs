@@ -1284,6 +1284,21 @@ struct DoctorArgs {
     /// With --repair-sessions: report what would be repaired, change nothing
     #[arg(long, default_value_t = false, requires = "repair_sessions")]
     dry_run: bool,
+    /// Report every Codewhale copy on this machine and who owns it (offline; nothing is run or changed)
+    #[arg(long, default_value_t = false, conflicts_with_all = ["context_json", "repair_sessions", "fix"])]
+    installs: bool,
+    /// With --installs: print only what needs attention, nothing on a tidy machine
+    #[arg(long, default_value_t = false, requires = "installs")]
+    brief: bool,
+    /// Move everything from a recovery folder back where it was (the newest when STAMP is omitted)
+    #[arg(
+        long,
+        value_name = "STAMP",
+        num_args = 0..=1,
+        default_missing_value = "latest",
+        conflicts_with_all = ["json", "context_json", "fix", "installs", "repair_sessions"]
+    )]
+    restore: Option<String>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -2528,6 +2543,12 @@ async fn run_async_main_dispatch(
     if let Some(command) = command {
         return match command {
             Commands::Doctor(args) => {
+                if let Some(stamp) = &args.restore {
+                    return crate::doctor::run_restore(stamp);
+                }
+                if args.installs {
+                    return crate::doctor::run_installs_report(args.json, args.brief);
+                }
                 let config = match load_doctor_config_from_cli(&cli, &args) {
                     Ok(config) => config,
                     Err(error) if args.json => return run_doctor_json_config_error(&error),
@@ -5028,6 +5049,16 @@ async fn run_doctor(
 
     println!("{}", "Updates:".bold());
     crate::doctor::print_update_report(probes).await;
+    println!();
+
+    println!("{}", "Installations:".bold());
+    let installation_lines =
+        tokio::task::spawn_blocking(|| crate::doctor::installation_lines(false))
+            .await
+            .unwrap_or_default();
+    for line in installation_lines {
+        println!("  {line}");
+    }
     println!();
 
     // Configuration summary

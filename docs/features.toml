@@ -47,6 +47,16 @@ docs = "docs/INSTALL.md"
 owner = "crates/cli/src/update/uninstall.rs"
 
 [[feature]]
+id = "install-cleanup"
+name = "Installation cleanup"
+summary = "doctor --installs lists every copy and owner; doctor --fix moves old backups to recovery; doctor --restore undoes it."
+status = "stable"
+surfaces = { tui = "stable" }
+since = "unreleased"
+docs = "docs/INSTALL.md#clean-up-old-copies"
+owner = "crates/release/src/installs.rs"
+
+[[feature]]
 id = "cloud-computer-dispatch"
 name = "Cloud computer conversations"
 summary = "Dispatch, inspect, continue and stop one account cloud conversation from terminal and desktop, saved whales included."

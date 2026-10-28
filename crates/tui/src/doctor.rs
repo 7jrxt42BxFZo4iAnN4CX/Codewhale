@@ -625,3 +625,112 @@ fn ds4_probe_error(config: &codewhale_runtime::config::Config, error: &str) -> S
 #[cfg(test)]
 #[path = "doctor/tests.rs"]
 mod tests;
+
+pub(crate) fn installation_lines(brief: bool) -> Vec<String> {
+    let running = std::env::current_exe().ok();
+    let inventory = codewhale_release::installs::inventory(running.as_deref());
+    let mut lines = inventory.summary_lines(brief, env!("CARGO_PKG_VERSION"));
+    if let Ok(home) = codewhale_config::codewhale_home() {
+        let now = codewhale_release::check::now_unix();
+        for folder in codewhale_release::installs::recovery_folders(&home) {
+            if folder.records.is_empty() {
+                continue;
+            }
+            lines.push(format!(
+                "Recovery {}: {} item(s), {}, deleted in {} day(s). Undo: codewhale doctor --restore {}",
+                folder.stamp,
+                folder.records.len(),
+                codewhale_release::installs::human_bytes(folder.bytes()),
+                folder.expires_in_days(now).unwrap_or(0),
+                folder.stamp
+            ));
+        }
+    }
+    lines
+}
+
+pub(crate) fn run_installs_report(json: bool, brief: bool) -> Result<()> {
+    if !json {
+        for line in installation_lines(brief) {
+            println!("{line}");
+        }
+        return Ok(());
+    }
+    let running = std::env::current_exe().ok();
+    let inventory = codewhale_release::installs::inventory(running.as_deref());
+    let rows: Vec<_> = inventory
+        .entries
+        .iter()
+        .map(|entry| {
+            serde_json::json!({
+                "path": entry.path,
+                "class": entry.class.label(),
+                "reason": match &entry.class {
+                    codewhale_release::installs::InstallClass::NotOurs(reason) => Some(*reason),
+                    _ => None,
+                },
+                "owner": match &entry.class {
+                    codewhale_release::installs::InstallClass::PackageManaged(method) => Some(method.label()),
+                    _ => None,
+                },
+                "owner_command": entry.owner_command(),
+                "is_dir": entry.is_dir,
+                "bytes": entry.bytes,
+                "active": entry.active,
+                "running": Some(entry.path.as_path()) == running.as_deref(),
+                "same_as_running": entry.same_as_running,
+            })
+        })
+        .collect();
+    let recovery: Vec<_> = codewhale_config::codewhale_home()
+        .map(|home| codewhale_release::installs::recovery_folders(&home))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|folder| {
+            serde_json::json!({
+                "stamp": folder.stamp,
+                "path": folder.dir,
+                "items": folder.records.len(),
+                "bytes": folder.bytes(),
+                "expires_in_days": folder.expires_in_days(codewhale_release::check::now_unix()),
+            })
+        })
+        .collect();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            "installations": rows,
+            "leftover_bytes": inventory.leftover_bytes(),
+            "summary": inventory.summary_lines(brief, env!("CARGO_PKG_VERSION")),
+            "recovery": recovery,
+        }))?
+    );
+    Ok(())
+}
+
+pub(crate) fn run_restore(stamp: &str) -> Result<()> {
+    let home = codewhale_config::codewhale_home()?;
+    let stamp = (stamp != "latest").then_some(stamp);
+    let (stamp, report) = codewhale_release::installs::restore(&home, stamp)?;
+    for path in &report.restored {
+        println!("Restored {}", path.display());
+    }
+    for (path, reason) in &report.skipped {
+        println!("Kept in recovery: {} ({reason})", path.display());
+    }
+    if let Some(displaced) = &report.displaced {
+        println!(
+            "The files that were in those places are kept in recovery {displaced}. Undo: codewhale doctor --restore {displaced}"
+        );
+    }
+    println!(
+        "Restored {} of {} item(s) from recovery {stamp}.",
+        report.restored.len(),
+        report.restored.len() + report.skipped.len()
+    );
+    if !report.skipped.is_empty() {
+        anyhow::bail!("some items could not be restored; they stay in the recovery folder");
+    }
+    Ok(())
+}
