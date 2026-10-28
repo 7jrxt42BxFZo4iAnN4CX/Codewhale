@@ -38,10 +38,6 @@
   "crates/config/src/path_io.rs": {
     "path_canonicalize": 2
   },
-  "crates/config/src/state_dirs.rs": {
-    "path_canonicalize": 1,
-    "std_fs": 8
-  },
   "crates/config/src/private_directory.rs": {
     "path_canonicalize": 1,
     "std_fs": 1
@@ -52,6 +48,10 @@
   },
   "crates/config/src/setup_state.rs": {
     "std_fs": 3
+  },
+  "crates/config/src/state_dirs.rs": {
+    "path_canonicalize": 1,
+    "std_fs": 8
   },
   "crates/config/src/user_constitution.rs": {
     "std_fs": 6
@@ -76,6 +76,40 @@
   },
   "crates/net/src/import_claude.rs": {
     "std_fs": 2
+  },
+  "crates/plugins/src/builtin.rs": {
+    "thread_sleep": 1
+  },
+  "crates/plugins/src/discovery.rs": {
+    "path_canonicalize": 1
+  },
+  "crates/plugins/src/export.rs": {
+    "path_canonicalize": 1
+  },
+  "crates/plugins/src/install/dsh.rs": {
+    "path_canonicalize": 2
+  },
+  "crates/plugins/src/install/mod.rs": {
+    "path_canonicalize": 1
+  },
+  "crates/plugins/src/install/stage.rs": {
+    "path_canonicalize": 2
+  },
+  "crates/plugins/src/manifest.rs": {
+    "path_canonicalize": 2
+  },
+  "crates/plugins/src/marketplace/document.rs": {
+    "std_fs": 1
+  },
+  "crates/plugins/src/marketplace/store.rs": {
+    "std_fs": 1
+  },
+  "crates/plugins/src/registry.rs": {
+    "path_canonicalize": 6,
+    "thread_sleep": 1
+  },
+  "crates/plugins/src/runtime.rs": {
+    "path_canonicalize": 2
   },
   "crates/release/src/check.rs": {
     "std_fs": 4
@@ -116,12 +150,12 @@
     "std_fs": 4
   },
   "crates/sandbox/src/bwrap.rs": {
-    "path_canonicalize": 1,
+    "path_canonicalize": 2,
     "std_fs": 1
   },
   "crates/sandbox/src/lib.rs": {
     "path_canonicalize": 1,
-    "std_fs": 2
+    "std_fs": 3
   },
   "crates/sandbox/src/policy.rs": {
     "path_canonicalize": 8
@@ -274,40 +308,6 @@
   },
   "crates/tui/src/models_dev_live.rs": {
     "std_fs": 1
-  },
-  "crates/plugins/src/builtin.rs": {
-    "thread_sleep": 1
-  },
-  "crates/plugins/src/discovery.rs": {
-    "path_canonicalize": 1
-  },
-  "crates/plugins/src/export.rs": {
-    "path_canonicalize": 1
-  },
-  "crates/plugins/src/install/dsh.rs": {
-    "path_canonicalize": 2
-  },
-  "crates/plugins/src/install/mod.rs": {
-    "path_canonicalize": 1
-  },
-  "crates/plugins/src/install/stage.rs": {
-    "path_canonicalize": 2
-  },
-  "crates/plugins/src/manifest.rs": {
-    "path_canonicalize": 2
-  },
-  "crates/plugins/src/marketplace/document.rs": {
-    "std_fs": 1
-  },
-  "crates/plugins/src/marketplace/store.rs": {
-    "std_fs": 1
-  },
-  "crates/plugins/src/registry.rs": {
-    "path_canonicalize": 6,
-    "thread_sleep": 1
-  },
-  "crates/plugins/src/runtime.rs": {
-    "path_canonicalize": 2
   },
   "crates/tui/src/project_context.rs": {
     "std_fs": 1
