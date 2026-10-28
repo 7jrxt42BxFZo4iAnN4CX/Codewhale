@@ -135,12 +135,11 @@ impl InstallMethod {
 
         let has = |name: &str| components.iter().any(|c| c == name);
 
-        if components
-            .windows(3)
-            .any(|parts| parts[0].ends_with(".app") && parts[1] == "contents" && parts[2] == "macos")
-            || components
-                .windows(2)
-                .any(|pair| pair[0] == "gpui" && pair[1] == "engine")
+        if components.windows(3).any(|parts| {
+            parts[0].ends_with(".app") && parts[1] == "contents" && parts[2] == "macos"
+        }) || components
+            .windows(2)
+            .any(|pair| pair[0] == "gpui" && pair[1] == "engine")
         {
             return Self::DesktopApp;
         }
