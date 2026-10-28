@@ -4062,6 +4062,7 @@ async fn memory_hog_is_stopped(
         {
             assert!(
                 message.contains("allocation failed")
+                    || message.ends_with("RangeError: Failed to allocate memory")
                     || (kind == codewhale_dependencies::HostRuntimeKind::Bun
                         && message.ends_with("RangeError: Out of memory")),
                 "{message}"
